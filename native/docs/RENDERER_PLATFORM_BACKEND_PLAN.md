@@ -110,9 +110,9 @@ behavior.
 
 Progress: the first draw seam is in place. `Renderer` now builds the immutable
 `RendererDrawSnapshot` and delegates frame drawing through the `PresentationBackend::draw_frame`
-interface. D3D11 implements that contract today; Metal has an explicit unsupported stub until it is
-wired to the shared renderer loop. `Renderer` retains ownership of scheduling, playback state, track
-lifecycle, GPU wait accounting, and overlay hooks.
+interface. D3D11 and Metal both implement that contract through platform providers. `Renderer`
+retains ownership of scheduling, playback state, track lifecycle, GPU wait accounting, and overlay
+hooks.
 Backend construction is now behind `PresentationBackendProvider`: Windows and macOS each declare
 which backend kinds they support and create the platform backend explicitly. The old
 `create_presentation_backend(RenderBackendKind)` entrypoint remains as a compatibility wrapper.

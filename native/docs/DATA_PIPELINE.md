@@ -1,87 +1,105 @@
 # 数据管线
 
-> 本文档描述帧数据从文件到屏幕的当前路径。
+> 本文档描述当前 frame/data path。Windows 和 macOS 共用播放与调度管线，平台差异收敛在 hardware decode provider 与 `PresentationBackend`。
 
 ## 总览
 
-```
+```text
 File
   -> DemuxThread
   -> PacketQueue
   -> DecodeThread
   -> FrameConverter
+  -> TextureFrame
   -> TrackBuffer / BidiRingBuffer
   -> RenderSink
-  -> D3D11FramePresenter
-  -> Renderer D3D11 draw
-  -> SwapChain 或 D3D11HeadlessOutput shared texture
+  -> PresentDecision
+  -> RendererDrawSnapshot
+  -> PresentationBackend
+     -> Windows: D3D11 shared texture / swap chain
+     -> macOS: Metal / CVPixelBuffer / IOSurface target
 ```
 
-DemuxThread 保留 packet 的 stream time base。DecodeThread 在解码出 frame 后将时间戳转为微秒，之后 renderer 管线统一使用微秒。
+`DemuxThread` 保留 packet stream time base。`DecodeThread` 输出 frame 时转成微秒，之后 renderer、seek、loop、
+layout 和 diagnostics 都使用微秒时间戳。
 
 ## TextureFrame
 
-```cpp
-struct TextureFrame {
-    int64_t pts_us;
-    int64_t duration_us;
-    int width, height;
-    bool is_ref;
-    void* texture_handle;
-    FrameStorage storage;
-    bool is_nv12;
-    bool is_p010;
-    int texture_array_index;
-    shared_ptr<void> hw_frame_ref;
-    shared_ptr<vector<uint8_t>> cpu_data;
-};
+`TextureFrame` 是 decode/convert 之后进入 renderer buffer 的平台中立 frame 包装。当前主字段是
+`FrameStorage` variant，兼容字段仍为旧调用点和测试保留。
+
+| Storage | 典型来源 | 消费方 |
+| --- | --- | --- |
+| `CpuNv12FrameStorage` / planar YUV | software decode、hwdownload fallback | D3D11 upload 或 Metal present package |
+| `CpuRgbaFrameStorage` | 旧测试、BGRA fallback、capture helpers | D3D11/Metal BGRA upload path |
+| `D3D11Nv12FrameStorage` / D3D11 texture | Windows D3D11VA renderer-owned path | D3D11 backend |
+| macOS CVPixelBuffer storage | VideoToolbox zero-copy path | Metal backend through CVMetalTextureCache / IOSurface |
+
+Frame storage 必须带足 lifetime 信息。D3D11VA 和 VideoToolbox 硬解 frame 都持有底层 FFmpeg/CVPixelBuffer 引用，避免
+decoder pool 在 renderer 使用期间提前复用 surface。
+
+## PresentDecision 与 RendererDrawSnapshot
+
+`RenderSink::evaluate()` 生成 `PresentDecision`，决定当前每轨该显示哪个 frame，以及 carry-forward、slot order、
+layout、file id、track generation 等身份信息。`Renderer` 再把 decision 与 track/layout/color metadata 打包成
+immutable `RendererDrawSnapshot`。
+
+`PresentationBackend::draw_frame(snapshot)` 是平台边界：
+
+- backend 可以上传、包装、复制或采样 snapshot 中已经选好的 frame；
+- backend 不能选择播放时间，不能拥有 seek/loop/track lifecycle；
+- draw 成功/失败、last error、storage kind、upload counters 会进入 diagnostics。
+
+## Windows D3D11 输出路径
+
+```text
+TextureFrame
+  -> D3D11 presentation backend
+  -> D3D11 SRV / renderer-owned texture preparation
+  -> HLSL layout/color shader
+  -> D3D11HeadlessOutput shared texture or swap chain
+  -> Flutter Texture
 ```
 
-字段含义：
+Windows headless mode 使用 `D3D11HeadlessOutput` 管理 shared BGRA texture。renderer 绘制到非 front buffer，发布后通过
+callback 通知 Flutter texture。front-buffer capture 从当前 published buffer 读回 BGRA，用于 UI automation hash。
 
-- `storage` 是当前主路径，使用 `FrameStorage` variant 区分 `CpuNv12`、`CpuRgba`、`D3D11Nv12`、`D3D11Texture`。
-- `cpu_data`、`texture_handle`、`is_nv12`、`texture_array_index`、`hw_frame_ref` 仍保留为兼容字段，便于迁移期间的测试和旧调用点。
-- `CpuNv12FrameStorage` 持有软件路径或 hwdownload 路径产生的 CPU NV12/P010 数据；`is_p010` 表示该 CPU buffer 应上传为 `DXGI_FORMAT_P010`。
-- `CpuRgbaFrameStorage` 保留给旧测试或直接 RGBA texture 路径。
-- `D3D11Nv12FrameStorage` 指向 D3D11VA NV12 texture 和 array slice，并持有 frame ref，保证 decoder surface 在 renderer 使用期间不被 FFmpeg pool 回收。
+## macOS Metal / CVPixelBuffer 输出路径
 
-## 三条输出路径
+```text
+TextureFrame
+  -> RendererDrawSnapshot
+  -> Metal PresentationBackend
+     -> CVPixelBuffer fast path for VideoToolbox frames
+     -> YUV/BGRA present package for software or fallback frames
+  -> renderer-owned CVPixelBuffer / IOSurface
+  -> Flutter Texture
+```
 
-| 路径 | 典型 codec | 数据流 | 特点 |
-|------|------------|--------|------|
-| 软件解码 | fallback、部分不支持硬解的 codec | `AVFrame -> CPU planar Y/U/V 或 CPU NV12/P010 pack -> D3D11 plane/NV12/P010 upload -> shader YUV->RGB` | 普通 8-bit 4:2:0 保留原始三平面；其他支持格式走确定性 packer，与硬解共用 shader 色彩转换路径 |
-| 硬解 hwdownload | AV1、VP9 | `D3D11VA decode -> av_hwframe_transfer_data -> CPU NV12/P010 pack -> D3D11 NV12/P010 upload` | 仍是硬解，避免直接采样驱动差异导致黑/灰帧 |
-| 硬解 renderer-owned NV12/P010 | H.264、H.265 等 | `D3D11VA NV12/P010 -> renderer-owned planar texture -> shader YUV->RGB` | CPU 拷贝少，性能路径 |
+VideoToolbox H.264/H.265 支持路径会保留 decoder-owned `CVPixelBuffer`，Metal backend 通过
+`CVMetalTextureCache` / IOSurface 采样，避免 hwdownload。unsupported codec、unsupported format 或 software decode
+走显式 present-package path，并在 diagnostics 中报告 `presentationFallbackReason` 与 storage kind。
 
-## Renderer 上屏
+## Capture 与 Diagnostics
 
-Renderer 通过 `RenderSink::evaluate()` 选择每轨应该显示的帧。`D3D11FramePresenter` 根据 `TextureFrame::storage` 类型执行：
+Windows 和 macOS 都应通过 shared renderer/capture contract 观察当前 front buffer。macOS 仍保留 Flutter texture 侧
+viewport metrics，但 native capture smoke 应优先使用 renderer/backend capture contract。
 
-- CPU planar Y/U/V 数据：当前用于普通 8-bit 4:2:0，上传/复用每轨 R8 plane texture 后创建 Y/U/V SRV 采样。
-- CPU NV12/P010 数据：上传/复用每轨 NV12/P010 texture 后创建 Y/UV SRV 采样。
-- RGBA CPU 数据：上传/复用每轨 RGBA texture 后按 RGBA 采样。
-- NV12/P010 硬解数据：复制 decoder surface 的目标 array slice 到 renderer-owned planar texture，再创建 Y/UV SRV 采样。
+关键 diagnostics：
 
-复制到 renderer-owned NV12 texture 是当前硬解稳定性的关键点：seek 或 pipeline recreate 后 FFmpeg decoder surface 可以被安全回收，不会被 Flutter/renderer 长时间引用。
+- backend kind、scheduler kind、storage kind、fallback reason
+- upload count/failure count/last draw error
+- per-track decode stats、offset、file id、slot
+- presented PTS trace、large-gap count、host interval、renderer-owned ratio
 
-## Headless / Flutter Texture
-
-Flutter 主窗口使用 headless renderer，不直接 Present 到 SwapChain。`D3D11HeadlessOutput` 管理三缓冲 shared BGRA texture：
-
-- native 持有 3 个 shared texture 和 handle。
-- renderer 总是写入非 front 且 Flutter 未持有的 buffer。
-- 绘制完成后切换 front handle，并通过 callback 通知 Flutter Texture 更新。
-- resize 时旧 shared buffers 会延迟保活，避免 Flutter 仍在读取时被释放导致黑闪；当前这是固定延迟的 best-effort 保护，不是消费者 ack 后再释放的严格 lifetime 协议。
-
-测试中的 `CAPTURE_VIEWPORT` 读取当前 front buffer，计算 hash、平均亮度和非黑像素占比，用于 UI 回归。
-
-## 内存估算
+## 内存量级
 
 | 资源 | 1080p 量级 |
-|------|-----------|
+| --- | --- |
 | PacketQueue 100 slots | 约 1 MB，取决于压缩码率 |
-| RGBA 帧 | 约 8 MB/帧 |
-| NV12 帧 | 约 3 MB/帧 |
-| P010 帧 | 约 6 MB/帧 |
-| Headless BGRA 三缓冲 | 约 24 MB |
-| renderer-owned NV12/P010 texture | 每轨约 3-6 MB，可随尺寸变化重建 |
+| RGBA/BGRA frame | 约 8 MB/帧 |
+| NV12 frame | 约 3 MB/帧 |
+| P010 frame | 约 6 MB/帧 |
+| D3D11 headless BGRA 三缓冲 | 约 24 MB |
+| macOS CVPixelBuffer target | 约 8 MB/1080p BGRA target |
+| renderer-owned YUV/P010 textures or staging | 随格式、轨道数和目标尺寸变化 |

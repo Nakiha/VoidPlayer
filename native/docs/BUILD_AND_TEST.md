@@ -2,208 +2,155 @@
 
 ## 入口命令
 
-项目根目录下优先使用 `dev.py`，它会串起 native 构建、CTest 和 Flutter 侧需要的产物复制。
+项目根目录优先使用 `dev.py`。它会串起 native build、CTest、Flutter build、UI automation 和 package staging。
 
 ```bash
-python dev.py build --native
-python dev.py test
+python3.12 dev.py build --native
+python3.12 dev.py build --flutter
+python3.12 dev.py test
+python3.12 dev.py test --native-only
+python3.12 dev.py package
+```
+
+Windows UI automation：
+
+```bash
+python dev.py ui-test --build ui_tests/smoke/basic.csv
+```
+
+macOS UI automation：
+
+```bash
+python3.12 dev.py mac-ui-test --build ui_tests/macos/native_facade_smoke.csv
+```
+
+Native 子目录仍可直接使用 CMake/presets，但日常开发建议通过顶层 `dev.py` 保持平台产物和依赖检查一致。
+
+## CMake 目标概览
+
+| 目标 | 平台 | 说明 |
+| --- | --- | --- |
+| `void_player_portable_core` | all | 平台中立基础类型、layout、presentation contracts |
+| `void_media_ffmpeg` | all | FFmpeg demux/decode support |
+| `void_renderer_portable_driver` | macOS/native smokes | shared renderer driver object target |
+| `void_macos_native_player` | macOS | macOS native bridge + Metal presentation backend |
+| `video_renderer_ffi` | Windows/native FFI | C FFI shared library，导出 `naki_vr_*` |
+| `video_renderer_native` | Windows/Python | pybind11 module for demo/scripts |
+| `VoidPlayerCli` | analysis enabled | analysis cache/overlay CLI |
+| `video_renderer_tests` | Windows | Catch2 renderer/unit/integration tests |
+| `analysis_tests` | analysis enabled | VAC2/VACHUNK/cache tests |
+| `test_ffi_c` | FFI tests | C ABI smoke |
+| `macos_*_smoke` / `renderer_metal_headless_smoke` | macOS | Metal、VideoToolbox、native player、capture、audio native smokes |
+
+常用 CMake 开关：
+
+| 开关 | 默认 | 说明 |
+| --- | --- | --- |
+| `BUILD_FFI` | `ON` | 构建 C FFI target |
+| `BUILD_PYTHON` | `ON` | 构建 pybind11 Python binding；找不到依赖时自动关闭 |
+| `BUILD_TESTS` | `ON` | 构建 CTest targets |
+| `BUILD_ANALYSIS` | `ON` | 构建 analysis cache/overlay/CLI；关闭时 renderer 使用 no-op overlay stub |
+| `BUILD_BENCHMARKS` | `OFF` | 构建 benchmark targets |
+
+## macOS Stabilization Gates
+
+macOS native playback 当前是 feature-complete / stabilization 状态。修改 shared renderer、Metal backend、VideoToolbox、
+Swift texture bridge 或 diagnostics 时，优先使用以下 gate：
+
+```bash
+python3.12 dev.py test --native-only
+python3.12 dev.py build --flutter
+python3.12 dev.py mac-ui-test --build \
+  ui_tests/macos/native_facade_smoke.csv \
+  ui_tests/macos/native_4k60_playback_smoke.csv \
+  ui_tests/macos/native_vvc_software_playback_smoke.csv \
+  ui_tests/macos/native_add_track_smoke.csv
+```
+
+更多 macOS UI smokes 按影响面选择：
+
+| 脚本 | 目的 |
+| --- | --- |
+| `native_playback_smoke.csv` | basic play/pause playback |
+| `native_seek_frame_smoke.csv` | seek preview / renderer-owned refresh |
+| `native_loop_range_smoke.csv` | loop policy |
+| `native_audio_play_seek_smoke.csv` | miniaudio/CoreAudio playback + seek |
+| `native_layout_split_smoke.csv` | split/layout and multi-track presentation |
+| `native_4k60_playback_smoke.csv` | VideoToolbox CVPixelBuffer + Metal 4K canary |
+| `native_vvc_software_playback_smoke.csv` | software fallback + Metal package path |
+| `native_p010_presentation_smoke.csv` | 10-bit/P010 presentation path |
+| `native_callback_stress_smoke.csv` | callback lifecycle stress |
+
+Native macOS CTest includes `videotoolbox_provider_smoke`, `macos_metal_uploader_smoke`,
+`macos_metal_presentation_backend_smoke`, `renderer_metal_headless_smoke`, and
+`macos_native_player_shared_renderer_smoke`.
+
+## Windows Preservation Gate
+
+The macOS backend work changed shared renderer boundaries, so Windows preservation remains a release gate. Run it on a
+Windows host before closing macOS release readiness:
+
+```powershell
 python dev.py test --native-only
-python dev.py ui-test ui_tests/smoke_basic.csv
+flutter build windows --release
+python dev.py ui-test --build ui_tests/smoke/basic.csv
 ```
 
-Native 子目录也可以单独运行：
+Add targeted Windows UI scripts when touching seek, loop, viewport/layout, codec, track, analysis, or D3D11 shared texture/capture behavior.
+
+## Release / Package Checks
+
+`python3.12 dev.py package` builds/stages clean package input for the current platform. On macOS it stages
+`VoidPlayer.app`, copies release docs and FFmpeg compliance files, verifies linkage/codesign, and can optionally create a DMG.
 
 ```bash
-python native/build.py
-python native/build.py --build-only
-python native/build.py --test-only
-python native/build.py --benchmarks-only
-python native/build.py --debug
+python3.12 dev.py package
+python3.12 dev.py package --installer
+python3.12 dev.py package --installer --macos-notarize --macos-notary-profile PROFILE
 ```
 
-Native also provides CMake presets for direct contributor workflows:
+Release compliance smoke:
 
 ```bash
-cmake --list-presets -S native
-cmake --preset windows-release -S native
-cmake --build native/build-msvc-preset-release --config Release
-cmake --preset no-python-no-tests -S native
-cmake --build native/build-msvc-preset-minimal --config Release
+python3.12 scripts/dev/check_release_compliance.py
+python3.12 scripts/dev/check_release_compliance.py --stage build/package/macos/stage
 ```
 
-Native FFI/Python staging 产物默认写入 `native/build-msvc/dist/`。不要依赖或提交源码树下的 `native/dist/`。
+Release readiness must verify:
 
-Analysis 全片生成 benchmark 通过顶层 dev 命令运行，它使用发布目录里的
-`VoidPlayerCli.exe` 和 `tools/ffmpeg-analysis/void_ffmpeg_analyzer.exe`：
+- FFmpeg dylibs/runtime files and README/manifest/license notices;
+- top-level `LICENSE`, `THIRD_PARTY_NOTICES.md`, and `native/THIRD_PARTY_NATIVE.md`;
+- crash/log paths do not land in package staging;
+- sandbox file access and file picker behavior;
+- signing/notarization inputs for external distribution.
+
+## CI
+
+CI entrypoint is `.github/workflows/native.yml`. It currently covers Windows native tests, macOS native tests, macOS
+analysis build, macOS runner build, FFmpeg package restore, release compliance smoke, and a VideoToolbox native smoke.
+
+Do not interpret CI green as full release readiness: headed macOS UI smokes, Windows UI preservation, package staging, and
+long-run/perf checks remain local or future nightly gates.
+
+## Analysis Benchmarks
+
+Analysis full-file benchmark:
 
 ```bash
 python dev.py analysis-benchmark --build
 python dev.py analysis-benchmark h264 h265 h266
 ```
 
-报告默认写入 `build/analysis-benchmark/analysis_benchmark.json` 和 `.md`。
-这条流程会同时覆盖 CLI、VAC2 生成、overlay VACHUNK 生成、chunk inspect 和
-zstd section 压缩统计。
-
-Analysis overlay benchmark 用于测量 legacy dirty-frame CPU raster 参考成本、估算
-当前 GUI/DX11 路径把 VACHUNK CU 记录上传为 GPU rect instances 的字节数，并通过
-D3D11 timestamp query 量化 overlay GPU pass。它默认使用 H.266 小样第一帧、比特率热力图，并优先使用 native build 目录下的
-`VoidPlayerCli.exe`，方便在 renderer/analysis 迭代时拿到最新代码：
+Analysis overlay benchmark:
 
 ```bash
 python dev.py analysis-overlay-benchmark --build
 python dev.py analysis-overlay-benchmark --iterations 240 --with-grid
-python dev.py analysis-overlay-benchmark --video <video> --codec hevc --frame 128 --mode qp
 ```
 
-报告默认写入
-`build/analysis-overlay-benchmark/analysis_overlay_benchmark.json` 和 `.md`。
-这条基准不代表完整 GUI 的 D3D blend 或窗口合成成本。GUI 当前对热力图/预测模式填充
-使用 16-byte packed rect structured buffer + instanced quad pass；CU/MB 反色边界用同一
-rect buffer 在 GPU 侧生成 R8 mask render target，以避免共享边界双绘制。`--with-grid`
-会同时测 legacy CU/MB 边界 mask raster，并输出 legacy CPU texture upload、当前 GPU
-rect upload、rect upload CPU wall time、color instance pass、GPU mask pass、invert pass
-和 full overlay pass 的平均耗时。可用 `--skip-gpu` 只跑 CPU reference。
-
-`dev.py build --native` 会在 native CMake 构建前检查 analysis 外部工具：
-
-- FFmpeg `void_ffmpeg_analyzer.exe`：如果缺失，或构建 stamp 与当前 `native/analysis/vendor/ffmpeg`、`zstd` 子模块版本 / Python analyzer build helper 不一致，会由 `dev.py` 自动重编。
-
-这意味着 cherry-pick 只改变 FFmpeg analyzer 或 zstd 子模块指针时，下一次 `python dev.py build --native` 会自动刷新对应的小工具，不需要手动记一条额外命令。
-
-如果 FFmpeg 不在默认的 `windows/libs/ffmpeg`，可以显式指定：
-
-```bash
-python native/build.py --ffmpeg-root <ffmpeg-root>
-```
-
-PowerShell 中也可以用环境变量：
-
-```powershell
-$env:FFMPEG_ROOT = "<ffmpeg-root>"
-python native/build.py
-```
-
-## CMake 目标
-
-| 目标 | 类型 | 说明 |
-|------|------|------|
-| `video_renderer_lib` | STATIC | 核心渲染/解码/同步管线 |
-| `video_renderer_ffi` | SHARED | C FFI DLL，导出 `naki_vr_*` |
-| `video_renderer_native` | MODULE | Python 扩展 `.pyd`，供 demo/脚本调用 |
-| `video_renderer_tests` | EXE | Catch2 renderer 单元/集成测试 |
-| `analysis_tests` | EXE | VAC2/VACHUNK 解析、生成与 cache 布局测试 |
-| `analysis_cli_smoke_tests` | EXE | VoidPlayerCli inspect/check/frame/chunk-frame/generate-base/generate-overlay smoke |
-| `test_ffi_c` | EXE | C ABI smoke test |
-| `probe_hw` | EXE | 硬件能力探测，存在 `probe_hw.cpp` 时构建 |
-| `pipeline_bench` | EXE | 解复用/解码/上传/Present 基准，`BUILD_BENCHMARKS=ON` 时构建 |
-
-常用 CMake 开关：
-
-| 开关 | 默认 | 说明 |
-|------|------|------|
-| `BUILD_FFI` | `ON` | 构建 C FFI DLL |
-| `BUILD_PYTHON` | `ON` | 构建 pybind11 Python 绑定；找不到 Python/pybind11 时自动关闭 |
-| `BUILD_TESTS` | `ON` | 构建 CTest 测试目标 |
-| `BUILD_ANALYSIS` | `ON` | 构建 analysis cache/overlay/CLI；关闭时 renderer 使用 no-op overlay stub，FFI/player 仍可构建 |
-| `BUILD_BENCHMARKS` | `OFF` | 构建 pipeline benchmark |
-
-CI 入口位于 `.github/workflows/native.yml`，包含完整 `python dev.py test --native-only`，并额外覆盖 `BUILD_PYTHON=OFF`、`BUILD_FFI=ON/OFF`、`BUILD_TESTS=ON/OFF` 的 clean configure + build 组合；FFI/tests 组合还会运行 `test_ffi_c` ABI smoke。
-
-CI matrix also includes a Debug FFI/tests build and a native dist smoke check
-for FFI artifacts:
-
-```bash
-python scripts/dev/check_native_dist.py --ffi native/build-msvc/dist/ffi
-```
-
-## 依赖
-
-| 依赖 | 来源 | 用途 |
-|------|------|------|
-| FFmpeg runtime/dev package | `FFMPEG_ROOT` / `FFMPEG_DIR` / `--ffmpeg-root`，默认 `windows/libs/ffmpeg` | demux、软解、D3D11VA 硬解、hwdownload |
-| zstd | `native/analysis/vendor/zstd` | analysis FFmpeg analyzer / future chunk compression support |
-| spdlog | FetchContent commit pin；`VOID_USE_LOCAL_DEPS=ON` 时可使用本地 cache | native 日志 |
-| Catch2 | FetchContent commit pin；`VOID_USE_LOCAL_DEPS=ON` 时可使用本地 cache | C++ 测试 |
-| pybind11 | Python 包提供的 `pybind11_DIR` 或 CMake `find_package` | Python 绑定 |
-
-当前依赖入口以“仓库内固定路径 + 显式 override + commit pin”为准：FFmpeg 只能从 `FFMPEG_ROOT` 指向的完整 dev package 读取头文件、lib 和 runtime DLL；zstd/analysis FFmpeg 使用 analysis vendor 子模块；spdlog/Catch2 默认通过 locked FetchContent 获取。已有本地源码 cache 只有在显式设置 `-DVOID_USE_LOCAL_DEPS=ON` 时才会优先使用，避免 clean checkout、CI 和个人机器因为残留 cache 产生不同依赖来源。
-
-Native 第三方依赖清单位于 [`native/THIRD_PARTY_NATIVE.md`](../THIRD_PARTY_NATIVE.md)。更新依赖版本、submodule pointer 或 runtime package 时，必须同步更新该清单。
-
-### FFmpeg Runtime Package
-
-默认 `windows/libs/ffmpeg` 是 gyan.dev 的 FFmpeg 8.1 full shared Windows build，`README.txt` 记录来源、GPL v3 license、source commit 和完整 configure flags。VoidPlayer/native 通过 FFmpeg import libraries 动态链接这些 DLL，不静态链接 FFmpeg。用户可以用 `--ffmpeg-root`、`FFMPEG_ROOT` 或 `FFMPEG_DIR` 指向同布局的替代 FFmpeg dev package，但替换包必须同时提供 `include/`、`lib/`、`bin/` 以及对应 `README.txt`/`LICENSE`。
-
-构建会把运行所需的 FFmpeg DLL 和 `README.txt`、`LICENSE`/`LICENSE.txt` 一起复制到 native build 输出目录、`native/build-msvc/dist/python/`、`native/build-msvc/dist/ffi/`，以及 Flutter runner 输出目录。播放器默认 runtime copy 包含 `avcodec`、`avformat`、`avutil`、`swresample`，不包含 `swscale`；只有 `BUILD_BENCHMARKS=ON` 的 `pipeline_bench` 会单独复制 `swscale`。
-
-### Release Compliance Smoke
-
-顶层 `THIRD_PARTY_NOTICES.md` 是发布包入口 notice，`native/THIRD_PARTY_NATIVE.md` 是 native 依赖清单。发布包必须包含：
-
-- VoidPlayer 顶层 `LICENSE`
-- `THIRD_PARTY_NOTICES.md`
-- `native/THIRD_PARTY_NATIVE.md`
-- FFmpeg package `README.txt`
-- FFmpeg `LICENSE` 或 `LICENSE.txt`
-
-机器检查入口：
-
-```bash
-python scripts/dev/check_release_compliance.py
-python scripts/dev/check_release_compliance.py --stage build/package/windows/stage
-```
-
-`python dev.py package` 会把顶层 license、third-party notices 和 native manifest 复制到 staged package 的 `docs/` 目录，并对 staging 目录执行同一套 smoke。CI 的 native workflow 也会在 native build 前检查 source tree 的 notice 文件，避免更新 FFmpeg/runtime 依赖时漏掉发布说明。
-
-## `python dev.py test` 实际覆盖
-
-`dev.py test` 会先执行 Flutter 单元测试，然后构建 native Release，再执行 `native/build.py --test-only`。当前 native 部分包含 CTest 的 3 个测试目标。
-
-如果只想运行 native 部分，可以使用：
-
-```bash
-python dev.py test --native-only
-```
-
-| CTest | 覆盖 |
-|------|------|
-| `video_renderer_tests` | Clock、PacketQueue、TrackBuffer、DemuxThread、DecodeThread、FrameConverter、D3D11 device/texture/shader、RenderSink、Renderer integration，并包含 headless front-buffer capture 的 HEVC/AV1/VP9 视觉回归 |
-| `analysis_tests` | VAC2/VACHUNK、VACache、analysis FFI handle、overlay chunk 和 bitstream indexing |
-| `test_ffi_c` | 未初始化 renderer、空指针、基础 lifecycle、C ABI 可调用性 |
-
-测试视频默认来自 `resources/video`，CMake 通过 `VIDEO_TEST_DIR` 注入。
-
-## UI 回归测试
-
-影响 Flutter 控制流、FFI action、主窗口交互、seek/上屏视觉结果时，native 测试不够，需要补跑 `dev.py ui-test`。
-
-当前与 renderer 相关的重点脚本：
-
-| 脚本 | 目的 |
-|------|------|
-| `ui_tests/h265_seek_visual_regression.csv` | HEVC 硬解 seek 后非黑帧且画面变化 |
-| `ui_tests/h265_timeline_click_visual_regression.csv` | 通过真实 timeline pointer 点击触发 HEVC seek，验证非黑帧且画面变化 |
-| `ui_tests/av1_not_black_regression.csv` | AV1 硬解 hwdownload 添加/seek 非黑帧 |
-| `ui_tests/vp9_not_black_regression.csv` | VP9 硬解 hwdownload 添加/seek 非黑帧且 hash 变化 |
-
-## 基准
-
-可执行文件: `pipeline_bench.exe`，源码位于 `video_renderer/benchmarks/`。日常构建默认跳过 benchmarks；需要运行时使用：
-
-```bash
-python native/build.py --benchmarks-only
-```
-
-| 基准 | 测量内容 |
-|------|---------|
-| `bench_demux_only` | 解复用吞吐 |
-| `bench_demux_decode` | 解复用 + 解码 |
-| `bench_demux_decode_sws` | 软件转换到 RGBA |
-| `bench_demux_decode_sws_d3d11` | RGBA 上传到 D3D11 |
-| `bench_demux_decode_sws_d3d11_reuse` | 纹理复用上传 |
-| `bench_full_pipeline` | 完整管线含 Present |
+These benchmarks are Windows-oriented today and do not replace playback/backend gates.
 
 ## Demo
 
-`video_renderer/demo/demo_video_renderer.py` 是 PySide6 交互式 demo；`video_renderer/demo/demo_seek.py` 是 seek/逐帧的自动演示。日常播放器行为验证优先使用 `dev.py launch` 和 `dev.py ui-test`。
+`video_renderer/demo/demo_video_renderer.py` and `video_renderer/demo/demo_seek.py` are development aids. Product behavior
+verification should use `dev.py launch`, native CTest, and platform UI automation.

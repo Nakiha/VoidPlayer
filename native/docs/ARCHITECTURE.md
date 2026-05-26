@@ -1,134 +1,144 @@
 # Native 模块架构概览
 
-> 本文档是 native 模块的入口文档，各子系统的详细设计请参阅底部链接。
+> 本文档是 native 模块入口。它描述当前架构，不记录迁移流水；详细实现历史以 git history 为准。
 
 ## 模块定位
 
-C++ DLL 视频渲染引擎，基于 FFmpeg demux + D3D11VA 硬解/软解，为 VoidPlayer 提供：
+VoidPlayer native 是一套共享媒体播放与渲染调度内核，加平台 presentation backend：
 
-- 多路视频同时解码（1-4 轨道）
-- 帧级 PTS 对齐同步上屏
-- 逐帧前进/后退
-- I 帧 Seek / 精确 Seek
-- 倍速播放（保持时钟连续性）
-- Headless 三缓冲 shared texture，上屏到 Flutter Texture
-- 自动化截图/hash 验证入口（通过 Flutter action 调用 native front buffer capture）
+- shared demux/decode/playback/seek/loop/track/layout/render scheduler
+- Windows presentation backend：D3D11 / shared texture / Flutter Texture
+- macOS presentation backend：Metal / CVPixelBuffer / IOSurface / Flutter Texture
+- shared audio engine：miniaudio 输出，Windows 与 macOS 使用各自系统设备后端
+- shared diagnostics / capture / UI automation hooks
+
+平台 runner 只负责 OS glue。Windows runner 负责 Win32/D3D11 texture bridge，macOS runner 负责
+Cocoa、sandbox file access、platform channel、FlutterTexture、CVPixelBuffer lifecycle 和 frame
+notification。播放策略、seek、loop、track lifecycle、layout、refresh completion 和 failure state 都属于
+shared native code。
+
+## 当前架构
+
+```text
+Dart UI / Actions
+  -> NativePlayerController
+     -> platform channel glue
+        -> shared NativePlayer facade
+           -> shared PlaybackController / Clock / AudioEngine
+           -> shared Renderer scheduler
+              -> RenderSink / PresentDecision
+              -> RendererDrawSnapshot
+              -> platform PresentationBackend
+                 -> D3D11 shared texture on Windows
+                 -> Metal / CVPixelBuffer / IOSurface on macOS
+```
+
+`Renderer` 拥有 playback/render cadence、track selection、carry-forward、layout constants 和 present
+decision。`PresentationBackend` 只消费 `RendererDrawSnapshot` / `PresentDecision`，把已经选好的帧变成平台纹理；
+backend 不决定播放时间，也不拥有 track state。
 
 ## 目录结构
 
-```
+```text
 native/
-├── CMakeLists.txt                  # 主构建配置
-├── build.py                        # Python 构建脚本
-├── probe_hw.cpp                    # 硬件能力探测工具
-├── common/
-│   └── logging.h/cpp               # spdlog 配置 + 崩溃处理
-├── media/                          # 容器读取 / stream 分发（renderer 与 audio 共享）
-│   ├── demux_thread.h/cpp          # FFmpeg demux + packet route
-│   ├── packet_queue.h/cpp          # AVPacket 线程安全队列
-│   └── seek_controller.h/cpp       # Seek 请求协调
-├── audio/
-│   └── audio_engine.h/cpp          # 音频解码 + miniaudio 设备输出（单 audible track）
-├── player/
-│   └── native_player.h/cpp         # native 播放 facade，平级拥有 playback + renderer
-├── playback/
-│   └── playback_controller.h/cpp   # 播放级控制，拥有 Clock + AudioEngine
-├── video_renderer/                 # 核心静态库
-│   ├── renderer.h/cpp              # 渲染器主入口
-│   ├── clock.h/cpp                 # PTS 时钟（可注入时间源）
-│   ├── exports/                    # renderer 的 FFI / pybind11 导出
-│   ├── demo/                       # renderer Python 交互式 Demo
-│   ├── benchmarks/                 # renderer 管线性能基准
-│   ├── d3d11/                      # D3D11 后端
-│   │   ├── device.h/cpp            # 设备 / SwapChain
-│   │   ├── texture.h/cpp           # 纹理创建、上传、池化、shared texture 打开
-│   │   ├── frame_presenter.h/cpp   # TextureFrame -> D3D11 SRV 准备
-│   │   ├── headless_output.h/cpp   # Flutter shared texture 三缓冲输出
-│   │   └── shader.h/cpp            # HLSL 编译管理
-│   ├── decode/                     # 解码管线
-│   │   ├── decode_thread.h/cpp     # Decode 线程
-│   │   ├── frame_converter.h/cpp   # AVFrame → TextureFrame
-│   │   └── hw/                     # 硬件解码 Provider
-│   │       ├── hw_decode_provider.h/cpp
-│   │       └── d3d11va_provider.h/cpp
-│   ├── buffer/                     # 帧缓冲
-│   │   ├── bidi_ring_buffer.h/cpp  # 双向环形缓冲
-│   │   └── track_buffer.h/cpp      # 轨道状态 + Preroll
-│   ├── sync/                       # 同步
-│   │   └── render_sink.h/cpp       # 上屏决策
-│   └── shaders/
-│       └── multitrack.hlsl         # RGBA + NV12 着色器
-├── tests/                          # Catch2 单元测试
-│   ├── renderer/
-│   ├── analysis/
-│   └── ffi/
+├── common/              # logging、process-global helpers、crash handlers
+├── media/               # demux、packet queue、seek controller
+├── audio/               # shared audio engine / miniaudio device output
+├── player/              # shared NativePlayer facade
+├── playback/            # playback controller、clock/audio coordination
+├── video_renderer/      # shared renderer scheduler、decode、buffer、render contracts
+│   ├── decode/          # DecodeThread、FrameConverter、hardware providers
+│   ├── render/          # PresentDecision、RendererDrawSnapshot、PresentationBackend
+│   ├── sync/            # RenderSink and present scheduling
+│   ├── d3d11/           # Windows D3D11 backend implementation
+│   └── exports/         # C FFI / Python binding surfaces
+├── macos/               # macOS native bridge and Metal presentation backend
+├── tests/               # Catch2 tests on Windows-oriented native targets
+├── tools/               # native smoke binaries and CLIs
 └── docs/
 ```
 
-## 类层级
+## 核心对象
 
-```
-Renderer                          # 主入口，生命周期管理
-├── Clock                         # 可注入时间源，PTS 时钟
-├── AudioCoordinator              # 音频轨注册 / seek / pause 桥接
-├── SeekCoordinator               # paused HEVC deferred seek 策略状态
-├── D3D11Device                   # GPU 设备 + 可选窗口 SwapChain
-├── ShaderManager                 # HLSL 编译
-│   └── ShaderConstants           # C++/HLSL cbuffer layout contract
-├── D3D11FramePresenter           # 每轨 frame 的 SRV/上传/NV12 copy 缓存
-├── D3D11HeadlessOutput           # Flutter Texture shared handle 三缓冲
-├── RenderSink                    # 上屏决策，PTS 对齐
-│
-└── TrackPipeline[N]              # 每路视频一个
-    ├── PacketQueue               # AVPacket 有界阻塞队列
-    ├── TrackBuffer               # 状态机 + Preroll
-    │   └── BidiRingBuffer        # 双向环形缓冲
-    ├── DemuxThread               # media 层文件读取 / packet 分发线程
-    ├── DecodeThread              # 解码线程
-    │   └── FrameConverter        # CPU NV12 包装 / D3D11VA surface 包装
-    │   └── HwDecodeProvider?     # 硬解（可选）
-    └── SeekController            # Seek 请求协调
-```
+| 对象 | 当前职责 |
+| --- | --- |
+| `NativePlayer` | Shared playback facade，平级协调 playback、renderer、audio、capture |
+| `Renderer` | 共享 render scheduler，拥有 track lifecycle、seek/loop/layout command surface、present cadence |
+| `RenderSink` / `PresentDecision` | 平台无关的多轨 frame selection、identity、carry-forward、layout decision |
+| `RendererDrawSnapshot` | renderer 到 backend 的 immutable draw input |
+| `PresentationBackend` | 平台 presentation seam；Windows 实现 D3D11，macOS 实现 Metal/CVPixelBuffer |
+| `TrackPipeline` | 每轨 demux/decode/buffer state，使用 file id + generation 防止 remove/re-add 串帧 |
+| `FrameConverter` | AVFrame 到 `TextureFrame`；保留硬解 surface 或做确定性 CPU pack |
 
 ## 数据流总览
 
+```text
+Media file
+  -> DemuxThread
+  -> PacketQueue
+  -> DecodeThread
+  -> FrameConverter
+  -> TextureFrame
+  -> TrackBuffer / BidiRingBuffer
+  -> RenderSink::evaluate()
+  -> PresentDecision
+  -> RendererDrawSnapshot
+  -> PresentationBackend::draw_frame()
+  -> Flutter Texture / native capture
 ```
-Video File
-  → [DemuxThread] → AVPacket (stream time_base)
-    → [PacketQueue] →
-      → [DecodeThread] → AVFrame (YUV/D3D11VA)
-        → [FrameConverter] → TextureFrame
-          → [TrackBuffer/BidiRingBuffer] →
-            → [RenderSink] → PresentDecision
-              → [D3D11FramePresenter] → [D3D11 Draw]
-                → SwapChain 或 D3D11HeadlessOutput shared texture
-```
 
-## 当前硬解路径
+Windows 和 macOS 共用从 demux 到 `RendererDrawSnapshot` 的主路径。差异从 hardware decode provider 和
+presentation backend 开始：
 
-| 路径 | 典型 codec | 说明 |
-|------|------------|------|
-| D3D11VA renderer-owned NV12 | H.264/H.265 | decoder surface copy 到 renderer-owned NV12 texture，再由 shader 采样 |
-| D3D11VA hwdownload | AV1/VP9 | 硬解后 `av_hwframe_transfer_data` 到 CPU RGBA，再走上传路径 |
-| 软件 fallback | 硬解不可用/打开失败 | AV1 软件 fallback 优先 `libdav1d` |
+| 平台 | 硬解 provider | presentation backend |
+| --- | --- | --- |
+| Windows | D3D11VA | D3D11 shared texture / headless output / optional swap chain |
+| macOS | VideoToolbox | Metal target backed by CVPixelBuffer / IOSurface |
 
-## 详细文档索引
+## 当前播放路径状态
+
+- Windows D3D11 path 是原始产品路径，仍需在 Windows host 上做 preservation gate。
+- macOS native playback 已进入 stabilization / release-readiness：shared scheduling、renderer-owned Metal
+  presentation、VideoToolbox zero-copy、software fallback、refresh completion、per-track diagnostics 都在 normal route。
+- macOS software decode fallback 是显式诊断路径，不是隐藏主路径。
+- 4K60 门槛仍属于 stabilization gate；先依赖 cadence diagnostics、fallback reason、upload stats 和 UI smoke 证据化。
+
+## 文档索引
+
+### Current Architecture
 
 | 文档 | 内容 |
-|------|------|
-| [线程模型](THREADING_MODEL.md) | 线程角色、锁策略、渲染循环 |
-| [数据管线](DATA_PIPELINE.md) | 帧格式变迁、零拷贝路径 |
-| [Target 边界](TARGET_BOUNDARIES.md) | CMake target 的 public/internal 边界、feature options 与后续拆分准则 |
-| [macOS 移植计划](MACOS_PORT_PLAN.md) | macOS 支持的阶段计划、平台边界、验证门槛 |
-| [时钟与同步](CLOCK_AND_SYNC.md) | Clock API、倍速、A/V 同步算法 |
-| [缓冲设计](BUFFER_DESIGN.md) | 队列、环形缓冲、状态机、Preroll |
-| [解码管线](DECODE_PIPELINE.md) | 软解/硬解路径、HwDecodeProvider |
-| [色彩管线](COLOR_PIPELINE.md) | 软件/硬件帧格式、YUV->RGB、HDR 到 SDR 边界 |
-| [Seek 策略](SEEK_STRATEGY.md) | SeekController、触发矩阵 |
-| [D3D11 后端](D3D11_BACKEND.md) | 设备、纹理、着色器、NV12 零拷贝 |
-| [Renderer 平台后端统一计划](RENDERER_PLATFORM_BACKEND_PLAN.md) | Windows/macOS 共用 renderer 调度、平台 presentation backend 拆分计划 |
-| [Native 事件通知管线](NATIVE_EVENT_PIPELINE_DESIGN.md) | native -> Dart EventChannel、seek preview 上屏事件、线程与回退策略 |
-| [码流遮罩层](ANALYSIS_OVERLAY_DESIGN.md) | VACHUNK/D3D11/Dart 交互边界与 roadmap |
-| [FFI 与绑定](FFI_AND_BINDINGS.md) | C FFI API、Python 绑定 |
-| [构建与测试](BUILD_AND_TEST.md) | CMake 目标、测试、基准、Demo |
-| [Native Refactor Todo](NATIVE_REFACTOR_TODO.md) | native 技术债分轮修复计划 |
+| --- | --- |
+| [数据管线](DATA_PIPELINE.md) | 平台中立 frame/data path，Windows D3D11 与 macOS Metal 输出路径 |
+| [解码管线](DECODE_PIPELINE.md) | D3D11VA、VideoToolbox、software fallback、hwdownload/zero-copy 边界 |
+| [色彩管线](COLOR_PIPELINE.md) | YUV/RGB/P010、range/matrix、shader contract 和 parity gates |
+| [线程模型](THREADING_MODEL.md) | 线程角色、锁顺序、render loop 与 callback 边界 |
+| [时钟与同步](CLOCK_AND_SYNC.md) | Clock、倍速、A/V sync、loop timing |
+| [缓冲设计](BUFFER_DESIGN.md) | PacketQueue、TrackBuffer、preroll、BidiRingBuffer |
+| [Seek 策略](SEEK_STRATEGY.md) | seek controller、exact seek、preview publication |
+
+### Platform Backend
+
+| 文档 | 内容 |
+| --- | --- |
+| [Renderer 平台后端统一计划](RENDERER_PLATFORM_BACKEND_PLAN.md) | shared renderer + platform backend status/gates |
+| [D3D11 后端](D3D11_BACKEND.md) | Windows D3D11 device、shared texture、capture、device-loss behavior |
+| [macOS 移植计划](MACOS_PORT_PLAN.md) | macOS readiness、runner 边界、remaining gates |
+| [macOS Presentation Adapter](MACOS_PRESENTATION_ADAPTER.md) | macOS software fallback/parity adapter notes |
+
+### Readiness / Release / Tooling
+
+| 文档 | 内容 |
+| --- | --- |
+| [构建与测试](BUILD_AND_TEST.md) | dev.py、CMake targets、macOS stabilization gates、Windows preservation、package checks |
+| [FFI 与绑定](FFI_AND_BINDINGS.md) | C FFI、Python bindings、runtime ABI |
+| [Target 边界](TARGET_BOUNDARIES.md) | CMake target boundaries and feature options |
+| [Native 第三方清单](../THIRD_PARTY_NATIVE.md) | FFmpeg/zstd/spdlog/Catch2 license and package notes |
+
+### Historical / Todo
+
+| 文档 | 内容 |
+| --- | --- |
+| [Native Refactor Todo](NATIVE_REFACTOR_TODO.md) | 历史技术债与后续 refactor notes |
+| [Native Stabilization Round](NATIVE_STABILIZATION_ROUND.md) | 历史 stabilization notes |
+| [Native Stabilization History](NATIVE_STABILIZATION_HISTORY.md) | 历史 patch log |

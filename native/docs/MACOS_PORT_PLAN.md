@@ -58,7 +58,7 @@ converted into a platform texture; it does not decide playback time.
 
 ## Active Work
 
-The active macOS work is no longer "make the MVP smoother" or "wire macOS into shared renderer".
+The active macOS work is no longer "make the MVP smoother" or "move macOS onto the shared renderer".
 That path is now feature-complete. The active work is stabilization:
 
 1. Keep renderer-owned Metal presentation and VideoToolbox/software fallback diagnostics truthful.

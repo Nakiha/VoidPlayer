@@ -124,7 +124,7 @@ presentation backend 开始：
 | [Renderer 平台后端统一计划](RENDERER_PLATFORM_BACKEND_PLAN.md) | shared renderer + platform backend status/gates |
 | [D3D11 后端](D3D11_BACKEND.md) | Windows D3D11 device、shared texture、capture、device-loss behavior |
 | [macOS 移植计划](MACOS_PORT_PLAN.md) | macOS readiness、runner 边界、remaining gates |
-| [macOS Presentation Adapter](MACOS_PRESENTATION_ADAPTER.md) | macOS software fallback/parity adapter notes |
+| [macOS Presentation Backend](MACOS_PRESENTATION_BACKEND.md) | macOS renderer-owned Metal route, fallback adapter, refresh, and diagnostics contract |
 
 ### Readiness / Release / Tooling
 

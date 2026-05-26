@@ -251,10 +251,9 @@ Goal: leave one maintainable native architecture.
 
 - [x] Delete obsolete macOS-only preview decoders, frame-copy schedulers, and duplicate diagnostics
   from the normal playback route.
-- [ ] Fold remaining macOS presentation adapter tests into renderer backend tests, keeping the
-  software adapter as a named fallback oracle.
-- [ ] Update architecture, threading, decode, color, and build docs to describe the platform backend
-  model.
+- [ ] Fold remaining macOS presentation backend tests into shared renderer backend tests, keeping
+  the software adapter as a named fallback oracle.
+- [x] Update remaining subsystem docs to describe the platform backend model.
 - [ ] Re-run the macOS smoke set and schedule Windows preservation checks on a Windows host.
 
 Exit gate: documentation and diagnostics describe one shared renderer with platform backends, not a

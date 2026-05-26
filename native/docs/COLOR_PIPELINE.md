@@ -1,77 +1,175 @@
 # Color Pipeline
 
-VoidPlayer 当前输出目标是 Flutter 暴露的 BGRA/RGB888 SDR surface。native 侧不声明 HDR passthrough，不设置 Windows HDR metadata，也不做 ICC / display profile / per-monitor color management。PQ/HLG 片源会在 shader 中 tone-map 到 SDR 后再写入 BGRA render target。
+VoidPlayer native has one shared color contract and multiple platform
+presentation backends. The shared contract is: decode metadata and frame storage
+must be normalized into shader inputs that produce equivalent SDR BGRA/RGB output
+on Windows D3D11 and macOS Metal.
 
-当前 render target 使用 `DXGI_FORMAT_B8G8R8A8_UNORM`。shader 写入的是 SDR/sRGB code value，不依赖 `_SRGB` render target 的硬件 gamma encode；也就是说普通 SDR YUV -> RGB 得到的是非线性 R'G'B'，HDR tone-map 分支会先得到线性 BT.709，再显式 `linear_to_srgb()` 后输出。Flutter/DWM 后续如何映射到显示器由系统和 Flutter engine 决定，native 不做 PotPlayer/MPV 那类显示设备 profile 或视频 renderer 级别的色彩管理。
+Native does not currently provide HDR passthrough, Windows HDR metadata, ICC
+profiles, display-profile transforms, or per-monitor color management. PQ/HLG
+sources are tone-mapped to SDR before presentation. System compositors and the
+Flutter engine own the final display mapping after the native texture is
+published.
 
-真 HDR 输出需要 Flutter engine / Windows swapchain / surface format / HDR metadata 级别的改造；在此之前，native 侧的目标是让软件帧和硬件帧在送入 shader 前尽量一致，并由同一套 shader 完成 YUV -> RGB 与 SDR tone mapping。
+## Shared Output Contract
+
+- Output is SDR BGRA/RGB-compatible content for a Flutter texture.
+- Shader output is SDR/sRGB code value, not a platform display-profile managed
+  signal.
+- SDR YUV sources produce nonlinear R'G'B' values.
+- HDR tone-map branches convert to linear BT.709, then explicitly encode to
+  sRGB-like SDR output.
+- Software decode, hardware decode, hwdownload, and fallback package paths must
+  converge on equivalent shader metadata and sample layout for the same source.
+
+Concrete presentation targets are platform-specific:
+
+| Platform | Backend target | Notes |
+| --- | --- | --- |
+| Windows | D3D11 BGRA shared texture / optional swap chain | Uses DXGI formats and HLSL shaders. |
+| macOS | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
+
+True HDR output would require Flutter surface, platform swapchain/texture,
+metadata, tone mapping, and display-management changes beyond the current native
+renderer contract.
 
 ## Frame Format Policy
 
-FrameConverter 不使用 `libswscale` / `libyuv` 通用 fallback。普通 8-bit
-4:2:0 软件帧保留原始 plane layout 上传，其余支持格式仍走显式 packer：
+`FrameConverter` does not use `libswscale` or `libyuv` as a generic fallback.
+Supported formats are converted or packed explicitly so layout and range
+behavior remain testable.
 
-| 输入格式 | 送入 shader 前的格式 | 说明 |
+| Input format | Shared shader input | Notes |
 | --- | --- | --- |
-| `YUV420P`, `YUVJ420P` | CPU planar Y/U/V | 三个 R8 plane texture，shader 直接采样 |
-| `NV12` | CPU NV12 | 直接复制 Y/UV |
-| `NV21` | CPU NV12 | VU 交换成 UV |
-| `YUV422P`, `YUVJ422P` | CPU NV12 | 垂直 2:1 chroma downsample |
-| `YUV444P`, `YUVJ444P` | CPU NV12 | 2x2 chroma downsample |
-| `YUV420P10LE` | CPU P010 | 10-bit low-bit planar 转 P010 high-bit layout |
-| `P010LE` | CPU P010 | 保留 P010 high-bit layout |
-| `YUV422P10LE` | CPU P010 | 垂直 2:1 chroma downsample，保留 10-bit |
-| `YUV444P10LE` | CPU P010 | 2x2 chroma downsample，保留 10-bit |
+| `YUV420P`, `YUVJ420P` | CPU planar Y/U/V | Three 8-bit planes sampled directly. |
+| `NV12` | CPU NV12 | Y and interleaved UV are copied directly. |
+| `NV21` | CPU NV12 | VU is swapped to UV. |
+| `YUV422P`, `YUVJ422P` | CPU NV12 | Chroma is vertically downsampled to 4:2:0. |
+| `YUV444P`, `YUVJ444P` | CPU NV12 | Chroma is 2x2 downsampled to 4:2:0. |
+| `YUV420P10LE` | CPU P010 | 10-bit planar data is packed into high-bit P010 layout. |
+| `P010LE` | CPU P010 | P010 high-bit layout is preserved. |
+| `YUV422P10LE` | CPU P010 | Chroma is vertically downsampled to 4:2:0. |
+| `YUV444P10LE` | CPU P010 | Chroma is 2x2 downsampled to 4:2:0. |
+| D3D11VA NV12/P010/P016 | GPU plane textures | Windows renderer-owned direct path. |
+| VideoToolbox NV12/P010 `CVPixelBuffer` | `CVPixelBuffer` fast path | macOS renderer-owned Metal path when supported. |
+| BGRA package | BGRA texture/package | Fallback, capture, and parity path. |
 
-8-bit `YUV420P/YUVJ420P` 软件帧上传为三张 `DXGI_FORMAT_R8_UNORM`
-texture；8-bit NV12/NV21 和 4:2:2/4:4:4 fallback 上传为
-`DXGI_FORMAT_NV12`，10-bit 软件帧上传为 `DXGI_FORMAT_P010`。硬解 D3D11VA
-direct path 根据解码 surface 的实际 DXGI format 创建 plane SRV；`NV12` 使用
-`R8/R8G8` SRV，`P010/P016` 使用 `R16/R16G16` SRV。
+4:2:2 and 4:4:4 software frames are currently displayed after downsampling to
+4:2:0. Hardware surfaces such as `Y210`, `Y216`, `Y410`, `Y416`, or `AYUV` must
+not be sampled as NV12/P010. Until dedicated shader paths exist, those sources
+should use software decode or explicit fallback packages.
 
-4:2:2 / 4:4:4 软件帧当前会下采样到 4:2:0 后显示。NVIDIA Blackwell 等新硬件可能支持 HEVC/H.264 4:2:2 硬解，但当前 renderer-owned D3D11 direct 上屏路径只接受 NV12/P010/P016 这类 4:2:0 surface。遇到标记为 4:2:2 / 4:4:4 的流时应优先走软件解码，直到 native 增加 `Y210/Y216/Y410/Y416/AYUV` 等 GPU surface 的专用 shader path。
+Soft/hard parity requirement:
 
-软硬一致性的硬约束是：同一片源如果能同时走软件和硬件路径，送入 shader 前必须同构。当前要求如下：
-
-| 片源/解码输出 | 软件路径送 shader 前 | 硬件 direct 路径送 shader 前 |
+| Source/decode output | Software path before shader | Hardware direct path before shader |
 | --- | --- | --- |
-| 8-bit 4:2:0 | planar `R8` Y/U/V 或 `DXGI_FORMAT_NV12` | `DXGI_FORMAT_NV12` |
-| 10-bit 4:2:0 | `DXGI_FORMAT_P010` | `DXGI_FORMAT_P010` / `P016` plane SRV |
-| 8/10-bit 4:2:2 | software-only: downsample to NV12/P010 | 当前禁用 renderer-owned direct path，避免把 `Y210/Y216` 等 surface 误采样成 NV12/P010 |
-| 8/10-bit 4:4:4 | software-only: downsample to NV12/P010 | 当前禁用 renderer-owned direct path，避免把 `Y410/Y416/AYUV` 等 surface 误采样成 NV12/P010 |
+| 8-bit 4:2:0 | Planar 8-bit Y/U/V or NV12 | D3D11/VideoToolbox NV12 |
+| 10-bit 4:2:0 | P010 | D3D11/VideoToolbox P010/P016-compatible plane input |
+| 8/10-bit 4:2:2 | Software-only downsample to NV12/P010 | Direct path disabled until native supports matching layout |
+| 8/10-bit 4:4:4 | Software-only downsample to NV12/P010 | Direct path disabled until native supports matching layout |
 
 ## Color Metadata
 
-FrameConverter 从 `AVFrame` 读取：
+`FrameConverter` reads these fields from `AVFrame` and carries them into
+presentation packages and renderer-owned frames:
 
-| Metadata | 支持值 |
+| Metadata | Supported values |
 | --- | --- |
 | Range | limited, full |
 | Matrix | BT.601, BT.709, BT.2020 non-constant-luminance |
 | Transfer | SDR, PQ, HLG |
 | Primaries | BT.601, BT.709, BT.2020 |
 
-未知 range 默认 limited；`YUVJ420P/YUVJ422P/YUVJ444P` 在 metadata 缺失时默认 full range。未知 matrix 按分辨率推断：宽度 `>=1280` 或高度 `>576` 使用 BT.709，否则 BT.601。未知 transfer 默认 SDR。未知 primaries 根据 matrix 推断。
+Defaults:
+
+- Unknown range defaults to limited.
+- `YUVJ420P`, `YUVJ422P`, and `YUVJ444P` default to full range when metadata is
+  missing.
+- Unknown matrix is inferred from resolution: width `>= 1280` or height `> 576`
+  uses BT.709; smaller content uses BT.601.
+- Unknown transfer defaults to SDR.
+- Unknown primaries are inferred from the matrix.
+
+## Windows HLSL / D3D11 Path
+
+Windows samples shader inputs through D3D11 SRVs:
+
+- 8-bit planar YUV420 software frames use `R8` plane textures.
+- NV12 uses Y `R8` and UV `R8G8` plane SRVs.
+- P010/P016 uses Y `R16` and UV `R16G16` plane SRVs.
+- BGRA fallback uses a BGRA texture.
+- `shaders/multitrack.hlsl` includes `shaders/color_pipeline.hlsl` for range,
+  matrix, primaries, transfer, tone mapping, and final BGRA output.
+
+The Windows headless backend currently publishes a BGRA shared texture to
+Flutter. That concrete DXGI target is a Windows backend detail, not the shared
+native color contract.
+
+## macOS Metal / CVPixelBuffer Path
+
+macOS uses the same metadata and layout contract through Metal:
+
+- VideoToolbox zero-copy frames keep their `CVPixelBuffer` storage when the
+  codec and pixel format are supported by the renderer-owned Metal path.
+- Software/fallback frames use explicit YUV or BGRA present packages.
+- The Metal uploader validates target size, BGRA pixel-buffer compatibility,
+  `CVMetalTextureCache` wrapping, storage kind, and package dimensions before
+  draw.
+- The renderer-owned target is a Metal-compatible, IOSurface-backed BGRA
+  `CVPixelBuffer` registered with Flutter by Swift.
+- Swift does not apply color policy; it only owns texture lifecycle and frame
+  notification.
+
+The macOS Metal shader path must stay equivalent to the Windows D3D11/HLSL path
+for range expansion, matrix selection, odd-dimension chroma packing, P010
+high-bit interpretation, and SDR tone mapping. Unsupported package kinds should
+fail visibly through presentation diagnostics rather than silently changing
+decode or playback policy.
 
 ## Shader Conversion
 
-`shaders/multitrack.hlsl` include 的 `shaders/color_pipeline.hlsl` 负责：
+The shared shader contract covers:
 
-- limited/full range 展开
+- limited/full range expansion
 - BT.601 / BT.709 / BT.2020_NCL YUV -> RGB
-- BT.2020 primaries 转 BT.709；BT.601 primaries 当前按 RGB code value 直接输出，不单独做 gamut conversion
-- PQ / HLG tone-map 到 SDR/sRGB code value
-- SDR 输出写入 BGRA render target
+- BT.2020 primaries to BT.709 conversion
+- PQ / HLG tone-map to SDR/sRGB code value
+- BGRA output for the platform texture target
 
-普通 SDR 分支在 YUV -> RGB 后保留一个历史性的 `1/255` 轻微下压，用于维持旧软件解码显示路径的取整侧一致性。它只会造成约 1 个 8-bit code value 的暗部/中间调偏移，不应被当作 HDR 或 full-range/limited-range 的大幅色彩修正。
+BT.601 primaries currently preserve RGB code values without a separate gamut
+conversion. The ordinary SDR branch keeps a historical `1/255` slight downward
+adjustment to preserve old software decode rounding parity. It is about one
+8-bit code value and should not be interpreted as HDR or full/limited range
+correction.
 
-当前 tone mapping 是播放器预览用的稳定 SDR 映射，不是完整影视级 HDR pipeline。它不读取 mastering display metadata / MaxCLL，不按目标显示器峰值亮度自适应，也不实现 PotPlayer 等播放器可能启用的视频 renderer、ICC 或 GPU driver 级增强。调整曲线时应补 golden/capture 测试，确保软件帧和硬件帧同源输入的 BGRA 输出保持一致。
+The tone mapper is a stable preview mapping, not a full film-grade HDR pipeline.
+It does not read mastering display metadata or MaxCLL, does not adapt to target
+display peak brightness, and does not implement player/driver enhancements.
+Changing curves requires golden or capture tests that compare software and
+hardware output for the same source.
+
+## Parity Gates
+
+Open stabilization gates before raising macOS release confidence:
+
+- CPU reference vs Metal output for planar YUV420, NV12, P010, and BGRA package
+  paths.
+- D3D11 HLSL vs Metal shader parity for range, matrix, transfer, and odd
+  dimensions.
+- Full/limited range parity for BT.601, BT.709, and BT.2020_NCL.
+- P010 high-bit interpretation parity across software, VideoToolbox, and D3D11VA
+  paths.
+- 4:2:2 / 4:4:4 fallback behavior remains explicit until dedicated direct paths
+  are implemented.
+- Capture/hash tests use backend capture contracts where available, not only
+  Flutter texture screenshots.
 
 ## MHW Full-Range BT.709 Fixture
 
-`resources/video/mhw_hevc_fullrange_bt709_3s.mp4` 是从本地 Monster Hunter Wilds 4K 样本 stream copy 出来的 portable fixture。`ffprobe` metadata 为：
+`resources/video/mhw_hevc_fullrange_bt709_3s.mp4` is a portable fixture stream
+copied from a local Monster Hunter Wilds 4K sample. `ffprobe` metadata:
 
-| 字段 | 值 |
+| Field | Value |
 | --- | --- |
 | Pixel format | `yuv420p` |
 | Range | `pc` / full |
@@ -80,6 +178,15 @@ FrameConverter 从 `AVFrame` 读取：
 | Primaries | `bt709` |
 | Resolution | `3840x2160` |
 
-它是 SDR full-range BT.709，不是 HDR/PQ/HLG。`ui_tests/color/hevc_fullrange_bt709_decode_mode_single_track_diff.csv` 用它比较 force software decode 和 preferred hardware decode 的最终 BGRA capture，覆盖 full-range metadata 在软解/硬解路径是否一致。
+It is SDR full-range BT.709, not HDR/PQ/HLG.
+`ui_tests/color/hevc_fullrange_bt709_decode_mode_single_track_diff.csv` compares
+force software decode and preferred hardware decode final BGRA capture, covering
+full-range metadata parity between software and hardware paths.
 
-2026-05-11 手工检查中，`build/color_hevc_full_soft.png` 与 `build/color_hevc_full_hard.png` 完全一致；与 FFmpeg 解出的同帧 1920x1080 RGB 参考相比，平均绝对 RGB 差约 1 code value，平均亮度基本持平。因此如果这条 MHW 样本肉眼比 PotPlayer 更深，优先怀疑 PotPlayer 侧的视频 renderer/range/color-management/enhancement 设置，或 native 缺少显示器 profile 管理，而不是当前 native soft/hard YUV metadata 链路已经把 full-range 当 limited-range。
+In the 2026-05-11 manual check, `build/color_hevc_full_soft.png` and
+`build/color_hevc_full_hard.png` were identical. Compared with an FFmpeg RGB
+reference for the same 1920x1080 frame, average absolute RGB difference was
+about one code value and average luma was effectively unchanged. If this fixture
+looks darker than PotPlayer, first compare the other player renderer, range,
+color-management, and enhancement settings before assuming native soft/hard YUV
+metadata handling is wrong.

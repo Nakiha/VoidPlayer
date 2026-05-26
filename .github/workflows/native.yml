@@ -5,6 +5,18 @@ permissions:
   contents: read
 
 on:
+  workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: "Run the full Windows native config matrix"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  schedule:
+    - cron: "17 20 * * 0"
   push:
     paths:
       - ".github/workflows/native.yml"
@@ -250,6 +262,7 @@ jobs:
 
   native-config-matrix:
     name: Full native config matrix / ${{ matrix.name }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full_matrix == 'true') }}
     needs: ffmpeg-artifacts
     runs-on: windows-latest
     strategy:

@@ -95,24 +95,12 @@ plan.
 Representative local macOS smoke set:
 
 ```bash
-python dev.py mac-ui-test \
-  ui_tests/macos/native_facade_smoke.csv \
-  ui_tests/macos/native_playback_smoke.csv \
-  ui_tests/macos/native_seek_frame_smoke.csv \
-  ui_tests/macos/native_loop_range_smoke.csv \
-  ui_tests/macos/native_audio_play_seek_smoke.csv \
-  ui_tests/macos/native_layout_split_smoke.csv \
-  ui_tests/macos/native_4k60_playback_smoke.csv
+python dev.py gate macos-ui-smoke
 ```
 
 Current stabilization gate:
 
 ```bash
-python3.12 dev.py test --native-only
-python3.12 dev.py build --flutter
-python3.12 dev.py mac-ui-test --build \
-  ui_tests/macos/native_facade_smoke.csv \
-  ui_tests/macos/native_4k60_playback_smoke.csv \
-  ui_tests/macos/native_vvc_software_playback_smoke.csv \
-  ui_tests/macos/native_add_track_smoke.csv
+python3.12 dev.py gate pr-fast
+python3.12 dev.py gate macos-ui-smoke
 ```

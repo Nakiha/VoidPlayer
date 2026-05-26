@@ -9,6 +9,8 @@ python3.12 dev.py build --native
 python3.12 dev.py build --flutter
 python3.12 dev.py test
 python3.12 dev.py test --native-only
+python3.12 dev.py gate pr-fast
+python3.12 dev.py gate macos-ui-smoke
 python3.12 dev.py package
 ```
 
@@ -22,6 +24,15 @@ macOS UI automation：
 
 ```bash
 python3.12 dev.py mac-ui-test --build ui_tests/macos/native_facade_smoke.csv
+```
+
+Named gates wrap the canonical command sets:
+
+```bash
+python3.12 dev.py gate pr-fast
+python3.12 dev.py gate macos-ui-smoke
+python3.12 dev.py gate macos-ui-nightly
+python3.12 dev.py gate windows-preservation
 ```
 
 Native 子目录仍可直接使用 CMake/presets，但日常开发建议通过顶层 `dev.py` 保持平台产物和依赖检查一致。
@@ -63,6 +74,7 @@ PR fast gate 只放稳定、高信号、非 headed 的检查：
 
 ```bash
 python3.12 dev.py test --native-only
+python3.12 dev.py gate pr-fast
 ```
 
 Windows CI 还会跑 release compliance notice smoke：
@@ -91,23 +103,18 @@ macOS native playback 当前是 feature-complete / stabilization 状态。修改
 Swift texture bridge 或 diagnostics 时，优先使用以下 gate：
 
 ```bash
-python3.12 dev.py test --native-only
-python3.12 dev.py build --flutter
-python3.12 dev.py mac-ui-test --build \
-  ui_tests/macos/native_facade_smoke.csv \
-  ui_tests/macos/native_4k60_playback_smoke.csv \
-  ui_tests/macos/native_vvc_software_playback_smoke.csv \
-  ui_tests/macos/native_add_track_smoke.csv
+python3.12 dev.py gate macos-ui-smoke
 ```
 
 更多 macOS UI smokes 按影响面选择：
 
 | 脚本 | 目的 |
 | --- | --- |
-| `native_playback_smoke.csv` | basic play/pause playback |
+| `native_facade_smoke.csv` | channel、metadata、diagnostics、首帧健康 |
+| `native_controls_smoke.csv` | basic play/pause/seek/step commands |
 | `native_seek_frame_smoke.csv` | seek preview / renderer-owned refresh |
 | `native_loop_range_smoke.csv` | loop policy |
-| `native_audio_play_seek_smoke.csv` | miniaudio/CoreAudio playback + seek |
+| `native_audio_play_seek_smoke.csv` | miniaudio/CoreAudio playback、seek、audible-track diagnostics |
 | `native_layout_split_smoke.csv` | split/layout and multi-track presentation |
 | `native_4k60_playback_smoke.csv` | VideoToolbox CVPixelBuffer + Metal 4K canary |
 | `native_vvc_software_playback_smoke.csv` | software fallback + Metal package path |
@@ -124,9 +131,7 @@ The macOS backend work changed shared renderer boundaries, so Windows preservati
 Windows host before closing macOS release readiness:
 
 ```powershell
-python dev.py test --native-only
-flutter build windows --release
-python dev.py ui-test --build ui_tests/smoke/basic.csv
+python dev.py gate windows-preservation
 ```
 
 Add targeted Windows UI scripts when touching seek, loop, viewport/layout, codec, track, analysis, or D3D11 shared texture/capture behavior.
@@ -137,13 +142,7 @@ Headed UI, callback churn, audio speaker behavior, long-run perf, and stress tes
 Use them for nightly, release candidate, or targeted local validation:
 
 ```bash
-python3.12 dev.py mac-ui-test --build \
-  ui_tests/macos/native_facade_smoke.csv \
-  ui_tests/macos/native_seek_frame_smoke.csv \
-  ui_tests/macos/native_layout_split_smoke.csv \
-  ui_tests/macos/native_audio_play_seek_smoke.csv \
-  ui_tests/macos/native_4k60_playback_smoke.csv \
-  ui_tests/macos/native_vvc_software_playback_smoke.csv
+python3.12 dev.py gate macos-ui-nightly
 ```
 
 `ui_tests/local/**` is manual/local only and must not be added to CI.
@@ -163,7 +162,7 @@ Release compliance smoke:
 
 ```bash
 python3.12 scripts/dev/check_release_compliance.py
-python3.12 scripts/dev/check_release_compliance.py --stage build/package/macos/stage
+python3.12 scripts/dev/check_release_compliance.py --stage build/package/macos/VoidPlayer
 ```
 
 Release candidate readiness must verify:
@@ -185,7 +184,7 @@ CI entrypoint is `.github/workflows/native.yml`. It currently covers:
 - macOS native fast gate through `scripts/ci/run_macos_native_fast.sh`;
 - macOS analysis FFI build smoke;
 - macOS runner debug build;
-- full Windows native config matrix.
+- full Windows native config matrix on scheduled runs or manual `workflow_dispatch` with `full_matrix=true`.
 
 Do not interpret CI green as full release readiness: headed macOS UI smokes, Windows UI preservation, package staging,
 full release compliance against staged packages, and long-run/perf checks remain release-candidate or local gates.

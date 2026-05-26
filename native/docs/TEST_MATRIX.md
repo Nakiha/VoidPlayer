@@ -1,17 +1,17 @@
 # Test Matrix
 
-This document is the ownership map for VoidPlayer tests. It classifies existing
-native and UI tests into gates without deleting or demoting anything by itself.
+This document is the ownership map for VoidPlayer tests. It classifies native
+and UI tests into gates and records cleanup decisions that changed the active set.
 
 ## Gate Levels
 
 | Gate | Purpose | Typical command |
 | --- | --- | --- |
-| PR fast | Stable, high-signal checks for shared native logic and platform backend canaries. | `python3.12 dev.py test --native-only` |
-| Windows preservation | Windows runner/D3D11 preservation after shared renderer/backend changes. | `python dev.py test --native-only` -> `flutter build windows --release` -> `python dev.py ui-test --build ui_tests/smoke/basic.csv` |
-| macOS stabilization | macOS native playback and renderer-owned Metal confidence. | `python3.12 dev.py test --native-only` -> selected `python3.12 dev.py mac-ui-test --build ...` |
-| Nightly/headed | Slower headed UI, stress, audio, 4K/cadence, and lifecycle churn. | selected `ui_tests/macos/*.csv` or Windows UI suites |
-| Release candidate | Full native config matrix, platform UI preservation, package, compliance, signing inputs. | CI full matrix + platform package commands |
+| PR fast | Stable, high-signal checks for shared native logic and platform backend canaries. | `python3.12 dev.py gate pr-fast` |
+| Windows preservation | Windows runner/D3D11 preservation after shared renderer/backend changes. | `python dev.py gate windows-preservation` |
+| macOS stabilization | macOS native playback and renderer-owned Metal confidence. | `python3.12 dev.py gate macos-ui-smoke` |
+| Nightly/headed | Slower headed UI, stress, audio, 4K/cadence, and lifecycle churn. | `python3.12 dev.py gate macos-ui-nightly` or Windows UI suites |
+| Release candidate | Full native config matrix, platform UI preservation, package, compliance, signing inputs. | `python3.12 dev.py gate release-candidate` plus CI full matrix |
 | Manual/local | Tests needing local media, audible speakers, external paths, or long perf runs. | `ui_tests/local/**`, manual audio/perf scripts |
 
 ## CTest Labels
@@ -86,22 +86,23 @@ ctest --test-dir native/build-macos-make -L backend --output-on-failure
 | `ui_tests/macos/native_facade_smoke.csv` | macOS channel/metadata/diagnostics smoke. | macOS stabilization PR gate candidate. |
 | `ui_tests/macos/native_seek_frame_smoke.csv` | Renderer-owned refresh after seek. | macOS stabilization. |
 | `ui_tests/macos/native_layout_split_smoke.csv` | Shared layout through Metal presentation. | macOS stabilization. |
+| `ui_tests/macos/native_controls_smoke.csv` | Basic native play/pause/seek/step command smoke. | macOS stabilization. |
 | `ui_tests/macos/native_4k60_playback_smoke.csv` | VideoToolbox/Metal/cadence canary. | Nightly/headed or release candidate. |
 | `ui_tests/macos/native_vvc_software_playback_smoke.csv` | Software fallback + Metal package path. | Nightly/headed or release candidate. |
-| `ui_tests/macos/native_audio_play_seek_smoke.csv` | Native audio play/seek diagnostics. | Nightly/headed; manual audible check remains separate. |
+| `ui_tests/macos/native_audio_play_seek_smoke.csv` | Native audio play/seek and audible-track diagnostics. | Nightly/headed; manual audible check remains separate. |
 | `ui_tests/macos/native_callback_stress_smoke.csv` | Callback lifecycle stress. | Nightly/headed. |
 | `ui_tests/macos/native_quit_while_playing_smoke.csv` / `native_user_window_close_smoke.csv` | Teardown and crash-report regression. | Nightly/headed or targeted runner changes. |
 | `ui_tests/local/**` | Developer-specific absolute-path regressions. | Manual/local only; never CI. |
 
-## Current Candidate Cleanup List
+## Phase 2 Cleanup Decisions
 
-These are candidates for phase 2 after the inventory is accepted. Do not delete
-or merge them in phase 1.
-
-| Candidate | Possible action | Reason |
+| Test or group | Decision | Reason |
 | --- | --- | --- |
-| macOS UI `native_first_frame_smoke`, `native_playback_smoke`, `native_facade_smoke` | Merge or demote overlapping assertions. | All prove some form of visible native frame/channel health. |
-| macOS UI callback/lifecycle scripts | Keep one PR candidate, move churn to nightly. | Useful but slower and more flake-prone. |
+| `native_first_frame_smoke.csv` | Deleted. | Covered by `native_facade_smoke.csv` and `native_seek_frame_smoke.csv`. |
+| `native_playback_smoke.csv` | Deleted. | Playback advancement is covered by 4K60/VVC and playing seek/step canaries. |
+| `synthetic_texture_smoke.csv` | Deleted. | Early MVP synthetic texture path; renderer-owned Metal is the normal route. |
+| `native_audio_diagnostics_smoke.csv` | Merged into `native_audio_play_seek_smoke.csv`, then deleted. | Keeps audible-track diagnostics with the audio play/seek smoke. |
+| `native_frame_callback_lifecycle_smoke.csv` | Deleted. | `native_callback_stress_smoke.csv` remains the stronger nightly callback churn gate. |
 | 4K60/VVC/P010 macOS UI smokes | Keep as release/nightly canaries unless a PR touches codec/color/backend. | High value but heavier than channel/seek/layout smokes. |
 | Windows timeline exact seek resource scripts across codecs | Keep targeted, consider release matrix grouping. | Similar resource-risk shape across codecs. |
 | CTest names ending in `_smoke` that are contract tests | Rename later only if churn is acceptable. | Labels now carry intent without breaking references. |

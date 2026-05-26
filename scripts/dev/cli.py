@@ -13,6 +13,7 @@ from .flutter_app import (
     cmd_test,
     cmd_ui_test,
 )
+from .gate import cmd_gate
 from .package import cmd_package
 
 
@@ -61,11 +62,13 @@ Examples:
   python dev.py test --flutter-only
   python dev.py test --native-only
   python dev.py test --native-only --github
+  python dev.py gate pr-fast
+  python dev.py gate macos-ui-smoke
   python dev.py package
   python dev.py package --installer
   python dev.py package --installer --macos-sign-identity "Developer ID Application: Team" --macos-notarize --macos-notary-profile PROFILE
   python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
-  python dev.py mac-ui-test ui_tests/macos/synthetic_texture_smoke.csv
+  python dev.py mac-ui-test ui_tests/macos/native_facade_smoke.csv
   python dev.py analysis-resize-stress
   python dev.py analysis-benchmark --build
   python dev.py analysis-overlay-benchmark --build
@@ -111,6 +114,20 @@ Examples:
                         help="Run only native standalone tests")
     p_test.add_argument("--github", action="store_true",
                         help="Run the lightweight native test set used by GitHub Actions")
+
+    p_gate = sub.add_parser("gate", help="Run a named validation gate profile")
+    p_gate.add_argument(
+        "profile",
+        choices=[
+            "pr-fast",
+            "macos-native-fast",
+            "macos-ui-smoke",
+            "macos-ui-nightly",
+            "windows-preservation",
+            "release-candidate",
+        ],
+        help="Gate profile to run",
+    )
 
     p_package = sub.add_parser("package", help="Build and stage clean platform package input")
     p_package.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)
@@ -233,6 +250,7 @@ def main() -> None:
         "launch": cmd_launch,
         "demo": cmd_demo,
         "test": cmd_test,
+        "gate": cmd_gate,
         "package": cmd_package,
         "ui-test": cmd_ui_test,
         "mac-ui-test": cmd_mac_ui_test,

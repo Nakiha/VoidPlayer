@@ -32,6 +32,8 @@ python dev.py demo
 # 测试
 python dev.py test
 python dev.py test --native-only
+python dev.py gate pr-fast
+python dev.py gate macos-ui-smoke
 python dev.py ui-test ui_tests/smoke/basic.csv
 python dev.py ui-test --build ui_tests/smoke/basic.csv
 python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewport_pan_layout_regression.csv
@@ -54,9 +56,9 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 
 | 改动类型 | 必跑验证 |
 | --- | --- |
-| native C++ 单元逻辑 | `python dev.py test --native-only` |
-| native C++ 影响 Windows runner / Texture / 渲染上屏 | `python dev.py test --native-only` -> `flutter build windows --release` -> 相关 `python dev.py ui-test ...` |
-| native C++ 影响 macOS runner / Texture / Metal 上屏 | `python dev.py test --native-only` -> `flutter build macos --debug` 或 `python dev.py mac-ui-test --build ...` -> 相关 `ui_tests/macos/*.csv` |
+| native C++ 单元逻辑 | `python dev.py gate pr-fast` 或 `python dev.py test --native-only` |
+| native C++ 影响 Windows runner / Texture / 渲染上屏 | `python dev.py gate windows-preservation` 或等价 Windows build + UI smoke |
+| native C++ 影响 macOS runner / Texture / Metal 上屏 | `python dev.py gate macos-ui-smoke` 或相关 `python dev.py mac-ui-test --build ...` |
 | shared renderer / presentation backend 边界 | macOS 相关 smoke + 后续 Windows preservation gate |
 | Flutter UI / Action / 主窗口 coordinator / 播放控制 | 相关 `python dev.py ui-test --build ...`，不要只跑 `python dev.py test --flutter-only` |
 | 窗口、布局、pan/zoom、split | `ui_tests/viewport/` 中相关脚本，加 smoke |
@@ -73,6 +75,7 @@ macOS smoke 首选按影响面选择 `ui_tests/macos/` 中脚本，例如：
 
 ```bash
 python dev.py mac-ui-test --build ui_tests/macos/native_facade_smoke.csv
+python dev.py gate macos-ui-smoke
 ```
 
 如果自动化脚本无法覆盖本轮风险，需要在最终说明里写清楚缺口，例如缺少哪个 Action、Assert 或启动参数。

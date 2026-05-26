@@ -176,7 +176,7 @@ PlaybackEofSettlementDecision choose_playback_eof_settlement(
         decision.used_reported_duration = true;
     }
 
-    if (input.current_pts_us + decision.tolerance_us < settle_pts_us) {
+    if (input.current_pts_us < input.last_presented_end_us) {
         return decision;
     }
 

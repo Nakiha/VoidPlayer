@@ -17,6 +17,7 @@ final class MacOSFramePresentationState {
   private var hostIntervalSampleCount = 0
   private var hostIntervalTotalNs: UInt64 = 0
   private var hostIntervalMaxNs: UInt64 = 0
+  private var hostIntervalsNs: [UInt64] = []
   private var ptsTrace: [Int] = []
   private var ptsSampleCount = 0
   private var ptsDistinctCount = 0
@@ -45,6 +46,7 @@ final class MacOSFramePresentationState {
     hostIntervalSampleCount = 0
     hostIntervalTotalNs = 0
     hostIntervalMaxNs = 0
+    hostIntervalsNs.removeAll(keepingCapacity: true)
     resetPtsTrace()
   }
 
@@ -82,6 +84,10 @@ final class MacOSFramePresentationState {
       hostIntervalSampleCount += 1
       hostIntervalTotalNs += interval
       hostIntervalMaxNs = max(hostIntervalMaxNs, interval)
+      hostIntervalsNs.append(interval)
+      if hostIntervalsNs.count > traceCapacity {
+        hostIntervalsNs.removeFirst(hostIntervalsNs.count - traceCapacity)
+      }
     }
     lastHostNs = now
     presentationCount += 1
@@ -137,6 +143,10 @@ final class MacOSFramePresentationState {
       "presentedFrameHostIntervalSampleCount": hostIntervalSampleCount,
       "presentedFrameHostIntervalAvgMs": hostIntervalAvgMs(),
       "presentedFrameHostIntervalMaxMs": hostIntervalMaxMs(),
+      "presentedFrameHostIntervalP95Ms": hostIntervalP95Ms(),
+      "presentedFrameDropCount": missCount,
+      "presentedFrameLateCount": 0,
+      "presentedFrameErrorCount": errorCount,
       "presentedFramePtsTrace": ptsTrace.suffix(32).map { String($0) }.joined(separator: ","),
     ]
   }
@@ -217,6 +227,18 @@ final class MacOSFramePresentationState {
 
   private func hostIntervalMaxMs() -> Int {
     Int(hostIntervalMaxNs / 1_000_000)
+  }
+
+  private func hostIntervalP95Ms() -> Int {
+    guard !hostIntervalsNs.isEmpty else {
+      return 0
+    }
+    let sorted = hostIntervalsNs.sorted()
+    let index = min(
+      sorted.count - 1,
+      max(0, Int(ceil(Double(sorted.count) * 0.95)) - 1)
+    )
+    return Int(sorted[index] / 1_000_000)
   }
 
   private func presentationElapsedMs() -> Int {

@@ -100,7 +100,8 @@ The macOS runner should report health from native state fields, including:
 - `uploadStorageKind`
 - upload/failure counters
 - cadence counters such as duplicate PTS, large PTS gaps, host interval samples,
-  and renderer-owned presentation ratio
+  host interval max/p95, drop/error aliases, and renderer-owned presentation
+  ratio
 
 Compatibility UI keys may continue to summarize these values, but the source of
 truth is native presentation state. A missing target, target clear, backend
@@ -115,8 +116,10 @@ Portable native tests should keep covering:
 - `macos_metal_uploader_smoke` for target validation and Metal upload behavior;
 - shared renderer-owned presentation smoke for target install/clear, refresh
   success, failure, timeout, and recovery;
-- layout/color parity tests for BGRA, NV12, planar YUV420, P010 rejection or
-  support state, odd dimensions, full/limited range, and matrix selection.
+- `macos_metal_color_layout_parity_smoke` for synthetic
+  `RendererDrawSnapshot` -> `MetalPresentationBackend` -> backend capture
+  parity across BGRA, NV12, planar YUV420, P010 high-bit packages, odd
+  dimensions, padded stride, split layout, and aspect-fit behavior.
 
 macOS UI smoke should assert renderer-owned state, upload storage kind,
 fallback reason, last draw error, frame callback/cadence counters, and
@@ -125,8 +128,9 @@ alone as proof that a frame was drawn.
 
 ## Remaining Gates
 
-- Metal shader/layout/color parity against CPU reference and Windows D3D11.
-- Drop/late/present-cadence diagnostics before raising 4K60 release thresholds.
+- Windows D3D11 capture parity against the same color/layout cases.
+- Further drop/late present-cadence diagnostics before raising 4K60 release
+  thresholds beyond conservative canary checks.
 - Release staging for FFmpeg dylibs, license notices, crash/log paths, sandbox
   file access, signing, and notarization inputs.
 - macOS analysis UI/IPC design without adding another playback scheduler.

@@ -150,19 +150,30 @@ hardware output for the same source.
 
 ## Parity Gates
 
-Open stabilization gates before raising macOS release confidence:
+Current macOS release-readiness evidence:
 
-- CPU reference vs Metal output for planar YUV420, NV12, P010, and BGRA package
-  paths.
+- `macos_metal_color_layout_parity_smoke` drives synthetic
+  `RendererDrawSnapshot` inputs through `MetalPresentationBackend`, then reads
+  the renderer-owned BGRA `CVPixelBuffer` through backend capture. It compares
+  BGRA channel order, NV12 limited BT.709, planar YUV420 full/limited range,
+  odd dimensions, padded strides, split/layout fit, and P010 high-bit samples
+  against a small-tolerance CPU reference.
+- `native_4k60_playback_smoke.csv` remains a headed VideoToolbox/Metal cadence
+  canary. It is not a strict 4K60 SLA; it asserts conservative health signals
+  such as monotonic PTS, no large PTS gaps, duplicate PTS visibility, host
+  interval samples/max/p95, and a high renderer-owned presentation ratio.
+
+Open stabilization gates before raising macOS release confidence further:
+
 - D3D11 HLSL vs Metal shader parity for range, matrix, transfer, and odd
   dimensions.
 - Full/limited range parity for BT.601, BT.709, and BT.2020_NCL.
-- P010 high-bit interpretation parity across software, VideoToolbox, and D3D11VA
-  paths.
+- P010 high-bit interpretation parity across VideoToolbox and D3D11VA direct
+  surfaces, beyond the synthetic CPU P010 package gate.
 - 4:2:2 / 4:4:4 fallback behavior remains explicit until dedicated direct paths
   are implemented.
-- Capture/hash tests use backend capture contracts where available, not only
-  Flutter texture screenshots.
+- Capture/hash expansion for real media should use backend capture contracts
+  where available, not only Flutter texture screenshots.
 
 ## MHW Full-Range BT.709 Fixture
 

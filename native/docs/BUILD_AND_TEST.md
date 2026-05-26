@@ -83,7 +83,7 @@ Windows CI 还会跑 release compliance notice smoke：
 python3.12 scripts/dev/check_release_compliance.py
 ```
 
-macOS CI 的 native fast gate 分成 software native suite + VideoToolbox canary：
+macOS CI 的 native fast gate uses the hosted-runner CTest profile：
 
 ```bash
 bash scripts/ci/run_macos_native_fast.sh

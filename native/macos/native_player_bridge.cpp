@@ -77,6 +77,17 @@ int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
   return 0;
 }
 
+int VPMacOSNativePlayerCopyTrackInfo(VPMacOSNativePlayer* player,
+                                     int32_t file_id,
+                                     VPMacOSNativeTrackInfo* out) {
+  if (!player || !out) {
+    return -1;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  *out = player->track_info_for_file_id_locked(file_id);
+  return out->slot >= 0 ? 0 : -1;
+}
+
 void VPMacOSNativePlayerRemoveTrack(VPMacOSNativePlayer* player,
                                     int32_t file_id) {
   if (!player) {

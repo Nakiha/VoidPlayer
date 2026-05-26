@@ -293,6 +293,16 @@ VPMacOSNativeTrackInfo VPMacOSNativePlayer::track_info_for_file_id_locked(
     out.width = info.width;
     out.height = info.height;
     out.duration_us = info.duration_us;
+    out.start_time_us = info.start_time_us;
+    out.bit_rate = info.bit_rate;
+    vp_macos::write_error(
+        out.format_name, sizeof(out.format_name), info.format_name);
+    vp_macos::write_error(
+        out.codec_name, sizeof(out.codec_name), info.codec_name);
+    vp_macos::write_error(
+        out.codec_long_name, sizeof(out.codec_long_name), info.codec_long_name);
+    vp_macos::write_error(
+        out.decoder_name, sizeof(out.decoder_name), info.decoder_name);
     return out;
   }
   return out;

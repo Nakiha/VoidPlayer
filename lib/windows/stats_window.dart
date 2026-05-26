@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+
 import '../l10n/app_localizations.dart';
+import '../native_player/native_player_api.dart';
 
 // ---- FFI bindings ----
 
@@ -65,53 +68,39 @@ final class NakiVrDiagnostics extends Struct {
 typedef _GetDiagNative = Pointer<NakiVrDiagnostics> Function();
 typedef _GetDiagDart = Pointer<NakiVrDiagnostics> Function();
 
-final _getDiag = DynamicLibrary.executable()
-    .lookupFunction<_GetDiagNative, _GetDiagDart>('naki_vr_get_diagnostics');
+abstract interface class StatsDataSource {
+  Future<StatsSnapshot?> load();
 
-// ---- UI panel ----
-
-class StatsPage extends StatefulWidget {
-  const StatsPage({super.key});
-
-  @override
-  State<StatsPage> createState() => _StatsPageState();
+  static StatsDataSource forCurrentPlatform() {
+    if (Platform.isWindows) {
+      return WindowsFfiStatsDataSource();
+    }
+    return NativeDiagnosticsStatsDataSource();
+  }
 }
 
-class _StatsPageState extends State<StatsPage> {
-  List<_TrackRow> _tracks = [];
-  _MemorySummary _memory = const _MemorySummary();
-  Timer? _timer;
+class WindowsFfiStatsDataSource implements StatsDataSource {
+  late final _GetDiagDart _getDiag = DynamicLibrary.executable()
+      .lookupFunction<_GetDiagNative, _GetDiagDart>('naki_vr_get_diagnostics');
 
   @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _poll());
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _poll() {
+  Future<StatsSnapshot?> load() async {
     final ptr = _getDiag();
-    if (ptr == nullptr) return;
+    if (ptr == nullptr) return null;
     final d = ptr.ref;
-    final count = d.trackCount;
-    final memory = _MemorySummary(
+    final memory = StatsMemorySummary(
       workingSetBytes: d.processWorkingSetBytes,
       privateBytes: d.processPrivateBytes,
       dedicatedGpuBytes: d.dedicatedVideoMemoryBytes,
       cpuFrameBytes: d.cpuFrameMemoryBytes,
       packetQueueBytes: d.packetQueueMemoryBytes,
     );
-    final list = <_TrackRow>[];
-    for (int i = 0; i < count && i < 4; i++) {
+    final list = <StatsTrackRow>[];
+    for (int i = 0; i < d.trackCount && i < 4; i++) {
       final t = d.tracks[i];
       if (t.slot < 0) continue;
       list.add(
-        _TrackRow(
+        StatsTrackRow(
           fileId: t.fileId,
           fps: t.fps,
           avgDecodeMs: t.avgDecodeMs,
@@ -126,6 +115,116 @@ class _StatsPageState extends State<StatsPage> {
         ),
       );
     }
+    return StatsSnapshot(memory: memory, tracks: list);
+  }
+}
+
+class NativeDiagnosticsStatsDataSource implements StatsDataSource {
+  final NativePlayerApi api;
+
+  const NativeDiagnosticsStatsDataSource([
+    this.api = const MethodChannelNativePlayerApi(),
+  ]);
+
+  @override
+  Future<StatsSnapshot?> load() async {
+    final diagnostics = await api.getDiagnostics();
+    final tracksValue =
+        diagnostics['nativeTrackDiagnostics'] ?? diagnostics['tracks'];
+    final tracks = tracksValue is List ? tracksValue : const <Object?>[];
+    return StatsSnapshot(
+      memory: StatsMemorySummary(
+        workingSetBytes: _intValue(
+          diagnostics['processRssBytes'] ??
+              diagnostics['processWorkingSetBytes'],
+        ),
+        privateBytes: _intValue(diagnostics['processPrivateBytes']),
+        dedicatedGpuBytes: _intValue(
+          diagnostics['dedicatedGpuUsageBytes'] ??
+              diagnostics['dedicatedVideoMemoryBytes'],
+        ),
+        cpuFrameBytes: _intValue(
+          diagnostics['cpuFrameMemoryBytes'] ??
+              diagnostics['nativeCpuFrameMemoryBytes'],
+        ),
+        packetQueueBytes: _intValue(
+          diagnostics['packetQueueMemoryBytes'] ??
+              diagnostics['nativePacketQueueMemoryBytes'],
+        ),
+      ),
+      tracks: tracks
+          .whereType<Map<dynamic, dynamic>>()
+          .map((track) => StatsTrackRow.fromDiagnostics(track))
+          .toList(),
+    );
+  }
+
+  static int _intValue(Object? value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is num) return value.toInt();
+    return 0;
+  }
+}
+
+@visibleForTesting
+class StatsSnapshot {
+  final StatsMemorySummary memory;
+  final List<StatsTrackRow> tracks;
+
+  const StatsSnapshot({required this.memory, required this.tracks});
+}
+
+// ---- UI panel ----
+
+class StatsPage extends StatefulWidget {
+  final StatsDataSource? dataSource;
+
+  const StatsPage({super.key, this.dataSource});
+
+  @override
+  State<StatsPage> createState() => _StatsPageState();
+}
+
+class _StatsPageState extends State<StatsPage> {
+  List<StatsTrackRow> _tracks = [];
+  StatsMemorySummary _memory = const StatsMemorySummary();
+  late final StatsDataSource _dataSource;
+  Timer? _timer;
+  Future<void>? _pollInFlight;
+
+  @override
+  void initState() {
+    super.initState();
+    _dataSource = widget.dataSource ?? StatsDataSource.forCurrentPlatform();
+    _timer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => unawaited(_poll()),
+    );
+    unawaited(_poll());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _poll() {
+    final existing = _pollInFlight;
+    if (existing != null) return existing;
+    final next = _pollImpl().whenComplete(() {
+      _pollInFlight = null;
+    });
+    _pollInFlight = next;
+    return next;
+  }
+
+  Future<void> _pollImpl() async {
+    final snapshot = await _dataSource.load();
+    if (snapshot == null) return;
+    final memory = snapshot.memory;
+    final list = snapshot.tracks;
     if (!mounted) return;
     if (_memory == memory && _tracksEqual(_tracks, list)) return;
     setState(() {
@@ -134,7 +233,7 @@ class _StatsPageState extends State<StatsPage> {
     });
   }
 
-  static bool _tracksEqual(List<_TrackRow> a, List<_TrackRow> b) {
+  static bool _tracksEqual(List<StatsTrackRow> a, List<StatsTrackRow> b) {
     if (a.length != b.length) return false;
     for (int i = 0; i < a.length; i++) {
       final x = a[i], y = b[i];
@@ -163,7 +262,7 @@ class _StatsPageState extends State<StatsPage> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _MemorySummarySection(memory: _memory),
+        StatsMemorySummarySection(memory: _memory),
         const Divider(height: 1),
         if (_tracks.isEmpty)
           Container(
@@ -248,40 +347,40 @@ String _bytesText(int bytes) {
   return '${(mb / 1024.0).toStringAsFixed(2)} GB';
 }
 
-class _MemorySummarySection extends StatelessWidget {
+class StatsMemorySummarySection extends StatelessWidget {
   static const _minTableWidth = 520.0;
   static const _cellWidth = 104.0;
 
-  final _MemorySummary memory;
+  final StatsMemorySummary memory;
 
-  const _MemorySummarySection({required this.memory});
+  const StatsMemorySummarySection({super.key, required this.memory});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final metrics = [
-      _MemoryMetric(
+      StatsMemoryMetric(
         label: 'RSS',
         value: _bytesText(memory.workingSetBytes),
         icon: Icons.memory_outlined,
       ),
-      _MemoryMetric(
+      StatsMemoryMetric(
         label: 'Private',
         value: _bytesText(memory.privateBytes),
         icon: Icons.lock_outline,
       ),
-      _MemoryMetric(
+      StatsMemoryMetric(
         label: 'GPU',
         value: _bytesText(memory.dedicatedGpuBytes),
         icon: Icons.developer_board_outlined,
       ),
-      _MemoryMetric(
+      StatsMemoryMetric(
         label: 'CPU frames',
         value: _bytesText(memory.cpuFrameBytes),
         icon: Icons.view_in_ar_outlined,
       ),
-      _MemoryMetric(
+      StatsMemoryMetric(
         label: 'Packets',
         value: _bytesText(memory.packetQueueBytes),
         icon: Icons.all_inbox_outlined,
@@ -364,7 +463,7 @@ class _MemorySummarySection extends StatelessWidget {
 }
 
 class _MemoryMetricCell extends StatelessWidget {
-  final _MemoryMetric metric;
+  final StatsMemoryMetric metric;
 
   const _MemoryMetricCell({required this.metric});
 
@@ -373,7 +472,7 @@ class _MemoryMetricCell extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return SizedBox(
-      width: _MemorySummarySection._cellWidth,
+      width: StatsMemorySummarySection._cellWidth,
       height: 56,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -417,26 +516,26 @@ class _MemoryMetricCell extends StatelessWidget {
   }
 }
 
-class _MemoryMetric {
+class StatsMemoryMetric {
   final String label;
   final String value;
   final IconData icon;
 
-  const _MemoryMetric({
+  const StatsMemoryMetric({
     required this.label,
     required this.value,
     required this.icon,
   });
 }
 
-class _MemorySummary {
+class StatsMemorySummary {
   final int workingSetBytes;
   final int privateBytes;
   final int dedicatedGpuBytes;
   final int cpuFrameBytes;
   final int packetQueueBytes;
 
-  const _MemorySummary({
+  const StatsMemorySummary({
     this.workingSetBytes = 0,
     this.privateBytes = 0,
     this.dedicatedGpuBytes = 0,
@@ -446,7 +545,7 @@ class _MemorySummary {
 
   @override
   bool operator ==(Object other) =>
-      other is _MemorySummary &&
+      other is StatsMemorySummary &&
       workingSetBytes == other.workingSetBytes &&
       privateBytes == other.privateBytes &&
       dedicatedGpuBytes == other.dedicatedGpuBytes &&
@@ -463,7 +562,7 @@ class _MemorySummary {
   );
 }
 
-class _TrackRow {
+class StatsTrackRow {
   final int fileId;
   final double fps;
   final double avgDecodeMs;
@@ -475,7 +574,7 @@ class _TrackRow {
   final int packetQueueMemoryBytes;
   final int currentPtsUs;
   final int currentDtsUs;
-  _TrackRow({
+  StatsTrackRow({
     required this.fileId,
     required this.fps,
     required this.avgDecodeMs,
@@ -488,4 +587,34 @@ class _TrackRow {
     required this.currentPtsUs,
     required this.currentDtsUs,
   });
+
+  factory StatsTrackRow.fromDiagnostics(Map<dynamic, dynamic> map) =>
+      StatsTrackRow(
+        fileId: _intValue(map['fileId']),
+        fps: _doubleValue(map['decodeFps'] ?? map['fps']),
+        avgDecodeMs: _doubleValue(map['decodeAvgMs'] ?? map['avgDecodeMs']),
+        maxDecodeMs: _doubleValue(map['decodeMaxMs'] ?? map['maxDecodeMs']),
+        bufferCount: _intValue(map['bufferCount']),
+        bufferCapacity: _intValue(map['bufferCapacity']),
+        bufferState: _intValue(map['bufferState']),
+        cpuFrameMemoryBytes: _intValue(
+          map['cpuFrameMemoryBytes'] ?? map['totalCpuFrameBytes'],
+        ),
+        packetQueueMemoryBytes: _intValue(map['packetQueueMemoryBytes']),
+        currentPtsUs: _intValue(map['currentPtsUs']),
+        currentDtsUs: _intValue(map['currentDtsUs'], fallback: _noTimestampUs),
+      );
+
+  static int _intValue(Object? value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is num) return value.toInt();
+    return fallback;
+  }
+
+  static double _doubleValue(Object? value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return 0.0;
+  }
 }

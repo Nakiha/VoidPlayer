@@ -17,6 +17,8 @@ enum MacOSVideoTrackPayload {
     width: Int,
     height: Int,
     durationUs: Int,
+    startTimeUs: Int = 0,
+    bitRate: Int = 0,
     formatName: String,
     codecName: String,
     codecLongName: String,
@@ -29,8 +31,8 @@ enum MacOSVideoTrackPayload {
       "width": width,
       "height": height,
       "durationUs": durationUs,
-      "startTimeUs": 0,
-      "bitRate": 0,
+      "startTimeUs": startTimeUs,
+      "bitRate": bitRate,
       "formatName": formatName,
       "codecName": codecName,
       "codecLongName": codecLongName,
@@ -50,10 +52,12 @@ enum MacOSVideoTrackPayload {
       width: metadata.width,
       height: metadata.height,
       durationUs: metadata.durationUs,
-      formatName: nativeFormatName,
-      codecName: nativeCodecName,
-      codecLongName: nativeCodecLongName,
-      decoderName: decoderName
+      startTimeUs: metadata.startTimeUs,
+      bitRate: metadata.bitRate,
+      formatName: nonEmpty(metadata.formatName, nativeFormatName),
+      codecName: nonEmpty(metadata.codecName, nativeCodecName),
+      codecLongName: nonEmpty(metadata.codecLongName, nativeCodecLongName),
+      decoderName: nonEmpty(metadata.decoderName, decoderName)
     )
   }
 
@@ -77,6 +81,10 @@ enum MacOSVideoTrackPayload {
       codecLongName: syntheticCodecLongName,
       decoderName: syntheticDecoderName
     )
+  }
+
+  private static func nonEmpty(_ value: String, _ fallback: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : value
   }
 
   static func defaultLayout() -> [String: Any] {

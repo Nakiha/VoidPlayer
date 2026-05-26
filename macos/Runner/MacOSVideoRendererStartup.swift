@@ -91,17 +91,23 @@ enum MacOSVideoRendererStartupFactory {
     let trackHeight = session.height() > 0 ? session.height() : firstFrame.height
     let sessionDurationUs = session.durationUs()
     let trackDurationUs = sessionDurationUs > 0 ? sessionDurationUs : MacOSVideoTrackPayload.syntheticDurationUs
+    let firstMetadata = try session.trackMetadata(fileId: 0)
     var tracks = [
-      MacOSVideoTrackPayload.track(
-        fileId: 0,
-        slot: 0,
+      MacOSVideoTrackPayload.nativeTrack(
         path: firstPath,
-        width: trackWidth,
-        height: trackHeight,
-        durationUs: trackDurationUs,
-        formatName: MacOSVideoTrackPayload.nativeFormatName,
-        codecName: MacOSVideoTrackPayload.nativeCodecName,
-        codecLongName: MacOSVideoTrackPayload.nativeCodecLongName,
+        metadata: MacOSNativeTrackMetadata(
+          fileId: firstMetadata.fileId,
+          slot: firstMetadata.slot,
+          width: firstMetadata.width > 0 ? firstMetadata.width : trackWidth,
+          height: firstMetadata.height > 0 ? firstMetadata.height : trackHeight,
+          durationUs: firstMetadata.durationUs > 0 ? firstMetadata.durationUs : trackDurationUs,
+          startTimeUs: firstMetadata.startTimeUs,
+          bitRate: firstMetadata.bitRate,
+          formatName: firstMetadata.formatName,
+          codecName: firstMetadata.codecName,
+          codecLongName: firstMetadata.codecLongName,
+          decoderName: firstMetadata.decoderName
+        ),
         decoderName: session.decoderName()
       )
     ]

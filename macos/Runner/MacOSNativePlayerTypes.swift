@@ -14,6 +14,12 @@ struct MacOSNativeTrackMetadata {
   let width: Int
   let height: Int
   let durationUs: Int
+  let startTimeUs: Int
+  let bitRate: Int
+  let formatName: String
+  let codecName: String
+  let codecLongName: String
+  let decoderName: String
 }
 
 enum MacOSNativePlayerError: Error, CustomStringConvertible {

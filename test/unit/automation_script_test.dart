@@ -31,12 +31,13 @@ void main() {
 1.2,ASSERT_NATIVE_DIAGNOSTIC_STRING,presentationAdapter,cvpixelbuffer-bgra-copy
 1.3,ASSERT_NATIVE_DIAGNOSTIC_BOOL,metalTextureValid,true
 1.4,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,textureWidth,320,1920
+1.45,ASSERT_TRACK_METADATA,0,QuickTime / MOV,VideoToolbox / h264
 1.5,CLOSE_MAIN_WINDOW
 ''');
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(15));
+    expect(instructions, hasLength(16));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
       200,
@@ -51,6 +52,7 @@ void main() {
       1200,
       1300,
       1400,
+      1450,
       1500,
       2000,
     ]);
@@ -169,9 +171,24 @@ void main() {
             .having((a) => a.maxValue, 'maxValue', 1920),
       ),
     );
-    expect(instructions[13], isA<ScriptCloseMainWindow>());
     expect(
-      instructions[14],
+      instructions[13],
+      isA<ScriptAssert>().having(
+        (i) => i.assertion,
+        'assertion',
+        isA<AssertTrackMetadata>()
+            .having((a) => a.slot, 'slot', 0)
+            .having(
+              (a) => a.formatName,
+              'formatName',
+              'QuickTime / MOV',
+            )
+            .having((a) => a.decoderName, 'decoderName', 'VideoToolbox / h264'),
+      ),
+    );
+    expect(instructions[14], isA<ScriptCloseMainWindow>());
+    expect(
+      instructions[15],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
   });

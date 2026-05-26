@@ -25,6 +25,12 @@ typedef struct VPMacOSNativeTrackInfo {
   int32_t width;
   int32_t height;
   int64_t duration_us;
+  int64_t start_time_us;
+  int64_t bit_rate;
+  char format_name[64];
+  char codec_name[64];
+  char codec_long_name[128];
+  char decoder_name[128];
 } VPMacOSNativeTrackInfo;
 
 typedef struct VPMacOSCaptureMetrics {
@@ -92,6 +98,10 @@ typedef struct VPMacOSNativeTrackDiagnosticInfo {
   int32_t hardware_decode_active;
   int32_t hardware_decode_downloads_to_cpu;
   int32_t buffer_state;
+  uint64_t buffer_count;
+  uint64_t buffer_capacity;
+  uint64_t cpu_frame_memory_bytes;
+  uint64_t packet_queue_memory_bytes;
   uint64_t frames_decoded;
   double decode_fps;
   double decode_avg_ms;
@@ -104,6 +114,8 @@ typedef struct VPMacOSNativeTrackDiagnosticInfo {
 } VPMacOSNativeTrackDiagnosticInfo;
 
 typedef struct VPMacOSNativePlayerPerfStats {
+  uint64_t process_rss_bytes;
+  uint64_t process_private_bytes;
   uint64_t decode_frame_count;
   uint64_t decode_dropped_count;
   int64_t decode_elapsed_ms;
@@ -124,6 +136,8 @@ typedef struct VPMacOSNativePlayerPerfStats {
   uint64_t active_track_count;
   uint64_t aggregate_decode_frame_count;
   double aggregate_decode_fps;
+  uint64_t cpu_frame_memory_bytes;
+  uint64_t packet_queue_memory_bytes;
   uint64_t renderer_owned_staging_allocation_count;
   uint64_t renderer_owned_staging_reuse_count;
   uint64_t renderer_owned_staging_max_bytes;

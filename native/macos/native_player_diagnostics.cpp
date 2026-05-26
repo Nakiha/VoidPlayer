@@ -8,6 +8,8 @@
 #include <mutex>
 #include <vector>
 
+#include <mach/mach.h>
+
 namespace {
 
 void write_c_string(char* dest, size_t dest_size, const std::string& value) {
@@ -23,6 +25,23 @@ const vr::TrackPerfStats* find_perf_stats(
     }
   }
   return nullptr;
+}
+
+void fill_process_memory_stats(VPMacOSNativePlayerPerfStats* out) {
+  if (!out) {
+    return;
+  }
+  task_vm_info_data_t vm_info = {};
+  mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+  const kern_return_t result = task_info(
+      mach_task_self(),
+      TASK_VM_INFO,
+      reinterpret_cast<task_info_t>(&vm_info),
+      &count);
+  if (result == KERN_SUCCESS) {
+    out->process_rss_bytes = static_cast<uint64_t>(vm_info.resident_size);
+    out->process_private_bytes = static_cast<uint64_t>(vm_info.phys_footprint);
+  }
 }
 
 }  // namespace
@@ -134,6 +153,7 @@ int VPMacOSNativePlayerCopyTrackDiagnostics(
   }
   const auto infos = player->renderer->track_infos();
   const auto perf_stats = player->renderer->track_perf_stats();
+  const auto memory_stats = player->renderer->gpu_memory_stats();
   const size_t count = infos.size();
   if (out_count) {
     *out_count = count;
@@ -162,12 +182,21 @@ int VPMacOSNativePlayerCopyTrackDiagnostics(
     const auto* perf = find_perf_stats(perf_stats, info.file_id);
     if (perf) {
       dst.buffer_state = static_cast<int32_t>(perf->buffer_state);
+      dst.buffer_count = perf->buffer_count;
+      dst.buffer_capacity = perf->buffer_capacity;
       dst.frames_decoded = perf->frames_decoded;
       dst.decode_fps = perf->fps;
       dst.decode_avg_ms = perf->avg_decode_ms;
       dst.decode_max_ms = perf->max_decode_ms;
       dst.current_pts_us = perf->current_pts_us;
       dst.current_dts_us = perf->current_dts_us;
+    }
+    for (const auto& memory : memory_stats.tracks) {
+      if (memory.slot == info.slot && memory.file_id == info.file_id) {
+        dst.cpu_frame_memory_bytes = memory.total_cpu_frame_bytes;
+        dst.packet_queue_memory_bytes = memory.packet_queue_bytes;
+        break;
+      }
     }
     write_c_string(dst.codec_name, sizeof(dst.codec_name), info.codec_name);
     write_c_string(dst.decoder_name, sizeof(dst.decoder_name), decoder_name);
@@ -280,6 +309,7 @@ int VPMacOSNativePlayerCopyPerfStats(
     return -1;
   }
   *out = {};
+  fill_process_memory_stats(out);
   {
     std::lock_guard<std::mutex> lock(player->mutex);
     out->decode_elapsed_ms =
@@ -299,6 +329,9 @@ int VPMacOSNativePlayerCopyPerfStats(
         out->aggregate_decode_frame_count += track_stats.frames_decoded;
         out->aggregate_decode_fps += track_stats.fps;
       }
+      const auto memory_stats = player->renderer->gpu_memory_stats();
+      out->cpu_frame_memory_bytes = memory_stats.cpu_frame_bytes;
+      out->packet_queue_memory_bytes = memory_stats.packet_queue_bytes;
       const auto backend_stats = player->renderer->presentation_backend_stats();
       out->renderer_owned_direct_yuv_upload_count =
           backend_stats.direct_yuv_upload_count;

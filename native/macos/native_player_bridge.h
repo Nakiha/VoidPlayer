@@ -27,6 +27,9 @@ int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
                                 VPMacOSNativeTrackInfo* out,
                                 char* error,
                                 size_t error_size);
+int VPMacOSNativePlayerCopyTrackInfo(VPMacOSNativePlayer* player,
+                                     int32_t file_id,
+                                     VPMacOSNativeTrackInfo* out);
 void VPMacOSNativePlayerRemoveTrack(VPMacOSNativePlayer* player,
                                     int32_t file_id);
 void VPMacOSNativePlayerClose(VPMacOSNativePlayer* player);

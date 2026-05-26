@@ -606,8 +606,8 @@ ScriptInstruction? _parseInstruction(
         time,
         AssertTrackMetadata(
           slot: int.parse(args[0]),
-          formatName: args[1],
-          decoderName: args[2],
+          formatName: args.sublist(1, args.length - 1).join(','),
+          decoderName: args.last,
         ),
       );
     case 'ASSERT_PRESENTED_FRAME_RANGE':

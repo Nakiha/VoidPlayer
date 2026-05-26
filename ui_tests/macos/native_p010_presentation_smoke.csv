@@ -12,7 +12,7 @@
 1.75, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, false
 1.8, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-videotoolbox
 1.82, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
-1.85, ASSERT_TRACK_METADATA, 0, macos-native-player, VideoToolbox / h264
+1.85, ASSERT_TRACK_METADATA, 0, QuickTime / MOV, VideoToolbox / h264
 1.9, CAPTURE_VIEWPORT, p010_initial
 2.0, ASSERT_CAPTURE_NOT_BLACK, p010_initial, 0.5, 16.0
 2.1, PLAY

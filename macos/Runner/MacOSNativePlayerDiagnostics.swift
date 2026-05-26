@@ -82,6 +82,8 @@ extension MacOSNativePlayerSession {
     var stats = VPMacOSNativePlayerPerfStats()
     guard VPMacOSNativePlayerCopyPerfStats(handle, &stats) == 0 else {
       return [
+        "processRssBytes": 0,
+        "processPrivateBytes": 0,
         "decodeFrameCount": 0,
         "decodeDroppedCount": 0,
         "decodeElapsedMs": 0,
@@ -105,6 +107,8 @@ extension MacOSNativePlayerSession {
         "aggregateDecodeFrameCount": 0,
         "aggregateDecodeFps": 0.0,
         "aggregateDecodeFpsX1000": 0,
+        "cpuFrameMemoryBytes": 0,
+        "packetQueueMemoryBytes": 0,
         "rendererOwnedStagingAllocationCount": 0,
         "rendererOwnedStagingReuseCount": 0,
         "rendererOwnedStagingMaxBytes": 0,
@@ -112,6 +116,8 @@ extension MacOSNativePlayerSession {
     }
     let maxInt64 = UInt64(Int64.max)
     return [
+      "processRssBytes": Int64(min(stats.process_rss_bytes, maxInt64)),
+      "processPrivateBytes": Int64(min(stats.process_private_bytes, maxInt64)),
       "decodeFrameCount": Int64(min(UInt64(stats.decode_frame_count), maxInt64)),
       "decodeDroppedCount": Int64(min(UInt64(stats.decode_dropped_count), maxInt64)),
       "decodeElapsedMs": Int64(stats.decode_elapsed_ms),
@@ -157,6 +163,8 @@ extension MacOSNativePlayerSession {
       ),
       "aggregateDecodeFps": stats.aggregate_decode_fps,
       "aggregateDecodeFpsX1000": Int64(max(0.0, stats.aggregate_decode_fps * 1000.0)),
+      "cpuFrameMemoryBytes": Int64(min(stats.cpu_frame_memory_bytes, maxInt64)),
+      "packetQueueMemoryBytes": Int64(min(stats.packet_queue_memory_bytes, maxInt64)),
       "rendererOwnedStagingAllocationCount": Int64(
         min(UInt64(stats.renderer_owned_staging_allocation_count), maxInt64)
       ),
@@ -198,6 +206,12 @@ extension MacOSNativePlayerSession {
         "hardwareDecodeActive": track.hardware_decode_active != 0,
         "hardwareDecodeDownloadsToCpu": track.hardware_decode_downloads_to_cpu != 0,
         "bufferState": Int(track.buffer_state),
+        "bufferCount": Int64(min(track.buffer_count, UInt64(Int64.max))),
+        "bufferCapacity": Int64(min(track.buffer_capacity, UInt64(Int64.max))),
+        "cpuFrameMemoryBytes": Int64(min(track.cpu_frame_memory_bytes, UInt64(Int64.max))),
+        "packetQueueMemoryBytes": Int64(
+          min(track.packet_queue_memory_bytes, UInt64(Int64.max))
+        ),
         "framesDecoded": Int64(min(track.frames_decoded, UInt64(Int64.max))),
         "decodeFps": track.decode_fps,
         "decodeFpsX1000": Int64(max(0.0, track.decode_fps * 1000.0)),

@@ -142,6 +142,8 @@ enum MacOSVideoRendererDiagnostics {
       "nativeRendererOwnedUploadFps": perfStats?["rendererOwnedUploadFps"] ?? 0.0,
       "nativeRendererOwnedUploadFpsX1000": perfStats?["rendererOwnedUploadFpsX1000"] ?? 0,
       "nativeRendererOwnedUploadElapsedMs": perfStats?["rendererOwnedUploadElapsedMs"] ?? 0,
+      "processRssBytes": perfStats?["processRssBytes"] ?? 0,
+      "processPrivateBytes": perfStats?["processPrivateBytes"] ?? 0,
       "nativeDecodeFrameCount": perfStats?["decodeFrameCount"] ?? 0,
       "nativeDecodeDroppedCount": perfStats?["decodeDroppedCount"] ?? 0,
       "nativeDecodeElapsedMs": perfStats?["decodeElapsedMs"] ?? 0,
@@ -153,6 +155,8 @@ enum MacOSVideoRendererDiagnostics {
       "nativeAggregateDecodeFrameCount": perfStats?["aggregateDecodeFrameCount"] ?? 0,
       "nativeAggregateDecodeFps": perfStats?["aggregateDecodeFps"] ?? 0.0,
       "nativeAggregateDecodeFpsX1000": perfStats?["aggregateDecodeFpsX1000"] ?? 0,
+      "nativeCpuFrameMemoryBytes": perfStats?["cpuFrameMemoryBytes"] ?? 0,
+      "nativePacketQueueMemoryBytes": perfStats?["packetQueueMemoryBytes"] ?? 0,
       "presentationFallbackReason": MacOSPresentationDiagnostics.fallbackReason(
         player: player,
         targetInstalled: presentationTargetInstalled,

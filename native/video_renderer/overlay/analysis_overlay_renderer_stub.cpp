@@ -61,14 +61,12 @@ void AnalysisOverlayRenderer::reset() {
     }
 }
 
-void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
-                                   const RendererDrawTrackSnapshotList& tracks,
+void AnalysisOverlayRenderer::draw(const RendererDrawSnapshot& snapshot,
                                    D3D11Device& device,
                                    D3D11RenderResources& resources,
                                    int target_width,
                                    int target_height) {
-    (void)decision;
-    (void)tracks;
+    (void)snapshot;
     (void)device;
     (void)resources;
     (void)target_width;

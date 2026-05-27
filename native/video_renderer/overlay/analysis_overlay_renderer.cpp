@@ -1,14 +1,12 @@
 #include "video_renderer/overlay/analysis_overlay_renderer.h"
 
-#include "analysis/analysis_manager.h"
-#include "analysis/cache/overlay_raster.h"
 #include "video_renderer/d3d11/memory_estimate.h"
 #include "video_renderer/d3d11/render_backend.h"
+#include "video_renderer/overlay/analysis_overlay_primitives.h"
 
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <memory>
@@ -356,8 +354,7 @@ bool AnalysisOverlayRenderer::render_overlay_mask(D3D11Device& device,
     return true;
 }
 
-void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
-                                   const RendererDrawTrackSnapshotList& tracks,
+void AnalysisOverlayRenderer::draw(const RendererDrawSnapshot& snapshot,
                                    D3D11Device& device,
                                    D3D11RenderResources& resources,
                                    int target_width,
@@ -377,45 +374,10 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
         return;
     }
 
-    auto& manager = analysis::AnalysisManager::instance();
-    const auto& overlay = manager.overlay_state();
-    const bool show_grid = overlay.show_cu_grid.load(std::memory_order_acquire);
-    const bool show_qp = overlay.show_qp_heatmap.load(std::memory_order_acquire);
-    const bool show_pred = overlay.show_pred_mode.load(std::memory_order_acquire);
-    const bool show_lines = overlay.show_pred_lines.load(std::memory_order_acquire);
-    const bool show_bit_cost = overlay.show_cu_bit_cost_heatmap.load(std::memory_order_acquire);
-    const int mode = overlay.mode.load(std::memory_order_acquire);
-    const int file_id = overlay.track_file_id.load(std::memory_order_acquire);
-    const int opacity_permille =
-        std::clamp(overlay.opacity_permille.load(std::memory_order_acquire), 0, 1000);
-
-    if (!show_grid && !show_qp && !show_pred && !show_lines && !show_bit_cost &&
-        mode != 0 && mode != 1 && mode != 2 && mode != 3 && mode != 4) {
+    const auto primitive_package = build_analysis_overlay_primitives(snapshot);
+    if (primitive_package.empty()) {
         return;
     }
-
-    auto overlay_tracks = manager.overlay_track_snapshot();
-    if (overlay_tracks.empty() && manager.is_loaded() && file_id >= 0) {
-        overlay_tracks.emplace_back(file_id, manager.session_snapshot());
-    }
-    if (overlay_tracks.empty()) {
-        return;
-    }
-
-    const uint8_t base_alpha = static_cast<uint8_t>(std::clamp(
-        opacity_permille * 255 / 1000, 0, 255));
-    const uint8_t line_alpha = base_alpha;
-    // Current Dart primary overlay modes are: 0=CU, 1=QP heatmap,
-    // 2=bitrate/bit-cost heatmap. Keep 3/4 as compatibility with the
-    // previous five-mode UI.
-    const bool qp_primary = show_qp || mode == 1 || mode == 3;
-    const bool bit_cost_primary = show_bit_cost || mode == 2 || mode == 4;
-    const bool pred_primary = show_pred;
-    const bool line_primary = show_lines;
-    const bool heatmap_primary = qp_primary || bit_cost_primary;
-    const uint8_t fill_alpha = heatmap_primary
-        ? base_alpha
-        : static_cast<uint8_t>(base_alpha * 2 / 5);
 
     auto* ctx = device.context();
     auto bind_overlay_target = [&]() -> bool {
@@ -497,36 +459,18 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
     bool has_color_instances = false;
     bool has_line_mask = false;
 
-    auto prepare_track_overlay = [&](int track_file_id,
-                                     const analysis::AnalysisSession& track_analysis) {
-        int slot = -1;
-        for (size_t i = 0; i < tracks.size(); ++i) {
-            if (tracks[i].active && tracks[i].file_id == track_file_id) {
-                slot = static_cast<int>(i);
-                break;
-            }
-        }
+    auto prepare_track_overlay = [&](const AnalysisOverlayTrackPrimitives& track_primitives) {
+        const int slot = track_primitives.slot;
         if (slot < 0 || slot >= static_cast<int>(kMaxTracks)) {
             return;
         }
-        const auto& track = tracks[slot];
-
-        const int frame_idx = track_analysis.current_frame_idx(
-            decision.frames[slot].has_value()
-                ? decision.frames[slot]->pts_us
-                : std::max<int64_t>(0, decision.current_pts_us - track.offset_us));
-        if (frame_idx < 0 || frame_idx >= track_analysis.frame_count()) {
-            return;
-        }
-
-        const int video_w = static_cast<int>(track_analysis.video_width());
-        const int video_h = static_cast<int>(track_analysis.video_height());
+        const int video_w = track_primitives.video_width;
+        const int video_h = track_primitives.video_height;
         if (video_w <= 0 || video_h <= 0) {
             return;
         }
-        const bool needs_line_instances =
-            line_alpha > 0 && (show_grid || mode == 0 || pred_primary);
-        const bool needs_color_texture = line_primary && line_alpha > 0;
+        const bool needs_line_instances = !track_primitives.outline_rects.empty();
+        const bool needs_color_texture = !track_primitives.motion_lines.empty();
         const bool texture_was_valid =
             !needs_color_texture ||
             (resources.overlay_width[slot] == video_w &&
@@ -546,36 +490,31 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
         const bool dirty =
             !texture_was_valid ||
             !cache.valid ||
-            cache.track_file_id != track_file_id ||
-            cache.frame_index != frame_idx ||
-            cache.mode != mode ||
-            cache.opacity_permille != opacity_permille ||
+            cache.track_file_id != track_primitives.track_file_id ||
+            cache.frame_index != track_primitives.frame_index ||
+            cache.mode != track_primitives.mode ||
+            cache.opacity_permille != track_primitives.opacity_permille ||
             cache.width != video_w ||
             cache.height != video_h ||
-            cache.show_grid != show_grid ||
-            cache.show_qp != show_qp ||
-            cache.show_pred != show_pred ||
-            cache.show_lines != show_lines ||
-            cache.show_bit_cost != show_bit_cost;
+            cache.show_grid != track_primitives.show_grid ||
+            cache.show_qp != track_primitives.show_qp ||
+            cache.show_pred != track_primitives.show_pred ||
+            cache.show_lines != track_primitives.show_lines ||
+            cache.show_bit_cost != track_primitives.show_bit_cost;
 
         if (dirty) {
-            auto frame = track_analysis.read_overlay_frame(frame_idx);
             cache = {};
-            cache.track_file_id = track_file_id;
-            cache.frame_index = frame_idx;
-            cache.mode = mode;
-            cache.opacity_permille = opacity_permille;
+            cache.track_file_id = track_primitives.track_file_id;
+            cache.frame_index = track_primitives.frame_index;
+            cache.mode = track_primitives.mode;
+            cache.opacity_permille = track_primitives.opacity_permille;
             cache.width = video_w;
             cache.height = video_h;
-            cache.show_grid = show_grid;
-            cache.show_qp = show_qp;
-            cache.show_pred = show_pred;
-            cache.show_lines = show_lines;
-            cache.show_bit_cost = show_bit_cost;
-
-            if (frame.cus.empty()) {
-                return;
-            }
+            cache.show_grid = track_primitives.show_grid;
+            cache.show_qp = track_primitives.show_qp;
+            cache.show_pred = track_primitives.show_pred;
+            cache.show_lines = track_primitives.show_lines;
+            cache.show_bit_cost = track_primitives.show_bit_cost;
 
             auto& color_pixels = overlay_pixels_[slot];
             auto& rects = overlay_rects_[slot];
@@ -589,7 +528,9 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
                 }
                 std::fill(color_pixels.begin(), color_pixels.end(), 0);
             }
-            rects.reserve(frame.cus.size());
+            rects.reserve(
+                track_primitives.fill_rects.size() +
+                track_primitives.outline_rects.size());
 
             auto push_rect = [&](int x0,
                                  int y0,
@@ -601,65 +542,51 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
                 rect.rect_uv0 = pack_overlay_uv16(x0, video_w, y0, video_h);
                 rect.rect_uv1 = pack_overlay_uv16(x1, video_w, y1, video_h);
                 rect.color_bgra = pack_overlay_bgra(color);
-                rect.track_idx = pack_overlay_track_payload(slot, line_alpha);
+                rect.track_idx = pack_overlay_track_payload(slot, track_primitives.line_alpha);
                 rects.push_back(rect);
                 if (color_instance) {
                     cache.has_color_instances = true;
                 }
             };
 
-            for (const auto& cu : frame.cus) {
-                const auto& c = cu.common;
-                const int x0 = std::clamp(static_cast<int>(c.x), 0, video_w);
-                const int y0 = std::clamp(static_cast<int>(c.y), 0, video_h);
-                const int x1 = std::clamp(static_cast<int>(c.x + c.w), 0, video_w);
-                const int y1 = std::clamp(static_cast<int>(c.y + c.h), 0, video_h);
-                if (x1 <= x0 || y1 <= y0) continue;
+            for (const auto& primitive : track_primitives.fill_rects) {
+                push_rect(primitive.x0,
+                          primitive.y0,
+                          primitive.x1,
+                          primitive.y1,
+                          primitive.color,
+                          true);
+            }
 
-                if (bit_cost_primary) {
-                    if (fill_alpha > 0) {
-                        push_rect(
-                            x0, y0, x1, y1,
-                            analysis::cu_bit_density_color(c, fill_alpha),
-                            true);
+            const bool fill_rects_align_with_outlines =
+                !track_primitives.fill_rects.empty() &&
+                track_primitives.fill_rects.size() == track_primitives.outline_rects.size();
+            if (needs_line_instances) {
+                if (fill_rects_align_with_outlines) {
+                    cache.has_mask = !rects.empty();
+                } else {
+                    for (const auto& primitive : track_primitives.outline_rects) {
+                        push_rect(primitive.x0,
+                                  primitive.y0,
+                                  primitive.x1,
+                                  primitive.y1,
+                                  analysis::OverlayColor{0, 0, 0, 0},
+                                  false);
                     }
-                } else if (qp_primary) {
-                    if (fill_alpha > 0) {
-                        push_rect(
-                            x0, y0, x1, y1, analysis::qp_color(c.qp, fill_alpha), true);
-                    }
-                } else if (pred_primary) {
-                    if (fill_alpha > 0) {
-                        push_rect(
-                            x0, y0, x1, y1,
-                            c.pred_mode == 1
-                                ? analysis::OverlayColor{
-                                      80, 235, 90, static_cast<uint8_t>(fill_alpha * 3 / 4)}
-                            : analysis::pred_color(
-                                  c.pred_mode, cu.inter,
-                                  static_cast<uint8_t>(fill_alpha * 3 / 4)),
-                            true);
-                    }
+                    cache.has_mask = !track_primitives.outline_rects.empty();
                 }
+            }
 
-                if (needs_line_instances) {
-                    if (!cache.has_color_instances) {
-                        push_rect(
-                            x0, y0, x1, y1,
-                            analysis::OverlayColor{0, 0, 0, 0},
-                            false);
-                    }
-                    cache.has_mask = true;
-                }
-
-                if (needs_color_texture && c.pred_mode != 1) {
-                    const int cx = (x0 + x1) / 2;
-                    const int cy = (y0 + y1) / 2;
-                    const int dx = std::clamp(static_cast<int>(cu.inter.mv_l0_x / 16), -80, 80);
-                    const int dy = std::clamp(static_cast<int>(cu.inter.mv_l0_y / 16), -80, 80);
-                    analysis::draw_overlay_line(
-                        color_pixels, video_w, video_h, cx, cy, cx + dx, cy + dy,
-                        analysis::OverlayColor{80, 180, 255, line_alpha});
+            if (needs_color_texture) {
+                for (const auto& line : track_primitives.motion_lines) {
+                    analysis::draw_overlay_line(color_pixels,
+                                                video_w,
+                                                video_h,
+                                                line.x0,
+                                                line.y0,
+                                                line.x1,
+                                                line.y1,
+                                                line.color);
                     cache.has_color = true;
                 }
             }
@@ -717,10 +644,8 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
         }
     };
 
-    for (const auto& [track_file_id, track_analysis] : overlay_tracks) {
-        if (track_analysis) {
-            prepare_track_overlay(track_file_id, *track_analysis);
-        }
+    for (const auto& track_primitives : primitive_package.tracks) {
+        prepare_track_overlay(track_primitives);
     }
 
     if (!has_color_overlay && !has_color_instances && !has_line_mask) {

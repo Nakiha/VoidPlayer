@@ -34,8 +34,7 @@ void AnalysisOverlayRenderer::reset() {
     }
 }
 
-void AnalysisOverlayRenderer::draw(const PresentDecision&,
-                                   const RendererDrawTrackSnapshotList&,
+void AnalysisOverlayRenderer::draw(const RendererDrawSnapshot&,
                                    D3D11Device&,
                                    D3D11RenderResources&,
                                    int,

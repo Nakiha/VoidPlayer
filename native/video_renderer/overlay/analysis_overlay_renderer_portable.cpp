@@ -1,8 +1,7 @@
 #include "video_renderer/overlay/analysis_overlay_renderer.h"
 
-#include "analysis/analysis_manager.h"
-#include "analysis/cache/overlay_raster.h"
 #include "video_renderer/layout/layout_geometry.h"
+#include "video_renderer/overlay/analysis_overlay_primitives.h"
 #include "video_renderer/render/shader_constants.h"
 
 #include <algorithm>
@@ -18,11 +17,6 @@ struct TargetRect {
     int x1 = 0;
     int y1 = 0;
 };
-
-uint8_t overlay_alpha(int opacity_permille, bool heatmap) {
-    const int base = std::clamp(opacity_permille, 0, 1000) * 255 / 1000;
-    return static_cast<uint8_t>(heatmap ? base : base * 2 / 5);
-}
 
 void blend_target_pixel(uint8_t* target,
                         int width,
@@ -275,8 +269,7 @@ void AnalysisOverlayRenderer::reset() {
     }
 }
 
-void AnalysisOverlayRenderer::draw(const PresentDecision&,
-                                   const RendererDrawTrackSnapshotList&,
+void AnalysisOverlayRenderer::draw(const RendererDrawSnapshot&,
                                    D3D11Device&,
                                    D3D11RenderResources&,
                                    int,
@@ -294,28 +287,8 @@ bool AnalysisOverlayRenderer::composite_bgra(const RendererDrawSnapshot& snapsho
         return false;
     }
 
-    auto& manager = analysis::AnalysisManager::instance();
-    const auto& overlay = manager.overlay_state();
-    const bool show_grid = overlay.show_cu_grid.load(std::memory_order_acquire);
-    const bool show_qp = overlay.show_qp_heatmap.load(std::memory_order_acquire);
-    const bool show_pred = overlay.show_pred_mode.load(std::memory_order_acquire);
-    const bool show_lines = overlay.show_pred_lines.load(std::memory_order_acquire);
-    const bool show_bit_cost = overlay.show_cu_bit_cost_heatmap.load(std::memory_order_acquire);
-    const int mode = overlay.mode.load(std::memory_order_acquire);
-    const int file_id = overlay.track_file_id.load(std::memory_order_acquire);
-    const int opacity_permille =
-        std::clamp(overlay.opacity_permille.load(std::memory_order_acquire), 0, 1000);
-
-    if (!show_grid && !show_qp && !show_pred && !show_lines && !show_bit_cost &&
-        mode != 0 && mode != 1 && mode != 2 && mode != 3 && mode != 4) {
-        return false;
-    }
-
-    auto overlay_tracks = manager.overlay_track_snapshot();
-    if (overlay_tracks.empty() && manager.is_loaded() && file_id >= 0) {
-        overlay_tracks.emplace_back(file_id, manager.session_snapshot());
-    }
-    if (overlay_tracks.empty()) {
+    const auto package = build_analysis_overlay_primitives(snapshot);
+    if (package.empty()) {
         return false;
     }
 
@@ -323,152 +296,96 @@ bool AnalysisOverlayRenderer::composite_bgra(const RendererDrawSnapshot& snapsho
     populate_layout_shader_constants(
         constants, snapshot.layout, snapshot.track_geometry, target_width, target_height);
 
-    const bool qp_primary = show_qp || mode == 1 || mode == 3;
-    const bool bit_cost_primary = show_bit_cost || mode == 2 || mode == 4;
-    const bool pred_primary = show_pred;
-    const bool heatmap_primary = qp_primary || bit_cost_primary;
-    const uint8_t fill_alpha = overlay_alpha(opacity_permille, heatmap_primary);
-    const uint8_t line_alpha = static_cast<uint8_t>(opacity_permille * 255 / 1000);
     bool drew = false;
 
-    auto find_slot = [&](int track_file_id) -> int {
-        for (size_t i = 0; i < snapshot.tracks.size(); ++i) {
-            if (snapshot.tracks[i].active && snapshot.tracks[i].file_id == track_file_id) {
-                return static_cast<int>(i);
-            }
-        }
-        return -1;
-    };
-
-    for (const auto& [track_file_id, track_analysis] : overlay_tracks) {
-        if (!track_analysis) {
-            continue;
-        }
-        const int slot = find_slot(track_file_id);
-        if (slot < 0 || slot >= static_cast<int>(snapshot.tracks.size())) {
-            continue;
-        }
-        const int frame_idx = track_analysis->current_frame_idx(
-            snapshot.decision.frames[slot].has_value()
-                ? snapshot.decision.frames[slot]->pts_us
-                : std::max<int64_t>(
-                      0, snapshot.decision.current_pts_us - snapshot.tracks[slot].offset_us));
-        if (frame_idx < 0 || frame_idx >= track_analysis->frame_count()) {
-            continue;
-        }
-        const int video_w = static_cast<int>(track_analysis->video_width());
-        const int video_h = static_cast<int>(track_analysis->video_height());
+    for (const auto& track : package.tracks) {
+        const int slot = track.slot;
+        const int video_w = track.video_width;
+        const int video_h = track.video_height;
         if (video_w <= 0 || video_h <= 0) {
             continue;
         }
-        const auto frame = track_analysis->read_overlay_frame(frame_idx);
-        if (frame.cus.empty()) {
-            continue;
+
+        for (const auto& primitive : track.fill_rects) {
+            TargetRect rect;
+            if (!video_rect_to_target(constants,
+                                      slot,
+                                      target_width,
+                                      target_height,
+                                      video_w,
+                                      video_h,
+                                      primitive.x0,
+                                      primitive.y0,
+                                      primitive.x1,
+                                      primitive.y1,
+                                      rect)) {
+                continue;
+            }
+            fill_target_rect(
+                target_bgra, target_width, target_height, target_stride_bytes, rect,
+                primitive.color);
+            drew = true;
         }
 
-        for (const auto& cu : frame.cus) {
-            const auto& c = cu.common;
-            const int x0 = std::clamp(static_cast<int>(c.x), 0, video_w);
-            const int y0 = std::clamp(static_cast<int>(c.y), 0, video_h);
-            const int x1 = std::clamp(static_cast<int>(c.x + c.w), 0, video_w);
-            const int y1 = std::clamp(static_cast<int>(c.y + c.h), 0, video_h);
-            if (x1 <= x0 || y1 <= y0) {
-                continue;
-            }
+        for (const auto& primitive : track.outline_rects) {
             TargetRect rect;
-            if (!video_rect_to_target(
-                    constants, slot, target_width, target_height, video_w, video_h,
-                    x0, y0, x1, y1, rect)) {
+            if (!video_rect_to_target(constants,
+                                      slot,
+                                      target_width,
+                                      target_height,
+                                      video_w,
+                                      video_h,
+                                      primitive.x0,
+                                      primitive.y0,
+                                      primitive.x1,
+                                      primitive.y1,
+                                      rect)) {
                 continue;
             }
+            stroke_target_rect(
+                target_bgra, target_width, target_height, target_stride_bytes, rect,
+                primitive.color);
+            drew = true;
+        }
 
-            if (bit_cost_primary && fill_alpha > 0) {
-                fill_target_rect(
-                    target_bgra,
-                    target_width,
-                    target_height,
-                    target_stride_bytes,
-                    rect,
-                    analysis::cu_bit_density_color(c, fill_alpha));
-                drew = true;
-            } else if (qp_primary && fill_alpha > 0) {
-                fill_target_rect(
-                    target_bgra,
-                    target_width,
-                    target_height,
-                    target_stride_bytes,
-                    rect,
-                    analysis::qp_color(c.qp, fill_alpha));
-                drew = true;
-            } else if (pred_primary && fill_alpha > 0) {
-                fill_target_rect(
-                    target_bgra,
-                    target_width,
-                    target_height,
-                    target_stride_bytes,
-                    rect,
-                    c.pred_mode == 1
-                        ? analysis::OverlayColor{80, 235, 90, static_cast<uint8_t>(fill_alpha * 3 / 4)}
-                        : analysis::pred_color(
-                              c.pred_mode, cu.inter, static_cast<uint8_t>(fill_alpha * 3 / 4)));
-                drew = true;
+        for (const auto& line : track.motion_lines) {
+            float x0 = 0.0f;
+            float y0 = 0.0f;
+            float x1 = 0.0f;
+            float y1 = 0.0f;
+            if (!video_point_to_target(constants,
+                                       slot,
+                                       target_width,
+                                       target_height,
+                                       static_cast<float>(line.x0) /
+                                           static_cast<float>(video_w),
+                                       static_cast<float>(line.y0) /
+                                           static_cast<float>(video_h),
+                                       x0,
+                                       y0) ||
+                !video_point_to_target(constants,
+                                       slot,
+                                       target_width,
+                                       target_height,
+                                       static_cast<float>(line.x1) /
+                                           static_cast<float>(video_w),
+                                       static_cast<float>(line.y1) /
+                                           static_cast<float>(video_h),
+                                       x1,
+                                       y1)) {
+                continue;
             }
-
-            if ((show_grid || mode == 0 || pred_primary) && line_alpha > 0) {
-                stroke_target_rect(
-                    target_bgra,
-                    target_width,
-                    target_height,
-                    target_stride_bytes,
-                    rect,
-                    analysis::OverlayColor{255, 255, 255, line_alpha});
-                drew = true;
-            }
-
-            if (show_lines && line_alpha > 0 && c.pred_mode != 1) {
-                float cx = 0.0f;
-                float cy = 0.0f;
-                if (!video_point_to_target(constants,
-                                           slot,
-                                           target_width,
-                                           target_height,
-                                           static_cast<float>(x0 + x1) * 0.5f /
-                                               static_cast<float>(video_w),
-                                           static_cast<float>(y0 + y1) * 0.5f /
-                                               static_cast<float>(video_h),
-                                           cx,
-                                           cy)) {
-                    continue;
-                }
-                const int dx = std::clamp(static_cast<int>(cu.inter.mv_l0_x / 16), -80, 80);
-                const int dy = std::clamp(static_cast<int>(cu.inter.mv_l0_y / 16), -80, 80);
-                TargetRect tip;
-                if (!video_rect_to_target(
-                        constants,
-                        slot,
-                        target_width,
-                        target_height,
-                        video_w,
-                        video_h,
-                        std::clamp((x0 + x1) / 2 + dx, 0, video_w),
-                        std::clamp((y0 + y1) / 2 + dy, 0, video_h),
-                        std::clamp((x0 + x1) / 2 + dx + 1, 0, video_w),
-                        std::clamp((y0 + y1) / 2 + dy + 1, 0, video_h),
-                        tip)) {
-                    continue;
-                }
-                draw_target_line(
-                    target_bgra,
-                    target_width,
-                    target_height,
-                    target_stride_bytes,
-                    static_cast<int>(std::lround(cx)),
-                    static_cast<int>(std::lround(cy)),
-                    tip.x0,
-                    tip.y0,
-                    analysis::OverlayColor{80, 180, 255, line_alpha});
-                drew = true;
-            }
+            draw_target_line(
+                target_bgra,
+                target_width,
+                target_height,
+                target_stride_bytes,
+                static_cast<int>(std::lround(x0)),
+                static_cast<int>(std::lround(y0)),
+                static_cast<int>(std::lround(x1)),
+                static_cast<int>(std::lround(y1)),
+                line.color);
+            drew = true;
         }
     }
 

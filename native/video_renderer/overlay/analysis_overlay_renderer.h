@@ -33,8 +33,7 @@ public:
     }
 
     void reset();
-    void draw(const PresentDecision& decision,
-              const RendererDrawTrackSnapshotList& tracks,
+    void draw(const RendererDrawSnapshot& snapshot,
               D3D11Device& device,
               D3D11RenderResources& resources,
               int target_width,

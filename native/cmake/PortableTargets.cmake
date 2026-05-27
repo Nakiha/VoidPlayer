@@ -55,17 +55,18 @@ function(void_label_test test_name labels)
 endfunction()
 
 if(APPLE)
-    set(VOID_RENDERER_PORTABLE_OVERLAY_SOURCE
+    set(VOID_RENDERER_PORTABLE_OVERLAY_SOURCES
         "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_renderer_portable_stub.cpp")
     if(BUILD_ANALYSIS)
-        set(VOID_RENDERER_PORTABLE_OVERLAY_SOURCE
+        set(VOID_RENDERER_PORTABLE_OVERLAY_SOURCES
+            "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_primitives.cpp"
             "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_renderer_portable.cpp")
     endif()
 
     add_library(void_renderer_portable_driver OBJECT
         "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
         ${VOID_RENDERER_PORTABLE_DRIVER_SOURCES}
-        "${VOID_RENDERER_PORTABLE_OVERLAY_SOURCE}"
+        ${VOID_RENDERER_PORTABLE_OVERLAY_SOURCES}
     )
     void_apply_native_compile_options(void_renderer_portable_driver)
     target_link_libraries(void_renderer_portable_driver PRIVATE

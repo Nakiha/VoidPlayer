@@ -2081,8 +2081,7 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
             return;
         }
         analysis_overlay_renderer_->draw(
-            draw_snapshot.decision,
-            draw_snapshot.tracks,
+            draw_snapshot,
             *device,
             *resources,
             draw_snapshot.target_width,

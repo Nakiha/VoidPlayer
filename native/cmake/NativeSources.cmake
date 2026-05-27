@@ -123,6 +123,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
 
 if(BUILD_ANALYSIS)
     list(APPEND VOID_RENDERER_WINDOWS_SOURCES
+        "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_primitives.cpp"
         "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_renderer.cpp")
 else()
     list(APPEND VOID_RENDERER_WINDOWS_SOURCES

@@ -196,6 +196,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Prepare macOS FFmpeg analyzer
+        shell: bash
+        run: python -c "from scripts.dev.native import ensure_ffmpeg_analyzer_tool; ensure_ffmpeg_analyzer_tool()"
+
       - name: Configure macOS analysis library
         shell: bash
         run: >
@@ -208,13 +212,15 @@ jobs:
           -DBUILD_FFI=OFF
           -DBUILD_PYTHON=OFF
 
-      - name: Build macOS analysis FFI smoke
+      - name: Build macOS analysis smokes
         shell: bash
-        run: cmake --build native/build-ci-macos-analysis --target macos_analysis_ffi_smoke -- -j "$(sysctl -n hw.ncpu)"
+        run: |
+          cmake --build native/build-ci-macos-analysis --target macos_analysis_ffi_smoke -- -j "$(sysctl -n hw.ncpu)"
+          cmake --build native/build-ci-macos-analysis --target macos_analysis_toolchain_smoke -- -j "$(sysctl -n hw.ncpu)"
 
-      - name: Run macOS analysis FFI smoke
+      - name: Run macOS analysis smokes
         shell: bash
-        run: native/build-ci-macos-analysis/macos_analysis_ffi_smoke
+        run: ctest --test-dir native/build-ci-macos-analysis -R "macos_analysis_(ffi|toolchain)_smoke" --output-on-failure
 
   macos-runner-build:
     name: macOS runner build

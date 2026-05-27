@@ -209,7 +209,7 @@ Main CI entrypoint is `.github/workflows/native.yml`. It currently covers:
 - FFmpeg artifact download once, then per-job restore through `scripts/ci/restore_ffmpeg_*`;
 - Windows native fast build/test and release compliance smoke;
 - macOS native fast gate through `scripts/ci/run_macos_native_fast.sh`;
-- macOS analysis FFI build smoke;
+- macOS analysis FFI build smoke plus VAC2/VACHUNK analyzer toolchain smoke;
 - macOS runner debug build;
 - full Windows native config matrix on scheduled runs or manual `workflow_dispatch` with `full_matrix=true`.
 
@@ -234,7 +234,10 @@ python dev.py analysis-overlay-benchmark --build
 python dev.py analysis-overlay-benchmark --iterations 240 --with-grid
 ```
 
-These benchmarks are Windows-oriented today and do not replace playback/backend gates.
+These benchmarks are cross-platform for VAC2/VACHUNK generation. On macOS,
+`--build` prepares the native analyzer and portable `VoidPlayerCli`; the overlay
+GPU timestamp benchmark remains Windows D3D11-only and is skipped by the macOS
+dev script. Benchmarks do not replace playback/backend gates.
 
 ## Demo
 

@@ -56,19 +56,26 @@ $env:MSYS2_BASH = "D:\msys64\usr\bin\bash.exe"
 $env:CMAKE_GENERATOR = "Visual Studio 17 2022"
 ```
 
-The Python build helper configures a minimal static MSVC build with NASM enabled, builds the
-analyzer tool, and installs it to:
+The Python build helper configures a minimal static build, builds the analyzer
+tool, and installs it to the host platform bin directory:
 
 ```text
 native/analysis/vendor/ffmpeg/bin/windows-x64/void_ffmpeg_analyzer.exe
+native/analysis/vendor/ffmpeg/bin/macos-arm64/void_ffmpeg_analyzer
+native/analysis/vendor/ffmpeg/bin/macos-x64/void_ffmpeg_analyzer
 ```
 
 `python dev.py build --native` / `python dev.py ui-test --build ...` install the
-tool into the Flutter runner output under:
+Windows tool into the Flutter runner output under:
 
 ```text
 build/windows/x64/runner/<Config>/tools/ffmpeg-analysis/void_ffmpeg_analyzer.exe
 ```
+
+On macOS the analyzer is built by `python dev.py analysis-benchmark --build`,
+`python dev.py analysis-overlay-benchmark --build`, or by the macOS analysis CI
+smoke before CMake configures `macos_analysis_toolchain_smoke`. The macOS build
+uses clang/darwin FFmpeg static archives and the same zstd-backed VACHUNK writer.
 
 The dev script stamps the analyzer with a signature over the Python build helper and
 codec hook files/headers. When H.264/HEVC/VVC hook code changes, the next build
@@ -105,7 +112,7 @@ banner line. Without it, FFmpeg misclassifies the compiler and passes GCC-style
 
 ## Runtime Contract
 
-The runtime tool expected by `windows/runner/analysis_ffi.cpp` is:
+The runtime tool expected by Windows analysis FFI is:
 
 ```text
 native/analysis/vendor/ffmpeg/bin/windows-x64/void_ffmpeg_analyzer.exe
@@ -120,9 +127,9 @@ native/analysis/vendor/ffmpeg/bin/windows-x64/void_hevc_analyzer.exe
 The command line contract is:
 
 ```text
-void_ffmpeg_analyzer.exe --codec vvc --input <video> --vachunk <output.vck> --start-frame <n> --end-frame <m>
-void_ffmpeg_analyzer.exe --codec hevc --input <video> --vachunk <output.vck> --start-frame <n> --end-frame <m>
-void_ffmpeg_analyzer.exe --codec h264 --input <video> --vachunk <output.vck> --start-frame <n> --end-frame <m>
+void_ffmpeg_analyzer --codec vvc --input <video> --vachunk <output.vck> --start-frame <n> --end-frame <m>
+void_ffmpeg_analyzer --codec hevc --input <video> --vachunk <output.vck> --start-frame <n> --end-frame <m>
+void_ffmpeg_analyzer --codec h264 --input <video> --vachunk <output.vck> --start-frame <n> --end-frame <m>
 ```
 
 The current tool emits real decoder-derived overlay VACHUNK payloads for
@@ -135,7 +142,7 @@ sections before atomically publishing into cache. It still accepts `--probe-only
 for quick codec/open validation:
 
 ```text
-void_ffmpeg_analyzer.exe --codec hevc --input <video> --probe-only
+void_ffmpeg_analyzer --codec hevc --input <video> --probe-only
 ```
 
 Verified overlay VACHUNK codecs:
@@ -147,7 +154,7 @@ Verified overlay VACHUNK codecs:
 AV1, VP9, and MPEG-2 overlay generation are disabled until codec-specific
 payload profiles are added.
 
-The current PE import table for the analyzer contains only Windows DLLs:
+The Windows PE import table for the analyzer contains only Windows DLLs:
 
 ```text
 Secur32.dll
@@ -170,8 +177,10 @@ python dev.py analysis-benchmark --build
 python dev.py analysis-benchmark h264 h265 h266
 ```
 
-The command runs `VoidPlayerCli.exe generate-base` and `generate-overlay` over
-the selected samples, then inspects the published chunks. Reports are written to
+The command runs `VoidPlayerCli generate-base` and `generate-overlay` over the
+selected samples, then inspects the published chunks. On macOS, `--build`
+builds the portable CLI and analyzer from native CMake/FFmpeg rather than a
+Flutter runner. Reports are written to
 `build/analysis-benchmark/analysis_benchmark.json` and `.md`, including elapsed
 time, cache/video size ratio, section decoded/compressed sizes, and zstd savings.
 

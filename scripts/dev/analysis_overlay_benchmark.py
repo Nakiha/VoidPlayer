@@ -10,8 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-from .native import ensure_ffmpeg_analyzer_tool
-from .paths import ROOT, WINDOWS_BUILD_DIR, find_ffmpeg_analyzer
+from .native import build_macos_analysis_cli, ensure_ffmpeg_analyzer_tool
+from .paths import ROOT, find_ffmpeg_analyzer, find_voidplayer_cli
 from .process import header, run
 
 
@@ -21,17 +21,20 @@ DEFAULT_SAMPLE = ("vvc", ROOT / "resources" / "video" / "h266_10s_1920x1080.mp4"
 def cmd_analysis_overlay_benchmark(args) -> None:
     ensure_ffmpeg_analyzer_tool()
     if args.build:
-        header("Build Flutter release for VoidPlayerCli")
-        run(["flutter", "build", "windows", "--release"], cwd=str(ROOT))
+        if sys.platform == "win32":
+            header("Build Flutter release for VoidPlayerCli")
+            run(["flutter", "build", "windows", "--release"], cwd=str(ROOT))
+        elif sys.platform == "darwin":
+            build_macos_analysis_cli()
 
     cli = _find_cli()
     analyzer = find_ffmpeg_analyzer()
     if not cli.exists():
         print(f"ERROR: VoidPlayerCli.exe not found: {cli}")
-        print("Run: flutter build windows --release")
+        print("Run: python dev.py analysis-overlay-benchmark --build")
         sys.exit(1)
     if not analyzer.exists():
-        print(f"ERROR: void_ffmpeg_analyzer.exe not found: {analyzer}")
+        print(f"ERROR: void_ffmpeg_analyzer not found: {analyzer}")
         sys.exit(1)
 
     out_dir = Path(args.output_dir).resolve() if args.output_dir else ROOT / "build" / "analysis-overlay-benchmark"
@@ -61,7 +64,7 @@ def cmd_analysis_overlay_benchmark(args) -> None:
         iterations=args.iterations,
         mode=args.mode,
         with_grid=args.with_grid,
-        run_gpu=not args.skip_gpu,
+        run_gpu=(sys.platform == "win32" and not args.skip_gpu),
     )
     report = {
         "schema": "voidplayer-analysis-overlay-benchmark-v1",
@@ -79,9 +82,7 @@ def cmd_analysis_overlay_benchmark(args) -> None:
 
 
 def _find_cli() -> Path:
-    release_cli = WINDOWS_BUILD_DIR / "Release" / "VoidPlayerCli.exe"
-    native_cli = ROOT / "native" / "build-msvc" / "Release" / "VoidPlayerCli.exe"
-    return native_cli if native_cli.exists() else release_cli
+    return find_voidplayer_cli()
 
 
 def _hash_for_sample(codec: str, video: Path) -> str:

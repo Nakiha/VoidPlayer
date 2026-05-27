@@ -10,8 +10,8 @@ import sys
 import time
 from pathlib import Path
 
-from .native import ensure_ffmpeg_analyzer_tool
-from .paths import ROOT, WINDOWS_BUILD_DIR, find_ffmpeg_analyzer
+from .native import build_macos_analysis_cli, ensure_ffmpeg_analyzer_tool
+from .paths import ROOT, find_ffmpeg_analyzer, find_voidplayer_cli
 from .process import header, run
 
 
@@ -27,17 +27,20 @@ def cmd_analysis_benchmark(args) -> None:
     ensure_ffmpeg_analyzer_tool()
 
     if args.build:
-        header("Build Flutter release for VoidPlayerCli")
-        run(["flutter", "build", "windows", "--release"], cwd=str(ROOT))
+        if sys.platform == "win32":
+            header("Build Flutter release for VoidPlayerCli")
+            run(["flutter", "build", "windows", "--release"], cwd=str(ROOT))
+        elif sys.platform == "darwin":
+            build_macos_analysis_cli()
 
     cli = _find_cli()
     analyzer = find_ffmpeg_analyzer()
     if not cli.exists():
         print(f"ERROR: VoidPlayerCli.exe not found: {cli}")
-        print("Run: flutter build windows --release")
+        print("Run: python dev.py analysis-benchmark --build")
         sys.exit(1)
     if not analyzer.exists():
-        print(f"ERROR: void_ffmpeg_analyzer.exe not found: {analyzer}")
+        print(f"ERROR: void_ffmpeg_analyzer not found: {analyzer}")
         sys.exit(1)
 
     out_dir = Path(args.output_dir).resolve() if args.output_dir else ROOT / "build" / "analysis-benchmark"
@@ -77,9 +80,7 @@ def cmd_analysis_benchmark(args) -> None:
 
 
 def _find_cli() -> Path:
-    release_cli = WINDOWS_BUILD_DIR / "Release" / "VoidPlayerCli.exe"
-    native_cli = ROOT / "native" / "build-msvc" / "Release" / "VoidPlayerCli.exe"
-    return release_cli if release_cli.exists() else native_cli
+    return find_voidplayer_cli()
 
 
 def _selected_samples(names: list[str] | None) -> list[tuple[str, Path]]:

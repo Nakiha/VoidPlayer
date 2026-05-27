@@ -26,8 +26,10 @@ current renderer unification work is tracked in
   in shared native code. Upload failures stay visible in diagnostics instead of silently falling back
   to the old Swift copy path. CVPixelBuffer hardware-frame uploads are distinguished from staged YUV
   and BGRA package uploads in diagnostics.
-- macOS analysis FFI can build and answer basic handle/base-generation calls, while analysis windows
-  and overlays remain capability-gated.
+- macOS analysis FFI can build and answer basic handle/base-generation calls. The macOS dev/CI
+  toolchain can also build `void_ffmpeg_analyzer`, generate VAC2 base + overlay VACHUNK through
+  portable `VoidPlayerCli`, and reopen the produced cache files. Analysis windows and runtime
+  overlay scheduling remain capability-gated.
 
 ## Hard Contract
 

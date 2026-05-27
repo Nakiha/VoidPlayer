@@ -178,6 +178,18 @@ if(APPLE)
     void_label_test(macos_crash_handler_smoke "macos;diagnostics;canary")
 
     if(BUILD_ANALYSIS)
+        add_executable(VoidPlayerCli
+            "${VOID_NATIVE_DIR}/tools/void_player_cli.cpp"
+            "${VOID_NATIVE_DIR}/tools/analysis_overlay_gpu_benchmark_stub.cpp"
+        )
+        void_apply_native_compile_options(VoidPlayerCli)
+        target_include_directories(VoidPlayerCli PRIVATE
+            "${VOID_NATIVE_DIR}"
+        )
+        target_link_libraries(VoidPlayerCli PRIVATE
+            analysis_lib
+        )
+
         add_executable(macos_analysis_ffi_smoke
             "${VOID_NATIVE_DIR}/tools/macos_analysis_ffi_smoke.cpp"
         )
@@ -190,6 +202,28 @@ if(APPLE)
         )
         add_test(NAME macos_analysis_ffi_smoke COMMAND macos_analysis_ffi_smoke)
         void_label_test(macos_analysis_ffi_smoke "macos;analysis;ffi;canary")
+
+        if(FFMPEG_ANALYZER_PATH)
+            add_executable(macos_analysis_toolchain_smoke
+                "${VOID_NATIVE_DIR}/tools/macos_analysis_toolchain_smoke.cpp"
+            )
+            void_apply_native_compile_options(macos_analysis_toolchain_smoke)
+            target_include_directories(macos_analysis_toolchain_smoke PRIVATE
+                "${VOID_NATIVE_DIR}"
+            )
+            target_link_libraries(macos_analysis_toolchain_smoke PRIVATE
+                analysis_lib
+            )
+            add_dependencies(macos_analysis_toolchain_smoke VoidPlayerCli)
+            add_test(NAME macos_analysis_toolchain_smoke
+                COMMAND macos_analysis_toolchain_smoke
+                    $<TARGET_FILE:VoidPlayerCli>
+                    "${FFMPEG_ANALYZER_PATH}"
+                    "${VIDEO_TEST_DIR}/h264_9s_1920x1080.mp4")
+            void_label_test(macos_analysis_toolchain_smoke "macos;analysis;cli;integration")
+        else()
+            message(STATUS "macos_analysis_toolchain_smoke disabled: FFmpeg analyzer tool not found")
+        endif()
     endif()
 
     add_executable(videotoolbox_provider_smoke

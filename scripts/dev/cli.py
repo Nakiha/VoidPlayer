@@ -32,14 +32,12 @@ def cmd_analysis_resize_stress(args) -> None:
 
 
 def cmd_analysis_benchmark(args) -> None:
-    _require_windows_command("analysis-benchmark")
     from .analysis_benchmark import cmd_analysis_benchmark as impl
 
     impl(args)
 
 
 def cmd_analysis_overlay_benchmark(args) -> None:
-    _require_windows_command("analysis-overlay-benchmark")
     from .analysis_overlay_benchmark import cmd_analysis_overlay_benchmark as impl
 
     impl(args)

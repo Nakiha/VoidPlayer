@@ -82,9 +82,11 @@ overlay redraw 读不到实际显示帧。
 
 `windows/runner/analysis_ffi.cpp` 和 `native/macos/analysis_ffi_bridge.cpp` 将分析功能暴露给
 Flutter/Dart。两端共用 `native/analysis/analysis_ffi_abi.h` 中的 flat ABI struct 定义；
-Windows 仍承载完整外部 analyzer / overlay VACHUNK 生成流程，macOS 当前先提供 VAC2 base
-生成、只读 handle 查询和 overlay state/track 绑定符号，overlay VACHUNK 生成会明确返回
-unsupported，直到 macOS analysis workspace 工作流落地。
+Windows 仍承载完整 analysis UI/IPC 与 runtime overlay VACHUNK 调度流程。macOS
+当前提供 VAC2 base 生成、只读 handle 查询、overlay state/track 绑定符号，以及
+dev/CI 侧 `VoidPlayerCli + void_ffmpeg_analyzer` 的 VAC2/VACHUNK toolchain smoke；
+macOS runtime FFI 的 `naki_analysis_generate_vac2_overlay_chunk` 仍会明确返回
+unsupported，直到 macOS analysis workspace / overlay 调度流程落地。
 
 | FFI 函数 | 功能 |
 |----------|------|
@@ -128,7 +130,9 @@ ABI / lifecycle notes:
 
 运行：`python dev.py test`
 
-全片 VAC2 + VACHUNK 生成性能和落盘体积可用 benchmark 脚本覆盖：
+全片 VAC2 + VACHUNK 生成性能和落盘体积可用 benchmark 脚本覆盖；Windows 和
+macOS 均可运行，macOS 的 `--build` 会构建 portable `VoidPlayerCli` 和本机
+`void_ffmpeg_analyzer`：
 
 ```bash
 python dev.py analysis-benchmark --build
@@ -146,8 +150,9 @@ python dev.py analysis-overlay-benchmark --iterations 240 --with-grid
 ```
 
 该命令会生成一个临时 VAC2 base 和 overlay VACHUNK，然后调用
-`VoidPlayerCli.exe benchmark-overlay` 对指定帧重复栅格化，并调用
-`VoidPlayerCli.exe benchmark-overlay-gpu` 量化 D3D11 overlay pass，报告写入
+`VoidPlayerCli benchmark-overlay` 对指定帧重复栅格化。Windows 默认额外调用
+`VoidPlayerCli benchmark-overlay-gpu` 量化 D3D11 overlay pass；macOS 当前只跑
+CPU raster / cache toolchain 部分，报告写入
 `build/analysis-overlay-benchmark/analysis_overlay_benchmark.json` 和 `.md`。
 它用于检查 dirty frame 下 CU/MB 热力图填充和边界 mask 路径的回归；raster 内核会跳过
 完整覆盖热力图的 BGRA 清屏，并用固定 LUT 计算 QP / bit-density 颜色。GUI 当前对热力图

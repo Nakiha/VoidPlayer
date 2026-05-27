@@ -73,6 +73,7 @@ ctest --test-dir native/build-macos-make -LE hosted-flaky --output-on-failure
 | `decode_thread_software_smoke` | native integration | macOS stabilization | sample media | Decode thread software path. |
 | `macos_native_player_shared_renderer_smoke` | native integration | macOS stabilization | Metal, sample media | Shared native player + renderer-owned presentation. |
 | `macos_analysis_ffi_smoke` | analysis/FFI canary | macOS analysis changes | analysis build | macOS analysis symbols/cache path. |
+| `macos_analysis_toolchain_smoke` | analysis CLI integration | macOS analysis changes | macOS analyzer, sample media | Portable `VoidPlayerCli` generates VAC2 base and analyzer-backed overlay VACHUNK, then reopens both. |
 | `macos_crash_handler_smoke` | diagnostics canary | macOS runner/native changes | macOS native build | Crash handler log contract. |
 
 ## Runner/UI Smoke Inventory

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -25,6 +26,9 @@
 
 #ifdef _WIN32
 #include <process.h>
+#else
+#include <sys/wait.h>
+#include <unistd.h>
 #endif
 
 namespace {
@@ -335,6 +339,14 @@ std::string join_path(const std::string& lhs, const std::string& rhs) {
         vr::win_utf8::path_from_utf8(lhs) / vr::win_utf8::path_from_utf8(rhs));
 }
 
+std::string cli_executable_name(const char* stem) {
+#ifdef _WIN32
+    return std::string(stem) + ".exe";
+#else
+    return std::string(stem);
+#endif
+}
+
 std::string temp_name(const std::string& prefix, const std::string& suffix) {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
     const auto ticks =
@@ -352,9 +364,9 @@ std::string find_analyzer(const std::string& explicit_path) {
     }
     const std::string exe_dir = vr::win_utf8::module_directory_utf8();
     const std::string candidates[] = {
-        join_path(exe_dir, "tools\\ffmpeg-analysis\\void_ffmpeg_analyzer.exe"),
-        join_path(exe_dir, "tools\\ffmpeg-analysis\\void_hevc_analyzer.exe"),
-        join_path(exe_dir, "void_ffmpeg_analyzer.exe"),
+        join_path(join_path(exe_dir, "tools"), join_path("ffmpeg-analysis", cli_executable_name("void_ffmpeg_analyzer"))),
+        join_path(join_path(exe_dir, "tools"), join_path("ffmpeg-analysis", cli_executable_name("void_hevc_analyzer"))),
+        join_path(exe_dir, cli_executable_name("void_ffmpeg_analyzer")),
     };
     for (const auto& candidate : candidates) {
         if (path_exists(candidate)) return candidate;
@@ -384,7 +396,28 @@ int run_process(const std::vector<std::string>& args) {
         argv.push_back(arg.c_str());
     }
     argv.push_back(nullptr);
-    return static_cast<int>(spawnv(P_WAIT, args[0].c_str(), argv.data()));
+    const pid_t pid = fork();
+    if (pid < 0) {
+        return -1;
+    }
+    if (pid == 0) {
+        execv(args[0].c_str(), const_cast<char* const*>(argv.data()));
+        _exit(127);
+    }
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) {
+            continue;
+        }
+        return -1;
+    }
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return -1;
 #endif
 }
 

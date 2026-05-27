@@ -795,6 +795,7 @@
 				);
 					OTHER_LDFLAGS = (
 						"$(inherited)",
+						"-Wl,-export_dynamic",
 						"-Wl,-force_load,$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
@@ -962,6 +963,7 @@
 				);
 					OTHER_LDFLAGS = (
 						"$(inherited)",
+						"-Wl,-export_dynamic",
 						"-Wl,-force_load,$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
@@ -1015,6 +1017,7 @@
 				);
 					OTHER_LDFLAGS = (
 						"$(inherited)",
+						"-Wl,-export_dynamic",
 						"-Wl,-force_load,$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
 						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",

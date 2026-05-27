@@ -5,7 +5,7 @@
 #if defined(_WIN32)
 #define NAKI_ANALYSIS_FFI_EXPORT __declspec(dllexport)
 #else
-#define NAKI_ANALYSIS_FFI_EXPORT __attribute__((visibility("default")))
+#define NAKI_ANALYSIS_FFI_EXPORT __attribute__((visibility("default"), used))
 #endif
 
 static constexpr int32_t NAKI_ANALYSIS_ABI_VERSION = 1;

@@ -1,6 +1,7 @@
 // ignore_for_file: unused_field
 
 import 'dart:ffi';
+import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 import '../app_paths.dart';
@@ -312,7 +313,7 @@ class _AnalysisNativeBindings {
     final previousFailure = _unavailable;
     if (previousFailure != null) throw previousFailure;
     try {
-      return _instance = _AnalysisNativeBindings._(DynamicLibrary.executable());
+      return _instance = _loadNativeBindings();
     } catch (e) {
       final unavailable = AnalysisFfiUnavailable(
         'Native analysis symbols are unavailable or incompatible.',
@@ -320,6 +321,24 @@ class _AnalysisNativeBindings {
       );
       _unavailable = unavailable;
       throw unavailable;
+    }
+  }
+
+  static _AnalysisNativeBindings _loadNativeBindings() {
+    try {
+      return _AnalysisNativeBindings._(DynamicLibrary.executable());
+    } catch (executableError) {
+      if (!Platform.isMacOS) rethrow;
+      final debugDylib = '${Platform.resolvedExecutable}.debug.dylib';
+      if (!File(debugDylib).existsSync()) rethrow;
+      try {
+        return _AnalysisNativeBindings._(DynamicLibrary.open(debugDylib));
+      } catch (debugDylibError) {
+        throw AnalysisFfiUnavailable(
+          'Failed to load macOS analysis symbols from the executable or debug dylib.',
+          '$executableError; $debugDylibError',
+        );
+      }
     }
   }
 

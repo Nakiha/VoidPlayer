@@ -74,6 +74,27 @@ extension MacOSNativePlayerSession {
       "targetHeight": Int(state.target_height),
       "uploadStorageKind": Self.presentPackageStorageName(state.upload_storage_kind),
       "lastSuccessfulFramePtsUs": Int64(state.last_successful_frame_pts_us),
+      "overlayLastExpected": state.overlay_last_expected != 0,
+      "overlayLastApplied": state.overlay_last_applied != 0,
+      "overlayLastLineRectCount": Int64(
+        min(state.overlay_last_line_rect_count, UInt64(Int64.max))
+      ),
+      "overlayExpectedCount": Int64(
+        min(state.overlay_expected_count, UInt64(Int64.max))
+      ),
+      "overlayAppliedCount": Int64(
+        min(state.overlay_applied_count, UInt64(Int64.max))
+      ),
+      "overlayMissedCount": Int64(min(state.overlay_missed_count, UInt64(Int64.max))),
+      "overlayGpuSuccessCount": Int64(
+        min(state.overlay_gpu_success_count, UInt64(Int64.max))
+      ),
+      "overlayGpuFailureCount": Int64(
+        min(state.overlay_gpu_failure_count, UInt64(Int64.max))
+      ),
+      "overlayCpuFallbackCount": Int64(
+        min(state.overlay_cpu_fallback_count, UInt64(Int64.max))
+      ),
       "lastDrawError": lastError,
     ]
   }
@@ -264,6 +285,15 @@ extension MacOSNativePlayerSession {
       "targetHeight": 0,
       "uploadStorageKind": "unavailable",
       "lastSuccessfulFramePtsUs": 0,
+      "overlayLastExpected": false,
+      "overlayLastApplied": false,
+      "overlayLastLineRectCount": 0,
+      "overlayExpectedCount": 0,
+      "overlayAppliedCount": 0,
+      "overlayMissedCount": 0,
+      "overlayGpuSuccessCount": 0,
+      "overlayGpuFailureCount": 0,
+      "overlayCpuFallbackCount": 0,
       "lastDrawError": "",
     ]
   }

@@ -85,6 +85,15 @@ typedef struct VPMacOSNativeRendererOwnedPresentationState {
   int32_t target_height;
   int32_t upload_storage_kind;
   int64_t last_successful_frame_pts_us;
+  int32_t overlay_last_expected;
+  int32_t overlay_last_applied;
+  uint64_t overlay_last_line_rect_count;
+  uint64_t overlay_expected_count;
+  uint64_t overlay_applied_count;
+  uint64_t overlay_missed_count;
+  uint64_t overlay_gpu_success_count;
+  uint64_t overlay_gpu_failure_count;
+  uint64_t overlay_cpu_fallback_count;
   char last_draw_error[256];
 } VPMacOSNativeRendererOwnedPresentationState;
 

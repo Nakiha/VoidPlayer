@@ -125,6 +125,15 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
           out->target_installed != 0 && backend_stats.target_installed != 0 ? 1 : 0;
       out->last_draw_succeeded = backend_stats.last_draw_succeeded;
       out->upload_storage_kind = backend_stats.last_present_package_storage;
+      out->overlay_last_expected = backend_stats.overlay_last_expected;
+      out->overlay_last_applied = backend_stats.overlay_last_applied;
+      out->overlay_last_line_rect_count = backend_stats.overlay_last_line_rect_count;
+      out->overlay_expected_count = backend_stats.overlay_expected_count;
+      out->overlay_applied_count = backend_stats.overlay_applied_count;
+      out->overlay_missed_count = backend_stats.overlay_missed_count;
+      out->overlay_gpu_success_count = backend_stats.overlay_gpu_success_count;
+      out->overlay_gpu_failure_count = backend_stats.overlay_gpu_failure_count;
+      out->overlay_cpu_fallback_count = backend_stats.overlay_cpu_fallback_count;
       if (backend_stats.last_successful_frame_pts_us != 0) {
         out->last_successful_frame_pts_us =
             backend_stats.last_successful_frame_pts_us;

@@ -55,6 +55,15 @@ struct PresentationBackendStats {
     uint64_t staging_allocation_count = 0;
     uint64_t staging_reuse_count = 0;
     uint64_t staging_max_bytes = 0;
+    int32_t overlay_last_expected = 0;
+    int32_t overlay_last_applied = 0;
+    uint64_t overlay_last_line_rect_count = 0;
+    uint64_t overlay_expected_count = 0;
+    uint64_t overlay_applied_count = 0;
+    uint64_t overlay_missed_count = 0;
+    uint64_t overlay_gpu_success_count = 0;
+    uint64_t overlay_gpu_failure_count = 0;
+    uint64_t overlay_cpu_fallback_count = 0;
 };
 
 struct PresentationBackendMetrics {

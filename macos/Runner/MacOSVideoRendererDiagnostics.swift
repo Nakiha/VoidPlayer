@@ -57,6 +57,24 @@ enum MacOSVideoRendererDiagnostics {
       "rendererOwnedUploadStorageKind": rendererOwnedState["uploadStorageKind"] ?? "unavailable",
       "rendererOwnedLastSuccessfulFramePtsUs":
         rendererOwnedState["lastSuccessfulFramePtsUs"] ?? 0,
+      "rendererOwnedOverlayLastExpected":
+        rendererOwnedState["overlayLastExpected"] ?? false,
+      "rendererOwnedOverlayLastApplied":
+        rendererOwnedState["overlayLastApplied"] ?? false,
+      "rendererOwnedOverlayLastLineRectCount":
+        rendererOwnedState["overlayLastLineRectCount"] ?? 0,
+      "rendererOwnedOverlayExpectedCount":
+        rendererOwnedState["overlayExpectedCount"] ?? 0,
+      "rendererOwnedOverlayAppliedCount":
+        rendererOwnedState["overlayAppliedCount"] ?? 0,
+      "rendererOwnedOverlayMissedCount":
+        rendererOwnedState["overlayMissedCount"] ?? 0,
+      "rendererOwnedOverlayGpuSuccessCount":
+        rendererOwnedState["overlayGpuSuccessCount"] ?? 0,
+      "rendererOwnedOverlayGpuFailureCount":
+        rendererOwnedState["overlayGpuFailureCount"] ?? 0,
+      "rendererOwnedOverlayCpuFallbackCount":
+        rendererOwnedState["overlayCpuFallbackCount"] ?? 0,
       "rendererOwnedLastDrawError": rendererOwnedState["lastDrawError"] ?? "",
       "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
       "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
@@ -241,6 +259,15 @@ enum MacOSVideoRendererDiagnostics {
       "targetHeight": 0,
       "uploadStorageKind": "unavailable",
       "lastSuccessfulFramePtsUs": 0,
+      "overlayLastExpected": false,
+      "overlayLastApplied": false,
+      "overlayLastLineRectCount": 0,
+      "overlayExpectedCount": 0,
+      "overlayAppliedCount": 0,
+      "overlayMissedCount": 0,
+      "overlayGpuSuccessCount": 0,
+      "overlayGpuFailureCount": 0,
+      "overlayCpuFallbackCount": 0,
       "lastDrawError": "",
     ]
   }

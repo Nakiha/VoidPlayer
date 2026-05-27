@@ -34,6 +34,16 @@ struct OverlayLineBuildResult {
   bool has_cpu_only_primitives = false;
 };
 
+struct OverlayCompositeResult {
+  bool expected = false;
+  bool applied = false;
+  bool gpu_attempted = false;
+  bool gpu_succeeded = false;
+  bool cpu_attempted = false;
+  bool cpu_succeeded = false;
+  size_t line_rect_count = 0;
+};
+
 #if VOID_BUILD_ANALYSIS
 uint32_t pack_overlay_track_payload(int slot, uint8_t line_alpha) {
   return static_cast<uint32_t>(slot & 0xff) |
@@ -190,6 +200,15 @@ vr::PresentationBackendStats MetalPresentationBackend::presentation_stats() cons
   stats.staging_allocation_count = staging_allocation_count_;
   stats.staging_reuse_count = staging_reuse_count_;
   stats.staging_max_bytes = staging_max_bytes_;
+  stats.overlay_last_expected = overlay_last_expected_ ? 1 : 0;
+  stats.overlay_last_applied = overlay_last_applied_ ? 1 : 0;
+  stats.overlay_last_line_rect_count = overlay_last_line_rect_count_;
+  stats.overlay_expected_count = overlay_expected_count_;
+  stats.overlay_applied_count = overlay_applied_count_;
+  stats.overlay_missed_count = overlay_missed_count_;
+  stats.overlay_gpu_success_count = overlay_gpu_success_count_;
+  stats.overlay_gpu_failure_count = overlay_gpu_failure_count_;
+  stats.overlay_cpu_fallback_count = overlay_cpu_fallback_count_;
   return stats;
 }
 
@@ -269,58 +288,78 @@ void MetalPresentationBackend::mark_draw_success(const VPMacOSNativeFrameInfo& f
   set_last_error("");
 }
 
-bool composite_overlay_lines_with_metal(const vr::RendererDrawSnapshot& snapshot,
-                                        VPMacOSMetalUploader* uploader,
-                                        void* pixel_buffer,
-                                        int32_t width,
-                                        int32_t height,
-                                        bool& has_cpu_only_primitives) {
-  has_cpu_only_primitives = false;
-  if (!uploader || !pixel_buffer || width <= 0 || height <= 0) {
-    return false;
+void MetalPresentationBackend::record_overlay_result(bool expected,
+                                                     bool applied,
+                                                     bool gpu_attempted,
+                                                     bool gpu_succeeded,
+                                                     bool cpu_attempted,
+                                                     size_t line_rect_count) {
+  overlay_last_expected_ = expected;
+  overlay_last_applied_ = applied;
+  overlay_last_line_rect_count_ = static_cast<uint64_t>(line_rect_count);
+  if (expected) {
+    ++overlay_expected_count_;
+    if (applied) {
+      ++overlay_applied_count_;
+    } else {
+      ++overlay_missed_count_;
+    }
   }
-  const auto overlay = build_overlay_line_rects_for_metal(snapshot, width, height);
-  has_cpu_only_primitives = overlay.has_cpu_only_primitives;
-  if (overlay.line_rects.empty()) {
-    return false;
+  if (gpu_attempted) {
+    if (gpu_succeeded) {
+      ++overlay_gpu_success_count_;
+    } else {
+      ++overlay_gpu_failure_count_;
+    }
   }
-  char error[256] = {};
-  VPMacOSNativePresentDecisionInfo decision = {};
-  fill_present_decision_info_from_snapshot(snapshot, width, height, &decision);
-  const int ret = VPMacOSMetalUploaderCompositeOverlayGpuRects(
-      uploader,
-      overlay.line_rects.data(),
-      overlay.line_rects.size(),
-      &decision,
-      pixel_buffer,
-      width,
-      height,
-      error,
-      sizeof(error));
-  return ret == 0;
+  if (cpu_attempted) {
+    ++overlay_cpu_fallback_count_;
+  }
 }
 
-void composite_overlay_after_upload(const vr::RendererDrawSnapshot& snapshot,
-                                    const vr::PresentationBackendDrawHooks& hooks,
-                                    VPMacOSMetalUploader* uploader,
-                                    void* pixel_buffer,
-                                    int32_t width,
-                                    int32_t height) {
-  if (!pixel_buffer || width <= 0 || height <= 0) {
-    return;
+OverlayCompositeResult composite_overlay_after_upload(
+    const vr::RendererDrawSnapshot& snapshot,
+    const vr::PresentationBackendDrawHooks& hooks,
+    VPMacOSMetalUploader* uploader,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height) {
+  OverlayCompositeResult result;
+  if (!uploader || !pixel_buffer || width <= 0 || height <= 0) {
+    return result;
   }
-  bool has_cpu_only_primitives = false;
-  const bool drew_gpu_lines = composite_overlay_lines_with_metal(
-      snapshot, uploader, pixel_buffer, width, height, has_cpu_only_primitives);
-  if (drew_gpu_lines && !has_cpu_only_primitives) {
-    return;
+  const auto overlay = build_overlay_line_rects_for_metal(snapshot, width, height);
+  result.line_rect_count = overlay.line_rects.size();
+  result.expected = !overlay.line_rects.empty() || overlay.has_cpu_only_primitives;
+
+  if (!overlay.line_rects.empty()) {
+    result.gpu_attempted = true;
+    char error[256] = {};
+    VPMacOSNativePresentDecisionInfo decision = {};
+    fill_present_decision_info_from_snapshot(snapshot, width, height, &decision);
+    const int ret = VPMacOSMetalUploaderCompositeOverlayGpuRects(
+        uploader,
+        overlay.line_rects.data(),
+        overlay.line_rects.size(),
+        &decision,
+        pixel_buffer,
+        width,
+        height,
+        error,
+        sizeof(error));
+    result.gpu_succeeded = ret == 0;
+    if (result.gpu_succeeded && !overlay.has_cpu_only_primitives) {
+      result.applied = true;
+      return result;
+    }
   }
+
   if (!hooks.composite_bgra_overlay) {
-    return;
+    return result;
   }
   auto* target = static_cast<CVPixelBufferRef>(pixel_buffer);
   if (CVPixelBufferLockBaseAddress(target, 0) != kCVReturnSuccess) {
-    return;
+    return result;
   }
   auto* bgra = static_cast<uint8_t*>(CVPixelBufferGetBaseAddress(target));
   const int pixel_width = static_cast<int>(CVPixelBufferGetWidth(target));
@@ -328,9 +367,13 @@ void composite_overlay_after_upload(const vr::RendererDrawSnapshot& snapshot,
   const auto stride = static_cast<size_t>(CVPixelBufferGetBytesPerRow(target));
   if (bgra && pixel_width == width && pixel_height == height &&
       stride >= static_cast<size_t>(width) * 4u) {
-    (void)hooks.composite_bgra_overlay(snapshot, bgra, width, height, stride);
+    result.cpu_attempted = true;
+    result.cpu_succeeded =
+        hooks.composite_bgra_overlay(snapshot, bgra, width, height, stride);
+    result.applied = result.applied || result.cpu_succeeded;
   }
   CVPixelBufferUnlockBaseAddress(target, 0);
+  return result;
 }
 
 bool MetalPresentationBackend::draw_frame(
@@ -383,12 +426,18 @@ bool MetalPresentationBackend::draw_frame(
               std::chrono::steady_clock::now() - start).count()));
     }
     if (ret == 0) {
-      composite_overlay_after_upload(snapshot,
-                                     hooks,
-                                     uploader_,
-                                     draw_target_pixel_buffer_,
-                                     draw_target_width_,
-                                     draw_target_height_);
+      const auto overlay = composite_overlay_after_upload(snapshot,
+                                                          hooks,
+                                                          uploader_,
+                                                          draw_target_pixel_buffer_,
+                                                          draw_target_width_,
+                                                          draw_target_height_);
+      record_overlay_result(overlay.expected,
+                            overlay.applied,
+                            overlay.gpu_attempted,
+                            overlay.gpu_succeeded,
+                            overlay.cpu_attempted,
+                            overlay.line_rect_count);
       mark_draw_success(frame_info);
       return true;
     }
@@ -461,12 +510,18 @@ bool MetalPresentationBackend::draw_frame(
             std::chrono::steady_clock::now() - start).count()));
   }
   if (ret == 0) {
-    composite_overlay_after_upload(snapshot,
-                                   hooks,
-                                   uploader_,
-                                   draw_target_pixel_buffer_,
-                                   draw_target_width_,
-                                   draw_target_height_);
+    const auto overlay = composite_overlay_after_upload(snapshot,
+                                                        hooks,
+                                                        uploader_,
+                                                        draw_target_pixel_buffer_,
+                                                        draw_target_width_,
+                                                        draw_target_height_);
+    record_overlay_result(overlay.expected,
+                          overlay.applied,
+                          overlay.gpu_attempted,
+                          overlay.gpu_succeeded,
+                          overlay.cpu_attempted,
+                          overlay.line_rect_count);
     mark_draw_success(frame_info);
   } else {
     mark_draw_failure(upload_error[0] ? upload_error : error);

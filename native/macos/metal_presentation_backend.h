@@ -50,6 +50,12 @@ private:
   void set_last_error(std::string error);
   void mark_draw_failure(std::string error);
   void mark_draw_success(const VPMacOSNativeFrameInfo& frame_info);
+  void record_overlay_result(bool expected,
+                             bool applied,
+                             bool gpu_attempted,
+                             bool gpu_succeeded,
+                             bool cpu_attempted,
+                             size_t line_rect_count);
 
   VPMacOSMetalUploader* uploader_ = nullptr;
   void* draw_target_pixel_buffer_ = nullptr;
@@ -66,6 +72,15 @@ private:
   uint64_t staging_allocation_count_ = 0;
   uint64_t staging_reuse_count_ = 0;
   size_t staging_max_bytes_ = 0;
+  bool overlay_last_expected_ = false;
+  bool overlay_last_applied_ = false;
+  uint64_t overlay_last_line_rect_count_ = 0;
+  uint64_t overlay_expected_count_ = 0;
+  uint64_t overlay_applied_count_ = 0;
+  uint64_t overlay_missed_count_ = 0;
+  uint64_t overlay_gpu_success_count_ = 0;
+  uint64_t overlay_gpu_failure_count_ = 0;
+  uint64_t overlay_cpu_fallback_count_ = 0;
   std::vector<uint8_t> staging_buffer_;
   bool last_draw_succeeded_ = false;
   bool headless_ = true;

@@ -1,0 +1,21 @@
+# CU overlay should stay applied while panning/zooming the short MHW HEVC sample.
+@WINDOW,1365,768
+0.0,ADD_MEDIA,resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+2.8,ASSERT_TRACK_COUNT,1
+3.0,TOGGLE_ANALYSIS_OVERLAY,0
+4.0,ASSERT_ANALYSIS_OVERLAY,true,cu,0.55
+4.1,SET_RENDER_SIZE,1280,720
+4.2,SET_ZOOM,1.45
+4.4,PAN,260,-150
+4.6,CAPTURE_VIEWPORT,mhw_pan_a,build/mhw_pan_a.png
+4.7,ASSERT_CAPTURE_NOT_BLACK,mhw_pan_a,0.01,4.0
+4.71,ASSERT_NATIVE_DIAGNOSTIC_BOOL,rendererOwnedOverlayLastExpected,true
+4.72,ASSERT_NATIVE_DIAGNOSTIC_BOOL,rendererOwnedOverlayLastApplied,true
+4.73,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,rendererOwnedOverlayLastLineRectCount,1
+4.8,PAN,-360,180
+5.0,CAPTURE_VIEWPORT,mhw_pan_b,build/mhw_pan_b.png
+5.1,ASSERT_CAPTURE_NOT_BLACK,mhw_pan_b,0.01,4.0
+5.11,ASSERT_NATIVE_DIAGNOSTIC_BOOL,rendererOwnedOverlayLastExpected,true
+5.12,ASSERT_NATIVE_DIAGNOSTIC_BOOL,rendererOwnedOverlayLastApplied,true
+5.13,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,rendererOwnedOverlayLastLineRectCount,1
+5.2,QUIT,0

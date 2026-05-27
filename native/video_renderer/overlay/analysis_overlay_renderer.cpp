@@ -807,4 +807,12 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
     (void)bind_overlay_target();
 }
 
+bool AnalysisOverlayRenderer::composite_bgra(const RendererDrawSnapshot&,
+                                             uint8_t*,
+                                             int,
+                                             int,
+                                             size_t) {
+    return false;
+}
+
 } // namespace vr

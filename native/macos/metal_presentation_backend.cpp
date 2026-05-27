@@ -205,6 +205,29 @@ void MetalPresentationBackend::mark_draw_success(const VPMacOSNativeFrameInfo& f
   set_last_error("");
 }
 
+void composite_overlay_into_target_if_needed(const vr::RendererDrawSnapshot& snapshot,
+                                             const vr::PresentationBackendDrawHooks& hooks,
+                                             void* pixel_buffer,
+                                             int32_t width,
+                                             int32_t height) {
+  if (!hooks.composite_bgra_overlay || !pixel_buffer || width <= 0 || height <= 0) {
+    return;
+  }
+  auto* target = static_cast<CVPixelBufferRef>(pixel_buffer);
+  if (CVPixelBufferLockBaseAddress(target, 0) != kCVReturnSuccess) {
+    return;
+  }
+  auto* bgra = static_cast<uint8_t*>(CVPixelBufferGetBaseAddress(target));
+  const int pixel_width = static_cast<int>(CVPixelBufferGetWidth(target));
+  const int pixel_height = static_cast<int>(CVPixelBufferGetHeight(target));
+  const auto stride = static_cast<size_t>(CVPixelBufferGetBytesPerRow(target));
+  if (bgra && pixel_width == width && pixel_height == height &&
+      stride >= static_cast<size_t>(width) * 4u) {
+    (void)hooks.composite_bgra_overlay(snapshot, bgra, width, height, stride);
+  }
+  CVPixelBufferUnlockBaseAddress(target, 0);
+}
+
 bool MetalPresentationBackend::draw_frame(
     const vr::RendererDrawSnapshot& snapshot,
     const vr::PresentationBackendDrawHooks& hooks) {
@@ -255,6 +278,8 @@ bool MetalPresentationBackend::draw_frame(
               std::chrono::steady_clock::now() - start).count()));
     }
     if (ret == 0) {
+      composite_overlay_into_target_if_needed(
+          snapshot, hooks, draw_target_pixel_buffer_, draw_target_width_, draw_target_height_);
       mark_draw_success(frame_info);
       return true;
     }
@@ -327,6 +352,8 @@ bool MetalPresentationBackend::draw_frame(
             std::chrono::steady_clock::now() - start).count()));
   }
   if (ret == 0) {
+    composite_overlay_into_target_if_needed(
+        snapshot, hooks, draw_target_pixel_buffer_, draw_target_width_, draw_target_height_);
     mark_draw_success(frame_info);
   } else {
     mark_draw_failure(upload_error[0] ? upload_error : error);

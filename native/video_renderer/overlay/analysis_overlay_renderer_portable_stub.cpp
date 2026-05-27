@@ -41,4 +41,12 @@ void AnalysisOverlayRenderer::draw(const PresentDecision&,
                                    int,
                                    int) {}
 
+bool AnalysisOverlayRenderer::composite_bgra(const RendererDrawSnapshot&,
+                                             uint8_t*,
+                                             int,
+                                             int,
+                                             size_t) {
+    return false;
+}
+
 } // namespace vr

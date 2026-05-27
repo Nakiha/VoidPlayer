@@ -27,6 +27,7 @@ struct PresentationBackendDrawHooks {
     std::function<void(const char*)> wait_gpu_idle;
     std::function<void(uint64_t)> record_frame_copy_us;
     std::function<void(PresentationBackend&, const RendererDrawSnapshot&)> draw_overlay;
+    std::function<bool(const RendererDrawSnapshot&, uint8_t*, int, int, size_t)> composite_bgra_overlay;
 };
 
 struct PresentationBackendFrameInfo {

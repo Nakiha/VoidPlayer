@@ -2092,6 +2092,22 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
         (void)draw_snapshot;
 #endif
     };
+    hooks.composite_bgra_overlay =
+        [this](const RendererDrawSnapshot& draw_snapshot,
+               uint8_t* target_bgra,
+               int target_width,
+               int target_height,
+               size_t target_stride_bytes) {
+            if (!analysis_overlay_renderer_) {
+                return false;
+            }
+            return analysis_overlay_renderer_->composite_bgra(
+                draw_snapshot,
+                target_bgra,
+                target_width,
+                target_height,
+                target_stride_bytes);
+        };
     return backend->draw_frame(snapshot, hooks);
 }
 

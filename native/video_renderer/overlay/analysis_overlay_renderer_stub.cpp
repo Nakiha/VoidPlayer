@@ -75,4 +75,12 @@ void AnalysisOverlayRenderer::draw(const PresentDecision& decision,
     (void)target_height;
 }
 
+bool AnalysisOverlayRenderer::composite_bgra(const RendererDrawSnapshot&,
+                                             uint8_t*,
+                                             int,
+                                             int,
+                                             size_t) {
+    return false;
+}
+
 } // namespace vr

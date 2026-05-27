@@ -39,6 +39,11 @@ public:
               D3D11RenderResources& resources,
               int target_width,
               int target_height);
+    bool composite_bgra(const RendererDrawSnapshot& snapshot,
+                        uint8_t* target_bgra,
+                        int target_width,
+                        int target_height,
+                        size_t target_stride_bytes);
 
 private:
     struct AnalysisOverlayCache {

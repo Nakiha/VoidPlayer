@@ -15,12 +15,15 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <spdlog/spdlog.h>
 
 namespace vp_macos {
 namespace {
@@ -32,17 +35,143 @@ namespace {
 struct OverlayLineBuildResult {
   std::vector<VPMacOSNativeOverlayGpuRect> line_rects;
   bool has_cpu_only_primitives = false;
+  uint32_t first_rect_uv0 = 0;
+  uint32_t first_rect_uv1 = 0;
+  uint32_t first_rect_track_idx = 0;
 };
 
 struct OverlayCompositeResult {
   bool expected = false;
   bool applied = false;
+  bool has_cpu_only_primitives = false;
   bool gpu_attempted = false;
   bool gpu_succeeded = false;
+  int gpu_ret = 0;
+  std::string gpu_error;
   bool cpu_attempted = false;
   bool cpu_succeeded = false;
   size_t line_rect_count = 0;
+  uint32_t first_rect_uv0 = 0;
+  uint32_t first_rect_uv1 = 0;
+  uint32_t first_rect_track_idx = 0;
 };
+
+bool env_flag_enabled(const char* name) {
+  const char* value = std::getenv(name);
+  return value && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
+bool overlay_debug_logging_enabled() {
+  static const bool enabled = env_flag_enabled("VOIDPLAYER_MACOS_OVERLAY_DEBUG");
+  return enabled;
+}
+
+int active_present_frame_count(const vr::RendererDrawSnapshot& snapshot) {
+  int count = 0;
+  for (const auto& frame : snapshot.decision.frames) {
+    if (frame.has_value()) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+int first_active_present_slot(const vr::RendererDrawSnapshot& snapshot) {
+  for (size_t i = 0; i < snapshot.decision.frames.size(); ++i) {
+    if (snapshot.decision.frames[i].has_value()) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+void log_overlay_composite_result(const char* path,
+                                  const vr::RendererDrawSnapshot& snapshot,
+                                  const OverlayCompositeResult& result,
+                                  int32_t target_width,
+                                  int32_t target_height) {
+  const bool missed = result.expected && !result.applied;
+  if (!overlay_debug_logging_enabled() && !missed) {
+    return;
+  }
+
+  const int slot = first_active_present_slot(snapshot);
+  const int file_id = (slot >= 0 && slot < static_cast<int>(snapshot.decision.file_ids.size()))
+      ? snapshot.decision.file_ids[static_cast<size_t>(slot)]
+      : -1;
+  const int64_t pts_us = (slot >= 0 &&
+                          slot < static_cast<int>(snapshot.decision.frames.size()) &&
+                          snapshot.decision.frames[static_cast<size_t>(slot)].has_value())
+      ? snapshot.decision.frames[static_cast<size_t>(slot)]->pts_us
+      : snapshot.decision.current_pts_us;
+
+  const char* level_label = missed ? "MISS" : "state";
+  if (missed) {
+    spdlog::warn("[MetalOverlay] {} path={} target={}x{} active_frames={} slot={} file_id={} "
+                 "pts={:.3f}s expected={} applied={} line_rects={} cpu_only={} "
+                 "gpu_attempted={} gpu_succeeded={} gpu_ret={} cpu_attempted={} cpu_succeeded={} "
+                 "layout(mode={}, zoom={:.3f}, offset={:.1f},{:.1f}, pixel_mode={}) "
+                 "first_rect_uv=0x{:08x}->0x{:08x} track_payload=0x{:08x} gpu_error='{}'",
+                 level_label,
+                 path,
+                 target_width,
+                 target_height,
+                 active_present_frame_count(snapshot),
+                 slot,
+                 file_id,
+                 static_cast<double>(pts_us) / 1000000.0,
+                 result.expected,
+                 result.applied,
+                 result.line_rect_count,
+                 result.has_cpu_only_primitives,
+                 result.gpu_attempted,
+                 result.gpu_succeeded,
+                 result.gpu_ret,
+                 result.cpu_attempted,
+                 result.cpu_succeeded,
+                 snapshot.layout.mode,
+                 snapshot.layout.zoom_ratio,
+                 snapshot.layout.view_offset[0],
+                 snapshot.layout.view_offset[1],
+                 snapshot.layout.pixel_size_mode,
+                 result.first_rect_uv0,
+                 result.first_rect_uv1,
+                 result.first_rect_track_idx,
+                 result.gpu_error);
+  } else {
+    spdlog::info("[MetalOverlay] {} path={} target={}x{} active_frames={} slot={} file_id={} "
+                 "pts={:.3f}s expected={} applied={} line_rects={} cpu_only={} "
+                 "gpu_attempted={} gpu_succeeded={} gpu_ret={} cpu_attempted={} cpu_succeeded={} "
+                 "layout(mode={}, zoom={:.3f}, offset={:.1f},{:.1f}, pixel_mode={}) "
+                 "first_rect_uv=0x{:08x}->0x{:08x} track_payload=0x{:08x} gpu_error='{}'",
+                 level_label,
+                 path,
+                 target_width,
+                 target_height,
+                 active_present_frame_count(snapshot),
+                 slot,
+                 file_id,
+                 static_cast<double>(pts_us) / 1000000.0,
+                 result.expected,
+                 result.applied,
+                 result.line_rect_count,
+                 result.has_cpu_only_primitives,
+                 result.gpu_attempted,
+                 result.gpu_succeeded,
+                 result.gpu_ret,
+                 result.cpu_attempted,
+                 result.cpu_succeeded,
+                 snapshot.layout.mode,
+                 snapshot.layout.zoom_ratio,
+                 snapshot.layout.view_offset[0],
+                 snapshot.layout.view_offset[1],
+                 snapshot.layout.pixel_size_mode,
+                 result.first_rect_uv0,
+                 result.first_rect_uv1,
+                 result.first_rect_track_idx,
+                 result.gpu_error);
+  }
+}
 
 #if VOID_BUILD_ANALYSIS
 uint32_t pack_overlay_track_payload(int slot, uint8_t line_alpha) {
@@ -77,6 +206,11 @@ OverlayLineBuildResult build_overlay_line_rects_for_metal(
       rect.rect_uv1 = vr::pack_overlay_uv16(
           primitive.x1, track.video_width, primitive.y1, track.video_height);
       rect.track_idx = pack_overlay_track_payload(track.slot, track.line_alpha);
+      if (result.line_rects.empty()) {
+        result.first_rect_uv0 = rect.rect_uv0;
+        result.first_rect_uv1 = rect.rect_uv1;
+        result.first_rect_track_idx = rect.track_idx;
+      }
       result.line_rects.push_back(rect);
     }
   }
@@ -330,7 +464,11 @@ OverlayCompositeResult composite_overlay_after_upload(
   }
   const auto overlay = build_overlay_line_rects_for_metal(snapshot, width, height);
   result.line_rect_count = overlay.line_rects.size();
+  result.has_cpu_only_primitives = overlay.has_cpu_only_primitives;
   result.expected = !overlay.line_rects.empty() || overlay.has_cpu_only_primitives;
+  result.first_rect_uv0 = overlay.first_rect_uv0;
+  result.first_rect_uv1 = overlay.first_rect_uv1;
+  result.first_rect_track_idx = overlay.first_rect_track_idx;
 
   if (!overlay.line_rects.empty()) {
     result.gpu_attempted = true;
@@ -347,6 +485,8 @@ OverlayCompositeResult composite_overlay_after_upload(
         height,
         error,
         sizeof(error));
+    result.gpu_ret = ret;
+    result.gpu_error = error;
     result.gpu_succeeded = ret == 0;
     if (result.gpu_succeeded && !overlay.has_cpu_only_primitives) {
       result.applied = true;
@@ -354,7 +494,7 @@ OverlayCompositeResult composite_overlay_after_upload(
     }
   }
 
-  if (!hooks.composite_bgra_overlay) {
+  if (!result.expected || !hooks.composite_bgra_overlay) {
     return result;
   }
   auto* target = static_cast<CVPixelBufferRef>(pixel_buffer);
@@ -432,6 +572,11 @@ bool MetalPresentationBackend::draw_frame(
                                                           draw_target_pixel_buffer_,
                                                           draw_target_width_,
                                                           draw_target_height_);
+      log_overlay_composite_result("cvpixelbuffer",
+                                   snapshot,
+                                   overlay,
+                                   draw_target_width_,
+                                   draw_target_height_);
       record_overlay_result(overlay.expected,
                             overlay.applied,
                             overlay.gpu_attempted,
@@ -516,6 +661,12 @@ bool MetalPresentationBackend::draw_frame(
                                                         draw_target_pixel_buffer_,
                                                         draw_target_width_,
                                                         draw_target_height_);
+    log_overlay_composite_result(
+        package.storage == VPMacOSNativePresentPackageStorageYUV ? "package-yuv" : "package-bgra",
+        snapshot,
+        overlay,
+        draw_target_width_,
+        draw_target_height_);
     record_overlay_result(overlay.expected,
                           overlay.applied,
                           overlay.gpu_attempted,

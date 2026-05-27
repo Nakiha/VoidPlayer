@@ -328,12 +328,17 @@ class MediaHeaderOverlayPanelHostState
           final ready = <int>{};
           for (final entry in entries) {
             final status = widget.dataSource.statusForPath(entry.path);
-            if (status?.isCached ?? false) {
+            final statusHash = status?.hash;
+            if ((status?.isCached ?? false) &&
+                statusHash != null &&
+                widget.dataSource.supportsOverlayForHash(statusHash)) {
               ready.add(entry.fileId);
               continue;
             }
             for (final cacheEntry in snapshot.entries) {
-              if (cacheEntry.videoPath == entry.path && cacheEntry.complete) {
+              if (cacheEntry.videoPath == entry.path &&
+                  cacheEntry.complete &&
+                  widget.dataSource.supportsOverlayForHash(cacheEntry.hash)) {
                 ready.add(entry.fileId);
                 break;
               }

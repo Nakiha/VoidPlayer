@@ -42,6 +42,9 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
   AnalysisTrackGenerationStatus? statusForPath(String path) => null;
 
   @override
+  bool supportsOverlayForHash(String hash) => true;
+
+  @override
   Future<String?> ensureGenerated(String videoPath) => Future.value(null);
 
   @override
@@ -155,6 +158,9 @@ class _FakeAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
   AnalysisTrackGenerationStatus? statusForPath(String path) => null;
 
   @override
+  bool supportsOverlayForHash(String hash) => true;
+
+  @override
   Future<AnalysisCacheSnapshot> snapshot() => Future.value(
     const AnalysisCacheSnapshot(
       path: '',
@@ -210,7 +216,7 @@ void main() {
   });
 
   test(
-    'macOS phase capabilities hide analysis window and overlay entry points',
+    'macOS phase capabilities hide analysis window but keep overlay entry',
     () {
       final controller = MainWindowController(
         actionRegistry: ActionRegistry(),
@@ -236,7 +242,7 @@ void main() {
       );
 
       expect(controller.viewModel.media.analysisEnabled, isFalse);
-      expect(controller.viewModel.media.analysisOverlayEnabled, isFalse);
+      expect(controller.viewModel.media.analysisOverlayEnabled, isTrue);
     },
   );
 }

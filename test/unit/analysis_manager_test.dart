@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
+import 'package:void_player/analysis/nalu_types.dart';
 
 void main() {
   test('overlay chunks use stable aligned frame windows', () {
@@ -78,6 +79,19 @@ void main() {
         targetFrame: 572,
       ),
       [(startFrame: 512, endFrame: 572)],
+    );
+  });
+
+  test('overlay chunks are only supported for block-coded codecs', () {
+    expect(AnalysisManager.supportsOverlayCodec(AnalysisCodec.h264), isTrue);
+    expect(AnalysisManager.supportsOverlayCodec(AnalysisCodec.hevc), isTrue);
+    expect(AnalysisManager.supportsOverlayCodec(AnalysisCodec.vvc), isTrue);
+    expect(AnalysisManager.supportsOverlayCodec(AnalysisCodec.av1), isFalse);
+    expect(AnalysisManager.supportsOverlayCodec(AnalysisCodec.vp9), isFalse);
+    expect(AnalysisManager.supportsOverlayCodec(AnalysisCodec.mpeg2), isFalse);
+    expect(
+      AnalysisManager.supportsOverlayCodec(AnalysisCodec.unknown),
+      isFalse,
     );
   });
 }

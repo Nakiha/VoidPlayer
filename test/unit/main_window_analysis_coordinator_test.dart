@@ -28,6 +28,9 @@ class _CountingAnalysisGenerationService implements AnalysisGenerationService {
   AnalysisTrackGenerationStatus? statusForPath(String path) => null;
 
   @override
+  bool supportsOverlayForHash(String hash) => true;
+
+  @override
   Future<String?> ensureGenerated(String videoPath) async {
     ensureGeneratedCalls++;
     return 'hash-$ensureGeneratedCalls';

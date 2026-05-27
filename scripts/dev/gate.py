@@ -31,6 +31,7 @@ MACOS_UI_NIGHTLY = [
     "ui_tests/macos/native_playing_step_pauses_smoke.csv",
     "ui_tests/macos/native_seek_preview_event_smoke.csv",
     "ui_tests/macos/analysis_gated_smoke.csv",
+    "ui_tests/macos/analysis_av1_overlay_unsupported_smoke.csv",
 ]
 
 

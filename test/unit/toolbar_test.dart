@@ -95,6 +95,9 @@ class _FakeAnalysisToolbarDataSource extends ChangeNotifier
       Future.value(bytesByHash);
 
   @override
+  bool supportsOverlayForHash(String hash) => true;
+
+  @override
   String formatBytes(int bytes) => '$bytes B';
 }
 

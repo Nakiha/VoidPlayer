@@ -194,6 +194,10 @@ class MainWindowAnalysisCoordinator {
     if (_disposed || !_overlayPanelRequested) return;
     if (activated) {
       _notifyOverlayStateChanged();
+    } else {
+      _overlayPanelRequested = false;
+      analysisGeneration.deactivateOverlay();
+      _notifyOverlayStateChanged();
     }
   }
 
@@ -261,7 +265,13 @@ class MainWindowAnalysisCoordinator {
       presentedPtsUs: presentedFrame?.ptsUs,
       presentedDtsUs: presentedFrame?.dtsUs,
     );
-    if (_disposed || !activated) return;
+    if (_disposed) return;
+    if (!activated) {
+      _overlayPanelRequested = false;
+      analysisGeneration.deactivateOverlay();
+      _notifyOverlayStateChanged();
+      return;
+    }
     _hashesByFileId[track.fileId] = hash;
     _notifyOverlayStateChanged();
   }

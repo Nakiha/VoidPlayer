@@ -99,6 +99,7 @@ abstract class AnalysisGenerationService {
   Set<int> get activeOverlayTrackFileIds;
   AnalysisOverlayConfig get overlayConfig;
   AnalysisTrackGenerationStatus? statusForPath(String path);
+  bool supportsOverlayForHash(String hash);
   Future<String?> ensureGenerated(String videoPath);
   Future<String?> ensureGeneratedAndLoaded(String videoPath);
   Future<bool> ensureOverlayChunk(
@@ -183,6 +184,9 @@ class AnalysisManager extends ChangeNotifier
   AnalysisTrackGenerationStatus? statusForPath(String path) =>
       _trackStatusByPath[path];
 
+  @override
+  bool supportsOverlayForHash(String hash) => _supportsOverlayForHash(hash);
+
   /// Compute a full-file SHA-256 cache key.
   static Future<String> computeHash(String videoPath) =>
       _computeHash(videoPath);
@@ -220,6 +224,9 @@ class AnalysisManager extends ChangeNotifier
       presentedPtsUs: presentedPtsUs,
       presentedDtsUs: presentedDtsUs,
     );
+    if (!_supportsOverlayForHash(hash)) {
+      return false;
+    }
     final ranges = _overlayChunkRangesFor(hash, targetFrame);
     if (ranges == null) return false;
     var ready = true;
@@ -661,6 +668,13 @@ class AnalysisManager extends ChangeNotifier
     for (final track in tracks) {
       if (_cache.deleteIfVacVersionMismatch(track.hash)) {
         log.info('[Analysis] skipped stale overlay VAC version: ${track.hash}');
+        continue;
+      }
+      if (!_supportsOverlayForHash(track.hash)) {
+        log.info(
+          '[Analysis] skipped overlay for ${track.hash}: '
+          'codec does not support VACHUNK overlay generation',
+        );
         continue;
       }
       final chunkReady = await ensureOverlayChunk(
@@ -1112,6 +1126,42 @@ class AnalysisManager extends ChangeNotifier
       session?.close();
     }
   }
+
+  bool _supportsOverlayForHash(String hash) {
+    AnalysisSession? session;
+    try {
+      session = _native.openSession(_cache.analysisPath(hash));
+      final summary = session?.summary;
+      if (summary == null || summary.loaded == 0) return false;
+      final codec = analysisCodecFromValue(summary.codec);
+      final supported = supportsOverlayCodec(codec);
+      if (!supported) {
+        log.info(
+          '[Analysis] overlay VACHUNK unsupported for '
+          '${analysisCodecName(codec)} cache $hash',
+        );
+      }
+      return supported;
+    } catch (e, stack) {
+      log.warning(
+        '[Analysis] failed to check overlay support for $hash: $e',
+        e,
+        stack,
+      );
+      return false;
+    } finally {
+      session?.close();
+    }
+  }
+
+  @visibleForTesting
+  static bool supportsOverlayCodec(AnalysisCodec codec) => switch (codec) {
+    AnalysisCodec.h264 || AnalysisCodec.hevc || AnalysisCodec.vvc => true,
+    AnalysisCodec.unknown ||
+    AnalysisCodec.av1 ||
+    AnalysisCodec.vp9 ||
+    AnalysisCodec.mpeg2 => false,
+  };
 
   @visibleForTesting
   static ({int startFrame, int endFrame}) overlayChunkRangeForFrame({

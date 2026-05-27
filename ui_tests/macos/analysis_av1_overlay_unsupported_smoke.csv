@@ -1,0 +1,12 @@
+# AV1 VAC2 base generation is supported, but renderer overlay VACHUNK is not.
+# The overlay action must stay inactive instead of presenting a false-positive
+# panel or repeatedly attempting unsupported VACHUNK generation.
+0.3, ADD_MEDIA, resources/video/av1_10s_1920x1080.webm
+1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
+1.5, ASSERT_ANALYSIS_FFI_AVAILABLE, true
+1.6, GENERATE_ANALYSIS_CACHE, 0
+2.0, TOGGLE_ANALYSIS_OVERLAY_PANEL
+2.8, ASSERT_ANALYSIS_OVERLAY, false
+3.0, TOGGLE_ANALYSIS_OVERLAY, 0
+3.8, ASSERT_ANALYSIS_OVERLAY, false
+4.0, QUIT, 0

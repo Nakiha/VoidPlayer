@@ -13,6 +13,7 @@ abstract class AnalysisToolbarDataSource implements Listenable {
   Set<int> get activeOverlayTrackFileIds;
   AnalysisOverlayConfig get overlayConfig;
   AnalysisTrackGenerationStatus? statusForPath(String path);
+  bool supportsOverlayForHash(String hash);
   Future<AnalysisCacheSnapshot> snapshot();
   Future<Map<String, int>> currentBytesByHash(Set<String> hashes);
   String formatBytes(int bytes);
@@ -59,6 +60,10 @@ class DefaultAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
   @override
   AnalysisTrackGenerationStatus? statusForPath(String path) =>
       analysisManager.statusForPath(path);
+
+  @override
+  bool supportsOverlayForHash(String hash) =>
+      analysisManager.supportsOverlayForHash(hash);
 
   @override
   Future<AnalysisCacheSnapshot> snapshot() {

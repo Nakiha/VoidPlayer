@@ -1,8 +1,13 @@
 #include "analysis/analysis_ffi_abi.h"
+#include "analysis/cache/overlay_chunk.h"
+#include "analysis/cache/vacache_store.h"
+#include "common/win_utf8.h"
 #include "tools/test_video_assets.h"
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
@@ -57,6 +62,8 @@ int main() {
     assert(summary->nalu_count > 0);
     assert(summary->video_width > 0);
     assert(summary->video_height > 0);
+    const int32_t frame_count = summary->frame_count;
+    const int32_t codec = summary->codec;
 
     NakiFrameInfo frame{};
     assert(naki_analysis_handle_get_frames_range(handle, 0, &frame, 1) == 1);
@@ -71,6 +78,45 @@ int main() {
     assert(bucket.frame_count > 0);
 
     naki_analysis_close(handle);
+
+    if (std::getenv("VOID_FFMPEG_ANALYZER") != nullptr && frame_count > 0) {
+        const int32_t end_frame = std::min<int32_t>(2, frame_count - 1);
+        assert(naki_analysis_generate_vac2_overlay_chunk(
+                   video.string().c_str(),
+                   hash.c_str(),
+                   cache_root.string().c_str(),
+                   0,
+                   end_frame,
+                   0) != 0);
+
+        vr::analysis::VacacheStore store(
+            vr::win_utf8::path_to_utf8(cache_root),
+            hash);
+        vr::analysis::Vac2BaseFile base;
+        assert(store.open_base(base));
+
+        vr::analysis::VachunkKey key;
+        key.kind = VachunkKind::Overlay;
+        key.codec = static_cast<AnalysisCodec>(codec);
+        key.feature_flags =
+            VACHUNK_FEATURE_CU_GEOMETRY |
+            VACHUNK_FEATURE_QP |
+            VACHUNK_FEATURE_PRED_MODE |
+            VACHUNK_FEATURE_MOTION_VECTORS |
+            VACHUNK_FEATURE_REF_INDEXES |
+            VACHUNK_FEATURE_BIT_COST;
+        key.base_content_revision = base.header().content_revision;
+        key.generator_revision = 2;
+        key.start_frame = 0;
+        key.end_frame = static_cast<uint32_t>(end_frame);
+
+        vr::analysis::VachunkFile chunk;
+        assert(store.open_chunk(key, chunk));
+        vr::analysis::VachunkOverlayFrameData overlay_frame;
+        assert(vr::analysis::read_overlay_vachunk_frame(chunk, 0, overlay_frame));
+        assert(!overlay_frame.cus.empty());
+    }
+
     std::filesystem::remove_all(cache_root);
     std::cout << "macos_analysis_ffi_smoke passed\n";
     return 0;

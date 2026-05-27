@@ -201,6 +201,10 @@ if(APPLE)
             VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
         )
         add_test(NAME macos_analysis_ffi_smoke COMMAND macos_analysis_ffi_smoke)
+        if(FFMPEG_ANALYZER_PATH)
+            set_tests_properties(macos_analysis_ffi_smoke PROPERTIES
+                ENVIRONMENT "VOID_FFMPEG_ANALYZER=${FFMPEG_ANALYZER_PATH}")
+        endif()
         void_label_test(macos_analysis_ffi_smoke "macos;analysis;ffi;canary")
 
         if(FFMPEG_ANALYZER_PATH)

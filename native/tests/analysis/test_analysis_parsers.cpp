@@ -3,6 +3,7 @@
 #include "analysis/cache/vacache_store.h"
 #include "analysis/cache/overlay_chunk.h"
 #include "analysis/cache/overlay_raster.h"
+#include "analysis/cache/overlay_text.h"
 #include "analysis/analysis_manager.h"
 #include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vachunk_parser.h"
@@ -212,6 +213,74 @@ vr::analysis::VachunkData make_frame_summary_chunk_data(uint8_t qp) {
 }
 
 } // namespace
+
+TEST_CASE("Overlay text: builds centered ASCII glyph quads", "[analysis][overlay][text]") {
+    vr::analysis::VachunkCuRecord cu{};
+    cu.common.qp = 27;
+    cu.common.pred_mode = 1;
+    cu.common.bit_count = 128000;
+    REQUIRE(vr::analysis::overlay_cu_label_text(
+                cu, vr::analysis::OverlayCuLabelMode::Qp) == "QP 27");
+    REQUIRE(vr::analysis::overlay_cu_label_text(
+                cu, vr::analysis::OverlayCuLabelMode::BitCost) == "128K");
+    REQUIRE(vr::analysis::overlay_cu_label_text(
+                cu, vr::analysis::OverlayCuLabelMode::Prediction) == "INTRA");
+
+    cu.common.pred_mode = 0;
+    cu.inter.merge_flag = 1;
+    REQUIRE(vr::analysis::overlay_cu_label_text(
+                cu, vr::analysis::OverlayCuLabelMode::Prediction) == "MERGE");
+
+    vr::analysis::OverlayTextLayout layout;
+    layout.surface_width = 1920;
+    layout.surface_height = 1080;
+    layout.rect_x0 = 100.0f;
+    layout.rect_y0 = 200.0f;
+    layout.rect_x1 = 260.0f;
+    layout.rect_y1 = 280.0f;
+    layout.pixel_scale_x = 1.0f;
+    layout.pixel_scale_y = 1.0f;
+    layout.target_cell_pixels = 2;
+    layout.padding_pixels = 2;
+
+    std::vector<vr::analysis::OverlayGlyphQuad> quads;
+    REQUIRE(vr::analysis::append_ascii_overlay_glyph_quads(
+        quads,
+        "QP 27",
+        layout,
+        vr::analysis::OverlayColor{255, 255, 255, 255},
+        vr::analysis::OverlayColor{0, 0, 0, 192}));
+    REQUIRE(!quads.empty());
+    for (const auto& quad : quads) {
+        REQUIRE(quad.x0 >= layout.rect_x0);
+        REQUIRE(quad.y0 >= layout.rect_y0);
+        REQUIRE(quad.x1 <= layout.rect_x1);
+        REQUIRE(quad.y1 <= layout.rect_y1);
+        REQUIRE(quad.atlas_x1 > quad.atlas_x0);
+        REQUIRE(quad.atlas_y1 > quad.atlas_y0);
+    }
+
+    layout.rect_x1 = layout.rect_x0 + 8.0f;
+    quads.clear();
+    REQUIRE_FALSE(vr::analysis::append_ascii_overlay_glyph_quads(
+        quads,
+        "QP 27",
+        layout,
+        vr::analysis::OverlayColor{255, 255, 255, 255},
+        vr::analysis::OverlayColor{}));
+    REQUIRE(quads.empty());
+
+    std::vector<uint8_t> atlas;
+    int width = 0;
+    int height = 0;
+    REQUIRE(vr::analysis::build_ascii_overlay_glyph_atlas(atlas, width, height));
+    REQUIRE(width == 128);
+    REQUIRE(height == 48);
+    REQUIRE(atlas.size() == static_cast<size_t>(width) * static_cast<size_t>(height));
+    REQUIRE(std::any_of(atlas.begin(), atlas.end(), [](uint8_t value) {
+        return value != 0;
+    }));
+}
 
 // ===========================================================================
 // VAC2 Base Container Tests

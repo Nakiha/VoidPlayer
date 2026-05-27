@@ -2,13 +2,17 @@
 
 #include "analysis/analysis_manager.h"
 #include "analysis/analysis_session.h"
+#include "analysis/cache/overlay_chunk.h"
 #include "analysis/cache/vacache_store.h"
 #include "analysis/generators/analysis_generator.h"
+#include "analysis/parsers/vachunk_parser.h"
 #include "common/win_utf8.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -18,7 +22,9 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
+#include <sys/wait.h>
 #include <unistd.h>
 
 namespace {
@@ -34,6 +40,14 @@ std::mutex g_handle_registry_mutex;
 std::unordered_map<uintptr_t, std::shared_ptr<vr::analysis::AnalysisSession>> g_handles;
 std::atomic<uintptr_t> g_next_handle_id{1};
 
+constexpr uint64_t kOverlayVachunkFeatureFlags =
+    VACHUNK_FEATURE_CU_GEOMETRY |
+    VACHUNK_FEATURE_QP |
+    VACHUNK_FEATURE_PRED_MODE |
+    VACHUNK_FEATURE_MOTION_VECTORS |
+    VACHUNK_FEATURE_REF_INDEXES |
+    VACHUNK_FEATURE_BIT_COST;
+
 void set_error(int32_t status, std::string message) {
     g_last_error.status = status;
     g_last_error.message = std::move(message);
@@ -45,6 +59,106 @@ void set_ok() {
 
 const char* safe_cstr(const char* value) {
     return value ? value : "";
+}
+
+bool path_exists(const std::string& path) {
+    return vr::win_utf8::file_exists_utf8(path);
+}
+
+std::string join_path(const std::string& base, const std::string& child) {
+    return vr::win_utf8::path_to_utf8(
+        vr::win_utf8::path_from_utf8(base) /
+        vr::win_utf8::path_from_utf8(child));
+}
+
+const char* ffmpeg_analysis_codec_arg(AnalysisCodec codec) {
+    switch (codec) {
+    case AnalysisCodec::H264: return "h264";
+    case AnalysisCodec::HEVC: return "hevc";
+    case AnalysisCodec::VVC: return "vvc";
+    default: return nullptr;
+    }
+}
+
+std::string host_analyzer_platform_dir() {
+#if defined(__aarch64__) || defined(__arm64__)
+    return "macos-arm64";
+#else
+    return "macos-x64";
+#endif
+}
+
+std::string find_ffmpeg_analyzer() {
+    const std::string env = vr::win_utf8::get_env_utf8(L"VOID_FFMPEG_ANALYZER");
+    if (!env.empty() && path_exists(env)) return env;
+
+    std::vector<std::string> roots;
+    const std::string module_dir = vr::win_utf8::module_directory_utf8();
+    if (!module_dir.empty()) roots.push_back(module_dir);
+
+    std::error_code ec;
+    const auto cwd = std::filesystem::current_path(ec);
+    if (!ec) {
+        roots.push_back(vr::win_utf8::path_to_utf8(cwd));
+        roots.push_back(vr::win_utf8::path_to_utf8(cwd / ".."));
+    }
+
+    const std::string platform = host_analyzer_platform_dir();
+    std::vector<std::string> candidates;
+    for (const auto& root : roots) {
+        candidates.push_back(join_path(join_path(root, "tools"), "ffmpeg-analysis/void_ffmpeg_analyzer"));
+        candidates.push_back(join_path(root, "void_ffmpeg_analyzer"));
+        candidates.push_back(join_path(
+            join_path(root, "native/analysis/vendor/ffmpeg/bin"),
+            platform + "/void_ffmpeg_analyzer"));
+        candidates.push_back(join_path(
+            join_path(root, "analysis/vendor/ffmpeg/bin"),
+            platform + "/void_ffmpeg_analyzer"));
+    }
+    for (const auto& candidate : candidates) {
+        if (path_exists(candidate)) return candidate;
+    }
+    return {};
+}
+
+int run_process(const std::vector<std::string>& args) {
+    if (args.empty()) return -1;
+    std::vector<const char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& arg : args) argv.push_back(arg.c_str());
+    argv.push_back(nullptr);
+
+    const pid_t pid = fork();
+    if (pid < 0) return -1;
+    if (pid == 0) {
+        execv(args[0].c_str(), const_cast<char* const*>(argv.data()));
+        _exit(127);
+    }
+
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno == EINTR) continue;
+        return -1;
+    }
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return -1;
+}
+
+bool vachunk_matches_key(const vr::analysis::VachunkFile& chunk,
+                         const vr::analysis::VachunkKey& key) {
+    const auto& h = chunk.header();
+    return h.kind == static_cast<uint16_t>(key.kind) &&
+           h.codec == static_cast<uint16_t>(key.codec) &&
+           h.feature_flags == key.feature_flags &&
+           h.base_content_revision == key.base_content_revision &&
+           h.generator_revision == key.generator_revision &&
+           h.start_frame == key.start_frame &&
+           h.end_frame == key.end_frame &&
+           h.start_packet == key.start_packet &&
+           h.end_packet == key.end_packet &&
+           h.start_unit == key.start_unit &&
+           h.end_unit == key.end_unit;
 }
 
 NakiAnalysisHandle encode_handle(uintptr_t id) {
@@ -511,13 +625,122 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_generate_vac2_base(
 }
 
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_generate_vac2_overlay_chunk(
-    const char*,
-    const char*,
-    const char*,
-    int32_t,
-    int32_t,
-    int64_t) {
-    set_error(NAKI_ANALYSIS_ERR_UNSUPPORTED,
-              "macOS overlay VACHUNK generation is not wired yet");
-    return 0;
+    const char* video_path,
+    const char* hash,
+    const char* cache_root,
+    int32_t start_frame,
+    int32_t end_frame,
+    int64_t max_cache_bytes) {
+    std::lock_guard<std::mutex> lock(g_generation_mutex);
+    if (!video_path || video_path[0] == '\0' || !hash || hash[0] == '\0' ||
+        !cache_root || cache_root[0] == '\0' || start_frame < 0 ||
+        end_frame < start_frame) {
+        set_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                  "video_path, hash, cache_root, and a valid frame range are required");
+        return 0;
+    }
+
+    vr::analysis::VacacheStore store(cache_root, hash);
+    if (!store.ensure_layout()) {
+        set_error(NAKI_ANALYSIS_ERR_OPEN_FAILED, "failed to create VAC2 cache layout");
+        return 0;
+    }
+
+    vr::analysis::Vac2BaseFile base;
+    if (!store.open_base(base)) {
+        set_error(NAKI_ANALYSIS_ERR_OPEN_FAILED, "VAC2 base cache is missing or invalid");
+        return 0;
+    }
+    if (static_cast<size_t>(end_frame) >= base.frames().size()) {
+        set_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                  "overlay frame range exceeds VAC2 base frame count");
+        return 0;
+    }
+
+    const AnalysisCodec codec = analysis_codec_from_u16(base.header().codec);
+    const char* codec_arg = ffmpeg_analysis_codec_arg(codec);
+    if (!codec_arg) {
+        set_error(NAKI_ANALYSIS_ERR_UNSUPPORTED,
+                  "overlay VACHUNK generation only supports H.264/HEVC/VVC");
+        return 0;
+    }
+
+    const std::string analyzer = find_ffmpeg_analyzer();
+    if (analyzer.empty()) {
+        set_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,
+                  "void_ffmpeg_analyzer not found; set VOID_FFMPEG_ANALYZER");
+        return 0;
+    }
+
+    vr::analysis::VachunkKey key;
+    key.kind = VachunkKind::Overlay;
+    key.codec = codec;
+    key.feature_flags = kOverlayVachunkFeatureFlags;
+    key.base_content_revision = base.header().content_revision;
+    key.generator_revision = 2;
+    key.start_frame = static_cast<uint32_t>(start_frame);
+    key.end_frame = static_cast<uint32_t>(end_frame);
+
+    const auto now = std::chrono::steady_clock::now().time_since_epoch();
+    const auto ticks =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
+    std::ostringstream staging_name;
+    staging_name << "overlay.ffi." << static_cast<long long>(getpid())
+                 << "." << ticks;
+    const auto staging_dir =
+        vr::win_utf8::path_from_utf8(store.tmp_dir()) / staging_name.str();
+    std::error_code ec;
+    std::filesystem::create_directories(staging_dir, ec);
+    if (ec) {
+        set_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                  "failed to create overlay VACHUNK staging directory");
+        return 0;
+    }
+    const std::string tmp_path = vr::win_utf8::path_to_utf8(
+        staging_dir / (std::string(hash) + ".overlay.tmp.vck"));
+
+    const int rc = run_process({
+        analyzer,
+        "--codec", codec_arg,
+        "--input", safe_cstr(video_path),
+        "--vachunk", tmp_path,
+        "--start-frame", std::to_string(start_frame),
+        "--end-frame", std::to_string(end_frame),
+        "--base-revision", std::to_string(key.base_content_revision),
+        "--generator-revision", std::to_string(key.generator_revision),
+    });
+    if (rc != 0 || !path_exists(tmp_path)) {
+        std::filesystem::remove_all(staging_dir, ec);
+        set_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                  "FFmpeg analyzer failed while generating overlay VACHUNK");
+        return 0;
+    }
+
+    vr::analysis::VachunkFile verify;
+    if (!verify.open(tmp_path) || !vachunk_matches_key(verify, key)) {
+        std::filesystem::remove_all(staging_dir, ec);
+        set_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                  "generated overlay VACHUNK does not match requested key");
+        return 0;
+    }
+    verify.close();
+
+    vr::analysis::VachunkData data;
+    if (!vr::analysis::read_vachunk_file_data(tmp_path, data)) {
+        std::filesystem::remove_all(staging_dir, ec);
+        set_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                  "failed to read generated overlay VACHUNK");
+        return 0;
+    }
+    const uint64_t max_output_bytes =
+        max_cache_bytes > 0 ? static_cast<uint64_t>(max_cache_bytes) : 0;
+    if (!store.write_chunk_atomic(key, std::move(data), max_output_bytes)) {
+        std::filesystem::remove_all(staging_dir, ec);
+        set_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                  "failed to publish generated overlay VACHUNK");
+        return 0;
+    }
+    std::filesystem::remove_all(staging_dir, ec);
+    set_ok();
+    return 1;
 }

@@ -147,6 +147,7 @@ set(VOID_RENDERER_SOURCES
 set(VOID_ANALYSIS_SOURCES
     "${VOID_NATIVE_DIR}/analysis/cache/overlay_chunk.cpp"
     "${VOID_NATIVE_DIR}/analysis/cache/overlay_raster.cpp"
+    "${VOID_NATIVE_DIR}/analysis/cache/overlay_text.cpp"
     "${VOID_NATIVE_DIR}/analysis/cache/vacache_store.cpp"
     "${VOID_NATIVE_DIR}/analysis/parsers/vac2_parser.cpp"
     "${VOID_NATIVE_DIR}/analysis/parsers/vachunk_parser.cpp"

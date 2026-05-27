@@ -3,6 +3,7 @@
 #include "analysis/parsers/vac2_parser.h"
 #include "analysis/parsers/vachunk_parser.h"
 #include "common/win_utf8.h"
+#include "tools/test_video_assets.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -90,9 +91,10 @@ bool run_cli(const std::string& cli, const std::vector<std::string>& args) {
 
 bool run_smoke(const std::string& cli,
                const std::string& analyzer,
-               const std::string& video) {
+               const std::string& video_root) {
     if (!path_exists(cli)) return fail("VoidPlayerCli is missing: " + cli);
     if (!path_exists(analyzer)) return fail("void_ffmpeg_analyzer is missing: " + analyzer);
+    const std::string video = vp_tools::h264_smoke_video_path(video_root);
     if (!path_exists(video)) return fail("sample video is missing: " + video);
 
     const std::filesystem::path cache_root = make_temp_cache_root();
@@ -190,7 +192,7 @@ bool run_smoke(const std::string& cli,
 int main(int argc, char** argv) {
     if (argc != 4) {
         std::cerr << "Usage: macos_analysis_toolchain_smoke "
-                     "<VoidPlayerCli> <void_ffmpeg_analyzer> <h264-sample>\n";
+                     "<VoidPlayerCli> <void_ffmpeg_analyzer> <video-test-dir>\n";
         return 1;
     }
     return run_smoke(argv[1], argv[2], argv[3]) ? 0 : 2;

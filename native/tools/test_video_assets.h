@@ -27,7 +27,10 @@ inline std::string h264_smoke_video_path(const std::string& root) {
         return preferred.string();
     }
     const auto fallback = root_path / "ci_h264_smoke.mp4";
-    return fallback.string();
+    if (std::filesystem::is_regular_file(fallback) && !is_git_lfs_pointer(fallback)) {
+        return fallback.string();
+    }
+    return {};
 }
 
 }  // namespace vp_tools

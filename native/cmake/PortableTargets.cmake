@@ -219,7 +219,7 @@ if(APPLE)
                 COMMAND macos_analysis_toolchain_smoke
                     $<TARGET_FILE:VoidPlayerCli>
                     "${FFMPEG_ANALYZER_PATH}"
-                    "${VIDEO_TEST_DIR}/h264_9s_1920x1080.mp4")
+                    "${VIDEO_TEST_DIR}")
             void_label_test(macos_analysis_toolchain_smoke "macos;analysis;cli;integration")
         else()
             message(STATUS "macos_analysis_toolchain_smoke disabled: FFmpeg analyzer tool not found")

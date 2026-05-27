@@ -103,6 +103,8 @@ final class MacOSPlaybackController {
 
   func handleFrameCallback(
     player: MacOSNativePlayerSession?,
+    texture: MacOSFlutterTextureBridge?,
+    maxTrackSlots: Int,
     nativeBackendActive: Bool,
     presentationState: MacOSFramePresentationState,
     markFrameAvailable: () -> Void
@@ -115,6 +117,14 @@ final class MacOSPlaybackController {
       presentationState.recordPresentation(rendererOwned: true)
       if let frameInfo = player?.lastRendererOwnedFrameInfo() {
         presentationState.recordFrame(frameInfo)
+      }
+      if let player, let texture {
+        guard texture.publishRenderedTargetAndInstallNext(
+          player,
+          maxTrackSlots: maxTrackSlots
+        ) else {
+          return
+        }
       }
       markFrameAvailable()
       return

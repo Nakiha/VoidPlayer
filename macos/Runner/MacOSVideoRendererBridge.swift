@@ -299,6 +299,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       guard let self else { return }
       self.playback.handleFrameCallback(
         player: self.nativePlayer,
+        texture: self.nativeTexture,
+        maxTrackSlots: self.tracks.activeSlotCapacity(),
         nativeBackendActive: self.backendName == MacOSVideoTrackPayload.nativeFormatName,
         presentationState: self.presentationState,
         markFrameAvailable: self.markFrameAvailable

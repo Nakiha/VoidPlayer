@@ -73,9 +73,15 @@ build/windows/x64/runner/<Config>/tools/ffmpeg-analysis/void_ffmpeg_analyzer.exe
 ```
 
 On macOS the analyzer is built by `python dev.py analysis-benchmark --build`,
-`python dev.py analysis-overlay-benchmark --build`, or by the macOS analysis CI
-smoke before CMake configures `macos_analysis_toolchain_smoke`. The macOS build
-uses clang/darwin FFmpeg static archives and the same zstd-backed VACHUNK writer.
+`python dev.py analysis-overlay-benchmark --build`, `python dev.py build --flutter`,
+`python dev.py launch`, `python dev.py mac-ui-test --build ...`, or by the macOS analysis
+CI smoke before CMake configures `macos_analysis_toolchain_smoke`. The macOS build uses
+clang/darwin FFmpeg static archives and the same zstd-backed VACHUNK writer. Dev Flutter
+builds install the tool into the app bundle under:
+
+```text
+build/macos/Build/Products/<Config>/VoidPlayer.app/Contents/MacOS/tools/ffmpeg-analysis/void_ffmpeg_analyzer
+```
 
 The dev script stamps the analyzer with a signature over the Python build helper and
 codec hook files/headers. When H.264/HEVC/VVC hook code changes, the next build

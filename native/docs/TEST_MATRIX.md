@@ -93,6 +93,7 @@ ctest --test-dir native/build-macos-make -LE hosted-flaky --output-on-failure
 | `ui_tests/macos/native_seek_frame_smoke.csv` | Renderer-owned refresh after seek. | macOS stabilization. |
 | `ui_tests/macos/native_layout_split_smoke.csv` | Shared layout through Metal presentation. | macOS stabilization. |
 | `ui_tests/macos/native_controls_smoke.csv` | Basic native play/pause/seek/step command smoke. | macOS stabilization. |
+| `ui_tests/macos/analysis_gated_smoke.csv` | macOS analysis FFI, media-header overlay panel/activation, and gated external analysis window behavior. | Nightly/headed or targeted analysis overlay changes. |
 | `ui_tests/macos/native_4k60_playback_smoke.csv` | VideoToolbox/Metal/cadence canary; asserts monotonic PTS, large-gap/error counters, duplicate PTS visibility, host interval max/p95, and renderer-owned ratio. | Nightly/headed or release candidate. |
 | `ui_tests/macos/native_vvc_software_playback_smoke.csv` | Software fallback + Metal package path. | Nightly/headed or release candidate. |
 | `ui_tests/macos/native_add_short_after_eof_smoke.csv` | EOF carry-forward when adding a shorter hardware-decoded track after AV1/VVC software tracks. | Nightly/headed or targeted track/presentation changes. |

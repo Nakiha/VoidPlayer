@@ -40,7 +40,7 @@ class PlatformCapabilities {
     sshRemoteMediaPlayback: false,
     nativeFilePicker: true,
     externalAnalysisWindows: false,
-    analysisOverlays: false,
+    analysisOverlays: true,
     nativeViewportCapture: true,
     pathLauncher: true,
   );

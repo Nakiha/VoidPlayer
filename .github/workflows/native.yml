@@ -264,7 +264,7 @@ jobs:
 
       - name: Build macOS Flutter runner
         shell: bash
-        run: flutter build macos --debug
+        run: python3.12 dev.py build --flutter --debug
 
   native-config-matrix:
     name: Full native config matrix / ${{ matrix.name }}

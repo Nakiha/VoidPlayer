@@ -86,7 +86,8 @@ Useful macOS smoke areas:
 - `native_layout_split_smoke.csv`: shared layout through Metal presentation.
 - `native_add_track_smoke.csv`: multi-track add/remove/offset diagnostics.
 - `native_callback_stress_smoke.csv`: play/pause, seek storm, destroy/recreate.
-- `analysis_gated_smoke.csv`: analysis FFI present, UI/IPC still gated.
+- `analysis_gated_smoke.csv`: analysis FFI and media-header overlay activation present, external
+  analysis UI/IPC still gated.
 
 Native VideoToolbox/provider and Metal presentation smokes are part of the
 native test suite where available. If the runner, Swift bridge, Metal backend,

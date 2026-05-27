@@ -82,11 +82,9 @@ overlay redraw 读不到实际显示帧。
 
 `windows/runner/analysis_ffi.cpp` 和 `native/macos/analysis_ffi_bridge.cpp` 将分析功能暴露给
 Flutter/Dart。两端共用 `native/analysis/analysis_ffi_abi.h` 中的 flat ABI struct 定义；
-Windows 仍承载完整 analysis UI/IPC 与 runtime overlay VACHUNK 调度流程。macOS
-当前提供 VAC2 base 生成、只读 handle 查询、overlay state/track 绑定符号，以及
-dev/CI 侧 `VoidPlayerCli + void_ffmpeg_analyzer` 的 VAC2/VACHUNK toolchain smoke；
-macOS runtime FFI 的 `naki_analysis_generate_vac2_overlay_chunk` 仍会明确返回
-unsupported，直到 macOS analysis workspace / overlay 调度流程落地。
+Windows 仍承载完整 analysis UI/IPC。macOS 当前提供 VAC2 base 生成、只读 handle
+查询、overlay state/track 绑定符号，以及通过 bundled `void_ffmpeg_analyzer` 的 runtime
+overlay VACHUNK 生成；外部 analysis 窗体和 analysis UI/IPC 仍保持 capability-gated。
 
 | FFI 函数 | 功能 |
 |----------|------|

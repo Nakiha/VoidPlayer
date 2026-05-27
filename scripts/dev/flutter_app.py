@@ -17,6 +17,7 @@ from .paths import (
     NATIVE_DIR,
     ROOT,
     app_exe_path,
+    find_ffmpeg_analyzer,
     macos_app_bundle_path,
     macos_app_exe_path,
 )
@@ -55,6 +56,7 @@ def flutter_build(debug: bool) -> None:
 def flutter_build_macos(debug: bool) -> None:
     """Build Flutter macOS app."""
     build_type = "Debug" if debug else "Release"
+    ensure_ffmpeg_analyzer_tool()
 
     header(f"Build Flutter macOS ({build_type})")
 
@@ -62,6 +64,24 @@ def flutter_build_macos(debug: bool) -> None:
     cmd.append("--debug" if debug else "--release")
 
     run(cmd, cwd=str(ROOT))
+    _install_macos_ffmpeg_analyzer(macos_app_bundle_path(debug))
+
+
+def _install_macos_ffmpeg_analyzer(app_bundle: Path) -> None:
+    analyzer = find_ffmpeg_analyzer()
+    if not analyzer.exists():
+        ensure_ffmpeg_analyzer_tool()
+        analyzer = find_ffmpeg_analyzer()
+    if not analyzer.exists():
+        print(f"ERROR: FFmpeg analyzer not found: {analyzer}")
+        sys.exit(1)
+
+    tools_dir = app_bundle / "Contents" / "MacOS" / "tools" / "ffmpeg-analysis"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    dest = tools_dir / analyzer.name
+    if not dest.exists() or analyzer.stat().st_mtime > dest.stat().st_mtime:
+        shutil.copy2(analyzer, dest)
+    dest.chmod(dest.stat().st_mode | 0o111)
 
 
 def flutter_unit_test() -> None:
@@ -232,6 +252,7 @@ def _cmd_launch_macos(args) -> None:
     if not app_bundle.exists() or not exe.exists():
         print(f"ERROR: macOS app not found: {app_bundle}")
         sys.exit(1)
+    _install_macos_ffmpeg_analyzer(app_bundle)
 
     cmd = [str(exe)]
     if args.log_level:
@@ -392,6 +413,7 @@ def _cmd_mac_ui_test(args) -> None:
     if not app_bundle.exists() or not exe.exists():
         print(f"ERROR: macOS app not found: {app_bundle}")
         sys.exit(1)
+    _install_macos_ffmpeg_analyzer(app_bundle)
 
     container_scripts_dir, container_media_dir = _macos_ui_test_container_dirs()
 

@@ -57,28 +57,81 @@ void fill_target_rect(uint8_t* target,
     }
 }
 
-void stroke_target_rect(uint8_t* target,
-                        int width,
-                        int height,
-                        size_t stride,
-                        TargetRect rect,
-                        analysis::OverlayColor color) {
-    rect.x0 = std::clamp(rect.x0, 0, width - 1);
-    rect.x1 = std::clamp(rect.x1, 0, width);
-    rect.y0 = std::clamp(rect.y0, 0, height - 1);
-    rect.y1 = std::clamp(rect.y1, 0, height);
-    if (rect.x0 >= rect.x1 || rect.y0 >= rect.y1 || color.a == 0) {
+void draw_contrast_line_rect(uint8_t* target,
+                             int width,
+                             int height,
+                             size_t stride,
+                             TargetRect center,
+                             analysis::OverlayColor center_color,
+                             analysis::OverlayColor halo_color) {
+    TargetRect halo{
+        center.x0 - 1,
+        center.y0 - 1,
+        center.x1 + 1,
+        center.y1 + 1,
+    };
+    fill_target_rect(target, width, height, stride, halo, halo_color);
+    fill_target_rect(target, width, height, stride, center, center_color);
+}
+
+void stroke_target_rect_contrast(uint8_t* target,
+                                 int width,
+                                 int height,
+                                 size_t stride,
+                                 TargetRect rect,
+                                 bool draw_right,
+                                 bool draw_bottom,
+                                 uint8_t line_alpha) {
+    if (line_alpha == 0) {
         return;
     }
-    const int right = rect.x1 - 1;
-    const int bottom = rect.y1 - 1;
-    for (int x = rect.x0; x <= right; ++x) {
-        blend_target_pixel(target, width, height, stride, x, rect.y0, color);
-        blend_target_pixel(target, width, height, stride, x, bottom, color);
+    rect.x0 = std::clamp(rect.x0, 0, width);
+    rect.x1 = std::clamp(rect.x1, 0, width);
+    rect.y0 = std::clamp(rect.y0, 0, height);
+    rect.y1 = std::clamp(rect.y1, 0, height);
+    if (rect.x0 >= rect.x1 || rect.y0 >= rect.y1) {
+        return;
     }
-    for (int y = rect.y0; y <= bottom; ++y) {
-        blend_target_pixel(target, width, height, stride, rect.x0, y, color);
-        blend_target_pixel(target, width, height, stride, right, y, color);
+
+    const analysis::OverlayColor center_color{255, 255, 255, 115};
+    const analysis::OverlayColor halo_color{0, 0, 0, 166};
+    const int line_width = 2;
+
+    draw_contrast_line_rect(
+        target,
+        width,
+        height,
+        stride,
+        TargetRect{rect.x0, rect.y0, rect.x1, rect.y0 + line_width},
+        center_color,
+        halo_color);
+    draw_contrast_line_rect(
+        target,
+        width,
+        height,
+        stride,
+        TargetRect{rect.x0, rect.y0, rect.x0 + line_width, rect.y1},
+        center_color,
+        halo_color);
+    if (draw_right) {
+        draw_contrast_line_rect(
+            target,
+            width,
+            height,
+            stride,
+            TargetRect{rect.x1 - line_width, rect.y0, rect.x1, rect.y1},
+            center_color,
+            halo_color);
+    }
+    if (draw_bottom) {
+        draw_contrast_line_rect(
+            target,
+            width,
+            height,
+            stride,
+            TargetRect{rect.x0, rect.y1 - line_width, rect.x1, rect.y1},
+            center_color,
+            halo_color);
     }
 }
 
@@ -342,9 +395,14 @@ bool AnalysisOverlayRenderer::composite_bgra(const RendererDrawSnapshot& snapsho
                                       rect)) {
                 continue;
             }
-            stroke_target_rect(
-                target_bgra, target_width, target_height, target_stride_bytes, rect,
-                primitive.color);
+            stroke_target_rect_contrast(target_bgra,
+                                        target_width,
+                                        target_height,
+                                        target_stride_bytes,
+                                        rect,
+                                        primitive.x1 >= video_w,
+                                        primitive.y1 >= video_h,
+                                        track.line_alpha);
             drew = true;
         }
 

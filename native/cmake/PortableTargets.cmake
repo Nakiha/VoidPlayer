@@ -376,7 +376,7 @@ if(APPLE)
     add_test(NAME macos_native_player_shared_renderer_smoke
         COMMAND macos_native_player_shared_renderer_smoke)
     void_label_test(macos_native_player_shared_renderer_smoke
-        "macos;native;integration;videotoolbox")
+        "macos;native;integration;videotoolbox;hosted-flaky;nightly")
 
     add_executable(audio_mixer_smoke
         "${VOID_NATIVE_DIR}/tools/audio_mixer_smoke.cpp"

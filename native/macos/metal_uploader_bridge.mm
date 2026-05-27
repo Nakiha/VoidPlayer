@@ -88,6 +88,13 @@ int32_t VPMacOSMetalUploaderLastPresentPackageStorage(VPMacOSMetalUploader* uplo
   return [uploader->impl lastPresentPackageStorage];
 }
 
+int64_t VPMacOSMetalUploaderLastOverlayMaskPixelCount(VPMacOSMetalUploader* uploader) {
+  if (!uploader || !uploader->impl) {
+    return -1;
+  }
+  return [uploader->impl lastOverlayMaskPixelCount];
+}
+
 int VPMacOSMetalUploaderValidatePixelBuffer(VPMacOSMetalUploader* uploader,
                                             void* pixel_buffer,
                                             int32_t width,

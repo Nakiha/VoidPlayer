@@ -48,6 +48,7 @@ struct OverlayCompositeResult {
   bool gpu_succeeded = false;
   int gpu_ret = 0;
   std::string gpu_error;
+  int64_t gpu_mask_pixel_count = -1;
   bool cpu_attempted = false;
   bool cpu_succeeded = false;
   size_t line_rect_count = 0;
@@ -109,7 +110,8 @@ void log_overlay_composite_result(const char* path,
   if (missed) {
     spdlog::warn("[MetalOverlay] {} path={} target={}x{} active_frames={} slot={} file_id={} "
                  "pts={:.3f}s expected={} applied={} line_rects={} cpu_only={} "
-                 "gpu_attempted={} gpu_succeeded={} gpu_ret={} cpu_attempted={} cpu_succeeded={} "
+                 "gpu_attempted={} gpu_succeeded={} gpu_ret={} mask_pixels={} "
+                 "cpu_attempted={} cpu_succeeded={} "
                  "layout(mode={}, zoom={:.3f}, offset={:.1f},{:.1f}, pixel_mode={}) "
                  "first_rect_uv=0x{:08x}->0x{:08x} track_payload=0x{:08x} gpu_error='{}'",
                  level_label,
@@ -127,6 +129,7 @@ void log_overlay_composite_result(const char* path,
                  result.gpu_attempted,
                  result.gpu_succeeded,
                  result.gpu_ret,
+                 result.gpu_mask_pixel_count,
                  result.cpu_attempted,
                  result.cpu_succeeded,
                  snapshot.layout.mode,
@@ -141,7 +144,8 @@ void log_overlay_composite_result(const char* path,
   } else {
     spdlog::info("[MetalOverlay] {} path={} target={}x{} active_frames={} slot={} file_id={} "
                  "pts={:.3f}s expected={} applied={} line_rects={} cpu_only={} "
-                 "gpu_attempted={} gpu_succeeded={} gpu_ret={} cpu_attempted={} cpu_succeeded={} "
+                 "gpu_attempted={} gpu_succeeded={} gpu_ret={} mask_pixels={} "
+                 "cpu_attempted={} cpu_succeeded={} "
                  "layout(mode={}, zoom={:.3f}, offset={:.1f},{:.1f}, pixel_mode={}) "
                  "first_rect_uv=0x{:08x}->0x{:08x} track_payload=0x{:08x} gpu_error='{}'",
                  level_label,
@@ -159,6 +163,7 @@ void log_overlay_composite_result(const char* path,
                  result.gpu_attempted,
                  result.gpu_succeeded,
                  result.gpu_ret,
+                 result.gpu_mask_pixel_count,
                  result.cpu_attempted,
                  result.cpu_succeeded,
                  snapshot.layout.mode,
@@ -488,6 +493,8 @@ OverlayCompositeResult composite_overlay_after_upload(
     result.gpu_ret = ret;
     result.gpu_error = error;
     result.gpu_succeeded = ret == 0;
+    result.gpu_mask_pixel_count =
+        VPMacOSMetalUploaderLastOverlayMaskPixelCount(uploader);
     if (result.gpu_succeeded && !overlay.has_cpu_only_primitives) {
       result.applied = true;
       return result;

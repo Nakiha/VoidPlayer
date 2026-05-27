@@ -30,9 +30,10 @@ namespace {
 #define VOID_BUILD_ANALYSIS 0
 #endif
 
-struct OverlayLineBuildResult {
+struct OverlayPrimitiveBuildResult {
+  std::vector<VPMacOSNativeOverlayGpuRect> fill_rects;
   std::vector<VPMacOSNativeOverlayGpuRect> line_rects;
-  bool has_cpu_only_primitives = false;
+  std::vector<VPMacOSNativeOverlayGpuRect> motion_lines;
   uint32_t first_rect_uv0 = 0;
   uint32_t first_rect_uv1 = 0;
   uint32_t first_rect_track_idx = 0;
@@ -41,14 +42,15 @@ struct OverlayLineBuildResult {
 struct OverlayCompositeResult {
   bool expected = false;
   bool applied = false;
-  bool has_cpu_only_primitives = false;
   bool gpu_attempted = false;
   bool gpu_succeeded = false;
   int gpu_ret = 0;
   std::string gpu_error;
   bool cpu_attempted = false;
   bool cpu_succeeded = false;
+  size_t fill_rect_count = 0;
   size_t line_rect_count = 0;
+  size_t motion_line_count = 0;
   uint32_t first_rect_uv0 = 0;
   uint32_t first_rect_uv1 = 0;
   uint32_t first_rect_track_idx = 0;
@@ -95,7 +97,7 @@ void log_overlay_composite_result(const char* path,
 
   const char* level_label = missed ? "MISS" : "state";
   spdlog::warn("[MetalOverlay] {} path={} target={}x{} active_frames={} slot={} file_id={} "
-               "pts={:.3f}s expected={} applied={} line_rects={} cpu_only={} "
+               "pts={:.3f}s expected={} applied={} fill_rects={} line_rects={} motion_lines={} "
                "gpu_attempted={} gpu_succeeded={} gpu_ret={} cpu_attempted={} cpu_succeeded={} "
                "layout(mode={}, zoom={:.3f}, offset={:.1f},{:.1f}, pixel_mode={}) "
                "first_rect_uv=0x{:08x}->0x{:08x} track_payload=0x{:08x} gpu_error='{}'",
@@ -109,8 +111,9 @@ void log_overlay_composite_result(const char* path,
                static_cast<double>(pts_us) / 1000000.0,
                result.expected,
                result.applied,
+               result.fill_rect_count,
                result.line_rect_count,
-               result.has_cpu_only_primitives,
+               result.motion_line_count,
                result.gpu_attempted,
                result.gpu_succeeded,
                result.gpu_ret,
@@ -128,30 +131,43 @@ void log_overlay_composite_result(const char* path,
 }
 
 #if VOID_BUILD_ANALYSIS
+uint32_t pack_overlay_bgra(vr::analysis::OverlayColor color) {
+  return static_cast<uint32_t>(color.b) |
+         (static_cast<uint32_t>(color.g) << 8) |
+         (static_cast<uint32_t>(color.r) << 16) |
+         (static_cast<uint32_t>(color.a) << 24);
+}
+
 uint32_t pack_overlay_track_payload(int slot, uint8_t line_alpha) {
   return static_cast<uint32_t>(slot & 0xff) |
          (static_cast<uint32_t>(line_alpha) << 8);
 }
 
-OverlayLineBuildResult build_overlay_line_rects_for_metal(
+OverlayPrimitiveBuildResult build_overlay_primitives_for_metal(
     const vr::RendererDrawSnapshot& snapshot,
     int32_t target_width,
     int32_t target_height) {
   (void)target_width;
   (void)target_height;
-  OverlayLineBuildResult result;
+  OverlayPrimitiveBuildResult result;
   const auto package = vr::build_analysis_overlay_primitives(snapshot);
   if (package.empty()) {
     return result;
   }
 
   for (const auto& track : package.tracks) {
-    result.has_cpu_only_primitives =
-        result.has_cpu_only_primitives ||
-        !track.fill_rects.empty() ||
-        !track.motion_lines.empty();
-    if (track.line_alpha == 0 || track.video_width <= 0 || track.video_height <= 0) {
+    if (track.video_width <= 0 || track.video_height <= 0) {
       continue;
+    }
+    for (const auto& primitive : track.fill_rects) {
+      VPMacOSNativeOverlayGpuRect rect = {};
+      rect.rect_uv0 = vr::pack_overlay_uv16(
+          primitive.x0, track.video_width, primitive.y0, track.video_height);
+      rect.rect_uv1 = vr::pack_overlay_uv16(
+          primitive.x1, track.video_width, primitive.y1, track.video_height);
+      rect.color_bgra = pack_overlay_bgra(primitive.color);
+      rect.track_idx = pack_overlay_track_payload(track.slot, track.line_alpha);
+      result.fill_rects.push_back(rect);
     }
     for (const auto& primitive : track.outline_rects) {
       VPMacOSNativeOverlayGpuRect rect = {};
@@ -167,11 +183,21 @@ OverlayLineBuildResult build_overlay_line_rects_for_metal(
       }
       result.line_rects.push_back(rect);
     }
+    for (const auto& line : track.motion_lines) {
+      VPMacOSNativeOverlayGpuRect gpu_line = {};
+      gpu_line.rect_uv0 = vr::pack_overlay_uv16(
+          line.x0, track.video_width, line.y0, track.video_height);
+      gpu_line.rect_uv1 = vr::pack_overlay_uv16(
+          line.x1, track.video_width, line.y1, track.video_height);
+      gpu_line.color_bgra = pack_overlay_bgra(line.color);
+      gpu_line.track_idx = pack_overlay_track_payload(track.slot, track.line_alpha);
+      result.motion_lines.push_back(gpu_line);
+    }
   }
   return result;
 }
 #else
-OverlayLineBuildResult build_overlay_line_rects_for_metal(
+OverlayPrimitiveBuildResult build_overlay_primitives_for_metal(
     const vr::RendererDrawSnapshot&,
     int32_t,
     int32_t) {
@@ -416,22 +442,28 @@ OverlayCompositeResult composite_overlay_after_upload(
   if (!uploader || !pixel_buffer || width <= 0 || height <= 0) {
     return result;
   }
-  const auto overlay = build_overlay_line_rects_for_metal(snapshot, width, height);
+  const auto overlay = build_overlay_primitives_for_metal(snapshot, width, height);
+  result.fill_rect_count = overlay.fill_rects.size();
   result.line_rect_count = overlay.line_rects.size();
-  result.has_cpu_only_primitives = overlay.has_cpu_only_primitives;
-  result.expected = !overlay.line_rects.empty() || overlay.has_cpu_only_primitives;
+  result.motion_line_count = overlay.motion_lines.size();
+  result.expected =
+      !overlay.fill_rects.empty() || !overlay.line_rects.empty() || !overlay.motion_lines.empty();
   result.first_rect_uv0 = overlay.first_rect_uv0;
   result.first_rect_uv1 = overlay.first_rect_uv1;
   result.first_rect_track_idx = overlay.first_rect_track_idx;
-  if (!overlay.line_rects.empty()) {
+  if (result.expected) {
     result.gpu_attempted = true;
     char error[256] = {};
     VPMacOSNativePresentDecisionInfo decision = {};
     fill_present_decision_info_from_snapshot(snapshot, width, height, &decision);
-    const int ret = VPMacOSMetalUploaderCompositeOverlayGpuRects(
+    const int ret = VPMacOSMetalUploaderCompositeOverlayGpuPrimitives(
         uploader,
+        overlay.fill_rects.data(),
+        overlay.fill_rects.size(),
         overlay.line_rects.data(),
         overlay.line_rects.size(),
+        overlay.motion_lines.data(),
+        overlay.motion_lines.size(),
         &decision,
         pixel_buffer,
         width,
@@ -441,7 +473,7 @@ OverlayCompositeResult composite_overlay_after_upload(
     result.gpu_ret = ret;
     result.gpu_error = error;
     result.gpu_succeeded = ret == 0;
-    if (result.gpu_succeeded && !overlay.has_cpu_only_primitives) {
+    if (result.gpu_succeeded) {
       result.applied = true;
       return result;
     }

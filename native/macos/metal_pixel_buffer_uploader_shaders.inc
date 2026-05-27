@@ -696,6 +696,136 @@ float2 overlay_global_uv_from_local_uv(
   return float2((float(slot) + local_uv.x) / float(count), local_uv.y);
 }
 
+float4 overlay_color_from_bgra(uint color_bgra) {
+  return float4(
+      float((color_bgra >> 16) & 0xffu),
+      float((color_bgra >> 8) & 0xffu),
+      float(color_bgra & 0xffu),
+      float((color_bgra >> 24) & 0xffu)) / 255.0;
+}
+
+bool overlay_global_rect_from_video_rect(
+    OverlayGpuRect rect,
+    constant LayoutParams& params,
+    thread float4& out_rect) {
+  const int track_idx = overlay_track_index_from_rect(rect);
+  const float2 rect_min = overlay_unpack_uv16(rect.rect_uv0);
+  const float2 rect_max = overlay_unpack_uv16(rect.rect_uv1);
+  const float4 local_rect =
+      overlay_local_rect_from_video_rect(rect_min, rect_max, params, track_idx);
+  const float4 visible_rect = overlay_visible_local_rect_for_track(params, track_idx);
+  const float2 clipped_min = max(local_rect.xy, visible_rect.xy);
+  const float2 clipped_max = min(local_rect.zw, visible_rect.zw);
+  if (clipped_max.x <= clipped_min.x || clipped_max.y <= clipped_min.y) {
+    return false;
+  }
+  const float2 global_min = overlay_global_uv_from_local_uv(clipped_min, params, track_idx);
+  const float2 global_max = overlay_global_uv_from_local_uv(clipped_max, params, track_idx);
+  out_rect = float4(
+      min(global_min.x, global_max.x),
+      min(global_min.y, global_max.y),
+      max(global_min.x, global_max.x),
+      max(global_min.y, global_max.y));
+  return true;
+}
+
+kernel void composite_overlay_fill_rects(
+    device const OverlayGpuRect* rects [[buffer(0)]],
+    constant LayoutParams& params [[buffer(1)]],
+    texture2d<float, access::read_write> destination [[texture(0)]],
+    uint id [[thread_position_in_grid]]) {
+  const int width = int(params.width);
+  const int height = int(params.height);
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+  const OverlayGpuRect rect = rects[id];
+  const float4 color = overlay_color_from_bgra(rect.color_bgra);
+  if (color.a <= 0.0) {
+    return;
+  }
+  float4 global_rect;
+  if (!overlay_global_rect_from_video_rect(rect, params, global_rect)) {
+    return;
+  }
+  const int min_x = clamp(int(floor(global_rect.x * float(width))), 0, width);
+  const int max_x = clamp(int(ceil(global_rect.z * float(width))), 0, width);
+  const int min_y = clamp(int(floor(global_rect.y * float(height))), 0, height);
+  const int max_y = clamp(int(ceil(global_rect.w * float(height))), 0, height);
+  for (int y = min_y; y < max_y; ++y) {
+    for (int x = min_x; x < max_x; ++x) {
+      const uint2 gid = uint2(uint(x), uint(y));
+      const float4 dst = destination.read(gid);
+      destination.write(overlay_blend_over(dst, color), gid);
+    }
+  }
+}
+
+kernel void composite_overlay_motion_lines(
+    device const OverlayGpuRect* lines [[buffer(0)]],
+    constant LayoutParams& params [[buffer(1)]],
+    texture2d<float, access::read_write> destination [[texture(0)]],
+    uint id [[thread_position_in_grid]]) {
+  const int width = int(params.width);
+  const int height = int(params.height);
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+  const OverlayGpuRect line = lines[id];
+  const float4 color = overlay_color_from_bgra(line.color_bgra);
+  if (color.a <= 0.0) {
+    return;
+  }
+  const int track_idx = overlay_track_index_from_rect(line);
+  const float2 p0_video = overlay_unpack_uv16(line.rect_uv0);
+  const float2 p1_video = overlay_unpack_uv16(line.rect_uv1);
+  const float4 visible_rect = overlay_visible_local_rect_for_track(params, track_idx);
+  const float2 p0_local =
+      overlay_local_rect_from_video_rect(p0_video, p0_video, params, track_idx).xy;
+  const float2 p1_local =
+      overlay_local_rect_from_video_rect(p1_video, p1_video, params, track_idx).xy;
+  if ((p0_local.x < visible_rect.x && p1_local.x < visible_rect.x) ||
+      (p0_local.x > visible_rect.z && p1_local.x > visible_rect.z) ||
+      (p0_local.y < visible_rect.y && p1_local.y < visible_rect.y) ||
+      (p0_local.y > visible_rect.w && p1_local.y > visible_rect.w)) {
+    return;
+  }
+  const float2 p0_global = overlay_global_uv_from_local_uv(
+      clamp(p0_local, visible_rect.xy, visible_rect.zw), params, track_idx);
+  const float2 p1_global = overlay_global_uv_from_local_uv(
+      clamp(p1_local, visible_rect.xy, visible_rect.zw), params, track_idx);
+  int x0 = clamp(int(round(p0_global.x * float(width))), 0, width - 1);
+  int y0 = clamp(int(round(p0_global.y * float(height))), 0, height - 1);
+  const int x1 = clamp(int(round(p1_global.x * float(width))), 0, width - 1);
+  const int y1 = clamp(int(round(p1_global.y * float(height))), 0, height - 1);
+
+  const int dx = abs(x1 - x0);
+  const int sx = x0 < x1 ? 1 : -1;
+  const int dy = -abs(y1 - y0);
+  const int sy = y0 < y1 ? 1 : -1;
+  int err = dx + dy;
+  for (int i = 0; i < width + height; ++i) {
+    const uint2 gid = uint2(uint(x0), uint(y0));
+    const float4 dst = destination.read(gid);
+    destination.write(overlay_blend_over(dst, color), gid);
+    if (x0 == x1 && y0 == y1) {
+      break;
+    }
+    const int e2 = 2 * err;
+    if (e2 >= dy) {
+      err += dy;
+      x0 += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y0 += sy;
+    }
+    if (x0 < 0 || y0 < 0 || x0 >= width || y0 >= height) {
+      break;
+    }
+  }
+}
+
 kernel void build_overlay_line_mask(
     device const OverlayGpuRect* rects [[buffer(0)]],
     device atomic_uint* mask [[buffer(1)]],

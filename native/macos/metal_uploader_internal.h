@@ -19,12 +19,16 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
   id<MTLCommandQueue> _commandQueue;
   id<MTLBuffer> _stagingBuffer;
   id<MTLBuffer> _layoutParamsBuffer;
+  id<MTLBuffer> _overlayFillRectBuffer;
   id<MTLBuffer> _overlayLineRectBuffer;
+  id<MTLBuffer> _overlayMotionLineBuffer;
   id<MTLBuffer> _overlayLineMaskBuffer;
   id<MTLComputePipelineState> _layoutPipeline;
   id<MTLComputePipelineState> _cvPixelBufferPipeline;
+  id<MTLComputePipelineState> _overlayFillRectPipeline;
   id<MTLComputePipelineState> _overlayLineMaskPipeline;
   id<MTLComputePipelineState> _overlayLineContrastPipeline;
+  id<MTLComputePipelineState> _overlayMotionLinePipeline;
   CVMetalTextureCacheRef _textureCache;
   std::atomic<int64_t> _directYuvUploadCount;
   std::atomic<int64_t> _cvPixelBufferUploadCount;
@@ -80,6 +84,18 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                            height:(int32_t)height
                             error:(char*)error
                         errorSize:(size_t)errorSize;
+- (int)compositeOverlayGpuPrimitives:(const VPMacOSNativeOverlayGpuRect*)fillRects
+                            fillCount:(size_t)fillRectCount
+                            lineRects:(const VPMacOSNativeOverlayGpuRect*)lineRects
+                            lineCount:(size_t)lineRectCount
+                          motionLines:(const VPMacOSNativeOverlayGpuRect*)motionLines
+                          motionCount:(size_t)motionLineCount
+                             decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
+                        toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                width:(int32_t)width
+                               height:(int32_t)height
+                                error:(char*)error
+                            errorSize:(size_t)errorSize;
 
 @end
 

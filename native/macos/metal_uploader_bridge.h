@@ -152,6 +152,20 @@ int VPMacOSMetalUploaderCompositeOverlayGpuRects(
     int32_t height,
     char* error,
     size_t error_size);
+int VPMacOSMetalUploaderCompositeOverlayGpuPrimitives(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeOverlayGpuRect* fill_rects,
+    size_t fill_rect_count,
+    const VPMacOSNativeOverlayGpuRect* line_rects,
+    size_t line_rect_count,
+    const VPMacOSNativeOverlayGpuRect* motion_lines,
+    size_t motion_line_count,
+    const VPMacOSNativePresentDecisionInfo* decision,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    char* error,
+    size_t error_size);
 
 #ifdef __cplusplus
 }  // extern "C"

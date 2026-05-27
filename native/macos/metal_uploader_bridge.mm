@@ -188,3 +188,35 @@ int VPMacOSMetalUploaderCompositeOverlayGpuRects(
                                             error:error
                                         errorSize:error_size];
 }
+
+int VPMacOSMetalUploaderCompositeOverlayGpuPrimitives(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeOverlayGpuRect* fill_rects,
+    size_t fill_rect_count,
+    const VPMacOSNativeOverlayGpuRect* line_rects,
+    size_t line_rect_count,
+    const VPMacOSNativeOverlayGpuRect* motion_lines,
+    size_t motion_line_count,
+    const VPMacOSNativePresentDecisionInfo* decision,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    char* error,
+    size_t error_size) {
+  if (!uploader || !uploader->impl) {
+    write_error(error, error_size, "native Metal uploader is null");
+    return -1;
+  }
+  return [uploader->impl compositeOverlayGpuPrimitives:fill_rects
+                                             fillCount:fill_rect_count
+                                             lineRects:line_rects
+                                             lineCount:line_rect_count
+                                           motionLines:motion_lines
+                                           motionCount:motion_line_count
+                                              decision:decision
+                                         toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                 width:width
+                                                height:height
+                                                 error:error
+                                             errorSize:error_size];
+}

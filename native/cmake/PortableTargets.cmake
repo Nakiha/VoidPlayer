@@ -81,6 +81,9 @@ if(APPLE)
     target_include_directories(void_macos_native_player PUBLIC
         "${VOID_NATIVE_DIR}/macos"
     )
+    target_compile_definitions(void_macos_native_player PRIVATE
+        VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>
+    )
     target_link_libraries(void_macos_native_player PUBLIC
         void_media_ffmpeg
         "-framework Foundation"

@@ -1,12 +1,19 @@
 #include "macos/metal_presentation_backend.h"
 
 #include "macos/presentation_package_builder.h"
+#include "video_renderer/layout/layout_geometry.h"
+#include "video_renderer/render/shader_constants.h"
 #include "video_renderer/render/presentation_backend_factory.h"
 #include "video_renderer/render/presentation_package.h"
+
+#if VOID_BUILD_ANALYSIS
+#include "video_renderer/overlay/analysis_overlay_primitives.h"
+#endif
 
 #include <CoreVideo/CoreVideo.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -16,6 +23,233 @@
 
 namespace vp_macos {
 namespace {
+
+#ifndef VOID_BUILD_ANALYSIS
+#define VOID_BUILD_ANALYSIS 0
+#endif
+
+struct TargetRect {
+  int x0 = 0;
+  int y0 = 0;
+  int x1 = 0;
+  int y1 = 0;
+};
+
+int active_display_count(const vr::ShaderConstants& constants) {
+  return std::max(constants.track_count, 1);
+}
+
+int display_slot_for_track(const vr::ShaderConstants& constants, int track_slot) {
+  const int count = active_display_count(constants);
+  for (int i = 0; i < count && i < 4; ++i) {
+    if (constants.order[i] == track_slot) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+bool video_point_to_target(const vr::ShaderConstants& constants,
+                           int track_slot,
+                           int target_width,
+                           int target_height,
+                           float video_u,
+                           float video_v,
+                           float& out_x,
+                           float& out_y) {
+  if (track_slot < 0 || track_slot >= 4 ||
+      constants.inv_display_size_x[track_slot] == 0.0f ||
+      constants.inv_display_size_y[track_slot] == 0.0f) {
+    return false;
+  }
+  const float local_x =
+      constants.display_offset_x[track_slot] +
+      (video_u + constants.view_offset_uv_x[track_slot]) /
+          constants.inv_display_size_x[track_slot];
+  const float local_y =
+      constants.display_offset_y[track_slot] +
+      (video_v + constants.view_offset_uv_y[track_slot]) /
+          constants.inv_display_size_y[track_slot];
+  if (!std::isfinite(local_x) || !std::isfinite(local_y)) {
+    return false;
+  }
+
+  if (constants.mode == vr::LAYOUT_SPLIT_SCREEN) {
+    out_x = local_x * static_cast<float>(target_width);
+    out_y = local_y * static_cast<float>(target_height);
+    return true;
+  }
+
+  const int display_slot = display_slot_for_track(constants, track_slot);
+  if (display_slot < 0) {
+    return false;
+  }
+  const int count = active_display_count(constants);
+  out_x = (static_cast<float>(display_slot) + local_x) *
+          static_cast<float>(target_width) / static_cast<float>(count);
+  out_y = local_y * static_cast<float>(target_height);
+  return true;
+}
+
+bool video_rect_to_target(const vr::ShaderConstants& constants,
+                          int track_slot,
+                          int target_width,
+                          int target_height,
+                          int video_width,
+                          int video_height,
+                          int x0,
+                          int y0,
+                          int x1,
+                          int y1,
+                          TargetRect& out) {
+  if (video_width <= 0 || video_height <= 0) {
+    return false;
+  }
+  float tx0 = 0.0f;
+  float ty0 = 0.0f;
+  float tx1 = 0.0f;
+  float ty1 = 0.0f;
+  if (!video_point_to_target(constants,
+                             track_slot,
+                             target_width,
+                             target_height,
+                             static_cast<float>(x0) / static_cast<float>(video_width),
+                             static_cast<float>(y0) / static_cast<float>(video_height),
+                             tx0,
+                             ty0) ||
+      !video_point_to_target(constants,
+                             track_slot,
+                             target_width,
+                             target_height,
+                             static_cast<float>(x1) / static_cast<float>(video_width),
+                             static_cast<float>(y1) / static_cast<float>(video_height),
+                             tx1,
+                             ty1)) {
+    return false;
+  }
+  out.x0 = static_cast<int>(std::floor(std::min(tx0, tx1)));
+  out.y0 = static_cast<int>(std::floor(std::min(ty0, ty1)));
+  out.x1 = static_cast<int>(std::ceil(std::max(tx0, tx1)));
+  out.y1 = static_cast<int>(std::ceil(std::max(ty0, ty1)));
+
+  if (constants.mode == vr::LAYOUT_SPLIT_SCREEN) {
+    const int split_x = static_cast<int>(
+        std::lround(constants.split_pos * static_cast<float>(target_width)));
+    if (constants.order[0] == track_slot) {
+      out.x0 = std::max(out.x0, 0);
+      out.x1 = std::min(out.x1, split_x);
+    } else if (constants.order[1] == track_slot) {
+      out.x0 = std::max(out.x0, split_x);
+      out.x1 = std::min(out.x1, target_width);
+    } else {
+      return false;
+    }
+  } else {
+    const int display_slot = display_slot_for_track(constants, track_slot);
+    if (display_slot < 0) {
+      return false;
+    }
+    const int count = active_display_count(constants);
+    const int slot_x0 = target_width * display_slot / count;
+    const int slot_x1 = target_width * (display_slot + 1) / count;
+    out.x0 = std::max(out.x0, slot_x0);
+    out.x1 = std::min(out.x1, slot_x1);
+  }
+  out.y0 = std::max(out.y0, 0);
+  out.y1 = std::min(out.y1, target_height);
+  return out.x0 < out.x1 && out.y0 < out.y1;
+}
+
+void append_line_rect(std::vector<VPMacOSNativeOverlayLineRect>& out,
+                      int target_width,
+                      int target_height,
+                      TargetRect rect) {
+  rect.x0 = std::clamp(rect.x0, 0, target_width);
+  rect.x1 = std::clamp(rect.x1, 0, target_width);
+  rect.y0 = std::clamp(rect.y0, 0, target_height);
+  rect.y1 = std::clamp(rect.y1, 0, target_height);
+  if (rect.x0 >= rect.x1 || rect.y0 >= rect.y1) {
+    return;
+  }
+  out.push_back({rect.x0, rect.y0, rect.x1, rect.y1});
+}
+
+struct OverlayLineBuildResult {
+  std::vector<VPMacOSNativeOverlayLineRect> line_rects;
+  bool has_cpu_only_primitives = false;
+};
+
+#if VOID_BUILD_ANALYSIS
+OverlayLineBuildResult build_overlay_line_rects_for_metal(
+    const vr::RendererDrawSnapshot& snapshot,
+    int32_t target_width,
+    int32_t target_height) {
+  OverlayLineBuildResult result;
+  const auto package = vr::build_analysis_overlay_primitives(snapshot);
+  if (package.empty()) {
+    return result;
+  }
+
+  vr::ShaderConstants constants = {};
+  vr::populate_layout_shader_constants(
+      constants, snapshot.layout, snapshot.track_geometry, target_width, target_height);
+
+  constexpr int kLineWidth = 2;
+  for (const auto& track : package.tracks) {
+    result.has_cpu_only_primitives =
+        result.has_cpu_only_primitives ||
+        !track.fill_rects.empty() ||
+        !track.motion_lines.empty();
+    if (track.line_alpha == 0 || track.video_width <= 0 || track.video_height <= 0) {
+      continue;
+    }
+    for (const auto& primitive : track.outline_rects) {
+      TargetRect rect;
+      if (!video_rect_to_target(constants,
+                                track.slot,
+                                target_width,
+                                target_height,
+                                track.video_width,
+                                track.video_height,
+                                primitive.x0,
+                                primitive.y0,
+                                primitive.x1,
+                                primitive.y1,
+                                rect)) {
+        continue;
+      }
+      append_line_rect(result.line_rects,
+                       target_width,
+                       target_height,
+                       TargetRect{rect.x0, rect.y0, rect.x1, rect.y0 + kLineWidth});
+      append_line_rect(result.line_rects,
+                       target_width,
+                       target_height,
+                       TargetRect{rect.x0, rect.y0, rect.x0 + kLineWidth, rect.y1});
+      if (primitive.x1 >= track.video_width) {
+        append_line_rect(result.line_rects,
+                         target_width,
+                         target_height,
+                         TargetRect{rect.x1 - kLineWidth, rect.y0, rect.x1, rect.y1});
+      }
+      if (primitive.y1 >= track.video_height) {
+        append_line_rect(result.line_rects,
+                         target_width,
+                         target_height,
+                         TargetRect{rect.x0, rect.y1 - kLineWidth, rect.x1, rect.y1});
+      }
+    }
+  }
+  return result;
+}
+#else
+OverlayLineBuildResult build_overlay_line_rects_for_metal(
+    const vr::RendererDrawSnapshot&,
+    int32_t,
+    int32_t) {
+  return {};
+}
+#endif
 
 std::pair<int32_t, int32_t> package_storage_extent(
     const vr::RendererDrawSnapshot& snapshot,
@@ -205,12 +439,50 @@ void MetalPresentationBackend::mark_draw_success(const VPMacOSNativeFrameInfo& f
   set_last_error("");
 }
 
-void composite_overlay_into_target_if_needed(const vr::RendererDrawSnapshot& snapshot,
-                                             const vr::PresentationBackendDrawHooks& hooks,
-                                             void* pixel_buffer,
-                                             int32_t width,
-                                             int32_t height) {
-  if (!hooks.composite_bgra_overlay || !pixel_buffer || width <= 0 || height <= 0) {
+bool composite_overlay_lines_with_metal(const vr::RendererDrawSnapshot& snapshot,
+                                        VPMacOSMetalUploader* uploader,
+                                        void* pixel_buffer,
+                                        int32_t width,
+                                        int32_t height,
+                                        bool& has_cpu_only_primitives) {
+  has_cpu_only_primitives = false;
+  if (!uploader || !pixel_buffer || width <= 0 || height <= 0) {
+    return false;
+  }
+  const auto overlay = build_overlay_line_rects_for_metal(snapshot, width, height);
+  has_cpu_only_primitives = overlay.has_cpu_only_primitives;
+  if (overlay.line_rects.empty()) {
+    return false;
+  }
+  char error[256] = {};
+  const int ret = VPMacOSMetalUploaderCompositeOverlayLineRects(
+      uploader,
+      overlay.line_rects.data(),
+      overlay.line_rects.size(),
+      pixel_buffer,
+      width,
+      height,
+      error,
+      sizeof(error));
+  return ret == 0;
+}
+
+void composite_overlay_after_upload(const vr::RendererDrawSnapshot& snapshot,
+                                    const vr::PresentationBackendDrawHooks& hooks,
+                                    VPMacOSMetalUploader* uploader,
+                                    void* pixel_buffer,
+                                    int32_t width,
+                                    int32_t height) {
+  if (!pixel_buffer || width <= 0 || height <= 0) {
+    return;
+  }
+  bool has_cpu_only_primitives = false;
+  const bool drew_gpu_lines = composite_overlay_lines_with_metal(
+      snapshot, uploader, pixel_buffer, width, height, has_cpu_only_primitives);
+  if (drew_gpu_lines && !has_cpu_only_primitives) {
+    return;
+  }
+  if (!hooks.composite_bgra_overlay) {
     return;
   }
   auto* target = static_cast<CVPixelBufferRef>(pixel_buffer);
@@ -278,8 +550,12 @@ bool MetalPresentationBackend::draw_frame(
               std::chrono::steady_clock::now() - start).count()));
     }
     if (ret == 0) {
-      composite_overlay_into_target_if_needed(
-          snapshot, hooks, draw_target_pixel_buffer_, draw_target_width_, draw_target_height_);
+      composite_overlay_after_upload(snapshot,
+                                     hooks,
+                                     uploader_,
+                                     draw_target_pixel_buffer_,
+                                     draw_target_width_,
+                                     draw_target_height_);
       mark_draw_success(frame_info);
       return true;
     }
@@ -352,8 +628,12 @@ bool MetalPresentationBackend::draw_frame(
             std::chrono::steady_clock::now() - start).count()));
   }
   if (ret == 0) {
-    composite_overlay_into_target_if_needed(
-        snapshot, hooks, draw_target_pixel_buffer_, draw_target_width_, draw_target_height_);
+    composite_overlay_after_upload(snapshot,
+                                   hooks,
+                                   uploader_,
+                                   draw_target_pixel_buffer_,
+                                   draw_target_width_,
+                                   draw_target_height_);
     mark_draw_success(frame_info);
   } else {
     mark_draw_failure(upload_error[0] ? upload_error : error);

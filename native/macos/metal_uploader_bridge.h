@@ -94,6 +94,13 @@ typedef struct VPMacOSNativeCVPixelBufferPresentFrame {
   VPMacOSNativePresentDecisionInfo decision;
 } VPMacOSNativeCVPixelBufferPresentFrame;
 
+typedef struct VPMacOSNativeOverlayLineRect {
+  int32_t x0;
+  int32_t y0;
+  int32_t x1;
+  int32_t y1;
+} VPMacOSNativeOverlayLineRect;
+
 VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);
 void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader);
 int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader);
@@ -133,6 +140,15 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
     int32_t width,
     int32_t height,
     VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
+int VPMacOSMetalUploaderCompositeOverlayLineRects(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeOverlayLineRect* rects,
+    size_t rect_count,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
     char* error,
     size_t error_size);
 

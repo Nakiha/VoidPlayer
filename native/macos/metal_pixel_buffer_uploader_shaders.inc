@@ -612,4 +612,82 @@ kernel void layout_cv_yuv_copy(
       source_y, source_uv, params, track_slot, source_x, source_y_pos);
   destination.write(color, gid);
 }
+
+struct OverlayLineRect {
+  int x0;
+  int y0;
+  int x1;
+  int y1;
+};
+
+struct OverlayMaskParams {
+  uint width;
+  uint height;
+};
+
+float4 overlay_blend_over(float4 dst, float4 src) {
+  return float4(src.rgb * src.a + dst.rgb * (1.0 - src.a), 1.0);
+}
+
+kernel void build_overlay_line_mask(
+    device const OverlayLineRect* rects [[buffer(0)]],
+    device atomic_uint* mask [[buffer(1)]],
+    constant OverlayMaskParams& params [[buffer(2)]],
+    uint id [[thread_position_in_grid]]) {
+  const OverlayLineRect rect = rects[id];
+  const int width = int(params.width);
+  const int height = int(params.height);
+  if (width <= 0 || height <= 0 ||
+      rect.x0 >= rect.x1 || rect.y0 >= rect.y1 ||
+      rect.x1 <= 0 || rect.y1 <= 0 ||
+      rect.x0 >= width || rect.y0 >= height) {
+    return;
+  }
+  const int min_x = clamp(rect.x0, 0, width);
+  const int max_x = clamp(rect.x1, 0, width);
+  const int min_y = clamp(rect.y0, 0, height);
+  const int max_y = clamp(rect.y1, 0, height);
+  for (int y = min_y; y < max_y; ++y) {
+    const uint row = uint(y) * params.width;
+    for (int x = min_x; x < max_x; ++x) {
+      atomic_store_explicit(&mask[row + uint(x)], 1u, memory_order_relaxed);
+    }
+  }
+}
+
+uint overlay_mask_at(device atomic_uint* mask, uint width, uint height, int x, int y) {
+  if (x < 0 || y < 0 || x >= int(width) || y >= int(height)) {
+    return 0u;
+  }
+  return atomic_load_explicit(&mask[uint(y) * width + uint(x)], memory_order_relaxed);
+}
+
+kernel void composite_overlay_line_contrast(
+    device atomic_uint* mask [[buffer(0)]],
+    constant OverlayMaskParams& params [[buffer(1)]],
+    texture2d<float, access::read_write> destination [[texture(0)]],
+    uint2 gid [[thread_position_in_grid]]) {
+  if (gid.x >= params.width || gid.y >= params.height ||
+      gid.x >= destination.get_width() || gid.y >= destination.get_height()) {
+    return;
+  }
+
+  const int x = int(gid.x);
+  const int y = int(gid.y);
+  const bool center = overlay_mask_at(mask, params.width, params.height, x, y) > 0;
+  const bool halo =
+      !center &&
+      (overlay_mask_at(mask, params.width, params.height, x - 1, y) > 0 ||
+       overlay_mask_at(mask, params.width, params.height, x + 1, y) > 0 ||
+       overlay_mask_at(mask, params.width, params.height, x, y - 1) > 0 ||
+       overlay_mask_at(mask, params.width, params.height, x, y + 1) > 0);
+  if (!center && !halo) {
+    return;
+  }
+
+  const float4 halo_color = float4(0.0, 0.0, 0.0, 166.0 / 255.0);
+  const float4 center_color = float4(1.0, 1.0, 1.0, 115.0 / 255.0);
+  const float4 dst = destination.read(gid);
+  destination.write(overlay_blend_over(dst, center ? center_color : halo_color), gid);
+}
 )";

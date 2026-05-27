@@ -19,8 +19,12 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
   id<MTLCommandQueue> _commandQueue;
   id<MTLBuffer> _stagingBuffer;
   id<MTLBuffer> _layoutParamsBuffer;
+  id<MTLBuffer> _overlayLineRectBuffer;
+  id<MTLBuffer> _overlayLineMaskBuffer;
   id<MTLComputePipelineState> _layoutPipeline;
   id<MTLComputePipelineState> _cvPixelBufferPipeline;
+  id<MTLComputePipelineState> _overlayLineMaskPipeline;
+  id<MTLComputePipelineState> _overlayLineContrastPipeline;
   CVMetalTextureCacheRef _textureCache;
   std::atomic<int64_t> _directYuvUploadCount;
   std::atomic<int64_t> _cvPixelBufferUploadCount;
@@ -68,6 +72,13 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                                      out:(VPMacOSNativeFrameInfo*)out
                                    error:(char*)error
                                errorSize:(size_t)errorSize;
+- (int)compositeOverlayLineRects:(const VPMacOSNativeOverlayLineRect*)rects
+                            count:(size_t)rectCount
+                    toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                            width:(int32_t)width
+                           height:(int32_t)height
+                            error:(char*)error
+                        errorSize:(size_t)errorSize;
 
 @end
 

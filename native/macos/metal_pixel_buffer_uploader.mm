@@ -17,6 +17,11 @@ constexpr const char* kLayoutBgraKernelSource =
 #include "macos/metal_pixel_buffer_uploader_shaders.inc"
     ;
 
+struct OverlayMaskParams {
+  uint32_t width = 0;
+  uint32_t height = 0;
+};
+
 void write_error(char* error, size_t error_size, const char* message) {
   if (!error || error_size == 0) {
     return;
@@ -114,6 +119,22 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
         NSError* pipelineError = nil;
         _cvPixelBufferPipeline = [_device newComputePipelineStateWithFunction:cvFunction
                                                                         error:&pipelineError];
+      }
+      id<MTLFunction> overlayLineMaskFunction =
+          library ? [library newFunctionWithName:@"build_overlay_line_mask"] : nil;
+      if (overlayLineMaskFunction) {
+        NSError* pipelineError = nil;
+        _overlayLineMaskPipeline =
+            [_device newComputePipelineStateWithFunction:overlayLineMaskFunction
+                                                   error:&pipelineError];
+      }
+      id<MTLFunction> overlayLineContrastFunction =
+          library ? [library newFunctionWithName:@"composite_overlay_line_contrast"] : nil;
+      if (overlayLineContrastFunction) {
+        NSError* pipelineError = nil;
+        _overlayLineContrastPipeline =
+            [_device newComputePipelineStateWithFunction:overlayLineContrastFunction
+                                                   error:&pipelineError];
       }
     }
   }
@@ -214,6 +235,24 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   _layoutParamsBuffer = [_device newBufferWithLength:sizeof(vp_macos::MetalLayoutParams)
                                              options:MTLResourceStorageModeShared];
   return _layoutParamsBuffer != nil;
+}
+
+- (BOOL)ensureOverlayLineRectBufferWithLength:(size_t)length {
+  if (_overlayLineRectBuffer != nil && [_overlayLineRectBuffer length] >= length) {
+    return YES;
+  }
+  _overlayLineRectBuffer =
+      [_device newBufferWithLength:length options:MTLResourceStorageModeShared];
+  return _overlayLineRectBuffer != nil;
+}
+
+- (BOOL)ensureOverlayLineMaskBufferWithLength:(size_t)length {
+  if (_overlayLineMaskBuffer != nil && [_overlayLineMaskBuffer length] >= length) {
+    return YES;
+  }
+  _overlayLineMaskBuffer =
+      [_device newBufferWithLength:length options:MTLResourceStorageModeShared];
+  return _overlayLineMaskBuffer != nil;
 }
 
 - (int)copyPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
@@ -448,6 +487,115 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   _lastPresentPackageTotalUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
   _lastPresentPackageStorage.store(VPMacOSNativePresentPackageStorageCVPixelBuffer,
                                    std::memory_order_relaxed);
+  write_error(error, errorSize, "");
+  return 0;
+}
+
+- (int)compositeOverlayLineRects:(const VPMacOSNativeOverlayLineRect*)rects
+                            count:(size_t)rectCount
+                    toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                            width:(int32_t)width
+                           height:(int32_t)height
+                            error:(char*)error
+                        errorSize:(size_t)errorSize {
+  if (rectCount == 0) {
+    write_error(error, errorSize, "");
+    return 0;
+  }
+  if (![self isAvailable] || !_overlayLineMaskPipeline || !_overlayLineContrastPipeline) {
+    write_error(error, errorSize, "native Metal overlay line pipelines are not available");
+    return -1;
+  }
+  if (!rects || !pixelBuffer || width <= 0 || height <= 0) {
+    write_error(error, errorSize, "invalid native Metal overlay arguments");
+    return -1;
+  }
+  const int validationStatus =
+      [self validatePixelBufferStatus:pixelBuffer width:width height:height];
+  if (validationStatus != VPMacOSMetalUploaderStatusOk) {
+    write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
+    return -1;
+  }
+
+  size_t rectBytes = 0;
+  size_t maskBytes = 0;
+  size_t maskPixels = 0;
+  if (!checked_mul_size(static_cast<size_t>(width), static_cast<size_t>(height), &maskPixels) ||
+      !checked_mul_size(maskPixels, sizeof(uint32_t), &maskBytes) ||
+      !checked_mul_size(rectCount, sizeof(VPMacOSNativeOverlayLineRect), &rectBytes) ||
+      rectBytes == 0 ||
+      maskBytes == 0 ||
+      ![self ensureOverlayLineRectBufferWithLength:rectBytes] ||
+      ![self ensureOverlayLineMaskBufferWithLength:maskBytes]) {
+    return metal_upload_failure(
+        error, errorSize, "failed to allocate native Metal overlay buffers");
+  }
+  std::memcpy([_overlayLineRectBuffer contents], rects, rectBytes);
+  std::memset([_overlayLineMaskBuffer contents], 0, maskBytes);
+
+  vp_macos::ScopedCVMetalTexture destinationRef;
+  const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(
+      _textureCache,
+      pixelBuffer,
+      MTLPixelFormatBGRA8Unorm,
+      width,
+      height,
+      0,
+      &destinationRef);
+  if (destinationStatus != kCVReturnSuccess || !destinationRef.valid()) {
+    return metal_upload_failure(
+        error, errorSize, "failed to wrap CVPixelBuffer as a Metal overlay texture");
+  }
+
+  id<MTLTexture> destinationTexture = destinationRef.texture();
+  id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+  id<MTLComputeCommandEncoder> maskCompute = [commandBuffer computeCommandEncoder];
+  if (!destinationTexture || !commandBuffer || !maskCompute) {
+    return metal_upload_failure(
+        error, errorSize, "failed to create native Metal overlay compute command");
+  }
+
+  OverlayMaskParams params{};
+  params.width = static_cast<uint32_t>(width);
+  params.height = static_cast<uint32_t>(height);
+  [maskCompute setComputePipelineState:_overlayLineMaskPipeline];
+  [maskCompute setBuffer:_overlayLineRectBuffer offset:0 atIndex:0];
+  [maskCompute setBuffer:_overlayLineMaskBuffer offset:0 atIndex:1];
+  [maskCompute setBytes:&params length:sizeof(params) atIndex:2];
+  const NSUInteger maskThreadWidth = _overlayLineMaskPipeline.threadExecutionWidth;
+  const MTLSize maskThreadsPerThreadgroup = MTLSizeMake(maskThreadWidth, 1, 1);
+  const MTLSize maskThreads = MTLSizeMake(rectCount, 1, 1);
+  [maskCompute dispatchThreads:maskThreads threadsPerThreadgroup:maskThreadsPerThreadgroup];
+  [maskCompute endEncoding];
+
+  id<MTLComputeCommandEncoder> contrastCompute = [commandBuffer computeCommandEncoder];
+  if (!contrastCompute) {
+    return metal_upload_failure(
+        error, errorSize, "failed to create native Metal overlay contrast command");
+  }
+  [contrastCompute setComputePipelineState:_overlayLineContrastPipeline];
+  [contrastCompute setBuffer:_overlayLineMaskBuffer offset:0 atIndex:0];
+  [contrastCompute setBytes:&params length:sizeof(params) atIndex:1];
+  [contrastCompute setTexture:destinationTexture atIndex:0];
+  const NSUInteger contrastThreadWidth = _overlayLineContrastPipeline.threadExecutionWidth;
+  const NSUInteger contrastThreadHeight =
+      std::max<NSUInteger>(1,
+                           _overlayLineContrastPipeline.maxTotalThreadsPerThreadgroup /
+                               contrastThreadWidth);
+  const MTLSize contrastThreadsPerThreadgroup =
+      MTLSizeMake(contrastThreadWidth, contrastThreadHeight, 1);
+  const MTLSize contrastThreads = MTLSizeMake(width, height, 1);
+  [contrastCompute dispatchThreads:contrastThreads
+              threadsPerThreadgroup:contrastThreadsPerThreadgroup];
+  [contrastCompute endEncoding];
+
+  [commandBuffer commit];
+  [commandBuffer waitUntilCompleted];
+
+  if ([commandBuffer status] != MTLCommandBufferStatusCompleted) {
+    return metal_upload_failure(
+        error, errorSize, "native Metal overlay compute did not complete");
+  }
   write_error(error, errorSize, "");
   return 0;
 }

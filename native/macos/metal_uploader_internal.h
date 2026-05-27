@@ -72,8 +72,9 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                                      out:(VPMacOSNativeFrameInfo*)out
                                    error:(char*)error
                                errorSize:(size_t)errorSize;
-- (int)compositeOverlayLineRects:(const VPMacOSNativeOverlayLineRect*)rects
+- (int)compositeOverlayGpuRects:(const VPMacOSNativeOverlayGpuRect*)rects
                             count:(size_t)rectCount
+                         decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
                     toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                             width:(int32_t)width
                            height:(int32_t)height

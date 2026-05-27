@@ -165,10 +165,11 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
                                          errorSize:error_size];
 }
 
-int VPMacOSMetalUploaderCompositeOverlayLineRects(
+int VPMacOSMetalUploaderCompositeOverlayGpuRects(
     VPMacOSMetalUploader* uploader,
-    const VPMacOSNativeOverlayLineRect* rects,
+    const VPMacOSNativeOverlayGpuRect* rects,
     size_t rect_count,
+    const VPMacOSNativePresentDecisionInfo* decision,
     void* pixel_buffer,
     int32_t width,
     int32_t height,
@@ -178,8 +179,9 @@ int VPMacOSMetalUploaderCompositeOverlayLineRects(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl compositeOverlayLineRects:rects
+  return [uploader->impl compositeOverlayGpuRects:rects
                                             count:rect_count
+                                         decision:decision
                                     toPixelBuffer:(CVPixelBufferRef)pixel_buffer
                                             width:width
                                            height:height

@@ -613,44 +613,164 @@ kernel void layout_cv_yuv_copy(
   destination.write(color, gid);
 }
 
-struct OverlayLineRect {
-  int x0;
-  int y0;
-  int x1;
-  int y1;
-};
-
-struct OverlayMaskParams {
-  uint width;
-  uint height;
+struct OverlayGpuRect {
+  uint rect_uv0;
+  uint rect_uv1;
+  uint color_bgra;
+  uint track_idx;
 };
 
 float4 overlay_blend_over(float4 dst, float4 src) {
   return float4(src.rgb * src.a + dst.rgb * (1.0 - src.a), 1.0);
 }
 
+int overlay_track_index_from_rect(OverlayGpuRect rect) {
+  return clamp(int(rect.track_idx & 0xffu), 0, 3);
+}
+
+float overlay_line_strength_from_rect(OverlayGpuRect rect) {
+  return float((rect.track_idx >> 8) & 0xffu) / 255.0;
+}
+
+int overlay_display_slot_for_track(constant LayoutParams& params, int track_idx) {
+  if (params.order0 == track_idx) return 0;
+  if (params.order1 == track_idx) return 1;
+  if (params.order2 == track_idx) return 2;
+  return 3;
+}
+
+float2 overlay_unpack_uv16(uint packed) {
+  return float2(
+      float(packed & 0xffffu) / 65535.0,
+      float((packed >> 16) & 0xffffu) / 65535.0);
+}
+
+float4 overlay_local_rect_from_video_rect(
+    float2 rect_min,
+    float2 rect_max,
+    constant LayoutParams& params,
+    int track_idx) {
+  const uint slot = uint(track_idx);
+  const float2 display_offset = float2(
+      display_offset_x_at(params, slot),
+      display_offset_y_at(params, slot));
+  const float2 inv_display_size = float2(
+      inv_display_size_x_at(params, slot),
+      inv_display_size_y_at(params, slot));
+  const float2 view_offset_uv = float2(
+      view_offset_uv_x_at(params, slot),
+      view_offset_uv_y_at(params, slot));
+  const float2 display_size = float2(
+      abs(inv_display_size.x) > 1e-5 ? 1.0 / inv_display_size.x : 0.0,
+      abs(inv_display_size.y) > 1e-5 ? 1.0 / inv_display_size.y : 0.0);
+  const float2 local_min = display_offset + (rect_min + view_offset_uv) * display_size;
+  const float2 local_max = display_offset + (rect_max + view_offset_uv) * display_size;
+  return float4(min(local_min, local_max), max(local_min, local_max));
+}
+
+float4 overlay_visible_local_rect_for_track(constant LayoutParams& params, int track_idx) {
+  float2 visible_min = float2(0.0, 0.0);
+  float2 visible_max = float2(1.0, 1.0);
+  if (params.mode == kModeSplitScreen) {
+    const int slot = overlay_display_slot_for_track(params, track_idx);
+    if (slot == 0) {
+      visible_max.x = clamp(params.split_pos, 0.0, 1.0);
+    } else if (slot == 1) {
+      visible_min.x = clamp(params.split_pos, 0.0, 1.0);
+    } else {
+      visible_max = visible_min;
+    }
+  }
+  return float4(visible_min, visible_max);
+}
+
+float2 overlay_global_uv_from_local_uv(
+    float2 local_uv,
+    constant LayoutParams& params,
+    int track_idx) {
+  if (params.mode == kModeSplitScreen) {
+    return local_uv;
+  }
+  const int count = max(params.track_count, 1);
+  const int slot = clamp(overlay_display_slot_for_track(params, track_idx), 0, count - 1);
+  return float2((float(slot) + local_uv.x) / float(count), local_uv.y);
+}
+
 kernel void build_overlay_line_mask(
-    device const OverlayLineRect* rects [[buffer(0)]],
+    device const OverlayGpuRect* rects [[buffer(0)]],
     device atomic_uint* mask [[buffer(1)]],
-    constant OverlayMaskParams& params [[buffer(2)]],
+    constant LayoutParams& params [[buffer(2)]],
     uint id [[thread_position_in_grid]]) {
-  const OverlayLineRect rect = rects[id];
+  const OverlayGpuRect rect = rects[id];
   const int width = int(params.width);
   const int height = int(params.height);
-  if (width <= 0 || height <= 0 ||
-      rect.x0 >= rect.x1 || rect.y0 >= rect.y1 ||
-      rect.x1 <= 0 || rect.y1 <= 0 ||
-      rect.x0 >= width || rect.y0 >= height) {
+  if (width <= 0 || height <= 0 || overlay_line_strength_from_rect(rect) <= 0.0) {
     return;
   }
-  const int min_x = clamp(rect.x0, 0, width);
-  const int max_x = clamp(rect.x1, 0, width);
-  const int min_y = clamp(rect.y0, 0, height);
-  const int max_y = clamp(rect.y1, 0, height);
+
+  const int track_idx = overlay_track_index_from_rect(rect);
+  const float2 rect_min = overlay_unpack_uv16(rect.rect_uv0);
+  const float2 rect_max = overlay_unpack_uv16(rect.rect_uv1);
+  const float4 local_rect =
+      overlay_local_rect_from_video_rect(rect_min, rect_max, params, track_idx);
+  const float4 visible_rect = overlay_visible_local_rect_for_track(params, track_idx);
+  const float2 clipped_min = max(local_rect.xy, visible_rect.xy);
+  const float2 clipped_max = min(local_rect.zw, visible_rect.zw);
+  if (clipped_max.x <= clipped_min.x || clipped_max.y <= clipped_min.y) {
+    return;
+  }
+
+  const float line_width_px = 2.0;
+  const float2 clipped_global_min =
+      overlay_global_uv_from_local_uv(clipped_min, params, track_idx);
+  const float2 clipped_global_max =
+      overlay_global_uv_from_local_uv(clipped_max, params, track_idx);
+  const float2 visible_global_min =
+      overlay_global_uv_from_local_uv(visible_rect.xy, params, track_idx);
+  const float2 visible_global_max =
+      overlay_global_uv_from_local_uv(visible_rect.zw, params, track_idx);
+  const float2 clipped_px_min =
+      min(clipped_global_min, clipped_global_max) * float2(width, height);
+  const float2 clipped_px_max =
+      max(clipped_global_min, clipped_global_max) * float2(width, height);
+  const float2 visible_px_min =
+      min(visible_global_min, visible_global_max) * float2(width, height);
+  const float2 visible_px_max =
+      max(visible_global_min, visible_global_max) * float2(width, height);
+  const float2 draw_px_min = max(clipped_px_min - line_width_px, visible_px_min);
+  const float2 draw_px_max = min(clipped_px_max + line_width_px, visible_px_max);
+  const float2 rect_global_min =
+      overlay_global_uv_from_local_uv(local_rect.xy, params, track_idx);
+  const float2 rect_global_max =
+      overlay_global_uv_from_local_uv(local_rect.zw, params, track_idx);
+  const float4 rect_px = float4(
+      floor(min(rect_global_min.x, rect_global_max.x) * float(width) + 0.5),
+      floor(min(rect_global_min.y, rect_global_max.y) * float(height) + 0.5),
+      floor(max(rect_global_min.x, rect_global_max.x) * float(width) + 0.5),
+      floor(max(rect_global_min.y, rect_global_max.y) * float(height) + 0.5));
+  if (rect_px.z <= rect_px.x || rect_px.w <= rect_px.y) {
+    return;
+  }
+
+  const int min_x = clamp(int(floor(draw_px_min.x)), 0, width);
+  const int max_x = clamp(int(ceil(draw_px_max.x)), 0, width);
+  const int min_y = clamp(int(floor(draw_px_min.y)), 0, height);
+  const int max_y = clamp(int(ceil(draw_px_max.y)), 0, height);
   for (int y = min_y; y < max_y; ++y) {
     const uint row = uint(y) * params.width;
     for (int x = min_x; x < max_x; ++x) {
-      atomic_store_explicit(&mask[row + uint(x)], 1u, memory_order_relaxed);
+      const bool within_y = float(y) >= rect_px.y && float(y) < rect_px.w;
+      const bool within_x = float(x) >= rect_px.x && float(x) < rect_px.z;
+      const bool on_line =
+          (within_y && float(x) >= rect_px.x && float(x) < rect_px.x + line_width_px) ||
+          (within_x && float(y) >= rect_px.y && float(y) < rect_px.y + line_width_px) ||
+          (rect_max.x >= 0.9999 &&
+              within_y && float(x) >= rect_px.z - line_width_px && float(x) < rect_px.z) ||
+          (rect_max.y >= 0.9999 &&
+              within_x && float(y) >= rect_px.w - line_width_px && float(y) < rect_px.w);
+      if (on_line) {
+        atomic_store_explicit(&mask[row + uint(x)], 1u, memory_order_relaxed);
+      }
     }
   }
 }
@@ -664,7 +784,7 @@ uint overlay_mask_at(device atomic_uint* mask, uint width, uint height, int x, i
 
 kernel void composite_overlay_line_contrast(
     device atomic_uint* mask [[buffer(0)]],
-    constant OverlayMaskParams& params [[buffer(1)]],
+    constant LayoutParams& params [[buffer(1)]],
     texture2d<float, access::read_write> destination [[texture(0)]],
     uint2 gid [[thread_position_in_grid]]) {
   if (gid.x >= params.width || gid.y >= params.height ||

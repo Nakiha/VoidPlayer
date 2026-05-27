@@ -17,11 +17,6 @@ constexpr const char* kLayoutBgraKernelSource =
 #include "macos/metal_pixel_buffer_uploader_shaders.inc"
     ;
 
-struct OverlayMaskParams {
-  uint32_t width = 0;
-  uint32_t height = 0;
-};
-
 void write_error(char* error, size_t error_size, const char* message) {
   if (!error || error_size == 0) {
     return;
@@ -491,8 +486,9 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   return 0;
 }
 
-- (int)compositeOverlayLineRects:(const VPMacOSNativeOverlayLineRect*)rects
+- (int)compositeOverlayGpuRects:(const VPMacOSNativeOverlayGpuRect*)rects
                             count:(size_t)rectCount
+                         decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
                     toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                             width:(int32_t)width
                            height:(int32_t)height
@@ -506,7 +502,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     write_error(error, errorSize, "native Metal overlay line pipelines are not available");
     return -1;
   }
-  if (!rects || !pixelBuffer || width <= 0 || height <= 0) {
+  if (!rects || !decisionInfo || !pixelBuffer || width <= 0 || height <= 0) {
     write_error(error, errorSize, "invalid native Metal overlay arguments");
     return -1;
   }
@@ -522,16 +518,19 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   size_t maskPixels = 0;
   if (!checked_mul_size(static_cast<size_t>(width), static_cast<size_t>(height), &maskPixels) ||
       !checked_mul_size(maskPixels, sizeof(uint32_t), &maskBytes) ||
-      !checked_mul_size(rectCount, sizeof(VPMacOSNativeOverlayLineRect), &rectBytes) ||
+      !checked_mul_size(rectCount, sizeof(VPMacOSNativeOverlayGpuRect), &rectBytes) ||
       rectBytes == 0 ||
       maskBytes == 0 ||
       ![self ensureOverlayLineRectBufferWithLength:rectBytes] ||
-      ![self ensureOverlayLineMaskBufferWithLength:maskBytes]) {
+      ![self ensureOverlayLineMaskBufferWithLength:maskBytes] ||
+      ![self ensureLayoutParamsBuffer]) {
     return metal_upload_failure(
         error, errorSize, "failed to allocate native Metal overlay buffers");
   }
   std::memcpy([_overlayLineRectBuffer contents], rects, rectBytes);
   std::memset([_overlayLineMaskBuffer contents], 0, maskBytes);
+  auto* metalParams = static_cast<vp_macos::MetalLayoutParams*>([_layoutParamsBuffer contents]);
+  vp_macos::fill_metal_layout_params(*metalParams, *decisionInfo, width, height);
 
   vp_macos::ScopedCVMetalTexture destinationRef;
   const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(
@@ -555,13 +554,10 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
         error, errorSize, "failed to create native Metal overlay compute command");
   }
 
-  OverlayMaskParams params{};
-  params.width = static_cast<uint32_t>(width);
-  params.height = static_cast<uint32_t>(height);
   [maskCompute setComputePipelineState:_overlayLineMaskPipeline];
   [maskCompute setBuffer:_overlayLineRectBuffer offset:0 atIndex:0];
   [maskCompute setBuffer:_overlayLineMaskBuffer offset:0 atIndex:1];
-  [maskCompute setBytes:&params length:sizeof(params) atIndex:2];
+  [maskCompute setBuffer:_layoutParamsBuffer offset:0 atIndex:2];
   const NSUInteger maskThreadWidth = _overlayLineMaskPipeline.threadExecutionWidth;
   const MTLSize maskThreadsPerThreadgroup = MTLSizeMake(maskThreadWidth, 1, 1);
   const MTLSize maskThreads = MTLSizeMake(rectCount, 1, 1);
@@ -575,7 +571,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   }
   [contrastCompute setComputePipelineState:_overlayLineContrastPipeline];
   [contrastCompute setBuffer:_overlayLineMaskBuffer offset:0 atIndex:0];
-  [contrastCompute setBytes:&params length:sizeof(params) atIndex:1];
+  [contrastCompute setBuffer:_layoutParamsBuffer offset:0 atIndex:1];
   [contrastCompute setTexture:destinationTexture atIndex:0];
   const NSUInteger contrastThreadWidth = _overlayLineContrastPipeline.threadExecutionWidth;
   const NSUInteger contrastThreadHeight =

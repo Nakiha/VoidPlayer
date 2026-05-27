@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
@@ -241,6 +242,15 @@ class TestRunner {
         final count = _probe.currentNativeSeekCount();
         _state.nativeSeekCountBaselines[nameId] = count;
         log.info('TestRunner: STORE_NATIVE_SEEK_COUNT $nameId count=$count');
+      case DragViewport(:final dx, :final dy, :final steps, :final stepMs):
+        log.info(
+          'TestRunner: DRAG_VIEWPORT dx=$dx dy=$dy steps=$steps stepMs=$stepMs',
+        );
+        await testHarness.dragViewport(
+          Offset(dx, dy),
+          steps: steps,
+          stepDelay: Duration(milliseconds: stepMs),
+        );
       case HoverControlsBarButtons(:final steps):
         log.info('TestRunner: HOVER_CONTROLS_BAR_BUTTONS steps=$steps');
         testHarness.hoverControlsBarButtons(steps: steps);

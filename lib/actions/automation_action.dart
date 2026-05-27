@@ -56,6 +56,16 @@ class StoreNativeSeekCount extends AutomationAction {
   const StoreNativeSeekCount(this.nameId) : super('STORE_NATIVE_SEEK_COUNT');
 }
 
+class DragViewport extends AutomationAction {
+  final double dx;
+  final double dy;
+  final int steps;
+  final int stepMs;
+
+  const DragViewport(this.dx, this.dy, {this.steps = 24, this.stepMs = 16})
+    : super('DRAG_VIEWPORT');
+}
+
 class HoverControlsBarButtons extends AutomationAction {
   final int steps;
 

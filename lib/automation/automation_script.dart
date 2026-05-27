@@ -307,6 +307,20 @@ ScriptInstruction? _parseInstruction(
         time,
         Pan(double.parse(args[0]), double.parse(args[1])),
       );
+    case 'DRAG_VIEWPORT':
+      if (args.length < 2) {
+        log.warning('DRAG_VIEWPORT needs dx and dy arguments: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        DragViewport(
+          double.parse(args[0]),
+          double.parse(args[1]),
+          steps: args.length >= 3 ? int.parse(args[2]) : 24,
+          stepMs: args.length >= 4 ? int.parse(args[3]) : 16,
+        ),
+      );
     case 'SET_RENDER_SIZE':
       if (args.length < 2) {
         log.warning(

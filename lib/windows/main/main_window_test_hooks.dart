@@ -535,6 +535,73 @@ class MainWindowTestHarness {
     );
   }
 
+  Future<void> dragViewport(
+    Offset delta, {
+    int steps = 24,
+    Duration stepDelay = const Duration(milliseconds: 16),
+  }) async {
+    final context = viewportKey.currentContext;
+    if (context == null) {
+      throw StateError('Viewport is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Viewport has no render box');
+    }
+
+    final count = steps <= 0 ? 1 : steps;
+    final start = renderObject.localToGlobal(
+      Offset(renderObject.size.width / 2, renderObject.size.height / 2),
+    );
+    final end = start + delta;
+    final pointer = _pointerId++;
+    var previous = start;
+
+    log.info(
+      'Test action: DRAG_VIEWPORT '
+      'delta=(${delta.dx.toStringAsFixed(1)}, ${delta.dy.toStringAsFixed(1)}) '
+      'steps=$count stepMs=${stepDelay.inMilliseconds} '
+      'global=(${start.dx.toStringAsFixed(1)}, ${start.dy.toStringAsFixed(1)})'
+      '->(${end.dx.toStringAsFixed(1)}, ${end.dy.toStringAsFixed(1)})',
+    );
+
+    GestureBinding.instance.handlePointerEvent(
+      PointerDownEvent(
+        pointer: pointer,
+        position: start,
+        buttons: kPrimaryButton,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    await Future<void>.delayed(stepDelay);
+    for (var i = 1; i <= count; i++) {
+      final t = i / count;
+      final next = Offset(
+        start.dx + (end.dx - start.dx) * t,
+        start.dy + (end.dy - start.dy) * t,
+      );
+      GestureBinding.instance.handlePointerEvent(
+        PointerMoveEvent(
+          pointer: pointer,
+          position: next,
+          delta: next - previous,
+          buttons: kPrimaryButton,
+          kind: PointerDeviceKind.mouse,
+        ),
+      );
+      previous = next;
+      await Future<void>.delayed(stepDelay);
+    }
+    GestureBinding.instance.handlePointerEvent(
+      PointerUpEvent(
+        pointer: pointer,
+        position: end,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    await Future<void>.delayed(stepDelay);
+  }
+
   void dragLoopHandle(String handle, int targetUs, {int steps = 12}) {
     final context = loopRangeBarKey.currentContext;
     if (context == null) {

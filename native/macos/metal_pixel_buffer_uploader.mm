@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
-#include <cstdlib>
 #include <cstring>
 #include <limits>
 
@@ -52,31 +51,6 @@ int64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
       .count();
 }
 
-bool env_flag_enabled(const char* name) {
-  const char* value = std::getenv(name);
-  return value && value[0] != '\0' && std::strcmp(value, "0") != 0;
-}
-
-bool overlay_debug_logging_enabled() {
-  static const bool enabled = env_flag_enabled("VOIDPLAYER_MACOS_OVERLAY_DEBUG");
-  return enabled;
-}
-
-int64_t count_overlay_mask_pixels(id<MTLBuffer> maskBuffer, size_t maskPixels) {
-  if (!maskBuffer || maskPixels == 0) {
-    return 0;
-  }
-  const auto* mask = static_cast<const uint32_t*>([maskBuffer contents]);
-  if (!mask) {
-    return -1;
-  }
-  int64_t count = 0;
-  for (size_t i = 0; i < maskPixels; ++i) {
-    count += mask[i] != 0 ? 1 : 0;
-  }
-  return count;
-}
-
 }  // namespace
 
 const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
@@ -112,7 +86,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     _lastPresentPackageStorage.store(
         VPMacOSNativePresentPackageStorageUnavailable,
         std::memory_order_relaxed);
-    _lastOverlayMaskPixelCount.store(-1, std::memory_order_relaxed);
     _device = MTLCreateSystemDefaultDevice();
     if (_device) {
       _commandQueue = [_device newCommandQueue];
@@ -200,10 +173,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
 
 - (int32_t)lastPresentPackageStorage {
   return _lastPresentPackageStorage.load(std::memory_order_relaxed);
-}
-
-- (int64_t)lastOverlayMaskPixelCount {
-  return _lastOverlayMaskPixelCount.load(std::memory_order_relaxed);
 }
 
 - (int)validatePixelBufferStatus:(CVPixelBufferRef)pixelBuffer
@@ -622,13 +591,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   if ([commandBuffer status] != MTLCommandBufferStatusCompleted) {
     return metal_upload_failure(
         error, errorSize, "native Metal overlay compute did not complete");
-  }
-  if (overlay_debug_logging_enabled()) {
-    _lastOverlayMaskPixelCount.store(
-        count_overlay_mask_pixels(_overlayLineMaskBuffer, maskPixels),
-        std::memory_order_relaxed);
-  } else {
-    _lastOverlayMaskPixelCount.store(-1, std::memory_order_relaxed);
   }
   write_error(error, errorSize, "");
   return 0;

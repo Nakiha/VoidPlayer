@@ -33,7 +33,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
   std::atomic<int64_t> _lastPresentPackageGpuWaitUs;
   std::atomic<int64_t> _lastPresentPackageTotalUs;
   std::atomic<int32_t> _lastPresentPackageStorage;
-  std::atomic<int64_t> _lastOverlayMaskPixelCount;
 }
 
 - (BOOL)isAvailable;
@@ -44,7 +43,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
 - (int64_t)lastPresentPackageGpuWaitUs;
 - (int64_t)lastPresentPackageTotalUs;
 - (int32_t)lastPresentPackageStorage;
-- (int64_t)lastOverlayMaskPixelCount;
 - (int)validatePixelBufferStatus:(CVPixelBufferRef)pixelBuffer
                             width:(int32_t)width
                            height:(int32_t)height;

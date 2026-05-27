@@ -15,8 +15,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdlib>
-#include <cstring>
 #include <limits>
 #include <memory>
 #include <string>
@@ -48,8 +46,6 @@ struct OverlayCompositeResult {
   bool gpu_succeeded = false;
   int gpu_ret = 0;
   std::string gpu_error;
-  int64_t gpu_mask_pixel_count = -1;
-  bool force_cpu_fallback = false;
   bool cpu_attempted = false;
   bool cpu_succeeded = false;
   size_t line_rect_count = 0;
@@ -57,21 +53,6 @@ struct OverlayCompositeResult {
   uint32_t first_rect_uv1 = 0;
   uint32_t first_rect_track_idx = 0;
 };
-
-bool env_flag_enabled(const char* name) {
-  const char* value = std::getenv(name);
-  return value && value[0] != '\0' && std::strcmp(value, "0") != 0;
-}
-
-bool overlay_debug_logging_enabled() {
-  static const bool enabled = env_flag_enabled("VOIDPLAYER_MACOS_OVERLAY_DEBUG");
-  return enabled;
-}
-
-bool overlay_force_cpu_fallback_enabled() {
-  static const bool enabled = env_flag_enabled("VOIDPLAYER_MACOS_OVERLAY_CPU_FALLBACK");
-  return enabled;
-}
 
 int active_present_frame_count(const vr::RendererDrawSnapshot& snapshot) {
   int count = 0;
@@ -98,7 +79,7 @@ void log_overlay_composite_result(const char* path,
                                   int32_t target_width,
                                   int32_t target_height) {
   const bool missed = result.expected && !result.applied;
-  if (!overlay_debug_logging_enabled() && !missed) {
+  if (!missed) {
     return;
   }
 
@@ -113,77 +94,37 @@ void log_overlay_composite_result(const char* path,
       : snapshot.decision.current_pts_us;
 
   const char* level_label = missed ? "MISS" : "state";
-  if (missed) {
-    spdlog::warn("[MetalOverlay] {} path={} target={}x{} active_frames={} slot={} file_id={} "
-                 "pts={:.3f}s expected={} applied={} line_rects={} cpu_only={} "
-                 "gpu_attempted={} gpu_succeeded={} gpu_ret={} mask_pixels={} "
-                 "force_cpu={} cpu_attempted={} cpu_succeeded={} "
-                 "layout(mode={}, zoom={:.3f}, offset={:.1f},{:.1f}, pixel_mode={}) "
-                 "first_rect_uv=0x{:08x}->0x{:08x} track_payload=0x{:08x} gpu_error='{}'",
-                 level_label,
-                 path,
-                 target_width,
-                 target_height,
-                 active_present_frame_count(snapshot),
-                 slot,
-                 file_id,
-                 static_cast<double>(pts_us) / 1000000.0,
-                 result.expected,
-                 result.applied,
-                 result.line_rect_count,
-                 result.has_cpu_only_primitives,
-                 result.gpu_attempted,
-                 result.gpu_succeeded,
-                 result.gpu_ret,
-                 result.gpu_mask_pixel_count,
-                 result.force_cpu_fallback,
-                 result.cpu_attempted,
-                 result.cpu_succeeded,
-                 snapshot.layout.mode,
-                 snapshot.layout.zoom_ratio,
-                 snapshot.layout.view_offset[0],
-                 snapshot.layout.view_offset[1],
-                 snapshot.layout.pixel_size_mode,
-                 result.first_rect_uv0,
-                 result.first_rect_uv1,
-                 result.first_rect_track_idx,
-                 result.gpu_error);
-  } else {
-    spdlog::info("[MetalOverlay] {} path={} target={}x{} active_frames={} slot={} file_id={} "
-                 "pts={:.3f}s expected={} applied={} line_rects={} cpu_only={} "
-                 "gpu_attempted={} gpu_succeeded={} gpu_ret={} mask_pixels={} "
-                 "force_cpu={} cpu_attempted={} cpu_succeeded={} "
-                 "layout(mode={}, zoom={:.3f}, offset={:.1f},{:.1f}, pixel_mode={}) "
-                 "first_rect_uv=0x{:08x}->0x{:08x} track_payload=0x{:08x} gpu_error='{}'",
-                 level_label,
-                 path,
-                 target_width,
-                 target_height,
-                 active_present_frame_count(snapshot),
-                 slot,
-                 file_id,
-                 static_cast<double>(pts_us) / 1000000.0,
-                 result.expected,
-                 result.applied,
-                 result.line_rect_count,
-                 result.has_cpu_only_primitives,
-                 result.gpu_attempted,
-                 result.gpu_succeeded,
-                 result.gpu_ret,
-                 result.gpu_mask_pixel_count,
-                 result.force_cpu_fallback,
-                 result.cpu_attempted,
-                 result.cpu_succeeded,
-                 snapshot.layout.mode,
-                 snapshot.layout.zoom_ratio,
-                 snapshot.layout.view_offset[0],
-                 snapshot.layout.view_offset[1],
-                 snapshot.layout.pixel_size_mode,
-                 result.first_rect_uv0,
-                 result.first_rect_uv1,
-                 result.first_rect_track_idx,
-                 result.gpu_error);
-  }
+  spdlog::warn("[MetalOverlay] {} path={} target={}x{} active_frames={} slot={} file_id={} "
+               "pts={:.3f}s expected={} applied={} line_rects={} cpu_only={} "
+               "gpu_attempted={} gpu_succeeded={} gpu_ret={} cpu_attempted={} cpu_succeeded={} "
+               "layout(mode={}, zoom={:.3f}, offset={:.1f},{:.1f}, pixel_mode={}) "
+               "first_rect_uv=0x{:08x}->0x{:08x} track_payload=0x{:08x} gpu_error='{}'",
+               level_label,
+               path,
+               target_width,
+               target_height,
+               active_present_frame_count(snapshot),
+               slot,
+               file_id,
+               static_cast<double>(pts_us) / 1000000.0,
+               result.expected,
+               result.applied,
+               result.line_rect_count,
+               result.has_cpu_only_primitives,
+               result.gpu_attempted,
+               result.gpu_succeeded,
+               result.gpu_ret,
+               result.cpu_attempted,
+               result.cpu_succeeded,
+               snapshot.layout.mode,
+               snapshot.layout.zoom_ratio,
+               snapshot.layout.view_offset[0],
+               snapshot.layout.view_offset[1],
+               snapshot.layout.pixel_size_mode,
+               result.first_rect_uv0,
+               result.first_rect_uv1,
+               result.first_rect_track_idx,
+               result.gpu_error);
 }
 
 #if VOID_BUILD_ANALYSIS
@@ -482,10 +423,7 @@ OverlayCompositeResult composite_overlay_after_upload(
   result.first_rect_uv0 = overlay.first_rect_uv0;
   result.first_rect_uv1 = overlay.first_rect_uv1;
   result.first_rect_track_idx = overlay.first_rect_track_idx;
-  result.force_cpu_fallback =
-      result.expected && overlay_force_cpu_fallback_enabled();
-
-  if (!overlay.line_rects.empty() && !result.force_cpu_fallback) {
+  if (!overlay.line_rects.empty()) {
     result.gpu_attempted = true;
     char error[256] = {};
     VPMacOSNativePresentDecisionInfo decision = {};
@@ -503,8 +441,6 @@ OverlayCompositeResult composite_overlay_after_upload(
     result.gpu_ret = ret;
     result.gpu_error = error;
     result.gpu_succeeded = ret == 0;
-    result.gpu_mask_pixel_count =
-        VPMacOSMetalUploaderLastOverlayMaskPixelCount(uploader);
     if (result.gpu_succeeded && !overlay.has_cpu_only_primitives) {
       result.applied = true;
       return result;

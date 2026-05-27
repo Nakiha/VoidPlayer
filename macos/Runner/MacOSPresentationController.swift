@@ -30,6 +30,7 @@ final class MacOSPresentationController {
   }
 
   func resize(arguments: Any?, context: MacOSPresentationContext) {
+    var nativeRefreshAttempted = false
     let width = MacOSFlutterArguments.intArg(arguments, "width")
     let height = MacOSFlutterArguments.intArg(arguments, "height")
     if let width, let height {
@@ -43,31 +44,41 @@ final class MacOSPresentationController {
       }
       _ = context.texture?.resize(width: nextWidth, height: nextHeight) ?? false
       if context.nativeBackendActive {
-        refreshCurrentFrame(context: context)
+        nativeRefreshAttempted = true
+        let refreshed = refreshCurrentFrame(context: context)
         context.playback.reinstallPresentationTargetIfPlaying(
           player: context.player,
           texture: context.nativeTexture,
           maxTrackSlots: context.maxTrackSlots
         )
+        if !refreshed {
+          return
+        }
       }
     }
-    context.markFrameAvailable()
+    if !nativeRefreshAttempted {
+      context.markFrameAvailable()
+    }
   }
 
-  func refreshCurrentFrame(context: MacOSPresentationContext) {
+  @discardableResult
+  func refreshCurrentFrame(context: MacOSPresentationContext) -> Bool {
     guard context.nativeBackendActive,
           let player = context.player,
           let texture = context.nativeTexture else {
       context.markFrameAvailable()
-      return
+      return true
     }
-    MacOSNativeFrameRefresh.refreshCurrentFrameAfterLayoutChange(
+    let refreshed = MacOSNativeFrameRefresh.refreshCurrentFrameAfterLayoutChange(
       player: player,
       texture: texture,
       maxTrackSlots: context.maxTrackSlots,
       presentationState: context.presentationState,
       framePump: context.playback.framePumpForRefresh
     )
-    context.markFrameAvailable()
+    if refreshed {
+      context.markFrameAvailable()
+    }
+    return refreshed
   }
 }

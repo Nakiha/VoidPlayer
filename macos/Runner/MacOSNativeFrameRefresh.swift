@@ -35,7 +35,7 @@ enum MacOSNativeFrameRefresh {
     maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
     framePump: MacOSNativeFramePump
-  ) {
+  ) -> Bool {
     do {
       let frameInfo = try texture.updateFromNativePlayer(
         player,
@@ -44,12 +44,14 @@ enum MacOSNativeFrameRefresh {
       )
       framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
       presentationState.recordFrame(frameInfo)
+      return true
     } catch {
       if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
         presentationState.recordMiss()
       } else {
         NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
       }
+      return false
     }
   }
 

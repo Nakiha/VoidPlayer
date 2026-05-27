@@ -321,6 +321,24 @@ ScriptInstruction? _parseInstruction(
           stepMs: args.length >= 4 ? int.parse(args[3]) : 16,
         ),
       );
+    case 'DRAG_VIEWPORT_SAMPLE_OVERLAY':
+      if (args.length < 2) {
+        log.warning(
+          'DRAG_VIEWPORT_SAMPLE_OVERLAY needs dx and dy arguments: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        DragViewportSampleOverlay(
+          double.parse(args[0]),
+          double.parse(args[1]),
+          steps: args.length >= 3 ? int.parse(args[2]) : 24,
+          stepMs: args.length >= 4 ? int.parse(args[3]) : 16,
+          minScoreRatio: args.length >= 5 ? double.parse(args[4]) : 0.45,
+          maxDropSamples: args.length >= 6 ? int.parse(args[5]) : 0,
+        ),
+      );
     case 'SET_RENDER_SIZE':
       if (args.length < 2) {
         log.warning(

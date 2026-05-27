@@ -251,6 +251,30 @@ class TestRunner {
           steps: steps,
           stepDelay: Duration(milliseconds: stepMs),
         );
+      case DragViewportSampleOverlay(
+        :final dx,
+        :final dy,
+        :final steps,
+        :final stepMs,
+        :final minScoreRatio,
+        :final maxDropSamples,
+      ):
+        log.info(
+          'TestRunner: DRAG_VIEWPORT_SAMPLE_OVERLAY dx=$dx dy=$dy '
+          'steps=$steps stepMs=$stepMs minScoreRatio=$minScoreRatio '
+          'maxDropSamples=$maxDropSamples',
+        );
+        final metric = await testHarness.dragViewportAndSampleOverlay(
+          Offset(dx, dy),
+          steps: steps,
+          stepDelay: Duration(milliseconds: stepMs),
+          minScoreRatio: minScoreRatio,
+          maxDropSamples: maxDropSamples,
+        );
+        log.info(metric.summary());
+        if (!metric.stable) {
+          throw AssertionError(metric.failureMessage);
+        }
       case HoverControlsBarButtons(:final steps):
         log.info('TestRunner: HOVER_CONTROLS_BAR_BUTTONS steps=$steps');
         testHarness.hoverControlsBarButtons(steps: steps);

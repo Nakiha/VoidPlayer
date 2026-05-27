@@ -49,6 +49,7 @@ struct OverlayCompositeResult {
   int gpu_ret = 0;
   std::string gpu_error;
   int64_t gpu_mask_pixel_count = -1;
+  bool force_cpu_fallback = false;
   bool cpu_attempted = false;
   bool cpu_succeeded = false;
   size_t line_rect_count = 0;
@@ -64,6 +65,11 @@ bool env_flag_enabled(const char* name) {
 
 bool overlay_debug_logging_enabled() {
   static const bool enabled = env_flag_enabled("VOIDPLAYER_MACOS_OVERLAY_DEBUG");
+  return enabled;
+}
+
+bool overlay_force_cpu_fallback_enabled() {
+  static const bool enabled = env_flag_enabled("VOIDPLAYER_MACOS_OVERLAY_CPU_FALLBACK");
   return enabled;
 }
 
@@ -111,7 +117,7 @@ void log_overlay_composite_result(const char* path,
     spdlog::warn("[MetalOverlay] {} path={} target={}x{} active_frames={} slot={} file_id={} "
                  "pts={:.3f}s expected={} applied={} line_rects={} cpu_only={} "
                  "gpu_attempted={} gpu_succeeded={} gpu_ret={} mask_pixels={} "
-                 "cpu_attempted={} cpu_succeeded={} "
+                 "force_cpu={} cpu_attempted={} cpu_succeeded={} "
                  "layout(mode={}, zoom={:.3f}, offset={:.1f},{:.1f}, pixel_mode={}) "
                  "first_rect_uv=0x{:08x}->0x{:08x} track_payload=0x{:08x} gpu_error='{}'",
                  level_label,
@@ -130,6 +136,7 @@ void log_overlay_composite_result(const char* path,
                  result.gpu_succeeded,
                  result.gpu_ret,
                  result.gpu_mask_pixel_count,
+                 result.force_cpu_fallback,
                  result.cpu_attempted,
                  result.cpu_succeeded,
                  snapshot.layout.mode,
@@ -145,7 +152,7 @@ void log_overlay_composite_result(const char* path,
     spdlog::info("[MetalOverlay] {} path={} target={}x{} active_frames={} slot={} file_id={} "
                  "pts={:.3f}s expected={} applied={} line_rects={} cpu_only={} "
                  "gpu_attempted={} gpu_succeeded={} gpu_ret={} mask_pixels={} "
-                 "cpu_attempted={} cpu_succeeded={} "
+                 "force_cpu={} cpu_attempted={} cpu_succeeded={} "
                  "layout(mode={}, zoom={:.3f}, offset={:.1f},{:.1f}, pixel_mode={}) "
                  "first_rect_uv=0x{:08x}->0x{:08x} track_payload=0x{:08x} gpu_error='{}'",
                  level_label,
@@ -164,6 +171,7 @@ void log_overlay_composite_result(const char* path,
                  result.gpu_succeeded,
                  result.gpu_ret,
                  result.gpu_mask_pixel_count,
+                 result.force_cpu_fallback,
                  result.cpu_attempted,
                  result.cpu_succeeded,
                  snapshot.layout.mode,
@@ -474,8 +482,10 @@ OverlayCompositeResult composite_overlay_after_upload(
   result.first_rect_uv0 = overlay.first_rect_uv0;
   result.first_rect_uv1 = overlay.first_rect_uv1;
   result.first_rect_track_idx = overlay.first_rect_track_idx;
+  result.force_cpu_fallback =
+      result.expected && overlay_force_cpu_fallback_enabled();
 
-  if (!overlay.line_rects.empty()) {
+  if (!overlay.line_rects.empty() && !result.force_cpu_fallback) {
     result.gpu_attempted = true;
     char error[256] = {};
     VPMacOSNativePresentDecisionInfo decision = {};

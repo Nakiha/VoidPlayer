@@ -66,6 +66,24 @@ class DragViewport extends AutomationAction {
     : super('DRAG_VIEWPORT');
 }
 
+class DragViewportSampleOverlay extends AutomationAction {
+  final double dx;
+  final double dy;
+  final int steps;
+  final int stepMs;
+  final double minScoreRatio;
+  final int maxDropSamples;
+
+  const DragViewportSampleOverlay(
+    this.dx,
+    this.dy, {
+    this.steps = 24,
+    this.stepMs = 16,
+    this.minScoreRatio = 0.45,
+    this.maxDropSamples = 0,
+  }) : super('DRAG_VIEWPORT_SAMPLE_OVERLAY');
+}
+
 class HoverControlsBarButtons extends AutomationAction {
   final int steps;
 

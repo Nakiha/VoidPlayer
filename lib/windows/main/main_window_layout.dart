@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../../app_log.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
@@ -25,6 +27,12 @@ class MainWindowLayoutCoordinator {
   bool _resizeDirty = false;
   bool _flushInProgress = false;
   bool _disposed = false;
+  final bool _viewportTraceEnabled =
+      Platform.environment['VOIDPLAYER_VIEWPORT_TRACE'] == '1';
+  int _panTraceSeq = 0;
+  int _flushTraceSeq = 0;
+  Offset _panTraceAccumulatedDelta = Offset.zero;
+  DateTime? _lastPanTraceAt;
 
   int viewportWidth = 0;
   int viewportHeight = 0;
@@ -111,6 +119,15 @@ class MainWindowLayoutCoordinator {
     final current = layout();
     final nextOffsetX = current.viewOffsetX + dx;
     final nextOffsetY = current.viewOffsetY + dy;
+    if (_viewportTraceEnabled) {
+      _logViewportPanTrace(
+        dx: dx,
+        dy: dy,
+        before: current,
+        nextOffsetX: nextOffsetX,
+        nextOffsetY: nextOffsetY,
+      );
+    }
     _updateLayout(
       (layout) =>
           layout.copyWith(viewOffsetX: nextOffsetX, viewOffsetY: nextOffsetY),
@@ -176,6 +193,19 @@ class MainWindowLayoutCoordinator {
     final nextOffsetY =
         actualFactor * currentLayout.viewOffsetY +
         (1 - actualFactor) * (cursorY - 0.5) * slotH;
+
+    if (_viewportTraceEnabled) {
+      log.info(
+        '[ViewportTrace] zoom factor=${factor.toStringAsFixed(4)} '
+        'actualFactor=${actualFactor.toStringAsFixed(4)} '
+        'local=(${localPos.dx.toStringAsFixed(1)},${localPos.dy.toStringAsFixed(1)}) '
+        'zoom=${currentLayout.zoomRatio.toStringAsFixed(4)}->${newZoom.toStringAsFixed(4)} '
+        'offset=(${currentLayout.viewOffsetX.toStringAsFixed(1)},${currentLayout.viewOffsetY.toStringAsFixed(1)})'
+        '->(${nextOffsetX.toStringAsFixed(1)},${nextOffsetY.toStringAsFixed(1)}) '
+        'viewport=${viewportWidth}x$viewportHeight mode=${currentLayout.mode} '
+        'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty flush=$_flushInProgress',
+      );
+    }
 
     _updateLayout(
       (layout) => layout.copyWith(
@@ -277,12 +307,27 @@ class MainWindowLayoutCoordinator {
   void markLayoutDirty() {
     if (_disposed) return;
     _layoutDirty = true;
+    if (_viewportTraceEnabled) {
+      final current = layout();
+      log.info(
+        '[ViewportTrace] mark-layout-dirty '
+        'zoom=${current.zoomRatio.toStringAsFixed(4)} '
+        'offset=(${current.viewOffsetX.toStringAsFixed(1)},${current.viewOffsetY.toStringAsFixed(1)}) '
+        'resizeDirty=$_resizeDirty flush=$_flushInProgress',
+      );
+    }
     _startTicker();
   }
 
   void _markResizeDirty() {
     if (_disposed) return;
     _resizeDirty = true;
+    if (_viewportTraceEnabled) {
+      log.info(
+        '[ViewportTrace] mark-resize-dirty viewport=${viewportWidth}x$viewportHeight '
+        'layoutDirty=$_layoutDirty flush=$_flushInProgress',
+      );
+    }
     _startTicker();
   }
 
@@ -302,6 +347,14 @@ class MainWindowLayoutCoordinator {
     }
 
     _flushInProgress = true;
+    final flushSeq = ++_flushTraceSeq;
+    if (_viewportTraceEnabled) {
+      log.info(
+        '[ViewportTrace] flush#$flushSeq begin '
+        'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty '
+        'viewport=${viewportWidth}x$viewportHeight',
+      );
+    }
     try {
       while (!_disposed && mounted() && (_resizeDirty || _layoutDirty)) {
         if (_resizeDirty && viewportWidth > 0 && viewportHeight > 0) {
@@ -311,8 +364,18 @@ class MainWindowLayoutCoordinator {
           if (_layoutDirty) {
             final pendingLayout = layout();
             _layoutDirty = false;
+            if (_viewportTraceEnabled) {
+              _logViewportApplyTrace(
+                flushSeq,
+                'pre-resize-apply-layout',
+                pendingLayout,
+              );
+            }
             await controller.applyLayout(pendingLayout);
             if (_disposed || !mounted()) return;
+          }
+          if (_viewportTraceEnabled) {
+            log.info('[ViewportTrace] flush#$flushSeq resize ${width}x$height');
           }
           await controller.resize(width, height);
           if (_disposed || !mounted()) return;
@@ -326,12 +389,21 @@ class MainWindowLayoutCoordinator {
         if (_layoutDirty) {
           final nextLayout = layout();
           _layoutDirty = false;
+          if (_viewportTraceEnabled) {
+            _logViewportApplyTrace(flushSeq, 'apply-layout', nextLayout);
+          }
           await controller.applyLayout(nextLayout);
           if (_disposed || !mounted()) return;
         }
       }
     } finally {
       _flushInProgress = false;
+      if (_viewportTraceEnabled) {
+        log.info(
+          '[ViewportTrace] flush#$flushSeq end '
+          'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty',
+        );
+      }
       if (!_disposed && mounted()) {
         if (_resizeDirty || _layoutDirty) {
           _startTicker();
@@ -344,6 +416,45 @@ class MainWindowLayoutCoordinator {
 
   void _updateLayout(LayoutState Function(LayoutState current) update) {
     setLayout(update(layout()));
+  }
+
+  void _logViewportPanTrace({
+    required double dx,
+    required double dy,
+    required LayoutState before,
+    required double nextOffsetX,
+    required double nextOffsetY,
+  }) {
+    final now = DateTime.now();
+    final last = _lastPanTraceAt;
+    _lastPanTraceAt = now;
+    final dtMs = last == null ? -1 : now.difference(last).inMicroseconds / 1000;
+    _panTraceAccumulatedDelta += Offset(dx, dy);
+    log.info(
+      '[ViewportTrace] pan#${++_panTraceSeq} '
+      'dtMs=${dtMs < 0 ? "first" : dtMs.toStringAsFixed(2)} '
+      'delta=(${dx.toStringAsFixed(1)},${dy.toStringAsFixed(1)}) '
+      'accum=(${_panTraceAccumulatedDelta.dx.toStringAsFixed(1)},${_panTraceAccumulatedDelta.dy.toStringAsFixed(1)}) '
+      'zoom=${before.zoomRatio.toStringAsFixed(4)} '
+      'offset=(${before.viewOffsetX.toStringAsFixed(1)},${before.viewOffsetY.toStringAsFixed(1)})'
+      '->(${nextOffsetX.toStringAsFixed(1)},${nextOffsetY.toStringAsFixed(1)}) '
+      'viewport=${viewportWidth}x$viewportHeight mode=${before.mode} '
+      'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty flush=$_flushInProgress',
+    );
+  }
+
+  void _logViewportApplyTrace(
+    int flushSeq,
+    String phase,
+    LayoutState nextLayout,
+  ) {
+    log.info(
+      '[ViewportTrace] flush#$flushSeq $phase '
+      'zoom=${nextLayout.zoomRatio.toStringAsFixed(4)} '
+      'offset=(${nextLayout.viewOffsetX.toStringAsFixed(1)},${nextLayout.viewOffsetY.toStringAsFixed(1)}) '
+      'viewport=${viewportWidth}x$viewportHeight mode=${nextLayout.mode} '
+      'resizeDirty=$_resizeDirty',
+    );
   }
 
   LayoutState _rescaleViewOffsetForLayoutChange(

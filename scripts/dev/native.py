@@ -720,5 +720,5 @@ def native_build_macos(debug: bool, test: bool = True, github: bool = False) -> 
             "--output-on-failure",
         ]
         if github:
-            ctest_cmd.extend(["-LE", "hosted-flaky"])
+            ctest_cmd.extend(["-LE", "hosted-flaky|videotoolbox"])
         run(ctest_cmd, cwd=str(ROOT))

@@ -32,6 +32,12 @@ final class MacOSPresentationController {
       return
     }
     layout = nextLayout
+    if context.nativeBackendActive,
+       context.playback.currentIsPlaying(player: context.player) {
+      invalidatePendingLayoutRefreshes()
+      MacOSNativeLayoutBridge.apply(layout: nextLayout, player: context.player)
+      return
+    }
     requestCoalescedLayoutRefresh(context: context, layout: nextLayout)
   }
 
@@ -95,6 +101,11 @@ final class MacOSPresentationController {
       layoutRefreshQueue.sync {}
     }
     layoutRefreshRunning = false
+  }
+
+  private func invalidatePendingLayoutRefreshes() {
+    layoutRefreshGeneration += 1
+    latestLayoutRefreshRequest = nil
   }
 
   private func requestCoalescedLayoutRefresh(

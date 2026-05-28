@@ -16,7 +16,9 @@ void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   if (player->renderer_active_locked()) {
-    player->clear_last_frame_locked();
+    if (!player->renderer->is_playing()) {
+      player->clear_last_frame_locked();
+    }
     player->renderer->apply_layout(to_layout_state(*state));
   }
 }

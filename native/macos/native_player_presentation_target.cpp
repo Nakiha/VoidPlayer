@@ -37,13 +37,16 @@ void VPMacOSNativePlayerSetFrameAvailableCallback(
   player->frame_available_user_data = user_data;
 }
 
-int VPMacOSNativePlayerSetMetalPresentationTarget(
+namespace {
+
+int set_metal_presentation_target(
     VPMacOSNativePlayer* player,
     VPMacOSMetalPresentationBackend* backend,
     void* pixel_buffer,
     int32_t width,
     int32_t height,
-    int32_t max_track_slots) {
+    int32_t max_track_slots,
+    bool refresh_now) {
   if (!player || !pixel_buffer || width <= 0 || height <= 0) {
     return -1;
   }
@@ -66,11 +69,13 @@ int VPMacOSNativePlayerSetMetalPresentationTarget(
     player->presentation_target_max_track_slots = clamped_track_slots;
     if (target_changed) {
       ++player->presentation_target_generation;
-      player->last_renderer_owned_presentation_succeeded = false;
-      player->last_renderer_owned_frame_info_available = false;
-      player->last_renderer_owned_frame_info = {};
-      player->renderer_owned_presentation_consecutive_failures = 0;
-      player->renderer_owned_presentation_last_error.clear();
+      if (refresh_now) {
+        player->last_renderer_owned_presentation_succeeded = false;
+        player->last_renderer_owned_frame_info_available = false;
+        player->last_renderer_owned_frame_info = {};
+        player->renderer_owned_presentation_consecutive_failures = 0;
+        player->renderer_owned_presentation_last_error.clear();
+      }
     }
   }
   if (target_changed) {
@@ -84,11 +89,21 @@ int VPMacOSNativePlayerSetMetalPresentationTarget(
       if (!target_changed) {
         return 0;
       }
-      if (player->renderer->update_headless_output(
-              pixel_buffer, width, height, clamped_track_slots)) {
-        return 0;
+      if (!refresh_now) {
+        if (player->renderer->install_headless_output(
+                pixel_buffer, width, height, clamped_track_slots)) {
+          return 0;
+        }
+        renderer_error = "failed to install renderer-owned Metal presentation target";
+      } else {
+        if (player->renderer->update_headless_output(
+                pixel_buffer, width, height, clamped_track_slots)) {
+          return 0;
+        }
       }
-      renderer_error = "failed to install renderer-owned Metal presentation target";
+      if (renderer_error.empty()) {
+        renderer_error = "failed to install renderer-owned Metal presentation target";
+      }
     } else if (!player->opened_path.empty()) {
       if (player->ensure_renderer_locked(renderer_error)) {
         return 0;
@@ -103,6 +118,30 @@ int VPMacOSNativePlayerSetMetalPresentationTarget(
   }
   player->presentation_condition.notify_all();
   return -1;
+}
+
+}  // namespace
+
+int VPMacOSNativePlayerSetMetalPresentationTarget(
+    VPMacOSNativePlayer* player,
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots) {
+  return set_metal_presentation_target(
+      player, backend, pixel_buffer, width, height, max_track_slots, true);
+}
+
+int VPMacOSNativePlayerInstallMetalPresentationTarget(
+    VPMacOSNativePlayer* player,
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots) {
+  return set_metal_presentation_target(
+      player, backend, pixel_buffer, width, height, max_track_slots, false);
 }
 
 void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player) {

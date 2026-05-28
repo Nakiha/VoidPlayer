@@ -797,7 +797,6 @@ void MetalPresentationBackend::set_draw_target(void* pixel_buffer,
       std::clamp(max_track_slots,
                  1,
                  static_cast<int32_t>(VPMacOSNativeMaxTracks));
-  last_draw_succeeded_ = false;
 }
 
 void MetalPresentationBackend::clear_draw_target() {

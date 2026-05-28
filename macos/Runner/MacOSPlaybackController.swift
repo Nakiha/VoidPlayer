@@ -25,6 +25,16 @@ final class MacOSPlaybackController {
     player?.isPlaying() ?? isPlaying
   }
 
+  @discardableResult
+  func syncPlayingState(player: MacOSNativePlayerSession?) -> Bool {
+    let nativePlaying = player?.isPlaying()
+    if let nativePlaying {
+      isPlaying = nativePlaying
+      return nativePlaying
+    }
+    return isPlaying
+  }
+
   func play(
     player: MacOSNativePlayerSession?,
     texture: MacOSFlutterTextureBridge?,

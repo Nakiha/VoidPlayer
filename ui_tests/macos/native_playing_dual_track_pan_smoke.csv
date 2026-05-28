@@ -2,7 +2,7 @@
 @WINDOW, 1366, 768
 0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
 1.6, ASSERT_TRACK_COUNT, 1
-1.8, ADD_MEDIA, resources/video/av1_10s_1920x1080.webm
+1.8, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
 3.8, ASSERT_TRACK_COUNT, 2
 3.9, SET_ZOOM, 4.0
 4.1, PLAY
@@ -15,5 +15,7 @@
 5.8, ASSERT_POSITION_RANGE, 700000, 3300000
 5.9, CAPTURE_VIEWPORT, playing_dual_track_pan_b
 6.0, ASSERT_CAPTURE_NOT_BLACK, playing_dual_track_pan_b, 0.01, 4.0
+6.05, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadCount, 20, 220
+6.06, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
 6.1, ASSERT_CAPTURE_CHANGED, playing_dual_track_pan_a, playing_dual_track_pan_b
 6.2, QUIT, 0

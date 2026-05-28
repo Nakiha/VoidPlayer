@@ -57,7 +57,8 @@ final class MacOSNativeMetalPresentationTarget {
     pixelBuffer: CVPixelBuffer,
     width: Int,
     height: Int,
-    maxTrackSlots: Int
+    maxTrackSlots: Int,
+    refresh: Bool = true
   ) -> Bool {
     guard let backend, isAvailable() else { return false }
     return player.setMetalPresentationTarget(
@@ -65,7 +66,8 @@ final class MacOSNativeMetalPresentationTarget {
       pixelBuffer: pixelBuffer,
       width: width,
       height: height,
-      maxTrackSlots: maxTrackSlots
+      maxTrackSlots: maxTrackSlots,
+      refresh: refresh
     )
   }
 
@@ -185,6 +187,18 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         throw MacOSNativePlayerError.failed("renderer-owned Metal presentation target changed during refresh")
       }
       publishDrawBufferLocked(nativeUploadCount: player.rendererOwnedPresentationUploadCount())
+      guard let nextDrawBuffer = pixelBufferLocked(drawBufferIndex),
+            presentationTarget.install(
+              player: player,
+              pixelBuffer: nextDrawBuffer,
+              width: width,
+              height: height,
+              maxTrackSlots: maxTrackSlots,
+              refresh: false
+            ) else {
+        pixelBufferMetalUploadFailureCount += 1
+        throw MacOSNativePlayerError.failed("failed to install next renderer-owned Metal presentation target")
+      }
       let totalEndNs = DispatchTime.now().uptimeNanoseconds
       logUpdateProfiler(
         result: "ok",
@@ -334,7 +348,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       pixelBuffer: nextDrawBuffer,
       width: width,
       height: height,
-      maxTrackSlots: maxTrackSlots
+      maxTrackSlots: maxTrackSlots,
+      refresh: false
     ) {
       return true
     }

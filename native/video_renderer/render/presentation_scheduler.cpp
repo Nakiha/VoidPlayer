@@ -6,12 +6,16 @@
 namespace vr {
 namespace {
 
-bool first_presented_frame_pts(const PresentDecision& decision, int64_t& pts_us) {
+bool first_presented_frame(const PresentDecision& decision,
+                           size_t& slot,
+                           int64_t& pts_us) {
     if (!decision.should_present) {
         return false;
     }
-    for (const auto& frame : decision.frames) {
+    for (size_t i = 0; i < decision.frames.size(); ++i) {
+        const auto& frame = decision.frames[i];
         if (frame.has_value()) {
+            slot = i;
             pts_us = frame->pts_us;
             return true;
         }
@@ -25,12 +29,13 @@ PresentationScheduler::PresentedSignature PresentationScheduler::signature_for(
     const PresentDecision& decision) {
     PresentedSignature signature;
     signature.should_present = decision.should_present;
-    signature.file_ids = decision.file_ids;
-    signature.track_generations = decision.track_generations;
-    for (size_t i = 0; i < kMaxTracks; ++i) {
-        signature.has_frame[i] = decision.frames[i].has_value();
-        signature.pts_us[i] =
-            decision.frames[i].has_value() ? decision.frames[i]->pts_us : kNoTimestampUs;
+    size_t slot = kMaxTracks;
+    int64_t pts_us = kNoTimestampUs;
+    if (first_presented_frame(decision, slot, pts_us)) {
+        signature.reference_slot = slot;
+        signature.pts_us = pts_us;
+        signature.file_id = decision.file_ids[slot];
+        signature.track_generation = decision.track_generations[slot];
     }
     return signature;
 }
@@ -44,7 +49,8 @@ PresentationSchedulerTick PresentationScheduler::tick(RenderSink& render_sink) {
     result.decision = render_sink.evaluate();
 
     int64_t pts_us = 0;
-    if (!first_presented_frame_pts(result.decision, pts_us)) {
+    size_t slot = kMaxTracks;
+    if (!first_presented_frame(result.decision, slot, pts_us)) {
         return result;
     }
 
@@ -52,10 +58,10 @@ PresentationSchedulerTick PresentationScheduler::tick(RenderSink& render_sink) {
     result.selected_pts_us = pts_us;
     const auto signature = signature_for(result.decision);
     if (signature.should_present == last_presented_signature_.should_present &&
-        signature.has_frame == last_presented_signature_.has_frame &&
         signature.pts_us == last_presented_signature_.pts_us &&
-        signature.file_ids == last_presented_signature_.file_ids &&
-        signature.track_generations == last_presented_signature_.track_generations) {
+        signature.reference_slot == last_presented_signature_.reference_slot &&
+        signature.file_id == last_presented_signature_.file_id &&
+        signature.track_generation == last_presented_signature_.track_generation) {
         return result;
     }
 
@@ -68,7 +74,8 @@ bool PresentationScheduler::advance_to_clock(RenderSink& render_sink,
                                              int64_t* selected_pts_us) const {
     const auto decision = render_sink.evaluate();
     int64_t pts_us = 0;
-    if (!first_presented_frame_pts(decision, pts_us)) {
+    size_t slot = kMaxTracks;
+    if (!first_presented_frame(decision, slot, pts_us)) {
         return false;
     }
     if (selected_pts_us) {

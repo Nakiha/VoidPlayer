@@ -14,15 +14,29 @@ extension MacOSNativePlayerSession {
     pixelBuffer: CVPixelBuffer,
     width: Int,
     height: Int,
-    maxTrackSlots: Int
+    maxTrackSlots: Int,
+    refresh: Bool = true
   ) -> Bool {
-    VPMacOSNativePlayerSetMetalPresentationTarget(
+    let pixelBufferPointer =
+      UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque())
+    let clampedTrackSlots = Int32(max(1, min(4, maxTrackSlots)))
+    if refresh {
+      return VPMacOSNativePlayerSetMetalPresentationTarget(
+        handle,
+        backend,
+        pixelBufferPointer,
+        Int32(width),
+        Int32(height),
+        clampedTrackSlots
+      ) == 0
+    }
+    return VPMacOSNativePlayerInstallMetalPresentationTarget(
       handle,
       backend,
-      UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque()),
+      pixelBufferPointer,
       Int32(width),
       Int32(height),
-      Int32(max(1, min(4, maxTrackSlots)))
+      clampedTrackSlots
     ) == 0
   }
 

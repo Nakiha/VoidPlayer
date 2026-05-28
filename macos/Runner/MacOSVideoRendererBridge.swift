@@ -299,32 +299,30 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   func scheduleNativeFrameCopyFromCallback() {
-    guard playback.isPlaying else {
-      DispatchQueue.main.async { [weak self] in
-        guard let self else { return }
-        self.playback.handleFrameCallback(
-          player: self.nativePlayer,
-          texture: self.nativeTexture,
-          maxTrackSlots: self.tracks.activeSlotCapacity(),
-          nativeBackendActive: self.backendName == MacOSVideoTrackPayload.nativeFormatName,
-          presentationState: self.presentationState,
-          markFrameAvailable: self.markFrameAvailable
-        )
-      }
-      return
-    }
+    let cachedPlaying = playback.isPlaying
     let enqueueNs = DispatchTime.now().uptimeNanoseconds
     guard frameCallbackProfiler.tryEnqueue(enqueueNs: enqueueNs) else {
       return
     }
-    DispatchQueue.main.async { [weak self] in
-      guard let self else { return }
-      self.processNativeFrameCallback(enqueueNs: enqueueNs)
+    let schedule = { [weak self] in
+      self?.processNativeFrameCallback(enqueueNs: enqueueNs)
+    }
+    if cachedPlaying {
+      DispatchQueue.main.async {
+        schedule()
+      }
+    } else {
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + .milliseconds(coalescedFrameCallbackDelayMs)
+      ) {
+        schedule()
+      }
     }
   }
 
   private func processNativeFrameCallback(enqueueNs: UInt64) {
     let startNs = DispatchTime.now().uptimeNanoseconds
+    _ = playback.syncPlayingState(player: nativePlayer)
     frameCallbackProfiler.recordMainStart(enqueueNs: enqueueNs, startNs: startNs)
     playback.handleFrameCallback(
       player: nativePlayer,
@@ -337,16 +335,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let endNs = DispatchTime.now().uptimeNanoseconds
     logFrameCallbackProfiler(enqueueNs: enqueueNs, startNs: startNs, endNs: endNs)
     if let nextEnqueueNs = frameCallbackProfiler.finishProcessing(endNs: endNs) {
-      if playback.isPlaying {
-        DispatchQueue.main.asyncAfter(
-          deadline: .now() + .milliseconds(coalescedFrameCallbackDelayMs)
-        ) { [weak self] in
-          self?.processNativeFrameCallback(enqueueNs: nextEnqueueNs)
+      let nativePlaying = playback.syncPlayingState(player: nativePlayer)
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + .milliseconds(coalescedFrameCallbackDelayMs)
+      ) { [weak self] in
+        guard let self else { return }
+        if !nativePlaying {
+          _ = self.playback.syncPlayingState(player: self.nativePlayer)
         }
-      } else {
-        DispatchQueue.main.async { [weak self] in
-          self?.processNativeFrameCallback(enqueueNs: nextEnqueueNs)
-        }
+        self.processNativeFrameCallback(enqueueNs: nextEnqueueNs)
       }
     }
   }

@@ -24,10 +24,10 @@ public:
 private:
     struct PresentedSignature {
         bool should_present = false;
-        std::array<bool, kMaxTracks> has_frame{};
-        std::array<int64_t, kMaxTracks> pts_us{};
-        std::array<int, kMaxTracks> file_ids{};
-        std::array<uint64_t, kMaxTracks> track_generations{};
+        size_t reference_slot = kMaxTracks;
+        int64_t pts_us = kNoTimestampUs;
+        int file_id = -1;
+        uint64_t track_generation = 0;
     };
 
     static PresentedSignature signature_for(const PresentDecision& decision);

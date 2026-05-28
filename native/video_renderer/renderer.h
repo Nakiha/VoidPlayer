@@ -15,6 +15,7 @@
 #include "video_renderer/render/renderer_draw_snapshot.h"
 #include "video_renderer/render/renderer_device_state.h"
 #include "video_renderer/render/presentation_backend.h"
+#include "video_renderer/render/presentation_scheduler.h"
 #include "video_renderer/seek/seek_coordinator.h"
 #include "video_renderer/render/shader_constants.h"
 #include "video_renderer/renderer_config.h"
@@ -33,6 +34,7 @@
 #include <mutex>  // IWYU pragma: keep
 #include <functional>
 #include <cstdint>
+#include <chrono>
 
 namespace vr {
 
@@ -219,6 +221,10 @@ public:
                                 int width,
                                 int height,
                                 int max_track_slots);
+    bool install_headless_output(void* output,
+                                 int width,
+                                 int height,
+                                 int max_track_slots);
     void clear_headless_output();
 
     /// Request an immediate redraw of the currently presentable frame.
@@ -354,6 +360,8 @@ private:
     FrameCaptureService* frame_capture_ = nullptr;
     LayoutController layout_controller_;
     RenderLoopController render_loop_controller_;
+    PresentationScheduler presentation_scheduler_;
+    std::chrono::steady_clock::time_point last_playing_layout_present_time_{};
     RenderBackendKind render_backend_kind_ = RenderBackendKind::D3D11;
 
     TrackPipelineFactory track_pipeline_factory_;

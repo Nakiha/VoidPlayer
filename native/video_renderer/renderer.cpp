@@ -39,6 +39,7 @@ namespace vr {
 static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout response
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
+static constexpr auto kPlayingLayoutRedrawInterval = std::chrono::microseconds(16000);
 
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
@@ -273,6 +274,8 @@ void Renderer::release_resources_locked() {
     // Must happen before decode_thread->stop() frees hw_device_ctx,
     // otherwise hw_frame_ref cleanup will access a freed device context.
     last_decision_ = PresentDecision();
+    presentation_scheduler_.reset();
+    last_playing_layout_present_time_ = {};
 
     tracks_.stop_all([this](size_t, TrackPipeline& track) {
         unregister_track_audio(track.file_id);
@@ -651,6 +654,8 @@ void Renderer::seek_internal(std::unique_lock<std::mutex>& state_lock,
     if (applied_seek) {
         preview_drawn_ = false;
         last_decision_ = PresentDecision();
+        presentation_scheduler_.reset();
+        last_playing_layout_present_time_ = {};
     }
 }
 
@@ -1730,6 +1735,43 @@ bool Renderer::update_headless_output(void* output,
     return true;
 }
 
+bool Renderer::install_headless_output(void* output,
+                                       int width,
+                                       int height,
+                                       int max_track_slots) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!headless_ || !presentation_backend_) {
+        return false;
+    }
+    const auto validation =
+        validate_renderer_dimensions(width, height, "headless output dimensions");
+    if (!validation.ok) {
+        spdlog::warn("[Renderer] ignoring invalid headless output: {}",
+                     validation.message);
+        return false;
+    }
+    {
+        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+        if (!presentation_backend_->update_headless_output(
+                output, width, height, max_track_slots)) {
+            return false;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (target_width_ == width && target_height_ == height) {
+            return true;
+        }
+        const auto layout_tracks = snapshot_layout_track_geometry(tracks_);
+        adjust_layout_view_offset_for_resize(
+            layout_, target_width_, target_height_, width, height, layout_tracks);
+        target_width_ = width;
+        target_height_ = height;
+        preview_drawn_ = false;
+    }
+    return true;
+}
+
 void Renderer::clear_headless_output() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!headless_ || !presentation_backend_) {
@@ -2019,7 +2061,8 @@ void Renderer::render_loop_body() {
             continue;
         }
 
-        auto decision = render_sink_->evaluate();
+        auto scheduler_tick = presentation_scheduler_.tick(*render_sink_);
+        auto decision = scheduler_tick.decision;
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             filter_present_decision_against_tracks(decision, tracks_);
@@ -2047,7 +2090,7 @@ void Renderer::render_loop_body() {
             }
         }
 
-        if (decision.should_present) {
+        if (decision.should_present && scheduler_tick.should_notify) {
             // Independent presentation: fill missing tracks from last decision
             // so each track always shows a frame (new or carried over).
             // Once a track has started, keep carrying its last frame even after
@@ -2058,20 +2101,45 @@ void Renderer::render_loop_body() {
                 apply_present_carry_forward(tracks_, last_decision_, decision);
             }
             present_frame(decision);
+            last_playing_layout_present_time_ = std::chrono::steady_clock::now();
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 last_decision_ = decision;
             }
         } else {
-            // No new frame but layout changed (e.g. zoom/pan during playback)
+            // No new PTS but layout changed (e.g. zoom/pan during playback).
+            // Redraw the cached frame once per layout revision instead of
+            // publishing duplicate video frames on every render-loop poll.
             bool should_redraw = false;
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 should_redraw =
                     !preview_drawn_ && present_decision_has_frame(last_decision_);
             }
-            if (should_redraw) {
+            const auto now = std::chrono::steady_clock::now();
+            const bool redraw_due =
+                last_playing_layout_present_time_ == std::chrono::steady_clock::time_point{} ||
+                now - last_playing_layout_present_time_ >= kPlayingLayoutRedrawInterval;
+            bool video_frame_imminent = false;
+            {
+                const int64_t current_pts = playback_->clock().current_pts_us();
+                const double speed = playback_->clock().speed();
+                std::optional<int64_t> next_event_pts;
+                {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    next_event_pts =
+                        compute_next_frame_event_pts_us(tracks_, current_pts);
+                }
+                if (next_event_pts.has_value() && speed > 0.0) {
+                    const auto next_delta_us =
+                        static_cast<int64_t>((*next_event_pts - current_pts) / speed);
+                    video_frame_imminent =
+                        next_delta_us <= kPlayingLayoutRedrawInterval.count();
+                }
+            }
+            if (should_redraw && redraw_due && !video_frame_imminent) {
                 redraw_layout();
+                last_playing_layout_present_time_ = std::chrono::steady_clock::now();
             }
         }
 
@@ -2454,6 +2522,8 @@ int Renderer::add_track_internal(const std::string& video_path,
         last_decision_.frames[slot] = std::nullopt;
         last_decision_.file_ids[slot] = -1;
         last_decision_.track_generations[slot] = 0;
+        presentation_scheduler_.reset();
+        last_playing_layout_present_time_ = {};
     }
 
     if (seek_result.applied) {
@@ -2521,6 +2591,8 @@ void Renderer::remove_track(int file_id) {
 
         cached_duration_us_ = compute_track_duration_cache(tracks_);
         preview_drawn_ = false;
+        presentation_scheduler_.reset();
+        last_playing_layout_present_time_ = {};
         remaining = tracks_.count();
 
         finish_track_removal_playback(

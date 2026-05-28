@@ -172,12 +172,12 @@ int main() {
       clock.speed(),
       66'666,
       std::chrono::microseconds(8'000));
-  if (!tick.scheduler.should_notify ||
+  if (tick.scheduler.should_notify ||
       !tick.scheduler.decision.frames[0].has_value() ||
       !tick.scheduler.decision.frames[1].has_value() ||
       tick.scheduler.decision.frames[0]->pts_us != 0 ||
       tick.scheduler.decision.frames[1]->pts_us != 33'333) {
-    return fail("multitrack presentation tick coalesced a secondary-track frame");
+    return fail("multitrack presentation tick published from a secondary-track-only frame");
   }
 
   driver.reset();

@@ -15,6 +15,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private let nativeEvents = MacOSNativeEventState()
   private let playback = MacOSPlaybackController()
   private let transport = MacOSTransportController()
+  private let frameCallbackProfiler = MacOSFrameCallbackProfiler()
+  private let coalescedFrameCallbackDelayMs = 8
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.lifecycle = MacOSPlayerLifecycleController(textureRegistry: textureRegistry)
@@ -171,6 +173,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         trackCount: tracks.count,
         presentationTargetInstalled: playback.targetInstalled,
         nativeEventDiagnostics: nativeEvents.diagnosticMap(),
+        frameCallbackDiagnostics: frameCallbackProfiler.diagnosticMap(),
         presentationDiagnostics: presentationState.diagnosticMap()
       ))
     case "captureViewport":
@@ -296,16 +299,54 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   func scheduleNativeFrameCopyFromCallback() {
+    guard playback.isPlaying else {
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        self.playback.handleFrameCallback(
+          player: self.nativePlayer,
+          texture: self.nativeTexture,
+          maxTrackSlots: self.tracks.activeSlotCapacity(),
+          nativeBackendActive: self.backendName == MacOSVideoTrackPayload.nativeFormatName,
+          presentationState: self.presentationState,
+          markFrameAvailable: self.markFrameAvailable
+        )
+      }
+      return
+    }
+    let enqueueNs = DispatchTime.now().uptimeNanoseconds
+    guard frameCallbackProfiler.tryEnqueue(enqueueNs: enqueueNs) else {
+      return
+    }
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      self.playback.handleFrameCallback(
-        player: self.nativePlayer,
-        texture: self.nativeTexture,
-        maxTrackSlots: self.tracks.activeSlotCapacity(),
-        nativeBackendActive: self.backendName == MacOSVideoTrackPayload.nativeFormatName,
-        presentationState: self.presentationState,
-        markFrameAvailable: self.markFrameAvailable
-      )
+      self.processNativeFrameCallback(enqueueNs: enqueueNs)
+    }
+  }
+
+  private func processNativeFrameCallback(enqueueNs: UInt64) {
+    let startNs = DispatchTime.now().uptimeNanoseconds
+    frameCallbackProfiler.recordMainStart(enqueueNs: enqueueNs, startNs: startNs)
+    playback.handleFrameCallback(
+      player: nativePlayer,
+      texture: nativeTexture,
+      maxTrackSlots: tracks.activeSlotCapacity(),
+      nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
+      presentationState: presentationState,
+      markFrameAvailable: markFrameAvailable
+    )
+    let endNs = DispatchTime.now().uptimeNanoseconds
+    if let nextEnqueueNs = frameCallbackProfiler.finishProcessing(endNs: endNs) {
+      if playback.isPlaying {
+        DispatchQueue.main.asyncAfter(
+          deadline: .now() + .milliseconds(coalescedFrameCallbackDelayMs)
+        ) { [weak self] in
+          self?.processNativeFrameCallback(enqueueNs: nextEnqueueNs)
+        }
+      } else {
+        DispatchQueue.main.async { [weak self] in
+          self?.processNativeFrameCallback(enqueueNs: nextEnqueueNs)
+        }
+      }
     }
   }
 

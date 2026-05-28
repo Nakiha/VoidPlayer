@@ -21,6 +21,7 @@ enum MacOSVideoRendererDiagnostics {
     trackCount: Int,
     presentationTargetInstalled: Bool,
     nativeEventDiagnostics: [String: Any],
+    frameCallbackDiagnostics: [String: Any],
     presentationDiagnostics: [String: Any]
   ) -> [String: Any] {
     let layoutSnapshot = player?.layoutSnapshotMap()
@@ -202,6 +203,7 @@ enum MacOSVideoRendererDiagnostics {
       ),
     ]
     nativeEventDiagnostics.forEach { diagnostics[$0.key] = $0.value }
+    frameCallbackDiagnostics.forEach { diagnostics[$0.key] = $0.value }
     presentationDiagnostics.forEach { diagnostics[$0.key] = $0.value }
     return diagnostics
   }

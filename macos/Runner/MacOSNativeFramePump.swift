@@ -49,6 +49,7 @@ final class MacOSNativeFramePump {
     stop(player: player)
     presentationState.resetFrameCounters()
     player.resetRendererOwnedPresentationStats()
+    texture?.resetNativeUploadBaseline()
     targetInstalled = false
     if !ensure(
       player: player,

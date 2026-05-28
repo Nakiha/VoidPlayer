@@ -273,6 +273,12 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     )
   }
 
+  func resetNativeUploadBaseline() {
+    lock.lock()
+    lastPublishedNativeUploadCount = 0
+    lock.unlock()
+  }
+
   func publishRenderedTargetAndInstallNext(
     _ player: MacOSNativePlayerSession,
     maxTrackSlots: Int

@@ -1183,6 +1183,7 @@ void Renderer::enter_terminal_render_loop_error_locked(const char* reason) {
 
 void Renderer::present_frame(const PresentDecision& decision) {
     RendererDrawSnapshot snapshot;
+    uint64_t snapshot_layout_revision = 0;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
         spdlog::debug("[present_frame] mode={}", layout_.mode);
@@ -1190,6 +1191,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
         filter_present_decision_against_tracks(filtered_decision, tracks_);
         update_track_geometry_from_decision_locked(filtered_decision);
         snapshot = build_draw_snapshot_locked(filtered_decision);
+        snapshot_layout_revision = layout_revision_;
     }
     std::function<void()> frame_callback;
     auto frame_failure_callback = frame_failure_callback_snapshot();
@@ -1236,7 +1238,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
     }
     if (drew) {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        preview_drawn_ = true;
+        preview_drawn_ = snapshot_layout_revision == layout_revision_;
     }
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
         frame_callback();
@@ -1249,9 +1251,11 @@ void Renderer::present_frame(const PresentDecision& decision) {
 
 void Renderer::redraw_layout() {
     RendererDrawSnapshot snapshot;
+    uint64_t snapshot_layout_revision = 0;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
         snapshot = build_draw_snapshot_locked(last_decision_);
+        snapshot_layout_revision = layout_revision_;
     }
     std::function<void()> frame_callback;
     auto frame_failure_callback = frame_failure_callback_snapshot();
@@ -1288,7 +1292,7 @@ void Renderer::redraw_layout() {
     }
     if (drew) {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        preview_drawn_ = true;
+        preview_drawn_ = snapshot_layout_revision == layout_revision_;
     }
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
         frame_callback();
@@ -2127,6 +2131,7 @@ void Renderer::apply_layout(const LayoutState& state) {
     }
     layout_controller_.apply(
         layout_, state, [this](int file_id) { return find_slot_by_file_id(file_id); });
+    ++layout_revision_;
 
     // Trigger redraw — during playback, redraw_layout() handles this
     // without Flush() to avoid contention with D3D11VA decode threads.

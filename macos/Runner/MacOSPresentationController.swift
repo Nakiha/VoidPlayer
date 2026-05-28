@@ -8,6 +8,7 @@ struct MacOSPresentationContext {
   let maxTrackSlots: Int
   let playback: MacOSPlaybackController
   let presentationState: MacOSFramePresentationState
+  let userData: UnsafeMutableRawPointer
   let markFrameAvailable: () -> Void
 }
 
@@ -124,14 +125,10 @@ final class MacOSPresentationController {
         guard let self else { return }
         if generation == self.layoutRefreshGeneration {
           switch outcome {
-          case .refreshed(let frameInfo, let targetInstalled):
-            request.context.playback.framePumpForRefresh.setTargetInstalled(targetInstalled)
-            request.context.presentationState.recordFrame(frameInfo)
-            request.context.markFrameAvailable()
+          case .applied:
+            break
           case .transientMiss:
             request.context.presentationState.recordMiss()
-          case .failed(let error):
-            NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
           }
         }
         if generation != self.layoutRefreshGeneration {
@@ -147,27 +144,21 @@ final class MacOSPresentationController {
     request: LayoutRefreshRequest
   ) -> LayoutRefreshOutcome {
     let context = request.context
-    guard let player = context.player,
-          let texture = context.nativeTexture else {
+    guard let player = context.player else {
+      return .transientMiss
+    }
+    let pumpReady = context.playback.ensurePresentationPump(
+      player: player,
+      texture: context.nativeTexture,
+      maxTrackSlots: context.maxTrackSlots,
+      userData: context.userData,
+      presentationState: context.presentationState
+    )
+    guard pumpReady else {
       return .transientMiss
     }
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
-    do {
-      let frameInfo = try texture.updateFromNativePlayer(
-        player,
-        maxTrackSlots: context.maxTrackSlots,
-        waitTimeoutMs: 100
-      )
-      return .refreshed(
-        frameInfo: frameInfo,
-        targetInstalled: player.rendererOwnedPresentationActive()
-      )
-    } catch {
-      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
-        return .transientMiss
-      }
-      return .failed(error)
-    }
+    return .applied
   }
 }
 
@@ -177,7 +168,6 @@ private struct LayoutRefreshRequest {
 }
 
 private enum LayoutRefreshOutcome {
-  case refreshed(frameInfo: MacOSNativeFrameInfo, targetInstalled: Bool)
+  case applied
   case transientMiss
-  case failed(Error)
 }

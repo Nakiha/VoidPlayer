@@ -47,7 +47,6 @@ final class MacOSPlaybackController {
   func pause(player: MacOSNativePlayerSession?) {
     isPlaying = false
     player?.pause()
-    stopFramePump(player: player)
   }
 
   func stopFramePump(
@@ -110,7 +109,7 @@ final class MacOSPlaybackController {
     markFrameAvailable: () -> Void
   ) {
     presentationState.recordCallback()
-    guard isPlaying, nativeBackendActive else {
+    guard nativeBackendActive else {
       return
     }
     if player?.lastRendererOwnedPresentationSucceeded() == true {
@@ -137,6 +136,24 @@ final class MacOSPlaybackController {
     isPlaying = false
     player?.pause()
     stopFramePump(player: player)
+  }
+
+  @discardableResult
+  func ensurePresentationPump(
+    player: MacOSNativePlayerSession?,
+    texture: MacOSFlutterTextureBridge?,
+    maxTrackSlots: Int,
+    userData: UnsafeMutableRawPointer,
+    presentationState: MacOSFramePresentationState
+  ) -> Bool {
+    guard let player else { return false }
+    return framePump.ensure(
+      player: player,
+      texture: texture,
+      maxTrackSlots: maxTrackSlots,
+      userData: userData,
+      presentationState: presentationState
+    )
   }
 
   private func startFramePump(

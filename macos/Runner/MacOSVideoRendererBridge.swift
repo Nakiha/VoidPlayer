@@ -268,6 +268,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       maxTrackSlots: tracks.activeSlotCapacity(),
       playback: playback,
       presentationState: presentationState,
+      userData: Unmanaged.passUnretained(self).toOpaque(),
       markFrameAvailable: { [weak self] in
         self?.markFrameAvailable()
       }

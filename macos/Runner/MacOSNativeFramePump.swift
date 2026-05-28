@@ -14,6 +14,31 @@ final class MacOSNativeFramePump {
     targetInstalled = installed
   }
 
+  func ensure(
+    player: MacOSNativePlayerSession,
+    texture: MacOSFlutterTextureBridge?,
+    maxTrackSlots: Int,
+    userData: UnsafeMutableRawPointer,
+    presentationState: MacOSFramePresentationState
+  ) -> Bool {
+    if !targetInstalled, let texture {
+      targetInstalled = texture.installNativePresentationTarget(
+        player,
+        maxTrackSlots: maxTrackSlots
+      )
+    }
+    if !callbackRegistered {
+      player.setFrameAvailableCallback(macOSNativeFrameAvailable, userData: userData)
+      callbackRegistered = true
+    }
+    guard targetInstalled else {
+      presentationState.recordError()
+      NSLog("VoidPlayer macOS renderer-owned Metal presentation target unavailable")
+      return false
+    }
+    return true
+  }
+
   func start(
     player: MacOSNativePlayerSession,
     texture: MacOSFlutterTextureBridge?,
@@ -24,18 +49,14 @@ final class MacOSNativeFramePump {
     stop(player: player)
     presentationState.resetFrameCounters()
     player.resetRendererOwnedPresentationStats()
-    callbackRegistered = true
     targetInstalled = false
-    if let texture {
-      targetInstalled = texture.installNativePresentationTarget(
-        player,
-        maxTrackSlots: maxTrackSlots
-      )
-    }
-    player.setFrameAvailableCallback(macOSNativeFrameAvailable, userData: userData)
-    guard targetInstalled else {
-      presentationState.recordError()
-      NSLog("VoidPlayer macOS renderer-owned Metal presentation target unavailable")
+    if !ensure(
+      player: player,
+      texture: texture,
+      maxTrackSlots: maxTrackSlots,
+      userData: userData,
+      presentationState: presentationState
+    ) {
       player.pause()
       stop(player: player)
       return false

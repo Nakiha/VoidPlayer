@@ -407,6 +407,7 @@ private:
 
     // -- Layout state --
     LayoutState layout_;
+    uint64_t layout_revision_ = 0;
     int next_file_id_ = 1;                         ///< Auto-incrementing file ID
     uint64_t next_track_generation_ = 1;
 

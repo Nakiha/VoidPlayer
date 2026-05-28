@@ -1,13 +1,17 @@
 import Foundation
 
 enum MacOSNativeLayoutBridge {
-  static func apply(
-    arguments: Any?,
-    player: MacOSNativePlayerSession?
-  ) -> [String: Any]? {
+  static func layoutMap(arguments: Any?) -> [String: Any]? {
     guard let nextLayout = arguments as? [String: Any] else {
       return nil
     }
+    return nextLayout
+  }
+
+  static func apply(
+    layout nextLayout: [String: Any],
+    player: MacOSNativePlayerSession?
+  ) {
     player?.applyLayout(
       mode: MacOSFlutterArguments.intValue(nextLayout["mode"]) ?? 0,
       splitPos: MacOSFlutterArguments.doubleValue(nextLayout["splitPos"]) ?? 0.5,
@@ -17,6 +21,5 @@ enum MacOSNativeLayoutBridge {
       pixelSizeMode: MacOSFlutterArguments.intValue(nextLayout["pixelSizeMode"]) ?? 0,
       order: MacOSFlutterArguments.intListValue(nextLayout["order"])
     )
-    return player?.layoutSnapshotMap() ?? nextLayout
   }
 }

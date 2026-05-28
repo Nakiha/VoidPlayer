@@ -19,7 +19,7 @@ final class MacOSPresentationController {
   )
   private var layoutRefreshGeneration = 0
   private var layoutRefreshRunning = false
-  private var latestLayoutRefreshContext: MacOSPresentationContext?
+  private var latestLayoutRefreshRequest: LayoutRefreshRequest?
 
   func resetLayout() {
     cancelPendingLayoutRefreshes()
@@ -27,14 +27,11 @@ final class MacOSPresentationController {
   }
 
   func applyLayout(arguments: Any?, context: MacOSPresentationContext) {
-    guard let nextLayout = MacOSNativeLayoutBridge.apply(
-      arguments: arguments,
-      player: context.player
-    ) else {
+    guard let nextLayout = MacOSNativeLayoutBridge.layoutMap(arguments: arguments) else {
       return
     }
     layout = nextLayout
-    requestCoalescedLayoutRefresh(context: context)
+    requestCoalescedLayoutRefresh(context: context, layout: nextLayout)
   }
 
   func resize(arguments: Any?, context: MacOSPresentationContext) {
@@ -92,14 +89,17 @@ final class MacOSPresentationController {
 
   private func cancelPendingLayoutRefreshes() {
     layoutRefreshGeneration += 1
-    latestLayoutRefreshContext = nil
+    latestLayoutRefreshRequest = nil
     if layoutRefreshRunning {
       layoutRefreshQueue.sync {}
     }
     layoutRefreshRunning = false
   }
 
-  private func requestCoalescedLayoutRefresh(context: MacOSPresentationContext) {
+  private func requestCoalescedLayoutRefresh(
+    context: MacOSPresentationContext,
+    layout: [String: Any]
+  ) {
     guard context.nativeBackendActive,
           context.player != nil,
           context.nativeTexture != nil else {
@@ -107,29 +107,29 @@ final class MacOSPresentationController {
       return
     }
     layoutRefreshGeneration += 1
-    latestLayoutRefreshContext = context
+    latestLayoutRefreshRequest = LayoutRefreshRequest(context: context, layout: layout)
     guard !layoutRefreshRunning else { return }
     layoutRefreshRunning = true
     runLatestLayoutRefresh(generation: layoutRefreshGeneration)
   }
 
   private func runLatestLayoutRefresh(generation: Int) {
-    guard let context = latestLayoutRefreshContext else {
+    guard let request = latestLayoutRefreshRequest else {
       layoutRefreshRunning = false
       return
     }
-    layoutRefreshQueue.async { [weak self, context, generation] in
-      let outcome = Self.performLayoutRefresh(context: context)
+    layoutRefreshQueue.async { [weak self, request, generation] in
+      let outcome = Self.performLayoutRefresh(request: request)
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
         if generation == self.layoutRefreshGeneration {
           switch outcome {
           case .refreshed(let frameInfo, let targetInstalled):
-            context.playback.framePumpForRefresh.setTargetInstalled(targetInstalled)
-            context.presentationState.recordFrame(frameInfo)
-            context.markFrameAvailable()
+            request.context.playback.framePumpForRefresh.setTargetInstalled(targetInstalled)
+            request.context.presentationState.recordFrame(frameInfo)
+            request.context.markFrameAvailable()
           case .transientMiss:
-            context.presentationState.recordMiss()
+            request.context.presentationState.recordMiss()
           case .failed(let error):
             NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
           }
@@ -144,12 +144,14 @@ final class MacOSPresentationController {
   }
 
   private static func performLayoutRefresh(
-    context: MacOSPresentationContext
+    request: LayoutRefreshRequest
   ) -> LayoutRefreshOutcome {
+    let context = request.context
     guard let player = context.player,
           let texture = context.nativeTexture else {
       return .transientMiss
     }
+    MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
     do {
       let frameInfo = try texture.updateFromNativePlayer(
         player,
@@ -167,6 +169,11 @@ final class MacOSPresentationController {
       return .failed(error)
     }
   }
+}
+
+private struct LayoutRefreshRequest {
+  let context: MacOSPresentationContext
+  let layout: [String: Any]
 }
 
 private enum LayoutRefreshOutcome {

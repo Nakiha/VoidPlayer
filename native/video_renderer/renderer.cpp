@@ -966,10 +966,14 @@ void Renderer::step_backward() {
 }
 
 bool Renderer::draw_paused_frame(const char* reason) {
+    const bool interactive_refresh =
+        reason && (std::strcmp(reason, "macos-renderer-owned-refresh") == 0 ||
+                   std::strcmp(reason, "request_frame_refresh") == 0);
     PresentDecision decision;
     bool has_frame = false;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
+        filter_present_decision_against_tracks(last_decision_, tracks_);
         if (render_sink_) {
             decision = render_sink_->evaluate();
             filter_present_decision_against_tracks(decision, tracks_);
@@ -978,7 +982,6 @@ bool Renderer::draw_paused_frame(const char* reason) {
             }
         }
         has_frame = present_decision_has_frame(decision);
-        filter_present_decision_against_tracks(last_decision_, tracks_);
         if (!has_frame && present_decision_has_frame(last_decision_)) {
             decision = last_decision_;
             has_frame = true;
@@ -997,6 +1000,25 @@ bool Renderer::draw_paused_frame(const char* reason) {
             filter_present_decision_against_tracks(decision, tracks_);
             has_frame = present_decision_has_frame(decision);
         }
+
+        if (has_frame && active_track_count(tracks_) > 1 &&
+            !present_decision_covers_active_tracks(decision, tracks_)) {
+            // Paused refreshes are often driven by seek/layout/EOF paths where
+            // tracks can become ready at different times.  Do not let a partial
+            // refresh overwrite a complete cached decision; otherwise a slower
+            // secondary track can disappear until the next full playback tick.
+            if (present_decision_covers_active_tracks(last_decision_, tracks_)) {
+                decision = last_decision_;
+            } else {
+                const auto snapshot = build_paused_preview_snapshot(tracks_);
+                if (snapshot.ready_to_present) {
+                    decision = snapshot.decision;
+                    has_frame = true;
+                } else {
+                    has_frame = false;
+                }
+            }
+        }
     }
     if (!has_frame) {
         return false;
@@ -1011,9 +1033,6 @@ bool Renderer::draw_paused_frame(const char* reason) {
     }
     double pts = (ref >= 0 && decision.frames[ref].has_value())
                  ? decision.frames[ref]->pts_us / 1e6 : -1.0;
-    const bool interactive_refresh =
-        reason && (std::strcmp(reason, "macos-renderer-owned-refresh") == 0 ||
-                   std::strcmp(reason, "request_frame_refresh") == 0);
     if (interactive_refresh) {
         spdlog::debug("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
     } else {

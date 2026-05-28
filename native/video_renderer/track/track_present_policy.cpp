@@ -16,6 +16,16 @@ bool present_decision_has_frame(const PresentDecision& decision) {
     return false;
 }
 
+size_t active_track_count(const TrackPipelineManager& tracks) {
+    size_t count = 0;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (tracks[i]) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 bool present_decision_slot_matches_track(
     const PresentDecision& decision,
     const TrackPipelineManager& tracks,
@@ -30,6 +40,26 @@ bool present_decision_slot_matches_track(
     }
     return decision.file_ids[slot] == tracks[slot]->file_id &&
            decision.track_generations[slot] == tracks[slot]->generation;
+}
+
+size_t present_decision_matching_frame_count(
+    const PresentDecision& decision,
+    const TrackPipelineManager& tracks) {
+    size_t count = 0;
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        if (present_decision_slot_matches_track(decision, tracks, i)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool present_decision_covers_active_tracks(
+    const PresentDecision& decision,
+    const TrackPipelineManager& tracks) {
+    const size_t active_count = active_track_count(tracks);
+    return active_count > 0 &&
+           present_decision_matching_frame_count(decision, tracks) == active_count;
 }
 
 void set_present_decision_track_identity(

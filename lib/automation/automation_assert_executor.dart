@@ -7,6 +7,7 @@ import '../actions/player_assert.dart';
 import '../analysis/analysis_ffi.dart';
 import '../analysis/analysis_manager.dart';
 import '../app_log.dart';
+import '../native_player/native_player_protocol.dart';
 import '../platform/analysis_process_host.dart';
 import '../windows/win32ffi.dart' deferred as win32;
 import 'automation_probe.dart';
@@ -315,6 +316,32 @@ class AutomationAssertExecutor {
             'avgLuma=${actual.avgLuma.toStringAsFixed(2)}, hash=${actual.hash}',
           );
         }
+      case AssertCaptureRegionNotBlack(
+        :final capture,
+        :final region,
+        :final minNonBlackRatio,
+        :final minAvgLuma,
+      ):
+        final actual = state.captures[capture];
+        if (actual == null) {
+          throw AssertionError(
+            'Missing capture for ASSERT_CAPTURE_REGION_NOT_BLACK: $capture',
+          );
+        }
+        final outputPath = actual.outputPath;
+        final metric = outputPath != null && outputPath.isNotEmpty
+            ? await _measureCaptureRegion(outputPath, region)
+            : _CaptureRegionMetric.fromCapture(actual, region);
+        final summary = metric.summary(capture, region);
+        log.info(summary);
+        if (metric.nonBlackRatio < minNonBlackRatio ||
+            metric.avgLuma < minAvgLuma) {
+          throw AssertionError(
+            '$summary below threshold '
+            '(nonBlack>=${minNonBlackRatio.toStringAsFixed(4)}, '
+            'avgLuma>=${minAvgLuma.toStringAsFixed(2)})',
+          );
+        }
       case AssertCaptureHasDetail(:final capture, :final minLumaStdDev):
         final actual = state.captures[capture];
         if (actual == null) {
@@ -588,6 +615,23 @@ class AutomationAssertExecutor {
     }
   }
 
+  static Future<_CaptureRegionMetric> _measureCaptureRegion(
+    String outputPath,
+    String region,
+  ) async {
+    final decoded = await _decodeCaptureRgba(outputPath);
+    try {
+      return _CaptureRegionMetric.fromRgba(
+        width: decoded.width,
+        height: decoded.height,
+        rgba: decoded.rgba,
+        region: region,
+      );
+    } finally {
+      decoded.dispose();
+    }
+  }
+
   static Future<_CaptureDetailMetric> _measureCaptureDetail(
     String outputPath,
   ) async {
@@ -733,6 +777,144 @@ class _CaptureDetailMetric {
         'lumaStdDev=${lumaStdDev.toStringAsFixed(4)} '
         'minLuma=${minLuma.toStringAsFixed(4)} '
         'maxLuma=${maxLuma.toStringAsFixed(4)}';
+  }
+}
+
+class _CaptureRegionMetric {
+  final int width;
+  final int height;
+  final int x0;
+  final int y0;
+  final int x1;
+  final int y1;
+  final int samples;
+  final double avgLuma;
+  final double nonBlackRatio;
+
+  const _CaptureRegionMetric({
+    required this.width,
+    required this.height,
+    required this.x0,
+    required this.y0,
+    required this.x1,
+    required this.y1,
+    required this.samples,
+    required this.avgLuma,
+    required this.nonBlackRatio,
+  });
+
+  factory _CaptureRegionMetric.fromRgba({
+    required int width,
+    required int height,
+    required Uint8List rgba,
+    required String region,
+  }) {
+    final expectedBytes = width * height * 4;
+    if (width <= 0 || height <= 0 || rgba.lengthInBytes < expectedBytes) {
+      throw AssertionError(
+        'Capture RGBA buffer is invalid: ${rgba.lengthInBytes} < $expectedBytes',
+      );
+    }
+
+    final normalized = region.trim().toLowerCase();
+    var x0 = 0;
+    var y0 = 0;
+    var x1 = width;
+    var y1 = height;
+    switch (normalized) {
+      case 'left':
+        x1 = width ~/ 2;
+        break;
+      case 'right':
+        x0 = width ~/ 2;
+        break;
+      case 'top':
+        y1 = height ~/ 2;
+        break;
+      case 'bottom':
+        y0 = height ~/ 2;
+        break;
+      case 'full':
+        break;
+      default:
+        throw AssertionError(
+          'Unsupported capture region "$region"; expected left/right/top/bottom/full',
+        );
+    }
+
+    if (x1 <= x0 || y1 <= y0) {
+      throw AssertionError('Capture region is empty: $region ${width}x$height');
+    }
+
+    var lumaSum = 0.0;
+    var nonBlack = 0;
+    var samples = 0;
+    for (var y = y0; y < y1; ++y) {
+      final row = y * width * 4;
+      for (var x = x0; x < x1; ++x) {
+        final i = row + x * 4;
+        final r = rgba[i];
+        final g = rgba[i + 1];
+        final b = rgba[i + 2];
+        final luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        lumaSum += luma;
+        if (r > 8 || g > 8 || b > 8) {
+          nonBlack++;
+        }
+        samples++;
+      }
+    }
+
+    return _CaptureRegionMetric(
+      width: width,
+      height: height,
+      x0: x0,
+      y0: y0,
+      x1: x1,
+      y1: y1,
+      samples: samples,
+      avgLuma: lumaSum / samples,
+      nonBlackRatio: nonBlack / samples,
+    );
+  }
+
+  factory _CaptureRegionMetric.fromCapture(
+    ViewportCapture capture,
+    String region,
+  ) {
+    final normalized = region.trim().toLowerCase();
+    final avgLuma = normalized == 'full'
+        ? capture.avgLuma
+        : capture.regionAvgLuma[normalized];
+    final nonBlackRatio = normalized == 'full'
+        ? capture.nonBlackRatio
+        : capture.regionNonBlackRatio[normalized];
+    if (avgLuma == null || nonBlackRatio == null) {
+      throw AssertionError(
+        'Capture $region region metrics are unavailable for ${capture.hash}; '
+        'provide CAPTURE_VIEWPORT with outputPath or use a platform that reports region metrics',
+      );
+    }
+    final x0 = normalized == 'right' ? capture.width ~/ 2 : 0;
+    final x1 = normalized == 'left' ? capture.width ~/ 2 : capture.width;
+    return _CaptureRegionMetric(
+      width: capture.width,
+      height: capture.height,
+      x0: x0,
+      y0: 0,
+      x1: x1,
+      y1: capture.height,
+      samples: (x1 - x0) * capture.height,
+      avgLuma: avgLuma,
+      nonBlackRatio: nonBlackRatio,
+    );
+  }
+
+  String summary(String capture, String region) {
+    return 'ASSERT_CAPTURE_REGION_NOT_BLACK $capture/$region: '
+        'size=${width}x$height rect=[$x0,$y0,$x1,$y1] samples=$samples '
+        'avgLuma=${avgLuma.toStringAsFixed(4)} '
+        'nonBlack=${nonBlackRatio.toStringAsFixed(4)}';
   }
 }
 

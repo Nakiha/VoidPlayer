@@ -176,6 +176,20 @@ class AssertCaptureNotBlack extends PlayerAssert {
   });
 }
 
+class AssertCaptureRegionNotBlack extends PlayerAssert {
+  final String capture;
+  final String region;
+  final double minNonBlackRatio;
+  final double minAvgLuma;
+
+  const AssertCaptureRegionNotBlack(
+    this.capture,
+    this.region, {
+    this.minNonBlackRatio = 0.01,
+    this.minAvgLuma = 4.0,
+  });
+}
+
 class AssertCaptureHasDetail extends PlayerAssert {
   final String capture;
   final double minLumaStdDev;

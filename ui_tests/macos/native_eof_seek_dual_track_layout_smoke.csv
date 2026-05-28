@@ -1,0 +1,25 @@
+# Multi-track EOF/layout/seek should keep both tracks visible after paused refresh.
+@WINDOW, 1366, 768
+0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.6, ASSERT_TRACK_COUNT, 1
+1.8, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+3.8, ASSERT_TRACK_COUNT, 2
+3.9, SET_ZOOM, 1.0
+4.0, PLAY
+13.4, WAIT_PAUSED, 3000
+13.6, ASSERT_PAUSED
+13.7, SET_ZOOM, 2.0
+13.9, DRAG_VIEWPORT, 360, -120, 50, 4
+14.4, CAPTURE_VIEWPORT, dual_eof_pan, build/dual_eof_pan.png
+14.5, ASSERT_CAPTURE_NOT_BLACK, dual_eof_pan, 0.01, 4.0
+14.6, ASSERT_CAPTURE_REGION_NOT_BLACK, dual_eof_pan, right, 0.01, 4.0
+14.8, SEEK_TO, 4000000
+16.0, CAPTURE_VIEWPORT, dual_after_seek, build/dual_after_seek.png
+16.1, ASSERT_CAPTURE_NOT_BLACK, dual_after_seek, 0.01, 4.0
+16.2, ASSERT_CAPTURE_REGION_NOT_BLACK, dual_after_seek, right, 0.01, 4.0
+16.3, DRAG_VIEWPORT, -520, 200, 60, 4
+16.9, CAPTURE_VIEWPORT, dual_after_seek_pan, build/dual_after_seek_pan.png
+17.0, ASSERT_CAPTURE_NOT_BLACK, dual_after_seek_pan, 0.01, 4.0
+17.1, ASSERT_CAPTURE_REGION_NOT_BLACK, dual_after_seek_pan, right, 0.01, 4.0
+17.2, ASSERT_CAPTURE_CHANGED, dual_after_seek, dual_after_seek_pan
+17.4, QUIT, 0

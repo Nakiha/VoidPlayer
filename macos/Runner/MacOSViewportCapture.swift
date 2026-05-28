@@ -17,6 +17,8 @@ enum MacOSViewportCapture {
       "height": metrics.height,
       "avgLuma": metrics.avgLuma,
       "nonBlackRatio": metrics.nonBlackRatio,
+      "regionAvgLuma": metrics.regionAvgLuma,
+      "regionNonBlackRatio": metrics.regionNonBlackRatio,
     ]
   }
 }

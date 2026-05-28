@@ -1315,6 +1315,46 @@ TEST_CASE("TrackPresentPolicy detects frames in present decisions",
     REQUIRE(first_present_decision_frame_pts_us(decision) == 5678);
 }
 
+TEST_CASE("TrackPresentPolicy counts only active matching track frames",
+          "[track_pipeline][track_present_policy]") {
+    const auto make_track = [](int file_id, uint64_t generation) {
+        auto track = std::make_unique<TrackPipeline>();
+        track->file_id = file_id;
+        track->generation = generation;
+        return track;
+    };
+    const auto make_frame = [](int64_t pts_us) {
+        TextureFrame frame;
+        frame.pts_us = pts_us;
+        return frame;
+    };
+
+    TrackPipelineManager manager;
+    manager[0] = make_track(10, 1);
+    manager[2] = make_track(20, 2);
+    REQUIRE(active_track_count(manager) == 2);
+
+    PresentDecision partial;
+    partial.frames[0] = make_frame(1000);
+    partial.file_ids[0] = 10;
+    partial.track_generations[0] = 1;
+
+    REQUIRE(present_decision_matching_frame_count(partial, manager) == 1);
+    REQUIRE_FALSE(present_decision_covers_active_tracks(partial, manager));
+
+    PresentDecision complete = partial;
+    complete.frames[2] = make_frame(2000);
+    complete.file_ids[2] = 20;
+    complete.track_generations[2] = 2;
+
+    REQUIRE(present_decision_matching_frame_count(complete, manager) == 2);
+    REQUIRE(present_decision_covers_active_tracks(complete, manager));
+
+    complete.track_generations[2] = 3;
+    REQUIRE(present_decision_matching_frame_count(complete, manager) == 1);
+    REQUIRE_FALSE(present_decision_covers_active_tracks(complete, manager));
+}
+
 TEST_CASE("TrackPresentPolicy collects seek preview presented events",
           "[track_pipeline][track_present_policy]") {
     const auto make_track = [](int file_id) {

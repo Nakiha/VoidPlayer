@@ -41,6 +41,16 @@ struct SeekPreviewPresentedTrackEvent {
 
 bool present_decision_has_frame(const PresentDecision& decision);
 
+size_t active_track_count(const TrackPipelineManager& tracks);
+
+size_t present_decision_matching_frame_count(
+    const PresentDecision& decision,
+    const TrackPipelineManager& tracks);
+
+bool present_decision_covers_active_tracks(
+    const PresentDecision& decision,
+    const TrackPipelineManager& tracks);
+
 bool present_decision_slot_matches_track(
     const PresentDecision& decision,
     const TrackPipelineManager& tracks,

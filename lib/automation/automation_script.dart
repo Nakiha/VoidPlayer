@@ -834,6 +834,22 @@ ScriptInstruction? _parseInstruction(
           minAvgLuma: args.length >= 3 ? double.parse(args[2]) : 4.0,
         ),
       );
+    case 'ASSERT_CAPTURE_REGION_NOT_BLACK':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_CAPTURE_REGION_NOT_BLACK needs capture name and region: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertCaptureRegionNotBlack(
+          args[0],
+          args[1],
+          minNonBlackRatio: args.length >= 3 ? double.parse(args[2]) : 0.01,
+          minAvgLuma: args.length >= 4 ? double.parse(args[3]) : 4.0,
+        ),
+      );
     case 'ASSERT_CAPTURE_HAS_DETAIL':
       if (args.isEmpty) {
         log.warning('ASSERT_CAPTURE_HAS_DETAIL needs capture name: $rawLine');

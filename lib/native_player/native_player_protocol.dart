@@ -54,6 +54,8 @@ class NativePlayerKeys {
   static const hash = 'hash';
   static const avgLuma = 'avgLuma';
   static const nonBlackRatio = 'nonBlackRatio';
+  static const regionAvgLuma = 'regionAvgLuma';
+  static const regionNonBlackRatio = 'regionNonBlackRatio';
   static const outputPath = 'outputPath';
   static const mode = 'mode';
   static const splitPos = 'splitPos';
@@ -209,6 +211,8 @@ class ViewportCapture {
   final int height;
   final double avgLuma;
   final double nonBlackRatio;
+  final Map<String, double> regionAvgLuma;
+  final Map<String, double> regionNonBlackRatio;
   final String? outputPath;
 
   const ViewportCapture({
@@ -217,6 +221,8 @@ class ViewportCapture {
     required this.height,
     required this.avgLuma,
     required this.nonBlackRatio,
+    this.regionAvgLuma = const {},
+    this.regionNonBlackRatio = const {},
     this.outputPath,
   });
 
@@ -227,7 +233,18 @@ class ViewportCapture {
     avgLuma: (map[NativePlayerKeys.avgLuma] as num?)?.toDouble() ?? 0.0,
     nonBlackRatio:
         (map[NativePlayerKeys.nonBlackRatio] as num?)?.toDouble() ?? 0.0,
+    regionAvgLuma: _doubleMap(map[NativePlayerKeys.regionAvgLuma]),
+    regionNonBlackRatio: _doubleMap(map[NativePlayerKeys.regionNonBlackRatio]),
     outputPath: map[NativePlayerKeys.outputPath] as String?,
+  );
+}
+
+Map<String, double> _doubleMap(Object? raw) {
+  if (raw is! Map) {
+    return const {};
+  }
+  return raw.map(
+    (key, value) => MapEntry('$key', (value as num?)?.toDouble() ?? 0.0),
   );
 }
 

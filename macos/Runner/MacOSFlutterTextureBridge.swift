@@ -23,7 +23,9 @@ protocol MacOSVideoTexture: FlutterTexture {
     height: Int,
     avgLuma: Double,
     nonBlackRatio: Double,
-    hash: String
+    hash: String,
+    regionAvgLuma: [String: Double],
+    regionNonBlackRatio: [String: Double]
   )
   func diagnostics() -> MacOSTextureDiagnostics
 }
@@ -212,7 +214,9 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     height: Int,
     avgLuma: Double,
     nonBlackRatio: Double,
-    hash: String
+    hash: String,
+    regionAvgLuma: [String: Double],
+    regionNonBlackRatio: [String: Double]
   ) {
     lock.lock()
     defer { lock.unlock() }
@@ -223,7 +227,9 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         height: height,
         avgLuma: 0.0,
         nonBlackRatio: 0.0,
-      hash: "\(hashPrefix)-empty"
+        hash: "\(hashPrefix)-empty",
+        regionAvgLuma: [:],
+        regionNonBlackRatio: [:]
       )
     }
     return MacOSPixelBufferMetrics.capture(

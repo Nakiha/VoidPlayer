@@ -193,8 +193,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func destroyPlayer() {
-    lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
     presentation.resetLayout()
+    lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
   }
 
   private func destroyPlayerForWindowClose() {

@@ -13,8 +13,16 @@ struct MacOSPresentationContext {
 
 final class MacOSPresentationController {
   private(set) var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
+  private let layoutRefreshQueue = DispatchQueue(
+    label: "dev.nakiha.voidplayer.macos.layout-refresh",
+    qos: .userInteractive
+  )
+  private var layoutRefreshGeneration = 0
+  private var layoutRefreshRunning = false
+  private var latestLayoutRefreshContext: MacOSPresentationContext?
 
   func resetLayout() {
+    cancelPendingLayoutRefreshes()
     layout = MacOSVideoTrackPayload.defaultLayout()
   }
 
@@ -26,7 +34,7 @@ final class MacOSPresentationController {
       return
     }
     layout = nextLayout
-    refreshCurrentFrame(context: context)
+    requestCoalescedLayoutRefresh(context: context)
   }
 
   func resize(arguments: Any?, context: MacOSPresentationContext) {
@@ -81,4 +89,88 @@ final class MacOSPresentationController {
     }
     return refreshed
   }
+
+  private func cancelPendingLayoutRefreshes() {
+    layoutRefreshGeneration += 1
+    latestLayoutRefreshContext = nil
+    if layoutRefreshRunning {
+      layoutRefreshQueue.sync {}
+    }
+    layoutRefreshRunning = false
+  }
+
+  private func requestCoalescedLayoutRefresh(context: MacOSPresentationContext) {
+    guard context.nativeBackendActive,
+          context.player != nil,
+          context.nativeTexture != nil else {
+      context.markFrameAvailable()
+      return
+    }
+    layoutRefreshGeneration += 1
+    latestLayoutRefreshContext = context
+    guard !layoutRefreshRunning else { return }
+    layoutRefreshRunning = true
+    runLatestLayoutRefresh(generation: layoutRefreshGeneration)
+  }
+
+  private func runLatestLayoutRefresh(generation: Int) {
+    guard let context = latestLayoutRefreshContext else {
+      layoutRefreshRunning = false
+      return
+    }
+    layoutRefreshQueue.async { [weak self, context, generation] in
+      let outcome = Self.performLayoutRefresh(context: context)
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
+        if generation == self.layoutRefreshGeneration {
+          switch outcome {
+          case .refreshed(let frameInfo, let targetInstalled):
+            context.playback.framePumpForRefresh.setTargetInstalled(targetInstalled)
+            context.presentationState.recordFrame(frameInfo)
+            context.markFrameAvailable()
+          case .transientMiss:
+            context.presentationState.recordMiss()
+          case .failed(let error):
+            NSLog("VoidPlayer macOS native layout refresh failed: \(error)")
+          }
+        }
+        if generation != self.layoutRefreshGeneration {
+          self.runLatestLayoutRefresh(generation: self.layoutRefreshGeneration)
+        } else {
+          self.layoutRefreshRunning = false
+        }
+      }
+    }
+  }
+
+  private static func performLayoutRefresh(
+    context: MacOSPresentationContext
+  ) -> LayoutRefreshOutcome {
+    guard let player = context.player,
+          let texture = context.nativeTexture else {
+      return .transientMiss
+    }
+    do {
+      let frameInfo = try texture.updateFromNativePlayer(
+        player,
+        maxTrackSlots: context.maxTrackSlots,
+        waitTimeoutMs: 100
+      )
+      return .refreshed(
+        frameInfo: frameInfo,
+        targetInstalled: player.rendererOwnedPresentationActive()
+      )
+    } catch {
+      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
+        return .transientMiss
+      }
+      return .failed(error)
+    }
+  }
+}
+
+private enum LayoutRefreshOutcome {
+  case refreshed(frameInfo: MacOSNativeFrameInfo, targetInstalled: Bool)
+  case transientMiss
+  case failed(Error)
 }

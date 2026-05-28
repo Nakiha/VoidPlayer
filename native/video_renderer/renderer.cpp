@@ -1011,7 +1011,14 @@ bool Renderer::draw_paused_frame(const char* reason) {
     }
     double pts = (ref >= 0 && decision.frames[ref].has_value())
                  ? decision.frames[ref]->pts_us / 1e6 : -1.0;
-    spdlog::info("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
+    const bool interactive_refresh =
+        reason && (std::strcmp(reason, "macos-renderer-owned-refresh") == 0 ||
+                   std::strcmp(reason, "request_frame_refresh") == 0);
+    if (interactive_refresh) {
+        spdlog::debug("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
+    } else {
+        spdlog::info("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
+    }
     return true;
 }
 

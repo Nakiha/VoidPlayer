@@ -94,6 +94,16 @@ typedef struct VPMacOSNativeCVPixelBufferPresentFrame {
   VPMacOSNativePresentDecisionInfo decision;
 } VPMacOSNativeCVPixelBufferPresentFrame;
 
+typedef struct VPMacOSNativeCVPixelBufferPresentFrameSet {
+  void* pixel_buffers[VPMacOSNativeMaxTracks];
+  int32_t pixel_formats[VPMacOSNativeMaxTracks];
+  int32_t plane_counts[VPMacOSNativeMaxTracks];
+  int32_t is_p010[VPMacOSNativeMaxTracks];
+  int32_t coded_widths[VPMacOSNativeMaxTracks];
+  int32_t coded_heights[VPMacOSNativeMaxTracks];
+  VPMacOSNativePresentDecisionInfo decision;
+} VPMacOSNativeCVPixelBufferPresentFrameSet;
+
 typedef struct VPMacOSNativeOverlayGpuRect {
   uint32_t rect_uv0;
   uint32_t rect_uv1;
@@ -136,6 +146,15 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
     VPMacOSMetalUploader* uploader,
     const VPMacOSNativeCVPixelBufferPresentFrame* frame,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
+int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeCVPixelBufferPresentFrameSet* frame_set,
     void* pixel_buffer,
     int32_t width,
     int32_t height,

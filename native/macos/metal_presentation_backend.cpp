@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <string>
@@ -29,6 +31,15 @@ namespace {
 #ifndef VOID_BUILD_ANALYSIS
 #define VOID_BUILD_ANALYSIS 0
 #endif
+
+bool macos_profiler_enabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("VOIDPLAYER_MACOS_PROFILER");
+    return value && value[0] != '\0' && std::strcmp(value, "0") != 0 &&
+           std::strcmp(value, "false") != 0;
+  }();
+  return enabled;
+}
 
 struct OverlayPrimitiveBuildResult {
   std::vector<VPMacOSNativeOverlayGpuRect> fill_rects;
@@ -504,10 +515,48 @@ OverlayCompositeResult composite_overlay_after_upload(
 bool MetalPresentationBackend::draw_frame(
     const vr::RendererDrawSnapshot& snapshot,
     const vr::PresentationBackendDrawHooks& hooks) {
+  const auto profiler_start = std::chrono::steady_clock::now();
+  auto log_profiler = [&](const char* path,
+                          bool success,
+                          int ret,
+                          int64_t copy_us,
+                          size_t bytes,
+                          int32_t storage,
+                          const char* error) {
+    if (!macos_profiler_enabled()) {
+      return;
+    }
+    const auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - profiler_start).count();
+    ++draw_profiler_count_;
+    if (total_us < 8000 && copy_us < 6000 && success && draw_profiler_count_ % 240 != 0) {
+      return;
+    }
+    spdlog::info(
+        "[MetalProfiler] draw_frame path={} success={} ret={} total_us={} copy_us={} "
+        "bytes={} storage={} target={}x{} slots={} staging_alloc={} staging_reuse={} "
+        "overlay_expected={} overlay_applied={} error={}",
+        path,
+        success,
+        ret,
+        total_us,
+        copy_us,
+        bytes,
+        storage,
+        draw_target_width_,
+        draw_target_height_,
+        draw_target_max_track_slots_,
+        staging_allocation_count_,
+        staging_reuse_count_,
+        overlay_last_expected_,
+        overlay_last_applied_,
+        error ? error : "");
+  };
   set_last_error("");
   if (!available() || !draw_target_pixel_buffer_ ||
       draw_target_width_ <= 0 || draw_target_height_ <= 0) {
     mark_draw_failure("renderer-owned Metal presentation target is unavailable");
+    log_profiler("none", false, -1, 0, 0, 0, last_error_.c_str());
     return false;
   }
 
@@ -523,6 +572,8 @@ bool MetalPresentationBackend::draw_frame(
       package_layout.bgra_row_bytes >
           static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
     mark_draw_failure("renderer-owned Metal presentation package layout is invalid");
+    log_profiler("package-layout", false, -1, 0, package_layout.max_bytes, 0,
+                 last_error_.c_str());
     return false;
   }
 
@@ -535,7 +586,6 @@ bool MetalPresentationBackend::draw_frame(
                                      error)) {
     VPMacOSNativeFrameInfo frame_info = {};
     char upload_error[256] = {};
-    const auto start = std::chrono::steady_clock::now();
     const int ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
         uploader_,
         &cv_frame,
@@ -546,9 +596,7 @@ bool MetalPresentationBackend::draw_frame(
         upload_error,
         sizeof(upload_error));
     if (hooks.record_frame_copy_us) {
-      hooks.record_frame_copy_us(static_cast<uint64_t>(
-          std::chrono::duration_cast<std::chrono::microseconds>(
-              std::chrono::steady_clock::now() - start).count()));
+      hooks.record_frame_copy_us(0);
     }
     if (ret == 0) {
       const auto overlay = composite_overlay_after_upload(snapshot,
@@ -569,9 +617,64 @@ bool MetalPresentationBackend::draw_frame(
                             overlay.cpu_attempted,
                             overlay.line_rect_count);
       mark_draw_success(frame_info);
+      log_profiler("cvpixelbuffer", true, ret, 0, 0,
+                   VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
       return true;
     }
     mark_draw_failure(upload_error[0] ? upload_error : error);
+    log_profiler("cvpixelbuffer", false, ret, 0, 0,
+                 VPMacOSNativePresentPackageStorageCVPixelBuffer,
+                 last_error_.c_str());
+    return false;
+  }
+
+  VPMacOSNativeCVPixelBufferPresentFrameSet cv_frame_set = {};
+  if (snapshot_cv_pixel_buffer_frame_set(snapshot,
+                                         draw_target_width_,
+                                         draw_target_height_,
+                                         &cv_frame_set,
+                                         error)) {
+    VPMacOSNativeFrameInfo frame_info = {};
+    char upload_error[256] = {};
+    const int ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
+        uploader_,
+        &cv_frame_set,
+        draw_target_pixel_buffer_,
+        draw_target_width_,
+        draw_target_height_,
+        &frame_info,
+        upload_error,
+        sizeof(upload_error));
+    if (hooks.record_frame_copy_us) {
+      hooks.record_frame_copy_us(0);
+    }
+    if (ret == 0) {
+      const auto overlay = composite_overlay_after_upload(snapshot,
+                                                          hooks,
+                                                          uploader_,
+                                                          draw_target_pixel_buffer_,
+                                                          draw_target_width_,
+                                                          draw_target_height_);
+      log_overlay_composite_result("cvpixelbuffer-set",
+                                   snapshot,
+                                   overlay,
+                                   draw_target_width_,
+                                   draw_target_height_);
+      record_overlay_result(overlay.expected,
+                            overlay.applied,
+                            overlay.gpu_attempted,
+                            overlay.gpu_succeeded,
+                            overlay.cpu_attempted,
+                            overlay.line_rect_count);
+      mark_draw_success(frame_info);
+      log_profiler("cvpixelbuffer-set", true, ret, 0, 0,
+                   VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
+      return true;
+    }
+    mark_draw_failure(upload_error[0] ? upload_error : error);
+    log_profiler("cvpixelbuffer-set", false, ret, 0, 0,
+                 VPMacOSNativePresentPackageStorageCVPixelBuffer,
+                 last_error_.c_str());
     return false;
   }
 
@@ -615,6 +718,8 @@ bool MetalPresentationBackend::draw_frame(
                                     &package,
                                     error)) {
       mark_draw_failure(error);
+      log_profiler("package-build", false, -1, 0, data_size, package.storage,
+                   last_error_.c_str());
       return false;
     }
     package.storage = VPMacOSNativePresentPackageStorageBGRA;
@@ -634,10 +739,10 @@ bool MetalPresentationBackend::draw_frame(
       &frame_info,
       upload_error,
       sizeof(upload_error));
+  const auto copy_us = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::steady_clock::now() - start).count();
   if (hooks.record_frame_copy_us) {
-    hooks.record_frame_copy_us(static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - start).count()));
+    hooks.record_frame_copy_us(static_cast<uint64_t>(copy_us));
   }
   if (ret == 0) {
     const auto overlay = composite_overlay_after_upload(snapshot,
@@ -659,8 +764,24 @@ bool MetalPresentationBackend::draw_frame(
                           overlay.cpu_attempted,
                           overlay.line_rect_count);
     mark_draw_success(frame_info);
+    log_profiler(
+        package.storage == VPMacOSNativePresentPackageStorageYUV ? "package-yuv" : "package-bgra",
+        true,
+        ret,
+        copy_us,
+        package.used_bytes,
+        package.storage,
+        "");
   } else {
     mark_draw_failure(upload_error[0] ? upload_error : error);
+    log_profiler(
+        package.storage == VPMacOSNativePresentPackageStorageYUV ? "package-yuv" : "package-bgra",
+        false,
+        ret,
+        copy_us,
+        package.used_bytes,
+        package.storage,
+        last_error_.c_str());
   }
   return ret == 0;
 }

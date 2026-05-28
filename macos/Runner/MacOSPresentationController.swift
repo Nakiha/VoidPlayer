@@ -21,6 +21,9 @@ final class MacOSPresentationController {
   private var layoutRefreshGeneration = 0
   private var layoutRefreshRunning = false
   private var latestLayoutRefreshRequest: LayoutRefreshRequest?
+  private var layoutRequestCount = 0
+  private var layoutImmediateCount = 0
+  private var layoutQueuedCount = 0
 
   func resetLayout() {
     cancelPendingLayoutRefreshes()
@@ -31,11 +34,22 @@ final class MacOSPresentationController {
     guard let nextLayout = MacOSNativeLayoutBridge.layoutMap(arguments: arguments) else {
       return
     }
+    layoutRequestCount += 1
     layout = nextLayout
     if context.nativeBackendActive,
        context.playback.currentIsPlaying(player: context.player) {
       invalidatePendingLayoutRefreshes()
+      let startNs = DispatchTime.now().uptimeNanoseconds
       MacOSNativeLayoutBridge.apply(layout: nextLayout, player: context.player)
+      layoutImmediateCount += 1
+      logLayoutProfiler(
+        route: "playing-immediate",
+        generation: layoutRefreshGeneration,
+        requestNs: startNs,
+        queueDelayNs: 0,
+        applyNs: DispatchTime.now().uptimeNanoseconds - startNs,
+        outcome: "applied"
+      )
       return
     }
     requestCoalescedLayoutRefresh(context: context, layout: nextLayout)
@@ -119,6 +133,7 @@ final class MacOSPresentationController {
       return
     }
     layoutRefreshGeneration += 1
+    layoutQueuedCount += 1
     latestLayoutRefreshRequest = LayoutRefreshRequest(context: context, layout: layout)
     guard !layoutRefreshRunning else { return }
     layoutRefreshRunning = true
@@ -131,9 +146,19 @@ final class MacOSPresentationController {
       return
     }
     layoutRefreshQueue.async { [weak self, request, generation] in
+      let startNs = DispatchTime.now().uptimeNanoseconds
       let outcome = Self.performLayoutRefresh(request: request)
+      let finishNs = DispatchTime.now().uptimeNanoseconds
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
+        self.logLayoutProfiler(
+          route: "paused-coalesced",
+          generation: generation,
+          requestNs: request.requestNs,
+          queueDelayNs: startNs >= request.requestNs ? startNs - request.requestNs : 0,
+          applyNs: finishNs >= startNs ? finishNs - startNs : 0,
+          outcome: outcome.profilerName
+        )
         if generation == self.layoutRefreshGeneration {
           switch outcome {
           case .applied:
@@ -171,14 +196,55 @@ final class MacOSPresentationController {
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
     return .applied
   }
+
+  private func logLayoutProfiler(
+    route: String,
+    generation: Int,
+    requestNs: UInt64,
+    queueDelayNs: UInt64,
+    applyNs: UInt64,
+    outcome: String
+  ) {
+    let totalNs = DispatchTime.now().uptimeNanoseconds - requestNs
+    let slow = totalNs >= 12_000_000 || queueDelayNs >= 8_000_000 || applyNs >= 8_000_000
+    let periodic = layoutRequestCount > 0 && layoutRequestCount % 120 == 0
+    guard slow || periodic else { return }
+    MacOSProfilerLog.log(String(
+      format: "VoidPlayer macOS layout profiler route=%@ outcome=%@ gen=%d requests=%d immediate=%d queued=%d totalMs=%.2f queueMs=%.2f applyMs=%.2f playing=%d",
+      route,
+      outcome,
+      generation,
+      layoutRequestCount,
+      layoutImmediateCount,
+      layoutQueuedCount,
+      Self.ms(totalNs),
+      Self.ms(queueDelayNs),
+      Self.ms(applyNs),
+      route == "playing-immediate" ? 1 : 0
+    ))
+  }
+
+  private static func ms(_ ns: UInt64) -> Double {
+    Double(ns) / 1_000_000.0
+  }
 }
 
 private struct LayoutRefreshRequest {
   let context: MacOSPresentationContext
   let layout: [String: Any]
+  let requestNs = DispatchTime.now().uptimeNanoseconds
 }
 
 private enum LayoutRefreshOutcome {
   case applied
   case transientMiss
+
+  var profilerName: String {
+    switch self {
+    case .applied:
+      return "applied"
+    case .transientMiss:
+      return "transient-miss"
+    }
+  }
 }

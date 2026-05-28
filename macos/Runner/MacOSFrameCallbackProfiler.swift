@@ -1,5 +1,15 @@
 import Foundation
 
+enum MacOSProfilerLog {
+  static let enabled =
+    ProcessInfo.processInfo.environment["VOIDPLAYER_MACOS_PROFILER"] == "1"
+
+  static func log(_ message: @autoclosure () -> String) {
+    guard enabled else { return }
+    NSLog("%@", message())
+  }
+}
+
 final class MacOSFrameCallbackProfiler {
   private let lock = NSLock()
   private var pending = false

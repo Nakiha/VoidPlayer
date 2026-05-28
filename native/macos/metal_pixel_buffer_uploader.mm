@@ -6,6 +6,7 @@
 #include <CoreVideo/CoreVideo.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstring>
@@ -114,6 +115,14 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
         NSError* pipelineError = nil;
         _cvPixelBufferPipeline = [_device newComputePipelineStateWithFunction:cvFunction
                                                                         error:&pipelineError];
+      }
+      id<MTLFunction> cvSetFunction =
+          library ? [library newFunctionWithName:@"layout_cv_yuv_set_copy"] : nil;
+      if (cvSetFunction) {
+        NSError* pipelineError = nil;
+        _cvPixelBufferSetPipeline =
+            [_device newComputePipelineStateWithFunction:cvSetFunction
+                                                   error:&pipelineError];
       }
       id<MTLFunction> overlayFillRectFunction =
           library ? [library newFunctionWithName:@"composite_overlay_fill_rects"] : nil;
@@ -509,6 +518,152 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   if (!completed) {
     return metal_upload_failure(
         error, errorSize, "native Metal CVPixelBuffer compute did not complete");
+  }
+
+  _cvPixelBufferUploadCount.fetch_add(1, std::memory_order_relaxed);
+  _lastPresentPackageCopyUs.store(0, std::memory_order_relaxed);
+  _lastPresentPackageTotalUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
+  _lastPresentPackageStorage.store(VPMacOSNativePresentPackageStorageCVPixelBuffer,
+                                   std::memory_order_relaxed);
+  write_error(error, errorSize, "");
+  return 0;
+}
+
+- (int)copyCVPixelBufferPresentFrameSet:(const VPMacOSNativeCVPixelBufferPresentFrameSet*)frameSet
+                          toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                  width:(int32_t)width
+                                 height:(int32_t)height
+                                    out:(VPMacOSNativeFrameInfo*)out
+                                  error:(char*)error
+                              errorSize:(size_t)errorSize {
+  if (![self isAvailable] || !_cvPixelBufferSetPipeline) {
+    write_error(error, errorSize, "native Metal CVPixelBuffer set uploader is not available");
+    return -1;
+  }
+  if (!frameSet || !pixelBuffer || !out || width <= 0 || height <= 0) {
+    write_error(error, errorSize, "invalid native Metal CVPixelBuffer set upload arguments");
+    return -1;
+  }
+  const int validationStatus =
+      [self validatePixelBufferStatus:pixelBuffer width:width height:height];
+  if (validationStatus != VPMacOSMetalUploaderStatusOk) {
+    write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
+    return -1;
+  }
+  if (![self ensureLayoutParamsBuffer]) {
+    return metal_upload_failure(
+        error, errorSize, "failed to allocate native Metal layout buffers");
+  }
+
+  auto* metalParams = static_cast<vp_macos::MetalLayoutParams*>([_layoutParamsBuffer contents]);
+  vp_macos::fill_metal_layout_params(*metalParams, frameSet->decision, width, height);
+  vp_macos::write_first_present_frame_info(frameSet->decision, out);
+
+  std::array<vp_macos::ScopedCVMetalTexture, VPMacOSNativeMaxTracks> sourceYRefs;
+  std::array<vp_macos::ScopedCVMetalTexture, VPMacOSNativeMaxTracks> sourceUVRefs;
+  std::array<id<MTLTexture>, VPMacOSNativeMaxTracks> sourceYTextures = {};
+  std::array<id<MTLTexture>, VPMacOSNativeMaxTracks> sourceUVTextures = {};
+  int firstPresentSlot = -1;
+  for (size_t slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
+    if (!frameSet->decision.frames[slot].present) {
+      continue;
+    }
+    CVPixelBufferRef sourcePixelBuffer =
+        static_cast<CVPixelBufferRef>(frameSet->pixel_buffers[slot]);
+    if (!sourcePixelBuffer || frameSet->plane_counts[slot] < 2 ||
+        frameSet->coded_widths[slot] <= 0 || frameSet->coded_heights[slot] <= 0) {
+      write_error(error, errorSize, "invalid native Metal CVPixelBuffer set frame");
+      return -1;
+    }
+    const bool isP010 = frameSet->is_p010[slot] != 0;
+    const MTLPixelFormat yFormat = isP010 ? MTLPixelFormatR16Unorm : MTLPixelFormatR8Unorm;
+    const MTLPixelFormat uvFormat = isP010 ? MTLPixelFormatRG16Unorm : MTLPixelFormatRG8Unorm;
+    const CVReturn yStatus = vp_macos::create_cv_metal_texture(
+        _textureCache,
+        sourcePixelBuffer,
+        yFormat,
+        CVPixelBufferGetWidthOfPlane(sourcePixelBuffer, 0),
+        CVPixelBufferGetHeightOfPlane(sourcePixelBuffer, 0),
+        0,
+        &sourceYRefs[slot]);
+    const CVReturn uvStatus = vp_macos::create_cv_metal_texture(
+        _textureCache,
+        sourcePixelBuffer,
+        uvFormat,
+        CVPixelBufferGetWidthOfPlane(sourcePixelBuffer, 1),
+        CVPixelBufferGetHeightOfPlane(sourcePixelBuffer, 1),
+        1,
+        &sourceUVRefs[slot]);
+    sourceYTextures[slot] = sourceYRefs[slot].texture();
+    sourceUVTextures[slot] = sourceUVRefs[slot].texture();
+    if (yStatus != kCVReturnSuccess || uvStatus != kCVReturnSuccess ||
+        !sourceYTextures[slot] || !sourceUVTextures[slot]) {
+      return metal_upload_failure(
+          error, errorSize, "failed to wrap CVPixelBuffer set planes as Metal textures");
+    }
+    if (firstPresentSlot < 0) {
+      firstPresentSlot = static_cast<int>(slot);
+    }
+  }
+  if (firstPresentSlot < 0) {
+    write_error(error, errorSize, "native Metal CVPixelBuffer set has no present frames");
+    return -1;
+  }
+  for (size_t slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
+    if (!sourceYTextures[slot]) {
+      sourceYTextures[slot] = sourceYTextures[firstPresentSlot];
+    }
+    if (!sourceUVTextures[slot]) {
+      sourceUVTextures[slot] = sourceUVTextures[firstPresentSlot];
+    }
+  }
+
+  vp_macos::ScopedCVMetalTexture destinationRef;
+  const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(
+      _textureCache,
+      pixelBuffer,
+      MTLPixelFormatBGRA8Unorm,
+      width,
+      height,
+      0,
+      &destinationRef);
+  if (destinationStatus != kCVReturnSuccess || !destinationRef.valid()) {
+    return metal_upload_failure(
+        error, errorSize, "failed to wrap CVPixelBuffer destination as Metal texture");
+  }
+
+  id<MTLTexture> destinationTexture = destinationRef.texture();
+  const auto gpuStart = std::chrono::steady_clock::now();
+  id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+  id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
+  if (!destinationTexture || !commandBuffer || !compute) {
+    return metal_upload_failure(
+        error, errorSize, "failed to create native Metal CVPixelBuffer set compute command");
+  }
+
+  [compute setComputePipelineState:_cvPixelBufferSetPipeline];
+  [compute setBuffer:_layoutParamsBuffer offset:0 atIndex:0];
+  [compute setTexture:destinationTexture atIndex:0];
+  for (NSUInteger slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
+    [compute setTexture:sourceYTextures[slot] atIndex:(1 + slot * 2)];
+    [compute setTexture:sourceUVTextures[slot] atIndex:(2 + slot * 2)];
+  }
+
+  const NSUInteger threadWidth = _cvPixelBufferSetPipeline.threadExecutionWidth;
+  const NSUInteger threadHeight =
+      std::max<NSUInteger>(1, _cvPixelBufferSetPipeline.maxTotalThreadsPerThreadgroup / threadWidth);
+  const MTLSize threadsPerThreadgroup = MTLSizeMake(threadWidth, threadHeight, 1);
+  const MTLSize threads = MTLSizeMake(width, height, 1);
+  [compute dispatchThreads:threads threadsPerThreadgroup:threadsPerThreadgroup];
+  [compute endEncoding];
+  [commandBuffer commit];
+  [commandBuffer waitUntilCompleted];
+
+  const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
+  _lastPresentPackageGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
+  if (!completed) {
+    return metal_upload_failure(
+        error, errorSize, "native Metal CVPixelBuffer set compute did not complete");
   }
 
   _cvPixelBufferUploadCount.fetch_add(1, std::memory_order_relaxed);

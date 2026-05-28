@@ -4,22 +4,62 @@
 #include "video_renderer/layout/layout_geometry.h"
 #include "video_renderer/render/shader_constants.h"
 
+#include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <mutex>
+#include <spdlog/spdlog.h>
 
 using vp_macos::to_layout_state;
 using vp_macos::to_native_layout_state;
+
+namespace {
+
+bool macos_profiler_enabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("VOIDPLAYER_MACOS_PROFILER");
+    return value && value[0] != '\0' && std::strcmp(value, "0") != 0 &&
+           std::strcmp(value, "false") != 0;
+  }();
+  return enabled;
+}
+
+}  // namespace
 
 void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
                                     const VPMacOSNativeLayoutState* state) {
   if (!player || !state) {
     return;
   }
+  const auto start = std::chrono::steady_clock::now();
+  bool playing = false;
+  bool active = false;
   std::lock_guard<std::mutex> lock(player->mutex);
   if (player->renderer_active_locked()) {
-    if (!player->renderer->is_playing()) {
+    active = true;
+    playing = player->renderer->is_playing();
+    if (!playing) {
       player->clear_last_frame_locked();
     }
     player->renderer->apply_layout(to_layout_state(*state));
+  }
+  const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::steady_clock::now() - start).count();
+  static uint64_t layout_count = 0;
+  ++layout_count;
+  if (macos_profiler_enabled() && (elapsed_us >= 2000 || layout_count % 120 == 0)) {
+    spdlog::info(
+        "[MacOSProfiler] apply_layout total_us={} active={} playing={} count={} "
+        "zoom={:.3f} offset=({:.3f},{:.3f}) split={:.3f} mode={}",
+        elapsed_us,
+        active,
+        playing,
+        layout_count,
+        state->zoom_ratio,
+        state->view_offset_x,
+        state->view_offset_y,
+        state->split_pos,
+        state->mode);
   }
 }
 

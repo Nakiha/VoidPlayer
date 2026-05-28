@@ -25,6 +25,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
   id<MTLBuffer> _overlayLineMaskBuffer;
   id<MTLComputePipelineState> _layoutPipeline;
   id<MTLComputePipelineState> _cvPixelBufferPipeline;
+  id<MTLComputePipelineState> _cvPixelBufferSetPipeline;
   id<MTLComputePipelineState> _overlayFillRectPipeline;
   id<MTLComputePipelineState> _overlayLineMaskPipeline;
   id<MTLComputePipelineState> _overlayLineContrastPipeline;
@@ -69,6 +70,13 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                                   out:(VPMacOSNativeFrameInfo*)out
                                 error:(char*)error
                             errorSize:(size_t)errorSize;
+- (int)copyCVPixelBufferPresentFrameSet:(const VPMacOSNativeCVPixelBufferPresentFrameSet*)frameSet
+                          toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                  width:(int32_t)width
+                                 height:(int32_t)height
+                                    out:(VPMacOSNativeFrameInfo*)out
+                                  error:(char*)error
+                              errorSize:(size_t)errorSize;
 - (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
                            toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                                    width:(int32_t)width

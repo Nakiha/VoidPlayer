@@ -44,4 +44,11 @@ bool snapshot_cv_pixel_buffer_frame(const vr::RendererDrawSnapshot& snapshot,
                                     VPMacOSNativeCVPixelBufferPresentFrame* out,
                                     std::string& error);
 
+bool snapshot_cv_pixel_buffer_frame_set(
+    const vr::RendererDrawSnapshot& snapshot,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeCVPixelBufferPresentFrameSet* out,
+    std::string& error);
+
 }  // namespace vp_macos

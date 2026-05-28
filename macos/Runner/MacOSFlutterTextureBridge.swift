@@ -144,6 +144,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     maxTrackSlots: Int,
     waitTimeoutMs: Int
   ) throws -> MacOSNativeFrameInfo {
+    let totalStartNs = DispatchTime.now().uptimeNanoseconds
     lock.lock()
     if pixelBuffers.isEmpty {
       rebuildPixelBuffersLocked()
@@ -168,11 +169,14 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       throw MacOSNativePlayerError.failed("failed to install renderer-owned Metal presentation target")
     }
     lock.unlock()
+    let installEndNs = DispatchTime.now().uptimeNanoseconds
 
     do {
+      let requestStartNs = DispatchTime.now().uptimeNanoseconds
       let info = try withExtendedLifetime(drawBuffer) {
         try player.requestRendererOwnedFrameRefresh(timeoutMs: waitTimeoutMs)
       }
+      let requestEndNs = DispatchTime.now().uptimeNanoseconds
       lock.lock()
       defer { lock.unlock() }
       let expectedPixelBuffer = Unmanaged.passUnretained(drawBuffer).toOpaque()
@@ -181,6 +185,16 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         throw MacOSNativePlayerError.failed("renderer-owned Metal presentation target changed during refresh")
       }
       publishDrawBufferLocked(nativeUploadCount: player.rendererOwnedPresentationUploadCount())
+      let totalEndNs = DispatchTime.now().uptimeNanoseconds
+      logUpdateProfiler(
+        result: "ok",
+        totalNs: totalEndNs - totalStartNs,
+        installNs: installEndNs - totalStartNs,
+        requestNs: requestEndNs - requestStartNs,
+        publishNs: totalEndNs - requestEndNs,
+        waitTimeoutMs: waitTimeoutMs,
+        ptsUs: info.ptsUs
+      )
       return info
     } catch {
       if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable != true {
@@ -189,6 +203,16 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         lock.unlock()
         NSLog("VoidPlayer macOS renderer-owned Metal refresh failed: \(error)")
       }
+      let nowNs = DispatchTime.now().uptimeNanoseconds
+      logUpdateProfiler(
+        result: "error:\(error)",
+        totalNs: nowNs - totalStartNs,
+        installNs: installEndNs - totalStartNs,
+        requestNs: nowNs - installEndNs,
+        publishNs: 0,
+        waitTimeoutMs: waitTimeoutMs,
+        ptsUs: -1
+      )
       throw error
     }
   }
@@ -419,6 +443,35 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     } else {
       drawBufferIndex = displayBufferIndex
     }
+  }
+
+  private func logUpdateProfiler(
+    result: String,
+    totalNs: UInt64,
+    installNs: UInt64,
+    requestNs: UInt64,
+    publishNs: UInt64,
+    waitTimeoutMs: Int,
+    ptsUs: Int
+  ) {
+    let slow = totalNs >= 12_000_000 || requestNs >= 10_000_000 || result != "ok"
+    guard slow else { return }
+    MacOSProfilerLog.log(String(
+      format: "VoidPlayer macOS texture update profiler result=%@ totalMs=%.2f installMs=%.2f requestMs=%.2f publishMs=%.2f timeoutMs=%d ptsUs=%d display=%d draw=%d",
+      result,
+      Self.ms(totalNs),
+      Self.ms(installNs),
+      Self.ms(requestNs),
+      Self.ms(publishNs),
+      waitTimeoutMs,
+      ptsUs,
+      displayBufferIndex,
+      drawBufferIndex
+    ))
+  }
+
+  private static func ms(_ ns: UInt64) -> Double {
+    Double(ns) / 1_000_000.0
   }
 
 }

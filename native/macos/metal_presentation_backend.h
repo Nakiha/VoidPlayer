@@ -71,6 +71,7 @@ private:
   uint64_t consecutive_draw_failures_ = 0;
   uint64_t staging_allocation_count_ = 0;
   uint64_t staging_reuse_count_ = 0;
+  uint64_t draw_profiler_count_ = 0;
   size_t staging_max_bytes_ = 0;
   bool overlay_last_expected_ = false;
   bool overlay_last_applied_ = false;

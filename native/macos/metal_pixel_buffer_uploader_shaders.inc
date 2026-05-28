@@ -613,6 +613,94 @@ kernel void layout_cv_yuv_copy(
   destination.write(color, gid);
 }
 
+kernel void layout_cv_yuv_set_copy(
+    constant LayoutParams& params [[buffer(0)]],
+    texture2d<float, access::write> destination [[texture(0)]],
+    texture2d<float, access::read> source_y0 [[texture(1)]],
+    texture2d<float, access::read> source_uv0 [[texture(2)]],
+    texture2d<float, access::read> source_y1 [[texture(3)]],
+    texture2d<float, access::read> source_uv1 [[texture(4)]],
+    texture2d<float, access::read> source_y2 [[texture(5)]],
+    texture2d<float, access::read> source_uv2 [[texture(6)]],
+    texture2d<float, access::read> source_y3 [[texture(7)]],
+    texture2d<float, access::read> source_uv3 [[texture(8)]],
+    uint2 gid [[thread_position_in_grid]]) {
+  if (gid.x >= params.width || gid.y >= params.height) {
+    return;
+  }
+
+  const float2 canvas_size = float2(float(params.width), float(params.height));
+  const float2 texcoord = (float2(gid) + float2(0.5, 0.5)) / canvas_size;
+  int track_idx = 0;
+  float2 local_uv = texcoord;
+  if (params.mode == kModeSplitScreen) {
+    track_idx = texcoord.x < params.split_pos
+        ? order_at(params, 0)
+        : order_at(params, 1);
+  } else {
+    const int count = max(params.track_count, 1);
+    const float scaled_x = texcoord.x * float(count);
+    const int display_slot = clamp(int(scaled_x), 0, count - 1);
+    track_idx = order_at(params, uint(display_slot));
+    local_uv = float2(scaled_x - float(display_slot), texcoord.y);
+  }
+  track_idx = clamp(track_idx, 0, int(kMaxTracks) - 1);
+  const uint track_slot = uint(track_idx);
+  if (frame_present_at(params, track_slot) == 0) {
+    destination.write(float4(0.0, 0.0, 0.0, 1.0), gid);
+    return;
+  }
+  const int source_width_int = source_width_at(params, track_slot);
+  const int source_height_int = source_height_at(params, track_slot);
+  if (source_width_int <= 0 || source_height_int <= 0) {
+    destination.write(float4(0.0, 0.0, 0.0, 1.0), gid);
+    return;
+  }
+
+  bool out_of_bounds = false;
+  const float2 source_uv = aspect_fit_uv(local_uv, params, track_slot, out_of_bounds);
+  if (out_of_bounds) {
+    destination.write(float4(0.0, 0.0, 0.0, 1.0), gid);
+    return;
+  }
+
+  const uint source_width = uint(source_width_int);
+  const uint source_height = uint(source_height_int);
+  const uint source_x = min(uint(source_uv.x * float(source_width)), source_width - 1);
+  const uint source_y = min(uint(source_uv.y * float(source_height)), source_height - 1);
+  float4 color = float4(0.0, 0.0, 0.0, 1.0);
+  if (track_slot == 0u) {
+    color = sample_cv_yuv_track(
+        source_y0, source_uv0, params, track_slot, source_x, source_y);
+  } else if (track_slot == 1u) {
+    color = sample_cv_yuv_track(
+        source_y1, source_uv1, params, track_slot, source_x, source_y);
+  } else if (track_slot == 2u) {
+    color = sample_cv_yuv_track(
+        source_y2, source_uv2, params, track_slot, source_x, source_y);
+  } else {
+    color = sample_cv_yuv_track(
+        source_y3, source_uv3, params, track_slot, source_x, source_y);
+  }
+
+  if (params.mode == kModeSplitScreen && params.width > 0) {
+    const float divider_x = params.split_pos * float(params.width);
+    const float pixel_x = texcoord.x * float(params.width);
+    const float dist = abs(pixel_x - divider_x);
+    const float core_width = 1.25;
+    const float edge_width = 0.75;
+    if (dist <= core_width + edge_width) {
+      const float alpha = (dist <= core_width)
+          ? 1.0
+          : 1.0 - ((dist - core_width) / edge_width);
+      const float3 divider_color = 1.0 - color.rgb;
+      color.rgb = divider_color * alpha + color.rgb * (1.0 - alpha);
+      color.a = 1.0;
+    }
+  }
+  destination.write(color, gid);
+}
+
 struct OverlayGpuRect {
   uint rect_uv0;
   uint rect_uv1;

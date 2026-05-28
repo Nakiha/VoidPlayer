@@ -4,10 +4,26 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <mutex>
+#include <spdlog/spdlog.h>
 #include <string>
 
 using vp_macos::write_error;
+
+namespace {
+
+bool macos_profiler_enabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("VOIDPLAYER_MACOS_PROFILER");
+    return value && value[0] != '\0' && std::strcmp(value, "0") != 0 &&
+           std::strcmp(value, "false") != 0;
+  }();
+  return enabled;
+}
+
+}  // namespace
 
 void VPMacOSNativePlayerSetFrameAvailableCallback(
     VPMacOSNativePlayer* player,
@@ -145,6 +161,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size) {
+  const auto profiler_start = std::chrono::steady_clock::now();
   if (!player || !out) {
     write_error(error, error_size, "player or renderer-owned frame output is null");
     return -1;
@@ -158,6 +175,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   bool baseline_frame_available = false;
   int64_t refresh_clock_us = 0;
   int64_t refresh_min_pts_us = -1;
+  int refresh_attempts = 0;
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
     if (!player->presentation_target_pixel_buffer ||
@@ -184,6 +202,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     }
     if (player->renderer) {
       refresh_clock_us = player->renderer->current_pts_us();
+      ++refresh_attempts;
       player->renderer->request_frame_refresh("macos-renderer-owned-refresh");
       return true;
     }
@@ -248,6 +267,15 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   }
 
   if (player->presentation_target_generation != baseline_target_generation) {
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - profiler_start).count();
+    if (macos_profiler_enabled()) {
+      spdlog::info(
+          "[MacOSProfiler] request_frame_refresh changed_target elapsed_ms={} timeout_ms={} attempts={}",
+          elapsed_ms,
+          bounded_timeout_ms,
+          refresh_attempts);
+    }
     write_error(error, error_size,
                 "renderer-owned Metal presentation target changed during refresh");
     return -1;
@@ -258,16 +286,56 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     if (refresh_min_pts_us >= 0) {
       player->renderer_owned_refresh_min_pts_us = -1;
     }
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - profiler_start).count();
+    if (macos_profiler_enabled() && (elapsed_ms >= 12 || refresh_attempts > 1)) {
+      spdlog::info(
+          "[MacOSProfiler] request_frame_refresh ok elapsed_ms={} timeout_ms={} attempts={} "
+          "baseline_upload={} upload={} pts_us={} clock_us={}",
+          elapsed_ms,
+          bounded_timeout_ms,
+          refresh_attempts,
+          baseline_upload_count,
+          player->renderer_owned_presentation_upload_count,
+          out->pts_us,
+          refresh_clock_us);
+    }
     write_error(error, error_size, "");
     return 0;
   }
   if (player->renderer_owned_presentation_draw_failure_count >
       baseline_draw_failure_count) {
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - profiler_start).count();
+    if (macos_profiler_enabled()) {
+      spdlog::info(
+          "[MacOSProfiler] request_frame_refresh draw_failed elapsed_ms={} timeout_ms={} attempts={} failures={} error={}",
+          elapsed_ms,
+          bounded_timeout_ms,
+          refresh_attempts,
+          player->renderer_owned_presentation_draw_failure_count,
+          player->renderer_owned_presentation_last_error);
+    }
     write_error(error, error_size,
                 player->renderer_owned_presentation_last_error.empty()
                     ? "renderer-owned Metal frame refresh failed"
                     : player->renderer_owned_presentation_last_error);
     return -1;
+  }
+  const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - profiler_start).count();
+  if (macos_profiler_enabled()) {
+    spdlog::info(
+        "[MacOSProfiler] request_frame_refresh timeout elapsed_ms={} timeout_ms={} attempts={} "
+        "baseline_upload={} upload={} baseline_failure={} failures={} clock_us={}",
+        elapsed_ms,
+        bounded_timeout_ms,
+        refresh_attempts,
+        baseline_upload_count,
+        player->renderer_owned_presentation_upload_count,
+        baseline_draw_failure_count,
+        player->renderer_owned_presentation_draw_failure_count,
+        refresh_clock_us);
   }
   write_error(error, error_size,
               "renderer-owned Metal frame refresh timed out");

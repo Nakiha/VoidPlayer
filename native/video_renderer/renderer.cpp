@@ -26,6 +26,7 @@
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -43,6 +44,12 @@ uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - start).count());
+}
+
+bool profiler_enabled(const char* env_name) {
+    const char* value = std::getenv(env_name);
+    return value && value[0] != '\0' && std::strcmp(value, "0") != 0 &&
+           std::strcmp(value, "false") != 0;
 }
 
 void stop_detached_track_pipeline(size_t slot, std::unique_ptr<TrackPipeline>& track) {
@@ -1201,9 +1208,12 @@ void Renderer::enter_terminal_render_loop_error_locked(const char* reason) {
 }
 
 void Renderer::present_frame(const PresentDecision& decision) {
+    const auto profiler_start = std::chrono::steady_clock::now();
     RendererDrawSnapshot snapshot;
     uint64_t snapshot_layout_revision = 0;
+    uint64_t snapshot_us = 0;
     {
+        const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(state_mutex_);
         spdlog::debug("[present_frame] mode={}", layout_.mode);
         PresentDecision filtered_decision = decision;
@@ -1211,6 +1221,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
         update_track_geometry_from_decision_locked(filtered_decision);
         snapshot = build_draw_snapshot_locked(filtered_decision);
         snapshot_layout_revision = layout_revision_;
+        snapshot_us = elapsed_us_since(snapshot_start);
     }
     std::function<void()> frame_callback;
     auto frame_failure_callback = frame_failure_callback_snapshot();
@@ -1218,7 +1229,9 @@ void Renderer::present_frame(const PresentDecision& decision) {
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
     bool device_lost = false;
     bool drew = false;
+    uint64_t backend_us = 0;
     {
+        const auto backend_start = std::chrono::steady_clock::now();
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         auto* backend = presentation_backend_.get();
         if (headless_) {
@@ -1249,6 +1262,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
         if (attempted_draw && !drew) {
             frame_failure_error = presentation_backend_last_error();
         }
+        backend_us = elapsed_us_since(backend_start);
     }
     if (device_lost) {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -1265,6 +1279,31 @@ void Renderer::present_frame(const PresentDecision& decision) {
     if (attempted_draw && !drew && frame_failure_callback &&
         !shutting_down_.load(std::memory_order_acquire)) {
         frame_failure_callback(frame_failure_error.c_str());
+    }
+    const auto total_us = elapsed_us_since(profiler_start);
+    static std::atomic<uint64_t> present_profiler_count{0};
+    const auto count = present_profiler_count.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER") &&
+        (total_us >= 8000 || backend_us >= 6000 || count % 240 == 0)) {
+        size_t active_tracks = 0;
+        bool final_preview_drawn = false;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            active_tracks = active_track_count(tracks_);
+            final_preview_drawn = preview_drawn_;
+        }
+        spdlog::info(
+            "[RendererProfiler] present_frame total_us={} snapshot_us={} backend_us={} "
+            "attempted={} drew={} headless={} tracks={} layout_rev={} preview_drawn={}",
+            total_us,
+            snapshot_us,
+            backend_us,
+            attempted_draw,
+            drew,
+            headless_,
+            active_tracks,
+            snapshot_layout_revision,
+            final_preview_drawn);
     }
 }
 

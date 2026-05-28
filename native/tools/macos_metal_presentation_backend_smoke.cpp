@@ -4,6 +4,7 @@
 #include "video_renderer/render/renderer_draw_snapshot.h"
 
 #include <CoreVideo/CoreVideo.h>
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -15,6 +16,143 @@ namespace {
 int fail(const char* message) {
   std::cerr << message << "\n";
   return 1;
+}
+
+struct ScopedCVPixelBuffer {
+  CVPixelBufferRef buffer = nullptr;
+
+  ~ScopedCVPixelBuffer() {
+    if (buffer) {
+      CVPixelBufferRelease(buffer);
+    }
+  }
+
+  ScopedCVPixelBuffer(const ScopedCVPixelBuffer&) = delete;
+  ScopedCVPixelBuffer& operator=(const ScopedCVPixelBuffer&) = delete;
+
+  ScopedCVPixelBuffer() = default;
+  ScopedCVPixelBuffer(ScopedCVPixelBuffer&& other) noexcept
+      : buffer(other.buffer) {
+    other.buffer = nullptr;
+  }
+  ScopedCVPixelBuffer& operator=(ScopedCVPixelBuffer&& other) noexcept {
+    if (this != &other) {
+      if (buffer) {
+        CVPixelBufferRelease(buffer);
+      }
+      buffer = other.buffer;
+      other.buffer = nullptr;
+    }
+    return *this;
+  }
+};
+
+ScopedCVPixelBuffer make_nv12_pixel_buffer(int width,
+                                           int height,
+                                           uint8_t y_value,
+                                           uint8_t u_value,
+                                           uint8_t v_value) {
+  ScopedCVPixelBuffer holder;
+  CFDictionaryRef io_surface_properties = CFDictionaryCreate(
+      kCFAllocatorDefault,
+      nullptr,
+      nullptr,
+      0,
+      &kCFTypeDictionaryKeyCallBacks,
+      &kCFTypeDictionaryValueCallBacks);
+  const void* keys[] = {
+      kCVPixelBufferMetalCompatibilityKey,
+      kCVPixelBufferIOSurfacePropertiesKey,
+  };
+  const void* values[] = {
+      kCFBooleanTrue,
+      io_surface_properties,
+  };
+  CFDictionaryRef attrs = CFDictionaryCreate(
+      kCFAllocatorDefault,
+      keys,
+      values,
+      2,
+      &kCFTypeDictionaryKeyCallBacks,
+      &kCFTypeDictionaryValueCallBacks);
+  CVPixelBufferCreate(kCFAllocatorDefault,
+                      width,
+                      height,
+                      kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                      attrs,
+                      &holder.buffer);
+  if (attrs) {
+    CFRelease(attrs);
+  }
+  if (io_surface_properties) {
+    CFRelease(io_surface_properties);
+  }
+  if (!holder.buffer ||
+      CVPixelBufferLockBaseAddress(holder.buffer, 0) != kCVReturnSuccess) {
+    return holder;
+  }
+  auto* y_plane = static_cast<uint8_t*>(
+      CVPixelBufferGetBaseAddressOfPlane(holder.buffer, 0));
+  auto* uv_plane = static_cast<uint8_t*>(
+      CVPixelBufferGetBaseAddressOfPlane(holder.buffer, 1));
+  const size_t y_stride = CVPixelBufferGetBytesPerRowOfPlane(holder.buffer, 0);
+  const size_t uv_stride = CVPixelBufferGetBytesPerRowOfPlane(holder.buffer, 1);
+  const int uv_height = (height + 1) / 2;
+  const int uv_width = (width + 1) / 2;
+  if (y_plane && uv_plane) {
+    for (int y = 0; y < height; ++y) {
+      std::fill_n(y_plane + static_cast<size_t>(y) * y_stride,
+                  width,
+                  y_value);
+    }
+    for (int y = 0; y < uv_height; ++y) {
+      uint8_t* row = uv_plane + static_cast<size_t>(y) * uv_stride;
+      for (int x = 0; x < uv_width; ++x) {
+        row[x * 2 + 0] = u_value;
+        row[x * 2 + 1] = v_value;
+      }
+    }
+  }
+  CVPixelBufferUnlockBaseAddress(holder.buffer, 0);
+  return holder;
+}
+
+std::shared_ptr<void> retain_pixel_buffer(CVPixelBufferRef pixel_buffer) {
+  if (!pixel_buffer) {
+    return {};
+  }
+  CVPixelBufferRetain(pixel_buffer);
+  return std::shared_ptr<void>(pixel_buffer, [](void* p) {
+    if (p) {
+      CVPixelBufferRelease(static_cast<CVPixelBufferRef>(p));
+    }
+  });
+}
+
+vr::TextureFrame make_cv_nv12_frame(CVPixelBufferRef pixel_buffer,
+                                    int width,
+                                    int height,
+                                    int64_t pts_us) {
+  vr::TextureFrame frame;
+  frame.width = width;
+  frame.height = height;
+  frame.pts_us = pts_us;
+  frame.duration_us = 33333;
+  frame.is_nv12 = true;
+  frame.color = {vr::VIDEO_COLOR_RANGE_LIMITED,
+                 vr::VIDEO_COLOR_MATRIX_BT709,
+                 vr::VIDEO_COLOR_TRANSFER_SDR,
+                 vr::VIDEO_COLOR_PRIMARIES_BT709};
+  frame.storage = vr::MacOSCVPixelBufferFrameStorage{
+      pixel_buffer,
+      kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+      2,
+      false,
+      width,
+      height,
+      retain_pixel_buffer(pixel_buffer),
+  };
+  return frame;
 }
 
 }  // namespace
@@ -250,6 +388,53 @@ int main() {
       backend_stats.staging_max_bytes == 0) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("Metal presentation backend staging diagnostics did not update");
+  }
+
+  auto left_cv = make_nv12_pixel_buffer(kWidth, kHeight, 96, 128, 128);
+  auto right_cv = make_nv12_pixel_buffer(kWidth, kHeight, 180, 128, 128);
+  if (!left_cv.buffer || !right_cv.buffer) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("Metal presentation backend could not create CVPixelBuffer sources");
+  }
+  vr::RendererDrawSnapshot cv_snapshot = snapshot;
+  const auto left_cv_frame =
+      make_cv_nv12_frame(left_cv.buffer, kWidth, kHeight, 200000);
+  const auto right_cv_frame =
+      make_cv_nv12_frame(right_cv.buffer, kWidth, kHeight, 200000);
+  cv_snapshot.layout.mode = vr::LAYOUT_SPLIT_SCREEN;
+  cv_snapshot.layout.pixel_size_mode = vr::PIXEL_SIZE_FILL_VIEW;
+  cv_snapshot.layout.order[0] = 7;
+  cv_snapshot.layout.order[1] = 8;
+  cv_snapshot.decision.current_pts_us = left_cv_frame.pts_us;
+  cv_snapshot.decision.frames[0] = left_cv_frame;
+  cv_snapshot.decision.frames[1] = right_cv_frame;
+  cv_snapshot.decision.file_ids[1] = 8;
+  cv_snapshot.decision.track_generations[1] = 1;
+  cv_snapshot.tracks[1].active = true;
+  cv_snapshot.tracks[1].file_id = 8;
+  cv_snapshot.tracks[1].generation = 1;
+  cv_snapshot.tracks[1].video_width = kWidth;
+  cv_snapshot.tracks[1].video_height = kHeight;
+  cv_snapshot.tracks[1].video_aspect = 1.0f;
+  cv_snapshot.track_geometry[1] = {true, kWidth, kHeight, 1.0f};
+  const int64_t cv_upload_count_before =
+      VPMacOSMetalUploaderCVPixelBufferUploadCount(backend.uploader());
+  if (!backend.draw_frame(cv_snapshot, hooks)) {
+    std::cerr << "Metal presentation backend rejected multi-track "
+                 "CVPixelBuffer snapshot: "
+              << backend.last_error() << "\n";
+    CVPixelBufferRelease(pixel_buffer);
+    return 1;
+  }
+  if (copy_metric_count != 4 ||
+      VPMacOSMetalUploaderPresentPackageUploadCount(backend.uploader()) != 3 ||
+      VPMacOSMetalUploaderCVPixelBufferUploadCount(backend.uploader()) !=
+          cv_upload_count_before + 1 ||
+      VPMacOSMetalUploaderLastPresentPackageStorage(backend.uploader()) !=
+          VPMacOSNativePresentPackageStorageCVPixelBuffer ||
+      VPMacOSMetalUploaderLastPresentPackageCopyUs(backend.uploader()) != 0) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("Metal presentation backend multi-track CVPixelBuffer diagnostics did not update");
   }
 
   backend.shutdown();

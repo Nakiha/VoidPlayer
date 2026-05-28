@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <spdlog/spdlog.h>
 #include <vector>
 
 extern "C" {
@@ -198,8 +199,11 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
 }
 
 void VPMacOSNativePlayer::on_frame_available() {
+  const auto start = std::chrono::steady_clock::now();
   VPMacOSFrameAvailableCallback callback = nullptr;
   void* user_data = nullptr;
+  uint64_t upload_count = 0;
+  int64_t pts_us = -1;
   {
     std::lock_guard<std::mutex> callback_lock(callback_mutex);
     last_renderer_owned_presentation_succeeded = true;
@@ -227,12 +231,25 @@ void VPMacOSNativePlayer::on_frame_available() {
     renderer_owned_presentation_last_upload_time = now;
     ++renderer_owned_presentation_upload_count;
     ++renderer_owned_presentation_event_sequence;
+    upload_count = renderer_owned_presentation_upload_count;
+    pts_us = last_renderer_owned_frame_info.pts_us;
     callback = frame_available_callback;
     user_data = frame_available_user_data;
   }
   presentation_condition.notify_all();
   if (callback) {
     callback(user_data);
+  }
+  const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::steady_clock::now() - start).count();
+  if (vp_macos::env_enabled("VOIDPLAYER_MACOS_PROFILER") &&
+      (elapsed_us >= 2000 || upload_count % 240 == 0)) {
+    spdlog::info(
+        "[MacOSProfiler] frame_available total_us={} upload_count={} pts_us={} has_callback={}",
+        elapsed_us,
+        upload_count,
+        pts_us,
+        callback != nullptr);
   }
 }
 

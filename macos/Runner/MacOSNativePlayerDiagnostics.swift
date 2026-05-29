@@ -140,6 +140,13 @@ extension MacOSNativePlayerSession {
         "rendererDrawBackendAvgUs": 0,
         "rendererDrawBackendMaxUs": 0,
         "rendererDrawBackendP95Us": 0,
+        "rendererLayoutIntentCount": 0,
+        "rendererLayoutPresentedCount": 0,
+        "rendererLayoutDeferredToPlaybackCount": 0,
+        "rendererPlayingLayoutRedrawSuppressedCount": 0,
+        "rendererLastLayoutRevision": 0,
+        "rendererLastPresentedLayoutRevision": 0,
+        "rendererDrawsPerPresentedLayoutX1000": 0,
       ]
     }
     let maxInt64 = UInt64(Int64.max)
@@ -209,6 +216,27 @@ extension MacOSNativePlayerSession {
       "rendererDrawBackendAvgUs": Int64(stats.renderer_draw_backend_avg_us),
       "rendererDrawBackendMaxUs": Int64(stats.renderer_draw_backend_max_us),
       "rendererDrawBackendP95Us": Int64(stats.renderer_draw_backend_p95_us),
+      "rendererLayoutIntentCount": Int64(
+        min(UInt64(stats.renderer_layout_intent_count), maxInt64)
+      ),
+      "rendererLayoutPresentedCount": Int64(
+        min(UInt64(stats.renderer_layout_presented_count), maxInt64)
+      ),
+      "rendererLayoutDeferredToPlaybackCount": Int64(
+        min(UInt64(stats.renderer_layout_deferred_to_playback_count), maxInt64)
+      ),
+      "rendererPlayingLayoutRedrawSuppressedCount": Int64(
+        min(UInt64(stats.renderer_playing_layout_redraw_suppressed_count), maxInt64)
+      ),
+      "rendererLastLayoutRevision": Int64(
+        min(UInt64(stats.renderer_last_layout_revision), maxInt64)
+      ),
+      "rendererLastPresentedLayoutRevision": Int64(
+        min(UInt64(stats.renderer_last_presented_layout_revision), maxInt64)
+      ),
+      "rendererDrawsPerPresentedLayoutX1000": Int64(
+        stats.renderer_draws_per_presented_layout_x1000
+      ),
     ]
   }
 

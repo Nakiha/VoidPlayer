@@ -215,6 +215,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   int64_t refresh_clock_us = 0;
   int64_t refresh_min_pts_us = -1;
   int refresh_attempts = 0;
+  bool deferred_to_playback = false;
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
     if (!player->presentation_target_pixel_buffer ||
@@ -242,6 +243,12 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     if (player->renderer) {
       refresh_clock_us = player->renderer->current_pts_us();
       ++refresh_attempts;
+      if (player->renderer->is_playing()) {
+        deferred_to_playback = true;
+        write_error(error, error_size,
+                    "renderer-owned Metal frame refresh deferred to playback present");
+        return true;
+      }
       player->renderer->request_frame_refresh("macos-renderer-owned-refresh");
       return true;
     }
@@ -250,6 +257,9 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   };
   if (!trigger_renderer_refresh()) {
     return -1;
+  }
+  if (deferred_to_playback) {
+    return -2;
   }
 
   std::unique_lock<std::mutex> callback_lock(player->callback_mutex);

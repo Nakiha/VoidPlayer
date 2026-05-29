@@ -298,7 +298,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
 
   func installNativePresentationTarget(
     _ player: MacOSNativePlayerSession,
-    maxTrackSlots: Int
+    maxTrackSlots: Int,
+    refresh: Bool = true
   ) -> Bool {
     lock.lock()
     defer { lock.unlock() }
@@ -313,7 +314,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       pixelBuffer: pixelBuffer,
       width: width,
       height: height,
-      maxTrackSlots: maxTrackSlots
+      maxTrackSlots: maxTrackSlots,
+      refresh: refresh
     )
   }
 

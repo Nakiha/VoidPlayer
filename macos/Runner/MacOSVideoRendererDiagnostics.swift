@@ -35,6 +35,12 @@ enum MacOSVideoRendererDiagnostics {
     let rendererOwnedState = player?.rendererOwnedPresentationState()
       ?? Self.emptyRendererOwnedPresentationState()
     let rendererOwnedActive = rendererOwnedState["active"] as? Bool ?? false
+    let rendererDrawCount = int64Diagnostic(perfStats?["rendererDrawCount"])
+    let nativeFramePresentationCount =
+      int64Diagnostic(presentationDiagnostics["nativeFramePresentationCount"])
+    let drawsPerPresentedFrameRatioX1000 = nativeFramePresentationCount > 0
+      ? rendererDrawCount * 1000 / nativeFramePresentationCount
+      : int64Diagnostic(perfStats?["rendererDrawsPerPresentedLayoutX1000"])
     var diagnostics: [String: Any] = [
       "platform": "macos",
       "backend": backendName,
@@ -182,13 +188,22 @@ enum MacOSVideoRendererDiagnostics {
       "nativeRendererOwnedUploadFps": perfStats?["rendererOwnedUploadFps"] ?? 0.0,
       "nativeRendererOwnedUploadFpsX1000": perfStats?["rendererOwnedUploadFpsX1000"] ?? 0,
       "nativeRendererOwnedUploadElapsedMs": perfStats?["rendererOwnedUploadElapsedMs"] ?? 0,
-      "nativeRendererDrawCount": perfStats?["rendererDrawCount"] ?? 0,
+      "nativeRendererDrawCount": rendererDrawCount,
       "nativeRendererDrawAvgUs": perfStats?["rendererDrawAvgUs"] ?? 0,
       "nativeRendererDrawMaxUs": perfStats?["rendererDrawMaxUs"] ?? 0,
       "nativeRendererDrawP95Us": perfStats?["rendererDrawP95Us"] ?? 0,
       "nativeRendererDrawBackendAvgUs": perfStats?["rendererDrawBackendAvgUs"] ?? 0,
       "nativeRendererDrawBackendMaxUs": perfStats?["rendererDrawBackendMaxUs"] ?? 0,
       "nativeRendererDrawBackendP95Us": perfStats?["rendererDrawBackendP95Us"] ?? 0,
+      "layoutPresentedCount": perfStats?["rendererLayoutPresentedCount"] ?? 0,
+      "layoutDeferredToPlaybackCount":
+        perfStats?["rendererLayoutDeferredToPlaybackCount"] ?? 0,
+      "playingLayoutRedrawSuppressedCount":
+        perfStats?["rendererPlayingLayoutRedrawSuppressedCount"] ?? 0,
+      "rendererLastLayoutRevision": perfStats?["rendererLastLayoutRevision"] ?? 0,
+      "rendererLastPresentedLayoutRevision":
+        perfStats?["rendererLastPresentedLayoutRevision"] ?? 0,
+      "drawsPerPresentedFrameRatioX1000": drawsPerPresentedFrameRatioX1000,
       "processRssBytes": perfStats?["processRssBytes"] ?? 0,
       "processPrivateBytes": perfStats?["processPrivateBytes"] ?? 0,
       "nativeDecodeFrameCount": perfStats?["decodeFrameCount"] ?? 0,
@@ -281,5 +296,21 @@ enum MacOSVideoRendererDiagnostics {
       "overlayCpuFallbackCount": 0,
       "lastDrawError": "",
     ]
+  }
+
+  private static func int64Diagnostic(_ value: Any?) -> Int64 {
+    if let value = value as? Int64 {
+      return value
+    }
+    if let value = value as? Int {
+      return Int64(value)
+    }
+    if let value = value as? UInt64 {
+      return Int64(min(value, UInt64(Int64.max)))
+    }
+    if let value = value as? Double {
+      return Int64(value)
+    }
+    return 0
   }
 }

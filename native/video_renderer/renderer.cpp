@@ -38,11 +38,6 @@ namespace vr {
 // Max render-loop sleep for playback deadline responsiveness. Viewport layout
 // redraw cadence is driven by the platform display clock on macOS.
 static constexpr int64_t MAX_SLEEP_US = 8000;
-// Avoid publishing a cached-frame layout redraw immediately before a video
-// frame that is already due. That close double-publish creates visible judder
-// during interactive pan/zoom because Flutter receives two texture frames with
-// different PTS within only a few milliseconds.
-static constexpr int64_t kLayoutRedrawNearPresentDeadlineUs = 5000;
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
 
@@ -248,6 +243,8 @@ bool Renderer::initialize(const RendererConfig& config) {
     headless_ = config.headless;
     target_width_ = config.width;
     target_height_ = config.height;
+    layout_revision_ = 0;
+    last_presented_layout_revision_ = 0;
     shutting_down_.store(false, std::memory_order_release);
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
     reset_presentation_backend_metrics();
@@ -414,6 +411,8 @@ void Renderer::release_resources_locked() {
     next_file_id_ = 1;
     next_track_generation_ = 1;
     layout_controller_.reset(layout_);
+    layout_revision_ = 0;
+    last_presented_layout_revision_ = 0;
     if (analysis_overlay_renderer_) {
         analysis_overlay_renderer_->reset();
     }
@@ -446,6 +445,12 @@ void Renderer::reset_presentation_backend_metrics() {
     presentation_backend_metrics_.shared_texture_resize_count.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.device_lost_count.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.texture_sharing_failure_count.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.layout_intent_count.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.layout_presented_count.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.layout_deferred_to_playback_count.store(
+        0, std::memory_order_relaxed);
+    presentation_backend_metrics_.playing_layout_redraw_suppressed_count.store(
+        0, std::memory_order_relaxed);
     {
         std::lock_guard<std::mutex> lock(presentation_draw_samples_mutex_);
         presentation_draw_total_samples_us_.clear();
@@ -1219,8 +1224,10 @@ bool Renderer::request_frame_refresh(const char* reason) {
     const char* refresh_reason = reason && reason[0] != '\0'
                                      ? reason
                                      : "request_frame_refresh";
-    if (playing_.load(std::memory_order_acquire)) {
-        redraw_layout();
+    if (playing_.load(std::memory_order_acquire) &&
+        !playback_->clock().is_paused()) {
+        presentation_backend_metrics_.layout_deferred_to_playback_count.fetch_add(
+            1, std::memory_order_relaxed);
         return true;
     }
     return draw_paused_frame(refresh_reason);
@@ -1435,6 +1442,11 @@ void Renderer::present_frame(const PresentDecision& decision) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
         current_layout_revision = layout_revision_;
+        if (snapshot_layout_revision > last_presented_layout_revision_) {
+            last_presented_layout_revision_ = snapshot_layout_revision;
+            presentation_backend_metrics_.layout_presented_count.fetch_add(
+                1, std::memory_order_relaxed);
+        }
         preview_drawn_ = !stale_layout_after_draw;
     }
     const bool callback_available = static_cast<bool>(frame_callback);
@@ -1542,6 +1554,11 @@ void Renderer::redraw_layout() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
         current_layout_revision = layout_revision_;
+        if (snapshot_layout_revision > last_presented_layout_revision_) {
+            last_presented_layout_revision_ = snapshot_layout_revision;
+            presentation_backend_metrics_.layout_presented_count.fetch_add(
+                1, std::memory_order_relaxed);
+        }
         preview_drawn_ = !stale_layout_after_draw;
     }
     const bool callback_available = static_cast<bool>(frame_callback);
@@ -1928,6 +1945,11 @@ bool Renderer::update_headless_output(void* output,
     }
     if (drew) {
         std::lock_guard<std::mutex> lock(state_mutex_);
+        if (layout_revision_ > last_presented_layout_revision_) {
+            last_presented_layout_revision_ = layout_revision_;
+            presentation_backend_metrics_.layout_presented_count.fetch_add(
+                1, std::memory_order_relaxed);
+        }
         preview_drawn_ = true;
     }
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
@@ -2029,6 +2051,11 @@ void Renderer::do_resize(int width, int height) {
     }
     if (drew) {
         std::lock_guard<std::mutex> lock(state_mutex_);
+        if (layout_revision_ > last_presented_layout_revision_) {
+            last_presented_layout_revision_ = layout_revision_;
+            presentation_backend_metrics_.layout_presented_count.fetch_add(
+                1, std::memory_order_relaxed);
+        }
         preview_drawn_ = true;
     }
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
@@ -2310,48 +2337,26 @@ void Renderer::render_loop_body() {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 last_decision_ = decision;
             }
-        } else {
-            // No new PTS but layout changed (e.g. zoom/pan during playback).
-            // Redraw the cached frame once per layout revision instead of
-            // publishing duplicate video frames on every render-loop poll.
-            bool should_redraw = false;
-            bool deferred_for_near_present = false;
-            int64_t near_present_sleep_us = -1;
-            uint64_t deferred_layout_revision = 0;
+        } else if (playing_snapshot) {
+            uint64_t layout_revision = 0;
+            uint64_t presented_revision = 0;
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
-                should_redraw =
-                    !preview_drawn_ && present_decision_has_frame(last_decision_);
-                if (should_redraw && playing_snapshot) {
-                    const int64_t current_pts = playback_->clock().current_pts_us();
-                    const auto next_event_pts =
-                        compute_next_frame_event_pts_us(tracks_, current_pts);
-                    if (next_event_pts.has_value()) {
-                        const auto sleep_for =
-                            render_loop_controller_.frame_deadline_sleep(
-                                current_pts,
-                                *next_event_pts,
-                                playback_->clock().speed(),
-                                MAX_SLEEP_US);
-                        near_present_sleep_us = sleep_for.count();
-                        if (near_present_sleep_us > 0 &&
-                            near_present_sleep_us <=
-                                kLayoutRedrawNearPresentDeadlineUs) {
-                            should_redraw = false;
-                            deferred_for_near_present = true;
-                            deferred_layout_revision = layout_revision_;
-                        }
-                    }
-                }
+                layout_revision = layout_revision_;
+                presented_revision = last_presented_layout_revision_;
             }
-            if (should_redraw) {
-                redraw_layout();
-            } else if (deferred_for_near_present && viewport_trace_enabled()) {
-                spdlog::info(
-                    "[ViewportTrace] native source=redraw_layout_skip reason=near-present "
-                    "sleep_us={} layout_rev={}",
-                    near_present_sleep_us,
-                    deferred_layout_revision);
+            if (layout_revision > presented_revision) {
+                const uint64_t pending_layout = presentation_backend_metrics_
+                    .playing_layout_redraw_suppressed_count.fetch_add(
+                        1, std::memory_order_relaxed) + 1;
+                if (viewport_trace_enabled() && pending_layout % 120 == 0) {
+                    spdlog::info(
+                        "[ViewportTrace] native source=redraw_layout_skip reason=deferred-to-playback "
+                        "layout_rev={} presented_layout_rev={} suppressed={}",
+                        layout_revision,
+                        presented_revision,
+                        pending_layout);
+                }
             }
         }
 
@@ -2470,12 +2475,18 @@ void Renderer::apply_layout(const LayoutState& state) {
     layout_controller_.apply(
         layout_, state, [this](int file_id) { return find_slot_by_file_id(file_id); });
     ++layout_revision_;
+    presentation_backend_metrics_.layout_intent_count.fetch_add(
+        1, std::memory_order_relaxed);
+    const bool defer_to_playback =
+        playing_.load(std::memory_order_acquire) && !playback_->clock().is_paused();
     if (viewport_trace_enabled()) {
         spdlog::info(
             "[ViewportTrace] native source=apply_layout layout_rev={} playing={} "
-            "mode={} zoom={:.4f} offset=({:.1f},{:.1f}) split={:.4f} pixel_mode={}",
+            "defer_to_playback={} mode={} zoom={:.4f} offset=({:.1f},{:.1f}) "
+            "split={:.4f} pixel_mode={}",
             layout_revision_,
             playing_.load(std::memory_order_acquire),
+            defer_to_playback,
             layout_.mode,
             layout_.zoom_ratio,
             layout_.view_offset[0],
@@ -2484,8 +2495,11 @@ void Renderer::apply_layout(const LayoutState& state) {
             layout_.pixel_size_mode);
     }
 
-    // Trigger redraw — during playback, redraw_layout() handles this
-    // without Flush() to avoid contention with D3D11VA decode threads.
+    if (defer_to_playback) {
+        presentation_backend_metrics_.layout_deferred_to_playback_count.fetch_add(
+            1, std::memory_order_relaxed);
+        return;
+    }
     preview_drawn_ = false;
 }
 
@@ -2923,6 +2937,21 @@ PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
         presentation_backend_metrics_.device_lost_count.load(std::memory_order_relaxed);
     result.texture_sharing_failure_count =
         presentation_backend_metrics_.texture_sharing_failure_count.load(std::memory_order_relaxed);
+    result.layout_intent_count =
+        presentation_backend_metrics_.layout_intent_count.load(std::memory_order_relaxed);
+    result.layout_presented_count =
+        presentation_backend_metrics_.layout_presented_count.load(std::memory_order_relaxed);
+    result.layout_deferred_to_playback_count =
+        presentation_backend_metrics_.layout_deferred_to_playback_count.load(
+            std::memory_order_relaxed);
+    result.playing_layout_redraw_suppressed_count =
+        presentation_backend_metrics_.playing_layout_redraw_suppressed_count.load(
+            std::memory_order_relaxed);
+    {
+        std::lock_guard<std::mutex> state_lock(state_mutex_);
+        result.last_layout_revision = layout_revision_;
+        result.last_presented_layout_revision = last_presented_layout_revision_;
+    }
     {
         std::lock_guard<std::mutex> lock(presentation_draw_samples_mutex_);
         result.draw_p95_us = percentile_95_us(presentation_draw_total_samples_us_);

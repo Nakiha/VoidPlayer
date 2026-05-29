@@ -83,6 +83,12 @@ struct PresentationBackendMetrics {
     uint64_t shared_texture_resize_count = 0;
     uint64_t device_lost_count = 0;
     uint64_t texture_sharing_failure_count = 0;
+    uint64_t layout_intent_count = 0;
+    uint64_t layout_presented_count = 0;
+    uint64_t layout_deferred_to_playback_count = 0;
+    uint64_t playing_layout_redraw_suppressed_count = 0;
+    uint64_t last_layout_revision = 0;
+    uint64_t last_presented_layout_revision = 0;
 };
 
 class PresentationBackend {

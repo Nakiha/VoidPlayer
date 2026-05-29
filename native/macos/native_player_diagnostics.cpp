@@ -380,6 +380,21 @@ int VPMacOSNativePlayerCopyPerfStats(
           static_cast<int64_t>(backend_metrics.draw_backend_max_us);
       out->renderer_draw_backend_p95_us =
           static_cast<int64_t>(backend_metrics.draw_backend_p95_us);
+      out->renderer_layout_intent_count = backend_metrics.layout_intent_count;
+      out->renderer_layout_presented_count = backend_metrics.layout_presented_count;
+      out->renderer_layout_deferred_to_playback_count =
+          backend_metrics.layout_deferred_to_playback_count;
+      out->renderer_playing_layout_redraw_suppressed_count =
+          backend_metrics.playing_layout_redraw_suppressed_count;
+      out->renderer_last_layout_revision = backend_metrics.last_layout_revision;
+      out->renderer_last_presented_layout_revision =
+          backend_metrics.last_presented_layout_revision;
+      if (backend_metrics.layout_presented_count > 0) {
+        out->renderer_draws_per_presented_layout_x1000 =
+            static_cast<int64_t>(
+                backend_metrics.draw_count * 1000 /
+                backend_metrics.layout_presented_count);
+      }
     }
   }
   {

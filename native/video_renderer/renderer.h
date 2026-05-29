@@ -387,6 +387,10 @@ private:
         std::atomic<uint64_t> shared_texture_resize_count{0};
         std::atomic<uint64_t> device_lost_count{0};
         std::atomic<uint64_t> texture_sharing_failure_count{0};
+        std::atomic<uint64_t> layout_intent_count{0};
+        std::atomic<uint64_t> layout_presented_count{0};
+        std::atomic<uint64_t> layout_deferred_to_playback_count{0};
+        std::atomic<uint64_t> playing_layout_redraw_suppressed_count{0};
     };
     mutable PresentationBackendMetricCounters presentation_backend_metrics_;
     mutable std::mutex presentation_draw_samples_mutex_;
@@ -423,6 +427,7 @@ private:
     // -- Layout state --
     LayoutState layout_;
     uint64_t layout_revision_ = 0;
+    uint64_t last_presented_layout_revision_ = 0;
     int next_file_id_ = 1;                         ///< Auto-incrementing file ID
     uint64_t next_track_generation_ = 1;
 

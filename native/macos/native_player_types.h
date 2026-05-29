@@ -157,6 +157,13 @@ typedef struct VPMacOSNativePlayerPerfStats {
   int64_t renderer_draw_backend_avg_us;
   int64_t renderer_draw_backend_max_us;
   int64_t renderer_draw_backend_p95_us;
+  uint64_t renderer_layout_intent_count;
+  uint64_t renderer_layout_presented_count;
+  uint64_t renderer_layout_deferred_to_playback_count;
+  uint64_t renderer_playing_layout_redraw_suppressed_count;
+  uint64_t renderer_last_layout_revision;
+  uint64_t renderer_last_presented_layout_revision;
+  int64_t renderer_draws_per_presented_layout_x1000;
 } VPMacOSNativePlayerPerfStats;
 
 typedef struct VPMacOSNativeAudioDiagnostics {

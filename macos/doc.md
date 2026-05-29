@@ -43,10 +43,12 @@ RendererDrawSnapshot
   -> Flutter Texture
 ```
 
-Swift creates/registers the texture target, installs it into native, releases
-the texture lock, then asks native for renderer-owned refresh completion. Swift
-must not add a second frame pump, playback clock, seek policy, loop policy, or
-layout compositor.
+Swift creates/registers the texture target, installs it into native, and
+releases the texture lock before any native refresh wait. Viewport pan/zoom only
+submits the latest layout intent; `CVDisplayLink` coalesces input, while the
+renderer consumes layout revisions on normal playback presents or cached redraws
+for paused/EOF/seek cases. Swift must not add a second frame pump, playback
+clock, seek policy, loop policy, or layout compositor.
 
 The detailed presentation contract is documented in
 `../native/docs/MACOS_PRESENTATION_BACKEND.md`.
@@ -84,6 +86,10 @@ Useful macOS smoke areas:
 - `native_vvc_software_playback_smoke.csv`: software decode fallback visibility.
 - `native_seek_frame_smoke.csv`: seek refresh through native renderer completion.
 - `native_layout_split_smoke.csv`: shared layout through Metal presentation.
+- `native_playing_dual_track_pan_smoke.csv`: playing viewport intent defers to
+  renderer-paced present cadence.
+- `native_paused_dual_track_pan_zoom_smoke.csv`: paused cached redraw follows
+  display-link cadence.
 - `native_add_track_smoke.csv`: multi-track add/remove/offset diagnostics.
 - `native_callback_stress_smoke.csv`: play/pause, seek storm, destroy/recreate.
 - `analysis_gated_smoke.csv`: analysis FFI and media-header overlay activation present, external

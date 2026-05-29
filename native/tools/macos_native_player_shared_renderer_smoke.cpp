@@ -129,6 +129,28 @@ bool wait_for_presented_frame(VPMacOSNativePlayer* player,
     return false;
 }
 
+bool wait_for_playback_presented_frame(VPMacOSNativePlayer* player,
+                                       CVPixelBufferRef target,
+                                       int64_t min_pts_us,
+                                       VPMacOSNativeFrameInfo& info,
+                                       double& non_black,
+                                       std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    do {
+        if (VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(player, &info) == 0 &&
+            info.pts_us > min_pts_us) {
+            non_black = non_black_ratio_pixel_buffer(target);
+            if (non_black > 0.5) {
+                return true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    } while (std::chrono::steady_clock::now() < deadline);
+    std::cerr << "shared renderer playback frame did not advance past "
+              << min_pts_us << "us or stayed black\n";
+    return false;
+}
+
 bool request_refresh_expect_failure(VPMacOSNativePlayer* player,
                                     std::string& message,
                                     std::chrono::milliseconds timeout) {
@@ -351,11 +373,26 @@ int main() {
     }
 
     VPMacOSNativePlayerPlay(player.get());
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    requested_layout.view_offset_x = 12.0f;
+    VPMacOSNativePlayerApplyLayout(player.get(), &requested_layout);
+    std::string playing_refresh_error;
+    if (!request_refresh_expect_failure(
+            player.get(), playing_refresh_error, std::chrono::milliseconds(100)) ||
+        playing_refresh_error.find("deferred") == std::string::npos) {
+        std::cerr << "playing refresh should defer to playback present: "
+                  << playing_refresh_error << "\n";
+        return 1;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(220));
     VPMacOSNativeFrameInfo playing = {};
     double playing_non_black = 0.0;
-    if (!wait_for_presented_frame(
-            player.get(), target.buffer, playing, playing_non_black, std::chrono::seconds(2)) ||
+    if (!wait_for_playback_presented_frame(player.get(),
+                                           target.buffer,
+                                           first.pts_us,
+                                           playing,
+                                           playing_non_black,
+                                           std::chrono::seconds(2)) ||
         playing.pts_us <= first.pts_us) {
         std::cerr << "shared renderer bridge did not advance during playback: first="
                   << first.pts_us << " playing=" << playing.pts_us << "\n";

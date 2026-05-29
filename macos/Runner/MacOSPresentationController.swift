@@ -32,6 +32,9 @@ final class MacOSPresentationController {
   private var layoutDrawCount = 0
   private var layoutSkipCount = 0
   private var layoutStaleDropCount = 0
+  private var layoutDeferredToPlaybackCount = 0
+  private var displayLinkIdleUntilNs: UInt64 = 0
+  private let displayLinkIdleGraceNs: UInt64 = 250_000_000
   private let layoutIntentRate = MacOSRateWindow()
   private let layoutSubmitRate = MacOSRateWindow()
   private let layoutDrawRate = MacOSRateWindow()
@@ -106,6 +109,14 @@ final class MacOSPresentationController {
       context.markFrameAvailable()
       return true
     }
+    if context.playback.currentIsPlaying(player: player) {
+      context.playback.reinstallPresentationTargetIfPlaying(
+        player: player,
+        texture: texture,
+        maxTrackSlots: context.maxTrackSlots
+      )
+      return true
+    }
     let refreshed = MacOSNativeFrameRefresh.refreshCurrentFrameAfterLayoutChange(
       player: player,
       texture: texture,
@@ -126,6 +137,9 @@ final class MacOSPresentationController {
     diagnostics["layoutDrawCount"] = layoutDrawCount
     diagnostics["layoutSkipCount"] = layoutSkipCount
     diagnostics["layoutStaleDropCount"] = layoutStaleDropCount
+    diagnostics["viewportLayoutDeferredToPlaybackCount"] = layoutDeferredToPlaybackCount
+    diagnostics["viewportClockWarm"] = displayLink.isRunning
+    diagnostics["displayIdleGraceMs"] = Int(displayLinkIdleGraceNs / 1_000_000)
     let intentHz = layoutIntentRate.rateHz()
     let submitHz = layoutSubmitRate.rateHz()
     let drawHz = layoutDrawRate.rateHz()
@@ -150,6 +164,7 @@ final class MacOSPresentationController {
   private func cancelPendingLayoutRefreshes() {
     invalidateLayoutRevision()
     latestLayoutRefreshRequest = nil
+    displayLinkIdleUntilNs = 0
     displayLink.stop()
     if layoutRefreshRunning {
       layoutRefreshQueue.sync {}
@@ -173,6 +188,7 @@ final class MacOSPresentationController {
       layout: layout,
       revision: revision
     )
+    extendDisplayLinkIdleGrace()
     logLayoutTrace(
       event: "display-link-pending",
       revision: revision,
@@ -186,7 +202,7 @@ final class MacOSPresentationController {
     guard let request = latestLayoutRefreshRequest else {
       layoutSkipCount += 1
       layoutSkipRate.record()
-      if !layoutRefreshRunning {
+      if !layoutRefreshRunning && !shouldKeepDisplayLinkWarm() {
         displayLink.stop()
       }
       return
@@ -217,6 +233,8 @@ final class MacOSPresentationController {
         case .applied:
           self.layoutDrawCount += 1
           self.layoutDrawRate.record()
+        case .deferredToPlayback:
+          self.layoutDeferredToPlaybackCount += 1
         case .stale:
           self.layoutStaleDropCount += 1
         case .transientMiss:
@@ -243,8 +261,9 @@ final class MacOSPresentationController {
           outcome: outcome.profilerName
         )
         if self.latestLayoutRefreshRequest != nil {
+          self.extendDisplayLinkIdleGrace()
           self.displayLink.start()
-        } else {
+        } else if !self.shouldKeepDisplayLinkWarm() {
           self.displayLink.stop()
         }
       }
@@ -275,7 +294,18 @@ final class MacOSPresentationController {
       return .stale
     }
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
+    if context.playback.currentIsPlaying(player: player) {
+      return .deferredToPlayback
+    }
     return .applied
+  }
+
+  private func extendDisplayLinkIdleGrace() {
+    displayLinkIdleUntilNs = DispatchTime.now().uptimeNanoseconds + displayLinkIdleGraceNs
+  }
+
+  private func shouldKeepDisplayLinkWarm() -> Bool {
+    DispatchTime.now().uptimeNanoseconds < displayLinkIdleUntilNs
   }
 
   private func nextLayoutRevision() -> UInt64 {
@@ -372,6 +402,7 @@ private struct LayoutRefreshRequest {
 
 private enum LayoutRefreshOutcome {
   case applied
+  case deferredToPlayback
   case stale
   case transientMiss
 
@@ -379,6 +410,8 @@ private enum LayoutRefreshOutcome {
     switch self {
     case .applied:
       return "applied"
+    case .deferredToPlayback:
+      return "deferred-to-playback"
     case .stale:
       return "stale"
     case .transientMiss:
@@ -414,6 +447,12 @@ private final class MacOSViewportDisplayLink {
     lock.lock()
     defer { lock.unlock() }
     return refreshHz
+  }
+
+  var isRunning: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return running
   }
 
   init(onTick: @escaping () -> Void) {

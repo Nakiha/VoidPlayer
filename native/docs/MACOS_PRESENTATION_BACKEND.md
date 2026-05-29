@@ -47,17 +47,26 @@ Unsupported storage kinds, pixel-buffer mismatches, missing Metal state,
 `draw_frame` failures must update native presentation state and `lastDrawError`
 instead of silently reporting a healthy renderer.
 
-## Refresh And Failure Semantics
+## Viewport Refresh And Failure Semantics
 
 Swift refresh callers use
 `VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(...)` for seek, step,
-layout, startup, and paused redraw refreshes. The call:
+startup, EOF, and paused redraw refreshes. The call:
 
 - requires a renderer-owned target;
 - asks shared native renderer code to redraw the current frame;
 - waits on completion keyed by target generation, upload count, failure count,
   and last error;
 - returns success, explicit failure, or timeout.
+
+Viewport pan/zoom does not install a Swift-side frame pump. Swift submits the
+latest layout intent and keeps the `CVDisplayLink` warm only long enough to
+coalesce input. While playback is running, native records the layout revision
+and defers drawing to the next normal PTS present, so a playing frame carries
+the newest layout without an extra cached redraw. Paused, EOF, startup, seek,
+and step refreshes may use display-link ticks to redraw the cached frame, but
+the renderer still decides whether the tick is skipped, drawn, failed, or
+deferred to playback.
 
 `VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(...)` and the older
 `VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(...)` compatibility path
@@ -99,6 +108,7 @@ The macOS runner should report health from native state fields, including:
 - `targetWidth` / `targetHeight`
 - `uploadStorageKind`
 - upload/failure counters
+- layout intent/present/deferred counters
 - cadence counters such as duplicate PTS, large PTS gaps, host interval samples,
   host interval max/p95, drop/error aliases, and renderer-owned presentation
   ratio

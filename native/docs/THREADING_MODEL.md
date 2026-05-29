@@ -66,6 +66,9 @@ NativePlayer / Renderer command surface
 - Calls `PresentationBackend::draw_frame()` for normal playback, paused redraw,
   layout refresh, seek refresh, step refresh, capture preparation, and EOF
   settling.
+- During playback, layout changes are consumed by the next normal present; the
+  render thread does not publish an extra cached redraw for every pan/zoom
+  intent.
 - Publishes success/failure state and frame callbacks after releasing renderer
   locks.
 - Does not call public lifecycle APIs and never joins itself.
@@ -76,9 +79,13 @@ NativePlayer / Renderer command surface
   through the Flutter texture descriptor callback.
 - macOS runner owns Cocoa, sandbox file access, platform channels, Flutter
   texture registration, `CVPixelBuffer` lifecycle, and frame notification.
-- macOS refresh calls install or validate the renderer-owned target, release the
-  Swift texture lock, then request native refresh completion. Swift does not own
-  playback clock, seek, loop, layout, or decode policy.
+- macOS viewport pan/zoom submits only the latest layout intent. `CVDisplayLink`
+  coalesces input and keeps a short idle grace, but native decides whether the
+  tick is skipped, drawn, failed, or deferred to playback.
+- macOS seek/step/startup/paused/EOF refresh calls install or validate the
+  renderer-owned target, release the Swift texture lock, then request native
+  refresh completion. Swift does not own playback clock, seek, loop, layout, or
+  decode policy.
 
 ### Audio Path
 

@@ -419,8 +419,13 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let presentationFrames = presentationState.diagnosticMap()
     let perf = nativePlayer?.performanceStats() ?? [:]
     let scheduler = nativePlayer?.presentationSchedulerStats() ?? [:]
+    let presentedCount = int64Value(presentationFrames, "nativeFramePresentationCount")
+    let drawCount = int64Value(perf, "rendererDrawCount")
+    let drawsPerPresentedFrameX1000 = presentedCount > 0
+      ? drawCount * 1000 / presentedCount
+      : 0
     let summary = String(
-      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld",
+      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutDeferred=%lld nativeLayoutPresented=%lld drawPerFrameX1000=%lld layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld",
       playback.isPlaying ? 1 : 0,
       tracks.count,
       stringValue(viewport, "viewportClockSource", defaultValue: "unknown"),
@@ -431,6 +436,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       doubleValue(viewport, "layoutSubmitHz"),
       doubleValue(viewport, "layoutDrawHz"),
       doubleValue(viewport, "layoutSkipHz"),
+      int64Value(viewport, "viewportLayoutDeferredToPlaybackCount"),
+      int64Value(perf, "rendererLayoutPresentedCount"),
+      drawsPerPresentedFrameX1000,
       doubleValue(viewport, "layoutRefreshTotalP95Ms"),
       doubleValue(viewport, "layoutRefreshTotalLastMs"),
       doubleValue(callbacks, "frameAvailableHz"),
@@ -439,11 +447,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       doubleValue(callbacks, "macosFrameCallbackCoalescedHz"),
       doubleValue(callbacks, "macosFrameCallbackMainWaitLastMs"),
       doubleValue(callbacks, "macosFrameCallbackHandleLastMs"),
-      int64Value(presentationFrames, "nativeFramePresentationCount"),
+      presentedCount,
       int64Value(presentationFrames, "presentedFramePtsDuplicateCount"),
       int64Value(presentationFrames, "presentedFramePtsLargeGapCount"),
       int64Value(presentationFrames, "nativeFrameRendererOwnedRatioX1000"),
-      int64Value(perf, "rendererDrawCount"),
+      drawCount,
       int64Value(perf, "rendererDrawAvgUs"),
       int64Value(perf, "rendererDrawP95Us"),
       int64Value(perf, "rendererDrawBackendAvgUs"),

@@ -106,7 +106,8 @@ final class MacOSPlaybackController {
     }
     setTargetInstalled(texture.installNativePresentationTarget(
       player,
-      maxTrackSlots: maxTrackSlots
+      maxTrackSlots: maxTrackSlots,
+      refresh: false
     ))
   }
 

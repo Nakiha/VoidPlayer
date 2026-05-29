@@ -32,6 +32,13 @@ final class MacOSPresentationController {
   private var layoutDrawCount = 0
   private var layoutSkipCount = 0
   private var layoutStaleDropCount = 0
+  private let layoutIntentRate = MacOSRateWindow()
+  private let layoutSubmitRate = MacOSRateWindow()
+  private let layoutDrawRate = MacOSRateWindow()
+  private let layoutSkipRate = MacOSRateWindow()
+  private let layoutQueueDuration = MacOSDurationWindow()
+  private let layoutApplyDuration = MacOSDurationWindow()
+  private let layoutTotalDuration = MacOSDurationWindow()
 
   func resetLayout() {
     cancelPendingLayoutRefreshes()
@@ -43,6 +50,7 @@ final class MacOSPresentationController {
       return
     }
     layoutIntentCount += 1
+    layoutIntentRate.record()
     let revision = nextLayoutRevision()
     layout = nextLayout
     logLayoutTrace(
@@ -118,6 +126,22 @@ final class MacOSPresentationController {
     diagnostics["layoutDrawCount"] = layoutDrawCount
     diagnostics["layoutSkipCount"] = layoutSkipCount
     diagnostics["layoutStaleDropCount"] = layoutStaleDropCount
+    let intentHz = layoutIntentRate.rateHz()
+    let submitHz = layoutSubmitRate.rateHz()
+    let drawHz = layoutDrawRate.rateHz()
+    let skipHz = layoutSkipRate.rateHz()
+    diagnostics["layoutIntentHz"] = intentHz
+    diagnostics["layoutIntentHzX1000"] = Int(intentHz * 1000.0)
+    diagnostics["layoutSubmitHz"] = submitHz
+    diagnostics["layoutSubmitHzX1000"] = Int(submitHz * 1000.0)
+    diagnostics["layoutDrawHz"] = drawHz
+    diagnostics["layoutDrawHzX1000"] = Int(drawHz * 1000.0)
+    diagnostics["layoutSkipHz"] = skipHz
+    diagnostics["layoutSkipHzX1000"] = Int(skipHz * 1000.0)
+    diagnostics["layoutRefreshQueueP95Ms"] = layoutQueueDuration.p95Ms()
+    diagnostics["layoutRefreshApplyP95Ms"] = layoutApplyDuration.p95Ms()
+    diagnostics["layoutRefreshTotalP95Ms"] = layoutTotalDuration.p95Ms()
+    diagnostics["layoutRefreshTotalLastMs"] = layoutTotalDuration.lastMs()
     diagnostics["layoutRefreshRunning"] = layoutRefreshRunning
     diagnostics["layoutIntentPending"] = latestLayoutRefreshRequest != nil
     return diagnostics
@@ -161,6 +185,7 @@ final class MacOSPresentationController {
   private func processViewportDisplayTick() {
     guard let request = latestLayoutRefreshRequest else {
       layoutSkipCount += 1
+      layoutSkipRate.record()
       if !layoutRefreshRunning {
         displayLink.stop()
       }
@@ -168,11 +193,13 @@ final class MacOSPresentationController {
     }
     guard !layoutRefreshRunning else {
       layoutSkipCount += 1
+      layoutSkipRate.record()
       return
     }
     latestLayoutRefreshRequest = nil
     layoutRefreshRunning = true
     layoutSubmitCount += 1
+    layoutSubmitRate.record()
     logLayoutTrace(
       event: "submit",
       revision: request.revision,
@@ -189,6 +216,7 @@ final class MacOSPresentationController {
         switch outcome {
         case .applied:
           self.layoutDrawCount += 1
+          self.layoutDrawRate.record()
         case .stale:
           self.layoutStaleDropCount += 1
         case .transientMiss:
@@ -201,11 +229,17 @@ final class MacOSPresentationController {
           outcome: outcome.profilerName
         )
         self.layoutRefreshRunning = false
+        let queueDelayNs = startNs >= request.requestNs ? startNs - request.requestNs : 0
+        let applyNs = finishNs >= startNs ? finishNs - startNs : 0
+        let totalNs = DispatchTime.now().uptimeNanoseconds - request.requestNs
+        self.layoutQueueDuration.record(queueDelayNs)
+        self.layoutApplyDuration.record(applyNs)
+        self.layoutTotalDuration.record(totalNs)
         self.logLayoutProfiler(
           route: "display-link-layout",
           requestNs: request.requestNs,
-          queueDelayNs: startNs >= request.requestNs ? startNs - request.requestNs : 0,
-          applyNs: finishNs >= startNs ? finishNs - startNs : 0,
+          queueDelayNs: queueDelayNs,
+          applyNs: applyNs,
           outcome: outcome.profilerName
         )
         if self.latestLayoutRefreshRequest != nil {
@@ -364,6 +398,8 @@ private final class MacOSViewportDisplayLink {
   private var source = "stopped"
   private var tickCount = 0
   private var deliveredTickCount = 0
+  private let tickRate = MacOSRateWindow()
+  private let deliveredTickRate = MacOSRateWindow()
   private var lastCallbackNs: UInt64 = 0
   private var refreshHz = 0.0
   private var intervalsNs: [UInt64] = []
@@ -441,6 +477,10 @@ private final class MacOSViewportDisplayLink {
       "displayRefreshHzEstimateX1000": Int(refreshHz * 1000.0),
       "displayTickCount": tickCount,
       "displayDeliveredTickCount": deliveredTickCount,
+      "displayTickHz": tickRate.rateHz(),
+      "displayTickHzX1000": Int(tickRate.rateHz() * 1000.0),
+      "displayDeliveredTickHz": deliveredTickRate.rateHz(),
+      "displayDeliveredTickHzX1000": Int(deliveredTickRate.rateHz() * 1000.0),
       "viewportTickP95Ms": intervalP95MsLocked(),
     ]
   }
@@ -520,6 +560,7 @@ private final class MacOSViewportDisplayLink {
       return
     }
     tickCount += 1
+    tickRate.record(nowNs: nowNs)
     if lastCallbackNs > 0, nowNs > lastCallbackNs {
       let interval = nowNs - lastCallbackNs
       intervalsNs.append(interval)
@@ -544,6 +585,7 @@ private final class MacOSViewportDisplayLink {
       self.lock.lock()
       self.mainTickScheduled = false
       self.deliveredTickCount += 1
+      self.deliveredTickRate.record()
       let shouldDeliver = self.running
       self.lock.unlock()
       if shouldDeliver {

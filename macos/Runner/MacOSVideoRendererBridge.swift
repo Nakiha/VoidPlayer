@@ -16,7 +16,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private let playback = MacOSPlaybackController()
   private let transport = MacOSTransportController()
   private let frameCallbackProfiler = MacOSFrameCallbackProfiler()
+  private let frameAvailableRate = MacOSRateWindow()
   private let coalescedFrameCallbackDelayMs = 8
+  private var frameAvailableCount = 0
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.lifecycle = MacOSPlayerLifecycleController(textureRegistry: textureRegistry)
@@ -182,7 +184,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         trackCount: tracks.count,
         presentationTargetInstalled: playback.targetInstalled,
         nativeEventDiagnostics: nativeEvents.diagnosticMap(),
-        frameCallbackDiagnostics: frameCallbackProfiler.diagnosticMap(),
+        frameCallbackDiagnostics: frameCallbackDiagnostics(),
         viewportDiagnostics: presentation.diagnosticMap(),
         presentationDiagnostics: presentationState.diagnosticMap()
       ))
@@ -256,7 +258,18 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func markFrameAvailable() {
+    frameAvailableCount += 1
+    frameAvailableRate.record()
     lifecycle.markFrameAvailable()
+  }
+
+  private func frameCallbackDiagnostics() -> [String: Any] {
+    var diagnostics = frameCallbackProfiler.diagnosticMap()
+    let frameAvailableHz = frameAvailableRate.rateHz()
+    diagnostics["frameAvailableCount"] = frameAvailableCount
+    diagnostics["frameAvailableHz"] = frameAvailableHz
+    diagnostics["frameAvailableHzX1000"] = Int(frameAvailableHz * 1000.0)
+    return diagnostics
   }
 
   private func activeDurationUs() -> Int {

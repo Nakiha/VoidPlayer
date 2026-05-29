@@ -336,6 +336,7 @@ private:
     /// Caller must hold state_mutex_.
     void enter_terminal_render_loop_error_locked(const char* reason);
     void reset_presentation_backend_metrics();
+    void record_presentation_draw_timing(uint64_t total_us, uint64_t backend_us);
     std::function<void(const char*)> frame_failure_callback_snapshot() const;
     std::string presentation_backend_last_error() const;
     void assign_missing_track_generations_locked();
@@ -372,6 +373,11 @@ private:
     std::atomic<bool> shutting_down_{false};
     std::atomic<RendererDeviceState> device_state_{RendererDeviceState::Ready};
     struct PresentationBackendMetricCounters {
+        std::atomic<uint64_t> draw_count{0};
+        std::atomic<uint64_t> draw_total_us{0};
+        std::atomic<uint64_t> draw_max_us{0};
+        std::atomic<uint64_t> draw_backend_total_us{0};
+        std::atomic<uint64_t> draw_backend_max_us{0};
         std::atomic<uint64_t> render_wait_us{0};
         std::atomic<uint64_t> render_wait_count{0};
         std::atomic<uint64_t> frame_copy_us{0};
@@ -383,6 +389,9 @@ private:
         std::atomic<uint64_t> texture_sharing_failure_count{0};
     };
     mutable PresentationBackendMetricCounters presentation_backend_metrics_;
+    mutable std::mutex presentation_draw_samples_mutex_;
+    std::vector<uint64_t> presentation_draw_total_samples_us_;
+    std::vector<uint64_t> presentation_draw_backend_samples_us_;
 
     // Renderer lock contract is documented in native/docs/THREADING_MODEL.md.
     // Allowed nesting: lifecycle_mutex_ -> state_mutex_ -> device_mutex_ ->

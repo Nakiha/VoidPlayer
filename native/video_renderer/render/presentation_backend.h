@@ -67,6 +67,13 @@ struct PresentationBackendStats {
 };
 
 struct PresentationBackendMetrics {
+    uint64_t draw_count = 0;
+    uint64_t draw_total_us = 0;
+    uint64_t draw_max_us = 0;
+    uint64_t draw_p95_us = 0;
+    uint64_t draw_backend_total_us = 0;
+    uint64_t draw_backend_max_us = 0;
+    uint64_t draw_backend_p95_us = 0;
     uint64_t render_wait_us = 0;
     uint64_t render_wait_count = 0;
     uint64_t frame_copy_us = 0;

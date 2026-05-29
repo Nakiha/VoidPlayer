@@ -133,6 +133,13 @@ extension MacOSNativePlayerSession {
         "rendererOwnedStagingAllocationCount": 0,
         "rendererOwnedStagingReuseCount": 0,
         "rendererOwnedStagingMaxBytes": 0,
+        "rendererDrawCount": 0,
+        "rendererDrawAvgUs": 0,
+        "rendererDrawMaxUs": 0,
+        "rendererDrawP95Us": 0,
+        "rendererDrawBackendAvgUs": 0,
+        "rendererDrawBackendMaxUs": 0,
+        "rendererDrawBackendP95Us": 0,
       ]
     }
     let maxInt64 = UInt64(Int64.max)
@@ -195,6 +202,13 @@ extension MacOSNativePlayerSession {
       "rendererOwnedStagingMaxBytes": Int64(
         min(UInt64(stats.renderer_owned_staging_max_bytes), maxInt64)
       ),
+      "rendererDrawCount": Int64(min(UInt64(stats.renderer_draw_count), maxInt64)),
+      "rendererDrawAvgUs": Int64(stats.renderer_draw_avg_us),
+      "rendererDrawMaxUs": Int64(stats.renderer_draw_max_us),
+      "rendererDrawP95Us": Int64(stats.renderer_draw_p95_us),
+      "rendererDrawBackendAvgUs": Int64(stats.renderer_draw_backend_avg_us),
+      "rendererDrawBackendMaxUs": Int64(stats.renderer_draw_backend_max_us),
+      "rendererDrawBackendP95Us": Int64(stats.renderer_draw_backend_p95_us),
     ]
   }
 

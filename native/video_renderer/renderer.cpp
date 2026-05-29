@@ -52,6 +52,25 @@ uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
             std::chrono::steady_clock::now() - start).count());
 }
 
+uint64_t percentile_95_us(std::vector<uint64_t> samples) {
+    if (samples.empty()) {
+        return 0;
+    }
+    std::sort(samples.begin(), samples.end());
+    const auto index = std::min(
+        samples.size() - 1,
+        static_cast<size_t>(std::ceil(static_cast<double>(samples.size()) * 0.95) - 1.0));
+    return samples[index];
+}
+
+void atomic_fetch_max(std::atomic<uint64_t>& target, uint64_t value) {
+    auto current = target.load(std::memory_order_relaxed);
+    while (value > current &&
+           !target.compare_exchange_weak(
+               current, value, std::memory_order_relaxed, std::memory_order_relaxed)) {
+    }
+}
+
 bool profiler_enabled(const char* env_name) {
     const char* value = std::getenv(env_name);
     return value && value[0] != '\0' && std::strcmp(value, "0") != 0 &&
@@ -413,6 +432,11 @@ void Renderer::release_resources_locked() {
 }
 
 void Renderer::reset_presentation_backend_metrics() {
+    presentation_backend_metrics_.draw_count.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.draw_total_us.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.draw_max_us.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.draw_backend_total_us.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.draw_backend_max_us.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.render_wait_us.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.render_wait_count.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.frame_copy_us.store(0, std::memory_order_relaxed);
@@ -422,6 +446,42 @@ void Renderer::reset_presentation_backend_metrics() {
     presentation_backend_metrics_.shared_texture_resize_count.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.device_lost_count.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.texture_sharing_failure_count.store(0, std::memory_order_relaxed);
+    {
+        std::lock_guard<std::mutex> lock(presentation_draw_samples_mutex_);
+        presentation_draw_total_samples_us_.clear();
+        presentation_draw_backend_samples_us_.clear();
+    }
+}
+
+void Renderer::record_presentation_draw_timing(uint64_t total_us, uint64_t backend_us) {
+    presentation_backend_metrics_.draw_count.fetch_add(1, std::memory_order_relaxed);
+    presentation_backend_metrics_.draw_total_us.fetch_add(total_us, std::memory_order_relaxed);
+    presentation_backend_metrics_.draw_backend_total_us.fetch_add(
+        backend_us, std::memory_order_relaxed);
+    atomic_fetch_max(presentation_backend_metrics_.draw_max_us, total_us);
+    atomic_fetch_max(presentation_backend_metrics_.draw_backend_max_us, backend_us);
+    {
+        std::lock_guard<std::mutex> lock(presentation_draw_samples_mutex_);
+        presentation_draw_total_samples_us_.push_back(total_us);
+        presentation_draw_backend_samples_us_.push_back(backend_us);
+        static constexpr size_t kMaxDrawTimingSamples = 240;
+        if (presentation_draw_total_samples_us_.size() > kMaxDrawTimingSamples) {
+            const auto remove_count =
+                presentation_draw_total_samples_us_.size() - kMaxDrawTimingSamples;
+            presentation_draw_total_samples_us_.erase(
+                presentation_draw_total_samples_us_.begin(),
+                presentation_draw_total_samples_us_.begin() +
+                    static_cast<std::vector<uint64_t>::difference_type>(remove_count));
+        }
+        if (presentation_draw_backend_samples_us_.size() > kMaxDrawTimingSamples) {
+            const auto remove_count =
+                presentation_draw_backend_samples_us_.size() - kMaxDrawTimingSamples;
+            presentation_draw_backend_samples_us_.erase(
+                presentation_draw_backend_samples_us_.begin(),
+                presentation_draw_backend_samples_us_.begin() +
+                    static_cast<std::vector<uint64_t>::difference_type>(remove_count));
+        }
+    }
 }
 
 std::function<void(const char*)> Renderer::frame_failure_callback_snapshot() const {
@@ -1389,6 +1449,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
         frame_failure_callback(frame_failure_error.c_str());
     }
     const auto total_us = elapsed_us_since(profiler_start);
+    record_presentation_draw_timing(total_us, backend_us);
     log_viewport_draw_trace("present_frame",
                             snapshot,
                             snapshot_layout_revision,
@@ -1494,6 +1555,8 @@ void Renderer::redraw_layout() {
         !shutting_down_.load(std::memory_order_acquire)) {
         frame_failure_callback(frame_failure_error.c_str());
     }
+    const auto total_us = elapsed_us_since(profiler_start);
+    record_presentation_draw_timing(total_us, backend_us);
     log_viewport_draw_trace("redraw_layout",
                             snapshot,
                             snapshot_layout_revision,
@@ -1503,7 +1566,7 @@ void Renderer::redraw_layout() {
                             stale_layout_after_draw,
                             callback_available,
                             callback_published,
-                            elapsed_us_since(profiler_start),
+                            total_us,
                             snapshot_us,
                             backend_us);
 }
@@ -2832,6 +2895,16 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
 
 PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
     PresentationBackendMetrics result;
+    result.draw_count =
+        presentation_backend_metrics_.draw_count.load(std::memory_order_relaxed);
+    result.draw_total_us =
+        presentation_backend_metrics_.draw_total_us.load(std::memory_order_relaxed);
+    result.draw_max_us =
+        presentation_backend_metrics_.draw_max_us.load(std::memory_order_relaxed);
+    result.draw_backend_total_us =
+        presentation_backend_metrics_.draw_backend_total_us.load(std::memory_order_relaxed);
+    result.draw_backend_max_us =
+        presentation_backend_metrics_.draw_backend_max_us.load(std::memory_order_relaxed);
     result.render_wait_us =
         presentation_backend_metrics_.render_wait_us.load(std::memory_order_relaxed);
     result.render_wait_count =
@@ -2850,6 +2923,11 @@ PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
         presentation_backend_metrics_.device_lost_count.load(std::memory_order_relaxed);
     result.texture_sharing_failure_count =
         presentation_backend_metrics_.texture_sharing_failure_count.load(std::memory_order_relaxed);
+    {
+        std::lock_guard<std::mutex> lock(presentation_draw_samples_mutex_);
+        result.draw_p95_us = percentile_95_us(presentation_draw_total_samples_us_);
+        result.draw_backend_p95_us = percentile_95_us(presentation_draw_backend_samples_us_);
+    }
     return result;
 }
 

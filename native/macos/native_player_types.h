@@ -150,6 +150,13 @@ typedef struct VPMacOSNativePlayerPerfStats {
   uint64_t renderer_owned_staging_allocation_count;
   uint64_t renderer_owned_staging_reuse_count;
   uint64_t renderer_owned_staging_max_bytes;
+  uint64_t renderer_draw_count;
+  int64_t renderer_draw_avg_us;
+  int64_t renderer_draw_max_us;
+  int64_t renderer_draw_p95_us;
+  int64_t renderer_draw_backend_avg_us;
+  int64_t renderer_draw_backend_max_us;
+  int64_t renderer_draw_backend_p95_us;
 } VPMacOSNativePlayerPerfStats;
 
 typedef struct VPMacOSNativeAudioDiagnostics {

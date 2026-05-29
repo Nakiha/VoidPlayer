@@ -342,6 +342,7 @@ int VPMacOSNativePlayerCopyPerfStats(
       out->cpu_frame_memory_bytes = memory_stats.cpu_frame_bytes;
       out->packet_queue_memory_bytes = memory_stats.packet_queue_bytes;
       const auto backend_stats = player->renderer->presentation_backend_stats();
+      const auto backend_metrics = player->renderer->presentation_backend_metrics();
       out->renderer_owned_direct_yuv_upload_count =
           backend_stats.direct_yuv_upload_count;
       out->renderer_owned_cvpixelbuffer_upload_count =
@@ -362,6 +363,23 @@ int VPMacOSNativePlayerCopyPerfStats(
           backend_stats.staging_reuse_count;
       out->renderer_owned_staging_max_bytes =
           backend_stats.staging_max_bytes;
+      out->renderer_draw_count = backend_metrics.draw_count;
+      if (backend_metrics.draw_count > 0) {
+        out->renderer_draw_avg_us =
+            static_cast<int64_t>(backend_metrics.draw_total_us /
+                                 backend_metrics.draw_count);
+        out->renderer_draw_backend_avg_us =
+            static_cast<int64_t>(backend_metrics.draw_backend_total_us /
+                                 backend_metrics.draw_count);
+      }
+      out->renderer_draw_max_us =
+          static_cast<int64_t>(backend_metrics.draw_max_us);
+      out->renderer_draw_p95_us =
+          static_cast<int64_t>(backend_metrics.draw_p95_us);
+      out->renderer_draw_backend_max_us =
+          static_cast<int64_t>(backend_metrics.draw_backend_max_us);
+      out->renderer_draw_backend_p95_us =
+          static_cast<int64_t>(backend_metrics.draw_backend_p95_us);
     }
   }
   {

@@ -428,6 +428,17 @@ ScriptInstruction? _parseInstruction(
         time,
         const ClickMediaHeaderOverlayButton(),
       );
+    case 'CLICK_MEDIA_HEADER_REMOVE_BUTTON':
+      if (args.isEmpty) {
+        log.warning(
+          'CLICK_MEDIA_HEADER_REMOVE_BUTTON missing file_id argument: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        ClickMediaHeaderRemoveButton(int.parse(args[0])),
+      );
     case 'HOVER_MEDIA_HEADER_OVERLAY_BUTTON':
       return ScriptAutomationAction(
         time,

@@ -108,6 +108,13 @@ class ClickMediaHeaderOverlayButton extends AutomationAction {
     : super('CLICK_MEDIA_HEADER_OVERLAY_BUTTON');
 }
 
+class ClickMediaHeaderRemoveButton extends AutomationAction {
+  final int fileId;
+
+  const ClickMediaHeaderRemoveButton(this.fileId)
+    : super('CLICK_MEDIA_HEADER_REMOVE_BUTTON');
+}
+
 class HoverMediaHeaderOverlayButton extends AutomationAction {
   const HoverMediaHeaderOverlayButton()
     : super('HOVER_MEDIA_HEADER_OVERLAY_BUTTON');

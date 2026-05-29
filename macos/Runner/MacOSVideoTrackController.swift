@@ -120,9 +120,6 @@ final class MacOSVideoTrackController {
     }
 
     if backendName == MacOSVideoTrackPayload.nativeFormatName {
-      if fileId == 0 {
-        return MacOSVideoTrackRemoveResult(destroyPlayer: true, refreshCurrentFrame: false)
-      }
       nativePlayer?.removeTrack(fileId: fileId)
     }
 

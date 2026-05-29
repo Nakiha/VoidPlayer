@@ -11,6 +11,9 @@ import '../track_manager.dart';
 import 'analysis_overlay_controls.dart';
 import 'app_menu_combo.dart';
 
+Key mediaHeaderRemoveButtonKey(int fileId) =>
+    ValueKey('media-header-remove-$fileId');
+
 /// Bar of per-track media headers, placed between viewport and controls bar.
 ///
 /// Each header shows a combo box for switching media sources and a remove button,
@@ -25,7 +28,7 @@ class MediaHeaderBar extends StatelessWidget {
   final ValueChanged<AnalysisOverlayType> onAnalysisOverlayTypeChanged;
   final ValueChanged<Set<AnalysisOverlayLayer>> onAnalysisOverlayLayersChanged;
   final ValueChanged<double> onAnalysisOverlayOpacityChanged;
-  final void Function(int slotIndex) onRemoveClicked;
+  final void Function(int fileId) onRemoveClicked;
 
   const MediaHeaderBar({
     super.key,
@@ -391,7 +394,7 @@ class _MediaHeaderBarWithCache extends StatefulWidget {
   final ValueChanged<AnalysisOverlayType> onAnalysisOverlayTypeChanged;
   final ValueChanged<Set<AnalysisOverlayLayer>> onAnalysisOverlayLayersChanged;
   final ValueChanged<double> onAnalysisOverlayOpacityChanged;
-  final void Function(int slotIndex) onRemoveClicked;
+  final void Function(int fileId) onRemoveClicked;
 
   const _MediaHeaderBarWithCache({
     required this.entries,
@@ -429,6 +432,7 @@ class _MediaHeaderBarWithCacheState extends State<_MediaHeaderBarWithCache> {
                   if (i > 0) const SizedBox(width: 4),
                   Expanded(
                     child: _MediaHeader(
+                      key: ValueKey('media-header-${widget.entries[i].fileId}'),
                       slotIndex: i,
                       entries: widget.entries,
                       analysisDataSource: widget.analysisDataSource,
@@ -471,9 +475,10 @@ class _MediaHeader extends StatelessWidget {
   final ValueChanged<AnalysisOverlayType> onAnalysisOverlayTypeChanged;
   final ValueChanged<Set<AnalysisOverlayLayer>> onAnalysisOverlayLayersChanged;
   final ValueChanged<double> onAnalysisOverlayOpacityChanged;
-  final void Function(int slotIndex) onRemoveClicked;
+  final void Function(int fileId) onRemoveClicked;
 
   const _MediaHeader({
+    super.key,
     required this.slotIndex,
     required this.entries,
     required this.analysisDataSource,
@@ -490,6 +495,7 @@ class _MediaHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final entry = entries[slotIndex];
     return Container(
       height: 28,
       decoration: BoxDecoration(
@@ -523,7 +529,8 @@ class _MediaHeader extends StatelessWidget {
             width: 28,
             height: 28,
             child: IconButton(
-              onPressed: () => onRemoveClicked(slotIndex),
+              key: mediaHeaderRemoveButtonKey(entry.fileId),
+              onPressed: () => onRemoveClicked(entry.fileId),
               icon: const Icon(Icons.close, size: 14),
               tooltip: AppLocalizations.of(context)!.removeTrack,
               padding: EdgeInsets.zero,

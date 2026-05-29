@@ -287,6 +287,9 @@ class TestRunner {
       case ClickMediaHeaderOverlayButton():
         log.info('TestRunner: CLICK_MEDIA_HEADER_OVERLAY_BUTTON');
         testHarness.clickAnalysisOverlayButton();
+      case ClickMediaHeaderRemoveButton(:final fileId):
+        log.info('TestRunner: CLICK_MEDIA_HEADER_REMOVE_BUTTON fileId=$fileId');
+        testHarness.clickMediaHeaderRemoveButton(fileId);
       case HoverMediaHeaderOverlayButton():
         log.info('TestRunner: HOVER_MEDIA_HEADER_OVERLAY_BUTTON');
         testHarness.hoverAnalysisOverlayButton();

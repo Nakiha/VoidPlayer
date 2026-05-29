@@ -13,6 +13,7 @@ import 'package:window_manager/window_manager.dart' as wm;
 import '../../app_log.dart';
 import '../../native_player/native_player_protocol.dart';
 import '../../widgets/analysis_overlay_controls.dart';
+import '../../widgets/media_header.dart';
 
 class MainWindowTestHarness {
   final GlobalKey viewportKey;
@@ -214,6 +215,62 @@ class MainWindowTestHarness {
     log.info(
       'Test action: CLICK_MEDIA_HEADER_OVERLAY_BUTTON '
       'global=(${global.dx.toStringAsFixed(1)}, ${global.dy.toStringAsFixed(1)})',
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerAddedEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerDownEvent(
+        pointer: pointer,
+        position: global,
+        buttons: kPrimaryButton,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerUpEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerRemovedEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
+  void clickMediaHeaderRemoveButton(int fileId) {
+    final context = _findContextByKey(mediaHeaderRemoveButtonKey(fileId));
+    if (context == null) {
+      throw StateError(
+        'Media header remove button for fileId $fileId is not mounted',
+      );
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError(
+        'Media header remove button for fileId $fileId has no render box',
+      );
+    }
+
+    final local = Offset(
+      renderObject.size.width / 2,
+      renderObject.size.height / 2,
+    );
+    final global = renderObject.localToGlobal(local);
+    final pointer = _pointerId++;
+    log.info(
+      'Test action: CLICK_MEDIA_HEADER_REMOVE_BUTTON '
+      'fileId=$fileId global=(${global.dx.toStringAsFixed(1)}, '
+      '${global.dy.toStringAsFixed(1)})',
     );
     GestureBinding.instance.handlePointerEvent(
       PointerAddedEvent(

@@ -91,11 +91,7 @@ class MainWindowMediaHeader extends StatelessWidget {
       onAnalysisOverlayTypeChanged: actions.analysisOverlay.onTypeChanged,
       onAnalysisOverlayLayersChanged: actions.analysisOverlay.onLayersChanged,
       onAnalysisOverlayOpacityChanged: actions.analysisOverlay.onOpacityChanged,
-      onRemoveClicked: (slotIndex) {
-        if (slotIndex < tracks.length) {
-          mediaActions.onRemoveTrack(tracks[slotIndex].fileId);
-        }
-      },
+      onRemoveClicked: mediaActions.onRemoveTrack,
     );
   }
 }

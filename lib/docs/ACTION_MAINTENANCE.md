@@ -127,6 +127,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `STORE_VIEW_CENTER` | name | 记录归一化视图中心基线 |
 | `STORE_RESOURCE_USAGE` | name | 记录进程 RSS / 专用显存基线 |
 | `STORE_NATIVE_SEEK_COUNT` | name | 记录当前 native 插件 seek 日志计数 |
+| `CLICK_MEDIA_HEADER_REMOVE_BUTTON` | fileId | 点击指定 fileId 的 media header 移除按钮，覆盖真实按钮路径 |
 
 ## Assert 清单
 

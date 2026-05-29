@@ -13,6 +13,7 @@ struct MacOSPresentationContext {
 }
 
 final class MacOSPresentationController {
+  private let pausedLayoutRefreshIntervalNs: UInt64 = 16_000_000
   private(set) var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
   private let layoutRefreshQueue = DispatchQueue(
     label: "dev.nakiha.voidplayer.macos.layout-refresh",
@@ -24,6 +25,7 @@ final class MacOSPresentationController {
   private var layoutRequestCount = 0
   private var layoutImmediateCount = 0
   private var layoutQueuedCount = 0
+  private var lastPausedLayoutRefreshStartNs: UInt64 = 0
 
   func resetLayout() {
     cancelPendingLayoutRefreshes()
@@ -111,6 +113,7 @@ final class MacOSPresentationController {
   private func cancelPendingLayoutRefreshes() {
     layoutRefreshGeneration += 1
     latestLayoutRefreshRequest = nil
+    lastPausedLayoutRefreshStartNs = 0
     if layoutRefreshRunning {
       layoutRefreshQueue.sync {}
     }
@@ -120,6 +123,7 @@ final class MacOSPresentationController {
   private func invalidatePendingLayoutRefreshes() {
     layoutRefreshGeneration += 1
     latestLayoutRefreshRequest = nil
+    lastPausedLayoutRefreshStartNs = 0
   }
 
   private func requestCoalescedLayoutRefresh(
@@ -145,6 +149,20 @@ final class MacOSPresentationController {
       layoutRefreshRunning = false
       return
     }
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    if lastPausedLayoutRefreshStartNs > 0,
+       nowNs > lastPausedLayoutRefreshStartNs,
+       nowNs - lastPausedLayoutRefreshStartNs < pausedLayoutRefreshIntervalNs {
+      let delayNs = pausedLayoutRefreshIntervalNs - (nowNs - lastPausedLayoutRefreshStartNs)
+      DispatchQueue.main.asyncAfter(deadline: .now() + .nanoseconds(Int(delayNs))) {
+        [weak self] in
+        guard let self else { return }
+        self.runLatestLayoutRefresh(generation: self.layoutRefreshGeneration)
+      }
+      return
+    }
+    latestLayoutRefreshRequest = nil
+    lastPausedLayoutRefreshStartNs = nowNs
     layoutRefreshQueue.async { [weak self, request, generation] in
       let startNs = DispatchTime.now().uptimeNanoseconds
       let outcome = Self.performLayoutRefresh(request: request)
@@ -167,7 +185,7 @@ final class MacOSPresentationController {
             request.context.presentationState.recordMiss()
           }
         }
-        if generation != self.layoutRefreshGeneration {
+        if self.latestLayoutRefreshRequest != nil {
           self.runLatestLayoutRefresh(generation: self.layoutRefreshGeneration)
         } else {
           self.layoutRefreshRunning = false

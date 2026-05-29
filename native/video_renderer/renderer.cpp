@@ -40,6 +40,7 @@ static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout resp
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
 static constexpr auto kPlayingLayoutRedrawInterval = std::chrono::microseconds(16000);
+static constexpr auto kPausedLayoutRedrawInterval = std::chrono::microseconds(16000);
 
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
@@ -276,6 +277,7 @@ void Renderer::release_resources_locked() {
     last_decision_ = PresentDecision();
     presentation_scheduler_.reset();
     last_playing_layout_present_time_ = {};
+    last_paused_layout_present_time_ = {};
 
     tracks_.stop_all([this](size_t, TrackPipeline& track) {
         unregister_track_audio(track.file_id);
@@ -656,6 +658,7 @@ void Renderer::seek_internal(std::unique_lock<std::mutex>& state_lock,
         last_decision_ = PresentDecision();
         presentation_scheduler_.reset();
         last_playing_layout_present_time_ = {};
+        last_paused_layout_present_time_ = {};
     }
 }
 
@@ -1970,6 +1973,15 @@ void Renderer::render_loop_body() {
                 should_draw_preview = !preview_drawn_;
             }
             if (should_draw_preview) {
+                const auto now = std::chrono::steady_clock::now();
+                const bool paused_redraw_due =
+                    last_paused_layout_present_time_ ==
+                        std::chrono::steady_clock::time_point{} ||
+                    now - last_paused_layout_present_time_ >= kPausedLayoutRedrawInterval;
+                if (!paused_redraw_due) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
                 bool drawn = false;
 
                 // Try cached last frame first (for layout changes while paused)
@@ -2000,6 +2012,7 @@ void Renderer::render_loop_body() {
                 }
                 if (present_decision_has_frame(cached_decision)) {
                     present_frame(cached_decision);
+                    last_paused_layout_present_time_ = std::chrono::steady_clock::now();
                     drawn = true;
                     spdlog::debug("[Renderer] Paused frame (cached): pts={:.3f}s",
                                   cached_pts_us.has_value()
@@ -2019,6 +2032,7 @@ void Renderer::render_loop_body() {
                     if (snapshot.ready_to_present) {
                         auto& preview = snapshot.decision;
                         present_frame(preview);
+                        last_paused_layout_present_time_ = std::chrono::steady_clock::now();
                         bool preserve_requested_clock = false;
                         int ref = -1;
                         int64_t ref_offset_us = 0;
@@ -2524,6 +2538,7 @@ int Renderer::add_track_internal(const std::string& video_path,
         last_decision_.track_generations[slot] = 0;
         presentation_scheduler_.reset();
         last_playing_layout_present_time_ = {};
+        last_paused_layout_present_time_ = {};
     }
 
     if (seek_result.applied) {
@@ -2593,6 +2608,7 @@ void Renderer::remove_track(int file_id) {
         preview_drawn_ = false;
         presentation_scheduler_.reset();
         last_playing_layout_present_time_ = {};
+        last_paused_layout_present_time_ = {};
         remaining = tracks_.count();
 
         finish_track_removal_playback(

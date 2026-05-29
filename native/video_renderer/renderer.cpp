@@ -38,6 +38,11 @@ namespace vr {
 // Max render-loop sleep for playback deadline responsiveness. Viewport layout
 // redraw cadence is driven by the platform display clock on macOS.
 static constexpr int64_t MAX_SLEEP_US = 8000;
+// Avoid publishing a cached-frame layout redraw immediately before a video
+// frame that is already due. That close double-publish creates visible judder
+// during interactive pan/zoom because Flutter receives two texture frames with
+// different PTS within only a few milliseconds.
+static constexpr int64_t kLayoutRedrawNearPresentDeadlineUs = 5000;
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
 
@@ -2247,13 +2252,43 @@ void Renderer::render_loop_body() {
             // Redraw the cached frame once per layout revision instead of
             // publishing duplicate video frames on every render-loop poll.
             bool should_redraw = false;
+            bool deferred_for_near_present = false;
+            int64_t near_present_sleep_us = -1;
+            uint64_t deferred_layout_revision = 0;
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 should_redraw =
                     !preview_drawn_ && present_decision_has_frame(last_decision_);
+                if (should_redraw && playing_snapshot) {
+                    const int64_t current_pts = playback_->clock().current_pts_us();
+                    const auto next_event_pts =
+                        compute_next_frame_event_pts_us(tracks_, current_pts);
+                    if (next_event_pts.has_value()) {
+                        const auto sleep_for =
+                            render_loop_controller_.frame_deadline_sleep(
+                                current_pts,
+                                *next_event_pts,
+                                playback_->clock().speed(),
+                                MAX_SLEEP_US);
+                        near_present_sleep_us = sleep_for.count();
+                        if (near_present_sleep_us > 0 &&
+                            near_present_sleep_us <=
+                                kLayoutRedrawNearPresentDeadlineUs) {
+                            should_redraw = false;
+                            deferred_for_near_present = true;
+                            deferred_layout_revision = layout_revision_;
+                        }
+                    }
+                }
             }
             if (should_redraw) {
                 redraw_layout();
+            } else if (deferred_for_near_present && viewport_trace_enabled()) {
+                spdlog::info(
+                    "[ViewportTrace] native source=redraw_layout_skip reason=near-present "
+                    "sleep_us={} layout_rev={}",
+                    near_present_sleep_us,
+                    deferred_layout_revision);
             }
         }
 

@@ -32,6 +32,10 @@ final class MacOSPresentationController {
   private var layoutDrawCount = 0
   private var layoutSkipCount = 0
   private var layoutStaleDropCount = 0
+  private var layoutStaleAfterDrawDropCount = 0
+  private var layoutPublishedCount = 0
+  private var layoutRefreshSupersededCount = 0
+  private var layoutCallbackPublicationSuppressedCount = 0
   private var layoutDeferredToPlaybackCount = 0
   private var displayLinkIdleUntilNs: UInt64 = 0
   private let displayLinkIdleGraceNs: UInt64 = 250_000_000
@@ -137,6 +141,11 @@ final class MacOSPresentationController {
     diagnostics["layoutDrawCount"] = layoutDrawCount
     diagnostics["layoutSkipCount"] = layoutSkipCount
     diagnostics["layoutStaleDropCount"] = layoutStaleDropCount
+    diagnostics["layoutStaleAfterDrawDropCount"] = layoutStaleAfterDrawDropCount
+    diagnostics["layoutPublishedCount"] = layoutPublishedCount
+    diagnostics["layoutRefreshSupersededCount"] = layoutRefreshSupersededCount
+    diagnostics["layoutCallbackPublicationSuppressedCount"] =
+      layoutCallbackPublicationSuppressedCount
     diagnostics["viewportLayoutDeferredToPlaybackCount"] = layoutDeferredToPlaybackCount
     diagnostics["viewportClockWarm"] = displayLink.isRunning
     diagnostics["displayIdleGraceMs"] = Int(displayLinkIdleGraceNs / 1_000_000)
@@ -161,6 +170,14 @@ final class MacOSPresentationController {
     return diagnostics
   }
 
+  func shouldSuppressPausedNativeCallbackPublication() -> Bool {
+    layoutRefreshRunning || latestLayoutRefreshRequest != nil
+  }
+
+  func recordLayoutCallbackPublicationSuppressed() {
+    layoutCallbackPublicationSuppressedCount += 1
+  }
+
   private func cancelPendingLayoutRefreshes() {
     invalidateLayoutRevision()
     latestLayoutRefreshRequest = nil
@@ -182,6 +199,9 @@ final class MacOSPresentationController {
           context.nativeTexture != nil else {
       context.markFrameAvailable()
       return
+    }
+    if latestLayoutRefreshRequest != nil || layoutRefreshRunning {
+      layoutRefreshSupersededCount += 1
     }
     latestLayoutRefreshRequest = LayoutRefreshRequest(
       context: context,
@@ -233,11 +253,14 @@ final class MacOSPresentationController {
         case .applied:
           request.context.markFrameAvailable()
           self.layoutDrawCount += 1
+          self.layoutPublishedCount += 1
           self.layoutDrawRate.record()
         case .deferredToPlayback:
           self.layoutDeferredToPlaybackCount += 1
         case .stale:
           self.layoutStaleDropCount += 1
+        case .staleAfterDraw:
+          self.layoutStaleAfterDrawDropCount += 1
         case .transientMiss:
           request.context.presentationState.recordMiss()
         }
@@ -301,7 +324,18 @@ final class MacOSPresentationController {
     guard let texture = context.nativeTexture else {
       return .transientMiss
     }
-    return MacOSNativeFrameRefresh.refreshCurrentFrameAfterLayoutChange(
+    guard let pendingFrame = MacOSNativeFrameRefresh.drawCurrentFrameForLayoutRefresh(
+      player: player,
+      texture: texture,
+      maxTrackSlots: context.maxTrackSlots
+    ) else {
+      return .transientMiss
+    }
+    guard isCurrentLayoutRequest(request) else {
+      return .staleAfterDraw
+    }
+    return MacOSNativeFrameRefresh.publishLayoutRefreshFrame(
+      pendingFrame,
       player: player,
       texture: texture,
       maxTrackSlots: context.maxTrackSlots,
@@ -358,7 +392,7 @@ final class MacOSPresentationController {
       layoutSubmitCount,
       layoutDrawCount,
       layoutSkipCount,
-      layoutStaleDropCount,
+      layoutStaleDropCount + layoutStaleAfterDrawDropCount,
       layoutRefreshRunning ? 1 : 0,
       latestLayoutRefreshRequest != nil ? 1 : 0,
       displayLink.clockSource,
@@ -389,7 +423,7 @@ final class MacOSPresentationController {
       layoutSubmitCount,
       layoutDrawCount,
       layoutSkipCount,
-      layoutStaleDropCount,
+      layoutStaleDropCount + layoutStaleAfterDrawDropCount,
       Self.ms(totalNs),
       Self.ms(queueDelayNs),
       Self.ms(applyNs),
@@ -414,6 +448,7 @@ private enum LayoutRefreshOutcome {
   case applied
   case deferredToPlayback
   case stale
+  case staleAfterDraw
   case transientMiss
 
   var profilerName: String {
@@ -424,6 +459,8 @@ private enum LayoutRefreshOutcome {
       return "deferred-to-playback"
     case .stale:
       return "stale"
+    case .staleAfterDraw:
+      return "stale-after-draw"
     case .transientMiss:
       return "transient-miss"
     }

@@ -85,6 +85,80 @@ enum MacOSNativeFrameRefresh {
     }
   }
 
+  static func drawCurrentFrameForLayoutRefresh(
+    player: MacOSNativePlayerSession,
+    texture: MacOSFlutterTextureBridge,
+    maxTrackSlots: Int
+  ) -> MacOSPendingNativeFrame? {
+    let startNs = DispatchTime.now().uptimeNanoseconds
+    do {
+      let pending = try texture.drawFromNativePlayer(
+        player,
+        maxTrackSlots: maxTrackSlots,
+        waitTimeoutMs: 100
+      )
+      logRefreshProfiler(
+        route: "layout-draw",
+        startNs: startNs,
+        timeoutMs: 100,
+        result: "ok",
+        ptsUs: pending.info.ptsUs
+      )
+      return pending
+    } catch {
+      logRefreshProfiler(
+        route: "layout-draw",
+        startNs: startNs,
+        timeoutMs: 100,
+        result: "error:\(error)",
+        ptsUs: -1
+      )
+      return nil
+    }
+  }
+
+  static func publishLayoutRefreshFrame(
+    _ pending: MacOSPendingNativeFrame,
+    player: MacOSNativePlayerSession,
+    texture: MacOSFlutterTextureBridge,
+    maxTrackSlots: Int,
+    presentationState: MacOSFramePresentationState,
+    framePump: MacOSNativeFramePump
+  ) -> Bool {
+    let startNs = DispatchTime.now().uptimeNanoseconds
+    do {
+      try texture.publishPendingNativeFrame(
+        pending,
+        player: player,
+        maxTrackSlots: maxTrackSlots
+      )
+      framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
+      presentationState.recordFrame(pending.info)
+      logRefreshProfiler(
+        route: "layout-publish",
+        startNs: startNs,
+        timeoutMs: 0,
+        result: "ok",
+        ptsUs: pending.info.ptsUs
+      )
+      return true
+    } catch {
+      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
+        presentationState.recordMiss()
+      } else {
+        NSLog("VoidPlayer macOS native layout publish failed: \(error)")
+      }
+      logRefreshProfiler(
+        route: "layout-publish",
+        startNs: startNs,
+        timeoutMs: 0,
+        result: "error:\(error)",
+        ptsUs: pending.info.ptsUs
+      )
+      return false
+    }
+  }
+
   static func stepAndRefresh(
     player: MacOSNativePlayerSession,
     texture: MacOSFlutterTextureBridge,

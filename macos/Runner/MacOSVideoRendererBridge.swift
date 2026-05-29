@@ -351,20 +351,32 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private func processNativeFrameCallback(enqueueNs: UInt64) {
     let startNs = DispatchTime.now().uptimeNanoseconds
-    _ = playback.syncPlayingState(player: nativePlayer)
+    let nativePlaying = playback.syncPlayingState(player: nativePlayer)
     frameCallbackProfiler.recordMainStart(enqueueNs: enqueueNs, startNs: startNs)
-    playback.handleFrameCallback(
-      player: nativePlayer,
-      texture: nativeTexture,
-      maxTrackSlots: tracks.activeSlotCapacity(),
-      nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
-      presentationState: presentationState,
-      markFrameAvailable: markFrameAvailable
-    )
+    let suppressPausedLayoutPublication =
+      !nativePlaying &&
+      backendName == MacOSVideoTrackPayload.nativeFormatName &&
+      presentation.shouldSuppressPausedNativeCallbackPublication()
+    if suppressPausedLayoutPublication {
+      presentation.recordLayoutCallbackPublicationSuppressed()
+    } else {
+      playback.handleFrameCallback(
+        player: nativePlayer,
+        texture: nativeTexture,
+        maxTrackSlots: tracks.activeSlotCapacity(),
+        nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
+        presentationState: presentationState,
+        markFrameAvailable: markFrameAvailable
+      )
+    }
     let endNs = DispatchTime.now().uptimeNanoseconds
-    logFrameCallbackProfiler(enqueueNs: enqueueNs, startNs: startNs, endNs: endNs)
+    logFrameCallbackProfiler(
+      enqueueNs: enqueueNs,
+      startNs: startNs,
+      endNs: endNs,
+      suppressed: suppressPausedLayoutPublication
+    )
     if let nextEnqueueNs = frameCallbackProfiler.finishProcessing(endNs: endNs) {
-      let nativePlaying = playback.syncPlayingState(player: nativePlayer)
       DispatchQueue.main.asyncAfter(
         deadline: .now() + .milliseconds(coalescedFrameCallbackDelayMs)
       ) { [weak self] in
@@ -377,26 +389,33 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func logFrameCallbackProfiler(enqueueNs: UInt64, startNs: UInt64, endNs: UInt64) {
+  private func logFrameCallbackProfiler(
+    enqueueNs: UInt64,
+    startNs: UInt64,
+    endNs: UInt64,
+    suppressed: Bool
+  ) {
     let waitNs = startNs >= enqueueNs ? startNs - enqueueNs : 0
     let handleNs = endNs >= startNs ? endNs - startNs : 0
     MacOSProfilerLog.trace(String(
-      format: "VoidPlayer viewport trace swift event=frame-callback waitMs=%.2f handleMs=%.2f playing=%d tracks=%d native=%d",
+      format: "VoidPlayer viewport trace swift event=frame-callback waitMs=%.2f handleMs=%.2f playing=%d tracks=%d native=%d suppressed=%d",
       Double(waitNs) / 1_000_000.0,
       Double(handleNs) / 1_000_000.0,
       playback.isPlaying ? 1 : 0,
       tracks.activeSlotCapacity(),
-      backendName == MacOSVideoTrackPayload.nativeFormatName ? 1 : 0
+      backendName == MacOSVideoTrackPayload.nativeFormatName ? 1 : 0,
+      suppressed ? 1 : 0
     ))
     let slow = waitNs >= 12_000_000 || handleNs >= 8_000_000
     guard slow else { return }
     MacOSProfilerLog.log(String(
-      format: "VoidPlayer macOS frame callback profiler waitMs=%.2f handleMs=%.2f playing=%d tracks=%d native=%d",
+      format: "VoidPlayer macOS frame callback profiler waitMs=%.2f handleMs=%.2f playing=%d tracks=%d native=%d suppressed=%d",
       Double(waitNs) / 1_000_000.0,
       Double(handleNs) / 1_000_000.0,
       playback.isPlaying ? 1 : 0,
       tracks.activeSlotCapacity(),
-      backendName == MacOSVideoTrackPayload.nativeFormatName ? 1 : 0
+      backendName == MacOSVideoTrackPayload.nativeFormatName ? 1 : 0,
+      suppressed ? 1 : 0
     ))
   }
 
@@ -425,7 +444,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       ? drawCount * 1000 / presentedCount
       : 0
     let summary = String(
-      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutDeferred=%lld nativeLayoutPresented=%lld drawPerFrameX1000=%lld layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld",
+      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutDeferred=%lld layoutPublished=%lld layoutStaleAfterDraw=%lld layoutSuperseded=%lld nativeLayoutPresented=%lld drawPerFrameX1000=%lld layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld",
       playback.isPlaying ? 1 : 0,
       tracks.count,
       stringValue(viewport, "viewportClockSource", defaultValue: "unknown"),
@@ -437,6 +456,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       doubleValue(viewport, "layoutDrawHz"),
       doubleValue(viewport, "layoutSkipHz"),
       int64Value(viewport, "viewportLayoutDeferredToPlaybackCount"),
+      int64Value(viewport, "layoutPublishedCount"),
+      int64Value(viewport, "layoutStaleAfterDrawDropCount"),
+      int64Value(viewport, "layoutRefreshSupersededCount"),
       int64Value(perf, "rendererLayoutPresentedCount"),
       drawsPerPresentedFrameX1000,
       doubleValue(viewport, "layoutRefreshTotalP95Ms"),

@@ -8,6 +8,16 @@ struct MacOSNativeFrameInfo {
   let dtsUs: Int
 }
 
+struct MacOSPendingNativeFrame {
+  let info: MacOSNativeFrameInfo
+  let publishToken: MacOSNativeFramePublishToken
+}
+
+struct MacOSNativeFramePublishToken {
+  let pixelBufferAddress: UInt
+  let nativeUploadCount: Int
+}
+
 struct MacOSNativeTrackMetadata {
   let fileId: Int
   let slot: Int

@@ -146,6 +146,24 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     maxTrackSlots: Int,
     waitTimeoutMs: Int
   ) throws -> MacOSNativeFrameInfo {
+    let pending = try drawFromNativePlayer(
+      player,
+      maxTrackSlots: maxTrackSlots,
+      waitTimeoutMs: waitTimeoutMs
+    )
+    try publishPendingNativeFrame(
+      pending,
+      player: player,
+      maxTrackSlots: maxTrackSlots
+    )
+    return pending.info
+  }
+
+  func drawFromNativePlayer(
+    _ player: MacOSNativePlayerSession,
+    maxTrackSlots: Int,
+    waitTimeoutMs: Int
+  ) throws -> MacOSPendingNativeFrame {
     let totalStartNs = DispatchTime.now().uptimeNanoseconds
     lock.lock()
     if pixelBuffers.isEmpty {
@@ -186,30 +204,23 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
             Unmanaged.passUnretained(currentDrawBuffer).toOpaque() == expectedPixelBuffer else {
         throw MacOSNativePlayerError.failed("renderer-owned Metal presentation target changed during refresh")
       }
-      publishDrawBufferLocked(nativeUploadCount: player.rendererOwnedPresentationUploadCount())
-      guard let nextDrawBuffer = pixelBufferLocked(drawBufferIndex),
-            presentationTarget.install(
-              player: player,
-              pixelBuffer: nextDrawBuffer,
-              width: width,
-              height: height,
-              maxTrackSlots: maxTrackSlots,
-              refresh: false
-            ) else {
-        pixelBufferMetalUploadFailureCount += 1
-        throw MacOSNativePlayerError.failed("failed to install next renderer-owned Metal presentation target")
-      }
       let totalEndNs = DispatchTime.now().uptimeNanoseconds
       logUpdateProfiler(
         result: "ok",
         totalNs: totalEndNs - totalStartNs,
         installNs: installEndNs - totalStartNs,
         requestNs: requestEndNs - requestStartNs,
-        publishNs: totalEndNs - requestEndNs,
+        publishNs: 0,
         waitTimeoutMs: waitTimeoutMs,
         ptsUs: info.ptsUs
       )
-      return info
+      return MacOSPendingNativeFrame(
+        info: info,
+        publishToken: MacOSNativeFramePublishToken(
+          pixelBufferAddress: UInt(bitPattern: expectedPixelBuffer),
+          nativeUploadCount: player.rendererOwnedPresentationUploadCount()
+        )
+      )
     } catch {
       if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable != true {
         lock.lock()
@@ -229,6 +240,56 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       )
       throw error
     }
+  }
+
+  func publishPendingNativeFrame(
+    _ pending: MacOSPendingNativeFrame,
+    player: MacOSNativePlayerSession,
+    maxTrackSlots: Int
+  ) throws {
+    let publishStartNs = DispatchTime.now().uptimeNanoseconds
+    lock.lock()
+    defer { lock.unlock() }
+
+    guard pending.publishToken.nativeUploadCount > lastPublishedNativeUploadCount else {
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        "renderer-owned Metal presentation target has no new completed frame to publish"
+      )
+    }
+    guard let currentDrawBuffer = pixelBufferLocked(drawBufferIndex),
+          UInt(bitPattern: Unmanaged.passUnretained(currentDrawBuffer).toOpaque())
+            == pending.publishToken.pixelBufferAddress else {
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        "renderer-owned Metal presentation target changed before publish"
+      )
+    }
+    publishDrawBufferLocked(nativeUploadCount: pending.publishToken.nativeUploadCount)
+    guard let nextDrawBuffer = pixelBufferLocked(drawBufferIndex),
+          presentationTarget.isAvailable(),
+          metalTextureValid else {
+      throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")
+    }
+    if !presentationTarget.install(
+      player: player,
+      pixelBuffer: nextDrawBuffer,
+      width: width,
+      height: height,
+      maxTrackSlots: maxTrackSlots,
+      refresh: false
+    ) {
+      pixelBufferMetalUploadFailureCount += 1
+      throw MacOSNativePlayerError.failed("failed to install next renderer-owned Metal presentation target")
+    }
+    let publishEndNs = DispatchTime.now().uptimeNanoseconds
+    logUpdateProfiler(
+      result: "ok",
+      totalNs: publishEndNs - publishStartNs,
+      installNs: 0,
+      requestNs: 0,
+      publishNs: publishEndNs - publishStartNs,
+      waitTimeoutMs: 0,
+      ptsUs: pending.info.ptsUs
+    )
   }
 
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {

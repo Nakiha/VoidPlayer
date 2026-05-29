@@ -88,7 +88,9 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
       metalTextureValid: false,
       metalTextureCreationCount: 0,
       metalTextureFailureCount: 0,
-      metalTextureLastError: ""
+      metalTextureLastError: "",
+      inFlightMetalBufferCount: 0,
+      metalBufferExhaustionCount: 0
     )
   }
 

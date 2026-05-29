@@ -144,9 +144,15 @@ extension MacOSNativePlayerSession {
         "rendererLayoutPresentedCount": 0,
         "rendererLayoutDeferredToPlaybackCount": 0,
         "rendererPlayingLayoutRedrawSuppressedCount": 0,
+        "rendererLayoutStaleCompletionDropCount": 0,
         "rendererLastLayoutRevision": 0,
         "rendererLastPresentedLayoutRevision": 0,
         "rendererDrawsPerPresentedLayoutX1000": 0,
+        "inFlightMetalBufferCount": 0,
+        "metalBufferExhaustionCount": 0,
+        "metalCommandCompletionP95Us": 0,
+        "metalCommandFailureCount": 0,
+        "asyncMetalPublishActive": false,
       ]
     }
     let maxInt64 = UInt64(Int64.max)
@@ -228,6 +234,9 @@ extension MacOSNativePlayerSession {
       "rendererPlayingLayoutRedrawSuppressedCount": Int64(
         min(UInt64(stats.renderer_playing_layout_redraw_suppressed_count), maxInt64)
       ),
+      "rendererLayoutStaleCompletionDropCount": Int64(
+        min(UInt64(stats.renderer_layout_stale_completion_drop_count), maxInt64)
+      ),
       "rendererLastLayoutRevision": Int64(
         min(UInt64(stats.renderer_last_layout_revision), maxInt64)
       ),
@@ -237,6 +246,19 @@ extension MacOSNativePlayerSession {
       "rendererDrawsPerPresentedLayoutX1000": Int64(
         stats.renderer_draws_per_presented_layout_x1000
       ),
+      "inFlightMetalBufferCount": Int64(
+        min(UInt64(stats.in_flight_metal_buffer_count), maxInt64)
+      ),
+      "metalBufferExhaustionCount": Int64(
+        min(UInt64(stats.metal_buffer_exhaustion_count), maxInt64)
+      ),
+      "metalCommandCompletionP95Us": Int64(
+        min(UInt64(stats.metal_command_completion_p95_us), maxInt64)
+      ),
+      "metalCommandFailureCount": Int64(
+        min(UInt64(stats.metal_command_failure_count), maxInt64)
+      ),
+      "asyncMetalPublishActive": stats.async_metal_publish_active != 0,
     ]
   }
 

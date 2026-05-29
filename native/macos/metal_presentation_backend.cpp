@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -41,6 +42,18 @@ bool macos_profiler_enabled() {
   return enabled;
 }
 
+uint64_t percentile_95_us(std::vector<uint64_t> samples) {
+  if (samples.empty()) {
+    return 0;
+  }
+  std::sort(samples.begin(), samples.end());
+  const auto index = std::min(
+      samples.size() - 1,
+      static_cast<size_t>(
+          std::ceil(static_cast<double>(samples.size()) * 0.95) - 1.0));
+  return samples[index];
+}
+
 struct OverlayPrimitiveBuildResult {
   std::vector<VPMacOSNativeOverlayGpuRect> fill_rects;
   std::vector<VPMacOSNativeOverlayGpuRect> line_rects;
@@ -65,6 +78,16 @@ struct OverlayCompositeResult {
   uint32_t first_rect_uv0 = 0;
   uint32_t first_rect_uv1 = 0;
   uint32_t first_rect_track_idx = 0;
+};
+
+struct AsyncDrawContext {
+  MetalPresentationBackend* backend = nullptr;
+  vr::PresentationBackendDrawHooks hooks;
+  OverlayCompositeResult overlay;
+  const char* path = "unknown";
+  int32_t storage = VPMacOSNativePresentPackageStorageUnavailable;
+  int64_t copy_us = 0;
+  size_t bytes = 0;
 };
 
 int active_present_frame_count(const vr::RendererDrawSnapshot& snapshot) {
@@ -283,6 +306,10 @@ MetalPresentationBackend::~MetalPresentationBackend() {
 
 bool MetalPresentationBackend::initialize(const vr::PresentationBackendConfig& config) {
   shutdown();
+  {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    async_shutdown_ = false;
+  }
   width_ = config.width;
   height_ = config.height;
   headless_ = config.headless;
@@ -298,6 +325,11 @@ bool MetalPresentationBackend::initialize(const vr::PresentationBackendConfig& c
 }
 
 void MetalPresentationBackend::shutdown() {
+  {
+    std::unique_lock<std::mutex> lock(async_mutex_);
+    async_shutdown_ = true;
+    async_cv_.wait(lock, [this] { return in_flight_draws_ == 0; });
+  }
   if (uploader_) {
     VPMacOSMetalUploaderDestroy(uploader_);
     uploader_ = nullptr;
@@ -365,6 +397,14 @@ vr::PresentationBackendStats MetalPresentationBackend::presentation_stats() cons
   stats.overlay_gpu_success_count = overlay_gpu_success_count_;
   stats.overlay_gpu_failure_count = overlay_gpu_failure_count_;
   stats.overlay_cpu_fallback_count = overlay_cpu_fallback_count_;
+  {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    stats.in_flight_metal_buffer_count = in_flight_draws_;
+    stats.metal_command_completion_p95_us =
+        percentile_95_us(metal_command_completion_samples_us_);
+    stats.metal_command_failure_count = metal_command_failure_count_;
+  }
+  stats.async_metal_publish_active = 1;
   return stats;
 }
 
@@ -471,6 +511,127 @@ void MetalPresentationBackend::record_overlay_result(bool expected,
   if (cpu_attempted) {
     ++overlay_cpu_fallback_count_;
   }
+}
+
+void MetalPresentationBackend::begin_async_draw() {
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  ++in_flight_draws_;
+}
+
+void MetalPresentationBackend::finish_async_draw() {
+  {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    if (in_flight_draws_ > 0) {
+      --in_flight_draws_;
+    }
+  }
+  async_cv_.notify_all();
+}
+
+bool MetalPresentationBackend::shutting_down_async() const {
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  return async_shutdown_;
+}
+
+void MetalPresentationBackend::complete_async_draw_result(
+    const VPMacOSNativeFrameInfo& frame_info,
+    bool success,
+    const char* error,
+    int64_t total_us,
+    bool overlay_expected,
+    bool overlay_applied,
+    bool gpu_attempted,
+    bool gpu_succeeded,
+    bool cpu_attempted,
+    size_t line_rect_count) {
+  {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    if (total_us >= 0) {
+      metal_command_completion_samples_us_.push_back(
+          static_cast<uint64_t>(total_us));
+      if (metal_command_completion_samples_us_.size() > 512) {
+        metal_command_completion_samples_us_.erase(
+            metal_command_completion_samples_us_.begin(),
+            metal_command_completion_samples_us_.begin() +
+                static_cast<std::ptrdiff_t>(
+                    metal_command_completion_samples_us_.size() - 512));
+      }
+    }
+    if (!success) {
+      ++metal_command_failure_count_;
+    }
+  }
+  if (success) {
+    record_overlay_result(overlay_expected,
+                          overlay_applied,
+                          gpu_attempted,
+                          gpu_succeeded,
+                          cpu_attempted,
+                          line_rect_count);
+    mark_draw_success(frame_info);
+  } else {
+    record_overlay_result(overlay_expected,
+                          false,
+                          gpu_attempted,
+                          false,
+                          cpu_attempted,
+                          line_rect_count);
+    mark_draw_failure(error ? error : "renderer-owned Metal async draw failed");
+  }
+}
+
+void metal_async_upload_completed(void* user_data,
+                                  int ret,
+                                  VPMacOSNativeFrameInfo frame_info,
+                                  const char* error,
+                                  int64_t gpu_wait_us,
+                                  int64_t total_us) {
+  std::unique_ptr<AsyncDrawContext> context(
+      static_cast<AsyncDrawContext*>(user_data));
+  if (!context || !context->backend) {
+    return;
+  }
+  auto* backend = context->backend;
+  const bool success = ret == 0;
+  auto overlay = context->overlay;
+  if (overlay.expected) {
+    overlay.gpu_attempted = true;
+    overlay.gpu_succeeded = success;
+    overlay.applied = success;
+  }
+  backend->complete_async_draw_result(frame_info,
+                                      success,
+                                      error,
+                                      total_us,
+                                      overlay.expected,
+                                      overlay.applied,
+                                      overlay.gpu_attempted,
+                                      overlay.gpu_succeeded,
+                                      overlay.cpu_attempted,
+                                      overlay.line_rect_count);
+  if (macos_profiler_enabled() &&
+      (!success || gpu_wait_us >= 8000 || total_us >= 8000)) {
+    spdlog::info(
+        "[MetalProfiler] async_complete path={} success={} ret={} gpu_us={} total_us={} "
+        "bytes={} storage={} overlay_expected={} overlay_applied={} error={}",
+        context->path,
+        success,
+        ret,
+        gpu_wait_us,
+        total_us,
+        context->bytes,
+        context->storage,
+        overlay.expected,
+        overlay.applied,
+        error ? error : "");
+  }
+  if (context->hooks.async_draw_completed) {
+    context->hooks.async_draw_completed(
+        success,
+        success ? "" : (error ? error : "renderer-owned Metal async draw failed"),
+        static_cast<uint64_t>(std::max<int64_t>(0, total_us)));
+  }
+  backend->finish_async_draw();
 }
 
 OverlayCompositeResult composite_overlay_after_upload(
@@ -584,6 +745,11 @@ bool MetalPresentationBackend::draw_frame(
     log_profiler("none", false, -1, 0, 0, 0, last_error_.c_str());
     return false;
   }
+  if (hooks.async_draw_completed && shutting_down_async()) {
+    mark_draw_failure("renderer-owned Metal presentation backend is shutting down");
+    log_profiler("shutdown", false, -1, 0, 0, 0, last_error_.c_str());
+    return false;
+  }
 
   const int32_t track_slots =
       std::clamp(draw_target_max_track_slots_,
@@ -615,6 +781,41 @@ bool MetalPresentationBackend::draw_frame(
                                      error)) {
     VPMacOSNativeFrameInfo frame_info = {};
     char upload_error[256] = {};
+    if (hooks.async_draw_completed) {
+      auto* context = new AsyncDrawContext();
+      context->backend = this;
+      context->hooks = hooks;
+      context->overlay = overlay_result_from_primitives(overlay_primitives);
+      context->path = "cvpixelbuffer";
+      context->storage = VPMacOSNativePresentPackageStorageCVPixelBuffer;
+      begin_async_draw();
+      const int ret =
+          VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlayAsync(
+              uploader_,
+              &cv_frame,
+              overlay_expected ? &overlay_set : nullptr,
+              draw_target_pixel_buffer_,
+              draw_target_width_,
+              draw_target_height_,
+              &frame_info,
+              upload_error,
+              sizeof(upload_error),
+              metal_async_upload_completed,
+              context);
+      if (hooks.record_frame_copy_us) {
+        hooks.record_frame_copy_us(0);
+      }
+      if (ret == 0) {
+        return true;
+      }
+      finish_async_draw();
+      delete context;
+      mark_draw_failure(upload_error[0] ? upload_error : error);
+      log_profiler("cvpixelbuffer", false, ret, 0, 0,
+                   VPMacOSNativePresentPackageStorageCVPixelBuffer,
+                   last_error_.c_str());
+      return false;
+    }
     int ret = overlay_expected
         ? VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlay(
               uploader_,
@@ -724,6 +925,41 @@ bool MetalPresentationBackend::draw_frame(
                                          error)) {
     VPMacOSNativeFrameInfo frame_info = {};
     char upload_error[256] = {};
+    if (hooks.async_draw_completed) {
+      auto* context = new AsyncDrawContext();
+      context->backend = this;
+      context->hooks = hooks;
+      context->overlay = overlay_result_from_primitives(overlay_primitives);
+      context->path = "cvpixelbuffer-set";
+      context->storage = VPMacOSNativePresentPackageStorageCVPixelBuffer;
+      begin_async_draw();
+      const int ret =
+          VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlayAsync(
+              uploader_,
+              &cv_frame_set,
+              overlay_expected ? &overlay_set : nullptr,
+              draw_target_pixel_buffer_,
+              draw_target_width_,
+              draw_target_height_,
+              &frame_info,
+              upload_error,
+              sizeof(upload_error),
+              metal_async_upload_completed,
+              context);
+      if (hooks.record_frame_copy_us) {
+        hooks.record_frame_copy_us(0);
+      }
+      if (ret == 0) {
+        return true;
+      }
+      finish_async_draw();
+      delete context;
+      mark_draw_failure(upload_error[0] ? upload_error : error);
+      log_profiler("cvpixelbuffer-set", false, ret, 0, 0,
+                   VPMacOSNativePresentPackageStorageCVPixelBuffer,
+                   last_error_.c_str());
+      return false;
+    }
     int ret = overlay_expected
         ? VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlay(
               uploader_,
@@ -875,6 +1111,53 @@ bool MetalPresentationBackend::draw_frame(
   VPMacOSNativeFrameInfo frame_info = {};
   char upload_error[256] = {};
   const auto start = std::chrono::steady_clock::now();
+  if (hooks.async_draw_completed) {
+    auto* context = new AsyncDrawContext();
+    context->backend = this;
+    context->hooks = hooks;
+    context->overlay = overlay_result_from_primitives(overlay_primitives);
+    context->path =
+        package.storage == VPMacOSNativePresentPackageStorageYUV ? "package-yuv" : "package-bgra";
+    context->storage = package.storage;
+    context->bytes = package.used_bytes;
+    begin_async_draw();
+    const int ret =
+        VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
+            uploader_,
+            data,
+            package.used_bytes,
+            &package,
+            overlay_expected ? &overlay_set : nullptr,
+            draw_target_pixel_buffer_,
+            draw_target_width_,
+            draw_target_height_,
+            &frame_info,
+            upload_error,
+            sizeof(upload_error),
+            metal_async_upload_completed,
+            context);
+    const auto copy_us = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - start).count();
+    context->copy_us = copy_us;
+    if (hooks.record_frame_copy_us) {
+      hooks.record_frame_copy_us(static_cast<uint64_t>(copy_us));
+    }
+    if (ret == 0) {
+      return true;
+    }
+    const char* failed_path = context->path;
+    finish_async_draw();
+    delete context;
+    mark_draw_failure(upload_error[0] ? upload_error : error);
+    log_profiler(failed_path,
+                 false,
+                 ret,
+                 copy_us,
+                 package.used_bytes,
+                 package.storage,
+                 last_error_.c_str());
+    return false;
+  }
   int ret = overlay_expected
       ? VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
             uploader_,

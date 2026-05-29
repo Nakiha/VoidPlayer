@@ -386,6 +386,8 @@ int VPMacOSNativePlayerCopyPerfStats(
           backend_metrics.layout_deferred_to_playback_count;
       out->renderer_playing_layout_redraw_suppressed_count =
           backend_metrics.playing_layout_redraw_suppressed_count;
+      out->renderer_layout_stale_completion_drop_count =
+          backend_metrics.layout_stale_completion_drop_count;
       out->renderer_last_layout_revision = backend_metrics.last_layout_revision;
       out->renderer_last_presented_layout_revision =
           backend_metrics.last_presented_layout_revision;
@@ -395,6 +397,16 @@ int VPMacOSNativePlayerCopyPerfStats(
                 backend_metrics.draw_count * 1000 /
                 backend_metrics.layout_presented_count);
       }
+      out->in_flight_metal_buffer_count =
+          backend_stats.in_flight_metal_buffer_count;
+      out->metal_buffer_exhaustion_count =
+          backend_stats.metal_buffer_exhaustion_count;
+      out->metal_command_completion_p95_us =
+          backend_stats.metal_command_completion_p95_us;
+      out->metal_command_failure_count =
+          backend_stats.metal_command_failure_count;
+      out->async_metal_publish_active =
+          backend_stats.async_metal_publish_active;
     }
   }
   {

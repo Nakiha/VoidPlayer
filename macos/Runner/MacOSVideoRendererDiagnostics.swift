@@ -15,7 +15,9 @@ enum MacOSVideoRendererDiagnostics {
       metalTextureValid: Bool,
       metalTextureCreationCount: Int,
       metalTextureFailureCount: Int,
-      metalTextureLastError: String
+      metalTextureLastError: String,
+      inFlightMetalBufferCount: Int,
+      metalBufferExhaustionCount: Int
     )?,
     textureDimensions: (width: Int, height: Int)?,
     trackCount: Int,
@@ -41,6 +43,14 @@ enum MacOSVideoRendererDiagnostics {
     let drawsPerPresentedFrameRatioX1000 = nativeFramePresentationCount > 0
       ? rendererDrawCount * 1000 / nativeFramePresentationCount
       : int64Diagnostic(perfStats?["rendererDrawsPerPresentedLayoutX1000"])
+    let nativeInFlightMetalBufferCount =
+      int64Diagnostic(perfStats?["inFlightMetalBufferCount"])
+    let textureInFlightMetalBufferCount =
+      Int64(textureStats?.inFlightMetalBufferCount ?? 0)
+    let nativeMetalBufferExhaustionCount =
+      int64Diagnostic(perfStats?["metalBufferExhaustionCount"])
+    let textureMetalBufferExhaustionCount =
+      Int64(textureStats?.metalBufferExhaustionCount ?? 0)
     var diagnostics: [String: Any] = [
       "platform": "macos",
       "backend": backendName,
@@ -182,6 +192,8 @@ enum MacOSVideoRendererDiagnostics {
       "metalTextureCreationCount": textureStats?.metalTextureCreationCount ?? 0,
       "metalTextureFailureCount": textureStats?.metalTextureFailureCount ?? 0,
       "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
+      "textureInFlightMetalBufferCount": textureStats?.inFlightMetalBufferCount ?? 0,
+      "textureMetalBufferExhaustionCount": textureStats?.metalBufferExhaustionCount ?? 0,
       "nativePresentationTargetInstalled": presentationTargetInstalled,
       "nativeRendererOwnedUploadCount": player?.rendererOwnedPresentationUploadCount() ?? 0,
       "nativeRendererOwnedUploadFailureCount": player?.rendererOwnedPresentationFailureCount() ?? 0,
@@ -200,10 +212,23 @@ enum MacOSVideoRendererDiagnostics {
         perfStats?["rendererLayoutDeferredToPlaybackCount"] ?? 0,
       "playingLayoutRedrawSuppressedCount":
         perfStats?["rendererPlayingLayoutRedrawSuppressedCount"] ?? 0,
+      "layoutStaleCompletionDropCount":
+        perfStats?["rendererLayoutStaleCompletionDropCount"] ?? 0,
       "rendererLastLayoutRevision": perfStats?["rendererLastLayoutRevision"] ?? 0,
       "rendererLastPresentedLayoutRevision":
         perfStats?["rendererLastPresentedLayoutRevision"] ?? 0,
       "drawsPerPresentedFrameRatioX1000": drawsPerPresentedFrameRatioX1000,
+      "inFlightMetalBufferCount": max(
+        nativeInFlightMetalBufferCount,
+        textureInFlightMetalBufferCount
+      ),
+      "metalBufferExhaustionCount": max(
+        nativeMetalBufferExhaustionCount,
+        textureMetalBufferExhaustionCount
+      ),
+      "metalCommandCompletionP95Us": perfStats?["metalCommandCompletionP95Us"] ?? 0,
+      "metalCommandFailureCount": perfStats?["metalCommandFailureCount"] ?? 0,
+      "asyncMetalPublishActive": perfStats?["asyncMetalPublishActive"] ?? false,
       "processRssBytes": perfStats?["processRssBytes"] ?? 0,
       "processPrivateBytes": perfStats?["processPrivateBytes"] ?? 0,
       "nativeDecodeFrameCount": perfStats?["decodeFrameCount"] ?? 0,

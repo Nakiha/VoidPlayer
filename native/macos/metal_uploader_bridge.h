@@ -11,6 +11,13 @@ extern "C" {
 #endif
 
 typedef struct VPMacOSMetalUploader VPMacOSMetalUploader;
+typedef void (*VPMacOSMetalUploaderCompletion)(
+    void* user_data,
+    int ret,
+    VPMacOSNativeFrameInfo frame_info,
+    const char* error,
+    int64_t gpu_wait_us,
+    int64_t total_us);
 
 enum {
   VPMacOSMetalUploaderStatusOk = 0,
@@ -164,6 +171,20 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
+    VPMacOSMetalUploader* uploader,
+    const uint8_t* data,
+    size_t data_size,
+    const VPMacOSNativePresentFramePackageInfo* package,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size,
+    VPMacOSMetalUploaderCompletion completion,
+    void* user_data);
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
     VPMacOSMetalUploader* uploader,
     const VPMacOSNativeCVPixelBufferPresentFrame* frame,
@@ -183,6 +204,18 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlay(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlayAsync(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeCVPixelBufferPresentFrame* frame,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size,
+    VPMacOSMetalUploaderCompletion completion,
+    void* user_data);
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
     VPMacOSMetalUploader* uploader,
     const VPMacOSNativeCVPixelBufferPresentFrameSet* frame_set,
@@ -202,6 +235,18 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlay(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlayAsync(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeCVPixelBufferPresentFrameSet* frame_set,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size,
+    VPMacOSMetalUploaderCompletion completion,
+    void* user_data);
 int VPMacOSMetalUploaderCompositeOverlayGpuRects(
     VPMacOSMetalUploader* uploader,
     const VPMacOSNativeOverlayGpuRect* rects,

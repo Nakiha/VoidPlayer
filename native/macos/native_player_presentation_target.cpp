@@ -216,6 +216,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   int64_t refresh_min_pts_us = -1;
   int refresh_attempts = 0;
   bool deferred_to_playback = false;
+  bool refresh_submitted = false;
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
     if (!player->presentation_target_pixel_buffer ||
@@ -249,7 +250,8 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
                     "renderer-owned Metal frame refresh deferred to playback present");
         return true;
       }
-      player->renderer->request_frame_refresh("macos-renderer-owned-refresh");
+      refresh_submitted =
+          player->renderer->request_frame_refresh("macos-renderer-owned-refresh");
       return true;
     }
     write_error(error, error_size, "shared macOS renderer is not available");
@@ -269,14 +271,17 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     if (!player->last_renderer_owned_frame_info_available) {
       return false;
     }
+    constexpr int64_t kRefreshPtsLowerToleranceUs = 500'000;
+    constexpr int64_t kRefreshPtsUpperToleranceUs = 1'500'000;
     if (refresh_min_pts_us >= 0) {
-      return player->last_renderer_owned_frame_info.pts_us >= refresh_min_pts_us;
+      const int64_t pts_us = player->last_renderer_owned_frame_info.pts_us;
+      return pts_us >= refresh_min_pts_us &&
+             pts_us <= refresh_min_pts_us + kRefreshPtsLowerToleranceUs +
+                           kRefreshPtsUpperToleranceUs;
     }
     if (!enforce_refresh_pts_window) {
       return true;
     }
-    constexpr int64_t kRefreshPtsLowerToleranceUs = 500'000;
-    constexpr int64_t kRefreshPtsUpperToleranceUs = 1'500'000;
     const int64_t pts_us = player->last_renderer_owned_frame_info.pts_us;
     return pts_us >= refresh_clock_us - kRefreshPtsLowerToleranceUs &&
            pts_us <= refresh_clock_us + kRefreshPtsUpperToleranceUs;
@@ -306,11 +311,13 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
       if (completed()) {
         break;
       }
-      callback_lock.unlock();
-      const bool requested = trigger_renderer_refresh();
-      callback_lock.lock();
-      if (!requested) {
-        return -1;
+      if (!refresh_submitted) {
+        callback_lock.unlock();
+        const bool requested = trigger_renderer_refresh();
+        callback_lock.lock();
+        if (!requested) {
+          return -1;
+        }
       }
     }
   }

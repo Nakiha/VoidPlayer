@@ -11,6 +11,8 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -57,6 +59,82 @@ bool overlay_primitive_set_has_content(
   return overlay && (overlay->fill_rect_count > 0 ||
                      overlay->line_rect_count > 0 ||
                      overlay->motion_line_count > 0);
+}
+
+struct AsyncMetalResourceLifetime {
+  std::vector<CVMetalTextureRef> textures;
+
+  ~AsyncMetalResourceLifetime() {
+    for (auto* texture : textures) {
+      if (texture) {
+        CFRelease(texture);
+      }
+    }
+  }
+
+  void retain(CVMetalTextureRef texture) {
+    if (!texture) {
+      return;
+    }
+    CFRetain(texture);
+    textures.push_back(texture);
+  }
+};
+
+void retain_async_texture(AsyncMetalResourceLifetime* lifetime,
+                          const vp_macos::ScopedCVMetalTexture& texture) {
+  if (lifetime) {
+    lifetime->retain(texture.get());
+  }
+}
+
+int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
+                        std::chrono::steady_clock::time_point gpuStart,
+                        VPMacOSNativeFrameInfo frameInfo,
+                        const char* failureMessage,
+                        std::atomic<int64_t>& lastGpuWaitUs,
+                        VPMacOSMetalUploaderCompletion completion,
+                        void* userData,
+                        AsyncMetalResourceLifetime* lifetime,
+                        char* error,
+                        size_t errorSize) {
+  if (!commandBuffer) {
+    delete lifetime;
+    return metal_upload_failure(error, errorSize, failureMessage);
+  }
+  if (completion) {
+    auto* retainedLifetime = lifetime;
+    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> completedBuffer) {
+      const BOOL completed = [completedBuffer status] == MTLCommandBufferStatusCompleted;
+      const int64_t gpuUs = elapsed_us_since(gpuStart);
+      lastGpuWaitUs.store(gpuUs, std::memory_order_relaxed);
+      std::string message;
+      if (!completed) {
+        message = failureMessage ? failureMessage : "native Metal command did not complete";
+      }
+      completion(userData,
+                 completed ? 0 : -2,
+                 frameInfo,
+                 message.c_str(),
+                 gpuUs,
+                 gpuUs);
+      delete retainedLifetime;
+    }];
+    [commandBuffer commit];
+    write_error(error, errorSize, "");
+    return 0;
+  }
+
+  [commandBuffer commit];
+  [commandBuffer waitUntilCompleted];
+  delete lifetime;
+
+  const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
+  lastGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
+  if (!completed) {
+    return metal_upload_failure(error, errorSize, failureMessage);
+  }
+  return 0;
 }
 
 }  // namespace
@@ -331,6 +409,32 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                             out:(VPMacOSNativeFrameInfo*)out
                           error:(char*)error
                       errorSize:(size_t)errorSize {
+  return [self copyPresentFramePackage:package
+                                  data:data
+                              dataSize:dataSize
+                               overlay:overlay
+                         toPixelBuffer:pixelBuffer
+                                 width:width
+                                height:height
+                                   out:out
+                                 error:error
+                             errorSize:errorSize
+                            completion:nullptr
+                              userData:nullptr];
+}
+
+- (int)copyPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
+                           data:(const uint8_t*)data
+                       dataSize:(size_t)dataSize
+                        overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                  toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                          width:(int32_t)width
+                         height:(int32_t)height
+                            out:(VPMacOSNativeFrameInfo*)out
+                          error:(char*)error
+                      errorSize:(size_t)errorSize
+                     completion:(VPMacOSMetalUploaderCompletion)completion
+                       userData:(void*)userData {
   if (![self isAvailable] || !_layoutPipeline) {
     write_error(error, errorSize, "native Metal layout uploader is not available");
     return -1;
@@ -356,8 +460,12 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                          height:height
                                                             out:out
                                                           error:error
-                                                      errorSize:errorSize];
-  _lastPresentPackageTotalUs.store(elapsed_us_since(totalStart), std::memory_order_relaxed);
+                                                      errorSize:errorSize
+                                                     completion:completion
+                                                       userData:userData];
+  if (!completion) {
+    _lastPresentPackageTotalUs.store(elapsed_us_since(totalStart), std::memory_order_relaxed);
+  }
   return uploadRet;
 }
 
@@ -386,6 +494,28 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                      out:(VPMacOSNativeFrameInfo*)out
                                    error:(char*)error
                                errorSize:(size_t)errorSize {
+  return [self uploadPreparedPresentFramePackage:package
+                                         overlay:overlay
+                                   toPixelBuffer:pixelBuffer
+                                           width:width
+                                          height:height
+                                             out:out
+                                           error:error
+                                       errorSize:errorSize
+                                      completion:nullptr
+                                        userData:nullptr];
+}
+
+- (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
+                                 overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                           toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                   width:(int32_t)width
+                                  height:(int32_t)height
+                                     out:(VPMacOSNativeFrameInfo*)out
+                                   error:(char*)error
+                               errorSize:(size_t)errorSize
+                              completion:(VPMacOSMetalUploaderCompletion)completion
+                                userData:(void*)userData {
   if (![self isAvailable] || !_layoutPipeline) {
     write_error(error, errorSize, "native Metal layout uploader is not available");
     return -1;
@@ -424,12 +554,15 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     return metal_upload_failure(
         error, errorSize, "failed to wrap CVPixelBuffer as a Metal texture");
   }
+  auto* lifetime = completion ? new AsyncMetalResourceLifetime() : nullptr;
+  retain_async_texture(lifetime, destinationRef);
 
   id<MTLTexture> destinationTexture = destinationRef.texture();
   const auto gpuStart = std::chrono::steady_clock::now();
   id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
   if (!destinationTexture || !commandBuffer || !compute) {
+    delete lifetime;
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal layout compute command");
   }
@@ -455,16 +588,21 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                     error:error
                                                 errorSize:errorSize];
   if (overlayRet != 0) {
+    delete lifetime;
     return overlayRet;
   }
-  [commandBuffer commit];
-  [commandBuffer waitUntilCompleted];
-
-  const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
-  _lastPresentPackageGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
-  if (!completed) {
-    return metal_upload_failure(
-        error, errorSize, "native Metal layout compute did not complete");
+  const int commitRet = commit_metal_upload(commandBuffer,
+                                            gpuStart,
+                                            out ? *out : VPMacOSNativeFrameInfo{},
+                                            "native Metal layout compute did not complete",
+                                            _lastPresentPackageGpuWaitUs,
+                                            completion,
+                                            userData,
+                                            lifetime,
+                                            error,
+                                            errorSize);
+  if (commitRet != 0) {
+    return commitRet;
   }
 
   _presentPackageUploadCount.fetch_add(1, std::memory_order_relaxed);
@@ -498,6 +636,28 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                   out:(VPMacOSNativeFrameInfo*)out
                                 error:(char*)error
                             errorSize:(size_t)errorSize {
+  return [self copyCVPixelBufferPresentFrame:frame
+                                     overlay:overlay
+                               toPixelBuffer:pixelBuffer
+                                       width:width
+                                      height:height
+                                         out:out
+                                       error:error
+                                   errorSize:errorSize
+                                  completion:nullptr
+                                    userData:nullptr];
+}
+
+- (int)copyCVPixelBufferPresentFrame:(const VPMacOSNativeCVPixelBufferPresentFrame*)frame
+                             overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                        toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                width:(int32_t)width
+                               height:(int32_t)height
+                                  out:(VPMacOSNativeFrameInfo*)out
+                                error:(char*)error
+                            errorSize:(size_t)errorSize
+                           completion:(VPMacOSMetalUploaderCompletion)completion
+                             userData:(void*)userData {
   if (![self isAvailable] || !_cvPixelBufferPipeline) {
     write_error(error, errorSize, "native Metal CVPixelBuffer uploader is not available");
     return -1;
@@ -561,6 +721,10 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     return metal_upload_failure(
         error, errorSize, "failed to wrap CVPixelBuffer planes as Metal textures");
   }
+  auto* lifetime = completion ? new AsyncMetalResourceLifetime() : nullptr;
+  retain_async_texture(lifetime, sourceYRef);
+  retain_async_texture(lifetime, sourceUVRef);
+  retain_async_texture(lifetime, destinationRef);
 
   id<MTLTexture> sourceYTexture = sourceYRef.texture();
   id<MTLTexture> sourceUVTexture = sourceUVRef.texture();
@@ -570,6 +734,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
   if (!sourceYTexture || !sourceUVTexture || !destinationTexture ||
       !commandBuffer || !compute) {
+    delete lifetime;
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal CVPixelBuffer compute command");
   }
@@ -596,21 +761,28 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                     error:error
                                                 errorSize:errorSize];
   if (overlayRet != 0) {
+    delete lifetime;
     return overlayRet;
   }
-  [commandBuffer commit];
-  [commandBuffer waitUntilCompleted];
-
-  const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
-  _lastPresentPackageGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
-  if (!completed) {
-    return metal_upload_failure(
-        error, errorSize, "native Metal CVPixelBuffer compute did not complete");
+  const int commitRet = commit_metal_upload(commandBuffer,
+                                            gpuStart,
+                                            out ? *out : VPMacOSNativeFrameInfo{},
+                                            "native Metal CVPixelBuffer compute did not complete",
+                                            _lastPresentPackageGpuWaitUs,
+                                            completion,
+                                            userData,
+                                            lifetime,
+                                            error,
+                                            errorSize);
+  if (commitRet != 0) {
+    return commitRet;
   }
 
   _cvPixelBufferUploadCount.fetch_add(1, std::memory_order_relaxed);
   _lastPresentPackageCopyUs.store(0, std::memory_order_relaxed);
-  _lastPresentPackageTotalUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
+  if (!completion) {
+    _lastPresentPackageTotalUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
+  }
   _lastPresentPackageStorage.store(VPMacOSNativePresentPackageStorageCVPixelBuffer,
                                    std::memory_order_relaxed);
   write_error(error, errorSize, "");
@@ -642,6 +814,28 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                     out:(VPMacOSNativeFrameInfo*)out
                                   error:(char*)error
                               errorSize:(size_t)errorSize {
+  return [self copyCVPixelBufferPresentFrameSet:frameSet
+                                        overlay:overlay
+                                  toPixelBuffer:pixelBuffer
+                                          width:width
+                                         height:height
+                                            out:out
+                                          error:error
+                                      errorSize:errorSize
+                                     completion:nullptr
+                                       userData:nullptr];
+}
+
+- (int)copyCVPixelBufferPresentFrameSet:(const VPMacOSNativeCVPixelBufferPresentFrameSet*)frameSet
+                                overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                          toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                  width:(int32_t)width
+                                 height:(int32_t)height
+                                    out:(VPMacOSNativeFrameInfo*)out
+                                  error:(char*)error
+                              errorSize:(size_t)errorSize
+                             completion:(VPMacOSMetalUploaderCompletion)completion
+                               userData:(void*)userData {
   if (![self isAvailable] || !_cvPixelBufferSetPipeline) {
     write_error(error, errorSize, "native Metal CVPixelBuffer set uploader is not available");
     return -1;
@@ -737,12 +931,21 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     return metal_upload_failure(
         error, errorSize, "failed to wrap CVPixelBuffer destination as Metal texture");
   }
+  auto* lifetime = completion ? new AsyncMetalResourceLifetime() : nullptr;
+  for (auto& ref : sourceYRefs) {
+    retain_async_texture(lifetime, ref);
+  }
+  for (auto& ref : sourceUVRefs) {
+    retain_async_texture(lifetime, ref);
+  }
+  retain_async_texture(lifetime, destinationRef);
 
   id<MTLTexture> destinationTexture = destinationRef.texture();
   const auto gpuStart = std::chrono::steady_clock::now();
   id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
   if (!destinationTexture || !commandBuffer || !compute) {
+    delete lifetime;
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal CVPixelBuffer set compute command");
   }
@@ -771,21 +974,29 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                     error:error
                                                 errorSize:errorSize];
   if (overlayRet != 0) {
+    delete lifetime;
     return overlayRet;
   }
-  [commandBuffer commit];
-  [commandBuffer waitUntilCompleted];
-
-  const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
-  _lastPresentPackageGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
-  if (!completed) {
-    return metal_upload_failure(
-        error, errorSize, "native Metal CVPixelBuffer set compute did not complete");
+  const int commitRet = commit_metal_upload(
+      commandBuffer,
+      gpuStart,
+      out ? *out : VPMacOSNativeFrameInfo{},
+      "native Metal CVPixelBuffer set compute did not complete",
+      _lastPresentPackageGpuWaitUs,
+      completion,
+      userData,
+      lifetime,
+      error,
+      errorSize);
+  if (commitRet != 0) {
+    return commitRet;
   }
 
   _cvPixelBufferUploadCount.fetch_add(1, std::memory_order_relaxed);
   _lastPresentPackageCopyUs.store(0, std::memory_order_relaxed);
-  _lastPresentPackageTotalUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
+  if (!completion) {
+    _lastPresentPackageTotalUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
+  }
   _lastPresentPackageStorage.store(VPMacOSNativePresentPackageStorageCVPixelBuffer,
                                    std::memory_order_relaxed);
   write_error(error, errorSize, "");

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace vr {
@@ -28,6 +29,7 @@ struct PresentationBackendDrawHooks {
     std::function<void(uint64_t)> record_frame_copy_us;
     std::function<void(PresentationBackend&, const RendererDrawSnapshot&)> draw_overlay;
     std::function<bool(const RendererDrawSnapshot&, uint8_t*, int, int, size_t)> composite_bgra_overlay;
+    std::function<void(bool, const char*, uint64_t)> async_draw_completed;
 };
 
 struct PresentationBackendFrameInfo {
@@ -64,6 +66,11 @@ struct PresentationBackendStats {
     uint64_t overlay_gpu_success_count = 0;
     uint64_t overlay_gpu_failure_count = 0;
     uint64_t overlay_cpu_fallback_count = 0;
+    uint64_t in_flight_metal_buffer_count = 0;
+    uint64_t metal_buffer_exhaustion_count = 0;
+    uint64_t metal_command_completion_p95_us = 0;
+    uint64_t metal_command_failure_count = 0;
+    int32_t async_metal_publish_active = 0;
 };
 
 struct PresentationBackendMetrics {
@@ -87,6 +94,7 @@ struct PresentationBackendMetrics {
     uint64_t layout_presented_count = 0;
     uint64_t layout_deferred_to_playback_count = 0;
     uint64_t playing_layout_redraw_suppressed_count = 0;
+    uint64_t layout_stale_completion_drop_count = 0;
     uint64_t last_layout_revision = 0;
     uint64_t last_presented_layout_revision = 0;
 };
@@ -101,6 +109,7 @@ public:
     virtual void shutdown() = 0;
     virtual bool headless() const = 0;
     virtual bool renderer_manages_headless_publish() const { return false; }
+    virtual bool completes_draw_asynchronously() const { return false; }
     virtual bool supports_swap_chain_present() const { return false; }
     virtual bool poll_device_removed(const char*) { return false; }
     virtual bool device_lost() const { return false; }

@@ -33,6 +33,7 @@
 #include <vector>
 #include <mutex>  // IWYU pragma: keep
 #include <functional>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 
@@ -242,7 +243,21 @@ public:
 private:
     void render_loop() noexcept;
     void render_loop_body();
-    bool draw_frame(const RendererDrawSnapshot& snapshot);
+    bool draw_frame(
+        const RendererDrawSnapshot& snapshot,
+        std::function<void(bool, const char*, uint64_t)> async_completion = {});
+    void finish_presented_draw(
+        const char* source,
+        const RendererDrawSnapshot& snapshot,
+        uint64_t snapshot_layout_revision,
+        uint64_t snapshot_us,
+        std::chrono::steady_clock::time_point profiler_start,
+        bool attempted_draw,
+        std::function<void()> frame_callback,
+        std::function<void(const char*)> frame_failure_callback,
+        bool drew,
+        const char* frame_failure_error,
+        uint64_t backend_us);
     bool draw_paused_frame(const char* reason);
     RendererDrawSnapshot build_draw_snapshot_locked(const PresentDecision& decision) const;
     void update_track_geometry_from_decision_locked(const PresentDecision& decision);
@@ -395,6 +410,7 @@ private:
         std::atomic<uint64_t> layout_presented_count{0};
         std::atomic<uint64_t> layout_deferred_to_playback_count{0};
         std::atomic<uint64_t> playing_layout_redraw_suppressed_count{0};
+        std::atomic<uint64_t> layout_stale_completion_drop_count{0};
     };
     mutable PresentationBackendMetricCounters presentation_backend_metrics_;
     mutable std::mutex presentation_draw_samples_mutex_;

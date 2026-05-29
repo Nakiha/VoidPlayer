@@ -5,6 +5,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -23,6 +25,7 @@ public:
   bool initialize(const vr::PresentationBackendConfig& config) override;
   void shutdown() override;
   bool headless() const override { return headless_; }
+  bool completes_draw_asynchronously() const override { return true; }
   bool update_headless_output(void* output,
                               int width,
                               int height,
@@ -45,6 +48,17 @@ public:
                        int32_t max_track_slots);
   void clear_draw_target();
   bool copy_last_draw_frame_info(VPMacOSNativeFrameInfo* out) const;
+  void complete_async_draw_result(const VPMacOSNativeFrameInfo& frame_info,
+                                  bool success,
+                                  const char* error,
+                                  int64_t total_us,
+                                  bool overlay_expected,
+                                  bool overlay_applied,
+                                  bool gpu_attempted,
+                                  bool gpu_succeeded,
+                                  bool cpu_attempted,
+                                  size_t line_rect_count);
+  void finish_async_draw();
 
 private:
   void set_last_error(std::string error);
@@ -56,6 +70,8 @@ private:
                              bool gpu_succeeded,
                              bool cpu_attempted,
                              size_t line_rect_count);
+  void begin_async_draw();
+  bool shutting_down_async() const;
 
   VPMacOSMetalUploader* uploader_ = nullptr;
   void* draw_target_pixel_buffer_ = nullptr;
@@ -82,9 +98,15 @@ private:
   uint64_t overlay_gpu_success_count_ = 0;
   uint64_t overlay_gpu_failure_count_ = 0;
   uint64_t overlay_cpu_fallback_count_ = 0;
+  uint64_t metal_command_failure_count_ = 0;
+  std::vector<uint64_t> metal_command_completion_samples_us_;
   std::vector<uint8_t> staging_buffer_;
   bool last_draw_succeeded_ = false;
   bool headless_ = true;
+  mutable std::mutex async_mutex_;
+  std::condition_variable async_cv_;
+  uint64_t in_flight_draws_ = 0;
+  bool async_shutdown_ = false;
 };
 
 }  // namespace vp_macos

@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <utility>
 
 namespace vr {
 
@@ -454,6 +455,8 @@ void Renderer::reset_presentation_backend_metrics() {
     presentation_backend_metrics_.layout_deferred_to_playback_count.store(
         0, std::memory_order_relaxed);
     presentation_backend_metrics_.playing_layout_redraw_suppressed_count.store(
+        0, std::memory_order_relaxed);
+    presentation_backend_metrics_.layout_stale_completion_drop_count.store(
         0, std::memory_order_relaxed);
     {
         std::lock_guard<std::mutex> lock(presentation_draw_samples_mutex_);
@@ -1379,6 +1382,68 @@ void Renderer::enter_terminal_render_loop_error_locked(const char* reason) {
     device_state_.store(plan.final_state, std::memory_order_release);
 }
 
+void Renderer::finish_presented_draw(
+    const char* source,
+    const RendererDrawSnapshot& snapshot,
+    uint64_t snapshot_layout_revision,
+    uint64_t snapshot_us,
+    std::chrono::steady_clock::time_point profiler_start,
+    bool attempted_draw,
+    std::function<void()> frame_callback,
+    std::function<void(const char*)> frame_failure_callback,
+    bool drew,
+    const char* frame_failure_error,
+    uint64_t backend_us) {
+    if (shutting_down_.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    bool stale_layout_after_draw = false;
+    uint64_t current_layout_revision = snapshot_layout_revision;
+    if (drew) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
+        current_layout_revision = layout_revision_;
+        if (stale_layout_after_draw) {
+            presentation_backend_metrics_.layout_stale_completion_drop_count.fetch_add(
+                1, std::memory_order_relaxed);
+        }
+        if (snapshot_layout_revision > last_presented_layout_revision_) {
+            last_presented_layout_revision_ = snapshot_layout_revision;
+            presentation_backend_metrics_.layout_presented_count.fetch_add(
+                1, std::memory_order_relaxed);
+        }
+        preview_drawn_ = !stale_layout_after_draw;
+    }
+
+    const bool callback_available = static_cast<bool>(frame_callback);
+    const bool callback_published =
+        callback_available && !stale_layout_after_draw &&
+        !shutting_down_.load(std::memory_order_acquire);
+    if (callback_published) {
+        frame_callback();
+    }
+    if (attempted_draw && !drew && frame_failure_callback &&
+        !shutting_down_.load(std::memory_order_acquire)) {
+        frame_failure_callback(frame_failure_error ? frame_failure_error : "");
+    }
+
+    const auto total_us = elapsed_us_since(profiler_start);
+    record_presentation_draw_timing(total_us, backend_us);
+    log_viewport_draw_trace(source,
+                            snapshot,
+                            snapshot_layout_revision,
+                            current_layout_revision,
+                            attempted_draw,
+                            drew,
+                            stale_layout_after_draw,
+                            callback_available,
+                            callback_published,
+                            total_us,
+                            snapshot_us,
+                            backend_us);
+}
+
 void Renderer::present_frame(const PresentDecision& decision) {
     const auto profiler_start = std::chrono::steady_clock::now();
     RendererDrawSnapshot snapshot;
@@ -1402,25 +1467,56 @@ void Renderer::present_frame(const PresentDecision& decision) {
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
     bool device_lost = false;
     bool drew = false;
+    bool async_draw_submitted = false;
     uint64_t backend_us = 0;
     {
         const auto backend_start = std::chrono::steady_clock::now();
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         auto* backend = presentation_backend_.get();
+        const bool async_backend = backend && backend->completes_draw_asynchronously();
+        auto async_completion =
+            async_backend
+                ? std::function<void(bool, const char*, uint64_t)>(
+                      [this,
+                       snapshot,
+                       snapshot_layout_revision,
+                       snapshot_us,
+                       profiler_start,
+                       attempted_draw,
+                       frame_callback = frame_callback_,
+                       frame_failure_callback](bool success,
+                                               const char* error,
+                                               uint64_t completion_backend_us) {
+                          finish_presented_draw("present_frame",
+                                                snapshot,
+                                                snapshot_layout_revision,
+                                                snapshot_us,
+                                                profiler_start,
+                                                attempted_draw,
+                                                frame_callback,
+                                                frame_failure_callback,
+                                                success,
+                                                error,
+                                                completion_backend_us);
+                      })
+                : std::function<void(bool, const char*, uint64_t)>();
         if (headless_) {
             if (backend && backend->renderer_manages_headless_publish()) {
                 drew = draw_headless_and_publish(snapshot, "present_frame", frame_callback);
             } else {
-                drew = draw_frame(snapshot);
-                if (drew) {
+                drew = draw_frame(snapshot, async_completion);
+                async_draw_submitted = async_backend && drew;
+                if (drew && !async_draw_submitted) {
                     frame_callback = frame_callback_;
                 }
             }
             device_lost = backend && backend->poll_device_removed("headless present");
         } else {
-            drew = draw_frame(snapshot);
+            drew = draw_frame(snapshot, async_completion);
+            async_draw_submitted = async_backend && drew;
             if (should_present_swap_chain_after_draw(
-                    drew, backend && backend->supports_swap_chain_present())) {
+                    drew && !async_draw_submitted,
+                    backend && backend->supports_swap_chain_present())) {
                 const auto present_start = std::chrono::steady_clock::now();
                 const bool presented = backend->present_swap_chain(0);
                 presentation_backend_metrics_.present_publish_us.fetch_add(
@@ -1442,44 +1538,22 @@ void Renderer::present_frame(const PresentDecision& decision) {
         enter_terminal_device_lost_locked("present_frame");
         return;
     }
-    bool stale_layout_after_draw = false;
-    uint64_t current_layout_revision = snapshot_layout_revision;
-    if (drew) {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
-        current_layout_revision = layout_revision_;
-        if (snapshot_layout_revision > last_presented_layout_revision_) {
-            last_presented_layout_revision_ = snapshot_layout_revision;
-            presentation_backend_metrics_.layout_presented_count.fetch_add(
-                1, std::memory_order_relaxed);
-        }
-        preview_drawn_ = !stale_layout_after_draw;
+    if (async_draw_submitted) {
+        return;
     }
-    const bool callback_available = static_cast<bool>(frame_callback);
-    const bool callback_published =
-        callback_available && !stale_layout_after_draw &&
-        !shutting_down_.load(std::memory_order_acquire);
-    if (callback_published) {
-        frame_callback();
-    }
-    if (attempted_draw && !drew && frame_failure_callback &&
-        !shutting_down_.load(std::memory_order_acquire)) {
-        frame_failure_callback(frame_failure_error.c_str());
-    }
+
+    finish_presented_draw("present_frame",
+                          snapshot,
+                          snapshot_layout_revision,
+                          snapshot_us,
+                          profiler_start,
+                          attempted_draw,
+                          frame_callback,
+                          frame_failure_callback,
+                          drew,
+                          frame_failure_error.c_str(),
+                          backend_us);
     const auto total_us = elapsed_us_since(profiler_start);
-    record_presentation_draw_timing(total_us, backend_us);
-    log_viewport_draw_trace("present_frame",
-                            snapshot,
-                            snapshot_layout_revision,
-                            current_layout_revision,
-                            attempted_draw,
-                            drew,
-                            stale_layout_after_draw,
-                            callback_available,
-                            callback_published,
-                            total_us,
-                            snapshot_us,
-                            backend_us);
     static std::atomic<uint64_t> present_profiler_count{0};
     const auto count = present_profiler_count.fetch_add(1, std::memory_order_relaxed) + 1;
     if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER") &&
@@ -1525,24 +1599,56 @@ void Renderer::redraw_layout() {
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
     bool device_lost = false;
     bool drew = false;
+    bool async_draw_submitted = false;
     uint64_t backend_us = 0;
     {
         const auto backend_start = std::chrono::steady_clock::now();
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         auto* backend = presentation_backend_.get();
+        const bool async_backend = backend && backend->completes_draw_asynchronously();
+        auto async_completion =
+            async_backend
+                ? std::function<void(bool, const char*, uint64_t)>(
+                      [this,
+                       snapshot,
+                       snapshot_layout_revision,
+                       snapshot_us,
+                       profiler_start,
+                       attempted_draw,
+                       frame_callback = frame_callback_,
+                       frame_failure_callback](bool success,
+                                               const char* error,
+                                               uint64_t completion_backend_us) {
+                          finish_presented_draw("redraw_layout",
+                                                snapshot,
+                                                snapshot_layout_revision,
+                                                snapshot_us,
+                                                profiler_start,
+                                                attempted_draw,
+                                                frame_callback,
+                                                frame_failure_callback,
+                                                success,
+                                                error,
+                                                completion_backend_us);
+                      })
+                : std::function<void(bool, const char*, uint64_t)>();
         if (headless_) {
             if (backend && backend->renderer_manages_headless_publish()) {
                 drew = draw_headless_and_publish(snapshot, "redraw_layout", frame_callback);
             } else {
-                drew = draw_frame(snapshot);
-                if (drew) {
+                drew = draw_frame(snapshot, async_completion);
+                async_draw_submitted = async_backend && drew;
+                if (drew && !async_draw_submitted) {
                     frame_callback = frame_callback_;
                 }
             }
             device_lost = backend && backend->poll_device_removed("headless redraw");
         } else if (backend) {
-            drew = draw_frame(snapshot);
-            backend->wait_idle("redraw_layout");
+            drew = draw_frame(snapshot, async_completion);
+            async_draw_submitted = async_backend && drew;
+            if (!async_draw_submitted) {
+                backend->wait_idle("redraw_layout");
+            }
             device_lost = backend->poll_device_removed("redraw_layout");
         }
         if (attempted_draw && !drew) {
@@ -1555,44 +1661,20 @@ void Renderer::redraw_layout() {
         enter_terminal_device_lost_locked("redraw_layout");
         return;
     }
-    bool stale_layout_after_draw = false;
-    uint64_t current_layout_revision = snapshot_layout_revision;
-    if (drew) {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
-        current_layout_revision = layout_revision_;
-        if (snapshot_layout_revision > last_presented_layout_revision_) {
-            last_presented_layout_revision_ = snapshot_layout_revision;
-            presentation_backend_metrics_.layout_presented_count.fetch_add(
-                1, std::memory_order_relaxed);
-        }
-        preview_drawn_ = !stale_layout_after_draw;
+    if (async_draw_submitted) {
+        return;
     }
-    const bool callback_available = static_cast<bool>(frame_callback);
-    const bool callback_published =
-        callback_available && !stale_layout_after_draw &&
-        !shutting_down_.load(std::memory_order_acquire);
-    if (callback_published) {
-        frame_callback();
-    }
-    if (attempted_draw && !drew && frame_failure_callback &&
-        !shutting_down_.load(std::memory_order_acquire)) {
-        frame_failure_callback(frame_failure_error.c_str());
-    }
-    const auto total_us = elapsed_us_since(profiler_start);
-    record_presentation_draw_timing(total_us, backend_us);
-    log_viewport_draw_trace("redraw_layout",
-                            snapshot,
-                            snapshot_layout_revision,
-                            current_layout_revision,
-                            attempted_draw,
-                            drew,
-                            stale_layout_after_draw,
-                            callback_available,
-                            callback_published,
-                            total_us,
-                            snapshot_us,
-                            backend_us);
+    finish_presented_draw("redraw_layout",
+                          snapshot,
+                          snapshot_layout_revision,
+                          snapshot_us,
+                          profiler_start,
+                          attempted_draw,
+                          frame_callback,
+                          frame_failure_callback,
+                          drew,
+                          frame_failure_error.c_str(),
+                          backend_us);
 }
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
@@ -2416,7 +2498,9 @@ void Renderer::render_loop_body() {
     pending_height_.store(0, std::memory_order_release);
 }
 
-bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
+bool Renderer::draw_frame(
+    const RendererDrawSnapshot& snapshot,
+    std::function<void(bool, const char*, uint64_t)> async_completion) {
     auto* backend = presentation_backend_.get();
     if (!backend) {
         return false;
@@ -2469,6 +2553,7 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
                 target_height,
                 target_stride_bytes);
         };
+    hooks.async_draw_completed = std::move(async_completion);
     return backend->draw_frame(snapshot, hooks);
 }
 
@@ -3016,6 +3101,9 @@ PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
             std::memory_order_relaxed);
     result.playing_layout_redraw_suppressed_count =
         presentation_backend_metrics_.playing_layout_redraw_suppressed_count.load(
+            std::memory_order_relaxed);
+    result.layout_stale_completion_drop_count =
+        presentation_backend_metrics_.layout_stale_completion_drop_count.load(
             std::memory_order_relaxed);
     {
         std::lock_guard<std::mutex> state_lock(state_mutex_);

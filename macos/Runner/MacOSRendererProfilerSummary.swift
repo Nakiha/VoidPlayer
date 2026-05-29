@@ -1,0 +1,129 @@
+import Foundation
+
+enum MacOSRendererProfilerSummary {
+  static func log(
+    isPlaying: Bool,
+    trackCount: Int,
+    viewport: [String: Any],
+    callbacks: [String: Any],
+    presentationFrames: [String: Any],
+    perf: [String: Any],
+    scheduler: [String: Any]
+  ) {
+    let presentedCount = int64Value(presentationFrames, "nativeFramePresentationCount")
+    let drawCount = int64Value(perf, "rendererDrawCount")
+    let drawsPerPresentedFrameX1000 = presentedCount > 0
+      ? drawCount * 1000 / presentedCount
+      : 0
+    let summary = String(
+      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutDeferred=%lld layoutPublished=%lld layoutStaleAfterDraw=%lld layoutSuperseded=%lld layoutCallbackSuppressed=%lld nativeLayoutPresented=%lld drawPerFrameX1000=%lld layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld inFlightMetal=%lld asyncMetal=%d metalCompletionP95Us=%lld metalFailures=%lld staleCompletionDrops=%lld",
+      isPlaying ? 1 : 0,
+      trackCount,
+      stringValue(viewport, "viewportClockSource", defaultValue: "unknown"),
+      doubleValue(viewport, "displayRefreshHzEstimate"),
+      doubleValue(viewport, "displayTickHz"),
+      doubleValue(viewport, "displayDeliveredTickHz"),
+      doubleValue(viewport, "layoutIntentHz"),
+      doubleValue(viewport, "layoutSubmitHz"),
+      doubleValue(viewport, "layoutDrawHz"),
+      doubleValue(viewport, "layoutSkipHz"),
+      int64Value(viewport, "viewportLayoutDeferredToPlaybackCount"),
+      int64Value(viewport, "layoutPublishedCount"),
+      int64Value(viewport, "layoutStaleAfterDrawDropCount"),
+      int64Value(viewport, "layoutRefreshSupersededCount"),
+      int64Value(viewport, "layoutCallbackPublicationSuppressedCount"),
+      int64Value(perf, "rendererLayoutPresentedCount"),
+      drawsPerPresentedFrameX1000,
+      doubleValue(viewport, "layoutRefreshTotalP95Ms"),
+      doubleValue(viewport, "layoutRefreshTotalLastMs"),
+      doubleValue(callbacks, "frameAvailableHz"),
+      doubleValue(callbacks, "macosFrameCallbackQueuedHz"),
+      doubleValue(callbacks, "macosFrameCallbackProcessedHz"),
+      doubleValue(callbacks, "macosFrameCallbackCoalescedHz"),
+      doubleValue(callbacks, "macosFrameCallbackMainWaitLastMs"),
+      doubleValue(callbacks, "macosFrameCallbackHandleLastMs"),
+      presentedCount,
+      int64Value(presentationFrames, "presentedFramePtsDuplicateCount"),
+      int64Value(presentationFrames, "presentedFramePtsLargeGapCount"),
+      int64Value(presentationFrames, "nativeFrameRendererOwnedRatioX1000"),
+      drawCount,
+      int64Value(perf, "rendererDrawAvgUs"),
+      int64Value(perf, "rendererDrawP95Us"),
+      int64Value(perf, "rendererDrawBackendAvgUs"),
+      int64Value(perf, "rendererDrawBackendP95Us"),
+      doubleValue(perf, "rendererOwnedUploadFps"),
+      int64Value(scheduler, "tickCount"),
+      int64Value(scheduler, "presentableTickCount"),
+      int64Value(scheduler, "lastSelectedPtsUs"),
+      int64Value(perf, "inFlightMetalBufferCount"),
+      boolValue(perf, "asyncMetalPublishActive") ? 1 : 0,
+      int64Value(perf, "metalCommandCompletionP95Us"),
+      int64Value(perf, "metalCommandFailureCount"),
+      int64Value(perf, "rendererLayoutStaleCompletionDropCount")
+    )
+    summary.withCString { pointer in
+      VPMacOSLogProfilerSummary(pointer)
+    }
+  }
+
+  private static func doubleValue(
+    _ values: [String: Any],
+    _ key: String,
+    defaultValue: Double = 0.0
+  ) -> Double {
+    switch values[key] {
+    case let value as Double:
+      return value
+    case let value as Float:
+      return Double(value)
+    case let value as Int:
+      return Double(value)
+    case let value as Int64:
+      return Double(value)
+    case let value as UInt64:
+      return Double(value)
+    default:
+      return defaultValue
+    }
+  }
+
+  private static func int64Value(
+    _ values: [String: Any],
+    _ key: String,
+    defaultValue: Int64 = 0
+  ) -> Int64 {
+    switch values[key] {
+    case let value as Int64:
+      return value
+    case let value as Int:
+      return Int64(value)
+    case let value as UInt64:
+      return Int64(min(value, UInt64(Int64.max)))
+    case let value as Double:
+      return Int64(value)
+    default:
+      return defaultValue
+    }
+  }
+
+  private static func boolValue(_ values: [String: Any], _ key: String) -> Bool {
+    switch values[key] {
+    case let value as Bool:
+      return value
+    case let value as Int:
+      return value != 0
+    case let value as Int64:
+      return value != 0
+    default:
+      return false
+    }
+  }
+
+  private static func stringValue(
+    _ values: [String: Any],
+    _ key: String,
+    defaultValue: String = ""
+  ) -> String {
+    values[key] as? String ?? defaultValue
+  }
+}

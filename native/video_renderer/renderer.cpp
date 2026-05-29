@@ -1272,11 +1272,14 @@ void Renderer::present_frame(const PresentDecision& decision) {
         enter_terminal_device_lost_locked("present_frame");
         return;
     }
+    bool stale_layout_after_draw = false;
     if (drew) {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        preview_drawn_ = snapshot_layout_revision == layout_revision_;
+        stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
+        preview_drawn_ = !stale_layout_after_draw;
     }
-    if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
+    if (frame_callback && !stale_layout_after_draw &&
+        !shutting_down_.load(std::memory_order_acquire)) {
         frame_callback();
     }
     if (attempted_draw && !drew && frame_failure_callback &&
@@ -1351,11 +1354,14 @@ void Renderer::redraw_layout() {
         enter_terminal_device_lost_locked("redraw_layout");
         return;
     }
+    bool stale_layout_after_draw = false;
     if (drew) {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        preview_drawn_ = snapshot_layout_revision == layout_revision_;
+        stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
+        preview_drawn_ = !stale_layout_after_draw;
     }
-    if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
+    if (frame_callback && !stale_layout_after_draw &&
+        !shutting_down_.load(std::memory_order_acquire)) {
         frame_callback();
     }
     if (attempted_draw && !drew && frame_failure_callback &&

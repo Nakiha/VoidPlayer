@@ -16,6 +16,7 @@ void VPMacOSRemoveCrashHandler(void);
 void VPMacOSConfigureLogging(const char* logs_dir,
                              const char* log_file_name,
                              const char* level);
+void VPMacOSLogProfilerSummary(const char* message);
 
 VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void);
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player);

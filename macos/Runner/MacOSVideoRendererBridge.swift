@@ -19,10 +19,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private let frameAvailableRate = MacOSRateWindow()
   private let coalescedFrameCallbackDelayMs = 8
   private var frameAvailableCount = 0
+  private var profilerSummaryTimer: DispatchSourceTimer?
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.lifecycle = MacOSPlayerLifecycleController(textureRegistry: textureRegistry)
     super.init()
+  }
+
+  deinit {
+    profilerSummaryTimer?.cancel()
   }
 
   private var texture: MacOSVideoTexture? {
@@ -80,6 +85,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     logsDir.withCString { logsDirPointer in
       VPMacOSInstallCrashHandler(logsDirPointer)
     }
+    startProfilerSummaryTimerIfNeeded()
   }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -392,6 +398,112 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       tracks.activeSlotCapacity(),
       backendName == MacOSVideoTrackPayload.nativeFormatName ? 1 : 0
     ))
+  }
+
+  private func startProfilerSummaryTimerIfNeeded() {
+    guard MacOSProfilerLog.enabled, profilerSummaryTimer == nil else {
+      return
+    }
+    let timer = DispatchSource.makeTimerSource(queue: .main)
+    timer.schedule(deadline: .now() + .seconds(1), repeating: .seconds(1))
+    timer.setEventHandler { [weak self] in
+      self?.logProfilerSummary()
+    }
+    profilerSummaryTimer = timer
+    timer.resume()
+  }
+
+  private func logProfilerSummary() {
+    let viewport = presentation.diagnosticMap()
+    let callbacks = frameCallbackDiagnostics()
+    let presentationFrames = presentationState.diagnosticMap()
+    let perf = nativePlayer?.performanceStats() ?? [:]
+    let scheduler = nativePlayer?.presentationSchedulerStats() ?? [:]
+    let summary = String(
+      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld",
+      playback.isPlaying ? 1 : 0,
+      tracks.count,
+      stringValue(viewport, "viewportClockSource", defaultValue: "unknown"),
+      doubleValue(viewport, "displayRefreshHzEstimate"),
+      doubleValue(viewport, "displayTickHz"),
+      doubleValue(viewport, "displayDeliveredTickHz"),
+      doubleValue(viewport, "layoutIntentHz"),
+      doubleValue(viewport, "layoutSubmitHz"),
+      doubleValue(viewport, "layoutDrawHz"),
+      doubleValue(viewport, "layoutSkipHz"),
+      doubleValue(viewport, "layoutRefreshTotalP95Ms"),
+      doubleValue(viewport, "layoutRefreshTotalLastMs"),
+      doubleValue(callbacks, "frameAvailableHz"),
+      doubleValue(callbacks, "macosFrameCallbackQueuedHz"),
+      doubleValue(callbacks, "macosFrameCallbackProcessedHz"),
+      doubleValue(callbacks, "macosFrameCallbackCoalescedHz"),
+      doubleValue(callbacks, "macosFrameCallbackMainWaitLastMs"),
+      doubleValue(callbacks, "macosFrameCallbackHandleLastMs"),
+      int64Value(presentationFrames, "nativeFramePresentationCount"),
+      int64Value(presentationFrames, "presentedFramePtsDuplicateCount"),
+      int64Value(presentationFrames, "presentedFramePtsLargeGapCount"),
+      int64Value(presentationFrames, "nativeFrameRendererOwnedRatioX1000"),
+      int64Value(perf, "rendererDrawCount"),
+      int64Value(perf, "rendererDrawAvgUs"),
+      int64Value(perf, "rendererDrawP95Us"),
+      int64Value(perf, "rendererDrawBackendAvgUs"),
+      int64Value(perf, "rendererDrawBackendP95Us"),
+      doubleValue(perf, "rendererOwnedUploadFps"),
+      int64Value(scheduler, "tickCount"),
+      int64Value(scheduler, "presentableTickCount"),
+      int64Value(scheduler, "lastSelectedPtsUs")
+    )
+    summary.withCString { pointer in
+      VPMacOSLogProfilerSummary(pointer)
+    }
+  }
+
+  private func doubleValue(
+    _ values: [String: Any],
+    _ key: String,
+    defaultValue: Double = 0.0
+  ) -> Double {
+    switch values[key] {
+    case let value as Double:
+      return value
+    case let value as Float:
+      return Double(value)
+    case let value as Int:
+      return Double(value)
+    case let value as Int64:
+      return Double(value)
+    case let value as UInt64:
+      return Double(value)
+    default:
+      return defaultValue
+    }
+  }
+
+  private func int64Value(
+    _ values: [String: Any],
+    _ key: String,
+    defaultValue: Int64 = 0
+  ) -> Int64 {
+    switch values[key] {
+    case let value as Int64:
+      return value
+    case let value as Int:
+      return Int64(value)
+    case let value as UInt64:
+      return Int64(min(value, UInt64(Int64.max)))
+    case let value as Double:
+      return Int64(value)
+    default:
+      return defaultValue
+    }
+  }
+
+  private func stringValue(
+    _ values: [String: Any],
+    _ key: String,
+    defaultValue: String = ""
+  ) -> String {
+    values[key] as? String ?? defaultValue
   }
 
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {

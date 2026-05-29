@@ -42,6 +42,13 @@ void VPMacOSConfigureLogging(const char* logs_dir,
   spdlog::info("[MacOSNative] native logging configured: {}", config.file_path);
 }
 
+void VPMacOSLogProfilerSummary(const char* message) {
+  if (!message || message[0] == '\0') {
+    return;
+  }
+  spdlog::info("[MacOSProfilerSummary] {}", message);
+}
+
 int VPMacOSNativePlayerOpen(VPMacOSNativePlayer* player,
                             const char* path,
                             char* error,

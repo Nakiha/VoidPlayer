@@ -13,6 +13,9 @@ extern "C" {
 
 void VPMacOSInstallCrashHandler(const char* crash_dir);
 void VPMacOSRemoveCrashHandler(void);
+void VPMacOSConfigureLogging(const char* logs_dir,
+                             const char* log_file_name,
+                             const char* level);
 
 VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void);
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player);

@@ -66,6 +66,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           !logsDir.isEmpty else {
       return
     }
+    let logFileName = args["logFileName"] as? String ?? "native_main.log"
+    let level = args["logLevel"] as? String ?? "info"
+    logsDir.withCString { logsDirPointer in
+      logFileName.withCString { logFileNamePointer in
+        level.withCString { levelPointer in
+          VPMacOSConfigureLogging(logsDirPointer, logFileNamePointer, levelPointer)
+        }
+      }
+    }
     logsDir.withCString { logsDirPointer in
       VPMacOSInstallCrashHandler(logsDirPointer)
     }

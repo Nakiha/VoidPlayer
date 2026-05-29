@@ -1,11 +1,14 @@
 #include "native_player_bridge.h"
 
+#include "common/logging.h"
 #include "macos/native_player_state.h"
 
 #include <cstring>
 #include <mutex>
 #include <new>
 #include <string>
+
+#include <spdlog/spdlog.h>
 
 using vp_macos::write_error;
 
@@ -15,6 +18,28 @@ VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void) {
 
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player) {
   delete player;
+}
+
+void VPMacOSConfigureLogging(const char* logs_dir,
+                             const char* log_file_name,
+                             const char* level) {
+  if (!logs_dir || logs_dir[0] == '\0') {
+    return;
+  }
+  const std::string dir(logs_dir);
+  const std::string file_name =
+      log_file_name && log_file_name[0] != '\0' ? log_file_name : "native_main.log";
+  const std::string level_name =
+      level && level[0] != '\0' ? level : "info";
+
+  vr::LogConfig config;
+  config.file_path = dir + "/" + file_name;
+  config.level = spdlog::level::from_str(level_name);
+  config.max_files = 5;
+  config.use_environment_level_override = true;
+  config.manage_global_flush = true;
+  vr::configure_logging(config);
+  spdlog::info("[MacOSNative] native logging configured: {}", config.file_path);
 }
 
 int VPMacOSNativePlayerOpen(VPMacOSNativePlayer* player,

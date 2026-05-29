@@ -231,6 +231,7 @@ final class MacOSPresentationController {
         guard let self else { return }
         switch outcome {
         case .applied:
+          request.context.markFrameAvailable()
           self.layoutDrawCount += 1
           self.layoutDrawRate.record()
         case .deferredToPlayback:
@@ -297,7 +298,16 @@ final class MacOSPresentationController {
     if context.playback.currentIsPlaying(player: player) {
       return .deferredToPlayback
     }
-    return .applied
+    guard let texture = context.nativeTexture else {
+      return .transientMiss
+    }
+    return MacOSNativeFrameRefresh.refreshCurrentFrameAfterLayoutChange(
+      player: player,
+      texture: texture,
+      maxTrackSlots: context.maxTrackSlots,
+      presentationState: context.presentationState,
+      framePump: context.playback.framePumpForRefresh
+    ) ? .applied : .transientMiss
   }
 
   private func extendDisplayLinkIdleGrace() {

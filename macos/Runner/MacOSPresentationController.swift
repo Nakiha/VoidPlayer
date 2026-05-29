@@ -1,3 +1,5 @@
+import Cocoa
+import CoreVideo
 import Foundation
 
 struct MacOSPresentationContext {
@@ -13,19 +15,20 @@ struct MacOSPresentationContext {
 }
 
 final class MacOSPresentationController {
-  private let pausedLayoutRefreshIntervalNs: UInt64 = 16_000_000
   private(set) var layout: [String: Any] = MacOSVideoTrackPayload.defaultLayout()
   private let layoutRefreshQueue = DispatchQueue(
     label: "dev.nakiha.voidplayer.macos.layout-refresh",
     qos: .userInteractive
   )
-  private var layoutRefreshGeneration = 0
+  private lazy var displayLink = MacOSViewportDisplayLink { [weak self] in
+    self?.processViewportDisplayTick()
+  }
   private var layoutRefreshRunning = false
   private var latestLayoutRefreshRequest: LayoutRefreshRequest?
-  private var layoutRequestCount = 0
-  private var layoutImmediateCount = 0
-  private var layoutQueuedCount = 0
-  private var lastPausedLayoutRefreshStartNs: UInt64 = 0
+  private var layoutIntentCount = 0
+  private var layoutSubmitCount = 0
+  private var layoutDrawCount = 0
+  private var layoutSkipCount = 0
 
   func resetLayout() {
     cancelPendingLayoutRefreshes()
@@ -36,25 +39,9 @@ final class MacOSPresentationController {
     guard let nextLayout = MacOSNativeLayoutBridge.layoutMap(arguments: arguments) else {
       return
     }
-    layoutRequestCount += 1
+    layoutIntentCount += 1
     layout = nextLayout
-    if context.nativeBackendActive,
-       context.playback.currentIsPlaying(player: context.player) {
-      invalidatePendingLayoutRefreshes()
-      let startNs = DispatchTime.now().uptimeNanoseconds
-      MacOSNativeLayoutBridge.apply(layout: nextLayout, player: context.player)
-      layoutImmediateCount += 1
-      logLayoutProfiler(
-        route: "playing-immediate",
-        generation: layoutRefreshGeneration,
-        requestNs: startNs,
-        queueDelayNs: 0,
-        applyNs: DispatchTime.now().uptimeNanoseconds - startNs,
-        outcome: "applied"
-      )
-      return
-    }
-    requestCoalescedLayoutRefresh(context: context, layout: nextLayout)
+    requestDisplayLinkedLayoutRefresh(context: context, layout: nextLayout)
   }
 
   func resize(arguments: Any?, context: MacOSPresentationContext) {
@@ -110,23 +97,27 @@ final class MacOSPresentationController {
     return refreshed
   }
 
+  func diagnosticMap() -> [String: Any] {
+    var diagnostics = displayLink.diagnosticMap()
+    diagnostics["layoutIntentCount"] = layoutIntentCount
+    diagnostics["layoutSubmitCount"] = layoutSubmitCount
+    diagnostics["layoutDrawCount"] = layoutDrawCount
+    diagnostics["layoutSkipCount"] = layoutSkipCount
+    diagnostics["layoutRefreshRunning"] = layoutRefreshRunning
+    diagnostics["layoutIntentPending"] = latestLayoutRefreshRequest != nil
+    return diagnostics
+  }
+
   private func cancelPendingLayoutRefreshes() {
-    layoutRefreshGeneration += 1
     latestLayoutRefreshRequest = nil
-    lastPausedLayoutRefreshStartNs = 0
+    displayLink.stop()
     if layoutRefreshRunning {
       layoutRefreshQueue.sync {}
     }
     layoutRefreshRunning = false
   }
 
-  private func invalidatePendingLayoutRefreshes() {
-    layoutRefreshGeneration += 1
-    latestLayoutRefreshRequest = nil
-    lastPausedLayoutRefreshStartNs = 0
-  }
-
-  private func requestCoalescedLayoutRefresh(
+  private func requestDisplayLinkedLayoutRefresh(
     context: MacOSPresentationContext,
     layout: [String: Any]
   ) {
@@ -136,59 +127,48 @@ final class MacOSPresentationController {
       context.markFrameAvailable()
       return
     }
-    layoutRefreshGeneration += 1
-    layoutQueuedCount += 1
     latestLayoutRefreshRequest = LayoutRefreshRequest(context: context, layout: layout)
-    guard !layoutRefreshRunning else { return }
-    layoutRefreshRunning = true
-    runLatestLayoutRefresh(generation: layoutRefreshGeneration)
+    displayLink.start()
   }
 
-  private func runLatestLayoutRefresh(generation: Int) {
+  private func processViewportDisplayTick() {
     guard let request = latestLayoutRefreshRequest else {
-      layoutRefreshRunning = false
-      return
-    }
-    let nowNs = DispatchTime.now().uptimeNanoseconds
-    if lastPausedLayoutRefreshStartNs > 0,
-       nowNs > lastPausedLayoutRefreshStartNs,
-       nowNs - lastPausedLayoutRefreshStartNs < pausedLayoutRefreshIntervalNs {
-      let delayNs = pausedLayoutRefreshIntervalNs - (nowNs - lastPausedLayoutRefreshStartNs)
-      DispatchQueue.main.asyncAfter(deadline: .now() + .nanoseconds(Int(delayNs))) {
-        [weak self] in
-        guard let self else { return }
-        self.runLatestLayoutRefresh(generation: self.layoutRefreshGeneration)
+      layoutSkipCount += 1
+      if !layoutRefreshRunning {
+        displayLink.stop()
       }
       return
     }
+    guard !layoutRefreshRunning else {
+      layoutSkipCount += 1
+      return
+    }
     latestLayoutRefreshRequest = nil
-    lastPausedLayoutRefreshStartNs = nowNs
-    layoutRefreshQueue.async { [weak self, request, generation] in
+    layoutRefreshRunning = true
+    layoutSubmitCount += 1
+    layoutRefreshQueue.async { [weak self, request] in
       let startNs = DispatchTime.now().uptimeNanoseconds
       let outcome = Self.performLayoutRefresh(request: request)
       let finishNs = DispatchTime.now().uptimeNanoseconds
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
+        if case .applied = outcome {
+          self.layoutDrawCount += 1
+        } else {
+          request.context.presentationState.recordMiss()
+        }
+        self.layoutRefreshRunning = false
         self.logLayoutProfiler(
-          route: "paused-coalesced",
-          generation: generation,
+          route: "display-link-layout",
           requestNs: request.requestNs,
           queueDelayNs: startNs >= request.requestNs ? startNs - request.requestNs : 0,
           applyNs: finishNs >= startNs ? finishNs - startNs : 0,
           outcome: outcome.profilerName
         )
-        if generation == self.layoutRefreshGeneration {
-          switch outcome {
-          case .applied:
-            break
-          case .transientMiss:
-            request.context.presentationState.recordMiss()
-          }
-        }
         if self.latestLayoutRefreshRequest != nil {
-          self.runLatestLayoutRefresh(generation: self.layoutRefreshGeneration)
+          self.displayLink.start()
         } else {
-          self.layoutRefreshRunning = false
+          self.displayLink.stop()
         }
       }
     }
@@ -217,7 +197,6 @@ final class MacOSPresentationController {
 
   private func logLayoutProfiler(
     route: String,
-    generation: Int,
     requestNs: UInt64,
     queueDelayNs: UInt64,
     applyNs: UInt64,
@@ -225,20 +204,21 @@ final class MacOSPresentationController {
   ) {
     let totalNs = DispatchTime.now().uptimeNanoseconds - requestNs
     let slow = totalNs >= 12_000_000 || queueDelayNs >= 8_000_000 || applyNs >= 8_000_000
-    let periodic = layoutRequestCount > 0 && layoutRequestCount % 120 == 0
+    let periodic = layoutIntentCount > 0 && layoutIntentCount % 120 == 0
     guard slow || periodic else { return }
     MacOSProfilerLog.log(String(
-      format: "VoidPlayer macOS layout profiler route=%@ outcome=%@ gen=%d requests=%d immediate=%d queued=%d totalMs=%.2f queueMs=%.2f applyMs=%.2f playing=%d",
+      format: "VoidPlayer macOS layout profiler route=%@ outcome=%@ intents=%d submits=%d draws=%d skips=%d totalMs=%.2f queueMs=%.2f applyMs=%.2f source=%@ hz=%.1f",
       route,
       outcome,
-      generation,
-      layoutRequestCount,
-      layoutImmediateCount,
-      layoutQueuedCount,
+      layoutIntentCount,
+      layoutSubmitCount,
+      layoutDrawCount,
+      layoutSkipCount,
       Self.ms(totalNs),
       Self.ms(queueDelayNs),
       Self.ms(applyNs),
-      route == "playing-immediate" ? 1 : 0
+      displayLink.clockSource,
+      displayLink.refreshHzEstimate
     ))
   }
 
@@ -264,5 +244,248 @@ private enum LayoutRefreshOutcome {
     case .transientMiss:
       return "transient-miss"
     }
+  }
+}
+
+private final class MacOSViewportDisplayLink {
+  private let lock = NSLock()
+  private let onTick: () -> Void
+  private var displayLink: CVDisplayLink?
+  private var fallbackTimer: DispatchSourceTimer?
+  private var running = false
+  private var mainTickScheduled = false
+  private var targetDisplayId: CGDirectDisplayID = 0
+  private var source = "stopped"
+  private var tickCount = 0
+  private var deliveredTickCount = 0
+  private var lastCallbackNs: UInt64 = 0
+  private var refreshHz = 0.0
+  private var intervalsNs: [UInt64] = []
+
+  var clockSource: String {
+    lock.lock()
+    defer { lock.unlock() }
+    return source
+  }
+
+  var refreshHzEstimate: Double {
+    lock.lock()
+    defer { lock.unlock() }
+    return refreshHz
+  }
+
+  init(onTick: @escaping () -> Void) {
+    self.onTick = onTick
+  }
+
+  deinit {
+    stop()
+  }
+
+  func start() {
+    lock.lock()
+    let displayId = Self.currentDisplayId()
+    let needsRecreate = displayLink == nil || displayId != targetDisplayId
+    lock.unlock()
+    if needsRecreate {
+      recreateDisplayLink(displayId: displayId)
+    }
+
+    lock.lock()
+    if running {
+      lock.unlock()
+      return
+    }
+    if let displayLink {
+      let status = CVDisplayLinkStart(displayLink)
+      running = status == kCVReturnSuccess
+      source = running ? "cvdisplaylink" : "fallback-timer"
+      lock.unlock()
+      if status != kCVReturnSuccess {
+        startFallbackTimer()
+      }
+      return
+    }
+    source = "fallback-timer"
+    lock.unlock()
+    startFallbackTimer()
+  }
+
+  func stop() {
+    lock.lock()
+    running = false
+    mainTickScheduled = false
+    let link = displayLink
+    let timer = fallbackTimer
+    fallbackTimer = nil
+    lock.unlock()
+    if let link, CVDisplayLinkIsRunning(link) {
+      CVDisplayLinkStop(link)
+    }
+    timer?.cancel()
+  }
+
+  func diagnosticMap() -> [String: Any] {
+    lock.lock()
+    defer { lock.unlock() }
+    return [
+      "viewportClockSource": source,
+      "viewportClockRunning": running,
+      "displayRefreshHzEstimate": refreshHz,
+      "displayRefreshHzEstimateX1000": Int(refreshHz * 1000.0),
+      "displayTickCount": tickCount,
+      "displayDeliveredTickCount": deliveredTickCount,
+      "viewportTickP95Ms": intervalP95MsLocked(),
+    ]
+  }
+
+  private func recreateDisplayLink(displayId: CGDirectDisplayID) {
+    lock.lock()
+    let oldLink = displayLink
+    displayLink = nil
+    targetDisplayId = displayId
+    lock.unlock()
+    if let oldLink, CVDisplayLinkIsRunning(oldLink) {
+      CVDisplayLinkStop(oldLink)
+    }
+
+    var newLink: CVDisplayLink?
+    let status = CVDisplayLinkCreateWithCGDisplay(displayId, &newLink)
+    guard status == kCVReturnSuccess, let created = newLink else {
+      lock.lock()
+      source = "fallback-timer"
+      refreshHz = Self.fallbackRefreshHz()
+      lock.unlock()
+      return
+    }
+    CVDisplayLinkSetOutputCallback(
+      created,
+      MacOSViewportDisplayLink.displayLinkCallback,
+      UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+    )
+    lock.lock()
+    displayLink = created
+    source = "cvdisplaylink"
+    refreshHz = Self.nominalRefreshHz(displayLink: created)
+    lock.unlock()
+  }
+
+  private func startFallbackTimer() {
+    lock.lock()
+    if fallbackTimer != nil {
+      running = true
+      lock.unlock()
+      return
+    }
+    let hz = Self.fallbackRefreshHz()
+    let intervalNs = max(1_000_000, UInt64(1_000_000_000.0 / hz))
+    refreshHz = hz
+    running = true
+    source = "fallback-timer"
+    lock.unlock()
+
+    let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .userInteractive))
+    timer.schedule(deadline: .now(), repeating: .nanoseconds(Int(intervalNs)))
+    timer.setEventHandler { [weak self] in
+      self?.recordTickAndScheduleMain()
+    }
+
+    lock.lock()
+    fallbackTimer = timer
+    lock.unlock()
+    timer.resume()
+  }
+
+  private static let displayLinkCallback: CVDisplayLinkOutputCallback = {
+    _, _, _, _, _, userInfo in
+    guard let userInfo else { return kCVReturnSuccess }
+    let driver = Unmanaged<MacOSViewportDisplayLink>
+      .fromOpaque(userInfo)
+      .takeUnretainedValue()
+    driver.recordTickAndScheduleMain()
+    return kCVReturnSuccess
+  }
+
+  private func recordTickAndScheduleMain() {
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    lock.lock()
+    guard running else {
+      lock.unlock()
+      return
+    }
+    tickCount += 1
+    if lastCallbackNs > 0, nowNs > lastCallbackNs {
+      let interval = nowNs - lastCallbackNs
+      intervalsNs.append(interval)
+      if intervalsNs.count > 240 {
+        intervalsNs.removeFirst(intervalsNs.count - 240)
+      }
+      let observedHz = 1_000_000_000.0 / Double(interval)
+      if observedHz.isFinite && observedHz > 1.0 {
+        refreshHz = refreshHz > 1.0 ? (refreshHz * 0.9 + observedHz * 0.1) : observedHz
+      }
+    }
+    lastCallbackNs = nowNs
+    if mainTickScheduled {
+      lock.unlock()
+      return
+    }
+    mainTickScheduled = true
+    lock.unlock()
+
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.lock.lock()
+      self.mainTickScheduled = false
+      self.deliveredTickCount += 1
+      let shouldDeliver = self.running
+      self.lock.unlock()
+      if shouldDeliver {
+        self.onTick()
+      }
+    }
+  }
+
+  private func intervalP95MsLocked() -> Double {
+    guard !intervalsNs.isEmpty else { return 0.0 }
+    let sorted = intervalsNs.sorted()
+    let index = min(sorted.count - 1, Int(Double(sorted.count - 1) * 0.95))
+    return Double(sorted[index]) / 1_000_000.0
+  }
+
+  private static func nominalRefreshHz(displayLink: CVDisplayLink) -> Double {
+    let nominal = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(displayLink)
+    guard nominal.timeValue > 0, nominal.timeScale > 0 else {
+      return fallbackRefreshHz()
+    }
+    return Double(nominal.timeScale) / Double(nominal.timeValue)
+  }
+
+  private static func fallbackRefreshHz() -> Double {
+    let screen = currentScreen()
+    if #available(macOS 10.15, *) {
+      let fps = screen?.maximumFramesPerSecond ?? 0
+      if fps > 0 {
+        return Double(fps)
+      }
+    }
+    return 60.0
+  }
+
+  private static func currentDisplayId() -> CGDirectDisplayID {
+    let screen = currentScreen()
+    let key = NSDeviceDescriptionKey("NSScreenNumber")
+    if let number = screen?.deviceDescription[key] as? NSNumber {
+      return CGDirectDisplayID(number.uint32Value)
+    }
+    return CGMainDisplayID()
+  }
+
+  private static func currentScreen() -> NSScreen? {
+    NSApplication.shared.keyWindow?.screen
+      ?? NSApplication.shared.mainWindow?.screen
+      ?? NSApplication.shared.windows.first(where: { $0.isVisible && $0.screen != nil })?.screen
+      ?? NSScreen.main
+      ?? NSScreen.screens.first
   }
 }

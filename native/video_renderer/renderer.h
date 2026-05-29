@@ -34,7 +34,6 @@
 #include <mutex>  // IWYU pragma: keep
 #include <functional>
 #include <cstdint>
-#include <chrono>
 
 namespace vr {
 
@@ -361,8 +360,6 @@ private:
     LayoutController layout_controller_;
     RenderLoopController render_loop_controller_;
     PresentationScheduler presentation_scheduler_;
-    std::chrono::steady_clock::time_point last_playing_layout_present_time_{};
-    std::chrono::steady_clock::time_point last_paused_layout_present_time_{};
     RenderBackendKind render_backend_kind_ = RenderBackendKind::D3D11;
 
     TrackPipelineFactory track_pipeline_factory_;

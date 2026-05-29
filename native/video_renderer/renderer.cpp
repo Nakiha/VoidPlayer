@@ -35,12 +35,11 @@
 
 namespace vr {
 
-// Max sleep for responsiveness (allows seek/pause within ~50 ms)
-static constexpr int64_t MAX_SLEEP_US = 8000;  // 8ms cap → ~120Hz layout response
+// Max render-loop sleep for playback deadline responsiveness. Viewport layout
+// redraw cadence is driven by the platform display clock on macOS.
+static constexpr int64_t MAX_SLEEP_US = 8000;
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
-static constexpr auto kPlayingLayoutRedrawInterval = std::chrono::microseconds(16000);
-static constexpr auto kPausedLayoutRedrawInterval = std::chrono::microseconds(16000);
 
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
@@ -276,8 +275,6 @@ void Renderer::release_resources_locked() {
     // otherwise hw_frame_ref cleanup will access a freed device context.
     last_decision_ = PresentDecision();
     presentation_scheduler_.reset();
-    last_playing_layout_present_time_ = {};
-    last_paused_layout_present_time_ = {};
 
     tracks_.stop_all([this](size_t, TrackPipeline& track) {
         unregister_track_audio(track.file_id);
@@ -657,8 +654,6 @@ void Renderer::seek_internal(std::unique_lock<std::mutex>& state_lock,
         preview_drawn_ = false;
         last_decision_ = PresentDecision();
         presentation_scheduler_.reset();
-        last_playing_layout_present_time_ = {};
-        last_paused_layout_present_time_ = {};
     }
 }
 
@@ -1839,8 +1834,8 @@ void Renderer::do_resize(int width, int height) {
 }
 
 void Renderer::render_loop() noexcept {
-    // Raise Windows timer resolution from default ~15.6ms to 1ms,
-    // so sleep_for(16ms) actually wakes up near 16ms instead of 31ms.
+    // On Windows this raises timer resolution from the default ~15.6 ms to
+    // 1 ms; on other platforms it is a no-op wrapper.
     ScopedRenderThreadTiming render_thread_timing;
     spdlog::info("[Renderer] Render loop started (timer resolution: platform), tid={}",
                  current_render_thread_id_string());
@@ -1973,15 +1968,6 @@ void Renderer::render_loop_body() {
                 should_draw_preview = !preview_drawn_;
             }
             if (should_draw_preview) {
-                const auto now = std::chrono::steady_clock::now();
-                const bool paused_redraw_due =
-                    last_paused_layout_present_time_ ==
-                        std::chrono::steady_clock::time_point{} ||
-                    now - last_paused_layout_present_time_ >= kPausedLayoutRedrawInterval;
-                if (!paused_redraw_due) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    continue;
-                }
                 bool drawn = false;
 
                 // Try cached last frame first (for layout changes while paused)
@@ -2012,7 +1998,6 @@ void Renderer::render_loop_body() {
                 }
                 if (present_decision_has_frame(cached_decision)) {
                     present_frame(cached_decision);
-                    last_paused_layout_present_time_ = std::chrono::steady_clock::now();
                     drawn = true;
                     spdlog::debug("[Renderer] Paused frame (cached): pts={:.3f}s",
                                   cached_pts_us.has_value()
@@ -2032,7 +2017,6 @@ void Renderer::render_loop_body() {
                     if (snapshot.ready_to_present) {
                         auto& preview = snapshot.decision;
                         present_frame(preview);
-                        last_paused_layout_present_time_ = std::chrono::steady_clock::now();
                         bool preserve_requested_clock = false;
                         int ref = -1;
                         int64_t ref_offset_us = 0;
@@ -2115,7 +2099,6 @@ void Renderer::render_loop_body() {
                 apply_present_carry_forward(tracks_, last_decision_, decision);
             }
             present_frame(decision);
-            last_playing_layout_present_time_ = std::chrono::steady_clock::now();
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 last_decision_ = decision;
@@ -2130,30 +2113,8 @@ void Renderer::render_loop_body() {
                 should_redraw =
                     !preview_drawn_ && present_decision_has_frame(last_decision_);
             }
-            const auto now = std::chrono::steady_clock::now();
-            const bool redraw_due =
-                last_playing_layout_present_time_ == std::chrono::steady_clock::time_point{} ||
-                now - last_playing_layout_present_time_ >= kPlayingLayoutRedrawInterval;
-            bool video_frame_imminent = false;
-            {
-                const int64_t current_pts = playback_->clock().current_pts_us();
-                const double speed = playback_->clock().speed();
-                std::optional<int64_t> next_event_pts;
-                {
-                    std::lock_guard<std::mutex> lock(state_mutex_);
-                    next_event_pts =
-                        compute_next_frame_event_pts_us(tracks_, current_pts);
-                }
-                if (next_event_pts.has_value() && speed > 0.0) {
-                    const auto next_delta_us =
-                        static_cast<int64_t>((*next_event_pts - current_pts) / speed);
-                    video_frame_imminent =
-                        next_delta_us <= kPlayingLayoutRedrawInterval.count();
-                }
-            }
-            if (should_redraw && redraw_due && !video_frame_imminent) {
+            if (should_redraw) {
                 redraw_layout();
-                last_playing_layout_present_time_ = std::chrono::steady_clock::now();
             }
         }
 
@@ -2537,8 +2498,6 @@ int Renderer::add_track_internal(const std::string& video_path,
         last_decision_.file_ids[slot] = -1;
         last_decision_.track_generations[slot] = 0;
         presentation_scheduler_.reset();
-        last_playing_layout_present_time_ = {};
-        last_paused_layout_present_time_ = {};
     }
 
     if (seek_result.applied) {
@@ -2607,8 +2566,6 @@ void Renderer::remove_track(int file_id) {
         cached_duration_us_ = compute_track_duration_cache(tracks_);
         preview_drawn_ = false;
         presentation_scheduler_.reset();
-        last_playing_layout_present_time_ = {};
-        last_paused_layout_present_time_ = {};
         remaining = tracks_.count();
 
         finish_track_removal_playback(

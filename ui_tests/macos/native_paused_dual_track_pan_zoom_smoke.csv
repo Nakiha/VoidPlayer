@@ -1,0 +1,21 @@
+# Paused dual-track pan/zoom should be driven by display-link cadence, not raw input events.
+@WINDOW, 1366, 768
+0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.6, ASSERT_TRACK_COUNT, 1
+1.8, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+3.8, ASSERT_TRACK_COUNT, 2
+3.9, ASSERT_PAUSED
+4.0, SET_ZOOM, 2.0
+4.1, DRAG_VIEWPORT, 480, -160, 240, 4
+5.3, SET_ZOOM, 3.5
+5.4, DRAG_VIEWPORT, -560, 260, 240, 4
+6.8, CAPTURE_VIEWPORT, paused_dual_pan_zoom, build/paused_dual_pan_zoom.png
+6.9, ASSERT_CAPTURE_NOT_BLACK, paused_dual_pan_zoom, 0.01, 4.0
+7.0, ASSERT_CAPTURE_REGION_NOT_BLACK, paused_dual_pan_zoom, right, 0.01, 4.0
+7.1, ASSERT_NATIVE_DIAGNOSTIC_STRING, viewportClockSource, cvdisplaylink
+7.2, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, displayRefreshHzEstimateX1000, 30000, 300000
+7.3, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutIntentCount, 200, 700
+7.4, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutSubmitCount, 20, 300
+7.5, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, layoutDrawCount, 20, 300
+7.6, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, displayDeliveredTickCount, 20, 320
+7.8, QUIT, 0

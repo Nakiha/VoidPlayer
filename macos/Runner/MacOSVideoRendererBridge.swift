@@ -174,6 +174,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         presentationTargetInstalled: playback.targetInstalled,
         nativeEventDiagnostics: nativeEvents.diagnosticMap(),
         frameCallbackDiagnostics: frameCallbackProfiler.diagnosticMap(),
+        viewportDiagnostics: presentation.diagnosticMap(),
         presentationDiagnostics: presentationState.diagnosticMap()
       ))
     case "captureViewport":

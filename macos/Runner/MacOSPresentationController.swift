@@ -45,6 +45,12 @@ final class MacOSPresentationController {
     layoutIntentCount += 1
     let revision = nextLayoutRevision()
     layout = nextLayout
+    logLayoutTrace(
+      event: "intent",
+      revision: revision,
+      layout: nextLayout,
+      outcome: "queued"
+    )
     requestDisplayLinkedLayoutRefresh(
       context: context,
       layout: nextLayout,
@@ -143,6 +149,12 @@ final class MacOSPresentationController {
       layout: layout,
       revision: revision
     )
+    logLayoutTrace(
+      event: "display-link-pending",
+      revision: revision,
+      layout: layout,
+      outcome: "latest"
+    )
     displayLink.start()
   }
 
@@ -161,6 +173,12 @@ final class MacOSPresentationController {
     latestLayoutRefreshRequest = nil
     layoutRefreshRunning = true
     layoutSubmitCount += 1
+    logLayoutTrace(
+      event: "submit",
+      revision: request.revision,
+      layout: request.layout,
+      outcome: "start"
+    )
     layoutRefreshQueue.async { [weak self, request] in
       guard let self else { return }
       let startNs = DispatchTime.now().uptimeNanoseconds
@@ -176,6 +194,12 @@ final class MacOSPresentationController {
         case .transientMiss:
           request.context.presentationState.recordMiss()
         }
+        self.logLayoutTrace(
+          event: "complete",
+          revision: request.revision,
+          layout: request.layout,
+          outcome: outcome.profilerName
+        )
         self.layoutRefreshRunning = false
         self.logLayoutProfiler(
           route: "display-link-layout",
@@ -239,6 +263,37 @@ final class MacOSPresentationController {
     let current = latestLayoutRevision
     layoutRevisionLock.unlock()
     return request.revision == current
+  }
+
+  private func logLayoutTrace(
+    event: String,
+    revision: UInt64,
+    layout: [String: Any],
+    outcome: String
+  ) {
+    let zoom = MacOSFlutterArguments.doubleValue(layout["zoomRatio"]) ?? 1.0
+    let offsetX = MacOSFlutterArguments.doubleValue(layout["viewOffsetX"]) ?? 0.0
+    let offsetY = MacOSFlutterArguments.doubleValue(layout["viewOffsetY"]) ?? 0.0
+    let mode = MacOSFlutterArguments.intValue(layout["mode"]) ?? 0
+    MacOSProfilerLog.trace(String(
+      format: "VoidPlayer viewport trace swift event=%@ outcome=%@ revision=%llu intent=%d submit=%d draw=%d skip=%d stale=%d running=%d pending=%d source=%@ hz=%.2f mode=%d zoom=%.4f offset=(%.1f,%.1f)",
+      event,
+      outcome,
+      revision,
+      layoutIntentCount,
+      layoutSubmitCount,
+      layoutDrawCount,
+      layoutSkipCount,
+      layoutStaleDropCount,
+      layoutRefreshRunning ? 1 : 0,
+      latestLayoutRefreshRequest != nil ? 1 : 0,
+      displayLink.clockSource,
+      displayLink.refreshHzEstimate,
+      mode,
+      zoom,
+      offsetX,
+      offsetY
+    ))
   }
 
   private func logLayoutProfiler(

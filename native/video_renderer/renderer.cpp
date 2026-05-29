@@ -53,6 +53,98 @@ bool profiler_enabled(const char* env_name) {
            std::strcmp(value, "false") != 0;
 }
 
+bool viewport_trace_enabled() {
+    return profiler_enabled("VOIDPLAYER_VIEWPORT_TRACE");
+}
+
+const char* frame_storage_kind_name(FrameStorageKind kind) {
+    switch (kind) {
+    case FrameStorageKind::CpuRgba:
+        return "cpu-rgba";
+    case FrameStorageKind::CpuNv12:
+        return "cpu-nv12";
+    case FrameStorageKind::CpuPlanarYuv:
+        return "cpu-planar-yuv";
+    case FrameStorageKind::D3D11Nv12:
+        return "d3d11-nv12";
+    case FrameStorageKind::D3D11Texture:
+        return "d3d11-texture";
+    case FrameStorageKind::MacOSCVPixelBuffer:
+        return "macos-cvpixelbuffer";
+    case FrameStorageKind::Empty:
+    default:
+        return "empty";
+    }
+}
+
+int first_present_slot(const RendererDrawSnapshot& snapshot) {
+    for (size_t i = 0; i < snapshot.decision.frames.size(); ++i) {
+        if (snapshot.decision.frames[i].has_value()) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+void log_viewport_draw_trace(const char* source,
+                             const RendererDrawSnapshot& snapshot,
+                             uint64_t snapshot_layout_revision,
+                             uint64_t current_layout_revision,
+                             bool attempted_draw,
+                             bool drew,
+                             bool stale_layout_after_draw,
+                             bool callback_available,
+                             bool callback_published,
+                             uint64_t total_us,
+                             uint64_t snapshot_us,
+                             uint64_t backend_us) {
+    if (!viewport_trace_enabled()) {
+        return;
+    }
+    const int slot = first_present_slot(snapshot);
+    int file_id = -1;
+    int64_t pts_us = snapshot.decision.current_pts_us;
+    const char* storage = "none";
+    if (slot >= 0) {
+        const auto index = static_cast<size_t>(slot);
+        file_id = snapshot.decision.file_ids[index];
+        if (snapshot.decision.frames[index].has_value()) {
+            const auto& frame = snapshot.decision.frames[index].value();
+            pts_us = frame.pts_us;
+            storage = frame_storage_kind_name(frame.storage_kind());
+        }
+    }
+    spdlog::info(
+        "[ViewportTrace] native source={} attempted={} drew={} stale={} "
+        "callback_available={} callback_published={} total_us={} snapshot_us={} "
+        "backend_us={} layout_rev={} current_layout_rev={} slot={} file_id={} "
+        "pts_us={} storage={} target={}x{} mode={} zoom={:.4f} "
+        "offset=({:.1f},{:.1f}) split={:.4f} pixel_mode={}",
+        source,
+        attempted_draw,
+        drew,
+        stale_layout_after_draw,
+        callback_available,
+        callback_published,
+        total_us,
+        snapshot_us,
+        backend_us,
+        snapshot_layout_revision,
+        current_layout_revision,
+        slot,
+        file_id,
+        pts_us,
+        storage,
+        snapshot.target_width,
+        snapshot.target_height,
+        snapshot.layout.mode,
+        snapshot.layout.zoom_ratio,
+        snapshot.layout.view_offset[0],
+        snapshot.layout.view_offset[1],
+        snapshot.layout.split_pos,
+        snapshot.layout.pixel_size_mode);
+}
+
 void stop_detached_track_pipeline(size_t slot, std::unique_ptr<TrackPipeline>& track) {
     if (!track) {
         return;
@@ -1273,13 +1365,18 @@ void Renderer::present_frame(const PresentDecision& decision) {
         return;
     }
     bool stale_layout_after_draw = false;
+    uint64_t current_layout_revision = snapshot_layout_revision;
     if (drew) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
+        current_layout_revision = layout_revision_;
         preview_drawn_ = !stale_layout_after_draw;
     }
-    if (frame_callback && !stale_layout_after_draw &&
-        !shutting_down_.load(std::memory_order_acquire)) {
+    const bool callback_available = static_cast<bool>(frame_callback);
+    const bool callback_published =
+        callback_available && !stale_layout_after_draw &&
+        !shutting_down_.load(std::memory_order_acquire);
+    if (callback_published) {
         frame_callback();
     }
     if (attempted_draw && !drew && frame_failure_callback &&
@@ -1287,6 +1384,18 @@ void Renderer::present_frame(const PresentDecision& decision) {
         frame_failure_callback(frame_failure_error.c_str());
     }
     const auto total_us = elapsed_us_since(profiler_start);
+    log_viewport_draw_trace("present_frame",
+                            snapshot,
+                            snapshot_layout_revision,
+                            current_layout_revision,
+                            attempted_draw,
+                            drew,
+                            stale_layout_after_draw,
+                            callback_available,
+                            callback_published,
+                            total_us,
+                            snapshot_us,
+                            backend_us);
     static std::atomic<uint64_t> present_profiler_count{0};
     const auto count = present_profiler_count.fetch_add(1, std::memory_order_relaxed) + 1;
     if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER") &&
@@ -1314,12 +1423,16 @@ void Renderer::present_frame(const PresentDecision& decision) {
 }
 
 void Renderer::redraw_layout() {
+    const auto profiler_start = std::chrono::steady_clock::now();
     RendererDrawSnapshot snapshot;
     uint64_t snapshot_layout_revision = 0;
+    uint64_t snapshot_us = 0;
     {
+        const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(state_mutex_);
         snapshot = build_draw_snapshot_locked(last_decision_);
         snapshot_layout_revision = layout_revision_;
+        snapshot_us = elapsed_us_since(snapshot_start);
     }
     std::function<void()> frame_callback;
     auto frame_failure_callback = frame_failure_callback_snapshot();
@@ -1327,7 +1440,9 @@ void Renderer::redraw_layout() {
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
     bool device_lost = false;
     bool drew = false;
+    uint64_t backend_us = 0;
     {
+        const auto backend_start = std::chrono::steady_clock::now();
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
         auto* backend = presentation_backend_.get();
         if (headless_) {
@@ -1348,6 +1463,7 @@ void Renderer::redraw_layout() {
         if (attempted_draw && !drew) {
             frame_failure_error = presentation_backend_last_error();
         }
+        backend_us = elapsed_us_since(backend_start);
     }
     if (device_lost) {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -1355,19 +1471,36 @@ void Renderer::redraw_layout() {
         return;
     }
     bool stale_layout_after_draw = false;
+    uint64_t current_layout_revision = snapshot_layout_revision;
     if (drew) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
+        current_layout_revision = layout_revision_;
         preview_drawn_ = !stale_layout_after_draw;
     }
-    if (frame_callback && !stale_layout_after_draw &&
-        !shutting_down_.load(std::memory_order_acquire)) {
+    const bool callback_available = static_cast<bool>(frame_callback);
+    const bool callback_published =
+        callback_available && !stale_layout_after_draw &&
+        !shutting_down_.load(std::memory_order_acquire);
+    if (callback_published) {
         frame_callback();
     }
     if (attempted_draw && !drew && frame_failure_callback &&
         !shutting_down_.load(std::memory_order_acquire)) {
         frame_failure_callback(frame_failure_error.c_str());
     }
+    log_viewport_draw_trace("redraw_layout",
+                            snapshot,
+                            snapshot_layout_revision,
+                            current_layout_revision,
+                            attempted_draw,
+                            drew,
+                            stale_layout_after_draw,
+                            callback_available,
+                            callback_published,
+                            elapsed_us_since(profiler_start),
+                            snapshot_us,
+                            backend_us);
 }
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
@@ -2239,6 +2372,19 @@ void Renderer::apply_layout(const LayoutState& state) {
     layout_controller_.apply(
         layout_, state, [this](int file_id) { return find_slot_by_file_id(file_id); });
     ++layout_revision_;
+    if (viewport_trace_enabled()) {
+        spdlog::info(
+            "[ViewportTrace] native source=apply_layout layout_rev={} playing={} "
+            "mode={} zoom={:.4f} offset=({:.1f},{:.1f}) split={:.4f} pixel_mode={}",
+            layout_revision_,
+            playing_.load(std::memory_order_acquire),
+            layout_.mode,
+            layout_.zoom_ratio,
+            layout_.view_offset[0],
+            layout_.view_offset[1],
+            layout_.split_pos,
+            layout_.pixel_size_mode);
+    }
 
     // Trigger redraw — during playback, redraw_layout() handles this
     // without Flush() to avoid contention with D3D11VA decode threads.

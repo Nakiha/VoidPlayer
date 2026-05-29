@@ -352,6 +352,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func logFrameCallbackProfiler(enqueueNs: UInt64, startNs: UInt64, endNs: UInt64) {
     let waitNs = startNs >= enqueueNs ? startNs - enqueueNs : 0
     let handleNs = endNs >= startNs ? endNs - startNs : 0
+    MacOSProfilerLog.trace(String(
+      format: "VoidPlayer viewport trace swift event=frame-callback waitMs=%.2f handleMs=%.2f playing=%d tracks=%d native=%d",
+      Double(waitNs) / 1_000_000.0,
+      Double(handleNs) / 1_000_000.0,
+      playback.isPlaying ? 1 : 0,
+      tracks.activeSlotCapacity(),
+      backendName == MacOSVideoTrackPayload.nativeFormatName ? 1 : 0
+    ))
     let slow = waitNs >= 12_000_000 || handleNs >= 8_000_000
     guard slow else { return }
     MacOSProfilerLog.log(String(

@@ -3,9 +3,16 @@ import Foundation
 enum MacOSProfilerLog {
   static let enabled =
     ProcessInfo.processInfo.environment["VOIDPLAYER_MACOS_PROFILER"] == "1"
+  static let traceEnabled =
+    ProcessInfo.processInfo.environment["VOIDPLAYER_VIEWPORT_TRACE"] == "1"
 
   static func log(_ message: @autoclosure () -> String) {
     guard enabled else { return }
+    NSLog("%@", message())
+  }
+
+  static func trace(_ message: @autoclosure () -> String) {
+    guard traceEnabled else { return }
     NSLog("%@", message())
   }
 }

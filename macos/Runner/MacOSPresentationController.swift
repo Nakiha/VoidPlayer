@@ -23,12 +23,15 @@ final class MacOSPresentationController {
   private lazy var displayLink = MacOSViewportDisplayLink { [weak self] in
     self?.processViewportDisplayTick()
   }
+  private let layoutRevisionLock = NSLock()
   private var layoutRefreshRunning = false
   private var latestLayoutRefreshRequest: LayoutRefreshRequest?
+  private var latestLayoutRevision: UInt64 = 0
   private var layoutIntentCount = 0
   private var layoutSubmitCount = 0
   private var layoutDrawCount = 0
   private var layoutSkipCount = 0
+  private var layoutStaleDropCount = 0
 
   func resetLayout() {
     cancelPendingLayoutRefreshes()
@@ -40,8 +43,13 @@ final class MacOSPresentationController {
       return
     }
     layoutIntentCount += 1
+    let revision = nextLayoutRevision()
     layout = nextLayout
-    requestDisplayLinkedLayoutRefresh(context: context, layout: nextLayout)
+    requestDisplayLinkedLayoutRefresh(
+      context: context,
+      layout: nextLayout,
+      revision: revision
+    )
   }
 
   func resize(arguments: Any?, context: MacOSPresentationContext) {
@@ -103,12 +111,14 @@ final class MacOSPresentationController {
     diagnostics["layoutSubmitCount"] = layoutSubmitCount
     diagnostics["layoutDrawCount"] = layoutDrawCount
     diagnostics["layoutSkipCount"] = layoutSkipCount
+    diagnostics["layoutStaleDropCount"] = layoutStaleDropCount
     diagnostics["layoutRefreshRunning"] = layoutRefreshRunning
     diagnostics["layoutIntentPending"] = latestLayoutRefreshRequest != nil
     return diagnostics
   }
 
   private func cancelPendingLayoutRefreshes() {
+    invalidateLayoutRevision()
     latestLayoutRefreshRequest = nil
     displayLink.stop()
     if layoutRefreshRunning {
@@ -119,7 +129,8 @@ final class MacOSPresentationController {
 
   private func requestDisplayLinkedLayoutRefresh(
     context: MacOSPresentationContext,
-    layout: [String: Any]
+    layout: [String: Any],
+    revision: UInt64
   ) {
     guard context.nativeBackendActive,
           context.player != nil,
@@ -127,7 +138,11 @@ final class MacOSPresentationController {
       context.markFrameAvailable()
       return
     }
-    latestLayoutRefreshRequest = LayoutRefreshRequest(context: context, layout: layout)
+    latestLayoutRefreshRequest = LayoutRefreshRequest(
+      context: context,
+      layout: layout,
+      revision: revision
+    )
     displayLink.start()
   }
 
@@ -147,14 +162,18 @@ final class MacOSPresentationController {
     layoutRefreshRunning = true
     layoutSubmitCount += 1
     layoutRefreshQueue.async { [weak self, request] in
+      guard let self else { return }
       let startNs = DispatchTime.now().uptimeNanoseconds
-      let outcome = Self.performLayoutRefresh(request: request)
+      let outcome = self.performLayoutRefresh(request: request)
       let finishNs = DispatchTime.now().uptimeNanoseconds
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
-        if case .applied = outcome {
+        switch outcome {
+        case .applied:
           self.layoutDrawCount += 1
-        } else {
+        case .stale:
+          self.layoutStaleDropCount += 1
+        case .transientMiss:
           request.context.presentationState.recordMiss()
         }
         self.layoutRefreshRunning = false
@@ -174,9 +193,12 @@ final class MacOSPresentationController {
     }
   }
 
-  private static func performLayoutRefresh(
+  private func performLayoutRefresh(
     request: LayoutRefreshRequest
   ) -> LayoutRefreshOutcome {
+    guard isCurrentLayoutRequest(request) else {
+      return .stale
+    }
     let context = request.context
     guard let player = context.player else {
       return .transientMiss
@@ -191,8 +213,32 @@ final class MacOSPresentationController {
     guard pumpReady else {
       return .transientMiss
     }
+    guard isCurrentLayoutRequest(request) else {
+      return .stale
+    }
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
     return .applied
+  }
+
+  private func nextLayoutRevision() -> UInt64 {
+    layoutRevisionLock.lock()
+    latestLayoutRevision &+= 1
+    let revision = latestLayoutRevision
+    layoutRevisionLock.unlock()
+    return revision
+  }
+
+  private func invalidateLayoutRevision() {
+    layoutRevisionLock.lock()
+    latestLayoutRevision &+= 1
+    layoutRevisionLock.unlock()
+  }
+
+  private func isCurrentLayoutRequest(_ request: LayoutRefreshRequest) -> Bool {
+    layoutRevisionLock.lock()
+    let current = latestLayoutRevision
+    layoutRevisionLock.unlock()
+    return request.revision == current
   }
 
   private func logLayoutProfiler(
@@ -207,13 +253,14 @@ final class MacOSPresentationController {
     let periodic = layoutIntentCount > 0 && layoutIntentCount % 120 == 0
     guard slow || periodic else { return }
     MacOSProfilerLog.log(String(
-      format: "VoidPlayer macOS layout profiler route=%@ outcome=%@ intents=%d submits=%d draws=%d skips=%d totalMs=%.2f queueMs=%.2f applyMs=%.2f source=%@ hz=%.1f",
+      format: "VoidPlayer macOS layout profiler route=%@ outcome=%@ intents=%d submits=%d draws=%d skips=%d stale=%d totalMs=%.2f queueMs=%.2f applyMs=%.2f source=%@ hz=%.1f",
       route,
       outcome,
       layoutIntentCount,
       layoutSubmitCount,
       layoutDrawCount,
       layoutSkipCount,
+      layoutStaleDropCount,
       Self.ms(totalNs),
       Self.ms(queueDelayNs),
       Self.ms(applyNs),
@@ -230,17 +277,21 @@ final class MacOSPresentationController {
 private struct LayoutRefreshRequest {
   let context: MacOSPresentationContext
   let layout: [String: Any]
+  let revision: UInt64
   let requestNs = DispatchTime.now().uptimeNanoseconds
 }
 
 private enum LayoutRefreshOutcome {
   case applied
+  case stale
   case transientMiss
 
   var profilerName: String {
     switch self {
     case .applied:
       return "applied"
+    case .stale:
+      return "stale"
     case .transientMiss:
       return "transient-miss"
     }

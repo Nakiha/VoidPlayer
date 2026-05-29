@@ -171,7 +171,10 @@ final class MacOSPresentationController {
   }
 
   func shouldSuppressPausedNativeCallbackPublication() -> Bool {
-    layoutRefreshRunning || latestLayoutRefreshRequest != nil
+    layoutRefreshRunning ||
+      latestLayoutRefreshRequest != nil ||
+      displayLink.isRunning ||
+      shouldKeepDisplayLinkWarm()
   }
 
   func recordLayoutCallbackPublicationSuppressed() {

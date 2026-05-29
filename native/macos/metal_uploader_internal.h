@@ -63,7 +63,25 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                             out:(VPMacOSNativeFrameInfo*)out
                           error:(char*)error
                       errorSize:(size_t)errorSize;
+- (int)copyPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
+                           data:(const uint8_t*)data
+                       dataSize:(size_t)dataSize
+                        overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                  toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                          width:(int32_t)width
+                         height:(int32_t)height
+                            out:(VPMacOSNativeFrameInfo*)out
+                          error:(char*)error
+                      errorSize:(size_t)errorSize;
 - (int)copyCVPixelBufferPresentFrame:(const VPMacOSNativeCVPixelBufferPresentFrame*)frame
+                        toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                width:(int32_t)width
+                               height:(int32_t)height
+                                  out:(VPMacOSNativeFrameInfo*)out
+                                error:(char*)error
+                            errorSize:(size_t)errorSize;
+- (int)copyCVPixelBufferPresentFrame:(const VPMacOSNativeCVPixelBufferPresentFrame*)frame
+                             overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
                         toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                                 width:(int32_t)width
                                height:(int32_t)height
@@ -77,7 +95,23 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                                     out:(VPMacOSNativeFrameInfo*)out
                                   error:(char*)error
                               errorSize:(size_t)errorSize;
+- (int)copyCVPixelBufferPresentFrameSet:(const VPMacOSNativeCVPixelBufferPresentFrameSet*)frameSet
+                                overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                          toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                  width:(int32_t)width
+                                 height:(int32_t)height
+                                    out:(VPMacOSNativeFrameInfo*)out
+                                  error:(char*)error
+                              errorSize:(size_t)errorSize;
 - (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
+                           toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                   width:(int32_t)width
+                                  height:(int32_t)height
+                                     out:(VPMacOSNativeFrameInfo*)out
+                                   error:(char*)error
+                               errorSize:(size_t)errorSize;
+- (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
+                                 overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
                            toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                                    width:(int32_t)width
                                   height:(int32_t)height
@@ -104,6 +138,14 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                                height:(int32_t)height
                                 error:(char*)error
                             errorSize:(size_t)errorSize;
+- (int)encodeOverlayGpuPrimitives:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                          decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
+                     commandBuffer:(id<MTLCommandBuffer>)commandBuffer
+                destinationTexture:(id<MTLTexture>)destinationTexture
+                             width:(int32_t)width
+                            height:(int32_t)height
+                             error:(char*)error
+                         errorSize:(size_t)errorSize;
 
 @end
 

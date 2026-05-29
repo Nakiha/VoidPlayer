@@ -216,6 +216,37 @@ OverlayPrimitiveBuildResult build_overlay_primitives_for_metal(
 }
 #endif
 
+bool overlay_primitives_expected(const OverlayPrimitiveBuildResult& overlay) {
+  return !overlay.fill_rects.empty() || !overlay.line_rects.empty() ||
+         !overlay.motion_lines.empty();
+}
+
+VPMacOSNativeOverlayGpuPrimitiveSet overlay_primitive_set(
+    const OverlayPrimitiveBuildResult& overlay) {
+  VPMacOSNativeOverlayGpuPrimitiveSet set = {};
+  set.fill_rects = overlay.fill_rects.empty() ? nullptr : overlay.fill_rects.data();
+  set.fill_rect_count = overlay.fill_rects.size();
+  set.line_rects = overlay.line_rects.empty() ? nullptr : overlay.line_rects.data();
+  set.line_rect_count = overlay.line_rects.size();
+  set.motion_lines =
+      overlay.motion_lines.empty() ? nullptr : overlay.motion_lines.data();
+  set.motion_line_count = overlay.motion_lines.size();
+  return set;
+}
+
+OverlayCompositeResult overlay_result_from_primitives(
+    const OverlayPrimitiveBuildResult& overlay) {
+  OverlayCompositeResult result;
+  result.fill_rect_count = overlay.fill_rects.size();
+  result.line_rect_count = overlay.line_rects.size();
+  result.motion_line_count = overlay.motion_lines.size();
+  result.expected = overlay_primitives_expected(overlay);
+  result.first_rect_uv0 = overlay.first_rect_uv0;
+  result.first_rect_uv1 = overlay.first_rect_uv1;
+  result.first_rect_track_idx = overlay.first_rect_track_idx;
+  return result;
+}
+
 std::pair<int32_t, int32_t> package_storage_extent(
     const vr::RendererDrawSnapshot& snapshot,
     int32_t target_width,
@@ -448,33 +479,27 @@ OverlayCompositeResult composite_overlay_after_upload(
     VPMacOSMetalUploader* uploader,
     void* pixel_buffer,
     int32_t width,
-    int32_t height) {
-  OverlayCompositeResult result;
+    int32_t height,
+    const OverlayPrimitiveBuildResult& overlay_primitives,
+    bool allow_gpu) {
+  OverlayCompositeResult result = overlay_result_from_primitives(overlay_primitives);
   if (!uploader || !pixel_buffer || width <= 0 || height <= 0) {
     return result;
   }
-  const auto overlay = build_overlay_primitives_for_metal(snapshot, width, height);
-  result.fill_rect_count = overlay.fill_rects.size();
-  result.line_rect_count = overlay.line_rects.size();
-  result.motion_line_count = overlay.motion_lines.size();
-  result.expected =
-      !overlay.fill_rects.empty() || !overlay.line_rects.empty() || !overlay.motion_lines.empty();
-  result.first_rect_uv0 = overlay.first_rect_uv0;
-  result.first_rect_uv1 = overlay.first_rect_uv1;
-  result.first_rect_track_idx = overlay.first_rect_track_idx;
-  if (result.expected) {
+  if (result.expected && allow_gpu) {
     result.gpu_attempted = true;
     char error[256] = {};
     VPMacOSNativePresentDecisionInfo decision = {};
     fill_present_decision_info_from_snapshot(snapshot, width, height, &decision);
+    const auto overlay = overlay_primitive_set(overlay_primitives);
     const int ret = VPMacOSMetalUploaderCompositeOverlayGpuPrimitives(
         uploader,
-        overlay.fill_rects.data(),
-        overlay.fill_rects.size(),
-        overlay.line_rects.data(),
-        overlay.line_rects.size(),
-        overlay.motion_lines.data(),
-        overlay.motion_lines.size(),
+        overlay.fill_rects,
+        overlay.fill_rect_count,
+        overlay.line_rects,
+        overlay.line_rect_count,
+        overlay.motion_lines,
+        overlay.motion_line_count,
         &decision,
         pixel_buffer,
         width,
@@ -564,6 +589,10 @@ bool MetalPresentationBackend::draw_frame(
       std::clamp(draw_target_max_track_slots_,
                  1,
                  static_cast<int>(VPMacOSNativeMaxTracks));
+  const auto overlay_primitives = build_overlay_primitives_for_metal(
+      snapshot, draw_target_width_, draw_target_height_);
+  const bool overlay_expected = overlay_primitives_expected(overlay_primitives);
+  const auto overlay_set = overlay_primitive_set(overlay_primitives);
   const auto storage_extent =
       package_storage_extent(snapshot, draw_target_width_, draw_target_height_);
   const auto package_layout = vr::describe_presentation_package_layout(
@@ -586,25 +615,36 @@ bool MetalPresentationBackend::draw_frame(
                                      error)) {
     VPMacOSNativeFrameInfo frame_info = {};
     char upload_error[256] = {};
-    const int ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
-        uploader_,
-        &cv_frame,
-        draw_target_pixel_buffer_,
-        draw_target_width_,
-        draw_target_height_,
-        &frame_info,
-        upload_error,
-        sizeof(upload_error));
+    int ret = overlay_expected
+        ? VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlay(
+              uploader_,
+              &cv_frame,
+              &overlay_set,
+              draw_target_pixel_buffer_,
+              draw_target_width_,
+              draw_target_height_,
+              &frame_info,
+              upload_error,
+              sizeof(upload_error))
+        : VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
+              uploader_,
+              &cv_frame,
+              draw_target_pixel_buffer_,
+              draw_target_width_,
+              draw_target_height_,
+              &frame_info,
+              upload_error,
+              sizeof(upload_error));
     if (hooks.record_frame_copy_us) {
       hooks.record_frame_copy_us(0);
     }
     if (ret == 0) {
-      const auto overlay = composite_overlay_after_upload(snapshot,
-                                                          hooks,
-                                                          uploader_,
-                                                          draw_target_pixel_buffer_,
-                                                          draw_target_width_,
-                                                          draw_target_height_);
+      auto overlay = overlay_result_from_primitives(overlay_primitives);
+      if (overlay.expected) {
+        overlay.gpu_attempted = true;
+        overlay.gpu_succeeded = true;
+        overlay.applied = true;
+      }
       log_overlay_composite_result("cvpixelbuffer",
                                    snapshot,
                                    overlay,
@@ -621,6 +661,54 @@ bool MetalPresentationBackend::draw_frame(
                    VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
       return true;
     }
+    if (overlay_expected) {
+      OverlayCompositeResult overlay = overlay_result_from_primitives(overlay_primitives);
+      overlay.gpu_attempted = true;
+      overlay.gpu_ret = ret;
+      overlay.gpu_error = upload_error;
+      char fallback_error[256] = {};
+      ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
+          uploader_,
+          &cv_frame,
+          draw_target_pixel_buffer_,
+          draw_target_width_,
+          draw_target_height_,
+          &frame_info,
+          fallback_error,
+          sizeof(fallback_error));
+      if (ret == 0) {
+        auto cpu_overlay = composite_overlay_after_upload(snapshot,
+                                                          hooks,
+                                                          uploader_,
+                                                          draw_target_pixel_buffer_,
+                                                          draw_target_width_,
+                                                          draw_target_height_,
+                                                          overlay_primitives,
+                                                          false);
+        cpu_overlay.gpu_attempted = true;
+        cpu_overlay.gpu_ret = overlay.gpu_ret;
+        cpu_overlay.gpu_error = overlay.gpu_error;
+        log_overlay_composite_result("cvpixelbuffer-cpu-overlay-fallback",
+                                     snapshot,
+                                     cpu_overlay,
+                                     draw_target_width_,
+                                     draw_target_height_);
+        record_overlay_result(cpu_overlay.expected,
+                              cpu_overlay.applied,
+                              cpu_overlay.gpu_attempted,
+                              cpu_overlay.gpu_succeeded,
+                              cpu_overlay.cpu_attempted,
+                              cpu_overlay.line_rect_count);
+        mark_draw_success(frame_info);
+        log_profiler("cvpixelbuffer-cpu-overlay-fallback", true, ret, 0, 0,
+                     VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
+        return true;
+      }
+      if (fallback_error[0]) {
+        std::strncpy(upload_error, fallback_error, sizeof(upload_error) - 1);
+        upload_error[sizeof(upload_error) - 1] = '\0';
+      }
+    }
     mark_draw_failure(upload_error[0] ? upload_error : error);
     log_profiler("cvpixelbuffer", false, ret, 0, 0,
                  VPMacOSNativePresentPackageStorageCVPixelBuffer,
@@ -636,25 +724,36 @@ bool MetalPresentationBackend::draw_frame(
                                          error)) {
     VPMacOSNativeFrameInfo frame_info = {};
     char upload_error[256] = {};
-    const int ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
-        uploader_,
-        &cv_frame_set,
-        draw_target_pixel_buffer_,
-        draw_target_width_,
-        draw_target_height_,
-        &frame_info,
-        upload_error,
-        sizeof(upload_error));
+    int ret = overlay_expected
+        ? VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlay(
+              uploader_,
+              &cv_frame_set,
+              &overlay_set,
+              draw_target_pixel_buffer_,
+              draw_target_width_,
+              draw_target_height_,
+              &frame_info,
+              upload_error,
+              sizeof(upload_error))
+        : VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
+              uploader_,
+              &cv_frame_set,
+              draw_target_pixel_buffer_,
+              draw_target_width_,
+              draw_target_height_,
+              &frame_info,
+              upload_error,
+              sizeof(upload_error));
     if (hooks.record_frame_copy_us) {
       hooks.record_frame_copy_us(0);
     }
     if (ret == 0) {
-      const auto overlay = composite_overlay_after_upload(snapshot,
-                                                          hooks,
-                                                          uploader_,
-                                                          draw_target_pixel_buffer_,
-                                                          draw_target_width_,
-                                                          draw_target_height_);
+      auto overlay = overlay_result_from_primitives(overlay_primitives);
+      if (overlay.expected) {
+        overlay.gpu_attempted = true;
+        overlay.gpu_succeeded = true;
+        overlay.applied = true;
+      }
       log_overlay_composite_result("cvpixelbuffer-set",
                                    snapshot,
                                    overlay,
@@ -670,6 +769,54 @@ bool MetalPresentationBackend::draw_frame(
       log_profiler("cvpixelbuffer-set", true, ret, 0, 0,
                    VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
       return true;
+    }
+    if (overlay_expected) {
+      OverlayCompositeResult overlay = overlay_result_from_primitives(overlay_primitives);
+      overlay.gpu_attempted = true;
+      overlay.gpu_ret = ret;
+      overlay.gpu_error = upload_error;
+      char fallback_error[256] = {};
+      ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
+          uploader_,
+          &cv_frame_set,
+          draw_target_pixel_buffer_,
+          draw_target_width_,
+          draw_target_height_,
+          &frame_info,
+          fallback_error,
+          sizeof(fallback_error));
+      if (ret == 0) {
+        auto cpu_overlay = composite_overlay_after_upload(snapshot,
+                                                          hooks,
+                                                          uploader_,
+                                                          draw_target_pixel_buffer_,
+                                                          draw_target_width_,
+                                                          draw_target_height_,
+                                                          overlay_primitives,
+                                                          false);
+        cpu_overlay.gpu_attempted = true;
+        cpu_overlay.gpu_ret = overlay.gpu_ret;
+        cpu_overlay.gpu_error = overlay.gpu_error;
+        log_overlay_composite_result("cvpixelbuffer-set-cpu-overlay-fallback",
+                                     snapshot,
+                                     cpu_overlay,
+                                     draw_target_width_,
+                                     draw_target_height_);
+        record_overlay_result(cpu_overlay.expected,
+                              cpu_overlay.applied,
+                              cpu_overlay.gpu_attempted,
+                              cpu_overlay.gpu_succeeded,
+                              cpu_overlay.cpu_attempted,
+                              cpu_overlay.line_rect_count);
+        mark_draw_success(frame_info);
+        log_profiler("cvpixelbuffer-set-cpu-overlay-fallback", true, ret, 0, 0,
+                     VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
+        return true;
+      }
+      if (fallback_error[0]) {
+        std::strncpy(upload_error, fallback_error, sizeof(upload_error) - 1);
+        upload_error[sizeof(upload_error) - 1] = '\0';
+      }
     }
     mark_draw_failure(upload_error[0] ? upload_error : error);
     log_profiler("cvpixelbuffer-set", false, ret, 0, 0,
@@ -728,29 +875,42 @@ bool MetalPresentationBackend::draw_frame(
   VPMacOSNativeFrameInfo frame_info = {};
   char upload_error[256] = {};
   const auto start = std::chrono::steady_clock::now();
-  const int ret = VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
-      uploader_,
-      data,
-      package.used_bytes,
-      &package,
-      draw_target_pixel_buffer_,
-      draw_target_width_,
-      draw_target_height_,
-      &frame_info,
-      upload_error,
-      sizeof(upload_error));
+  int ret = overlay_expected
+      ? VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
+            uploader_,
+            data,
+            package.used_bytes,
+            &package,
+            &overlay_set,
+            draw_target_pixel_buffer_,
+            draw_target_width_,
+            draw_target_height_,
+            &frame_info,
+            upload_error,
+            sizeof(upload_error))
+      : VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+            uploader_,
+            data,
+            package.used_bytes,
+            &package,
+            draw_target_pixel_buffer_,
+            draw_target_width_,
+            draw_target_height_,
+            &frame_info,
+            upload_error,
+            sizeof(upload_error));
   const auto copy_us = std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::steady_clock::now() - start).count();
   if (hooks.record_frame_copy_us) {
     hooks.record_frame_copy_us(static_cast<uint64_t>(copy_us));
   }
   if (ret == 0) {
-    const auto overlay = composite_overlay_after_upload(snapshot,
-                                                        hooks,
-                                                        uploader_,
-                                                        draw_target_pixel_buffer_,
-                                                        draw_target_width_,
-                                                        draw_target_height_);
+    auto overlay = overlay_result_from_primitives(overlay_primitives);
+    if (overlay.expected) {
+      overlay.gpu_attempted = true;
+      overlay.gpu_succeeded = true;
+      overlay.applied = true;
+    }
     log_overlay_composite_result(
         package.storage == VPMacOSNativePresentPackageStorageYUV ? "package-yuv" : "package-bgra",
         snapshot,
@@ -773,6 +933,67 @@ bool MetalPresentationBackend::draw_frame(
         package.storage,
         "");
   } else {
+    if (overlay_expected) {
+      OverlayCompositeResult overlay = overlay_result_from_primitives(overlay_primitives);
+      overlay.gpu_attempted = true;
+      overlay.gpu_ret = ret;
+      overlay.gpu_error = upload_error;
+      char fallback_error[256] = {};
+      ret = VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+          uploader_,
+          data,
+          package.used_bytes,
+          &package,
+          draw_target_pixel_buffer_,
+          draw_target_width_,
+          draw_target_height_,
+          &frame_info,
+          fallback_error,
+          sizeof(fallback_error));
+      if (ret == 0) {
+        auto cpu_overlay = composite_overlay_after_upload(snapshot,
+                                                          hooks,
+                                                          uploader_,
+                                                          draw_target_pixel_buffer_,
+                                                          draw_target_width_,
+                                                          draw_target_height_,
+                                                          overlay_primitives,
+                                                          false);
+        cpu_overlay.gpu_attempted = true;
+        cpu_overlay.gpu_ret = overlay.gpu_ret;
+        cpu_overlay.gpu_error = overlay.gpu_error;
+        log_overlay_composite_result(
+            package.storage == VPMacOSNativePresentPackageStorageYUV
+                ? "package-yuv-cpu-overlay-fallback"
+                : "package-bgra-cpu-overlay-fallback",
+            snapshot,
+            cpu_overlay,
+            draw_target_width_,
+            draw_target_height_);
+        record_overlay_result(cpu_overlay.expected,
+                              cpu_overlay.applied,
+                              cpu_overlay.gpu_attempted,
+                              cpu_overlay.gpu_succeeded,
+                              cpu_overlay.cpu_attempted,
+                              cpu_overlay.line_rect_count);
+        mark_draw_success(frame_info);
+        log_profiler(
+            package.storage == VPMacOSNativePresentPackageStorageYUV
+                ? "package-yuv-cpu-overlay-fallback"
+                : "package-bgra-cpu-overlay-fallback",
+            true,
+            ret,
+            copy_us,
+            package.used_bytes,
+            package.storage,
+            "");
+        return true;
+      }
+      if (fallback_error[0]) {
+        std::strncpy(upload_error, fallback_error, sizeof(upload_error) - 1);
+        upload_error[sizeof(upload_error) - 1] = '\0';
+      }
+    }
     mark_draw_failure(upload_error[0] ? upload_error : error);
     log_profiler(
         package.storage == VPMacOSNativePresentPackageStorageYUV ? "package-yuv" : "package-bgra",

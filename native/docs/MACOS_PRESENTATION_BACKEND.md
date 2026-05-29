@@ -25,6 +25,9 @@ The shared renderer builds a `RendererDrawSnapshot` from the current
 - consumes VideoToolbox `CVPixelBuffer` frames or software/fallback present
   packages;
 - runs the Metal layout/color path into the renderer-owned target;
+- when analysis overlay primitives are active, encodes video and overlay work in
+  the same command buffer; CPU overlay is a visible fallback only after a GPU
+  overlay failure;
 - records upload storage, frame PTS, cadence, and failure diagnostics;
 - wakes refresh waiters and asks Swift to mark the Flutter texture available.
 

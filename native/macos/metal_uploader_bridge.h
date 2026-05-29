@@ -111,6 +111,15 @@ typedef struct VPMacOSNativeOverlayGpuRect {
   uint32_t track_idx;
 } VPMacOSNativeOverlayGpuRect;
 
+typedef struct VPMacOSNativeOverlayGpuPrimitiveSet {
+  const VPMacOSNativeOverlayGpuRect* fill_rects;
+  size_t fill_rect_count;
+  const VPMacOSNativeOverlayGpuRect* line_rects;
+  size_t line_rect_count;
+  const VPMacOSNativeOverlayGpuRect* motion_lines;
+  size_t motion_line_count;
+} VPMacOSNativeOverlayGpuPrimitiveSet;
+
 VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);
 void VPMacOSMetalUploaderDestroy(VPMacOSMetalUploader* uploader);
 int VPMacOSMetalUploaderIsAvailable(VPMacOSMetalUploader* uploader);
@@ -143,6 +152,18 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
+    VPMacOSMetalUploader* uploader,
+    const uint8_t* data,
+    size_t data_size,
+    const VPMacOSNativePresentFramePackageInfo* package,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
     VPMacOSMetalUploader* uploader,
     const VPMacOSNativeCVPixelBufferPresentFrame* frame,
@@ -152,9 +173,29 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlay(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeCVPixelBufferPresentFrame* frame,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
     VPMacOSMetalUploader* uploader,
     const VPMacOSNativeCVPixelBufferPresentFrameSet* frame_set,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
+int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlay(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeCVPixelBufferPresentFrameSet* frame_set,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
     void* pixel_buffer,
     int32_t width,
     int32_t height,

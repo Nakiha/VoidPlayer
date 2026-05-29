@@ -139,6 +139,34 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
                                            width:width
                                           height:height
                                              out:out
+                                            error:error
+                                        errorSize:error_size];
+}
+
+int VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
+    VPMacOSMetalUploader* uploader,
+    const uint8_t* data,
+    size_t data_size,
+    const VPMacOSNativePresentFramePackageInfo* package,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  if (!uploader || !uploader->impl) {
+    write_error(error, error_size, "native Metal uploader is null");
+    return -1;
+  }
+  return [uploader->impl copyPresentFramePackage:package
+                                            data:data
+                                        dataSize:data_size
+                                         overlay:overlay
+                                   toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                           width:width
+                                          height:height
+                                             out:out
                                            error:error
                                        errorSize:error_size];
 }
@@ -161,8 +189,32 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
                                                  width:width
                                                 height:height
                                                    out:out
-                                             error:error
-                                         errorSize:error_size];
+                                         error:error
+                                     errorSize:error_size];
+}
+
+int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlay(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeCVPixelBufferPresentFrame* frame,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  if (!uploader || !uploader->impl) {
+    write_error(error, error_size, "native Metal uploader is null");
+    return -1;
+  }
+  return [uploader->impl copyCVPixelBufferPresentFrame:frame
+                                              overlay:overlay
+                                        toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                width:width
+                                               height:height
+                                                  out:out
+                                                error:error
+                                            errorSize:error_size];
 }
 
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
@@ -185,6 +237,30 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
                                                       out:out
                                                     error:error
                                                 errorSize:error_size];
+}
+
+int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlay(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativeCVPixelBufferPresentFrameSet* frame_set,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  if (!uploader || !uploader->impl) {
+    write_error(error, error_size, "native Metal uploader is null");
+    return -1;
+  }
+  return [uploader->impl copyCVPixelBufferPresentFrameSet:frame_set
+                                                 overlay:overlay
+                                           toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                   width:width
+                                                  height:height
+                                                     out:out
+                                                   error:error
+                                               errorSize:error_size];
 }
 
 int VPMacOSMetalUploaderCompositeOverlayGpuRects(

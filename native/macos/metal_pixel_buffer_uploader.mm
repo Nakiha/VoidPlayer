@@ -52,6 +52,13 @@ int64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
       .count();
 }
 
+bool overlay_primitive_set_has_content(
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay) {
+  return overlay && (overlay->fill_rect_count > 0 ||
+                     overlay->line_rect_count > 0 ||
+                     overlay->motion_line_count > 0);
+}
+
 }  // namespace
 
 const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
@@ -302,6 +309,28 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                             out:(VPMacOSNativeFrameInfo*)out
                           error:(char*)error
                       errorSize:(size_t)errorSize {
+  return [self copyPresentFramePackage:package
+                                  data:data
+                              dataSize:dataSize
+                               overlay:nullptr
+                         toPixelBuffer:pixelBuffer
+                                 width:width
+                                height:height
+                                   out:out
+                                 error:error
+                             errorSize:errorSize];
+}
+
+- (int)copyPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
+                           data:(const uint8_t*)data
+                       dataSize:(size_t)dataSize
+                        overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                  toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                          width:(int32_t)width
+                         height:(int32_t)height
+                            out:(VPMacOSNativeFrameInfo*)out
+                          error:(char*)error
+                      errorSize:(size_t)errorSize {
   if (![self isAvailable] || !_layoutPipeline) {
     write_error(error, errorSize, "native Metal layout uploader is not available");
     return -1;
@@ -321,6 +350,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   std::memcpy([_stagingBuffer contents], data, package->used_bytes);
   _lastPresentPackageCopyUs.store(elapsed_us_since(copyStart), std::memory_order_relaxed);
   const int uploadRet = [self uploadPreparedPresentFramePackage:package
+                                                       overlay:overlay
                                                   toPixelBuffer:pixelBuffer
                                                           width:width
                                                          height:height
@@ -332,6 +362,24 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
 }
 
 - (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
+                           toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                   width:(int32_t)width
+                                  height:(int32_t)height
+                                     out:(VPMacOSNativeFrameInfo*)out
+                                   error:(char*)error
+                               errorSize:(size_t)errorSize {
+  return [self uploadPreparedPresentFramePackage:package
+                                         overlay:nullptr
+                                   toPixelBuffer:pixelBuffer
+                                           width:width
+                                          height:height
+                                             out:out
+                                           error:error
+                                       errorSize:errorSize];
+}
+
+- (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
+                                 overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
                            toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                                    width:(int32_t)width
                                   height:(int32_t)height
@@ -398,6 +446,17 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   const MTLSize threads = MTLSizeMake(width, height, 1);
   [compute dispatchThreads:threads threadsPerThreadgroup:threadsPerThreadgroup];
   [compute endEncoding];
+  const int overlayRet = [self encodeOverlayGpuPrimitives:overlay
+                                                 decision:&package->decision
+                                            commandBuffer:commandBuffer
+                                       destinationTexture:destinationTexture
+                                                    width:width
+                                                   height:height
+                                                    error:error
+                                                errorSize:errorSize];
+  if (overlayRet != 0) {
+    return overlayRet;
+  }
   [commandBuffer commit];
   [commandBuffer waitUntilCompleted];
 
@@ -415,6 +474,24 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
 }
 
 - (int)copyCVPixelBufferPresentFrame:(const VPMacOSNativeCVPixelBufferPresentFrame*)frame
+                        toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                width:(int32_t)width
+                               height:(int32_t)height
+                                  out:(VPMacOSNativeFrameInfo*)out
+                                error:(char*)error
+                            errorSize:(size_t)errorSize {
+  return [self copyCVPixelBufferPresentFrame:frame
+                                     overlay:nullptr
+                               toPixelBuffer:pixelBuffer
+                                       width:width
+                                      height:height
+                                         out:out
+                                       error:error
+                                   errorSize:errorSize];
+}
+
+- (int)copyCVPixelBufferPresentFrame:(const VPMacOSNativeCVPixelBufferPresentFrame*)frame
+                             overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
                         toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                                 width:(int32_t)width
                                height:(int32_t)height
@@ -510,6 +587,17 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   const MTLSize threads = MTLSizeMake(width, height, 1);
   [compute dispatchThreads:threads threadsPerThreadgroup:threadsPerThreadgroup];
   [compute endEncoding];
+  const int overlayRet = [self encodeOverlayGpuPrimitives:overlay
+                                                 decision:&frame->decision
+                                            commandBuffer:commandBuffer
+                                       destinationTexture:destinationTexture
+                                                    width:width
+                                                   height:height
+                                                    error:error
+                                                errorSize:errorSize];
+  if (overlayRet != 0) {
+    return overlayRet;
+  }
   [commandBuffer commit];
   [commandBuffer waitUntilCompleted];
 
@@ -530,6 +618,24 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
 }
 
 - (int)copyCVPixelBufferPresentFrameSet:(const VPMacOSNativeCVPixelBufferPresentFrameSet*)frameSet
+                          toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                  width:(int32_t)width
+                                 height:(int32_t)height
+                                    out:(VPMacOSNativeFrameInfo*)out
+                                  error:(char*)error
+                              errorSize:(size_t)errorSize {
+  return [self copyCVPixelBufferPresentFrameSet:frameSet
+                                        overlay:nullptr
+                                  toPixelBuffer:pixelBuffer
+                                          width:width
+                                         height:height
+                                            out:out
+                                          error:error
+                                      errorSize:errorSize];
+}
+
+- (int)copyCVPixelBufferPresentFrameSet:(const VPMacOSNativeCVPixelBufferPresentFrameSet*)frameSet
+                                overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
                           toPixelBuffer:(CVPixelBufferRef)pixelBuffer
                                   width:(int32_t)width
                                  height:(int32_t)height
@@ -656,6 +762,17 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   const MTLSize threads = MTLSizeMake(width, height, 1);
   [compute dispatchThreads:threads threadsPerThreadgroup:threadsPerThreadgroup];
   [compute endEncoding];
+  const int overlayRet = [self encodeOverlayGpuPrimitives:overlay
+                                                 decision:&frameSet->decision
+                                            commandBuffer:commandBuffer
+                                       destinationTexture:destinationTexture
+                                                    width:width
+                                                   height:height
+                                                    error:error
+                                                errorSize:errorSize];
+  if (overlayRet != 0) {
+    return overlayRet;
+  }
   [commandBuffer commit];
   [commandBuffer waitUntilCompleted];
 
@@ -697,25 +814,20 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                    errorSize:errorSize];
 }
 
-- (int)compositeOverlayGpuPrimitives:(const VPMacOSNativeOverlayGpuRect*)fillRects
-                            fillCount:(size_t)fillRectCount
-                            lineRects:(const VPMacOSNativeOverlayGpuRect*)lineRects
-                            lineCount:(size_t)lineRectCount
-                          motionLines:(const VPMacOSNativeOverlayGpuRect*)motionLines
-                          motionCount:(size_t)motionLineCount
-                             decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
-                        toPixelBuffer:(CVPixelBufferRef)pixelBuffer
-                                width:(int32_t)width
-                               height:(int32_t)height
-                                error:(char*)error
-                            errorSize:(size_t)errorSize {
-  const bool hasFillRects = fillRectCount > 0;
-  const bool hasLineRects = lineRectCount > 0;
-  const bool hasMotionLines = motionLineCount > 0;
-  if (!hasFillRects && !hasLineRects && !hasMotionLines) {
-    write_error(error, errorSize, "");
+- (int)encodeOverlayGpuPrimitives:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                          decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
+                     commandBuffer:(id<MTLCommandBuffer>)commandBuffer
+                destinationTexture:(id<MTLTexture>)destinationTexture
+                             width:(int32_t)width
+                            height:(int32_t)height
+                             error:(char*)error
+                         errorSize:(size_t)errorSize {
+  if (!overlay_primitive_set_has_content(overlay)) {
     return 0;
   }
+  const bool hasFillRects = overlay->fill_rect_count > 0;
+  const bool hasLineRects = overlay->line_rect_count > 0;
+  const bool hasMotionLines = overlay->motion_line_count > 0;
   if (![self isAvailable] ||
       (hasFillRects && !_overlayFillRectPipeline) ||
       (hasLineRects && (!_overlayLineMaskPipeline || !_overlayLineContrastPipeline)) ||
@@ -723,17 +835,12 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     write_error(error, errorSize, "native Metal overlay pipelines are not available");
     return -1;
   }
-  if ((hasFillRects && !fillRects) ||
-      (hasLineRects && !lineRects) ||
-      (hasMotionLines && !motionLines) ||
-      !decisionInfo || !pixelBuffer || width <= 0 || height <= 0) {
+  if ((hasFillRects && !overlay->fill_rects) ||
+      (hasLineRects && !overlay->line_rects) ||
+      (hasMotionLines && !overlay->motion_lines) ||
+      !decisionInfo || !commandBuffer || !destinationTexture ||
+      width <= 0 || height <= 0) {
     write_error(error, errorSize, "invalid native Metal overlay arguments");
-    return -1;
-  }
-  const int validationStatus =
-      [self validatePixelBufferStatus:pixelBuffer width:width height:height];
-  if (validationStatus != VPMacOSMetalUploaderStatusOk) {
-    write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
     return -1;
   }
 
@@ -744,18 +851,24 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   size_t maskPixels = 0;
   if (!checked_mul_size(static_cast<size_t>(width), static_cast<size_t>(height), &maskPixels) ||
       (hasFillRects &&
-       (!checked_mul_size(fillRectCount, sizeof(VPMacOSNativeOverlayGpuRect), &fillRectBytes) ||
+       (!checked_mul_size(overlay->fill_rect_count,
+                          sizeof(VPMacOSNativeOverlayGpuRect),
+                          &fillRectBytes) ||
         fillRectBytes == 0 ||
         ![self ensureOverlayFillRectBufferWithLength:fillRectBytes])) ||
       (hasLineRects &&
        (!checked_mul_size(maskPixels, sizeof(uint32_t), &maskBytes) ||
-        !checked_mul_size(lineRectCount, sizeof(VPMacOSNativeOverlayGpuRect), &rectBytes) ||
+        !checked_mul_size(overlay->line_rect_count,
+                          sizeof(VPMacOSNativeOverlayGpuRect),
+                          &rectBytes) ||
         rectBytes == 0 ||
         maskBytes == 0 ||
         ![self ensureOverlayLineRectBufferWithLength:rectBytes] ||
         ![self ensureOverlayLineMaskBufferWithLength:maskBytes])) ||
       (hasMotionLines &&
-       (!checked_mul_size(motionLineCount, sizeof(VPMacOSNativeOverlayGpuRect), &motionLineBytes) ||
+       (!checked_mul_size(overlay->motion_line_count,
+                          sizeof(VPMacOSNativeOverlayGpuRect),
+                          &motionLineBytes) ||
         motionLineBytes == 0 ||
         ![self ensureOverlayMotionLineBufferWithLength:motionLineBytes])) ||
       ![self ensureLayoutParamsBuffer]) {
@@ -763,38 +876,17 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
         error, errorSize, "failed to allocate native Metal overlay buffers");
   }
   if (hasFillRects) {
-    std::memcpy([_overlayFillRectBuffer contents], fillRects, fillRectBytes);
+    std::memcpy([_overlayFillRectBuffer contents], overlay->fill_rects, fillRectBytes);
   }
   if (hasLineRects) {
-    std::memcpy([_overlayLineRectBuffer contents], lineRects, rectBytes);
+    std::memcpy([_overlayLineRectBuffer contents], overlay->line_rects, rectBytes);
     std::memset([_overlayLineMaskBuffer contents], 0, maskBytes);
   }
   if (hasMotionLines) {
-    std::memcpy([_overlayMotionLineBuffer contents], motionLines, motionLineBytes);
+    std::memcpy([_overlayMotionLineBuffer contents], overlay->motion_lines, motionLineBytes);
   }
   auto* metalParams = static_cast<vp_macos::MetalLayoutParams*>([_layoutParamsBuffer contents]);
   vp_macos::fill_metal_layout_params(*metalParams, *decisionInfo, width, height);
-
-  vp_macos::ScopedCVMetalTexture destinationRef;
-  const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(
-      _textureCache,
-      pixelBuffer,
-      MTLPixelFormatBGRA8Unorm,
-      width,
-      height,
-      0,
-      &destinationRef);
-  if (destinationStatus != kCVReturnSuccess || !destinationRef.valid()) {
-    return metal_upload_failure(
-        error, errorSize, "failed to wrap CVPixelBuffer as a Metal overlay texture");
-  }
-
-  id<MTLTexture> destinationTexture = destinationRef.texture();
-  id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
-  if (!destinationTexture || !commandBuffer) {
-    return metal_upload_failure(
-        error, errorSize, "failed to create native Metal overlay compute command");
-  }
 
   if (hasFillRects) {
     id<MTLComputeCommandEncoder> fillCompute = [commandBuffer computeCommandEncoder];
@@ -808,7 +900,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     [fillCompute setTexture:destinationTexture atIndex:0];
     const NSUInteger fillThreadWidth = _overlayFillRectPipeline.threadExecutionWidth;
     const MTLSize fillThreadsPerThreadgroup = MTLSizeMake(fillThreadWidth, 1, 1);
-    const MTLSize fillThreads = MTLSizeMake(fillRectCount, 1, 1);
+    const MTLSize fillThreads = MTLSizeMake(overlay->fill_rect_count, 1, 1);
     [fillCompute dispatchThreads:fillThreads threadsPerThreadgroup:fillThreadsPerThreadgroup];
     [fillCompute endEncoding];
   }
@@ -825,7 +917,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     [motionCompute setTexture:destinationTexture atIndex:0];
     const NSUInteger motionThreadWidth = _overlayMotionLinePipeline.threadExecutionWidth;
     const MTLSize motionThreadsPerThreadgroup = MTLSizeMake(motionThreadWidth, 1, 1);
-    const MTLSize motionThreads = MTLSizeMake(motionLineCount, 1, 1);
+    const MTLSize motionThreads = MTLSizeMake(overlay->motion_line_count, 1, 1);
     [motionCompute dispatchThreads:motionThreads threadsPerThreadgroup:motionThreadsPerThreadgroup];
     [motionCompute endEncoding];
   }
@@ -842,7 +934,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     [maskCompute setBuffer:_layoutParamsBuffer offset:0 atIndex:2];
     const NSUInteger maskThreadWidth = _overlayLineMaskPipeline.threadExecutionWidth;
     const MTLSize maskThreadsPerThreadgroup = MTLSizeMake(maskThreadWidth, 1, 1);
-    const MTLSize maskThreads = MTLSizeMake(lineRectCount, 1, 1);
+    const MTLSize maskThreads = MTLSizeMake(overlay->line_rect_count, 1, 1);
     [maskCompute dispatchThreads:maskThreads threadsPerThreadgroup:maskThreadsPerThreadgroup];
     [maskCompute endEncoding];
 
@@ -866,6 +958,72 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     [contrastCompute dispatchThreads:contrastThreads
                 threadsPerThreadgroup:contrastThreadsPerThreadgroup];
     [contrastCompute endEncoding];
+  }
+  return 0;
+}
+
+- (int)compositeOverlayGpuPrimitives:(const VPMacOSNativeOverlayGpuRect*)fillRects
+                            fillCount:(size_t)fillRectCount
+                            lineRects:(const VPMacOSNativeOverlayGpuRect*)lineRects
+                            lineCount:(size_t)lineRectCount
+                          motionLines:(const VPMacOSNativeOverlayGpuRect*)motionLines
+                          motionCount:(size_t)motionLineCount
+                             decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
+	                        toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+	                                width:(int32_t)width
+	                               height:(int32_t)height
+	                                error:(char*)error
+	                            errorSize:(size_t)errorSize {
+  const VPMacOSNativeOverlayGpuPrimitiveSet overlay = {
+      fillRects,
+      fillRectCount,
+      lineRects,
+      lineRectCount,
+      motionLines,
+      motionLineCount,
+  };
+  if (!overlay_primitive_set_has_content(&overlay)) {
+    write_error(error, errorSize, "");
+    return 0;
+  }
+  const int validationStatus =
+      [self validatePixelBufferStatus:pixelBuffer width:width height:height];
+  if (validationStatus != VPMacOSMetalUploaderStatusOk) {
+    write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
+    return -1;
+  }
+
+  vp_macos::ScopedCVMetalTexture destinationRef;
+  const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(
+      _textureCache,
+      pixelBuffer,
+      MTLPixelFormatBGRA8Unorm,
+      width,
+      height,
+      0,
+      &destinationRef);
+  if (destinationStatus != kCVReturnSuccess || !destinationRef.valid()) {
+    return metal_upload_failure(
+        error, errorSize, "failed to wrap CVPixelBuffer as a Metal overlay texture");
+  }
+
+  id<MTLTexture> destinationTexture = destinationRef.texture();
+  id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+  if (!destinationTexture || !commandBuffer) {
+    return metal_upload_failure(
+        error, errorSize, "failed to create native Metal overlay compute command");
+  }
+
+  const int encodeRet = [self encodeOverlayGpuPrimitives:&overlay
+                                                 decision:decisionInfo
+                                            commandBuffer:commandBuffer
+                                       destinationTexture:destinationTexture
+                                                    width:width
+                                                   height:height
+                                                    error:error
+                                                errorSize:errorSize];
+  if (encodeRet != 0) {
+    return encodeRet;
   }
 
   [commandBuffer commit];

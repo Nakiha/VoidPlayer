@@ -243,8 +243,10 @@ bool Renderer::initialize(const RendererConfig& config) {
     headless_ = config.headless;
     target_width_ = config.width;
     target_height_ = config.height;
+    layout_intent_revision_.store(0, std::memory_order_relaxed);
     layout_revision_ = 0;
     last_presented_layout_revision_ = 0;
+    clear_pending_layout_intent();
     shutting_down_.store(false, std::memory_order_release);
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
     reset_presentation_backend_metrics();
@@ -411,8 +413,10 @@ void Renderer::release_resources_locked() {
     next_file_id_ = 1;
     next_track_generation_ = 1;
     layout_controller_.reset(layout_);
+    layout_intent_revision_.store(0, std::memory_order_relaxed);
     layout_revision_ = 0;
     last_presented_layout_revision_ = 0;
+    clear_pending_layout_intent();
     if (analysis_overlay_renderer_) {
         analysis_overlay_renderer_->reset();
     }
@@ -1145,6 +1149,7 @@ bool Renderer::draw_paused_frame(const char* reason) {
     bool has_frame = false;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
+        consume_pending_layout_locked();
         filter_present_decision_against_tracks(last_decision_, tracks_);
         if (render_sink_) {
             decision = render_sink_->evaluate();
@@ -1382,6 +1387,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
     {
         const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(state_mutex_);
+        consume_pending_layout_locked();
         spdlog::debug("[present_frame] mode={}", layout_.mode);
         PresentDecision filtered_decision = decision;
         filter_present_decision_against_tracks(filtered_decision, tracks_);
@@ -1508,6 +1514,7 @@ void Renderer::redraw_layout() {
     {
         const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(state_mutex_);
+        consume_pending_layout_locked();
         snapshot = build_draw_snapshot_locked(last_decision_);
         snapshot_layout_revision = layout_revision_;
         snapshot_us = elapsed_us_since(snapshot_start);
@@ -2199,6 +2206,7 @@ void Renderer::render_loop_body() {
             bool should_draw_preview = false;
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
+                consume_pending_layout_locked();
                 should_draw_preview = !preview_drawn_;
             }
             if (should_draw_preview) {
@@ -2465,27 +2473,89 @@ bool Renderer::draw_frame(const RendererDrawSnapshot& snapshot) {
 }
 
 // -- Layout control --
+void Renderer::apply_layout_locked(const LayoutState& state, uint64_t revision) {
+    layout_controller_.apply(
+        layout_, state, [this](int file_id) { return find_slot_by_file_id(file_id); });
+    layout_revision_ = std::max(layout_revision_ + 1, revision);
+    preview_drawn_ = false;
+}
+
+bool Renderer::consume_pending_layout_locked() {
+    std::optional<LayoutState> pending;
+    uint64_t pending_revision = 0;
+    {
+        std::lock_guard<std::mutex> lock(pending_layout_mutex_);
+        if (!pending_layout_.has_value()) {
+            return false;
+        }
+        pending = pending_layout_;
+        pending_revision = pending_layout_revision_;
+        pending_layout_.reset();
+        pending_layout_revision_ = 0;
+    }
+    if (pending_revision <= layout_revision_) {
+        return false;
+    }
+    apply_layout_locked(*pending, pending_revision);
+    return true;
+}
+
+void Renderer::clear_pending_layout_intent() {
+    std::lock_guard<std::mutex> lock(pending_layout_mutex_);
+    pending_layout_.reset();
+    pending_layout_revision_ = 0;
+}
+
 void Renderer::apply_layout(const LayoutState& state) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    std::lock_guard<std::mutex> lock(state_mutex_);
     if (auto validation = validate_layout_state(state); !validation.ok) {
         spdlog::warn("[Renderer] ignoring invalid layout: {}", validation.message);
         return;
     }
-    layout_controller_.apply(
-        layout_, state, [this](int file_id) { return find_slot_by_file_id(file_id); });
-    ++layout_revision_;
+
+    const uint64_t intent_revision =
+        layout_intent_revision_.fetch_add(1, std::memory_order_relaxed) + 1;
     presentation_backend_metrics_.layout_intent_count.fetch_add(
         1, std::memory_order_relaxed);
-    const bool defer_to_playback =
-        playing_.load(std::memory_order_acquire) && !playback_->clock().is_paused();
+    const bool playing_now = playing_.load(std::memory_order_acquire);
+    const bool defer_to_playback = playing_now && !playback_->clock().is_paused();
+
+    if (defer_to_playback) {
+        {
+            std::lock_guard<std::mutex> lock(pending_layout_mutex_);
+            pending_layout_ = state;
+            pending_layout_revision_ = intent_revision;
+        }
+        presentation_backend_metrics_.layout_deferred_to_playback_count.fetch_add(
+            1, std::memory_order_relaxed);
+        if (viewport_trace_enabled()) {
+            spdlog::info(
+                "[ViewportTrace] native source=apply_layout layout_rev={} playing={} "
+                "defer_to_playback={} mode={} zoom={:.4f} offset=({:.1f},{:.1f}) "
+                "split={:.4f} pixel_mode={}",
+                intent_revision,
+                playing_now,
+                defer_to_playback,
+                state.mode,
+                state.zoom_ratio,
+                state.view_offset[0],
+                state.view_offset[1],
+                state.split_pos,
+                state.pixel_size_mode);
+        }
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    clear_pending_layout_intent();
+    apply_layout_locked(state, intent_revision);
     if (viewport_trace_enabled()) {
         spdlog::info(
             "[ViewportTrace] native source=apply_layout layout_rev={} playing={} "
             "defer_to_playback={} mode={} zoom={:.4f} offset=({:.1f},{:.1f}) "
             "split={:.4f} pixel_mode={}",
             layout_revision_,
-            playing_.load(std::memory_order_acquire),
+            playing_now,
             defer_to_playback,
             layout_.mode,
             layout_.zoom_ratio,
@@ -2494,13 +2564,6 @@ void Renderer::apply_layout(const LayoutState& state) {
             layout_.split_pos,
             layout_.pixel_size_mode);
     }
-
-    if (defer_to_playback) {
-        presentation_backend_metrics_.layout_deferred_to_playback_count.fetch_add(
-            1, std::memory_order_relaxed);
-        return;
-    }
-    preview_drawn_ = false;
 }
 
 void Renderer::set_background_color(float r, float g, float b, float a) {
@@ -2515,6 +2578,13 @@ void Renderer::set_background_color(float r, float g, float b, float a) {
 
 LayoutState Renderer::layout() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
+    {
+        std::lock_guard<std::mutex> pending_lock(pending_layout_mutex_);
+        if (pending_layout_.has_value() &&
+            pending_layout_revision_ > layout_revision_) {
+            return *pending_layout_;
+        }
+    }
     return layout_controller_.snapshot(layout_);
 }
 

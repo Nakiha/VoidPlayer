@@ -34,6 +34,7 @@
 #include <mutex>  // IWYU pragma: keep
 #include <functional>
 #include <cstdint>
+#include <optional>
 
 namespace vr {
 
@@ -264,6 +265,9 @@ private:
     void emit_event(const RendererEvent& event);
     void emit_seek_preview_presented_events(const PresentDecision& decision);
     void clear_event_callback();
+    void apply_layout_locked(const LayoutState& state, uint64_t revision);
+    bool consume_pending_layout_locked();
+    void clear_pending_layout_intent();
 
     /// Apply pending resize on the render thread.
     void do_resize(int width, int height);
@@ -402,6 +406,7 @@ private:
     // texture_mutex(). Callbacks must run outside these locks.
     mutable std::mutex lifecycle_mutex_;
     mutable std::mutex state_mutex_;
+    mutable std::mutex pending_layout_mutex_;
     mutable std::mutex event_callback_mutex_;
     RendererEventCallback event_callback_;
     std::function<void()> frame_callback_;
@@ -426,6 +431,9 @@ private:
 
     // -- Layout state --
     LayoutState layout_;
+    std::atomic<uint64_t> layout_intent_revision_{0};
+    std::optional<LayoutState> pending_layout_;
+    uint64_t pending_layout_revision_ = 0;
     uint64_t layout_revision_ = 0;
     uint64_t last_presented_layout_revision_ = 0;
     int next_file_id_ = 1;                         ///< Auto-incrementing file ID

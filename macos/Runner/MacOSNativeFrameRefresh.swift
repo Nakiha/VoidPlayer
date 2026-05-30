@@ -1,6 +1,12 @@
 import FlutterMacOS
 import Foundation
 
+enum MacOSNativeLayoutDrawResult {
+  case ready(MacOSPendingNativeFrame)
+  case coalesced
+  case failed
+}
+
 enum MacOSNativeFrameRefresh {
   static func seekAndRefresh(
     player: MacOSNativePlayerSession,
@@ -89,7 +95,7 @@ enum MacOSNativeFrameRefresh {
     player: MacOSNativePlayerSession,
     texture: MacOSFlutterTextureBridge,
     maxTrackSlots: Int
-  ) -> MacOSPendingNativeFrame? {
+  ) -> MacOSNativeLayoutDrawResult {
     let startNs = DispatchTime.now().uptimeNanoseconds
     do {
       let pending = try texture.drawFromNativePlayer(
@@ -104,8 +110,18 @@ enum MacOSNativeFrameRefresh {
         result: "ok",
         ptsUs: pending.info.ptsUs
       )
-      return pending
+      return .ready(pending)
     } catch {
+      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
+        logRefreshProfiler(
+          route: "layout-draw",
+          startNs: startNs,
+          timeoutMs: 100,
+          result: "coalesced:\(error)",
+          ptsUs: -1
+        )
+        return .coalesced
+      }
       logRefreshProfiler(
         route: "layout-draw",
         startNs: startNs,
@@ -113,7 +129,7 @@ enum MacOSNativeFrameRefresh {
         result: "error:\(error)",
         ptsUs: -1
       )
-      return nil
+      return .failed
     }
   }
 
@@ -127,7 +143,7 @@ enum MacOSNativeFrameRefresh {
   ) -> Bool {
     let startNs = DispatchTime.now().uptimeNanoseconds
     do {
-      try texture.publishPendingNativeFrame(
+      let outcome = try texture.publishPendingNativeFrame(
         pending,
         player: player,
         maxTrackSlots: maxTrackSlots
@@ -138,7 +154,7 @@ enum MacOSNativeFrameRefresh {
         route: "layout-publish",
         startNs: startNs,
         timeoutMs: 0,
-        result: "ok",
+        result: outcome == .published ? "ok" : "already-published",
         ptsUs: pending.info.ptsUs
       )
       return true
@@ -213,7 +229,8 @@ enum MacOSNativeFrameRefresh {
     ptsUs: Int
   ) {
     let elapsedNs = DispatchTime.now().uptimeNanoseconds - startNs
-    let slow = elapsedNs >= 12_000_000 || result != "ok"
+    let isError = result.hasPrefix("error:")
+    let slow = elapsedNs >= 12_000_000 || isError
     guard slow else { return }
     MacOSProfilerLog.log(String(
       format: "VoidPlayer macOS refresh profiler route=%@ result=%@ elapsedMs=%.2f timeoutMs=%d ptsUs=%d",

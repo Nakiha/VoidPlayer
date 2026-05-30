@@ -16,7 +16,7 @@ enum MacOSRendererProfilerSummary {
       ? drawCount * 1000 / presentedCount
       : 0
     let summary = String(
-      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutDeferred=%lld layoutPublished=%lld layoutStaleAfterDraw=%lld layoutSuperseded=%lld layoutCallbackSuppressed=%lld nativeLayoutPresented=%lld drawPerFrameX1000=%lld layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld inFlightMetal=%lld asyncMetal=%d metalCompletionP95Us=%lld metalFailures=%lld staleCompletionDrops=%lld",
+      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutDeferred=%lld layoutPublished=%lld layoutStaleAfterDraw=%lld layoutSuperseded=%lld layoutCallbackSuppressed=%lld nativeLayoutPresented=%lld drawPerFrameX1000=%lld layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld videoSourceUpdates=%lld viewportComposites=%lld sourceCacheHits=%lld sourceCacheMisses=%lld sourceCacheHitRatioX1000=%lld inFlightMetal=%lld metalBufferExhaustion=%lld asyncMetal=%d metalCompletionP95Us=%lld metalFailures=%lld staleCompletionDrops=%lld",
       isPlaying ? 1 : 0,
       trackCount,
       stringValue(viewport, "viewportClockSource", defaultValue: "unknown"),
@@ -55,7 +55,13 @@ enum MacOSRendererProfilerSummary {
       int64Value(scheduler, "tickCount"),
       int64Value(scheduler, "presentableTickCount"),
       int64Value(scheduler, "lastSelectedPtsUs"),
+      int64Value(perf, "videoSourceUpdateCount"),
+      int64Value(perf, "viewportCompositeCount"),
+      int64Value(perf, "sourceFrameCacheHitCount"),
+      int64Value(perf, "sourceFrameCacheMissCount"),
+      int64Value(perf, "sourceFrameCacheHitRatioX1000"),
       int64Value(perf, "inFlightMetalBufferCount"),
+      int64Value(perf, "metalBufferExhaustionCount"),
       boolValue(perf, "asyncMetalPublishActive") ? 1 : 0,
       int64Value(perf, "metalCommandCompletionP95Us"),
       int64Value(perf, "metalCommandFailureCount"),

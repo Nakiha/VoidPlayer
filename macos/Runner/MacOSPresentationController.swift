@@ -292,6 +292,9 @@ final class MacOSPresentationController {
           self.layoutStaleAfterDrawDropCount += 1
         case .transientMiss:
           request.context.presentationState.recordMiss()
+        case .coalesced:
+          self.layoutSkipCount += 1
+          self.layoutSkipRate.record()
         }
         self.logLayoutTrace(
           event: "complete",
@@ -350,11 +353,18 @@ final class MacOSPresentationController {
     guard let texture = context.nativeTexture else {
       return .transientMiss
     }
-    guard let pendingFrame = MacOSNativeFrameRefresh.drawCurrentFrameForLayoutRefresh(
+    let drawResult = MacOSNativeFrameRefresh.drawCurrentFrameForLayoutRefresh(
       player: player,
       texture: texture,
       maxTrackSlots: context.maxTrackSlots
-    ) else {
+    )
+    let pendingFrame: MacOSPendingNativeFrame
+    switch drawResult {
+    case .ready(let pending):
+      pendingFrame = pending
+    case .coalesced:
+      return .coalesced
+    case .failed:
       return .transientMiss
     }
     guard isCurrentLayoutRequest(request) else {
@@ -470,6 +480,7 @@ private enum LayoutRefreshOutcome {
   case stale
   case staleAfterDraw
   case transientMiss
+  case coalesced
 
   var profilerName: String {
     switch self {
@@ -483,6 +494,8 @@ private enum LayoutRefreshOutcome {
       return "stale-after-draw"
     case .transientMiss:
       return "transient-miss"
+    case .coalesced:
+      return "coalesced"
     }
   }
 }

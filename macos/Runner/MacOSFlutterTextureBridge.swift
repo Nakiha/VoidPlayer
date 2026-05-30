@@ -38,6 +38,11 @@ private enum NativePixelBufferState {
   case displayed
 }
 
+enum MacOSNativeFramePublishOutcome: Equatable {
+  case published
+  case alreadyPublished
+}
+
 final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private static let rendererOwnedPixelBufferCount = 4
 
@@ -96,7 +101,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       maxTrackSlots: maxTrackSlots,
       waitTimeoutMs: waitTimeoutMs
     )
-    try publishPendingNativeFrame(
+    _ = try publishPendingNativeFrame(
       pending,
       player: player,
       maxTrackSlots: maxTrackSlots
@@ -171,7 +176,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         )
       )
     } catch {
-      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable != true {
+      let transient = (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true
+      if !transient {
         lock.lock()
         pixelBufferMetalUploadFailureCount += 1
         releaseInFlightDrawBufferLocked()
@@ -180,7 +186,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       }
       let nowNs = DispatchTime.now().uptimeNanoseconds
       logUpdateProfiler(
-        result: "error:\(error)",
+        result: transient ? "coalesced:\(error)" : "error:\(error)",
         totalNs: nowNs - totalStartNs,
         installNs: installEndNs - totalStartNs,
         requestNs: nowNs - installEndNs,
@@ -196,15 +202,29 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     _ pending: MacOSPendingNativeFrame,
     player: MacOSNativePlayerSession,
     maxTrackSlots: Int
-  ) throws {
+  ) throws -> MacOSNativeFramePublishOutcome {
     let publishStartNs = DispatchTime.now().uptimeNanoseconds
     lock.lock()
     defer { lock.unlock() }
 
     guard pending.publishToken.nativeUploadCount > lastPublishedNativeUploadCount else {
-      throw MacOSNativePlayerError.transientFrameUnavailable(
-        "renderer-owned Metal presentation target has no new completed frame to publish"
+      if let currentDrawBuffer = pixelBufferLocked(drawBufferIndex),
+         UInt(bitPattern: Unmanaged.passUnretained(currentDrawBuffer).toOpaque())
+          == pending.publishToken.pixelBufferAddress {
+        releaseInFlightDrawBufferLocked()
+        _ = chooseNextDrawBufferLocked()
+      }
+      let publishEndNs = DispatchTime.now().uptimeNanoseconds
+      logUpdateProfiler(
+        result: "already-published",
+        totalNs: publishEndNs - publishStartNs,
+        installNs: 0,
+        requestNs: 0,
+        publishNs: publishEndNs - publishStartNs,
+        waitTimeoutMs: 0,
+        ptsUs: pending.info.ptsUs
       )
+      return .alreadyPublished
     }
     guard let currentDrawBuffer = pixelBufferLocked(drawBufferIndex),
           UInt(bitPattern: Unmanaged.passUnretained(currentDrawBuffer).toOpaque())
@@ -242,6 +262,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       waitTimeoutMs: 0,
       ptsUs: pending.info.ptsUs
     )
+    return .published
   }
 
   func discardPendingNativeFrame(_ pending: MacOSPendingNativeFrame) {
@@ -549,7 +570,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     waitTimeoutMs: Int,
     ptsUs: Int
   ) {
-    let slow = totalNs >= 12_000_000 || requestNs >= 10_000_000 || result != "ok"
+    let isError = result.hasPrefix("error:")
+    let slow = totalNs >= 12_000_000 || requestNs >= 10_000_000 || isError
     guard slow else { return }
     MacOSProfilerLog.log(String(
       format: "VoidPlayer macOS texture update profiler result=%@ totalMs=%.2f installMs=%.2f requestMs=%.2f publishMs=%.2f timeoutMs=%d ptsUs=%d display=%d draw=%d",

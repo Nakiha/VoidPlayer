@@ -1617,7 +1617,7 @@ bool Renderer::redraw_layout() {
                        frame_failure_callback](bool success,
                                                const char* error,
                                                uint64_t completion_backend_us) {
-                          finish_presented_draw("redraw_layout",
+                          finish_presented_draw("viewport_composite",
                                                 snapshot,
                                                 snapshot_layout_revision,
                                                 snapshot_us,
@@ -1632,7 +1632,7 @@ bool Renderer::redraw_layout() {
                 : std::function<void(bool, const char*, uint64_t)>();
         if (headless_) {
             if (backend && backend->renderer_manages_headless_publish()) {
-                drew = draw_headless_and_publish(snapshot, "redraw_layout", frame_callback);
+                drew = draw_headless_and_publish(snapshot, "viewport_composite", frame_callback);
             } else {
                 drew = draw_frame(snapshot, async_completion);
                 async_draw_submitted = async_backend && drew;
@@ -1645,9 +1645,9 @@ bool Renderer::redraw_layout() {
             drew = draw_frame(snapshot, async_completion);
             async_draw_submitted = async_backend && drew;
             if (!async_draw_submitted) {
-                backend->wait_idle("redraw_layout");
+                backend->wait_idle("viewport_composite");
             }
-            device_lost = backend->poll_device_removed("redraw_layout");
+            device_lost = backend->poll_device_removed("viewport_composite");
         }
         if (attempted_draw && !drew) {
             frame_failure_error = presentation_backend_last_error();
@@ -1656,13 +1656,13 @@ bool Renderer::redraw_layout() {
     }
     if (device_lost) {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        enter_terminal_device_lost_locked("redraw_layout");
+        enter_terminal_device_lost_locked("viewport_composite");
         return false;
     }
     if (async_draw_submitted) {
         return true;
     }
-    finish_presented_draw("redraw_layout",
+    finish_presented_draw("viewport_composite",
                           snapshot,
                           snapshot_layout_revision,
                           snapshot_us,
@@ -2440,7 +2440,7 @@ void Renderer::render_loop_body() {
                         1, std::memory_order_relaxed) + 1;
                 if (viewport_trace_enabled() && pending_layout % 120 == 0) {
                     spdlog::info(
-                        "[ViewportTrace] native source=redraw_layout_skip reason=deferred-to-playback "
+                        "[ViewportTrace] native source=viewport_composite_skip reason=deferred-to-playback "
                         "layout_rev={} presented_layout_rev={} suppressed={}",
                         layout_revision,
                         presented_revision,

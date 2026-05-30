@@ -942,10 +942,18 @@ TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
         chunk_path.string(),
         replacement_chunk_data));
     const auto replaced_frame0 = manager.read_overlay_frame(0);
-    REQUIRE(replaced_frame0.summary.avg_qp == 56);
+    REQUIRE(replaced_frame0.summary.avg_qp == 22);
     REQUIRE(replaced_frame0.cus.size() == 1);
     if (!replaced_frame0.cus.empty()) {
-        REQUIRE(replaced_frame0.cus[0].common.qp == 56);
+        REQUIRE(replaced_frame0.cus[0].common.qp == 22);
+    }
+    manager.unload();
+    REQUIRE(manager.load(base_path.string()));
+    const auto reloaded_frame0 = manager.read_overlay_frame(0);
+    REQUIRE(reloaded_frame0.summary.avg_qp == 56);
+    REQUIRE(reloaded_frame0.cus.size() == 1);
+    if (!reloaded_frame0.cus.empty()) {
+        REQUIRE(reloaded_frame0.cus[0].common.qp == 56);
     }
     const auto replaced_frame1 = manager.read_overlay_frame(1);
     REQUIRE(replaced_frame1.summary.avg_qp == 57);

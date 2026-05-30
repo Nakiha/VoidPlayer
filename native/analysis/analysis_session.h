@@ -21,6 +21,7 @@ public:
     VachunkFrameSummary read_frame_summary(int frame_idx) const;
     VachunkOverlayFrameData read_overlay_frame(int frame_idx) const;
     int current_frame_idx(int64_t pts_us) const;
+    void load_overlay_chunk_index() const;
 
     const Vac2BaseFile& vac2_base() const { return vac2_base_; }
     const std::string& analysis_path() const { return analysis_path_; }
@@ -63,7 +64,6 @@ private:
 
     mutable std::mutex overlay_chunk_index_mutex_;
     mutable bool overlay_chunk_index_loaded_ = false;
-    mutable std::filesystem::file_time_type overlay_chunk_index_write_time_{};
     mutable std::vector<OverlayChunkIndexEntry> overlay_chunk_index_;
     mutable OverlayFrameCache overlay_frame_cache_;
     mutable uint64_t overlay_decoded_chunk_cache_clock_ = 0;

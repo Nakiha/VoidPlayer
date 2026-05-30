@@ -11,6 +11,7 @@ bool AnalysisOverlayTrackRegistry::set_track(int track_file_id,
     if (!session->open(analysis_path)) {
         return false;
     }
+    session->load_overlay_chunk_index();
     std::lock_guard<std::mutex> lock(mutex_);
     tracks_[track_file_id] = std::move(session);
     return true;

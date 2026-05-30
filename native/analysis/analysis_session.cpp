@@ -31,14 +31,6 @@ FileFingerprint read_file_fingerprint(const std::string& path) {
     return fingerprint;
 }
 
-bool same_file_fingerprint(const FileFingerprint& lhs,
-                           const FileFingerprint& rhs) {
-    return lhs.valid &&
-           rhs.valid &&
-           lhs.file_size == rhs.file_size &&
-           lhs.write_time == rhs.write_time;
-}
-
 } // namespace
 
 bool AnalysisSession::open(const std::string& analysis_path) {
@@ -97,22 +89,15 @@ VachunkOverlayFrameData AnalysisSession::read_vac2_overlay_frame(int frame_idx) 
     if (analysis_path_.empty()) return empty;
 
     std::lock_guard<std::mutex> lock(overlay_chunk_index_mutex_);
-    const auto base_path = win_utf8::path_from_utf8(analysis_path_);
-    const auto overlay_dir = base_path.parent_path() / L"chunks" / L"overlay";
-    std::error_code ec;
-    const auto write_time = std::filesystem::last_write_time(overlay_dir, ec);
-    const bool directory_changed =
-        !ec && overlay_chunk_index_loaded_ &&
-        write_time != overlay_chunk_index_write_time_;
-    if (!overlay_chunk_index_loaded_ || directory_changed) {
+    if (!overlay_chunk_index_loaded_) {
         refresh_overlay_chunk_index_locked();
     }
-    auto result = read_overlay_frame_from_index_locked(frame_idx);
-    if (!result.cus.empty()) {
-        return result;
-    }
-    refresh_overlay_chunk_index_locked();
     return read_overlay_frame_from_index_locked(frame_idx);
+}
+
+void AnalysisSession::load_overlay_chunk_index() const {
+    std::lock_guard<std::mutex> lock(overlay_chunk_index_mutex_);
+    refresh_overlay_chunk_index_locked();
 }
 
 void AnalysisSession::refresh_overlay_chunk_index_locked() const {
@@ -126,8 +111,7 @@ void AnalysisSession::refresh_overlay_chunk_index_locked() const {
     const auto base_path = win_utf8::path_from_utf8(analysis_path_);
     const auto overlay_dir = base_path.parent_path() / L"chunks" / L"overlay";
     std::error_code ec;
-    overlay_chunk_index_write_time_ = std::filesystem::last_write_time(overlay_dir, ec);
-    if (ec || !std::filesystem::exists(overlay_dir, ec) || ec) return;
+    if (!std::filesystem::exists(overlay_dir, ec) || ec) return;
 
     const auto& base_header = vac2_base_.header();
     constexpr uint64_t kRequiredOverlayFeatures = VACHUNK_FEATURE_CU_GEOMETRY;
@@ -183,13 +167,9 @@ VachunkOverlayFrameData AnalysisSession::read_overlay_frame_from_index_locked(
 
     if (!best) return result;
 
-    const auto frame_cache_fingerprint = read_file_fingerprint(best->path);
     if (overlay_frame_cache_.valid &&
         overlay_frame_cache_.frame_index == target &&
-        overlay_frame_cache_.chunk_path == best->path &&
-        frame_cache_fingerprint.valid &&
-        overlay_frame_cache_.file_size == frame_cache_fingerprint.file_size &&
-        overlay_frame_cache_.write_time == frame_cache_fingerprint.write_time) {
+        overlay_frame_cache_.chunk_path == best->path) {
         return overlay_frame_cache_.data;
     }
 
@@ -211,20 +191,12 @@ VachunkOverlayFrameData AnalysisSession::read_overlay_frame_from_index_locked(
 
 const AnalysisSession::OverlayDecodedChunkCacheEntry*
 AnalysisSession::decoded_overlay_chunk_for_path_locked(const std::string& path) const {
-    const auto before = read_file_fingerprint(path);
-    if (!before.valid) return nullptr;
-
     const uint64_t use_token = ++overlay_decoded_chunk_cache_clock_;
     auto& cache = overlay_decoded_chunk_cache_;
     for (auto it = cache.begin(); it != cache.end(); ++it) {
         if (it->path != path) continue;
-        if (it->file_size == before.file_size &&
-            it->write_time == before.write_time) {
-            it->last_used = use_token;
-            return &(*it);
-        }
-        cache.erase(it);
-        break;
+        it->last_used = use_token;
+        return &(*it);
     }
 
     VachunkFile chunk;
@@ -232,8 +204,7 @@ AnalysisSession::decoded_overlay_chunk_for_path_locked(const std::string& path) 
     DecodedOverlayChunk decoded;
     if (!read_overlay_vachunk_chunk(chunk, decoded)) return nullptr;
 
-    const auto after = read_file_fingerprint(path);
-    if (!same_file_fingerprint(before, after)) return nullptr;
+    const auto fingerprint = read_file_fingerprint(path);
 
     if (cache.size() >= kDecodedOverlayChunkCacheLimit) {
         const auto oldest = std::min_element(
@@ -248,8 +219,8 @@ AnalysisSession::decoded_overlay_chunk_for_path_locked(const std::string& path) 
     }
     cache.push_back(OverlayDecodedChunkCacheEntry{
         path,
-        after.write_time,
-        after.file_size,
+        fingerprint.write_time,
+        fingerprint.file_size,
         use_token,
         std::move(decoded),
     });

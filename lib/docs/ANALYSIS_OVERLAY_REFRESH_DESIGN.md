@@ -152,8 +152,9 @@ OverlayChunkIndexEntry {
 
 索引刷新策略：
 
-- 第一次读取时扫描 `cache/<hash>/chunks/overlay`。
-- frame miss 时强制重扫一次，覆盖“chunk 刚生成完成”的情况。
+- `set_overlay_track()` 绑定 track 时扫描 `cache/<hash>/chunks/overlay` 并建立内存索引。
+- 普通 draw path 只查内存索引和 decoded chunk cache；frame miss 直接跳过 overlay，不在上屏线程重扫目录。
+- VACHUNK window 生成完成后由 Dart reload native overlay track，刷新索引并触发 redraw，覆盖“chunk 刚生成完成”的情况。
 - 如果多个 chunk 覆盖同一 frame，选择最高 `generatorRevision`，再选择最高 `baseRevision`。
 - `set_overlay_track()` 或 `clear_overlay_tracks()` 清空对应索引。
 - 旧 revision chunk 可以留在磁盘，但不能优先于新 revision。

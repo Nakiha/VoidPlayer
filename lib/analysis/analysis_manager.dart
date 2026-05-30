@@ -11,6 +11,7 @@ import 'analysis_generation_queue.dart';
 import 'analysis_generation_settings.dart';
 import 'analysis_native_service.dart';
 import 'analysis_overlay.dart';
+import 'analysis_overlay_chunk_scheduler.dart';
 import 'file_hash.dart';
 import 'nalu_types.dart';
 
@@ -93,6 +94,18 @@ class _AnalysisCancelToken {
   bool cancelled = false;
 }
 
+class _OverlayTrackRequest {
+  final AnalysisOverlayTrackSource source;
+  final int targetFrame;
+  final List<({int startFrame, int endFrame})> ranges;
+
+  const _OverlayTrackRequest({
+    required this.source,
+    required this.targetFrame,
+    required this.ranges,
+  });
+}
+
 abstract class AnalysisGenerationService {
   String? get activeOverlayHash;
   bool get overlayPanelVisible;
@@ -151,13 +164,23 @@ class AnalysisManager extends ChangeNotifier
   String? _generatingFileName;
   String? _loadedHash;
   String? _activeOverlayHash;
-  int _activeOverlayTrackFileId = -1;
-  final Map<int, String> _activeOverlayHashesByTrackFileId = {};
+  final Map<int, _OverlayTrackRequest> _requestedOverlayTracksByFileId = {};
+  final Map<int, String> _readyOverlayHashesByTrackFileId = {};
   final Map<int, FileLockHandle> _overlayHashLocksByTrackFileId = {};
   AnalysisOverlayConfig _overlayConfig = const AnalysisOverlayConfig();
   FileLockHandle? _loadedHashLock;
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
-  final Map<String, Future<bool>> _ensureOverlayChunkInFlightByKey = {};
+  late final AnalysisOverlayChunkScheduler _overlayChunkScheduler =
+      AnalysisOverlayChunkScheduler(
+        onComplete: _handleOverlayChunkJobComplete,
+        onLog: (message, [error, stackTrace]) {
+          if (error == null) {
+            log.info(message);
+          } else {
+            log.warning(message, error, stackTrace);
+          }
+        },
+      );
   final Map<String, AnalysisTrackGenerationStatus> _trackStatusByPath = {};
   _AnalysisCancelToken _cancelToken = _AnalysisCancelToken();
   int _stateSerial = 0;
@@ -172,10 +195,10 @@ class AnalysisManager extends ChangeNotifier
   @override
   String? get activeOverlayHash => _activeOverlayHash;
   @override
-  bool get overlayPanelVisible => _activeOverlayHashesByTrackFileId.isNotEmpty;
+  bool get overlayPanelVisible => _requestedOverlayTracksByFileId.isNotEmpty;
   @override
   Set<int> get activeOverlayTrackFileIds =>
-      Set<int>.unmodifiable(_activeOverlayHashesByTrackFileId.keys);
+      Set<int>.unmodifiable(_requestedOverlayTracksByFileId.keys);
   @override
   AnalysisOverlayConfig get overlayConfig => _overlayConfig;
   bool get isLoaded => _state == AnalysisState.loaded;
@@ -229,22 +252,27 @@ class AnalysisManager extends ChangeNotifier
     }
     final ranges = _overlayChunkRangesFor(hash, targetFrame);
     if (ranges == null) return false;
-    var ready = true;
+    final futures = <Future<bool>>[];
     for (final range in ranges) {
       final frame = targetFrame.clamp(range.startFrame, range.endFrame).toInt();
       if (_cache.hasOverlayChunkForFrame(hash, frame)) {
         continue;
       }
-      final ok = await _ensureOverlayChunkRange(
-        hash: hash,
-        videoPath: videoPath,
-        startFrame: range.startFrame,
-        endFrame: range.endFrame,
-        targetFrame: frame,
+      futures.add(
+        _ensureOverlayChunkRange(
+          hash: hash,
+          videoPath: videoPath,
+          startFrame: range.startFrame,
+          endFrame: range.endFrame,
+          targetFrame: frame,
+          priority: 0,
+        ),
       );
-      ready = ready && ok;
     }
-    return ready;
+    if (futures.isEmpty) return true;
+    final results = await Future.wait(futures);
+    return results.every((ok) => ok) &&
+        _cache.hasOverlayChunkForFrame(hash, targetFrame);
   }
 
   Future<bool> _ensureOverlayChunkRange({
@@ -253,31 +281,33 @@ class AnalysisManager extends ChangeNotifier
     required int startFrame,
     required int endFrame,
     required int targetFrame,
+    required int priority,
+    int? overlaySerial,
   }) {
     if (_cache.hasOverlayChunkForFrame(hash, targetFrame)) {
       return Future.value(true);
     }
-    final key = '$hash:$startFrame:$endFrame';
-    final existing = _ensureOverlayChunkInFlightByKey[key];
-    if (existing != null) return existing;
-
+    final request = AnalysisOverlayChunkRequest(
+      hash: hash,
+      videoPath: videoPath,
+      startFrame: startFrame,
+      endFrame: endFrame,
+      targetFrame: targetFrame,
+    );
     final cancelToken = _cancelToken;
-    late final Future<bool> future;
-    future =
-        _ensureOverlayChunkImpl(
-          hash: hash,
-          videoPath: videoPath,
-          startFrame: startFrame,
-          endFrame: endFrame,
-          targetFrame: targetFrame,
-          cancelToken: cancelToken,
-        ).whenComplete(() {
-          if (identical(_ensureOverlayChunkInFlightByKey[key], future)) {
-            _ensureOverlayChunkInFlightByKey.remove(key);
-          }
-        });
-    _ensureOverlayChunkInFlightByKey[key] = future;
-    return future;
+    return _overlayChunkScheduler.schedule(
+      request: request,
+      priority: priority,
+      overlaySerial: overlaySerial,
+      run: () => _ensureOverlayChunkImpl(
+        hash: hash,
+        videoPath: videoPath,
+        startFrame: startFrame,
+        endFrame: endFrame,
+        targetFrame: targetFrame,
+        cancelToken: cancelToken,
+      ),
+    );
   }
 
   /// Full flow: find cached hash or compute hash → generate if needed → load.
@@ -547,11 +577,7 @@ class AnalysisManager extends ChangeNotifier
   }) async {
     if (_loadedHash == hash) {
       _overlayActivationSerial++;
-      _activeOverlayHash = null;
-      _activeOverlayTrackFileId = -1;
-      _activeOverlayHashesByTrackFileId.clear();
-      AnalysisFfi.clearOverlayTracks();
-      _releaseOverlayHashLocks();
+      _clearOverlayState();
       _applyDisabledOverlayConfig();
       _native.unload();
       _loadedHash = null;
@@ -664,7 +690,7 @@ class AnalysisManager extends ChangeNotifier
   ) async {
     final serial = ++_overlayActivationSerial;
 
-    final readyTracks = <AnalysisOverlayTrackSource>[];
+    final requests = <int, _OverlayTrackRequest>{};
     for (final track in tracks) {
       if (_cache.deleteIfVacVersionMismatch(track.hash)) {
         log.info('[Analysis] skipped stale overlay VAC version: ${track.hash}');
@@ -677,77 +703,45 @@ class AnalysisManager extends ChangeNotifier
         );
         continue;
       }
-      final chunkReady = await ensureOverlayChunk(
+      final targetFrame = _resolveOverlayTargetFrame(
         track.hash,
-        videoPath: track.path,
         presentedPtsUs: track.presentedPtsUs,
         presentedDtsUs: track.presentedDtsUs,
       );
-      if (!_isOverlayActivationCurrent(serial)) return false;
-      if (!chunkReady) {
+      final ranges = _overlayChunkRangesFor(track.hash, targetFrame);
+      if (ranges == null) {
         log.info(
           '[Analysis] skipped overlay for ${track.hash}: '
-          'VAC2 cache has no overlay chunk for the current frame',
+          'VAC2 cache cannot resolve overlay chunk range',
         );
         continue;
       }
-      readyTracks.add(track);
+      requests[track.trackFileId] = _OverlayTrackRequest(
+        source: track,
+        targetFrame: targetFrame,
+        ranges: ranges,
+      );
     }
 
-    AnalysisFfi.clearOverlayTracks();
-    _activeOverlayHashesByTrackFileId.clear();
-    _activeOverlayHash = null;
-    _activeOverlayTrackFileId = -1;
-    _releaseOverlayHashLocks();
+    _clearOverlayState();
+    _requestedOverlayTracksByFileId.addAll(requests);
+    _activeOverlayHash = requests.values.isEmpty
+        ? null
+        : requests.values.first.source.hash;
 
-    var activatedAny = false;
-    for (final track in readyTracks) {
-      final analysisPath = _cache.analysisPath(track.hash);
-      final lock = _cache.acquireHashSharedLockSync(track.hash);
-      final loaded = AnalysisFfi.setOverlayTrack(
-        trackFileId: track.trackFileId,
-        analysisPath: analysisPath,
-      );
-      if (!loaded) {
-        lock.releaseSync();
-        log.warning(
-          '[Analysis] failed to load overlay track '
-          '${track.trackFileId}: $analysisPath',
-        );
-        continue;
-      }
-      _overlayHashLocksByTrackFileId[track.trackFileId] = lock;
-      _activeOverlayHashesByTrackFileId[track.trackFileId] = track.hash;
-      _activeOverlayHash ??= track.hash;
-      if (_activeOverlayTrackFileId < 0) {
-        _activeOverlayTrackFileId = track.trackFileId;
-      }
-      _setTrackStatus(
-        track.path,
-        fileName: track.name,
-        hash: track.hash,
-        status: AnalysisTrackStatus.cached,
-        progress: 1,
-      );
-      unawaited(
-        _cache.touchEntry(track.hash).catchError((Object e, StackTrace stack) {
-          log.warning(
-            '[Analysis] failed to touch overlay cache ${track.hash}: $e',
-            e,
-            stack,
-          );
-        }),
-      );
-      activatedAny = true;
-    }
-
-    if (activatedAny) {
-      _applyOverlayConfig();
-    } else {
+    if (requests.isEmpty) {
       _applyDisabledOverlayConfig();
+      notifyListeners();
+      return false;
+    }
+
+    _applyOverlayConfig();
+    _reloadReadyOverlayTracksForIntent(serial, reason: 'activate');
+    for (final request in requests.values) {
+      _scheduleOverlayChunksForRequest(request, serial);
     }
     notifyListeners();
-    return activatedAny;
+    return true;
   }
 
   @override
@@ -763,11 +757,8 @@ class AnalysisManager extends ChangeNotifier
   void deactivateOverlay() {
     if (!overlayPanelVisible && _activeOverlayHash == null) return;
     _overlayActivationSerial++;
-    _activeOverlayHash = null;
-    _activeOverlayTrackFileId = -1;
-    _activeOverlayHashesByTrackFileId.clear();
-    AnalysisFfi.clearOverlayTracks();
-    _releaseOverlayHashLocks();
+    _clearOverlayChunkScheduler();
+    _clearOverlayState();
     _applyDisabledOverlayConfig();
     notifyListeners();
   }
@@ -779,12 +770,8 @@ class AnalysisManager extends ChangeNotifier
     _overlayActivationSerial++;
     _cancelPendingWork();
     _ensureGeneratedInFlightByPath.clear();
-    _ensureOverlayChunkInFlightByKey.clear();
-    _activeOverlayHash = null;
-    _activeOverlayTrackFileId = -1;
-    _activeOverlayHashesByTrackFileId.clear();
-    AnalysisFfi.clearOverlayTracks();
-    _releaseOverlayHashLocks();
+    _clearOverlayChunkScheduler();
+    _clearOverlayState();
     _applyDisabledOverlayConfig();
     if (_state == AnalysisState.loaded) {
       _native.unload();
@@ -806,6 +793,14 @@ class AnalysisManager extends ChangeNotifier
     _overlayHashLocksByTrackFileId.clear();
   }
 
+  void _clearOverlayState() {
+    _activeOverlayHash = null;
+    _requestedOverlayTracksByFileId.clear();
+    _readyOverlayHashesByTrackFileId.clear();
+    AnalysisFfi.clearOverlayTracks();
+    _releaseOverlayHashLocks();
+  }
+
   void _cancelPendingWork() {
     _cancelToken.cancelled = true;
     _cancelToken = _AnalysisCancelToken();
@@ -814,8 +809,125 @@ class AnalysisManager extends ChangeNotifier
   bool _isOverlayActivationCurrent(int serial) =>
       serial == _overlayActivationSerial;
 
+  void _clearOverlayChunkScheduler() {
+    _overlayChunkScheduler.clear();
+  }
+
+  void _handleOverlayChunkJobComplete(AnalysisOverlayChunkJobResult result) {
+    final serial = result.overlaySerial;
+    if (!result.ok || serial == null || !_isOverlayActivationCurrent(serial)) {
+      return;
+    }
+    _reloadReadyOverlayTracksForIntent(serial, reason: 'chunk-ready');
+    notifyListeners();
+  }
+
+  void _scheduleOverlayChunksForRequest(
+    _OverlayTrackRequest request,
+    int serial,
+  ) {
+    for (final range in request.ranges) {
+      final targetFrame = request.targetFrame
+          .clamp(range.startFrame, range.endFrame)
+          .toInt();
+      if (_cache.hasOverlayChunkForFrame(request.source.hash, targetFrame)) {
+        continue;
+      }
+      final containsPresentedFrame =
+          request.targetFrame >= range.startFrame &&
+          request.targetFrame <= range.endFrame;
+      unawaited(
+        _ensureOverlayChunkRange(
+          hash: request.source.hash,
+          videoPath: request.source.path,
+          startFrame: range.startFrame,
+          endFrame: range.endFrame,
+          targetFrame: targetFrame,
+          priority: containsPresentedFrame ? 0 : 10,
+          overlaySerial: serial,
+        ).then((ok) {
+          if (!ok && _isOverlayActivationCurrent(serial)) {
+            log.info(
+              '[Analysis] overlay chunk not ready yet for '
+              '${request.source.hash} frames=${range.startFrame}..${range.endFrame}',
+            );
+          }
+        }),
+      );
+    }
+  }
+
+  bool _reloadReadyOverlayTracksForIntent(
+    int serial, {
+    required String reason,
+  }) {
+    if (!_isOverlayActivationCurrent(serial)) return false;
+
+    AnalysisFfi.clearOverlayTracks();
+    _readyOverlayHashesByTrackFileId.clear();
+    _releaseOverlayHashLocks();
+
+    var loadedAny = false;
+    for (final request in _requestedOverlayTracksByFileId.values) {
+      final track = request.source;
+      if (!_cache.hasOverlayChunkForFrame(track.hash, request.targetFrame)) {
+        continue;
+      }
+      final analysisPath = _cache.analysisPath(track.hash);
+      final lock = _cache.acquireHashSharedLockSync(track.hash);
+      final loaded = AnalysisFfi.setOverlayTrack(
+        trackFileId: track.trackFileId,
+        analysisPath: analysisPath,
+      );
+      if (!loaded) {
+        lock.releaseSync();
+        log.warning(
+          '[Analysis] failed to load overlay track '
+          '${track.trackFileId}: $analysisPath',
+        );
+        continue;
+      }
+      _overlayHashLocksByTrackFileId[track.trackFileId] = lock;
+      _readyOverlayHashesByTrackFileId[track.trackFileId] = track.hash;
+      _setTrackStatus(
+        track.path,
+        fileName: track.name,
+        hash: track.hash,
+        status: AnalysisTrackStatus.cached,
+        progress: 1,
+      );
+      unawaited(
+        _cache.touchEntry(track.hash).catchError((Object e, StackTrace stack) {
+          log.warning(
+            '[Analysis] failed to touch overlay cache ${track.hash}: $e',
+            e,
+            stack,
+          );
+        }),
+      );
+      loadedAny = true;
+    }
+
+    if (loadedAny) {
+      log.info(
+        '[Analysis] overlay tracks loaded after $reason: '
+        '${_readyOverlayHashesByTrackFileId.keys.toList()}',
+      );
+    }
+    if (_requestedOverlayTracksByFileId.isNotEmpty) {
+      _applyOverlayConfig();
+    }
+    return loadedAny;
+  }
+
   Set<String> _protectedHashes(String hash) {
-    final hashes = <String>{hash, ..._activeOverlayHashesByTrackFileId.values};
+    final hashes = <String>{
+      hash,
+      ..._requestedOverlayTracksByFileId.values.map(
+        (request) => request.source.hash,
+      ),
+      ..._readyOverlayHashesByTrackFileId.values,
+    };
     final loadedHash = _loadedHash;
     if (loadedHash != null) hashes.add(loadedHash);
     return hashes;
@@ -849,18 +961,17 @@ class AnalysisManager extends ChangeNotifier
   }
 
   void _unloadHashBeforeRegeneration(String hash) {
-    final overlayUsesHash = _activeOverlayHashesByTrackFileId.containsValue(
-      hash,
-    );
+    final overlayUsesHash =
+        _requestedOverlayTracksByFileId.values.any(
+          (request) => request.source.hash == hash,
+        ) ||
+        _readyOverlayHashesByTrackFileId.containsValue(hash);
     if (_loadedHash != hash && !overlayUsesHash) return;
     log.info('[Analysis] unloading stale cache before regeneration: $hash');
     if (overlayUsesHash) {
       _overlayActivationSerial++;
-      _activeOverlayHash = null;
-      _activeOverlayTrackFileId = -1;
-      _activeOverlayHashesByTrackFileId.clear();
-      AnalysisFfi.clearOverlayTracks();
-      _releaseOverlayHashLocks();
+      _clearOverlayChunkScheduler();
+      _clearOverlayState();
       _applyDisabledOverlayConfig();
     }
     if (_loadedHash == hash) {

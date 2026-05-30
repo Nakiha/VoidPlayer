@@ -11,9 +11,9 @@
 
 | Layer | Responsibility |
 | --- | --- |
-| `AnalysisManager` | Compute source hash, generate/load VAC2 base, request VACHUNK overlay chunks, track active overlay state. |
+| `AnalysisManager` | Compute source hash, generate/load VAC2 base, track overlay intent, schedule VACHUNK chunks, and reload native overlay tracks when chunks become ready. |
 | `AnalysisCache` | Resolve cache paths, validate runtime VAC versions, discover current overlay chunks by file name. |
-| `SerialAnalysisGenerationQueue` | Serialize base/chunk generation and take cache locks around native FFI calls. |
+| `SerialAnalysisGenerationQueue` | Serialize base/chunk FFI work and take cache locks around native calls. |
 | `MainWindowAnalysisCoordinator` | Connect active tracks, presented-frame timing, overlay panel state, analysis IPC, and redraw requests. |
 | `MainWindowPlaybackCoordinator` | Notify analysis after seek settles so overlay chunks can be requested without blocking seek or frame presentation. |
 
@@ -51,12 +51,18 @@ target presented frame
   -> naki_analysis_generate_vac2_overlay_chunk(...)
 ```
 
-When the target comes from the renderer-presented PTS/DTS pair, Dart still
-waits for all boundary windows selected by that policy. This is intentional:
-near a 64-frame boundary, the Dart PTS/DTS lookup and native paused-frame lookup
-can differ by one frame. Waiting for both windows keeps the final redraw from
-missing the actual displayed frame. This work is queued after seek settles and
-does not block `seek()` or the preview frame being presented.
+When the target comes from the renderer-presented PTS/DTS pair, Dart schedules
+the current window first and boundary windows at lower priority. This keeps the
+displayed frame from waiting on adjacent prefetch work while still avoiding a
+miss near 64-frame boundaries, where Dart PTS/DTS lookup and native paused-frame
+lookup can differ by one frame.
+
+Chunk requests are deduplicated by `(hash, startFrame, endFrame)` and run
+through a small scheduler in `AnalysisManager`. The default worker count is one:
+base and chunk generation remain serialized through `SerialAnalysisGenerationQueue`,
+but UI overlay activation no longer blocks on missing chunks. Pending work is
+trimmed under backpressure, stale overlay activations are ignored, and chunk
+completion reloads only the still-requested native overlay tracks.
 
 Generated chunks are published under:
 
@@ -79,8 +85,8 @@ timeline / action seek
   -> native emits seekPreviewPresented(requestId, trackFileId, ptsUs, dtsUs)
   -> MainWindowPlaybackCoordinator accepts the latest requestId
   -> MainWindowAnalysisCoordinator.refreshOverlayForPresentedFrame(...)
-  -> AnalysisManager.ensureOverlayChunk(...)
-  -> native overlay track is reloaded
+  -> AnalysisManager schedules the needed overlay chunk window
+  -> chunk completion reloads the still-requested native overlay track
   -> MainWindowController.applyLayout(...) forces redraw
 ```
 
@@ -100,18 +106,22 @@ summary current-frame estimate.
 
 ## Overlay Activation
 
-`activateOverlayTracks()` first ensures required chunks, then calls:
+`activateOverlayTracks()` records the requested overlay tracks immediately, sets
+the current overlay mode, schedules missing chunks, and returns once the intent
+is accepted. It only calls `setOverlayTrack` for tracks whose current target
+chunk is already present:
 
 ```text
 AnalysisFfi.clearOverlayTracks()
-AnalysisFfi.setOverlayTrack(trackFileId, cache/<hash>/base.vac)
+AnalysisFfi.setOverlayTrack(trackFileId, cache/<hash>/base.vac)  # ready chunks only
 AnalysisFfi.setOverlay(...)
 ```
 
 The native renderer keeps overlay tracks by file id and maps them to current
 layout slots at draw time. The Dart control strip can expose one or more active
 overlay track sources, while each native track manager lazily reads the relevant
-VACHUNK frame on demand.
+VACHUNK frame on demand. If a chunk is missing, the panel remains requested and
+native receives the track later when the scheduler finishes that window.
 
 ## Test Guidance
 

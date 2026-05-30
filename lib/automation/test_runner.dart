@@ -181,7 +181,7 @@ class TestRunner {
   }
 
   Future<void> _executeAction(PlayerAction action) async {
-    automation.executePlayerAction(action);
+    await automation.executePlayerAction(action);
   }
 
   Future<void> _executeAutomationAction(AutomationAction action) async {

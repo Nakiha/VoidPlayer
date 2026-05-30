@@ -86,6 +86,9 @@ AnalysisOverlayPrimitivePackage build_analysis_overlay_primitives(
         if (video_w <= 0 || video_h <= 0) {
             continue;
         }
+        // TODO(analysis-overlay): cache per-frame primitive packages during
+        // the planned overlay redesign. The presentation path must stay free
+        // of filesystem scans and heavy cache refresh work.
         const auto frame = track_analysis->read_overlay_frame(frame_idx);
         if (frame.cus.empty()) {
             continue;

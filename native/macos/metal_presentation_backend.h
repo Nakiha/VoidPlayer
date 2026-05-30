@@ -100,6 +100,8 @@ private:
   uint64_t overlay_gpu_failure_count_ = 0;
   uint64_t overlay_cpu_fallback_count_ = 0;
   uint64_t metal_command_failure_count_ = 0;
+  uint64_t metal_command_completion_sample_count_ = 0;
+  uint64_t metal_command_completion_p95_us_ = 0;
   uint64_t video_source_update_count_ = 0;
   uint64_t viewport_composite_count_ = 0;
   uint64_t source_frame_cache_hit_count_ = 0;

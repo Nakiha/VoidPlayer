@@ -508,8 +508,7 @@ vr::PresentationBackendStats MetalPresentationBackend::presentation_stats() cons
   {
     std::lock_guard<std::mutex> lock(async_mutex_);
     stats.in_flight_metal_buffer_count = in_flight_draws_;
-    stats.metal_command_completion_p95_us =
-        percentile_95_us(metal_command_completion_samples_us_);
+    stats.metal_command_completion_p95_us = metal_command_completion_p95_us_;
     stats.metal_command_failure_count = metal_command_failure_count_;
   }
   stats.async_metal_publish_active = 1;
@@ -668,6 +667,7 @@ void MetalPresentationBackend::complete_async_draw_result(
   {
     std::lock_guard<std::mutex> lock(async_mutex_);
     if (total_us >= 0) {
+      ++metal_command_completion_sample_count_;
       metal_command_completion_samples_us_.push_back(
           static_cast<uint64_t>(total_us));
       if (metal_command_completion_samples_us_.size() > 512) {
@@ -676,6 +676,11 @@ void MetalPresentationBackend::complete_async_draw_result(
             metal_command_completion_samples_us_.begin() +
                 static_cast<std::ptrdiff_t>(
                     metal_command_completion_samples_us_.size() - 512));
+      }
+      if (metal_command_completion_sample_count_ <= 16 ||
+          (metal_command_completion_sample_count_ % 16) == 0) {
+        metal_command_completion_p95_us_ =
+            percentile_95_us(metal_command_completion_samples_us_);
       }
     }
     if (!success) {

@@ -441,6 +441,8 @@ void Renderer::reset_presentation_backend_metrics() {
     presentation_backend_metrics_.draw_max_us.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.draw_backend_total_us.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.draw_backend_max_us.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.draw_p95_us.store(0, std::memory_order_relaxed);
+    presentation_backend_metrics_.draw_backend_p95_us.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.render_wait_us.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.render_wait_count.store(0, std::memory_order_relaxed);
     presentation_backend_metrics_.frame_copy_us.store(0, std::memory_order_relaxed);
@@ -466,7 +468,8 @@ void Renderer::reset_presentation_backend_metrics() {
 }
 
 void Renderer::record_presentation_draw_timing(uint64_t total_us, uint64_t backend_us) {
-    presentation_backend_metrics_.draw_count.fetch_add(1, std::memory_order_relaxed);
+    const auto draw_count =
+        presentation_backend_metrics_.draw_count.fetch_add(1, std::memory_order_relaxed) + 1;
     presentation_backend_metrics_.draw_total_us.fetch_add(total_us, std::memory_order_relaxed);
     presentation_backend_metrics_.draw_backend_total_us.fetch_add(
         backend_us, std::memory_order_relaxed);
@@ -492,6 +495,14 @@ void Renderer::record_presentation_draw_timing(uint64_t total_us, uint64_t backe
                 presentation_draw_backend_samples_us_.begin(),
                 presentation_draw_backend_samples_us_.begin() +
                     static_cast<std::vector<uint64_t>::difference_type>(remove_count));
+        }
+        if (draw_count <= 16 || (draw_count % 16) == 0) {
+            presentation_backend_metrics_.draw_p95_us.store(
+                percentile_95_us(presentation_draw_total_samples_us_),
+                std::memory_order_relaxed);
+            presentation_backend_metrics_.draw_backend_p95_us.store(
+                percentile_95_us(presentation_draw_backend_samples_us_),
+                std::memory_order_relaxed);
         }
     }
 }
@@ -3217,11 +3228,10 @@ PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
         result.last_layout_revision = layout_revision_;
         result.last_presented_layout_revision = last_presented_layout_revision_;
     }
-    {
-        std::lock_guard<std::mutex> lock(presentation_draw_samples_mutex_);
-        result.draw_p95_us = percentile_95_us(presentation_draw_total_samples_us_);
-        result.draw_backend_p95_us = percentile_95_us(presentation_draw_backend_samples_us_);
-    }
+    result.draw_p95_us =
+        presentation_backend_metrics_.draw_p95_us.load(std::memory_order_relaxed);
+    result.draw_backend_p95_us =
+        presentation_backend_metrics_.draw_backend_p95_us.load(std::memory_order_relaxed);
     return result;
 }
 

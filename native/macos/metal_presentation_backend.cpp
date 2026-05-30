@@ -20,6 +20,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -79,6 +80,24 @@ struct OverlayCompositeResult {
   uint32_t first_rect_uv1 = 0;
   uint32_t first_rect_track_idx = 0;
 };
+
+#if VOID_BUILD_ANALYSIS
+struct MetalOverlayPrimitiveCacheKey {
+  const void* package = nullptr;
+  uint64_t package_generation = 0;
+
+  bool operator==(const MetalOverlayPrimitiveCacheKey& other) const {
+    return package == other.package &&
+           package_generation == other.package_generation;
+  }
+};
+
+struct MetalOverlayPrimitiveCacheEntry {
+  MetalOverlayPrimitiveCacheKey key;
+  std::shared_ptr<const OverlayPrimitiveBuildResult> result;
+  uint64_t last_used = 0;
+};
+#endif
 
 struct AsyncDrawContext {
   MetalPresentationBackend* backend = nullptr;
@@ -285,19 +304,95 @@ uint32_t pack_overlay_track_payload(int slot, uint8_t line_alpha) {
          (static_cast<uint32_t>(line_alpha) << 8);
 }
 
-OverlayPrimitiveBuildResult build_overlay_primitives_for_metal(
+constexpr size_t kMetalOverlayPrimitiveCacheLimit = 24;
+
+std::mutex& metal_overlay_primitive_cache_mutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+std::vector<MetalOverlayPrimitiveCacheEntry>& metal_overlay_primitive_cache_entries() {
+  static std::vector<MetalOverlayPrimitiveCacheEntry> entries;
+  return entries;
+}
+
+uint64_t& metal_overlay_primitive_cache_clock() {
+  static uint64_t clock = 0;
+  return clock;
+}
+
+std::shared_ptr<const OverlayPrimitiveBuildResult> empty_metal_overlay_primitives() {
+  static const auto empty = std::make_shared<const OverlayPrimitiveBuildResult>();
+  return empty;
+}
+
+std::shared_ptr<const OverlayPrimitiveBuildResult> lookup_metal_overlay_primitives(
+    MetalOverlayPrimitiveCacheKey key) {
+  std::lock_guard<std::mutex> lock(metal_overlay_primitive_cache_mutex());
+  auto& clock = metal_overlay_primitive_cache_clock();
+  const uint64_t use_token = ++clock;
+  for (auto& entry : metal_overlay_primitive_cache_entries()) {
+    if (entry.key == key) {
+      entry.last_used = use_token;
+      return entry.result;
+    }
+  }
+  return nullptr;
+}
+
+void store_metal_overlay_primitives(
+    MetalOverlayPrimitiveCacheKey key,
+    std::shared_ptr<const OverlayPrimitiveBuildResult> result) {
+  if (!result) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(metal_overlay_primitive_cache_mutex());
+  auto& clock = metal_overlay_primitive_cache_clock();
+  auto& entries = metal_overlay_primitive_cache_entries();
+  const uint64_t use_token = ++clock;
+  for (auto& entry : entries) {
+    if (entry.key == key) {
+      entry.result = std::move(result);
+      entry.last_used = use_token;
+      return;
+    }
+  }
+  if (entries.size() >= kMetalOverlayPrimitiveCacheLimit) {
+    const auto oldest = std::min_element(
+        entries.begin(),
+        entries.end(),
+        [](const auto& lhs, const auto& rhs) {
+          return lhs.last_used < rhs.last_used;
+        });
+    if (oldest != entries.end()) {
+      entries.erase(oldest);
+    }
+  }
+  entries.push_back(
+      MetalOverlayPrimitiveCacheEntry{key, std::move(result), use_token});
+}
+
+std::shared_ptr<const OverlayPrimitiveBuildResult> build_overlay_primitives_for_metal(
     const vr::RendererDrawSnapshot& snapshot,
     int32_t target_width,
     int32_t target_height) {
   (void)target_width;
   (void)target_height;
-  OverlayPrimitiveBuildResult result;
-  const auto package = vr::build_analysis_overlay_primitives(snapshot);
-  if (package.empty()) {
-    return result;
+  const auto package = vr::build_analysis_overlay_primitive_package(snapshot);
+  if (!package || package->empty()) {
+    return empty_metal_overlay_primitives();
   }
 
-  for (const auto& track : package.tracks) {
+  const MetalOverlayPrimitiveCacheKey cache_key{
+      package.get(),
+      package->cache_generation,
+  };
+  if (const auto cached = lookup_metal_overlay_primitives(cache_key)) {
+    return cached;
+  }
+
+  auto result = std::make_shared<OverlayPrimitiveBuildResult>();
+  for (const auto& track : package->tracks) {
     if (track.video_width <= 0 || track.video_height <= 0) {
       continue;
     }
@@ -309,7 +404,7 @@ OverlayPrimitiveBuildResult build_overlay_primitives_for_metal(
           primitive.x1, track.video_width, primitive.y1, track.video_height);
       rect.color_bgra = pack_overlay_bgra(primitive.color);
       rect.track_idx = pack_overlay_track_payload(track.slot, track.line_alpha);
-      result.fill_rects.push_back(rect);
+      result->fill_rects.push_back(rect);
     }
     for (const auto& primitive : track.outline_rects) {
       VPMacOSNativeOverlayGpuRect rect = {};
@@ -318,12 +413,12 @@ OverlayPrimitiveBuildResult build_overlay_primitives_for_metal(
       rect.rect_uv1 = vr::pack_overlay_uv16(
           primitive.x1, track.video_width, primitive.y1, track.video_height);
       rect.track_idx = pack_overlay_track_payload(track.slot, track.line_alpha);
-      if (result.line_rects.empty()) {
-        result.first_rect_uv0 = rect.rect_uv0;
-        result.first_rect_uv1 = rect.rect_uv1;
-        result.first_rect_track_idx = rect.track_idx;
+      if (result->line_rects.empty()) {
+        result->first_rect_uv0 = rect.rect_uv0;
+        result->first_rect_uv1 = rect.rect_uv1;
+        result->first_rect_track_idx = rect.track_idx;
       }
-      result.line_rects.push_back(rect);
+      result->line_rects.push_back(rect);
     }
     for (const auto& line : track.motion_lines) {
       VPMacOSNativeOverlayGpuRect gpu_line = {};
@@ -333,17 +428,19 @@ OverlayPrimitiveBuildResult build_overlay_primitives_for_metal(
           line.x1, track.video_width, line.y1, track.video_height);
       gpu_line.color_bgra = pack_overlay_bgra(line.color);
       gpu_line.track_idx = pack_overlay_track_payload(track.slot, track.line_alpha);
-      result.motion_lines.push_back(gpu_line);
+      result->motion_lines.push_back(gpu_line);
     }
   }
+  store_metal_overlay_primitives(cache_key, result);
   return result;
 }
 #else
-OverlayPrimitiveBuildResult build_overlay_primitives_for_metal(
+std::shared_ptr<const OverlayPrimitiveBuildResult> build_overlay_primitives_for_metal(
     const vr::RendererDrawSnapshot&,
     int32_t,
     int32_t) {
-  return {};
+  static const auto empty = std::make_shared<const OverlayPrimitiveBuildResult>();
+  return empty;
 }
 #endif
 
@@ -907,8 +1004,9 @@ bool MetalPresentationBackend::draw_frame(
     ++video_source_update_count_;
     last_source_signature_ = source_signature;
   }
-  const auto overlay_primitives = build_overlay_primitives_for_metal(
+  const auto overlay_primitives_ptr = build_overlay_primitives_for_metal(
       snapshot, draw_target_width_, draw_target_height_);
+  const auto& overlay_primitives = *overlay_primitives_ptr;
   const bool overlay_expected = overlay_primitives_expected(overlay_primitives);
   const auto overlay_set = overlay_primitive_set(overlay_primitives);
   const auto storage_extent =

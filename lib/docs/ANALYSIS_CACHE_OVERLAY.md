@@ -108,11 +108,14 @@ summary current-frame estimate.
 
 `activateOverlayTracks()` records the requested overlay tracks immediately, sets
 the current overlay mode, schedules missing chunks, and returns once the intent
-is accepted. It only calls `setOverlayTrack` for tracks whose current target
-chunk is already present:
+is accepted. It keeps the current native overlay track binding while the same
+track/hash already covers the target frame, so seek and display-link refresh do
+not re-open VAC2/VACHUNK state just because the current PTS changed. Native
+tracks are rebound only when the track set changes or the requested target frame
+requires a newly generated chunk:
 
 ```text
-AnalysisFfi.clearOverlayTracks()
+AnalysisFfi.clearOverlayTracks()                                # track set changed / target missing
 AnalysisFfi.setOverlayTrack(trackFileId, cache/<hash>/base.vac)  # ready chunks only
 AnalysisFfi.setOverlay(...)
 ```
@@ -120,8 +123,12 @@ AnalysisFfi.setOverlay(...)
 The native renderer keeps overlay tracks by file id and maps them to current
 layout slots at draw time. The Dart control strip can expose one or more active
 overlay track sources, while each native track manager lazily reads the relevant
-VACHUNK frame on demand. If a chunk is missing, the panel remains requested and
-native receives the track later when the scheduler finishes that window.
+VACHUNK frame on demand. The render hot path then caches per-frame primitive
+packages in video coordinates; Metal separately caches the packed GPU rect/line
+buffers for the same package. Layout, pan, zoom, and split changes should reuse
+those cached primitives and let the compositor shader project them with the
+latest layout. If a chunk is missing, the panel remains requested and native
+receives the track later when the scheduler finishes that window.
 
 ## Test Guidance
 

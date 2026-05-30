@@ -161,6 +161,19 @@ OverlayChunkIndexEntry {
 
 这样可以把热路径从“每帧遍历目录并打开多个文件”降到“查内存索引并打开一个文件”。
 
+当前 macOS Metal 上屏路径还要求更严格：display-link viewport composite
+可能高于视频 PTS 频率运行，因此 overlay 不应在每个 composite tick 重建
+primitive。当前 contract 是：
+
+- Dart 只在 track set 变化、目标 chunk 缺失或 chunk-ready 后刷新 native
+  overlay track；普通 seek/layout tick 不重复 `set_overlay_track()`。
+- native primitive package 按 session、track file id、frame、slot、视频尺寸和
+  overlay config 缓存，坐标保持在 video space。
+- Metal backend 再按 primitive package generation 缓存已打包的 GPU rect/line
+  列表；pan/zoom/split 只更新 layout params，由 shader 投影到目标 buffer。
+- CPU overlay fallback 只用于 GPU overlay 失败后的可见 fallback，不能作为
+  正常高刷新路径。
+
 ## Redraw Contract
 
 overlay refresh 完成后只做两件事：

@@ -87,7 +87,7 @@ ctest --test-dir native/build-macos-make -LE hosted-flaky --output-on-failure
 | `ui_tests/viewport/**` | Pan/zoom/split/fullscreen layout. | Targeted preservation. |
 | `ui_tests/track/**` | Add/remove/reorder/offset/network track behavior. | Targeted preservation. |
 | `ui_tests/codec/**` | Codec-specific not-black/decode canaries. | Targeted preservation / release candidate. |
-| `ui_tests/analysis/**` | Windows analysis UI/IPC and overlay. | Analysis changes / release candidate. |
+| `ui_tests/analysis/**` | Windows analysis UI/IPC plus cross-platform overlay activation/seek regressions. | Analysis changes / release candidate. |
 | `ui_tests/color/**` | Color metadata/capture parity. | Release candidate or color pipeline changes. |
 | `ui_tests/macos/native_facade_smoke.csv` | macOS channel/metadata/diagnostics smoke. | macOS stabilization PR gate candidate. |
 | `ui_tests/macos/native_seek_frame_smoke.csv` | Renderer-owned refresh after seek. | macOS stabilization. |
@@ -95,6 +95,7 @@ ctest --test-dir native/build-macos-make -LE hosted-flaky --output-on-failure
 | `ui_tests/macos/native_controls_smoke.csv` | Basic native play/pause/seek/step command smoke. | macOS stabilization. |
 | `ui_tests/macos/native_media_header_remove_smoke.csv` | Real media-header remove button path for native fileId 0 and remaining-track presentation. | Targeted track/header changes; candidate for stabilization smoke after the layout smoke gate is stable. |
 | `ui_tests/macos/analysis_gated_smoke.csv` | macOS analysis FFI, media-header overlay panel/activation, and gated external analysis window behavior. | Nightly/headed or targeted analysis overlay changes. |
+| `ui_tests/analysis/overlay_seek_boundary_hevc_aq.csv` / `overlay_seek_boundary_vvc.csv` | Real timeline seek near VACHUNK window boundaries; validates async chunk readiness, native overlay rebinding, and redraw. | Targeted analysis overlay changes on Windows or macOS; use `mac-ui-test --build` for macOS renderer-owned Metal. |
 | `ui_tests/macos/native_4k60_playback_smoke.csv` | VideoToolbox/Metal/cadence canary; asserts monotonic PTS, large-gap/error counters, duplicate PTS visibility, host interval max/p95, and renderer-owned ratio. | Nightly/headed or release candidate. |
 | `ui_tests/macos/native_playing_dual_track_pan_smoke.csv` | Playing pan intent coalescing; asserts display-link viewport composite can reuse the source-frame cache while video source updates remain PTS-driven. | Targeted viewport/backend changes; candidate for macOS stabilization. |
 | `ui_tests/macos/native_paused_dual_track_pan_zoom_smoke.csv` | Paused dual-track pan/zoom through display-link source-cache composite. | Targeted viewport/backend changes. |

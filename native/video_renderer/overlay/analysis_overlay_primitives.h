@@ -4,6 +4,7 @@
 #include "video_renderer/render/renderer_draw_snapshot.h"
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace vr {
@@ -44,6 +45,7 @@ struct AnalysisOverlayTrackPrimitives {
 };
 
 struct AnalysisOverlayPrimitivePackage {
+    uint64_t cache_generation = 0;
     std::vector<AnalysisOverlayTrackPrimitives> tracks;
 
     bool empty() const { return tracks.empty(); }
@@ -51,5 +53,8 @@ struct AnalysisOverlayPrimitivePackage {
 
 AnalysisOverlayPrimitivePackage build_analysis_overlay_primitives(
     const RendererDrawSnapshot& snapshot);
+
+std::shared_ptr<const AnalysisOverlayPrimitivePackage>
+build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot);
 
 } // namespace vr

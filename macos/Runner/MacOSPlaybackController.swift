@@ -125,13 +125,15 @@ final class MacOSPlaybackController {
     }
     if player?.lastRendererOwnedPresentationSucceeded() == true {
       presentationState.recordPresentation(rendererOwned: true)
-      if let frameInfo = player?.lastRendererOwnedFrameInfo() {
+      let frameInfo = player?.lastRendererOwnedFrameInfo()
+      if let frameInfo {
         presentationState.recordFrame(frameInfo)
       }
       if let player, let texture {
         guard texture.publishRenderedTargetAndInstallNext(
           player,
-          maxTrackSlots: maxTrackSlots
+          maxTrackSlots: maxTrackSlots,
+          frameInfo: frameInfo
         ) else {
           return
         }

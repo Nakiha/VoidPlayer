@@ -71,26 +71,37 @@ class ActionRegistry {
     _callbacks.remove(name);
   }
 
+  /// Execute an action by name and log asynchronous failures.
+  ///
+  /// This keeps keyboard/button actions fire-and-forget while allowing
+  /// automation to call [executeAndWait] for actions whose visual result is
+  /// committed asynchronously, such as seek preview refresh.
+  void execute(String name, [PlayerAction? overrideAction]) {
+    fireAndLog('Action "$name"', executeAndWait(name, overrideAction));
+  }
+
   /// Execute an action by name, optionally with an override action instance.
   ///
   /// When called from a keyboard shortcut, [overrideAction] is null and the
   /// registered default action is used. When called from a test script,
   /// [overrideAction] carries the script-specified parameters (e.g. seek position).
-  void execute(String name, [PlayerAction? overrideAction]) {
+  Future<void> executeAndWait(
+    String name, [
+    PlayerAction? overrideAction,
+  ]) async {
     final callback = _callbacks[name];
     if (callback == null) {
       log.severe('Action "$name" not bound');
-      return;
+      throw StateError('Action "$name" not bound');
     }
     final action = overrideAction ?? _actions[name];
     log.info('Action: $name${action != overrideAction ? '' : ' (script)'}');
-    try {
-      final result = callback(action!);
-      if (result is Future) {
-        fireAndLog('Action "$name"', result.then((_) {}));
-      }
-    } catch (error, stack) {
-      log.severe('Action "$name" failed', error, stack);
+    if (action == null) {
+      throw StateError('Action "$name" has no registered definition');
+    }
+    final result = callback(action);
+    if (result is Future) {
+      await result;
     }
   }
 

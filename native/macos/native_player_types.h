@@ -17,6 +17,7 @@ typedef struct VPMacOSNativeFrameInfo {
   int64_t pts_us;
   int64_t dts_us;
   int64_t duration_us;
+  uint64_t target_pixel_buffer_address;
 } VPMacOSNativeFrameInfo;
 
 typedef struct VPMacOSNativeTrackInfo {

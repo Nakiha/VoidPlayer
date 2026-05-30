@@ -51,7 +51,7 @@ class MainWindowActionCoordinator {
       pause: playbackCoordinator.pause,
       stepForward: controller.stepForward,
       stepBackward: controller.stepBackward,
-      seekTo: playbackCoordinator.seekTo,
+      seekTo: playbackCoordinator.seekToAndWait,
       clickTimelineFraction: testHarness.clickTimelineFraction,
       setSpeed: playbackCoordinator.setSpeed,
       openFile: mediaCoordinator.openFile,
@@ -105,7 +105,7 @@ class MainWindowActionBinder {
   final Future<void> Function() pause;
   final Future<void> Function() stepForward;
   final Future<void> Function() stepBackward;
-  final void Function(int ptsUs) seekTo;
+  final Future<void> Function(int ptsUs) seekTo;
   final void Function(double fraction) clickTimelineFraction;
   final void Function(double speed) setSpeed;
 
@@ -189,7 +189,7 @@ class MainWindowActionBinder {
     _bind(const StepBackward(), (_) => stepBackward());
     _bind(const SeekTo(0), (action) {
       final a = action as SeekTo;
-      seekTo(a.ptsUs);
+      return seekTo(a.ptsUs);
     });
     _bind(const ClickTimelineFraction(0), (action) {
       final a = action as ClickTimelineFraction;

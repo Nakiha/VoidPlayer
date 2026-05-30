@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
@@ -21,6 +22,10 @@ bool macos_profiler_enabled() {
            std::strcmp(value, "false") != 0;
   }();
   return enabled;
+}
+
+uint64_t pointer_address(const void* pointer) {
+  return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pointer));
 }
 
 }  // namespace
@@ -211,6 +216,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   uint64_t baseline_upload_count = 0;
   uint64_t baseline_draw_failure_count = 0;
   uint64_t baseline_target_generation = 0;
+  uint64_t baseline_target_address = 0;
   bool baseline_frame_available = false;
   int64_t refresh_clock_us = 0;
   int64_t refresh_min_pts_us = -1;
@@ -230,6 +236,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     baseline_draw_failure_count =
         player->renderer_owned_presentation_draw_failure_count;
     baseline_target_generation = player->presentation_target_generation;
+    baseline_target_address = pointer_address(player->presentation_target_pixel_buffer);
     baseline_frame_available = player->last_renderer_owned_frame_info_available;
     refresh_min_pts_us = player->renderer_owned_refresh_min_pts_us;
   }
@@ -244,8 +251,11 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     if (player->renderer) {
       refresh_clock_us = player->renderer->current_pts_us();
       ++refresh_attempts;
+      const char* refresh_reason =
+          refresh_min_pts_us >= 0 ? "seek_frame_refresh"
+                                  : "macos-renderer-owned-refresh";
       refresh_submitted =
-          player->renderer->request_frame_refresh("macos-renderer-owned-refresh");
+          player->renderer->request_frame_refresh(refresh_reason);
       if (refresh_submitted) {
         const auto metrics = player->renderer->presentation_backend_metrics();
         expected_layout_revision =
@@ -282,13 +292,26 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     return pts_us >= refresh_clock_us - kRefreshPtsLowerToleranceUs &&
            pts_us <= refresh_clock_us + kRefreshPtsUpperToleranceUs;
   };
+  const auto frame_matches_layout_request = [&]() {
+    return expected_layout_revision == 0 ||
+           player->last_renderer_owned_layout_revision >=
+               expected_layout_revision;
+  };
+  const auto frame_matches_target_request = [&]() {
+    if (!player->last_renderer_owned_frame_info_available ||
+        baseline_target_address == 0) {
+      return false;
+    }
+    const uint64_t frame_target =
+        player->last_renderer_owned_frame_info.target_pixel_buffer_address;
+    return frame_target == baseline_target_address;
+  };
   const auto completed = [&]() {
     return player->presentation_target_generation != baseline_target_generation ||
            (player->renderer_owned_presentation_upload_count >
                 baseline_upload_count &&
-            (expected_layout_revision == 0 ||
-             player->last_renderer_owned_layout_revision >=
-                 expected_layout_revision) &&
+            frame_matches_target_request() &&
+            frame_matches_layout_request() &&
             frame_matches_refresh_request()) ||
            player->renderer_owned_presentation_draw_failure_count >
                baseline_draw_failure_count;
@@ -336,6 +359,8 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     return -1;
   }
   if (player->renderer_owned_presentation_upload_count > baseline_upload_count &&
+      frame_matches_target_request() &&
+      frame_matches_layout_request() &&
       frame_matches_refresh_request()) {
     *out = player->last_renderer_owned_frame_info;
     if (refresh_min_pts_us >= 0) {

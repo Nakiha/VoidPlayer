@@ -168,6 +168,11 @@ class MainWindowPlaybackCoordinator {
     unawaited(_seekToAsync(ptsUs).catchError((_) {}));
   }
 
+  Future<void> seekToAndWait(int ptsUs) {
+    if (_disposed) return Future<void>.value();
+    return _seekToAsync(ptsUs);
+  }
+
   Future<void> _seekToAsync(int ptsUs) async {
     if (_disposed) return;
     final targetPtsUs = _clampSeekTargetUs(ptsUs);

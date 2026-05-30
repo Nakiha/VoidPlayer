@@ -3,6 +3,7 @@
 #include "common/logging.h"
 #include "macos/native_player_state.h"
 
+#include <algorithm>
 #include <cstring>
 #include <mutex>
 #include <new>
@@ -105,6 +106,11 @@ int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
     return -1;
   }
   player->update_decode_names_locked();
+  {
+    std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+    player->renderer_owned_refresh_min_pts_us =
+        std::max<int64_t>(0, player->renderer->current_pts_us() - 500'000);
+  }
   write_error(error, error_size, "");
   return 0;
 }

@@ -1148,6 +1148,8 @@ bool Renderer::draw_paused_frame(const char* reason) {
     const bool interactive_refresh =
         reason && (std::strcmp(reason, "macos-renderer-owned-refresh") == 0 ||
                    std::strcmp(reason, "request_frame_refresh") == 0);
+    const bool decoded_preview_refresh =
+        reason && std::strcmp(reason, "seek_frame_refresh") == 0;
     PresentDecision decision;
     bool has_frame = false;
     {
@@ -1157,12 +1159,13 @@ bool Renderer::draw_paused_frame(const char* reason) {
         if (render_sink_) {
             decision = render_sink_->evaluate();
             filter_present_decision_against_tracks(decision, tracks_);
-            if (decision.should_present) {
+            if (decision.should_present && !decoded_preview_refresh) {
                 apply_present_carry_forward(tracks_, last_decision_, decision);
             }
         }
         has_frame = present_decision_has_frame(decision);
-        if (!has_frame && present_decision_has_frame(last_decision_)) {
+        if (!decoded_preview_refresh && !has_frame &&
+            present_decision_has_frame(last_decision_)) {
             decision = last_decision_;
             has_frame = true;
         }
@@ -1187,7 +1190,8 @@ bool Renderer::draw_paused_frame(const char* reason) {
             // tracks can become ready at different times.  Do not let a partial
             // refresh overwrite a complete cached decision; otherwise a slower
             // secondary track can disappear until the next full playback tick.
-            if (present_decision_covers_active_tracks(last_decision_, tracks_)) {
+            if (!decoded_preview_refresh &&
+                present_decision_covers_active_tracks(last_decision_, tracks_)) {
                 decision = last_decision_;
             } else {
                 const auto snapshot = build_paused_preview_snapshot(tracks_);
@@ -1232,8 +1236,31 @@ bool Renderer::request_frame_refresh(const char* reason) {
     const char* refresh_reason = reason && reason[0] != '\0'
                                      ? reason
                                      : "request_frame_refresh";
-    if (playing_.load(std::memory_order_acquire) &&
-        !playback_->clock().is_paused()) {
+    const bool renderer_owned_refresh =
+        std::strcmp(refresh_reason, "macos-renderer-owned-refresh") == 0 ||
+        std::strcmp(refresh_reason, "request_frame_refresh") == 0;
+    bool has_complete_cached_decision = false;
+    if (renderer_owned_refresh) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        PresentDecision cached = last_decision_;
+        filter_present_decision_against_tracks(cached, tracks_);
+        const auto active_count = active_track_count(tracks_);
+        has_complete_cached_decision =
+            present_decision_has_frame(cached) &&
+            (active_count <= 1 ||
+             present_decision_covers_active_tracks(cached, tracks_));
+    }
+    if (renderer_owned_refresh) {
+        if (redraw_layout()) {
+            return true;
+        }
+        if (has_complete_cached_decision ||
+            (playing_.load(std::memory_order_acquire) &&
+             !playback_->clock().is_paused())) {
+            return false;
+        }
+    } else if (playing_.load(std::memory_order_acquire) &&
+               !playback_->clock().is_paused()) {
         return redraw_layout();
     }
     return draw_paused_frame(refresh_reason);
@@ -1589,9 +1616,48 @@ bool Renderer::redraw_layout() {
         const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(state_mutex_);
         consume_pending_layout_locked();
-        snapshot = build_draw_snapshot_locked(last_decision_);
+        PresentDecision decision = last_decision_;
+        filter_present_decision_against_tracks(decision, tracks_);
+        bool has_frame = present_decision_has_frame(decision);
+        if (has_frame) {
+            auto available = build_available_paused_frame_snapshot(tracks_);
+            for (size_t i = 0; i < kMaxTracks; ++i) {
+                if (!decision.frames[i].has_value() &&
+                    available.decision.frames[i].has_value()) {
+                    decision.frames[i] = available.decision.frames[i];
+                    decision.file_ids[i] = available.decision.file_ids[i];
+                    decision.track_generations[i] =
+                        available.decision.track_generations[i];
+                }
+            }
+            filter_present_decision_against_tracks(decision, tracks_);
+            has_frame = present_decision_has_frame(decision);
+        }
+        if (has_frame && active_track_count(tracks_) > 1 &&
+            !present_decision_covers_active_tracks(decision, tracks_)) {
+            const auto preview = build_paused_preview_snapshot(tracks_);
+            if (preview.ready_to_present) {
+                decision = preview.decision;
+                has_frame = true;
+            } else {
+                has_frame = false;
+            }
+        }
         snapshot_layout_revision = layout_revision_;
         snapshot_us = elapsed_us_since(snapshot_start);
+        if (!has_frame) {
+            if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER")) {
+                spdlog::info(
+                    "[RendererProfiler] redraw_layout skipped: no complete "
+                    "decision layout_rev={} tracks={}",
+                    snapshot_layout_revision,
+                    active_track_count(tracks_));
+            }
+            return false;
+        }
+        last_decision_ = decision;
+        update_track_geometry_from_decision_locked(decision);
+        snapshot = build_draw_snapshot_locked(decision);
     }
     std::function<void()> frame_callback;
     auto frame_failure_callback = frame_failure_callback_snapshot();

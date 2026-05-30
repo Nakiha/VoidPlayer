@@ -17,20 +17,27 @@ enum MacOSNativeFrameRefresh {
     framePump: MacOSNativeFramePump
   ) -> FlutterError? {
     let startNs = DispatchTime.now().uptimeNanoseconds
+    let timeoutMs = 3_000
     do {
       player.seek(targetPtsUs)
-      let frameInfo = try texture.updateFromNativePlayer(
+      let (frameInfo, attempts) = try updateFromNativePlayerWithTransientRetry(
+        route: "seek",
         player,
+        texture: texture,
         maxTrackSlots: maxTrackSlots,
-        waitTimeoutMs: 3_000
+        timeoutMs: timeoutMs,
+        acceptFrame: { frameInfo in
+          frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
+            frameInfo.ptsUs <= targetPtsUs + 1_500_000
+        }
       )
       framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
       presentationState.recordFrame(frameInfo)
       logRefreshProfiler(
         route: "seek",
         startNs: startNs,
-        timeoutMs: 3_000,
-        result: "ok",
+        timeoutMs: timeoutMs,
+        result: attempts > 1 ? "ok attempts=\(attempts)" : "ok",
         ptsUs: frameInfo.ptsUs
       )
       return nil
@@ -38,7 +45,7 @@ enum MacOSNativeFrameRefresh {
       logRefreshProfiler(
         route: "seek",
         startNs: startNs,
-        timeoutMs: 3_000,
+        timeoutMs: timeoutMs,
         result: "error:\(error)",
         ptsUs: -1
       )
@@ -47,6 +54,46 @@ enum MacOSNativeFrameRefresh {
         message: "Failed to decode macOS video frame",
         details: "\(error)"
       )
+    }
+  }
+
+  private static func updateFromNativePlayerWithTransientRetry(
+    route: String,
+    _ player: MacOSNativePlayerSession,
+    texture: MacOSFlutterTextureBridge,
+    maxTrackSlots: Int,
+    timeoutMs: Int,
+    acceptFrame: (MacOSNativeFrameInfo) -> Bool = { _ in true }
+  ) throws -> (MacOSNativeFrameInfo, Int) {
+    let deadlineNs = DispatchTime.now().uptimeNanoseconds +
+      UInt64(max(1, timeoutMs)) * 1_000_000
+    var attempts = 0
+    while true {
+      attempts += 1
+      let nowNs = DispatchTime.now().uptimeNanoseconds
+      let remainingMs = max(1, Int((deadlineNs > nowNs ? deadlineNs - nowNs : 0) / 1_000_000))
+      do {
+        let frameInfo = try texture.updateFromNativePlayer(
+          player,
+          maxTrackSlots: maxTrackSlots,
+          waitTimeoutMs: remainingMs
+        )
+        guard acceptFrame(frameInfo) else {
+          throw MacOSNativePlayerError.transientFrameUnavailable(
+            "renderer-owned Metal refresh returned a stale frame pts=\(frameInfo.ptsUs)"
+          )
+        }
+        return (frameInfo, attempts)
+      } catch {
+        let transient = (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true
+        if !transient || DispatchTime.now().uptimeNanoseconds >= deadlineNs {
+          throw error
+        }
+        MacOSProfilerLog.trace(
+          "VoidPlayer macOS refresh retry route=\(route) attempt=\(attempts) error=\(error)"
+        )
+        Thread.sleep(forTimeInterval: 0.02)
+      }
     }
   }
 
@@ -177,9 +224,7 @@ enum MacOSNativeFrameRefresh {
 
   static func stepAndRefresh(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
     forward: Bool,
-    maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
     framePump: MacOSNativeFramePump
   ) -> FlutterError? {
@@ -190,19 +235,17 @@ enum MacOSNativeFrameRefresh {
       } else {
         try player.stepBackward()
       }
-      let frameInfo = try texture.updateFromNativePlayer(
-        player,
-        maxTrackSlots: maxTrackSlots,
-        waitTimeoutMs: 3_000
-      )
       framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
-      presentationState.recordFrame(frameInfo)
+      let frameInfo = player.lastRendererOwnedFrameInfo()
+      if let frameInfo {
+        presentationState.recordFrame(frameInfo)
+      }
       logRefreshProfiler(
         route: forward ? "step-forward" : "step-backward",
         startNs: startNs,
         timeoutMs: 3_000,
         result: "ok",
-        ptsUs: frameInfo.ptsUs
+        ptsUs: frameInfo?.ptsUs ?? -1
       )
     } catch {
       logRefreshProfiler(

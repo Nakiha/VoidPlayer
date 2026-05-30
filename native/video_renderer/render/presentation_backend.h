@@ -39,6 +39,7 @@ struct PresentationBackendFrameInfo {
     int64_t pts_us = 0;
     int64_t dts_us = 0;
     int64_t duration_us = 0;
+    uint64_t target_pixel_buffer_address = 0;
 };
 
 struct PresentationBackendStats {

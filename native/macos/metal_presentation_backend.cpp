@@ -88,6 +88,7 @@ struct AsyncDrawContext {
   int32_t storage = VPMacOSNativePresentPackageStorageUnavailable;
   int64_t copy_us = 0;
   size_t bytes = 0;
+  uint64_t target_pixel_buffer_address = 0;
 };
 
 int active_present_frame_count(const vr::RendererDrawSnapshot& snapshot) {
@@ -115,6 +116,14 @@ void hash_combine(uint64_t& seed, uint64_t value) {
 
 uint64_t pointer_bits(const void* ptr) {
   return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
+}
+
+void annotate_frame_target(VPMacOSNativeFrameInfo* frame_info,
+                           const void* pixel_buffer) {
+  if (!frame_info) {
+    return;
+  }
+  frame_info->target_pixel_buffer_address = pointer_bits(pixel_buffer);
 }
 
 uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
@@ -521,6 +530,8 @@ bool MetalPresentationBackend::copy_last_frame_info(
   out->pts_us = last_draw_frame_info_.pts_us;
   out->dts_us = last_draw_frame_info_.dts_us;
   out->duration_us = last_draw_frame_info_.duration_us;
+  out->target_pixel_buffer_address =
+      last_draw_frame_info_.target_pixel_buffer_address;
   return true;
 }
 
@@ -703,6 +714,7 @@ void metal_async_upload_completed(void* user_data,
   }
   auto* backend = context->backend;
   const bool success = ret == 0;
+  frame_info.target_pixel_buffer_address = context->target_pixel_buffer_address;
   auto overlay = context->overlay;
   if (overlay.expected) {
     overlay.gpu_attempted = true;
@@ -914,6 +926,7 @@ bool MetalPresentationBackend::draw_frame(
       context->overlay = overlay_result_from_primitives(overlay_primitives);
       context->path = "cvpixelbuffer";
       context->storage = VPMacOSNativePresentPackageStorageCVPixelBuffer;
+      context->target_pixel_buffer_address = pointer_bits(draw_target_pixel_buffer_);
       begin_async_draw();
       const int ret =
           VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlayAsync(
@@ -983,6 +996,7 @@ bool MetalPresentationBackend::draw_frame(
                             overlay.gpu_succeeded,
                             overlay.cpu_attempted,
                             overlay.line_rect_count);
+      annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
       mark_draw_success(frame_info);
       log_profiler("cvpixelbuffer", true, ret, 0, 0,
                    VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
@@ -1026,6 +1040,7 @@ bool MetalPresentationBackend::draw_frame(
                               cpu_overlay.gpu_succeeded,
                               cpu_overlay.cpu_attempted,
                               cpu_overlay.line_rect_count);
+        annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
         mark_draw_success(frame_info);
         log_profiler("cvpixelbuffer-cpu-overlay-fallback", true, ret, 0, 0,
                      VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
@@ -1058,6 +1073,7 @@ bool MetalPresentationBackend::draw_frame(
       context->overlay = overlay_result_from_primitives(overlay_primitives);
       context->path = "cvpixelbuffer-set";
       context->storage = VPMacOSNativePresentPackageStorageCVPixelBuffer;
+      context->target_pixel_buffer_address = pointer_bits(draw_target_pixel_buffer_);
       begin_async_draw();
       const int ret =
           VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlayAsync(
@@ -1127,6 +1143,7 @@ bool MetalPresentationBackend::draw_frame(
                             overlay.gpu_succeeded,
                             overlay.cpu_attempted,
                             overlay.line_rect_count);
+      annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
       mark_draw_success(frame_info);
       log_profiler("cvpixelbuffer-set", true, ret, 0, 0,
                    VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
@@ -1170,6 +1187,7 @@ bool MetalPresentationBackend::draw_frame(
                               cpu_overlay.gpu_succeeded,
                               cpu_overlay.cpu_attempted,
                               cpu_overlay.line_rect_count);
+        annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
         mark_draw_success(frame_info);
         log_profiler("cvpixelbuffer-set-cpu-overlay-fallback", true, ret, 0, 0,
                      VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
@@ -1268,6 +1286,7 @@ bool MetalPresentationBackend::draw_frame(
             : (package_from_cache ? "package-bgra-cached-composite" : "package-bgra");
     context->storage = package.storage;
     context->bytes = package.used_bytes;
+    context->target_pixel_buffer_address = pointer_bits(draw_target_pixel_buffer_);
     begin_async_draw();
     const int ret = package_from_cache
         ? VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlayAsync(
@@ -1377,6 +1396,7 @@ bool MetalPresentationBackend::draw_frame(
                           overlay.gpu_succeeded,
                           overlay.cpu_attempted,
                           overlay.line_rect_count);
+    annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
     mark_draw_success(frame_info);
     log_profiler(
         package.storage == VPMacOSNativePresentPackageStorageYUV ? "package-yuv" : "package-bgra",
@@ -1430,6 +1450,7 @@ bool MetalPresentationBackend::draw_frame(
                               cpu_overlay.gpu_succeeded,
                               cpu_overlay.cpu_attempted,
                               cpu_overlay.line_rect_count);
+        annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
         mark_draw_success(frame_info);
         log_profiler(
             package.storage == VPMacOSNativePresentPackageStorageYUV

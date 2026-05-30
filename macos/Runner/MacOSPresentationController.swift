@@ -171,10 +171,11 @@ final class MacOSPresentationController {
   }
 
   func shouldSuppressPausedNativeCallbackPublication() -> Bool {
-    layoutRefreshRunning ||
-      latestLayoutRefreshRequest != nil ||
-      displayLink.isRunning ||
-      shouldKeepDisplayLinkWarm()
+    // Only layout-owned refreshes are published through the revision gate.
+    // Paused seek/EOF previews still need their native callback to advance the
+    // renderer-owned buffer ring; suppressing them during display-link idle
+    // grace leaves completed buffers in-flight and starves later layout draws.
+    layoutRefreshRunning || latestLayoutRefreshRequest != nil
   }
 
   func recordLayoutCallbackPublicationSuppressed() {

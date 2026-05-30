@@ -37,8 +37,8 @@ class UiAutomationBridge {
     required ActionRegistry actionRegistry,
   }) : _actionRegistry = actionRegistry;
 
-  void executePlayerAction(PlayerAction action) {
-    _actionRegistry.execute(action.name, action);
+  Future<void> executePlayerAction(PlayerAction action) {
+    return _actionRegistry.executeAndWait(action.name, action);
   }
 
   Future<bool> waitForAnalysisProcessCount(int count, Duration timeout) =>

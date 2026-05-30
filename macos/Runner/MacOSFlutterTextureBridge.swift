@@ -57,6 +57,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private var drawBufferIndex = 0
   private var lastCopiedBufferIndex: Int?
   private var lastPublishedNativeUploadCount = 0
+  private var lastIgnoredNativeUploadCount = 0
   private var metalBufferExhaustionCount = 0
   private var pixelBufferRebuildCount = 0
   private var pixelBufferReuseCount = 0
@@ -154,9 +155,37 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       lock.lock()
       defer { lock.unlock() }
       let expectedPixelBuffer = Unmanaged.passUnretained(drawBuffer).toOpaque()
-      guard let currentDrawBuffer = pixelBufferLocked(drawBufferIndex),
-            Unmanaged.passUnretained(currentDrawBuffer).toOpaque() == expectedPixelBuffer else {
-        throw MacOSNativePlayerError.failed("renderer-owned Metal presentation target changed during refresh")
+      let expectedAddress = UInt(bitPattern: expectedPixelBuffer)
+      let completedAddress = info.targetPixelBufferAddress == 0
+        ? expectedAddress
+        : info.targetPixelBufferAddress
+      guard completedAddress == expectedAddress else {
+        MacOSProfilerLog.log(String(
+          format: "VoidPlayer macOS stale target expected=0x%llx completed=0x%llx display=%d draw=%d states=%@ upload=%d ptsUs=%d",
+          UInt64(expectedAddress),
+          UInt64(completedAddress),
+          displayBufferIndex,
+          drawBufferIndex,
+          pixelBufferStateSummaryLocked(),
+          player.rendererOwnedPresentationUploadCount(),
+          info.ptsUs
+        ))
+        throw MacOSNativePlayerError.transientFrameUnavailable(
+          String(
+            format: "renderer-owned Metal refresh completed for a stale presentation target expected=0x%llx completed=0x%llx display=%d draw=%d states=%@ upload=%d",
+            UInt64(expectedAddress),
+            UInt64(completedAddress),
+            displayBufferIndex,
+            drawBufferIndex,
+            pixelBufferStateSummaryLocked(),
+            player.rendererOwnedPresentationUploadCount()
+          )
+        )
+      }
+      guard pixelBufferIndexLocked(address: completedAddress) != nil else {
+        throw MacOSNativePlayerError.transientFrameUnavailable(
+          "renderer-owned Metal presentation target changed during refresh"
+        )
       }
       let totalEndNs = DispatchTime.now().uptimeNanoseconds
       logUpdateProfiler(
@@ -171,7 +200,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       return MacOSPendingNativeFrame(
         info: info,
         publishToken: MacOSNativeFramePublishToken(
-          pixelBufferAddress: UInt(bitPattern: expectedPixelBuffer),
+          pixelBufferAddress: completedAddress,
           nativeUploadCount: player.rendererOwnedPresentationUploadCount()
         )
       )
@@ -207,13 +236,19 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     lock.lock()
     defer { lock.unlock() }
 
-    guard pending.publishToken.nativeUploadCount > lastPublishedNativeUploadCount else {
-      if let currentDrawBuffer = pixelBufferLocked(drawBufferIndex),
-         UInt(bitPattern: Unmanaged.passUnretained(currentDrawBuffer).toOpaque())
-          == pending.publishToken.pixelBufferAddress {
-        releaseInFlightDrawBufferLocked()
-        _ = chooseNextDrawBufferLocked()
-      }
+    let pendingBufferIndex = pixelBufferIndexLocked(
+      address: pending.publishToken.pixelBufferAddress
+    )
+    let pendingMatchesCurrentDraw = pendingBufferIndex == drawBufferIndex
+    let pendingIsDisplayed = pendingBufferIndex == displayBufferIndex
+
+    let callbackUploadFloor = max(
+      lastPublishedNativeUploadCount,
+      lastIgnoredNativeUploadCount
+    )
+    guard pending.publishToken.nativeUploadCount > callbackUploadFloor ||
+          pendingMatchesCurrentDraw ||
+          pendingIsDisplayed else {
       let publishEndNs = DispatchTime.now().uptimeNanoseconds
       logUpdateProfiler(
         result: "already-published",
@@ -226,14 +261,24 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       )
       return .alreadyPublished
     }
-    guard let currentDrawBuffer = pixelBufferLocked(drawBufferIndex),
-          UInt(bitPattern: Unmanaged.passUnretained(currentDrawBuffer).toOpaque())
-            == pending.publishToken.pixelBufferAddress else {
+    if pendingIsDisplayed {
+      lastPublishedNativeUploadCount = max(
+        lastPublishedNativeUploadCount,
+        pending.publishToken.nativeUploadCount
+      )
+      return .alreadyPublished
+    }
+    guard let publishBufferIndex = pendingBufferIndex,
+          pixelBufferStates.indices.contains(publishBufferIndex),
+          pixelBufferStates[publishBufferIndex] == .inFlight else {
       throw MacOSNativePlayerError.transientFrameUnavailable(
         "renderer-owned Metal presentation target changed before publish"
       )
     }
-    publishDrawBufferLocked(nativeUploadCount: pending.publishToken.nativeUploadCount)
+    publishBufferLocked(
+      publishBufferIndex,
+      nativeUploadCount: pending.publishToken.nativeUploadCount
+    )
     guard let nextDrawBuffer = pixelBufferLocked(drawBufferIndex),
           presentationTarget.isAvailable(),
           metalTextureValid else {
@@ -269,14 +314,17 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     lock.lock()
     defer { lock.unlock() }
 
-    guard let currentDrawBuffer = pixelBufferLocked(drawBufferIndex),
-          UInt(bitPattern: Unmanaged.passUnretained(currentDrawBuffer).toOpaque())
-            == pending.publishToken.pixelBufferAddress else {
+    guard let pendingBufferIndex = pixelBufferIndexLocked(
+      address: pending.publishToken.pixelBufferAddress
+    ) else {
       return
     }
-    releaseInFlightDrawBufferLocked()
-    lastPublishedNativeUploadCount = max(
-      lastPublishedNativeUploadCount,
+    if pixelBufferStates.indices.contains(pendingBufferIndex),
+       pixelBufferStates[pendingBufferIndex] == .inFlight {
+      pixelBufferStates[pendingBufferIndex] = .available
+    }
+    lastIgnoredNativeUploadCount = max(
+      lastIgnoredNativeUploadCount,
       pending.publishToken.nativeUploadCount
     )
     _ = chooseNextDrawBufferLocked()
@@ -381,24 +429,41 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   func resetNativeUploadBaseline() {
     lock.lock()
     lastPublishedNativeUploadCount = 0
+    lastIgnoredNativeUploadCount = 0
     lock.unlock()
   }
 
   func publishRenderedTargetAndInstallNext(
     _ player: MacOSNativePlayerSession,
-    maxTrackSlots: Int
+    maxTrackSlots: Int,
+    frameInfo: MacOSNativeFrameInfo?
   ) -> Bool {
     let nativeUploadCount = player.rendererOwnedPresentationUploadCount()
     lock.lock()
     defer { lock.unlock() }
 
-    if nativeUploadCount <= lastPublishedNativeUploadCount {
+    if nativeUploadCount <= max(lastPublishedNativeUploadCount, lastIgnoredNativeUploadCount) {
       return false
     }
-    guard pixelBufferLocked(drawBufferIndex) != nil else {
+    let completedAddress = frameInfo?.targetPixelBufferAddress ?? 0
+    let completedBufferIndex = completedAddress == 0
+      ? drawBufferIndex
+      : pixelBufferIndexLocked(address: completedAddress)
+    guard let publishBufferIndex = completedBufferIndex,
+          pixelBufferLocked(publishBufferIndex) != nil else {
+      lastIgnoredNativeUploadCount = max(lastIgnoredNativeUploadCount, nativeUploadCount)
       return false
     }
-    publishDrawBufferLocked(nativeUploadCount: nativeUploadCount)
+    if publishBufferIndex == displayBufferIndex {
+      lastPublishedNativeUploadCount = max(lastPublishedNativeUploadCount, nativeUploadCount)
+      return false
+    }
+    guard pixelBufferStates.indices.contains(publishBufferIndex),
+          pixelBufferStates[publishBufferIndex] == .inFlight else {
+      lastIgnoredNativeUploadCount = max(lastIgnoredNativeUploadCount, nativeUploadCount)
+      return false
+    }
+    publishBufferLocked(publishBufferIndex, nativeUploadCount: nativeUploadCount)
     guard let nextDrawBuffer = pixelBufferLocked(drawBufferIndex),
           presentationTarget.isAvailable(),
           metalTextureValid else {
@@ -463,6 +528,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     pixelBufferStates[displayBufferIndex] = .displayed
     lastCopiedBufferIndex = nil
     lastPublishedNativeUploadCount = 0
+    lastIgnoredNativeUploadCount = 0
     validateMetalTextureLocked(buffer: nextBuffers[drawBufferIndex])
   }
 
@@ -498,15 +564,38 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     return pixelBuffers[index]
   }
 
-  private func publishDrawBufferLocked(nativeUploadCount: Int) {
+  private func pixelBufferIndexLocked(address: UInt) -> Int? {
+    for index in pixelBuffers.indices {
+      guard let buffer = pixelBufferLocked(index) else { continue }
+      if UInt(bitPattern: Unmanaged.passUnretained(buffer).toOpaque()) == address {
+        return index
+      }
+    }
+    return nil
+  }
+
+  private func pixelBufferStateSummaryLocked() -> String {
+    pixelBufferStates.map { state in
+      switch state {
+      case .available:
+        return "a"
+      case .inFlight:
+        return "i"
+      case .displayed:
+        return "d"
+      }
+    }.joined()
+  }
+
+  private func publishBufferLocked(_ index: Int, nativeUploadCount: Int) {
     if pixelBufferStates.indices.contains(displayBufferIndex) {
       pixelBufferStates[displayBufferIndex] = .available
     }
-    displayBufferIndex = drawBufferIndex
+    displayBufferIndex = index
     if pixelBufferStates.indices.contains(displayBufferIndex) {
       pixelBufferStates[displayBufferIndex] = .displayed
     }
-    lastPublishedNativeUploadCount = nativeUploadCount
+    lastPublishedNativeUploadCount = max(lastPublishedNativeUploadCount, nativeUploadCount)
     pixelBufferMetalUploadCount += 1
     pixelBufferReuseCount += 1
     if let displayBuffer = pixelBufferLocked(displayBufferIndex) {

@@ -221,8 +221,11 @@ void VPMacOSNativePlayer::on_frame_available() {
         last_renderer_owned_frame_info.pts_us = frame_info.pts_us;
         last_renderer_owned_frame_info.dts_us = frame_info.dts_us;
         last_renderer_owned_frame_info.duration_us = frame_info.duration_us;
+        last_renderer_owned_frame_info.target_pixel_buffer_address =
+            frame_info.target_pixel_buffer_address;
       } else {
         last_renderer_owned_frame_info.pts_us = renderer->current_pts_us();
+        last_renderer_owned_frame_info.target_pixel_buffer_address = 0;
       }
       last_renderer_owned_layout_revision =
           renderer->presentation_backend_metrics().last_presented_layout_revision;

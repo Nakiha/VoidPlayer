@@ -62,7 +62,8 @@ extension MacOSNativePlayerSession {
       height: Int(info.height),
       durationUs: Int(info.duration_us),
       ptsUs: Int(info.pts_us),
-      dtsUs: Int(info.dts_us)
+      dtsUs: Int(info.dts_us),
+      targetPixelBufferAddress: UInt(info.target_pixel_buffer_address)
     )
   }
 
@@ -91,7 +92,8 @@ extension MacOSNativePlayerSession {
       height: Int(info.height),
       durationUs: Int(info.duration_us),
       ptsUs: Int(info.pts_us),
-      dtsUs: Int(info.dts_us)
+      dtsUs: Int(info.dts_us),
+      targetPixelBufferAddress: UInt(info.target_pixel_buffer_address)
     )
   }
 
@@ -124,7 +126,8 @@ extension MacOSNativePlayerSession {
       height: Int(info.height),
       durationUs: Int(info.duration_us),
       ptsUs: Int(info.pts_us),
-      dtsUs: Int(info.dts_us)
+      dtsUs: Int(info.dts_us),
+      targetPixelBufferAddress: UInt(info.target_pixel_buffer_address)
     )
   }
 

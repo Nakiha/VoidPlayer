@@ -70,6 +70,7 @@ private:
                              bool gpu_succeeded,
                              bool cpu_attempted,
                              size_t line_rect_count);
+  void invalidate_source_cache();
   void begin_async_draw();
   bool shutting_down_async() const;
 
@@ -99,8 +100,16 @@ private:
   uint64_t overlay_gpu_failure_count_ = 0;
   uint64_t overlay_cpu_fallback_count_ = 0;
   uint64_t metal_command_failure_count_ = 0;
+  uint64_t video_source_update_count_ = 0;
+  uint64_t viewport_composite_count_ = 0;
+  uint64_t source_frame_cache_hit_count_ = 0;
+  uint64_t source_frame_cache_miss_count_ = 0;
   std::vector<uint64_t> metal_command_completion_samples_us_;
   std::vector<uint8_t> staging_buffer_;
+  bool cached_package_valid_ = false;
+  uint64_t cached_package_source_signature_ = 0;
+  uint64_t last_source_signature_ = 0;
+  VPMacOSNativePresentFramePackageInfo cached_package_ = {};
   bool last_draw_succeeded_ = false;
   bool headless_ = true;
   mutable std::mutex async_mutex_;

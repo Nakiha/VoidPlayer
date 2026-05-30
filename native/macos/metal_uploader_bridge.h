@@ -185,6 +185,28 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
     size_t error_size,
     VPMacOSMetalUploaderCompletion completion,
     void* user_data);
+int VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlay(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativePresentFramePackageInfo* package,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
+int VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlayAsync(
+    VPMacOSMetalUploader* uploader,
+    const VPMacOSNativePresentFramePackageInfo* package,
+    const VPMacOSNativeOverlayGpuPrimitiveSet* overlay,
+    void* pixel_buffer,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size,
+    VPMacOSMetalUploaderCompletion completion,
+    void* user_data);
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
     VPMacOSMetalUploader* uploader,
     const VPMacOSNativeCVPixelBufferPresentFrame* frame,

@@ -96,9 +96,9 @@ ctest --test-dir native/build-macos-make -LE hosted-flaky --output-on-failure
 | `ui_tests/macos/native_media_header_remove_smoke.csv` | Real media-header remove button path for native fileId 0 and remaining-track presentation. | Targeted track/header changes; candidate for stabilization smoke after the layout smoke gate is stable. |
 | `ui_tests/macos/analysis_gated_smoke.csv` | macOS analysis FFI, media-header overlay panel/activation, and gated external analysis window behavior. | Nightly/headed or targeted analysis overlay changes. |
 | `ui_tests/macos/native_4k60_playback_smoke.csv` | VideoToolbox/Metal/cadence canary; asserts monotonic PTS, large-gap/error counters, duplicate PTS visibility, host interval max/p95, and renderer-owned ratio. | Nightly/headed or release candidate. |
-| `ui_tests/macos/native_playing_dual_track_pan_smoke.csv` | Playing pan intent coalescing; asserts layout is deferred to normal playback presents and draw/present ratio stays bounded. | Targeted viewport/backend changes; candidate for macOS stabilization. |
-| `ui_tests/macos/native_paused_dual_track_pan_zoom_smoke.csv` | Paused dual-track pan/zoom through display-link cached redraw. | Targeted viewport/backend changes. |
-| `ui_tests/macos/native_eof_seek_dual_track_layout_smoke.csv` | EOF cached redraw, seek recovery, and dual-track layout visibility. | Targeted EOF/seek/layout changes. |
+| `ui_tests/macos/native_playing_dual_track_pan_smoke.csv` | Playing pan intent coalescing; asserts display-link viewport composite can reuse the source-frame cache while video source updates remain PTS-driven. | Targeted viewport/backend changes; candidate for macOS stabilization. |
+| `ui_tests/macos/native_paused_dual_track_pan_zoom_smoke.csv` | Paused dual-track pan/zoom through display-link source-cache composite. | Targeted viewport/backend changes. |
+| `ui_tests/macos/native_eof_seek_dual_track_layout_smoke.csv` | EOF source-cache composite, seek recovery, and dual-track layout visibility. | Targeted EOF/seek/layout changes. |
 | `ui_tests/macos/native_vvc_software_playback_smoke.csv` | Software fallback + Metal package path. | Nightly/headed or release candidate. |
 | `ui_tests/macos/native_add_short_after_eof_smoke.csv` | EOF carry-forward when adding a shorter hardware-decoded track after AV1/VVC software tracks. | Nightly/headed or targeted track/presentation changes. |
 | `ui_tests/macos/native_audio_play_seek_smoke.csv` | Native audio play/seek and audible-track diagnostics. | Nightly/headed; manual audible check remains separate. |

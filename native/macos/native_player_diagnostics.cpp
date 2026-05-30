@@ -407,6 +407,14 @@ int VPMacOSNativePlayerCopyPerfStats(
           backend_stats.metal_command_failure_count;
       out->async_metal_publish_active =
           backend_stats.async_metal_publish_active;
+      out->video_source_update_count =
+          backend_stats.video_source_update_count;
+      out->viewport_composite_count =
+          backend_stats.viewport_composite_count;
+      out->source_frame_cache_hit_count =
+          backend_stats.source_frame_cache_hit_count;
+      out->source_frame_cache_miss_count =
+          backend_stats.source_frame_cache_miss_count;
     }
   }
   {

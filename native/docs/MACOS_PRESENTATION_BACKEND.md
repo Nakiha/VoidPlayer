@@ -64,12 +64,14 @@ startup, EOF, and paused redraw refreshes. The call:
 
 Viewport pan/zoom does not install a Swift-side frame pump. Swift submits the
 latest layout intent and keeps the `CVDisplayLink` warm only long enough to
-coalesce input. While playback is running, native records the layout revision
-and defers drawing to the next normal PTS present, so a playing frame carries
-the newest layout without an extra cached redraw. Paused, EOF, startup, seek,
-and step refreshes may use display-link ticks to redraw the cached frame, but
-the renderer still decides whether the tick is skipped, drawn, failed, or
-deferred to playback.
+coalesce input. Video source updates stay media-clock driven: the renderer still
+selects frames by PTS and the backend records the last completed source package
+or VideoToolbox `CVPixelBuffer` decision. Viewport/layout composite may run on
+display-link ticks against that retained source, so pan, zoom, split, and
+overlay movement are not forced to wait for the next decoded video frame.
+Paused, EOF, startup, seek, and step refreshes use the same renderer-owned
+completion path; the renderer still decides whether a tick is skipped, drawn,
+failed, or merged into a newer layout intent.
 
 `VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(...)` and the older
 `VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(...)` compatibility path
@@ -112,6 +114,8 @@ The macOS runner should report health from native state fields, including:
 - `uploadStorageKind`
 - upload/failure counters
 - layout intent/present/deferred counters
+- source update, viewport composite, source-cache hit/miss, and ring-pressure
+  counters
 - cadence counters such as duplicate PTS, large PTS gaps, host interval samples,
   host interval max/p95, drop/error aliases, and renderer-owned presentation
   ratio

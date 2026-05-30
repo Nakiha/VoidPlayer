@@ -181,7 +181,7 @@ final class MacOSPresentationController {
     layoutCallbackPublicationSuppressedCount += 1
   }
 
-  private func cancelPendingLayoutRefreshes() {
+  func cancelPendingLayoutRefreshes() {
     invalidateLayoutRevision()
     latestLayoutRefreshRequest = nil
     displayLinkIdleUntilNs = 0
@@ -252,12 +252,38 @@ final class MacOSPresentationController {
       let finishNs = DispatchTime.now().uptimeNanoseconds
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
+        var finalOutcomeName = outcome.profilerName
         switch outcome {
-        case .applied:
-          request.context.markFrameAvailable()
-          self.layoutDrawCount += 1
-          self.layoutPublishedCount += 1
-          self.layoutDrawRate.record()
+        case .ready(let pending):
+          guard self.isCurrentLayoutRequest(request) else {
+            request.context.nativeTexture?.discardPendingNativeFrame(pending)
+            self.layoutStaleAfterDrawDropCount += 1
+            finalOutcomeName = LayoutRefreshOutcome.staleAfterDraw.profilerName
+            break
+          }
+          guard let player = request.context.player,
+                let texture = request.context.nativeTexture else {
+            request.context.presentationState.recordMiss()
+            finalOutcomeName = LayoutRefreshOutcome.transientMiss.profilerName
+            break
+          }
+          if MacOSNativeFrameRefresh.publishLayoutRefreshFrame(
+            pending,
+            player: player,
+            texture: texture,
+            maxTrackSlots: request.context.maxTrackSlots,
+            presentationState: request.context.presentationState,
+            framePump: request.context.playback.framePumpForRefresh
+          ) {
+            request.context.markFrameAvailable()
+            self.layoutDrawCount += 1
+            self.layoutPublishedCount += 1
+            self.layoutDrawRate.record()
+            finalOutcomeName = "applied"
+          } else {
+            request.context.presentationState.recordMiss()
+            finalOutcomeName = LayoutRefreshOutcome.transientMiss.profilerName
+          }
         case .deferredToPlayback:
           self.layoutDeferredToPlaybackCount += 1
         case .stale:
@@ -271,7 +297,7 @@ final class MacOSPresentationController {
           event: "complete",
           revision: request.revision,
           layout: request.layout,
-          outcome: outcome.profilerName
+          outcome: finalOutcomeName
         )
         self.layoutRefreshRunning = false
         let queueDelayNs = startNs >= request.requestNs ? startNs - request.requestNs : 0
@@ -285,7 +311,7 @@ final class MacOSPresentationController {
           requestNs: request.requestNs,
           queueDelayNs: queueDelayNs,
           applyNs: applyNs,
-          outcome: outcome.profilerName
+          outcome: finalOutcomeName
         )
         if self.latestLayoutRefreshRequest != nil {
           self.extendDisplayLinkIdleGrace()
@@ -321,9 +347,6 @@ final class MacOSPresentationController {
       return .stale
     }
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
-    if context.playback.currentIsPlaying(player: player) {
-      return .deferredToPlayback
-    }
     guard let texture = context.nativeTexture else {
       return .transientMiss
     }
@@ -338,14 +361,7 @@ final class MacOSPresentationController {
       texture.discardPendingNativeFrame(pendingFrame)
       return .staleAfterDraw
     }
-    return MacOSNativeFrameRefresh.publishLayoutRefreshFrame(
-      pendingFrame,
-      player: player,
-      texture: texture,
-      maxTrackSlots: context.maxTrackSlots,
-      presentationState: context.presentationState,
-      framePump: context.playback.framePumpForRefresh
-    ) ? .applied : .transientMiss
+    return .ready(pendingFrame)
   }
 
   private func extendDisplayLinkIdleGrace() {
@@ -449,7 +465,7 @@ private struct LayoutRefreshRequest {
 }
 
 private enum LayoutRefreshOutcome {
-  case applied
+  case ready(MacOSPendingNativeFrame)
   case deferredToPlayback
   case stale
   case staleAfterDraw
@@ -457,8 +473,8 @@ private enum LayoutRefreshOutcome {
 
   var profilerName: String {
     switch self {
-    case .applied:
-      return "applied"
+    case .ready:
+      return "ready"
     case .deferredToPlayback:
       return "deferred-to-playback"
     case .stale:

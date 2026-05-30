@@ -153,6 +153,11 @@ extension MacOSNativePlayerSession {
         "metalCommandCompletionP95Us": 0,
         "metalCommandFailureCount": 0,
         "asyncMetalPublishActive": false,
+        "videoSourceUpdateCount": 0,
+        "viewportCompositeCount": 0,
+        "sourceFrameCacheHitCount": 0,
+        "sourceFrameCacheMissCount": 0,
+        "sourceFrameCacheHitRatioX1000": 0,
       ]
     }
     let maxInt64 = UInt64(Int64.max)
@@ -259,7 +264,28 @@ extension MacOSNativePlayerSession {
         min(UInt64(stats.metal_command_failure_count), maxInt64)
       ),
       "asyncMetalPublishActive": stats.async_metal_publish_active != 0,
+      "videoSourceUpdateCount": Int64(
+        min(UInt64(stats.video_source_update_count), maxInt64)
+      ),
+      "viewportCompositeCount": Int64(
+        min(UInt64(stats.viewport_composite_count), maxInt64)
+      ),
+      "sourceFrameCacheHitCount": Int64(
+        min(UInt64(stats.source_frame_cache_hit_count), maxInt64)
+      ),
+      "sourceFrameCacheMissCount": Int64(
+        min(UInt64(stats.source_frame_cache_miss_count), maxInt64)
+      ),
+      "sourceFrameCacheHitRatioX1000": Self.ratioX1000(
+        numerator: stats.source_frame_cache_hit_count,
+        denominator: stats.source_frame_cache_hit_count + stats.source_frame_cache_miss_count
+      ),
     ]
+  }
+
+  private static func ratioX1000(numerator: UInt64, denominator: UInt64) -> Int64 {
+    guard denominator > 0 else { return 0 }
+    return Int64(min(numerator * 1000 / denominator, UInt64(Int64.max)))
   }
 
   func trackDiagnostics() -> [[String: Any]] {

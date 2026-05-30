@@ -170,6 +170,10 @@ typedef struct VPMacOSNativePlayerPerfStats {
   uint64_t metal_command_completion_p95_us;
   uint64_t metal_command_failure_count;
   int32_t async_metal_publish_active;
+  uint64_t video_source_update_count;
+  uint64_t viewport_composite_count;
+  uint64_t source_frame_cache_hit_count;
+  uint64_t source_frame_cache_miss_count;
 } VPMacOSNativePlayerPerfStats;
 
 typedef struct VPMacOSNativeAudioDiagnostics {

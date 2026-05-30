@@ -1234,9 +1234,7 @@ bool Renderer::request_frame_refresh(const char* reason) {
                                      : "request_frame_refresh";
     if (playing_.load(std::memory_order_acquire) &&
         !playback_->clock().is_paused()) {
-        presentation_backend_metrics_.layout_deferred_to_playback_count.fetch_add(
-            1, std::memory_order_relaxed);
-        return true;
+        return redraw_layout();
     }
     return draw_paused_frame(refresh_reason);
 }
@@ -1580,7 +1578,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
     }
 }
 
-void Renderer::redraw_layout() {
+bool Renderer::redraw_layout() {
     const auto profiler_start = std::chrono::steady_clock::now();
     RendererDrawSnapshot snapshot;
     uint64_t snapshot_layout_revision = 0;
@@ -1659,10 +1657,10 @@ void Renderer::redraw_layout() {
     if (device_lost) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         enter_terminal_device_lost_locked("redraw_layout");
-        return;
+        return false;
     }
     if (async_draw_submitted) {
-        return;
+        return true;
     }
     finish_presented_draw("redraw_layout",
                           snapshot,
@@ -1675,6 +1673,7 @@ void Renderer::redraw_layout() {
                           drew,
                           frame_failure_error.c_str(),
                           backend_us);
+    return drew;
 }
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {

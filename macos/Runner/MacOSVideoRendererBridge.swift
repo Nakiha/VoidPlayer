@@ -137,6 +137,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       let targetPtsUs = MacOSFlutterArguments.intArg(call.arguments, "ptsUs") ?? 0
       let requestId = MacOSFlutterArguments.intArg(call.arguments, "requestId")
       let resumeAfterSeek = playback.currentIsPlaying(player: nativePlayer)
+      presentation.cancelPendingLayoutRefreshes()
       if let error = transport.seekAndRefresh(
         targetPtsUs: targetPtsUs,
         requestId: requestId,
@@ -148,12 +149,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
       result(nil)
     case "stepForward":
+      presentation.cancelPendingLayoutRefreshes()
       if let error = transport.stepAndRefresh(forward: true, context: transportContext()) {
         result(error)
         return
       }
       result(nil)
     case "stepBackward":
+      presentation.cancelPendingLayoutRefreshes()
       if let error = transport.stepAndRefresh(forward: false, context: transportContext()) {
         result(error)
         return

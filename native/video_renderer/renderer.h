@@ -302,8 +302,8 @@ private:
     /// Internal mutex for D3D11 headless texture access.
     std::mutex& texture_mutex() const;
 
-    /// Lightweight layout-only redraw (no Flush) for responsive zoom/pan during playback.
-    void redraw_layout();
+    /// Lightweight layout-only redraw of the cached present decision.
+    bool redraw_layout();
 
     /// Issue GPU fence and spin-wait for completion without publishing buffers.
     void wait_gpu_idle(const char* label);

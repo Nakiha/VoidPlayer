@@ -229,6 +229,12 @@ enum MacOSVideoRendererDiagnostics {
       "metalCommandCompletionP95Us": perfStats?["metalCommandCompletionP95Us"] ?? 0,
       "metalCommandFailureCount": perfStats?["metalCommandFailureCount"] ?? 0,
       "asyncMetalPublishActive": perfStats?["asyncMetalPublishActive"] ?? false,
+      "videoSourceUpdateCount": perfStats?["videoSourceUpdateCount"] ?? 0,
+      "viewportCompositeCount": perfStats?["viewportCompositeCount"] ?? 0,
+      "sourceFrameCacheHitCount": perfStats?["sourceFrameCacheHitCount"] ?? 0,
+      "sourceFrameCacheMissCount": perfStats?["sourceFrameCacheMissCount"] ?? 0,
+      "sourceFrameCacheHitRatioX1000":
+        perfStats?["sourceFrameCacheHitRatioX1000"] ?? 0,
       "processRssBytes": perfStats?["processRssBytes"] ?? 0,
       "processPrivateBytes": perfStats?["processPrivateBytes"] ?? 0,
       "nativeDecodeFrameCount": perfStats?["decodeFrameCount"] ?? 0,

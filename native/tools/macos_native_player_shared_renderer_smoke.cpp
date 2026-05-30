@@ -166,6 +166,21 @@ bool request_refresh_expect_failure(VPMacOSNativePlayer* player,
     return true;
 }
 
+bool request_refresh_expect_success(VPMacOSNativePlayer* player,
+                                    VPMacOSNativeFrameInfo& info,
+                                    std::chrono::milliseconds timeout) {
+    info = {};
+    char error[1024] = {};
+    const int ret = VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+        player, static_cast<int>(timeout.count()), &info, error, sizeof(error));
+    if (ret != 0) {
+        std::cerr << "renderer-owned refresh failed unexpectedly: "
+                  << error << "\n";
+        return false;
+    }
+    return true;
+}
+
 bool copy_presentation_state(VPMacOSNativePlayer* player,
                              VPMacOSNativeRendererOwnedPresentationState& state) {
     state = {};
@@ -376,12 +391,27 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(60));
     requested_layout.view_offset_x = 12.0f;
     VPMacOSNativePlayerApplyLayout(player.get(), &requested_layout);
-    std::string playing_refresh_error;
-    if (!request_refresh_expect_failure(
-            player.get(), playing_refresh_error, std::chrono::milliseconds(100)) ||
-        playing_refresh_error.find("deferred") == std::string::npos) {
-        std::cerr << "playing refresh should defer to playback present: "
-                  << playing_refresh_error << "\n";
+    VPMacOSNativeFrameInfo layout_refresh = {};
+    if (!request_refresh_expect_success(
+            player.get(), layout_refresh, std::chrono::milliseconds(500))) {
+        std::cerr << "playing refresh should composite the cached source frame\n";
+        return 1;
+    }
+    VPMacOSNativePlayerPerfStats perf_after_layout_refresh = {};
+    if (VPMacOSNativePlayerCopyPerfStats(player.get(), &perf_after_layout_refresh) != 0) {
+        std::cerr << "shared renderer bridge could not copy perf stats\n";
+        return 1;
+    }
+    const uint64_t source_cache_samples =
+        perf_after_layout_refresh.source_frame_cache_hit_count +
+        perf_after_layout_refresh.source_frame_cache_miss_count;
+    if (perf_after_layout_refresh.viewport_composite_count == 0 ||
+        perf_after_layout_refresh.video_source_update_count == 0 ||
+        source_cache_samples == 0 ||
+        perf_after_layout_refresh.viewport_composite_count <
+            perf_after_layout_refresh.video_source_update_count) {
+        std::cerr << "shared renderer bridge did not expose source-cache/composite stats"
+                  << "\n";
         return 1;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(220));

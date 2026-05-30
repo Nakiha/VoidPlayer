@@ -17,8 +17,10 @@
 6.0, ASSERT_CAPTURE_NOT_BLACK, playing_dual_track_pan_b, 0.01, 4.0
 6.05, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadCount, 20, 220
 6.06, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
-6.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, layoutDeferredToPlaybackCount, 1
-6.08, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, layoutPresentedCount, 1
-6.09, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, drawsPerPresentedFrameRatioX1000, 500, 1800
+6.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, layoutPresentedCount, 1
+6.08, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, drawsPerPresentedFrameRatioX1000, 500, 3000
+6.09, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, viewportCompositeCount, 20, 260
+6.095, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, videoSourceUpdateCount, 1
+6.096, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceFrameCacheHitCount, 1
 6.1, ASSERT_CAPTURE_CHANGED, playing_dual_track_pan_a, playing_dual_track_pan_b
 6.2, QUIT, 0

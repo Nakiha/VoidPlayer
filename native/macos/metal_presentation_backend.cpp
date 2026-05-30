@@ -109,6 +109,105 @@ int first_active_present_slot(const vr::RendererDrawSnapshot& snapshot) {
   return -1;
 }
 
+void hash_combine(uint64_t& seed, uint64_t value) {
+  seed ^= value + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2);
+}
+
+uint64_t pointer_bits(const void* ptr) {
+  return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
+}
+
+uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
+                                int32_t target_width,
+                                int32_t target_height,
+                                int32_t track_slots) {
+  uint64_t hash = 1469598103934665603ull;
+  hash_combine(hash, snapshot.decision.should_present ? 1u : 0u);
+  hash_combine(hash, static_cast<uint64_t>(target_width));
+  hash_combine(hash, static_cast<uint64_t>(target_height));
+  hash_combine(hash, static_cast<uint64_t>(track_slots));
+  for (size_t slot = 0; slot < snapshot.decision.frames.size(); ++slot) {
+    const auto& frame = snapshot.decision.frames[slot];
+    hash_combine(hash, static_cast<uint64_t>(slot));
+    hash_combine(hash, static_cast<uint64_t>(
+        snapshot.decision.file_ids[slot] < 0 ? 0 : snapshot.decision.file_ids[slot] + 1));
+    hash_combine(hash, snapshot.decision.track_generations[slot]);
+    if (!frame.has_value()) {
+      hash_combine(hash, 0);
+      continue;
+    }
+    hash_combine(hash, 1);
+    hash_combine(hash, static_cast<uint64_t>(frame->pts_us));
+    hash_combine(hash, static_cast<uint64_t>(frame->dts_us));
+    hash_combine(hash, static_cast<uint64_t>(frame->duration_us));
+    hash_combine(hash, static_cast<uint64_t>(frame->width));
+    hash_combine(hash, static_cast<uint64_t>(frame->height));
+    hash_combine(hash, static_cast<uint64_t>(frame->storage_kind()));
+    hash_combine(hash, pointer_bits(frame->cpu_data.get()));
+    hash_combine(hash, pointer_bits(frame->hw_frame_ref.get()));
+    if (const auto* storage = frame->cpu_rgba_storage()) {
+      hash_combine(hash, pointer_bits(storage->data.get()));
+      hash_combine(hash, static_cast<uint64_t>(storage->stride));
+    } else if (const auto* storage = frame->cpu_nv12_storage()) {
+      hash_combine(hash, pointer_bits(storage->data.get()));
+      hash_combine(hash, static_cast<uint64_t>(storage->y_stride));
+      hash_combine(hash, static_cast<uint64_t>(storage->uv_stride));
+      hash_combine(hash, storage->is_p010 ? 1u : 0u);
+      hash_combine(hash, static_cast<uint64_t>(storage->coded_width));
+      hash_combine(hash, static_cast<uint64_t>(storage->coded_height));
+    } else if (const auto* storage = frame->cpu_planar_yuv_storage()) {
+      hash_combine(hash, pointer_bits(storage->frame_ref.get()));
+      for (int plane = 0; plane < 3; ++plane) {
+        hash_combine(hash, pointer_bits(storage->planes[plane]));
+        hash_combine(hash, static_cast<uint64_t>(storage->strides[plane]));
+        hash_combine(hash, static_cast<uint64_t>(storage->plane_widths[plane]));
+        hash_combine(hash, static_cast<uint64_t>(storage->plane_heights[plane]));
+      }
+      hash_combine(hash, static_cast<uint64_t>(storage->bytes_per_sample));
+    } else if (const auto* storage = frame->macos_cv_pixel_buffer_storage()) {
+      hash_combine(hash, pointer_bits(storage->pixel_buffer));
+      hash_combine(hash, pointer_bits(storage->frame_ref.get()));
+      hash_combine(hash, static_cast<uint64_t>(storage->pixel_format));
+      hash_combine(hash, static_cast<uint64_t>(storage->plane_count));
+      hash_combine(hash, storage->is_p010 ? 1u : 0u);
+      hash_combine(hash, static_cast<uint64_t>(storage->coded_width));
+      hash_combine(hash, static_cast<uint64_t>(storage->coded_height));
+    }
+  }
+  return hash;
+}
+
+void update_cached_package_layout_decision(
+    const vr::RendererDrawSnapshot& snapshot,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativePresentFramePackageInfo* package) {
+  if (!package) {
+    return;
+  }
+  VPMacOSNativePresentDecisionInfo next_decision = {};
+  fill_present_decision_info_from_snapshot(snapshot, width, height, &next_decision);
+  for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
+    next_decision.y_offset[slot] = package->decision.y_offset[slot];
+    next_decision.uv_offset[slot] = package->decision.uv_offset[slot];
+    next_decision.v_offset[slot] = package->decision.v_offset[slot];
+    next_decision.y_stride[slot] = package->decision.y_stride[slot];
+    next_decision.uv_stride[slot] = package->decision.uv_stride[slot];
+    next_decision.coded_width[slot] = package->decision.coded_width[slot];
+    next_decision.coded_height[slot] = package->decision.coded_height[slot];
+    next_decision.yuv_format[slot] = package->decision.yuv_format[slot];
+    if (package->decision.nv12_uv_scale_x[slot] > 0.0f) {
+      next_decision.nv12_uv_scale_x[slot] =
+          package->decision.nv12_uv_scale_x[slot];
+    }
+    if (package->decision.nv12_uv_scale_y[slot] > 0.0f) {
+      next_decision.nv12_uv_scale_y[slot] =
+          package->decision.nv12_uv_scale_y[slot];
+    }
+  }
+  package->decision = next_decision;
+}
+
 void log_overlay_composite_result(const char* path,
                                   const vr::RendererDrawSnapshot& snapshot,
                                   const OverlayCompositeResult& result,
@@ -405,6 +504,10 @@ vr::PresentationBackendStats MetalPresentationBackend::presentation_stats() cons
     stats.metal_command_failure_count = metal_command_failure_count_;
   }
   stats.async_metal_publish_active = 1;
+  stats.video_source_update_count = video_source_update_count_;
+  stats.viewport_composite_count = viewport_composite_count_;
+  stats.source_frame_cache_hit_count = source_frame_cache_hit_count_;
+  stats.source_frame_cache_miss_count = source_frame_cache_miss_count_;
   return stats;
 }
 
@@ -511,6 +614,13 @@ void MetalPresentationBackend::record_overlay_result(bool expected,
   if (cpu_attempted) {
     ++overlay_cpu_fallback_count_;
   }
+}
+
+void MetalPresentationBackend::invalidate_source_cache() {
+  cached_package_valid_ = false;
+  cached_package_source_signature_ = 0;
+  last_source_signature_ = 0;
+  cached_package_ = {};
 }
 
 void MetalPresentationBackend::begin_async_draw() {
@@ -755,6 +865,18 @@ bool MetalPresentationBackend::draw_frame(
       std::clamp(draw_target_max_track_slots_,
                  1,
                  static_cast<int>(VPMacOSNativeMaxTracks));
+  ++viewport_composite_count_;
+  const uint64_t source_signature =
+      source_frame_signature(snapshot, draw_target_width_, draw_target_height_, track_slots);
+  const bool source_signature_hit =
+      last_source_signature_ != 0 && last_source_signature_ == source_signature;
+  if (source_signature_hit) {
+    ++source_frame_cache_hit_count_;
+  } else {
+    ++source_frame_cache_miss_count_;
+    ++video_source_update_count_;
+    last_source_signature_ = source_signature;
+  }
   const auto overlay_primitives = build_overlay_primitives_for_metal(
       snapshot, draw_target_width_, draw_target_height_);
   const bool overlay_expected = overlay_primitives_expected(overlay_primitives);
@@ -1068,30 +1190,46 @@ bool MetalPresentationBackend::draw_frame(
   fill_present_decision_info_from_snapshot(
       snapshot, draw_target_width_, draw_target_height_, &package.decision);
 
-  if (staging_buffer_.size() < package_layout.max_bytes) {
-    staging_buffer_.assign(package_layout.max_bytes, 0);
-    ++staging_allocation_count_;
-    staging_max_bytes_ = std::max(staging_max_bytes_, staging_buffer_.size());
+  const bool can_use_cached_package =
+      cached_package_valid_ &&
+      cached_package_source_signature_ == source_signature &&
+      cached_package_.width == draw_target_width_ &&
+      cached_package_.height == draw_target_height_ &&
+      cached_package_.max_track_slots == track_slots &&
+      cached_package_.storage != VPMacOSNativePresentPackageStorageUnavailable;
+  bool package_from_cache = false;
+  uint8_t* data = staging_buffer_.empty() ? nullptr : staging_buffer_.data();
+  size_t data_size = staging_buffer_.size();
+  if (can_use_cached_package) {
+    package = cached_package_;
+    update_cached_package_layout_decision(
+        snapshot, draw_target_width_, draw_target_height_, &package);
+    package_from_cache = true;
   } else {
-    ++staging_reuse_count_;
-  }
-  auto* data = staging_buffer_.data();
-  const auto data_size = staging_buffer_.size();
-  if (copy_snapshot_yuv_package(snapshot,
-                                data,
-                                data_size,
-                                draw_target_width_,
-                                draw_target_height_,
-                                static_cast<size_t>(track_slots),
-                                &package,
-                                error)) {
-    package.storage = VPMacOSNativePresentPackageStorageYUV;
-  } else {
-    fill_present_decision_info_from_snapshot(
-        snapshot, draw_target_width_, draw_target_height_, &package.decision);
-    package.stride_bytes = static_cast<int32_t>(package_layout.bgra_row_bytes);
-    package.track_stride_bytes = package_layout.bgra_track_stride_bytes;
-    if (!copy_snapshot_bgra_package(snapshot,
+    if (staging_buffer_.size() < package_layout.max_bytes) {
+      staging_buffer_.assign(package_layout.max_bytes, 0);
+      ++staging_allocation_count_;
+      staging_max_bytes_ = std::max(staging_max_bytes_, staging_buffer_.size());
+    } else {
+      ++staging_reuse_count_;
+    }
+    data = staging_buffer_.data();
+    data_size = staging_buffer_.size();
+    if (copy_snapshot_yuv_package(snapshot,
+                                  data,
+                                  data_size,
+                                  draw_target_width_,
+                                  draw_target_height_,
+                                  static_cast<size_t>(track_slots),
+                                  &package,
+                                  error)) {
+      package.storage = VPMacOSNativePresentPackageStorageYUV;
+    } else {
+      fill_present_decision_info_from_snapshot(
+          snapshot, draw_target_width_, draw_target_height_, &package.decision);
+      package.stride_bytes = static_cast<int32_t>(package_layout.bgra_row_bytes);
+      package.track_stride_bytes = package_layout.bgra_track_stride_bytes;
+      if (!copy_snapshot_bgra_package(snapshot,
                                     data,
                                     data_size,
                                     draw_target_width_,
@@ -1100,12 +1238,16 @@ bool MetalPresentationBackend::draw_frame(
                                     package.track_stride_bytes,
                                     &package,
                                     error)) {
-      mark_draw_failure(error);
-      log_profiler("package-build", false, -1, 0, data_size, package.storage,
-                   last_error_.c_str());
-      return false;
+        mark_draw_failure(error);
+        log_profiler("package-build", false, -1, 0, data_size, package.storage,
+                     last_error_.c_str());
+        return false;
+      }
+      package.storage = VPMacOSNativePresentPackageStorageBGRA;
     }
-    package.storage = VPMacOSNativePresentPackageStorageBGRA;
+    cached_package_ = package;
+    cached_package_source_signature_ = source_signature;
+    cached_package_valid_ = true;
   }
 
   VPMacOSNativeFrameInfo frame_info = {};
@@ -1117,25 +1259,39 @@ bool MetalPresentationBackend::draw_frame(
     context->hooks = hooks;
     context->overlay = overlay_result_from_primitives(overlay_primitives);
     context->path =
-        package.storage == VPMacOSNativePresentPackageStorageYUV ? "package-yuv" : "package-bgra";
+        package.storage == VPMacOSNativePresentPackageStorageYUV
+            ? (package_from_cache ? "package-yuv-cached-composite" : "package-yuv")
+            : (package_from_cache ? "package-bgra-cached-composite" : "package-bgra");
     context->storage = package.storage;
     context->bytes = package.used_bytes;
     begin_async_draw();
-    const int ret =
-        VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
-            uploader_,
-            data,
-            package.used_bytes,
-            &package,
-            overlay_expected ? &overlay_set : nullptr,
-            draw_target_pixel_buffer_,
-            draw_target_width_,
-            draw_target_height_,
-            &frame_info,
-            upload_error,
-            sizeof(upload_error),
-            metal_async_upload_completed,
-            context);
+    const int ret = package_from_cache
+        ? VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlayAsync(
+              uploader_,
+              &package,
+              overlay_expected ? &overlay_set : nullptr,
+              draw_target_pixel_buffer_,
+              draw_target_width_,
+              draw_target_height_,
+              &frame_info,
+              upload_error,
+              sizeof(upload_error),
+              metal_async_upload_completed,
+              context)
+        : VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
+              uploader_,
+              data,
+              package.used_bytes,
+              &package,
+              overlay_expected ? &overlay_set : nullptr,
+              draw_target_pixel_buffer_,
+              draw_target_width_,
+              draw_target_height_,
+              &frame_info,
+              upload_error,
+              sizeof(upload_error),
+              metal_async_upload_completed,
+              context);
     const auto copy_us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - start).count();
     context->copy_us = copy_us;
@@ -1158,30 +1314,41 @@ bool MetalPresentationBackend::draw_frame(
                  last_error_.c_str());
     return false;
   }
-  int ret = overlay_expected
-      ? VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
+  int ret = package_from_cache
+      ? VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlay(
             uploader_,
-            data,
-            package.used_bytes,
             &package,
-            &overlay_set,
+            overlay_expected ? &overlay_set : nullptr,
             draw_target_pixel_buffer_,
             draw_target_width_,
             draw_target_height_,
             &frame_info,
             upload_error,
             sizeof(upload_error))
-      : VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
-            uploader_,
-            data,
-            package.used_bytes,
-            &package,
-            draw_target_pixel_buffer_,
-            draw_target_width_,
-            draw_target_height_,
-            &frame_info,
-            upload_error,
-            sizeof(upload_error));
+      : (overlay_expected
+             ? VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
+                   uploader_,
+                   data,
+                   package.used_bytes,
+                   &package,
+                   &overlay_set,
+                   draw_target_pixel_buffer_,
+                   draw_target_width_,
+                   draw_target_height_,
+                   &frame_info,
+                   upload_error,
+                   sizeof(upload_error))
+             : VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+                   uploader_,
+                   data,
+                   package.used_bytes,
+                   &package,
+                   draw_target_pixel_buffer_,
+                   draw_target_width_,
+                   draw_target_height_,
+                   &frame_info,
+                   upload_error,
+                   sizeof(upload_error)));
   const auto copy_us = std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::steady_clock::now() - start).count();
   if (hooks.record_frame_copy_us) {
@@ -1294,13 +1461,20 @@ void MetalPresentationBackend::set_draw_target(void* pixel_buffer,
                                                int32_t width,
                                                int32_t height,
                                                int32_t max_track_slots) {
+  const int32_t clamped_track_slots = std::clamp(
+      max_track_slots, 1, static_cast<int32_t>(VPMacOSNativeMaxTracks));
+  const bool target_changed =
+      draw_target_pixel_buffer_ != pixel_buffer ||
+      draw_target_width_ != width ||
+      draw_target_height_ != height ||
+      draw_target_max_track_slots_ != clamped_track_slots;
   draw_target_pixel_buffer_ = pixel_buffer;
   draw_target_width_ = width;
   draw_target_height_ = height;
-  draw_target_max_track_slots_ =
-      std::clamp(max_track_slots,
-                 1,
-                 static_cast<int32_t>(VPMacOSNativeMaxTracks));
+  draw_target_max_track_slots_ = clamped_track_slots;
+  if (target_changed) {
+    invalidate_source_cache();
+  }
 }
 
 void MetalPresentationBackend::clear_draw_target() {
@@ -1311,6 +1485,7 @@ void MetalPresentationBackend::clear_draw_target() {
   last_draw_frame_info_available_ = false;
   last_draw_frame_info_ = {};
   last_draw_succeeded_ = false;
+  invalidate_source_cache();
   set_last_error("");
 }
 

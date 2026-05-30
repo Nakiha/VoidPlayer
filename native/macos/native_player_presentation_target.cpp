@@ -214,6 +214,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   bool baseline_frame_available = false;
   int64_t refresh_clock_us = 0;
   int64_t refresh_min_pts_us = -1;
+  uint64_t expected_layout_revision = 0;
   int refresh_attempts = 0;
   bool refresh_submitted = false;
   {
@@ -245,6 +246,11 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
       ++refresh_attempts;
       refresh_submitted =
           player->renderer->request_frame_refresh("macos-renderer-owned-refresh");
+      if (refresh_submitted) {
+        const auto metrics = player->renderer->presentation_backend_metrics();
+        expected_layout_revision =
+            std::max(expected_layout_revision, metrics.last_layout_revision);
+      }
       return true;
     }
     write_error(error, error_size, "shared macOS renderer is not available");
@@ -280,6 +286,9 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     return player->presentation_target_generation != baseline_target_generation ||
            (player->renderer_owned_presentation_upload_count >
                 baseline_upload_count &&
+            (expected_layout_revision == 0 ||
+             player->last_renderer_owned_layout_revision >=
+                 expected_layout_revision) &&
             frame_matches_refresh_request()) ||
            player->renderer_owned_presentation_draw_failure_count >
                baseline_draw_failure_count;

@@ -865,7 +865,11 @@ bool MetalPresentationBackend::draw_frame(
       std::clamp(draw_target_max_track_slots_,
                  1,
                  static_cast<int>(VPMacOSNativeMaxTracks));
-  ++viewport_composite_count_;
+  const bool is_viewport_composite =
+      hooks.draw_source && std::strcmp(hooks.draw_source, "viewport_composite") == 0;
+  if (is_viewport_composite) {
+    ++viewport_composite_count_;
+  }
   const uint64_t source_signature =
       source_frame_signature(snapshot, draw_target_width_, draw_target_height_, track_slots);
   const bool source_signature_hit =

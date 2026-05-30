@@ -407,9 +407,7 @@ int main() {
         perf_after_layout_refresh.source_frame_cache_miss_count;
     if (perf_after_layout_refresh.viewport_composite_count == 0 ||
         perf_after_layout_refresh.video_source_update_count == 0 ||
-        source_cache_samples == 0 ||
-        perf_after_layout_refresh.viewport_composite_count <
-            perf_after_layout_refresh.video_source_update_count) {
+        source_cache_samples == 0) {
         std::cerr << "shared renderer bridge did not expose source-cache/composite stats"
                   << "\n";
         return 1;

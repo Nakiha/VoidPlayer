@@ -1298,7 +1298,7 @@ bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
         }
         resources->cached_rtv = rtv;
     }
-    if (!draw_frame(snapshot)) {
+    if (!draw_frame(snapshot, label)) {
         return false;
     }
     const auto publish_start = std::chrono::steady_clock::now();
@@ -1450,7 +1450,9 @@ void Renderer::present_frame(const PresentDecision& decision) {
     {
         const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(state_mutex_);
-        consume_pending_layout_locked();
+        if (should_present_frame_consume_pending_layout()) {
+            consume_pending_layout_locked();
+        }
         spdlog::debug("[present_frame] mode={}", layout_.mode);
         PresentDecision filtered_decision = decision;
         filter_present_decision_against_tracks(filtered_decision, tracks_);
@@ -1502,7 +1504,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
             if (backend && backend->renderer_manages_headless_publish()) {
                 drew = draw_headless_and_publish(snapshot, "present_frame", frame_callback);
             } else {
-                drew = draw_frame(snapshot, async_completion);
+                drew = draw_frame(snapshot, "present_frame", async_completion);
                 async_draw_submitted = async_backend && drew;
                 if (drew && !async_draw_submitted) {
                     frame_callback = frame_callback_;
@@ -1510,7 +1512,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
             }
             device_lost = backend && backend->poll_device_removed("headless present");
         } else {
-            drew = draw_frame(snapshot, async_completion);
+            drew = draw_frame(snapshot, "present_frame", async_completion);
             async_draw_submitted = async_backend && drew;
             if (should_present_swap_chain_after_draw(
                     drew && !async_draw_submitted,
@@ -1634,7 +1636,7 @@ bool Renderer::redraw_layout() {
             if (backend && backend->renderer_manages_headless_publish()) {
                 drew = draw_headless_and_publish(snapshot, "viewport_composite", frame_callback);
             } else {
-                drew = draw_frame(snapshot, async_completion);
+                drew = draw_frame(snapshot, "viewport_composite", async_completion);
                 async_draw_submitted = async_backend && drew;
                 if (drew && !async_draw_submitted) {
                     frame_callback = frame_callback_;
@@ -1642,7 +1644,7 @@ bool Renderer::redraw_layout() {
             }
             device_lost = backend && backend->poll_device_removed("headless redraw");
         } else if (backend) {
-            drew = draw_frame(snapshot, async_completion);
+            drew = draw_frame(snapshot, "viewport_composite", async_completion);
             async_draw_submitted = async_backend && drew;
             if (!async_draw_submitted) {
                 backend->wait_idle("viewport_composite");
@@ -2023,7 +2025,7 @@ bool Renderer::update_headless_output(void* output,
         if (present_decision_has_frame(snapshot.decision)) {
             attempted_draw = true;
             std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-            drew = draw_frame(snapshot);
+            drew = draw_frame(snapshot, "install_headless_output");
             if (drew) {
                 frame_callback = frame_callback_;
             } else {
@@ -2429,20 +2431,28 @@ void Renderer::render_loop_body() {
         } else if (playing_snapshot) {
             uint64_t layout_revision = 0;
             uint64_t presented_revision = 0;
+            uint64_t pending_layout_revision = 0;
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 layout_revision = layout_revision_;
                 presented_revision = last_presented_layout_revision_;
             }
-            if (layout_revision > presented_revision) {
+            {
+                std::lock_guard<std::mutex> lock(pending_layout_mutex_);
+                pending_layout_revision = pending_layout_revision_;
+            }
+            const uint64_t latest_layout_revision =
+                std::max(layout_revision, pending_layout_revision);
+            if (latest_layout_revision > presented_revision) {
                 const uint64_t pending_layout = presentation_backend_metrics_
                     .playing_layout_redraw_suppressed_count.fetch_add(
                         1, std::memory_order_relaxed) + 1;
                 if (viewport_trace_enabled() && pending_layout % 120 == 0) {
                     spdlog::info(
                         "[ViewportTrace] native source=viewport_composite_skip reason=deferred-to-playback "
-                        "layout_rev={} presented_layout_rev={} suppressed={}",
+                        "layout_rev={} pending_layout_rev={} presented_layout_rev={} suppressed={}",
                         layout_revision,
+                        pending_layout_revision,
                         presented_revision,
                         pending_layout);
                 }
@@ -2499,12 +2509,14 @@ void Renderer::render_loop_body() {
 
 bool Renderer::draw_frame(
     const RendererDrawSnapshot& snapshot,
+    const char* source,
     std::function<void(bool, const char*, uint64_t)> async_completion) {
     auto* backend = presentation_backend_.get();
     if (!backend) {
         return false;
     }
     PresentationBackendDrawHooks hooks;
+    hooks.draw_source = source;
     hooks.wait_gpu_idle = [this](const char* label) { wait_gpu_idle(label); };
     hooks.record_frame_copy_us = [this](uint64_t elapsed_us) {
         presentation_backend_metrics_.frame_copy_us.fetch_add(
@@ -2562,6 +2574,18 @@ void Renderer::apply_layout_locked(const LayoutState& state, uint64_t revision) 
         layout_, state, [this](int file_id) { return find_slot_by_file_id(file_id); });
     layout_revision_ = std::max(layout_revision_ + 1, revision);
     preview_drawn_ = false;
+}
+
+bool Renderer::should_present_frame_consume_pending_layout() const {
+    if (!playing_.load(std::memory_order_acquire) ||
+        playback_->clock().is_paused()) {
+        return true;
+    }
+    if (!presentation_backend_ ||
+        presentation_backend_->kind() != PresentationBackendKind::Metal) {
+        return true;
+    }
+    return false;
 }
 
 bool Renderer::consume_pending_layout_locked() {

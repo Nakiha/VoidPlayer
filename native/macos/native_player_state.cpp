@@ -141,6 +141,7 @@ void VPMacOSNativePlayer::clear_last_frame_locked() {
   last_renderer_owned_presentation_succeeded = false;
   last_renderer_owned_frame_info_available = false;
   last_renderer_owned_frame_info = {};
+  last_renderer_owned_layout_revision = 0;
   renderer_owned_refresh_min_pts_us = -1;
 }
 
@@ -223,6 +224,8 @@ void VPMacOSNativePlayer::on_frame_available() {
       } else {
         last_renderer_owned_frame_info.pts_us = renderer->current_pts_us();
       }
+      last_renderer_owned_layout_revision =
+          renderer->presentation_backend_metrics().last_presented_layout_revision;
     }
     const auto now = std::chrono::steady_clock::now();
     if (renderer_owned_presentation_upload_count == 0) {

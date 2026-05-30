@@ -245,6 +245,7 @@ private:
     void render_loop_body();
     bool draw_frame(
         const RendererDrawSnapshot& snapshot,
+        const char* source,
         std::function<void(bool, const char*, uint64_t)> async_completion = {});
     void finish_presented_draw(
         const char* source,
@@ -283,6 +284,7 @@ private:
     void apply_layout_locked(const LayoutState& state, uint64_t revision);
     bool consume_pending_layout_locked();
     void clear_pending_layout_intent();
+    bool should_present_frame_consume_pending_layout() const;
 
     /// Apply pending resize on the render thread.
     void do_resize(int width, int height);

@@ -225,6 +225,7 @@ void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer*
   player->last_renderer_owned_presentation_succeeded = false;
   player->last_renderer_owned_frame_info_available = false;
   player->last_renderer_owned_frame_info = {};
+  player->last_renderer_owned_layout_revision = 0;
   player->renderer_owned_presentation_upload_count = 0;
   player->renderer_owned_presentation_failure_count = 0;
   player->renderer_owned_presentation_draw_failure_count = 0;

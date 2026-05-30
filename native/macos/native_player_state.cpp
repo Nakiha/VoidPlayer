@@ -190,7 +190,10 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   }
 
   renderer = std::move(next_renderer);
-  renderer->set_frame_callback([this]() { on_frame_available(); });
+  renderer->set_frame_callback(
+      [this](const vr::PresentationBackendFrameInfo* frame_info) {
+        on_frame_available(frame_info);
+      });
   renderer->set_frame_failure_callback(
       [this](const char* message) { on_frame_failed(message); });
   renderer_active.store(true, std::memory_order_release);
@@ -199,7 +202,8 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   return true;
 }
 
-void VPMacOSNativePlayer::on_frame_available() {
+void VPMacOSNativePlayer::on_frame_available(
+    const vr::PresentationBackendFrameInfo* completed_frame_info) {
   const auto start = std::chrono::steady_clock::now();
   VPMacOSFrameAvailableCallback callback = nullptr;
   void* user_data = nullptr;
@@ -213,9 +217,19 @@ void VPMacOSNativePlayer::on_frame_available() {
     renderer_owned_presentation_last_error.clear();
     last_renderer_owned_frame_info.width = presentation_target_width;
     last_renderer_owned_frame_info.height = presentation_target_height;
+    if (completed_frame_info) {
+      last_renderer_owned_frame_info.width = completed_frame_info->width;
+      last_renderer_owned_frame_info.height = completed_frame_info->height;
+      last_renderer_owned_frame_info.pts_us = completed_frame_info->pts_us;
+      last_renderer_owned_frame_info.dts_us = completed_frame_info->dts_us;
+      last_renderer_owned_frame_info.duration_us =
+          completed_frame_info->duration_us;
+      last_renderer_owned_frame_info.target_pixel_buffer_address =
+          completed_frame_info->target_pixel_buffer_address;
+    }
     if (renderer) {
       vr::PresentationBackendFrameInfo frame_info;
-      if (renderer->copy_last_presentation_frame_info(&frame_info)) {
+      if (!completed_frame_info && renderer->copy_last_presentation_frame_info(&frame_info)) {
         last_renderer_owned_frame_info.width = frame_info.width;
         last_renderer_owned_frame_info.height = frame_info.height;
         last_renderer_owned_frame_info.pts_us = frame_info.pts_us;
@@ -223,7 +237,7 @@ void VPMacOSNativePlayer::on_frame_available() {
         last_renderer_owned_frame_info.duration_us = frame_info.duration_us;
         last_renderer_owned_frame_info.target_pixel_buffer_address =
             frame_info.target_pixel_buffer_address;
-      } else {
+      } else if (!completed_frame_info) {
         last_renderer_owned_frame_info.pts_us = renderer->current_pts_us();
         last_renderer_owned_frame_info.target_pixel_buffer_address = 0;
       }

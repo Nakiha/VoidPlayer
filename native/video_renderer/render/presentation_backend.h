@@ -24,15 +24,6 @@ struct PresentationBackendConfig {
     bool headless = false;
 };
 
-struct PresentationBackendDrawHooks {
-    const char* draw_source = nullptr;
-    std::function<void(const char*)> wait_gpu_idle;
-    std::function<void(uint64_t)> record_frame_copy_us;
-    std::function<void(PresentationBackend&, const RendererDrawSnapshot&)> draw_overlay;
-    std::function<bool(const RendererDrawSnapshot&, uint8_t*, int, int, size_t)> composite_bgra_overlay;
-    std::function<void(bool, const char*, uint64_t)> async_draw_completed;
-};
-
 struct PresentationBackendFrameInfo {
     int32_t width = 0;
     int32_t height = 0;
@@ -40,6 +31,18 @@ struct PresentationBackendFrameInfo {
     int64_t dts_us = 0;
     int64_t duration_us = 0;
     uint64_t target_pixel_buffer_address = 0;
+};
+
+using PresentationBackendAsyncDrawCompleted =
+    std::function<void(bool, const char*, uint64_t, const PresentationBackendFrameInfo*)>;
+
+struct PresentationBackendDrawHooks {
+    const char* draw_source = nullptr;
+    std::function<void(const char*)> wait_gpu_idle;
+    std::function<void(uint64_t)> record_frame_copy_us;
+    std::function<void(PresentationBackend&, const RendererDrawSnapshot&)> draw_overlay;
+    std::function<bool(const RendererDrawSnapshot&, uint8_t*, int, int, size_t)> composite_bgra_overlay;
+    PresentationBackendAsyncDrawCompleted async_draw_completed;
 };
 
 struct PresentationBackendStats {

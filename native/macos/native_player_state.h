@@ -35,7 +35,7 @@ struct VPMacOSNativePlayer {
   void shutdown_renderer_locked();
   void clear_last_frame_locked();
   bool ensure_renderer_locked(std::string& error);
-  void on_frame_available();
+  void on_frame_available(const vr::PresentationBackendFrameInfo* frame_info);
   void on_frame_failed(const char* error);
   void record_presentation_failure_locked(const std::string& error,
                                           bool upload_failure);

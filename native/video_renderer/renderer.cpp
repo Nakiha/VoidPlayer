@@ -1306,7 +1306,7 @@ void Renderer::wait_gpu_idle(const char* label) {
 
 bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
                                          const char* label,
-                                         std::function<void()>& callback) {
+                                         RendererFrameCallback& callback) {
 #ifdef _WIN32
     callback = {};
     if (shutting_down_.load(std::memory_order_acquire)) {
@@ -1332,7 +1332,14 @@ bool Renderer::draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
     output->wait_gpu_idle(label);
     {
         std::lock_guard<std::mutex> tex_lock(texture_mutex());
-        callback = output->publish_frame_locked();
+        auto published_callback = output->publish_frame_locked();
+        callback = published_callback
+            ? RendererFrameCallback(
+                  [published_callback = std::move(published_callback)](
+                      const PresentationBackendFrameInfo*) mutable {
+                      published_callback();
+                  })
+            : RendererFrameCallback();
     }
     if (shutting_down_.load(std::memory_order_acquire)) {
         callback = {};
@@ -1414,11 +1421,12 @@ void Renderer::finish_presented_draw(
     uint64_t snapshot_us,
     std::chrono::steady_clock::time_point profiler_start,
     bool attempted_draw,
-    std::function<void()> frame_callback,
+    RendererFrameCallback frame_callback,
     std::function<void(const char*)> frame_failure_callback,
     bool drew,
     const char* frame_failure_error,
-    uint64_t backend_us) {
+    uint64_t backend_us,
+    const PresentationBackendFrameInfo* completed_frame_info) {
     if (shutting_down_.load(std::memory_order_acquire)) {
         return;
     }
@@ -1446,7 +1454,7 @@ void Renderer::finish_presented_draw(
         callback_available && !stale_layout_after_draw &&
         !shutting_down_.load(std::memory_order_acquire);
     if (callback_published) {
-        frame_callback();
+        frame_callback(completed_frame_info);
     }
     if (attempted_draw && !drew && frame_failure_callback &&
         !shutting_down_.load(std::memory_order_acquire)) {
@@ -1488,7 +1496,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
         snapshot_layout_revision = layout_revision_;
         snapshot_us = elapsed_us_since(snapshot_start);
     }
-    std::function<void()> frame_callback;
+    RendererFrameCallback frame_callback;
     auto frame_failure_callback = frame_failure_callback_snapshot();
     std::string frame_failure_error;
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
@@ -1503,7 +1511,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
         const bool async_backend = backend && backend->completes_draw_asynchronously();
         auto async_completion =
             async_backend
-                ? std::function<void(bool, const char*, uint64_t)>(
+                ? PresentationBackendAsyncDrawCompleted(
                       [this,
                        snapshot,
                        snapshot_layout_revision,
@@ -1513,7 +1521,8 @@ void Renderer::present_frame(const PresentDecision& decision) {
                        frame_callback = frame_callback_,
                        frame_failure_callback](bool success,
                                                const char* error,
-                                               uint64_t completion_backend_us) {
+                                               uint64_t completion_backend_us,
+                                               const PresentationBackendFrameInfo* frame_info) {
                           finish_presented_draw("present_frame",
                                                 snapshot,
                                                 snapshot_layout_revision,
@@ -1524,9 +1533,10 @@ void Renderer::present_frame(const PresentDecision& decision) {
                                                 frame_failure_callback,
                                                 success,
                                                 error,
-                                                completion_backend_us);
+                                                completion_backend_us,
+                                                frame_info);
                       })
-                : std::function<void(bool, const char*, uint64_t)>();
+                : PresentationBackendAsyncDrawCompleted();
         if (headless_) {
             if (backend && backend->renderer_manages_headless_publish()) {
                 drew = draw_headless_and_publish(snapshot, "present_frame", frame_callback);
@@ -1579,7 +1589,8 @@ void Renderer::present_frame(const PresentDecision& decision) {
                           frame_failure_callback,
                           drew,
                           frame_failure_error.c_str(),
-                          backend_us);
+                          backend_us,
+                          nullptr);
     const auto total_us = elapsed_us_since(profiler_start);
     static std::atomic<uint64_t> present_profiler_count{0};
     const auto count = present_profiler_count.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -1659,7 +1670,7 @@ bool Renderer::redraw_layout() {
         update_track_geometry_from_decision_locked(decision);
         snapshot = build_draw_snapshot_locked(decision);
     }
-    std::function<void()> frame_callback;
+    RendererFrameCallback frame_callback;
     auto frame_failure_callback = frame_failure_callback_snapshot();
     std::string frame_failure_error;
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
@@ -1674,7 +1685,7 @@ bool Renderer::redraw_layout() {
         const bool async_backend = backend && backend->completes_draw_asynchronously();
         auto async_completion =
             async_backend
-                ? std::function<void(bool, const char*, uint64_t)>(
+                ? PresentationBackendAsyncDrawCompleted(
                       [this,
                        snapshot,
                        snapshot_layout_revision,
@@ -1684,7 +1695,8 @@ bool Renderer::redraw_layout() {
                        frame_callback = frame_callback_,
                        frame_failure_callback](bool success,
                                                const char* error,
-                                               uint64_t completion_backend_us) {
+                                               uint64_t completion_backend_us,
+                                               const PresentationBackendFrameInfo* frame_info) {
                           finish_presented_draw("viewport_composite",
                                                 snapshot,
                                                 snapshot_layout_revision,
@@ -1695,9 +1707,10 @@ bool Renderer::redraw_layout() {
                                                 frame_failure_callback,
                                                 success,
                                                 error,
-                                                completion_backend_us);
+                                                completion_backend_us,
+                                                frame_info);
                       })
-                : std::function<void(bool, const char*, uint64_t)>();
+                : PresentationBackendAsyncDrawCompleted();
         if (headless_) {
             if (backend && backend->renderer_manages_headless_publish()) {
                 drew = draw_headless_and_publish(snapshot, "viewport_composite", frame_callback);
@@ -1740,7 +1753,8 @@ bool Renderer::redraw_layout() {
                           frame_failure_callback,
                           drew,
                           frame_failure_error.c_str(),
-                          backend_us);
+                          backend_us,
+                          nullptr);
     return drew;
 }
 
@@ -1953,11 +1967,15 @@ int64_t Renderer::track_offset_us(int file_id) const {
     return tracks_[slot]->offset_us;
 }
 
-void Renderer::set_frame_callback(std::function<void()> cb) {
+void Renderer::set_frame_callback(RendererFrameCallback cb) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 #ifdef _WIN32
     if (auto* output = headless_output()) {
-        output->set_frame_callback(std::move(cb));
+        output->set_frame_callback([cb = std::move(cb)]() {
+            if (cb) {
+                cb(nullptr);
+            }
+        });
         frame_callback_ = {};
         return;
     }
@@ -2049,7 +2067,7 @@ bool Renderer::update_headless_output(void* output,
                                       int width,
                                       int height,
                                       int max_track_slots) {
-    std::function<void()> frame_callback;
+    RendererFrameCallback frame_callback;
     auto frame_failure_callback = frame_failure_callback_snapshot();
     std::string frame_failure_error;
     bool drew = false;
@@ -2109,7 +2127,7 @@ bool Renderer::update_headless_output(void* output,
         preview_drawn_ = true;
     }
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
-        frame_callback();
+        frame_callback(nullptr);
     }
     if (attempted_draw && !drew && frame_failure_callback &&
         !shutting_down_.load(std::memory_order_acquire)) {
@@ -2199,7 +2217,7 @@ void Renderer::do_resize(int width, int height) {
         snapshot = build_draw_snapshot_locked(last_decision_);
     }
 
-    std::function<void()> frame_callback;
+    RendererFrameCallback frame_callback;
     bool drew = false;
     {
         std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
@@ -2215,7 +2233,7 @@ void Renderer::do_resize(int width, int height) {
         preview_drawn_ = true;
     }
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
-        frame_callback();
+        frame_callback(nullptr);
     }
 #else
     (void)width;
@@ -2576,7 +2594,7 @@ void Renderer::render_loop_body() {
 bool Renderer::draw_frame(
     const RendererDrawSnapshot& snapshot,
     const char* source,
-    std::function<void(bool, const char*, uint64_t)> async_completion) {
+    PresentationBackendAsyncDrawCompleted async_completion) {
     auto* backend = presentation_backend_.get();
     if (!backend) {
         return false;

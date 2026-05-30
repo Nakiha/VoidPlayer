@@ -273,7 +273,12 @@ LayoutState NativePlayer::layout() const {
 
 void NativePlayer::set_frame_callback(std::function<void()> cb) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
-    renderer_.set_frame_callback(std::move(cb));
+    renderer_.set_frame_callback(
+        [cb = std::move(cb)](const PresentationBackendFrameInfo*) {
+            if (cb) {
+                cb();
+            }
+        });
 }
 
 void NativePlayer::set_event_callback(RendererEventCallback cb) {

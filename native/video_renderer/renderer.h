@@ -67,6 +67,8 @@ struct RendererEvent {
 };
 
 using RendererEventCallback = std::function<void(const RendererEvent&)>;
+using RendererFrameCallback =
+    std::function<void(const PresentationBackendFrameInfo*)>;
 
 using D3D11BackendMetrics = PresentationBackendMetrics;
 
@@ -194,7 +196,7 @@ public:
     // -- Headless mode: texture sharing --
 
     /// Set callback invoked after each frame is drawn in headless mode.
-    void set_frame_callback(std::function<void()> cb);
+    void set_frame_callback(RendererFrameCallback cb);
     void set_frame_failure_callback(std::function<void(const char*)> cb);
 
     /// Set callback invoked for low-frequency renderer/player events.
@@ -246,7 +248,7 @@ private:
     bool draw_frame(
         const RendererDrawSnapshot& snapshot,
         const char* source,
-        std::function<void(bool, const char*, uint64_t)> async_completion = {});
+        PresentationBackendAsyncDrawCompleted async_completion = {});
     void finish_presented_draw(
         const char* source,
         const RendererDrawSnapshot& snapshot,
@@ -254,11 +256,12 @@ private:
         uint64_t snapshot_us,
         std::chrono::steady_clock::time_point profiler_start,
         bool attempted_draw,
-        std::function<void()> frame_callback,
+        RendererFrameCallback frame_callback,
         std::function<void(const char*)> frame_failure_callback,
         bool drew,
         const char* frame_failure_error,
-        uint64_t backend_us);
+        uint64_t backend_us,
+        const PresentationBackendFrameInfo* completed_frame_info);
     bool draw_paused_frame(const char* reason);
     RendererDrawSnapshot build_draw_snapshot_locked(const PresentDecision& decision) const;
     void update_track_geometry_from_decision_locked(const PresentDecision& decision);
@@ -299,7 +302,7 @@ private:
     /// both locks.
     bool draw_headless_and_publish(const RendererDrawSnapshot& snapshot,
                                    const char* label,
-                                   std::function<void()>& callback);
+                                   RendererFrameCallback& callback);
 
     /// Internal mutex for D3D11 headless texture access.
     std::mutex& texture_mutex() const;
@@ -427,7 +430,7 @@ private:
     mutable std::mutex pending_layout_mutex_;
     mutable std::mutex event_callback_mutex_;
     RendererEventCallback event_callback_;
-    std::function<void()> frame_callback_;
+    RendererFrameCallback frame_callback_;
     std::function<void(const char*)> frame_failure_callback_;
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     bool preview_drawn_ = false;

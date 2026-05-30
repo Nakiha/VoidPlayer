@@ -748,10 +748,19 @@ void metal_async_upload_completed(void* user_data,
         error ? error : "");
   }
   if (context->hooks.async_draw_completed) {
+    vr::PresentationBackendFrameInfo backend_frame_info;
+    backend_frame_info.width = frame_info.width;
+    backend_frame_info.height = frame_info.height;
+    backend_frame_info.pts_us = frame_info.pts_us;
+    backend_frame_info.dts_us = frame_info.dts_us;
+    backend_frame_info.duration_us = frame_info.duration_us;
+    backend_frame_info.target_pixel_buffer_address =
+        frame_info.target_pixel_buffer_address;
     context->hooks.async_draw_completed(
         success,
         success ? "" : (error ? error : "renderer-owned Metal async draw failed"),
-        static_cast<uint64_t>(std::max<int64_t>(0, total_us)));
+        static_cast<uint64_t>(std::max<int64_t>(0, total_us)),
+        success ? &backend_frame_info : nullptr);
   }
   backend->finish_async_draw();
 }

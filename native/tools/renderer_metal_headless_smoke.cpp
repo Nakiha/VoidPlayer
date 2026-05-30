@@ -112,7 +112,7 @@ int main() {
         return 1;
     }
     std::atomic<int> callbacks{0};
-    renderer.set_frame_callback([&callbacks]() {
+    renderer.set_frame_callback([&callbacks](const vr::PresentationBackendFrameInfo*) {
         callbacks.fetch_add(1, std::memory_order_relaxed);
     });
 

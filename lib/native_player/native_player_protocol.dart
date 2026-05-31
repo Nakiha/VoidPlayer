@@ -69,6 +69,13 @@ class NativePlayerKeys {
   static const order = 'order';
   static const ptsUs = 'ptsUs';
   static const dtsUs = 'dtsUs';
+  static const analysisFrameIndex = 'analysisFrameIndex';
+  static const frameIdentityMode = 'frameIdentityMode';
+  static const sourcePacketIndex = 'sourcePacketIndex';
+  static const sourcePacketSize = 'sourcePacketSize';
+  static const sourcePacketPos = 'sourcePacketPos';
+  static const sourcePacketPtsUs = 'sourcePacketPtsUs';
+  static const sourcePacketDtsUs = 'sourcePacketDtsUs';
   static const requestId = 'requestId';
   static const targetPtsUs = 'targetPtsUs';
   static const speed = 'speed';
@@ -105,17 +112,50 @@ class PresentedFrameTiming {
 
   final int ptsUs;
   final int dtsUs;
+  final int durationUs;
+  final int analysisFrameIndex;
+  final int frameIdentityMode;
+  final int sourcePacketIndex;
+  final int sourcePacketSize;
+  final int sourcePacketPos;
+  final int sourcePacketPtsUs;
+  final int sourcePacketDtsUs;
 
-  const PresentedFrameTiming({required this.ptsUs, required this.dtsUs});
+  const PresentedFrameTiming({
+    required this.ptsUs,
+    required this.dtsUs,
+    this.durationUs = 0,
+    this.analysisFrameIndex = -1,
+    this.frameIdentityMode = 0,
+    this.sourcePacketIndex = -1,
+    this.sourcePacketSize = 0,
+    this.sourcePacketPos = -1,
+    this.sourcePacketPtsUs = noTimestampUs,
+    this.sourcePacketDtsUs = noTimestampUs,
+  });
 
   factory PresentedFrameTiming.fromMap(Map<dynamic, dynamic> map) {
     return PresentedFrameTiming(
       ptsUs: map[NativePlayerKeys.ptsUs] as int? ?? -1,
       dtsUs: map[NativePlayerKeys.dtsUs] as int? ?? -1,
+      durationUs: map[NativePlayerKeys.durationUs] as int? ?? 0,
+      analysisFrameIndex:
+          map[NativePlayerKeys.analysisFrameIndex] as int? ?? -1,
+      frameIdentityMode: map[NativePlayerKeys.frameIdentityMode] as int? ?? 0,
+      sourcePacketIndex: map[NativePlayerKeys.sourcePacketIndex] as int? ?? -1,
+      sourcePacketSize: map[NativePlayerKeys.sourcePacketSize] as int? ?? 0,
+      sourcePacketPos: map[NativePlayerKeys.sourcePacketPos] as int? ?? -1,
+      sourcePacketPtsUs:
+          map[NativePlayerKeys.sourcePacketPtsUs] as int? ?? noTimestampUs,
+      sourcePacketDtsUs:
+          map[NativePlayerKeys.sourcePacketDtsUs] as int? ?? noTimestampUs,
     );
   }
 
-  bool get isValid => ptsUs >= 0 && dtsUs != noTimestampUs;
+  bool get hasStableSourceIdentity =>
+      analysisFrameIndex >= 0 || sourcePacketPos >= 0 || sourcePacketIndex >= 0;
+
+  bool get isValid => ptsUs >= 0 || hasStableSourceIdentity;
 }
 
 /// Layout mode constants matching native defines.

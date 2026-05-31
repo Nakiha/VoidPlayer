@@ -76,6 +76,13 @@ TrackPerfSnapshotResult snapshot_track_perf_stats(
     if (current_frame.has_value()) {
         stats.current_pts_us = current_frame->pts_us;
         stats.current_dts_us = current_frame->dts_us;
+        stats.analysis_frame_index = current_frame->analysis_frame_index;
+        stats.source_packet_index = current_frame->source_packet_index;
+        stats.source_packet_size = current_frame->source_packet_size;
+        stats.source_packet_pos = current_frame->source_packet_pos;
+        stats.source_packet_pts = current_frame->source_packet_pts;
+        stats.source_packet_dts = current_frame->source_packet_dts;
+        stats.frame_identity_mode = current_frame->frame_identity_mode;
     }
 
     if (decode_perf.frames_decoded > 0) {

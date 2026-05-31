@@ -118,6 +118,13 @@ void write_frame_info(const vr::TextureFrame& frame, VPMacOSNativeFrameInfo* out
   out->pts_us = frame.pts_us;
   out->dts_us = frame.dts_us;
   out->duration_us = frame.duration_us;
+  out->analysis_frame_index = frame.analysis_frame_index;
+  out->frame_identity_mode = static_cast<int32_t>(frame.frame_identity_mode);
+  out->source_packet_index = frame.source_packet_index;
+  out->source_packet_size = frame.source_packet_size;
+  out->source_packet_pos = frame.source_packet_pos;
+  out->source_packet_pts = frame.source_packet_pts;
+  out->source_packet_dts = frame.source_packet_dts;
 }
 
 bool copy_cpu_rgba_to_bgra(const vr::TextureFrame& frame,

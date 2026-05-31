@@ -150,6 +150,7 @@ private:
     ErrorCallback error_callback_;
     mutable std::mutex error_callback_mutex_;
     std::atomic<int> forced_read_error_for_test_{0};
+    int32_t next_video_packet_identity_index_ = 0;
     std::mutex lifecycle_mutex_;
     std::condition_variable lifecycle_cv_;
     bool opening_ = false;

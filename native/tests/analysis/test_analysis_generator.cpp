@@ -91,8 +91,10 @@ TEST_CASE("AnalysisGenerator: generates VAC2 base from private CDN FLV",
     REQUIRE(vac2.header().unit_count == 1);
     REQUIRE(vac2.header().au_count == 1);
     REQUIRE(vac2.metadata_json().find(
-                "\"frame_model\":\"one_packet_per_frame_fallback\"") !=
+                "\"frame_model\":\"source_packet_identity\"") !=
             std::string::npos);
+    REQUIRE(vac2.packets()[0].file_offset != UINT64_MAX);
+    REQUIRE(vac2.packets()[0].format_offset != UINT64_MAX);
     REQUIRE(vac2.packets()[0].pts == 45);
     REQUIRE(vac2.packets()[0].dts == 40);
     REQUIRE(vac2.packets()[0].au_index == 0);

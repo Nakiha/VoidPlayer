@@ -65,7 +65,7 @@ Current `VachunkHeader`:
 | --- | ---: | --- |
 | `magic` | `char[4]` | `VCK1`. |
 | `version_major` | `uint16_t` | Initial value `1`. |
-| `version_minor` | `uint16_t` | Initial value `0`. |
+| `version_minor` | `uint16_t` | Current value `1`. |
 | `header_size` | `uint16_t` | Size of this header. |
 | `section_entry_size` | `uint16_t` | Size of each section entry. |
 | `section_count` | `uint32_t` | Number of section entries. |

@@ -114,6 +114,7 @@ struct Vac2ScanData {
     uint32_t width = 0;
     uint32_t height = 0;
     std::vector<AnalysisPacketScanEntry> packets;
+    std::vector<int64_t> packet_positions;
     std::vector<AnalysisUnitScanEntry> units;
 };
 
@@ -122,6 +123,10 @@ static uint64_t source_file_size(const std::string& path) {
     if (!f) return 0;
     const auto size = f.tellg();
     return size < 0 ? 0 : static_cast<uint64_t>(size);
+}
+
+static uint64_t packet_pos_to_vac2_offset(int64_t pos) {
+    return pos >= 0 ? static_cast<uint64_t>(pos) : UINT64_MAX;
 }
 
 static bool probe_video_geometry(const std::string& video_path,
@@ -297,7 +302,7 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
     out.width = scan.width;
     out.height = scan.height;
     out.source_size = source_file_size(video_path);
-    out.content_revision = 3;
+    out.content_revision = 4;
     if ((out.width == 0 || out.height == 0) &&
         !probe_video_geometry(video_path, out.width, out.height)) {
         spdlog::warn("[AnalysisGen] failed to probe VAC2 base dimensions: {}", video_path);
@@ -305,9 +310,9 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
     out.metadata_json =
         "{\"schema\":\"VAC2\",\"producer\":\"AnalysisGenerator::generate_vac2_base\","
         "\"source\":\"direct-vac2-scanner\","
-        "\"frame_model\":\"one_packet_per_frame_fallback\","
+        "\"frame_model\":\"source_packet_identity\","
         "\"reference_model\":\"packet_pts_reorder_inference\","
-        "\"frame_model_warning\":\"packet_index_equals_frame_index\"}";
+        "\"frame_identity\":\"packet_pos+packet_index\"}";
 
     out.packets.resize(static_cast<size_t>(packet_count));
     out.frames.resize(static_cast<size_t>(packet_count));
@@ -366,8 +371,10 @@ static bool build_vac2_base_from_scan(const std::string& video_path,
         packet.size = src.size;
         packet.stream_index = 0;
         packet.flags = (src.flags & ANALYSIS_PACKET_FLAG_KEYFRAME) ? VAC2_PACKET_FLAG_KEYFRAME : 0;
-        packet.file_offset = UINT64_MAX;
-        packet.format_offset = UINT64_MAX;
+        const int64_t packet_pos =
+            index < scan.packet_positions.size() ? scan.packet_positions[index] : -1;
+        packet.file_offset = packet_pos_to_vac2_offset(packet_pos);
+        packet.format_offset = packet_pos_to_vac2_offset(packet_pos);
         packet.first_unit = first_unit_by_frame[index] == UINT32_MAX ? 0 : first_unit_by_frame[index];
         packet.unit_count = unit_count_by_frame[index];
         packet.au_index = index;
@@ -581,6 +588,7 @@ static bool scanRawOnlyVac2(const std::string& video_path,
             entry.flags = (unit.flags & ANALYSIS_UNIT_FLAG_IS_KEYFRAME) ? ANALYSIS_PACKET_FLAG_KEYFRAME : 0;
             if (!budget.reserve(sizeof(AnalysisPacketScanEntry))) return false;
             out.packets.push_back(entry);
+            out.packet_positions.push_back(static_cast<int64_t>(unit.offset));
             return true;
         });
 
@@ -662,6 +670,7 @@ static bool scanPrivateCdnFlvVac2(const std::string& video_path,
             break;
         }
         out.packets.push_back(entry);
+        out.packet_positions.push_back(pkt->pos);
 
         bool unit_ok = true;
         if (annex_b_bsf) {
@@ -806,6 +815,7 @@ static bool scanFfmpegVac2(const std::string& video_path,
             break;
         }
         out.packets.push_back(entry);
+        out.packet_positions.push_back(pkt->pos);
 
         bool unit_ok = true;
         if (annex_b_bsf) {
@@ -1057,9 +1067,9 @@ static bool collect_decoder_frame_summaries(const std::string& video_path,
         data.metadata_json =
             "{\"schema\":\"VAC2\",\"producer\":\"AnalysisGenerator::generate_vac2_base\","
             "\"source\":\"direct-vac2-scanner+ffmpeg-analysis-frame-summary\","
-            "\"frame_model\":\"one_packet_per_frame_fallback\","
+            "\"frame_model\":\"source_packet_identity\","
             "\"reference_model\":\"decoder_frame_summary\","
-            "\"frame_model_warning\":\"packet_index_equals_frame_index\"}";
+            "\"frame_identity\":\"packet_pos+packet_index\"}";
     }
     return ok;
 }

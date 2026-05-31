@@ -55,6 +55,12 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
   Future<bool> ensureOverlayChunk(
     String hash, {
     required String videoPath,
+    int? analysisFrameIndex,
+    int? sourcePacketIndex,
+    int? sourcePacketSize,
+    int? sourcePacketPos,
+    int? sourcePacketPtsUs,
+    int? sourcePacketDtsUs,
     int? presentedPtsUs,
     int? presentedDtsUs,
   }) => Future.value(false);
@@ -65,6 +71,12 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
     required String name,
     required String path,
     required int trackFileId,
+    int? analysisFrameIndex,
+    int? sourcePacketIndex,
+    int? sourcePacketSize,
+    int? sourcePacketPos,
+    int? sourcePacketPtsUs,
+    int? sourcePacketDtsUs,
     int? presentedPtsUs,
     int? presentedDtsUs,
   }) => Future.value(false);

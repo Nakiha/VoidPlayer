@@ -1,6 +1,7 @@
 #include "video_renderer/decode/software_frame_publisher.h"
 
 #include "video_renderer/decode/frame_color_metadata.h"
+#include "video_renderer/decode/frame_identity.h"
 #include "video_renderer/decode/software_bgra_converter.h"
 
 #include <memory>
@@ -32,6 +33,7 @@ std::optional<TextureFrame> make_bgra_texture_frame(const AVFrame* frame) {
     result.width = frame->width;
     result.height = frame->height;
     result.color = color_info_from_av_frame(frame);
+    populate_frame_identity_from_av_frame(frame, result);
     result.cpu_data = data;
     result.texture_handle = data->data();
     result.storage = CpuRgbaFrameStorage{

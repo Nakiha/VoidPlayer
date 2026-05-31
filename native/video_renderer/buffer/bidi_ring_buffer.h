@@ -10,6 +10,17 @@
 namespace vr {
 
 constexpr int64_t kNoTimestampUs = std::numeric_limits<int64_t>::min();
+constexpr int32_t kInvalidAnalysisFrameIndex = -1;
+constexpr int32_t kInvalidSourcePacketIndex = -1;
+constexpr int64_t kUnknownSourcePacketPosition = -1;
+
+enum class FrameIdentityMode : int32_t {
+    Unknown = 0,
+    RuntimeOrdinal = 1,
+    TimestampEstimated = 2,
+    SourcePacketIdentity = 3,
+    ExactAnalysisFrame = 4,
+};
 
 struct TextureFrame {
     int64_t pts_us = 0;
@@ -19,6 +30,13 @@ struct TextureFrame {
     bool is_ref = false;
     void* texture_handle = nullptr;
     int64_t dts_us = kNoTimestampUs;
+    int32_t analysis_frame_index = kInvalidAnalysisFrameIndex;
+    int32_t source_packet_index = kInvalidSourcePacketIndex;
+    int32_t source_packet_size = 0;
+    int64_t source_packet_pos = kUnknownSourcePacketPosition;
+    int64_t source_packet_pts = kNoTimestampUs;
+    int64_t source_packet_dts = kNoTimestampUs;
+    FrameIdentityMode frame_identity_mode = FrameIdentityMode::Unknown;
     // Owns CPU-side video data; shared_ptr enables safe cross-thread sharing
     // and automatic cleanup when all references are gone.
     std::shared_ptr<std::vector<uint8_t>> cpu_data;

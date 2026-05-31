@@ -626,6 +626,13 @@ bool MetalPresentationBackend::copy_last_frame_info(
   out->pts_us = last_draw_frame_info_.pts_us;
   out->dts_us = last_draw_frame_info_.dts_us;
   out->duration_us = last_draw_frame_info_.duration_us;
+  out->analysis_frame_index = last_draw_frame_info_.analysis_frame_index;
+  out->frame_identity_mode = last_draw_frame_info_.frame_identity_mode;
+  out->source_packet_index = last_draw_frame_info_.source_packet_index;
+  out->source_packet_size = last_draw_frame_info_.source_packet_size;
+  out->source_packet_pos = last_draw_frame_info_.source_packet_pos;
+  out->source_packet_pts = last_draw_frame_info_.source_packet_pts;
+  out->source_packet_dts = last_draw_frame_info_.source_packet_dts;
   out->target_pixel_buffer_address =
       last_draw_frame_info_.target_pixel_buffer_address;
   return true;
@@ -874,6 +881,13 @@ void metal_async_upload_completed(void* user_data,
     backend_frame_info.pts_us = frame_info.pts_us;
     backend_frame_info.dts_us = frame_info.dts_us;
     backend_frame_info.duration_us = frame_info.duration_us;
+    backend_frame_info.analysis_frame_index = frame_info.analysis_frame_index;
+    backend_frame_info.frame_identity_mode = frame_info.frame_identity_mode;
+    backend_frame_info.source_packet_index = frame_info.source_packet_index;
+    backend_frame_info.source_packet_size = frame_info.source_packet_size;
+    backend_frame_info.source_packet_pos = frame_info.source_packet_pos;
+    backend_frame_info.source_packet_pts = frame_info.source_packet_pts;
+    backend_frame_info.source_packet_dts = frame_info.source_packet_dts;
     backend_frame_info.target_pixel_buffer_address =
         frame_info.target_pixel_buffer_address;
     context->hooks.async_draw_completed(

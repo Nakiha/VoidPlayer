@@ -49,7 +49,7 @@ void main() {
 
     final overlayChunkPath = p.join(
       AnalysisCache.overlayChunksDir(hash),
-      '2_f0000000000000001_b0000000000000001_g0000000000000002_00000008_00000016.vck',
+      '2_f0000000000000001_b0000000000000001_g0000000000000003_00000008_00000016.vck',
     );
     await Directory(p.dirname(overlayChunkPath)).create(recursive: true);
     await File(overlayChunkPath).writeAsBytes([1, 2, 3]);
@@ -84,7 +84,7 @@ void main() {
 
     final overlayChunkPath = p.join(
       AnalysisCache.overlayChunksDir(hash),
-      '2_f0000000000000001_b0000000000000001_g0000000000000002_00000000_00000000.vck',
+      '2_f0000000000000001_b0000000000000001_g0000000000000003_00000000_00000000.vck',
     );
     final exactChunkPath = p.join(
       AnalysisCache.chunksDir(hash),

@@ -437,6 +437,27 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_handle_frame_index_for
     return frame_index_for_timestamp(*session, pts_us, dts_us);
 }
 
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_handle_frame_index_for_source_packet(
+    NakiAnalysisHandle handle,
+    int64_t packet_pos,
+    int32_t packet_size,
+    int32_t packet_index,
+    int64_t packet_pts,
+    int64_t packet_dts) {
+    const auto session = pin_handle(handle);
+    if (!session) {
+        set_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT, "analysis handle is invalid or closed");
+        return -1;
+    }
+    set_ok();
+    return session->frame_idx_for_source_packet(
+        packet_pos,
+        packet_size,
+        packet_index,
+        packet_pts,
+        packet_dts);
+}
+
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_handle_get_frames(
     NakiAnalysisHandle handle,
     NakiFrameInfo* out,
@@ -677,7 +698,7 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_generate_vac2_overlay_
     key.codec = codec;
     key.feature_flags = kOverlayVachunkFeatureFlags;
     key.base_content_revision = base.header().content_revision;
-    key.generator_revision = 2;
+    key.generator_revision = 3;
     key.start_frame = static_cast<uint32_t>(start_frame);
     key.end_frame = static_cast<uint32_t>(end_frame);
 

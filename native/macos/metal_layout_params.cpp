@@ -17,6 +17,13 @@ void write_first_present_frame_info(const VPMacOSNativePresentDecisionInfo& deci
       out->pts_us = decisionInfo.frames[slot].pts_us;
       out->dts_us = decisionInfo.frames[slot].dts_us;
       out->duration_us = decisionInfo.frames[slot].duration_us;
+      out->analysis_frame_index = decisionInfo.frames[slot].analysis_frame_index;
+      out->frame_identity_mode = decisionInfo.frames[slot].frame_identity_mode;
+      out->source_packet_index = decisionInfo.frames[slot].source_packet_index;
+      out->source_packet_size = decisionInfo.frames[slot].source_packet_size;
+      out->source_packet_pos = decisionInfo.frames[slot].source_packet_pos;
+      out->source_packet_pts = decisionInfo.frames[slot].source_packet_pts;
+      out->source_packet_dts = decisionInfo.frames[slot].source_packet_dts;
       break;
     }
   }

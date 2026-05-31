@@ -1,4 +1,3 @@
-import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
@@ -49,6 +48,12 @@ class _CountingAnalysisGenerationService implements AnalysisGenerationService {
   Future<bool> ensureOverlayChunk(
     String hash, {
     required String videoPath,
+    int? analysisFrameIndex,
+    int? sourcePacketIndex,
+    int? sourcePacketSize,
+    int? sourcePacketPos,
+    int? sourcePacketPtsUs,
+    int? sourcePacketDtsUs,
     int? presentedPtsUs,
     int? presentedDtsUs,
   }) async {
@@ -61,6 +66,12 @@ class _CountingAnalysisGenerationService implements AnalysisGenerationService {
     required String name,
     required String path,
     required int trackFileId,
+    int? analysisFrameIndex,
+    int? sourcePacketIndex,
+    int? sourcePacketSize,
+    int? sourcePacketPos,
+    int? sourcePacketPtsUs,
+    int? sourcePacketDtsUs,
     int? presentedPtsUs,
     int? presentedDtsUs,
   }) async {
@@ -150,50 +161,50 @@ void main() {
     expect(generation.activateOverlayTracksCalls, 0);
   });
 
-  test('overlay panel starts low-frequency playback prefetch', () {
-    fakeAsync((async) {
-      final tracks = _trackManagerWithOneTrack();
-      final generation = _CountingAnalysisGenerationService();
-      var redraws = 0;
-      var presentedFrameCalls = 0;
-      final coordinator = MainWindowAnalysisCoordinator(
-        trackManager: tracks,
-        analysisProcesses: UnsupportedAnalysisProcessHost(),
-        analysisGeneration: generation,
-        presentedFrameProvider: (fileId) async {
-          presentedFrameCalls++;
-          return PresentedFrameTiming(
-            ptsUs: presentedFrameCalls * 33333,
-            dtsUs: presentedFrameCalls * 33333,
-          );
-        },
-        onOverlayStateChanged: () {
-          redraws++;
-        },
-      );
+  testWidgets('overlay panel starts low-frequency playback prefetch', (
+    tester,
+  ) async {
+    final tracks = _trackManagerWithOneTrack();
+    final generation = _CountingAnalysisGenerationService();
+    var redraws = 0;
+    var presentedFrameCalls = 0;
+    final coordinator = MainWindowAnalysisCoordinator(
+      trackManager: tracks,
+      analysisProcesses: UnsupportedAnalysisProcessHost(),
+      analysisGeneration: generation,
+      presentedFrameProvider: (fileId) async {
+        presentedFrameCalls++;
+        return PresentedFrameTiming(
+          ptsUs: presentedFrameCalls * 33333,
+          dtsUs: presentedFrameCalls * 33333,
+        );
+      },
+      onOverlayStateChanged: () {
+        redraws++;
+      },
+    );
+    addTearDown(coordinator.dispose);
+    addTearDown(tracks.dispose);
 
-      coordinator.toggleOverlayPanel();
-      async.flushMicrotasks();
+    await coordinator.toggleOverlayPanel();
+    await tester.pump();
 
-      expect(generation.activateOverlayTracksCalls, 1);
-      expect(redraws, 1);
-      expect(presentedFrameCalls, 1);
+    expect(generation.activateOverlayTracksCalls, 1);
+    expect(redraws, 1);
+    expect(presentedFrameCalls, 1);
 
-      async.elapse(const Duration(milliseconds: 750));
-      async.flushMicrotasks();
+    await tester.pump(const Duration(milliseconds: 750));
+    await tester.pump();
 
-      expect(generation.activateOverlayTracksCalls, 2);
-      expect(presentedFrameCalls, 2);
-      expect(redraws, 1);
+    expect(generation.activateOverlayTracksCalls, 2);
+    expect(presentedFrameCalls, 2);
+    expect(redraws, 1);
 
-      coordinator.deactivateOverlay();
-      async.flushMicrotasks();
-      async.elapse(const Duration(milliseconds: 1500));
-      async.flushMicrotasks();
+    coordinator.deactivateOverlay();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump();
 
-      expect(generation.activateOverlayTracksCalls, 2);
-      coordinator.dispose();
-      tracks.dispose();
-    });
+    expect(generation.activateOverlayTracksCalls, 2);
   });
 }

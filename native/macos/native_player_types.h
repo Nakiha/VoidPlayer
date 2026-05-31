@@ -17,6 +17,13 @@ typedef struct VPMacOSNativeFrameInfo {
   int64_t pts_us;
   int64_t dts_us;
   int64_t duration_us;
+  int32_t analysis_frame_index;
+  int32_t frame_identity_mode;
+  int32_t source_packet_index;
+  int32_t source_packet_size;
+  int64_t source_packet_pos;
+  int64_t source_packet_pts;
+  int64_t source_packet_dts;
   uint64_t target_pixel_buffer_address;
 } VPMacOSNativeFrameInfo;
 
@@ -118,6 +125,13 @@ typedef struct VPMacOSNativeTrackDiagnosticInfo {
   double decode_max_ms;
   int64_t current_pts_us;
   int64_t current_dts_us;
+  int32_t analysis_frame_index;
+  int32_t frame_identity_mode;
+  int32_t source_packet_index;
+  int32_t source_packet_size;
+  int64_t source_packet_pos;
+  int64_t source_packet_pts;
+  int64_t source_packet_dts;
   char codec_name[64];
   char decoder_name[128];
   char decode_mode[64];

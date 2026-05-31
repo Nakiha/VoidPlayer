@@ -167,11 +167,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "duration":
       result(tracks.isEmpty ? 0 : tracks.currentDurationUs)
     case "currentPresentedFrame":
-      result(
-        textureId == nil
-          ? nil
-          : presentationState.currentPresentedFrameMap()
-      )
+      result(currentPresentedFrame(arguments: call.arguments))
     case "isPlaying":
       result(playback.currentIsPlaying(player: nativePlayer))
     case "getLayout":
@@ -202,6 +198,29 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  private func currentPresentedFrame(arguments: Any?) -> Any? {
+    guard textureId != nil else { return nil }
+    let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") ?? -1
+    if fileId >= 0, let player = nativePlayer {
+      for track in player.trackDiagnostics() {
+        if (track["fileId"] as? Int) == fileId {
+          return [
+            "ptsUs": track["currentPtsUs"] as? Int64 ?? -1,
+            "dtsUs": track["currentDtsUs"] as? Int64 ?? Int64.min,
+            "analysisFrameIndex": track["analysisFrameIndex"] as? Int ?? -1,
+            "frameIdentityMode": track["frameIdentityMode"] as? Int ?? 0,
+            "sourcePacketIndex": track["sourcePacketIndex"] as? Int ?? -1,
+            "sourcePacketSize": track["sourcePacketSize"] as? Int ?? 0,
+            "sourcePacketPos": track["sourcePacketPos"] as? Int64 ?? -1,
+            "sourcePacketPtsUs": track["sourcePacketPtsUs"] as? Int64 ?? Int64.min,
+            "sourcePacketDtsUs": track["sourcePacketDtsUs"] as? Int64 ?? Int64.min,
+          ]
+        }
+      }
+    }
+    return presentationState.currentPresentedFrameMap()
   }
 
   private func createPlayer(arguments: Any?) -> Any {

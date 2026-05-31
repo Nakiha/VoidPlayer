@@ -84,7 +84,10 @@ bool read_overlay_vachunk_frame(const DecodedOverlayChunk& chunk,
         return false;
     }
     const auto& entry = chunk.frame_index[local];
-    if ((entry.flags & VACHUNK_OVERLAY_FRAME_FLAG_COMPLETE) == 0 ||
+    if ((entry.flags & (VACHUNK_OVERLAY_FRAME_FLAG_COMPLETE |
+                        VACHUNK_OVERLAY_FRAME_FLAG_EXACT)) !=
+            (VACHUNK_OVERLAY_FRAME_FLAG_COMPLETE |
+             VACHUNK_OVERLAY_FRAME_FLAG_EXACT) ||
         entry.first_unit > chunk.records.size() ||
         entry.unit_count > chunk.records.size() - entry.first_unit) {
         return false;

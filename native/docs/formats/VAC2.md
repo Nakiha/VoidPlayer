@@ -17,14 +17,14 @@ VAC2 must answer four questions quickly:
 3. Which lightweight display statistics can the UI show immediately?
 4. Where should an on-demand analyzer seek to produce deeper chunks?
 
-Current `AnalysisGenerator::generate_vac2_base()` uses an explicit
-`one_packet_per_frame_fallback` frame model. In generated metadata this appears
-as `"frame_model":"one_packet_per_frame_fallback"`. Under that model each
-demuxed packet becomes one `AUF2` row, `packet.au_index == packet_index`, and
-frame/summary flags include the inferred-AU bit. This is a compatibility
-boundary, not a final decoded-frame model; future exact AU grouping should
-replace the flag and metadata when B-frame reorder or multi-packet access units
-are modeled precisely.
+Current `AnalysisGenerator::generate_vac2_base()` records a
+`source_packet_identity` frame model. Generated `PACK` rows persist packet
+offset, size, PTS, DTS, and stream-local packet order so playback can resolve a
+presented frame back to a VAC2 frame without using PTS/DTS as the primary key.
+Under the current lightweight generator each demuxed packet still becomes one
+`AUF2` row and frame/summary flags may include the inferred-AU bit; the source
+packet identity is the stable lookup key, while exact decoded-frame summaries
+from VACHUNK/analyzer output can refine the model.
 
 ## File Name
 
@@ -67,7 +67,7 @@ Proposed `Vac2Header`:
 | --- | ---: | --- |
 | `magic` | `char[4]` | `VAC2`. |
 | `version_major` | `uint16_t` | Initial value `2`. |
-| `version_minor` | `uint16_t` | Initial value `0`. |
+| `version_minor` | `uint16_t` | Current value `2`. |
 | `header_size` | `uint16_t` | Size of this header. |
 | `section_entry_size` | `uint16_t` | Size of each section entry. |
 | `section_count` | `uint32_t` | Number of section entries. |

@@ -1,5 +1,6 @@
 #include "video_renderer/decode/frame_converter.h"
 #include "video_renderer/decode/frame_color_metadata.h"
+#include "video_renderer/decode/frame_identity.h"
 #include "video_renderer/decode/software_frame_packer.h"
 #include <spdlog/spdlog.h>
 
@@ -101,6 +102,7 @@ std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame) {
     result.is_ref = false;
     result.texture_handle = nullptr;
     result.color = color_info_from_av_frame(frame);
+    populate_frame_identity_from_av_frame(frame, result);
 
     // Software 8-bit 4:2:0 can be uploaded as its original Y/U/V planes.
     // Other supported software formats still use the deterministic packer.

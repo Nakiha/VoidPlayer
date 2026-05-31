@@ -117,6 +117,13 @@ PresentationSnapshot build_presentation_snapshot(
         frame_out.pts_us = frame.pts_us;
         frame_out.dts_us = frame.dts_us;
         frame_out.duration_us = frame.duration_us;
+        frame_out.analysis_frame_index = frame.analysis_frame_index;
+        frame_out.frame_identity_mode = static_cast<int32_t>(frame.frame_identity_mode);
+        frame_out.source_packet_index = frame.source_packet_index;
+        frame_out.source_packet_size = frame.source_packet_size;
+        frame_out.source_packet_pos = frame.source_packet_pos;
+        frame_out.source_packet_pts = frame.source_packet_pts;
+        frame_out.source_packet_dts = frame.source_packet_dts;
         fill_frame_storage_snapshot(frame, frame_out);
         frame_out.color_range = normalized_color_range(frame);
         frame_out.color_matrix = normalized_color_matrix(frame);

@@ -77,6 +77,13 @@ class AnalysisOverlayTrackSource {
   final String name;
   final String path;
   final int trackFileId;
+  final int? analysisFrameIndex;
+  final int? frameIdentityMode;
+  final int? sourcePacketIndex;
+  final int? sourcePacketSize;
+  final int? sourcePacketPos;
+  final int? sourcePacketPtsUs;
+  final int? sourcePacketDtsUs;
   final int? presentedPtsUs;
   final int? presentedDtsUs;
 
@@ -85,6 +92,13 @@ class AnalysisOverlayTrackSource {
     required this.name,
     required this.path,
     required this.trackFileId,
+    this.analysisFrameIndex,
+    this.frameIdentityMode,
+    this.sourcePacketIndex,
+    this.sourcePacketSize,
+    this.sourcePacketPos,
+    this.sourcePacketPtsUs,
+    this.sourcePacketDtsUs,
     this.presentedPtsUs,
     this.presentedDtsUs,
   });
@@ -135,6 +149,12 @@ abstract class AnalysisGenerationService {
   Future<bool> ensureOverlayChunk(
     String hash, {
     required String videoPath,
+    int? analysisFrameIndex,
+    int? sourcePacketIndex,
+    int? sourcePacketSize,
+    int? sourcePacketPos,
+    int? sourcePacketPtsUs,
+    int? sourcePacketDtsUs,
     int? presentedPtsUs,
     int? presentedDtsUs,
   });
@@ -143,6 +163,12 @@ abstract class AnalysisGenerationService {
     required String name,
     required String path,
     required int trackFileId,
+    int? analysisFrameIndex,
+    int? sourcePacketIndex,
+    int? sourcePacketSize,
+    int? sourcePacketPos,
+    int? sourcePacketPtsUs,
+    int? sourcePacketDtsUs,
     int? presentedPtsUs,
     int? presentedDtsUs,
   });
@@ -256,11 +282,23 @@ class AnalysisManager extends ChangeNotifier
   Future<bool> ensureOverlayChunk(
     String hash, {
     required String videoPath,
+    int? analysisFrameIndex,
+    int? sourcePacketIndex,
+    int? sourcePacketSize,
+    int? sourcePacketPos,
+    int? sourcePacketPtsUs,
+    int? sourcePacketDtsUs,
     int? presentedPtsUs,
     int? presentedDtsUs,
   }) async {
     final targetFrame = _resolveOverlayTargetFrame(
       hash,
+      analysisFrameIndex: analysisFrameIndex,
+      sourcePacketIndex: sourcePacketIndex,
+      sourcePacketSize: sourcePacketSize,
+      sourcePacketPos: sourcePacketPos,
+      sourcePacketPtsUs: sourcePacketPtsUs,
+      sourcePacketDtsUs: sourcePacketDtsUs,
       presentedPtsUs: presentedPtsUs,
       presentedDtsUs: presentedDtsUs,
     );
@@ -686,6 +724,12 @@ class AnalysisManager extends ChangeNotifier
     required String name,
     required String path,
     required int trackFileId,
+    int? analysisFrameIndex,
+    int? sourcePacketIndex,
+    int? sourcePacketSize,
+    int? sourcePacketPos,
+    int? sourcePacketPtsUs,
+    int? sourcePacketDtsUs,
     int? presentedPtsUs,
     int? presentedDtsUs,
   }) async {
@@ -695,6 +739,12 @@ class AnalysisManager extends ChangeNotifier
         name: name,
         path: path,
         trackFileId: trackFileId,
+        analysisFrameIndex: analysisFrameIndex,
+        sourcePacketIndex: sourcePacketIndex,
+        sourcePacketSize: sourcePacketSize,
+        sourcePacketPos: sourcePacketPos,
+        sourcePacketPtsUs: sourcePacketPtsUs,
+        sourcePacketDtsUs: sourcePacketDtsUs,
         presentedPtsUs: presentedPtsUs,
         presentedDtsUs: presentedDtsUs,
       ),
@@ -722,6 +772,12 @@ class AnalysisManager extends ChangeNotifier
       }
       final targetFrame = _resolveOverlayTargetFrame(
         track.hash,
+        analysisFrameIndex: track.analysisFrameIndex,
+        sourcePacketIndex: track.sourcePacketIndex,
+        sourcePacketSize: track.sourcePacketSize,
+        sourcePacketPos: track.sourcePacketPos,
+        sourcePacketPtsUs: track.sourcePacketPtsUs,
+        sourcePacketDtsUs: track.sourcePacketDtsUs,
         presentedPtsUs: track.presentedPtsUs,
         presentedDtsUs: track.presentedDtsUs,
       );
@@ -1246,6 +1302,12 @@ class AnalysisManager extends ChangeNotifier
 
   int _resolveOverlayTargetFrame(
     String hash, {
+    int? analysisFrameIndex,
+    int? sourcePacketIndex,
+    int? sourcePacketSize,
+    int? sourcePacketPos,
+    int? sourcePacketPtsUs,
+    int? sourcePacketDtsUs,
     int? presentedPtsUs,
     int? presentedDtsUs,
   }) {
@@ -1257,7 +1319,24 @@ class AnalysisManager extends ChangeNotifier
         return 0;
       }
       var current = -1;
-      if (presentedPtsUs != null &&
+      if (analysisFrameIndex != null &&
+          analysisFrameIndex >= 0 &&
+          analysisFrameIndex < summary.frameCount) {
+        current = analysisFrameIndex;
+      }
+      if (current < 0 && sourcePacketPos != null && sourcePacketPos >= 0) {
+        current =
+            session?.frameIndexForSourcePacket(
+              packetPos: sourcePacketPos,
+              packetSize: sourcePacketSize ?? 0,
+              packetIndex: sourcePacketIndex ?? -1,
+              packetPts: sourcePacketPtsUs ?? _noTimestampUs,
+              packetDts: sourcePacketDtsUs ?? _noTimestampUs,
+            ) ??
+            -1;
+      }
+      if (current < 0 &&
+          presentedPtsUs != null &&
           presentedPtsUs >= 0 &&
           presentedDtsUs != null &&
           presentedDtsUs != _noTimestampUs) {
@@ -1267,6 +1346,12 @@ class AnalysisManager extends ChangeNotifier
               dtsUs: presentedDtsUs,
             ) ??
             -1;
+        if (current >= 0) {
+          log.fine(
+            '[Analysis] resolved overlay frame by timestamp fallback: '
+            'hash=$hash frame=$current pts=$presentedPtsUs dts=$presentedDtsUs',
+          );
+        }
       }
       if (current < 0) {
         current = summary.currentFrameIdx;

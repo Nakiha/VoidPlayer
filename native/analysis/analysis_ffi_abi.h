@@ -138,6 +138,7 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT NakiAnalysisHandle naki_analysis_open(const 
 extern "C" NAKI_ANALYSIS_FFI_EXPORT void naki_analysis_close(NakiAnalysisHandle handle);
 extern "C" NAKI_ANALYSIS_FFI_EXPORT const NakiAnalysisSummary* naki_analysis_handle_get_summary(NakiAnalysisHandle handle);
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_handle_frame_index_for_timestamp(NakiAnalysisHandle handle, int64_t pts_us, int64_t dts_us);
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_handle_frame_index_for_source_packet(NakiAnalysisHandle handle, int64_t packet_pos, int32_t packet_size, int32_t packet_index, int64_t packet_pts, int64_t packet_dts);
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_handle_get_frames(NakiAnalysisHandle handle, NakiFrameInfo* out, int32_t max_count);
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_handle_get_frames_range(NakiAnalysisHandle handle, int32_t start, NakiFrameInfo* out, int32_t max_count);
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_handle_get_nalus(NakiAnalysisHandle handle, NakiNaluInfo* out, int32_t max_count);

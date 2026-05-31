@@ -94,4 +94,15 @@ int AnalysisManager::current_frame_idx(int64_t pts_us) const {
     return session->current_frame_idx(pts_us);
 }
 
+int AnalysisManager::frame_idx_for_source_packet(int64_t packet_pos,
+                                                 int32_t packet_size,
+                                                 int32_t packet_index,
+                                                 int64_t packet_pts,
+                                                 int64_t packet_dts) const {
+    const auto session = session_snapshot();
+    if (!session) return -1;
+    return session->frame_idx_for_source_packet(
+        packet_pos, packet_size, packet_index, packet_pts, packet_dts);
+}
+
 } // namespace vr::analysis

@@ -180,6 +180,11 @@ typedef _HandleFrameIndexForTimestampNative =
 typedef _HandleFrameIndexForTimestampDart =
     int Function(Pointer<Void>, int, int);
 
+typedef _HandleFrameIndexForSourcePacketNative =
+    Int32 Function(Pointer<Void>, Int64, Int32, Int32, Int64, Int64);
+typedef _HandleFrameIndexForSourcePacketDart =
+    int Function(Pointer<Void>, int, int, int, int, int);
+
 typedef _HandleGetFramesRangeNative =
     Int32 Function(Pointer<Void>, Int32, Pointer<NakiFrameInfo>, Int32);
 typedef _HandleGetFramesRangeDart =
@@ -279,6 +284,11 @@ class _AnalysisNativeBindings {
           _HandleFrameIndexForTimestampNative,
           _HandleFrameIndexForTimestampDart
         >('naki_analysis_handle_frame_index_for_timestamp');
+    handleFrameIndexForSourcePacket = library
+        .lookupFunction<
+          _HandleFrameIndexForSourcePacketNative,
+          _HandleFrameIndexForSourcePacketDart
+        >('naki_analysis_handle_frame_index_for_source_packet');
     handleGetFramesRange = library
         .lookupFunction<_HandleGetFramesRangeNative, _HandleGetFramesRangeDart>(
           'naki_analysis_handle_get_frames_range',
@@ -376,6 +386,8 @@ class _AnalysisNativeBindings {
   late final _CloseDart close;
   late final _HandleGetSummaryDart handleGetSummary;
   late final _HandleFrameIndexForTimestampDart handleFrameIndexForTimestamp;
+  late final _HandleFrameIndexForSourcePacketDart
+  handleFrameIndexForSourcePacket;
   late final _HandleGetFramesRangeDart handleGetFramesRange;
   late final _HandleGetNalusRangeDart handleGetNalusRange;
   late final _HandleIndexMapDart handleFrameToNalu;
@@ -651,6 +663,24 @@ class AnalysisSession {
   int frameIndexForTimestamp({required int ptsUs, required int dtsUs}) {
     if (_handle == nullptr || ptsUs < 0) return -1;
     return _native.handleFrameIndexForTimestamp(_handle, ptsUs, dtsUs);
+  }
+
+  int frameIndexForSourcePacket({
+    required int packetPos,
+    required int packetSize,
+    required int packetIndex,
+    required int packetPts,
+    required int packetDts,
+  }) {
+    if (_handle == nullptr) return -1;
+    return _native.handleFrameIndexForSourcePacket(
+      _handle,
+      packetPos,
+      packetSize,
+      packetIndex,
+      packetPts,
+      packetDts,
+    );
   }
 
   List<FrameInfo> get frames {

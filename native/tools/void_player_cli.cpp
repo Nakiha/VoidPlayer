@@ -60,7 +60,7 @@ struct CliOptions {
     uint32_t width = 1920;
     uint32_t height = 1080;
     uint32_t iterations = 120;
-    uint64_t generator_revision = 2;
+    uint64_t generator_revision = 3;
     uint64_t max_cache_bytes = 0;
     std::string input;
     std::string cache_root;

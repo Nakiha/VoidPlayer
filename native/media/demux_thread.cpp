@@ -1,5 +1,7 @@
 #include "media/demux_thread.h"
+
 #include "media/private_cdn_flv_demuxer.h"
+#include "media/source_packet_identity.h"
 #include <spdlog/spdlog.h>
 #include <chrono>
 
@@ -473,6 +475,19 @@ void DemuxThread::run() {
             // NOTE: Do NOT convert PTS here — keep packets in stream time_base.
             // The decode thread will convert frame PTS to microseconds after decoding.
             // Double-conversion would produce wildly incorrect timestamps.
+            if (pkt->stream_index == stats_.video_stream_index && !pkt->opaque_ref) {
+                SourcePacketIdentity identity;
+                identity.stream_index = pkt->stream_index;
+                identity.packet_index = next_video_packet_identity_index_++;
+                identity.position = pkt->pos;
+                identity.pts = pkt->pts;
+                identity.dts = pkt->dts;
+                identity.duration = pkt->duration;
+                identity.size = pkt->size;
+                identity.flags = pkt->flags;
+                attach_source_packet_identity(pkt, identity);
+            }
+
             AVPacket* out = av_packet_clone(pkt);
             if (!out) {
                 spdlog::error("[DemuxThread] Failed to clone packet");

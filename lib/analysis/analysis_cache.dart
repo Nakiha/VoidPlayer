@@ -102,8 +102,8 @@ class AnalysisCache {
   AnalysisCache._();
 
   static const int currentVac2MajorVersion = 2;
-  static const int currentVac2MinorVersion = 1;
-  static const int currentOverlayVachunkGeneratorRevision = 2;
+  static const int currentVac2MinorVersion = 2;
+  static const int currentOverlayVachunkGeneratorRevision = 3;
   static const int _vac2HeaderSize = 124;
   static const int _vac2SectionEntrySize = 56;
 

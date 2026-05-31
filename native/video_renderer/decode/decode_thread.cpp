@@ -323,6 +323,10 @@ bool DecodeThread::reset_codec_context(const AVCodec* codec) {
         return false;
     }
 
+#ifdef AV_CODEC_FLAG_COPY_OPAQUE
+    codec_ctx_->flags |= AV_CODEC_FLAG_COPY_OPAQUE;
+#endif
+
     return true;
 }
 

@@ -224,6 +224,20 @@ void VPMacOSNativePlayer::on_frame_available(
       last_renderer_owned_frame_info.dts_us = completed_frame_info->dts_us;
       last_renderer_owned_frame_info.duration_us =
           completed_frame_info->duration_us;
+      last_renderer_owned_frame_info.analysis_frame_index =
+          completed_frame_info->analysis_frame_index;
+      last_renderer_owned_frame_info.frame_identity_mode =
+          completed_frame_info->frame_identity_mode;
+      last_renderer_owned_frame_info.source_packet_index =
+          completed_frame_info->source_packet_index;
+      last_renderer_owned_frame_info.source_packet_size =
+          completed_frame_info->source_packet_size;
+      last_renderer_owned_frame_info.source_packet_pos =
+          completed_frame_info->source_packet_pos;
+      last_renderer_owned_frame_info.source_packet_pts =
+          completed_frame_info->source_packet_pts;
+      last_renderer_owned_frame_info.source_packet_dts =
+          completed_frame_info->source_packet_dts;
       last_renderer_owned_frame_info.target_pixel_buffer_address =
           completed_frame_info->target_pixel_buffer_address;
     }
@@ -235,6 +249,20 @@ void VPMacOSNativePlayer::on_frame_available(
         last_renderer_owned_frame_info.pts_us = frame_info.pts_us;
         last_renderer_owned_frame_info.dts_us = frame_info.dts_us;
         last_renderer_owned_frame_info.duration_us = frame_info.duration_us;
+        last_renderer_owned_frame_info.analysis_frame_index =
+            frame_info.analysis_frame_index;
+        last_renderer_owned_frame_info.frame_identity_mode =
+            frame_info.frame_identity_mode;
+        last_renderer_owned_frame_info.source_packet_index =
+            frame_info.source_packet_index;
+        last_renderer_owned_frame_info.source_packet_size =
+            frame_info.source_packet_size;
+        last_renderer_owned_frame_info.source_packet_pos =
+            frame_info.source_packet_pos;
+        last_renderer_owned_frame_info.source_packet_pts =
+            frame_info.source_packet_pts;
+        last_renderer_owned_frame_info.source_packet_dts =
+            frame_info.source_packet_dts;
         last_renderer_owned_frame_info.target_pixel_buffer_address =
             frame_info.target_pixel_buffer_address;
       } else if (!completed_frame_info) {

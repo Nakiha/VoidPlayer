@@ -403,6 +403,75 @@ int32_t vac2_frame_idx_for_timestamp_us(const vr::analysis::Vac2BaseFile& base,
     return -1;
 }
 
+int32_t vac2_frame_idx_for_packet_index(const std::vector<Vac2FrameEntry>& frames,
+                                        uint32_t packet_index) {
+    for (size_t i = 0; i < frames.size(); ++i) {
+        const auto& frame = frames[i];
+        if (packet_index >= frame.first_packet &&
+            packet_index < frame.first_packet + frame.packet_count) {
+            return static_cast<int32_t>(i);
+        }
+    }
+    return -1;
+}
+
+bool vac2_packet_position_matches(const Vac2PacketEntry& packet, int64_t packet_pos) {
+    if (packet_pos < 0) return false;
+    const uint64_t pos = static_cast<uint64_t>(packet_pos);
+    return packet.file_offset == pos || packet.format_offset == pos;
+}
+
+bool vac2_packet_size_matches(const Vac2PacketEntry& packet, int32_t packet_size) {
+    return packet_size <= 0 || packet.size == static_cast<uint32_t>(packet_size);
+}
+
+int32_t vac2_frame_idx_for_source_packet(const vr::analysis::Vac2BaseFile& base,
+                                         int64_t packet_pos,
+                                         int32_t packet_size,
+                                         int32_t packet_index,
+                                         int64_t packet_pts,
+                                         int64_t packet_dts) {
+    const auto& packets = base.packets();
+    const auto& frames = base.frames();
+    if (packets.empty() || frames.empty()) return -1;
+
+    if (packet_pos >= 0) {
+        int32_t matched_frame = -1;
+        for (size_t i = 0; i < packets.size(); ++i) {
+            const auto& packet = packets[i];
+            if (!vac2_packet_position_matches(packet, packet_pos) ||
+                !vac2_packet_size_matches(packet, packet_size)) {
+                continue;
+            }
+            const int32_t frame_idx =
+                vac2_frame_idx_for_packet_index(frames, static_cast<uint32_t>(i));
+            if (frame_idx < 0) continue;
+            if (matched_frame >= 0 && matched_frame != frame_idx) return -1;
+            matched_frame = frame_idx;
+        }
+        if (matched_frame >= 0) return matched_frame;
+    }
+
+    if (packet_index >= 0 && static_cast<size_t>(packet_index) < packets.size()) {
+        const auto& packet = packets[static_cast<size_t>(packet_index)];
+        const bool known_pos_matches =
+            packet_pos < 0 ||
+            vac2_packet_position_matches(packet, packet_pos) ||
+            (packet.file_offset == UINT64_MAX && packet.format_offset == UINT64_MAX);
+        const bool packet_matches =
+            known_pos_matches &&
+            vac2_packet_size_matches(packet, packet_size) &&
+            (packet_pts == INT64_MIN || packet.pts == packet_pts) &&
+            (packet_dts == INT64_MIN || packet.dts == packet_dts);
+        if (packet_matches) {
+            return vac2_frame_idx_for_packet_index(
+                frames, static_cast<uint32_t>(packet_index));
+        }
+    }
+
+    return -1;
+}
+
 int32_t current_vac2_frame_idx(const vr::analysis::Vac2BaseFile& base) {
     NakiAnalysisPtsCallback cb = nullptr;
     {
@@ -735,6 +804,35 @@ int32_t naki_analysis_handle_frame_index_for_timestamp(NakiAnalysisHandle handle
     }
     const auto index = vac2_frame_idx_for_timestamp_us(
         *state->vac2_base, pts_us, dts_us);
+    set_analysis_ok();
+    return index;
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_handle_frame_index_for_source_packet(NakiAnalysisHandle handle,
+                                                           int64_t packet_pos,
+                                                           int32_t packet_size,
+                                                           int32_t packet_index,
+                                                           int64_t packet_pts,
+                                                           int64_t packet_dts) {
+    auto state = pin_analysis_handle(handle);
+    if (!state) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "analysis handle is invalid or closed");
+        return -1;
+    }
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (state->closed) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_CLOSED, "analysis handle is closed");
+        return -1;
+    }
+    const auto index = vac2_frame_idx_for_source_packet(
+        *state->vac2_base,
+        packet_pos,
+        packet_size,
+        packet_index,
+        packet_pts,
+        packet_dts);
     set_analysis_ok();
     return index;
 }
@@ -1567,7 +1665,7 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
     key.codec = base_codec;
     key.feature_flags = kOverlayVachunkFeatureFlags;
     key.base_content_revision = base.header().content_revision;
-    key.generator_revision = 2;
+    key.generator_revision = 3;
     key.start_frame = static_cast<uint32_t>(start_frame);
     key.end_frame = static_cast<uint32_t>(end_frame);
 

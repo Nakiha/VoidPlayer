@@ -20,6 +20,13 @@ struct PresentationFrameSnapshot {
     int64_t pts_us = 0;
     int64_t dts_us = kNoTimestampUs;
     int64_t duration_us = 0;
+    int32_t analysis_frame_index = kInvalidAnalysisFrameIndex;
+    int32_t frame_identity_mode = static_cast<int32_t>(FrameIdentityMode::Unknown);
+    int32_t source_packet_index = kInvalidSourcePacketIndex;
+    int32_t source_packet_size = 0;
+    int64_t source_packet_pos = kUnknownSourcePacketPosition;
+    int64_t source_packet_pts = kNoTimestampUs;
+    int64_t source_packet_dts = kNoTimestampUs;
     bool is_nv12 = false;
     bool is_p010 = false;
     int y_stride = 0;

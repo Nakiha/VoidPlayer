@@ -727,6 +727,12 @@ TEST_CASE("VACHUNK: overlay chunk carries frame data",
     if (!decoded_frame1.cus.empty()) {
         REQUIRE(decoded_frame1.cus[0].common.qp == 23);
     }
+    decoded_chunk.frame_index[1].flags &= ~VACHUNK_OVERLAY_FRAME_FLAG_EXACT;
+    vr::analysis::VachunkOverlayFrameData inexact_frame;
+    REQUIRE_FALSE(vr::analysis::read_overlay_vachunk_frame(
+        decoded_chunk,
+        1,
+        inexact_frame));
 
     vr::analysis::VachunkOverlayFrameData missing;
     REQUIRE_FALSE(vr::analysis::read_overlay_vachunk_frame(chunk, 2, missing));
@@ -1016,6 +1022,80 @@ TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
     REQUIRE(read_count.load(std::memory_order_relaxed) > 0);
 
     manager.unload();
+    fs::remove_all(root);
+}
+
+TEST_CASE("AnalysisManager: resolves frames by source packet identity",
+          "[analysis][manager][vac2][identity]") {
+    namespace fs = std::filesystem;
+    const auto root = fs::temp_directory_path() / "voidplayer_manager_identity";
+    const auto base_path = root / "base.vac";
+    fs::remove_all(root);
+    REQUIRE(fs::create_directories(root));
+
+    vr::analysis::Vac2BaseData base;
+    base.codec = AnalysisCodec::H264;
+    base.time_base_num = 1;
+    base.time_base_den = 1000;
+    base.width = 640;
+    base.height = 360;
+    base.content_revision = 123;
+    base.metadata_json = R"({"schema":"identity-test"})";
+
+    for (uint32_t i = 0; i < 3; ++i) {
+        Vac2PacketEntry packet{};
+        packet.pts = i == 2 ? 40 : static_cast<int64_t>(i) * 40;
+        packet.dts = i == 1 ? -999 : static_cast<int64_t>(i) * 40;
+        packet.duration = 40;
+        packet.size = 100 + i;
+        packet.file_offset = 1000 + i * 250;
+        packet.format_offset = 1000 + i * 250;
+        packet.first_unit = i;
+        packet.unit_count = 1;
+        packet.au_index = i;
+        base.packets.push_back(packet);
+
+        Vac2BitstreamUnitEntry unit{};
+        unit.packet_index = i;
+        unit.au_index = i;
+        unit.offset = packet.file_offset;
+        unit.size = packet.size;
+        unit.flags = VAC2_UNIT_FLAG_IS_VCL | VAC2_UNIT_FLAG_IS_SLICE;
+        unit.pset_snapshot = UINT16_MAX;
+        base.units.push_back(unit);
+
+        Vac2FrameEntry frame{};
+        frame.first_packet = i;
+        frame.packet_count = 1;
+        frame.first_unit = i;
+        frame.unit_count = 1;
+        frame.pts = packet.pts;
+        frame.dts = packet.dts;
+        frame.duration = packet.duration;
+        frame.coded_order = i;
+        frame.display_order = static_cast<int32_t>(i);
+        frame.poc = static_cast<int32_t>(i);
+        frame.frame_size = packet.size;
+        base.frames.push_back(frame);
+
+        Vac2FrameSummaryEntry summary{};
+        summary.coded_order = i;
+        summary.first_vcl_unit = i;
+        base.frame_summaries.push_back(summary);
+    }
+
+    REQUIRE(vr::analysis::write_vac2_base_container(base_path.string(), base));
+
+    vr::analysis::AnalysisManager manager;
+    REQUIRE(manager.load(base_path.string()));
+    REQUIRE(manager.frame_idx_for_source_packet(
+                1250, 101, -1, INT64_MIN, INT64_MIN) == 1);
+    REQUIRE(manager.frame_idx_for_source_packet(1500, 102, 0, 40, 40) == 2);
+    REQUIRE(manager.frame_idx_for_source_packet(-1, 101, 1, 40, -999) == 1);
+    REQUIRE(manager.frame_idx_for_source_packet(-1, 101, 1, 40, 40) == -1);
+    REQUIRE(manager.frame_idx_for_source_packet(
+                1500, 999, -1, INT64_MIN, INT64_MIN) == -1);
+
     fs::remove_all(root);
 }
 

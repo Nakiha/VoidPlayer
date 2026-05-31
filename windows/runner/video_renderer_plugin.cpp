@@ -1127,20 +1127,36 @@ void VideoRendererPlugin::CurrentPresentedFrame(
         result->Error("BAD_ARGS", "fileId must be an integer");
         return;
     }
-    int64_t pts = -1;
-    int64_t dts = std::numeric_limits<int64_t>::min();
+    vr::TrackPerfStats selected_stats{};
+    bool found = false;
     if (player_) {
         for (const auto& stats : player_->track_perf_stats()) {
             if (stats.file_id == file_id) {
-                pts = stats.current_pts_us;
-                dts = stats.current_dts_us;
+                selected_stats = stats;
+                found = true;
                 break;
             }
         }
     }
     flutter::EncodableMap frame;
-    frame[flutter::EncodableValue("ptsUs")] = flutter::EncodableValue(pts);
-    frame[flutter::EncodableValue("dtsUs")] = flutter::EncodableValue(dts);
+    frame[flutter::EncodableValue("ptsUs")] =
+        flutter::EncodableValue(found ? selected_stats.current_pts_us : -1);
+    frame[flutter::EncodableValue("dtsUs")] = flutter::EncodableValue(
+        found ? selected_stats.current_dts_us : std::numeric_limits<int64_t>::min());
+    frame[flutter::EncodableValue("analysisFrameIndex")] =
+        flutter::EncodableValue(found ? selected_stats.analysis_frame_index : -1);
+    frame[flutter::EncodableValue("frameIdentityMode")] =
+        flutter::EncodableValue(found ? static_cast<int32_t>(selected_stats.frame_identity_mode) : 0);
+    frame[flutter::EncodableValue("sourcePacketIndex")] =
+        flutter::EncodableValue(found ? selected_stats.source_packet_index : -1);
+    frame[flutter::EncodableValue("sourcePacketSize")] =
+        flutter::EncodableValue(found ? selected_stats.source_packet_size : 0);
+    frame[flutter::EncodableValue("sourcePacketPos")] =
+        flutter::EncodableValue(found ? selected_stats.source_packet_pos : -1);
+    frame[flutter::EncodableValue("sourcePacketPtsUs")] =
+        flutter::EncodableValue(found ? selected_stats.source_packet_pts : std::numeric_limits<int64_t>::min());
+    frame[flutter::EncodableValue("sourcePacketDtsUs")] =
+        flutter::EncodableValue(found ? selected_stats.source_packet_dts : std::numeric_limits<int64_t>::min());
     result->Success(flutter::EncodableValue(frame));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "currentPresentedFrame", e);

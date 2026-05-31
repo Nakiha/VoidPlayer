@@ -49,6 +49,11 @@ public:
 
     // Derive current frame index from PTS
     int current_frame_idx(int64_t pts_us) const;
+    int frame_idx_for_source_packet(int64_t packet_pos,
+                                    int32_t packet_size,
+                                    int32_t packet_index,
+                                    int64_t packet_pts,
+                                    int64_t packet_dts) const;
 
 private:
     bool load_vac2(const std::string& analysis_path);

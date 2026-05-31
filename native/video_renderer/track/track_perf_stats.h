@@ -20,6 +20,13 @@ struct TrackPerfStats {
     TrackState buffer_state = TrackState::Empty;
     int64_t current_pts_us = 0;
     int64_t current_dts_us = kNoTimestampUs;
+    int32_t analysis_frame_index = kInvalidAnalysisFrameIndex;
+    int32_t source_packet_index = kInvalidSourcePacketIndex;
+    int32_t source_packet_size = 0;
+    int64_t source_packet_pos = kUnknownSourcePacketPosition;
+    int64_t source_packet_pts = kNoTimestampUs;
+    int64_t source_packet_dts = kNoTimestampUs;
+    FrameIdentityMode frame_identity_mode = FrameIdentityMode::Unknown;
 };
 
 } // namespace vr

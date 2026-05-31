@@ -152,7 +152,7 @@ bool run_smoke(const std::string& cli,
     key.codec = AnalysisCodec::H264;
     key.feature_flags = kOverlayVachunkFeatureFlags;
     key.base_content_revision = base.header().content_revision;
-    key.generator_revision = 2;
+    key.generator_revision = 3;
     key.start_frame = 0;
     key.end_frame = end_frame;
 

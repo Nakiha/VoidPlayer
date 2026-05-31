@@ -144,7 +144,7 @@ inline constexpr uint8_t ANALYSIS_PACKET_FLAG_KEYFRAME = 0x01;
 // ===========================================================================
 
 inline constexpr uint16_t kVac2VersionMajor = 2;
-inline constexpr uint16_t kVac2VersionMinor = 1;
+inline constexpr uint16_t kVac2VersionMinor = 2;
 
 struct Vac2Header {
     char     magic[4];       // "VAC2"
@@ -279,7 +279,7 @@ inline constexpr uint8_t VAC2_QP_KIND_EXACT = 4;
 // ===========================================================================
 
 inline constexpr uint16_t kVachunkVersionMajor = 1;
-inline constexpr uint16_t kVachunkVersionMinor = 0;
+inline constexpr uint16_t kVachunkVersionMinor = 1;
 
 enum class VachunkKind : uint16_t {
     Unknown = 0,

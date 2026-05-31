@@ -280,11 +280,22 @@ build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot) {
         if (slot < 0 || slot >= static_cast<int>(snapshot.tracks.size())) {
             continue;
         }
-        const int frame_idx = track_analysis->current_frame_idx(
-            snapshot.decision.frames[slot].has_value()
-                ? snapshot.decision.frames[slot]->pts_us
-                : std::max<int64_t>(
-                      0, snapshot.decision.current_pts_us - snapshot.tracks[slot].offset_us));
+        if (!snapshot.decision.frames[slot].has_value()) {
+            continue;
+        }
+        const auto& presented_frame = *snapshot.decision.frames[slot];
+        int frame_idx = track_analysis->frame_idx_for_source_packet(
+            presented_frame.source_packet_pos,
+            presented_frame.source_packet_size,
+            presented_frame.source_packet_pos >= 0
+                ? presented_frame.source_packet_index
+                : -1,
+            presented_frame.source_packet_pts,
+            presented_frame.source_packet_dts);
+        if (frame_idx < 0 &&
+            presented_frame.frame_identity_mode == FrameIdentityMode::ExactAnalysisFrame) {
+            frame_idx = presented_frame.analysis_frame_index;
+        }
         if (frame_idx < 0 || frame_idx >= track_analysis->frame_count()) {
             continue;
         }

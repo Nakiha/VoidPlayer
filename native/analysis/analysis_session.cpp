@@ -31,6 +31,30 @@ FileFingerprint read_file_fingerprint(const std::string& path) {
     return fingerprint;
 }
 
+int frame_index_for_packet_index(const std::vector<Vac2FrameEntry>& frames,
+                                 uint32_t packet_index) {
+    for (size_t i = 0; i < frames.size(); ++i) {
+        const auto& frame = frames[i];
+        if (packet_index >= frame.first_packet &&
+            packet_index < frame.first_packet + frame.packet_count) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+bool vac2_packet_position_matches(const Vac2PacketEntry& packet, int64_t packet_pos) {
+    if (packet_pos < 0) {
+        return false;
+    }
+    const uint64_t pos = static_cast<uint64_t>(packet_pos);
+    return packet.file_offset == pos || packet.format_offset == pos;
+}
+
+bool vac2_packet_size_matches(const Vac2PacketEntry& packet, int32_t packet_size) {
+    return packet_size <= 0 || packet.size == static_cast<uint32_t>(packet_size);
+}
+
 } // namespace
 
 bool AnalysisSession::open(const std::string& analysis_path) {
@@ -250,6 +274,60 @@ int AnalysisSession::current_frame_idx(int64_t pts_us) const {
     if (it == frames.begin()) return frames.empty() ? -1 : 0;
     --it;
     return static_cast<int>(std::distance(frames.begin(), it));
+}
+
+int AnalysisSession::frame_idx_for_source_packet(int64_t packet_pos,
+                                                 int32_t packet_size,
+                                                 int32_t packet_index,
+                                                 int64_t packet_pts,
+                                                 int64_t packet_dts) const {
+    const auto& packets = vac2_base_.packets();
+    const auto& frames = vac2_base_.frames();
+    if (packets.empty() || frames.empty()) {
+        return -1;
+    }
+
+    if (packet_pos >= 0) {
+        int matched_frame = -1;
+        for (size_t i = 0; i < packets.size(); ++i) {
+            const auto& packet = packets[i];
+            if (!vac2_packet_position_matches(packet, packet_pos) ||
+                !vac2_packet_size_matches(packet, packet_size)) {
+                continue;
+            }
+            const int frame_idx = frame_index_for_packet_index(
+                frames, static_cast<uint32_t>(i));
+            if (frame_idx < 0) {
+                continue;
+            }
+            if (matched_frame >= 0 && matched_frame != frame_idx) {
+                return -1;
+            }
+            matched_frame = frame_idx;
+        }
+        if (matched_frame >= 0) {
+            return matched_frame;
+        }
+    }
+
+    if (packet_index >= 0 &&
+        static_cast<size_t>(packet_index) < packets.size()) {
+        const auto& packet = packets[static_cast<size_t>(packet_index)];
+        const bool known_pos_matches =
+            packet_pos < 0 ||
+            vac2_packet_position_matches(packet, packet_pos) ||
+            (packet.file_offset == UINT64_MAX && packet.format_offset == UINT64_MAX);
+        const bool packet_matches =
+            known_pos_matches &&
+            vac2_packet_size_matches(packet, packet_size) &&
+            (packet_pts == INT64_MIN || packet.pts == packet_pts) &&
+            (packet_dts == INT64_MIN || packet.dts == packet_dts);
+        if (packet_matches) {
+            return frame_index_for_packet_index(frames, static_cast<uint32_t>(packet_index));
+        }
+    }
+
+    return -1;
 }
 
 } // namespace vr::analysis

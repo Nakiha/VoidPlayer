@@ -21,6 +21,11 @@ public:
     VachunkFrameSummary read_frame_summary(int frame_idx) const;
     VachunkOverlayFrameData read_overlay_frame(int frame_idx) const;
     int current_frame_idx(int64_t pts_us) const;
+    int frame_idx_for_source_packet(int64_t packet_pos,
+                                    int32_t packet_size,
+                                    int32_t packet_index,
+                                    int64_t packet_pts,
+                                    int64_t packet_dts) const;
     void load_overlay_chunk_index() const;
 
     const Vac2BaseFile& vac2_base() const { return vac2_base_; }

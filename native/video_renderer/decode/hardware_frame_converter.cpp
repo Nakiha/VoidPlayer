@@ -1,6 +1,7 @@
 #include "video_renderer/decode/hardware_frame_converter.h"
 
 #include "video_renderer/decode/frame_color_metadata.h"
+#include "video_renderer/decode/frame_identity.h"
 #include "video_renderer/decode/software_frame_packer.h"
 
 #include <spdlog/spdlog.h>
@@ -29,6 +30,7 @@ TextureFrame make_texture_frame_metadata(AVFrame* frame) {
     result.is_ref = false;
     result.texture_handle = nullptr;
     result.color = color_info_from_av_frame(frame);
+    populate_frame_identity_from_av_frame(frame, result);
     return result;
 }
 

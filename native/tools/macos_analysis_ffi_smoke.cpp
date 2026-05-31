@@ -106,7 +106,7 @@ int main() {
             VACHUNK_FEATURE_REF_INDEXES |
             VACHUNK_FEATURE_BIT_COST;
         key.base_content_revision = base.header().content_revision;
-        key.generator_revision = 2;
+        key.generator_revision = 3;
         key.start_frame = 0;
         key.end_frame = static_cast<uint32_t>(end_frame);
 

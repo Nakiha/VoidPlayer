@@ -199,6 +199,13 @@ int VPMacOSNativePlayerCopyTrackDiagnostics(
       dst.decode_max_ms = perf->max_decode_ms;
       dst.current_pts_us = perf->current_pts_us;
       dst.current_dts_us = perf->current_dts_us;
+      dst.analysis_frame_index = perf->analysis_frame_index;
+      dst.frame_identity_mode = static_cast<int32_t>(perf->frame_identity_mode);
+      dst.source_packet_index = perf->source_packet_index;
+      dst.source_packet_size = perf->source_packet_size;
+      dst.source_packet_pos = perf->source_packet_pos;
+      dst.source_packet_pts = perf->source_packet_pts;
+      dst.source_packet_dts = perf->source_packet_dts;
     }
     for (const auto& memory : memory_stats.tracks) {
       if (memory.slot == info.slot && memory.file_id == info.file_id) {

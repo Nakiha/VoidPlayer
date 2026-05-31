@@ -62,6 +62,20 @@ uint64_t AnalysisGenerationService::submit_overlay_chunk(
     const std::string key = make_overlay_key(request);
     const auto live = live_jobs_by_key_.find(key);
     if (live != live_jobs_by_key_.end()) {
+        for (auto& pending : pending_) {
+            if (pending.id == live->second &&
+                request.priority < pending.request.priority) {
+                pending.request.priority = request.priority;
+                std::stable_sort(
+                    pending_.begin(), pending_.end(), [](const Job& a, const Job& b) {
+                        if (a.request.priority != b.request.priority) {
+                            return a.request.priority < b.request.priority;
+                        }
+                        return a.sequence < b.sequence;
+                    });
+                break;
+            }
+        }
         deduped_jobs_++;
         return live->second;
     }

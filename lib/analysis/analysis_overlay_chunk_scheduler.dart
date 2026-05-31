@@ -50,7 +50,7 @@ class _AnalysisOverlayChunkJob {
 }
 
 class AnalysisOverlayChunkScheduler {
-  final int maxWorkers;
+  final int maxInFlightSubmissions;
   final int maxQueuedJobs;
   final void Function(AnalysisOverlayChunkJobResult result)? onComplete;
   final void Function(String message, [Object? error, StackTrace? stackTrace])?
@@ -59,23 +59,33 @@ class AnalysisOverlayChunkScheduler {
   final Map<String, _AnalysisOverlayChunkJob> _jobsByKey = {};
   final List<_AnalysisOverlayChunkJob> _pendingJobs = [];
   int _jobSequence = 0;
-  int _activeWorkers = 0;
+  int _activeSubmissions = 0;
   int _backpressureDropCount = 0;
 
   AnalysisOverlayChunkScheduler({
-    this.maxWorkers = 1,
+    int? maxInFlightSubmissions,
+    int? maxWorkers,
     this.maxQueuedJobs = 48,
     this.onComplete,
     this.onLog,
-  }) : assert(maxWorkers > 0),
+  }) : maxInFlightSubmissions = maxInFlightSubmissions ?? maxWorkers ?? 1,
+       assert((maxInFlightSubmissions ?? maxWorkers ?? 1) > 0),
        assert(maxQueuedJobs > 0);
 
-  int get activeWorkers => _activeWorkers;
+  int get activeSubmissions => _activeSubmissions;
   int get pendingJobs => _pendingJobs.length;
   int get trackedJobs => _jobsByKey.length;
   int get backpressureDropCount => _backpressureDropCount;
 
-  static int defaultNativeSubmissionWorkers() {
+  @Deprecated(
+    'Use maxInFlightSubmissions. Dart no longer owns analysis workers.',
+  )
+  int get maxWorkers => maxInFlightSubmissions;
+
+  @Deprecated('Use activeSubmissions. Dart no longer owns analysis workers.')
+  int get activeWorkers => activeSubmissions;
+
+  static int defaultNativeSubmissionLimit() {
     final processors = math.max(1, Platform.numberOfProcessors);
     final fallback = math.min(math.max(8, processors), 32);
     final value = int.tryParse(
@@ -149,9 +159,10 @@ class AnalysisOverlayChunkScheduler {
   }
 
   void _pump() {
-    while (_activeWorkers < maxWorkers && _pendingJobs.isNotEmpty) {
+    while (_activeSubmissions < maxInFlightSubmissions &&
+        _pendingJobs.isNotEmpty) {
       final job = _pendingJobs.removeAt(0);
-      _activeWorkers++;
+      _activeSubmissions++;
       unawaited(_runJob(job));
     }
   }
@@ -175,8 +186,8 @@ class AnalysisOverlayChunkScheduler {
       if (!job.completer.isCompleted) {
         job.completer.complete(ok);
       }
-      if (_activeWorkers > 0) {
-        _activeWorkers--;
+      if (_activeSubmissions > 0) {
+        _activeSubmissions--;
       }
       onComplete?.call(
         AnalysisOverlayChunkJobResult(

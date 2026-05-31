@@ -216,8 +216,8 @@ class AnalysisManager extends ChangeNotifier
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
   late final AnalysisOverlayChunkScheduler _overlayChunkScheduler =
       AnalysisOverlayChunkScheduler(
-        maxWorkers:
-            AnalysisOverlayChunkScheduler.defaultNativeSubmissionWorkers(),
+        maxInFlightSubmissions:
+            AnalysisOverlayChunkScheduler.defaultNativeSubmissionLimit(),
         onComplete: _handleOverlayChunkJobComplete,
         onLog: (message, [error, stackTrace]) {
           if (error == null) {
@@ -248,10 +248,11 @@ class AnalysisManager extends ChangeNotifier
   }
 
   int get analysisWorkerCount =>
-      _nativeGenerationStats?.workerCount ?? _overlayChunkScheduler.maxWorkers;
+      _nativeGenerationStats?.workerCount ??
+      _overlayChunkScheduler.maxInFlightSubmissions;
   int get analysisActiveWorkers =>
       _nativeGenerationStats?.activeWorkers ??
-      _overlayChunkScheduler.activeWorkers;
+      _overlayChunkScheduler.activeSubmissions;
   int get analysisPendingJobs =>
       _nativeGenerationStats?.pendingJobs ?? _overlayChunkScheduler.pendingJobs;
   int get analysisBackpressureDropCount =>

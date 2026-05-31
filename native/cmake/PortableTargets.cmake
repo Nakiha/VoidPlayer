@@ -218,6 +218,18 @@ if(APPLE)
         endif()
         void_label_test(macos_analysis_ffi_smoke "macos;analysis;ffi;canary")
 
+        add_executable(analysis_generation_service_smoke
+            "${VOID_NATIVE_DIR}/tools/analysis_generation_service_smoke.cpp"
+        )
+        void_apply_native_compile_options(analysis_generation_service_smoke)
+        target_link_libraries(analysis_generation_service_smoke PRIVATE
+            analysis_lib
+        )
+        add_test(NAME analysis_generation_service_smoke
+            COMMAND analysis_generation_service_smoke)
+        void_label_test(analysis_generation_service_smoke
+            "analysis;contract;portable")
+
         if(FFMPEG_ANALYZER_PATH)
             add_executable(macos_analysis_toolchain_smoke
                 "${VOID_NATIVE_DIR}/tools/macos_analysis_toolchain_smoke.cpp"

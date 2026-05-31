@@ -54,7 +54,7 @@ void main() {
     final running = Completer<bool>();
     final runOrder = <String>[];
     final scheduler = AnalysisOverlayChunkScheduler(
-      maxWorkers: 1,
+      maxInFlightSubmissions: 1,
       maxQueuedJobs: 1,
     );
 
@@ -126,7 +126,7 @@ void main() {
       }
     }
 
-    final scheduler = AnalysisOverlayChunkScheduler(maxWorkers: 2);
+    final scheduler = AnalysisOverlayChunkScheduler(maxInFlightSubmissions: 2);
     final a = scheduler.schedule(
       request: _request(0, 63, hash: 'a'),
       priority: 0,

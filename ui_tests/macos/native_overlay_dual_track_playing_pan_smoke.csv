@@ -1,0 +1,27 @@
+# macOS dual-track overlay playing pan should not double-drive renderer-owned output.
+@WINDOW, 1366, 768
+0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.6, ASSERT_TRACK_COUNT, 1
+1.8, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+3.8, ASSERT_TRACK_COUNT, 2
+4.0, TOGGLE_ANALYSIS_OVERLAY, 0
+4.2, TOGGLE_ANALYSIS_OVERLAY, 1
+5.4, ASSERT_ANALYSIS_OVERLAY, true, cu, , 2
+5.5, SET_ZOOM, 4.0
+5.7, PLAY
+6.0, ASSERT_PLAYING
+6.1, DRAG_VIEWPORT, 420, -160, 60, 4
+6.7, ASSERT_POSITION_RANGE, 300000, 2800000
+6.8, CAPTURE_VIEWPORT, overlay_dual_track_pan_a
+6.9, ASSERT_CAPTURE_NOT_BLACK, overlay_dual_track_pan_a, 0.01, 4.0
+7.0, DRAG_VIEWPORT, -520, 220, 60, 4
+7.6, ASSERT_POSITION_RANGE, 700000, 3600000
+7.7, CAPTURE_VIEWPORT, overlay_dual_track_pan_b
+7.8, ASSERT_CAPTURE_NOT_BLACK, overlay_dual_track_pan_b, 0.01, 4.0
+7.85, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, drawsPerPresentedFrameRatioX1000, 500, 5000
+7.86, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, viewportCompositeCount, 5, 360
+7.87, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceFrameCacheHitCount, 1
+7.88, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
+7.89, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 2
+7.9, ASSERT_CAPTURE_CHANGED, overlay_dual_track_pan_a, overlay_dual_track_pan_b
+8.0, QUIT, 0

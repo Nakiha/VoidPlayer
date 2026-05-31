@@ -289,6 +289,8 @@ private:
     bool consume_pending_layout_locked();
     void clear_pending_layout_intent();
     bool should_present_frame_consume_pending_layout() const;
+    void note_viewport_compositor_activity();
+    bool should_suppress_playback_present_for_viewport_compositor() const;
 
     /// Apply pending resize on the render thread.
     void do_resize(int width, int height);
@@ -464,6 +466,7 @@ private:
     uint64_t layout_revision_ = 0;
     uint64_t last_presented_layout_revision_ = 0;
     std::atomic<int64_t> transient_presentation_backpressure_until_us_{0};
+    std::atomic<int64_t> viewport_compositor_active_until_us_{0};
     int next_file_id_ = 1;                         ///< Auto-incrementing file ID
     uint64_t next_track_generation_ = 1;
 

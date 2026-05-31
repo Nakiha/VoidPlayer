@@ -43,6 +43,8 @@ static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
 static constexpr auto kTransientPresentationBackpressureBackoff =
     std::chrono::microseconds(MAX_SLEEP_US);
+static constexpr auto kViewportCompositorActivityGrace =
+    std::chrono::milliseconds(25);
 
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
@@ -112,6 +114,16 @@ int first_present_slot(const RendererDrawSnapshot& snapshot) {
         }
     }
     return -1;
+}
+
+size_t present_decision_frame_count(const PresentDecision& decision) {
+    size_t count = 0;
+    for (const auto& frame : decision.frames) {
+        if (frame.has_value()) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 void log_viewport_draw_trace(const char* source,
@@ -1299,6 +1311,11 @@ bool Renderer::request_frame_refresh(const char* reason) {
     const bool renderer_owned_refresh =
         std::strcmp(refresh_reason, "macos-renderer-owned-refresh") == 0 ||
         std::strcmp(refresh_reason, "request_frame_refresh") == 0;
+    const bool viewport_compositor_refresh =
+        std::strcmp(refresh_reason, "macos-renderer-owned-refresh") == 0;
+    if (viewport_compositor_refresh) {
+        note_viewport_compositor_activity();
+    }
     bool has_complete_cached_decision = false;
     bool preview_draw_pending = false;
     if (renderer_owned_refresh) {
@@ -1601,6 +1618,23 @@ void Renderer::present_frame(const PresentDecision& decision) {
     auto frame_failure_callback = frame_failure_callback_snapshot();
     std::string frame_failure_error;
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
+    if (attempted_draw &&
+        should_suppress_playback_present_for_viewport_compositor()) {
+        const auto suppressed = presentation_backend_metrics_
+                                    .playing_layout_redraw_suppressed_count.fetch_add(
+                                        1, std::memory_order_relaxed) +
+                                1;
+        if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER") &&
+            (suppressed % 120 == 0 || viewport_trace_enabled())) {
+            spdlog::info(
+                "[RendererProfiler] present_frame suppressed by viewport compositor "
+                "layout_rev={} suppressed={} tracks={}",
+                snapshot_layout_revision,
+                suppressed,
+                present_decision_frame_count(snapshot.decision));
+        }
+        return;
+    }
     bool device_lost = false;
     bool drew = false;
     bool async_draw_submitted = false;
@@ -2805,6 +2839,33 @@ bool Renderer::should_present_frame_consume_pending_layout() const {
         return true;
     }
     return false;
+}
+
+void Renderer::note_viewport_compositor_activity() {
+    const auto active_until =
+        steady_clock_us_now() +
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            kViewportCompositorActivityGrace)
+            .count();
+    auto current = viewport_compositor_active_until_us_.load(std::memory_order_relaxed);
+    while (active_until > current &&
+           !viewport_compositor_active_until_us_.compare_exchange_weak(
+               current,
+               active_until,
+               std::memory_order_relaxed,
+               std::memory_order_relaxed)) {
+    }
+}
+
+bool Renderer::should_suppress_playback_present_for_viewport_compositor() const {
+    if (!playing_.load(std::memory_order_acquire) ||
+        playback_->clock().is_paused() ||
+        !presentation_backend_ ||
+        presentation_backend_->kind() != PresentationBackendKind::Metal) {
+        return false;
+    }
+    return steady_clock_us_now() <
+           viewport_compositor_active_until_us_.load(std::memory_order_relaxed);
 }
 
 bool Renderer::consume_pending_layout_locked() {

@@ -114,6 +114,35 @@ struct NakiOverlayStateV2 {
     NakiOverlayState value;
 };
 
+enum NakiAnalysisGenerationJobKind {
+    NAKI_ANALYSIS_GENERATION_JOB_OVERLAY_CHUNK = 1,
+};
+
+struct NakiAnalysisGenerationJobResult {
+    uint64_t job_id;
+    int32_t kind;
+    int32_t ok;
+    int32_t status;
+    int32_t start_frame;
+    int32_t end_frame;
+    int32_t priority;
+    int32_t _reserved;
+    char hash[65];
+    char message[256];
+};
+
+struct NakiAnalysisGenerationServiceStats {
+    int32_t worker_count;
+    int32_t active_workers;
+    int32_t pending_jobs;
+    int32_t running_jobs;
+    int32_t completed_jobs;
+    int32_t failed_jobs;
+    int32_t deduped_jobs;
+    int32_t backpressure_drop_count;
+    uint64_t submitted_jobs;
+};
+
 using NakiAnalysisHandle = void*;
 using NakiAnalysisPtsCallback = int64_t (*)();
 
@@ -153,3 +182,6 @@ void naki_analysis_clear_pts_callback_for_owner(const void* owner);
 
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_generate_vac2_base(const char* video_path, const char* hash, const char* cache_root, int64_t max_cache_bytes);
 extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path, const char* hash, const char* cache_root, int32_t start_frame, int32_t end_frame, int64_t max_cache_bytes);
+extern "C" NAKI_ANALYSIS_FFI_EXPORT uint64_t naki_analysis_submit_vac2_overlay_chunk(const char* video_path, const char* hash, const char* cache_root, int32_t start_frame, int32_t end_frame, int64_t max_cache_bytes, int32_t priority);
+extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_poll_generation_jobs(NakiAnalysisGenerationJobResult* out, int32_t max_count);
+extern "C" NAKI_ANALYSIS_FFI_EXPORT void naki_analysis_get_generation_service_stats(NakiAnalysisGenerationServiceStats* out);

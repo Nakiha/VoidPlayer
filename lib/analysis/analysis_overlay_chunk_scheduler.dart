@@ -77,9 +77,9 @@ class AnalysisOverlayChunkScheduler {
 
   static int defaultNativeSubmissionWorkers() {
     final processors = math.max(1, Platform.numberOfProcessors);
-    final fallback = math.min(math.max(2, processors ~/ 2), 8);
+    final fallback = math.min(math.max(8, processors), 32);
     final value = int.tryParse(
-      Platform.environment['VOIDPLAYER_ANALYSIS_WORKERS'] ?? '',
+      Platform.environment['VOIDPLAYER_ANALYSIS_SUBMISSIONS'] ?? '',
     );
     return (value ?? fallback).clamp(1, math.max(1, processors)).toInt();
   }

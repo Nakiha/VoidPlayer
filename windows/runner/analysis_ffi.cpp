@@ -1,4 +1,5 @@
 #include "analysis_ffi.h"
+#include "analysis/analysis_generation_service.h"
 #include "analysis/analysis_manager.h"
 #include "analysis/cache/overlay_chunk.h"
 #include "analysis/cache/vacache_store.h"
@@ -1725,4 +1726,73 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
     spdlog::info("[Analysis] generate_vac2_overlay_chunk succeeded: hash={}, frames={}-{}",
                  hash, start_frame, end_frame);
     return 1;
+}
+
+namespace {
+
+vr::analysis::AnalysisGenerationService& generation_service() {
+    static vr::analysis::AnalysisGenerationService service(
+        [](const vr::analysis::AnalysisGenerationOverlayChunkRequest& request,
+           std::string& message) -> int32_t {
+            const int32_t ok = naki_analysis_generate_vac2_overlay_chunk(
+                request.video_path.c_str(),
+                request.hash.c_str(),
+                request.cache_root.c_str(),
+                request.start_frame,
+                request.end_frame,
+                request.max_cache_bytes);
+            if (ok != 0) return NAKI_ANALYSIS_OK;
+            char buffer[256] = {};
+            const int32_t status = naki_analysis_last_error(buffer, sizeof(buffer));
+            message = buffer;
+            return status == NAKI_ANALYSIS_OK ? NAKI_ANALYSIS_ERR_INTERNAL : status;
+        });
+    return service;
+}
+
+} // namespace
+
+extern "C" __declspec(dllexport)
+uint64_t naki_analysis_submit_vac2_overlay_chunk(const char* video_path,
+                                                 const char* hash,
+                                                 const char* cache_root,
+                                                 int32_t start_frame,
+                                                 int32_t end_frame,
+                                                 int64_t max_cache_bytes,
+                                                 int32_t priority) {
+    if (!video_path || video_path[0] == '\0' || !hash || hash[0] == '\0' ||
+        !cache_root || cache_root[0] == '\0' ||
+        start_frame < 0 || end_frame < start_frame) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INVALID_ARGUMENT,
+                           "video_path, hash, cache_root, and a valid frame range are required");
+        return 0;
+    }
+    vr::analysis::AnalysisGenerationOverlayChunkRequest request;
+    request.video_path = video_path;
+    request.hash = hash;
+    request.cache_root = cache_root;
+    request.start_frame = start_frame;
+    request.end_frame = end_frame;
+    request.max_cache_bytes = max_cache_bytes;
+    request.priority = priority;
+    const uint64_t job_id = generation_service().submit_overlay_chunk(std::move(request));
+    if (job_id == 0) {
+        set_analysis_error(NAKI_ANALYSIS_ERR_INTERNAL,
+                           "failed to submit overlay generation job");
+        return 0;
+    }
+    set_analysis_ok();
+    return job_id;
+}
+
+extern "C" __declspec(dllexport)
+int32_t naki_analysis_poll_generation_jobs(NakiAnalysisGenerationJobResult* out,
+                                           int32_t max_count) {
+    return generation_service().poll_results(out, max_count);
+}
+
+extern "C" __declspec(dllexport)
+void naki_analysis_get_generation_service_stats(NakiAnalysisGenerationServiceStats* out) {
+    if (!out) return;
+    generation_service().copy_stats(*out);
 }

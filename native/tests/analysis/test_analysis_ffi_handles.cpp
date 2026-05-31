@@ -352,6 +352,51 @@ TEST_CASE("analysis FFI rejects overlay chunk generation without VAC2 base",
     fs::remove_all(cache_root);
 }
 
+TEST_CASE("analysis FFI resident service reports overlay chunk failures",
+          "[analysis][ffi][vac2][vachunk][service]") {
+    namespace fs = std::filesystem;
+    const std::string video_path =
+        std::string(VIDEO_TEST_DIR) + "/h264_9s_1920x1080.mp4";
+    REQUIRE(fs::exists(video_path));
+
+    const fs::path cache_root =
+        fs::temp_directory_path() / "voidplayer_ffi_generation_service";
+    fs::remove_all(cache_root);
+    REQUIRE(fs::create_directories(cache_root));
+
+    const uint64_t job_id = naki_analysis_submit_vac2_overlay_chunk(
+        video_path.c_str(),
+        "ffi_service_overlay",
+        cache_root.string().c_str(),
+        0,
+        0,
+        128 * 1024 * 1024,
+        0);
+    REQUIRE(job_id != 0);
+
+    NakiAnalysisGenerationJobResult result{};
+    int32_t count = 0;
+    for (int i = 0; i < 100 && count == 0; ++i) {
+        count = naki_analysis_poll_generation_jobs(&result, 1);
+        if (count == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+    }
+    REQUIRE(count == 1);
+    REQUIRE(result.job_id == job_id);
+    REQUIRE(result.ok == 0);
+    REQUIRE(result.status == NAKI_ANALYSIS_ERR_OPEN_FAILED);
+    REQUIRE(std::string(result.message).find("base") != std::string::npos);
+
+    NakiAnalysisGenerationServiceStats stats{};
+    naki_analysis_get_generation_service_stats(&stats);
+    REQUIRE(stats.worker_count >= 1);
+    REQUIRE(stats.submitted_jobs >= 1);
+    REQUIRE(stats.failed_jobs >= 1);
+
+    fs::remove_all(cache_root);
+}
+
 TEST_CASE("analysis FFI overlay publish budget uses remaining cache bytes",
           "[analysis][ffi][vac2][vachunk]") {
     namespace fs = std::filesystem;

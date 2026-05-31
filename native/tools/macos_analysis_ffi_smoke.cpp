@@ -12,6 +12,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 
 #include <unistd.h>
 
@@ -88,6 +89,31 @@ int main() {
                    0,
                    end_frame,
                    0) != 0);
+
+        const uint64_t job_id = naki_analysis_submit_vac2_overlay_chunk(
+            video.string().c_str(),
+            hash.c_str(),
+            cache_root.string().c_str(),
+            0,
+            end_frame,
+            0,
+            0);
+        assert(job_id != 0);
+        NakiAnalysisGenerationJobResult job_result{};
+        int32_t job_count = 0;
+        for (int i = 0; i < 200 && job_count == 0; ++i) {
+            job_count = naki_analysis_poll_generation_jobs(&job_result, 1);
+            if (job_count == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+        }
+        assert(job_count == 1);
+        assert(job_result.job_id == job_id);
+        assert(job_result.ok != 0);
+        NakiAnalysisGenerationServiceStats service_stats{};
+        naki_analysis_get_generation_service_stats(&service_stats);
+        assert(service_stats.worker_count > 0);
+        assert(service_stats.submitted_jobs > 0);
 
         vr::analysis::VacacheStore store(
             vr::win_utf8::path_to_utf8(cache_root),

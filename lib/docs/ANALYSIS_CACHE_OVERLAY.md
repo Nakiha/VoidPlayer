@@ -11,9 +11,10 @@
 
 | Layer | Responsibility |
 | --- | --- |
-| `AnalysisManager` | Compute source hash, generate/load VAC2 base, track overlay intent, schedule VACHUNK chunks, and reload native overlay tracks when chunks become ready. |
+| `AnalysisManager` | Compute source hash, generate/load VAC2 base, track overlay intent, submit VACHUNK requests, and reload native overlay tracks when chunks become ready. |
 | `AnalysisCache` | Resolve cache paths, validate runtime VAC versions, discover current overlay chunks by file name. |
-| `SerialAnalysisGenerationQueue` | Serialize VAC2 base writes and keep same-hash overlay work behind active base writes; overlay VACHUNK generation is submitted to native concurrently. |
+| `SerialAnalysisGenerationQueue` | Serialize VAC2 base writes and keep same-hash overlay submission behind active base writes. It is not a CPU worker pool. |
+| native analysis generation service | Own the resident VACHUNK worker pool, request de-duplication, job stats, and asynchronous completion polling. |
 | `MainWindowAnalysisCoordinator` | Connect active tracks, presented-frame timing, overlay panel state, analysis IPC, and redraw requests. |
 | `MainWindowPlaybackCoordinator` | Notify analysis after seek settles so overlay chunks can be requested without blocking seek or frame presentation. |
 
@@ -49,7 +50,9 @@ target presented frame
   -> next window at low priority during normal playback prefetch
   -> previous window too if target is in the first quarter
   -> next window too if target is in the last quarter
-  -> naki_analysis_generate_vac2_overlay_chunk(...)
+  -> naki_analysis_submit_vac2_overlay_chunk(...)
+  -> native resident generation service
+  -> naki_analysis_poll_generation_jobs(...)
 ```
 
 When the target comes from the renderer-presented PTS/DTS pair, Dart schedules
@@ -58,15 +61,19 @@ displayed frame from waiting on adjacent prefetch work while still avoiding a
 miss near 64-frame boundaries, where Dart PTS/DTS lookup and native paused-frame
 lookup can differ by one frame.
 
-Chunk requests are deduplicated by `(hash, startFrame, endFrame)` and run
-through a small intent scheduler in `AnalysisManager`. Dart only owns this
-request-level policy: priority, de-duplication, and backpressure. The heavy work
-is native/analyzer-side. VAC2 base writes remain serialized and exclusive for a
-hash, but overlay VACHUNK generation may run concurrently for different frame
-windows once the base cache is ready. The submission worker count defaults to
-`min(max(2, cpu/2), 8)` and can be overridden with
-`VOIDPLAYER_ANALYSIS_WORKERS`; this limits how many native analyzer jobs Dart
-submits, not how much CPU work Dart performs.
+Chunk requests pass through a small Dart intent scheduler so UI code can
+coalesce duplicate requests and drop stale low-priority submissions under
+backpressure. The resident native analysis generation service owns the real
+worker pool. It de-duplicates live `(hash, startFrame, endFrame)` jobs, runs
+VACHUNK generation on native worker threads, and reports completions through
+`naki_analysis_poll_generation_jobs`.
+
+VAC2 base writes remain serialized and exclusive for a hash. Overlay VACHUNK
+generation may run concurrently for different frame windows once the base cache
+is ready. Native worker count defaults to `min(max(2, cpu/2), 8)` and can be
+overridden with `VOIDPLAYER_ANALYSIS_WORKERS`. Dart's outstanding submission
+window can be adjusted with `VOIDPLAYER_ANALYSIS_SUBMISSIONS`; it is only an
+intent/backpressure limit and does not perform analysis work.
 
 While overlay is active, `MainWindowAnalysisCoordinator` also runs a low-frequency
 playback prefetch tick. It samples the latest renderer-presented frame and

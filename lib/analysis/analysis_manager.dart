@@ -239,10 +239,23 @@ class AnalysisManager extends ChangeNotifier
   AnalysisError? get error => _error;
   String? get generatingFileName => _generatingFileName;
   String? get loadedHash => _loadedHash;
-  int get analysisWorkerCount => _overlayChunkScheduler.maxWorkers;
-  int get analysisActiveWorkers => _overlayChunkScheduler.activeWorkers;
-  int get analysisPendingJobs => _overlayChunkScheduler.pendingJobs;
+  AnalysisGenerationServiceStats? get _nativeGenerationStats {
+    try {
+      return _native.generationServiceStats();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  int get analysisWorkerCount =>
+      _nativeGenerationStats?.workerCount ?? _overlayChunkScheduler.maxWorkers;
+  int get analysisActiveWorkers =>
+      _nativeGenerationStats?.activeWorkers ??
+      _overlayChunkScheduler.activeWorkers;
+  int get analysisPendingJobs =>
+      _nativeGenerationStats?.pendingJobs ?? _overlayChunkScheduler.pendingJobs;
   int get analysisBackpressureDropCount =>
+      _nativeGenerationStats?.backpressureDropCount ??
       _overlayChunkScheduler.backpressureDropCount;
   @override
   String? get activeOverlayHash => _activeOverlayHash;

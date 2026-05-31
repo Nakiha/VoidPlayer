@@ -568,6 +568,8 @@
 				"$(PROJECT_DIR)/../native/cmake/NativeSources.cmake",
 				"$(PROJECT_DIR)/../native/cmake/PortableTargets.cmake",
 				"$(PROJECT_DIR)/../native/analysis/analysis_ffi_abi.h",
+				"$(PROJECT_DIR)/../native/analysis/analysis_generation_service.cpp",
+				"$(PROJECT_DIR)/../native/analysis/analysis_generation_service.h",
 				"$(PROJECT_DIR)/../native/macos/analysis_ffi_bridge.cpp",
 				"$(PROJECT_DIR)/../native/macos/metal_layout_params.cpp",
 				"$(PROJECT_DIR)/../native/macos/metal_layout_params.h",

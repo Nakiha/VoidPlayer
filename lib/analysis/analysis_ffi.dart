@@ -134,6 +134,50 @@ final class NakiOverlayState extends Struct {
   external int _reserved;
 }
 
+final class NakiAnalysisGenerationJobResult extends Struct {
+  @Uint64()
+  external int jobId;
+  @Int32()
+  external int kind;
+  @Int32()
+  external int ok;
+  @Int32()
+  external int status;
+  @Int32()
+  external int startFrame;
+  @Int32()
+  external int endFrame;
+  @Int32()
+  external int priority;
+  @Int32()
+  external int _reserved;
+  @Array(65)
+  external Array<Int8> hash;
+  @Array(256)
+  external Array<Int8> message;
+}
+
+final class NakiAnalysisGenerationServiceStats extends Struct {
+  @Int32()
+  external int workerCount;
+  @Int32()
+  external int activeWorkers;
+  @Int32()
+  external int pendingJobs;
+  @Int32()
+  external int runningJobs;
+  @Int32()
+  external int completedJobs;
+  @Int32()
+  external int failedJobs;
+  @Int32()
+  external int dedupedJobs;
+  @Int32()
+  external int backpressureDropCount;
+  @Uint64()
+  external int submittedJobs;
+}
+
 // ===========================================================================
 // FFI function typedefs
 // ===========================================================================
@@ -163,6 +207,37 @@ typedef _GenerateVac2OverlayChunkNative =
     );
 typedef _GenerateVac2OverlayChunkDart =
     int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, int, int, int);
+
+typedef _SubmitVac2OverlayChunkNative =
+    Uint64 Function(
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Int32,
+      Int32,
+      Int64,
+      Int32,
+    );
+typedef _SubmitVac2OverlayChunkDart =
+    int Function(
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      int,
+      int,
+      int,
+      int,
+    );
+
+typedef _PollGenerationJobsNative =
+    Int32 Function(Pointer<NakiAnalysisGenerationJobResult>, Int32);
+typedef _PollGenerationJobsDart =
+    int Function(Pointer<NakiAnalysisGenerationJobResult>, int);
+
+typedef _GetGenerationServiceStatsNative =
+    Void Function(Pointer<NakiAnalysisGenerationServiceStats>);
+typedef _GetGenerationServiceStatsDart =
+    void Function(Pointer<NakiAnalysisGenerationServiceStats>);
 
 typedef _OpenNative = Pointer<Void> Function(Pointer<Utf8>);
 typedef _OpenDart = Pointer<Void> Function(Pointer<Utf8>);
@@ -271,6 +346,26 @@ class _AnalysisNativeBindings {
           _GenerateVac2OverlayChunkNative,
           _GenerateVac2OverlayChunkDart
         >('naki_analysis_generate_vac2_overlay_chunk');
+    try {
+      submitVac2OverlayChunk = library
+          .lookupFunction<
+            _SubmitVac2OverlayChunkNative,
+            _SubmitVac2OverlayChunkDart
+          >('naki_analysis_submit_vac2_overlay_chunk');
+      pollGenerationJobs = library
+          .lookupFunction<_PollGenerationJobsNative, _PollGenerationJobsDart>(
+            'naki_analysis_poll_generation_jobs',
+          );
+      getGenerationServiceStats = library
+          .lookupFunction<
+            _GetGenerationServiceStatsNative,
+            _GetGenerationServiceStatsDart
+          >('naki_analysis_get_generation_service_stats');
+    } catch (_) {
+      submitVac2OverlayChunk = null;
+      pollGenerationJobs = null;
+      getGenerationServiceStats = null;
+    }
     open = library.lookupFunction<_OpenNative, _OpenDart>('naki_analysis_open');
     close = library.lookupFunction<_CloseNative, _CloseDart>(
       'naki_analysis_close',
@@ -382,6 +477,9 @@ class _AnalysisNativeBindings {
   late final _ClearOverlayTracksDart clearOverlayTracks;
   late final _GenerateVac2BaseDart generateVac2Base;
   late final _GenerateVac2OverlayChunkDart generateVac2OverlayChunk;
+  late final _SubmitVac2OverlayChunkDart? submitVac2OverlayChunk;
+  late final _PollGenerationJobsDart? pollGenerationJobs;
+  late final _GetGenerationServiceStatsDart? getGenerationServiceStats;
   late final _OpenDart open;
   late final _CloseDart close;
   late final _HandleGetSummaryDart handleGetSummary;
@@ -393,6 +491,11 @@ class _AnalysisNativeBindings {
   late final _HandleIndexMapDart handleFrameToNalu;
   late final _HandleIndexMapDart handleNaluToFrame;
   late final _HandleGetFrameBucketsDart handleGetFrameBuckets;
+
+  bool get hasGenerationService =>
+      submitVac2OverlayChunk != null &&
+      pollGenerationJobs != null &&
+      getGenerationServiceStats != null;
 
   void _validateAbi() {
     final version = abiVersion();
@@ -611,6 +714,96 @@ FrameBucket _frameBucketAt(Pointer<NakiFrameBucket> ptr, int i) {
   );
 }
 
+String _fixedInt8String(Array<Int8> bytes, int maxLength) {
+  final units = <int>[];
+  for (var i = 0; i < maxLength; i++) {
+    final value = bytes[i];
+    if (value == 0) break;
+    units.add(value & 0xff);
+  }
+  return String.fromCharCodes(units);
+}
+
+class AnalysisGenerationJobResult {
+  final int jobId;
+  final int kind;
+  final bool ok;
+  final int status;
+  final int startFrame;
+  final int endFrame;
+  final int priority;
+  final String hash;
+  final String message;
+
+  const AnalysisGenerationJobResult({
+    required this.jobId,
+    required this.kind,
+    required this.ok,
+    required this.status,
+    required this.startFrame,
+    required this.endFrame,
+    required this.priority,
+    required this.hash,
+    required this.message,
+  });
+
+  factory AnalysisGenerationJobResult.fromNative(
+    NakiAnalysisGenerationJobResult result,
+  ) {
+    return AnalysisGenerationJobResult(
+      jobId: result.jobId,
+      kind: result.kind,
+      ok: result.ok != 0,
+      status: result.status,
+      startFrame: result.startFrame,
+      endFrame: result.endFrame,
+      priority: result.priority,
+      hash: _fixedInt8String(result.hash, 65),
+      message: _fixedInt8String(result.message, 256),
+    );
+  }
+}
+
+class AnalysisGenerationServiceStats {
+  final int workerCount;
+  final int activeWorkers;
+  final int pendingJobs;
+  final int runningJobs;
+  final int completedJobs;
+  final int failedJobs;
+  final int dedupedJobs;
+  final int backpressureDropCount;
+  final int submittedJobs;
+
+  const AnalysisGenerationServiceStats({
+    required this.workerCount,
+    required this.activeWorkers,
+    required this.pendingJobs,
+    required this.runningJobs,
+    required this.completedJobs,
+    required this.failedJobs,
+    required this.dedupedJobs,
+    required this.backpressureDropCount,
+    required this.submittedJobs,
+  });
+
+  factory AnalysisGenerationServiceStats.fromNative(
+    NakiAnalysisGenerationServiceStats stats,
+  ) {
+    return AnalysisGenerationServiceStats(
+      workerCount: stats.workerCount,
+      activeWorkers: stats.activeWorkers,
+      pendingJobs: stats.pendingJobs,
+      runningJobs: stats.runningJobs,
+      completedJobs: stats.completedJobs,
+      failedJobs: stats.failedJobs,
+      dedupedJobs: stats.dedupedJobs,
+      backpressureDropCount: stats.backpressureDropCount,
+      submittedJobs: stats.submittedJobs,
+    );
+  }
+}
+
 class AnalysisSession {
   Pointer<Void> _handle;
   FileLockHandle? _useLock;
@@ -775,6 +968,8 @@ class AnalysisFfi {
   static AnalysisFfiUnavailable? get unavailableReason =>
       _AnalysisNativeBindings.unavailableReason;
 
+  static bool get hasGenerationService => _native.hasGenerationService;
+
   /// Set overlay visibility flags.
   static void setOverlay({
     required bool showCuGrid,
@@ -872,6 +1067,67 @@ class AnalysisFfi {
       calloc.free(video);
       calloc.free(hashStr);
       calloc.free(cacheRoot);
+    }
+  }
+
+  static int submitVac2OverlayChunk({
+    required String videoPath,
+    required String hash,
+    required int startFrame,
+    required int endFrame,
+    required int maxCacheBytes,
+    int priority = 0,
+  }) {
+    final submit = _native.submitVac2OverlayChunk;
+    if (submit == null) return 0;
+    final video = videoPath.toNativeUtf8(allocator: calloc);
+    final hashStr = hash.toNativeUtf8(allocator: calloc);
+    final cacheRoot = AppPaths.current.analysisCacheDir.toNativeUtf8(
+      allocator: calloc,
+    );
+    try {
+      return submit(
+        video,
+        hashStr,
+        cacheRoot,
+        startFrame,
+        endFrame,
+        maxCacheBytes,
+        priority,
+      );
+    } finally {
+      calloc.free(video);
+      calloc.free(hashStr);
+      calloc.free(cacheRoot);
+    }
+  }
+
+  static List<AnalysisGenerationJobResult> pollGenerationJobs({
+    int maxCount = 64,
+  }) {
+    final poll = _native.pollGenerationJobs;
+    if (poll == null || maxCount <= 0) return const [];
+    final ptr = calloc<NakiAnalysisGenerationJobResult>(maxCount);
+    try {
+      final count = poll(ptr, maxCount).clamp(0, maxCount).toInt();
+      return List.generate(
+        count,
+        (i) => AnalysisGenerationJobResult.fromNative(ptr[i]),
+      );
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static AnalysisGenerationServiceStats? generationServiceStats() {
+    final getStats = _native.getGenerationServiceStats;
+    if (getStats == null) return null;
+    final ptr = calloc<NakiAnalysisGenerationServiceStats>();
+    try {
+      getStats(ptr);
+      return AnalysisGenerationServiceStats.fromNative(ptr.ref);
+    } finally {
+      calloc.free(ptr);
     }
   }
 }

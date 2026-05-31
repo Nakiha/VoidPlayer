@@ -138,6 +138,9 @@ class _FakeNativeService implements AnalysisNativeService {
 
   @override
   void unload() => throw UnimplementedError();
+
+  @override
+  AnalysisGenerationServiceStats? generationServiceStats() => null;
 }
 
 void main() {

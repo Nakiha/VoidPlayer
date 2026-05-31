@@ -458,11 +458,75 @@ float4 overlay_blend_over(float4 dst, float4 src) {
   return float4(src.rgb * src.a + dst.rgb * (1.0 - src.a), 1.0);
 }
 
+float2 overlay_screen_px_per_source_px(
+    constant LayoutParams& params,
+    uint track_slot,
+    uint source_width,
+    uint source_height) {
+  const float display_slots = float(max(params.track_count, 1));
+  const float local_width_px = params.mode == kModeSplitScreen
+      ? float(params.width)
+      : float(params.width) / display_slots;
+  const float local_height_px = float(params.height);
+  const float2 inv_display_size = float2(
+      abs(inv_display_size_x_at(params, track_slot)),
+      abs(inv_display_size_y_at(params, track_slot)));
+  return max(float2(local_width_px, local_height_px) /
+                 max(inv_display_size * float2(float(source_width), float(source_height)),
+                     float2(1.0, 1.0)),
+             float2(0.001, 0.001));
+}
+
+float overlay_line_marker_distance_px(
+    uint edge_bits,
+    float2 source_px_coord,
+    float2 px_per_source) {
+  const float2 source_frac = fract(source_px_coord);
+  float distance_px = 1.0e6;
+  if ((edge_bits & 1u) != 0u) {
+    distance_px = min(distance_px, source_frac.x * px_per_source.x);
+  }
+  if ((edge_bits & 2u) != 0u) {
+    distance_px = min(distance_px, (1.0 - source_frac.x) * px_per_source.x);
+  }
+  if ((edge_bits & 4u) != 0u) {
+    distance_px = min(distance_px, source_frac.y * px_per_source.y);
+  }
+  if ((edge_bits & 8u) != 0u) {
+    distance_px = min(distance_px, (1.0 - source_frac.y) * px_per_source.y);
+  }
+  return distance_px;
+}
+
+float4 overlay_decode_line_marker(
+    float4 sample,
+    float2 source_px_coord,
+    float2 px_per_source) {
+  const bool is_marker =
+      sample.a > 0.99 && sample.g < 0.01 && sample.r > 0.001;
+  if (!is_marker) {
+    return sample;
+  }
+  const uint edge_bits = uint(round(saturate(sample.r) * 15.0));
+  if (edge_bits == 0u) {
+    return float4(0.0, 0.0, 0.0, 0.0);
+  }
+  const float distance_px =
+      overlay_line_marker_distance_px(edge_bits, source_px_coord, px_per_source);
+  if (sample.b < 0.5) {
+    const float alpha = smoothstep(1.35, 0.45, distance_px);
+    return float4(1.0, 1.0, 1.0, alpha);
+  }
+  const float alpha = smoothstep(2.6, 1.1, distance_px);
+  return float4(0.0, 0.0, 0.0, alpha * (166.0 / 255.0));
+}
+
 float4 overlay_sample_for_track(
     constant LayoutParams& params,
     uint track_slot,
     uint source_x,
     uint source_y,
+    float2 source_uv,
     texture2d<float, access::read> overlay0,
     texture2d<float, access::read> overlay1,
     texture2d<float, access::read> overlay2,
@@ -470,20 +534,27 @@ float4 overlay_sample_for_track(
   if (overlay_present_at(params, track_slot) == 0) {
     return float4(0.0, 0.0, 0.0, 0.0);
   }
+  const uint source_width = uint(max(source_width_at(params, track_slot), 1));
+  const uint source_height = uint(max(source_height_at(params, track_slot), 1));
+  const float2 px_per_source =
+      overlay_screen_px_per_source_px(params, track_slot, source_width, source_height);
+  const float2 source_px_coord =
+      source_uv * float2(float(source_width), float(source_height));
+  float4 sample = float4(0.0, 0.0, 0.0, 0.0);
   if (track_slot == 0u) {
-    return overlay0.read(uint2(min(source_x, overlay0.get_width() - 1),
-                               min(source_y, overlay0.get_height() - 1)));
+    sample = overlay0.read(uint2(min(source_x, overlay0.get_width() - 1),
+                                 min(source_y, overlay0.get_height() - 1)));
+  } else if (track_slot == 1u) {
+    sample = overlay1.read(uint2(min(source_x, overlay1.get_width() - 1),
+                                 min(source_y, overlay1.get_height() - 1)));
+  } else if (track_slot == 2u) {
+    sample = overlay2.read(uint2(min(source_x, overlay2.get_width() - 1),
+                                 min(source_y, overlay2.get_height() - 1)));
+  } else {
+    sample = overlay3.read(uint2(min(source_x, overlay3.get_width() - 1),
+                                 min(source_y, overlay3.get_height() - 1)));
   }
-  if (track_slot == 1u) {
-    return overlay1.read(uint2(min(source_x, overlay1.get_width() - 1),
-                               min(source_y, overlay1.get_height() - 1)));
-  }
-  if (track_slot == 2u) {
-    return overlay2.read(uint2(min(source_x, overlay2.get_width() - 1),
-                               min(source_y, overlay2.get_height() - 1)));
-  }
-  return overlay3.read(uint2(min(source_x, overlay3.get_width() - 1),
-                             min(source_y, overlay3.get_height() - 1)));
+  return overlay_decode_line_marker(sample, source_px_coord, px_per_source);
 }
 
 	kernel void layout_bgra_copy(
@@ -573,6 +644,7 @@ float4 overlay_sample_for_track(
                                track_slot,
                                source_x,
                                source_y,
+                               source_uv,
                                overlay0,
                                overlay1,
                                overlay2,
@@ -677,6 +749,7 @@ kernel void layout_cv_yuv_copy(
                                track_slot,
                                source_x,
                                source_y_pos,
+                               source_uv_coord,
                                overlay0,
                                overlay1,
                                overlay2,
@@ -779,6 +852,7 @@ kernel void layout_cv_yuv_set_copy(
                                track_slot,
                                source_x,
                                source_y,
+                               source_uv,
                                overlay0,
                                overlay1,
                                overlay2,
@@ -1000,15 +1074,23 @@ kernel void build_overlay_line_mask_layer(
     for (int x = min_x; x < max_x; ++x) {
       const bool within_y = float(y) >= rect_px.y && float(y) < rect_px.w;
       const bool within_x = float(x) >= rect_px.x && float(x) < rect_px.z;
-      const bool on_line =
-          (within_y && float(x) >= rect_px.x && float(x) < rect_px.x + line_width_px) ||
-          (within_x && float(y) >= rect_px.y && float(y) < rect_px.y + line_width_px) ||
-          (rect_max.x >= 0.9999 &&
-              within_y && float(x) >= rect_px.z - line_width_px && float(x) < rect_px.z) ||
-          (rect_max.y >= 0.9999 &&
-              within_x && float(y) >= rect_px.w - line_width_px && float(y) < rect_px.w);
-      if (on_line) {
-        atomic_store_explicit(&mask[row + uint(x)], 1u, memory_order_relaxed);
+      uint edge_bits = 0u;
+      if (within_y && float(x) >= rect_px.x && float(x) < rect_px.x + line_width_px) {
+        edge_bits |= 1u;
+      }
+      if (rect_max.x >= 0.9999 &&
+          within_y && float(x) >= rect_px.z - line_width_px && float(x) < rect_px.z) {
+        edge_bits |= 2u;
+      }
+      if (within_x && float(y) >= rect_px.y && float(y) < rect_px.y + line_width_px) {
+        edge_bits |= 4u;
+      }
+      if (rect_max.y >= 0.9999 &&
+          within_x && float(y) >= rect_px.w - line_width_px && float(y) < rect_px.w) {
+        edge_bits |= 8u;
+      }
+      if (edge_bits != 0u) {
+        atomic_fetch_or_explicit(&mask[row + uint(x)], edge_bits, memory_order_relaxed);
       }
     }
   }
@@ -1032,20 +1114,20 @@ kernel void composite_overlay_line_layer(
   }
   const int x = int(gid.x);
   const int y = int(gid.y);
-  const bool center = overlay_mask_at(mask, params.width, params.height, x, y) > 0;
-  const bool halo =
-      !center &&
-      (overlay_mask_at(mask, params.width, params.height, x - 1, y) > 0 ||
-       overlay_mask_at(mask, params.width, params.height, x + 1, y) > 0 ||
-       overlay_mask_at(mask, params.width, params.height, x, y - 1) > 0 ||
-       overlay_mask_at(mask, params.width, params.height, x, y + 1) > 0);
-  if (!center && !halo) {
+  const uint center_bits = overlay_mask_at(mask, params.width, params.height, x, y) & 15u;
+  const uint halo_bits =
+      center_bits == 0u
+          ? ((overlay_mask_at(mask, params.width, params.height, x - 1, y) |
+              overlay_mask_at(mask, params.width, params.height, x + 1, y) |
+              overlay_mask_at(mask, params.width, params.height, x, y - 1) |
+              overlay_mask_at(mask, params.width, params.height, x, y + 1)) & 15u)
+          : 0u;
+  const uint edge_bits = center_bits != 0u ? center_bits : halo_bits;
+  if (edge_bits == 0u) {
     return;
   }
-  const float4 halo_color = float4(0.0, 0.0, 0.0, 166.0 / 255.0);
-  const float4 center_color = float4(1.0, 1.0, 1.0, 115.0 / 255.0);
-  const float4 dst = layer.read(gid);
-  layer.write(overlay_blend_over(dst, center ? center_color : halo_color), gid);
+  const float marker = float(edge_bits) / 15.0;
+  layer.write(float4(marker, 0.0, center_bits != 0u ? 0.0 : 1.0, 1.0), gid);
 }
 
 bool overlay_global_rect_from_video_rect(
@@ -1273,7 +1355,7 @@ kernel void composite_overlay_line_contrast(
   }
 
   const float4 halo_color = float4(0.0, 0.0, 0.0, 166.0 / 255.0);
-  const float4 center_color = float4(1.0, 1.0, 1.0, 115.0 / 255.0);
+  const float4 center_color = float4(1.0, 1.0, 1.0, 230.0 / 255.0);
   const float4 dst = destination.read(gid);
   destination.write(overlay_blend_over(dst, center ? center_color : halo_color), gid);
 }

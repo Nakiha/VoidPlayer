@@ -26,9 +26,11 @@ The shared renderer builds a `RendererDrawSnapshot` from the current
   packages;
 - runs the Metal layout/color path into the renderer-owned target;
 - when analysis overlay is active, the long-term route is to sample retained
-  per-track overlay layers during final composite; the current immediate
-  primitive overlay path is a compatibility/fallback path and must not keep
-  growing as the high-refresh solution;
+  per-track overlay layers during final composite; CU line layers retain
+  direction markers and decode them to fixed screen-pixel black-edge/bright-center
+  strokes at composite time, so zoom/pan does not re-raster target-size masks;
+  the immediate primitive overlay path is a compatibility/fallback path and must
+  not keep growing as the high-refresh solution;
 - records upload storage, frame PTS, cadence, and failure diagnostics;
 - wakes refresh waiters and asks Swift to mark the Flutter texture available.
 

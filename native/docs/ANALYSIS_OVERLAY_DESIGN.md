@@ -115,7 +115,7 @@ Shared native renderer 负责：
 - 用稳定 generation/hash 表达 `track_file_id + frame_index + overlay state + video size`
   的 materialization 边界。
 - 复用现有 layout state 和 track geometry，保证遮罩与视频像素对齐。
-- 按显示尺度做 LOD：小尺度下隐藏过细线框或合并热力图。
+- 按最终显示尺度保持线框像素宽度稳定，避免高倍率下把源像素线条放大成粗块。
 - 绘制 selected/hover 高亮。
 
 Windows D3D11 backend 当前按 `track_file_id + frame_index + overlay state + video size`
@@ -157,8 +157,9 @@ display-link final composite 热路径里。当前 Metal immediate primitive pat
 4. Overlay layer raster 可以落后于 viewport composite。ring pressure 或 GPU 忙时优先跳过
    overlay layer raster，final composite 继续使用 last completed layer，不能阻塞 Swift/main
    thread，不能发布半成品 buffer。
-5. 高倍率和密集 CU 场景必须有 LOD/budget：按最终像素尺度合并或抑制低价值细线，保留
-   黑边 + 中心高亮的可读样式，同时记录 dropped/merged primitive 计数。
+5. CU/MB 边界在 layer 中保存方向 marker，final composite 按当前 source-to-screen
+   scale 解码成固定屏幕像素宽度的黑边 + 亮白中心线。LOD/budget 只作为未来 8K 或
+   极端密集 overlay 的候选，不能作为普通缩放倍率下保持流畅的前提。
 
 验收指标：
 
@@ -167,7 +168,7 @@ display-link final composite 热路径里。当前 Metal immediate primitive pat
 - `overlayLayerReuseCount` 在 pan/zoom 期间明显高于 raster count。
 - `overlayCompositeP95Us` 保持在 display-link final composite budget 内；overlay layer
   raster 可以低频，但 viewport 不能因为 overlay 进入 backpressure 风暴。
-- `overlayPrimitiveDropCount`、`overlayLodLevel`、`overlayWaitingForChunk` 等诊断必须可见，
+- `overlayWaitingForChunk`、overlay fallback reason 和未来可能的 drop/budget 诊断必须可见，
   不能把 CPU fallback 或缺 chunk 伪装成健康 GPU path。
 
 当前 VACHUNK CU/MB record 已带 `bit_count`，`cuBitCostHeatmap` 使用

@@ -477,6 +477,15 @@ float2 overlay_screen_px_per_source_px(
              float2(0.001, 0.001));
 }
 
+uint overlay_marker_bits_from_sample(float4 sample) {
+  const bool is_marker =
+      sample.a > 0.99 && sample.g < 0.01 && sample.r > 0.001;
+  if (!is_marker) {
+    return 0u;
+  }
+  return uint(round(saturate(sample.r) * 15.0)) & 15u;
+}
+
 float overlay_line_marker_distance_px(
     uint edge_bits,
     float2 source_px_coord,
@@ -498,27 +507,14 @@ float overlay_line_marker_distance_px(
   return distance_px;
 }
 
-float4 overlay_decode_line_marker(
-    float4 sample,
-    float2 source_px_coord,
-    float2 px_per_source) {
-  const bool is_marker =
-      sample.a > 0.99 && sample.g < 0.01 && sample.r > 0.001;
-  if (!is_marker) {
-    return sample;
+float4 overlay_decode_line_marker(float4 base_overlay, float distance_px) {
+  if (distance_px < 0.55) {
+    return overlay_blend_over(base_overlay, float4(1.0, 1.0, 1.0, 0.95));
   }
-  const uint edge_bits = uint(round(saturate(sample.r) * 15.0));
-  if (edge_bits == 0u) {
-    return float4(0.0, 0.0, 0.0, 0.0);
+  if (distance_px < 1.55) {
+    return overlay_blend_over(base_overlay, float4(0.0, 0.0, 0.0, 0.85));
   }
-  const float distance_px =
-      overlay_line_marker_distance_px(edge_bits, source_px_coord, px_per_source);
-  if (sample.b < 0.5) {
-    const float alpha = smoothstep(1.35, 0.45, distance_px);
-    return float4(1.0, 1.0, 1.0, alpha);
-  }
-  const float alpha = smoothstep(2.6, 1.1, distance_px);
-  return float4(0.0, 0.0, 0.0, alpha * (166.0 / 255.0));
+  return base_overlay;
 }
 
 float4 overlay_sample_for_track(
@@ -541,20 +537,86 @@ float4 overlay_sample_for_track(
   const float2 source_px_coord =
       source_uv * float2(float(source_width), float(source_height));
   float4 sample = float4(0.0, 0.0, 0.0, 0.0);
+  float4 sample_left = float4(0.0, 0.0, 0.0, 0.0);
+  float4 sample_right = float4(0.0, 0.0, 0.0, 0.0);
+  float4 sample_up = float4(0.0, 0.0, 0.0, 0.0);
+  float4 sample_down = float4(0.0, 0.0, 0.0, 0.0);
+  const uint left_x = source_x > 0u ? source_x - 1u : source_x;
+  const uint right_x = min(source_x + 1u, source_width - 1u);
+  const uint up_y = source_y > 0u ? source_y - 1u : source_y;
+  const uint down_y = min(source_y + 1u, source_height - 1u);
   if (track_slot == 0u) {
     sample = overlay0.read(uint2(min(source_x, overlay0.get_width() - 1),
                                  min(source_y, overlay0.get_height() - 1)));
+    sample_left = overlay0.read(uint2(min(left_x, overlay0.get_width() - 1),
+                                      min(source_y, overlay0.get_height() - 1)));
+    sample_right = overlay0.read(uint2(min(right_x, overlay0.get_width() - 1),
+                                       min(source_y, overlay0.get_height() - 1)));
+    sample_up = overlay0.read(uint2(min(source_x, overlay0.get_width() - 1),
+                                    min(up_y, overlay0.get_height() - 1)));
+    sample_down = overlay0.read(uint2(min(source_x, overlay0.get_width() - 1),
+                                      min(down_y, overlay0.get_height() - 1)));
   } else if (track_slot == 1u) {
     sample = overlay1.read(uint2(min(source_x, overlay1.get_width() - 1),
                                  min(source_y, overlay1.get_height() - 1)));
+    sample_left = overlay1.read(uint2(min(left_x, overlay1.get_width() - 1),
+                                      min(source_y, overlay1.get_height() - 1)));
+    sample_right = overlay1.read(uint2(min(right_x, overlay1.get_width() - 1),
+                                       min(source_y, overlay1.get_height() - 1)));
+    sample_up = overlay1.read(uint2(min(source_x, overlay1.get_width() - 1),
+                                    min(up_y, overlay1.get_height() - 1)));
+    sample_down = overlay1.read(uint2(min(source_x, overlay1.get_width() - 1),
+                                      min(down_y, overlay1.get_height() - 1)));
   } else if (track_slot == 2u) {
     sample = overlay2.read(uint2(min(source_x, overlay2.get_width() - 1),
                                  min(source_y, overlay2.get_height() - 1)));
+    sample_left = overlay2.read(uint2(min(left_x, overlay2.get_width() - 1),
+                                      min(source_y, overlay2.get_height() - 1)));
+    sample_right = overlay2.read(uint2(min(right_x, overlay2.get_width() - 1),
+                                       min(source_y, overlay2.get_height() - 1)));
+    sample_up = overlay2.read(uint2(min(source_x, overlay2.get_width() - 1),
+                                    min(up_y, overlay2.get_height() - 1)));
+    sample_down = overlay2.read(uint2(min(source_x, overlay2.get_width() - 1),
+                                      min(down_y, overlay2.get_height() - 1)));
   } else {
     sample = overlay3.read(uint2(min(source_x, overlay3.get_width() - 1),
                                  min(source_y, overlay3.get_height() - 1)));
+    sample_left = overlay3.read(uint2(min(left_x, overlay3.get_width() - 1),
+                                      min(source_y, overlay3.get_height() - 1)));
+    sample_right = overlay3.read(uint2(min(right_x, overlay3.get_width() - 1),
+                                       min(source_y, overlay3.get_height() - 1)));
+    sample_up = overlay3.read(uint2(min(source_x, overlay3.get_width() - 1),
+                                    min(up_y, overlay3.get_height() - 1)));
+    sample_down = overlay3.read(uint2(min(source_x, overlay3.get_width() - 1),
+                                      min(down_y, overlay3.get_height() - 1)));
   }
-  return overlay_decode_line_marker(sample, source_px_coord, px_per_source);
+
+  const uint center_bits = overlay_marker_bits_from_sample(sample);
+  const uint left_bits = source_x > 0u ? overlay_marker_bits_from_sample(sample_left) : 0u;
+  const uint right_bits =
+      source_x + 1u < source_width ? overlay_marker_bits_from_sample(sample_right) : 0u;
+  const uint up_bits = source_y > 0u ? overlay_marker_bits_from_sample(sample_up) : 0u;
+  const uint down_bits =
+      source_y + 1u < source_height ? overlay_marker_bits_from_sample(sample_down) : 0u;
+  const float2 frac = fract(source_px_coord);
+  float distance_px = overlay_line_marker_distance_px(
+      center_bits, source_px_coord, px_per_source);
+  if ((left_bits & 2u) != 0u) {
+    distance_px = min(distance_px, frac.x * px_per_source.x);
+  }
+  if ((right_bits & 1u) != 0u) {
+    distance_px = min(distance_px, (1.0 - frac.x) * px_per_source.x);
+  }
+  if ((up_bits & 8u) != 0u) {
+    distance_px = min(distance_px, frac.y * px_per_source.y);
+  }
+  if ((down_bits & 4u) != 0u) {
+    distance_px = min(distance_px, (1.0 - frac.y) * px_per_source.y);
+  }
+
+  const float4 base_overlay =
+      center_bits == 0u ? sample : float4(0.0, 0.0, 0.0, 0.0);
+  return overlay_decode_line_marker(base_overlay, distance_px);
 }
 
 	kernel void layout_bgra_copy(
@@ -1115,19 +1177,11 @@ kernel void composite_overlay_line_layer(
   const int x = int(gid.x);
   const int y = int(gid.y);
   const uint center_bits = overlay_mask_at(mask, params.width, params.height, x, y) & 15u;
-  const uint halo_bits =
-      center_bits == 0u
-          ? ((overlay_mask_at(mask, params.width, params.height, x - 1, y) |
-              overlay_mask_at(mask, params.width, params.height, x + 1, y) |
-              overlay_mask_at(mask, params.width, params.height, x, y - 1) |
-              overlay_mask_at(mask, params.width, params.height, x, y + 1)) & 15u)
-          : 0u;
-  const uint edge_bits = center_bits != 0u ? center_bits : halo_bits;
-  if (edge_bits == 0u) {
+  if (center_bits == 0u) {
     return;
   }
-  const float marker = float(edge_bits) / 15.0;
-  layer.write(float4(marker, 0.0, center_bits != 0u ? 0.0 : 1.0, 1.0), gid);
+  const float marker = float(center_bits) / 15.0;
+  layer.write(float4(marker, 0.0, 0.0, 1.0), gid);
 }
 
 bool overlay_global_rect_from_video_rect(

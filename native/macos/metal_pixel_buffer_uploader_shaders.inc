@@ -494,10 +494,17 @@ uint overlay_marker_bits_at(texture2d<float, access::read> overlay, int x, int y
   return overlay_marker_bits_from_sample(overlay.read(uint2(uint(x), uint(y))));
 }
 
+float overlay_snapped_line_distance_px(float line_screen_px,
+                                       float pixel_center_px) {
+  const float snapped_line_px = floor(line_screen_px) + 0.5;
+  return abs(pixel_center_px - snapped_line_px);
+}
+
 float overlay_line_marker_distance_for_texture(
     texture2d<float, access::read> overlay,
     float2 source_px_coord,
-    float2 px_per_source) {
+    float2 px_per_source,
+    float2 display_px_coord) {
   const int base_x = int(floor(source_px_coord.x));
   const int base_y = int(floor(source_px_coord.y));
   const int radius_x = clamp(int(ceil(1.6 / max(px_per_source.x, 0.001))), 1, 8);
@@ -507,20 +514,36 @@ float overlay_line_marker_distance_for_texture(
     const int x = base_x + dx;
     const uint bits = overlay_marker_bits_at(overlay, x, base_y);
     if ((bits & 1u) != 0u) {
-      distance_px = min(distance_px, abs(source_px_coord.x - float(x)) * px_per_source.x);
+      const float line_screen_x =
+          display_px_coord.x + (float(x) - source_px_coord.x) * px_per_source.x;
+      distance_px = min(distance_px,
+                        overlay_snapped_line_distance_px(line_screen_x,
+                                                         display_px_coord.x));
     }
     if ((bits & 2u) != 0u) {
-      distance_px = min(distance_px, abs(source_px_coord.x - float(x + 1)) * px_per_source.x);
+      const float line_screen_x =
+          display_px_coord.x + (float(x + 1) - source_px_coord.x) * px_per_source.x;
+      distance_px = min(distance_px,
+                        overlay_snapped_line_distance_px(line_screen_x,
+                                                         display_px_coord.x));
     }
   }
   for (int dy = -radius_y; dy <= radius_y; ++dy) {
     const int y = base_y + dy;
     const uint bits = overlay_marker_bits_at(overlay, base_x, y);
     if ((bits & 4u) != 0u) {
-      distance_px = min(distance_px, abs(source_px_coord.y - float(y)) * px_per_source.y);
+      const float line_screen_y =
+          display_px_coord.y + (float(y) - source_px_coord.y) * px_per_source.y;
+      distance_px = min(distance_px,
+                        overlay_snapped_line_distance_px(line_screen_y,
+                                                         display_px_coord.y));
     }
     if ((bits & 8u) != 0u) {
-      distance_px = min(distance_px, abs(source_px_coord.y - float(y + 1)) * px_per_source.y);
+      const float line_screen_y =
+          display_px_coord.y + (float(y + 1) - source_px_coord.y) * px_per_source.y;
+      distance_px = min(distance_px,
+                        overlay_snapped_line_distance_px(line_screen_y,
+                                                         display_px_coord.y));
     }
   }
   return distance_px;
@@ -542,6 +565,7 @@ float4 overlay_sample_for_track(
     uint source_x,
     uint source_y,
     float2 source_uv,
+    float2 display_px_coord,
     texture2d<float, access::read> overlay0,
     texture2d<float, access::read> overlay1,
     texture2d<float, access::read> overlay2,
@@ -561,22 +585,26 @@ float4 overlay_sample_for_track(
     sample = overlay0.read(uint2(min(source_x, overlay0.get_width() - 1),
                                  min(source_y, overlay0.get_height() - 1)));
     distance_px =
-        overlay_line_marker_distance_for_texture(overlay0, source_px_coord, px_per_source);
+        overlay_line_marker_distance_for_texture(
+            overlay0, source_px_coord, px_per_source, display_px_coord);
   } else if (track_slot == 1u) {
     sample = overlay1.read(uint2(min(source_x, overlay1.get_width() - 1),
                                  min(source_y, overlay1.get_height() - 1)));
     distance_px =
-        overlay_line_marker_distance_for_texture(overlay1, source_px_coord, px_per_source);
+        overlay_line_marker_distance_for_texture(
+            overlay1, source_px_coord, px_per_source, display_px_coord);
   } else if (track_slot == 2u) {
     sample = overlay2.read(uint2(min(source_x, overlay2.get_width() - 1),
                                  min(source_y, overlay2.get_height() - 1)));
     distance_px =
-        overlay_line_marker_distance_for_texture(overlay2, source_px_coord, px_per_source);
+        overlay_line_marker_distance_for_texture(
+            overlay2, source_px_coord, px_per_source, display_px_coord);
   } else {
     sample = overlay3.read(uint2(min(source_x, overlay3.get_width() - 1),
                                  min(source_y, overlay3.get_height() - 1)));
     distance_px =
-        overlay_line_marker_distance_for_texture(overlay3, source_px_coord, px_per_source);
+        overlay_line_marker_distance_for_texture(
+            overlay3, source_px_coord, px_per_source, display_px_coord);
   }
 
   const uint center_bits = overlay_marker_bits_from_sample(sample);
@@ -673,6 +701,7 @@ float4 overlay_sample_for_track(
                                source_x,
                                source_y,
                                source_uv,
+                               float2(gid) + float2(0.5, 0.5),
                                overlay0,
                                overlay1,
                                overlay2,
@@ -778,6 +807,7 @@ kernel void layout_cv_yuv_copy(
                                source_x,
                                source_y_pos,
                                source_uv_coord,
+                               float2(gid) + float2(0.5, 0.5),
                                overlay0,
                                overlay1,
                                overlay2,
@@ -881,6 +911,7 @@ kernel void layout_cv_yuv_set_copy(
                                source_x,
                                source_y,
                                source_uv,
+                               float2(gid) + float2(0.5, 0.5),
                                overlay0,
                                overlay1,
                                overlay2,

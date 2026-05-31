@@ -39,6 +39,9 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
   AnalysisOverlayConfig get overlayConfig => _config;
 
   @override
+  int get overlayPresentationRevision => 0;
+
+  @override
   AnalysisTrackGenerationStatus? statusForPath(String path) => null;
 
   @override

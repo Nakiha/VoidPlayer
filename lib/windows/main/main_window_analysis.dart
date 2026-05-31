@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../../analysis/analysis_manager.dart';
@@ -29,6 +30,8 @@ class MainWindowAnalysisCoordinator {
   bool _overlayPanelRequested = false;
   Future<void>? _operationInFlight;
   Timer? _overlayPlaybackPrefetchTimer;
+  late final Listenable? _analysisGenerationListenable;
+  late int _observedOverlayPresentationRevision;
 
   MainWindowAnalysisCoordinator({
     required this.trackManager,
@@ -38,11 +41,22 @@ class MainWindowAnalysisCoordinator {
     this.presentedFrameProvider,
     this.onOverlayStateChanged,
   }) : analysisGeneration = analysisGeneration ?? AnalysisManager.instance {
+    _observedOverlayPresentationRevision =
+        this.analysisGeneration.overlayPresentationRevision;
+    _analysisGenerationListenable = this.analysisGeneration is Listenable
+        ? this.analysisGeneration as Listenable
+        : null;
+    _analysisGenerationListenable?.addListener(
+      _handleAnalysisGenerationChanged,
+    );
     _ipcServer.publishAccentColor(analysisProcesses.accentColorValue);
   }
 
   Future<void> dispose() async {
     _disposed = true;
+    _analysisGenerationListenable?.removeListener(
+      _handleAnalysisGenerationChanged,
+    );
     _stopOverlayPlaybackPrefetch();
     _hashesByFileId.clear();
     analysisProcesses.analysisIpcPort = null;
@@ -483,5 +497,18 @@ class MainWindowAnalysisCoordinator {
   void _notifyOverlayStateChanged() {
     if (_disposed) return;
     onOverlayStateChanged?.call();
+  }
+
+  void _handleAnalysisGenerationChanged() {
+    if (_disposed) return;
+    final revision = analysisGeneration.overlayPresentationRevision;
+    if (revision == _observedOverlayPresentationRevision) return;
+    _observedOverlayPresentationRevision = revision;
+    if (!analysisOverlaysEnabled) return;
+    if (!analysisGeneration.overlayPanelVisible ||
+        analysisGeneration.activeOverlayTrackFileIds.isEmpty) {
+      return;
+    }
+    _notifyOverlayStateChanged();
   }
 }

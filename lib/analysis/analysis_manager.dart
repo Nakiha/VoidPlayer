@@ -142,6 +142,7 @@ abstract class AnalysisGenerationService {
   bool get overlayPanelVisible;
   Set<int> get activeOverlayTrackFileIds;
   AnalysisOverlayConfig get overlayConfig;
+  int get overlayPresentationRevision;
   AnalysisTrackGenerationStatus? statusForPath(String path);
   bool supportsOverlayForHash(String hash);
   Future<String?> ensureGenerated(String videoPath);
@@ -230,6 +231,7 @@ class AnalysisManager extends ChangeNotifier
   int _loadSerial = 0;
   int _ensureAndLoadSerial = 0;
   int _overlayActivationSerial = 0;
+  int _overlayPresentationRevision = 0;
 
   AnalysisState get state => _state;
   AnalysisError? get error => _error;
@@ -244,6 +246,8 @@ class AnalysisManager extends ChangeNotifier
       Set<int>.unmodifiable(_requestedOverlayTracksByFileId.keys);
   @override
   AnalysisOverlayConfig get overlayConfig => _overlayConfig;
+  @override
+  int get overlayPresentationRevision => _overlayPresentationRevision;
   bool get isLoaded => _state == AnalysisState.loaded;
 
   @override
@@ -941,7 +945,13 @@ class AnalysisManager extends ChangeNotifier
     if (!result.ok || serial == null || !_isOverlayActivationCurrent(serial)) {
       return;
     }
-    _reloadReadyOverlayTracksForIntent(serial, reason: 'chunk-ready');
+    final loadedAny = _reloadReadyOverlayTracksForIntent(
+      serial,
+      reason: 'chunk-ready',
+    );
+    if (loadedAny) {
+      _overlayPresentationRevision++;
+    }
     notifyListeners();
   }
 

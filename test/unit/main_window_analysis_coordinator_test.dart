@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
@@ -6,13 +7,15 @@ import 'package:void_player/platform/analysis_process_host.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/windows/main/main_window_analysis.dart';
 
-class _CountingAnalysisGenerationService implements AnalysisGenerationService {
+class _CountingAnalysisGenerationService extends ChangeNotifier
+    implements AnalysisGenerationService {
   int ensureGeneratedCalls = 0;
   int activateOverlayCalls = 0;
   int activateOverlayTracksCalls = 0;
   bool _overlayPanelVisible = false;
   Set<int> _activeOverlayTrackFileIds = const {};
   AnalysisOverlayConfig _config = const AnalysisOverlayConfig();
+  int _overlayPresentationRevision = 0;
 
   @override
   String? get activeOverlayHash => null;
@@ -25,6 +28,9 @@ class _CountingAnalysisGenerationService implements AnalysisGenerationService {
 
   @override
   AnalysisOverlayConfig get overlayConfig => _config;
+
+  @override
+  int get overlayPresentationRevision => _overlayPresentationRevision;
 
   @override
   AnalysisTrackGenerationStatus? statusForPath(String path) => null;
@@ -102,6 +108,17 @@ class _CountingAnalysisGenerationService implements AnalysisGenerationService {
   void deactivateOverlay() {
     _overlayPanelVisible = false;
     _activeOverlayTrackFileIds = const {};
+  }
+
+  void completeOverlayChunkForTest({int trackFileId = 7}) {
+    _overlayPanelVisible = true;
+    _activeOverlayTrackFileIds = {trackFileId};
+    _overlayPresentationRevision++;
+    notifyListeners();
+  }
+
+  void emitSameOverlayRevisionForTest() {
+    notifyListeners();
   }
 }
 
@@ -206,5 +223,29 @@ void main() {
     await tester.pump();
 
     expect(generation.activateOverlayTracksCalls, 2);
+  });
+
+  test('overlay chunk readiness requests redraw for paused viewport', () {
+    final tracks = _trackManagerWithOneTrack();
+    final generation = _CountingAnalysisGenerationService();
+    var redraws = 0;
+    final coordinator = MainWindowAnalysisCoordinator(
+      trackManager: tracks,
+      analysisProcesses: UnsupportedAnalysisProcessHost(),
+      analysisGeneration: generation,
+      onOverlayStateChanged: () {
+        redraws++;
+      },
+    );
+    addTearDown(coordinator.dispose);
+    addTearDown(tracks.dispose);
+
+    generation.completeOverlayChunkForTest();
+
+    expect(redraws, 1);
+
+    generation.emitSameOverlayRevisionForTest();
+
+    expect(redraws, 1);
   });
 }

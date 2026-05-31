@@ -275,6 +275,34 @@ class TestRunner {
         if (!metric.stable) {
           throw AssertionError(metric.failureMessage);
         }
+      case AssertViewportOverlayLineStyle(
+        :final minPairedCenters,
+        :final minPairedRatio,
+      ):
+        final capture = await controller.captureViewport();
+        if (!capture.overlayLineStyleMetricsAvailable) {
+          throw AssertionError(
+            'Viewport overlay line style metrics are unavailable for '
+            '${capture.hash}',
+          );
+        }
+        final metric = _ViewportOverlayLineStyleMetric(
+          pairedCenters: capture.overlayLinePairedCenters,
+          weakWhiteCenters: capture.overlayLineWeakWhiteCenters,
+          blackOnlyCenters: capture.overlayLineBlackOnlyCenters,
+        );
+        log.info(metric.summary());
+        if (!metric.meets(
+          minPairedCenters: minPairedCenters,
+          minPairedRatio: minPairedRatio,
+        )) {
+          throw AssertionError(
+            metric.failureMessage(
+              minPairedCenters: minPairedCenters,
+              minPairedRatio: minPairedRatio,
+            ),
+          );
+        }
       case HoverControlsBarButtons(:final steps):
         log.info('TestRunner: HOVER_CONTROLS_BAR_BUTTONS steps=$steps');
         testHarness.hoverControlsBarButtons(steps: steps);
@@ -360,4 +388,43 @@ class TestRunner {
       'WAIT_${state.name.toUpperCase()} timed out after ${timeout.inMilliseconds}ms',
     );
   }
+}
+
+class _ViewportOverlayLineStyleMetric {
+  final int pairedCenters;
+  final int weakWhiteCenters;
+  final int blackOnlyCenters;
+
+  const _ViewportOverlayLineStyleMetric({
+    required this.pairedCenters,
+    required this.weakWhiteCenters,
+    required this.blackOnlyCenters,
+  });
+
+  int get suspiciousCenters => weakWhiteCenters + blackOnlyCenters;
+
+  int get classifiedCenters => pairedCenters + suspiciousCenters;
+
+  double get pairedRatio =>
+      classifiedCenters == 0 ? 0.0 : pairedCenters / classifiedCenters;
+
+  bool meets({required int minPairedCenters, required double minPairedRatio}) =>
+      pairedCenters >= minPairedCenters && pairedRatio >= minPairedRatio;
+
+  String failureMessage({
+    required int minPairedCenters,
+    required double minPairedRatio,
+  }) =>
+      'Viewport overlay line style is unstable: '
+      'pairedCenters=$pairedCenters weakWhiteCenters=$weakWhiteCenters '
+      'blackOnlyCenters=$blackOnlyCenters '
+      'pairedRatio=${pairedRatio.toStringAsFixed(3)} '
+      'requiredPairedCenters=$minPairedCenters '
+      'requiredPairedRatio=${minPairedRatio.toStringAsFixed(3)}';
+
+  String summary() =>
+      'ASSERT_VIEWPORT_OVERLAY_LINE_STYLE summary: '
+      'pairedCenters=$pairedCenters weakWhiteCenters=$weakWhiteCenters '
+      'blackOnlyCenters=$blackOnlyCenters '
+      'pairedRatio=${pairedRatio.toStringAsFixed(3)}';
 }

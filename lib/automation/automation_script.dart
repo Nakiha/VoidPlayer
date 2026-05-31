@@ -339,6 +339,14 @@ ScriptInstruction? _parseInstruction(
           maxDropSamples: args.length >= 6 ? int.parse(args[5]) : 0,
         ),
       );
+    case 'ASSERT_VIEWPORT_OVERLAY_LINE_STYLE':
+      return ScriptAutomationAction(
+        time,
+        AssertViewportOverlayLineStyle(
+          minPairedCenters: args.isNotEmpty ? int.parse(args[0]) : 80,
+          minPairedRatio: args.length >= 2 ? double.parse(args[1]) : 0.72,
+        ),
+      );
     case 'SET_RENDER_SIZE':
       if (args.length < 2) {
         log.warning(

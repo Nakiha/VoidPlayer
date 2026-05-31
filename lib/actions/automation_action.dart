@@ -84,6 +84,16 @@ class DragViewportSampleOverlay extends AutomationAction {
   }) : super('DRAG_VIEWPORT_SAMPLE_OVERLAY');
 }
 
+class AssertViewportOverlayLineStyle extends AutomationAction {
+  final int minPairedCenters;
+  final double minPairedRatio;
+
+  const AssertViewportOverlayLineStyle({
+    this.minPairedCenters = 80,
+    this.minPairedRatio = 0.72,
+  }) : super('ASSERT_VIEWPORT_OVERLAY_LINE_STYLE');
+}
+
 class HoverControlsBarButtons extends AutomationAction {
   final int steps;
 

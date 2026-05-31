@@ -19,6 +19,9 @@ enum MacOSViewportCapture {
       "nonBlackRatio": metrics.nonBlackRatio,
       "regionAvgLuma": metrics.regionAvgLuma,
       "regionNonBlackRatio": metrics.regionNonBlackRatio,
+      "overlayLinePairedCenters": metrics.overlayLinePairedCenters,
+      "overlayLineWeakWhiteCenters": metrics.overlayLineWeakWhiteCenters,
+      "overlayLineBlackOnlyCenters": metrics.overlayLineBlackOnlyCenters,
     ]
   }
 }

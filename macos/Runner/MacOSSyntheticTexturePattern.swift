@@ -50,7 +50,10 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
     nonBlackRatio: Double,
     hash: String,
     regionAvgLuma: [String: Double],
-    regionNonBlackRatio: [String: Double]
+    regionNonBlackRatio: [String: Double],
+    overlayLinePairedCenters: Int,
+    overlayLineWeakWhiteCenters: Int,
+    overlayLineBlackOnlyCenters: Int
   ) {
     lock.lock()
     defer { lock.unlock() }
@@ -63,7 +66,10 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
         nonBlackRatio: 0.0,
         hash: "macos-synthetic-empty",
         regionAvgLuma: [:],
-        regionNonBlackRatio: [:]
+        regionNonBlackRatio: [:],
+        overlayLinePairedCenters: 0,
+        overlayLineWeakWhiteCenters: 0,
+        overlayLineBlackOnlyCenters: 0
       )
     }
     return MacOSPixelBufferMetrics.capture(

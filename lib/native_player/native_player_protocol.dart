@@ -56,6 +56,9 @@ class NativePlayerKeys {
   static const nonBlackRatio = 'nonBlackRatio';
   static const regionAvgLuma = 'regionAvgLuma';
   static const regionNonBlackRatio = 'regionNonBlackRatio';
+  static const overlayLinePairedCenters = 'overlayLinePairedCenters';
+  static const overlayLineWeakWhiteCenters = 'overlayLineWeakWhiteCenters';
+  static const overlayLineBlackOnlyCenters = 'overlayLineBlackOnlyCenters';
   static const outputPath = 'outputPath';
   static const mode = 'mode';
   static const splitPos = 'splitPos';
@@ -213,6 +216,10 @@ class ViewportCapture {
   final double nonBlackRatio;
   final Map<String, double> regionAvgLuma;
   final Map<String, double> regionNonBlackRatio;
+  final bool overlayLineStyleMetricsAvailable;
+  final int overlayLinePairedCenters;
+  final int overlayLineWeakWhiteCenters;
+  final int overlayLineBlackOnlyCenters;
   final String? outputPath;
 
   const ViewportCapture({
@@ -223,6 +230,10 @@ class ViewportCapture {
     required this.nonBlackRatio,
     this.regionAvgLuma = const {},
     this.regionNonBlackRatio = const {},
+    this.overlayLineStyleMetricsAvailable = false,
+    this.overlayLinePairedCenters = 0,
+    this.overlayLineWeakWhiteCenters = 0,
+    this.overlayLineBlackOnlyCenters = 0,
     this.outputPath,
   });
 
@@ -235,6 +246,18 @@ class ViewportCapture {
         (map[NativePlayerKeys.nonBlackRatio] as num?)?.toDouble() ?? 0.0,
     regionAvgLuma: _doubleMap(map[NativePlayerKeys.regionAvgLuma]),
     regionNonBlackRatio: _doubleMap(map[NativePlayerKeys.regionNonBlackRatio]),
+    overlayLineStyleMetricsAvailable:
+        map.containsKey(NativePlayerKeys.overlayLinePairedCenters) &&
+        map.containsKey(NativePlayerKeys.overlayLineWeakWhiteCenters) &&
+        map.containsKey(NativePlayerKeys.overlayLineBlackOnlyCenters),
+    overlayLinePairedCenters:
+        (map[NativePlayerKeys.overlayLinePairedCenters] as num?)?.toInt() ?? 0,
+    overlayLineWeakWhiteCenters:
+        (map[NativePlayerKeys.overlayLineWeakWhiteCenters] as num?)?.toInt() ??
+        0,
+    overlayLineBlackOnlyCenters:
+        (map[NativePlayerKeys.overlayLineBlackOnlyCenters] as num?)?.toInt() ??
+        0,
     outputPath: map[NativePlayerKeys.outputPath] as String?,
   );
 }

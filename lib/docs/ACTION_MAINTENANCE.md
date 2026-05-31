@@ -152,6 +152,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `ASSERT_SPLIT_POS` | position, tolerance | 断言分屏分割线位置 |
 | `ASSERT_VIEW_OFFSET` | x, y, tolerance | 断言视口平移偏移 |
 | `ASSERT_VIEW_CENTER_STABLE` | baseline, tolerance | 断言当前归一化视图中心与 `STORE_VIEW_CENTER` 基线一致 |
+| `ASSERT_VIEWPORT_OVERLAY_LINE_STYLE` | minPairedCenters?, minPairedRatio? | 采样 viewport 中 CU overlay 黑白黑线型稳定性 |
 | `ASSERT_CAPTURE_EQUALS` | expected, actual | 断言两次 viewport 截图 hash 相同 |
 | `ASSERT_CAPTURE_CHANGED` | before, after | 断言两次 viewport 截图 hash 不同 |
 | `ASSERT_CAPTURE_HASH` | capture, hash | 断言截图 hash |

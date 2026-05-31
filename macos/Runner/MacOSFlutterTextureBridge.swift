@@ -27,7 +27,10 @@ protocol MacOSVideoTexture: FlutterTexture {
     nonBlackRatio: Double,
     hash: String,
     regionAvgLuma: [String: Double],
-    regionNonBlackRatio: [String: Double]
+    regionNonBlackRatio: [String: Double],
+    overlayLinePairedCenters: Int,
+    overlayLineWeakWhiteCenters: Int,
+    overlayLineBlackOnlyCenters: Int
   )
   func diagnostics() -> MacOSTextureDiagnostics
 }
@@ -360,7 +363,10 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     nonBlackRatio: Double,
     hash: String,
     regionAvgLuma: [String: Double],
-    regionNonBlackRatio: [String: Double]
+    regionNonBlackRatio: [String: Double],
+    overlayLinePairedCenters: Int,
+    overlayLineWeakWhiteCenters: Int,
+    overlayLineBlackOnlyCenters: Int
   ) {
     lock.lock()
     defer { lock.unlock() }
@@ -373,7 +379,10 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         nonBlackRatio: 0.0,
         hash: "\(hashPrefix)-empty",
         regionAvgLuma: [:],
-        regionNonBlackRatio: [:]
+        regionNonBlackRatio: [:],
+        overlayLinePairedCenters: 0,
+        overlayLineWeakWhiteCenters: 0,
+        overlayLineBlackOnlyCenters: 0
       )
     }
     return MacOSPixelBufferMetrics.capture(

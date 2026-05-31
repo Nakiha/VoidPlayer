@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
 
 class AnalysisOverlayChunkRequest {
   final String hash;
@@ -58,6 +60,7 @@ class AnalysisOverlayChunkScheduler {
   final List<_AnalysisOverlayChunkJob> _pendingJobs = [];
   int _jobSequence = 0;
   int _activeWorkers = 0;
+  int _backpressureDropCount = 0;
 
   AnalysisOverlayChunkScheduler({
     this.maxWorkers = 1,
@@ -66,6 +69,20 @@ class AnalysisOverlayChunkScheduler {
     this.onLog,
   }) : assert(maxWorkers > 0),
        assert(maxQueuedJobs > 0);
+
+  int get activeWorkers => _activeWorkers;
+  int get pendingJobs => _pendingJobs.length;
+  int get trackedJobs => _jobsByKey.length;
+  int get backpressureDropCount => _backpressureDropCount;
+
+  static int defaultNativeSubmissionWorkers() {
+    final processors = math.max(1, Platform.numberOfProcessors);
+    final fallback = math.min(math.max(2, processors ~/ 2), 8);
+    final value = int.tryParse(
+      Platform.environment['VOIDPLAYER_ANALYSIS_WORKERS'] ?? '',
+    );
+    return (value ?? fallback).clamp(1, math.max(1, processors)).toInt();
+  }
 
   Future<bool> schedule({
     required AnalysisOverlayChunkRequest request,
@@ -119,6 +136,7 @@ class AnalysisOverlayChunkScheduler {
     while (_pendingJobs.length > maxQueuedJobs) {
       final dropped = _pendingJobs.removeLast();
       _jobsByKey.remove(dropped.request.key);
+      _backpressureDropCount++;
       if (!dropped.completer.isCompleted) {
         dropped.completer.complete(false);
       }

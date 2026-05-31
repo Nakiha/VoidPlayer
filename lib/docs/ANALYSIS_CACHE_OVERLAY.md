@@ -13,7 +13,7 @@
 | --- | --- |
 | `AnalysisManager` | Compute source hash, generate/load VAC2 base, track overlay intent, schedule VACHUNK chunks, and reload native overlay tracks when chunks become ready. |
 | `AnalysisCache` | Resolve cache paths, validate runtime VAC versions, discover current overlay chunks by file name. |
-| `SerialAnalysisGenerationQueue` | Serialize base/chunk FFI work and take cache locks around native calls. |
+| `SerialAnalysisGenerationQueue` | Serialize VAC2 base writes and keep same-hash overlay work behind active base writes; overlay VACHUNK generation is submitted to native concurrently. |
 | `MainWindowAnalysisCoordinator` | Connect active tracks, presented-frame timing, overlay panel state, analysis IPC, and redraw requests. |
 | `MainWindowPlaybackCoordinator` | Notify analysis after seek settles so overlay chunks can be requested without blocking seek or frame presentation. |
 
@@ -59,19 +59,21 @@ miss near 64-frame boundaries, where Dart PTS/DTS lookup and native paused-frame
 lookup can differ by one frame.
 
 Chunk requests are deduplicated by `(hash, startFrame, endFrame)` and run
-through a small scheduler in `AnalysisManager`. The default worker count is one:
-base and chunk generation remain serialized through `SerialAnalysisGenerationQueue`,
-but UI overlay activation no longer blocks on missing chunks. Pending work is
-trimmed under backpressure, stale overlay activations are ignored, and chunk
-completion reloads only the still-requested native overlay tracks.
+through a small intent scheduler in `AnalysisManager`. Dart only owns this
+request-level policy: priority, de-duplication, and backpressure. The heavy work
+is native/analyzer-side. VAC2 base writes remain serialized and exclusive for a
+hash, but overlay VACHUNK generation may run concurrently for different frame
+windows once the base cache is ready. The submission worker count defaults to
+`min(max(2, cpu/2), 8)` and can be overridden with
+`VOIDPLAYER_ANALYSIS_WORKERS`; this limits how many native analyzer jobs Dart
+submits, not how much CPU work Dart performs.
 
 While overlay is active, `MainWindowAnalysisCoordinator` also runs a low-frequency
-playback prefetch tick. It samples the latest renderer-presented frame, submits
-the current chunk window plus one forward window, and skips ticks while another
-analysis operation is already in flight. This is intentionally separate from
-the Metal/display-link hot path: playback keeps presenting, VACHUNK generation
-stays serialized in the background, and newly published chunks are picked up by
-the native overlay track reload path.
+playback prefetch tick. It samples the latest renderer-presented frame and
+submits the current chunk window plus one forward window. This is intentionally
+separate from the Metal/display-link hot path: playback keeps presenting,
+VACHUNK generation runs in native analyzer work, and newly published chunks are
+picked up by the native overlay track reload path.
 
 Generated chunks are published under:
 

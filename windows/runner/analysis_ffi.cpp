@@ -135,6 +135,7 @@ namespace {
 
 std::mutex g_analysis_mutex;
 std::mutex g_analysis_generate_mutex;
+std::atomic<uint64_t> g_overlay_staging_counter{1};
 
 const char* safe_cstr(const char* value) {
     return value ? value : "";
@@ -1589,7 +1590,6 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
                                                   int32_t start_frame,
                                                   int32_t end_frame,
                                                   int64_t max_cache_bytes) {
-    std::lock_guard<std::mutex> lock(g_analysis_generate_mutex);
     if (!video_path || video_path[0] == '\0' || !hash || hash[0] == '\0' ||
         !cache_root || cache_root[0] == '\0' ||
         start_frame < 0 || end_frame < start_frame) {
@@ -1629,7 +1629,9 @@ int32_t naki_analysis_generate_vac2_overlay_chunk(const char* video_path,
         vr::win_utf8::path_from_utf8(store.tmp_dir()) /
         vr::win_utf8::path_from_utf8(
             "overlay." + std::to_string(GetCurrentProcessId()) + "." +
-            std::to_string(GetTickCount64())));
+            std::to_string(GetTickCount64()) + "." +
+            std::to_string(g_overlay_staging_counter.fetch_add(
+                1, std::memory_order_relaxed))));
     ScopedStagingDir staging(staging_path);
     if (!vr::win_utf8::create_directory_utf8(staging.path())) {
         set_analysis_error(NAKI_ANALYSIS_ERR_OPEN_FAILED,

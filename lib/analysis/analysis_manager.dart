@@ -216,6 +216,8 @@ class AnalysisManager extends ChangeNotifier
   final Map<String, Future<String?>> _ensureGeneratedInFlightByPath = {};
   late final AnalysisOverlayChunkScheduler _overlayChunkScheduler =
       AnalysisOverlayChunkScheduler(
+        maxWorkers:
+            AnalysisOverlayChunkScheduler.defaultNativeSubmissionWorkers(),
         onComplete: _handleOverlayChunkJobComplete,
         onLog: (message, [error, stackTrace]) {
           if (error == null) {
@@ -237,6 +239,11 @@ class AnalysisManager extends ChangeNotifier
   AnalysisError? get error => _error;
   String? get generatingFileName => _generatingFileName;
   String? get loadedHash => _loadedHash;
+  int get analysisWorkerCount => _overlayChunkScheduler.maxWorkers;
+  int get analysisActiveWorkers => _overlayChunkScheduler.activeWorkers;
+  int get analysisPendingJobs => _overlayChunkScheduler.pendingJobs;
+  int get analysisBackpressureDropCount =>
+      _overlayChunkScheduler.backpressureDropCount;
   @override
   String? get activeOverlayHash => _activeOverlayHash;
   @override

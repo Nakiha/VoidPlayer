@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_cache.dart';
 import 'package:void_player/analysis/analysis_cache_service.dart';
@@ -82,6 +84,11 @@ class _FakeCacheService implements AnalysisCacheService {
 class _FakeNativeService implements AnalysisNativeService {
   int generateCount = 0;
   int generateOverlayChunkCount = 0;
+  int activeBaseCount = 0;
+  int activeOverlayCount = 0;
+  int maxActiveOverlayCount = 0;
+  Completer<bool>? nextBaseCompleter;
+  final List<Completer<bool>> overlayCompleters = [];
 
   @override
   Future<bool> generateVac2Base(
@@ -90,7 +97,13 @@ class _FakeNativeService implements AnalysisNativeService {
     int maxCacheBytes,
   ) async {
     generateCount++;
-    return true;
+    activeBaseCount++;
+    try {
+      return await (nextBaseCompleter?.future ?? Future.value(true));
+    } finally {
+      activeBaseCount--;
+      nextBaseCompleter = null;
+    }
   }
 
   @override
@@ -102,7 +115,18 @@ class _FakeNativeService implements AnalysisNativeService {
     required int maxCacheBytes,
   }) async {
     generateOverlayChunkCount++;
-    return true;
+    activeOverlayCount++;
+    maxActiveOverlayCount = activeOverlayCount > maxActiveOverlayCount
+        ? activeOverlayCount
+        : maxActiveOverlayCount;
+    final completer = overlayCompleters.isNotEmpty
+        ? overlayCompleters.removeAt(0)
+        : null;
+    try {
+      return await (completer?.future ?? Future.value(true));
+    } finally {
+      activeOverlayCount--;
+    }
   }
 
   @override
@@ -153,6 +177,78 @@ void main() {
       expect(cache.exclusiveLockCount, 0);
       expect(cache.sharedLockCount, 1);
       expect(native.generateOverlayChunkCount, 1);
+    },
+  );
+
+  test('generation queue allows concurrent overlay chunk generation', () async {
+    final cache = _FakeCacheService();
+    final firstChunk = Completer<bool>();
+    final secondChunk = Completer<bool>();
+    final native = _FakeNativeService()
+      ..overlayCompleters.addAll([firstChunk, secondChunk]);
+    final queue = SerialAnalysisGenerationQueue(cache: cache, native: native);
+
+    final first = queue.generateOverlayChunk(
+      videoPath: 'video.mp4',
+      hash: 'hash',
+      startFrame: 0,
+      endFrame: 63,
+      maxCacheBytes: 0,
+    );
+    final second = queue.generateOverlayChunk(
+      videoPath: 'video.mp4',
+      hash: 'hash',
+      startFrame: 64,
+      endFrame: 127,
+      maxCacheBytes: 0,
+    );
+
+    await Future<void>.delayed(Duration.zero);
+
+    expect(native.maxActiveOverlayCount, 2);
+    firstChunk.complete(true);
+    secondChunk.complete(true);
+    expect(await Future.wait([first, second]), [true, true]);
+    expect(cache.sharedLockCount, 2);
+  });
+
+  test(
+    'generation queue blocks same-hash overlay while base is writing',
+    () async {
+      final cache = _FakeCacheService();
+      final baseGeneration = Completer<bool>();
+      final overlayChunk = Completer<bool>();
+      final native = _FakeNativeService()
+        ..nextBaseCompleter = baseGeneration
+        ..overlayCompleters.add(overlayChunk);
+      final queue = SerialAnalysisGenerationQueue(cache: cache, native: native);
+
+      final base = queue.generate(
+        videoPath: 'video.mp4',
+        hash: 'hash',
+        maxCacheBytes: 0,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      final overlay = queue.generateOverlayChunk(
+        videoPath: 'video.mp4',
+        hash: 'hash',
+        startFrame: 0,
+        endFrame: 63,
+        maxCacheBytes: 0,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(native.activeBaseCount, 1);
+      expect(native.activeOverlayCount, 0);
+
+      baseGeneration.complete(true);
+      expect(await base, isTrue);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(native.activeOverlayCount, 1);
+      overlayChunk.complete(true);
+      expect(await overlay, isTrue);
     },
   );
 }

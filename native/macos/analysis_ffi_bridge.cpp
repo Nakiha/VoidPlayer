@@ -39,6 +39,7 @@ std::mutex g_generation_mutex;
 std::mutex g_handle_registry_mutex;
 std::unordered_map<uintptr_t, std::shared_ptr<vr::analysis::AnalysisSession>> g_handles;
 std::atomic<uintptr_t> g_next_handle_id{1};
+std::atomic<uint64_t> g_overlay_staging_counter{1};
 
 constexpr uint64_t kOverlayVachunkFeatureFlags =
     VACHUNK_FEATURE_CU_GEOMETRY |
@@ -652,7 +653,6 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_generate_vac2_overlay_
     int32_t start_frame,
     int32_t end_frame,
     int64_t max_cache_bytes) {
-    std::lock_guard<std::mutex> lock(g_generation_mutex);
     if (!video_path || video_path[0] == '\0' || !hash || hash[0] == '\0' ||
         !cache_root || cache_root[0] == '\0' || start_frame < 0 ||
         end_frame < start_frame) {
@@ -705,9 +705,11 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_generate_vac2_overlay_
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
     const auto ticks =
         std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
+    const uint64_t staging_counter =
+        g_overlay_staging_counter.fetch_add(1, std::memory_order_relaxed);
     std::ostringstream staging_name;
     staging_name << "overlay.ffi." << static_cast<long long>(getpid())
-                 << "." << ticks;
+                 << "." << ticks << "." << staging_counter;
     const auto staging_dir =
         vr::win_utf8::path_from_utf8(store.tmp_dir()) / staging_name.str();
     std::error_code ec;

@@ -21,7 +21,8 @@ class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
   final AnalysisCacheService cache;
   final AnalysisNativeService native;
 
-  Future<void> _queue = Future<void>.value();
+  Future<void> _baseQueue = Future<void>.value();
+  final Map<String, Future<void>> _exclusiveByHash = {};
 
   SerialAnalysisGenerationQueue({required this.cache, required this.native});
 
@@ -31,13 +32,24 @@ class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
     required String hash,
     required int maxCacheBytes,
   }) {
-    final previous = _queue;
-    final task = previous.catchError((_) {}).then((_) {
-      return cache.withHashExclusiveLock(hash, () async {
-        return native.generateVac2Base(videoPath, hash, maxCacheBytes);
-      });
-    });
-    _queue = task.then<void>((_) {}, onError: (_) {});
+    final previous = _baseQueue;
+    late final Future<bool> task;
+    late final Future<void> exclusiveMarker;
+    task = previous
+        .catchError((_) {})
+        .then((_) {
+          return cache.withHashExclusiveLock(hash, () async {
+            return native.generateVac2Base(videoPath, hash, maxCacheBytes);
+          });
+        })
+        .whenComplete(() {
+          if (identical(_exclusiveByHash[hash], exclusiveMarker)) {
+            _exclusiveByHash.remove(hash);
+          }
+        });
+    exclusiveMarker = task.then<void>((_) {}, onError: (_) {});
+    _exclusiveByHash[hash] = exclusiveMarker;
+    _baseQueue = task.then<void>((_) {}, onError: (_) {});
     return task;
   }
 
@@ -49,8 +61,8 @@ class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
     required int endFrame,
     required int maxCacheBytes,
   }) {
-    final previous = _queue;
-    final task = previous.catchError((_) {}).then((_) {
+    final waitForBase = _exclusiveByHash[hash] ?? Future<void>.value();
+    return waitForBase.catchError((_) {}).then((_) {
       return cache.withHashSharedLock(hash, () async {
         return native.generateOverlayChunk(
           videoPath: videoPath,
@@ -61,7 +73,5 @@ class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
         );
       });
     });
-    _queue = task.then<void>((_) {}, onError: (_) {});
-    return task;
   }
 }

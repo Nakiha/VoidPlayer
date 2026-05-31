@@ -110,4 +110,39 @@ void main() {
     expect(result?.ok, isTrue);
     expect(result?.overlaySerial, 42);
   });
+
+  test('runs jobs concurrently up to the worker limit', () async {
+    final first = Completer<bool>();
+    final second = Completer<bool>();
+    var active = 0;
+    var maxActive = 0;
+    Future<bool> tracked(Completer<bool> completer) async {
+      active++;
+      maxActive = active > maxActive ? active : maxActive;
+      try {
+        return await completer.future;
+      } finally {
+        active--;
+      }
+    }
+
+    final scheduler = AnalysisOverlayChunkScheduler(maxWorkers: 2);
+    final a = scheduler.schedule(
+      request: _request(0, 63, hash: 'a'),
+      priority: 0,
+      run: () => tracked(first),
+    );
+    final b = scheduler.schedule(
+      request: _request(64, 127, hash: 'b'),
+      priority: 0,
+      run: () => tracked(second),
+    );
+
+    await Future<void>.delayed(Duration.zero);
+
+    expect(maxActive, 2);
+    first.complete(true);
+    second.complete(true);
+    expect(await Future.wait([a, b]), [true, true]);
+  });
 }

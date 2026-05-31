@@ -725,7 +725,11 @@ class AnalysisManager extends ChangeNotifier
         presentedPtsUs: track.presentedPtsUs,
         presentedDtsUs: track.presentedDtsUs,
       );
-      final ranges = _overlayChunkRangesFor(track.hash, targetFrame);
+      final ranges = _overlayChunkRangesFor(
+        track.hash,
+        targetFrame,
+        forwardPrefetchWindows: 1,
+      );
       if (ranges == null) {
         log.info(
           '[Analysis] skipped overlay for ${track.hash}: '
@@ -1283,8 +1287,9 @@ class AnalysisManager extends ChangeNotifier
 
   List<({int startFrame, int endFrame})>? _overlayChunkRangesFor(
     String hash,
-    int targetFrame,
-  ) {
+    int targetFrame, {
+    int forwardPrefetchWindows = 0,
+  }) {
     AnalysisSession? session;
     try {
       session = _native.openSession(_cache.analysisPath(hash));
@@ -1296,6 +1301,7 @@ class AnalysisManager extends ChangeNotifier
       return overlayChunkRangesForFrame(
         frameCount: frameCount,
         targetFrame: targetFrame,
+        forwardPrefetchWindows: forwardPrefetchWindows,
       );
     } catch (e, stack) {
       log.warning(
@@ -1367,6 +1373,7 @@ class AnalysisManager extends ChangeNotifier
     required int targetFrame,
     int chunkFrameCount = 64,
     int edgePrefetchDivisor = 4,
+    int forwardPrefetchWindows = 0,
   }) {
     final safeFrameCount = frameCount <= 0 ? 1 : frameCount;
     final safeChunkFrameCount = chunkFrameCount <= 0 ? 64 : chunkFrameCount;
@@ -1398,6 +1405,17 @@ class AnalysisManager extends ChangeNotifier
         overlayChunkRangeForFrame(
           frameCount: safeFrameCount,
           targetFrame: current.endFrame + 1,
+          chunkFrameCount: safeChunkFrameCount,
+        ),
+      );
+    }
+    for (var i = 1; i <= forwardPrefetchWindows; i++) {
+      final nextFrame = current.endFrame + (i - 1) * safeChunkFrameCount + 1;
+      if (nextFrame >= safeFrameCount) break;
+      ranges.add(
+        overlayChunkRangeForFrame(
+          frameCount: safeFrameCount,
+          targetFrame: nextFrame,
           chunkFrameCount: safeChunkFrameCount,
         ),
       );

@@ -82,6 +82,33 @@ void main() {
     );
   });
 
+  test('overlay chunk ranges can prefetch forward playback windows', () {
+    expect(
+      AnalysisManager.overlayChunkRangesForFrame(
+        frameCount: 573,
+        targetFrame: 80,
+        forwardPrefetchWindows: 1,
+      ),
+      [(startFrame: 64, endFrame: 127), (startFrame: 128, endFrame: 191)],
+    );
+    expect(
+      AnalysisManager.overlayChunkRangesForFrame(
+        frameCount: 573,
+        targetFrame: 118,
+        forwardPrefetchWindows: 1,
+      ),
+      [(startFrame: 64, endFrame: 127), (startFrame: 128, endFrame: 191)],
+    );
+    expect(
+      AnalysisManager.overlayChunkRangesForFrame(
+        frameCount: 573,
+        targetFrame: 572,
+        forwardPrefetchWindows: 2,
+      ),
+      [(startFrame: 512, endFrame: 572)],
+    );
+  });
+
   test('overlay chunks are only supported for block-coded codecs', () {
     expect(AnalysisManager.supportsOverlayCodec(AnalysisCodec.h264), isTrue);
     expect(AnalysisManager.supportsOverlayCodec(AnalysisCodec.hevc), isTrue);

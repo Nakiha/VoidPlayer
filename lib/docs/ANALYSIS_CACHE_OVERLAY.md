@@ -46,6 +46,7 @@ Overlay chunks are generated in fixed frame windows, currently 64 frames:
 ```text
 target presented frame
   -> current aligned 64-frame window
+  -> next window at low priority during normal playback prefetch
   -> previous window too if target is in the first quarter
   -> next window too if target is in the last quarter
   -> naki_analysis_generate_vac2_overlay_chunk(...)
@@ -63,6 +64,14 @@ base and chunk generation remain serialized through `SerialAnalysisGenerationQue
 but UI overlay activation no longer blocks on missing chunks. Pending work is
 trimmed under backpressure, stale overlay activations are ignored, and chunk
 completion reloads only the still-requested native overlay tracks.
+
+While overlay is active, `MainWindowAnalysisCoordinator` also runs a low-frequency
+playback prefetch tick. It samples the latest renderer-presented frame, submits
+the current chunk window plus one forward window, and skips ticks while another
+analysis operation is already in flight. This is intentionally separate from
+the Metal/display-link hot path: playback keeps presenting, VACHUNK generation
+stays serialized in the background, and newly published chunks are picked up by
+the native overlay track reload path.
 
 Generated chunks are published under:
 

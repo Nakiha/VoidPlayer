@@ -1,3 +1,4 @@
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
@@ -10,16 +11,18 @@ class _CountingAnalysisGenerationService implements AnalysisGenerationService {
   int ensureGeneratedCalls = 0;
   int activateOverlayCalls = 0;
   int activateOverlayTracksCalls = 0;
+  bool _overlayPanelVisible = false;
+  Set<int> _activeOverlayTrackFileIds = const {};
   AnalysisOverlayConfig _config = const AnalysisOverlayConfig();
 
   @override
   String? get activeOverlayHash => null;
 
   @override
-  bool get overlayPanelVisible => false;
+  bool get overlayPanelVisible => _overlayPanelVisible;
 
   @override
-  Set<int> get activeOverlayTrackFileIds => const {};
+  Set<int> get activeOverlayTrackFileIds => _activeOverlayTrackFileIds;
 
   @override
   AnalysisOverlayConfig get overlayConfig => _config;
@@ -62,6 +65,8 @@ class _CountingAnalysisGenerationService implements AnalysisGenerationService {
     int? presentedDtsUs,
   }) async {
     activateOverlayCalls++;
+    _overlayPanelVisible = true;
+    _activeOverlayTrackFileIds = {trackFileId};
     return true;
   }
 
@@ -70,6 +75,10 @@ class _CountingAnalysisGenerationService implements AnalysisGenerationService {
     List<AnalysisOverlayTrackSource> tracks,
   ) async {
     activateOverlayTracksCalls++;
+    _overlayPanelVisible = tracks.isNotEmpty;
+    _activeOverlayTrackFileIds = tracks
+        .map((track) => track.trackFileId)
+        .toSet();
     return true;
   }
 
@@ -79,7 +88,10 @@ class _CountingAnalysisGenerationService implements AnalysisGenerationService {
   }
 
   @override
-  void deactivateOverlay() {}
+  void deactivateOverlay() {
+    _overlayPanelVisible = false;
+    _activeOverlayTrackFileIds = const {};
+  }
 }
 
 TrackManager _trackManagerWithOneTrack() {
@@ -136,5 +148,52 @@ void main() {
     expect(generation.ensureGeneratedCalls, 0);
     expect(generation.activateOverlayCalls, 0);
     expect(generation.activateOverlayTracksCalls, 0);
+  });
+
+  test('overlay panel starts low-frequency playback prefetch', () {
+    fakeAsync((async) {
+      final tracks = _trackManagerWithOneTrack();
+      final generation = _CountingAnalysisGenerationService();
+      var redraws = 0;
+      var presentedFrameCalls = 0;
+      final coordinator = MainWindowAnalysisCoordinator(
+        trackManager: tracks,
+        analysisProcesses: UnsupportedAnalysisProcessHost(),
+        analysisGeneration: generation,
+        presentedFrameProvider: (fileId) async {
+          presentedFrameCalls++;
+          return PresentedFrameTiming(
+            ptsUs: presentedFrameCalls * 33333,
+            dtsUs: presentedFrameCalls * 33333,
+          );
+        },
+        onOverlayStateChanged: () {
+          redraws++;
+        },
+      );
+
+      coordinator.toggleOverlayPanel();
+      async.flushMicrotasks();
+
+      expect(generation.activateOverlayTracksCalls, 1);
+      expect(redraws, 1);
+      expect(presentedFrameCalls, 1);
+
+      async.elapse(const Duration(milliseconds: 750));
+      async.flushMicrotasks();
+
+      expect(generation.activateOverlayTracksCalls, 2);
+      expect(presentedFrameCalls, 2);
+      expect(redraws, 1);
+
+      coordinator.deactivateOverlay();
+      async.flushMicrotasks();
+      async.elapse(const Duration(milliseconds: 1500));
+      async.flushMicrotasks();
+
+      expect(generation.activateOverlayTracksCalls, 2);
+      coordinator.dispose();
+      tracks.dispose();
+    });
   });
 }

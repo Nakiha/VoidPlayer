@@ -11,6 +11,10 @@ import '../analysis/ipc/analysis_ipc_models.dart';
 import '../analysis/ipc/analysis_ipc_server.dart';
 
 class MainWindowAnalysisCoordinator {
+  static const Duration _overlayPlaybackPrefetchInterval = Duration(
+    milliseconds: 750,
+  );
+
   final TrackManager trackManager;
   final AnalysisProcessHost analysisProcesses;
   final AnalysisGenerationService analysisGeneration;
@@ -24,6 +28,7 @@ class MainWindowAnalysisCoordinator {
   bool _disposed = false;
   bool _overlayPanelRequested = false;
   Future<void>? _operationInFlight;
+  Timer? _overlayPlaybackPrefetchTimer;
 
   MainWindowAnalysisCoordinator({
     required this.trackManager,
@@ -38,6 +43,7 @@ class MainWindowAnalysisCoordinator {
 
   Future<void> dispose() async {
     _disposed = true;
+    _stopOverlayPlaybackPrefetch();
     _hashesByFileId.clear();
     analysisProcesses.analysisIpcPort = null;
     analysisProcesses.analysisIpcToken = null;
@@ -105,6 +111,7 @@ class MainWindowAnalysisCoordinator {
       final track = trackManager.entries[slotIndex];
       if (analysisGeneration.activeOverlayTrackFileIds.contains(track.fileId)) {
         _overlayPanelRequested = false;
+        _stopOverlayPlaybackPrefetch();
         analysisGeneration.deactivateOverlay();
         _notifyOverlayStateChanged();
         return;
@@ -125,6 +132,7 @@ class MainWindowAnalysisCoordinator {
   void deactivateOverlay() {
     if (_disposed) return;
     _overlayPanelRequested = false;
+    _stopOverlayPlaybackPrefetch();
     analysisGeneration.deactivateOverlay();
     _notifyOverlayStateChanged();
   }
@@ -134,6 +142,7 @@ class MainWindowAnalysisCoordinator {
     if (trackManager.isEmpty) return;
     if (_overlayPanelRequested || analysisGeneration.overlayPanelVisible) {
       _overlayPanelRequested = false;
+      _stopOverlayPlaybackPrefetch();
       analysisGeneration.deactivateOverlay();
       _notifyOverlayStateChanged();
       return;
@@ -147,6 +156,7 @@ class MainWindowAnalysisCoordinator {
     final requestedEntries = List<TrackEntry>.of(trackManager.entries);
     if (requestedEntries.isEmpty) {
       _overlayPanelRequested = false;
+      _stopOverlayPlaybackPrefetch();
       analysisGeneration.deactivateOverlay();
       _notifyOverlayStateChanged();
       return;
@@ -184,6 +194,7 @@ class MainWindowAnalysisCoordinator {
         .toList(growable: false);
     if (liveSources.isEmpty) {
       _overlayPanelRequested = false;
+      _stopOverlayPlaybackPrefetch();
       analysisGeneration.deactivateOverlay();
       _notifyOverlayStateChanged();
       return;
@@ -193,9 +204,11 @@ class MainWindowAnalysisCoordinator {
     );
     if (_disposed || !_overlayPanelRequested) return;
     if (activated) {
+      _startOverlayPlaybackPrefetch();
       _notifyOverlayStateChanged();
     } else {
       _overlayPanelRequested = false;
+      _stopOverlayPlaybackPrefetch();
       analysisGeneration.deactivateOverlay();
       _notifyOverlayStateChanged();
     }
@@ -244,6 +257,7 @@ class MainWindowAnalysisCoordinator {
     if (!stillOpen) return;
     if (analysisGeneration.activeOverlayTrackFileIds.contains(track.fileId)) {
       _overlayPanelRequested = false;
+      _stopOverlayPlaybackPrefetch();
       analysisGeneration.deactivateOverlay();
       _notifyOverlayStateChanged();
       return;
@@ -268,16 +282,19 @@ class MainWindowAnalysisCoordinator {
     if (_disposed) return;
     if (!activated) {
       _overlayPanelRequested = false;
+      _stopOverlayPlaybackPrefetch();
       analysisGeneration.deactivateOverlay();
       _notifyOverlayStateChanged();
       return;
     }
     _hashesByFileId[track.fileId] = hash;
+    _startOverlayPlaybackPrefetch();
     _notifyOverlayStateChanged();
   }
 
   Future<void> _refreshOverlayForCurrentFrameImpl({
     Map<int, PresentedFrameTiming>? presentedFrameOverrides,
+    bool notifyOnSuccess = true,
   }) async {
     final activeFileIds = analysisGeneration.activeOverlayTrackFileIds;
     if (activeFileIds.isEmpty) return;
@@ -309,7 +326,38 @@ class MainWindowAnalysisCoordinator {
     if (_disposed || sources.isEmpty) return;
     final refreshed = await analysisGeneration.activateOverlayTracks(sources);
     if (_disposed || !refreshed) return;
-    _notifyOverlayStateChanged();
+    if (notifyOnSuccess) {
+      _notifyOverlayStateChanged();
+    }
+  }
+
+  void _startOverlayPlaybackPrefetch() {
+    if (_overlayPlaybackPrefetchTimer != null) return;
+    _overlayPlaybackPrefetchTimer = Timer.periodic(
+      _overlayPlaybackPrefetchInterval,
+      (_) => _tickOverlayPlaybackPrefetch(),
+    );
+  }
+
+  void _stopOverlayPlaybackPrefetch() {
+    _overlayPlaybackPrefetchTimer?.cancel();
+    _overlayPlaybackPrefetchTimer = null;
+  }
+
+  void _tickOverlayPlaybackPrefetch() {
+    if (_disposed ||
+        !_overlayPanelRequested ||
+        !analysisGeneration.overlayPanelVisible ||
+        analysisGeneration.activeOverlayTrackFileIds.isEmpty) {
+      _stopOverlayPlaybackPrefetch();
+      return;
+    }
+    if (_operationInFlight != null) return;
+    unawaited(
+      _enqueueOperation(
+        () => _refreshOverlayForCurrentFrameImpl(notifyOnSuccess: false),
+      ).catchError((_) {}),
+    );
   }
 
   Future<PresentedFrameTiming?> _presentedFrameForTrack(

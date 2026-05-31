@@ -496,7 +496,13 @@ uint overlay_marker_bits_at(texture2d<float, access::read> overlay, int x, int y
 
 float overlay_snapped_line_distance_px(float line_screen_px,
                                        float pixel_center_px) {
-  const float snapped_line_px = floor(line_screen_px) + 0.5;
+  // Source-space overlay markers are projected back to screen coordinates for
+  // constant-width lines. At some viewport sizes the projected edge lands almost
+  // exactly on an integer pixel boundary; tiny inverse-mapping differences can
+  // otherwise snap adjacent CU edges to opposite pixels and produce mixed
+  // white-only / black-only line styles.
+  const float snap_epsilon_px = 0.001;
+  const float snapped_line_px = floor(line_screen_px + snap_epsilon_px) + 0.5;
   return abs(pixel_center_px - snapped_line_px);
 }
 

@@ -95,6 +95,7 @@ typedef struct VPMacOSNativeRendererOwnedPresentationState {
   int64_t last_successful_frame_pts_us;
   int32_t overlay_last_expected;
   int32_t overlay_last_applied;
+  uint64_t overlay_last_fill_rect_count;
   uint64_t overlay_last_line_rect_count;
   uint64_t overlay_expected_count;
   uint64_t overlay_applied_count;

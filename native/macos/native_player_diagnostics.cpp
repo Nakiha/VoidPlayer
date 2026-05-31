@@ -127,6 +127,7 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
       out->upload_storage_kind = backend_stats.last_present_package_storage;
       out->overlay_last_expected = backend_stats.overlay_last_expected;
       out->overlay_last_applied = backend_stats.overlay_last_applied;
+      out->overlay_last_fill_rect_count = backend_stats.overlay_last_fill_rect_count;
       out->overlay_last_line_rect_count = backend_stats.overlay_last_line_rect_count;
       out->overlay_expected_count = backend_stats.overlay_expected_count;
       out->overlay_applied_count = backend_stats.overlay_applied_count;

@@ -76,6 +76,9 @@ extension MacOSNativePlayerSession {
       "lastSuccessfulFramePtsUs": Int64(state.last_successful_frame_pts_us),
       "overlayLastExpected": state.overlay_last_expected != 0,
       "overlayLastApplied": state.overlay_last_applied != 0,
+      "overlayLastFillRectCount": Int64(
+        min(state.overlay_last_fill_rect_count, UInt64(Int64.max))
+      ),
       "overlayLastLineRectCount": Int64(
         min(state.overlay_last_line_rect_count, UInt64(Int64.max))
       ),
@@ -386,6 +389,7 @@ extension MacOSNativePlayerSession {
       "lastSuccessfulFramePtsUs": 0,
       "overlayLastExpected": false,
       "overlayLastApplied": false,
+      "overlayLastFillRectCount": 0,
       "overlayLastLineRectCount": 0,
       "overlayExpectedCount": 0,
       "overlayAppliedCount": 0,

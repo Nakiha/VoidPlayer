@@ -594,6 +594,7 @@ vr::PresentationBackendStats MetalPresentationBackend::presentation_stats() cons
   stats.staging_max_bytes = staging_max_bytes_;
   stats.overlay_last_expected = overlay_last_expected_ ? 1 : 0;
   stats.overlay_last_applied = overlay_last_applied_ ? 1 : 0;
+  stats.overlay_last_fill_rect_count = overlay_last_fill_rect_count_;
   stats.overlay_last_line_rect_count = overlay_last_line_rect_count_;
   stats.overlay_expected_count = overlay_expected_count_;
   stats.overlay_applied_count = overlay_applied_count_;
@@ -706,9 +707,11 @@ void MetalPresentationBackend::record_overlay_result(bool expected,
                                                      bool gpu_attempted,
                                                      bool gpu_succeeded,
                                                      bool cpu_attempted,
+                                                     size_t fill_rect_count,
                                                      size_t line_rect_count) {
   overlay_last_expected_ = expected;
   overlay_last_applied_ = applied;
+  overlay_last_fill_rect_count_ = static_cast<uint64_t>(fill_rect_count);
   overlay_last_line_rect_count_ = static_cast<uint64_t>(line_rect_count);
   if (expected) {
     ++overlay_expected_count_;
@@ -784,6 +787,7 @@ void MetalPresentationBackend::complete_async_draw_result(
     bool gpu_attempted,
     bool gpu_succeeded,
     bool cpu_attempted,
+    size_t fill_rect_count,
     size_t line_rect_count) {
   {
     std::lock_guard<std::mutex> lock(async_mutex_);
@@ -814,6 +818,7 @@ void MetalPresentationBackend::complete_async_draw_result(
                           gpu_attempted,
                           gpu_succeeded,
                           cpu_attempted,
+                          fill_rect_count,
                           line_rect_count);
     mark_draw_success(frame_info);
   } else {
@@ -822,6 +827,7 @@ void MetalPresentationBackend::complete_async_draw_result(
                           gpu_attempted,
                           false,
                           cpu_attempted,
+                          fill_rect_count,
                           line_rect_count);
     mark_draw_failure(error ? error : "renderer-owned Metal async draw failed");
   }
@@ -856,6 +862,7 @@ void metal_async_upload_completed(void* user_data,
                                       overlay.gpu_attempted,
                                       overlay.gpu_succeeded,
                                       overlay.cpu_attempted,
+                                      overlay.fill_rect_count,
                                       overlay.line_rect_count);
   backend->finish_async_draw();
   if (macos_profiler_enabled() &&
@@ -1154,6 +1161,7 @@ bool MetalPresentationBackend::draw_frame(
                             overlay.gpu_attempted,
                             overlay.gpu_succeeded,
                             overlay.cpu_attempted,
+                            overlay.fill_rect_count,
                             overlay.line_rect_count);
       annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
       mark_draw_success(frame_info);
@@ -1198,6 +1206,7 @@ bool MetalPresentationBackend::draw_frame(
                               cpu_overlay.gpu_attempted,
                               cpu_overlay.gpu_succeeded,
                               cpu_overlay.cpu_attempted,
+                              cpu_overlay.fill_rect_count,
                               cpu_overlay.line_rect_count);
         annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
         mark_draw_success(frame_info);
@@ -1311,6 +1320,7 @@ bool MetalPresentationBackend::draw_frame(
                             overlay.gpu_attempted,
                             overlay.gpu_succeeded,
                             overlay.cpu_attempted,
+                            overlay.fill_rect_count,
                             overlay.line_rect_count);
       annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
       mark_draw_success(frame_info);
@@ -1355,6 +1365,7 @@ bool MetalPresentationBackend::draw_frame(
                               cpu_overlay.gpu_attempted,
                               cpu_overlay.gpu_succeeded,
                               cpu_overlay.cpu_attempted,
+                              cpu_overlay.fill_rect_count,
                               cpu_overlay.line_rect_count);
         annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
         mark_draw_success(frame_info);
@@ -1575,6 +1586,7 @@ bool MetalPresentationBackend::draw_frame(
                           overlay.gpu_attempted,
                           overlay.gpu_succeeded,
                           overlay.cpu_attempted,
+                          overlay.fill_rect_count,
                           overlay.line_rect_count);
     annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
     mark_draw_success(frame_info);
@@ -1629,6 +1641,7 @@ bool MetalPresentationBackend::draw_frame(
                               cpu_overlay.gpu_attempted,
                               cpu_overlay.gpu_succeeded,
                               cpu_overlay.cpu_attempted,
+                              cpu_overlay.fill_rect_count,
                               cpu_overlay.line_rect_count);
         annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
         mark_draw_success(frame_info);

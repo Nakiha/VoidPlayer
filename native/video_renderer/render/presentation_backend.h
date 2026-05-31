@@ -71,6 +71,7 @@ struct PresentationBackendStats {
     uint64_t staging_max_bytes = 0;
     int32_t overlay_last_expected = 0;
     int32_t overlay_last_applied = 0;
+    uint64_t overlay_last_fill_rect_count = 0;
     uint64_t overlay_last_line_rect_count = 0;
     uint64_t overlay_expected_count = 0;
     uint64_t overlay_applied_count = 0;

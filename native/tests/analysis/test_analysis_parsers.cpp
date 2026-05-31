@@ -953,6 +953,9 @@ TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",
         chunk_data));
 
     const auto frame0 = manager.read_overlay_frame(0);
+    REQUIRE((frame0.feature_flags & VACHUNK_FEATURE_QP) != 0);
+    REQUIRE((frame0.feature_flags & VACHUNK_FEATURE_BIT_COST) != 0);
+    REQUIRE((frame0.frame_flags & VACHUNK_OVERLAY_FRAME_FLAG_EXACT) != 0);
     REQUIRE(frame0.summary.avg_qp == 22);
     REQUIRE(frame0.cus.size() == 1);
     if (!frame0.cus.empty()) {

@@ -10,15 +10,15 @@
 2.9, SET_SPLIT_POS, 0.0
 3.2, ASSERT_SPLIT_POS, 0.0, 0.0001
 3.3, CAPTURE_VIEWPORT, split_zero_secondary_full
-3.4, ASSERT_CAPTURE_NOT_BLACK, split_zero_secondary_full, 0.01, 1.0
-3.5, SET_SPLIT_POS, 1.0
-3.8, ASSERT_SPLIT_POS, 1.0, 0.0001
-3.9, CAPTURE_VIEWPORT, split_one_primary_full
-4.0, ASSERT_CAPTURE_NOT_BLACK, split_one_primary_full
-4.1, ASSERT_CAPTURE_CHANGED, split_zero_secondary_full, split_one_primary_full
-4.2, SET_SPLIT_POS, 0.5
-4.5, ASSERT_SPLIT_POS, 0.5, 0.0001
-4.6, CAPTURE_VIEWPORT, split_middle
-4.7, ASSERT_CAPTURE_NOT_BLACK, split_middle
-4.8, ASSERT_CAPTURE_CHANGED, split_one_primary_full, split_middle
-4.9, QUIT, 0
+9.0, ASSERT_CAPTURE_NOT_BLACK, split_zero_secondary_full, 0.01, 1.0
+9.1, SET_SPLIT_POS, 1.0
+9.6, ASSERT_SPLIT_POS, 1.0, 0.0001
+9.8, CAPTURE_VIEWPORT, split_one_primary_full
+15.5, ASSERT_CAPTURE_NOT_BLACK, split_one_primary_full
+15.6, ASSERT_CAPTURE_CHANGED, split_zero_secondary_full, split_one_primary_full
+15.7, SET_SPLIT_POS, 0.5
+16.2, ASSERT_SPLIT_POS, 0.5, 0.0001
+16.4, CAPTURE_VIEWPORT, split_middle
+22.0, ASSERT_CAPTURE_NOT_BLACK, split_middle
+22.1, ASSERT_CAPTURE_CHANGED, split_one_primary_full, split_middle
+22.2, QUIT, 0

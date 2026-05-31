@@ -39,6 +39,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
   id<MTLComputePipelineState> _overlayLayerLineCompositePipeline;
   id<MTLComputePipelineState> _overlayLayerMotionLinePipeline;
   id<MTLComputePipelineState> _overlayDirectLinePipeline;
+  id<MTLRenderPipelineState> _overlayLayerFillRectRenderPipeline;
   id<MTLTexture> _transparentOverlayTexture;
   std::array<id<MTLTexture>, VPMacOSNativeMaxTracks> _overlayLayerTextures;
   std::array<uint64_t, VPMacOSNativeMaxTracks> _overlayLayerGenerations;

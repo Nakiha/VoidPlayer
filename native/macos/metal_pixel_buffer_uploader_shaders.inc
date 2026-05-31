@@ -1222,6 +1222,61 @@ kernel void raster_overlay_fill_rects_layer(
   }
 }
 
+struct OverlayFillRectVertexOut {
+  float4 position [[position]];
+  float4 color;
+};
+
+vertex OverlayFillRectVertexOut overlay_fill_rect_layer_vertex(
+    device const OverlayGpuRect* rects [[buffer(0)]],
+    constant OverlayLayerParams& params [[buffer(1)]],
+    uint vertex_id [[vertex_id]]) {
+  OverlayFillRectVertexOut out;
+  out.position = float4(-2.0, -2.0, 0.0, 1.0);
+  out.color = float4(0.0, 0.0, 0.0, 0.0);
+  if (params.width == 0 || params.height == 0) {
+    return out;
+  }
+
+  const uint rect_id = vertex_id / 6u;
+  const uint corner = vertex_id - rect_id * 6u;
+  const OverlayGpuRect rect = rects[rect_id];
+  if (!overlay_rect_matches_layer(rect, params)) {
+    return out;
+  }
+  const float4 color = overlay_color_from_bgra(rect.color_bgra);
+  if (color.a <= 0.0) {
+    return out;
+  }
+
+  const float4 rect_px = overlay_video_px_rect(rect, params);
+  const float2 min_px = clamp(floor(rect_px.xy), float2(0.0), float2(params.width, params.height));
+  const float2 max_px = clamp(ceil(rect_px.zw), float2(0.0), float2(params.width, params.height));
+  if (max_px.x <= min_px.x || max_px.y <= min_px.y) {
+    return out;
+  }
+
+  float2 px = min_px;
+  if (corner == 1u || corner == 3u || corner == 4u) {
+    px.x = max_px.x;
+  }
+  if (corner == 2u || corner == 4u || corner == 5u) {
+    px.y = max_px.y;
+  }
+  out.position = float4(
+      px.x / float(params.width) * 2.0 - 1.0,
+      1.0 - px.y / float(params.height) * 2.0,
+      0.0,
+      1.0);
+  out.color = color;
+  return out;
+}
+
+fragment float4 overlay_fill_rect_layer_fragment(
+    OverlayFillRectVertexOut in [[stage_in]]) {
+  return in.color;
+}
+
 kernel void raster_overlay_motion_lines_layer(
     device const OverlayGpuRect* lines [[buffer(0)]],
     constant OverlayLayerParams& params [[buffer(1)]],

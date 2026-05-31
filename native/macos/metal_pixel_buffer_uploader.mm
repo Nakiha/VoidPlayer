@@ -264,6 +264,29 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
             [_device newComputePipelineStateWithFunction:overlayLayerFillFunction
                                                    error:&pipelineError];
       }
+      id<MTLFunction> overlayLayerFillVertexFunction =
+          library ? [library newFunctionWithName:@"overlay_fill_rect_layer_vertex"] : nil;
+      id<MTLFunction> overlayLayerFillFragmentFunction =
+          library ? [library newFunctionWithName:@"overlay_fill_rect_layer_fragment"] : nil;
+      if (overlayLayerFillVertexFunction && overlayLayerFillFragmentFunction) {
+        MTLRenderPipelineDescriptor* descriptor = [[MTLRenderPipelineDescriptor alloc] init];
+        descriptor.vertexFunction = overlayLayerFillVertexFunction;
+        descriptor.fragmentFunction = overlayLayerFillFragmentFunction;
+        descriptor.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        descriptor.colorAttachments[0].blendingEnabled = YES;
+        descriptor.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
+        descriptor.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
+        descriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        descriptor.colorAttachments[0].destinationRGBBlendFactor =
+            MTLBlendFactorOneMinusSourceAlpha;
+        descriptor.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        descriptor.colorAttachments[0].destinationAlphaBlendFactor =
+            MTLBlendFactorOneMinusSourceAlpha;
+        NSError* pipelineError = nil;
+        _overlayLayerFillRectRenderPipeline =
+            [_device newRenderPipelineStateWithDescriptor:descriptor
+                                                    error:&pipelineError];
+      }
       id<MTLFunction> overlayLayerLineMaskFunction =
           library ? [library newFunctionWithName:@"build_overlay_line_mask_layer"] : nil;
       if (overlayLayerLineMaskFunction) {
@@ -500,6 +523,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                         height:static_cast<NSUInteger>(height)
                                                      mipmapped:NO];
   descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+  descriptor.usage |= MTLTextureUsageRenderTarget;
   descriptor.storageMode = MTLStorageModePrivate;
   _overlayLayerTextures[slot] = [_device newTextureWithDescriptor:descriptor];
   _overlayLayerGenerations[slot] = 0;
@@ -521,7 +545,8 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     return NO;
   }
   if (!_overlayLayerClearPipeline ||
-      (overlay->fill_rect_count > 0 && !_overlayLayerFillRectPipeline) ||
+      (overlay->fill_rect_count > 0 &&
+       !_overlayLayerFillRectRenderPipeline && !_overlayLayerFillRectPipeline) ||
       (overlay->motion_line_count > 0 && !_overlayLayerMotionLinePipeline) ||
       ![self ensureTransparentOverlayTexture]) {
     write_error(error, errorSize, "native Metal overlay layer pipelines are not available");
@@ -639,19 +664,45 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     [clearCompute endEncoding];
 
     if (overlay->fill_rect_count > 0) {
-      id<MTLComputeCommandEncoder> fillCompute = [commandBuffer computeCommandEncoder];
-      if (!fillCompute) {
-        write_error(error, errorSize, "failed to create native Metal overlay layer fill command");
+      size_t vertexCount = 0;
+      if (!checked_mul_size(overlay->fill_rect_count, 6u, &vertexCount) ||
+          vertexCount > std::numeric_limits<NSUInteger>::max()) {
+        write_error(error, errorSize, "native Metal overlay layer fill vertex count overflow");
         return NO;
       }
-      [fillCompute setComputePipelineState:_overlayLayerFillRectPipeline];
-      [fillCompute setBuffer:fillRectBuffer offset:0 atIndex:0];
-      [fillCompute setBytes:&params length:sizeof(params) atIndex:1];
-      [fillCompute setTexture:layer atIndex:0];
-      const NSUInteger fillThreadWidth = _overlayLayerFillRectPipeline.threadExecutionWidth;
-      [fillCompute dispatchThreads:MTLSizeMake(overlay->fill_rect_count, 1, 1)
-               threadsPerThreadgroup:MTLSizeMake(fillThreadWidth, 1, 1)];
-      [fillCompute endEncoding];
+      if (_overlayLayerFillRectRenderPipeline) {
+        MTLRenderPassDescriptor* pass = [MTLRenderPassDescriptor renderPassDescriptor];
+        pass.colorAttachments[0].texture = layer;
+        pass.colorAttachments[0].loadAction = MTLLoadActionLoad;
+        pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+        id<MTLRenderCommandEncoder> render = [commandBuffer renderCommandEncoderWithDescriptor:pass];
+        if (!render) {
+          write_error(error, errorSize, "failed to create native Metal overlay layer fill render command");
+          return NO;
+        }
+        [render setRenderPipelineState:_overlayLayerFillRectRenderPipeline];
+        [render setVertexBuffer:fillRectBuffer offset:0 atIndex:0];
+        [render setVertexBytes:&params length:sizeof(params) atIndex:1];
+        [render setViewport:MTLViewport{0.0, 0.0, static_cast<double>(width), static_cast<double>(height), 0.0, 1.0}];
+        [render drawPrimitives:MTLPrimitiveTypeTriangle
+                   vertexStart:0
+                   vertexCount:static_cast<NSUInteger>(vertexCount)];
+        [render endEncoding];
+      } else {
+        id<MTLComputeCommandEncoder> fillCompute = [commandBuffer computeCommandEncoder];
+        if (!fillCompute) {
+          write_error(error, errorSize, "failed to create native Metal overlay layer fill command");
+          return NO;
+        }
+        [fillCompute setComputePipelineState:_overlayLayerFillRectPipeline];
+        [fillCompute setBuffer:fillRectBuffer offset:0 atIndex:0];
+        [fillCompute setBytes:&params length:sizeof(params) atIndex:1];
+        [fillCompute setTexture:layer atIndex:0];
+        const NSUInteger fillThreadWidth = _overlayLayerFillRectPipeline.threadExecutionWidth;
+        [fillCompute dispatchThreads:MTLSizeMake(overlay->fill_rect_count, 1, 1)
+                 threadsPerThreadgroup:MTLSizeMake(fillThreadWidth, 1, 1)];
+        [fillCompute endEncoding];
+      }
     }
 
     if (overlay->motion_line_count > 0) {

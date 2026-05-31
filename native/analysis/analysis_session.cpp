@@ -203,6 +203,8 @@ VachunkOverlayFrameData AnalysisSession::read_overlay_frame_from_index_locked(
     VachunkOverlayFrameData frame;
     if (!read_overlay_vachunk_frame(decoded_entry->chunk, target, frame)) return result;
     result.summary = frame.summary;
+    result.feature_flags = frame.feature_flags;
+    result.frame_flags = frame.frame_flags;
     result.cus = std::move(frame.cus);
     overlay_frame_cache_.valid = true;
     overlay_frame_cache_.frame_index = target;

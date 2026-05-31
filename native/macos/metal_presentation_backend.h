@@ -57,6 +57,7 @@ public:
                                   bool gpu_attempted,
                                   bool gpu_succeeded,
                                   bool cpu_attempted,
+                                  size_t fill_rect_count,
                                   size_t line_rect_count);
   void finish_async_draw();
 
@@ -69,6 +70,7 @@ private:
                              bool gpu_attempted,
                              bool gpu_succeeded,
                              bool cpu_attempted,
+                             size_t fill_rect_count,
                              size_t line_rect_count);
   void invalidate_source_cache();
   bool try_begin_async_draw(const char* source);
@@ -92,6 +94,7 @@ private:
   size_t staging_max_bytes_ = 0;
   bool overlay_last_expected_ = false;
   bool overlay_last_applied_ = false;
+  uint64_t overlay_last_fill_rect_count_ = 0;
   uint64_t overlay_last_line_rect_count_ = 0;
   uint64_t overlay_expected_count_ = 0;
   uint64_t overlay_applied_count_ = 0;

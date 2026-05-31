@@ -79,6 +79,8 @@ enum MacOSVideoRendererDiagnostics {
         rendererOwnedState["overlayLastExpected"] ?? false,
       "rendererOwnedOverlayLastApplied":
         rendererOwnedState["overlayLastApplied"] ?? false,
+      "rendererOwnedOverlayLastFillRectCount":
+        rendererOwnedState["overlayLastFillRectCount"] ?? 0,
       "rendererOwnedOverlayLastLineRectCount":
         rendererOwnedState["overlayLastLineRectCount"] ?? 0,
       "rendererOwnedOverlayExpectedCount":
@@ -318,6 +320,7 @@ enum MacOSVideoRendererDiagnostics {
       "lastSuccessfulFramePtsUs": 0,
       "overlayLastExpected": false,
       "overlayLastApplied": false,
+      "overlayLastFillRectCount": 0,
       "overlayLastLineRectCount": 0,
       "overlayExpectedCount": 0,
       "overlayAppliedCount": 0,

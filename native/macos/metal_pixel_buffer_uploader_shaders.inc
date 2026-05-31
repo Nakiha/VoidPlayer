@@ -1118,34 +1118,50 @@ kernel void build_overlay_line_mask_layer(
     return;
   }
   const float4 rect_px = overlay_video_px_rect(rect, params);
-  if (rect_px.z <= rect_px.x || rect_px.w <= rect_px.y) {
+  const float4 snapped_rect_px = float4(
+      floor(rect_px.x + 0.5),
+      floor(rect_px.y + 0.5),
+      floor(rect_px.z + 0.5),
+      floor(rect_px.w + 0.5));
+  if (snapped_rect_px.z <= snapped_rect_px.x ||
+      snapped_rect_px.w <= snapped_rect_px.y) {
     return;
   }
   const float line_width_px = 1.0;
-  const int min_x = clamp(int(floor(rect_px.x - line_width_px)), 0, int(params.width));
-  const int max_x = clamp(int(ceil(rect_px.z + line_width_px)), 0, int(params.width));
-  const int min_y = clamp(int(floor(rect_px.y - line_width_px)), 0, int(params.height));
-  const int max_y = clamp(int(ceil(rect_px.w + line_width_px)), 0, int(params.height));
+  const int min_x =
+      clamp(int(floor(snapped_rect_px.x - line_width_px)), 0, int(params.width));
+  const int max_x =
+      clamp(int(ceil(snapped_rect_px.z + line_width_px)), 0, int(params.width));
+  const int min_y =
+      clamp(int(floor(snapped_rect_px.y - line_width_px)), 0, int(params.height));
+  const int max_y =
+      clamp(int(ceil(snapped_rect_px.w + line_width_px)), 0, int(params.height));
   const float2 rect_min = overlay_unpack_uv16(rect.rect_uv0);
   const float2 rect_max = overlay_unpack_uv16(rect.rect_uv1);
   for (int y = min_y; y < max_y; ++y) {
     const uint row = uint(y) * params.width;
     for (int x = min_x; x < max_x; ++x) {
-      const bool within_y = float(y) >= rect_px.y && float(y) < rect_px.w;
-      const bool within_x = float(x) >= rect_px.x && float(x) < rect_px.z;
+      const bool within_y =
+          float(y) >= snapped_rect_px.y && float(y) < snapped_rect_px.w;
+      const bool within_x =
+          float(x) >= snapped_rect_px.x && float(x) < snapped_rect_px.z;
       uint edge_bits = 0u;
-      if (within_y && float(x) >= rect_px.x && float(x) < rect_px.x + line_width_px) {
+      if (within_y && float(x) >= snapped_rect_px.x &&
+          float(x) < snapped_rect_px.x + line_width_px) {
         edge_bits |= 1u;
       }
       if (rect_max.x >= 0.9999 &&
-          within_y && float(x) >= rect_px.z - line_width_px && float(x) < rect_px.z) {
+          within_y && float(x) >= snapped_rect_px.z - line_width_px &&
+          float(x) < snapped_rect_px.z) {
         edge_bits |= 2u;
       }
-      if (within_x && float(y) >= rect_px.y && float(y) < rect_px.y + line_width_px) {
+      if (within_x && float(y) >= snapped_rect_px.y &&
+          float(y) < snapped_rect_px.y + line_width_px) {
         edge_bits |= 4u;
       }
       if (rect_max.y >= 0.9999 &&
-          within_x && float(y) >= rect_px.w - line_width_px && float(y) < rect_px.w) {
+          within_x && float(y) >= snapped_rect_px.w - line_width_px &&
+          float(y) < snapped_rect_px.w) {
         edge_bits |= 8u;
       }
       if (edge_bits != 0u) {

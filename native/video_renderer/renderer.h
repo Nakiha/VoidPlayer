@@ -439,6 +439,7 @@ private:
     std::function<void(const char*)> frame_failure_callback_;
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     bool preview_drawn_ = false;
+    bool preview_draw_pending_ = false;
     bool was_buffering_ = false;
     LoopRangeState loop_range_;
 

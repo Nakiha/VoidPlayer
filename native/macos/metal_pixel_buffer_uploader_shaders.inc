@@ -486,23 +486,42 @@ uint overlay_marker_bits_from_sample(float4 sample) {
   return uint(round(saturate(sample.r) * 15.0)) & 15u;
 }
 
-float overlay_line_marker_distance_px(
-    uint edge_bits,
+uint overlay_marker_bits_at(texture2d<float, access::read> overlay, int x, int y) {
+  if (x < 0 || y < 0 ||
+      x >= int(overlay.get_width()) || y >= int(overlay.get_height())) {
+    return 0u;
+  }
+  return overlay_marker_bits_from_sample(overlay.read(uint2(uint(x), uint(y))));
+}
+
+float overlay_line_marker_distance_for_texture(
+    texture2d<float, access::read> overlay,
     float2 source_px_coord,
     float2 px_per_source) {
-  const float2 source_frac = fract(source_px_coord);
+  const int base_x = int(floor(source_px_coord.x));
+  const int base_y = int(floor(source_px_coord.y));
+  const int radius_x = clamp(int(ceil(1.6 / max(px_per_source.x, 0.001))), 1, 8);
+  const int radius_y = clamp(int(ceil(1.6 / max(px_per_source.y, 0.001))), 1, 8);
   float distance_px = 1.0e6;
-  if ((edge_bits & 1u) != 0u) {
-    distance_px = min(distance_px, source_frac.x * px_per_source.x);
+  for (int dx = -radius_x; dx <= radius_x; ++dx) {
+    const int x = base_x + dx;
+    const uint bits = overlay_marker_bits_at(overlay, x, base_y);
+    if ((bits & 1u) != 0u) {
+      distance_px = min(distance_px, abs(source_px_coord.x - float(x)) * px_per_source.x);
+    }
+    if ((bits & 2u) != 0u) {
+      distance_px = min(distance_px, abs(source_px_coord.x - float(x + 1)) * px_per_source.x);
+    }
   }
-  if ((edge_bits & 2u) != 0u) {
-    distance_px = min(distance_px, (1.0 - source_frac.x) * px_per_source.x);
-  }
-  if ((edge_bits & 4u) != 0u) {
-    distance_px = min(distance_px, source_frac.y * px_per_source.y);
-  }
-  if ((edge_bits & 8u) != 0u) {
-    distance_px = min(distance_px, (1.0 - source_frac.y) * px_per_source.y);
+  for (int dy = -radius_y; dy <= radius_y; ++dy) {
+    const int y = base_y + dy;
+    const uint bits = overlay_marker_bits_at(overlay, base_x, y);
+    if ((bits & 4u) != 0u) {
+      distance_px = min(distance_px, abs(source_px_coord.y - float(y)) * px_per_source.y);
+    }
+    if ((bits & 8u) != 0u) {
+      distance_px = min(distance_px, abs(source_px_coord.y - float(y + 1)) * px_per_source.y);
+    }
   }
   return distance_px;
 }
@@ -537,83 +556,30 @@ float4 overlay_sample_for_track(
   const float2 source_px_coord =
       source_uv * float2(float(source_width), float(source_height));
   float4 sample = float4(0.0, 0.0, 0.0, 0.0);
-  float4 sample_left = float4(0.0, 0.0, 0.0, 0.0);
-  float4 sample_right = float4(0.0, 0.0, 0.0, 0.0);
-  float4 sample_up = float4(0.0, 0.0, 0.0, 0.0);
-  float4 sample_down = float4(0.0, 0.0, 0.0, 0.0);
-  const uint left_x = source_x > 0u ? source_x - 1u : source_x;
-  const uint right_x = min(source_x + 1u, source_width - 1u);
-  const uint up_y = source_y > 0u ? source_y - 1u : source_y;
-  const uint down_y = min(source_y + 1u, source_height - 1u);
+  float distance_px = 1.0e6;
   if (track_slot == 0u) {
     sample = overlay0.read(uint2(min(source_x, overlay0.get_width() - 1),
                                  min(source_y, overlay0.get_height() - 1)));
-    sample_left = overlay0.read(uint2(min(left_x, overlay0.get_width() - 1),
-                                      min(source_y, overlay0.get_height() - 1)));
-    sample_right = overlay0.read(uint2(min(right_x, overlay0.get_width() - 1),
-                                       min(source_y, overlay0.get_height() - 1)));
-    sample_up = overlay0.read(uint2(min(source_x, overlay0.get_width() - 1),
-                                    min(up_y, overlay0.get_height() - 1)));
-    sample_down = overlay0.read(uint2(min(source_x, overlay0.get_width() - 1),
-                                      min(down_y, overlay0.get_height() - 1)));
+    distance_px =
+        overlay_line_marker_distance_for_texture(overlay0, source_px_coord, px_per_source);
   } else if (track_slot == 1u) {
     sample = overlay1.read(uint2(min(source_x, overlay1.get_width() - 1),
                                  min(source_y, overlay1.get_height() - 1)));
-    sample_left = overlay1.read(uint2(min(left_x, overlay1.get_width() - 1),
-                                      min(source_y, overlay1.get_height() - 1)));
-    sample_right = overlay1.read(uint2(min(right_x, overlay1.get_width() - 1),
-                                       min(source_y, overlay1.get_height() - 1)));
-    sample_up = overlay1.read(uint2(min(source_x, overlay1.get_width() - 1),
-                                    min(up_y, overlay1.get_height() - 1)));
-    sample_down = overlay1.read(uint2(min(source_x, overlay1.get_width() - 1),
-                                      min(down_y, overlay1.get_height() - 1)));
+    distance_px =
+        overlay_line_marker_distance_for_texture(overlay1, source_px_coord, px_per_source);
   } else if (track_slot == 2u) {
     sample = overlay2.read(uint2(min(source_x, overlay2.get_width() - 1),
                                  min(source_y, overlay2.get_height() - 1)));
-    sample_left = overlay2.read(uint2(min(left_x, overlay2.get_width() - 1),
-                                      min(source_y, overlay2.get_height() - 1)));
-    sample_right = overlay2.read(uint2(min(right_x, overlay2.get_width() - 1),
-                                       min(source_y, overlay2.get_height() - 1)));
-    sample_up = overlay2.read(uint2(min(source_x, overlay2.get_width() - 1),
-                                    min(up_y, overlay2.get_height() - 1)));
-    sample_down = overlay2.read(uint2(min(source_x, overlay2.get_width() - 1),
-                                      min(down_y, overlay2.get_height() - 1)));
+    distance_px =
+        overlay_line_marker_distance_for_texture(overlay2, source_px_coord, px_per_source);
   } else {
     sample = overlay3.read(uint2(min(source_x, overlay3.get_width() - 1),
                                  min(source_y, overlay3.get_height() - 1)));
-    sample_left = overlay3.read(uint2(min(left_x, overlay3.get_width() - 1),
-                                      min(source_y, overlay3.get_height() - 1)));
-    sample_right = overlay3.read(uint2(min(right_x, overlay3.get_width() - 1),
-                                       min(source_y, overlay3.get_height() - 1)));
-    sample_up = overlay3.read(uint2(min(source_x, overlay3.get_width() - 1),
-                                    min(up_y, overlay3.get_height() - 1)));
-    sample_down = overlay3.read(uint2(min(source_x, overlay3.get_width() - 1),
-                                      min(down_y, overlay3.get_height() - 1)));
+    distance_px =
+        overlay_line_marker_distance_for_texture(overlay3, source_px_coord, px_per_source);
   }
 
   const uint center_bits = overlay_marker_bits_from_sample(sample);
-  const uint left_bits = source_x > 0u ? overlay_marker_bits_from_sample(sample_left) : 0u;
-  const uint right_bits =
-      source_x + 1u < source_width ? overlay_marker_bits_from_sample(sample_right) : 0u;
-  const uint up_bits = source_y > 0u ? overlay_marker_bits_from_sample(sample_up) : 0u;
-  const uint down_bits =
-      source_y + 1u < source_height ? overlay_marker_bits_from_sample(sample_down) : 0u;
-  const float2 frac = fract(source_px_coord);
-  float distance_px = overlay_line_marker_distance_px(
-      center_bits, source_px_coord, px_per_source);
-  if ((left_bits & 2u) != 0u) {
-    distance_px = min(distance_px, frac.x * px_per_source.x);
-  }
-  if ((right_bits & 1u) != 0u) {
-    distance_px = min(distance_px, (1.0 - frac.x) * px_per_source.x);
-  }
-  if ((up_bits & 8u) != 0u) {
-    distance_px = min(distance_px, frac.y * px_per_source.y);
-  }
-  if ((down_bits & 4u) != 0u) {
-    distance_px = min(distance_px, (1.0 - frac.y) * px_per_source.y);
-  }
-
   const float4 base_overlay =
       center_bits == 0u ? sample : float4(0.0, 0.0, 0.0, 0.0);
   return overlay_decode_line_marker(base_overlay, distance_px);

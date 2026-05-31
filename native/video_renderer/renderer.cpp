@@ -1300,6 +1300,7 @@ bool Renderer::request_frame_refresh(const char* reason) {
         std::strcmp(refresh_reason, "macos-renderer-owned-refresh") == 0 ||
         std::strcmp(refresh_reason, "request_frame_refresh") == 0;
     bool has_complete_cached_decision = false;
+    bool preview_draw_pending = false;
     if (renderer_owned_refresh) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         PresentDecision cached = last_decision_;
@@ -1309,8 +1310,12 @@ bool Renderer::request_frame_refresh(const char* reason) {
             present_decision_has_frame(cached) &&
             (active_count <= 1 ||
              present_decision_covers_active_tracks(cached, tracks_));
+        preview_draw_pending = preview_draw_pending_;
     }
     if (renderer_owned_refresh) {
+        if (preview_draw_pending) {
+            return true;
+        }
         if (redraw_layout()) {
             return true;
         }
@@ -1530,6 +1535,10 @@ void Renderer::finish_presented_draw(
                 1, std::memory_order_relaxed);
         }
         preview_drawn_ = !stale_layout_after_draw;
+        preview_draw_pending_ = false;
+    } else {
+        lock.lock();
+        preview_draw_pending_ = false;
     }
     if (lock.owns_lock()) {
         lock.unlock();
@@ -1668,6 +1677,11 @@ void Renderer::present_frame(const PresentDecision& decision) {
         return;
     }
     if (async_draw_submitted) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!playing_.load(std::memory_order_acquire) ||
+            playback_->clock().is_paused()) {
+            preview_draw_pending_ = true;
+        }
         return;
     }
 
@@ -1836,6 +1850,11 @@ bool Renderer::redraw_layout() {
         return false;
     }
     if (async_draw_submitted) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!playing_.load(std::memory_order_acquire) ||
+            playback_->clock().is_paused()) {
+            preview_draw_pending_ = true;
+        }
         return true;
     }
     finish_presented_draw("viewport_composite",
@@ -2476,7 +2495,10 @@ void Renderer::render_loop_body() {
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 consume_pending_layout_locked();
-                should_draw_preview = !preview_drawn_;
+                should_draw_preview = !preview_drawn_ && !preview_draw_pending_;
+                if (should_draw_preview) {
+                    preview_draw_pending_ = true;
+                }
             }
             if (should_draw_preview) {
                 bool drawn = false;
@@ -2564,6 +2586,10 @@ void Renderer::render_loop_body() {
                                      ? preview.frames[ref]->pts_us / 1e6 : -1.0);
                         emit_seek_preview_presented_events(preview);
                     }
+                }
+                if (!drawn) {
+                    std::lock_guard<std::mutex> lock(state_mutex_);
+                    preview_draw_pending_ = false;
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));

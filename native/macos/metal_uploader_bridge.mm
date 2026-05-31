@@ -20,6 +20,13 @@ void write_error(char* error, size_t error_size, const char* message) {
   error[copy_size] = '\0';
 }
 
+template <typename Fn>
+auto with_metal_autorelease_pool(Fn&& fn) -> decltype(fn()) {
+  @autoreleasepool {
+    return fn();
+  }
+}
+
 }  // namespace
 
 VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void) {
@@ -132,15 +139,17 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl copyPresentFramePackage:package
-                                            data:data
-                                        dataSize:data_size
-                                   toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                           width:width
-                                          height:height
-                                             out:out
-                                            error:error
-                                        errorSize:error_size];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl copyPresentFramePackage:package
+                                              data:data
+                                          dataSize:data_size
+                                     toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                             width:width
+                                            height:height
+                                               out:out
+                                             error:error
+                                         errorSize:error_size];
+  });
 }
 
 int VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
@@ -159,16 +168,18 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl copyPresentFramePackage:package
-                                            data:data
-                                        dataSize:data_size
-                                         overlay:overlay
-                                   toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                           width:width
-                                          height:height
-                                             out:out
-                                           error:error
-                                       errorSize:error_size];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl copyPresentFramePackage:package
+                                              data:data
+                                          dataSize:data_size
+                                           overlay:overlay
+                                     toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                             width:width
+                                            height:height
+                                               out:out
+                                             error:error
+                                         errorSize:error_size];
+  });
 }
 
 int VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
@@ -189,18 +200,20 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl copyPresentFramePackage:package
-                                            data:data
-                                        dataSize:data_size
-                                         overlay:overlay
-                                   toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                           width:width
-                                          height:height
-                                             out:out
-                                           error:error
-                                       errorSize:error_size
-                                      completion:completion
-                                        userData:user_data];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl copyPresentFramePackage:package
+                                              data:data
+                                          dataSize:data_size
+                                           overlay:overlay
+                                     toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                             width:width
+                                            height:height
+                                               out:out
+                                             error:error
+                                         errorSize:error_size
+                                        completion:completion
+                                          userData:user_data];
+  });
 }
 
 int VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlay(
@@ -217,14 +230,16 @@ int VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlay(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl uploadPreparedPresentFramePackage:package
-                                                   overlay:overlay
-                                             toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                     width:width
-                                                    height:height
-                                                       out:out
-                                                     error:error
-                                                 errorSize:error_size];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl uploadPreparedPresentFramePackage:package
+                                                     overlay:overlay
+                                               toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                       width:width
+                                                      height:height
+                                                         out:out
+                                                       error:error
+                                                   errorSize:error_size];
+  });
 }
 
 int VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlayAsync(
@@ -243,16 +258,18 @@ int VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlayAsy
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl uploadPreparedPresentFramePackage:package
-                                                   overlay:overlay
-                                             toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                     width:width
-                                                    height:height
-                                                       out:out
-                                                     error:error
-                                                 errorSize:error_size
-                                                completion:completion
-                                                  userData:user_data];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl uploadPreparedPresentFramePackage:package
+                                                     overlay:overlay
+                                               toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                       width:width
+                                                      height:height
+                                                         out:out
+                                                       error:error
+                                                   errorSize:error_size
+                                                  completion:completion
+                                                    userData:user_data];
+  });
 }
 
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
@@ -268,13 +285,15 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl copyCVPixelBufferPresentFrame:frame
-                                         toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                 width:width
-                                                height:height
-                                                   out:out
-                                         error:error
-                                     errorSize:error_size];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl copyCVPixelBufferPresentFrame:frame
+                                           toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                   width:width
+                                                  height:height
+                                                     out:out
+                                                   error:error
+                                               errorSize:error_size];
+  });
 }
 
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlay(
@@ -291,14 +310,16 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlay(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl copyCVPixelBufferPresentFrame:frame
-                                              overlay:overlay
-                                        toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                width:width
-                                               height:height
-                                                  out:out
-                                                error:error
-                                            errorSize:error_size];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl copyCVPixelBufferPresentFrame:frame
+                                                overlay:overlay
+                                          toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                  width:width
+                                                 height:height
+                                                    out:out
+                                                  error:error
+                                              errorSize:error_size];
+  });
 }
 
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlayAsync(
@@ -317,16 +338,18 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayoutAndOverlayAsync(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl copyCVPixelBufferPresentFrame:frame
-                                              overlay:overlay
-                                        toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                width:width
-                                               height:height
-                                                  out:out
-                                                error:error
-                                            errorSize:error_size
-                                           completion:completion
-                                             userData:user_data];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl copyCVPixelBufferPresentFrame:frame
+                                                overlay:overlay
+                                          toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                  width:width
+                                                 height:height
+                                                    out:out
+                                                  error:error
+                                              errorSize:error_size
+                                             completion:completion
+                                               userData:user_data];
+  });
 }
 
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
@@ -342,13 +365,15 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl copyCVPixelBufferPresentFrameSet:frame_set
-                                            toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                    width:width
-                                                   height:height
-                                                      out:out
-                                                    error:error
-                                                errorSize:error_size];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl copyCVPixelBufferPresentFrameSet:frame_set
+                                              toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                      width:width
+                                                     height:height
+                                                        out:out
+                                                      error:error
+                                                  errorSize:error_size];
+  });
 }
 
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlay(
@@ -365,14 +390,16 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlay(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl copyCVPixelBufferPresentFrameSet:frame_set
-                                                 overlay:overlay
-                                           toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                   width:width
-                                                  height:height
-                                                     out:out
-                                                   error:error
-                                               errorSize:error_size];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl copyCVPixelBufferPresentFrameSet:frame_set
+                                                   overlay:overlay
+                                             toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                     width:width
+                                                    height:height
+                                                       out:out
+                                                     error:error
+                                                 errorSize:error_size];
+  });
 }
 
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlayAsync(
@@ -391,16 +418,18 @@ int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayoutAndOverlayAsyn
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl copyCVPixelBufferPresentFrameSet:frame_set
-                                                 overlay:overlay
-                                           toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                   width:width
-                                                  height:height
-                                                     out:out
-                                                   error:error
-                                               errorSize:error_size
-                                              completion:completion
-                                                userData:user_data];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl copyCVPixelBufferPresentFrameSet:frame_set
+                                                   overlay:overlay
+                                             toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                     width:width
+                                                    height:height
+                                                       out:out
+                                                     error:error
+                                                 errorSize:error_size
+                                                completion:completion
+                                                  userData:user_data];
+  });
 }
 
 int VPMacOSMetalUploaderCompositeOverlayGpuRects(
@@ -417,14 +446,16 @@ int VPMacOSMetalUploaderCompositeOverlayGpuRects(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl compositeOverlayGpuRects:rects
-                                            count:rect_count
-                                         decision:decision
-                                    toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                            width:width
-                                           height:height
-                                            error:error
-                                        errorSize:error_size];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl compositeOverlayGpuRects:rects
+                                              count:rect_count
+                                           decision:decision
+                                      toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                              width:width
+                                             height:height
+                                              error:error
+                                          errorSize:error_size];
+  });
 }
 
 int VPMacOSMetalUploaderCompositeOverlayGpuPrimitives(
@@ -445,16 +476,18 @@ int VPMacOSMetalUploaderCompositeOverlayGpuPrimitives(
     write_error(error, error_size, "native Metal uploader is null");
     return -1;
   }
-  return [uploader->impl compositeOverlayGpuPrimitives:fill_rects
-                                             fillCount:fill_rect_count
-                                             lineRects:line_rects
-                                             lineCount:line_rect_count
-                                           motionLines:motion_lines
-                                           motionCount:motion_line_count
-                                              decision:decision
-                                         toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                 width:width
-                                                height:height
-                                                 error:error
-                                             errorSize:error_size];
+  return with_metal_autorelease_pool([&] {
+    return [uploader->impl compositeOverlayGpuPrimitives:fill_rects
+                                               fillCount:fill_rect_count
+                                               lineRects:line_rects
+                                               lineCount:line_rect_count
+                                             motionLines:motion_lines
+                                             motionCount:motion_line_count
+                                                decision:decision
+                                           toPixelBuffer:(CVPixelBufferRef)pixel_buffer
+                                                   width:width
+                                                  height:height
+                                                   error:error
+                                               errorSize:error_size];
+  });
 }

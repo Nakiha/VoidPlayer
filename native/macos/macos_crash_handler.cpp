@@ -161,6 +161,14 @@ void write_signal_log(int signal_number, siginfo_t* info) {
                   info->si_addr);
     append_text(fd, line);
   }
+  append_text(fd, "backtrace:\n");
+  void* frames[64] = {};
+  const int frame_count = backtrace(frames, 64);
+  if (frame_count > 0) {
+    backtrace_symbols_fd(frames, frame_count, fd);
+  } else {
+    append_text(fd, "  unavailable\n");
+  }
   close(fd);
 }
 

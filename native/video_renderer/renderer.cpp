@@ -41,6 +41,8 @@ namespace vr {
 static constexpr int64_t MAX_SLEEP_US = 8000;
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
+static constexpr auto kTransientPresentationBackpressureBackoff =
+    std::chrono::microseconds(MAX_SLEEP_US);
 
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
     return static_cast<uint64_t>(
@@ -65,6 +67,12 @@ void atomic_fetch_max(std::atomic<uint64_t>& target, uint64_t value) {
            !target.compare_exchange_weak(
                current, value, std::memory_order_relaxed, std::memory_order_relaxed)) {
     }
+}
+
+int64_t steady_clock_us_now() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
 }
 
 bool profiler_enabled(const char* env_name) {
@@ -460,6 +468,9 @@ void Renderer::reset_presentation_backend_metrics() {
         0, std::memory_order_relaxed);
     presentation_backend_metrics_.layout_stale_completion_drop_count.store(
         0, std::memory_order_relaxed);
+    presentation_backend_metrics_.transient_backpressure_skip_count.store(
+        0, std::memory_order_relaxed);
+    transient_presentation_backpressure_until_us_.store(0, std::memory_order_relaxed);
     {
         std::lock_guard<std::mutex> lock(presentation_draw_samples_mutex_);
         presentation_draw_total_samples_us_.clear();
@@ -505,6 +516,44 @@ void Renderer::record_presentation_draw_timing(uint64_t total_us, uint64_t backe
                 std::memory_order_relaxed);
         }
     }
+}
+
+void Renderer::note_transient_presentation_backpressure(const char* source) {
+    const int64_t until_us =
+        steady_clock_us_now() +
+        static_cast<int64_t>(kTransientPresentationBackpressureBackoff.count());
+    auto current = transient_presentation_backpressure_until_us_.load(
+        std::memory_order_relaxed);
+    while (until_us > current &&
+           !transient_presentation_backpressure_until_us_.compare_exchange_weak(
+               current,
+               until_us,
+               std::memory_order_relaxed,
+               std::memory_order_relaxed)) {
+    }
+    const auto count = presentation_backend_metrics_.transient_backpressure_skip_count
+                           .fetch_add(1, std::memory_order_relaxed) +
+                       1;
+    if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER") &&
+        (count <= 8 || count % 120 == 0)) {
+        spdlog::info(
+            "[RendererProfiler] transient presentation backpressure source={} "
+            "backoff_us={} count={}",
+            source ? source : "",
+            kTransientPresentationBackpressureBackoff.count(),
+            count);
+    }
+}
+
+std::chrono::microseconds
+Renderer::transient_presentation_backpressure_remaining() const {
+    const int64_t until_us = transient_presentation_backpressure_until_us_.load(
+        std::memory_order_relaxed);
+    const int64_t remaining_us = until_us - steady_clock_us_now();
+    if (remaining_us <= 0) {
+        return std::chrono::microseconds(0);
+    }
+    return std::chrono::microseconds(remaining_us);
 }
 
 std::function<void(const char*)> Renderer::frame_failure_callback_snapshot() const {
@@ -1496,6 +1545,9 @@ void Renderer::finish_presented_draw(
     const bool transient_backpressure =
         frame_failure_error &&
         is_transient_presentation_backpressure_error(frame_failure_error);
+    if (transient_backpressure) {
+        note_transient_presentation_backpressure(source);
+    }
     if (attempted_draw && !drew && !transient_backpressure && frame_failure_callback &&
         !shutting_down_.load(std::memory_order_acquire)) {
         frame_failure_callback(frame_failure_error ? frame_failure_error : "");
@@ -1659,6 +1711,9 @@ void Renderer::present_frame(const PresentDecision& decision) {
 }
 
 bool Renderer::redraw_layout() {
+    if (transient_presentation_backpressure_remaining().count() > 0) {
+        return false;
+    }
     const auto profiler_start = std::chrono::steady_clock::now();
     RendererDrawSnapshot snapshot;
     uint64_t snapshot_layout_revision = 0;
@@ -2409,6 +2464,13 @@ void Renderer::render_loop_body() {
         }
 
         if (!playing_snapshot || clock_paused_snapshot) {
+            if (const auto backoff =
+                    transient_presentation_backpressure_remaining();
+                backoff.count() > 0) {
+                std::this_thread::sleep_for(
+                    std::min(backoff, std::chrono::microseconds(2000)));
+                continue;
+            }
             // While paused/prerolling, draw current frame if not yet drawn
             bool should_draw_preview = false;
             {
@@ -2538,6 +2600,13 @@ void Renderer::render_loop_body() {
         }
 
         if (decision.should_present && scheduler_tick.should_notify) {
+            if (const auto backoff =
+                    transient_presentation_backpressure_remaining();
+                backoff.count() > 0) {
+                std::this_thread::sleep_for(
+                    std::min(backoff, std::chrono::microseconds(2000)));
+                continue;
+            }
             // Independent presentation: fill missing tracks from last decision
             // so each track always shows a frame (new or carried over).
             // Once a track has started, keep carrying its last frame even after

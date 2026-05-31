@@ -362,6 +362,8 @@ private:
     void enter_terminal_render_loop_error_locked(const char* reason);
     void reset_presentation_backend_metrics();
     void record_presentation_draw_timing(uint64_t total_us, uint64_t backend_us);
+    void note_transient_presentation_backpressure(const char* source);
+    std::chrono::microseconds transient_presentation_backpressure_remaining() const;
     std::function<void(const char*)> frame_failure_callback_snapshot() const;
     void assign_missing_track_generations_locked();
     int add_track_internal(const std::string& video_path,
@@ -418,6 +420,7 @@ private:
         std::atomic<uint64_t> layout_deferred_to_playback_count{0};
         std::atomic<uint64_t> playing_layout_redraw_suppressed_count{0};
         std::atomic<uint64_t> layout_stale_completion_drop_count{0};
+        std::atomic<uint64_t> transient_backpressure_skip_count{0};
     };
     mutable PresentationBackendMetricCounters presentation_backend_metrics_;
     mutable std::mutex presentation_draw_samples_mutex_;
@@ -459,6 +462,7 @@ private:
     uint64_t pending_layout_revision_ = 0;
     uint64_t layout_revision_ = 0;
     uint64_t last_presented_layout_revision_ = 0;
+    std::atomic<int64_t> transient_presentation_backpressure_until_us_{0};
     int next_file_id_ = 1;                         ///< Auto-incrementing file ID
     uint64_t next_track_generation_ = 1;
 

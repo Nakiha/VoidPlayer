@@ -966,6 +966,12 @@ bool MetalPresentationBackend::draw_frame(
     const auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - profiler_start).count();
     ++draw_profiler_count_;
+    const bool transient_backpressure =
+        ret == -2 && error &&
+        std::strcmp(error, "renderer-owned Metal async draw deferred by backpressure") == 0;
+    if (transient_backpressure && draw_profiler_count_ % 120 != 0) {
+      return;
+    }
     if (total_us < 8000 && copy_us < 6000 && success && draw_profiler_count_ % 240 != 0) {
       return;
     }

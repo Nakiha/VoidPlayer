@@ -271,24 +271,37 @@ OverlayColor heatmap_ramp_color(float value, uint8_t alpha) {
     return OverlayColor{blue, green, red, alpha};
 }
 
+uint8_t qp_heatmap_clamped_value(uint8_t qp) {
+    return std::min<uint8_t>(qp, kOverlayQpHeatmapMax);
+}
+
+uint64_t cu_bit_density_normalized_64x64(const VachunkCuCommon& cu) {
+    const uint64_t area =
+        std::max<uint64_t>(1, static_cast<uint64_t>(cu.w) * static_cast<uint64_t>(cu.h));
+    return (static_cast<uint64_t>(cu.bit_count) * 4096ull + area / 2ull) / area;
+}
+
 OverlayColor qp_color(uint8_t qp, uint8_t alpha) {
     static const auto lut = [] {
-        std::array<OverlayColor, 51> colors = {};
+        std::array<OverlayColor, static_cast<size_t>(kOverlayQpHeatmapMax) + 1> colors = {};
         for (size_t i = 0; i < colors.size(); ++i) {
-            colors[i] = heatmap_ramp_color(static_cast<float>(i) / 50.0f, 255);
+            colors[i] = heatmap_ramp_color(
+                static_cast<float>(i) / static_cast<float>(kOverlayQpHeatmapMax),
+                255);
         }
         return colors;
     }();
-    OverlayColor color = lut[std::min<uint8_t>(qp, 50)];
+    OverlayColor color = lut[qp_heatmap_clamped_value(qp)];
     color.a = alpha;
     return color;
 }
 
 OverlayColor cu_bit_density_color(const VachunkCuCommon& cu, uint8_t alpha) {
     static const auto lut = [] {
-        std::array<OverlayColor, 4097> colors = {};
+        std::array<OverlayColor, static_cast<size_t>(kOverlayBitDensityHeatmapMax) + 1> colors = {};
         const float low = std::log2(64.0f + 1.0f);
-        const float high = std::log2(4096.0f + 1.0f);
+        const float high = std::log2(
+            static_cast<float>(kOverlayBitDensityHeatmapMax) + 1.0f);
         for (size_t i = 0; i < colors.size(); ++i) {
             const float t = std::clamp(
                 (std::log2(static_cast<float>(i) + 1.0f) - low) / (high - low),
@@ -299,11 +312,9 @@ OverlayColor cu_bit_density_color(const VachunkCuCommon& cu, uint8_t alpha) {
         return colors;
     }();
 
-    const uint64_t area =
-        std::max<uint64_t>(1, static_cast<uint64_t>(cu.w) * static_cast<uint64_t>(cu.h));
-    const uint64_t density =
-        (static_cast<uint64_t>(cu.bit_count) * 4096ull + area / 2ull) / area;
-    OverlayColor color = lut[static_cast<size_t>(std::min<uint64_t>(density, 4096ull))];
+    const uint64_t density = cu_bit_density_normalized_64x64(cu);
+    OverlayColor color = lut[static_cast<size_t>(
+        std::min<uint64_t>(density, kOverlayBitDensityHeatmapMax))];
     color.a = alpha;
     return color;
 }

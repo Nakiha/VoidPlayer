@@ -508,8 +508,8 @@
   "analysisOverlayTypeQpHeatmap": "QP heatmap",
   "@analysisOverlayTypeQpHeatmap": { "description": "Tooltip for the QP heatmap overlay type button" },
 
-  "analysisOverlayTypeCuBitCostHeatmap": "Bitrate heatmap",
-  "@analysisOverlayTypeCuBitCostHeatmap": { "description": "Tooltip for the bitrate heatmap overlay type button" },
+  "analysisOverlayTypeCuBitCostHeatmap": "Bit-cost heatmap",
+  "@analysisOverlayTypeCuBitCostHeatmap": { "description": "Tooltip for the CU bit-cost heatmap overlay type button" },
 
   "analysisOverlayLayerCuGrid": "CU grid",
   "@analysisOverlayLayerCuGrid": { "description": "Tooltip for toggling CU grid overlay layer" },

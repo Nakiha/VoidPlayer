@@ -310,7 +310,7 @@ void main() {
       containsAll(const [
         'CU partitions',
         'QP heatmap',
-        'Bitrate heatmap',
+        'Bit-cost heatmap',
         'Prediction mode labels',
         'Prediction lines',
         'Overlay opacity',

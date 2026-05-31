@@ -13,6 +13,10 @@
 namespace vr {
 namespace {
 
+constexpr int kAnalysisOverlayHeatmapNone = 0;
+constexpr int kAnalysisOverlayHeatmapQp = 1;
+constexpr int kAnalysisOverlayHeatmapBitCost = 2;
+
 uint8_t overlay_fill_alpha(int opacity_permille, bool heatmap) {
     const int base = std::clamp(opacity_permille, 0, 1000) * 255 / 1000;
     return static_cast<uint8_t>(heatmap ? base : base * 2 / 5);
@@ -173,6 +177,15 @@ AnalysisOverlayTrackPrimitives build_track_primitives(
     track.show_pred = key.show_pred;
     track.show_lines = key.show_lines;
     track.show_bit_cost = key.show_bit_cost;
+    track.heatmap_mode = bit_cost_primary
+        ? kAnalysisOverlayHeatmapBitCost
+        : (qp_primary ? kAnalysisOverlayHeatmapQp : kAnalysisOverlayHeatmapNone);
+    const bool qp_feature_available =
+        (frame.feature_flags & VACHUNK_FEATURE_QP) == VACHUNK_FEATURE_QP;
+    const bool bit_cost_feature_available =
+        (frame.feature_flags & VACHUNK_FEATURE_BIT_COST) == VACHUNK_FEATURE_BIT_COST;
+    track.missing_qp_feature = qp_primary && !qp_feature_available;
+    track.missing_bit_cost_feature = bit_cost_primary && !bit_cost_feature_available;
     track.line_alpha = line_alpha;
     track.fill_rects.reserve(frame.cus.size());
     track.outline_rects.reserve(frame.cus.size());
@@ -188,11 +201,20 @@ AnalysisOverlayTrackPrimitives build_track_primitives(
             continue;
         }
 
-        if (bit_cost_primary && fill_alpha > 0) {
+        if (bit_cost_primary && bit_cost_feature_available && fill_alpha > 0) {
+            const uint64_t density = analysis::cu_bit_density_normalized_64x64(c);
+            if (density > analysis::kOverlayBitDensityHeatmapMax) {
+                ++track.heatmap_clamped_bit_cost_count;
+            }
             track.fill_rects.push_back(
                 {x0, y0, x1, y1, analysis::cu_bit_density_color(c, fill_alpha)});
-        } else if (qp_primary && fill_alpha > 0) {
+            ++track.heatmap_rect_count;
+        } else if (qp_primary && qp_feature_available && fill_alpha > 0) {
+            if (c.qp != analysis::qp_heatmap_clamped_value(c.qp)) {
+                ++track.heatmap_clamped_qp_count;
+            }
             track.fill_rects.push_back({x0, y0, x1, y1, analysis::qp_color(c.qp, fill_alpha)});
+            ++track.heatmap_rect_count;
         } else if (pred_primary && fill_alpha > 0) {
             track.fill_rects.push_back(
                 {x0,
@@ -333,10 +355,16 @@ build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot) {
 
     auto package = std::make_shared<AnalysisOverlayPrimitivePackage>();
     package->cache_generation = next_overlay_primitive_package_generation();
+    package->heatmap_mode = bit_cost_primary
+        ? kAnalysisOverlayHeatmapBitCost
+        : (qp_primary ? kAnalysisOverlayHeatmapQp : kAnalysisOverlayHeatmapNone);
     package->tracks.reserve(sources.size());
+    bool has_uncacheable_missing_data = false;
     for (const auto& source : sources) {
         const auto frame = source.analysis->read_overlay_frame(source.key.frame_index);
         if (frame.cus.empty()) {
+            ++package->overlay_frame_missing_count;
+            has_uncacheable_missing_data = true;
             continue;
         }
 
@@ -349,6 +377,14 @@ build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot) {
                                             fill_alpha,
                                             line_alpha);
 
+        package->heatmap_rect_count += track.heatmap_rect_count;
+        package->heatmap_clamped_qp_count += track.heatmap_clamped_qp_count;
+        package->heatmap_clamped_bit_cost_count += track.heatmap_clamped_bit_cost_count;
+        if (track.missing_qp_feature || track.missing_bit_cost_feature) {
+            ++package->heatmap_missing_feature_track_count;
+            has_uncacheable_missing_data = true;
+        }
+
         if (!track.fill_rects.empty() ||
             !track.outline_rects.empty() ||
             !track.motion_lines.empty()) {
@@ -356,7 +392,9 @@ build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot) {
         }
     }
 
-    store_overlay_primitive_package(std::move(cache_key), package);
+    if (!has_uncacheable_missing_data && !package->tracks.empty()) {
+        store_overlay_primitive_package(std::move(cache_key), package);
+    }
     return package;
 }
 

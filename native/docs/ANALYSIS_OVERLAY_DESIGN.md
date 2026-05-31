@@ -46,7 +46,7 @@
 - control strip 参与主窗口布局，占用底部媒体区高度，viewport 通过 `Expanded` 自然被向上挤压。
 - control strip 横向分栏与 media header 的 track slot 对齐；第一版 native 只支持一个 active analysis session，因此只有 active track 的分栏可交互，其他分栏显示为 disabled。
 - 每个 active track 分栏是一行控件，从左到右：
-  - overlay type：`CU/MB 划分`、`QP 热力图`、`比特率热力图` 三选一。
+  - overlay type：`CU/MB 划分`、`QP 热力图`、`编码开销热力图` 三选一。
   - additive layers：`预测模式`、`预测线` 两个独立激活按钮。
   - opacity：调节遮罩透明度。
   - sync：是否把当前面板设置同步到全部 overlay header。
@@ -60,7 +60,7 @@
 | --- | --- | --- | --- | --- |
 | CU | CU/MB partition outlines | H.264 MB grid or HEVC/VVC CU geometry | prediction mode, prediction lines | Enabled |
 | QP heatmap | Per-CU/MB QP fill | CU/MB QP | prediction mode, prediction lines | Enabled |
-| Bitrate heatmap | Per-CU/MB bit density fill | `bit_count` in current overlay CU/MB records | prediction mode, prediction lines | Enabled |
+| Bit-cost heatmap | Per-CU/MB syntax bit density fill | `bit_count` in current overlay CU/MB records | prediction mode, prediction lines | Enabled |
 
 ### Additive Layers
 
@@ -75,7 +75,7 @@
 
 - CU defaults to partition outlines.
 - QP heatmap defaults to QP fill plus partition outlines.
-- Bitrate heatmap defaults to real coded-bit density fill plus partition outlines.
+- Bit-cost heatmap defaults to coded syntax bit-density fill plus partition outlines.
 
 The type controls the primary native renderer pass. Prediction mode and prediction line layers are independent flags sent in the same overlay state so later renderer phases do not need UI rewiring.
 
@@ -182,7 +182,7 @@ log2 标尺绘制，避免不同帧/片源自适应导致颜色抖动。
 - 点击按钮加载该 track 的 VAC2 base，并设置 native overlay state。
 - overlay 默认类型为 CU，透明度为 55%。
 - 遮罩打开后 media header 上方出现 per-track overlay control strip。
-- control strip 可在 CU / QP heatmap / bitrate heatmap 三个主视觉间切换，可独立开关预测模式和预测线，可调整透明度。
+- control strip 可在 CU / QP heatmap / bit-cost heatmap 三个主视觉间切换，可独立开关预测模式和预测线，可调整透明度。
 - native overlay tracks 按 `track_file_id` 绑定；UI 可按当前控制面板状态激活一个或多个 track，renderer 在 draw pass 根据 layout slot 映射。
 
 渲染层落地顺序：
@@ -191,7 +191,7 @@ log2 标尺绘制，避免不同帧/片源自适应导致颜色抖动。
 2. QP heatmap：以 video-space block rect 半透明填充，使用固定 QP 范围归一化。
 3. Prediction mode：第一版用色彩区分 intra/inter/skip/merge，后续补小 glyph。
 4. Prediction lines：第一版画基础 L0 MV，后续补 L1 MV 和 intra direction。
-5. Bitrate heatmap：使用 VACHUNK `bit_count` 绘制真实 CU/MB bit density。
+5. Bit-cost heatmap：使用 VACHUNK `bit_count` 绘制 CU/MB syntax bit density；它不是 presentation-time bitrate。
 
 ## Hit-Test Contract
 

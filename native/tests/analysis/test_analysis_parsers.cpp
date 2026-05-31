@@ -704,6 +704,9 @@ TEST_CASE("VACHUNK: overlay chunk carries frame data",
 
     vr::analysis::VachunkOverlayFrameData frame0;
     REQUIRE(vr::analysis::read_overlay_vachunk_frame(chunk, 0, frame0));
+    REQUIRE((frame0.feature_flags & VACHUNK_FEATURE_QP) != 0);
+    REQUIRE((frame0.feature_flags & VACHUNK_FEATURE_BIT_COST) != 0);
+    REQUIRE((frame0.frame_flags & VACHUNK_OVERLAY_FRAME_FLAG_EXACT) != 0);
     REQUIRE(frame0.summary.avg_qp == 22);
     REQUIRE(frame0.summary.num_cus == 1);
     REQUIRE(frame0.cus.size() == 1);
@@ -825,6 +828,23 @@ TEST_CASE("Overlay raster: fills BGRA spans and guards invalid surfaces",
         255,
         heatmap));
     REQUIRE(heatmap == sentinel);
+
+    const auto low_qp = vr::analysis::qp_color(50, 73);
+    const auto high_qp = vr::analysis::qp_color(56, 73);
+    REQUIRE(low_qp.a == 73);
+    REQUIRE(high_qp.a == 73);
+    REQUIRE(high_qp.g != low_qp.g);
+    REQUIRE(vr::analysis::qp_heatmap_clamped_value(255) ==
+            vr::analysis::kOverlayQpHeatmapMax);
+
+    vr::analysis::VachunkCuCommon dense_cu{};
+    dense_cu.w = 1;
+    dense_cu.h = 1;
+    dense_cu.bit_count = std::numeric_limits<uint32_t>::max();
+    const auto dense_color = vr::analysis::cu_bit_density_color(dense_cu, 39);
+    REQUIRE(dense_color.a == 39);
+    REQUIRE(vr::analysis::cu_bit_density_normalized_64x64(dense_cu) >
+            vr::analysis::kOverlayBitDensityHeatmapMax);
 }
 
 TEST_CASE("AnalysisManager: reads VAC2 base with overlay chunks",

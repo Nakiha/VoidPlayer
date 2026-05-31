@@ -455,7 +455,9 @@ uint overlay_present_at(constant LayoutParams& params, uint index) {
 	}
 
 float4 overlay_blend_over(float4 dst, float4 src) {
-  return float4(src.rgb * src.a + dst.rgb * (1.0 - src.a), 1.0);
+  return float4(
+      src.rgb * src.a + dst.rgb * (1.0 - src.a),
+      src.a + dst.a * (1.0 - src.a));
 }
 
 float2 overlay_screen_px_per_source_px(

@@ -141,7 +141,7 @@ void_ffmpeg_analyzer --codec h264 --input <video> --vachunk <output.vck> --start
 The current tool emits real decoder-derived overlay VACHUNK payloads for
 H.266/H.265/H.264. Overlay records include CU/MB geometry, QP, prediction mode,
 motion vectors/reference indexes where available, and per-CU/MB coded bit
-counts used by the bitrate heatmap. The tool writes a temporary uncompressed
+counts used by the bit-cost heatmap. The tool writes a temporary uncompressed
 VCK1 file; the runner/CLI publish step validates that file and rewrites it
 through the native VACHUNK writer, which may zstd-compress individual payload
 sections before atomically publishing into cache. It still accepts `--probe-only`

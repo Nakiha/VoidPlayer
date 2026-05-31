@@ -19,6 +19,9 @@ enum class OverlayHeatmapMode {
     BitCost,
 };
 
+inline constexpr uint8_t kOverlayQpHeatmapMax = 63;
+inline constexpr uint64_t kOverlayBitDensityHeatmapMax = 4096;
+
 struct OverlayRasterStats {
     uint64_t cu_count = 0;
     uint64_t filled_pixels = 0;
@@ -85,6 +88,8 @@ bool overlay_frame_covers_surface(const VachunkOverlayFrameData& frame,
                                   int surface_height);
 
 OverlayColor heatmap_ramp_color(float value, uint8_t alpha);
+uint8_t qp_heatmap_clamped_value(uint8_t qp);
+uint64_t cu_bit_density_normalized_64x64(const VachunkCuCommon& cu);
 OverlayColor qp_color(uint8_t qp, uint8_t alpha);
 OverlayColor cu_bit_density_color(const VachunkCuCommon& cu, uint8_t alpha);
 OverlayColor pred_color(uint8_t pred_mode, const VachunkCuInter& inter, uint8_t alpha);

@@ -94,6 +94,8 @@ bool read_overlay_vachunk_frame(const DecodedOverlayChunk& chunk,
     }
 
     out.summary = chunk.summaries[local];
+    out.feature_flags = header.feature_flags;
+    out.frame_flags = entry.flags;
     out.cus.insert(out.cus.end(),
                    chunk.records.begin() + entry.first_unit,
                    chunk.records.begin() + entry.first_unit + entry.unit_count);

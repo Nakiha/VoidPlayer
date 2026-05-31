@@ -17,6 +17,8 @@ struct VachunkCuRecord {
 
 struct VachunkOverlayFrameData {
     VachunkFrameSummary summary{};
+    uint64_t feature_flags = 0;
+    uint32_t frame_flags = 0;
     std::vector<VachunkCuRecord> cus;
 };
 

@@ -254,8 +254,9 @@ VachunkCuIntra:
 ```
 
 `bit_count` is the syntax bit delta attributed by the codec hook to the CU/MB.
-The renderer normalizes it to a 64x64 block before applying the fixed bitrate
-heatmap scale.
+The renderer normalizes it to a 64x64 block before applying the fixed bit-cost
+heatmap scale. This is CU/MB syntax bit density, not a true presentation-time
+bitrate measurement.
 
 Future columns may add affine control points, transform flags, VVC tool flags,
 or export-only syntax values.

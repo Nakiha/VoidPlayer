@@ -356,11 +356,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let startNs = DispatchTime.now().uptimeNanoseconds
     let nativePlaying = playback.syncPlayingState(player: nativePlayer)
     frameCallbackProfiler.recordMainStart(enqueueNs: enqueueNs, startNs: startNs)
-    let suppressPausedLayoutPublication =
-      !nativePlaying &&
+    let suppressLayoutPublication =
       backendName == MacOSVideoTrackPayload.nativeFormatName &&
-      presentation.shouldSuppressPausedNativeCallbackPublication()
-    if suppressPausedLayoutPublication {
+      presentation.shouldSuppressNativeCallbackPublicationDuringLayout()
+    if suppressLayoutPublication {
       presentation.recordLayoutCallbackPublicationSuppressed()
     } else {
       playback.handleFrameCallback(
@@ -377,7 +376,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       enqueueNs: enqueueNs,
       startNs: startNs,
       endNs: endNs,
-      suppressed: suppressPausedLayoutPublication
+      suppressed: suppressLayoutPublication
     )
     if let nextEnqueueNs = frameCallbackProfiler.finishProcessing(endNs: endNs) {
       DispatchQueue.main.asyncAfter(

@@ -172,8 +172,6 @@ uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
     hash_combine(hash, static_cast<uint64_t>(frame->width));
     hash_combine(hash, static_cast<uint64_t>(frame->height));
     hash_combine(hash, static_cast<uint64_t>(frame->storage_kind()));
-    hash_combine(hash, pointer_bits(frame->cpu_data.get()));
-    hash_combine(hash, pointer_bits(frame->hw_frame_ref.get()));
     if (const auto* storage = frame->cpu_rgba_storage()) {
       hash_combine(hash, pointer_bits(storage->data.get()));
       hash_combine(hash, static_cast<uint64_t>(storage->stride));
@@ -185,7 +183,6 @@ uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
       hash_combine(hash, static_cast<uint64_t>(storage->coded_width));
       hash_combine(hash, static_cast<uint64_t>(storage->coded_height));
     } else if (const auto* storage = frame->cpu_planar_yuv_storage()) {
-      hash_combine(hash, pointer_bits(storage->frame_ref.get()));
       for (int plane = 0; plane < 3; ++plane) {
         hash_combine(hash, pointer_bits(storage->planes[plane]));
         hash_combine(hash, static_cast<uint64_t>(storage->strides[plane]));
@@ -195,7 +192,6 @@ uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
       hash_combine(hash, static_cast<uint64_t>(storage->bytes_per_sample));
     } else if (const auto* storage = frame->macos_cv_pixel_buffer_storage()) {
       hash_combine(hash, pointer_bits(storage->pixel_buffer));
-      hash_combine(hash, pointer_bits(storage->frame_ref.get()));
       hash_combine(hash, static_cast<uint64_t>(storage->pixel_format));
       hash_combine(hash, static_cast<uint64_t>(storage->plane_count));
       hash_combine(hash, storage->is_p010 ? 1u : 0u);
@@ -1658,8 +1654,7 @@ void MetalPresentationBackend::set_draw_target(void* pixel_buffer,
                                                int32_t max_track_slots) {
   const int32_t clamped_track_slots = std::clamp(
       max_track_slots, 1, static_cast<int32_t>(VPMacOSNativeMaxTracks));
-  const bool target_changed =
-      draw_target_pixel_buffer_ != pixel_buffer ||
+  const bool source_cache_shape_changed =
       draw_target_width_ != width ||
       draw_target_height_ != height ||
       draw_target_max_track_slots_ != clamped_track_slots;
@@ -1667,7 +1662,7 @@ void MetalPresentationBackend::set_draw_target(void* pixel_buffer,
   draw_target_width_ = width;
   draw_target_height_ = height;
   draw_target_max_track_slots_ = clamped_track_slots;
-  if (target_changed) {
+  if (source_cache_shape_changed) {
     invalidate_source_cache();
   }
 }

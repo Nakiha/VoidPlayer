@@ -170,11 +170,11 @@ final class MacOSPresentationController {
     return diagnostics
   }
 
-  func shouldSuppressPausedNativeCallbackPublication() -> Bool {
-    // Only layout-owned refreshes are published through the revision gate.
-    // Paused seek/EOF previews still need their native callback to advance the
-    // renderer-owned buffer ring; suppressing them during display-link idle
-    // grace leaves completed buffers in-flight and starves later layout draws.
+  func shouldSuppressNativeCallbackPublicationDuringLayout() -> Bool {
+    // Layout-owned refreshes are published through the revision gate. Native
+    // callbacks that arrive while a layout refresh is active are only
+    // diagnostic signals; publishing them here would bypass stale-revision
+    // checks and can double-drive Flutter texture notifications during pan/zoom.
     layoutRefreshRunning || latestLayoutRefreshRequest != nil
   }
 

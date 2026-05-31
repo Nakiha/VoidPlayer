@@ -24,6 +24,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
   id<MTLBuffer> _overlayFillRectBuffer;
   id<MTLBuffer> _overlayLineRectBuffer;
   id<MTLBuffer> _overlayMotionLineBuffer;
+  id<MTLBuffer> _overlayDirectLineRectBuffer;
   id<MTLBuffer> _overlayLineMaskBuffer;
   id<MTLComputePipelineState> _layoutPipeline;
   id<MTLComputePipelineState> _cvPixelBufferPipeline;
@@ -37,11 +38,15 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
   id<MTLComputePipelineState> _overlayLayerLineMaskPipeline;
   id<MTLComputePipelineState> _overlayLayerLineCompositePipeline;
   id<MTLComputePipelineState> _overlayLayerMotionLinePipeline;
+  id<MTLComputePipelineState> _overlayDirectLinePipeline;
   id<MTLTexture> _transparentOverlayTexture;
   std::array<id<MTLTexture>, VPMacOSNativeMaxTracks> _overlayLayerTextures;
   std::array<uint64_t, VPMacOSNativeMaxTracks> _overlayLayerGenerations;
   std::array<int32_t, VPMacOSNativeMaxTracks> _overlayLayerWidths;
   std::array<int32_t, VPMacOSNativeMaxTracks> _overlayLayerHeights;
+  uint64_t _overlayDirectLineRectGeneration;
+  size_t _overlayDirectLineRectCount;
+  size_t _overlayDirectLineRectBytes;
   CVMetalTextureCacheRef _textureCache;
   std::atomic<int64_t> _directYuvUploadCount;
   std::atomic<int64_t> _cvPixelBufferUploadCount;
@@ -199,7 +204,15 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                              width:(int32_t)width
                             height:(int32_t)height
                              error:(char*)error
-                         errorSize:(size_t)errorSize;
+	                         errorSize:(size_t)errorSize;
+- (int)encodeDirectOverlayLinePrimitives:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                                decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
+                           commandBuffer:(id<MTLCommandBuffer>)commandBuffer
+                      destinationTexture:(id<MTLTexture>)destinationTexture
+                                   width:(int32_t)width
+                                  height:(int32_t)height
+                                   error:(char*)error
+                               errorSize:(size_t)errorSize;
 - (BOOL)prepareOverlayLayers:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
                      decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
                 commandBuffer:(id<MTLCommandBuffer>)commandBuffer

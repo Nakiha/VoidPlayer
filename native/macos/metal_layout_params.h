@@ -122,6 +122,13 @@ struct MetalOverlayLayerParams {
   uint32_t reserved0;
 };
 
+struct MetalOverlayLinePassParams {
+  uint32_t width;
+  uint32_t height;
+  uint32_t pass;
+  uint32_t reserved0;
+};
+
 void write_first_present_frame_info(const VPMacOSNativePresentDecisionInfo& decision_info,
                                     VPMacOSNativeFrameInfo* out);
 void fill_metal_layout_params(MetalLayoutParams& metal_params,

@@ -206,6 +206,7 @@ enum MacOSNativeFrameRefresh {
       )
       return true
     } catch {
+      texture.discardPendingNativeFrame(pending)
       if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
         presentationState.recordMiss()
       } else {

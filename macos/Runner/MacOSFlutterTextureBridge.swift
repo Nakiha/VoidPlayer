@@ -35,9 +35,12 @@ protocol MacOSVideoTexture: FlutterTexture {
   func diagnostics() -> MacOSTextureDiagnostics
 }
 
-private enum NativePixelBufferState {
+private enum NativePixelBufferState: Equatable {
   case available
-  case inFlight
+  // Installed as the native Metal target, but no command is currently writing it.
+  case targetInstalled
+  // A native/Metal command has accepted this buffer and may still complete.
+  case rendering
   case displayed
 }
 
@@ -127,24 +130,21 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       lock.unlock()
       throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")
     }
-    guard let drawBuffer = markDrawBufferInFlightLocked() else {
-      lock.unlock()
-      throw MacOSNativePlayerError.transientFrameUnavailable(
-        "renderer-owned Metal presentation buffer ring is full"
+    let drawBuffer: CVPixelBuffer
+    do {
+      drawBuffer = try ensureDrawTargetInstalledLocked(
+        player: player,
+        maxTrackSlots: maxTrackSlots,
+        refresh: false
       )
-    }
-    guard presentationTarget.install(
-      player: player,
-      pixelBuffer: drawBuffer,
-      width: width,
-      height: height,
-      maxTrackSlots: maxTrackSlots,
-      refresh: false
-    ) else {
-      pixelBufferMetalUploadFailureCount += 1
-      releaseInFlightDrawBufferLocked()
+      guard markInstalledTargetRenderingLocked() else {
+        throw MacOSNativePlayerError.transientFrameUnavailable(
+          "renderer-owned Metal presentation target changed before draw"
+        )
+      }
+    } catch {
       lock.unlock()
-      throw MacOSNativePlayerError.failed("failed to install renderer-owned Metal presentation target")
+      throw error
     }
     lock.unlock()
     let installEndNs = DispatchTime.now().uptimeNanoseconds
@@ -209,17 +209,15 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       )
     } catch {
       let transient = (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true
-      let deferredByNativeBackpressure = String(describing: error)
-        .contains("renderer-owned Metal async draw deferred by backpressure")
-      if transient && deferredByNativeBackpressure {
+      if transient {
         lock.lock()
-        releaseInFlightDrawBufferLocked()
+        restoreRenderingDrawBufferToInstalledLocked()
         lock.unlock()
       }
       if !transient {
         lock.lock()
         pixelBufferMetalUploadFailureCount += 1
-        releaseInFlightDrawBufferLocked()
+        releaseRenderingDrawBufferLocked()
         lock.unlock()
         NSLog("VoidPlayer macOS renderer-owned Metal refresh failed: \(error)")
       }
@@ -280,7 +278,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     }
     guard let publishBufferIndex = pendingBufferIndex,
           pixelBufferStates.indices.contains(publishBufferIndex),
-          pixelBufferStates[publishBufferIndex] == .inFlight else {
+          pixelBufferStates[publishBufferIndex] == .rendering else {
       throw MacOSNativePlayerError.transientFrameUnavailable(
         "renderer-owned Metal presentation target changed before publish"
       )
@@ -289,24 +287,11 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       publishBufferIndex,
       nativeUploadCount: pending.publishToken.nativeUploadCount
     )
-    guard let nextDrawBuffer = pixelBufferLocked(drawBufferIndex),
-          presentationTarget.isAvailable(),
-          metalTextureValid else {
-      throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")
-    }
-    markCurrentDrawBufferInFlightLocked()
-    if !presentationTarget.install(
+    _ = try ensureDrawTargetInstalledLocked(
       player: player,
-      pixelBuffer: nextDrawBuffer,
-      width: width,
-      height: height,
       maxTrackSlots: maxTrackSlots,
       refresh: false
-    ) {
-      pixelBufferMetalUploadFailureCount += 1
-      releaseInFlightDrawBufferLocked()
-      throw MacOSNativePlayerError.failed("failed to install next renderer-owned Metal presentation target")
-    }
+    )
     let publishEndNs = DispatchTime.now().uptimeNanoseconds
     logUpdateProfiler(
       result: "ok",
@@ -330,7 +315,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       return
     }
     if pixelBufferStates.indices.contains(pendingBufferIndex),
-       pixelBufferStates[pendingBufferIndex] == .inFlight {
+       pixelBufferStates[pendingBufferIndex] == .rendering {
       pixelBufferStates[pendingBufferIndex] = .available
     }
     lastIgnoredNativeUploadCount = max(
@@ -408,7 +393,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       metalTextureCreationCount: metalTextureCreationCount,
       metalTextureFailureCount: metalTextureFailureCount,
       metalTextureLastError: metalTextureLastError,
-      inFlightMetalBufferCount: pixelBufferStates.filter { $0 == .inFlight }.count,
+      inFlightMetalBufferCount: pixelBufferStates.filter { $0 == .rendering }.count,
       metalBufferExhaustionCount: metalBufferExhaustionCount
     )
   }
@@ -425,21 +410,16 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
           metalTextureValid else {
       return false
     }
-    guard let pixelBuffer = markDrawBufferInFlightLocked(allowExistingInFlight: true) else {
+    do {
+      _ = try ensureDrawTargetInstalledLocked(
+        player: player,
+        maxTrackSlots: maxTrackSlots,
+        refresh: refresh
+      )
+      return true
+    } catch {
       return false
     }
-    let installed = presentationTarget.install(
-      player: player,
-      pixelBuffer: pixelBuffer,
-      width: width,
-      height: height,
-      maxTrackSlots: maxTrackSlots,
-      refresh: refresh
-    )
-    if !installed {
-      releaseInFlightDrawBufferLocked()
-    }
-    return installed
   }
 
   func resetNativeUploadBaseline() {
@@ -475,30 +455,23 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       return false
     }
     guard pixelBufferStates.indices.contains(publishBufferIndex),
-          pixelBufferStates[publishBufferIndex] == .inFlight else {
+          pixelBufferStates[publishBufferIndex] == .rendering ||
+          pixelBufferStates[publishBufferIndex] == .targetInstalled else {
       lastIgnoredNativeUploadCount = max(lastIgnoredNativeUploadCount, nativeUploadCount)
       return false
     }
     publishBufferLocked(publishBufferIndex, nativeUploadCount: nativeUploadCount)
-    guard let nextDrawBuffer = pixelBufferLocked(drawBufferIndex),
-          presentationTarget.isAvailable(),
-          metalTextureValid else {
+    do {
+      _ = try ensureDrawTargetInstalledLocked(
+        player: player,
+        maxTrackSlots: maxTrackSlots,
+        refresh: false
+      )
+      return true
+    } catch {
+      pixelBufferMetalUploadFailureCount += 1
       return false
     }
-    markCurrentDrawBufferInFlightLocked()
-    if presentationTarget.install(
-      player: player,
-      pixelBuffer: nextDrawBuffer,
-      width: width,
-      height: height,
-      maxTrackSlots: maxTrackSlots,
-      refresh: false
-    ) {
-      return true
-    }
-    pixelBufferMetalUploadFailureCount += 1
-    releaseInFlightDrawBufferLocked()
-    return false
   }
 
   private func rebuildPixelBuffer() {
@@ -595,8 +568,10 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       switch state {
       case .available:
         return "a"
-      case .inFlight:
-        return "i"
+      case .targetInstalled:
+        return "t"
+      case .rendering:
+        return "r"
       case .displayed:
         return "d"
       }
@@ -620,30 +595,79 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     _ = chooseNextDrawBufferLocked()
   }
 
-  private func markDrawBufferInFlightLocked(
-    allowExistingInFlight: Bool = false
-  ) -> CVPixelBuffer? {
-    if allowExistingInFlight,
-       pixelBufferStates.indices.contains(drawBufferIndex),
-       pixelBufferStates[drawBufferIndex] == .inFlight {
-      return pixelBufferLocked(drawBufferIndex)
+  private func ensureDrawTargetInstalledLocked(
+    player: MacOSNativePlayerSession,
+    maxTrackSlots: Int,
+    refresh: Bool
+  ) throws -> CVPixelBuffer {
+    guard presentationTarget.isAvailable(),
+          metalTextureValid else {
+      throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")
     }
-    if chooseNextDrawBufferLocked() {
-      markCurrentDrawBufferInFlightLocked()
-      return pixelBufferLocked(drawBufferIndex)
+    if pixelBufferStates.contains(.rendering) {
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        "renderer-owned Metal presentation buffer ring is busy"
+      )
     }
-    return nil
-  }
-
-  private func markCurrentDrawBufferInFlightLocked() {
+    if let installedIndex = pixelBufferStates.firstIndex(of: .targetInstalled) {
+      drawBufferIndex = installedIndex
+      guard let installedBuffer = pixelBufferLocked(installedIndex) else {
+        throw MacOSNativePlayerError.failed("renderer-owned Metal presentation target is invalid")
+      }
+      return installedBuffer
+    }
+    if !pixelBufferStates.indices.contains(drawBufferIndex) ||
+      pixelBufferStates[drawBufferIndex] != .available {
+      guard chooseNextDrawBufferLocked() else {
+        throw MacOSNativePlayerError.transientFrameUnavailable(
+          "renderer-owned Metal presentation buffer ring is full"
+        )
+      }
+    }
+    guard let drawBuffer = pixelBufferLocked(drawBufferIndex) else {
+      throw MacOSNativePlayerError.failed("renderer-owned Metal presentation target is invalid")
+    }
+    guard presentationTarget.install(
+      player: player,
+      pixelBuffer: drawBuffer,
+      width: width,
+      height: height,
+      maxTrackSlots: maxTrackSlots,
+      refresh: refresh
+    ) else {
+      pixelBufferMetalUploadFailureCount += 1
+      if pixelBufferStates.indices.contains(drawBufferIndex),
+         pixelBufferStates[drawBufferIndex] != .displayed {
+        pixelBufferStates[drawBufferIndex] = .available
+      }
+      throw MacOSNativePlayerError.failed("failed to install renderer-owned Metal presentation target")
+    }
     if pixelBufferStates.indices.contains(drawBufferIndex) {
-      pixelBufferStates[drawBufferIndex] = .inFlight
+      pixelBufferStates[drawBufferIndex] = .targetInstalled
+    }
+    return drawBuffer
+  }
+
+  @discardableResult
+  private func markInstalledTargetRenderingLocked() -> Bool {
+    if pixelBufferStates.indices.contains(drawBufferIndex),
+       pixelBufferStates[drawBufferIndex] == .targetInstalled {
+      pixelBufferStates[drawBufferIndex] = .rendering
+      return true
+    }
+    return false
+  }
+
+  private func restoreRenderingDrawBufferToInstalledLocked() {
+    if pixelBufferStates.indices.contains(drawBufferIndex),
+       pixelBufferStates[drawBufferIndex] == .rendering {
+      pixelBufferStates[drawBufferIndex] = .targetInstalled
     }
   }
 
-  private func releaseInFlightDrawBufferLocked() {
+  private func releaseRenderingDrawBufferLocked() {
     if pixelBufferStates.indices.contains(drawBufferIndex),
-       pixelBufferStates[drawBufferIndex] == .inFlight {
+       pixelBufferStates[drawBufferIndex] == .rendering {
       pixelBufferStates[drawBufferIndex] = .available
     }
   }

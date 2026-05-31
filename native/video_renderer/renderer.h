@@ -170,6 +170,7 @@ public:
     PresentationBackendMetrics presentation_backend_metrics() const;
     D3D11BackendMetrics d3d_backend_metrics() const;
     PresentationBackendStats presentation_backend_stats() const;
+    std::string presentation_backend_last_error() const;
     bool copy_last_presentation_frame_info(PresentationBackendFrameInfo* out) const;
     RendererGpuMemoryStats gpu_memory_stats() const;
 
@@ -362,7 +363,6 @@ private:
     void reset_presentation_backend_metrics();
     void record_presentation_draw_timing(uint64_t total_us, uint64_t backend_us);
     std::function<void(const char*)> frame_failure_callback_snapshot() const;
-    std::string presentation_backend_last_error() const;
     void assign_missing_track_generations_locked();
     int add_track_internal(const std::string& video_path,
                            bool use_hardware_decode,

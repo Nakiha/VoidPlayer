@@ -206,6 +206,13 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       )
     } catch {
       let transient = (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true
+      let deferredByNativeBackpressure = String(describing: error)
+        .contains("renderer-owned Metal async draw deferred by backpressure")
+      if transient && deferredByNativeBackpressure {
+        lock.lock()
+        releaseInFlightDrawBufferLocked()
+        lock.unlock()
+      }
       if !transient {
         lock.lock()
         pixelBufferMetalUploadFailureCount += 1

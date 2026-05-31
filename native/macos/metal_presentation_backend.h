@@ -71,7 +71,7 @@ private:
                              bool cpu_attempted,
                              size_t line_rect_count);
   void invalidate_source_cache();
-  void begin_async_draw();
+  bool try_begin_async_draw(const char* source);
   bool shutting_down_async() const;
 
   VPMacOSMetalUploader* uploader_ = nullptr;
@@ -100,6 +100,7 @@ private:
   uint64_t overlay_gpu_failure_count_ = 0;
   uint64_t overlay_cpu_fallback_count_ = 0;
   uint64_t metal_command_failure_count_ = 0;
+  uint64_t metal_buffer_exhaustion_count_ = 0;
   uint64_t metal_command_completion_sample_count_ = 0;
   uint64_t metal_command_completion_p95_us_ = 0;
   uint64_t video_source_update_count_ = 0;

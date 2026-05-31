@@ -1444,8 +1444,31 @@ void Renderer::finish_presented_draw(
 
     bool stale_layout_after_draw = false;
     uint64_t current_layout_revision = snapshot_layout_revision;
+    std::unique_lock<std::mutex> lock(state_mutex_, std::defer_lock);
     if (drew) {
-        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (completed_frame_info) {
+            if (!lock.try_lock()) {
+                presentation_backend_metrics_.layout_stale_completion_drop_count.fetch_add(
+                    1, std::memory_order_relaxed);
+                const auto total_us = elapsed_us_since(profiler_start);
+                record_presentation_draw_timing(total_us, backend_us);
+                log_viewport_draw_trace(source,
+                                        snapshot,
+                                        snapshot_layout_revision,
+                                        snapshot_layout_revision,
+                                        attempted_draw,
+                                        drew,
+                                        true,
+                                        static_cast<bool>(frame_callback),
+                                        false,
+                                        total_us,
+                                        snapshot_us,
+                                        backend_us);
+                return;
+            }
+        } else {
+            lock.lock();
+        }
         stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
         current_layout_revision = layout_revision_;
         if (stale_layout_after_draw) {
@@ -1459,6 +1482,9 @@ void Renderer::finish_presented_draw(
         }
         preview_drawn_ = !stale_layout_after_draw;
     }
+    if (lock.owns_lock()) {
+        lock.unlock();
+    }
 
     const bool callback_available = static_cast<bool>(frame_callback);
     const bool callback_published =
@@ -1467,7 +1493,10 @@ void Renderer::finish_presented_draw(
     if (callback_published) {
         frame_callback(completed_frame_info);
     }
-    if (attempted_draw && !drew && frame_failure_callback &&
+    const bool transient_backpressure =
+        frame_failure_error &&
+        is_transient_presentation_backpressure_error(frame_failure_error);
+    if (attempted_draw && !drew && !transient_backpressure && frame_failure_callback &&
         !shutting_down_.load(std::memory_order_acquire)) {
         frame_failure_callback(frame_failure_error ? frame_failure_error : "");
     }
@@ -3254,35 +3283,37 @@ bool Renderer::copy_last_presentation_frame_info(
 }
 
 RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    std::lock_guard<std::recursive_mutex> device_lock(device_mutex_);
     RendererGpuMemoryStats result;
 
 #ifdef _WIN32
-    auto* presenter = frame_presenter();
-    const auto presenter_stats = presenter
-        ? presenter->memory_stats()
-        : D3D11FramePresenterMemoryStats{};
-    result.presenter_texture_bytes = presenter_stats.total_estimated_bytes;
-    result.total_estimated_bytes += result.presenter_texture_bytes;
+    D3D11FramePresenterMemoryStats presenter_stats{};
+    {
+        std::lock_guard<std::recursive_mutex> device_lock(device_mutex_);
+        auto* presenter = frame_presenter();
+        presenter_stats = presenter
+            ? presenter->memory_stats()
+            : D3D11FramePresenterMemoryStats{};
+        result.presenter_texture_bytes = presenter_stats.total_estimated_bytes;
+        result.total_estimated_bytes += result.presenter_texture_bytes;
 
-    if (auto* output = headless_output()) {
-        const auto headless_stats = output->memory_stats();
-        result.headless_output_bytes = headless_stats.estimated_bytes;
-        result.headless_width = headless_stats.width;
-        result.headless_height = headless_stats.height;
-        result.headless_buffer_count = headless_stats.buffer_count;
-        result.total_estimated_bytes += result.headless_output_bytes;
-    }
+        if (auto* output = headless_output()) {
+            const auto headless_stats = output->memory_stats();
+            result.headless_output_bytes = headless_stats.estimated_bytes;
+            result.headless_width = headless_stats.width;
+            result.headless_height = headless_stats.height;
+            result.headless_buffer_count = headless_stats.buffer_count;
+            result.total_estimated_bytes += result.headless_output_bytes;
+        }
 
-    if (auto* resources = d3d_resources()) {
-        const auto overlay_stats =
-            snapshot_analysis_overlay_memory_stats(*resources);
-        result.analysis_overlay_bytes = overlay_stats.estimated_bytes;
-        result.analysis_overlay_width = overlay_stats.width;
-        result.analysis_overlay_height = overlay_stats.height;
-        if (result.analysis_overlay_bytes > 0) {
-            result.total_estimated_bytes += result.analysis_overlay_bytes;
+        if (auto* resources = d3d_resources()) {
+            const auto overlay_stats =
+                snapshot_analysis_overlay_memory_stats(*resources);
+            result.analysis_overlay_bytes = overlay_stats.estimated_bytes;
+            result.analysis_overlay_width = overlay_stats.width;
+            result.analysis_overlay_height = overlay_stats.height;
+            if (result.analysis_overlay_bytes > 0) {
+                result.total_estimated_bytes += result.analysis_overlay_bytes;
+            }
         }
     }
 
@@ -3294,6 +3325,7 @@ RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
 #else
     std::array<uint64_t, kMaxTracks> presenter_copy_texture_bytes_by_slot{};
 #endif
+    std::lock_guard<std::mutex> lock(state_mutex_);
     const auto track_memory = snapshot_track_gpu_memory_stats_collection(
         tracks_, presenter_copy_texture_bytes_by_slot);
     result.decoder_pool_bytes += track_memory.decoder_pool_bytes;

@@ -223,6 +223,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   uint64_t expected_layout_revision = 0;
   int refresh_attempts = 0;
   bool refresh_submitted = false;
+  bool refresh_deferred_by_backpressure = false;
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
     if (!player->presentation_target_pixel_buffer ||
@@ -256,6 +257,14 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
                                   : "macos-renderer-owned-refresh";
       refresh_submitted =
           player->renderer->request_frame_refresh(refresh_reason);
+      if (!refresh_submitted) {
+        const auto renderer_error =
+            player->renderer->presentation_backend_last_error();
+        if (vr::is_transient_presentation_backpressure_error(renderer_error)) {
+          refresh_deferred_by_backpressure = true;
+          write_error(error, error_size, renderer_error);
+        }
+      }
       if (refresh_submitted) {
         const auto metrics = player->renderer->presentation_backend_metrics();
         expected_layout_revision =
@@ -268,6 +277,9 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   };
   if (!trigger_renderer_refresh()) {
     return -1;
+  }
+  if (refresh_deferred_by_backpressure) {
+    return -2;
   }
 
   std::unique_lock<std::mutex> callback_lock(player->callback_mutex);
@@ -339,6 +351,9 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
         callback_lock.lock();
         if (!requested) {
           return -1;
+        }
+        if (refresh_deferred_by_backpressure) {
+          return -2;
         }
       }
     }

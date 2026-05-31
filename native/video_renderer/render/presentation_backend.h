@@ -82,6 +82,10 @@ struct PresentationBackendStats {
     uint64_t source_frame_cache_miss_count = 0;
 };
 
+inline bool is_transient_presentation_backpressure_error(const std::string& error) {
+    return error == "renderer-owned Metal async draw deferred by backpressure";
+}
+
 struct PresentationBackendMetrics {
     uint64_t draw_count = 0;
     uint64_t draw_total_us = 0;

@@ -56,6 +56,7 @@ uint64_t percentile_95_us(std::vector<uint64_t> samples) {
 }
 
 struct OverlayPrimitiveBuildResult {
+  uint64_t generation = 0;
   std::vector<VPMacOSNativeOverlayGpuRect> fill_rects;
   std::vector<VPMacOSNativeOverlayGpuRect> line_rects;
   std::vector<VPMacOSNativeOverlayGpuRect> motion_lines;
@@ -392,6 +393,7 @@ std::shared_ptr<const OverlayPrimitiveBuildResult> build_overlay_primitives_for_
   }
 
   auto result = std::make_shared<OverlayPrimitiveBuildResult>();
+  result->generation = package->cache_generation;
   for (const auto& track : package->tracks) {
     if (track.video_width <= 0 || track.video_height <= 0) {
       continue;
@@ -459,6 +461,7 @@ VPMacOSNativeOverlayGpuPrimitiveSet overlay_primitive_set(
   set.motion_lines =
       overlay.motion_lines.empty() ? nullptr : overlay.motion_lines.data();
   set.motion_line_count = overlay.motion_lines.size();
+  set.generation = overlay.generation;
   return set;
 }
 

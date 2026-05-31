@@ -1,6 +1,7 @@
 #ifndef VOIDPLAYER_MACOS_METAL_UPLOADER_INTERNAL_H_
 #define VOIDPLAYER_MACOS_METAL_UPLOADER_INTERNAL_H_
 
+#include "macos/metal_layout_params.h"
 #include "macos/metal_uploader_bridge.h"
 
 #include <CoreVideo/CoreVideo.h>
@@ -8,6 +9,7 @@
 #include <Metal/Metal.h>
 
 #include <atomic>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -30,6 +32,16 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
   id<MTLComputePipelineState> _overlayLineMaskPipeline;
   id<MTLComputePipelineState> _overlayLineContrastPipeline;
   id<MTLComputePipelineState> _overlayMotionLinePipeline;
+  id<MTLComputePipelineState> _overlayLayerClearPipeline;
+  id<MTLComputePipelineState> _overlayLayerFillRectPipeline;
+  id<MTLComputePipelineState> _overlayLayerLineMaskPipeline;
+  id<MTLComputePipelineState> _overlayLayerLineCompositePipeline;
+  id<MTLComputePipelineState> _overlayLayerMotionLinePipeline;
+  id<MTLTexture> _transparentOverlayTexture;
+  std::array<id<MTLTexture>, VPMacOSNativeMaxTracks> _overlayLayerTextures;
+  std::array<uint64_t, VPMacOSNativeMaxTracks> _overlayLayerGenerations;
+  std::array<int32_t, VPMacOSNativeMaxTracks> _overlayLayerWidths;
+  std::array<int32_t, VPMacOSNativeMaxTracks> _overlayLayerHeights;
   CVMetalTextureCacheRef _textureCache;
   std::atomic<int64_t> _directYuvUploadCount;
   std::atomic<int64_t> _cvPixelBufferUploadCount;
@@ -188,6 +200,16 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                             height:(int32_t)height
                              error:(char*)error
                          errorSize:(size_t)errorSize;
+- (BOOL)prepareOverlayLayers:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                     decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
+                commandBuffer:(id<MTLCommandBuffer>)commandBuffer
+                         error:(char*)error
+                     errorSize:(size_t)errorSize;
+- (void)bindOverlayLayersForDecision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
+                              overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                                params:(vp_macos::MetalLayoutParams*)params
+                               encoder:(id<MTLComputeCommandEncoder>)encoder
+                     firstTextureIndex:(NSUInteger)firstTextureIndex;
 
 @end
 

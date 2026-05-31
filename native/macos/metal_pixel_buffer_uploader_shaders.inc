@@ -122,6 +122,10 @@ struct LayoutParams {
   float view_offset_uv_y1;
   float view_offset_uv_y2;
   float view_offset_uv_y3;
+  uint overlay_present0;
+  uint overlay_present1;
+  uint overlay_present2;
+  uint overlay_present3;
 };
 
 uint frame_present_at(constant LayoutParams& params, uint index) {
@@ -276,6 +280,13 @@ float view_offset_uv_y_at(constant LayoutParams& params, uint index) {
   if (index == 1) return params.view_offset_uv_y1;
   if (index == 2) return params.view_offset_uv_y2;
   return params.view_offset_uv_y3;
+}
+
+uint overlay_present_at(constant LayoutParams& params, uint index) {
+  if (index == 0) return params.overlay_present0;
+  if (index == 1) return params.overlay_present1;
+  if (index == 2) return params.overlay_present2;
+  return params.overlay_present3;
 }
 
 	float2 aspect_fit_uv(float2 local_uv,
@@ -443,10 +454,46 @@ float view_offset_uv_y_at(constant LayoutParams& params, uint index) {
 	      1.0);
 	}
 
+float4 overlay_blend_over(float4 dst, float4 src) {
+  return float4(src.rgb * src.a + dst.rgb * (1.0 - src.a), 1.0);
+}
+
+float4 overlay_sample_for_track(
+    constant LayoutParams& params,
+    uint track_slot,
+    uint source_x,
+    uint source_y,
+    texture2d<float, access::read> overlay0,
+    texture2d<float, access::read> overlay1,
+    texture2d<float, access::read> overlay2,
+    texture2d<float, access::read> overlay3) {
+  if (overlay_present_at(params, track_slot) == 0) {
+    return float4(0.0, 0.0, 0.0, 0.0);
+  }
+  if (track_slot == 0u) {
+    return overlay0.read(uint2(min(source_x, overlay0.get_width() - 1),
+                               min(source_y, overlay0.get_height() - 1)));
+  }
+  if (track_slot == 1u) {
+    return overlay1.read(uint2(min(source_x, overlay1.get_width() - 1),
+                               min(source_y, overlay1.get_height() - 1)));
+  }
+  if (track_slot == 2u) {
+    return overlay2.read(uint2(min(source_x, overlay2.get_width() - 1),
+                               min(source_y, overlay2.get_height() - 1)));
+  }
+  return overlay3.read(uint2(min(source_x, overlay3.get_width() - 1),
+                             min(source_y, overlay3.get_height() - 1)));
+}
+
 	kernel void layout_bgra_copy(
 	    device const uchar* source [[buffer(0)]],
 	    constant LayoutParams& params [[buffer(1)]],
 	    texture2d<float, access::write> destination [[texture(0)]],
+    texture2d<float, access::read> overlay0 [[texture(1)]],
+    texture2d<float, access::read> overlay1 [[texture(2)]],
+    texture2d<float, access::read> overlay2 [[texture(3)]],
+    texture2d<float, access::read> overlay3 [[texture(4)]],
     uint2 gid [[thread_position_in_grid]]) {
   if (gid.x >= params.width || gid.y >= params.height) {
     return;
@@ -520,6 +567,16 @@ float view_offset_uv_y_at(constant LayoutParams& params, uint index) {
       color.a = 1.0;
     }
   }
+  color = overlay_blend_over(
+      color,
+      overlay_sample_for_track(params,
+                               track_slot,
+                               source_x,
+                               source_y,
+                               overlay0,
+                               overlay1,
+                               overlay2,
+                               overlay3));
   destination.write(color, gid);
 }
 
@@ -578,6 +635,10 @@ kernel void layout_cv_yuv_copy(
     texture2d<float, access::write> destination [[texture(0)]],
     texture2d<float, access::read> source_y [[texture(1)]],
     texture2d<float, access::read> source_uv [[texture(2)]],
+    texture2d<float, access::read> overlay0 [[texture(3)]],
+    texture2d<float, access::read> overlay1 [[texture(4)]],
+    texture2d<float, access::read> overlay2 [[texture(5)]],
+    texture2d<float, access::read> overlay3 [[texture(6)]],
     uint2 gid [[thread_position_in_grid]]) {
   if (gid.x >= params.width || gid.y >= params.height) {
     return;
@@ -610,6 +671,16 @@ kernel void layout_cv_yuv_copy(
   const uint source_y_pos = min(uint(source_uv_coord.y * float(source_height)), source_height - 1);
   float4 color = sample_cv_yuv_track(
       source_y, source_uv, params, track_slot, source_x, source_y_pos);
+  color = overlay_blend_over(
+      color,
+      overlay_sample_for_track(params,
+                               track_slot,
+                               source_x,
+                               source_y_pos,
+                               overlay0,
+                               overlay1,
+                               overlay2,
+                               overlay3));
   destination.write(color, gid);
 }
 
@@ -624,6 +695,10 @@ kernel void layout_cv_yuv_set_copy(
     texture2d<float, access::read> source_uv2 [[texture(6)]],
     texture2d<float, access::read> source_y3 [[texture(7)]],
     texture2d<float, access::read> source_uv3 [[texture(8)]],
+    texture2d<float, access::read> overlay0 [[texture(9)]],
+    texture2d<float, access::read> overlay1 [[texture(10)]],
+    texture2d<float, access::read> overlay2 [[texture(11)]],
+    texture2d<float, access::read> overlay3 [[texture(12)]],
     uint2 gid [[thread_position_in_grid]]) {
   if (gid.x >= params.width || gid.y >= params.height) {
     return;
@@ -698,6 +773,16 @@ kernel void layout_cv_yuv_set_copy(
       color.a = 1.0;
     }
   }
+  color = overlay_blend_over(
+      color,
+      overlay_sample_for_track(params,
+                               track_slot,
+                               source_x,
+                               source_y,
+                               overlay0,
+                               overlay1,
+                               overlay2,
+                               overlay3));
   destination.write(color, gid);
 }
 
@@ -708,9 +793,12 @@ struct OverlayGpuRect {
   uint track_idx;
 };
 
-float4 overlay_blend_over(float4 dst, float4 src) {
-  return float4(src.rgb * src.a + dst.rgb * (1.0 - src.a), 1.0);
-}
+struct OverlayLayerParams {
+  uint width;
+  uint height;
+  uint track_slot;
+  uint reserved0;
+};
 
 int overlay_track_index_from_rect(OverlayGpuRect rect) {
   return clamp(int(rect.track_idx & 0xffu), 0, 3);
@@ -790,6 +878,174 @@ float4 overlay_color_from_bgra(uint color_bgra) {
       float((color_bgra >> 8) & 0xffu),
       float(color_bgra & 0xffu),
       float((color_bgra >> 24) & 0xffu)) / 255.0;
+}
+
+bool overlay_rect_matches_layer(OverlayGpuRect rect, constant OverlayLayerParams& params) {
+  return uint(overlay_track_index_from_rect(rect)) == params.track_slot;
+}
+
+float4 overlay_video_px_rect(OverlayGpuRect rect, constant OverlayLayerParams& params) {
+  const float2 rect_min = overlay_unpack_uv16(rect.rect_uv0);
+  const float2 rect_max = overlay_unpack_uv16(rect.rect_uv1);
+  const float2 scale = float2(float(params.width), float(params.height));
+  const float2 px_min = min(rect_min, rect_max) * scale;
+  const float2 px_max = max(rect_min, rect_max) * scale;
+  return float4(px_min, px_max);
+}
+
+kernel void clear_overlay_layer(
+    texture2d<float, access::write> layer [[texture(0)]],
+    uint2 gid [[thread_position_in_grid]]) {
+  if (gid.x >= layer.get_width() || gid.y >= layer.get_height()) {
+    return;
+  }
+  layer.write(float4(0.0, 0.0, 0.0, 0.0), gid);
+}
+
+kernel void raster_overlay_fill_rects_layer(
+    device const OverlayGpuRect* rects [[buffer(0)]],
+    constant OverlayLayerParams& params [[buffer(1)]],
+    texture2d<float, access::read_write> layer [[texture(0)]],
+    uint id [[thread_position_in_grid]]) {
+  if (!overlay_rect_matches_layer(rects[id], params)) {
+    return;
+  }
+  const float4 color = overlay_color_from_bgra(rects[id].color_bgra);
+  if (color.a <= 0.0) {
+    return;
+  }
+  const float4 rect_px = overlay_video_px_rect(rects[id], params);
+  const int min_x = clamp(int(floor(rect_px.x)), 0, int(params.width));
+  const int max_x = clamp(int(ceil(rect_px.z)), 0, int(params.width));
+  const int min_y = clamp(int(floor(rect_px.y)), 0, int(params.height));
+  const int max_y = clamp(int(ceil(rect_px.w)), 0, int(params.height));
+  for (int y = min_y; y < max_y; ++y) {
+    for (int x = min_x; x < max_x; ++x) {
+      const uint2 pos = uint2(uint(x), uint(y));
+      const float4 dst = layer.read(pos);
+      layer.write(overlay_blend_over(dst, color), pos);
+    }
+  }
+}
+
+kernel void raster_overlay_motion_lines_layer(
+    device const OverlayGpuRect* lines [[buffer(0)]],
+    constant OverlayLayerParams& params [[buffer(1)]],
+    texture2d<float, access::read_write> layer [[texture(0)]],
+    uint id [[thread_position_in_grid]]) {
+  if (!overlay_rect_matches_layer(lines[id], params)) {
+    return;
+  }
+  const float4 color = overlay_color_from_bgra(lines[id].color_bgra);
+  if (color.a <= 0.0 || params.width == 0 || params.height == 0) {
+    return;
+  }
+  const float2 p0_uv = overlay_unpack_uv16(lines[id].rect_uv0);
+  const float2 p1_uv = overlay_unpack_uv16(lines[id].rect_uv1);
+  int x0 = clamp(int(round(p0_uv.x * float(params.width))), 0, int(params.width) - 1);
+  int y0 = clamp(int(round(p0_uv.y * float(params.height))), 0, int(params.height) - 1);
+  const int x1 = clamp(int(round(p1_uv.x * float(params.width))), 0, int(params.width) - 1);
+  const int y1 = clamp(int(round(p1_uv.y * float(params.height))), 0, int(params.height) - 1);
+  const int dx = abs(x1 - x0);
+  const int sx = x0 < x1 ? 1 : -1;
+  const int dy = -abs(y1 - y0);
+  const int sy = y0 < y1 ? 1 : -1;
+  int err = dx + dy;
+  for (int i = 0; i < int(params.width + params.height); ++i) {
+    const uint2 pos = uint2(uint(x0), uint(y0));
+    const float4 dst = layer.read(pos);
+    layer.write(overlay_blend_over(dst, color), pos);
+    if (x0 == x1 && y0 == y1) {
+      break;
+    }
+    const int e2 = 2 * err;
+    if (e2 >= dy) {
+      err += dy;
+      x0 += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y0 += sy;
+    }
+    if (x0 < 0 || y0 < 0 || x0 >= int(params.width) || y0 >= int(params.height)) {
+      break;
+    }
+  }
+}
+
+kernel void build_overlay_line_mask_layer(
+    device const OverlayGpuRect* rects [[buffer(0)]],
+    device atomic_uint* mask [[buffer(1)]],
+    constant OverlayLayerParams& params [[buffer(2)]],
+    uint id [[thread_position_in_grid]]) {
+  const OverlayGpuRect rect = rects[id];
+  if (!overlay_rect_matches_layer(rect, params) ||
+      params.width == 0 || params.height == 0 ||
+      overlay_line_strength_from_rect(rect) <= 0.0) {
+    return;
+  }
+  const float4 rect_px = overlay_video_px_rect(rect, params);
+  if (rect_px.z <= rect_px.x || rect_px.w <= rect_px.y) {
+    return;
+  }
+  const float line_width_px = 1.0;
+  const int min_x = clamp(int(floor(rect_px.x - line_width_px)), 0, int(params.width));
+  const int max_x = clamp(int(ceil(rect_px.z + line_width_px)), 0, int(params.width));
+  const int min_y = clamp(int(floor(rect_px.y - line_width_px)), 0, int(params.height));
+  const int max_y = clamp(int(ceil(rect_px.w + line_width_px)), 0, int(params.height));
+  const float2 rect_min = overlay_unpack_uv16(rect.rect_uv0);
+  const float2 rect_max = overlay_unpack_uv16(rect.rect_uv1);
+  for (int y = min_y; y < max_y; ++y) {
+    const uint row = uint(y) * params.width;
+    for (int x = min_x; x < max_x; ++x) {
+      const bool within_y = float(y) >= rect_px.y && float(y) < rect_px.w;
+      const bool within_x = float(x) >= rect_px.x && float(x) < rect_px.z;
+      const bool on_line =
+          (within_y && float(x) >= rect_px.x && float(x) < rect_px.x + line_width_px) ||
+          (within_x && float(y) >= rect_px.y && float(y) < rect_px.y + line_width_px) ||
+          (rect_max.x >= 0.9999 &&
+              within_y && float(x) >= rect_px.z - line_width_px && float(x) < rect_px.z) ||
+          (rect_max.y >= 0.9999 &&
+              within_x && float(y) >= rect_px.w - line_width_px && float(y) < rect_px.w);
+      if (on_line) {
+        atomic_store_explicit(&mask[row + uint(x)], 1u, memory_order_relaxed);
+      }
+    }
+  }
+}
+
+uint overlay_mask_at(device atomic_uint* mask, uint width, uint height, int x, int y) {
+  if (x < 0 || y < 0 || x >= int(width) || y >= int(height)) {
+    return 0u;
+  }
+  return atomic_load_explicit(&mask[uint(y) * width + uint(x)], memory_order_relaxed);
+}
+
+kernel void composite_overlay_line_layer(
+    device atomic_uint* mask [[buffer(0)]],
+    constant OverlayLayerParams& params [[buffer(1)]],
+    texture2d<float, access::read_write> layer [[texture(0)]],
+    uint2 gid [[thread_position_in_grid]]) {
+  if (gid.x >= params.width || gid.y >= params.height ||
+      gid.x >= layer.get_width() || gid.y >= layer.get_height()) {
+    return;
+  }
+  const int x = int(gid.x);
+  const int y = int(gid.y);
+  const bool center = overlay_mask_at(mask, params.width, params.height, x, y) > 0;
+  const bool halo =
+      !center &&
+      (overlay_mask_at(mask, params.width, params.height, x - 1, y) > 0 ||
+       overlay_mask_at(mask, params.width, params.height, x + 1, y) > 0 ||
+       overlay_mask_at(mask, params.width, params.height, x, y - 1) > 0 ||
+       overlay_mask_at(mask, params.width, params.height, x, y + 1) > 0);
+  if (!center && !halo) {
+    return;
+  }
+  const float4 halo_color = float4(0.0, 0.0, 0.0, 166.0 / 255.0);
+  const float4 center_color = float4(1.0, 1.0, 1.0, 115.0 / 255.0);
+  const float4 dst = layer.read(gid);
+  layer.write(overlay_blend_over(dst, center ? center_color : halo_color), gid);
 }
 
 bool overlay_global_rect_from_video_rect(
@@ -991,13 +1247,6 @@ kernel void build_overlay_line_mask(
       }
     }
   }
-}
-
-uint overlay_mask_at(device atomic_uint* mask, uint width, uint height, int x, int y) {
-  if (x < 0 || y < 0 || x >= int(width) || y >= int(height)) {
-    return 0u;
-  }
-  return atomic_load_explicit(&mask[uint(y) * width + uint(x)], memory_order_relaxed);
 }
 
 kernel void composite_overlay_line_contrast(

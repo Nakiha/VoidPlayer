@@ -131,6 +131,18 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   metalParams.view_offset_uv_y1 = decisionInfo.view_offset_uv_y[1];
   metalParams.view_offset_uv_y2 = decisionInfo.view_offset_uv_y[2];
   metalParams.view_offset_uv_y3 = decisionInfo.view_offset_uv_y[3];
+  metalParams.overlay_present0 = 0;
+  metalParams.overlay_present1 = 0;
+  metalParams.overlay_present2 = 0;
+  metalParams.overlay_present3 = 0;
+}
+
+void set_metal_overlay_present(MetalLayoutParams& metalParams,
+                               const uint32_t overlayPresent[VPMacOSNativeMaxTracks]) {
+  metalParams.overlay_present0 = overlayPresent ? overlayPresent[0] : 0;
+  metalParams.overlay_present1 = overlayPresent ? overlayPresent[1] : 0;
+  metalParams.overlay_present2 = overlayPresent ? overlayPresent[2] : 0;
+  metalParams.overlay_present3 = overlayPresent ? overlayPresent[3] : 0;
 }
 
 }  // namespace vp_macos

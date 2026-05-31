@@ -109,6 +109,17 @@ struct MetalLayoutParams {
   float view_offset_uv_y1;
   float view_offset_uv_y2;
   float view_offset_uv_y3;
+  uint32_t overlay_present0;
+  uint32_t overlay_present1;
+  uint32_t overlay_present2;
+  uint32_t overlay_present3;
+};
+
+struct MetalOverlayLayerParams {
+  uint32_t width;
+  uint32_t height;
+  uint32_t track_slot;
+  uint32_t reserved0;
 };
 
 void write_first_present_frame_info(const VPMacOSNativePresentDecisionInfo& decision_info,
@@ -117,6 +128,8 @@ void fill_metal_layout_params(MetalLayoutParams& metal_params,
                               const VPMacOSNativePresentDecisionInfo& decision_info,
                               int32_t width,
                               int32_t height);
+void set_metal_overlay_present(MetalLayoutParams& metal_params,
+                               const uint32_t overlay_present[VPMacOSNativeMaxTracks]);
 
 }  // namespace vp_macos
 

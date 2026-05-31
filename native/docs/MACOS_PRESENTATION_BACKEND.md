@@ -25,9 +25,10 @@ The shared renderer builds a `RendererDrawSnapshot` from the current
 - consumes VideoToolbox `CVPixelBuffer` frames or software/fallback present
   packages;
 - runs the Metal layout/color path into the renderer-owned target;
-- when analysis overlay primitives are active, encodes video and overlay work in
-  the same command buffer; CPU overlay is a visible fallback only after a GPU
-  overlay failure;
+- when analysis overlay is active, the long-term route is to sample retained
+  per-track overlay layers during final composite; the current immediate
+  primitive overlay path is a compatibility/fallback path and must not keep
+  growing as the high-refresh solution;
 - records upload storage, frame PTS, cadence, and failure diagnostics;
 - wakes refresh waiters and asks Swift to mark the Flutter texture available.
 
@@ -69,6 +70,9 @@ selects frames by PTS and the backend records the last completed source package
 or VideoToolbox `CVPixelBuffer` decision. Viewport/layout composite may run on
 display-link ticks against that retained source, so pan, zoom, split, and
 overlay movement are not forced to wait for the next decoded video frame.
+Overlay scene generation and GPU layer rasterization are event-driven by
+frame/chunk/mode changes; display-link ticks should reuse completed overlay
+layers and publish only the final composite.
 Paused, EOF, startup, seek, and step refreshes use the same renderer-owned
 completion path; the renderer still decides whether a tick is skipped, drawn,
 failed, or merged into a newer layout intent.

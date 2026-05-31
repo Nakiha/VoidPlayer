@@ -125,6 +125,7 @@ typedef struct VPMacOSNativeOverlayGpuPrimitiveSet {
   size_t line_rect_count;
   const VPMacOSNativeOverlayGpuRect* motion_lines;
   size_t motion_line_count;
+  uint64_t generation;
 } VPMacOSNativeOverlayGpuPrimitiveSet;
 
 VPMacOSMetalUploader* VPMacOSMetalUploaderCreate(void);

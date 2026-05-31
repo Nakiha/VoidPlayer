@@ -109,19 +109,22 @@ Native analysis 负责：
 
 ### Native Renderer
 
-D3D11 renderer 负责：
+Shared native renderer 负责：
 
-- 在视频 pass 后叠加 overlay pass。
+- 从 VAC2/VACHUNK 和当前 `RendererDrawSnapshot` 构建平台无关的 overlay scene。
+- 用稳定 generation/hash 表达 `track_file_id + frame_index + overlay state + video size`
+  的 materialization 边界。
 - 复用现有 layout state 和 track geometry，保证遮罩与视频像素对齐。
 - 按显示尺度做 LOD：小尺度下隐藏过细线框或合并热力图。
 - 绘制 selected/hover 高亮。
 
-当前实现按 `track_file_id + frame_index + overlay state + video size` 缓存 renderer
-侧 overlay materialization；只有实际上屏帧、overlay 类型/图层/透明度或视频尺寸变化时
-才重新读取 VACHUNK。QP / bit-density / prediction-mode 填充不再生成整张 BGRA
-dynamic texture，而是把每个 CU/MB 写成 16-byte packed rect instance，上传到 D3D11
-structured buffer，并由 instanced quad pass 在 GPU 上直接绘制。平滑 pan/zoom/resize
-只更新已有 layout constants，不重新 raster 或上传整张 video-space color texture。
+Windows D3D11 backend 当前按 `track_file_id + frame_index + overlay state + video size`
+缓存 renderer 侧 overlay materialization；只有实际上屏帧、overlay 类型/图层/透明度或
+视频尺寸变化时才重新读取 VACHUNK。QP / bit-density / prediction-mode 填充不再生成
+整张 BGRA dynamic texture，而是把每个 CU/MB 写成 16-byte packed rect instance，
+上传到 D3D11 structured buffer，并由 instanced quad pass 在 GPU 上直接绘制。平滑
+pan/zoom/resize 只更新已有 layout constants，不重新 raster 或上传整张 video-space
+color texture。
 
 CU/MB 反色线框也复用同一组 rect instances，在 GPU 侧写入 video-size R8 mask render
 target。这个选择保留了共享边界的幂等绘制语义：同一条边只在 mask 中置位一次，再通过
@@ -132,6 +135,40 @@ frame CPU raster 成本、当前 GUI/DX11 路径的 estimated rect upload 字节
 rect upload / color pass / GPU mask pass / invert pass / full overlay pass 的粒度耗时。
 后续如果 GPU mask pass 仍成为瓶颈，应优先考虑更紧的 rect buffer 或 stencil/coverage
 策略，而不是回到普通 alpha line 绘制。
+
+### macOS Retained Overlay Layer
+
+macOS high-refresh viewport 不应把 overlay primitive rebuild/upload/raster 放在每次
+display-link final composite 热路径里。当前 Metal immediate primitive path 可作为
+兼容 fallback，但不是长期目标；高倍率 pan/zoom 下它会让同一批 CU 线框随 layout tick
+反复进入 `MetalPresentationBackend` 和 overlay compute pass，导致 command completion
+超过 display budget。
+
+目标形态：
+
+1. `AnalysisOverlayScene` 是共享输入模型，按 track/frame/overlay state 生成，与
+   pan/zoom/layout revision 解耦。
+2. `MetalOverlayLayerCache` 按 track 保存 last completed overlay layer。scene generation
+   不变时，display-link composite 只采样已有 layer；不重新读取 VACHUNK、不重新上传全量
+   CU rect、不重新构建 target-size mask。
+3. VideoToolbox/软件源帧和 overlay layer 都是 retained source resource。视频 PTS 更新只
+   更新 source frame cache；overlay chunk/mode/frame 更新只更新 overlay layer；pan/zoom
+   只触发 final composite。
+4. Overlay layer raster 可以落后于 viewport composite。ring pressure 或 GPU 忙时优先跳过
+   overlay layer raster，final composite 继续使用 last completed layer，不能阻塞 Swift/main
+   thread，不能发布半成品 buffer。
+5. 高倍率和密集 CU 场景必须有 LOD/budget：按最终像素尺度合并或抑制低价值细线，保留
+   黑边 + 中心高亮的可读样式，同时记录 dropped/merged primitive 计数。
+
+验收指标：
+
+- `overlayLayerRasterCount` 应主要随 frame/chunk/mode 变化增长，而不是随
+  `layoutIntentCount` 增长。
+- `overlayLayerReuseCount` 在 pan/zoom 期间明显高于 raster count。
+- `overlayCompositeP95Us` 保持在 display-link final composite budget 内；overlay layer
+  raster 可以低频，但 viewport 不能因为 overlay 进入 backpressure 风暴。
+- `overlayPrimitiveDropCount`、`overlayLodLevel`、`overlayWaitingForChunk` 等诊断必须可见，
+  不能把 CPU fallback 或缺 chunk 伪装成健康 GPU path。
 
 当前 VACHUNK CU/MB record 已带 `bit_count`，`cuBitCostHeatmap` 使用
 `bit_count * 64 * 64 / (w * h)` 计算归一到 64x64 的 bit density，并用固定

@@ -172,6 +172,10 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     _lastPresentPackageStorage.store(
         VPMacOSNativePresentPackageStorageUnavailable,
         std::memory_order_relaxed);
+    _overlayLayerTextures.fill(nil);
+    _overlayLayerGenerations.fill(0);
+    _overlayLayerWidths.fill(0);
+    _overlayLayerHeights.fill(0);
     _device = MTLCreateSystemDefaultDevice();
     if (_device) {
       _commandQueue = [_device newCommandQueue];
@@ -239,6 +243,46 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
         NSError* pipelineError = nil;
         _overlayMotionLinePipeline =
             [_device newComputePipelineStateWithFunction:overlayMotionLineFunction
+                                                   error:&pipelineError];
+      }
+      id<MTLFunction> overlayLayerClearFunction =
+          library ? [library newFunctionWithName:@"clear_overlay_layer"] : nil;
+      if (overlayLayerClearFunction) {
+        NSError* pipelineError = nil;
+        _overlayLayerClearPipeline =
+            [_device newComputePipelineStateWithFunction:overlayLayerClearFunction
+                                                   error:&pipelineError];
+      }
+      id<MTLFunction> overlayLayerFillFunction =
+          library ? [library newFunctionWithName:@"raster_overlay_fill_rects_layer"] : nil;
+      if (overlayLayerFillFunction) {
+        NSError* pipelineError = nil;
+        _overlayLayerFillRectPipeline =
+            [_device newComputePipelineStateWithFunction:overlayLayerFillFunction
+                                                   error:&pipelineError];
+      }
+      id<MTLFunction> overlayLayerLineMaskFunction =
+          library ? [library newFunctionWithName:@"build_overlay_line_mask_layer"] : nil;
+      if (overlayLayerLineMaskFunction) {
+        NSError* pipelineError = nil;
+        _overlayLayerLineMaskPipeline =
+            [_device newComputePipelineStateWithFunction:overlayLayerLineMaskFunction
+                                                   error:&pipelineError];
+      }
+      id<MTLFunction> overlayLayerLineCompositeFunction =
+          library ? [library newFunctionWithName:@"composite_overlay_line_layer"] : nil;
+      if (overlayLayerLineCompositeFunction) {
+        NSError* pipelineError = nil;
+        _overlayLayerLineCompositePipeline =
+            [_device newComputePipelineStateWithFunction:overlayLayerLineCompositeFunction
+                                                   error:&pipelineError];
+      }
+      id<MTLFunction> overlayLayerMotionFunction =
+          library ? [library newFunctionWithName:@"raster_overlay_motion_lines_layer"] : nil;
+      if (overlayLayerMotionFunction) {
+        NSError* pipelineError = nil;
+        _overlayLayerMotionLinePipeline =
+            [_device newComputePipelineStateWithFunction:overlayLayerMotionFunction
                                                    error:&pipelineError];
       }
     }
@@ -376,6 +420,326 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   _overlayLineMaskBuffer =
       [_device newBufferWithLength:length options:MTLResourceStorageModeShared];
   return _overlayLineMaskBuffer != nil;
+}
+
+- (BOOL)ensureTransparentOverlayTexture {
+  if (_transparentOverlayTexture != nil) {
+    return YES;
+  }
+  MTLTextureDescriptor* descriptor =
+      [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                         width:1
+                                                        height:1
+                                                     mipmapped:NO];
+  descriptor.usage = MTLTextureUsageShaderRead;
+  descriptor.storageMode = MTLStorageModeShared;
+  _transparentOverlayTexture = [_device newTextureWithDescriptor:descriptor];
+  if (!_transparentOverlayTexture) {
+    return NO;
+  }
+  const uint8_t transparent[4] = {0, 0, 0, 0};
+  [_transparentOverlayTexture replaceRegion:MTLRegionMake2D(0, 0, 1, 1)
+                                mipmapLevel:0
+                                  withBytes:transparent
+                                bytesPerRow:4];
+  return YES;
+}
+
+- (BOOL)ensureOverlayLayerTextureForSlot:(NSUInteger)slot
+                                   width:(int32_t)width
+                                  height:(int32_t)height {
+  if (slot >= VPMacOSNativeMaxTracks || width <= 0 || height <= 0) {
+    return NO;
+  }
+  if (_overlayLayerTextures[slot] != nil &&
+      _overlayLayerWidths[slot] == width &&
+      _overlayLayerHeights[slot] == height) {
+    return YES;
+  }
+  MTLTextureDescriptor* descriptor =
+      [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                         width:static_cast<NSUInteger>(width)
+                                                        height:static_cast<NSUInteger>(height)
+                                                     mipmapped:NO];
+  descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+  descriptor.storageMode = MTLStorageModePrivate;
+  _overlayLayerTextures[slot] = [_device newTextureWithDescriptor:descriptor];
+  _overlayLayerGenerations[slot] = 0;
+  _overlayLayerWidths[slot] = _overlayLayerTextures[slot] ? width : 0;
+  _overlayLayerHeights[slot] = _overlayLayerTextures[slot] ? height : 0;
+  return _overlayLayerTextures[slot] != nil;
+}
+
+- (BOOL)prepareOverlayLayers:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                     decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
+                commandBuffer:(id<MTLCommandBuffer>)commandBuffer
+                         error:(char*)error
+                     errorSize:(size_t)errorSize {
+  if (!overlay_primitive_set_has_content(overlay)) {
+    return YES;
+  }
+  if (!decisionInfo || !commandBuffer || overlay->generation == 0) {
+    write_error(error, errorSize, "invalid native Metal overlay layer arguments");
+    return NO;
+  }
+  if (!_overlayLayerClearPipeline ||
+      (overlay->fill_rect_count > 0 && !_overlayLayerFillRectPipeline) ||
+      (overlay->line_rect_count > 0 &&
+       (!_overlayLayerLineMaskPipeline || !_overlayLayerLineCompositePipeline)) ||
+      (overlay->motion_line_count > 0 && !_overlayLayerMotionLinePipeline) ||
+      ![self ensureTransparentOverlayTexture]) {
+    write_error(error, errorSize, "native Metal overlay layer pipelines are not available");
+    return NO;
+  }
+
+  std::array<bool, VPMacOSNativeMaxTracks> hasPrimitive = {};
+  auto markPrimitiveSlots =
+      [&](const VPMacOSNativeOverlayGpuRect* rects, size_t count) {
+        for (size_t i = 0; i < count; ++i) {
+          const uint32_t slot = rects[i].track_idx & 0xffu;
+          if (slot < VPMacOSNativeMaxTracks) {
+            hasPrimitive[slot] = true;
+          }
+        }
+      };
+  if (overlay->fill_rects && overlay->fill_rect_count > 0) {
+    markPrimitiveSlots(overlay->fill_rects, overlay->fill_rect_count);
+  }
+  if (overlay->line_rects && overlay->line_rect_count > 0) {
+    markPrimitiveSlots(overlay->line_rects, overlay->line_rect_count);
+  }
+  if (overlay->motion_lines && overlay->motion_line_count > 0) {
+    markPrimitiveSlots(overlay->motion_lines, overlay->motion_line_count);
+  }
+
+  std::array<bool, VPMacOSNativeMaxTracks> shouldRaster = {};
+  bool anyRaster = false;
+  for (size_t slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
+    const int32_t width = decisionInfo->source_width[slot];
+    const int32_t height = decisionInfo->source_height[slot];
+    if (!hasPrimitive[slot] || !decisionInfo->frames[slot].present ||
+        width <= 0 || height <= 0) {
+      continue;
+    }
+    const bool cacheHit =
+        _overlayLayerTextures[slot] != nil &&
+        _overlayLayerGenerations[slot] == overlay->generation &&
+        _overlayLayerWidths[slot] == width &&
+        _overlayLayerHeights[slot] == height;
+    shouldRaster[slot] = !cacheHit;
+    anyRaster = anyRaster || shouldRaster[slot];
+  }
+  if (!anyRaster) {
+    return YES;
+  }
+
+  id<MTLBuffer> fillRectBuffer = nil;
+  id<MTLBuffer> lineRectBuffer = nil;
+  id<MTLBuffer> motionLineBuffer = nil;
+  if (overlay->fill_rect_count > 0) {
+    size_t bytes = 0;
+    if (!overlay->fill_rects ||
+        !checked_mul_size(overlay->fill_rect_count,
+                          sizeof(VPMacOSNativeOverlayGpuRect),
+                          &bytes)) {
+      write_error(error, errorSize, "failed to allocate native Metal overlay layer fill buffer");
+      return NO;
+    }
+    fillRectBuffer =
+        [_device newBufferWithBytes:overlay->fill_rects
+                              length:bytes
+                             options:MTLResourceStorageModeShared];
+    if (!fillRectBuffer) {
+      write_error(error, errorSize, "failed to allocate native Metal overlay layer fill buffer");
+      return NO;
+    }
+  }
+  if (overlay->line_rect_count > 0) {
+    size_t bytes = 0;
+    if (!overlay->line_rects ||
+        !checked_mul_size(overlay->line_rect_count,
+                          sizeof(VPMacOSNativeOverlayGpuRect),
+                          &bytes)) {
+      write_error(error, errorSize, "failed to allocate native Metal overlay layer line buffer");
+      return NO;
+    }
+    lineRectBuffer =
+        [_device newBufferWithBytes:overlay->line_rects
+                              length:bytes
+                             options:MTLResourceStorageModeShared];
+    if (!lineRectBuffer) {
+      write_error(error, errorSize, "failed to allocate native Metal overlay layer line buffer");
+      return NO;
+    }
+  }
+  if (overlay->motion_line_count > 0) {
+    size_t bytes = 0;
+    if (!overlay->motion_lines ||
+        !checked_mul_size(overlay->motion_line_count,
+                          sizeof(VPMacOSNativeOverlayGpuRect),
+                          &bytes)) {
+      write_error(error, errorSize, "failed to allocate native Metal overlay layer motion buffer");
+      return NO;
+    }
+    motionLineBuffer =
+        [_device newBufferWithBytes:overlay->motion_lines
+                              length:bytes
+                             options:MTLResourceStorageModeShared];
+    if (!motionLineBuffer) {
+      write_error(error, errorSize, "failed to allocate native Metal overlay layer motion buffer");
+      return NO;
+    }
+  }
+
+  for (size_t slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
+    if (!shouldRaster[slot]) {
+      continue;
+    }
+    const int32_t width = decisionInfo->source_width[slot];
+    const int32_t height = decisionInfo->source_height[slot];
+    size_t maskPixels = 0;
+    size_t maskBytes = 0;
+    if (!checked_mul_size(static_cast<size_t>(width), static_cast<size_t>(height), &maskPixels) ||
+        !checked_mul_size(maskPixels, sizeof(uint32_t), &maskBytes) ||
+        ![self ensureOverlayLayerTextureForSlot:slot width:width height:height]) {
+      write_error(error, errorSize, "failed to allocate native Metal overlay layer resources");
+      return NO;
+    }
+
+    vp_macos::MetalOverlayLayerParams params = {};
+    params.width = static_cast<uint32_t>(width);
+    params.height = static_cast<uint32_t>(height);
+    params.track_slot = static_cast<uint32_t>(slot);
+
+    id<MTLTexture> layer = _overlayLayerTextures[slot];
+    id<MTLComputeCommandEncoder> clearCompute = [commandBuffer computeCommandEncoder];
+    if (!clearCompute) {
+      write_error(error, errorSize, "failed to create native Metal overlay layer clear command");
+      return NO;
+    }
+    [clearCompute setComputePipelineState:_overlayLayerClearPipeline];
+    [clearCompute setTexture:layer atIndex:0];
+    const NSUInteger clearThreadWidth = _overlayLayerClearPipeline.threadExecutionWidth;
+    const NSUInteger clearThreadHeight =
+        std::max<NSUInteger>(1,
+                             _overlayLayerClearPipeline.maxTotalThreadsPerThreadgroup /
+                                 clearThreadWidth);
+    [clearCompute dispatchThreads:MTLSizeMake(width, height, 1)
+             threadsPerThreadgroup:MTLSizeMake(clearThreadWidth, clearThreadHeight, 1)];
+    [clearCompute endEncoding];
+
+    if (overlay->fill_rect_count > 0) {
+      id<MTLComputeCommandEncoder> fillCompute = [commandBuffer computeCommandEncoder];
+      if (!fillCompute) {
+        write_error(error, errorSize, "failed to create native Metal overlay layer fill command");
+        return NO;
+      }
+      [fillCompute setComputePipelineState:_overlayLayerFillRectPipeline];
+      [fillCompute setBuffer:fillRectBuffer offset:0 atIndex:0];
+      [fillCompute setBytes:&params length:sizeof(params) atIndex:1];
+      [fillCompute setTexture:layer atIndex:0];
+      const NSUInteger fillThreadWidth = _overlayLayerFillRectPipeline.threadExecutionWidth;
+      [fillCompute dispatchThreads:MTLSizeMake(overlay->fill_rect_count, 1, 1)
+               threadsPerThreadgroup:MTLSizeMake(fillThreadWidth, 1, 1)];
+      [fillCompute endEncoding];
+    }
+
+    if (overlay->motion_line_count > 0) {
+      id<MTLComputeCommandEncoder> motionCompute = [commandBuffer computeCommandEncoder];
+      if (!motionCompute) {
+        write_error(error, errorSize, "failed to create native Metal overlay layer motion command");
+        return NO;
+      }
+      [motionCompute setComputePipelineState:_overlayLayerMotionLinePipeline];
+      [motionCompute setBuffer:motionLineBuffer offset:0 atIndex:0];
+      [motionCompute setBytes:&params length:sizeof(params) atIndex:1];
+      [motionCompute setTexture:layer atIndex:0];
+      const NSUInteger motionThreadWidth = _overlayLayerMotionLinePipeline.threadExecutionWidth;
+      [motionCompute dispatchThreads:MTLSizeMake(overlay->motion_line_count, 1, 1)
+                 threadsPerThreadgroup:MTLSizeMake(motionThreadWidth, 1, 1)];
+      [motionCompute endEncoding];
+    }
+
+    if (overlay->line_rect_count > 0) {
+      id<MTLBuffer> maskBuffer =
+          [_device newBufferWithLength:maskBytes options:MTLResourceStorageModeShared];
+      if (!maskBuffer) {
+        write_error(error, errorSize, "failed to allocate native Metal overlay layer mask buffer");
+        return NO;
+      }
+      std::memset([maskBuffer contents], 0, maskBytes);
+
+      id<MTLComputeCommandEncoder> maskCompute = [commandBuffer computeCommandEncoder];
+      if (!maskCompute) {
+        write_error(error, errorSize, "failed to create native Metal overlay layer mask command");
+        return NO;
+      }
+      [maskCompute setComputePipelineState:_overlayLayerLineMaskPipeline];
+      [maskCompute setBuffer:lineRectBuffer offset:0 atIndex:0];
+      [maskCompute setBuffer:maskBuffer offset:0 atIndex:1];
+      [maskCompute setBytes:&params length:sizeof(params) atIndex:2];
+      const NSUInteger maskThreadWidth = _overlayLayerLineMaskPipeline.threadExecutionWidth;
+      [maskCompute dispatchThreads:MTLSizeMake(overlay->line_rect_count, 1, 1)
+               threadsPerThreadgroup:MTLSizeMake(maskThreadWidth, 1, 1)];
+      [maskCompute endEncoding];
+
+      id<MTLComputeCommandEncoder> lineCompute = [commandBuffer computeCommandEncoder];
+      if (!lineCompute) {
+        write_error(error, errorSize, "failed to create native Metal overlay layer line command");
+        return NO;
+      }
+      [lineCompute setComputePipelineState:_overlayLayerLineCompositePipeline];
+      [lineCompute setBuffer:maskBuffer offset:0 atIndex:0];
+      [lineCompute setBytes:&params length:sizeof(params) atIndex:1];
+      [lineCompute setTexture:layer atIndex:0];
+      const NSUInteger lineThreadWidth = _overlayLayerLineCompositePipeline.threadExecutionWidth;
+      const NSUInteger lineThreadHeight =
+          std::max<NSUInteger>(1,
+                               _overlayLayerLineCompositePipeline.maxTotalThreadsPerThreadgroup /
+                                   lineThreadWidth);
+      [lineCompute dispatchThreads:MTLSizeMake(width, height, 1)
+              threadsPerThreadgroup:MTLSizeMake(lineThreadWidth, lineThreadHeight, 1)];
+      [lineCompute endEncoding];
+    }
+
+    _overlayLayerGenerations[slot] = overlay->generation;
+  }
+
+  return YES;
+}
+
+- (void)bindOverlayLayersForDecision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
+                              overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                                params:(vp_macos::MetalLayoutParams*)params
+                               encoder:(id<MTLComputeCommandEncoder>)encoder
+                     firstTextureIndex:(NSUInteger)firstTextureIndex {
+  uint32_t overlayPresent[VPMacOSNativeMaxTracks] = {};
+  const bool hasOverlay = overlay_primitive_set_has_content(overlay) &&
+      overlay->generation != 0;
+  if (hasOverlay && decisionInfo) {
+    for (size_t slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
+      const int32_t width = decisionInfo->source_width[slot];
+      const int32_t height = decisionInfo->source_height[slot];
+      if (decisionInfo->frames[slot].present &&
+          _overlayLayerTextures[slot] != nil &&
+          _overlayLayerGenerations[slot] == overlay->generation &&
+          _overlayLayerWidths[slot] == width &&
+          _overlayLayerHeights[slot] == height) {
+        overlayPresent[slot] = 1;
+      }
+    }
+  }
+  if (params) {
+    vp_macos::set_metal_overlay_present(*params, overlayPresent);
+  }
+  [self ensureTransparentOverlayTexture];
+  for (NSUInteger slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
+    id<MTLTexture> texture = overlayPresent[slot] ? _overlayLayerTextures[slot] : nil;
+    if (!texture) {
+      texture = _transparentOverlayTexture;
+    }
+    [encoder setTexture:texture atIndex:firstTextureIndex + slot];
+  }
 }
 
 - (int)copyPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
@@ -560,8 +924,22 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   id<MTLTexture> destinationTexture = destinationRef.texture();
   const auto gpuStart = std::chrono::steady_clock::now();
   id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+  if (!destinationTexture || !commandBuffer) {
+    delete lifetime;
+    return metal_upload_failure(
+        error, errorSize, "failed to create native Metal layout compute command");
+  }
+  if (![self prepareOverlayLayers:overlay
+                          decision:&package->decision
+                     commandBuffer:commandBuffer
+                              error:error
+                          errorSize:errorSize]) {
+    delete lifetime;
+    return -2;
+  }
+
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
-  if (!destinationTexture || !commandBuffer || !compute) {
+  if (!compute) {
     delete lifetime;
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal layout compute command");
@@ -571,6 +949,11 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   [compute setBuffer:_stagingBuffer offset:0 atIndex:0];
   [compute setBuffer:_layoutParamsBuffer offset:0 atIndex:1];
   [compute setTexture:destinationTexture atIndex:0];
+  [self bindOverlayLayersForDecision:&package->decision
+                              overlay:overlay
+                                params:metalParams
+                               encoder:compute
+                     firstTextureIndex:1];
 
   const NSUInteger threadWidth = _layoutPipeline.threadExecutionWidth;
   const NSUInteger threadHeight =
@@ -579,18 +962,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   const MTLSize threads = MTLSizeMake(width, height, 1);
   [compute dispatchThreads:threads threadsPerThreadgroup:threadsPerThreadgroup];
   [compute endEncoding];
-  const int overlayRet = [self encodeOverlayGpuPrimitives:overlay
-                                                 decision:&package->decision
-                                            commandBuffer:commandBuffer
-                                       destinationTexture:destinationTexture
-                                                    width:width
-                                                   height:height
-                                                    error:error
-                                                errorSize:errorSize];
-  if (overlayRet != 0) {
-    delete lifetime;
-    return overlayRet;
-  }
   const int commitRet = commit_metal_upload(commandBuffer,
                                             gpuStart,
                                             out ? *out : VPMacOSNativeFrameInfo{},
@@ -731,9 +1102,23 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   id<MTLTexture> destinationTexture = destinationRef.texture();
   const auto gpuStart = std::chrono::steady_clock::now();
   id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
-  id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
   if (!sourceYTexture || !sourceUVTexture || !destinationTexture ||
-      !commandBuffer || !compute) {
+      !commandBuffer) {
+    delete lifetime;
+    return metal_upload_failure(
+        error, errorSize, "failed to create native Metal CVPixelBuffer compute command");
+  }
+  if (![self prepareOverlayLayers:overlay
+                          decision:&frame->decision
+                     commandBuffer:commandBuffer
+                              error:error
+                          errorSize:errorSize]) {
+    delete lifetime;
+    return -2;
+  }
+
+  id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
+  if (!compute) {
     delete lifetime;
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal CVPixelBuffer compute command");
@@ -744,6 +1129,11 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   [compute setTexture:destinationTexture atIndex:0];
   [compute setTexture:sourceYTexture atIndex:1];
   [compute setTexture:sourceUVTexture atIndex:2];
+  [self bindOverlayLayersForDecision:&frame->decision
+                              overlay:overlay
+                                params:metalParams
+                               encoder:compute
+                     firstTextureIndex:3];
 
   const NSUInteger threadWidth = _cvPixelBufferPipeline.threadExecutionWidth;
   const NSUInteger threadHeight =
@@ -752,18 +1142,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   const MTLSize threads = MTLSizeMake(width, height, 1);
   [compute dispatchThreads:threads threadsPerThreadgroup:threadsPerThreadgroup];
   [compute endEncoding];
-  const int overlayRet = [self encodeOverlayGpuPrimitives:overlay
-                                                 decision:&frame->decision
-                                            commandBuffer:commandBuffer
-                                       destinationTexture:destinationTexture
-                                                    width:width
-                                                   height:height
-                                                    error:error
-                                                errorSize:errorSize];
-  if (overlayRet != 0) {
-    delete lifetime;
-    return overlayRet;
-  }
   const int commitRet = commit_metal_upload(commandBuffer,
                                             gpuStart,
                                             out ? *out : VPMacOSNativeFrameInfo{},
@@ -943,8 +1321,22 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   id<MTLTexture> destinationTexture = destinationRef.texture();
   const auto gpuStart = std::chrono::steady_clock::now();
   id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+  if (!destinationTexture || !commandBuffer) {
+    delete lifetime;
+    return metal_upload_failure(
+        error, errorSize, "failed to create native Metal CVPixelBuffer set compute command");
+  }
+  if (![self prepareOverlayLayers:overlay
+                          decision:&frameSet->decision
+                     commandBuffer:commandBuffer
+                              error:error
+                          errorSize:errorSize]) {
+    delete lifetime;
+    return -2;
+  }
+
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
-  if (!destinationTexture || !commandBuffer || !compute) {
+  if (!compute) {
     delete lifetime;
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal CVPixelBuffer set compute command");
@@ -957,6 +1349,11 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     [compute setTexture:sourceYTextures[slot] atIndex:(1 + slot * 2)];
     [compute setTexture:sourceUVTextures[slot] atIndex:(2 + slot * 2)];
   }
+  [self bindOverlayLayersForDecision:&frameSet->decision
+                              overlay:overlay
+                                params:metalParams
+                               encoder:compute
+                     firstTextureIndex:9];
 
   const NSUInteger threadWidth = _cvPixelBufferSetPipeline.threadExecutionWidth;
   const NSUInteger threadHeight =
@@ -965,18 +1362,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   const MTLSize threads = MTLSizeMake(width, height, 1);
   [compute dispatchThreads:threads threadsPerThreadgroup:threadsPerThreadgroup];
   [compute endEncoding];
-  const int overlayRet = [self encodeOverlayGpuPrimitives:overlay
-                                                 decision:&frameSet->decision
-                                            commandBuffer:commandBuffer
-                                       destinationTexture:destinationTexture
-                                                    width:width
-                                                   height:height
-                                                    error:error
-                                                errorSize:errorSize];
-  if (overlayRet != 0) {
-    delete lifetime;
-    return overlayRet;
-  }
   const int commitRet = commit_metal_upload(
       commandBuffer,
       gpuStart,

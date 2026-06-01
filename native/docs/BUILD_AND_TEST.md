@@ -208,6 +208,7 @@ Release candidate readiness must verify:
 - crash/log paths do not land in package staging;
 - sandbox file access and file picker behavior;
 - signing/notarization inputs for external distribution.
+- macOS native ASAN/TSAN gate in `.github/workflows/native.yml`;
 - full Windows native config matrix in `.github/workflows/native.yml`;
 - Windows UI preservation and macOS headed smoke set selected from [TEST_MATRIX.md](TEST_MATRIX.md).
 
@@ -221,6 +222,8 @@ Main CI entrypoint is `.github/workflows/native.yml`. It currently covers:
 - FFmpeg artifact download once, then per-job restore through `scripts/ci/restore_ffmpeg_*`;
 - Windows native fast build/test and release compliance smoke;
 - macOS native fast gate through `scripts/ci/run_macos_native_fast.sh`;
+- macOS native sanitizer gate on scheduled runs or manual `workflow_dispatch`
+  with `macos_sanitizers=true`;
 - macOS analysis FFI build smoke plus VAC2/VACHUNK analyzer toolchain smoke;
 - macOS runner debug build;
 - full Windows native config matrix on scheduled runs or manual `workflow_dispatch` with `full_matrix=true`.

@@ -15,6 +15,14 @@ on:
         options:
           - "false"
           - "true"
+      macos_sanitizers:
+        description: "Run the macOS native ASAN/TSAN gate"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   schedule:
     - cron: "17 20 * * 0"
   push:
@@ -161,6 +169,37 @@ jobs:
       - name: Run macOS native fast gate
         shell: bash
         run: bash scripts/ci/run_macos_native_fast.sh
+
+  macos-native-sanitizers:
+    name: macOS native sanitizers
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.macos_sanitizers == 'true') }}
+    needs: ffmpeg-artifacts
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          submodules: false
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-ffmpeg-artifacts
+          path: build/ci-ffmpeg
+
+      - name: Restore and verify macOS FFmpeg artifact
+        shell: bash
+        env:
+          VOIDPLAYER_FFMPEG_BUILD_RUN_ID: ${{ needs.ffmpeg-artifacts.outputs.build_run_id }}
+        run: bash scripts/ci/restore_ffmpeg_macos.sh
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run macOS native sanitizer gate
+        shell: bash
+        run: python3.12 dev.py gate macos-native-sanitizers
 
   macos-analysis-build:
     name: macOS analysis build

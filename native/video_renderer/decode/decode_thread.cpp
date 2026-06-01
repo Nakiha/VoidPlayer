@@ -844,12 +844,13 @@ DecodedFramePublisher DecodeThread::make_frame_publisher() {
 void DecodeThread::run() {
     spdlog::info("[DecodeThread] Decode loop started (hw={})", hw_enabled_);
 
-    AVFrame* frame = av_frame_alloc();
-    if (!frame) {
+    auto frame_owner = AvFrameOwner::allocate();
+    if (!frame_owner) {
         spdlog::error("[DecodeThread] Failed to allocate frame");
         output_buffer_.set_state(TrackState::Error);
         return;
     }
+    AVFrame* frame = frame_owner.get();
     auto rescale_ts = [&](AVFrame* frame_to_rescale) {
         rescale_frame_timestamps_to_us(frame_to_rescale, time_base_);
     };
@@ -1126,7 +1127,6 @@ void DecodeThread::run() {
     }
 
     output_buffer_.set_state(TrackState::Flushing);
-    av_frame_free(&frame);
     spdlog::info("[DecodeThread] Decode loop ended");
 }
 

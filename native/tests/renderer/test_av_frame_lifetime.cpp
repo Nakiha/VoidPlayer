@@ -2,6 +2,8 @@
 
 #include "video_renderer/decode/av_frame_lifetime.h"
 
+#include <utility>
+
 extern "C" {
 #include <libavutil/buffer.h>
 #include <libavutil/frame.h>
@@ -60,4 +62,33 @@ TEST_CASE("AvFrameUnrefGuard: null frame reset is safe",
     reset_reusable_av_frame(nullptr);
     AvFrameUnrefGuard guard(nullptr);
     REQUIRE(guard.get() == nullptr);
+}
+
+TEST_CASE("AvFrameOwner: owns allocated frames",
+          "[decode_thread][av_frame_lifetime]") {
+    auto owner = AvFrameOwner::allocate();
+    REQUIRE(owner);
+    REQUIRE(owner.get() != nullptr);
+
+    AVFrame* raw = owner.release();
+    REQUIRE(raw != nullptr);
+    REQUIRE_FALSE(owner);
+    av_frame_free(&raw);
+    REQUIRE(raw == nullptr);
+}
+
+TEST_CASE("AvFrameOwner: supports move-only ownership",
+          "[decode_thread][av_frame_lifetime]") {
+    auto owner = AvFrameOwner::allocate();
+    REQUIRE(owner);
+    AVFrame* raw = owner.get();
+
+    AvFrameOwner moved(std::move(owner));
+    REQUIRE_FALSE(owner);
+    REQUIRE(moved.get() == raw);
+
+    AvFrameOwner assigned;
+    assigned = std::move(moved);
+    REQUIRE_FALSE(moved);
+    REQUIRE(assigned.get() == raw);
 }

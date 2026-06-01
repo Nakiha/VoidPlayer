@@ -251,6 +251,16 @@ target_link_libraries(presentation_carry_forward_smoke PRIVATE
 add_test(NAME presentation_carry_forward_smoke COMMAND presentation_carry_forward_smoke)
 void_label_test(presentation_carry_forward_smoke "contract;portable")
 
+add_executable(av_frame_lifetime_smoke
+    "${VOID_NATIVE_DIR}/tools/av_frame_lifetime_smoke.cpp"
+)
+void_apply_native_compile_options(av_frame_lifetime_smoke)
+target_link_libraries(av_frame_lifetime_smoke PRIVATE
+    void_media_ffmpeg
+)
+add_test(NAME av_frame_lifetime_smoke COMMAND av_frame_lifetime_smoke)
+void_label_test(av_frame_lifetime_smoke "contract;portable")
+
 add_executable(software_frame_queue_smoke
     "${VOID_NATIVE_DIR}/tools/software_frame_queue_smoke.cpp"
 )

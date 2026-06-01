@@ -110,7 +110,14 @@ public:
     void set_codec_open_for_test(CodecOpenFunction open_fn) { codec_open_for_test_ = open_fn; }
 
 private:
+    struct DecodeLoopScratch;
+    enum class DecodeLoopStepResult {
+        Continue,
+        Stop,
+    };
+
     void run();
+    DecodeLoopStepResult run_decode_loop_step(DecodeLoopScratch& scratch);
 
     /// Attempt to open codec. Returns true on success.
     /// If hw_enabled_ is true and open fails, falls back to software.

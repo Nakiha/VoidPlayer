@@ -841,6 +841,12 @@ DecodedFramePublisher DecodeThread::make_frame_publisher() {
                                  running_);
 }
 
+struct DecodeThread::DecodeLoopScratch {
+    AVFrame* frame = nullptr;
+    DecodedFramePublisher& publisher;
+    std::function<void(AVFrame*)> rescale_timestamps;
+};
+
 void DecodeThread::run() {
     spdlog::info("[DecodeThread] Decode loop started (hw={})", hw_enabled_);
 
@@ -855,149 +861,53 @@ void DecodeThread::run() {
         rescale_frame_timestamps_to_us(frame_to_rescale, time_base_);
     };
     auto publisher = make_frame_publisher();
+    DecodeLoopScratch scratch{
+        frame,
+        publisher,
+        rescale_ts,
+    };
 
     while (running_.load()) {
-        const auto seek_notification = take_pending_seek_notification();
-        if (seek_notification.has_value()) {
-            begin_seek_epoch(frame, *seek_notification);
-            continue;
-        }
-
-        if (should_publish_pending_exact_seek_frames(
-                exact_seek_candidates_.pending_count(),
-                decode_paused_.load(std::memory_order_acquire),
-                output_buffer_.state())) {
-            publish_pending_exact_seek_frames();
-            continue;
-        }
-
-        if (should_drain_decoder_before_next_packet(
-                drain_decoder_before_next_packet_,
-                decode_paused_.load(std::memory_order_acquire),
-                output_buffer_.state())) {
-            const auto drain_result = drain_frames_before_next_packet(
-                frame,
-                DecodeFrameDrainCallbacks{
-                    [this]() {
-                        return should_abort_drain_before_receive(
-                            cancelled_.load(std::memory_order_acquire),
-                            output_buffer_.state());
-                    },
-                    [this](AVFrame* frame_to_receive) {
-                        return receive_codec_frame_seh_guarded(
-                            codec_ctx_, frame_to_receive, hw_enabled_, device_mutex_);
-                    },
-                    rescale_ts,
-                    [this](const AVFrame* ready_frame) {
-                        log_hw_frame_context_once(ready_frame);
-                    },
-                    [&publisher](AVFrame* frame_to_publish) {
-                        publisher.flush_before_publish_if_needed(true);
-                        return publisher.convert_and_push_frame(
-                            frame_to_publish, "drain before next packet");
-                    },
-                    [this]() {
-                        return should_stop_drain_after_publish(
-                            decode_paused_.load(std::memory_order_acquire),
-                            output_buffer_.state());
-                    },
-                });
-            if (drain_result.stop_with_error) {
-                output_buffer_.set_state(TrackState::Error);
-                decode_paused_.store(true, std::memory_order_release);
-                running_.store(false, std::memory_order_release);
-            }
-            if (drain_result.clear_drain_request) {
-                drain_decoder_before_next_packet_ = false;
-            }
-            if (drain_result.frames_published > 0) {
-                perf_.frames_decoded.fetch_add(
-                    static_cast<uint64_t>(drain_result.frames_published),
-                    std::memory_order_relaxed);
-            }
-            continue;
-        }
-
-        // Fully pause decode consumption so the packet queue preserves packets
-        // and the demux thread stops at backpressure instead of racing to EOF.
-        if (should_pause_decode_consumption(
-                decode_paused_.load(std::memory_order_acquire),
-                output_buffer_.state())) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            continue;
-        }
-
-        // Non-blocking pop with short sleep — allows seek_pending to be checked promptly
-        PacketPopResult packet_result = input_queue_.try_pop();
-        AVPacket* pkt = packet_result.packet;
-        const auto pop_action = choose_decode_packet_pop_action(
-            packet_result.status,
-            pkt != nullptr,
-            running_.load(std::memory_order_acquire),
-            cancelled_.load(std::memory_order_acquire));
-        if (pop_action != DecodePacketPopAction::ProcessPacket) {
-            if (pop_action == DecodePacketPopAction::SleepAndContinue) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                continue;
-            }
-            if (handle_queue_gap_or_eof(frame, rescale_ts, publisher)) {
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            continue;
-        }
-
-        eof_flushed_ = false;
-
-        auto batch_t0 = std::chrono::steady_clock::now();
-        const auto packet_send_result = send_decode_packet(
-            pkt,
-            DecodePacketSendCallbacks{
-                [this]() {
-                    // If decode is paused (seek transition), discard the
-                    // packet without sending to codec. This prevents the HEVC
-                    // decoder from emitting stale-reference warnings.
-                    return should_discard_packet_before_decode(
-                        has_pending_seek_notification(),
-                        decode_paused_.load(std::memory_order_acquire),
-                        output_buffer_.state());
-                },
-                [this]() {
-                    // Cancel checkpoint: abort if a new seek arrived while
-                    // this loop was waiting on queue/publisher backpressure.
-                    return should_abort_packet_before_send(
-                        cancelled_.load(std::memory_order_acquire));
-                },
-                [this](AVPacket* packet_to_send) {
-                    return send_codec_packet_seh_guarded(
-                        codec_ctx_, packet_to_send, hw_enabled_, device_mutex_);
-                },
-                [](int send_ret) {
-                    spdlog::error("[DecodeThread] Error sending packet: {:#x}",
-                                  static_cast<unsigned>(send_ret));
-                },
-            });
-        if (packet_send_result.stop_with_error) {
-            output_buffer_.set_state(TrackState::Error);
-            decode_paused_.store(true, std::memory_order_release);
-            running_.store(false, std::memory_order_release);
+        if (run_decode_loop_step(scratch) == DecodeLoopStepResult::Stop) {
             break;
         }
-        if (!packet_send_result.sent) {
-            continue;
-        }
+    }
 
-        const auto receive_result = receive_decode_frames_for_packet(
+    output_buffer_.set_state(TrackState::Flushing);
+    spdlog::info("[DecodeThread] Decode loop ended");
+}
+
+DecodeThread::DecodeLoopStepResult DecodeThread::run_decode_loop_step(
+    DecodeLoopScratch& scratch) {
+    AVFrame* frame = scratch.frame;
+    auto& publisher = scratch.publisher;
+    auto& rescale_ts = scratch.rescale_timestamps;
+
+    const auto seek_notification = take_pending_seek_notification();
+    if (seek_notification.has_value()) {
+        begin_seek_epoch(frame, *seek_notification);
+        return DecodeLoopStepResult::Continue;
+    }
+
+    if (should_publish_pending_exact_seek_frames(
+            exact_seek_candidates_.pending_count(),
+            decode_paused_.load(std::memory_order_acquire),
+            output_buffer_.state())) {
+        publish_pending_exact_seek_frames();
+        return DecodeLoopStepResult::Continue;
+    }
+
+    if (should_drain_decoder_before_next_packet(
+            drain_decoder_before_next_packet_,
+            decode_paused_.load(std::memory_order_acquire),
+            output_buffer_.state())) {
+        const auto drain_result = drain_frames_before_next_packet(
             frame,
-            DecodeFrameReceiveLoopOptions{
-                exact_seek_target_us_ >= 0,
-                exact_seek_target_us_,
-                perf_.frames_decoded.load(std::memory_order_relaxed) > 0,
-            },
-            DecodeFrameReceiveLoopCallbacks{
+            DecodeFrameDrainCallbacks{
                 [this]() {
-                    return should_stop_receive_loop_before_frame(
-                        cancelled_.load(std::memory_order_acquire));
+                    return should_abort_drain_before_receive(
+                        cancelled_.load(std::memory_order_acquire),
+                        output_buffer_.state());
                 },
                 [this](AVFrame* frame_to_receive) {
                     return receive_codec_frame_seh_guarded(
@@ -1007,127 +917,242 @@ void DecodeThread::run() {
                 [this](const AVFrame* ready_frame) {
                     log_hw_frame_context_once(ready_frame);
                 },
-                [this]() {
-                    perf_.frames_dropped.fetch_add(1, std::memory_order_relaxed);
-                },
-                [this](AVFrame* exact_seek_frame) {
-                    auto candidate =
-                        ExactSeekCandidateStore::make_candidate(exact_seek_frame);
-                    if (candidate.frame) {
-                        collect_exact_seek_candidate(std::move(candidate));
-                    }
+                [&publisher](AVFrame* frame_to_publish) {
+                    publisher.flush_before_publish_if_needed(true);
+                    return publisher.convert_and_push_frame(
+                        frame_to_publish, "drain before next packet");
                 },
                 [this]() {
-                    return exact_seek_preview_window_ready();
+                    return should_stop_drain_after_publish(
+                        decode_paused_.load(std::memory_order_acquire),
+                        output_buffer_.state());
+                },
+            });
+        if (drain_result.stop_with_error) {
+            output_buffer_.set_state(TrackState::Error);
+            decode_paused_.store(true, std::memory_order_release);
+            running_.store(false, std::memory_order_release);
+        }
+        if (drain_result.clear_drain_request) {
+            drain_decoder_before_next_packet_ = false;
+        }
+        if (drain_result.frames_published > 0) {
+            perf_.frames_decoded.fetch_add(
+                static_cast<uint64_t>(drain_result.frames_published),
+                std::memory_order_relaxed);
+        }
+        return DecodeLoopStepResult::Continue;
+    }
+
+    // Fully pause decode consumption so the packet queue preserves packets
+    // and the demux thread stops at backpressure instead of racing to EOF.
+    if (should_pause_decode_consumption(
+            decode_paused_.load(std::memory_order_acquire),
+            output_buffer_.state())) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return DecodeLoopStepResult::Continue;
+    }
+
+    // Non-blocking pop with short sleep allows seek_pending to be checked promptly.
+    PacketPopResult packet_result = input_queue_.try_pop();
+    AVPacket* pkt = packet_result.packet;
+    const auto pop_action = choose_decode_packet_pop_action(
+        packet_result.status,
+        pkt != nullptr,
+        running_.load(std::memory_order_acquire),
+        cancelled_.load(std::memory_order_acquire));
+    if (pop_action != DecodePacketPopAction::ProcessPacket) {
+        if (pop_action == DecodePacketPopAction::SleepAndContinue) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            return DecodeLoopStepResult::Continue;
+        }
+        if (handle_queue_gap_or_eof(frame, rescale_ts, publisher)) {
+            return DecodeLoopStepResult::Stop;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return DecodeLoopStepResult::Continue;
+    }
+
+    eof_flushed_ = false;
+
+    auto batch_t0 = std::chrono::steady_clock::now();
+    const auto packet_send_result = send_decode_packet(
+        pkt,
+        DecodePacketSendCallbacks{
+            [this]() {
+                // If decode is paused (seek transition), discard the
+                // packet without sending to codec. This prevents the HEVC
+                // decoder from emitting stale-reference warnings.
+                return should_discard_packet_before_decode(
+                    has_pending_seek_notification(),
+                    decode_paused_.load(std::memory_order_acquire),
+                    output_buffer_.state());
+            },
+            [this]() {
+                // Cancel checkpoint: abort if a new seek arrived while
+                // this loop was waiting on queue/publisher backpressure.
+                return should_abort_packet_before_send(
+                    cancelled_.load(std::memory_order_acquire));
+            },
+            [this](AVPacket* packet_to_send) {
+                return send_codec_packet_seh_guarded(
+                    codec_ctx_, packet_to_send, hw_enabled_, device_mutex_);
+            },
+            [](int send_ret) {
+                spdlog::error("[DecodeThread] Error sending packet: {:#x}",
+                              static_cast<unsigned>(send_ret));
+            },
+        });
+    if (packet_send_result.stop_with_error) {
+        output_buffer_.set_state(TrackState::Error);
+        decode_paused_.store(true, std::memory_order_release);
+        running_.store(false, std::memory_order_release);
+        return DecodeLoopStepResult::Stop;
+    }
+    if (!packet_send_result.sent) {
+        return DecodeLoopStepResult::Continue;
+    }
+
+    const auto receive_result = receive_decode_frames_for_packet(
+        frame,
+        DecodeFrameReceiveLoopOptions{
+            exact_seek_target_us_ >= 0,
+            exact_seek_target_us_,
+            perf_.frames_decoded.load(std::memory_order_relaxed) > 0,
+        },
+        DecodeFrameReceiveLoopCallbacks{
+            [this]() {
+                return should_stop_receive_loop_before_frame(
+                    cancelled_.load(std::memory_order_acquire));
+            },
+            [this](AVFrame* frame_to_receive) {
+                return receive_codec_frame_seh_guarded(
+                    codec_ctx_, frame_to_receive, hw_enabled_, device_mutex_);
+            },
+            rescale_ts,
+            [this](const AVFrame* ready_frame) {
+                log_hw_frame_context_once(ready_frame);
+            },
+            [this]() {
+                perf_.frames_dropped.fetch_add(1, std::memory_order_relaxed);
+            },
+            [this](AVFrame* exact_seek_frame) {
+                auto candidate =
+                    ExactSeekCandidateStore::make_candidate(exact_seek_frame);
+                if (candidate.frame) {
+                    collect_exact_seek_candidate(std::move(candidate));
+                }
+            },
+            [this]() {
+                return exact_seek_preview_window_ready();
+            },
+            [this]() {
+                publish_best_exact_seek_frame();
+            },
+            [this]() {
+                // Flush the independent decode device after the first
+                // visible HW frame on startup and after seek/add-track
+                // transitions. Without this, the render device can sample
+                // a partially-written NV12 surface.
+                hw_visibility_flush_pending_ = hw_enabled_;
+            },
+            [&publisher](AVFrame* frame_to_publish) {
+                // The flush must happen before push_frame() publishes this
+                // frame to the render thread, otherwise the paused preview
+                // path can win the race and draw an incomplete surface.
+                publisher.flush_visibility_if_needed();
+                return publisher.convert_and_push_frame(
+                    frame_to_publish, "decode loop");
+            },
+            [this]() {
+                complete_preroll_if_ready();
+            },
+            [](int receive_ret) {
+                spdlog::error("[DecodeThread] Error receiving frame: {:#x}",
+                              static_cast<unsigned>(receive_ret));
+            },
+        });
+    if (receive_result.stop_with_error) {
+        output_buffer_.set_state(TrackState::Error);
+        decode_paused_.store(true, std::memory_order_release);
+        running_.store(false, std::memory_order_release);
+        return DecodeLoopStepResult::Stop;
+    }
+    const int frames_produced = receive_result.frames_produced;
+
+    // Exact seek B-frame reordering fallback. The receive loop normally
+    // publishes once enough frames are collected, but EOF/drain can also
+    // make the buffer ready here.
+    if (!exact_seek_candidates_.reorder_empty()) {
+        const DecodeExactSeekReorderState reorder_state{
+            exact_seek_target_us_ >= 0,
+            exact_seek_candidates_.reorder_count(),
+            input_queue_.is_eof(),
+            input_queue_.size(),
+            eof_flushed_,
+            exact_seek_preview_window_ready(),
+        };
+        handle_exact_seek_reorder_after_receive(
+            reorder_state,
+            DecodeExactSeekReorderCallbacks{
+                [this, frame, &rescale_ts]() {
+                    drain_codec(frame, rescale_ts, exact_seek_target_us_);
+                },
+                [this]() {
+                    return exact_seek_candidates_.reorder_count();
+                },
+                [](size_t reorder_count) {
+                    spdlog::info("[DecodeThread] Exact seek EOF: codec drain, "
+                                 "reorder buffer now has {} frames",
+                                 reorder_count);
                 },
                 [this]() {
                     publish_best_exact_seek_frame();
                 },
-                [this]() {
-                    // Flush the independent decode device after the first
-                    // visible HW frame on startup and after seek/add-track
-                    // transitions. Without this, the render device can sample
-                    // a partially-written NV12 surface.
-                    hw_visibility_flush_pending_ = hw_enabled_;
+                [this]() -> std::optional<int64_t> {
+                    auto first = output_buffer_.peek(0);
+                    if (!first.has_value()) {
+                        return std::nullopt;
+                    }
+                    return first->pts_us;
                 },
-                [&publisher](AVFrame* frame_to_publish) {
-                    // The flush must happen before push_frame() publishes this
-                    // frame to the render thread, otherwise the paused preview
-                    // path can win the race and draw an incomplete surface.
-                    publisher.flush_visibility_if_needed();
-                    return publisher.convert_and_push_frame(
-                        frame_to_publish, "decode loop");
-                },
-                [this]() {
-                    complete_preroll_if_ready();
-                },
-                [](int receive_ret) {
-                    spdlog::error("[DecodeThread] Error receiving frame: {:#x}",
-                                  static_cast<unsigned>(receive_ret));
+                [](std::optional<int64_t> first_pts_us) {
+                    spdlog::info("[DecodeThread] Exact seek reorder: frames pushed, "
+                                 "first_pts={:.3f}s",
+                                 first_pts_us.has_value()
+                                     ? static_cast<double>(*first_pts_us) / 1e6
+                                     : -1.0);
                 },
             });
-        if (receive_result.stop_with_error) {
-            output_buffer_.set_state(TrackState::Error);
-            decode_paused_.store(true, std::memory_order_release);
-            running_.store(false, std::memory_order_release);
-            break;
-        }
-        const int frames_produced = receive_result.frames_produced;
-
-        // Exact seek B-frame reordering fallback. The receive loop normally
-        // publishes once enough frames are collected, but EOF/drain can also
-        // make the buffer ready here.
-        if (!exact_seek_candidates_.reorder_empty()) {
-            const DecodeExactSeekReorderState reorder_state{
-                exact_seek_target_us_ >= 0,
-                exact_seek_candidates_.reorder_count(),
-                input_queue_.is_eof(),
-                input_queue_.size(),
-                eof_flushed_,
-                exact_seek_preview_window_ready(),
-            };
-            handle_exact_seek_reorder_after_receive(
-                reorder_state,
-                DecodeExactSeekReorderCallbacks{
-                    [this, frame, &rescale_ts]() {
-                        drain_codec(frame, rescale_ts, exact_seek_target_us_);
-                    },
-                    [this]() {
-                        return exact_seek_candidates_.reorder_count();
-                    },
-                    [](size_t reorder_count) {
-                        spdlog::info("[DecodeThread] Exact seek EOF: codec drain, "
-                                     "reorder buffer now has {} frames",
-                                     reorder_count);
-                    },
-                    [this]() {
-                        publish_best_exact_seek_frame();
-                    },
-                    [this]() -> std::optional<int64_t> {
-                        auto first = output_buffer_.peek(0);
-                        if (!first.has_value()) {
-                            return std::nullopt;
-                        }
-                        return first->pts_us;
-                    },
-                    [](std::optional<int64_t> first_pts_us) {
-                        spdlog::info("[DecodeThread] Exact seek reorder: frames pushed, "
-                                     "first_pts={:.3f}s",
-                                     first_pts_us.has_value()
-                                         ? static_cast<double>(*first_pts_us) / 1e6
-                                         : -1.0);
-                    },
-                });
-        }
-
-        complete_preroll_if_ready();
-
-        // D3D11VA HEVC exact seek is sensitive to burst-feeding packets while
-        // paused. Playback naturally paces this path through render/clock
-        // consumption; mirror a tiny amount of that pacing during drain mode.
-        if (should_pace_hardware_exact_seek_decode(
-                exact_seek_target_us_ >= 0, hw_enabled_)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-
-        if (frames_produced > 0) {
-            uint64_t batch_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - batch_t0).count());
-            perf_.frames_decoded.fetch_add(frames_produced, std::memory_order_relaxed);
-            perf_.total_decode_us.fetch_add(batch_us, std::memory_order_relaxed);
-            // Update peak (CAS loop)
-            uint64_t cur_max = perf_.max_decode_us.load(std::memory_order_relaxed);
-            while (batch_us > cur_max &&
-                   !perf_.max_decode_us.compare_exchange_weak(cur_max, batch_us,
-                                                              std::memory_order_relaxed)) {}
-            spdlog::debug("[DecodeThread] Decoded {} frames in {}us, buf_state={}, buf_count={}",
-                          frames_produced, batch_us, static_cast<int>(output_buffer_.state()),
-                          output_buffer_.total_count());
-        }
     }
 
-    output_buffer_.set_state(TrackState::Flushing);
-    spdlog::info("[DecodeThread] Decode loop ended");
+    complete_preroll_if_ready();
+
+    // D3D11VA HEVC exact seek is sensitive to burst-feeding packets while
+    // paused. Playback naturally paces this path through render/clock
+    // consumption; mirror a tiny amount of that pacing during drain mode.
+    if (should_pace_hardware_exact_seek_decode(
+            exact_seek_target_us_ >= 0, hw_enabled_)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    if (frames_produced > 0) {
+        uint64_t batch_us = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - batch_t0).count());
+        perf_.frames_decoded.fetch_add(frames_produced, std::memory_order_relaxed);
+        perf_.total_decode_us.fetch_add(batch_us, std::memory_order_relaxed);
+        // Update peak (CAS loop)
+        uint64_t cur_max = perf_.max_decode_us.load(std::memory_order_relaxed);
+        while (batch_us > cur_max &&
+               !perf_.max_decode_us.compare_exchange_weak(cur_max, batch_us,
+                                                          std::memory_order_relaxed)) {}
+        spdlog::debug("[DecodeThread] Decoded {} frames in {}us, buf_state={}, buf_count={}",
+                      frames_produced, batch_us, static_cast<int>(output_buffer_.state()),
+                      output_buffer_.total_count());
+    }
+
+    return DecodeLoopStepResult::Continue;
 }
 
 } // namespace vr

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../performance/performance_health.dart';
 import '../../platform/pointer_button_state_provider.dart';
 import '../../widgets/app_feedback_host.dart';
 import '../../widgets/axtree_region.dart';
@@ -111,6 +112,12 @@ class MainWindowScaffold extends StatelessWidget {
               onClose: overlayActions.onCloseSettings,
               onViewportPixelSizeModeChanged:
                   overlayActions.onViewportPixelSizeModeChanged,
+            ),
+            PerformanceHealthFeedbackMonitor(
+              enabled: media.nativePlaybackAvailable && media.tracks.isNotEmpty,
+              trackCount: media.tracks.length,
+              profilerVisible: overlays.profilerVisible,
+              onOpenProfiler: toolbarActions.onProfiler,
             ),
             const AppFeedbackHost(),
           ],

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../native_player/native_player_api.dart';
+import '../performance/performance_health.dart';
 
 // ---- FFI bindings ----
 
@@ -115,7 +116,11 @@ class WindowsFfiStatsDataSource implements StatsDataSource {
         ),
       );
     }
-    return StatsSnapshot(memory: memory, tracks: list);
+    return StatsSnapshot(
+      health: PerformanceHealthSnapshot.ok(trackCount: d.trackCount),
+      memory: memory,
+      tracks: list,
+    );
   }
 }
 
@@ -133,6 +138,7 @@ class NativeDiagnosticsStatsDataSource implements StatsDataSource {
         diagnostics['nativeTrackDiagnostics'] ?? diagnostics['tracks'];
     final tracks = tracksValue is List ? tracksValue : const <Object?>[];
     return StatsSnapshot(
+      health: PerformanceHealthSnapshot.fromDiagnostics(diagnostics),
       memory: StatsMemorySummary(
         workingSetBytes: _intValue(
           diagnostics['processRssBytes'] ??
@@ -169,10 +175,15 @@ class NativeDiagnosticsStatsDataSource implements StatsDataSource {
 
 @visibleForTesting
 class StatsSnapshot {
+  final PerformanceHealthSnapshot health;
   final StatsMemorySummary memory;
   final List<StatsTrackRow> tracks;
 
-  const StatsSnapshot({required this.memory, required this.tracks});
+  const StatsSnapshot({
+    required this.health,
+    required this.memory,
+    required this.tracks,
+  });
 }
 
 // ---- UI panel ----
@@ -189,6 +200,7 @@ class StatsPage extends StatefulWidget {
 class _StatsPageState extends State<StatsPage> {
   List<StatsTrackRow> _tracks = [];
   StatsMemorySummary _memory = const StatsMemorySummary();
+  PerformanceHealthSnapshot _health = PerformanceHealthSnapshot.ok();
   late final StatsDataSource _dataSource;
   Timer? _timer;
   Future<void>? _pollInFlight;
@@ -223,11 +235,15 @@ class _StatsPageState extends State<StatsPage> {
   Future<void> _pollImpl() async {
     final snapshot = await _dataSource.load();
     if (snapshot == null) return;
+    final health = snapshot.health;
     final memory = snapshot.memory;
     final list = snapshot.tracks;
     if (!mounted) return;
-    if (_memory == memory && _tracksEqual(_tracks, list)) return;
+    if (_health == health && _memory == memory && _tracksEqual(_tracks, list)) {
+      return;
+    }
     setState(() {
+      _health = health;
       _memory = memory;
       _tracks = list;
     });
@@ -262,6 +278,8 @@ class _StatsPageState extends State<StatsPage> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        StatsHealthSummarySection(health: _health),
+        const Divider(height: 1),
         StatsMemorySummarySection(memory: _memory),
         const Divider(height: 1),
         if (_tracks.isEmpty)
@@ -345,6 +363,80 @@ String _bytesText(int bytes) {
   final mb = bytes / 1024.0 / 1024.0;
   if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
   return '${(mb / 1024.0).toStringAsFixed(2)} GB';
+}
+
+class StatsHealthSummarySection extends StatelessWidget {
+  final PerformanceHealthSnapshot health;
+
+  const StatsHealthSummarySection({super.key, required this.health});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final accent = switch (health.level) {
+      PerformanceHealthLevel.ok => Colors.green,
+      PerformanceHealthLevel.warning => Colors.orange,
+      PerformanceHealthLevel.severe => colorScheme.error,
+    };
+    final icon = switch (health.level) {
+      PerformanceHealthLevel.ok => Icons.check_circle_outline,
+      PerformanceHealthLevel.warning => Icons.warning_amber_rounded,
+      PerformanceHealthLevel.severe => Icons.error_outline,
+    };
+    return ColoredBox(
+      color: accent.withValues(alpha: 0.08),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 16, color: accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          health.localizedTitle(context),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: colorScheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (health.trackCount > 0)
+                        Text(
+                          '${health.trackCount} tracks',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    health.localizedDetail(context),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class StatsMemorySummarySection extends StatelessWidget {

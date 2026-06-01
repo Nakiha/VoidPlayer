@@ -2,10 +2,53 @@ import Cocoa
 import CoreVideo
 import Foundation
 
+private final class MacOSViewportDisplayLinkCallbackContext {
+  private let condition = NSCondition()
+  private weak var displayLink: MacOSViewportDisplayLink?
+  private var alive = true
+  private var inFlight = 0
+
+  init(displayLink: MacOSViewportDisplayLink) {
+    self.displayLink = displayLink
+  }
+
+  func beginTick() -> MacOSViewportDisplayLink? {
+    condition.lock()
+    guard alive, let displayLink else {
+      condition.unlock()
+      return nil
+    }
+    inFlight += 1
+    condition.unlock()
+    return displayLink
+  }
+
+  func endTick() {
+    condition.lock()
+    if inFlight > 0 {
+      inFlight -= 1
+    }
+    if inFlight == 0 {
+      condition.broadcast()
+    }
+    condition.unlock()
+  }
+
+  func invalidateAndWait() {
+    condition.lock()
+    alive = false
+    while inFlight > 0 {
+      condition.wait()
+    }
+    condition.unlock()
+  }
+}
+
 final class MacOSViewportDisplayLink {
   private let lock = NSLock()
   private let onTick: () -> Void
   private var displayLink: CVDisplayLink?
+  private var displayLinkUserData: UnsafeMutableRawPointer?
   private var fallbackTimer: DispatchSourceTimer?
   private var running = false
   private var mainTickScheduled = false
@@ -43,6 +86,7 @@ final class MacOSViewportDisplayLink {
 
   deinit {
     stop()
+    clearDisplayLink()
   }
 
   func start() {
@@ -109,12 +153,20 @@ final class MacOSViewportDisplayLink {
   private func recreateDisplayLink(displayId: CGDirectDisplayID) {
     lock.lock()
     let oldLink = displayLink
+    let oldUserData = displayLinkUserData
+    let oldTimer = fallbackTimer
     displayLink = nil
+    displayLinkUserData = nil
+    fallbackTimer = nil
+    running = false
+    mainTickScheduled = false
     targetDisplayId = displayId
     lock.unlock()
     if let oldLink, CVDisplayLinkIsRunning(oldLink) {
       CVDisplayLinkStop(oldLink)
     }
+    oldTimer?.cancel()
+    releaseDisplayLinkUserData(oldUserData)
 
     var newLink: CVDisplayLink?
     let status = CVDisplayLinkCreateWithCGDisplay(displayId, &newLink)
@@ -125,13 +177,25 @@ final class MacOSViewportDisplayLink {
       lock.unlock()
       return
     }
-    CVDisplayLinkSetOutputCallback(
+    let userData = Unmanaged.passRetained(
+      MacOSViewportDisplayLinkCallbackContext(displayLink: self)
+    ).toOpaque()
+    let callbackStatus = CVDisplayLinkSetOutputCallback(
       created,
       MacOSViewportDisplayLink.displayLinkCallback,
-      UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+      userData
     )
+    guard callbackStatus == kCVReturnSuccess else {
+      releaseDisplayLinkUserData(userData)
+      lock.lock()
+      source = "fallback-timer"
+      refreshHz = Self.fallbackRefreshHz()
+      lock.unlock()
+      return
+    }
     lock.lock()
     displayLink = created
+    displayLinkUserData = userData
     source = "cvdisplaylink"
     refreshHz = Self.nominalRefreshHz(displayLink: created)
     lock.unlock()
@@ -166,11 +230,36 @@ final class MacOSViewportDisplayLink {
   private static let displayLinkCallback: CVDisplayLinkOutputCallback = {
     _, _, _, _, _, userInfo in
     guard let userInfo else { return kCVReturnSuccess }
-    let driver = Unmanaged<MacOSViewportDisplayLink>
+    let context = Unmanaged<MacOSViewportDisplayLinkCallbackContext>
       .fromOpaque(userInfo)
       .takeUnretainedValue()
+    guard let driver = context.beginTick() else {
+      return kCVReturnSuccess
+    }
+    defer { context.endTick() }
     driver.recordTickAndScheduleMain()
     return kCVReturnSuccess
+  }
+
+  private func clearDisplayLink() {
+    lock.lock()
+    let oldLink = displayLink
+    let oldUserData = displayLinkUserData
+    displayLink = nil
+    displayLinkUserData = nil
+    lock.unlock()
+    if let oldLink, CVDisplayLinkIsRunning(oldLink) {
+      CVDisplayLinkStop(oldLink)
+    }
+    releaseDisplayLinkUserData(oldUserData)
+  }
+
+  private func releaseDisplayLinkUserData(_ userData: UnsafeMutableRawPointer?) {
+    guard let userData else { return }
+    let unmanaged = Unmanaged<MacOSViewportDisplayLinkCallbackContext>
+      .fromOpaque(userData)
+    unmanaged.takeUnretainedValue().invalidateAndWait()
+    unmanaged.release()
   }
 
   private func recordTickAndScheduleMain() {

@@ -156,6 +156,13 @@ Use them for nightly, release candidate, or targeted local validation:
 python3.12 dev.py gate macos-ui-nightly
 ```
 
+Native sanitizer coverage is a separate local/nightly gate. It builds the macOS native presets with ASAN and TSAN,
+then runs CTest while excluding the already-marked headless Metal hosted-flaky smoke:
+
+```bash
+python3.12 dev.py gate macos-native-sanitizers
+```
+
 `.github/workflows/macos-ui.yml` provides a separate headed macOS UI workflow. It runs `macos-ui-smoke` weekly and can
 be manually dispatched with either `macos-ui-smoke` or `macos-ui-nightly`; it is intentionally not part of the regular
 push/PR native workflow.

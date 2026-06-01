@@ -61,6 +61,26 @@ def _run_macos_native_werror() -> None:
     run(["cmake", "--build", "--preset", "macos-werror"], cwd=str(ROOT / "native"))
 
 
+def _run_macos_native_sanitizer(preset: str) -> None:
+    run(["cmake", "--preset", preset], cwd=str(ROOT / "native"))
+    run(["cmake", "--build", "--preset", preset], cwd=str(ROOT / "native"))
+    run(
+        [
+            "ctest",
+            "--preset",
+            preset,
+            "--label-exclude",
+            "hosted-flaky|nightly",
+        ],
+        cwd=str(ROOT / "native"),
+    )
+
+
+def _run_macos_native_sanitizers() -> None:
+    _run_macos_native_sanitizer("macos-asan")
+    _run_macos_native_sanitizer("macos-tsan")
+
+
 def _run_macos_ui_smoke() -> None:
     _python_dev("mac-ui-test", "--build", *MACOS_UI_SMOKE)
 
@@ -115,6 +135,12 @@ def cmd_gate(args: argparse.Namespace) -> None:
         _run_macos_native_werror()
         return
 
+    if profile == "macos-native-sanitizers":
+        if not _is_macos():
+            _unsupported(profile, "macOS")
+        _run_macos_native_sanitizers()
+        return
+
     if profile == "macos-ui-smoke":
         if not _is_macos():
             _unsupported(profile, "macOS")
@@ -143,6 +169,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
         if _is_macos():
             _run_macos_native_fast()
             _run_macos_native_werror()
+            _run_macos_native_sanitizers()
             _python_dev("build", "--flutter")
             _run_macos_ui_nightly()
             _run_macos_release_readiness()

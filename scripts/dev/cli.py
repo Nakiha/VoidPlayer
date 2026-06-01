@@ -121,6 +121,7 @@ Examples:
             "pr-fast",
             "macos-native-fast",
             "macos-native-werror",
+            "macos-native-sanitizers",
             "macos-ui-smoke",
             "macos-ui-nightly",
             "macos-release-readiness",

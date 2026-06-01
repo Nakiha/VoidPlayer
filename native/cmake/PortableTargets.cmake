@@ -56,4 +56,7 @@ endfunction()
 
 if(APPLE)
     include(cmake/MacOSTargets.cmake)
+    if(BUILD_TESTS)
+        include(cmake/MacOSTests.cmake)
+    endif()
 endif()

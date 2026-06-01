@@ -901,47 +901,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::run_decode_loop_step(
             drain_decoder_before_next_packet_,
             decode_paused_.load(std::memory_order_acquire),
             output_buffer_.state())) {
-        const auto drain_result = drain_frames_before_next_packet(
-            frame,
-            DecodeFrameDrainCallbacks{
-                [this]() {
-                    return should_abort_drain_before_receive(
-                        cancelled_.load(std::memory_order_acquire),
-                        output_buffer_.state());
-                },
-                [this](AVFrame* frame_to_receive) {
-                    return receive_codec_frame_seh_guarded(
-                        codec_ctx_, frame_to_receive, hw_enabled_, device_mutex_);
-                },
-                rescale_ts,
-                [this](const AVFrame* ready_frame) {
-                    log_hw_frame_context_once(ready_frame);
-                },
-                [&publisher](AVFrame* frame_to_publish) {
-                    publisher.flush_before_publish_if_needed(true);
-                    return publisher.convert_and_push_frame(
-                        frame_to_publish, "drain before next packet");
-                },
-                [this]() {
-                    return should_stop_drain_after_publish(
-                        decode_paused_.load(std::memory_order_acquire),
-                        output_buffer_.state());
-                },
-            });
-        if (drain_result.stop_with_error) {
-            output_buffer_.set_state(TrackState::Error);
-            decode_paused_.store(true, std::memory_order_release);
-            running_.store(false, std::memory_order_release);
-        }
-        if (drain_result.clear_drain_request) {
-            drain_decoder_before_next_packet_ = false;
-        }
-        if (drain_result.frames_published > 0) {
-            perf_.frames_decoded.fetch_add(
-                static_cast<uint64_t>(drain_result.frames_published),
-                std::memory_order_relaxed);
-        }
-        return DecodeLoopStepResult::Continue;
+        return drain_before_next_packet(scratch);
     }
 
     // Fully pause decode consumption so the packet queue preserves packets
@@ -975,6 +935,63 @@ DecodeThread::DecodeLoopStepResult DecodeThread::run_decode_loop_step(
 
     eof_flushed_ = false;
 
+    return process_decode_packet(pkt, scratch);
+}
+
+DecodeThread::DecodeLoopStepResult DecodeThread::drain_before_next_packet(
+    DecodeLoopScratch& scratch) {
+    AVFrame* frame = scratch.frame;
+    auto& publisher = scratch.publisher;
+    auto& rescale_ts = scratch.rescale_timestamps;
+
+    const auto drain_result = drain_frames_before_next_packet(
+        frame,
+        DecodeFrameDrainCallbacks{
+            [this]() {
+                return should_abort_drain_before_receive(
+                    cancelled_.load(std::memory_order_acquire),
+                    output_buffer_.state());
+            },
+            [this](AVFrame* frame_to_receive) {
+                return receive_codec_frame_seh_guarded(
+                    codec_ctx_, frame_to_receive, hw_enabled_, device_mutex_);
+            },
+            rescale_ts,
+            [this](const AVFrame* ready_frame) {
+                log_hw_frame_context_once(ready_frame);
+            },
+            [&publisher](AVFrame* frame_to_publish) {
+                publisher.flush_before_publish_if_needed(true);
+                return publisher.convert_and_push_frame(
+                    frame_to_publish, "drain before next packet");
+            },
+            [this]() {
+                return should_stop_drain_after_publish(
+                    decode_paused_.load(std::memory_order_acquire),
+                    output_buffer_.state());
+            },
+        });
+    if (drain_result.stop_with_error) {
+        return stop_decode_loop_with_error();
+    }
+    if (drain_result.clear_drain_request) {
+        drain_decoder_before_next_packet_ = false;
+    }
+    if (drain_result.frames_published > 0) {
+        perf_.frames_decoded.fetch_add(
+            static_cast<uint64_t>(drain_result.frames_published),
+            std::memory_order_relaxed);
+    }
+    return DecodeLoopStepResult::Continue;
+}
+
+DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
+    AVPacket*& pkt,
+    DecodeLoopScratch& scratch) {
+    AVFrame* frame = scratch.frame;
+    auto& publisher = scratch.publisher;
+    auto& rescale_ts = scratch.rescale_timestamps;
+
     auto batch_t0 = std::chrono::steady_clock::now();
     const auto packet_send_result = send_decode_packet(
         pkt,
@@ -1004,10 +1021,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::run_decode_loop_step(
             },
         });
     if (packet_send_result.stop_with_error) {
-        output_buffer_.set_state(TrackState::Error);
-        decode_paused_.store(true, std::memory_order_release);
-        running_.store(false, std::memory_order_release);
-        return DecodeLoopStepResult::Stop;
+        return stop_decode_loop_with_error();
     }
     if (!packet_send_result.sent) {
         return DecodeLoopStepResult::Continue;
@@ -1073,10 +1087,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::run_decode_loop_step(
             },
         });
     if (receive_result.stop_with_error) {
-        output_buffer_.set_state(TrackState::Error);
-        decode_paused_.store(true, std::memory_order_release);
-        running_.store(false, std::memory_order_release);
-        return DecodeLoopStepResult::Stop;
+        return stop_decode_loop_with_error();
     }
     const int frames_produced = receive_result.frames_produced;
 
@@ -1153,6 +1164,13 @@ DecodeThread::DecodeLoopStepResult DecodeThread::run_decode_loop_step(
     }
 
     return DecodeLoopStepResult::Continue;
+}
+
+DecodeThread::DecodeLoopStepResult DecodeThread::stop_decode_loop_with_error() {
+    output_buffer_.set_state(TrackState::Error);
+    decode_paused_.store(true, std::memory_order_release);
+    running_.store(false, std::memory_order_release);
+    return DecodeLoopStepResult::Stop;
 }
 
 } // namespace vr

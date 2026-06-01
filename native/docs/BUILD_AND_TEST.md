@@ -199,7 +199,7 @@ It verifies source and staged-package evidence for FFmpeg dylibs, `@rpath` linka
 Release entitlements, sandbox file-picker inputs, crash-report watcher wiring, codesign verification, and absence of
 runtime/user artifacts in the package stage. The default gate accepts ad-hoc signing for local testing; use
 `scripts/dev/check_macos_release_readiness.py --require-developer-id` on a Developer ID signed stage before external
-distribution.
+distribution. Developer ID package/readiness runs also require `spctl -a -vv --type execute` to pass for the staged app.
 
 Release candidate readiness must verify:
 

@@ -23,7 +23,8 @@ Current release boundary:
 - `dev.py gate macos-release-readiness` stages the app and checks bundled
   FFmpeg dylibs/symlinks, `@rpath` linkage, package notices, package
   cleanliness, release entitlements, sandbox file-picker inputs, crash-report
-  watcher wiring, and codesign verification.
+  watcher wiring, and codesign verification. Developer ID package/readiness
+  runs also require `spctl -a -vv --type execute` to pass for the staged app.
 - `dev.py package --installer` creates
   `build/package/macos/installer/VoidPlayer-<version>-macos-arm64.dmg` for local
   testing. Add `--macos-notarize --macos-notary-profile <profile>`, or set

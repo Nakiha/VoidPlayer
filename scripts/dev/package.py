@@ -160,6 +160,8 @@ def _cmd_package_macos(args) -> None:
     sign_identity = args.macos_sign_identity or os.environ.get("VOIDPLAYER_MACOS_SIGN_IDENTITY")
     _sign_macos_app(stage_app, sign_identity)
     _verify_macos_codesign(stage_app)
+    if sign_identity:
+        _verify_macos_gatekeeper(stage_app)
 
     print(f"\nmacOS package staging ready: {stage_dir}")
     if args.installer:
@@ -396,6 +398,11 @@ def _assert_no_developer_paths(binary: Path, loads: list[str]) -> None:
 def _verify_macos_codesign(stage_app: Path) -> None:
     header("Verify macOS app signature")
     run(["codesign", "--verify", "--deep", "--strict", str(stage_app)], cwd=str(ROOT))
+
+
+def _verify_macos_gatekeeper(stage_app: Path) -> None:
+    header("Verify macOS Gatekeeper assessment")
+    run(["spctl", "-a", "-vv", "--type", "execute", str(stage_app)], cwd=str(ROOT))
 
 
 def _run_macos_codesign(

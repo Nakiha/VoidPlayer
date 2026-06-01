@@ -135,7 +135,9 @@ linkage, GPL/third-party notices, package cleanliness, sandbox file-picker
 inputs, crash-report watcher wiring, codesign verification, and release
 entitlements. The default gate accepts ad-hoc signing for local testing; use
 `scripts/dev/check_macos_release_readiness.py --require-developer-id` against a
-Developer ID signed stage before external distribution.
+Developer ID signed stage before external distribution. Developer ID
+package/readiness runs also require `spctl -a -vv --type execute` to pass for
+the staged app.
 
 With `--installer`, the same staging directory is compressed into
 `build/package/macos/installer/VoidPlayer-<version>-macos-arm64.dmg` for local

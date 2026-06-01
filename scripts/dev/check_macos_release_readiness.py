@@ -227,6 +227,8 @@ def _check_codesign(stage_app: Path, require_developer_id: bool) -> None:
     display = (result.stdout + result.stderr).decode("utf-8", errors="ignore")
     if require_developer_id and "Authority=Developer ID Application:" not in display:
         raise RuntimeError("staged app is not signed with a Developer ID Application identity")
+    if require_developer_id:
+        _run_capture(["spctl", "-a", "-vv", "--type", "execute", str(stage_app)])
 
     entitlements = _codesign_entitlements(stage_app)
     _require_entitlement(entitlements, "com.apple.security.app-sandbox", True)

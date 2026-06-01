@@ -992,7 +992,7 @@ bool MetalPresentationBackend::draw_frame(
     ++draw_profiler_count_;
     const bool transient_backpressure =
         ret == -2 && error &&
-        std::strcmp(error, "renderer-owned Metal async draw deferred by backpressure") == 0;
+        vr::is_transient_presentation_backpressure_error(error);
     if (transient_backpressure && draw_profiler_count_ % 120 != 0) {
       return;
     }

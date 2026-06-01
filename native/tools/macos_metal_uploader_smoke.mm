@@ -675,7 +675,7 @@ int main() {
           async_upload_completed,
           &async_context_b);
   if (async_ret_b != -2 ||
-      std::strcmp(async_error_b, "native Metal uploader async resources are busy") != 0) {
+      std::strcmp(async_error_b, "native Metal uploader shared resources are busy") != 0) {
     wait_for_async_upload(async_context_a);
     CFRelease(async_buffer_b);
     CFRelease(async_buffer_a);

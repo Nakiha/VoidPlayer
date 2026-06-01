@@ -88,18 +88,18 @@ void retain_async_texture(AsyncMetalResourceLifetime* lifetime,
   }
 }
 
-void release_async_shared_resources(std::atomic<bool>* inFlightFlag) {
+void release_shared_resources(std::atomic<bool>* inFlightFlag) {
   if (inFlightFlag) {
     inFlightFlag->store(false, std::memory_order_release);
   }
 }
 
-struct ScopedAsyncSharedResourceReservation {
-  explicit ScopedAsyncSharedResourceReservation(std::atomic<bool>* flag)
+struct ScopedSharedResourceReservation {
+  explicit ScopedSharedResourceReservation(std::atomic<bool>* flag)
       : flag_(flag) {}
 
-  ~ScopedAsyncSharedResourceReservation() {
-    release_async_shared_resources(flag_);
+  ~ScopedSharedResourceReservation() {
+    release_shared_resources(flag_);
   }
 
   void disarm() { flag_ = nullptr; }
@@ -116,17 +116,17 @@ int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
                         VPMacOSMetalUploaderCompletion completion,
                         void* userData,
                         AsyncMetalResourceLifetime* lifetime,
-                        std::atomic<bool>* asyncSharedResourceFlag,
+                        std::atomic<bool>* sharedResourceFlag,
                         char* error,
                         size_t errorSize) {
   if (!commandBuffer) {
     delete lifetime;
-    release_async_shared_resources(asyncSharedResourceFlag);
+    release_shared_resources(sharedResourceFlag);
     return metal_upload_failure(error, errorSize, failureMessage);
   }
   if (completion) {
     auto* retainedLifetime = lifetime;
-    auto* retainedAsyncSharedResourceFlag = asyncSharedResourceFlag;
+    auto* retainedSharedResourceFlag = sharedResourceFlag;
     [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> completedBuffer) {
       const BOOL completed = [completedBuffer status] == MTLCommandBufferStatusCompleted;
       const int64_t gpuUs = elapsed_us_since(gpuStart);
@@ -135,7 +135,7 @@ int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
       if (!completed) {
         message = failureMessage ? failureMessage : "native Metal command did not complete";
       }
-      release_async_shared_resources(retainedAsyncSharedResourceFlag);
+      release_shared_resources(retainedSharedResourceFlag);
       completion(userData,
                  completed ? 0 : -2,
                  frameInfo,
@@ -152,7 +152,7 @@ int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
   [commandBuffer commit];
   [commandBuffer waitUntilCompleted];
   delete lifetime;
-  release_async_shared_resources(asyncSharedResourceFlag);
+  release_shared_resources(sharedResourceFlag);
 
   const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
   lastGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
@@ -197,7 +197,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     _lastPresentPackageStorage.store(
         VPMacOSNativePresentPackageStorageUnavailable,
         std::memory_order_relaxed);
-    _asyncSharedResourcesInFlight.store(false, std::memory_order_relaxed);
+    _sharedResourcesInFlight.store(false, std::memory_order_relaxed);
     _overlayLayerTextures.fill(nil);
     _overlayLayerGenerations.fill(0);
     _overlayLayerWidths.fill(0);
@@ -428,21 +428,21 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
       VPMacOSMetalUploaderStatusOk;
 }
 
-- (BOOL)tryReserveAsyncSharedResources:(std::atomic<bool>**)outFlag
-                                 error:(char*)error
-                             errorSize:(size_t)errorSize {
+- (BOOL)tryReserveSharedResources:(std::atomic<bool>**)outFlag
+                             error:(char*)error
+                         errorSize:(size_t)errorSize {
   if (!outFlag) {
-    write_error(error, errorSize, "invalid native Metal async resource reservation");
+    write_error(error, errorSize, "invalid native Metal shared resource reservation");
     return NO;
   }
   *outFlag = nullptr;
   bool expected = false;
-  if (!_asyncSharedResourcesInFlight.compare_exchange_strong(
+  if (!_sharedResourcesInFlight.compare_exchange_strong(
           expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
-    write_error(error, errorSize, "native Metal uploader async resources are busy");
+    write_error(error, errorSize, "native Metal uploader shared resources are busy");
     return NO;
   }
-  *outFlag = &_asyncSharedResourcesInFlight;
+  *outFlag = &_sharedResourcesInFlight;
   return YES;
 }
 
@@ -930,14 +930,13 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     write_error(error, errorSize, "invalid native Metal present package arguments");
     return -1;
   }
-  std::atomic<bool>* asyncSharedResourceFlag = nullptr;
-  if (completion &&
-      ![self tryReserveAsyncSharedResources:&asyncSharedResourceFlag
-                                      error:error
-                                  errorSize:errorSize]) {
+  std::atomic<bool>* sharedResourceFlag = nullptr;
+  if (![self tryReserveSharedResources:&sharedResourceFlag
+                                  error:error
+                              errorSize:errorSize]) {
     return -2;
   }
-  ScopedAsyncSharedResourceReservation reservation(asyncSharedResourceFlag);
+  ScopedSharedResourceReservation reservation(sharedResourceFlag);
   if (![self ensureStagingBufferWithLength:package->used_bytes] ||
       ![self ensureLayoutParamsBuffer]) {
     return metal_upload_failure(
@@ -958,7 +957,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                       errorSize:errorSize
                                                      completion:completion
                                                        userData:userData
-                                        asyncSharedResourceFlag:asyncSharedResourceFlag];
+                                        sharedResourceFlag:sharedResourceFlag];
   if (!completion) {
     _lastPresentPackageTotalUs.store(elapsed_us_since(totalStart), std::memory_order_relaxed);
   }
@@ -1012,11 +1011,10 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                errorSize:(size_t)errorSize
                               completion:(VPMacOSMetalUploaderCompletion)completion
                                 userData:(void*)userData {
-  std::atomic<bool>* asyncSharedResourceFlag = nullptr;
-  if (completion &&
-      ![self tryReserveAsyncSharedResources:&asyncSharedResourceFlag
-                                      error:error
-                                  errorSize:errorSize]) {
+  std::atomic<bool>* sharedResourceFlag = nullptr;
+  if (![self tryReserveSharedResources:&sharedResourceFlag
+                                  error:error
+                              errorSize:errorSize]) {
     return -2;
   }
   return [self uploadPreparedPresentFramePackage:package
@@ -1029,7 +1027,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                        errorSize:errorSize
                                       completion:completion
                                         userData:userData
-                         asyncSharedResourceFlag:asyncSharedResourceFlag];
+                         sharedResourceFlag:sharedResourceFlag];
 }
 
 - (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
@@ -1042,8 +1040,8 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                errorSize:(size_t)errorSize
                               completion:(VPMacOSMetalUploaderCompletion)completion
                                 userData:(void*)userData
-                 asyncSharedResourceFlag:(std::atomic<bool>*)asyncSharedResourceFlag {
-  ScopedAsyncSharedResourceReservation reservation(asyncSharedResourceFlag);
+                 sharedResourceFlag:(std::atomic<bool>*)sharedResourceFlag {
+  ScopedSharedResourceReservation reservation(sharedResourceFlag);
   if (![self isAvailable] || !_layoutPipeline) {
     write_error(error, errorSize, "native Metal layout uploader is not available");
     return -1;
@@ -1147,7 +1145,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                             completion,
                                             userData,
                                             lifetime,
-                                            asyncSharedResourceFlag,
+                                            sharedResourceFlag,
                                             error,
                                             errorSize);
   if (commitRet != 0) {
@@ -1223,14 +1221,13 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
     return -1;
   }
-  std::atomic<bool>* asyncSharedResourceFlag = nullptr;
-  if (completion &&
-      ![self tryReserveAsyncSharedResources:&asyncSharedResourceFlag
-                                      error:error
-                                  errorSize:errorSize]) {
+  std::atomic<bool>* sharedResourceFlag = nullptr;
+  if (![self tryReserveSharedResources:&sharedResourceFlag
+                                  error:error
+                              errorSize:errorSize]) {
     return -2;
   }
-  ScopedAsyncSharedResourceReservation reservation(asyncSharedResourceFlag);
+  ScopedSharedResourceReservation reservation(sharedResourceFlag);
   if (![self ensureLayoutParamsBuffer]) {
     return metal_upload_failure(
         error, errorSize, "failed to allocate native Metal layout buffers");
@@ -1349,7 +1346,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                             completion,
                                             userData,
                                             lifetime,
-                                            asyncSharedResourceFlag,
+                                            sharedResourceFlag,
                                             error,
                                             errorSize);
   if (commitRet != 0) {
@@ -1428,14 +1425,13 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
     return -1;
   }
-  std::atomic<bool>* asyncSharedResourceFlag = nullptr;
-  if (completion &&
-      ![self tryReserveAsyncSharedResources:&asyncSharedResourceFlag
-                                      error:error
-                                  errorSize:errorSize]) {
+  std::atomic<bool>* sharedResourceFlag = nullptr;
+  if (![self tryReserveSharedResources:&sharedResourceFlag
+                                  error:error
+                              errorSize:errorSize]) {
     return -2;
   }
-  ScopedAsyncSharedResourceReservation reservation(asyncSharedResourceFlag);
+  ScopedSharedResourceReservation reservation(sharedResourceFlag);
   if (![self ensureLayoutParamsBuffer]) {
     return metal_upload_failure(
         error, errorSize, "failed to allocate native Metal layout buffers");
@@ -1592,7 +1588,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
       completion,
       userData,
       lifetime,
-      asyncSharedResourceFlag,
+      sharedResourceFlag,
       error,
       errorSize);
   if (commitRet != 0) {
@@ -1811,6 +1807,13 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
     return -1;
   }
+  std::atomic<bool>* sharedResourceFlag = nullptr;
+  if (![self tryReserveSharedResources:&sharedResourceFlag
+                                  error:error
+                              errorSize:errorSize]) {
+    return -2;
+  }
+  ScopedSharedResourceReservation reservation(sharedResourceFlag);
 
   vp_macos::ScopedCVMetalTexture destinationRef;
   const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(

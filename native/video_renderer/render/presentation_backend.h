@@ -92,7 +92,8 @@ struct PresentationBackendStats {
 };
 
 inline bool is_transient_presentation_backpressure_error(const std::string& error) {
-    return error == "renderer-owned Metal async draw deferred by backpressure";
+    return error == "renderer-owned Metal async draw deferred by backpressure" ||
+           error == "native Metal uploader shared resources are busy";
 }
 
 struct PresentationBackendMetrics {

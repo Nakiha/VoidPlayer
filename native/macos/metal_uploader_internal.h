@@ -15,16 +15,34 @@
 
 const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
 
+constexpr size_t VPMacOSMetalFrameResourcePoolSize = 3;
+
+struct VPMacOSMetalFrameResources {
+  std::atomic<bool> in_flight;
+  id<MTLBuffer> staging_buffer;
+  id<MTLBuffer> layout_params_buffer;
+  id<MTLBuffer> overlay_direct_line_rect_buffer;
+  uint64_t overlay_direct_line_rect_generation;
+  size_t overlay_direct_line_rect_count;
+  size_t overlay_direct_line_rect_bytes;
+
+  VPMacOSMetalFrameResources()
+      : in_flight(false),
+        staging_buffer(nil),
+        layout_params_buffer(nil),
+        overlay_direct_line_rect_buffer(nil),
+        overlay_direct_line_rect_generation(0),
+        overlay_direct_line_rect_count(0),
+        overlay_direct_line_rect_bytes(0) {}
+};
+
 @interface VPMacOSMetalUploaderImpl : NSObject {
  @private
   id<MTLDevice> _device;
   id<MTLCommandQueue> _commandQueue;
-  id<MTLBuffer> _stagingBuffer;
-  id<MTLBuffer> _layoutParamsBuffer;
   id<MTLBuffer> _overlayFillRectBuffer;
   id<MTLBuffer> _overlayLineRectBuffer;
   id<MTLBuffer> _overlayMotionLineBuffer;
-  id<MTLBuffer> _overlayDirectLineRectBuffer;
   id<MTLBuffer> _overlayLineMaskBuffer;
   id<MTLComputePipelineState> _layoutPipeline;
   id<MTLComputePipelineState> _cvPixelBufferPipeline;
@@ -45,11 +63,9 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
   std::array<uint64_t, VPMacOSNativeMaxTracks> _overlayLayerGenerations;
   std::array<int32_t, VPMacOSNativeMaxTracks> _overlayLayerWidths;
   std::array<int32_t, VPMacOSNativeMaxTracks> _overlayLayerHeights;
-  uint64_t _overlayDirectLineRectGeneration;
-  size_t _overlayDirectLineRectCount;
-  size_t _overlayDirectLineRectBytes;
   CVMetalTextureCacheRef _textureCache;
-  std::atomic<bool> _sharedResourcesInFlight;
+  std::array<VPMacOSMetalFrameResources, VPMacOSMetalFrameResourcePoolSize> _frameResourcePool;
+  std::atomic<bool> _overlayLayerResourcesInFlight;
   std::atomic<int64_t> _directYuvUploadCount;
   std::atomic<int64_t> _cvPixelBufferUploadCount;
   std::atomic<int64_t> _presentPackageUploadCount;
@@ -73,9 +89,9 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
 - (BOOL)validatePixelBuffer:(CVPixelBufferRef)pixelBuffer
                       width:(int32_t)width
                      height:(int32_t)height;
-- (BOOL)tryReserveSharedResources:(std::atomic<bool>**)outFlag
-                             error:(char*)error
-                         errorSize:(size_t)errorSize;
+- (VPMacOSMetalFrameResources*)acquireFrameResourcesWithStagingLength:(size_t)stagingLength
+                                                                error:(char*)error
+                                                            errorSize:(size_t)errorSize;
 - (int)copyPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
                            data:(const uint8_t*)data
                        dataSize:(size_t)dataSize
@@ -182,17 +198,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                                errorSize:(size_t)errorSize
                               completion:(VPMacOSMetalUploaderCompletion)completion
                                 userData:(void*)userData;
-- (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
-                                 overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
-                           toPixelBuffer:(CVPixelBufferRef)pixelBuffer
-                                   width:(int32_t)width
-                                  height:(int32_t)height
-                                     out:(VPMacOSNativeFrameInfo*)out
-                                   error:(char*)error
-                               errorSize:(size_t)errorSize
-                              completion:(VPMacOSMetalUploaderCompletion)completion
-                                userData:(void*)userData
-                 sharedResourceFlag:(std::atomic<bool>*)sharedResourceFlag;
 - (int)compositeOverlayGpuRects:(const VPMacOSNativeOverlayGpuRect*)rects
                             count:(size_t)rectCount
                          decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
@@ -217,6 +222,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                           decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
                      commandBuffer:(id<MTLCommandBuffer>)commandBuffer
                 destinationTexture:(id<MTLTexture>)destinationTexture
+                     frameResource:(VPMacOSMetalFrameResources*)frameResource
                              width:(int32_t)width
                             height:(int32_t)height
                              error:(char*)error
@@ -225,6 +231,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                                 decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
                            commandBuffer:(id<MTLCommandBuffer>)commandBuffer
                       destinationTexture:(id<MTLTexture>)destinationTexture
+                            frameResource:(VPMacOSMetalFrameResources*)frameResource
                                    width:(int32_t)width
                                   height:(int32_t)height
                                    error:(char*)error
@@ -232,6 +239,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
 - (BOOL)prepareOverlayLayers:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
                      decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
                 commandBuffer:(id<MTLCommandBuffer>)commandBuffer
+           overlayResourceFlag:(std::atomic<bool>**)overlayResourceFlag
                          error:(char*)error
                      errorSize:(size_t)errorSize;
 - (void)bindOverlayLayersForDecision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo

@@ -4,6 +4,7 @@
 #include <Foundation/Foundation.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -605,146 +606,163 @@ int main() {
   }
   CFRelease(p010_buffer);
 
-  constexpr int async_width = 1024;
-  constexpr int async_height = 1024;
+  constexpr int async_width = 2048;
+  constexpr int async_height = 2048;
   size_t async_data_size = 0;
   VPMacOSNativePresentFramePackageInfo async_package =
       make_nv12_package(async_width, async_height, 1001, &async_data_size);
   std::vector<uint8_t> async_package_data(async_data_size, 128);
-  CVPixelBufferRef async_buffer_a =
-      create_pixel_buffer(kCVPixelFormatType_32BGRA, async_width, async_height);
-  CVPixelBufferRef async_buffer_b =
-      create_pixel_buffer(kCVPixelFormatType_32BGRA, async_width, async_height);
-  if (!async_buffer_a || !async_buffer_b) {
-    if (async_buffer_a) {
-      CFRelease(async_buffer_a);
+  constexpr size_t async_pool_submissions = 3;
+  std::array<CVPixelBufferRef, async_pool_submissions + 1> async_buffers = {};
+  for (auto& buffer : async_buffers) {
+    buffer = create_pixel_buffer(kCVPixelFormatType_32BGRA, async_width, async_height);
+  }
+  const auto release_async_buffers = [&] {
+    for (auto* buffer : async_buffers) {
+      if (buffer) {
+        CFRelease(buffer);
+      }
     }
-    if (async_buffer_b) {
-      CFRelease(async_buffer_b);
-    }
+  };
+  if (std::any_of(async_buffers.begin(), async_buffers.end(), [](CVPixelBufferRef buffer) {
+        return buffer == nullptr;
+      })) {
+    release_async_buffers();
     CFRelease(argb);
     CFRelease(bgra);
     VPMacOSMetalUploaderDestroy(uploader);
     return fail("failed to create async Metal upload CVPixelBuffers");
   }
 
-  AsyncUploadContext async_context_a;
-  VPMacOSNativeFrameInfo async_info_a = {};
-  char async_error_a[512] = {};
-  const int async_ret_a =
+  std::array<AsyncUploadContext, async_pool_submissions> async_contexts = {};
+  for (size_t i = 0; i < async_pool_submissions; ++i) {
+    async_package.decision.frames[0].pts_us = 1001 + static_cast<int64_t>(i);
+    VPMacOSNativeFrameInfo async_info = {};
+    char async_error[512] = {};
+    const int async_ret =
+        VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
+            uploader,
+            async_package_data.data(),
+            async_package_data.size(),
+            &async_package,
+            nullptr,
+            async_buffers[i],
+            async_width,
+            async_height,
+            &async_info,
+            async_error,
+            sizeof(async_error),
+            async_upload_completed,
+            &async_contexts[i]);
+    if (async_ret != 0) {
+      for (size_t wait = 0; wait < i; ++wait) {
+        wait_for_async_upload(async_contexts[wait]);
+      }
+      release_async_buffers();
+      CFRelease(argb);
+      CFRelease(bgra);
+      VPMacOSMetalUploaderDestroy(uploader);
+      std::fprintf(stderr,
+                   "async Metal upload %zu failed to submit: %s\n",
+                   i,
+                   async_error);
+      return 1;
+    }
+  }
+
+  async_package.decision.frames[0].pts_us = 2001;
+  VPMacOSNativeFrameInfo async_info_busy = {};
+  char async_error_busy[512] = {};
+  AsyncUploadContext async_context_busy;
+  const int async_ret_busy =
       VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
           uploader,
           async_package_data.data(),
           async_package_data.size(),
           &async_package,
           nullptr,
-          async_buffer_a,
+          async_buffers.back(),
           async_width,
           async_height,
-          &async_info_a,
-          async_error_a,
-          sizeof(async_error_a),
+          &async_info_busy,
+          async_error_busy,
+          sizeof(async_error_busy),
           async_upload_completed,
-          &async_context_a);
-  if (async_ret_a != 0) {
-    CFRelease(async_buffer_b);
-    CFRelease(async_buffer_a);
+          &async_context_busy);
+  if (async_ret_busy != -2 ||
+      std::strcmp(async_error_busy, "native Metal uploader frame resource pool is busy") != 0) {
+    for (auto& context : async_contexts) {
+      wait_for_async_upload(context);
+    }
+    release_async_buffers();
     CFRelease(argb);
     CFRelease(bgra);
     VPMacOSMetalUploaderDestroy(uploader);
-    std::fprintf(stderr, "first async Metal upload failed to submit: %s\n", async_error_a);
+    std::fprintf(
+        stderr,
+        "async Metal upload beyond resource pool did not report busy resources: ret=%d error=%s\n",
+        async_ret_busy,
+        async_error_busy);
     return 1;
   }
 
-  AsyncUploadContext async_context_b;
-  VPMacOSNativeFrameInfo async_info_b = {};
-  char async_error_b[512] = {};
-  const int async_ret_b =
-      VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
-          uploader,
-          async_package_data.data(),
-          async_package_data.size(),
-          &async_package,
-          nullptr,
-          async_buffer_b,
-          async_width,
-          async_height,
-          &async_info_b,
-          async_error_b,
-          sizeof(async_error_b),
-          async_upload_completed,
-          &async_context_b);
-  if (async_ret_b != -2 ||
-      std::strcmp(async_error_b, "native Metal uploader shared resources are busy") != 0) {
-    wait_for_async_upload(async_context_a);
-    CFRelease(async_buffer_b);
-    CFRelease(async_buffer_a);
-    CFRelease(argb);
-    CFRelease(bgra);
-    VPMacOSMetalUploaderDestroy(uploader);
-    std::fprintf(
-        stderr,
-        "second async Metal upload did not report busy resources: ret=%d error=%s\n",
-        async_ret_b,
-        async_error_b);
-    return 1;
-  }
-  if (!wait_for_async_upload(async_context_a) ||
-      async_context_a.ret != 0 ||
-      async_context_a.frame_info.pts_us != 1001) {
-    CFRelease(async_buffer_b);
-    CFRelease(async_buffer_a);
-    CFRelease(argb);
-    CFRelease(bgra);
-    VPMacOSMetalUploaderDestroy(uploader);
-    std::fprintf(
-        stderr,
-        "first async Metal upload did not complete cleanly: ret=%d error=%s pts=%lld\n",
-        async_context_a.ret,
-        async_context_a.error.c_str(),
-        static_cast<long long>(async_context_a.frame_info.pts_us));
-    return 1;
+  for (size_t i = 0; i < async_pool_submissions; ++i) {
+    if (!wait_for_async_upload(async_contexts[i]) ||
+        async_contexts[i].ret != 0 ||
+        async_contexts[i].frame_info.pts_us !=
+            1001 + static_cast<int64_t>(i)) {
+      release_async_buffers();
+      CFRelease(argb);
+      CFRelease(bgra);
+      VPMacOSMetalUploaderDestroy(uploader);
+      std::fprintf(
+          stderr,
+          "async Metal upload %zu did not complete cleanly: ret=%d error=%s pts=%lld\n",
+          i,
+          async_contexts[i].ret,
+          async_contexts[i].error.c_str(),
+          static_cast<long long>(async_contexts[i].frame_info.pts_us));
+      return 1;
+    }
   }
 
-  async_package.decision.frames[0].pts_us = 1002;
-  AsyncUploadContext async_context_c;
-  VPMacOSNativeFrameInfo async_info_c = {};
-  char async_error_c[512] = {};
-  const int async_ret_c =
+  async_package.decision.frames[0].pts_us = 3001;
+  AsyncUploadContext async_context_reused;
+  VPMacOSNativeFrameInfo async_info_reused = {};
+  char async_error_reused[512] = {};
+  const int async_ret_reused =
       VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
           uploader,
           async_package_data.data(),
           async_package_data.size(),
           &async_package,
           nullptr,
-          async_buffer_b,
+          async_buffers[0],
           async_width,
           async_height,
-          &async_info_c,
-          async_error_c,
-          sizeof(async_error_c),
+          &async_info_reused,
+          async_error_reused,
+          sizeof(async_error_reused),
           async_upload_completed,
-          &async_context_c);
-  if (async_ret_c != 0 ||
-      !wait_for_async_upload(async_context_c) ||
-      async_context_c.ret != 0 ||
-      async_context_c.frame_info.pts_us != 1002) {
-    CFRelease(async_buffer_b);
-    CFRelease(async_buffer_a);
+          &async_context_reused);
+  if (async_ret_reused != 0 ||
+      !wait_for_async_upload(async_context_reused) ||
+      async_context_reused.ret != 0 ||
+      async_context_reused.frame_info.pts_us != 3001) {
+    release_async_buffers();
     CFRelease(argb);
     CFRelease(bgra);
     VPMacOSMetalUploaderDestroy(uploader);
     std::fprintf(
         stderr,
-        "async Metal uploader did not accept work after completion: submit=%d ret=%d error=%s pts=%lld\n",
-        async_ret_c,
-        async_context_c.ret,
-        async_context_c.error.c_str(),
-        static_cast<long long>(async_context_c.frame_info.pts_us));
+        "async Metal uploader did not accept work after pool completion: submit=%d ret=%d error=%s pts=%lld\n",
+        async_ret_reused,
+        async_context_reused.ret,
+        async_context_reused.error.c_str(),
+        static_cast<long long>(async_context_reused.frame_info.pts_us));
     return 1;
   }
-  CFRelease(async_buffer_b);
-  CFRelease(async_buffer_a);
+  release_async_buffers();
 
   CFRelease(argb);
   CFRelease(bgra);

@@ -88,24 +88,40 @@ void retain_async_texture(AsyncMetalResourceLifetime* lifetime,
   }
 }
 
-void release_shared_resources(std::atomic<bool>* inFlightFlag) {
+void release_resource_flag(std::atomic<bool>* inFlightFlag) {
   if (inFlightFlag) {
     inFlightFlag->store(false, std::memory_order_release);
   }
 }
 
-struct ScopedSharedResourceReservation {
-  explicit ScopedSharedResourceReservation(std::atomic<bool>* flag)
-      : flag_(flag) {}
+struct MetalResourceLease {
+  std::atomic<bool>* frameResourceFlag = nullptr;
+  std::atomic<bool>* overlayResourceFlag = nullptr;
+};
 
-  ~ScopedSharedResourceReservation() {
-    release_shared_resources(flag_);
+void release_resource_lease(MetalResourceLease lease) {
+  release_resource_flag(lease.frameResourceFlag);
+  release_resource_flag(lease.overlayResourceFlag);
+}
+
+struct ScopedMetalResourceLease {
+  explicit ScopedMetalResourceLease(MetalResourceLease lease)
+      : lease_(lease) {}
+
+  ~ScopedMetalResourceLease() { release_resource_lease(lease_); }
+
+  void setOverlayResourceFlag(std::atomic<bool>* flag) {
+    lease_.overlayResourceFlag = flag;
   }
 
-  void disarm() { flag_ = nullptr; }
+  MetalResourceLease disarm() {
+    MetalResourceLease lease = lease_;
+    lease_ = {};
+    return lease;
+  }
 
  private:
-  std::atomic<bool>* flag_;
+  MetalResourceLease lease_;
 };
 
 int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
@@ -117,17 +133,17 @@ int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
                         VPMacOSMetalUploaderCompletion completion,
                         void* userData,
                         AsyncMetalResourceLifetime* lifetime,
-                        std::atomic<bool>* sharedResourceFlag,
+                        MetalResourceLease resourceLease,
                         char* error,
                         size_t errorSize) {
   if (!commandBuffer) {
     delete lifetime;
-    release_shared_resources(sharedResourceFlag);
+    release_resource_lease(resourceLease);
     return metal_upload_failure(error, errorSize, failureMessage);
   }
   if (completion) {
     auto* retainedLifetime = lifetime;
-    auto* retainedSharedResourceFlag = sharedResourceFlag;
+    const MetalResourceLease retainedResourceLease = resourceLease;
     [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> completedBuffer) {
       const BOOL completed = [completedBuffer status] == MTLCommandBufferStatusCompleted;
       const int64_t gpuUs = elapsed_us_since(gpuStart);
@@ -137,7 +153,7 @@ int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
       if (!completed) {
         message = failureMessage ? failureMessage : "native Metal command did not complete";
       }
-      release_shared_resources(retainedSharedResourceFlag);
+      release_resource_lease(retainedResourceLease);
       completion(userData,
                  completed ? 0 : -2,
                  frameInfo,
@@ -154,7 +170,7 @@ int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
   [commandBuffer commit];
   [commandBuffer waitUntilCompleted];
   delete lifetime;
-  release_shared_resources(sharedResourceFlag);
+  release_resource_lease(resourceLease);
 
   const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
   const int64_t gpuUs = elapsed_us_since(gpuStart);
@@ -187,6 +203,27 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   }
 }
 
+@interface VPMacOSMetalUploaderImpl ()
+- (BOOL)ensureStagingBufferWithLength:(size_t)length
+                              resource:(VPMacOSMetalFrameResources*)resource;
+- (BOOL)ensureLayoutParamsBufferForResource:(VPMacOSMetalFrameResources*)resource;
+- (BOOL)ensureDirectOverlayLineRectBuffer:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                                    bytes:(size_t)bytes
+                                 resource:(VPMacOSMetalFrameResources*)resource;
+- (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
+                                 overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                           toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                   width:(int32_t)width
+                                  height:(int32_t)height
+                                     out:(VPMacOSNativeFrameInfo*)out
+                                   error:(char*)error
+                               errorSize:(size_t)errorSize
+                              completion:(VPMacOSMetalUploaderCompletion)completion
+                                userData:(void*)userData
+                           frameResource:(VPMacOSMetalFrameResources*)frameResource
+                           resourceLease:(MetalResourceLease)resourceLease;
+@end
+
 @implementation VPMacOSMetalUploaderImpl
 
 - (instancetype)init {
@@ -201,14 +238,17 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     _lastPresentPackageStorage.store(
         VPMacOSNativePresentPackageStorageUnavailable,
         std::memory_order_relaxed);
-    _sharedResourcesInFlight.store(false, std::memory_order_relaxed);
+    _overlayLayerResourcesInFlight.store(false, std::memory_order_relaxed);
+    for (auto& resource : _frameResourcePool) {
+      resource.in_flight.store(false, std::memory_order_relaxed);
+      resource.overlay_direct_line_rect_generation = 0;
+      resource.overlay_direct_line_rect_count = 0;
+      resource.overlay_direct_line_rect_bytes = 0;
+    }
     _overlayLayerTextures.fill(nil);
     _overlayLayerGenerations.fill(0);
     _overlayLayerWidths.fill(0);
     _overlayLayerHeights.fill(0);
-    _overlayDirectLineRectGeneration = 0;
-    _overlayDirectLineRectCount = 0;
-    _overlayDirectLineRectBytes = 0;
     _device = MTLCreateSystemDefaultDevice();
     if (_device) {
       _commandQueue = [_device newCommandQueue];
@@ -432,40 +472,53 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
       VPMacOSMetalUploaderStatusOk;
 }
 
-- (BOOL)tryReserveSharedResources:(std::atomic<bool>**)outFlag
-                             error:(char*)error
-                         errorSize:(size_t)errorSize {
-  if (!outFlag) {
-    write_error(error, errorSize, "invalid native Metal shared resource reservation");
-    return NO;
+- (VPMacOSMetalFrameResources*)acquireFrameResourcesWithStagingLength:(size_t)stagingLength
+                                                                error:(char*)error
+                                                            errorSize:(size_t)errorSize {
+  for (auto& resource : _frameResourcePool) {
+    bool expected = false;
+    if (!resource.in_flight.compare_exchange_strong(
+            expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+      continue;
+    }
+    if (![self ensureLayoutParamsBufferForResource:&resource] ||
+        (stagingLength > 0 &&
+         ![self ensureStagingBufferWithLength:stagingLength resource:&resource])) {
+      release_resource_flag(&resource.in_flight);
+      write_error(error, errorSize, "failed to allocate native Metal frame resources");
+      return nullptr;
+    }
+    return &resource;
   }
-  *outFlag = nullptr;
-  bool expected = false;
-  if (!_sharedResourcesInFlight.compare_exchange_strong(
-          expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
-    write_error(error, errorSize, "native Metal uploader shared resources are busy");
-    return NO;
-  }
-  *outFlag = &_sharedResourcesInFlight;
-  return YES;
+  write_error(error, errorSize, "native Metal uploader frame resource pool is busy");
+  return nullptr;
 }
 
-- (BOOL)ensureStagingBufferWithLength:(size_t)length {
-  if (_stagingBuffer != nil && [_stagingBuffer length] >= length) {
+- (BOOL)ensureStagingBufferWithLength:(size_t)length
+                              resource:(VPMacOSMetalFrameResources*)resource {
+  if (!resource) {
+    return NO;
+  }
+  if (resource->staging_buffer != nil && [resource->staging_buffer length] >= length) {
     return YES;
   }
-  _stagingBuffer = [_device newBufferWithLength:length
-                                        options:MTLResourceStorageModeShared];
-  return _stagingBuffer != nil;
+  resource->staging_buffer = [_device newBufferWithLength:length
+                                                   options:MTLResourceStorageModeShared];
+  return resource->staging_buffer != nil;
 }
 
-- (BOOL)ensureLayoutParamsBuffer {
-  if (_layoutParamsBuffer != nil && [_layoutParamsBuffer length] >= sizeof(vp_macos::MetalLayoutParams)) {
+- (BOOL)ensureLayoutParamsBufferForResource:(VPMacOSMetalFrameResources*)resource {
+  if (!resource) {
+    return NO;
+  }
+  if (resource->layout_params_buffer != nil &&
+      [resource->layout_params_buffer length] >= sizeof(vp_macos::MetalLayoutParams)) {
     return YES;
   }
-  _layoutParamsBuffer = [_device newBufferWithLength:sizeof(vp_macos::MetalLayoutParams)
-                                             options:MTLResourceStorageModeShared];
-  return _layoutParamsBuffer != nil;
+  resource->layout_params_buffer =
+      [_device newBufferWithLength:sizeof(vp_macos::MetalLayoutParams)
+                            options:MTLResourceStorageModeShared];
+  return resource->layout_params_buffer != nil;
 }
 
 - (BOOL)ensureOverlayLineRectBufferWithLength:(size_t)length {
@@ -496,29 +549,33 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
 }
 
 - (BOOL)ensureDirectOverlayLineRectBuffer:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
-                                    bytes:(size_t)bytes {
+                                    bytes:(size_t)bytes
+                                 resource:(VPMacOSMetalFrameResources*)resource {
   if (!overlay || overlay->line_rect_count == 0 || bytes == 0 || !overlay->line_rects) {
     return NO;
   }
-  if (_overlayDirectLineRectBuffer != nil &&
-      _overlayDirectLineRectGeneration == overlay->generation &&
-      _overlayDirectLineRectCount == overlay->line_rect_count &&
-      _overlayDirectLineRectBytes == bytes) {
+  if (!resource) {
+    return NO;
+  }
+  if (resource->overlay_direct_line_rect_buffer != nil &&
+      resource->overlay_direct_line_rect_generation == overlay->generation &&
+      resource->overlay_direct_line_rect_count == overlay->line_rect_count &&
+      resource->overlay_direct_line_rect_bytes == bytes) {
     return YES;
   }
-  _overlayDirectLineRectBuffer =
+  resource->overlay_direct_line_rect_buffer =
       [_device newBufferWithBytes:overlay->line_rects
                            length:bytes
                           options:MTLResourceStorageModeShared];
-  if (_overlayDirectLineRectBuffer == nil) {
-    _overlayDirectLineRectGeneration = 0;
-    _overlayDirectLineRectCount = 0;
-    _overlayDirectLineRectBytes = 0;
+  if (resource->overlay_direct_line_rect_buffer == nil) {
+    resource->overlay_direct_line_rect_generation = 0;
+    resource->overlay_direct_line_rect_count = 0;
+    resource->overlay_direct_line_rect_bytes = 0;
     return NO;
   }
-  _overlayDirectLineRectGeneration = overlay->generation;
-  _overlayDirectLineRectCount = overlay->line_rect_count;
-  _overlayDirectLineRectBytes = bytes;
+  resource->overlay_direct_line_rect_generation = overlay->generation;
+  resource->overlay_direct_line_rect_count = overlay->line_rect_count;
+  resource->overlay_direct_line_rect_bytes = bytes;
   return YES;
 }
 
@@ -583,8 +640,12 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
 - (BOOL)prepareOverlayLayers:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
                      decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
                 commandBuffer:(id<MTLCommandBuffer>)commandBuffer
+          overlayResourceFlag:(std::atomic<bool>**)overlayResourceFlag
                          error:(char*)error
                      errorSize:(size_t)errorSize {
+  if (overlayResourceFlag) {
+    *overlayResourceFlag = nullptr;
+  }
   if (!overlay_primitive_set_has_content(overlay)) {
     return YES;
   }
@@ -617,6 +678,10 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   if (overlay->motion_lines && overlay->motion_line_count > 0) {
     markPrimitiveSlots(overlay->motion_lines, overlay->motion_line_count);
   }
+  bool hasLayerPrimitive = false;
+  for (bool value : hasPrimitive) {
+    hasLayerPrimitive = hasLayerPrimitive || value;
+  }
 
   std::array<bool, VPMacOSNativeMaxTracks> shouldRaster = {};
   bool anyRaster = false;
@@ -636,8 +701,20 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     anyRaster = anyRaster || shouldRaster[slot];
   }
   if (!anyRaster) {
+    if (hasLayerPrimitive &&
+        _overlayLayerResourcesInFlight.load(std::memory_order_acquire)) {
+      write_error(error, errorSize, "native Metal uploader overlay layer resources are busy");
+      return NO;
+    }
     return YES;
   }
+  bool expected = false;
+  if (!_overlayLayerResourcesInFlight.compare_exchange_strong(
+          expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+    write_error(error, errorSize, "native Metal uploader overlay layer resources are busy");
+    return NO;
+  }
+  ScopedMetalResourceLease overlayReservation({nullptr, &_overlayLayerResourcesInFlight});
 
   id<MTLBuffer> fillRectBuffer = nil;
   id<MTLBuffer> motionLineBuffer = nil;
@@ -772,6 +849,10 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     _overlayLayerGenerations[slot] = overlay->generation;
   }
 
+  if (overlayResourceFlag) {
+    *overlayResourceFlag = &_overlayLayerResourcesInFlight;
+  }
+  overlayReservation.disarm();
   return YES;
 }
 
@@ -813,6 +894,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                 decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
                            commandBuffer:(id<MTLCommandBuffer>)commandBuffer
                       destinationTexture:(id<MTLTexture>)destinationTexture
+                            frameResource:(VPMacOSMetalFrameResources*)frameResource
                                    width:(int32_t)width
                                   height:(int32_t)height
                                    error:(char*)error
@@ -820,7 +902,8 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   if (!overlay || overlay->line_rect_count == 0) {
     return 0;
   }
-  if (![self isAvailable] || !_overlayDirectLinePipeline || !_layoutParamsBuffer) {
+  if (![self isAvailable] || !_overlayDirectLinePipeline || !frameResource ||
+      !frameResource->layout_params_buffer) {
     write_error(error, errorSize, "native Metal overlay direct line pipeline is not available");
     return -1;
   }
@@ -834,7 +917,9 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                         sizeof(VPMacOSNativeOverlayGpuRect),
                         &lineBytes) ||
       lineBytes == 0 ||
-      ![self ensureDirectOverlayLineRectBuffer:overlay bytes:lineBytes]) {
+      ![self ensureDirectOverlayLineRectBuffer:overlay
+                                         bytes:lineBytes
+                                      resource:frameResource]) {
     return metal_upload_failure(
         error, errorSize, "failed to allocate native Metal overlay direct line buffer");
   }
@@ -850,8 +935,8 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
           error, errorSize, "failed to create native Metal overlay direct line command");
     }
     [lineCompute setComputePipelineState:_overlayDirectLinePipeline];
-    [lineCompute setBuffer:_overlayDirectLineRectBuffer offset:0 atIndex:0];
-    [lineCompute setBuffer:_layoutParamsBuffer offset:0 atIndex:1];
+    [lineCompute setBuffer:frameResource->overlay_direct_line_rect_buffer offset:0 atIndex:0];
+    [lineCompute setBuffer:frameResource->layout_params_buffer offset:0 atIndex:1];
     [lineCompute setBytes:&passParams length:sizeof(passParams) atIndex:2];
     [lineCompute setTexture:destinationTexture atIndex:0];
     const NSUInteger lineThreadWidth = _overlayDirectLinePipeline.threadExecutionWidth;
@@ -934,23 +1019,18 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     write_error(error, errorSize, "invalid native Metal present package arguments");
     return -1;
   }
-  std::atomic<bool>* sharedResourceFlag = nullptr;
-  if (![self tryReserveSharedResources:&sharedResourceFlag
-                                  error:error
-                              errorSize:errorSize]) {
+  VPMacOSMetalFrameResources* frameResource =
+      [self acquireFrameResourcesWithStagingLength:package->used_bytes
+                                             error:error
+                                         errorSize:errorSize];
+  if (!frameResource) {
     return -2;
   }
-  ScopedSharedResourceReservation reservation(sharedResourceFlag);
-  if (![self ensureStagingBufferWithLength:package->used_bytes] ||
-      ![self ensureLayoutParamsBuffer]) {
-    return metal_upload_failure(
-        error, errorSize, "failed to allocate native Metal layout buffers");
-  }
+  ScopedMetalResourceLease reservation({&frameResource->in_flight, nullptr});
   const auto totalStart = std::chrono::steady_clock::now();
   const auto copyStart = std::chrono::steady_clock::now();
-  std::memcpy([_stagingBuffer contents], data, package->used_bytes);
+  std::memcpy([frameResource->staging_buffer contents], data, package->used_bytes);
   _lastPresentPackageCopyUs.store(elapsed_us_since(copyStart), std::memory_order_relaxed);
-  reservation.disarm();
   const int uploadRet = [self uploadPreparedPresentFramePackage:package
                                                        overlay:overlay
                                                   toPixelBuffer:pixelBuffer
@@ -961,7 +1041,8 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                       errorSize:errorSize
                                                      completion:completion
                                                        userData:userData
-                                        sharedResourceFlag:sharedResourceFlag];
+                                                  frameResource:frameResource
+                                          resourceLease:reservation.disarm()];
   if (!completion) {
     _lastPresentPackageTotalUs.store(elapsed_us_since(totalStart), std::memory_order_relaxed);
   }
@@ -1015,23 +1096,19 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                errorSize:(size_t)errorSize
                               completion:(VPMacOSMetalUploaderCompletion)completion
                                 userData:(void*)userData {
-  std::atomic<bool>* sharedResourceFlag = nullptr;
-  if (![self tryReserveSharedResources:&sharedResourceFlag
-                                  error:error
-                              errorSize:errorSize]) {
-    return -2;
-  }
-  return [self uploadPreparedPresentFramePackage:package
-                                         overlay:overlay
-                                   toPixelBuffer:pixelBuffer
-                                           width:width
-                                          height:height
-                                             out:out
-                                           error:error
-                                       errorSize:errorSize
-                                      completion:completion
-                                        userData:userData
-                         sharedResourceFlag:sharedResourceFlag];
+  (void)package;
+  (void)overlay;
+  (void)pixelBuffer;
+  (void)width;
+  (void)height;
+  (void)out;
+  (void)completion;
+  (void)userData;
+  write_error(
+      error,
+      errorSize,
+      "prepared native Metal package upload is disabled; pass package bytes explicitly");
+  return -1;
 }
 
 - (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
@@ -1044,14 +1121,17 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                errorSize:(size_t)errorSize
                               completion:(VPMacOSMetalUploaderCompletion)completion
                                 userData:(void*)userData
-                 sharedResourceFlag:(std::atomic<bool>*)sharedResourceFlag {
-  ScopedSharedResourceReservation reservation(sharedResourceFlag);
+                            frameResource:(VPMacOSMetalFrameResources*)frameResource
+                            resourceLease:(MetalResourceLease)resourceLease {
+  ScopedMetalResourceLease reservation(resourceLease);
   if (![self isAvailable] || !_layoutPipeline) {
     write_error(error, errorSize, "native Metal layout uploader is not available");
     return -1;
   }
   if (!package || !pixelBuffer || width <= 0 || height <= 0 ||
-      package->storage == VPMacOSNativePresentPackageStorageUnavailable) {
+      package->storage == VPMacOSNativePresentPackageStorageUnavailable ||
+      !frameResource || !frameResource->staging_buffer ||
+      !frameResource->layout_params_buffer) {
     write_error(error, errorSize, "invalid native Metal present package arguments");
     return -1;
   }
@@ -1068,7 +1148,8 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   }
   vp_macos::write_first_present_frame_info(decisionInfo, out);
 
-  auto* metalParams = static_cast<vp_macos::MetalLayoutParams*>([_layoutParamsBuffer contents]);
+  auto* metalParams =
+      static_cast<vp_macos::MetalLayoutParams*>([frameResource->layout_params_buffer contents]);
   vp_macos::fill_metal_layout_params(*metalParams, decisionInfo, width, height);
 
   vp_macos::ScopedCVMetalTexture destinationRef;
@@ -1095,14 +1176,17 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal layout compute command");
   }
+  std::atomic<bool>* overlayResourceFlag = nullptr;
   if (![self prepareOverlayLayers:overlay
                           decision:&package->decision
                      commandBuffer:commandBuffer
+              overlayResourceFlag:&overlayResourceFlag
                               error:error
                           errorSize:errorSize]) {
     delete lifetime;
     return -2;
   }
+  reservation.setOverlayResourceFlag(overlayResourceFlag);
 
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
   if (!compute) {
@@ -1112,8 +1196,8 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   }
 
   [compute setComputePipelineState:_layoutPipeline];
-  [compute setBuffer:_stagingBuffer offset:0 atIndex:0];
-  [compute setBuffer:_layoutParamsBuffer offset:0 atIndex:1];
+  [compute setBuffer:frameResource->staging_buffer offset:0 atIndex:0];
+  [compute setBuffer:frameResource->layout_params_buffer offset:0 atIndex:1];
   [compute setTexture:destinationTexture atIndex:0];
   [self bindOverlayLayersForDecision:&package->decision
                               overlay:overlay
@@ -1132,6 +1216,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                      decision:&package->decision
                                                 commandBuffer:commandBuffer
                                            destinationTexture:destinationTexture
+                                                frameResource:frameResource
                                                         width:width
                                                        height:height
                                                         error:error
@@ -1140,7 +1225,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     delete lifetime;
     return lineRet;
   }
-  reservation.disarm();
   const int commitRet = commit_metal_upload(commandBuffer,
                                             gpuStart,
                                             out ? *out : VPMacOSNativeFrameInfo{},
@@ -1150,7 +1234,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                             completion,
                                             userData,
                                             lifetime,
-                                            sharedResourceFlag,
+                                            reservation.disarm(),
                                             error,
                                             errorSize);
   if (commitRet != 0) {
@@ -1226,19 +1310,15 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
     return -1;
   }
-  std::atomic<bool>* sharedResourceFlag = nullptr;
-  if (![self tryReserveSharedResources:&sharedResourceFlag
-                                  error:error
-                              errorSize:errorSize]) {
+  VPMacOSMetalFrameResources* frameResource =
+      [self acquireFrameResourcesWithStagingLength:0 error:error errorSize:errorSize];
+  if (!frameResource) {
     return -2;
   }
-  ScopedSharedResourceReservation reservation(sharedResourceFlag);
-  if (![self ensureLayoutParamsBuffer]) {
-    return metal_upload_failure(
-        error, errorSize, "failed to allocate native Metal layout buffers");
-  }
+  ScopedMetalResourceLease reservation({&frameResource->in_flight, nullptr});
 
-  auto* metalParams = static_cast<vp_macos::MetalLayoutParams*>([_layoutParamsBuffer contents]);
+  auto* metalParams =
+      static_cast<vp_macos::MetalLayoutParams*>([frameResource->layout_params_buffer contents]);
   vp_macos::fill_metal_layout_params(*metalParams, frame->decision, width, height);
   vp_macos::write_first_present_frame_info(frame->decision, out);
 
@@ -1296,14 +1376,17 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal CVPixelBuffer compute command");
   }
+  std::atomic<bool>* overlayResourceFlag = nullptr;
   if (![self prepareOverlayLayers:overlay
                           decision:&frame->decision
                      commandBuffer:commandBuffer
+              overlayResourceFlag:&overlayResourceFlag
                               error:error
                           errorSize:errorSize]) {
     delete lifetime;
     return -2;
   }
+  reservation.setOverlayResourceFlag(overlayResourceFlag);
 
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
   if (!compute) {
@@ -1313,7 +1396,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   }
 
   [compute setComputePipelineState:_cvPixelBufferPipeline];
-  [compute setBuffer:_layoutParamsBuffer offset:0 atIndex:0];
+  [compute setBuffer:frameResource->layout_params_buffer offset:0 atIndex:0];
   [compute setTexture:destinationTexture atIndex:0];
   [compute setTexture:sourceYTexture atIndex:1];
   [compute setTexture:sourceUVTexture atIndex:2];
@@ -1334,6 +1417,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                      decision:&frame->decision
                                                 commandBuffer:commandBuffer
                                            destinationTexture:destinationTexture
+                                                frameResource:frameResource
                                                         width:width
                                                        height:height
                                                         error:error
@@ -1342,7 +1426,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     delete lifetime;
     return lineRet;
   }
-  reservation.disarm();
   const int commitRet = commit_metal_upload(commandBuffer,
                                             gpuStart,
                                             out ? *out : VPMacOSNativeFrameInfo{},
@@ -1352,7 +1435,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                             completion,
                                             userData,
                                             lifetime,
-                                            sharedResourceFlag,
+                                            reservation.disarm(),
                                             error,
                                             errorSize);
   if (commitRet != 0) {
@@ -1431,19 +1514,15 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
     return -1;
   }
-  std::atomic<bool>* sharedResourceFlag = nullptr;
-  if (![self tryReserveSharedResources:&sharedResourceFlag
-                                  error:error
-                              errorSize:errorSize]) {
+  VPMacOSMetalFrameResources* frameResource =
+      [self acquireFrameResourcesWithStagingLength:0 error:error errorSize:errorSize];
+  if (!frameResource) {
     return -2;
   }
-  ScopedSharedResourceReservation reservation(sharedResourceFlag);
-  if (![self ensureLayoutParamsBuffer]) {
-    return metal_upload_failure(
-        error, errorSize, "failed to allocate native Metal layout buffers");
-  }
+  ScopedMetalResourceLease reservation({&frameResource->in_flight, nullptr});
 
-  auto* metalParams = static_cast<vp_macos::MetalLayoutParams*>([_layoutParamsBuffer contents]);
+  auto* metalParams =
+      static_cast<vp_macos::MetalLayoutParams*>([frameResource->layout_params_buffer contents]);
   vp_macos::fill_metal_layout_params(*metalParams, frameSet->decision, width, height);
   vp_macos::write_first_present_frame_info(frameSet->decision, out);
 
@@ -1536,14 +1615,17 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     return metal_upload_failure(
         error, errorSize, "failed to create native Metal CVPixelBuffer set compute command");
   }
+  std::atomic<bool>* overlayResourceFlag = nullptr;
   if (![self prepareOverlayLayers:overlay
                           decision:&frameSet->decision
                      commandBuffer:commandBuffer
+              overlayResourceFlag:&overlayResourceFlag
                               error:error
                           errorSize:errorSize]) {
     delete lifetime;
     return -2;
   }
+  reservation.setOverlayResourceFlag(overlayResourceFlag);
 
   id<MTLComputeCommandEncoder> compute = [commandBuffer computeCommandEncoder];
   if (!compute) {
@@ -1553,7 +1635,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   }
 
   [compute setComputePipelineState:_cvPixelBufferSetPipeline];
-  [compute setBuffer:_layoutParamsBuffer offset:0 atIndex:0];
+  [compute setBuffer:frameResource->layout_params_buffer offset:0 atIndex:0];
   [compute setTexture:destinationTexture atIndex:0];
   for (NSUInteger slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
     [compute setTexture:sourceYTextures[slot] atIndex:(1 + slot * 2)];
@@ -1576,6 +1658,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                      decision:&frameSet->decision
                                                 commandBuffer:commandBuffer
                                            destinationTexture:destinationTexture
+                                                frameResource:frameResource
                                                         width:width
                                                        height:height
                                                         error:error
@@ -1584,7 +1667,6 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     delete lifetime;
     return lineRet;
   }
-  reservation.disarm();
   const int commitRet = commit_metal_upload(
       commandBuffer,
       gpuStart,
@@ -1595,7 +1677,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
       completion,
       userData,
       lifetime,
-      sharedResourceFlag,
+      reservation.disarm(),
       error,
       errorSize);
   if (commitRet != 0) {
@@ -1639,6 +1721,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                           decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo
                      commandBuffer:(id<MTLCommandBuffer>)commandBuffer
                 destinationTexture:(id<MTLTexture>)destinationTexture
+                     frameResource:(VPMacOSMetalFrameResources*)frameResource
                              width:(int32_t)width
                             height:(int32_t)height
                              error:(char*)error
@@ -1692,7 +1775,8 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                           &motionLineBytes) ||
         motionLineBytes == 0 ||
         ![self ensureOverlayMotionLineBufferWithLength:motionLineBytes])) ||
-      ![self ensureLayoutParamsBuffer]) {
+      !frameResource ||
+      !frameResource->layout_params_buffer) {
     return metal_upload_failure(
         error, errorSize, "failed to allocate native Metal overlay buffers");
   }
@@ -1706,7 +1790,8 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   if (hasMotionLines) {
     std::memcpy([_overlayMotionLineBuffer contents], overlay->motion_lines, motionLineBytes);
   }
-  auto* metalParams = static_cast<vp_macos::MetalLayoutParams*>([_layoutParamsBuffer contents]);
+  auto* metalParams =
+      static_cast<vp_macos::MetalLayoutParams*>([frameResource->layout_params_buffer contents]);
   vp_macos::fill_metal_layout_params(*metalParams, *decisionInfo, width, height);
 
   if (hasFillRects) {
@@ -1717,7 +1802,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     }
     [fillCompute setComputePipelineState:_overlayFillRectPipeline];
     [fillCompute setBuffer:_overlayFillRectBuffer offset:0 atIndex:0];
-    [fillCompute setBuffer:_layoutParamsBuffer offset:0 atIndex:1];
+    [fillCompute setBuffer:frameResource->layout_params_buffer offset:0 atIndex:1];
     [fillCompute setTexture:destinationTexture atIndex:0];
     const NSUInteger fillThreadWidth = _overlayFillRectPipeline.threadExecutionWidth;
     const MTLSize fillThreadsPerThreadgroup = MTLSizeMake(fillThreadWidth, 1, 1);
@@ -1734,7 +1819,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     }
     [motionCompute setComputePipelineState:_overlayMotionLinePipeline];
     [motionCompute setBuffer:_overlayMotionLineBuffer offset:0 atIndex:0];
-    [motionCompute setBuffer:_layoutParamsBuffer offset:0 atIndex:1];
+    [motionCompute setBuffer:frameResource->layout_params_buffer offset:0 atIndex:1];
     [motionCompute setTexture:destinationTexture atIndex:0];
     const NSUInteger motionThreadWidth = _overlayMotionLinePipeline.threadExecutionWidth;
     const MTLSize motionThreadsPerThreadgroup = MTLSizeMake(motionThreadWidth, 1, 1);
@@ -1752,7 +1837,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     [maskCompute setComputePipelineState:_overlayLineMaskPipeline];
     [maskCompute setBuffer:_overlayLineRectBuffer offset:0 atIndex:0];
     [maskCompute setBuffer:_overlayLineMaskBuffer offset:0 atIndex:1];
-    [maskCompute setBuffer:_layoutParamsBuffer offset:0 atIndex:2];
+    [maskCompute setBuffer:frameResource->layout_params_buffer offset:0 atIndex:2];
     const NSUInteger maskThreadWidth = _overlayLineMaskPipeline.threadExecutionWidth;
     const MTLSize maskThreadsPerThreadgroup = MTLSizeMake(maskThreadWidth, 1, 1);
     const MTLSize maskThreads = MTLSizeMake(overlay->line_rect_count, 1, 1);
@@ -1766,7 +1851,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     }
     [contrastCompute setComputePipelineState:_overlayLineContrastPipeline];
     [contrastCompute setBuffer:_overlayLineMaskBuffer offset:0 atIndex:0];
-    [contrastCompute setBuffer:_layoutParamsBuffer offset:0 atIndex:1];
+    [contrastCompute setBuffer:frameResource->layout_params_buffer offset:0 atIndex:1];
     [contrastCompute setTexture:destinationTexture atIndex:0];
     const NSUInteger contrastThreadWidth = _overlayLineContrastPipeline.threadExecutionWidth;
     const NSUInteger contrastThreadHeight =
@@ -1814,13 +1899,20 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
     write_error(error, errorSize, VPMacOSMetalUploaderStatusMessageForCode(validationStatus));
     return -1;
   }
-  std::atomic<bool>* sharedResourceFlag = nullptr;
-  if (![self tryReserveSharedResources:&sharedResourceFlag
-                                  error:error
-                              errorSize:errorSize]) {
+  VPMacOSMetalFrameResources* frameResource =
+      [self acquireFrameResourcesWithStagingLength:0 error:error errorSize:errorSize];
+  if (!frameResource) {
     return -2;
   }
-  ScopedSharedResourceReservation reservation(sharedResourceFlag);
+  bool expected = false;
+  if (!_overlayLayerResourcesInFlight.compare_exchange_strong(
+          expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+    release_resource_flag(&frameResource->in_flight);
+    write_error(error, errorSize, "native Metal uploader overlay layer resources are busy");
+    return -2;
+  }
+  ScopedMetalResourceLease reservation(
+      {&frameResource->in_flight, &_overlayLayerResourcesInFlight});
 
   vp_macos::ScopedCVMetalTexture destinationRef;
   const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(
@@ -1847,6 +1939,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                                  decision:decisionInfo
                                             commandBuffer:commandBuffer
                                        destinationTexture:destinationTexture
+                                             frameResource:frameResource
                                                     width:width
                                                    height:height
                                                     error:error

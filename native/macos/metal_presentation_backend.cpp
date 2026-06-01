@@ -742,8 +742,9 @@ void MetalPresentationBackend::invalidate_source_cache() {
 }
 
 bool MetalPresentationBackend::try_begin_async_draw(const char* source) {
-  // The uploader owns one shared staging/layout/overlay buffer set. Keep async
-  // draws serialized until the uploader grows per-frame Metal resource slots.
+  // The uploader can accept multiple per-frame resource slots, but this backend
+  // still presents into one installed CVPixelBuffer target at a time. Keep
+  // renderer-owned draws serialized until target ownership moves fully native.
   constexpr uint64_t kMaxAsyncRendererOwnedDraws = 1;
   std::lock_guard<std::mutex> lock(async_mutex_);
   if (in_flight_draws_ >= kMaxAsyncRendererOwnedDraws) {

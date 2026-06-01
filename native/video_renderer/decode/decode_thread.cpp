@@ -760,44 +760,50 @@ bool DecodeThread::handle_queue_gap_or_eof(
 
     if (eof_action == EofDrainAction::BufferingExactSeekDrain ||
         eof_action == EofDrainAction::BufferingMarkFlushed) {
-        // Drain codec for exact seek to flush remaining DPB frames.
-        if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
-            drain_codec(frame, rescale_ts, exact_seek_target_us_);
-            spdlog::info("[DecodeThread] Exact seek EOF drain: reorder buffer has {} frames",
-                         exact_seek_candidates_.reorder_count());
-        } else {
-            eof_flushed_ = true;
-        }
-
-        // Flush exact-seek reorder buffer at EOF — no more frames coming.
-        if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
-            publish_best_exact_seek_frame();
-        } else {
-            flush_reorder_buffer();
-        }
-        // Preroll check — may complete if reorder flush added frames.
-        // Even with 0 frames, transition to Ready: the seek target is past
-        // this track's duration, no frames will ever arrive here.
-        if (post_seek_) {
-            spdlog::info("[DecodeThread] === Preroll complete (EOF): {} frames, state->Ready",
-                         output_buffer_.total_count());
-            output_buffer_.set_state(TrackState::Ready);
-            post_seek_ = false;
-        } else {
-            spdlog::info("[DecodeThread] EOF seen during Buffering, deferring codec flush "
-                         "(buf={}, pq={})",
-                         output_buffer_.total_count(), input_queue_.size());
-        }
-        return false;
+        return handle_buffering_eof(eof_action, frame, rescale_ts);
     }
 
+    return drain_codec_at_eof(frame, rescale_ts, publisher);
+}
+
+bool DecodeThread::handle_buffering_eof(
+    EofDrainAction eof_action,
+    AVFrame* frame,
+    const std::function<void(AVFrame*)>& rescale_ts) {
+    if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
+        drain_codec(frame, rescale_ts, exact_seek_target_us_);
+        spdlog::info("[DecodeThread] Exact seek EOF drain: reorder buffer has {} frames",
+                     exact_seek_candidates_.reorder_count());
+        publish_best_exact_seek_frame();
+    } else {
+        eof_flushed_ = true;
+        flush_reorder_buffer();
+    }
+
+    // Preroll check may complete if reorder flush added frames. Even with 0
+    // frames, transition to Ready: the seek target is past this track duration.
+    if (post_seek_) {
+        spdlog::info("[DecodeThread] === Preroll complete (EOF): {} frames, state->Ready",
+                     output_buffer_.total_count());
+        output_buffer_.set_state(TrackState::Ready);
+        post_seek_ = false;
+    } else {
+        spdlog::info("[DecodeThread] EOF seen during Buffering, deferring codec flush "
+                     "(buf={}, pq={})",
+                     output_buffer_.total_count(), input_queue_.size());
+    }
+    return false;
+}
+
+bool DecodeThread::drain_codec_at_eof(
+    AVFrame* frame,
+    const std::function<void(AVFrame*)>& rescale_ts,
+    DecodedFramePublisher& publisher) {
     int send_ret = send_codec_packet_seh_guarded(codec_ctx_, nullptr);
     const auto send_action = choose_eof_codec_send_action(send_ret);
     if (send_action != EofCodecSendAction::ReceiveFrames) {
         if (send_action == EofCodecSendAction::StopWithError) {
-            output_buffer_.set_state(TrackState::Error);
-            decode_paused_.store(true, std::memory_order_release);
-            running_.store(false, std::memory_order_release);
+            stop_decode_loop_with_error();
         }
         return true;
     }
@@ -805,9 +811,7 @@ bool DecodeThread::handle_queue_gap_or_eof(
         int ret = receive_codec_frame_seh_guarded(codec_ctx_, frame);
         const auto receive_action = choose_eof_codec_receive_action(ret);
         if (receive_action == DecodeDrainReceiveAction::StopWithError) {
-            output_buffer_.set_state(TrackState::Error);
-            decode_paused_.store(true, std::memory_order_release);
-            running_.store(false, std::memory_order_release);
+            stop_decode_loop_with_error();
             break;
         }
         if (receive_action == DecodeDrainReceiveAction::Stop) {

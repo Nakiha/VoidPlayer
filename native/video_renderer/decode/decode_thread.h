@@ -23,6 +23,8 @@ extern "C" {
 
 namespace vr {
 
+enum class EofDrainAction;
+
 /// Performance stats snapshot for a single decode thread.
 struct DecodePerfCounters {
     std::atomic<uint64_t> frames_decoded{0};       ///< Total frames decoded since start
@@ -173,6 +175,12 @@ private:
     bool handle_queue_gap_or_eof(AVFrame* frame,
                                  const std::function<void(AVFrame*)>& rescale_ts,
                                  DecodedFramePublisher& publisher);
+    bool handle_buffering_eof(EofDrainAction eof_action,
+                              AVFrame* frame,
+                              const std::function<void(AVFrame*)>& rescale_ts);
+    bool drain_codec_at_eof(AVFrame* frame,
+                            const std::function<void(AVFrame*)>& rescale_ts,
+                            DecodedFramePublisher& publisher);
 
     /// Create a lightweight publisher view over decode-thread-owned frame state.
     DecodedFramePublisher make_frame_publisher();

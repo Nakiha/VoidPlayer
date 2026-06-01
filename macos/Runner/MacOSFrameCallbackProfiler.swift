@@ -5,6 +5,17 @@ enum MacOSProfilerLog {
     ProcessInfo.processInfo.environment["VOIDPLAYER_MACOS_PROFILER"] == "1"
   static let traceEnabled =
     ProcessInfo.processInfo.environment["VOIDPLAYER_VIEWPORT_TRACE"] == "1"
+  static let traceAll =
+    ProcessInfo.processInfo.environment["VOIDPLAYER_VIEWPORT_TRACE_ALL"] == "1"
+  private static let traceSampleEvery: Int = {
+    let raw = ProcessInfo.processInfo.environment["VOIDPLAYER_VIEWPORT_TRACE_SAMPLE_EVERY"]
+    guard let raw, let value = Int(raw), value > 0 else {
+      return 120
+    }
+    return value
+  }()
+  private static let traceLock = NSLock()
+  private static var traceCount = 0
 
   static func log(_ message: @autoclosure () -> String) {
     guard enabled else { return }
@@ -13,6 +24,13 @@ enum MacOSProfilerLog {
 
   static func trace(_ message: @autoclosure () -> String) {
     guard traceEnabled else { return }
+    if !traceAll {
+      traceLock.lock()
+      traceCount += 1
+      let shouldLog = traceCount % traceSampleEvery == 0
+      traceLock.unlock()
+      guard shouldLog else { return }
+    }
     NSLog("%@", message())
   }
 }

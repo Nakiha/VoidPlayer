@@ -87,6 +87,22 @@ bool viewport_trace_enabled() {
     return profiler_enabled("VOIDPLAYER_VIEWPORT_TRACE");
 }
 
+bool viewport_trace_log_all() {
+    return profiler_enabled("VOIDPLAYER_VIEWPORT_TRACE_ALL");
+}
+
+bool should_log_viewport_trace_event(bool important) {
+    if (!viewport_trace_enabled()) {
+        return false;
+    }
+    if (viewport_trace_log_all() || important) {
+        return true;
+    }
+    static std::atomic<uint64_t> trace_event_count{0};
+    const auto count = trace_event_count.fetch_add(1, std::memory_order_relaxed) + 1;
+    return count % 120 == 0;
+}
+
 const char* frame_storage_kind_name(FrameStorageKind kind) {
     switch (kind) {
     case FrameStorageKind::CpuRgba:
@@ -138,7 +154,10 @@ void log_viewport_draw_trace(const char* source,
                              uint64_t total_us,
                              uint64_t snapshot_us,
                              uint64_t backend_us) {
-    if (!viewport_trace_enabled()) {
+    const bool slow_or_abnormal =
+        stale_layout_after_draw || !callback_published || !drew || total_us >= 8000 ||
+        backend_us >= 6000;
+    if (!should_log_viewport_trace_event(slow_or_abnormal)) {
         return;
     }
     const int slot = first_present_slot(snapshot);
@@ -1633,7 +1652,7 @@ void Renderer::present_frame(const PresentDecision& decision) {
                                         1, std::memory_order_relaxed) +
                                 1;
         if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER") &&
-            (suppressed % 120 == 0 || viewport_trace_enabled())) {
+            (suppressed % 120 == 0 || viewport_trace_log_all())) {
             spdlog::info(
                 "[RendererProfiler] present_frame suppressed by viewport compositor "
                 "layout_rev={} suppressed={} tracks={}",
@@ -2999,7 +3018,7 @@ void Renderer::apply_layout(const LayoutState& state) {
         }
         presentation_backend_metrics_.layout_deferred_to_playback_count.fetch_add(
             1, std::memory_order_relaxed);
-        if (viewport_trace_enabled()) {
+        if (should_log_viewport_trace_event(false)) {
             spdlog::info(
                 "[ViewportTrace] native source=apply_layout layout_rev={} playing={} "
                 "defer_to_playback={} mode={} zoom={:.4f} offset=({:.1f},{:.1f}) "
@@ -3020,7 +3039,7 @@ void Renderer::apply_layout(const LayoutState& state) {
     std::lock_guard<std::mutex> lock(state_mutex_);
     clear_pending_layout_intent();
     apply_layout_locked(state, intent_revision);
-    if (viewport_trace_enabled()) {
+    if (should_log_viewport_trace_event(false)) {
         spdlog::info(
             "[ViewportTrace] native source=apply_layout layout_rev={} playing={} "
             "defer_to_playback={} mode={} zoom={:.4f} offset=({:.1f},{:.1f}) "

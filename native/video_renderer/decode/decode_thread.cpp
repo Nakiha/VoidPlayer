@@ -2,6 +2,7 @@
 #include "video_renderer/decode/av_frame_lifetime.h"
 #include "video_renderer/decode/codec_loop.h"
 #include "video_renderer/decode/decode_drain_policy.h"
+#include "video_renderer/decode/decode_exact_seek_reorder.h"
 #include "video_renderer/decode/decode_frame_drainer.h"
 #include "video_renderer/decode/decode_frame_receive_loop.h"
 #include "video_renderer/decode/decode_loop_policy.h"
@@ -1055,26 +1056,47 @@ void DecodeThread::run() {
         // Exact seek B-frame reordering fallback. The receive loop normally
         // publishes once enough frames are collected, but EOF/drain can also
         // make the buffer ready here.
-        if (exact_seek_target_us_ >= 0 && !exact_seek_candidates_.reorder_empty()) {
-            const auto publish_decision = choose_exact_seek_reorder_publish(
+        if (!exact_seek_candidates_.reorder_empty()) {
+            const DecodeExactSeekReorderState reorder_state{
                 exact_seek_target_us_ >= 0,
                 exact_seek_candidates_.reorder_count(),
                 input_queue_.is_eof(),
                 input_queue_.size(),
                 eof_flushed_,
-                exact_seek_preview_window_ready());
-            if (publish_decision.drain_codec) {
-                drain_codec(frame, rescale_ts, exact_seek_target_us_);
-                spdlog::info("[DecodeThread] Exact seek EOF: codec drain, reorder buffer now has {} frames",
-                             exact_seek_candidates_.reorder_count());
-            }
-
-            if (publish_decision.publish) {
-                publish_best_exact_seek_frame();
-                auto first = output_buffer_.peek(0);
-                spdlog::info("[DecodeThread] Exact seek reorder: frames pushed, first_pts={:.3f}s",
-                             first.has_value() ? first->pts_us / 1e6 : -1.0);
-            }
+                exact_seek_preview_window_ready(),
+            };
+            handle_exact_seek_reorder_after_receive(
+                reorder_state,
+                DecodeExactSeekReorderCallbacks{
+                    [this, frame, &rescale_ts]() {
+                        drain_codec(frame, rescale_ts, exact_seek_target_us_);
+                    },
+                    [this]() {
+                        return exact_seek_candidates_.reorder_count();
+                    },
+                    [](size_t reorder_count) {
+                        spdlog::info("[DecodeThread] Exact seek EOF: codec drain, "
+                                     "reorder buffer now has {} frames",
+                                     reorder_count);
+                    },
+                    [this]() {
+                        publish_best_exact_seek_frame();
+                    },
+                    [this]() -> std::optional<int64_t> {
+                        auto first = output_buffer_.peek(0);
+                        if (!first.has_value()) {
+                            return std::nullopt;
+                        }
+                        return first->pts_us;
+                    },
+                    [](std::optional<int64_t> first_pts_us) {
+                        spdlog::info("[DecodeThread] Exact seek reorder: frames pushed, "
+                                     "first_pts={:.3f}s",
+                                     first_pts_us.has_value()
+                                         ? static_cast<double>(*first_pts_us) / 1e6
+                                         : -1.0);
+                    },
+                });
         }
 
         complete_preroll_if_ready();

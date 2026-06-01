@@ -36,6 +36,7 @@ add_executable(video_renderer_tests
     renderer/test_av_frame_lifetime.cpp
     renderer/test_codec_loop.cpp
     renderer/test_decode_drain_policy.cpp
+    renderer/test_decode_exact_seek_reorder.cpp
     renderer/test_decode_frame_drainer.cpp
     renderer/test_decode_frame_receive_loop.cpp
     renderer/test_decode_packet_sender.cpp

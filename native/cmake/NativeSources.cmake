@@ -50,6 +50,7 @@ set(VOID_MEDIA_FFMPEG_SOURCES
     "${VOID_NATIVE_DIR}/video_renderer/decode/codec_loop.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decoded_frame_publisher.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_drain_policy.cpp"
+    "${VOID_NATIVE_DIR}/video_renderer/decode/decode_exact_seek_reorder.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_frame_drainer.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_frame_receive_loop.cpp"
     "${VOID_NATIVE_DIR}/video_renderer/decode/decode_loop_policy.cpp"

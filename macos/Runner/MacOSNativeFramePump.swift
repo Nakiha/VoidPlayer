@@ -47,7 +47,7 @@ func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
 final class MacOSNativeFramePump {
   private var callbackRegistered = false
   private(set) var targetInstalled = false
-  private var callbackContext: MacOSNativeFrameCallbackContext?
+  private var callbackContextUserData: UnsafeMutableRawPointer?
 
   func setTargetInstalled(_ installed: Bool) {
     targetInstalled = installed
@@ -71,10 +71,11 @@ final class MacOSNativeFramePump {
         .fromOpaque(userData)
         .takeUnretainedValue()
       let context = MacOSNativeFrameCallbackContext(bridge: bridge)
-      callbackContext = context
+      let retainedUserData = Unmanaged.passRetained(context).toOpaque()
+      callbackContextUserData = retainedUserData
       player.setFrameAvailableCallback(
         macOSNativeFrameAvailable,
-        userData: Unmanaged.passUnretained(context).toOpaque()
+        userData: retainedUserData
       )
       callbackRegistered = true
     }
@@ -113,12 +114,29 @@ final class MacOSNativeFramePump {
   }
 
   func stop(player: MacOSNativePlayerSession?, clearPresentationTarget: Bool = false) {
-    callbackContext?.invalidate()
-    if callbackRegistered {
-      player?.setFrameAvailableCallback(nil, userData: nil)
-      callbackRegistered = false
+    let userData = callbackContextUserData
+    var canReleaseCallbackContext = true
+    if let userData {
+      Unmanaged<MacOSNativeFrameCallbackContext>
+        .fromOpaque(userData)
+        .takeUnretainedValue()
+        .invalidate()
     }
-    callbackContext = nil
+    if callbackRegistered {
+      if let player {
+        player.setFrameAvailableCallback(nil, userData: nil)
+        callbackRegistered = false
+      } else {
+        NSLog("VoidPlayer macOS native frame callback stop skipped: player unavailable")
+        canReleaseCallbackContext = false
+      }
+    }
+    if canReleaseCallbackContext, let userData {
+      Unmanaged<MacOSNativeFrameCallbackContext>
+        .fromOpaque(userData)
+        .release()
+      callbackContextUserData = nil
+    }
     if clearPresentationTarget {
       player?.clearMetalPresentationTarget()
       targetInstalled = false

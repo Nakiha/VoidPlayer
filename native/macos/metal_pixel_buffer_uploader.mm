@@ -113,6 +113,7 @@ int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
                         VPMacOSNativeFrameInfo frameInfo,
                         const char* failureMessage,
                         std::atomic<int64_t>& lastGpuWaitUs,
+                        std::atomic<int64_t>& lastTotalUs,
                         VPMacOSMetalUploaderCompletion completion,
                         void* userData,
                         AsyncMetalResourceLifetime* lifetime,
@@ -131,6 +132,7 @@ int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
       const BOOL completed = [completedBuffer status] == MTLCommandBufferStatusCompleted;
       const int64_t gpuUs = elapsed_us_since(gpuStart);
       lastGpuWaitUs.store(gpuUs, std::memory_order_relaxed);
+      lastTotalUs.store(gpuUs, std::memory_order_relaxed);
       std::string message;
       if (!completed) {
         message = failureMessage ? failureMessage : "native Metal command did not complete";
@@ -155,7 +157,9 @@ int commit_metal_upload(id<MTLCommandBuffer> commandBuffer,
   release_shared_resources(sharedResourceFlag);
 
   const BOOL completed = [commandBuffer status] == MTLCommandBufferStatusCompleted;
-  lastGpuWaitUs.store(elapsed_us_since(gpuStart), std::memory_order_relaxed);
+  const int64_t gpuUs = elapsed_us_since(gpuStart);
+  lastGpuWaitUs.store(gpuUs, std::memory_order_relaxed);
+  lastTotalUs.store(gpuUs, std::memory_order_relaxed);
   if (!completed) {
     return metal_upload_failure(error, errorSize, failureMessage);
   }
@@ -1142,6 +1146,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                             out ? *out : VPMacOSNativeFrameInfo{},
                                             "native Metal layout compute did not complete",
                                             _lastPresentPackageGpuWaitUs,
+                                            _lastPresentPackageTotalUs,
                                             completion,
                                             userData,
                                             lifetime,
@@ -1343,6 +1348,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
                                             out ? *out : VPMacOSNativeFrameInfo{},
                                             "native Metal CVPixelBuffer compute did not complete",
                                             _lastPresentPackageGpuWaitUs,
+                                            _lastPresentPackageTotalUs,
                                             completion,
                                             userData,
                                             lifetime,
@@ -1585,6 +1591,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
       out ? *out : VPMacOSNativeFrameInfo{},
       "native Metal CVPixelBuffer set compute did not complete",
       _lastPresentPackageGpuWaitUs,
+      _lastPresentPackageTotalUs,
       completion,
       userData,
       lifetime,

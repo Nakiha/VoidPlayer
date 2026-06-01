@@ -16,21 +16,21 @@
 2.22, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackDiagnosticCount, 1
 2.25, CAPTURE_VIEWPORT, vvc_software_start
 2.35, ASSERT_CAPTURE_NOT_BLACK, vvc_software_start, 0.01, 4.0
-2.5, PLAY
-4.4, ASSERT_POSITION_RANGE, 500000, 3000000
-4.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeDecodeFrameCount, 8
-4.55, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFramePresentationCount, 2
-4.56, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 2
-4.58, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeRendererOwnedUploadCount, 2
-4.59, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
-4.592, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv
-4.593, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, yuv
-4.595, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
-4.596, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameHostIntervalSampleCount, 1
-4.597, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameExpectedIntervalUs, 1
-4.598, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedRatioX1000, 900
-4.6, CAPTURE_VIEWPORT, vvc_software_after_play
-4.7, ASSERT_CAPTURE_CHANGED, vvc_software_start, vvc_software_after_play
-4.8, PAUSE
-5.1, ASSERT_PAUSED
-5.2, QUIT, 0
+4.7, PLAY
+6.5, ASSERT_POSITION_RANGE, 500000, 3000000
+6.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeDecodeFrameCount, 8
+6.65, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFramePresentationCount, 2
+6.66, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 2
+6.68, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeRendererOwnedUploadCount, 2
+6.69, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
+6.692, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv
+6.693, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, yuv
+6.695, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
+6.696, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameHostIntervalSampleCount, 1
+6.697, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameExpectedIntervalUs, 1
+6.698, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedRatioX1000, 900
+6.8, CAPTURE_VIEWPORT, vvc_software_after_play
+6.9, ASSERT_CAPTURE_CHANGED, vvc_software_start, vvc_software_after_play
+7.0, PAUSE
+7.3, ASSERT_PAUSED
+7.4, QUIT, 0

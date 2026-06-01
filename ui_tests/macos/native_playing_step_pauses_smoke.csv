@@ -11,9 +11,9 @@
 2.6, ASSERT_POSITION_RANGE, 500000, 2200000
 2.7, ASSERT_PRESENTED_FRAME_RANGE, 0, 500000, 2200000
 2.72, CAPTURE_VIEWPORT, native_after_playing_step
-2.8, PLAY
-3.2, ASSERT_PLAYING
-3.5, ASSERT_POSITION_RANGE, 800000, 3500000
-3.6, CAPTURE_VIEWPORT, native_after_step_resume
-3.7, ASSERT_CAPTURE_CHANGED, native_after_playing_step, native_after_step_resume
-3.8, QUIT, 0
+6.8, PLAY
+7.2, ASSERT_PLAYING
+7.8, ASSERT_POSITION_RANGE, 800000, 3500000
+7.9, CAPTURE_VIEWPORT, native_after_step_resume
+8.0, ASSERT_CAPTURE_CHANGED, native_after_playing_step, native_after_step_resume
+8.1, QUIT, 0

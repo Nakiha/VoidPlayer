@@ -296,11 +296,7 @@ final class MacOSPresentationController {
         case .coalesced:
           self.layoutSkipCount += 1
           self.layoutSkipRate.record()
-          if self.isCurrentLayoutRequest(request),
-             self.latestLayoutRefreshRequest == nil {
-            self.latestLayoutRefreshRequest = request
-            self.extendDisplayLinkIdleGrace()
-          }
+          request.context.presentationState.recordMiss()
         }
         self.logLayoutTrace(
           event: "complete",

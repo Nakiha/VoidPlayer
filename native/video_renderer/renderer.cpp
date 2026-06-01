@@ -1536,29 +1536,7 @@ void Renderer::finish_presented_draw(
     uint64_t current_layout_revision = snapshot_layout_revision;
     std::unique_lock<std::mutex> lock(state_mutex_, std::defer_lock);
     if (drew) {
-        if (completed_frame_info) {
-            if (!lock.try_lock()) {
-                presentation_backend_metrics_.layout_stale_completion_drop_count.fetch_add(
-                    1, std::memory_order_relaxed);
-                const auto total_us = elapsed_us_since(profiler_start);
-                record_presentation_draw_timing(total_us, backend_us);
-                log_viewport_draw_trace(source,
-                                        snapshot,
-                                        snapshot_layout_revision,
-                                        snapshot_layout_revision,
-                                        attempted_draw,
-                                        drew,
-                                        true,
-                                        static_cast<bool>(frame_callback),
-                                        false,
-                                        total_us,
-                                        snapshot_us,
-                                        backend_us);
-                return;
-            }
-        } else {
-            lock.lock();
-        }
+        lock.lock();
         stale_layout_after_draw = snapshot_layout_revision != layout_revision_;
         current_layout_revision = layout_revision_;
         if (stale_layout_after_draw) {

@@ -49,6 +49,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
   size_t _overlayDirectLineRectCount;
   size_t _overlayDirectLineRectBytes;
   CVMetalTextureCacheRef _textureCache;
+  std::atomic<bool> _asyncSharedResourcesInFlight;
   std::atomic<int64_t> _directYuvUploadCount;
   std::atomic<int64_t> _cvPixelBufferUploadCount;
   std::atomic<int64_t> _presentPackageUploadCount;
@@ -72,6 +73,9 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
 - (BOOL)validatePixelBuffer:(CVPixelBufferRef)pixelBuffer
                       width:(int32_t)width
                      height:(int32_t)height;
+- (BOOL)tryReserveAsyncSharedResources:(std::atomic<bool>**)outFlag
+                                 error:(char*)error
+                             errorSize:(size_t)errorSize;
 - (int)copyPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
                            data:(const uint8_t*)data
                        dataSize:(size_t)dataSize
@@ -178,6 +182,17 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
                                errorSize:(size_t)errorSize
                               completion:(VPMacOSMetalUploaderCompletion)completion
                                 userData:(void*)userData;
+- (int)uploadPreparedPresentFramePackage:(const VPMacOSNativePresentFramePackageInfo*)package
+                                 overlay:(const VPMacOSNativeOverlayGpuPrimitiveSet*)overlay
+                           toPixelBuffer:(CVPixelBufferRef)pixelBuffer
+                                   width:(int32_t)width
+                                  height:(int32_t)height
+                                     out:(VPMacOSNativeFrameInfo*)out
+                                   error:(char*)error
+                               errorSize:(size_t)errorSize
+                              completion:(VPMacOSMetalUploaderCompletion)completion
+                                userData:(void*)userData
+                 asyncSharedResourceFlag:(std::atomic<bool>*)asyncSharedResourceFlag;
 - (int)compositeOverlayGpuRects:(const VPMacOSNativeOverlayGpuRect*)rects
                             count:(size_t)rectCount
                          decision:(const VPMacOSNativePresentDecisionInfo*)decisionInfo

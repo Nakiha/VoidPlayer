@@ -1486,33 +1486,20 @@ bool MetalPresentationBackend::draw_frame(
                    last_error_.c_str());
       return false;
     }
-    const int ret = package_from_cache
-        ? VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlayAsync(
-              uploader_,
-              &package,
-              overlay_expected ? &overlay_set : nullptr,
-              draw_target_pixel_buffer_,
-              draw_target_width_,
-              draw_target_height_,
-              &frame_info,
-              upload_error,
-              sizeof(upload_error),
-              metal_async_upload_completed,
-              context)
-        : VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
-              uploader_,
-              data,
-              package.used_bytes,
-              &package,
-              overlay_expected ? &overlay_set : nullptr,
-              draw_target_pixel_buffer_,
-              draw_target_width_,
-              draw_target_height_,
-              &frame_info,
-              upload_error,
-              sizeof(upload_error),
-              metal_async_upload_completed,
-              context);
+    const int ret = VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
+        uploader_,
+        data,
+        package.used_bytes,
+        &package,
+        overlay_expected ? &overlay_set : nullptr,
+        draw_target_pixel_buffer_,
+        draw_target_width_,
+        draw_target_height_,
+        &frame_info,
+        upload_error,
+        sizeof(upload_error),
+        metal_async_upload_completed,
+        context);
     const auto copy_us = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - start).count();
     context->copy_us = copy_us;
@@ -1535,41 +1522,30 @@ bool MetalPresentationBackend::draw_frame(
                  last_error_.c_str());
     return false;
   }
-  int ret = package_from_cache
-      ? VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlay(
+  int ret = overlay_expected
+      ? VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
             uploader_,
+            data,
+            package.used_bytes,
             &package,
-            overlay_expected ? &overlay_set : nullptr,
+            &overlay_set,
             draw_target_pixel_buffer_,
             draw_target_width_,
             draw_target_height_,
             &frame_info,
             upload_error,
             sizeof(upload_error))
-      : (overlay_expected
-             ? VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlay(
-                   uploader_,
-                   data,
-                   package.used_bytes,
-                   &package,
-                   &overlay_set,
-                   draw_target_pixel_buffer_,
-                   draw_target_width_,
-                   draw_target_height_,
-                   &frame_info,
-                   upload_error,
-                   sizeof(upload_error))
-             : VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
-                   uploader_,
-                   data,
-                   package.used_bytes,
-                   &package,
-                   draw_target_pixel_buffer_,
-                   draw_target_width_,
-                   draw_target_height_,
-                   &frame_info,
-                   upload_error,
-                   sizeof(upload_error)));
+      : VPMacOSMetalUploaderCopyPresentFramePackageWithLayout(
+            uploader_,
+            data,
+            package.used_bytes,
+            &package,
+            draw_target_pixel_buffer_,
+            draw_target_width_,
+            draw_target_height_,
+            &frame_info,
+            upload_error,
+            sizeof(upload_error));
   const auto copy_us = std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::steady_clock::now() - start).count();
   if (hooks.record_frame_copy_us) {

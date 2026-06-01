@@ -2329,6 +2329,78 @@ bool Renderer::install_headless_output(void* output,
     return true;
 }
 
+bool Renderer::install_headless_output_ring(const void* const* pixel_buffers,
+                                            size_t pixel_buffer_count,
+                                            void* displayed_pixel_buffer,
+                                            void* protected_pixel_buffer,
+                                            int width,
+                                            int height,
+                                            int max_track_slots) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!headless_ || !presentation_backend_) {
+        return false;
+    }
+    const auto validation =
+        validate_renderer_dimensions(width, height, "headless output dimensions");
+    if (!validation.ok) {
+        spdlog::warn("[Renderer] ignoring invalid headless output ring: {}",
+                     validation.message);
+        return false;
+    }
+    {
+        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+        if (!presentation_backend_->update_headless_output_ring(pixel_buffers,
+                                                                pixel_buffer_count,
+                                                                displayed_pixel_buffer,
+                                                                protected_pixel_buffer,
+                                                                width,
+                                                                height,
+                                                                max_track_slots)) {
+            return false;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (target_width_ == width && target_height_ == height) {
+            return true;
+        }
+        const auto layout_tracks = snapshot_layout_track_geometry(tracks_);
+        adjust_layout_view_offset_for_resize(
+            layout_, target_width_, target_height_, width, height, layout_tracks);
+        target_width_ = width;
+        target_height_ = height;
+        preview_drawn_ = false;
+    }
+    return true;
+}
+
+void Renderer::mark_headless_output_displayed(void* pixel_buffer) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!headless_ || !presentation_backend_) {
+        return;
+    }
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    presentation_backend_->mark_headless_output_displayed(pixel_buffer);
+}
+
+void Renderer::protect_headless_output(void* pixel_buffer) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!headless_ || !presentation_backend_) {
+        return;
+    }
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    presentation_backend_->protect_headless_output(pixel_buffer);
+}
+
+void Renderer::release_headless_output(void* pixel_buffer) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!headless_ || !presentation_backend_) {
+        return;
+    }
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    presentation_backend_->release_headless_output(pixel_buffer);
+}
+
 void Renderer::clear_headless_output() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!headless_ || !presentation_backend_) {

@@ -42,6 +42,27 @@ final class MacOSNativeMetalPresentationTarget {
     )
   }
 
+  func installRing(
+    player: MacOSNativePlayerSession,
+    pixelBuffers: [CVPixelBuffer],
+    displayedPixelBuffer: CVPixelBuffer?,
+    protectedPixelBuffer: CVPixelBuffer?,
+    width: Int,
+    height: Int,
+    maxTrackSlots: Int
+  ) -> Bool {
+    guard let backend, isAvailable() else { return false }
+    return player.installMetalPresentationTargetRing(
+      backend: backend,
+      pixelBuffers: pixelBuffers,
+      displayedPixelBuffer: displayedPixelBuffer,
+      protectedPixelBuffer: protectedPixelBuffer,
+      width: width,
+      height: height,
+      maxTrackSlots: maxTrackSlots
+    )
+  }
+
   func validate(pixelBuffer: CVPixelBuffer, width: Int, height: Int) -> (valid: Bool, error: String) {
     guard let backend else {
       return (valid: false, error: "native Metal presentation backend is null")

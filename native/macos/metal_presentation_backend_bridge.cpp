@@ -40,10 +40,60 @@ void VPMacOSMetalPresentationBackendSetDrawTarget(
   }
 }
 
+void VPMacOSMetalPresentationBackendSetDrawTargetRing(
+    VPMacOSMetalPresentationBackend* backend,
+    const void* const* pixel_buffers,
+    size_t pixel_buffer_count,
+    void* displayed_pixel_buffer,
+    void* protected_pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots) {
+  if (backend) {
+    backend->impl.set_draw_target_ring(pixel_buffers,
+                                       pixel_buffer_count,
+                                       displayed_pixel_buffer,
+                                       protected_pixel_buffer,
+                                       width,
+                                       height,
+                                       max_track_slots);
+  }
+}
+
 void VPMacOSMetalPresentationBackendClearDrawTarget(
     VPMacOSMetalPresentationBackend* backend) {
   if (backend) {
     backend->impl.clear_draw_target();
+  }
+}
+
+int VPMacOSMetalPresentationBackendContainsDrawTarget(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer) {
+  return backend && backend->impl.contains_draw_target(pixel_buffer) ? 1 : 0;
+}
+
+void VPMacOSMetalPresentationBackendMarkDisplayedTarget(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer) {
+  if (backend) {
+    backend->impl.mark_displayed_target(pixel_buffer);
+  }
+}
+
+void VPMacOSMetalPresentationBackendProtectTarget(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer) {
+  if (backend) {
+    backend->impl.protect_target(pixel_buffer);
+  }
+}
+
+void VPMacOSMetalPresentationBackendReleaseTarget(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer) {
+  if (backend) {
+    backend->impl.release_target(pixel_buffer);
   }
 }
 

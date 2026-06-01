@@ -229,6 +229,16 @@ public:
                                  int width,
                                  int height,
                                  int max_track_slots);
+    bool install_headless_output_ring(const void* const* pixel_buffers,
+                                      size_t pixel_buffer_count,
+                                      void* displayed_pixel_buffer,
+                                      void* protected_pixel_buffer,
+                                      int width,
+                                      int height,
+                                      int max_track_slots);
+    void mark_headless_output_displayed(void* pixel_buffer);
+    void protect_headless_output(void* pixel_buffer);
+    void release_headless_output(void* pixel_buffer);
     void clear_headless_output();
 
     /// Request an immediate redraw of the currently presentable frame.

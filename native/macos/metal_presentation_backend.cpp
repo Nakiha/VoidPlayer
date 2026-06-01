@@ -138,6 +138,10 @@ uint64_t pointer_bits(const void* ptr) {
   return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr));
 }
 
+void* pointer_from_bits(uint64_t bits) {
+  return reinterpret_cast<void*>(static_cast<uintptr_t>(bits));
+}
+
 void annotate_frame_target(VPMacOSNativeFrameInfo* frame_info,
                            const void* pixel_buffer) {
   if (!frame_info) {
@@ -562,8 +566,44 @@ bool MetalPresentationBackend::update_headless_output(void* output,
   return available();
 }
 
+bool MetalPresentationBackend::update_headless_output_ring(
+    const void* const* pixel_buffers,
+    size_t pixel_buffer_count,
+    void* displayed_pixel_buffer,
+    void* protected_pixel_buffer,
+    int width,
+    int height,
+    int max_track_slots) {
+  if (!pixel_buffers || pixel_buffer_count == 0 || width <= 0 || height <= 0) {
+    clear_draw_target();
+    return false;
+  }
+  width_ = width;
+  height_ = height;
+  set_draw_target_ring(pixel_buffers,
+                       pixel_buffer_count,
+                       displayed_pixel_buffer,
+                       protected_pixel_buffer,
+                       width,
+                       height,
+                       max_track_slots);
+  return available();
+}
+
 void MetalPresentationBackend::clear_headless_output() {
   clear_draw_target();
+}
+
+void MetalPresentationBackend::mark_headless_output_displayed(void* pixel_buffer) {
+  mark_displayed_target(pixel_buffer);
+}
+
+void MetalPresentationBackend::protect_headless_output(void* pixel_buffer) {
+  protect_target(pixel_buffer);
+}
+
+void MetalPresentationBackend::release_headless_output(void* pixel_buffer) {
+  release_target(pixel_buffer);
 }
 
 vr::PresentationBackendStats MetalPresentationBackend::presentation_stats() const {
@@ -583,8 +623,14 @@ vr::PresentationBackendStats MetalPresentationBackend::presentation_stats() cons
   stats.last_present_package_storage =
       VPMacOSMetalUploaderLastPresentPackageStorage(uploader_);
   stats.backend_available = available() ? 1 : 0;
-  stats.target_installed =
-      draw_target_pixel_buffer_ && draw_target_width_ > 0 && draw_target_height_ > 0 ? 1 : 0;
+  {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    stats.target_installed =
+        ((draw_target_pixel_buffer_ || target_ring_enabled_) &&
+         draw_target_width_ > 0 && draw_target_height_ > 0)
+            ? 1
+            : 0;
+  }
   stats.last_draw_succeeded = last_draw_succeeded_ ? 1 : 0;
   stats.draw_failure_count = draw_failure_count_;
   stats.consecutive_draw_failures = consecutive_draw_failures_;
@@ -643,8 +689,14 @@ bool MetalPresentationBackend::copy_last_frame_info(
 bool MetalPresentationBackend::capture_front_buffer(std::vector<uint8_t>& bgra,
                                                     int& width,
                                                     int& height) {
-  auto* pixel_buffer =
-      static_cast<CVPixelBufferRef>(draw_target_pixel_buffer_);
+  void* target = draw_target_pixel_buffer_;
+  {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    if (target_ring_enabled_ && displayed_target_address_ != 0) {
+      target = pointer_from_bits(displayed_target_address_);
+    }
+  }
+  auto* pixel_buffer = static_cast<CVPixelBufferRef>(target);
   if (!pixel_buffer ||
       CVPixelBufferLockBaseAddress(pixel_buffer, kCVPixelBufferLock_ReadOnly) !=
           kCVReturnSuccess) {
@@ -766,6 +818,71 @@ bool MetalPresentationBackend::try_begin_async_draw(const char* source) {
   return true;
 }
 
+void* MetalPresentationBackend::try_acquire_ring_draw_target(const char* source) {
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  if (async_shutdown_) {
+    set_last_error("renderer-owned Metal presentation backend is shutting down");
+    return nullptr;
+  }
+  constexpr uint64_t kMaxAsyncRendererOwnedDraws = 3;
+  if (in_flight_draws_ >= kMaxAsyncRendererOwnedDraws) {
+    ++metal_buffer_exhaustion_count_;
+    set_last_error("renderer-owned Metal async draw deferred by backpressure");
+    return nullptr;
+  }
+  if (!target_ring_enabled_) {
+    set_last_error("renderer-owned Metal presentation target ring is unavailable");
+    return nullptr;
+  }
+  for (auto& slot : target_ring_) {
+    if (slot.state != TargetState::Available || !slot.pixel_buffer) {
+      continue;
+    }
+    slot.state = TargetState::InFlight;
+    ++in_flight_draws_;
+    return slot.pixel_buffer;
+  }
+  ++metal_buffer_exhaustion_count_;
+  set_last_error("renderer-owned Metal presentation target ring is busy");
+  if (macos_profiler_enabled() &&
+      (metal_buffer_exhaustion_count_ <= 8 ||
+       (metal_buffer_exhaustion_count_ % 60) == 0)) {
+    spdlog::info(
+        "[MetalProfiler] target_ring_backpressure source={} in_flight={} targets={} count={}",
+        source ? source : "",
+        in_flight_draws_,
+        target_ring_.size(),
+        metal_buffer_exhaustion_count_);
+  }
+  return nullptr;
+}
+
+void MetalPresentationBackend::complete_ring_draw_target(
+    uint64_t target_pixel_buffer_address,
+    bool success) {
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  if (!target_ring_enabled_ || target_pixel_buffer_address == 0) {
+    return;
+  }
+  for (auto& slot : target_ring_) {
+    if (pointer_bits(slot.pixel_buffer) != target_pixel_buffer_address) {
+      continue;
+    }
+    if (slot.state == TargetState::InFlight) {
+      if (success) {
+        slot.state = TargetState::Completed;
+      } else if (target_pixel_buffer_address == displayed_target_address_) {
+        slot.state = TargetState::Displayed;
+      } else if (target_pixel_buffer_address == protected_target_address_) {
+        slot.state = TargetState::Protected;
+      } else {
+        slot.state = TargetState::Available;
+      }
+    }
+    return;
+  }
+}
+
 void MetalPresentationBackend::finish_async_draw() {
   {
     std::lock_guard<std::mutex> lock(async_mutex_);
@@ -868,6 +985,7 @@ void metal_async_upload_completed(void* user_data,
                                       overlay.cpu_attempted,
                                       overlay.fill_rect_count,
                                       overlay.line_rect_count);
+  backend->complete_ring_draw_target(context->target_pixel_buffer_address, success);
   backend->finish_async_draw();
   if (macos_profiler_enabled() &&
       (!success || gpu_wait_us >= 8000 || total_us >= 8000)) {
@@ -1021,13 +1139,48 @@ bool MetalPresentationBackend::draw_frame(
         error ? error : "");
   };
   set_last_error("");
-  if (!available() || !draw_target_pixel_buffer_ ||
+  const bool async_draw_requested = static_cast<bool>(hooks.async_draw_completed);
+  bool use_target_ring = false;
+  {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    use_target_ring = target_ring_enabled_;
+  }
+  void* target_pixel_buffer = draw_target_pixel_buffer_;
+  if (async_draw_requested && use_target_ring) {
+    target_pixel_buffer = try_acquire_ring_draw_target(hooks.draw_source);
+    if (!target_pixel_buffer) {
+      log_profiler("target-ring-backpressure", false, -2, 0, 0, 0,
+                   last_error_.c_str());
+      return false;
+    }
+  } else if (use_target_ring) {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    for (const auto& slot : target_ring_) {
+      if (pointer_bits(slot.pixel_buffer) == displayed_target_address_) {
+        target_pixel_buffer = slot.pixel_buffer;
+        break;
+      }
+    }
+    if (!target_pixel_buffer && !target_ring_.empty()) {
+      target_pixel_buffer = target_ring_.front().pixel_buffer;
+    }
+  }
+  auto release_acquired_target = [&]() {
+    if (async_draw_requested && use_target_ring && target_pixel_buffer) {
+      complete_ring_draw_target(pointer_bits(target_pixel_buffer), false);
+      finish_async_draw();
+      target_pixel_buffer = nullptr;
+    }
+  };
+  if (!available() || !target_pixel_buffer ||
       draw_target_width_ <= 0 || draw_target_height_ <= 0) {
+    release_acquired_target();
     mark_draw_failure("renderer-owned Metal presentation target is unavailable");
     log_profiler("none", false, -1, 0, 0, 0, last_error_.c_str());
     return false;
   }
   if (hooks.async_draw_completed && shutting_down_async()) {
+    release_acquired_target();
     mark_draw_failure("renderer-owned Metal presentation backend is shutting down");
     log_profiler("shutdown", false, -1, 0, 0, 0, last_error_.c_str());
     return false;
@@ -1065,6 +1218,7 @@ bool MetalPresentationBackend::draw_frame(
   if (package_layout.max_bytes == 0 ||
       package_layout.bgra_row_bytes >
           static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+    release_acquired_target();
     mark_draw_failure("renderer-owned Metal presentation package layout is invalid");
     log_profiler("package-layout", false, -1, 0, package_layout.max_bytes, 0,
                  last_error_.c_str());
@@ -1088,8 +1242,8 @@ bool MetalPresentationBackend::draw_frame(
       context->overlay = overlay_result_from_primitives(overlay_primitives);
       context->path = "cvpixelbuffer";
       context->storage = VPMacOSNativePresentPackageStorageCVPixelBuffer;
-      context->target_pixel_buffer_address = pointer_bits(draw_target_pixel_buffer_);
-      if (!try_begin_async_draw(hooks.draw_source)) {
+      context->target_pixel_buffer_address = pointer_bits(target_pixel_buffer);
+      if (!use_target_ring && !try_begin_async_draw(hooks.draw_source)) {
         delete context;
         log_profiler("cvpixelbuffer-backpressure",
                      false,
@@ -1105,7 +1259,7 @@ bool MetalPresentationBackend::draw_frame(
               uploader_,
               &cv_frame,
               overlay_expected ? &overlay_set : nullptr,
-              draw_target_pixel_buffer_,
+              target_pixel_buffer,
               draw_target_width_,
               draw_target_height_,
               &frame_info,
@@ -1119,7 +1273,11 @@ bool MetalPresentationBackend::draw_frame(
       if (ret == 0) {
         return true;
       }
-      finish_async_draw();
+      if (use_target_ring) {
+        release_acquired_target();
+      } else {
+        finish_async_draw();
+      }
       delete context;
       mark_draw_failure(upload_error[0] ? upload_error : error);
       log_profiler("cvpixelbuffer", false, ret, 0, 0,
@@ -1132,7 +1290,7 @@ bool MetalPresentationBackend::draw_frame(
               uploader_,
               &cv_frame,
               &overlay_set,
-              draw_target_pixel_buffer_,
+              target_pixel_buffer,
               draw_target_width_,
               draw_target_height_,
               &frame_info,
@@ -1141,7 +1299,7 @@ bool MetalPresentationBackend::draw_frame(
         : VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
               uploader_,
               &cv_frame,
-              draw_target_pixel_buffer_,
+              target_pixel_buffer,
               draw_target_width_,
               draw_target_height_,
               &frame_info,
@@ -1169,7 +1327,7 @@ bool MetalPresentationBackend::draw_frame(
                             overlay.cpu_attempted,
                             overlay.fill_rect_count,
                             overlay.line_rect_count);
-      annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
+      annotate_frame_target(&frame_info, target_pixel_buffer);
       mark_draw_success(frame_info);
       log_profiler("cvpixelbuffer", true, ret, 0, 0,
                    VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
@@ -1184,7 +1342,7 @@ bool MetalPresentationBackend::draw_frame(
       ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
           uploader_,
           &cv_frame,
-          draw_target_pixel_buffer_,
+          target_pixel_buffer,
           draw_target_width_,
           draw_target_height_,
           &frame_info,
@@ -1194,7 +1352,7 @@ bool MetalPresentationBackend::draw_frame(
         auto cpu_overlay = composite_overlay_after_upload(snapshot,
                                                           hooks,
                                                           uploader_,
-                                                          draw_target_pixel_buffer_,
+                                                          target_pixel_buffer,
                                                           draw_target_width_,
                                                           draw_target_height_,
                                                           overlay_primitives,
@@ -1214,7 +1372,7 @@ bool MetalPresentationBackend::draw_frame(
                               cpu_overlay.cpu_attempted,
                               cpu_overlay.fill_rect_count,
                               cpu_overlay.line_rect_count);
-        annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
+        annotate_frame_target(&frame_info, target_pixel_buffer);
         mark_draw_success(frame_info);
         log_profiler("cvpixelbuffer-cpu-overlay-fallback", true, ret, 0, 0,
                      VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
@@ -1248,8 +1406,8 @@ bool MetalPresentationBackend::draw_frame(
       context->overlay = overlay_result_from_primitives(overlay_primitives);
       context->path = "cvpixelbuffer-set";
       context->storage = VPMacOSNativePresentPackageStorageCVPixelBuffer;
-      context->target_pixel_buffer_address = pointer_bits(draw_target_pixel_buffer_);
-      if (!try_begin_async_draw(hooks.draw_source)) {
+      context->target_pixel_buffer_address = pointer_bits(target_pixel_buffer);
+      if (!use_target_ring && !try_begin_async_draw(hooks.draw_source)) {
         delete context;
         log_profiler("cvpixelbuffer-set-backpressure",
                      false,
@@ -1265,7 +1423,7 @@ bool MetalPresentationBackend::draw_frame(
               uploader_,
               &cv_frame_set,
               overlay_expected ? &overlay_set : nullptr,
-              draw_target_pixel_buffer_,
+              target_pixel_buffer,
               draw_target_width_,
               draw_target_height_,
               &frame_info,
@@ -1279,7 +1437,11 @@ bool MetalPresentationBackend::draw_frame(
       if (ret == 0) {
         return true;
       }
-      finish_async_draw();
+      if (use_target_ring) {
+        release_acquired_target();
+      } else {
+        finish_async_draw();
+      }
       delete context;
       mark_draw_failure(upload_error[0] ? upload_error : error);
       log_profiler("cvpixelbuffer-set", false, ret, 0, 0,
@@ -1292,7 +1454,7 @@ bool MetalPresentationBackend::draw_frame(
               uploader_,
               &cv_frame_set,
               &overlay_set,
-              draw_target_pixel_buffer_,
+              target_pixel_buffer,
               draw_target_width_,
               draw_target_height_,
               &frame_info,
@@ -1301,7 +1463,7 @@ bool MetalPresentationBackend::draw_frame(
         : VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
               uploader_,
               &cv_frame_set,
-              draw_target_pixel_buffer_,
+              target_pixel_buffer,
               draw_target_width_,
               draw_target_height_,
               &frame_info,
@@ -1329,7 +1491,7 @@ bool MetalPresentationBackend::draw_frame(
                             overlay.cpu_attempted,
                             overlay.fill_rect_count,
                             overlay.line_rect_count);
-      annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
+      annotate_frame_target(&frame_info, target_pixel_buffer);
       mark_draw_success(frame_info);
       log_profiler("cvpixelbuffer-set", true, ret, 0, 0,
                    VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
@@ -1344,7 +1506,7 @@ bool MetalPresentationBackend::draw_frame(
       ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameSetWithLayout(
           uploader_,
           &cv_frame_set,
-          draw_target_pixel_buffer_,
+          target_pixel_buffer,
           draw_target_width_,
           draw_target_height_,
           &frame_info,
@@ -1354,7 +1516,7 @@ bool MetalPresentationBackend::draw_frame(
         auto cpu_overlay = composite_overlay_after_upload(snapshot,
                                                           hooks,
                                                           uploader_,
-                                                          draw_target_pixel_buffer_,
+                                                          target_pixel_buffer,
                                                           draw_target_width_,
                                                           draw_target_height_,
                                                           overlay_primitives,
@@ -1374,7 +1536,7 @@ bool MetalPresentationBackend::draw_frame(
                               cpu_overlay.cpu_attempted,
                               cpu_overlay.fill_rect_count,
                               cpu_overlay.line_rect_count);
-        annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
+        annotate_frame_target(&frame_info, target_pixel_buffer);
         mark_draw_success(frame_info);
         log_profiler("cvpixelbuffer-set-cpu-overlay-fallback", true, ret, 0, 0,
                      VPMacOSNativePresentPackageStorageCVPixelBuffer, "");
@@ -1447,6 +1609,7 @@ bool MetalPresentationBackend::draw_frame(
                                     package.track_stride_bytes,
                                     &package,
                                     error)) {
+        release_acquired_target();
         mark_draw_failure(error);
         log_profiler("package-build", false, -1, 0, data_size, package.storage,
                      last_error_.c_str());
@@ -1474,8 +1637,8 @@ bool MetalPresentationBackend::draw_frame(
             : (package_from_cache ? "package-bgra-cached-composite" : "package-bgra");
     context->storage = package.storage;
     context->bytes = package.used_bytes;
-    context->target_pixel_buffer_address = pointer_bits(draw_target_pixel_buffer_);
-    if (!try_begin_async_draw(hooks.draw_source)) {
+    context->target_pixel_buffer_address = pointer_bits(target_pixel_buffer);
+    if (!use_target_ring && !try_begin_async_draw(hooks.draw_source)) {
       const char* failed_path = context->path;
       delete context;
       log_profiler(failed_path,
@@ -1493,7 +1656,7 @@ bool MetalPresentationBackend::draw_frame(
         package.used_bytes,
         &package,
         overlay_expected ? &overlay_set : nullptr,
-        draw_target_pixel_buffer_,
+        target_pixel_buffer,
         draw_target_width_,
         draw_target_height_,
         &frame_info,
@@ -1511,7 +1674,11 @@ bool MetalPresentationBackend::draw_frame(
       return true;
     }
     const char* failed_path = context->path;
-    finish_async_draw();
+    if (use_target_ring) {
+      release_acquired_target();
+    } else {
+      finish_async_draw();
+    }
     delete context;
     mark_draw_failure(upload_error[0] ? upload_error : error);
     log_profiler(failed_path,
@@ -1530,7 +1697,7 @@ bool MetalPresentationBackend::draw_frame(
             package.used_bytes,
             &package,
             &overlay_set,
-            draw_target_pixel_buffer_,
+            target_pixel_buffer,
             draw_target_width_,
             draw_target_height_,
             &frame_info,
@@ -1541,7 +1708,7 @@ bool MetalPresentationBackend::draw_frame(
             data,
             package.used_bytes,
             &package,
-            draw_target_pixel_buffer_,
+            target_pixel_buffer,
             draw_target_width_,
             draw_target_height_,
             &frame_info,
@@ -1572,7 +1739,7 @@ bool MetalPresentationBackend::draw_frame(
                           overlay.cpu_attempted,
                           overlay.fill_rect_count,
                           overlay.line_rect_count);
-    annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
+    annotate_frame_target(&frame_info, target_pixel_buffer);
     mark_draw_success(frame_info);
     log_profiler(
         package.storage == VPMacOSNativePresentPackageStorageYUV ? "package-yuv" : "package-bgra",
@@ -1594,7 +1761,7 @@ bool MetalPresentationBackend::draw_frame(
           data,
           package.used_bytes,
           &package,
-          draw_target_pixel_buffer_,
+          target_pixel_buffer,
           draw_target_width_,
           draw_target_height_,
           &frame_info,
@@ -1604,7 +1771,7 @@ bool MetalPresentationBackend::draw_frame(
         auto cpu_overlay = composite_overlay_after_upload(snapshot,
                                                           hooks,
                                                           uploader_,
-                                                          draw_target_pixel_buffer_,
+                                                          target_pixel_buffer,
                                                           draw_target_width_,
                                                           draw_target_height_,
                                                           overlay_primitives,
@@ -1627,7 +1794,7 @@ bool MetalPresentationBackend::draw_frame(
                               cpu_overlay.cpu_attempted,
                               cpu_overlay.fill_rect_count,
                               cpu_overlay.line_rect_count);
-        annotate_frame_target(&frame_info, draw_target_pixel_buffer_);
+        annotate_frame_target(&frame_info, target_pixel_buffer);
         mark_draw_success(frame_info);
         log_profiler(
             package.storage == VPMacOSNativePresentPackageStorageYUV
@@ -1673,6 +1840,61 @@ void MetalPresentationBackend::set_draw_target(void* pixel_buffer,
   draw_target_width_ = width;
   draw_target_height_ = height;
   draw_target_max_track_slots_ = clamped_track_slots;
+  {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    target_ring_.clear();
+    target_ring_enabled_ = false;
+    displayed_target_address_ = 0;
+    protected_target_address_ = 0;
+  }
+  if (source_cache_shape_changed) {
+    invalidate_source_cache();
+  }
+}
+
+void MetalPresentationBackend::set_draw_target_ring(
+    const void* const* pixel_buffers,
+    size_t pixel_buffer_count,
+    void* displayed_pixel_buffer,
+    void* protected_pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots) {
+  const int32_t clamped_track_slots = std::clamp(
+      max_track_slots, 1, static_cast<int32_t>(VPMacOSNativeMaxTracks));
+  const bool source_cache_shape_changed =
+      draw_target_width_ != width ||
+      draw_target_height_ != height ||
+      draw_target_max_track_slots_ != clamped_track_slots;
+  draw_target_pixel_buffer_ = nullptr;
+  draw_target_width_ = width;
+  draw_target_height_ = height;
+  draw_target_max_track_slots_ = clamped_track_slots;
+  {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    target_ring_.clear();
+    target_ring_.reserve(pixel_buffer_count);
+    displayed_target_address_ = pointer_bits(displayed_pixel_buffer);
+    protected_target_address_ = pointer_bits(protected_pixel_buffer);
+    for (size_t i = 0; i < pixel_buffer_count; ++i) {
+      void* pixel_buffer = const_cast<void*>(pixel_buffers[i]);
+      if (!pixel_buffer) {
+        continue;
+      }
+      const uint64_t address = pointer_bits(pixel_buffer);
+      TargetSlot slot;
+      slot.pixel_buffer = pixel_buffer;
+      if (address == displayed_target_address_) {
+        slot.state = TargetState::Displayed;
+      } else if (address == protected_target_address_) {
+        slot.state = TargetState::Protected;
+      } else {
+        slot.state = TargetState::Available;
+      }
+      target_ring_.push_back(slot);
+    }
+    target_ring_enabled_ = target_ring_.size() >= 2;
+  }
   if (source_cache_shape_changed) {
     invalidate_source_cache();
   }
@@ -1683,11 +1905,96 @@ void MetalPresentationBackend::clear_draw_target() {
   draw_target_width_ = 0;
   draw_target_height_ = 0;
   draw_target_max_track_slots_ = VPMacOSNativeMaxTracks;
+  {
+    std::lock_guard<std::mutex> lock(async_mutex_);
+    target_ring_.clear();
+    target_ring_enabled_ = false;
+    displayed_target_address_ = 0;
+    protected_target_address_ = 0;
+  }
   last_draw_frame_info_available_ = false;
   last_draw_frame_info_ = {};
   last_draw_succeeded_ = false;
   invalidate_source_cache();
   set_last_error("");
+}
+
+bool MetalPresentationBackend::contains_draw_target(void* pixel_buffer) const {
+  if (!pixel_buffer) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  if (!target_ring_enabled_) {
+    return pixel_buffer == draw_target_pixel_buffer_;
+  }
+  return std::any_of(target_ring_.begin(), target_ring_.end(), [pixel_buffer](const TargetSlot& slot) {
+    return slot.pixel_buffer == pixel_buffer;
+  });
+}
+
+void MetalPresentationBackend::mark_displayed_target(void* pixel_buffer) {
+  if (!pixel_buffer) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  if (!target_ring_enabled_) {
+    return;
+  }
+  const uint64_t displayed = pointer_bits(pixel_buffer);
+  displayed_target_address_ = displayed;
+  for (auto& slot : target_ring_) {
+    const uint64_t address = pointer_bits(slot.pixel_buffer);
+    if (address == displayed) {
+      slot.state = TargetState::Displayed;
+    } else if (address == protected_target_address_) {
+      slot.state = TargetState::Protected;
+    } else if (slot.state == TargetState::Displayed ||
+               slot.state == TargetState::Protected) {
+      slot.state = TargetState::Available;
+    }
+  }
+}
+
+void MetalPresentationBackend::protect_target(void* pixel_buffer) {
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  if (!target_ring_enabled_) {
+    return;
+  }
+  protected_target_address_ = pointer_bits(pixel_buffer);
+  for (auto& slot : target_ring_) {
+    const uint64_t address = pointer_bits(slot.pixel_buffer);
+    if (address == displayed_target_address_) {
+      slot.state = TargetState::Displayed;
+    } else if (pixel_buffer && address == protected_target_address_) {
+      slot.state = TargetState::Protected;
+    } else if (slot.state == TargetState::Protected) {
+      slot.state = TargetState::Available;
+    }
+  }
+}
+
+void MetalPresentationBackend::release_target(void* pixel_buffer) {
+  if (!pixel_buffer) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  if (!target_ring_enabled_) {
+    return;
+  }
+  const uint64_t released = pointer_bits(pixel_buffer);
+  for (auto& slot : target_ring_) {
+    if (pointer_bits(slot.pixel_buffer) != released) {
+      continue;
+    }
+    if (released == displayed_target_address_) {
+      slot.state = TargetState::Displayed;
+    } else if (released == protected_target_address_) {
+      slot.state = TargetState::Protected;
+    } else if (slot.state == TargetState::Completed) {
+      slot.state = TargetState::Available;
+    }
+    return;
+  }
 }
 
 bool MetalPresentationBackend::copy_last_draw_frame_info(

@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace vp_macos {
 
@@ -66,6 +67,7 @@ struct VPMacOSNativePlayer {
   uint64_t frame_available_callback_in_flight = 0;
   VPMacOSMetalPresentationBackend* presentation_target_backend = nullptr;
   void* presentation_target_pixel_buffer = nullptr;
+  std::vector<void*> presentation_target_pixel_buffers;
   int32_t presentation_target_width = 0;
   int32_t presentation_target_height = 0;
   int32_t presentation_target_max_track_slots = 1;

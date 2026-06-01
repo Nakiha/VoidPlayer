@@ -22,8 +22,29 @@ void VPMacOSMetalPresentationBackendSetDrawTarget(
     int32_t width,
     int32_t height,
     int32_t max_track_slots);
+void VPMacOSMetalPresentationBackendSetDrawTargetRing(
+    VPMacOSMetalPresentationBackend* backend,
+    const void* const* pixel_buffers,
+    size_t pixel_buffer_count,
+    void* displayed_pixel_buffer,
+    void* protected_pixel_buffer,
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots);
 void VPMacOSMetalPresentationBackendClearDrawTarget(
     VPMacOSMetalPresentationBackend* backend);
+int VPMacOSMetalPresentationBackendContainsDrawTarget(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer);
+void VPMacOSMetalPresentationBackendMarkDisplayedTarget(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer);
+void VPMacOSMetalPresentationBackendProtectTarget(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer);
+void VPMacOSMetalPresentationBackendReleaseTarget(
+    VPMacOSMetalPresentationBackend* backend,
+    void* pixel_buffer);
 int64_t VPMacOSMetalPresentationBackendDirectYUVUploadCount(
     VPMacOSMetalPresentationBackend* backend);
 int64_t VPMacOSMetalPresentationBackendCVPixelBufferUploadCount(

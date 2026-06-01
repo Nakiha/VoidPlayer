@@ -30,6 +30,16 @@ public:
                               int width,
                               int height,
                               int max_track_slots) override;
+  bool update_headless_output_ring(const void* const* pixel_buffers,
+                                   size_t pixel_buffer_count,
+                                   void* displayed_pixel_buffer,
+                                   void* protected_pixel_buffer,
+                                   int width,
+                                   int height,
+                                   int max_track_slots) override;
+  void mark_headless_output_displayed(void* pixel_buffer) override;
+  void protect_headless_output(void* pixel_buffer) override;
+  void release_headless_output(void* pixel_buffer) override;
   void clear_headless_output() override;
   vr::PresentationBackendStats presentation_stats() const override;
   bool copy_last_frame_info(vr::PresentationBackendFrameInfo* out) const override;
@@ -46,7 +56,18 @@ public:
                        int32_t width,
                        int32_t height,
                        int32_t max_track_slots);
+  void set_draw_target_ring(const void* const* pixel_buffers,
+                            size_t pixel_buffer_count,
+                            void* displayed_pixel_buffer,
+                            void* protected_pixel_buffer,
+                            int32_t width,
+                            int32_t height,
+                            int32_t max_track_slots);
   void clear_draw_target();
+  bool contains_draw_target(void* pixel_buffer) const;
+  void mark_displayed_target(void* pixel_buffer);
+  void protect_target(void* pixel_buffer);
+  void release_target(void* pixel_buffer);
   bool copy_last_draw_frame_info(VPMacOSNativeFrameInfo* out) const;
   void complete_async_draw_result(const VPMacOSNativeFrameInfo& frame_info,
                                   bool success,
@@ -59,6 +80,8 @@ public:
                                   bool cpu_attempted,
                                   size_t fill_rect_count,
                                   size_t line_rect_count);
+  void complete_ring_draw_target(uint64_t target_pixel_buffer_address,
+                                 bool success);
   void finish_async_draw();
 
 private:
@@ -74,6 +97,7 @@ private:
                              size_t line_rect_count);
   void invalidate_source_cache();
   bool try_begin_async_draw(const char* source);
+  void* try_acquire_ring_draw_target(const char* source);
   bool shutting_down_async() const;
 
   VPMacOSMetalUploader* uploader_ = nullptr;
@@ -122,6 +146,21 @@ private:
   std::condition_variable async_cv_;
   uint64_t in_flight_draws_ = 0;
   bool async_shutdown_ = false;
+  enum class TargetState {
+    Available,
+    InFlight,
+    Completed,
+    Displayed,
+    Protected,
+  };
+  struct TargetSlot {
+    void* pixel_buffer = nullptr;
+    TargetState state = TargetState::Available;
+  };
+  std::vector<TargetSlot> target_ring_;
+  bool target_ring_enabled_ = false;
+  uint64_t displayed_target_address_ = 0;
+  uint64_t protected_target_address_ = 0;
 };
 
 }  // namespace vp_macos

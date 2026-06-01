@@ -95,7 +95,8 @@ inline bool is_transient_presentation_backpressure_error(const std::string& erro
     return error == "renderer-owned Metal async draw deferred by backpressure" ||
            error == "native Metal uploader shared resources are busy" ||
            error == "native Metal uploader frame resource pool is busy" ||
-           error == "native Metal uploader overlay layer resources are busy";
+           error == "native Metal uploader overlay layer resources are busy" ||
+           error == "renderer-owned Metal presentation target ring is busy";
 }
 
 struct PresentationBackendMetrics {
@@ -144,6 +145,16 @@ public:
     virtual void reset_track(size_t) {}
     virtual void move_track(size_t, size_t) {}
     virtual bool update_headless_output(void*, int, int, int) { return false; }
+    virtual bool update_headless_output_ring(const void* const*,
+                                             size_t,
+                                             void*,
+                                             void*,
+                                             int,
+                                             int,
+                                             int) { return false; }
+    virtual void mark_headless_output_displayed(void*) {}
+    virtual void protect_headless_output(void*) {}
+    virtual void release_headless_output(void*) {}
     virtual void clear_headless_output() {}
     virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }

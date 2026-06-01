@@ -40,6 +40,62 @@ extension MacOSNativePlayerSession {
     ) == 0
   }
 
+  func installMetalPresentationTargetRing(
+    backend: OpaquePointer,
+    pixelBuffers: [CVPixelBuffer],
+    displayedPixelBuffer: CVPixelBuffer?,
+    protectedPixelBuffer: CVPixelBuffer?,
+    width: Int,
+    height: Int,
+    maxTrackSlots: Int
+  ) -> Bool {
+    guard !pixelBuffers.isEmpty else { return false }
+    var pixelBufferPointers: [UnsafeRawPointer?] = pixelBuffers.map {
+      UnsafeRawPointer(Unmanaged.passUnretained($0).toOpaque())
+    }
+    let displayedPointer = displayedPixelBuffer.map {
+      UnsafeMutableRawPointer(Unmanaged.passUnretained($0).toOpaque())
+    }
+    let protectedPointer = protectedPixelBuffer.map {
+      UnsafeMutableRawPointer(Unmanaged.passUnretained($0).toOpaque())
+    }
+    let clampedTrackSlots = Int32(max(1, min(4, maxTrackSlots)))
+    return pixelBufferPointers.withUnsafeMutableBufferPointer { buffer in
+      VPMacOSNativePlayerInstallMetalPresentationTargetRing(
+        handle,
+        backend,
+        buffer.baseAddress,
+        buffer.count,
+        displayedPointer,
+        protectedPointer,
+        Int32(width),
+        Int32(height),
+        clampedTrackSlots
+      ) == 0
+    }
+  }
+
+  func markMetalPresentationTargetDisplayed(_ pixelBuffer: CVPixelBuffer) {
+    VPMacOSNativePlayerMarkMetalPresentationTargetDisplayed(
+      handle,
+      UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque())
+    )
+  }
+
+  func protectMetalPresentationTarget(_ pixelBuffer: CVPixelBuffer?) {
+    let pointer = pixelBuffer.map {
+      UnsafeMutableRawPointer(Unmanaged.passUnretained($0).toOpaque())
+    }
+    VPMacOSNativePlayerProtectMetalPresentationTarget(handle, pointer)
+  }
+
+  func releaseMetalPresentationTarget(_ pixelBuffer: CVPixelBuffer) {
+    VPMacOSNativePlayerReleaseMetalPresentationTarget(
+      handle,
+      UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque())
+    )
+  }
+
   func clearMetalPresentationTarget() {
     VPMacOSNativePlayerClearMetalPresentationTarget(handle)
   }

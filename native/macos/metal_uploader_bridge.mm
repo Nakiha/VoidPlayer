@@ -226,20 +226,18 @@ int VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlay(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size) {
-  if (!uploader || !uploader->impl) {
-    write_error(error, error_size, "native Metal uploader is null");
-    return -1;
-  }
-  return with_metal_autorelease_pool([&] {
-    return [uploader->impl uploadPreparedPresentFramePackage:package
-                                                     overlay:overlay
-                                               toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                       width:width
-                                                      height:height
-                                                         out:out
-                                                       error:error
-                                                   errorSize:error_size];
-  });
+  (void)uploader;
+  (void)package;
+  (void)overlay;
+  (void)pixel_buffer;
+  (void)width;
+  (void)height;
+  (void)out;
+  write_error(
+      error,
+      error_size,
+      "prepared native Metal package upload is disabled; pass package bytes explicitly");
+  return -1;
 }
 
 int VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlayAsync(
@@ -254,22 +252,20 @@ int VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlayAsy
     size_t error_size,
     VPMacOSMetalUploaderCompletion completion,
     void* user_data) {
-  if (!uploader || !uploader->impl) {
-    write_error(error, error_size, "native Metal uploader is null");
-    return -1;
-  }
-  return with_metal_autorelease_pool([&] {
-    return [uploader->impl uploadPreparedPresentFramePackage:package
-                                                     overlay:overlay
-                                               toPixelBuffer:(CVPixelBufferRef)pixel_buffer
-                                                       width:width
-                                                      height:height
-                                                         out:out
-                                                       error:error
-                                                   errorSize:error_size
-                                                  completion:completion
-                                                    userData:user_data];
-  });
+  (void)uploader;
+  (void)package;
+  (void)overlay;
+  (void)pixel_buffer;
+  (void)width;
+  (void)height;
+  (void)out;
+  (void)completion;
+  (void)user_data;
+  write_error(
+      error,
+      error_size,
+      "prepared native Metal package upload is disabled; pass package bytes explicitly");
+  return -1;
 }
 
 int VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(

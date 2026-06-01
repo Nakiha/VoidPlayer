@@ -193,6 +193,9 @@ int VPMacOSMetalUploaderCopyPresentFramePackageWithLayoutAndOverlayAsync(
     size_t error_size,
     VPMacOSMetalUploaderCompletion completion,
     void* user_data);
+// Deprecated ABI placeholders. Prepared package upload depended on mutable
+// uploader-internal staging bytes and is disabled; use
+// VPMacOSMetalUploaderCopyPresentFramePackageWithLayout* instead.
 int VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlay(
     VPMacOSMetalUploader* uploader,
     const VPMacOSNativePresentFramePackageInfo* package,

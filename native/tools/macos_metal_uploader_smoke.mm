@@ -388,6 +388,56 @@ int main() {
         static_cast<long long>(planar_info.pts_us));
     return fail("planar YUV420 Metal package upload did not produce neutral BGRA");
   }
+  char prepared_error[512] = {};
+  VPMacOSNativeFrameInfo prepared_info = {};
+  if (VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlay(
+          uploader,
+          &planar_package,
+          nullptr,
+          planar_buffer,
+          4,
+          4,
+          &prepared_info,
+          prepared_error,
+          sizeof(prepared_error)) != -1 ||
+      std::strcmp(
+          prepared_error,
+          "prepared native Metal package upload is disabled; pass package bytes explicitly") !=
+          0) {
+    CFRelease(planar_buffer);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(stderr, "prepared Metal upload was not rejected: %s\n", prepared_error);
+    return 1;
+  }
+  char prepared_async_error[512] = {};
+  if (VPMacOSMetalUploaderUploadPreparedPresentFramePackageWithLayoutAndOverlayAsync(
+          uploader,
+          &planar_package,
+          nullptr,
+          planar_buffer,
+          4,
+          4,
+          &prepared_info,
+          prepared_async_error,
+          sizeof(prepared_async_error),
+          async_upload_completed,
+          nullptr) != -1 ||
+      std::strcmp(
+          prepared_async_error,
+          "prepared native Metal package upload is disabled; pass package bytes explicitly") !=
+          0) {
+    CFRelease(planar_buffer);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(
+        stderr,
+        "prepared async Metal upload was not rejected: %s\n",
+        prepared_async_error);
+    return 1;
+  }
   CFRelease(planar_buffer);
 
   CVPixelBufferRef nv12_buffer =

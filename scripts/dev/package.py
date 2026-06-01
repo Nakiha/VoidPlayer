@@ -155,6 +155,7 @@ def _cmd_package_macos(args) -> None:
     _assert_no_mutable_artifacts(stage_dir, "macOS package staging")
     _assert_release_compliance(stage_dir)
     _assert_macos_app_compliance(stage_app)
+    _assert_macos_nested_code_layout(stage_app)
     _verify_macos_linkage(stage_app)
     sign_identity = args.macos_sign_identity or os.environ.get("VOIDPLAYER_MACOS_SIGN_IDENTITY")
     _sign_macos_app(stage_app, sign_identity)
@@ -293,6 +294,28 @@ def _assert_macos_app_compliance(stage_app: Path) -> None:
         if not path.is_file():
             print(f"\nERROR: macOS app compliance file missing: {path}")
             sys.exit(1)
+
+
+def _assert_macos_nested_code_layout(stage_app: Path) -> None:
+    helpers_analyzer = (
+        stage_app
+        / "Contents"
+        / "Helpers"
+        / "ffmpeg-analysis"
+        / "void_ffmpeg_analyzer"
+    )
+    if not helpers_analyzer.is_file():
+        print(f"\nERROR: macOS FFmpeg analyzer helper missing: {helpers_analyzer}")
+        sys.exit(1)
+    if not os.access(helpers_analyzer, os.X_OK):
+        print(f"\nERROR: macOS FFmpeg analyzer helper is not executable: {helpers_analyzer}")
+        sys.exit(1)
+
+    legacy_tools_dir = stage_app / "Contents" / "MacOS" / "tools"
+    if legacy_tools_dir.exists():
+        print(f"\nERROR: legacy macOS helper location is present: {legacy_tools_dir}")
+        print("Place bundled helper executables under Contents/Helpers.")
+        sys.exit(1)
 
 
 def _verify_macos_linkage(stage_app: Path) -> None:

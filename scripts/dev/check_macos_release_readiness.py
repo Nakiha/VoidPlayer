@@ -248,6 +248,26 @@ def _check_app_compliance(stage_app: Path) -> None:
         _require_file(path, label)
 
 
+def _check_nested_code_layout(stage_app: Path) -> None:
+    helpers_analyzer = (
+        stage_app
+        / "Contents"
+        / "Helpers"
+        / "ffmpeg-analysis"
+        / "void_ffmpeg_analyzer"
+    )
+    _require_file(helpers_analyzer, "macOS FFmpeg analyzer helper")
+    if not helpers_analyzer.stat().st_mode & 0o111:
+        raise RuntimeError(f"macOS FFmpeg analyzer helper is not executable: {helpers_analyzer}")
+
+    legacy_tools_dir = stage_app / "Contents" / "MacOS" / "tools"
+    if legacy_tools_dir.exists():
+        raise RuntimeError(
+            "legacy macOS helper location is present under Contents/MacOS/tools; "
+            "place helper executables under Contents/Helpers"
+        )
+
+
 def _check_stage(stage_dir: Path, require_developer_id: bool) -> None:
     _require_dir(stage_dir, "macOS package stage")
     stage_app = stage_dir / "VoidPlayer.app"
@@ -256,6 +276,7 @@ def _check_stage(stage_dir: Path, require_developer_id: bool) -> None:
 
     check_stage(stage_dir)
     _check_app_compliance(stage_app)
+    _check_nested_code_layout(stage_app)
     _check_no_mutable_artifacts(stage_dir)
     _check_macos_linkage(stage_app)
     _check_codesign(stage_app, require_developer_id)

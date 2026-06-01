@@ -1250,14 +1250,7 @@ class AnalysisManager extends ChangeNotifier
         return false;
       }
       final analysisFile = File(analysisPath);
-      final analyzerFile = File(
-        p.join(
-          p.dirname(Platform.resolvedExecutable),
-          'tools',
-          'ffmpeg-analysis',
-          'void_ffmpeg_analyzer.exe',
-        ),
-      );
+      final analyzerFile = _bundledFfmpegAnalyzerFile();
       if (!analysisFile.existsSync() || !analyzerFile.existsSync()) {
         return false;
       }
@@ -1268,6 +1261,42 @@ class AnalysisManager extends ChangeNotifier
       log.warning('[Analysis] FFmpeg analyzer cache age check failed: $e');
       return false;
     }
+  }
+
+  File _bundledFfmpegAnalyzerFile() {
+    final executableDir = p.dirname(Platform.resolvedExecutable);
+    if (Platform.isMacOS) {
+      final helpersCandidate = File(
+        p.normalize(
+          p.join(
+            executableDir,
+            '..',
+            'Helpers',
+            'ffmpeg-analysis',
+            'void_ffmpeg_analyzer',
+          ),
+        ),
+      );
+      if (helpersCandidate.existsSync()) {
+        return helpersCandidate;
+      }
+      return File(
+        p.join(
+          executableDir,
+          'tools',
+          'ffmpeg-analysis',
+          'void_ffmpeg_analyzer',
+        ),
+      );
+    }
+    return File(
+      p.join(
+        executableDir,
+        'tools',
+        'ffmpeg-analysis',
+        'void_ffmpeg_analyzer.exe',
+      ),
+    );
   }
 
   Future<bool> _generateVac2BaseSerialized(String videoPath, String hash) {

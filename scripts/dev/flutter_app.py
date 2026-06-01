@@ -76,7 +76,7 @@ def _install_macos_ffmpeg_analyzer(app_bundle: Path) -> None:
         print(f"ERROR: FFmpeg analyzer not found: {analyzer}")
         sys.exit(1)
 
-    tools_dir = app_bundle / "Contents" / "MacOS" / "tools" / "ffmpeg-analysis"
+    tools_dir = app_bundle / "Contents" / "Helpers" / "ffmpeg-analysis"
     tools_dir.mkdir(parents=True, exist_ok=True)
     dest = tools_dir / analyzer.name
     if not dest.exists() or analyzer.stat().st_mtime > dest.stat().st_mtime:

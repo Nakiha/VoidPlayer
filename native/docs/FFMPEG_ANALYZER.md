@@ -80,7 +80,7 @@ clang/darwin FFmpeg static archives and the same zstd-backed VACHUNK writer. Dev
 builds install the tool into the app bundle under:
 
 ```text
-build/macos/Build/Products/<Config>/VoidPlayer.app/Contents/MacOS/tools/ffmpeg-analysis/void_ffmpeg_analyzer
+build/macos/Build/Products/<Config>/VoidPlayer.app/Contents/Helpers/ffmpeg-analysis/void_ffmpeg_analyzer
 ```
 
 The dev script stamps the analyzer with a signature over the Python build helper and

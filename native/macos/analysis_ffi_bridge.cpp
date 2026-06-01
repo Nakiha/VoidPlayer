@@ -108,6 +108,7 @@ std::string find_ffmpeg_analyzer() {
     const std::string platform = host_analyzer_platform_dir();
     std::vector<std::string> candidates;
     for (const auto& root : roots) {
+        candidates.push_back(join_path(join_path(root, "../Helpers"), "ffmpeg-analysis/void_ffmpeg_analyzer"));
         candidates.push_back(join_path(join_path(root, "tools"), "ffmpeg-analysis/void_ffmpeg_analyzer"));
         candidates.push_back(join_path(root, "void_ffmpeg_analyzer"));
         candidates.push_back(join_path(

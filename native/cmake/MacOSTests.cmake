@@ -284,6 +284,16 @@ target_link_libraries(decode_frame_drainer_smoke PRIVATE
 add_test(NAME decode_frame_drainer_smoke COMMAND decode_frame_drainer_smoke)
 void_label_test(decode_frame_drainer_smoke "contract;portable")
 
+add_executable(decode_frame_receive_loop_smoke
+    "${VOID_NATIVE_DIR}/tools/decode_frame_receive_loop_smoke.cpp"
+)
+void_apply_native_compile_options(decode_frame_receive_loop_smoke)
+target_link_libraries(decode_frame_receive_loop_smoke PRIVATE
+    void_media_ffmpeg
+)
+add_test(NAME decode_frame_receive_loop_smoke COMMAND decode_frame_receive_loop_smoke)
+void_label_test(decode_frame_receive_loop_smoke "contract;portable")
+
 add_executable(decode_thread_software_smoke
     "${VOID_NATIVE_DIR}/tools/decode_thread_software_smoke.cpp"
 )

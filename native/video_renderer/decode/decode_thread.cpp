@@ -3,6 +3,7 @@
 #include "video_renderer/decode/codec_loop.h"
 #include "video_renderer/decode/decode_drain_policy.h"
 #include "video_renderer/decode/decode_frame_drainer.h"
+#include "video_renderer/decode/decode_frame_receive_loop.h"
 #include "video_renderer/decode/decode_loop_policy.h"
 #include "video_renderer/decode/decode_preroll_policy.h"
 #include "video_renderer/decode/exact_seek_frame_publisher.h"
@@ -980,78 +981,72 @@ void DecodeThread::run() {
             continue;
         }
 
-        int frames_produced = 0;
-        while (true) {
-            if (should_stop_receive_loop_before_frame(
-                    cancelled_.load(std::memory_order_acquire))) {
-                break;
-            }
-            ret = receive_codec_frame_seh_guarded(codec_ctx_, frame, hw_enabled_, device_mutex_);
-            const auto receive_action = choose_decode_frame_receive_action(ret);
-            if (receive_action == DecodeFrameReceiveAction::StopWithError) {
-                output_buffer_.set_state(TrackState::Error);
-                decode_paused_.store(true, std::memory_order_release);
-                running_.store(false, std::memory_order_release);
-                break;
-            }
-            if (receive_action == DecodeFrameReceiveAction::Stop) {
-                break;
-            }
-            if (receive_action == DecodeFrameReceiveAction::StopWithLoggedError) {
-                spdlog::error("[DecodeThread] Error receiving frame: {:#x}", static_cast<unsigned>(ret));
-                break;
-            }
-
-            AvFrameUnrefGuard frame_guard(frame);
-            rescale_ts(frame);
-            log_hw_frame_context_once(frame);
-
-            // Exact seek: FFmpeg returns frames in display order after codec
-            // reordering. Keep only the latest frame before target, then a
-            // tiny preview window after it.
-            if (exact_seek_target_us_ >= 0) {
-                if (!should_collect_exact_seek_candidate(frame->pts, exact_seek_target_us_)) {
+        const auto receive_result = receive_decode_frames_for_packet(
+            frame,
+            DecodeFrameReceiveLoopOptions{
+                exact_seek_target_us_ >= 0,
+                exact_seek_target_us_,
+                perf_.frames_decoded.load(std::memory_order_relaxed) > 0,
+            },
+            DecodeFrameReceiveLoopCallbacks{
+                [this]() {
+                    return should_stop_receive_loop_before_frame(
+                        cancelled_.load(std::memory_order_acquire));
+                },
+                [this](AVFrame* frame_to_receive) {
+                    return receive_codec_frame_seh_guarded(
+                        codec_ctx_, frame_to_receive, hw_enabled_, device_mutex_);
+                },
+                rescale_ts,
+                [this](const AVFrame* ready_frame) {
+                    log_hw_frame_context_once(ready_frame);
+                },
+                [this]() {
                     perf_.frames_dropped.fetch_add(1, std::memory_order_relaxed);
-                    continue;
-                }
-
-                auto candidate = ExactSeekCandidateStore::make_candidate(frame);
-                ++frames_produced;
-                if (candidate.frame) {
-                    collect_exact_seek_candidate(std::move(candidate));
-                }
-
-                if (should_publish_exact_seek_preview_after_collect(
-                        exact_seek_target_us_ >= 0,
-                        exact_seek_preview_window_ready())) {
+                },
+                [this](AVFrame* exact_seek_frame) {
+                    auto candidate =
+                        ExactSeekCandidateStore::make_candidate(exact_seek_frame);
+                    if (candidate.frame) {
+                        collect_exact_seek_candidate(std::move(candidate));
+                    }
+                },
+                [this]() {
+                    return exact_seek_preview_window_ready();
+                },
+                [this]() {
                     publish_best_exact_seek_frame();
-                    break;
-                }
-
-                continue;
-            }
-
-            ++frames_produced;
-
-            // Flush the independent decode device after the first visible HW
-            // frame on startup and after seek/add-track transitions. Without
-            // this, the render device can sample a partially-written NV12
-            // surface, which shows up as green or missing regions.
-            if (frames_produced == 1 &&
-                perf_.frames_decoded.load(std::memory_order_relaxed) == 0) {
-                hw_visibility_flush_pending_ = hw_enabled_;
-            }
-
-            // The flush must happen before push_frame() publishes this frame
-            // to the render thread, otherwise the paused preview path can win
-            // the race and draw an incomplete surface.
-            publisher.flush_visibility_if_needed();
-            if (!publisher.convert_and_push_frame(frame, "decode loop")) {
-                break;
-            }
-
-            complete_preroll_if_ready();
+                },
+                [this]() {
+                    // Flush the independent decode device after the first
+                    // visible HW frame on startup and after seek/add-track
+                    // transitions. Without this, the render device can sample
+                    // a partially-written NV12 surface.
+                    hw_visibility_flush_pending_ = hw_enabled_;
+                },
+                [&publisher](AVFrame* frame_to_publish) {
+                    // The flush must happen before push_frame() publishes this
+                    // frame to the render thread, otherwise the paused preview
+                    // path can win the race and draw an incomplete surface.
+                    publisher.flush_visibility_if_needed();
+                    return publisher.convert_and_push_frame(
+                        frame_to_publish, "decode loop");
+                },
+                [this]() {
+                    complete_preroll_if_ready();
+                },
+                [](int receive_ret) {
+                    spdlog::error("[DecodeThread] Error receiving frame: {:#x}",
+                                  static_cast<unsigned>(receive_ret));
+                },
+            });
+        if (receive_result.stop_with_error) {
+            output_buffer_.set_state(TrackState::Error);
+            decode_paused_.store(true, std::memory_order_release);
+            running_.store(false, std::memory_order_release);
+            break;
         }
+        const int frames_produced = receive_result.frames_produced;
 
         // Exact seek B-frame reordering fallback. The receive loop normally
         // publishes once enough frames are collected, but EOF/drain can also

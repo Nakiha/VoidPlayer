@@ -25,7 +25,15 @@ python native/build.py --benchmarks-only
 
 # Debug 构建
 python native/build.py --debug
+
+# 显式平台/目录（覆盖 host 默认）
+python native/build.py --platform macos --build-dir native/build-macos-local
 ```
+
+`native/build.py` 会按 host 选择默认构建目录和 FFmpeg root：
+Windows 使用 `native/build-msvc` + `windows/libs/ffmpeg`，macOS 使用
+`native/build-macos` + `third_party/ffmpeg`。需要交叉验证时用
+`--platform`、`--build-dir`、`--ffmpeg-root` 显式指定，不要依赖隐式 Windows 路径。
 
 ### 测试必须全绿
 

@@ -1,15 +1,53 @@
 """Build script for video_renderer_native module."""
 import argparse
 import os
+import sys
 import subprocess
 from pathlib import Path
+
+
+def host_platform() -> str:
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "macos"
+    return "portable"
+
+
+def default_build_dir(script_dir: Path, platform_name: str) -> Path:
+    if platform_name == "windows":
+        return script_dir / "build-msvc"
+    if platform_name == "macos":
+        return script_dir / "build-macos"
+    return script_dir / "build-native"
+
+
+def default_ffmpeg_candidates(script_dir: Path, platform_name: str) -> list[Path]:
+    if platform_name == "windows":
+        return [
+            script_dir.parent / "windows" / "libs" / "ffmpeg",
+            script_dir.parent / "third_party" / "ffmpeg",
+        ]
+    if platform_name == "macos":
+        return [
+            script_dir.parent / "third_party" / "ffmpeg",
+            script_dir.parent / "windows" / "libs" / "ffmpeg",
+        ]
+    return [
+        script_dir.parent / "third_party" / "ffmpeg",
+        script_dir.parent / "windows" / "libs" / "ffmpeg",
+    ]
 
 
 def is_ffmpeg_root(path: Path) -> bool:
     return (path / "include" / "libavcodec" / "avcodec.h").exists()
 
 
-def resolve_ffmpeg_root(script_dir: Path, explicit_root: str | None) -> Path:
+def resolve_ffmpeg_root(
+    script_dir: Path,
+    platform_name: str,
+    explicit_root: str | None,
+) -> Path:
     candidates: list[Path] = []
 
     if explicit_root:
@@ -20,7 +58,7 @@ def resolve_ffmpeg_root(script_dir: Path, explicit_root: str | None) -> Path:
         if env_value:
             candidates.append(Path(env_value))
 
-    candidates.append(script_dir.parent / "windows" / "libs" / "ffmpeg")
+    candidates.extend(default_ffmpeg_candidates(script_dir, platform_name))
 
     for candidate in candidates:
         resolved = candidate.expanduser().resolve()
@@ -94,8 +132,14 @@ def test(build_dir: Path, build_type: str, script_dir: Path, skip_analysis_tests
         return
 
 
-def benchmark(build_dir: Path, build_type: str):
-    exe = build_dir / build_type / "pipeline_bench.exe"
+def native_executable_name(name: str, platform_name: str) -> str:
+    return f"{name}.exe" if platform_name == "windows" else name
+
+
+def benchmark(build_dir: Path, build_type: str, platform_name: str):
+    if platform_name != "windows":
+        raise RuntimeError("pipeline_bench is currently a Windows native benchmark target")
+    exe = build_dir / build_type / native_executable_name("pipeline_bench", platform_name)
     video = build_dir.parents[1] / "resources" / "video" / "h264_9s_1920x1080.mp4"
     subprocess.check_call([str(exe), str(video)])
 
@@ -113,14 +157,24 @@ def main():
                         help="Build in Debug mode (no optimization, with PDB debug symbols)")
     parser.add_argument("--ffmpeg-root", type=str, default=None,
                         help="Path to an FFmpeg root containing include/ and lib/")
+    parser.add_argument("--platform", choices=["host", "windows", "macos", "portable"],
+                        default="host",
+                        help="Native target platform defaults to the current host")
+    parser.add_argument("--build-dir", type=str, default=None,
+                        help="Override the native build directory")
     parser.add_argument("--github", action="store_true",
                         help="Skip external analysis tool tests for lightweight GitHub CI")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
-    build_dir = (script_dir / "build-msvc").resolve()
+    platform_name = host_platform() if args.platform == "host" else args.platform
+    build_dir = (
+        Path(args.build_dir)
+        if args.build_dir
+        else default_build_dir(script_dir, platform_name)
+    ).expanduser().resolve()
     build_type = "Debug" if args.debug else "Release"
-    ffmpeg_root = resolve_ffmpeg_root(script_dir, args.ffmpeg_root)
+    ffmpeg_root = resolve_ffmpeg_root(script_dir, platform_name, args.ffmpeg_root)
 
     if args.benchmarks_only:
         print("Configuring...", flush=True)
@@ -139,7 +193,7 @@ def main():
         build(build_dir, build_type)
 
         print("Running benchmarks...", flush=True)
-        benchmark(build_dir, build_type)
+        benchmark(build_dir, build_type, platform_name)
         print("Done.", flush=True)
         return
 

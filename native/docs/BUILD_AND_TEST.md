@@ -37,6 +37,10 @@ python3.12 dev.py gate windows-preservation
 ```
 
 Native 子目录仍可直接使用 CMake/presets，但日常开发建议通过顶层 `dev.py` 保持平台产物和依赖检查一致。
+如需直接调用 legacy wrapper，`python native/build.py` 会按 host 选择平台默认：
+Windows -> `native/build-msvc` / `windows/libs/ffmpeg`，macOS ->
+`native/build-macos` / `third_party/ffmpeg`；也可用 `--platform`、`--build-dir`、
+`--ffmpeg-root` 显式覆盖。
 
 ## CMake 目标概览
 

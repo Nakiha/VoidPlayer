@@ -71,10 +71,6 @@ struct CliOptions {
     bool with_grid = false;
 };
 
-std::string fourcc(const char value[4]) {
-    return std::string(value, value + 4);
-}
-
 std::string json_escape(const std::string& value) {
     std::ostringstream out;
     for (const char ch : value) {

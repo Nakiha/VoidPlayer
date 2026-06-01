@@ -373,9 +373,12 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
   return 0;
 }
 
-int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+namespace {
+
+int request_renderer_owned_frame_refresh(
     VPMacOSNativePlayer* player,
     int32_t timeout_ms,
+    uint32_t flags,
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size) {
@@ -400,6 +403,20 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   bool refresh_submitted = false;
   bool refresh_deferred_by_backpressure = false;
   std::string last_refresh_backpressure_error;
+  const bool suppress_frame_callback =
+      (flags & VPMacOSNativeFrameRefreshSuppressFrameCallback) != 0;
+  auto release_manual_refresh_callback_suppression_locked = [&]() {
+    if (!suppress_frame_callback) {
+      return;
+    }
+    if (player->manual_refresh_callback_suppression_count > 0) {
+      --player->manual_refresh_callback_suppression_count;
+    }
+  };
+  auto release_manual_refresh_callback_suppression = [&]() {
+    std::lock_guard<std::mutex> lock(player->callback_mutex);
+    release_manual_refresh_callback_suppression_locked();
+  };
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
     if (!player->presentation_target_pixel_buffer ||
@@ -421,6 +438,9 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     }
     baseline_frame_available = player->last_renderer_owned_frame_info_available;
     refresh_min_pts_us = player->renderer_owned_refresh_min_pts_us;
+    if (suppress_frame_callback) {
+      ++player->manual_refresh_callback_suppression_count;
+    }
   }
 
   auto trigger_renderer_refresh = [&]() -> bool {
@@ -460,6 +480,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     return false;
   };
   if (!trigger_renderer_refresh()) {
+    release_manual_refresh_callback_suppression();
     return -1;
   }
 
@@ -536,6 +557,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
         const bool requested = trigger_renderer_refresh();
         callback_lock.lock();
         if (!requested) {
+          release_manual_refresh_callback_suppression_locked();
           return -1;
         }
       }
@@ -554,6 +576,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     }
     write_error(error, error_size,
                 "renderer-owned Metal presentation target changed during refresh");
+    release_manual_refresh_callback_suppression_locked();
     return -1;
   }
   if (player->renderer_owned_presentation_upload_count > baseline_upload_count &&
@@ -622,5 +645,29 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     write_error(error, error_size,
                 "renderer-owned Metal frame refresh timed out");
   }
+  release_manual_refresh_callback_suppression_locked();
   return -2;
+}
+
+}  // namespace
+
+int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+    VPMacOSNativePlayer* player,
+    int32_t timeout_ms,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  return request_renderer_owned_frame_refresh(player, timeout_ms, 0, out, error,
+                                              error_size);
+}
+
+int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
+    VPMacOSNativePlayer* player,
+    int32_t timeout_ms,
+    uint32_t flags,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  return request_renderer_owned_frame_refresh(player, timeout_ms, flags, out,
+                                              error, error_size);
 }

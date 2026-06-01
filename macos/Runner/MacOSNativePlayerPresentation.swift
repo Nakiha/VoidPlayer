@@ -153,12 +153,16 @@ extension MacOSNativePlayerSession {
     )
   }
 
-  func requestRendererOwnedFrameRefresh(timeoutMs: Int) throws -> MacOSNativeFrameInfo {
+  func requestRendererOwnedFrameRefresh(
+    timeoutMs: Int,
+    suppressFrameCallback: Bool = false
+  ) throws -> MacOSNativeFrameInfo {
     var info = VPMacOSNativeFrameInfo()
     var error = [CChar](repeating: 0, count: 1024)
-    let ret = VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+    let ret = VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
       handle,
       Int32(max(0, timeoutMs)),
+      suppressFrameCallback ? UInt32(VPMacOSNativeFrameRefreshSuppressFrameCallback) : 0,
       &info,
       &error,
       error.count

@@ -65,6 +65,7 @@ struct VPMacOSNativePlayer {
   void* frame_available_user_data = nullptr;
   uint64_t frame_available_callback_generation = 0;
   uint64_t frame_available_callback_in_flight = 0;
+  uint64_t manual_refresh_callback_suppression_count = 0;
   VPMacOSMetalPresentationBackend* presentation_target_backend = nullptr;
   void* presentation_target_pixel_buffer = nullptr;
   std::vector<void*> presentation_target_pixel_buffers;

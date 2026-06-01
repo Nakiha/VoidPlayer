@@ -143,7 +143,10 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
 
     do {
       let requestStartNs = DispatchTime.now().uptimeNanoseconds
-      let info = try player.requestRendererOwnedFrameRefresh(timeoutMs: waitTimeoutMs)
+      let info = try player.requestRendererOwnedFrameRefresh(
+        timeoutMs: waitTimeoutMs,
+        suppressFrameCallback: true
+      )
       let requestEndNs = DispatchTime.now().uptimeNanoseconds
       lock.lock()
       defer { lock.unlock() }

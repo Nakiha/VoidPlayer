@@ -214,6 +214,7 @@ void VPMacOSNativePlayer::on_frame_available(
   VPMacOSFrameAvailableCallback callback = nullptr;
   void* user_data = nullptr;
   bool callback_in_flight = false;
+  bool suppress_external_callback = false;
   uint64_t upload_count = 0;
   int64_t pts_us = -1;
   {
@@ -259,8 +260,14 @@ void VPMacOSNativePlayer::on_frame_available(
     ++renderer_owned_presentation_event_sequence;
     upload_count = renderer_owned_presentation_upload_count;
     pts_us = last_renderer_owned_frame_info.pts_us;
-    callback = frame_available_callback;
-    user_data = frame_available_user_data;
+    if (manual_refresh_callback_suppression_count > 0) {
+      --manual_refresh_callback_suppression_count;
+      suppress_external_callback = true;
+    }
+    if (!suppress_external_callback) {
+      callback = frame_available_callback;
+      user_data = frame_available_user_data;
+    }
     if (callback) {
       ++frame_available_callback_in_flight;
       callback_in_flight = true;
@@ -284,11 +291,12 @@ void VPMacOSNativePlayer::on_frame_available(
   if (vp_macos::env_enabled("VOIDPLAYER_MACOS_PROFILER") &&
       (elapsed_us >= 2000 || upload_count % 240 == 0)) {
     spdlog::info(
-        "[MacOSProfiler] frame_available total_us={} upload_count={} pts_us={} has_callback={}",
+        "[MacOSProfiler] frame_available total_us={} upload_count={} pts_us={} has_callback={} suppressed_manual_refresh={}",
         elapsed_us,
         upload_count,
         pts_us,
-        callback != nullptr);
+        callback != nullptr,
+        suppress_external_callback);
   }
 }
 
@@ -310,6 +318,9 @@ void VPMacOSNativePlayer::record_presentation_failure_locked(
 void VPMacOSNativePlayer::on_frame_failed(const char* error) {
   {
     std::lock_guard<std::mutex> callback_lock(callback_mutex);
+    if (manual_refresh_callback_suppression_count > 0) {
+      --manual_refresh_callback_suppression_count;
+    }
     record_presentation_failure_locked(
         error ? std::string(error) : std::string(), false);
   }

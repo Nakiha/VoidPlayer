@@ -274,6 +274,16 @@ target_compile_definitions(software_decode_frame_queue_smoke PRIVATE
 add_test(NAME software_decode_frame_queue_smoke COMMAND software_decode_frame_queue_smoke)
 void_label_test(software_decode_frame_queue_smoke "macos;native;integration")
 
+add_executable(decode_frame_drainer_smoke
+    "${VOID_NATIVE_DIR}/tools/decode_frame_drainer_smoke.cpp"
+)
+void_apply_native_compile_options(decode_frame_drainer_smoke)
+target_link_libraries(decode_frame_drainer_smoke PRIVATE
+    void_media_ffmpeg
+)
+add_test(NAME decode_frame_drainer_smoke COMMAND decode_frame_drainer_smoke)
+void_label_test(decode_frame_drainer_smoke "contract;portable")
+
 add_executable(decode_thread_software_smoke
     "${VOID_NATIVE_DIR}/tools/decode_thread_software_smoke.cpp"
 )

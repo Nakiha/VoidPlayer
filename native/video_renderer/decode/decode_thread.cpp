@@ -2,6 +2,7 @@
 #include "video_renderer/decode/av_frame_lifetime.h"
 #include "video_renderer/decode/codec_loop.h"
 #include "video_renderer/decode/decode_drain_policy.h"
+#include "video_renderer/decode/decode_frame_drainer.h"
 #include "video_renderer/decode/decode_loop_policy.h"
 #include "video_renderer/decode/decode_preroll_policy.h"
 #include "video_renderer/decode/exact_seek_frame_publisher.h"
@@ -870,47 +871,45 @@ void DecodeThread::run() {
                 drain_decoder_before_next_packet_,
                 decode_paused_.load(std::memory_order_acquire),
                 output_buffer_.state())) {
-            int drained = 0;
-            while (true) {
-                if (should_abort_drain_before_receive(
-                        cancelled_.load(std::memory_order_acquire),
-                        output_buffer_.state())) {
-                    drain_decoder_before_next_packet_ = false;
-                    break;
-                }
-
-                int ret = receive_codec_frame_seh_guarded(
-                    codec_ctx_, frame, hw_enabled_, device_mutex_);
-                const auto drain_action = choose_drain_before_next_packet_receive_action(ret);
-                if (drain_action == DecodeDrainReceiveAction::StopWithErrorAndClearDrainRequest) {
-                    output_buffer_.set_state(TrackState::Error);
-                    decode_paused_.store(true, std::memory_order_release);
-                    running_.store(false, std::memory_order_release);
-                    drain_decoder_before_next_packet_ = false;
-                    break;
-                }
-                if (drain_action == DecodeDrainReceiveAction::StopAndClearDrainRequest) {
-                    drain_decoder_before_next_packet_ = false;
-                    break;
-                }
-
-                AvFrameUnrefGuard frame_guard(frame);
-                rescale_ts(frame);
-                log_hw_frame_context_once(frame);
-                publisher.flush_before_publish_if_needed(true);
-                if (!publisher.convert_and_push_frame(frame, "drain before next packet")) {
-                    break;
-                }
-                ++drained;
-
-                if (should_stop_drain_after_publish(
-                        decode_paused_.load(std::memory_order_acquire),
-                        output_buffer_.state())) {
-                    break;
-                }
+            const auto drain_result = drain_frames_before_next_packet(
+                frame,
+                DecodeFrameDrainCallbacks{
+                    [this]() {
+                        return should_abort_drain_before_receive(
+                            cancelled_.load(std::memory_order_acquire),
+                            output_buffer_.state());
+                    },
+                    [this](AVFrame* frame_to_receive) {
+                        return receive_codec_frame_seh_guarded(
+                            codec_ctx_, frame_to_receive, hw_enabled_, device_mutex_);
+                    },
+                    rescale_ts,
+                    [this](const AVFrame* ready_frame) {
+                        log_hw_frame_context_once(ready_frame);
+                    },
+                    [&publisher](AVFrame* frame_to_publish) {
+                        publisher.flush_before_publish_if_needed(true);
+                        return publisher.convert_and_push_frame(
+                            frame_to_publish, "drain before next packet");
+                    },
+                    [this]() {
+                        return should_stop_drain_after_publish(
+                            decode_paused_.load(std::memory_order_acquire),
+                            output_buffer_.state());
+                    },
+                });
+            if (drain_result.stop_with_error) {
+                output_buffer_.set_state(TrackState::Error);
+                decode_paused_.store(true, std::memory_order_release);
+                running_.store(false, std::memory_order_release);
             }
-            if (drained > 0) {
-                perf_.frames_decoded.fetch_add(drained, std::memory_order_relaxed);
+            if (drain_result.clear_drain_request) {
+                drain_decoder_before_next_packet_ = false;
+            }
+            if (drain_result.frames_published > 0) {
+                perf_.frames_decoded.fetch_add(
+                    static_cast<uint64_t>(drain_result.frames_published),
+                    std::memory_order_relaxed);
             }
             continue;
         }

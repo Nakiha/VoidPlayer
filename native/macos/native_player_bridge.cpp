@@ -18,6 +18,10 @@ VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void) {
 }
 
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return;
+  }
+  VPMacOSNativePlayerSetFrameAvailableCallback(player, nullptr, nullptr);
   delete player;
 }
 
@@ -68,9 +72,16 @@ int VPMacOSNativePlayerOpen(VPMacOSNativePlayer* player,
     player->shutdown_renderer_locked();
   }
   player->opened_path = path;
+  bool target_installed = false;
+  {
+    std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+    target_installed =
+        player->presentation_target_pixel_buffer &&
+        player->presentation_target_width > 0 &&
+        player->presentation_target_height > 0;
+  }
   std::string message;
-  if (player->presentation_target_pixel_buffer &&
-      !player->ensure_renderer_locked(message)) {
+  if (target_installed && !player->ensure_renderer_locked(message)) {
     write_error(error, error_size, message);
     return -1;
   }
@@ -110,10 +121,11 @@ int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
     return -1;
   }
   player->update_decode_names_locked();
+  const int64_t current_pts_us = player->renderer->current_pts_us();
   {
     std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
     player->renderer_owned_refresh_min_pts_us =
-        std::max<int64_t>(0, player->renderer->current_pts_us() - 500'000);
+        std::max<int64_t>(0, current_pts_us - 500'000);
   }
   write_error(error, error_size, "");
   return 0;

@@ -28,7 +28,8 @@ extern "C" {
  * - The frame callback may run on a renderer/native worker thread. It must not
  *   call back into player APIs synchronously. Clearing the callback with
  *   VPMacOSNativePlayerSetFrameAvailableCallback(player, NULL, NULL) waits for
- *   any callback invocation already in progress to return.
+ *   any callback invocation already in progress to return. Destroy also clears
+ *   and drains the callback before freeing the player.
  * - Error buffers are caller-owned writable byte buffers. On success, functions
  *   that accept an error buffer write an empty string when possible.
  */

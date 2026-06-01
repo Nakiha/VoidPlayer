@@ -117,6 +117,7 @@ VPMacOSNativeLayoutState to_native_layout_state(const vr::LayoutState& layout) {
 }  // namespace vp_macos
 
 VPMacOSNativePlayer::~VPMacOSNativePlayer() {
+  std::lock_guard<std::mutex> lock(mutex);
   shutdown_renderer_locked();
 }
 

@@ -10,10 +10,20 @@ ROOT = Path(__file__).resolve().parents[2]
 
 NATIVE_DIR = ROOT / "native"
 NATIVE_BUILD_PY = NATIVE_DIR / "build.py"
-NATIVE_BUILD_DIR = NATIVE_DIR / "build-msvc"
 DEMO_SCRIPT = NATIVE_DIR / "video_renderer" / "demo" / "demo_video_renderer.py"
 
 FFMPEG_ANALYZER_DIR = ROOT / "native" / "analysis" / "vendor" / "ffmpeg"
+
+
+def default_native_build_dir() -> Path:
+    if sys.platform == "win32":
+        return NATIVE_DIR / "build-msvc"
+    if sys.platform == "darwin":
+        return NATIVE_DIR / "build-macos"
+    return NATIVE_DIR / "build-native"
+
+
+NATIVE_BUILD_DIR = default_native_build_dir()
 
 
 def host_platform_id() -> str:
@@ -85,8 +95,15 @@ def macos_app_exe_path(debug: bool) -> Path:
 def find_voidplayer_cli() -> Path:
     if sys.platform == "win32":
         release_cli = WINDOWS_BUILD_DIR / "Release" / "VoidPlayerCli.exe"
-        native_cli = NATIVE_DIR / "build-msvc" / "Release" / "VoidPlayerCli.exe"
+        native_cli = NATIVE_BUILD_DIR / "Release" / "VoidPlayerCli.exe"
         return release_cli if release_cli.exists() else native_cli
     if sys.platform == "darwin":
+        for candidate in (
+            MACOS_NATIVE_ANALYSIS_BUILD_DIR / "VoidPlayerCli",
+            NATIVE_DIR / "build-macos-make" / "VoidPlayerCli",
+            NATIVE_BUILD_DIR / "VoidPlayerCli",
+        ):
+            if candidate.exists():
+                return candidate
         return MACOS_NATIVE_ANALYSIS_BUILD_DIR / "VoidPlayerCli"
     return NATIVE_DIR / "build" / executable_name("VoidPlayerCli")

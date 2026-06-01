@@ -36,7 +36,7 @@ def cmd_analysis_benchmark(args) -> None:
     cli = _find_cli()
     analyzer = find_ffmpeg_analyzer()
     if not cli.exists():
-        print(f"ERROR: VoidPlayerCli.exe not found: {cli}")
+        print(f"ERROR: VoidPlayerCli not found: {cli}")
         print("Run: python dev.py analysis-benchmark --build")
         sys.exit(1)
     if not analyzer.exists():

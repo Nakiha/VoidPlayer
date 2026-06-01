@@ -385,7 +385,9 @@ private:
     std::unique_ptr<AnalysisOverlayRenderer> analysis_overlay_renderer_;
     std::unique_ptr<PresentationBackend> presentation_backend_;
     std::unique_ptr<RenderSink> render_sink_;
+#ifdef _WIN32
     FrameCaptureService* frame_capture_ = nullptr;
+#endif
     LayoutController layout_controller_;
     RenderLoopController render_loop_controller_;
     PresentationScheduler presentation_scheduler_;

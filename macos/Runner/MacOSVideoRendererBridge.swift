@@ -94,6 +94,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       configureNativeLogging(arguments: call.arguments)
       result(nil)
     case "setViewportBackgroundColor":
+      if let color = MacOSFlutterArguments.intArg(call.arguments, "color") {
+        nativePlayer?.setBackgroundColor(color)
+        if backendName == MacOSVideoTrackPayload.nativeFormatName {
+          presentation.refreshCurrentFrame(context: presentationContext())
+        }
+      }
       result(nil)
     case "setTrackOffset":
       transport.setTrackOffset(arguments: call.arguments, player: nativePlayer)
@@ -349,14 +355,28 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     )
   }
 
-  func scheduleNativeFrameCopyFromCallback() {
+  func scheduleNativeFrameCopyFromCallback(
+    callbackGeneration: UInt64,
+    callbackContext: MacOSNativeFrameCallbackContext
+  ) {
     let cachedPlaying = playback.isPlaying
     let enqueueNs = DispatchTime.now().uptimeNanoseconds
     guard frameCallbackProfiler.tryEnqueue(enqueueNs: enqueueNs) else {
       return
     }
-    let schedule = { [weak self] in
-      self?.processNativeFrameCallback(enqueueNs: enqueueNs)
+    let schedule = { [weak self, weak callbackContext] in
+      guard let self else { return }
+      guard callbackContext?.isCurrent(callbackGeneration) == true else {
+        _ = self.frameCallbackProfiler.finishProcessing(
+          endNs: DispatchTime.now().uptimeNanoseconds
+        )
+        return
+      }
+      self.processNativeFrameCallback(
+        enqueueNs: enqueueNs,
+        callbackGeneration: callbackGeneration,
+        callbackContext: callbackContext
+      )
     }
     if cachedPlaying {
       DispatchQueue.main.async {
@@ -371,7 +391,17 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func processNativeFrameCallback(enqueueNs: UInt64) {
+  private func processNativeFrameCallback(
+    enqueueNs: UInt64,
+    callbackGeneration: UInt64,
+    callbackContext: MacOSNativeFrameCallbackContext?
+  ) {
+    guard callbackContext?.isCurrent(callbackGeneration) == true else {
+      _ = frameCallbackProfiler.finishProcessing(
+        endNs: DispatchTime.now().uptimeNanoseconds
+      )
+      return
+    }
     let startNs = DispatchTime.now().uptimeNanoseconds
     let nativePlaying = playback.syncPlayingState(player: nativePlayer)
     frameCallbackProfiler.recordMainStart(enqueueNs: enqueueNs, startNs: startNs)
@@ -400,12 +430,19 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     if let nextEnqueueNs = frameCallbackProfiler.finishProcessing(endNs: endNs) {
       DispatchQueue.main.asyncAfter(
         deadline: .now() + .milliseconds(coalescedFrameCallbackDelayMs)
-      ) { [weak self] in
+      ) { [weak self, weak callbackContext] in
         guard let self else { return }
+        guard callbackContext?.isCurrent(callbackGeneration) == true else {
+          return
+        }
         if !nativePlaying {
           _ = self.playback.syncPlayingState(player: self.nativePlayer)
         }
-        self.processNativeFrameCallback(enqueueNs: nextEnqueueNs)
+        self.processNativeFrameCallback(
+          enqueueNs: nextEnqueueNs,
+          callbackGeneration: callbackGeneration,
+          callbackContext: callbackContext
+        )
       }
     }
   }

@@ -38,6 +38,7 @@ struct PresentationBackendFrameInfo {
     int64_t source_packet_pts = kNoTimestampUs;
     int64_t source_packet_dts = kNoTimestampUs;
     uint64_t target_pixel_buffer_address = 0;
+    uint64_t layout_revision = 0;
 };
 
 using PresentationBackendAsyncDrawCompleted =

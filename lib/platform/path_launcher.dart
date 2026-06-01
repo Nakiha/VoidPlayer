@@ -17,11 +17,11 @@ class LocalPathLauncher implements PathLauncher {
   Future<void> openFolder(String path) async {
     await Directory(path).create(recursive: true);
     if (Platform.isWindows) {
-      await Process.start('explorer.exe', [path]);
+      await _runLauncher('explorer.exe', [path]);
     } else if (Platform.isMacOS) {
-      await Process.start('open', [path]);
+      await _runLauncher('open', [path]);
     } else {
-      await Process.start('xdg-open', [path]);
+      await _runLauncher('xdg-open', [path]);
     }
   }
 
@@ -30,23 +30,35 @@ class LocalPathLauncher implements PathLauncher {
     final file = File(path);
     if (Platform.isWindows) {
       if (await file.exists()) {
-        await Process.start('explorer.exe', ['/select,', file.absolute.path]);
+        await _runLauncher('explorer.exe', ['/select,', file.absolute.path]);
         return;
       }
       final parent = file.parent;
       if (await parent.exists()) {
-        await Process.start('explorer.exe', [parent.absolute.path]);
+        await _runLauncher('explorer.exe', [parent.absolute.path]);
       }
       return;
     }
 
     if (Platform.isMacOS && await file.exists()) {
-      await Process.start('open', ['-R', file.absolute.path]);
+      await _runLauncher('open', ['-R', file.absolute.path]);
       return;
     }
 
     final target = await file.exists() ? file.absolute.path : file.parent.path;
     await openFolder(target);
+  }
+
+  static Future<void> _runLauncher(String executable, List<String> args) async {
+    final result = await Process.run(executable, args);
+    if (result.exitCode != 0) {
+      throw ProcessException(
+        executable,
+        args,
+        result.stderr.toString(),
+        result.exitCode,
+      );
+    }
   }
 }
 

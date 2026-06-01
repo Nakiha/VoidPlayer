@@ -467,10 +467,10 @@ void parse_unit_header(AnalysisCodec codec,
     }
 }
 
-void append_streamed_unit(AnalysisCodec codec,
-                          const std::vector<uint8_t>& header,
-                          uint64_t unit_size,
-                          BitstreamIndex& index) {
+[[maybe_unused]] void append_streamed_unit(AnalysisCodec codec,
+                                           const std::vector<uint8_t>& header,
+                                           uint64_t unit_size,
+                                           BitstreamIndex& index) {
     if (unit_size == 0 || unit_size > std::numeric_limits<uint32_t>::max()) {
         return;
     }
@@ -518,7 +518,9 @@ bool index_length_prefixed_stream_to_sink(std::ifstream& in,
                                           const BitstreamIndexer::AnalysisUnitScanEntrySink& sink,
                                           uint64_t& source_size);
 
-bool index_annex_b_stream(std::ifstream& in, AnalysisCodec codec, BitstreamIndex& index) {
+[[maybe_unused]] bool index_annex_b_stream(std::ifstream& in,
+                                           AnalysisCodec codec,
+                                           BitstreamIndex& index) {
     uint64_t source_size = index.source_size;
     const bool ok = index_annex_b_stream_to_sink(
         in,
@@ -636,7 +638,9 @@ uint32_t read_be32(const uint8_t bytes[4]) {
            static_cast<uint32_t>(bytes[3]);
 }
 
-bool index_length_prefixed_stream(std::ifstream& in, AnalysisCodec codec, BitstreamIndex& index) {
+[[maybe_unused]] bool index_length_prefixed_stream(std::ifstream& in,
+                                                   AnalysisCodec codec,
+                                                   BitstreamIndex& index) {
     uint64_t source_size = index.source_size;
     const bool ok = index_length_prefixed_stream_to_sink(
         in,

@@ -29,11 +29,36 @@ final class MacOSNativePlayerSession {
     }
   }
 
-  func addTrack(path: String, fileId: Int) throws -> MacOSNativeTrackMetadata {
+  func setHardwareDecodeEnabled(_ enabled: Bool) {
+    VPMacOSNativePlayerSetHardwareDecodeEnabled(handle, enabled ? 1 : 0)
+  }
+
+  func setBackgroundColor(_ color: Int) {
+    let value = UInt32(truncatingIfNeeded: color)
+    let a = Float((value >> 24) & 0xFF) / 255.0
+    let r = Float((value >> 16) & 0xFF) / 255.0
+    let g = Float((value >> 8) & 0xFF) / 255.0
+    let b = Float(value & 0xFF) / 255.0
+    VPMacOSNativePlayerSetBackgroundColor(handle, r, g, b, a)
+  }
+
+  func addTrack(
+    path: String,
+    fileId: Int,
+    useHardwareDecode: Bool
+  ) throws -> MacOSNativeTrackMetadata {
     var info = VPMacOSNativeTrackInfo()
     var error = [CChar](repeating: 0, count: 1024)
     let ret = path.withCString { pathPointer in
-      VPMacOSNativePlayerAddTrack(handle, pathPointer, Int32(fileId), &info, &error, error.count)
+      VPMacOSNativePlayerAddTrack(
+        handle,
+        pathPointer,
+        Int32(fileId),
+        useHardwareDecode ? 1 : 0,
+        &info,
+        &error,
+        error.count
+      )
     }
     if ret != 0 {
       let message = String(cString: error)

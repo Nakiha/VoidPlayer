@@ -3,9 +3,8 @@
 namespace vr {
 
 BidiRingBuffer::BidiRingBuffer(size_t forward_depth, size_t backward_depth)
-    : forward_depth_(forward_depth)
+    : capacity_(forward_depth + backward_depth + 1)
     , backward_depth_(backward_depth)
-    , capacity_(forward_depth + backward_depth + 1)
 {
     ring_.resize(capacity_);
 }

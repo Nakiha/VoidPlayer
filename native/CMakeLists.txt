@@ -31,6 +31,9 @@ include(cmake/RuntimeArtifacts.cmake)
 
 option(BUILD_BENCHMARKS "Build native benchmark executables" OFF)
 option(BUILD_FFI "Build C FFI shared library" ON)
+option(VOID_ENABLE_WARNINGS_AS_ERRORS "Treat native compiler warnings as errors" OFF)
+set(VOID_SANITIZER "" CACHE STRING "Native sanitizer to enable: address, thread, or undefined")
+set_property(CACHE VOID_SANITIZER PROPERTY STRINGS "" "address" "thread" "undefined")
 
 enable_testing()
 if(BUILD_ANALYSIS)

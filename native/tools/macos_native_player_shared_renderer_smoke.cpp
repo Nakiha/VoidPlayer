@@ -343,7 +343,7 @@ int main() {
 
     VPMacOSNativeTrackInfo second_track = {};
     if (VPMacOSNativePlayerAddTrack(
-            player.get(), path.c_str(), 1, &second_track, error, sizeof(error)) != 0 ||
+            player.get(), path.c_str(), 1, 1, &second_track, error, sizeof(error)) != 0 ||
         second_track.file_id != 1 ||
         second_track.slot != 1 ||
         second_track.width <= 0 ||

@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -11,7 +12,11 @@ extern "C" {
 typedef struct VPMacOSNativePlayer VPMacOSNativePlayer;
 typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
 
+#define VP_MACOS_NATIVE_API_VERSION 1u
+
 typedef struct VPMacOSNativeFrameInfo {
+  uint32_t struct_size;
+  uint32_t api_version;
   int32_t width;
   int32_t height;
   int64_t pts_us;
@@ -26,6 +31,15 @@ typedef struct VPMacOSNativeFrameInfo {
   int64_t source_packet_dts;
   uint64_t target_pixel_buffer_address;
 } VPMacOSNativeFrameInfo;
+
+static inline void VPMacOSNativeFrameInfoInit(VPMacOSNativeFrameInfo* out) {
+  if (!out) {
+    return;
+  }
+  memset(out, 0, sizeof(*out));
+  out->struct_size = (uint32_t)sizeof(VPMacOSNativeFrameInfo);
+  out->api_version = VP_MACOS_NATIVE_API_VERSION;
+}
 
 typedef struct VPMacOSNativeTrackInfo {
   int32_t file_id;

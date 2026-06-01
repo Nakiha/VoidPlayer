@@ -61,6 +61,7 @@ ExactSeekCandidate ExactSeekCandidateStore::make_candidate(AVFrame* frame) {
         std::shared_ptr<AVFrame>(cloned, [](AVFrame* f) {
             av_frame_free(&f);
         }),
+        std::nullopt,
     };
 }
 

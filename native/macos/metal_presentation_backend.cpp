@@ -172,31 +172,31 @@ uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
     hash_combine(hash, static_cast<uint64_t>(frame->width));
     hash_combine(hash, static_cast<uint64_t>(frame->height));
     hash_combine(hash, static_cast<uint64_t>(frame->storage_kind()));
-    if (const auto* storage = frame->cpu_rgba_storage()) {
-      hash_combine(hash, pointer_bits(storage->data.get()));
-      hash_combine(hash, static_cast<uint64_t>(storage->stride));
-    } else if (const auto* storage = frame->cpu_nv12_storage()) {
-      hash_combine(hash, pointer_bits(storage->data.get()));
-      hash_combine(hash, static_cast<uint64_t>(storage->y_stride));
-      hash_combine(hash, static_cast<uint64_t>(storage->uv_stride));
-      hash_combine(hash, storage->is_p010 ? 1u : 0u);
-      hash_combine(hash, static_cast<uint64_t>(storage->coded_width));
-      hash_combine(hash, static_cast<uint64_t>(storage->coded_height));
-    } else if (const auto* storage = frame->cpu_planar_yuv_storage()) {
+    if (const auto* rgba = frame->cpu_rgba_storage()) {
+      hash_combine(hash, pointer_bits(rgba->data.get()));
+      hash_combine(hash, static_cast<uint64_t>(rgba->stride));
+    } else if (const auto* nv12 = frame->cpu_nv12_storage()) {
+      hash_combine(hash, pointer_bits(nv12->data.get()));
+      hash_combine(hash, static_cast<uint64_t>(nv12->y_stride));
+      hash_combine(hash, static_cast<uint64_t>(nv12->uv_stride));
+      hash_combine(hash, nv12->is_p010 ? 1u : 0u);
+      hash_combine(hash, static_cast<uint64_t>(nv12->coded_width));
+      hash_combine(hash, static_cast<uint64_t>(nv12->coded_height));
+    } else if (const auto* planar = frame->cpu_planar_yuv_storage()) {
       for (int plane = 0; plane < 3; ++plane) {
-        hash_combine(hash, pointer_bits(storage->planes[plane]));
-        hash_combine(hash, static_cast<uint64_t>(storage->strides[plane]));
-        hash_combine(hash, static_cast<uint64_t>(storage->plane_widths[plane]));
-        hash_combine(hash, static_cast<uint64_t>(storage->plane_heights[plane]));
+        hash_combine(hash, pointer_bits(planar->planes[plane]));
+        hash_combine(hash, static_cast<uint64_t>(planar->strides[plane]));
+        hash_combine(hash, static_cast<uint64_t>(planar->plane_widths[plane]));
+        hash_combine(hash, static_cast<uint64_t>(planar->plane_heights[plane]));
       }
-      hash_combine(hash, static_cast<uint64_t>(storage->bytes_per_sample));
-    } else if (const auto* storage = frame->macos_cv_pixel_buffer_storage()) {
-      hash_combine(hash, pointer_bits(storage->pixel_buffer));
-      hash_combine(hash, static_cast<uint64_t>(storage->pixel_format));
-      hash_combine(hash, static_cast<uint64_t>(storage->plane_count));
-      hash_combine(hash, storage->is_p010 ? 1u : 0u);
-      hash_combine(hash, static_cast<uint64_t>(storage->coded_width));
-      hash_combine(hash, static_cast<uint64_t>(storage->coded_height));
+      hash_combine(hash, static_cast<uint64_t>(planar->bytes_per_sample));
+    } else if (const auto* cv_pixel = frame->macos_cv_pixel_buffer_storage()) {
+      hash_combine(hash, pointer_bits(cv_pixel->pixel_buffer));
+      hash_combine(hash, static_cast<uint64_t>(cv_pixel->pixel_format));
+      hash_combine(hash, static_cast<uint64_t>(cv_pixel->plane_count));
+      hash_combine(hash, cv_pixel->is_p010 ? 1u : 0u);
+      hash_combine(hash, static_cast<uint64_t>(cv_pixel->coded_width));
+      hash_combine(hash, static_cast<uint64_t>(cv_pixel->coded_height));
     }
   }
   return hash;
@@ -636,6 +636,7 @@ bool MetalPresentationBackend::copy_last_frame_info(
   out->source_packet_dts = last_draw_frame_info_.source_packet_dts;
   out->target_pixel_buffer_address =
       last_draw_frame_info_.target_pixel_buffer_address;
+  out->layout_revision = 0;
   return true;
 }
 
@@ -741,7 +742,9 @@ void MetalPresentationBackend::invalidate_source_cache() {
 }
 
 bool MetalPresentationBackend::try_begin_async_draw(const char* source) {
-  constexpr uint64_t kMaxAsyncRendererOwnedDraws = 3;
+  // The uploader owns one shared staging/layout/overlay buffer set. Keep async
+  // draws serialized until the uploader grows per-frame Metal resource slots.
+  constexpr uint64_t kMaxAsyncRendererOwnedDraws = 1;
   std::lock_guard<std::mutex> lock(async_mutex_);
   if (in_flight_draws_ >= kMaxAsyncRendererOwnedDraws) {
     ++metal_buffer_exhaustion_count_;
@@ -897,6 +900,7 @@ void metal_async_upload_completed(void* user_data,
     backend_frame_info.source_packet_dts = frame_info.source_packet_dts;
     backend_frame_info.target_pixel_buffer_address =
         frame_info.target_pixel_buffer_address;
+    backend_frame_info.layout_revision = 0;
     context->hooks.async_draw_completed(
         success,
         success ? "" : (error ? error : "renderer-owned Metal async draw failed"),
@@ -1074,6 +1078,7 @@ bool MetalPresentationBackend::draw_frame(
                                      &cv_frame,
                                      error)) {
     VPMacOSNativeFrameInfo frame_info = {};
+    VPMacOSNativeFrameInfoInit(&frame_info);
     char upload_error[256] = {};
     if (hooks.async_draw_completed) {
       auto* context = new AsyncDrawContext();
@@ -1233,6 +1238,7 @@ bool MetalPresentationBackend::draw_frame(
                                          &cv_frame_set,
                                          error)) {
     VPMacOSNativeFrameInfo frame_info = {};
+    VPMacOSNativeFrameInfoInit(&frame_info);
     char upload_error[256] = {};
     if (hooks.async_draw_completed) {
       auto* context = new AsyncDrawContext();
@@ -1453,6 +1459,7 @@ bool MetalPresentationBackend::draw_frame(
   }
 
   VPMacOSNativeFrameInfo frame_info = {};
+  VPMacOSNativeFrameInfoInit(&frame_info);
   char upload_error[256] = {};
   const auto start = std::chrono::steady_clock::now();
   if (hooks.async_draw_completed) {

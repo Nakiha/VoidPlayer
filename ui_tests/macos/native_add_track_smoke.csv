@@ -2,6 +2,7 @@
 # Run with:
 #   python dev.py mac-ui-test ui_tests/macos/native_add_track_smoke.csv
 @WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
 0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
 1.3, ASSERT_TRACK_COUNT, 1
 1.35, CAPTURE_VIEWPORT, before_second_native_track

@@ -56,6 +56,11 @@ def _run_macos_native_fast() -> None:
     run(["bash", "scripts/ci/run_macos_native_fast.sh"], cwd=str(ROOT))
 
 
+def _run_macos_native_werror() -> None:
+    run(["cmake", "--preset", "macos-werror"], cwd=str(ROOT / "native"))
+    run(["cmake", "--build", "--preset", "macos-werror"], cwd=str(ROOT / "native"))
+
+
 def _run_macos_ui_smoke() -> None:
     _python_dev("mac-ui-test", "--build", *MACOS_UI_SMOKE)
 
@@ -104,6 +109,12 @@ def cmd_gate(args: argparse.Namespace) -> None:
         _run_macos_native_fast()
         return
 
+    if profile == "macos-native-werror":
+        if not _is_macos():
+            _unsupported(profile, "macOS")
+        _run_macos_native_werror()
+        return
+
     if profile == "macos-ui-smoke":
         if not _is_macos():
             _unsupported(profile, "macOS")
@@ -131,6 +142,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
     if profile == "release-candidate":
         if _is_macos():
             _run_macos_native_fast()
+            _run_macos_native_werror()
             _python_dev("build", "--flutter")
             _run_macos_ui_nightly()
             _run_macos_release_readiness()

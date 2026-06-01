@@ -510,6 +510,7 @@ class MainWindowController {
       lifecycle: mediaLifecycle,
       playbackPreferences: playbackPreferences,
       nativeFilePicker: nativeFilePicker,
+      appSettings: appSettings,
       mounted: mounted,
     );
     testHarness = MainWindowTestHarness(

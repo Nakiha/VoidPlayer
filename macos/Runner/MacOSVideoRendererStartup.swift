@@ -17,6 +17,8 @@ enum MacOSVideoRendererStartupFactory {
     let paths = MacOSFlutterArguments.stringListArg(arguments, "videoPaths")
     let requestedWidth = max(16, MacOSFlutterArguments.intArg(arguments, "width") ?? 1920)
     let requestedHeight = max(16, MacOSFlutterArguments.intArg(arguments, "height") ?? 1080)
+    let useHardwareDecode =
+      MacOSFlutterArguments.boolArg(arguments, "useHardwareDecode") ?? true
     guard let firstPath = paths.first, !firstPath.isEmpty else {
       throw MacOSNativePlayerError.failed("createPlayer requires at least one media path")
     }
@@ -32,7 +34,8 @@ enum MacOSVideoRendererStartupFactory {
       paths: paths,
       firstPath: firstPath,
       requestedWidth: requestedWidth,
-      requestedHeight: requestedHeight
+      requestedHeight: requestedHeight,
+      useHardwareDecode: useHardwareDecode
     )
   }
 
@@ -72,11 +75,13 @@ enum MacOSVideoRendererStartupFactory {
     paths: [String],
     firstPath: String,
     requestedWidth: Int,
-    requestedHeight: Int
+    requestedHeight: Int,
+    useHardwareDecode: Bool
   ) throws -> MacOSVideoRendererStartup {
     guard let session = MacOSNativePlayerSession() else {
       throw MacOSNativePlayerError.failed("failed to allocate macOS native player")
     }
+    session.setHardwareDecodeEnabled(useHardwareDecode)
     try session.open(path: firstPath)
     let texture = MacOSFlutterTextureBridge(
       nativeWidth: requestedWidth,
@@ -113,7 +118,11 @@ enum MacOSVideoRendererStartupFactory {
     ]
     for path in paths.dropFirst() {
       let fileId = (tracks.map { MacOSFlutterArguments.intValue($0["fileId"]) ?? 0 }.max() ?? -1) + 1
-      let metadata = try session.addTrack(path: path, fileId: fileId)
+      let metadata = try session.addTrack(
+        path: path,
+        fileId: fileId,
+        useHardwareDecode: useHardwareDecode
+      )
       tracks.append(MacOSVideoTrackPayload.nativeTrack(
         path: path,
         metadata: metadata,

@@ -2,6 +2,7 @@
 # Run with:
 #   python dev.py mac-ui-test ui_tests/macos/native_facade_smoke.csv
 @WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
 0.0, GENERATE_TEST_VIDEO, build/generated/macos/native_facade_h264.mp4, 270, 30, 1920, 1080
 0.3, ADD_MEDIA, build/generated/macos/native_facade_h264.mp4
 1.3, ASSERT_TRACK_COUNT, 1

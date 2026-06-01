@@ -28,6 +28,9 @@ abstract class AppSettingsRepository {
   ViewportPixelSizeMode get viewportPixelSizeMode;
   set viewportPixelSizeMode(ViewportPixelSizeMode value);
 
+  Map<String, String> get securityScopedBookmarks;
+  set securityScopedBookmarks(Map<String, String> value);
+
   Future<void> save();
 }
 
@@ -100,6 +103,15 @@ class AppConfigSettingsRepository implements AppSettingsRepository {
   @override
   set viewportPixelSizeMode(ViewportPixelSizeMode value) {
     config.viewportPixelSizeMode = value;
+  }
+
+  @override
+  Map<String, String> get securityScopedBookmarks =>
+      config.securityScopedBookmarks;
+
+  @override
+  set securityScopedBookmarks(Map<String, String> value) {
+    config.securityScopedBookmarks = value;
   }
 
   @override

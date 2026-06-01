@@ -1691,6 +1691,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
       lineRectCount,
       motionLines,
       motionLineCount,
+      0,
   };
   if (!overlay_primitive_set_has_content(&overlay)) {
     write_error(error, errorSize, "");

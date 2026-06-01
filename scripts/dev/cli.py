@@ -120,6 +120,7 @@ Examples:
         choices=[
             "pr-fast",
             "macos-native-fast",
+            "macos-native-werror",
             "macos-ui-smoke",
             "macos-ui-nightly",
             "macos-release-readiness",

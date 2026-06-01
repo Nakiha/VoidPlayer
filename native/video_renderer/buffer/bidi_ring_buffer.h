@@ -131,7 +131,6 @@ private:
     mutable std::mutex mutex_;
     std::vector<TextureFrame> ring_;
     size_t capacity_;
-    size_t forward_depth_;
     size_t backward_depth_;
     size_t write_idx_ = 0;
     size_t read_idx_ = 0;

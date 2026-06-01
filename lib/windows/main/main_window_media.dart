@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../../app_log.dart';
+import '../../config/app_settings_repository.dart';
 import '../../platform/native_file_picker.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../remote/ssh_remote_media.dart';
@@ -25,6 +26,7 @@ class MainWindowMediaCoordinator {
   final MainWindowMediaLifecycle lifecycle;
   final PlaybackPreferences playbackPreferences;
   final NativeFilePicker nativeFilePicker;
+  final AppSettingsRepository appSettings;
   final bool Function() mounted;
   final SshRemoteMediaService sshRemoteMedia;
   Future<void>? _loadInFlight;
@@ -39,6 +41,7 @@ class MainWindowMediaCoordinator {
     required this.lifecycle,
     required this.playbackPreferences,
     this.nativeFilePicker = const MethodChannelNativeFilePicker(),
+    required this.appSettings,
     required this.mounted,
     this.sshRemoteMedia = const SshRemoteMediaService(),
   });
@@ -187,9 +190,29 @@ class MainWindowMediaCoordinator {
   }
 
   Future<void> openFile() async {
-    final paths = await nativeFilePicker.pickFiles(allowMultiple: true);
-    if (paths == null || paths.isEmpty) return;
+    final entries = await nativeFilePicker.pickFileEntries(allowMultiple: true);
+    if (entries == null || entries.isEmpty) return;
+    await _rememberSecurityScopedBookmarks(entries);
+    final paths = entries.map((entry) => entry.path).toList(growable: false);
     await loadMediaPaths(paths);
+  }
+
+  Future<void> _rememberSecurityScopedBookmarks(
+    List<NativePickedFile> entries,
+  ) async {
+    final selectedBookmarks = <String, String>{};
+    for (final entry in entries) {
+      final bookmark = entry.securityScopedBookmarkBase64;
+      if (bookmark == null || bookmark.isEmpty) continue;
+      selectedBookmarks[entry.path] = bookmark;
+    }
+    if (selectedBookmarks.isEmpty) return;
+
+    appSettings.securityScopedBookmarks = {
+      ...appSettings.securityScopedBookmarks,
+      ...selectedBookmarks,
+    };
+    await appSettings.save();
   }
 
   Future<void> removeTrack(int fileId) async {

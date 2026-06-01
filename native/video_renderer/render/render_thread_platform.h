@@ -13,7 +13,9 @@ public:
     ScopedRenderThreadTiming& operator=(const ScopedRenderThreadTiming&) = delete;
 
 private:
+#ifdef _WIN32
     bool active_ = false;
+#endif
 };
 
 std::string current_render_thread_id_string();

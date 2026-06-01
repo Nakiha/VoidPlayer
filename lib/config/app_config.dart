@@ -15,7 +15,8 @@ import '../utils/file_lock.dart';
 /// {
 ///   "window": { "x": 100, "y": 200, "width": 1280, "height": 720 },
 ///   "shortcuts": { ... },
-///   "preferences": { ... }
+///   "preferences": { ... },
+///   "macos": { "securityScopedBookmarks": { "/path/video.mp4": "..." } }
 /// }
 /// ```
 class AppConfig {
@@ -144,6 +145,36 @@ class AppConfig {
         'width': rect.width,
         'height': rect.height,
       };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // macOS sandbox section
+  // ---------------------------------------------------------------------------
+
+  static const _macosKey = 'macos';
+  static const _securityScopedBookmarksKey = 'securityScopedBookmarks';
+
+  Map<String, String> get securityScopedBookmarks {
+    final raw = section(_macosKey)[_securityScopedBookmarksKey];
+    if (raw is! Map) return const {};
+    return Map<String, String>.fromEntries(
+      raw.entries
+          .where((entry) => entry.key is String && entry.value is String)
+          .map((entry) => MapEntry(entry.key as String, entry.value as String)),
+    );
+  }
+
+  set securityScopedBookmarks(Map<String, String> value) {
+    final sanitized = <String, String>{};
+    for (final entry in value.entries) {
+      if (entry.key.isEmpty || entry.value.isEmpty) continue;
+      sanitized[entry.key] = entry.value;
+    }
+    if (sanitized.isEmpty) {
+      section(_macosKey).remove(_securityScopedBookmarksKey);
+    } else {
+      section(_macosKey)[_securityScopedBookmarksKey] = sanitized;
     }
   }
 

@@ -113,6 +113,7 @@ void write_frame_info(const vr::TextureFrame& frame, VPMacOSNativeFrameInfo* out
   if (!out) {
     return;
   }
+  VPMacOSNativeFrameInfoInit(out);
   out->width = frame.width;
   out->height = frame.height;
   out->pts_us = frame.pts_us;
@@ -328,6 +329,7 @@ bool copy_texture_frame_to_owned_bgra(const vr::TextureFrame& frame,
     return false;
   }
   VPMacOSNativeFrameInfo info{};
+  VPMacOSNativeFrameInfoInit(&info);
   if (!copy_texture_frame_to_bgra_destination(
           frame,
           out->bgra,

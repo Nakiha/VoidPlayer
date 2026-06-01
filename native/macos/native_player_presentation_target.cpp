@@ -37,9 +37,15 @@ void VPMacOSNativePlayerSetFrameAvailableCallback(
   if (!player) {
     return;
   }
-  std::lock_guard<std::mutex> lock(player->callback_mutex);
+  std::unique_lock<std::mutex> lock(player->callback_mutex);
+  ++player->frame_available_callback_generation;
   player->frame_available_callback = callback;
   player->frame_available_user_data = user_data;
+  if (!callback) {
+    player->callback_condition.wait(lock, [player] {
+      return player->frame_available_callback_in_flight == 0;
+    });
+  }
 }
 
 namespace {
@@ -180,7 +186,7 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
     write_error(error, error_size, "player or renderer-owned frame output is null");
     return -1;
   }
-  *out = {};
+  VPMacOSNativeFrameInfoInit(out);
   std::string message;
   {
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -210,7 +216,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     write_error(error, error_size, "player or renderer-owned frame output is null");
     return -1;
   }
-  *out = {};
+  VPMacOSNativeFrameInfoInit(out);
   const int32_t bounded_timeout_ms = std::max<int32_t>(0, timeout_ms);
 
   uint64_t baseline_upload_count = 0;
@@ -224,6 +230,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   int refresh_attempts = 0;
   bool refresh_submitted = false;
   bool refresh_deferred_by_backpressure = false;
+  std::string last_refresh_backpressure_error;
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
     if (!player->presentation_target_pixel_buffer ||
@@ -252,6 +259,8 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
     if (player->renderer) {
       refresh_clock_us = player->renderer->current_pts_us();
       ++refresh_attempts;
+      refresh_submitted = false;
+      refresh_deferred_by_backpressure = false;
       const char* refresh_reason =
           refresh_min_pts_us >= 0 ? "seek_frame_refresh"
                                   : "macos-renderer-owned-refresh";
@@ -262,6 +271,7 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
             player->renderer->presentation_backend_last_error();
         if (vr::is_transient_presentation_backpressure_error(renderer_error)) {
           refresh_deferred_by_backpressure = true;
+          last_refresh_backpressure_error = renderer_error;
           write_error(error, error_size, renderer_error);
         }
       }
@@ -277,9 +287,6 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
   };
   if (!trigger_renderer_refresh()) {
     return -1;
-  }
-  if (refresh_deferred_by_backpressure) {
-    return -2;
   }
 
   std::unique_lock<std::mutex> callback_lock(player->callback_mutex);
@@ -351,9 +358,6 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
         callback_lock.lock();
         if (!requested) {
           return -1;
-        }
-        if (refresh_deferred_by_backpressure) {
-          return -2;
         }
       }
     }
@@ -432,7 +436,12 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
         player->renderer_owned_presentation_draw_failure_count,
         refresh_clock_us);
   }
-  write_error(error, error_size,
-              "renderer-owned Metal frame refresh timed out");
+  if (refresh_deferred_by_backpressure &&
+      !last_refresh_backpressure_error.empty()) {
+    write_error(error, error_size, last_refresh_backpressure_error);
+  } else {
+    write_error(error, error_size,
+                "renderer-owned Metal frame refresh timed out");
+  }
   return -2;
 }

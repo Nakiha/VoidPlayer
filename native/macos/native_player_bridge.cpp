@@ -81,6 +81,7 @@ int VPMacOSNativePlayerOpen(VPMacOSNativePlayer* player,
 int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
                                 const char* path,
                                 int32_t file_id,
+                                int use_hardware_decode,
                                 VPMacOSNativeTrackInfo* out,
                                 char* error,
                                 size_t error_size) {
@@ -95,7 +96,10 @@ int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
     write_error(error, error_size, message);
     return -1;
   }
-  const int slot = player->renderer->add_track_with_file_id(path ? path : "", file_id);
+  const int slot = player->renderer->add_track_with_file_id(
+      path ? path : "",
+      file_id,
+      use_hardware_decode != 0 && !vp_macos::videotoolbox_disabled_by_env());
   if (slot < 0) {
     write_error(error, error_size, "shared macOS renderer failed to add track");
     return -1;
@@ -143,4 +147,34 @@ void VPMacOSNativePlayerClose(VPMacOSNativePlayer* player) {
   }
   std::lock_guard<std::mutex> lock(player->mutex);
   player->shutdown_renderer_locked();
+}
+
+void VPMacOSNativePlayerSetHardwareDecodeEnabled(VPMacOSNativePlayer* player,
+                                                 int enabled) {
+  if (!player) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  player->use_hardware_decode = enabled != 0;
+}
+
+void VPMacOSNativePlayerSetBackgroundColor(VPMacOSNativePlayer* player,
+                                           float r,
+                                           float g,
+                                           float b,
+                                           float a) {
+  if (!player) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  player->background_color[0] = std::clamp(r, 0.0f, 1.0f);
+  player->background_color[1] = std::clamp(g, 0.0f, 1.0f);
+  player->background_color[2] = std::clamp(b, 0.0f, 1.0f);
+  player->background_color[3] = std::clamp(a, 0.0f, 1.0f);
+  if (player->renderer_active_locked()) {
+    player->renderer->set_background_color(player->background_color[0],
+                                           player->background_color[1],
+                                           player->background_color[2],
+                                           player->background_color[3]);
+  }
 }

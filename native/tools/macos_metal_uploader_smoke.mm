@@ -48,10 +48,10 @@ CVPixelBufferRef create_pixel_buffer(OSType pixel_format, int width, int height)
   return buffer;
 }
 
-bool measure_pixel_buffer(CVPixelBufferRef buffer,
-                          int width,
-                          int height,
-                          VPMacOSCaptureMetrics* out) {
+[[maybe_unused]] bool measure_pixel_buffer(CVPixelBufferRef buffer,
+                                           int width,
+                                           int height,
+                                           VPMacOSCaptureMetrics* out) {
   if (!buffer || !out) {
     return false;
   }
@@ -68,11 +68,11 @@ bool measure_pixel_buffer(CVPixelBufferRef buffer,
   return ret == 0;
 }
 
-double pixel_buffer_rect_non_black_ratio(CVPixelBufferRef buffer,
-                                         int x,
-                                         int y,
-                                         int width,
-                                         int height) {
+[[maybe_unused]] double pixel_buffer_rect_non_black_ratio(CVPixelBufferRef buffer,
+                                                          int x,
+                                                          int y,
+                                                          int width,
+                                                          int height) {
   if (!buffer || x < 0 || y < 0 || width <= 0 || height <= 0) {
     return 0.0;
   }

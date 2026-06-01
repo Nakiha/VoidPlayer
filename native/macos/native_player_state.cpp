@@ -176,7 +176,8 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   config.width = width;
   config.height = height;
   config.headless = true;
-  config.use_hardware_decode = !vp_macos::videotoolbox_disabled_by_env();
+  config.use_hardware_decode =
+      use_hardware_decode && !vp_macos::videotoolbox_disabled_by_env();
   config.initial_file_id = 0;
   config.backend.type = vr::RendererBackendType::Metal;
   config.backend.output = output;
@@ -188,6 +189,10 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
     error = "shared macOS renderer failed to initialize";
     return false;
   }
+  next_renderer->set_background_color(background_color[0],
+                                      background_color[1],
+                                      background_color[2],
+                                      background_color[3]);
 
   renderer = std::move(next_renderer);
   renderer->set_frame_callback(
@@ -207,6 +212,7 @@ void VPMacOSNativePlayer::on_frame_available(
   const auto start = std::chrono::steady_clock::now();
   VPMacOSFrameAvailableCallback callback = nullptr;
   void* user_data = nullptr;
+  bool callback_in_flight = false;
   uint64_t upload_count = 0;
   int64_t pts_us = -1;
   {
@@ -215,6 +221,7 @@ void VPMacOSNativePlayer::on_frame_available(
     last_renderer_owned_frame_info_available = true;
     renderer_owned_presentation_consecutive_failures = 0;
     renderer_owned_presentation_last_error.clear();
+    VPMacOSNativeFrameInfoInit(&last_renderer_owned_frame_info);
     last_renderer_owned_frame_info.width = presentation_target_width;
     last_renderer_owned_frame_info.height = presentation_target_height;
     if (completed_frame_info) {
@@ -240,37 +247,7 @@ void VPMacOSNativePlayer::on_frame_available(
           completed_frame_info->source_packet_dts;
       last_renderer_owned_frame_info.target_pixel_buffer_address =
           completed_frame_info->target_pixel_buffer_address;
-    }
-    if (renderer) {
-      vr::PresentationBackendFrameInfo frame_info;
-      if (!completed_frame_info && renderer->copy_last_presentation_frame_info(&frame_info)) {
-        last_renderer_owned_frame_info.width = frame_info.width;
-        last_renderer_owned_frame_info.height = frame_info.height;
-        last_renderer_owned_frame_info.pts_us = frame_info.pts_us;
-        last_renderer_owned_frame_info.dts_us = frame_info.dts_us;
-        last_renderer_owned_frame_info.duration_us = frame_info.duration_us;
-        last_renderer_owned_frame_info.analysis_frame_index =
-            frame_info.analysis_frame_index;
-        last_renderer_owned_frame_info.frame_identity_mode =
-            frame_info.frame_identity_mode;
-        last_renderer_owned_frame_info.source_packet_index =
-            frame_info.source_packet_index;
-        last_renderer_owned_frame_info.source_packet_size =
-            frame_info.source_packet_size;
-        last_renderer_owned_frame_info.source_packet_pos =
-            frame_info.source_packet_pos;
-        last_renderer_owned_frame_info.source_packet_pts =
-            frame_info.source_packet_pts;
-        last_renderer_owned_frame_info.source_packet_dts =
-            frame_info.source_packet_dts;
-        last_renderer_owned_frame_info.target_pixel_buffer_address =
-            frame_info.target_pixel_buffer_address;
-      } else if (!completed_frame_info) {
-        last_renderer_owned_frame_info.pts_us = renderer->current_pts_us();
-        last_renderer_owned_frame_info.target_pixel_buffer_address = 0;
-      }
-      last_renderer_owned_layout_revision =
-          renderer->presentation_backend_metrics().last_presented_layout_revision;
+      last_renderer_owned_layout_revision = completed_frame_info->layout_revision;
     }
     const auto now = std::chrono::steady_clock::now();
     if (renderer_owned_presentation_upload_count == 0) {
@@ -283,10 +260,23 @@ void VPMacOSNativePlayer::on_frame_available(
     pts_us = last_renderer_owned_frame_info.pts_us;
     callback = frame_available_callback;
     user_data = frame_available_user_data;
+    if (callback) {
+      ++frame_available_callback_in_flight;
+      callback_in_flight = true;
+    }
   }
   presentation_condition.notify_all();
   if (callback) {
     callback(user_data);
+  }
+  if (callback_in_flight) {
+    {
+      std::lock_guard<std::mutex> callback_lock(callback_mutex);
+      if (frame_available_callback_in_flight > 0) {
+        --frame_available_callback_in_flight;
+      }
+    }
+    callback_condition.notify_all();
   }
   const auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::steady_clock::now() - start).count();

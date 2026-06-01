@@ -1,6 +1,7 @@
 # macOS native playback smoke for a generated 3840x2160 60fps H.264 sample.
 # This is a throughput canary for the VideoToolbox renderer-owned CVPixelBuffer + Metal path.
 @WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
 0.0, GENERATE_TEST_VIDEO, build/generated/macos/native_4k60_h264.mp4, 180, 60, 3840, 2160
 0.3, ADD_MEDIA, build/generated/macos/native_4k60_h264.mp4
 2.2, ASSERT_TRACK_COUNT, 1

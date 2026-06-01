@@ -1561,12 +1561,20 @@ void Renderer::finish_presented_draw(
         lock.unlock();
     }
 
+    PresentationBackendFrameInfo callback_frame_info;
+    const PresentationBackendFrameInfo* callback_frame_info_ptr = completed_frame_info;
+    if (completed_frame_info) {
+        callback_frame_info = *completed_frame_info;
+        callback_frame_info.layout_revision = current_layout_revision;
+        callback_frame_info_ptr = &callback_frame_info;
+    }
+
     const bool callback_available = static_cast<bool>(frame_callback);
     const bool callback_published =
         callback_available && !stale_layout_after_draw &&
         !shutting_down_.load(std::memory_order_acquire);
     if (callback_published) {
-        frame_callback(completed_frame_info);
+        frame_callback(callback_frame_info_ptr);
     }
     const bool transient_backpressure =
         frame_failure_error &&
@@ -2777,9 +2785,9 @@ bool Renderer::draw_frame(
         presentation_backend_metrics_.frame_copy_count.fetch_add(
             1, std::memory_order_relaxed);
     };
+#ifdef _WIN32
     hooks.draw_overlay = [this](PresentationBackend& backend,
                                 const RendererDrawSnapshot& draw_snapshot) {
-#ifdef _WIN32
         if (!analysis_overlay_renderer_ ||
             backend.kind() != PresentationBackendKind::D3D11) {
             return;
@@ -2796,11 +2804,14 @@ bool Renderer::draw_frame(
             *resources,
             draw_snapshot.target_width,
             draw_snapshot.target_height);
+    };
 #else
+    hooks.draw_overlay = [](PresentationBackend& backend,
+                            const RendererDrawSnapshot& draw_snapshot) {
         (void)backend;
         (void)draw_snapshot;
-#endif
     };
+#endif
     hooks.composite_bgra_overlay =
         [this](const RendererDrawSnapshot& draw_snapshot,
                uint8_t* target_bgra,

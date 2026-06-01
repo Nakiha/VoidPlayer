@@ -11,6 +11,28 @@
 extern "C" {
 #endif
 
+/*
+ * macOS native bridge contract:
+ *
+ * - This C ABI is embedded by the macOS Flutter runner; it is not a stable
+ *   system-wide plugin ABI. VP_MACOS_NATIVE_API_VERSION must be bumped when
+ *   existing struct layouts or ownership rules become incompatible.
+ * - VPMacOSNativePlayer* is owned by the caller. Create/Destroy and all player
+ *   control functions may be called from the main thread or automation thread,
+ *   but concurrent calls for the same player are serialized internally only at
+ *   the player boundary.
+ * - `const char* path` arguments are borrowed for the duration of the call.
+ * - `void* pixel_buffer` arguments are borrowed CVPixelBufferRef values. The
+ *   caller must keep the pixel buffer alive until it is replaced or
+ *   VPMacOSNativePlayerClearMetalPresentationTarget returns.
+ * - The frame callback may run on a renderer/native worker thread. It must not
+ *   call back into player APIs synchronously. Clearing the callback with
+ *   VPMacOSNativePlayerSetFrameAvailableCallback(player, NULL, NULL) waits for
+ *   any callback invocation already in progress to return.
+ * - Error buffers are caller-owned writable byte buffers. On success, functions
+ *   that accept an error buffer write an empty string when possible.
+ */
+
 void VPMacOSInstallCrashHandler(const char* crash_dir);
 void VPMacOSRemoveCrashHandler(void);
 void VPMacOSConfigureLogging(const char* logs_dir,
@@ -28,6 +50,7 @@ int VPMacOSNativePlayerOpen(VPMacOSNativePlayer* player,
 int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
                                 const char* path,
                                 int32_t file_id,
+                                int use_hardware_decode,
                                 VPMacOSNativeTrackInfo* out,
                                 char* error,
                                 size_t error_size);
@@ -37,6 +60,13 @@ int VPMacOSNativePlayerCopyTrackInfo(VPMacOSNativePlayer* player,
 void VPMacOSNativePlayerRemoveTrack(VPMacOSNativePlayer* player,
                                     int32_t file_id);
 void VPMacOSNativePlayerClose(VPMacOSNativePlayer* player);
+void VPMacOSNativePlayerSetHardwareDecodeEnabled(VPMacOSNativePlayer* player,
+                                                 int enabled);
+void VPMacOSNativePlayerSetBackgroundColor(VPMacOSNativePlayer* player,
+                                           float r,
+                                           float g,
+                                           float b,
+                                           float a);
 void VPMacOSNativePlayerSetFrameAvailableCallback(
     VPMacOSNativePlayer* player,
     VPMacOSFrameAvailableCallback callback,

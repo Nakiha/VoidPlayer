@@ -68,7 +68,11 @@ final class MacOSVideoTrackController {
         guard let session = nativePlayer else {
           throw MacOSNativePlayerError.failed("macOS native player is unavailable")
         }
-        let metadata = try session.addTrack(path: path, fileId: fileId)
+        let metadata = try session.addTrack(
+          path: path,
+          fileId: fileId,
+          useHardwareDecode: MacOSFlutterArguments.boolArg(arguments, "useHardwareDecode") ?? true
+        )
         let track = MacOSVideoTrackPayload.nativeTrack(
           path: path,
           metadata: metadata,

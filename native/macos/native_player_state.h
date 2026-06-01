@@ -31,6 +31,10 @@ struct VPMacOSNativePlayer {
   VPMacOSNativePlayer(const VPMacOSNativePlayer&) = delete;
   VPMacOSNativePlayer& operator=(const VPMacOSNativePlayer&) = delete;
 
+  // Lock order for code that needs both native player state and presentation
+  // callback state is mutex -> callback_mutex. Presentation-target helpers may
+  // take the locks in separate phases, but must not nest callback_mutex before
+  // mutex.
   bool renderer_active_locked() const;
   void shutdown_renderer_locked();
   void clear_last_frame_locked();
@@ -45,6 +49,8 @@ struct VPMacOSNativePlayer {
   std::mutex mutex;
   std::unique_ptr<vr::Renderer> renderer;
   std::string opened_path;
+  bool use_hardware_decode = true;
+  float background_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
   std::atomic<bool> renderer_active{false};
   std::string decode_mode_name = "none";
   std::string decoder_name = "none";
@@ -53,8 +59,11 @@ struct VPMacOSNativePlayer {
 
   mutable std::mutex callback_mutex;
   std::condition_variable presentation_condition;
+  std::condition_variable callback_condition;
   VPMacOSFrameAvailableCallback frame_available_callback = nullptr;
   void* frame_available_user_data = nullptr;
+  uint64_t frame_available_callback_generation = 0;
+  uint64_t frame_available_callback_in_flight = 0;
   VPMacOSMetalPresentationBackend* presentation_target_backend = nullptr;
   void* presentation_target_pixel_buffer = nullptr;
   int32_t presentation_target_width = 0;

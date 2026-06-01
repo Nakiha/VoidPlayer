@@ -34,6 +34,9 @@ class _FakeAppSettingsRepository implements AppSettingsRepository {
       ViewportPixelSizeMode.uniformVideoPixels;
 
   @override
+  Map<String, String> securityScopedBookmarks = {};
+
+  @override
   Future<void> save() => Future.value();
 }
 

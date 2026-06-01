@@ -9,7 +9,7 @@ void write_first_present_frame_info(const VPMacOSNativePresentDecisionInfo& deci
   if (!out) {
     return;
   }
-  *out = {};
+  VPMacOSNativeFrameInfoInit(out);
   for (int slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
     if (decisionInfo.frames[slot].present) {
       out->width = decisionInfo.frames[slot].width;

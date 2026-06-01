@@ -52,12 +52,6 @@ uint64_t estimate_av_yuv_surface_bytes(int width, int height, AVPixelFormat form
     }
 }
 
-bool log_codec_exception(const char* stage, AVCodecID codec_id, bool hw_enabled) {
-    spdlog::error("[DecodeThread] Unhandled exception during {} (codec_id={}, hw={})",
-                  stage, static_cast<int>(codec_id), hw_enabled);
-    return false;
-}
-
 const char* decode_device_mode_name(DecodeDeviceMode mode) {
     switch (mode) {
     case DecodeDeviceMode::IndependentDevice:

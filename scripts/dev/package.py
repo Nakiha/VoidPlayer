@@ -389,39 +389,103 @@ def _verify_macos_codesign(stage_app: Path) -> None:
     run(["codesign", "--verify", "--deep", "--strict", str(stage_app)], cwd=str(ROOT))
 
 
-def _adhoc_sign_macos_app(stage_app: Path) -> None:
-    header("Ad-hoc sign staged macOS app")
-    run([
+def _run_macos_codesign(
+    path: Path,
+    identity: str,
+    *,
+    developer_id: bool,
+    entitlements: Path | None = None,
+) -> None:
+    cmd = [
         "codesign",
         "--force",
-        "--deep",
         "--sign",
-        "-",
-        "--entitlements",
-        str(MACOS_RELEASE_ENTITLEMENTS),
-        str(stage_app),
-    ], cwd=str(ROOT))
+        identity,
+    ]
+    if developer_id:
+        cmd.extend(["--options", "runtime", "--timestamp"])
+    else:
+        cmd.append("--timestamp=none")
+    if entitlements is not None:
+        cmd.extend(["--entitlements", str(entitlements)])
+    cmd.append(str(path))
+    run(cmd, cwd=str(ROOT))
+
+
+def _is_machosignable_file(path: Path) -> bool:
+    if path.is_symlink() or not path.is_file():
+        return False
+    result = subprocess.run(
+        ["file", "-b", str(path)],
+        cwd=str(ROOT),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0 and "Mach-O" in result.stdout
+
+
+def _macos_nested_code_items(stage_app: Path) -> list[Path]:
+    contents = stage_app / "Contents"
+    frameworks = contents / "Frameworks"
+    search_roots = [
+        frameworks,
+        contents / "PlugIns",
+        contents / "XPCServices",
+        contents / "Helpers",
+    ]
+    items: list[Path] = []
+    covered_frameworks: set[Path] = set()
+
+    if frameworks.exists():
+        for framework in sorted(frameworks.rglob("*.framework")):
+            if framework.is_dir():
+                items.append(framework)
+                covered_frameworks.add(framework)
+
+    for root in search_roots:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*")):
+            if any(_is_relative_to(path, framework) for framework in covered_frameworks):
+                continue
+            if path.is_dir() and path.suffix in {".app", ".appex", ".bundle", ".framework", ".xpc"}:
+                items.append(path)
+            elif path.suffix in {".dylib", ".so"} or _is_machosignable_file(path):
+                items.append(path)
+
+    main_executable = contents / "MacOS" / "VoidPlayer"
+    macos_dir = contents / "MacOS"
+    if macos_dir.exists():
+        for path in sorted(macos_dir.rglob("*")):
+            if path == main_executable:
+                continue
+            if _is_machosignable_file(path):
+                items.append(path)
+
+    unique_items = sorted(set(items), key=lambda item: len(item.parts), reverse=True)
+    return unique_items
+
+
+def _sign_macos_app_inside_out(stage_app: Path, identity: str, developer_id: bool) -> None:
+    for item in _macos_nested_code_items(stage_app):
+        _run_macos_codesign(item, identity, developer_id=developer_id)
+    _run_macos_codesign(
+        stage_app,
+        identity,
+        developer_id=developer_id,
+        entitlements=MACOS_RELEASE_ENTITLEMENTS,
+    )
 
 
 def _sign_macos_app(stage_app: Path, identity: str | None) -> None:
     if not identity:
-        _adhoc_sign_macos_app(stage_app)
+        header("Ad-hoc sign staged macOS app")
+        _sign_macos_app_inside_out(stage_app, "-", developer_id=False)
         return
 
     header("Developer ID sign staged macOS app")
-    run([
-        "codesign",
-        "--force",
-        "--deep",
-        "--options",
-        "runtime",
-        "--timestamp",
-        "--sign",
-        identity,
-        "--entitlements",
-        str(MACOS_RELEASE_ENTITLEMENTS),
-        str(stage_app),
-    ], cwd=str(ROOT))
+    _sign_macos_app_inside_out(stage_app, identity, developer_id=True)
 
 
 def _assert_no_build_only_artifacts(root: Path) -> None:
@@ -496,7 +560,9 @@ def _create_macos_dmg(stage_dir: Path) -> Path:
     MACOS_INSTALLER_DIR.mkdir(parents=True, exist_ok=True)
 
     version = _read_pubspec_version()
-    dmg = MACOS_INSTALLER_DIR / f"VoidPlayer-{version}-macos-arm64.dmg"
+    app = stage_dir / "VoidPlayer.app"
+    arch = _macos_app_arch_label(app)
+    dmg = MACOS_INSTALLER_DIR / f"VoidPlayer-{version}-macos-{arch}.dmg"
     run([
         "hdiutil",
         "create",
@@ -519,6 +585,27 @@ def _create_macos_dmg(stage_dir: Path) -> Path:
     return dmg
 
 
+def _macos_app_arch_label(stage_app: Path) -> str:
+    executable = stage_app / "Contents" / "MacOS" / "VoidPlayer"
+    result = subprocess.run(
+        ["lipo", "-archs", str(executable)],
+        cwd=str(ROOT),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    archs = sorted(result.stdout.split())
+    if archs == ["arm64"]:
+        return "arm64"
+    if archs == ["x86_64"]:
+        return "x64"
+    if archs == ["arm64", "x86_64"]:
+        return "universal"
+    if not archs:
+        return "unknown"
+    return "-".join(archs)
+
+
 def _notarize_macos_dmg(dmg: Path, notary_profile: str | None) -> None:
     header("Notarize macOS DMG")
     if not notary_profile:
@@ -539,6 +626,16 @@ def _notarize_macos_dmg(dmg: Path, notary_profile: str | None) -> None:
     ], cwd=str(ROOT))
     run(["xcrun", "stapler", "staple", str(dmg)], cwd=str(ROOT))
     run(["xcrun", "stapler", "validate", str(dmg)], cwd=str(ROOT))
+    run([
+        "spctl",
+        "-a",
+        "-t",
+        "open",
+        "--context",
+        "context:primary-signature",
+        "-v",
+        str(dmg),
+    ], cwd=str(ROOT))
     print(f"\nNotarized and stapled DMG ready: {dmg}")
 
 

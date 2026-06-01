@@ -42,6 +42,54 @@
         "BUILD_ANALYSIS_TESTS": "OFF",
         "BUILD_BENCHMARKS": "OFF"
       }
+    },
+    {
+      "name": "macos-release",
+      "displayName": "macOS Release Native",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-macos-preset-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_ANALYSIS": "OFF",
+        "BUILD_PYTHON": "OFF",
+        "BUILD_FFI": "OFF",
+        "BUILD_TESTS": "ON",
+        "BUILD_BENCHMARKS": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "macos-asan",
+      "displayName": "macOS AddressSanitizer Native",
+      "inherits": "macos-release",
+      "binaryDir": "${sourceDir}/build-macos-preset-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VOID_SANITIZER": "address"
+      }
+    },
+    {
+      "name": "macos-werror",
+      "displayName": "macOS Warnings-as-Errors Native",
+      "inherits": "macos-release",
+      "binaryDir": "${sourceDir}/build-macos-preset-werror",
+      "cacheVariables": {
+        "VOID_ENABLE_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "macos-tsan",
+      "displayName": "macOS ThreadSanitizer Native",
+      "inherits": "macos-release",
+      "binaryDir": "${sourceDir}/build-macos-preset-tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VOID_SANITIZER": "thread"
+      }
     }
   ],
   "buildPresets": [
@@ -64,6 +112,22 @@
       "name": "minimal-release",
       "configurePreset": "no-python-no-tests",
       "configuration": "Release"
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release"
+    },
+    {
+      "name": "macos-asan",
+      "configurePreset": "macos-asan"
+    },
+    {
+      "name": "macos-werror",
+      "configurePreset": "macos-werror"
+    },
+    {
+      "name": "macos-tsan",
+      "configurePreset": "macos-tsan"
     }
   ],
   "testPresets": [
@@ -79,6 +143,34 @@
       "name": "windows-debug",
       "configurePreset": "windows-debug",
       "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-release",
+      "configurePreset": "macos-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-asan",
+      "configurePreset": "macos-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-werror",
+      "configurePreset": "macos-werror",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-tsan",
+      "configurePreset": "macos-tsan",
       "output": {
         "outputOnFailure": true
       }

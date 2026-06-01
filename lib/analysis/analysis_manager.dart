@@ -941,9 +941,12 @@ class AnalysisManager extends ChangeNotifier
 
   bool _overlayRequestNeedsNativeReload(_OverlayTrackRequest request) {
     final ready = _readyOverlayTracksByFileId[request.source.trackFileId];
-    if (ready == null || ready.hash != request.source.hash) return true;
-    if (!ready.covers(request.targetFrame)) return true;
-    return false;
+    if (ready != null &&
+        ready.hash == request.source.hash &&
+        ready.covers(request.targetFrame)) {
+      return false;
+    }
+    return _targetOverlayChunkReady(request);
   }
 
   List<({int startFrame, int endFrame})> _readyRangesForRequest(
@@ -951,6 +954,9 @@ class AnalysisManager extends ChangeNotifier
   ) {
     final ranges = <({int startFrame, int endFrame})>[];
     for (final range in request.ranges) {
+      if (!_rangeContainsFrame(range, request.targetFrame)) {
+        continue;
+      }
       final probeFrame = request.targetFrame
           .clamp(range.startFrame, range.endFrame)
           .toInt();
@@ -962,18 +968,35 @@ class AnalysisManager extends ChangeNotifier
   }
 
   void _handleOverlayChunkJobComplete(AnalysisOverlayChunkJobResult result) {
-    final serial = result.overlaySerial;
-    if (!result.ok || serial == null || !_isOverlayActivationCurrent(serial)) {
+    if (!result.ok) {
       return;
     }
+    final shouldReload = _requestedOverlayTracksByFileId.values.any((request) {
+      if (request.source.hash != result.request.hash ||
+          request.source.path != result.request.videoPath) {
+        return false;
+      }
+      if (!_rangeContainsFrame((
+        startFrame: result.request.startFrame,
+        endFrame: result.request.endFrame,
+      ), request.targetFrame)) {
+        return false;
+      }
+      final ready = _readyOverlayTracksByFileId[request.source.trackFileId];
+      return ready == null ||
+          ready.hash != request.source.hash ||
+          !ready.covers(request.targetFrame);
+    });
+    if (!shouldReload) return;
+
     final loadedAny = _reloadReadyOverlayTracksForIntent(
-      serial,
+      _overlayActivationSerial,
       reason: 'chunk-ready',
     );
     if (loadedAny) {
       _overlayPresentationRevision++;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   void _scheduleOverlayChunksForRequest(
@@ -1017,10 +1040,6 @@ class AnalysisManager extends ChangeNotifier
   }) {
     if (!_isOverlayActivationCurrent(serial)) return false;
 
-    AnalysisFfi.clearOverlayTracks();
-    _readyOverlayTracksByFileId.clear();
-    _releaseOverlayHashLocks();
-
     var loadedAny = false;
     for (final request in _requestedOverlayTracksByFileId.values) {
       final track = request.source;
@@ -1032,21 +1051,28 @@ class AnalysisManager extends ChangeNotifier
           })) {
         continue;
       }
+      final previousReady = _readyOverlayTracksByFileId[track.trackFileId];
+      if (previousReady != null &&
+          previousReady.hash == track.hash &&
+          _readyRangesEqual(previousReady.indexedRanges, readyRanges)) {
+        continue;
+      }
       final analysisPath = _cache.analysisPath(track.hash);
-      final lock = _cache.acquireHashSharedLockSync(track.hash);
+      final newLock = _cache.acquireHashSharedLockSync(track.hash);
       final loaded = AnalysisFfi.setOverlayTrack(
         trackFileId: track.trackFileId,
         analysisPath: analysisPath,
       );
       if (!loaded) {
-        lock.releaseSync();
+        newLock.releaseSync();
         log.warning(
           '[Analysis] failed to load overlay track '
           '${track.trackFileId}: $analysisPath',
         );
         continue;
       }
-      _overlayHashLocksByTrackFileId[track.trackFileId] = lock;
+      _overlayHashLocksByTrackFileId.remove(track.trackFileId)?.releaseSync();
+      _overlayHashLocksByTrackFileId[track.trackFileId] = newLock;
       _readyOverlayTracksByFileId[track.trackFileId] = _ReadyOverlayTrackState(
         hash: track.hash,
         indexedRanges: readyRanges,
@@ -1080,6 +1106,39 @@ class AnalysisManager extends ChangeNotifier
       _applyOverlayConfig();
     }
     return loadedAny;
+  }
+
+  bool _targetOverlayChunkReady(_OverlayTrackRequest request) {
+    for (final range in request.ranges) {
+      if (!_rangeContainsFrame(range, request.targetFrame)) {
+        continue;
+      }
+      final probeFrame = request.targetFrame
+          .clamp(range.startFrame, range.endFrame)
+          .toInt();
+      if (_cache.hasOverlayChunkForFrame(request.source.hash, probeFrame)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _rangeContainsFrame(({int startFrame, int endFrame}) range, int frame) {
+    return frame >= range.startFrame && frame <= range.endFrame;
+  }
+
+  bool _readyRangesEqual(
+    List<({int startFrame, int endFrame})> a,
+    List<({int startFrame, int endFrame})> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].startFrame != b[i].startFrame ||
+          a[i].endFrame != b[i].endFrame) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Set<String> _protectedHashes(String hash) {

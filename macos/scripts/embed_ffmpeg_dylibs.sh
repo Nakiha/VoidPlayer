@@ -40,19 +40,28 @@ copy_symlink() {
   ln -sfn "$(readlink "${src}")" "${dst}"
 }
 
-copy_dylib libavcodec.62.28.100.dylib
-copy_dylib libavformat.62.12.100.dylib
-copy_dylib libavutil.60.26.100.dylib
-copy_dylib libswresample.6.3.100.dylib
+copy_library_family() {
+  library="$1"
+  real_path="$(find "${FFMPEG_LIB_DIR}" -maxdepth 1 -type f -name "${library}.*.dylib" | sort | tail -n 1)"
+  if [ -z "${real_path}" ]; then
+    echo "error: missing FFmpeg dylib for ${library} in ${FFMPEG_LIB_DIR}" >&2
+    exit 1
+  fi
 
-copy_symlink libavcodec.62.dylib
-copy_symlink libavcodec.dylib
-copy_symlink libavformat.62.dylib
-copy_symlink libavformat.dylib
-copy_symlink libavutil.60.dylib
-copy_symlink libavutil.dylib
-copy_symlink libswresample.6.dylib
-copy_symlink libswresample.dylib
+  real_name="$(basename "${real_path}")"
+  copy_dylib "${real_name}"
+
+  major_name="$(printf "%s\n" "${real_name}" | sed -E "s/^(${library})\\.([0-9]+)(\\..*)?\\.dylib$/\\1.\\2.dylib/")"
+  if [ "${major_name}" != "${real_name}" ]; then
+    copy_symlink "${major_name}"
+  fi
+  copy_symlink "${library}.dylib"
+}
+
+copy_library_family libavcodec
+copy_library_family libavformat
+copy_library_family libavutil
+copy_library_family libswresample
 
 mkdir -p "${NOTICE_DIR}"
 cp -f "${FFMPEG_ROOT}/README.txt" "${NOTICE_DIR}/README.txt"

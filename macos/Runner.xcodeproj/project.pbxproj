@@ -535,19 +535,11 @@
 				"$(PROJECT_DIR)/../third_party/ffmpeg/README.txt",
 				"$(PROJECT_DIR)/../third_party/ffmpeg/VOIDPLAYER_BUILD.md",
 				"$(PROJECT_DIR)/../third_party/ffmpeg/voidplayer-ffmpeg-manifest.json",
-				"$(PROJECT_DIR)/../third_party/ffmpeg/lib/libavcodec.62.28.100.dylib",
-				"$(PROJECT_DIR)/../third_party/ffmpeg/lib/libavformat.62.12.100.dylib",
-				"$(PROJECT_DIR)/../third_party/ffmpeg/lib/libavutil.60.26.100.dylib",
-				"$(PROJECT_DIR)/../third_party/ffmpeg/lib/libswresample.6.3.100.dylib",
 			);
 			name = "[VoidPlayer] Embed FFmpeg dylibs";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libavcodec.62.28.100.dylib",
-				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libavformat.62.12.100.dylib",
-				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libavutil.60.26.100.dylib",
-				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libswresample.6.3.100.dylib",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/ThirdParty/ffmpeg/README.txt",
 			);
 			runOnlyForDeploymentPostprocessing = 0;

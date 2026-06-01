@@ -20,26 +20,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.dev.check_release_compliance import check_source_tree, check_stage  # noqa: E402
+from scripts.dev.macos_ffmpeg import (  # noqa: E402
+    FFMPEG_RUNTIME_LIBRARIES,
+    ffmpeg_runtime_dylibs,
+    ffmpeg_runtime_symlinks,
+)
 from scripts.dev.paths import MACOS_PACKAGE_STAGE_DIR  # noqa: E402
 
-
-MACOS_FFMPEG_DYLIBS = [
-    "libavcodec.62.28.100.dylib",
-    "libavformat.62.12.100.dylib",
-    "libavutil.60.26.100.dylib",
-    "libswresample.6.3.100.dylib",
-]
-
-MACOS_FFMPEG_SYMLINKS = [
-    "libavcodec.62.dylib",
-    "libavcodec.dylib",
-    "libavformat.62.dylib",
-    "libavformat.dylib",
-    "libavutil.60.dylib",
-    "libavutil.dylib",
-    "libswresample.6.dylib",
-    "libswresample.dylib",
-]
 
 MUTABLE_DIR_NAMES = {
     ".pytest_cache",
@@ -119,7 +106,7 @@ def _check_source_inputs() -> None:
 
     _require_text(
         ROOT / "macos" / "scripts" / "embed_ffmpeg_dylibs.sh",
-        [*MACOS_FFMPEG_DYLIBS, *MACOS_FFMPEG_SYMLINKS, "ThirdParty/ffmpeg", "codesign"],
+        [*FFMPEG_RUNTIME_LIBRARIES, "ThirdParty/ffmpeg", "codesign"],
         "macOS FFmpeg embed script",
     )
     _require_text(
@@ -181,14 +168,17 @@ def _otool_libraries(binary: Path) -> list[str]:
 def _check_macos_linkage(stage_app: Path) -> None:
     executable = stage_app / "Contents" / "MacOS" / "VoidPlayer"
     frameworks = stage_app / "Contents" / "Frameworks"
-    required_loads = {f"@rpath/{name}" for name in MACOS_FFMPEG_DYLIBS}
+    ffmpeg_lib_dir = ROOT / "third_party" / "ffmpeg" / "lib"
+    ffmpeg_dylibs = ffmpeg_runtime_dylibs(ffmpeg_lib_dir)
+    ffmpeg_symlinks = ffmpeg_runtime_symlinks(ffmpeg_lib_dir)
+    required_loads = {f"@rpath/{name}" for name in ffmpeg_dylibs}
 
     _require_file(executable, "macOS executable")
     _require_dir(frameworks, "macOS Frameworks directory")
 
-    for name in MACOS_FFMPEG_DYLIBS:
+    for name in ffmpeg_dylibs:
         _require_file(frameworks / name, f"bundled FFmpeg dylib {name}")
-    for name in MACOS_FFMPEG_SYMLINKS:
+    for name in ffmpeg_symlinks:
         path = frameworks / name
         if not path.is_symlink():
             raise RuntimeError(f"missing bundled FFmpeg dylib symlink: {path}")
@@ -199,7 +189,7 @@ def _check_macos_linkage(stage_app: Path) -> None:
         raise RuntimeError("staged app executable is missing FFmpeg @rpath loads: " + ", ".join(missing))
 
     _check_no_developer_paths(executable, executable_loads)
-    for name in MACOS_FFMPEG_DYLIBS:
+    for name in ffmpeg_dylibs:
         dylib = frameworks / name
         loads = _otool_libraries(dylib)
         if not loads or loads[0] != f"@rpath/{name}":

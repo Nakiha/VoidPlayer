@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .check_release_compliance import check_source_tree, check_stage
 from .flutter_app import flutter_build, flutter_build_macos
+from .macos_ffmpeg import ffmpeg_runtime_dylibs, ffmpeg_runtime_symlinks
 from .paths import (
     MACOS_PACKAGE_DIR,
     MACOS_PACKAGE_STAGE_DIR,
@@ -61,24 +62,6 @@ BUILD_ONLY_FILE_PATTERNS = {
     "*.lib",
     "*.pdb",
 }
-
-MACOS_FFMPEG_DYLIBS = [
-    "libavcodec.62.28.100.dylib",
-    "libavformat.62.12.100.dylib",
-    "libavutil.60.26.100.dylib",
-    "libswresample.6.3.100.dylib",
-]
-
-MACOS_FFMPEG_SYMLINKS = [
-    "libavcodec.62.dylib",
-    "libavcodec.dylib",
-    "libavformat.62.dylib",
-    "libavformat.dylib",
-    "libavutil.60.dylib",
-    "libavutil.dylib",
-    "libswresample.6.dylib",
-    "libswresample.dylib",
-]
 
 MACOS_RELEASE_ENTITLEMENTS = ROOT / "macos" / "Runner" / "Release.entitlements"
 
@@ -316,15 +299,18 @@ def _verify_macos_linkage(stage_app: Path) -> None:
     header("Verify macOS app linkage")
     executable = stage_app / "Contents" / "MacOS" / "VoidPlayer"
     frameworks = stage_app / "Contents" / "Frameworks"
-    required_loads = {f"@rpath/{name}" for name in MACOS_FFMPEG_DYLIBS}
+    ffmpeg_lib_dir = ROOT / "third_party" / "ffmpeg" / "lib"
+    ffmpeg_dylibs = ffmpeg_runtime_dylibs(ffmpeg_lib_dir)
+    ffmpeg_symlinks = ffmpeg_runtime_symlinks(ffmpeg_lib_dir)
+    required_loads = {f"@rpath/{name}" for name in ffmpeg_dylibs}
 
-    for name in MACOS_FFMPEG_DYLIBS:
+    for name in ffmpeg_dylibs:
         path = frameworks / name
         if not path.is_file():
             print(f"\nERROR: bundled FFmpeg dylib missing: {path}")
             sys.exit(1)
 
-    for name in MACOS_FFMPEG_SYMLINKS:
+    for name in ffmpeg_symlinks:
         path = frameworks / name
         if not path.is_symlink():
             print(f"\nERROR: bundled FFmpeg dylib symlink missing: {path}")
@@ -339,7 +325,7 @@ def _verify_macos_linkage(stage_app: Path) -> None:
         sys.exit(1)
 
     _assert_no_developer_paths(executable, executable_loads)
-    for name in MACOS_FFMPEG_DYLIBS:
+    for name in ffmpeg_dylibs:
         dylib = frameworks / name
         loads = _otool_libraries(dylib)
         if not loads or loads[0] != f"@rpath/{name}":

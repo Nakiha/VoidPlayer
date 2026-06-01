@@ -29,7 +29,7 @@ mv "$artifact_dir/unpacked/$artifact_name" third_party/ffmpeg
   echo "- Artifact: $artifact_name"
 } > third_party/ffmpeg/VOIDPLAYER_BUILD.md
 
-dylib="third_party/ffmpeg/lib/libavcodec.62.28.100.dylib"
+dylib="$(find third_party/ffmpeg/lib -maxdepth 1 -type f -name 'libavcodec.*.dylib' | sort | tail -n 1)"
 if [[ ! -s "$dylib" ]]; then
   echo "macOS FFmpeg dylib is missing or empty: $dylib" >&2
   exit 1

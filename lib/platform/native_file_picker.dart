@@ -32,12 +32,56 @@ class NativePickedFile {
   }
 }
 
+class NativeBookmarkActivation {
+  const NativeBookmarkActivation({
+    required this.path,
+    required this.requestedPath,
+    required this.activated,
+    required this.stale,
+    this.securityScopedBookmarkBase64,
+    this.error,
+  });
+
+  final String path;
+  final String requestedPath;
+  final bool activated;
+  final bool stale;
+  final String? securityScopedBookmarkBase64;
+  final String? error;
+
+  static NativeBookmarkActivation fromPlatformValue(Object? value) {
+    if (value is! Map) {
+      throw FormatException(
+        'Unsupported bookmark activation payload: ${value.runtimeType}',
+      );
+    }
+    final path = value['path'];
+    final requestedPath = value['requestedPath'];
+    final bookmark = value['securityScopedBookmarkBase64'];
+    final error = value['error'];
+    return NativeBookmarkActivation(
+      path: path is String ? path : '',
+      requestedPath: requestedPath is String ? requestedPath : '',
+      activated: value['activated'] == true,
+      stale: value['stale'] == true,
+      securityScopedBookmarkBase64: bookmark is String && bookmark.isNotEmpty
+          ? bookmark
+          : null,
+      error: error is String && error.isNotEmpty ? error : null,
+    );
+  }
+}
+
 abstract interface class NativeFilePicker {
   bool get isAvailable;
 
   Future<List<NativePickedFile>?> pickFileEntries({bool allowMultiple = true});
 
   Future<List<String>?> pickFiles({bool allowMultiple = true});
+
+  Future<List<NativeBookmarkActivation>> activateSecurityScopedBookmarks(
+    Map<String, String> bookmarksByPath,
+  );
 }
 
 class MethodChannelNativeFilePicker implements NativeFilePicker {
@@ -71,6 +115,25 @@ class MethodChannelNativeFilePicker implements NativeFilePicker {
     if (entries == null || entries.isEmpty) return null;
     return entries.map((entry) => entry.path).toList(growable: false);
   }
+
+  @override
+  Future<List<NativeBookmarkActivation>> activateSecurityScopedBookmarks(
+    Map<String, String> bookmarksByPath,
+  ) async {
+    if (bookmarksByPath.isEmpty) return const [];
+    try {
+      final result = await _channel.invokeMethod<List<dynamic>>(
+        'activateSecurityScopedBookmarks',
+        {'bookmarks': bookmarksByPath},
+      );
+      if (result == null || result.isEmpty) return const [];
+      return result
+          .map(NativeBookmarkActivation.fromPlatformValue)
+          .toList(growable: false);
+    } on MissingPluginException {
+      return const [];
+    }
+  }
 }
 
 class UnsupportedNativeFilePicker implements NativeFilePicker {
@@ -91,5 +154,12 @@ class UnsupportedNativeFilePicker implements NativeFilePicker {
   @override
   Future<List<String>?> pickFiles({bool allowMultiple = true}) {
     throw UnsupportedError(message);
+  }
+
+  @override
+  Future<List<NativeBookmarkActivation>> activateSecurityScopedBookmarks(
+    Map<String, String> bookmarksByPath,
+  ) async {
+    return const [];
   }
 }

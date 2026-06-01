@@ -39,6 +39,57 @@ final class MacOSSecurityScopedFileAccess {
     bookmarkData(forPath: path)?.base64EncodedString()
   }
 
+  func activateBookmarks(_ bookmarksByPath: [String: String]) -> [[String: Any]] {
+    var results: [[String: Any]] = []
+    for (requestedPath, bookmarkBase64) in bookmarksByPath {
+      var entry: [String: Any] = [
+        "path": requestedPath,
+        "requestedPath": requestedPath,
+        "activated": false,
+        "stale": false,
+      ]
+      guard let bookmarkData = Data(base64Encoded: bookmarkBase64) else {
+        entry["error"] = "invalid bookmark data"
+        results.append(entry)
+        continue
+      }
+
+      var stale = false
+      do {
+        let url = try URL(
+          resolvingBookmarkData: bookmarkData,
+          options: [.withSecurityScope],
+          relativeTo: nil,
+          bookmarkDataIsStale: &stale
+        )
+        lock.lock()
+        let alreadyActive = activeUrlsByPath[url.path] != nil
+        lock.unlock()
+        let activated = alreadyActive || url.startAccessingSecurityScopedResource()
+        lock.lock()
+        if activated && !alreadyActive {
+          activeUrlsByPath[url.path] = url
+        }
+        if let refreshedBookmark = try? url.bookmarkData(
+          options: [.withSecurityScope],
+          includingResourceValuesForKeys: nil,
+          relativeTo: nil
+        ) {
+          bookmarkDataByPath[url.path] = refreshedBookmark
+          entry["securityScopedBookmarkBase64"] = refreshedBookmark.base64EncodedString()
+        }
+        lock.unlock()
+        entry["path"] = url.path
+        entry["activated"] = activated
+        entry["stale"] = stale
+      } catch {
+        entry["error"] = error.localizedDescription
+      }
+      results.append(entry)
+    }
+    return results
+  }
+
   func releaseAll() {
     lock.lock()
     let urls = Array(activeUrlsByPath.values)
@@ -52,6 +103,15 @@ final class MacOSSecurityScopedFileAccess {
 }
 
 enum MacOSFilePicker {
+  static func activateSecurityScopedBookmarks(arguments: Any?, result: @escaping FlutterResult) {
+    guard let args = arguments as? [String: Any],
+          let bookmarks = args["bookmarks"] as? [String: String] else {
+      result([])
+      return
+    }
+    result(MacOSSecurityScopedFileAccess.shared.activateBookmarks(bookmarks))
+  }
+
   static func pickFiles(arguments: Any?, result: @escaping FlutterResult) {
     let allowsMultipleSelection = MacOSFlutterArguments.boolArg(arguments, "allowMultiple") ?? true
     DispatchQueue.main.async {

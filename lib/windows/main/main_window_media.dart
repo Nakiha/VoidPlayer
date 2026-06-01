@@ -89,6 +89,8 @@ class MainWindowMediaCoordinator {
 
   Future<void> _loadMediaPathsImpl(List<String> paths) async {
     if (!_alive) return;
+    await _activateSecurityScopedBookmarks(paths);
+    if (!_alive) return;
 
     if (textureId() == null) {
       setViewportState(const ViewportDisplayState.loading());
@@ -213,6 +215,63 @@ class MainWindowMediaCoordinator {
       ...selectedBookmarks,
     };
     await appSettings.save();
+  }
+
+  Future<void> _activateSecurityScopedBookmarks(List<String> paths) async {
+    final knownBookmarks = appSettings.securityScopedBookmarks;
+    if (knownBookmarks.isEmpty) return;
+    final bookmarksToActivate = <String, String>{};
+    for (final path in paths) {
+      final bookmark = knownBookmarks[path];
+      if (bookmark == null || bookmark.isEmpty) continue;
+      bookmarksToActivate[path] = bookmark;
+    }
+    if (bookmarksToActivate.isEmpty) return;
+
+    try {
+      final activations = await nativeFilePicker
+          .activateSecurityScopedBookmarks(bookmarksToActivate);
+      if (activations.isEmpty) return;
+      final refreshedBookmarks = <String, String>{};
+      for (final activation in activations) {
+        final bookmark = activation.securityScopedBookmarkBase64;
+        if (bookmark == null || bookmark.isEmpty) continue;
+        final key = activation.path.isNotEmpty
+            ? activation.path
+            : activation.requestedPath;
+        if (key.isEmpty) continue;
+        refreshedBookmarks[key] = bookmark;
+        if (activation.requestedPath.isNotEmpty &&
+            activation.requestedPath != key) {
+          refreshedBookmarks[activation.requestedPath] = bookmark;
+        }
+      }
+      if (refreshedBookmarks.isNotEmpty) {
+        appSettings.securityScopedBookmarks = {
+          ...knownBookmarks,
+          ...refreshedBookmarks,
+        };
+        await appSettings.save();
+      }
+      final failures = activations
+          .where((activation) => !activation.activated)
+          .map(
+            (activation) => activation.error == null
+                ? activation.requestedPath
+                : '${activation.requestedPath}: ${activation.error}',
+          )
+          .where((message) => message.isNotEmpty)
+          .toList(growable: false);
+      if (failures.isNotEmpty) {
+        log.warning(
+          '[macOS sandbox] Failed to activate ${failures.length} security-scoped bookmark(s): ${failures.join("; ")}',
+        );
+      }
+    } catch (e) {
+      log.warning(
+        '[macOS sandbox] Security-scoped bookmark activation failed: $e',
+      );
+    }
   }
 
   Future<void> removeTrack(int fileId) async {

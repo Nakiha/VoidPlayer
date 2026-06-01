@@ -185,6 +185,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       result(tracks.tracks)
     case "pickFiles":
       MacOSFilePicker.pickFiles(arguments: call.arguments, result: result)
+    case "activateSecurityScopedBookmarks":
+      MacOSFilePicker.activateSecurityScopedBookmarks(arguments: call.arguments, result: result)
     case "getDiagnostics":
       result(MacOSVideoRendererDiagnostics.map(
         backendName: backendName,

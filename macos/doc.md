@@ -24,6 +24,8 @@ The macOS runner owns:
 - `CVPixelBuffer` lifecycle for renderer-owned texture targets.
 - App data/log path setup and macOS crash diagnostics.
 - macOS package/sign/notarization staging inputs.
+- Security-scoped bookmarks are captured from `NSOpenPanel` selections and
+  reactivated before persisted external paths are reopened.
 
 The runner does not own playback scheduling, decode policy, seek/loop behavior,
 track lifecycle, layout policy, audio policy, or color conversion.

@@ -111,7 +111,13 @@ def _check_source_inputs() -> None:
     )
     _require_text(
         ROOT / "macos" / "Runner" / "MacOSFilePicker.swift",
-        ["NSOpenPanel", "canChooseFiles = true", "panel.urls.map"],
+        [
+            "NSOpenPanel",
+            "canChooseFiles = true",
+            "panel.urls.map",
+            "startAccessingSecurityScopedResource",
+            "activateSecurityScopedBookmarks",
+        ],
         "macOS sandbox file picker",
     )
     _require_text(

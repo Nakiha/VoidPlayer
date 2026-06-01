@@ -14,6 +14,14 @@ typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
 
 #define VP_MACOS_NATIVE_API_VERSION 1u
 
+typedef enum VPMacOSNativeStatus {
+  VPMacOSNativeStatusOk = 0,
+  VPMacOSNativeStatusInvalidArgument = -1,
+  VPMacOSNativeStatusUnsupported = -2,
+  VPMacOSNativeStatusTransientBackpressure = -3,
+  VPMacOSNativeStatusRendererFailed = -4,
+} VPMacOSNativeStatus;
+
 typedef struct VPMacOSNativeFrameInfo {
   uint32_t struct_size;
   uint32_t api_version;

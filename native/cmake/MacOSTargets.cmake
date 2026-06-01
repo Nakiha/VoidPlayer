@@ -86,6 +86,16 @@ target_link_libraries(macos_presentation_adapter_smoke PRIVATE
 add_test(NAME macos_presentation_adapter_smoke COMMAND macos_presentation_adapter_smoke)
 void_label_test(macos_presentation_adapter_smoke "macos;backend;canary")
 
+add_executable(macos_native_abi_smoke
+    "${VOID_NATIVE_DIR}/tools/macos_native_abi_smoke.cpp"
+)
+void_apply_native_compile_options(macos_native_abi_smoke)
+target_link_libraries(macos_native_abi_smoke PRIVATE
+    void_macos_native_player
+)
+add_test(NAME macos_native_abi_smoke COMMAND macos_native_abi_smoke)
+void_label_test(macos_native_abi_smoke "macos;abi;contract")
+
 add_executable(macos_metal_uploader_smoke
     "${VOID_NATIVE_DIR}/tools/macos_metal_uploader_smoke.mm"
 )

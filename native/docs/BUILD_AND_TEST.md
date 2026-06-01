@@ -50,6 +50,7 @@ Windows -> `native/build-msvc` / `windows/libs/ffmpeg`，macOS ->
 | `void_media_ffmpeg` | all | FFmpeg demux/decode support |
 | `void_renderer_portable_driver` | macOS/native smokes | shared renderer driver object target |
 | `void_macos_native_player` | macOS | macOS native bridge + Metal presentation backend |
+| `macos_native_abi_smoke` | macOS | macOS C ABI layout/status/lifetime contract smoke |
 | `video_renderer_ffi` | Windows/native FFI | C FFI shared library，导出 `naki_vr_*` |
 | `video_renderer_native` | Windows/Python | pybind11 module for demo/scripts |
 | `VoidPlayerCli` | analysis enabled | analysis cache/overlay CLI |

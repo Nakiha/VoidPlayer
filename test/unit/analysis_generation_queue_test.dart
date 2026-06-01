@@ -55,6 +55,10 @@ class _FakeCacheService implements AnalysisCacheService {
       throw UnimplementedError();
 
   @override
+  List<({int startFrame, int endFrame})> overlayChunkRanges(String hash) =>
+      throw UnimplementedError();
+
+  @override
   Future<AnalysisCachePruneResult> enforceLimit({
     required int maxBytes,
     Set<String> protectedHashes = const {},

@@ -174,11 +174,37 @@ class AnalysisCache {
       return dir.listSync(followLinks: false).any((entity) {
         if (entity is! File) return false;
         if (p.extension(entity.path).toLowerCase() != '.vck') return false;
-        return _overlayChunkFileCoversFrame(entity.path, frameIndex);
+        final range = _overlayChunkFileRange(entity.path);
+        if (range == null) return false;
+        return frameIndex >= range.startFrame && frameIndex <= range.endFrame;
       });
     } catch (_) {
       return false;
     }
+  }
+
+  static List<({int startFrame, int endFrame})> overlayChunkRanges(
+    String hash,
+  ) {
+    final dir = Directory(overlayChunksDir(hash));
+    if (!dir.existsSync()) return const [];
+    final ranges = <({int startFrame, int endFrame})>[];
+    try {
+      for (final entity in dir.listSync(followLinks: false)) {
+        if (entity is! File) continue;
+        if (p.extension(entity.path).toLowerCase() != '.vck') continue;
+        final range = _overlayChunkFileRange(entity.path);
+        if (range != null) ranges.add(range);
+      }
+    } catch (_) {
+      return const [];
+    }
+    ranges.sort((a, b) {
+      final start = a.startFrame.compareTo(b.startFrame);
+      if (start != 0) return start;
+      return a.endFrame.compareTo(b.endFrame);
+    });
+    return _mergeOverlayChunkRanges(ranges);
   }
 
   static final RegExp _chunkFrameRangePattern = RegExp(
@@ -186,18 +212,43 @@ class AnalysisCache {
     caseSensitive: false,
   );
 
-  static bool _overlayChunkFileCoversFrame(String path, int frameIndex) {
+  static ({int startFrame, int endFrame})? _overlayChunkFileRange(String path) {
     final name = p.basename(path).toLowerCase();
     final expectedGenerator =
         '_g${currentOverlayVachunkGeneratorRevision.toRadixString(16).padLeft(16, '0')}_';
-    if (!name.contains(expectedGenerator)) return false;
-    if (name.endsWith('_all.vck')) return true;
+    if (!name.contains(expectedGenerator)) return null;
+    if (name.endsWith('_all.vck')) {
+      return (startFrame: 0, endFrame: 0x7fffffff);
+    }
     final match = _chunkFrameRangePattern.firstMatch(name);
-    if (match == null) return false;
+    if (match == null) return null;
     final start = int.tryParse(match.group(1)!);
     final end = int.tryParse(match.group(2)!);
-    if (start == null || end == null || start > end) return false;
-    return frameIndex >= start && frameIndex <= end;
+    if (start == null || end == null || start > end) return null;
+    return (startFrame: start, endFrame: end);
+  }
+
+  static List<({int startFrame, int endFrame})> _mergeOverlayChunkRanges(
+    List<({int startFrame, int endFrame})> ranges,
+  ) {
+    if (ranges.isEmpty) return const [];
+    final merged = <({int startFrame, int endFrame})>[];
+    var current = ranges.first;
+    for (final range in ranges.skip(1)) {
+      if (range.startFrame <= current.endFrame + 1) {
+        current = (
+          startFrame: current.startFrame,
+          endFrame: range.endFrame > current.endFrame
+              ? range.endFrame
+              : current.endFrame,
+        );
+      } else {
+        merged.add(current);
+        current = range;
+      }
+    }
+    merged.add(current);
+    return merged;
   }
 
   static bool deleteIfVacVersionMismatch(String hash) {

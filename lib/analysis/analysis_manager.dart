@@ -952,19 +952,8 @@ class AnalysisManager extends ChangeNotifier
   List<({int startFrame, int endFrame})> _readyRangesForRequest(
     _OverlayTrackRequest request,
   ) {
-    final ranges = <({int startFrame, int endFrame})>[];
-    for (final range in request.ranges) {
-      if (!_rangeContainsFrame(range, request.targetFrame)) {
-        continue;
-      }
-      final probeFrame = request.targetFrame
-          .clamp(range.startFrame, range.endFrame)
-          .toInt();
-      if (_cache.hasOverlayChunkForFrame(request.source.hash, probeFrame)) {
-        ranges.add(range);
-      }
-    }
-    return ranges;
+    if (!_targetOverlayChunkReady(request)) return const [];
+    return _cache.overlayChunkRanges(request.source.hash);
   }
 
   void _handleOverlayChunkJobComplete(AnalysisOverlayChunkJobResult result) {

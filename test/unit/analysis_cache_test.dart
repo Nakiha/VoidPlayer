@@ -58,6 +58,18 @@ void main() {
     expect(AnalysisCache.hasOverlayChunkForFrame(hash, 8), isTrue);
     expect(AnalysisCache.hasOverlayChunkForFrame(hash, 16), isTrue);
     expect(AnalysisCache.hasOverlayChunkForFrame(hash, 17), isFalse);
+    expect(AnalysisCache.overlayChunkRanges(hash), [
+      (startFrame: 8, endFrame: 16),
+    ]);
+
+    final adjacentOverlayChunkPath = p.join(
+      AnalysisCache.overlayChunksDir(hash),
+      '2_f0000000000000001_b0000000000000001_g0000000000000003_00000017_00000020.vck',
+    );
+    await File(adjacentOverlayChunkPath).writeAsBytes([4, 5, 6]);
+    expect(AnalysisCache.overlayChunkRanges(hash), [
+      (startFrame: 8, endFrame: 20),
+    ]);
   });
 
   test('deletes per-hash VAC2 cache directories', () async {

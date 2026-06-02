@@ -199,17 +199,21 @@ TEST_CASE("BidiRingBuffer: retreat re-exposes the bounded backward window",
     REQUIRE(brb.peek()->pts_us == 3000);
 
     REQUIRE(brb.can_retreat());
+    REQUIRE(brb.available_retreat_count() == 2);
     REQUIRE(brb.retreat());
     REQUIRE(brb.peek()->pts_us == 2000);
     REQUIRE(brb.backward_count() == 1);
+    REQUIRE(brb.available_retreat_count() == 1);
 
     REQUIRE(brb.can_retreat());
     REQUIRE(brb.retreat());
     REQUIRE(brb.peek()->pts_us == 1000);
     REQUIRE(brb.backward_count() == 2);
+    REQUIRE(brb.available_retreat_count() == 0);
     REQUIRE_FALSE(brb.can_retreat());
 
     REQUIRE(brb.advance());
     REQUIRE(brb.peek()->pts_us == 2000);
     REQUIRE(brb.backward_count() == 1);
+    REQUIRE(brb.available_retreat_count() == 1);
 }

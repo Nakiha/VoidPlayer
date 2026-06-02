@@ -1075,80 +1075,6 @@ TEST_CASE("TrackStepPolicy detects buffering tracks",
     REQUIRE_FALSE(has_buffering_track(manager));
 }
 
-TEST_CASE("TrackStepPolicy retreats tracks only when all can retreat",
-          "[track_pipeline][track_step_policy]") {
-    TrackPipelineManager empty_manager;
-    REQUIRE(retreat_tracks_if_all_can_retreat(empty_manager));
-
-    const auto make_retreatable_track = [](int64_t previous_pts,
-                                           int64_t current_pts) {
-        auto track = std::make_unique<TrackPipeline>();
-        track->track_buffer = std::make_shared<TrackBuffer>();
-        TextureFrame previous;
-        previous.pts_us = previous_pts;
-        TextureFrame current;
-        current.pts_us = current_pts;
-        track->track_buffer->push_frame(previous);
-        track->track_buffer->push_frame(current);
-        REQUIRE(track->track_buffer->advance());
-        REQUIRE(track->track_buffer->can_retreat());
-        REQUIRE(track->track_buffer->peek(0)->pts_us == current_pts);
-        return track;
-    };
-
-    TrackPipelineManager success_manager;
-    success_manager[0] = make_retreatable_track(100, 200);
-    success_manager[2] = make_retreatable_track(300, 400);
-
-    REQUIRE(retreat_tracks_if_all_can_retreat(success_manager));
-    REQUIRE(success_manager[0]->track_buffer->peek(0)->pts_us == 100);
-    REQUIRE(success_manager[2]->track_buffer->peek(0)->pts_us == 300);
-
-    TrackPipelineManager failure_manager;
-    failure_manager[0] = make_retreatable_track(500, 600);
-    auto non_retreatable = std::make_unique<TrackPipeline>();
-    non_retreatable->track_buffer = std::make_shared<TrackBuffer>();
-    TextureFrame only_frame;
-    only_frame.pts_us = 700;
-    non_retreatable->track_buffer->push_frame(only_frame);
-    REQUIRE_FALSE(non_retreatable->track_buffer->can_retreat());
-    failure_manager[1] = std::move(non_retreatable);
-
-    REQUIRE_FALSE(retreat_tracks_if_all_can_retreat(failure_manager));
-    REQUIRE(failure_manager[0]->track_buffer->peek(0)->pts_us == 600);
-    REQUIRE(failure_manager[1]->track_buffer->peek(0)->pts_us == 700);
-}
-
-TEST_CASE("TrackStepPolicy chooses step-backward retreat application",
-          "[track_pipeline][track_step_policy]") {
-    TrackPipelineManager empty_manager;
-    const auto empty = choose_step_backward_retreat_application(empty_manager);
-    REQUIRE(empty.reference_slot == -1);
-    REQUIRE_FALSE(empty.has_clock_target);
-
-    auto track = std::make_unique<TrackPipeline>();
-    track->offset_us = 50;
-    track->track_buffer = std::make_shared<TrackBuffer>();
-    TextureFrame frame;
-    frame.pts_us = 100;
-    track->track_buffer->push_frame(frame);
-
-    TrackPipelineManager manager;
-    manager[1] = std::move(track);
-    const auto application =
-        choose_step_backward_retreat_application(manager);
-    REQUIRE(application.reference_slot == 1);
-    REQUIRE(application.has_clock_target);
-    REQUIRE(application.presented_pts_us == 100);
-    REQUIRE(application.clock_target_us == 150);
-
-    manager[1]->track_buffer->clear_frames();
-    const auto missing_frame =
-        choose_step_backward_retreat_application(manager);
-    REQUIRE(missing_frame.reference_slot == 1);
-    REQUIRE_FALSE(missing_frame.has_clock_target);
-}
-
 TEST_CASE("TrackStepPolicy computes minimum current frame duration",
           "[track_pipeline][track_step_policy]") {
     TrackPipelineManager empty_manager;
@@ -1661,6 +1587,7 @@ TEST_CASE("TrackStepPolicy applies step-forward decisions",
     manager[1] = make_track_with_frames({100, 200, 300});
 
     PresentDecision decision;
+    decision.current_pts_us = 250;
     TextureFrame selected0;
     selected0.pts_us = 200;
     decision.frames[0] = selected0;
@@ -1680,6 +1607,154 @@ TEST_CASE("TrackStepPolicy applies step-forward decisions",
     REQUIRE(application.clock_target_us == 250);
     REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 300);
     REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 300);
+}
+
+TEST_CASE("TrackStepPolicy chooses fair multi-track step-forward target",
+          "[track_pipeline][track_step_policy]") {
+    const auto make_track_with_frames =
+        [](std::initializer_list<int64_t> pts_values) {
+            auto track = std::make_unique<TrackPipeline>();
+            track->track_buffer = std::make_shared<TrackBuffer>();
+            for (const int64_t pts : pts_values) {
+                TextureFrame frame;
+                frame.pts_us = pts;
+                track->track_buffer->push_frame(frame);
+            }
+            return track;
+        };
+
+    TrackPipelineManager manager;
+    manager[0] = make_track_with_frames({100000, 200000, 300000});
+    manager[1] = make_track_with_frames({150000, 250000, 350000});
+    manager[2] = make_track_with_frames({120000, 400000});
+
+    PresentDecision last_decision;
+    TextureFrame frame_a;
+    frame_a.pts_us = 100000;
+    last_decision.frames[0] = frame_a;
+    TextureFrame frame_b;
+    frame_b.pts_us = 150000;
+    last_decision.frames[1] = frame_b;
+    TextureFrame frame_c;
+    frame_c.pts_us = 120000;
+    last_decision.frames[2] = frame_c;
+    set_present_decision_track_identity(last_decision, 0, *manager[0]);
+    set_present_decision_track_identity(last_decision, 1, *manager[1]);
+    set_present_decision_track_identity(last_decision, 2, *manager[2]);
+    last_decision.should_present = true;
+
+    PresentDecision decision;
+    REQUIRE(build_step_forward_decision(
+        manager,
+        150000,
+        100000,
+        last_decision,
+        decision));
+
+    REQUIRE(decision.current_pts_us == 250000);
+    REQUIRE(decision.frames[0]->pts_us == 200000);
+    REQUIRE(decision.frames[1]->pts_us == 250000);
+    REQUIRE(decision.frames[2]->pts_us == 120000);
+}
+
+TEST_CASE("TrackStepPolicy chooses fair multi-track step-backward target",
+          "[track_pipeline][track_step_policy]") {
+    const auto make_track_with_frames =
+        [](std::initializer_list<int64_t> pts_values, int advances) {
+            auto track = std::make_unique<TrackPipeline>();
+            track->track_buffer = std::make_shared<TrackBuffer>();
+            for (const int64_t pts : pts_values) {
+                TextureFrame frame;
+                frame.pts_us = pts;
+                track->track_buffer->push_frame(frame);
+            }
+            for (int i = 0; i < advances; ++i) {
+                track->track_buffer->advance();
+            }
+            return track;
+        };
+
+    TrackPipelineManager manager;
+    manager[0] = make_track_with_frames({100000, 200000, 300000}, 2);
+    manager[1] = make_track_with_frames({150000, 250000, 350000}, 2);
+    manager[2] = make_track_with_frames({120000, 400000}, 1);
+
+    PresentDecision last_decision;
+    TextureFrame frame_a;
+    frame_a.pts_us = 200000;
+    last_decision.frames[0] = frame_a;
+    TextureFrame frame_b;
+    frame_b.pts_us = 250000;
+    last_decision.frames[1] = frame_b;
+    TextureFrame frame_c;
+    frame_c.pts_us = 120000;
+    last_decision.frames[2] = frame_c;
+    set_present_decision_track_identity(last_decision, 0, *manager[0]);
+    set_present_decision_track_identity(last_decision, 1, *manager[1]);
+    set_present_decision_track_identity(last_decision, 2, *manager[2]);
+    last_decision.should_present = true;
+
+    PresentDecision decision;
+    REQUIRE(build_step_backward_decision(
+        manager,
+        250000,
+        last_decision,
+        decision));
+
+    REQUIRE(decision.current_pts_us == 150000);
+    REQUIRE(decision.frames[0]->pts_us == 100000);
+    REQUIRE(decision.frames[1]->pts_us == 150000);
+    REQUIRE(decision.frames[2]->pts_us == 120000);
+
+    const auto application = apply_step_backward_decision(manager, decision);
+    REQUIRE(application.has_clock_target);
+    REQUIRE(application.clock_target_us == 150000);
+    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 100000);
+    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 150000);
+    REQUIRE(manager[2]->track_buffer->peek(0)->pts_us == 120000);
+}
+
+TEST_CASE("TrackStepPolicy does not build backward decisions past local history",
+          "[track_pipeline][track_step_policy]") {
+    auto track = std::make_unique<TrackPipeline>();
+    track->track_buffer = std::make_shared<TrackBuffer>();
+    for (const int64_t pts : {100000, 200000}) {
+        TextureFrame frame;
+        frame.pts_us = pts;
+        frame.duration_us = 100000;
+        track->track_buffer->push_frame(frame);
+    }
+    REQUIRE(track->track_buffer->advance());
+
+    TrackPipelineManager manager;
+    manager[0] = std::move(track);
+
+    PresentDecision last_decision;
+    TextureFrame current_frame;
+    current_frame.pts_us = 200000;
+    last_decision.frames[0] = current_frame;
+    last_decision.should_present = true;
+
+    PresentDecision decision;
+    REQUIRE(build_step_backward_decision(
+        manager,
+        200000,
+        last_decision,
+        decision));
+    REQUIRE(decision.current_pts_us == 100000);
+    REQUIRE(decision.frames[0]->pts_us == 100000);
+
+    const auto application = apply_step_backward_decision(manager, decision);
+    REQUIRE(application.has_clock_target);
+    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 100000);
+    last_decision = decision;
+
+    PresentDecision exhausted_decision;
+    REQUIRE_FALSE(build_step_backward_decision(
+        manager,
+        100000,
+        last_decision,
+        exhausted_decision));
 }
 
 TEST_CASE("TrackStepPolicy chooses step-forward exact-seek fallback targets",
@@ -1749,8 +1824,8 @@ TEST_CASE("TrackStepPolicy chooses step-forward exact-seek fallback targets",
     future_last_decision.frames[0] = future_last_frame;
     const auto future_last_target = choose_step_forward_exact_seek_target(
         future_manager, 30000, 0, future_last_decision);
-    REQUIRE(future_last_target.base_pts_us == 30000);
-    REQUIRE(future_last_target.target_pts_us == 71000);
+    REQUIRE(future_last_target.base_pts_us == 70100);
+    REQUIRE(future_last_target.target_pts_us == 111100);
 
     const auto clamped_target = choose_step_forward_exact_seek_target(
         manager, 9000, 20000, last_decision);
@@ -1762,7 +1837,9 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
           "[track_pipeline][track_step_policy]") {
     TrackPipelineManager empty_manager;
     const auto empty_target = choose_step_backward_exact_seek_target(
-        empty_manager, 10000);
+        empty_manager, 10000, PresentDecision{});
+    REQUIRE(empty_target.reference_slot == -1);
+    REQUIRE(empty_target.base_pts_us == 10000);
     REQUIRE(empty_target.clock_pts_us == 10000);
     REQUIRE(empty_target.frame_duration_us == 33333);
     REQUIRE(empty_target.target_pts_us == 0);
@@ -1778,16 +1855,36 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     TrackPipelineManager manager;
     manager[0] = std::move(track);
     const auto target = choose_step_backward_exact_seek_target(
-        manager, 90000);
+        manager, 90000, PresentDecision{});
+    REQUIRE(target.reference_slot == 0);
+    REQUIRE(target.base_pts_us == 90000);
     REQUIRE(target.clock_pts_us == 90000);
     REQUIRE(target.frame_duration_us == 40000);
     REQUIRE(target.target_pts_us == 49000);
     REQUIRE_FALSE(target.clamped_to_zero);
 
     const auto clamped_target = choose_step_backward_exact_seek_target(
-        manager, 40500);
+        manager, 40500, PresentDecision{});
     REQUIRE(clamped_target.target_pts_us == 0);
     REQUIRE(clamped_target.clamped_to_zero);
+
+    TextureFrame visible_frame;
+    visible_frame.pts_us = 60000;
+    PresentDecision last_decision;
+    last_decision.frames[0] = visible_frame;
+    const auto visible_target = choose_step_backward_exact_seek_target(
+        manager, 90000, last_decision);
+    REQUIRE(visible_target.base_pts_us == 60000);
+    REQUIRE(visible_target.target_pts_us == 19000);
+
+    TextureFrame future_visible_frame;
+    future_visible_frame.pts_us = 130000;
+    PresentDecision future_last_decision;
+    future_last_decision.frames[0] = future_visible_frame;
+    const auto future_visible_target = choose_step_backward_exact_seek_target(
+        manager, 90000, future_last_decision);
+    REQUIRE(future_visible_target.base_pts_us == 90000);
+    REQUIRE(future_visible_target.target_pts_us == 49000);
 }
 
 TEST_CASE("TrackStepPolicy discards consumed step-forward frames",

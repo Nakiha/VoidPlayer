@@ -36,6 +36,7 @@ public:
     bool advance();
     bool retreat();
     bool can_retreat() const;
+    size_t available_retreat_count() const;
 
     TrackState state() const;
     size_t total_count() const;

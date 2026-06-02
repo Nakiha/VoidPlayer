@@ -74,6 +74,10 @@ bool TrackBuffer::can_retreat() const {
     return ring_.can_retreat();
 }
 
+size_t TrackBuffer::available_retreat_count() const {
+    return ring_.available_retreat_count();
+}
+
 TrackState TrackBuffer::state() const {
     return state_.load(std::memory_order_acquire);
 }

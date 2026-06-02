@@ -1,0 +1,21 @@
+# macOS runner regression for paused step presentation refresh.
+# Run with:
+#   python dev.py mac-ui-test --build ui_tests/macos/native_step_visual_regression.csv
+@WINDOW, 960, 540
+0.3, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+1.3, ASSERT_TRACK_COUNT, 1
+1.4, SEEK_TO, 3060000
+2.0, ASSERT_POSITION, 3060000, 20
+2.1, CAPTURE_VIEWPORT, step_before
+2.2, ASSERT_CAPTURE_NOT_BLACK, step_before, 0.5, 16.0
+2.3, STEP_FORWARD
+2.9, ASSERT_POSITION_RANGE, 3070000, 3090000
+3.0, ASSERT_PRESENTED_FRAME_RANGE, 0, 3070000, 3160000
+3.1, CAPTURE_VIEWPORT, step_forward
+3.2, ASSERT_CAPTURE_CHANGED, step_before, step_forward
+3.3, STEP_BACKWARD
+3.9, ASSERT_POSITION_RANGE, 3050000, 3075000
+4.0, ASSERT_PRESENTED_FRAME_RANGE, 0, 3000000, 3075000
+4.1, CAPTURE_VIEWPORT, step_backward
+4.2, ASSERT_CAPTURE_CHANGED, step_forward, step_backward
+4.3, QUIT, 0

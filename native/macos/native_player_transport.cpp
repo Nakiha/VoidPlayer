@@ -115,6 +115,11 @@ int VPMacOSNativePlayerStepForward(VPMacOSNativePlayer* player,
   }
   player->clear_last_frame_locked();
   player->renderer->step_forward();
+  {
+    std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+    player->renderer_owned_refresh_min_pts_us =
+        std::max<int64_t>(0, player->renderer->current_pts_us() - 100'000);
+  }
   write_error(error, error_size, "");
   return 0;
 }
@@ -133,6 +138,11 @@ int VPMacOSNativePlayerStepBackward(VPMacOSNativePlayer* player,
   }
   player->clear_last_frame_locked();
   player->renderer->step_backward();
+  {
+    std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+    player->renderer_owned_refresh_min_pts_us =
+        std::max<int64_t>(0, player->renderer->current_pts_us() - 500'000);
+  }
   write_error(error, error_size, "");
   return 0;
 }

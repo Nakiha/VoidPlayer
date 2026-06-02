@@ -1,5 +1,7 @@
 #include "video_renderer/buffer/bidi_ring_buffer.h"
 
+#include <algorithm>
+
 namespace vr {
 
 BidiRingBuffer::BidiRingBuffer(size_t forward_depth, size_t backward_depth)
@@ -107,6 +109,12 @@ size_t BidiRingBuffer::forward_count() const {
 size_t BidiRingBuffer::backward_count() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return retreated_;
+}
+
+size_t BidiRingBuffer::available_retreat_count() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const size_t available = std::min(backward_depth_, total_advanced_);
+    return available > retreated_ ? available - retreated_ : 0;
 }
 
 size_t BidiRingBuffer::total_count() const {

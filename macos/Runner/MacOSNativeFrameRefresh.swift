@@ -225,34 +225,56 @@ enum MacOSNativeFrameRefresh {
 
   static func stepAndRefresh(
     player: MacOSNativePlayerSession,
+    texture: MacOSFlutterTextureBridge,
     forward: Bool,
+    maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
     framePump: MacOSNativeFramePump
   ) -> FlutterError? {
     let startNs = DispatchTime.now().uptimeNanoseconds
+    let timeoutMs = 3_000
     do {
+      let previousFrameInfo = player.lastRendererOwnedFrameInfo()
       if forward {
         try player.stepForward()
       } else {
         try player.stepBackward()
       }
+      let targetPtsUs = player.currentPtsUs()
+      let (frameInfo, attempts) = try updateFromNativePlayerWithTransientRetry(
+        route: forward ? "step-forward" : "step-backward",
+        player,
+        texture: texture,
+        maxTrackSlots: maxTrackSlots,
+        timeoutMs: timeoutMs,
+        acceptFrame: { frameInfo in
+          let nearStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 100_000) &&
+            frameInfo.ptsUs <= targetPtsUs + 100_000
+          let nearBackwardStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
+            frameInfo.ptsUs <= targetPtsUs + 100_000
+          let acceptedTarget = forward ? nearStepTarget : nearBackwardStepTarget
+          guard acceptedTarget else { return false }
+          guard let previousFrameInfo,
+                previousFrameInfo.ptsUs != targetPtsUs else {
+            return true
+          }
+          return frameInfo.ptsUs != previousFrameInfo.ptsUs
+        }
+      )
       framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
-      let frameInfo = player.lastRendererOwnedFrameInfo()
-      if let frameInfo {
-        presentationState.recordFrame(frameInfo)
-      }
+      presentationState.recordFrame(frameInfo)
       logRefreshProfiler(
         route: forward ? "step-forward" : "step-backward",
         startNs: startNs,
-        timeoutMs: 3_000,
-        result: "ok",
-        ptsUs: frameInfo?.ptsUs ?? -1
+        timeoutMs: timeoutMs,
+        result: attempts > 1 ? "ok attempts=\(attempts)" : "ok",
+        ptsUs: frameInfo.ptsUs
       )
     } catch {
       logRefreshProfiler(
         route: forward ? "step-forward" : "step-backward",
         startNs: startNs,
-        timeoutMs: 3_000,
+        timeoutMs: timeoutMs,
         result: "error:\(error)",
         ptsUs: -1
       )

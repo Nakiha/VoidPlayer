@@ -122,6 +122,7 @@ public:
     size_t max_count() const { return capacity_ - backward_depth_; }
     size_t forward_count() const;
     size_t backward_count() const;
+    size_t available_retreat_count() const;
     size_t total_count() const;
     uint64_t estimated_cpu_bytes() const;
     bool empty() const;

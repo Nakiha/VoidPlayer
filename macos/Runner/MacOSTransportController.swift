@@ -80,12 +80,14 @@ final class MacOSTransportController {
     context.playback.stopForBlockingCommand(player: context.player, pausePlayer: false)
     guard context.nativeBackendActive,
           let player = context.player,
-          context.texture != nil else {
+          let texture = context.texture else {
       return nil
     }
     if let error = MacOSNativeFrameRefresh.stepAndRefresh(
       player: player,
+      texture: texture,
       forward: forward,
+      maxTrackSlots: context.maxTrackSlots,
       presentationState: context.presentationState,
       framePump: context.playback.framePumpForRefresh
     ) {

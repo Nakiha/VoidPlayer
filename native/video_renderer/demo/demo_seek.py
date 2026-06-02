@@ -2,13 +2,21 @@
 import sys
 from pathlib import Path
 
-# Add build output directory so video_renderer_native.pyd can be found
-_build_dir = Path(__file__).resolve().parents[2] / "build-msvc"
-for _cfg in ("Release", "Debug"):
-    _candidate = _build_dir / _cfg
-    if _candidate.is_dir():
-        sys.path.insert(0, str(_candidate))
-        break
+# Add build output directory so video_renderer_native.pyd can be found.
+_root_dir = Path(__file__).resolve().parents[3]
+_build_dirs = (
+    _root_dir / "build" / "native" / "standalone" / "windows-msvc",
+    Path(__file__).resolve().parents[2] / "build-msvc",
+)
+for _build_dir in _build_dirs:
+    for _cfg in ("Release", "Debug"):
+        _candidate = _build_dir / _cfg
+        if _candidate.is_dir():
+            sys.path.insert(0, str(_candidate))
+            break
+    else:
+        continue
+    break
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QWindow

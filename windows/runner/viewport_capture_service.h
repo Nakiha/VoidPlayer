@@ -1,6 +1,6 @@
 #pragma once
 
-#include "player/native_player.h"
+#include "windows/player/native_player.h"
 
 #include <string>
 

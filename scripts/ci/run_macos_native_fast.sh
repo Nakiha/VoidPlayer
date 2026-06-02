@@ -9,5 +9,5 @@ set -euo pipefail
 # can report VT availability but fail real H.264 VT frame output.
 VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1 python3.12 dev.py test --native-only --github
 
-ctest --test-dir native/build-macos-make --output-on-failure \
+ctest --test-dir build/native/standalone/macos-make --output-on-failure \
   -R "videotoolbox_provider_smoke"

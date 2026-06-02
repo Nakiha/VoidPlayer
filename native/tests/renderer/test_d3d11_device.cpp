@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "test_utils.h"
-#include "video_renderer/d3d11/device.h"
+#include "windows/d3d11/device.h"
 #include <wrl/client.h>
 
 using namespace vr::test;

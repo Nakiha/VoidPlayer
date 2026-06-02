@@ -136,7 +136,7 @@ Status: done in Round 10.
 
 证据：
 
-- `native/player/native_player.cpp` 中 `initialize()` 先 `playback_.start_session()`，再 `renderer_.initialize(config)`。
+- `native/windows/player/native_player.cpp` 中 `initialize()` 先 `playback_.start_session()`，再 `renderer_.initialize(config)`。
 - `Renderer::initialize()` 会拒绝 already initialized/running/joinable，但这发生在 `NativePlayer` 已触碰 playback 之后。
 
 TODO:
@@ -699,7 +699,7 @@ TODO:
 - [x] CI matrix 增加 Debug build，至少覆盖 `BUILD_FFI=ON BUILD_TESTS=ON`。
 - [x] CI matrix 覆盖 `BUILD_ANALYSIS=OFF` 的 FFI build，以及 `BUILD_ANALYSIS=OFF BUILD_FFI=OFF BUILD_TESTS=ON` 的 no-FFI tests configure/build。
 - [ ] 增加 clang-cl configure/build job，先允许独立 warning baseline，再逐步收紧。本机当前未发现 `clang-cl`。
-- [ ] 增加 clang-tidy 或 cppcheck job，先限定 `native/common`、`native/player`、`native/video_renderer/exports`。本机当前未发现 `clang-tidy` / `cppcheck`。
+- [ ] 增加 clang-tidy 或 cppcheck job，先限定 `native/common`、`native/windows/player`、`native/video_renderer/exports`。本机当前未发现 `clang-tidy` / `cppcheck`。
 - [x] 增加 clean dist smoke：检查 FFI DLL、header、FFmpeg DLL 和 notice 文件进入 `dist/ffi`。
 - [x] 增加 release compliance smoke，和 P0 合规任务联动。
 

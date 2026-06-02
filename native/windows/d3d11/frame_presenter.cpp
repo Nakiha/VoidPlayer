@@ -1,5 +1,5 @@
-#include "video_renderer/d3d11/frame_presenter.h"
-#include "video_renderer/d3d11/memory_estimate.h"
+#include "windows/d3d11/frame_presenter.h"
+#include "windows/d3d11/memory_estimate.h"
 #include <spdlog/spdlog.h>
 #include <utility>
 

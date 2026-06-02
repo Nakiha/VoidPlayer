@@ -1,11 +1,11 @@
 #pragma once
 
 #include "video_renderer/render/presentation_backend.h"
-#include "video_renderer/d3d11/device.h"
-#include "video_renderer/d3d11/frame_presenter.h"
-#include "video_renderer/d3d11/headless_output.h"
-#include "video_renderer/d3d11/shader.h"
-#include "video_renderer/d3d11/texture.h"
+#include "windows/d3d11/device.h"
+#include "windows/d3d11/frame_presenter.h"
+#include "windows/d3d11/headless_output.h"
+#include "windows/d3d11/shader.h"
+#include "windows/d3d11/texture.h"
 
 #include <array>
 #include <memory>

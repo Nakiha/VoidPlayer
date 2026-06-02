@@ -7,7 +7,7 @@
 #endif
 #endif
 
-#include "common/windows_crash_handler.h"
+#include "windows/common/windows_crash_handler.h"
 #include "common/win_utf8.h"
 
 #ifdef _WIN32

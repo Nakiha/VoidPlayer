@@ -6,7 +6,7 @@ and [RENDERER_PLATFORM_BACKEND_PLAN.md](RENDERER_PLATFORM_BACKEND_PLAN.md).
 
 ## D3D11Device
 
-头文件: `d3d11/device.h`
+头文件: `windows/d3d11/device.h`
 
 封装 `ID3D11Device`、ImmediateContext，以及窗口模式下的可选 SwapChain。
 
@@ -76,7 +76,7 @@ D3D11VA texture array slice
 
 ## ShaderManager
 
-头文件: `d3d11/shader.h`
+头文件: `windows/d3d11/shader.h`
 
 HLSL shader 内嵌到构建产物，运行时编译并绑定：
 

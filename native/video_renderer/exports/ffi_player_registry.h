@@ -1,7 +1,7 @@
 #pragma once
 
 #include "video_renderer/exports/ffi_exports.h"
-#include "player/native_player.h"
+#include "windows/player/native_player.h"
 
 #include <memory>
 #include <mutex>

@@ -15,11 +15,12 @@ def host_platform() -> str:
 
 
 def default_build_dir(script_dir: Path, platform_name: str) -> Path:
+    build_root = script_dir.parent / "build" / "native" / "standalone"
     if platform_name == "windows":
-        return script_dir / "build-msvc"
+        return build_root / "windows-msvc"
     if platform_name == "macos":
-        return script_dir / "build-macos"
-    return script_dir / "build-native"
+        return build_root / "macos"
+    return build_root / "portable"
 
 
 def default_ffmpeg_candidates(script_dir: Path, platform_name: str) -> list[Path]:
@@ -140,7 +141,8 @@ def benchmark(build_dir: Path, build_type: str, platform_name: str):
     if platform_name != "windows":
         raise RuntimeError("pipeline_bench is currently a Windows native benchmark target")
     exe = build_dir / build_type / native_executable_name("pipeline_bench", platform_name)
-    video = build_dir.parents[1] / "resources" / "video" / "h264_9s_1920x1080.mp4"
+    repo_root = Path(__file__).resolve().parents[1]
+    video = repo_root / "resources" / "video" / "h264_9s_1920x1080.mp4"
     subprocess.check_call([str(exe), str(video)])
 
 

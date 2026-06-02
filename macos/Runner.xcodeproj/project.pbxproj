@@ -558,6 +558,11 @@
 			inputPaths = (
 				"$(PROJECT_DIR)/../native/CMakeLists.txt",
 				"$(PROJECT_DIR)/../native/cmake/NativeSources.cmake",
+				"$(PROJECT_DIR)/../native/cmake/NativeSourcesAnalysis.cmake",
+				"$(PROJECT_DIR)/../native/cmake/NativeSourcesMacOS.cmake",
+				"$(PROJECT_DIR)/../native/cmake/NativeSourcesPortable.cmake",
+				"$(PROJECT_DIR)/../native/cmake/NativeSourcesShaders.cmake",
+				"$(PROJECT_DIR)/../native/cmake/NativeSourcesWindows.cmake",
 				"$(PROJECT_DIR)/../native/cmake/PortableTargets.cmake",
 				"$(PROJECT_DIR)/../native/analysis/analysis_ffi_abi.h",
 				"$(PROJECT_DIR)/../native/analysis/analysis_generation_service.cpp",
@@ -591,15 +596,15 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
-				"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
-				"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
-				"$(PROJECT_DIR)/../native/build-xcode-macos/analysis/libanalysis_lib.a",
-				"$(PROJECT_DIR)/../native/build-xcode-macos/_deps/zstd-build/lib/libzstd.a",
+				"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_macos_native_player.a",
+				"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_media_ffmpeg.a",
+				"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_player_portable_core.a",
+				"$(PROJECT_DIR)/../build/native/runner/macos-xcode/analysis/libanalysis_lib.a",
+				"$(PROJECT_DIR)/../build/native/runner/macos-xcode/_deps/zstd-build/lib/libzstd.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nBUILD_DIR=\"${PROJECT_DIR}/../native/build-xcode-macos\"\ncmake -S \"${PROJECT_DIR}/../native\" -B \"${BUILD_DIR}\" -G \"Unix Makefiles\" \\\n  -DBUILD_ANALYSIS=ON \\\n  -DBUILD_ANALYSIS_TESTS=OFF \\\n  -DBUILD_TESTS=OFF \\\n  -DBUILD_FFI=OFF \\\n  -DBUILD_PYTHON=OFF \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET}\" \\\n  -DCMAKE_BUILD_TYPE=\"${CONFIGURATION}\"\ncmake --build \"${BUILD_DIR}\" --target void_macos_native_player -- -j \"$(sysctl -n hw.ncpu)\"\n";
+			shellScript = "set -euo pipefail\nBUILD_DIR=\"${PROJECT_DIR}/../build/native/runner/macos-xcode\"\ncmake -S \"${PROJECT_DIR}/../native\" -B \"${BUILD_DIR}\" -G \"Unix Makefiles\" \\\n  -DBUILD_ANALYSIS=ON \\\n  -DBUILD_ANALYSIS_TESTS=OFF \\\n  -DBUILD_TESTS=OFF \\\n  -DBUILD_FFI=OFF \\\n  -DBUILD_PYTHON=OFF \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET}\" \\\n  -DCMAKE_BUILD_TYPE=\"${CONFIGURATION}\"\ncmake --build \"${BUILD_DIR}\" --target void_macos_native_player -- -j \"$(sysctl -n hw.ncpu)\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -800,17 +805,17 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../native/build-xcode-macos",
+					"$(PROJECT_DIR)/../build/native/runner/macos-xcode",
 					"$(PROJECT_DIR)/../third_party/ffmpeg/lib",
 				);
 					OTHER_LDFLAGS = (
 						"$(inherited)",
 						"-Wl,-export_dynamic",
-						"-Wl,-force_load,$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/analysis/libanalysis_lib.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/_deps/zstd-build/lib/libzstd.a",
+						"-Wl,-force_load,$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_macos_native_player.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_media_ffmpeg.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_player_portable_core.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/analysis/libanalysis_lib.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/_deps/zstd-build/lib/libzstd.a",
 						"-lc++",
 						"-lavformat",
 						"-lavcodec",
@@ -968,17 +973,17 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../native/build-xcode-macos",
+					"$(PROJECT_DIR)/../build/native/runner/macos-xcode",
 					"$(PROJECT_DIR)/../third_party/ffmpeg/lib",
 				);
 					OTHER_LDFLAGS = (
 						"$(inherited)",
 						"-Wl,-export_dynamic",
-						"-Wl,-force_load,$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/analysis/libanalysis_lib.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/_deps/zstd-build/lib/libzstd.a",
+						"-Wl,-force_load,$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_macos_native_player.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_media_ffmpeg.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_player_portable_core.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/analysis/libanalysis_lib.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/_deps/zstd-build/lib/libzstd.a",
 						"-lc++",
 						"-lavformat",
 						"-lavcodec",
@@ -1022,17 +1027,17 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../native/build-xcode-macos",
+					"$(PROJECT_DIR)/../build/native/runner/macos-xcode",
 					"$(PROJECT_DIR)/../third_party/ffmpeg/lib",
 				);
 					OTHER_LDFLAGS = (
 						"$(inherited)",
 						"-Wl,-export_dynamic",
-						"-Wl,-force_load,$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_macos_native_player.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_media_ffmpeg.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/libvoid_player_portable_core.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/analysis/libanalysis_lib.a",
-						"$(PROJECT_DIR)/../native/build-xcode-macos/_deps/zstd-build/lib/libzstd.a",
+						"-Wl,-force_load,$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_macos_native_player.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_media_ffmpeg.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/libvoid_player_portable_core.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/analysis/libanalysis_lib.a",
+						"$(PROJECT_DIR)/../build/native/runner/macos-xcode/_deps/zstd-build/lib/libzstd.a",
 						"-lc++",
 						"-lavformat",
 						"-lavcodec",

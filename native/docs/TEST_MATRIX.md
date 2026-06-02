@@ -36,10 +36,10 @@ targets:
 Examples:
 
 ```bash
-ctest --test-dir native/build-macos-make -L contract --output-on-failure
-ctest --test-dir native/build-macos-make -L macos --output-on-failure
-ctest --test-dir native/build-macos-make -L backend --output-on-failure
-ctest --test-dir native/build-macos-make -LE hosted-flaky --output-on-failure
+ctest --test-dir build/native/standalone/macos-make -L contract --output-on-failure
+ctest --test-dir build/native/standalone/macos-make -L macos --output-on-failure
+ctest --test-dir build/native/standalone/macos-make -L backend --output-on-failure
+ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on-failure
 ```
 
 ## Native Test Inventory

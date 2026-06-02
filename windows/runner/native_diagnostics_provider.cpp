@@ -1,6 +1,6 @@
 #include "native_diagnostics_provider.h"
 
-#include "player/native_player.h"
+#include "windows/player/native_player.h"
 
 #include <windows.h>
 #include <dxgi1_4.h>

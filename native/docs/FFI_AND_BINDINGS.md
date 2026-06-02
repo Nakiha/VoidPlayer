@@ -122,7 +122,7 @@ Python `RendererConfig` 和 `LayoutState` 使用和 C FFI 相同的核心校验�
 
 `LogConfig` 的默认行为是 library-safe：不会改 Windows console code page，不读取通用 `SPDLOG_LEVEL`，也不会启动/修改 spdlog 的 process-global flush 策略。VoidPlayer Windows runner 会在 app 层显式打开 `configure_console_codepage`、`use_environment_level_override` 和 `manage_global_flush`。
 
-Crash handler 的实现位于 `common/windows_crash_handler.*`。它不是 renderer 生命周期的一部分；宿主进程需要显式 opt-in，并且要意识到这些 Windows hooks 会影响整个进程。VoidPlayer Windows runner 使用 `WindowsCrashHandlerConfig` 显式选择 SEH/VEH/CRT hooks；可复用库路径不在 renderer 初始化时安装 hooks。
+Crash handler 的实现位于 `windows/common/windows_crash_handler.*`。它不是 renderer 生命周期的一部分；宿主进程需要显式 opt-in，并且要意识到这些 Windows hooks 会影响整个进程。VoidPlayer Windows runner 使用 `WindowsCrashHandlerConfig` 显式选择 SEH/VEH/CRT hooks；可复用库路径不在 renderer 初始化时安装 hooks。
 
 长期 host logging 接口应保持与这些 process-global convenience API 分离：宿主创建一个显式 log sink/token，把它传给 player/session 初始化；native 只向该 sink 发结构化日志事件，不拥有默认 logger、flush 线程或 crash hooks。旧 `naki_vr_configure_logging*` 继续作为单宿主 bootstrap/测试便捷入口，不能在多 engine 宿主里反复调用来模拟 per-player logging。
 
@@ -132,8 +132,8 @@ Crash handler 的实现位于 `common/windows_crash_handler.*`。它不是 rende
 
 | 目标 | 输出路径 | 说明 |
 |------|---------|------|
-| video_renderer_ffi | `native/build-msvc/dist/ffi/` | DLL + 头文件 |
-| video_renderer_native | `native/build-msvc/dist/python/` | .pyd + FFmpeg DLLs |
+| video_renderer_ffi | `build/native/standalone/windows-msvc/dist/ffi/` | DLL + 头文件 |
+| video_renderer_native | `build/native/standalone/windows-msvc/dist/python/` | .pyd + FFmpeg DLLs |
 
 C FFI 消费者需链接 `video_renderer_ffi.dll` 并包含 `ffi_exports.h`。
 Python 消费者 `import video_renderer_native` 即可。

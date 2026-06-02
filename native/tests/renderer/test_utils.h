@@ -2,7 +2,7 @@
 #include <windows.h>
 #include <string>
 #include <utility>
-#include "video_renderer/d3d11/device.h"
+#include "windows/d3d11/device.h"
 
 namespace vr::test {
 

@@ -7,20 +7,25 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+BUILD_DIR = ROOT / "build"
 
 NATIVE_DIR = ROOT / "native"
 NATIVE_BUILD_PY = NATIVE_DIR / "build.py"
 DEMO_SCRIPT = NATIVE_DIR / "video_renderer" / "demo" / "demo_video_renderer.py"
+NATIVE_BUILD_ROOT = BUILD_DIR / "native"
+NATIVE_STANDALONE_BUILD_ROOT = NATIVE_BUILD_ROOT / "standalone"
+NATIVE_RUNNER_BUILD_ROOT = NATIVE_BUILD_ROOT / "runner"
+NATIVE_ANALYSIS_BUILD_ROOT = NATIVE_BUILD_ROOT / "analysis"
 
 FFMPEG_ANALYZER_DIR = ROOT / "native" / "analysis" / "vendor" / "ffmpeg"
 
 
 def default_native_build_dir() -> Path:
     if sys.platform == "win32":
-        return NATIVE_DIR / "build-msvc"
+        return NATIVE_STANDALONE_BUILD_ROOT / "windows-msvc"
     if sys.platform == "darwin":
-        return NATIVE_DIR / "build-macos"
-    return NATIVE_DIR / "build-native"
+        return NATIVE_STANDALONE_BUILD_ROOT / "macos"
+    return NATIVE_STANDALONE_BUILD_ROOT / "portable"
 
 
 NATIVE_BUILD_DIR = default_native_build_dir()
@@ -57,14 +62,16 @@ def find_ffmpeg_analyzer() -> Path:
 
 FFMPEG_ANALYZER = find_ffmpeg_analyzer()
 
-WINDOWS_BUILD_DIR = ROOT / "build" / "windows" / "x64" / "runner"
-MACOS_NATIVE_ANALYSIS_BUILD_DIR = NATIVE_DIR / "build-macos-analysis"
-WINDOWS_PACKAGE_DIR = ROOT / "build" / "package" / "windows"
+WINDOWS_BUILD_DIR = BUILD_DIR / "windows" / "x64" / "runner"
+MACOS_NATIVE_ANALYSIS_BUILD_DIR = NATIVE_ANALYSIS_BUILD_ROOT / "macos"
+MACOS_NATIVE_MAKE_BUILD_DIR = NATIVE_STANDALONE_BUILD_ROOT / "macos-make"
+MACOS_XCODE_NATIVE_BUILD_DIR = NATIVE_RUNNER_BUILD_ROOT / "macos-xcode"
+WINDOWS_PACKAGE_DIR = BUILD_DIR / "package" / "windows"
 WINDOWS_PACKAGE_STAGE_DIR = WINDOWS_PACKAGE_DIR / "VoidPlayer"
 WINDOWS_INSTALLER_DIR = WINDOWS_PACKAGE_DIR / "installer"
 WINDOWS_INNO_SCRIPT = ROOT / "installer" / "windows" / "VoidPlayer.iss"
 WINDOWS_RELEASE_DOCS_DIR = ROOT / "installer" / "windows" / "docs"
-MACOS_PACKAGE_DIR = ROOT / "build" / "package" / "macos"
+MACOS_PACKAGE_DIR = BUILD_DIR / "package" / "macos"
 MACOS_PACKAGE_STAGE_DIR = MACOS_PACKAGE_DIR / "VoidPlayer"
 MACOS_INSTALLER_DIR = MACOS_PACKAGE_DIR / "installer"
 MACOS_RELEASE_DOCS_DIR = ROOT / "installer" / "macos" / "docs"
@@ -100,8 +107,11 @@ def find_voidplayer_cli() -> Path:
     if sys.platform == "darwin":
         for candidate in (
             MACOS_NATIVE_ANALYSIS_BUILD_DIR / "VoidPlayerCli",
-            NATIVE_DIR / "build-macos-make" / "VoidPlayerCli",
+            MACOS_NATIVE_MAKE_BUILD_DIR / "VoidPlayerCli",
             NATIVE_BUILD_DIR / "VoidPlayerCli",
+            NATIVE_DIR / "build-macos-analysis" / "VoidPlayerCli",
+            NATIVE_DIR / "build-macos-make" / "VoidPlayerCli",
+            NATIVE_DIR / "build-macos" / "VoidPlayerCli",
         ):
             if candidate.exists():
                 return candidate

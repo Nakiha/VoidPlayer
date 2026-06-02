@@ -8,7 +8,7 @@
 #include "file_picker_service.h"
 #include "flutter_texture_bridge.h"
 #include "native_diagnostics_ffi.h"
-#include "player/native_player.h"
+#include "windows/player/native_player.h"
 #include "native_diagnostics_provider.h"
 #include "native_logging_bootstrap.h"
 #include "native_player_method_dispatcher.h"

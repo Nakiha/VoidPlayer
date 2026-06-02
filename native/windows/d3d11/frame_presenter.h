@@ -1,7 +1,7 @@
 #pragma once
 
 #include "video_renderer/buffer/bidi_ring_buffer.h"
-#include "video_renderer/d3d11/texture.h"
+#include "windows/d3d11/texture.h"
 #include <array>
 #include <functional>
 #include <mutex>

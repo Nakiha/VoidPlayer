@@ -40,7 +40,7 @@ the broader playback/buffering/device event set remains planned.
 | Layer | Responsibility |
 | --- | --- |
 | `native/video_renderer` | 产生 renderer/player 事实事件，例如 seek preview 已上屏。 |
-| `native/player` | 为跨 renderer/playback 的事件补充 request id、track file id、状态原因。 |
+| `native/windows/player` | 为跨 renderer/playback 的事件补充 request id、track file id、状态原因。 |
 | `windows/runner/video_renderer_plugin.*` | 持有 Flutter `EventChannel`、线程安全队列和平台线程派发。 |
 | `lib/native_player/` | 解析事件 envelope，暴露 typed Dart stream。 |
 | `lib/windows/main/` | 订阅事件并驱动 coordinator，例如 analysis overlay refresh。 |

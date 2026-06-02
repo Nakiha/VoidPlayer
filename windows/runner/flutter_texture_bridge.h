@@ -3,7 +3,7 @@
 #include <flutter/texture_registrar.h>
 #include <flutter_windows.h>
 
-#include "player/native_player.h"
+#include "windows/player/native_player.h"
 
 #include <atomic>
 #include <cstdint>

@@ -41,17 +41,19 @@ backend 不决定播放时间，也不拥有 track state。
 
 ```text
 native/
-├── common/              # logging、process-global helpers、crash handlers
+├── common/              # platform-neutral logging and shared helpers
 ├── media/               # demux、packet queue、seek controller
 ├── audio/               # shared audio engine / miniaudio device output
-├── player/              # shared NativePlayer facade
 ├── playback/            # playback controller、clock/audio coordination
 ├── video_renderer/      # shared renderer scheduler、decode、buffer、render contracts
 │   ├── decode/          # DecodeThread、FrameConverter、hardware providers
 │   ├── render/          # PresentDecision、RendererDrawSnapshot、PresentationBackend
 │   ├── sync/            # RenderSink and present scheduling
-│   ├── d3d11/           # Windows D3D11 backend implementation
 │   └── exports/         # C FFI / Python binding surfaces
+├── windows/             # Windows native facade, crash hooks, and D3D11 backend
+│   ├── player/          # Windows NativePlayer facade
+│   ├── d3d11/           # Windows D3D11 backend implementation
+│   └── common/          # Windows process-global helpers
 ├── macos/               # macOS native bridge and Metal presentation backend
 ├── tests/               # Catch2 tests on Windows-oriented native targets
 ├── tools/               # native smoke binaries and CLIs

@@ -1,7 +1,7 @@
 #include "native_logging_bootstrap.h"
 
 #include "common/win_utf8.h"
-#include "common/windows_crash_handler.h"
+#include "windows/common/windows_crash_handler.h"
 #include "common/logging.h"
 #include "startup_trace.h"
 

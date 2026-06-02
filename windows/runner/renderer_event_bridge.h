@@ -6,7 +6,7 @@
 #include <flutter/event_sink.h>
 #include <windows.h>
 
-#include "player/native_player.h"
+#include "windows/player/native_player.h"
 
 #include <atomic>
 #include <cstdint>

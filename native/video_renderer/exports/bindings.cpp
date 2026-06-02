@@ -1,11 +1,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "player/native_player.h"
+#include "windows/player/native_player.h"
 #include "video_renderer/layout/layout_validation.h"
 #include "video_renderer/renderer_config_validation.h"
 #include "video_renderer/renderer.h"
 #include "common/logging.h"
-#include "common/windows_crash_handler.h"
+#include "windows/common/windows_crash_handler.h"
 #include <cstdint>
 
 namespace py = pybind11;

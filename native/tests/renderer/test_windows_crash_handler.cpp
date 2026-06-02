@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "common/windows_crash_handler.h"
+#include "windows/common/windows_crash_handler.h"
 
 #include <filesystem>
 

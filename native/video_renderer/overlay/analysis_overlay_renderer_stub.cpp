@@ -1,7 +1,7 @@
 #include "video_renderer/overlay/analysis_overlay_renderer.h"
 
-#include "video_renderer/d3d11/memory_estimate.h"
-#include "video_renderer/d3d11/render_backend.h"
+#include "windows/d3d11/memory_estimate.h"
+#include "windows/d3d11/render_backend.h"
 
 #include <algorithm>
 #include <cmath>

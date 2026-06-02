@@ -7,10 +7,10 @@
 #include <mutex>
 #include <functional>
 #include "test_utils.h"
-#include "video_renderer/d3d11/device.h"
-#include "video_renderer/d3d11/frame_presenter.h"
-#include "video_renderer/d3d11/headless_output.h"
-#include "video_renderer/d3d11/texture.h"
+#include "windows/d3d11/device.h"
+#include "windows/d3d11/frame_presenter.h"
+#include "windows/d3d11/headless_output.h"
+#include "windows/d3d11/texture.h"
 #include "video_renderer/capture/frame_capture_service.h"
 #include "video_renderer/decode/frame_converter.h"
 #include "video_renderer/renderer_limits.h"

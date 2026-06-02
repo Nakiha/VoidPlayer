@@ -12,6 +12,7 @@ from pathlib import Path
 from .paths import (
     FFMPEG_ANALYZER_DIR,
     MACOS_NATIVE_ANALYSIS_BUILD_DIR,
+    MACOS_NATIVE_MAKE_BUILD_DIR,
     NATIVE_BUILD_PY,
     NATIVE_DIR,
     ROOT,
@@ -684,7 +685,7 @@ def native_build(debug: bool, test: bool = True, github: bool = False) -> None:
 def native_build_macos(debug: bool, test: bool = True, github: bool = False) -> None:
     """Build the portable native macOS targets, optionally run CTest."""
     build_type = "Debug" if debug else "Release"
-    build_dir = NATIVE_DIR / "build-macos-make"
+    build_dir = MACOS_NATIVE_MAKE_BUILD_DIR
     parallelism = str(os.cpu_count() or 4)
 
     header(f"Configure native macOS ({build_type})")

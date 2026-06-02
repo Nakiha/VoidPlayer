@@ -38,11 +38,35 @@ python3.12 dev.py gate windows-preservation
 
 Native 子目录仍可直接使用 CMake/presets，但日常开发建议通过顶层 `dev.py` 保持平台产物和依赖检查一致。
 如需直接调用 legacy wrapper，`python native/build.py` 会按 host 选择平台默认：
-Windows -> `native/build-msvc` / `windows/libs/ffmpeg`，macOS ->
-`native/build-macos` / `third_party/ffmpeg`；也可用 `--platform`、`--build-dir`、
+Windows -> `build/native/standalone/windows-msvc` / `windows/libs/ffmpeg`，macOS ->
+`build/native/standalone/macos` / `third_party/ffmpeg`；也可用 `--platform`、`--build-dir`、
 `--ffmpeg-root` 显式覆盖。
 
+## 构建产物目录
+
+`native/` 是源码目录，新的 native CMake 产物应放在根目录 `build/native/` 下：
+
+| 目录 | 说明 |
+| --- | --- |
+| `build/native/standalone/` | `native/build.py`、native CMake presets、独立 CTest/FFI/Python 产物 |
+| `build/native/runner/` | Flutter/Xcode runner 内嵌 native 静态库或中间产物 |
+| `build/native/analysis/` | analysis CLI 等辅助 native 工具构建目录 |
+
+历史目录如 `native/build-msvc`、`native/build-macos-*` 只作为旧缓存/旧命令兼容，不应再新增引用。
+
 ## CMake 目标概览
+
+Source ownership is split under `native/cmake/`:
+
+| 文件 | 说明 |
+| --- | --- |
+| `NativeSourcesPortable.cmake` | shared playback/media/renderer source lists |
+| `NativeSourcesWindows.cmake` | Windows facade、D3D11 backend、Windows-only renderer integration |
+| `NativeSourcesMacOS.cmake` | macOS native bridge、Metal/CVPixelBuffer presentation |
+| `NativeSourcesAnalysis.cmake` | analysis cache/generator source list |
+| `NativeSourcesShaders.cmake` | embedded HLSL shader inputs |
+
+新增 native 源文件时先按 ownership 放进对应清单；`NativeSources.cmake` 只保留 shared path setup、includes 和通用 CMake helper functions。
 
 | 目标 | 平台 | 说明 |
 | --- | --- | --- |
@@ -102,10 +126,10 @@ black front buffer while the shared native player Metal canary passes.
 CTest labels 可用于本地收窄测试：
 
 ```bash
-ctest --test-dir native/build-macos-make -L contract --output-on-failure
-ctest --test-dir native/build-macos-make -L backend --output-on-failure
-ctest --test-dir native/build-macos-make -L macos --output-on-failure
-ctest --test-dir native/build-macos-make -LE hosted-flaky --output-on-failure
+ctest --test-dir build/native/standalone/macos-make -L contract --output-on-failure
+ctest --test-dir build/native/standalone/macos-make -L backend --output-on-failure
+ctest --test-dir build/native/standalone/macos-make -L macos --output-on-failure
+ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on-failure
 ```
 
 ## macOS Stabilization Gates

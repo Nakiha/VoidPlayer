@@ -1,7 +1,7 @@
 #include "video_renderer/exports/ffi_process_globals.h"
 
 #include "common/logging.h"
-#include "common/windows_crash_handler.h"
+#include "windows/common/windows_crash_handler.h"
 #include "video_renderer/exports/ffi_marshalling.h"
 #include "video_renderer/exports/ffi_player_registry.h"
 

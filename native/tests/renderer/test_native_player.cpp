@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "player/native_player.h"
+#include "windows/player/native_player.h"
 #include "test_utils.h"
 
 using namespace vr;

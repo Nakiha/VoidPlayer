@@ -4,7 +4,7 @@
     {
       "name": "windows-release",
       "displayName": "Windows Release",
-      "binaryDir": "${sourceDir}/build-msvc-preset-release",
+      "binaryDir": "${sourceDir}/../build/native/standalone/windows-msvc-preset-release",
       "cacheVariables": {
         "BUILD_PYTHON": "ON",
         "BUILD_FFI": "ON",
@@ -16,13 +16,13 @@
       "name": "windows-debug",
       "displayName": "Windows Debug",
       "inherits": "windows-release",
-      "binaryDir": "${sourceDir}/build-msvc-preset-debug"
+      "binaryDir": "${sourceDir}/../build/native/standalone/windows-msvc-preset-debug"
     },
     {
       "name": "ffi-only",
       "displayName": "Windows FFI Only",
       "inherits": "windows-release",
-      "binaryDir": "${sourceDir}/build-msvc-preset-ffi",
+      "binaryDir": "${sourceDir}/../build/native/standalone/windows-msvc-preset-ffi",
       "cacheVariables": {
         "BUILD_PYTHON": "OFF",
         "BUILD_FFI": "ON",
@@ -34,7 +34,7 @@
       "name": "no-python-no-tests",
       "displayName": "Windows Minimal App Native",
       "inherits": "windows-release",
-      "binaryDir": "${sourceDir}/build-msvc-preset-minimal",
+      "binaryDir": "${sourceDir}/../build/native/standalone/windows-msvc-preset-minimal",
       "cacheVariables": {
         "BUILD_PYTHON": "OFF",
         "BUILD_FFI": "OFF",
@@ -47,7 +47,7 @@
       "name": "macos-release",
       "displayName": "macOS Release Native",
       "generator": "Unix Makefiles",
-      "binaryDir": "${sourceDir}/build-macos-preset-release",
+      "binaryDir": "${sourceDir}/../build/native/standalone/macos-preset-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_ANALYSIS": "OFF",
@@ -66,7 +66,7 @@
       "name": "macos-asan",
       "displayName": "macOS AddressSanitizer Native",
       "inherits": "macos-release",
-      "binaryDir": "${sourceDir}/build-macos-preset-asan",
+      "binaryDir": "${sourceDir}/../build/native/standalone/macos-preset-asan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "VOID_SANITIZER": "address"
@@ -76,7 +76,7 @@
       "name": "macos-werror",
       "displayName": "macOS Warnings-as-Errors Native",
       "inherits": "macos-release",
-      "binaryDir": "${sourceDir}/build-macos-preset-werror",
+      "binaryDir": "${sourceDir}/../build/native/standalone/macos-preset-werror",
       "cacheVariables": {
         "VOID_ENABLE_WARNINGS_AS_ERRORS": "ON"
       }
@@ -85,7 +85,7 @@
       "name": "macos-tsan",
       "displayName": "macOS ThreadSanitizer Native",
       "inherits": "macos-release",
-      "binaryDir": "${sourceDir}/build-macos-preset-tsan",
+      "binaryDir": "${sourceDir}/../build/native/standalone/macos-preset-tsan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "VOID_SANITIZER": "thread"

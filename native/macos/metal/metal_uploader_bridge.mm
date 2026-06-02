@@ -1,4 +1,4 @@
-#include "macos/metal_uploader_internal.h"
+#include "macos/metal/metal_uploader_internal.h"
 
 #include <CoreVideo/CoreVideo.h>
 

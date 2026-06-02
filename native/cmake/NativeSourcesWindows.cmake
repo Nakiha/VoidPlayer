@@ -5,7 +5,8 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/windows/player/native_player.cpp"
     "${VOID_NATIVE_DIR}/renderer/capture/frame_capture_service.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer.cpp"
-    "${VOID_NATIVE_DIR}/renderer/decode/hw/d3d11va_provider.cpp"
+    "${VOID_NATIVE_DIR}/windows/decode/d3d11_frame_snapshot.cpp"
+    "${VOID_NATIVE_DIR}/windows/decode/d3d11va_provider.cpp"
 )
 
 if(BUILD_ANALYSIS)

@@ -1,7 +1,7 @@
 #include "native_player_bridge.h"
 
 #include "common/logging.h"
-#include "macos/native_player_state.h"
+#include "macos/player/native_player_state.h"
 
 #include <algorithm>
 #include <cstring>

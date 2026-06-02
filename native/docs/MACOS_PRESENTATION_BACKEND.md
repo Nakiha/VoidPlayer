@@ -91,7 +91,7 @@ initialization alone.
 
 ## Software Fallback / Parity Adapter
 
-`native/macos/presentation_adapter.*` exposes the
+`native/macos/presentation/presentation_adapter.*` exposes the
 `cvpixelbuffer-bgra-copy` software adapter. It starts at shared
 `vr::TextureFrame` storage and copies into caller-provided BGRA rows. This
 adapter remains useful as:

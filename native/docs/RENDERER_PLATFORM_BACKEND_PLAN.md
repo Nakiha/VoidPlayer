@@ -70,7 +70,7 @@ Goal: make the current split honest before moving code.
   pump once renderer-owned presentation is expected.
 - [x] Add native tests for backend-independent present decision identity, carry-forward, and
   multi-track layout inputs.
-- [x] Mark the current `native/macos/native_player_bridge.*` tick thread and Swift callback copy path
+- [x] Mark the current `native/macos/player/native_player_bridge.*` tick thread and Swift callback copy path
   as transitional in code comments and diagnostics.
 
 Progress: shared `PresentationSnapshot` now centralizes present-decision metadata, layout constants,

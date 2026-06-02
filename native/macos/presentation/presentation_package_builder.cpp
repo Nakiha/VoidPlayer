@@ -1,6 +1,6 @@
-#include "macos/presentation_package_builder.h"
+#include "macos/presentation/presentation_package_builder.h"
 
-#include "macos/presentation_adapter.h"
+#include "macos/presentation/presentation_adapter.h"
 #include "renderer/render/presentation_snapshot.h"
 
 #include <CoreVideo/CoreVideo.h>

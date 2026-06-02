@@ -1,7 +1,7 @@
 #ifndef VOIDPLAYER_MACOS_NATIVE_PLAYER_BRIDGE_H_
 #define VOIDPLAYER_MACOS_NATIVE_PLAYER_BRIDGE_H_
 
-#include "metal_presentation_backend_bridge.h"
+#include "macos/metal/metal_presentation_backend_bridge.h"
 #include "native_player_types.h"
 
 #include <stddef.h>

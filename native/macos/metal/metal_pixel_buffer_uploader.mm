@@ -1,7 +1,7 @@
-#include "macos/metal_uploader_internal.h"
+#include "macos/metal/metal_uploader_internal.h"
 
-#include "macos/metal_layout_params.h"
-#include "macos/metal_texture_wrapping.h"
+#include "macos/metal/metal_layout_params.h"
+#include "macos/metal/metal_texture_wrapping.h"
 
 #include <CoreVideo/CoreVideo.h>
 
@@ -17,7 +17,7 @@
 namespace {
 
 constexpr const char* kLayoutBgraKernelSource =
-#include "macos/metal_pixel_buffer_uploader_shaders.inc"
+#include "macos/metal/metal_pixel_buffer_uploader_shaders.inc"
     ;
 
 void write_error(char* error, size_t error_size, const char* message) {

@@ -1,9 +1,9 @@
 #include "renderer/decode/hw/hw_decode_provider.h"
 #ifdef _WIN32
-#include "renderer/decode/hw/d3d11va_provider.h"
+#include "windows/decode/d3d11va_provider.h"
 #endif
 #ifdef __APPLE__
-#include "renderer/decode/hw/videotoolbox_provider.h"
+#include "macos/decode/videotoolbox_provider.h"
 #endif
 #include <spdlog/spdlog.h>
 #include <vector>

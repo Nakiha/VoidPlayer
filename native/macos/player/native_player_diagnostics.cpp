@@ -1,7 +1,7 @@
-#include "macos/native_player_bridge.h"
+#include "macos/player/native_player_bridge.h"
 
-#include "macos/native_player_state.h"
-#include "macos/presentation_adapter.h"
+#include "macos/player/native_player_state.h"
+#include "macos/presentation/presentation_adapter.h"
 #include "renderer/capture/bgra_capture_metrics.h"
 
 #include <chrono>

@@ -1,4 +1,4 @@
-#include "native_player_bridge.h"
+#include "macos/player/native_player_bridge.h"
 #include "tools/test_video_assets.h"
 
 #include <CoreVideo/CoreVideo.h>

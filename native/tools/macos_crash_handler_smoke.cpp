@@ -1,4 +1,4 @@
-#include "macos/native_player_bridge.h"
+#include "macos/player/native_player_bridge.h"
 
 #include <unistd.h>
 

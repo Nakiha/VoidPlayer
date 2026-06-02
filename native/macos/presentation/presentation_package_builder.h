@@ -1,6 +1,6 @@
 #pragma once
 
-#include "macos/metal_uploader_bridge.h"
+#include "macos/metal/metal_uploader_bridge.h"
 #include "renderer/render/renderer_draw_snapshot.h"
 
 #include <cstddef>

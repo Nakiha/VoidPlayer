@@ -1,8 +1,8 @@
 #ifndef VOIDPLAYER_MACOS_METAL_UPLOADER_INTERNAL_H_
 #define VOIDPLAYER_MACOS_METAL_UPLOADER_INTERNAL_H_
 
-#include "macos/metal_layout_params.h"
-#include "macos/metal_uploader_bridge.h"
+#include "macos/metal/metal_layout_params.h"
+#include "macos/metal/metal_uploader_bridge.h"
 
 #include <CoreVideo/CoreVideo.h>
 #include <Foundation/Foundation.h>

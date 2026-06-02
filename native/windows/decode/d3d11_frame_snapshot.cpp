@@ -1,4 +1,4 @@
-#include "renderer/decode/d3d11_frame_snapshot.h"
+#include "windows/decode/d3d11_frame_snapshot.h"
 #include <spdlog/spdlog.h>
 
 #ifdef _WIN32

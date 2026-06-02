@@ -180,10 +180,15 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
 
     TextureFrame result = make_texture_frame_metadata(frame);
     if (hw_type_ == HwDecodeType::D3D11VA) {
+#ifdef _WIN32
         if (!populate_d3d11_hardware_texture_frame(frame, result)) {
             return std::nullopt;
         }
         return result;
+#else
+        spdlog::error("[HardwareFrameConverter] D3D11VA frames are Windows-only");
+        return std::nullopt;
+#endif
     }
 
 #ifdef __APPLE__
@@ -197,6 +202,7 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
 }
 
 std::optional<TextureFrame> HardwareFrameConverter::snapshot_frame(AVFrame* frame) {
+#ifdef _WIN32
     if (download_to_cpu_ || hw_type_ != HwDecodeType::D3D11VA || !frame || !frame->data[0]) {
         return std::nullopt;
     }
@@ -207,10 +213,18 @@ std::optional<TextureFrame> HardwareFrameConverter::snapshot_frame(AVFrame* fram
         metadata,
         device_mutex_,
         d3d11_snapshot_pool_);
+#else
+    (void)frame;
+    return std::nullopt;
+#endif
 }
 
 D3D11SnapshotPoolStats HardwareFrameConverter::snapshot_pool_stats() const {
+#ifdef _WIN32
     return d3d11_snapshot_pool_stats(d3d11_snapshot_pool_);
+#else
+    return {};
+#endif
 }
 
 } // namespace vr

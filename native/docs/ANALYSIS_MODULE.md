@@ -80,7 +80,7 @@ overlay redraw 读不到实际显示帧。
 
 ## FFI 桥接
 
-`windows/runner/analysis_ffi.cpp` 和 `native/macos/analysis_ffi_bridge.cpp` 将分析功能暴露给
+`windows/runner/analysis_ffi.cpp` 和 `native/macos/analysis/analysis_ffi_bridge.cpp` 将分析功能暴露给
 Flutter/Dart。两端共用 `native/analysis/analysis_ffi_abi.h` 中的 flat ABI struct 定义；
 Windows 仍承载完整 analysis UI/IPC。macOS 当前提供 VAC2 base 生成、只读 handle
 查询、overlay state/track 绑定符号，以及通过 bundled `void_ffmpeg_analyzer` 的 runtime

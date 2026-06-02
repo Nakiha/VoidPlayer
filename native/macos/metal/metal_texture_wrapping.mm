@@ -1,4 +1,4 @@
-#include "macos/metal_texture_wrapping.h"
+#include "macos/metal/metal_texture_wrapping.h"
 
 namespace vp_macos {
 

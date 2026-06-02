@@ -1,6 +1,6 @@
 #pragma once
 
-#include "macos/native_player_types.h"
+#include "macos/player/native_player_types.h"
 
 #include <cstddef>
 #include <cstdint>

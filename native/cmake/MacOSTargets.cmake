@@ -35,6 +35,10 @@ target_link_libraries(void_macos_native_player PUBLIC
     "-framework Metal"
     "-framework CoreVideo"
 )
+
+target_sources(void_media_ffmpeg PRIVATE
+    "${VOID_NATIVE_DIR}/macos/decode/videotoolbox_provider.cpp"
+)
 if(BUILD_ANALYSIS)
     target_link_libraries(void_macos_native_player PUBLIC analysis_lib)
 endif()

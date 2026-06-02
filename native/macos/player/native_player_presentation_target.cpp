@@ -1,6 +1,6 @@
 #include "native_player_bridge.h"
 
-#include "macos/native_player_state.h"
+#include "macos/player/native_player_state.h"
 
 #include <algorithm>
 #include <chrono>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "renderer/buffer/bidi_ring_buffer.h"
-#include "renderer/decode/d3d11_frame_snapshot.h"
+#include "windows/decode/d3d11_frame_snapshot.h"
 #include "renderer/decode/hw/hw_decode_provider.h"
 
 #include <memory>

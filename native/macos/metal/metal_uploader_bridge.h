@@ -1,7 +1,7 @@
 #ifndef VOIDPLAYER_MACOS_METAL_UPLOADER_BRIDGE_H_
 #define VOIDPLAYER_MACOS_METAL_UPLOADER_BRIDGE_H_
 
-#include "native_player_types.h"
+#include "macos/player/native_player_types.h"
 
 #include <stddef.h>
 #include <stdint.h>

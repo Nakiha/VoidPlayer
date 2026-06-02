@@ -2,7 +2,7 @@
 
 ## Clock 类
 
-头文件: `video_renderer/clock.h`
+头文件: `renderer/clock.h`
 
 Clock 维护一个基于 base-time/base-pts 的时钟，支持暂停/恢复/倍速/Seek。
 

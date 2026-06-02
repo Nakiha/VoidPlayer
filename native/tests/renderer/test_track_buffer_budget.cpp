@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/track/track_buffer_budget.h"
+#include "renderer/track/track_buffer_budget.h"
 
 using namespace vr;
 

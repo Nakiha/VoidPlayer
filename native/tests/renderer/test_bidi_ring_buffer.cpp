@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "video_renderer/buffer/bidi_ring_buffer.h"
+#include "renderer/buffer/bidi_ring_buffer.h"
 #include <deque>
 #include <random>
 

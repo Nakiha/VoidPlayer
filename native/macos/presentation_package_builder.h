@@ -1,7 +1,7 @@
 #pragma once
 
 #include "macos/metal_uploader_bridge.h"
-#include "video_renderer/render/renderer_draw_snapshot.h"
+#include "renderer/render/renderer_draw_snapshot.h"
 
 #include <cstddef>
 #include <cstdint>

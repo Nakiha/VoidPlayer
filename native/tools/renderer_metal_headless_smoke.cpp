@@ -1,5 +1,5 @@
 #include "tools/test_video_assets.h"
-#include "video_renderer/renderer.h"
+#include "renderer/renderer.h"
 
 #include <CoreVideo/CoreVideo.h>
 

@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/decode/exact_seek_candidate_store.h"
+#include "renderer/decode/exact_seek_candidate_store.h"
 
 #include <vector>
 

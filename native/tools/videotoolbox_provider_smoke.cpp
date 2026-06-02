@@ -1,4 +1,4 @@
-#include "video_renderer/decode/hw/hw_decode_provider.h"
+#include "renderer/decode/hw/hw_decode_provider.h"
 
 #include <iostream>
 #include <string>

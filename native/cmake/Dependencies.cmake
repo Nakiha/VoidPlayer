@@ -6,6 +6,20 @@ option(VOID_USE_LOCAL_DEPS
 
 option(BUILD_ANALYSIS "Build native analysis cache, CLI, and overlay feature" ON)
 
+set(VOID_LOCAL_DEPS_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/_deps"
+    CACHE PATH "Local dependency source cache used when VOID_USE_LOCAL_DEPS=ON")
+
+function(void_first_existing_path out_var)
+    foreach(candidate IN LISTS ARGN)
+        if(EXISTS "${candidate}")
+            set(${out_var} "${candidate}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+    set(${out_var} "" PARENT_SCOPE)
+endfunction()
+
 set(VOID_ZSTD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/analysis/vendor/zstd")
 if(BUILD_ANALYSIS AND EXISTS "${VOID_ZSTD_DIR}/build/cmake/CMakeLists.txt" AND NOT TARGET libzstd_static)
     set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
@@ -30,7 +44,10 @@ function(void_link_zstd target_name)
 endfunction()
 
 # spdlog (header-only): locked FetchContent by default; local cache is explicit opt-in.
-set(SPDLOG_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build/windows/x64/_deps/spdlog-src")
+set(SPDLOG_LOCAL_CANDIDATES
+    "${VOID_LOCAL_DEPS_DIR}/spdlog-src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../build/windows/x64/_deps/spdlog-src")
+void_first_existing_path(SPDLOG_LOCAL_DIR ${SPDLOG_LOCAL_CANDIDATES})
 if(VOID_USE_LOCAL_DEPS AND EXISTS "${SPDLOG_LOCAL_DIR}/include/spdlog/spdlog.h")
     message(STATUS "Using local spdlog from: ${SPDLOG_LOCAL_DIR}")
     add_library(spdlog_header_only INTERFACE)
@@ -53,7 +70,7 @@ if(NOT BUILD_ANALYSIS AND BUILD_ANALYSIS_TESTS)
     set(BUILD_ANALYSIS_TESTS OFF CACHE BOOL "" FORCE)
 endif()
 if(BUILD_TESTS)
-    set(CATCH2_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/_deps/catch2-src")
+    set(CATCH2_LOCAL_DIR "${VOID_LOCAL_DEPS_DIR}/catch2-src")
     if(VOID_USE_LOCAL_DEPS AND EXISTS "${CATCH2_LOCAL_DIR}/CMakeLists.txt")
         message(STATUS "Using local Catch2 from: ${CATCH2_LOCAL_DIR}")
         add_subdirectory("${CATCH2_LOCAL_DIR}" "${CMAKE_BINARY_DIR}/_deps/catch2-build")

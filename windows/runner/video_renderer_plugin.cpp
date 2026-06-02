@@ -1,8 +1,8 @@
 #include "video_renderer_plugin.h"
 #include "analysis_ffi.h"
 
-#include "video_renderer/layout/layout_validation.h"
-#include "video_renderer/renderer_config_validation.h"
+#include "renderer/layout/layout_validation.h"
+#include "renderer/renderer_config_validation.h"
 #include "utils.h"
 #include <flutter/event_channel.h>
 #include <flutter/event_stream_handler_functions.h>
@@ -178,7 +178,7 @@ void VideoRendererPlugin::RegisterWithRegistrar(
         registrar->messenger(), "video_renderer",
         &flutter::StandardMethodCodec::GetInstance());
     auto event_channel = std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
-        registrar->messenger(), "video_renderer/events",
+        registrar->messenger(), "renderer/events",
         &flutter::StandardMethodCodec::GetInstance());
 
     auto* texture_registrar = registrar->texture_registrar();

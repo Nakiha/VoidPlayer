@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/decode/av_frame_lifetime.h"
+#include "renderer/decode/av_frame_lifetime.h"
 
 #include <utility>
 

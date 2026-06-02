@@ -1,7 +1,7 @@
 #pragma once
 
 #include "metal_presentation_backend_bridge.h"
-#include "video_renderer/render/presentation_backend.h"
+#include "renderer/render/presentation_backend.h"
 
 #include <cstddef>
 #include <cstdint>

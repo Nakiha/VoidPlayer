@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/render/device_loss_policy.h"
+#include "renderer/render/device_loss_policy.h"
 
 using namespace vr;
 

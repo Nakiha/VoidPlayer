@@ -35,7 +35,7 @@ bool snapshot_cv_pixel_buffer_frame(const vr::RendererDrawSnapshot& snapshot,
       return false;
     }
     const auto& frame = *snapshot.decision.frames[slot];
-    const auto* storage = frame.macos_cv_pixel_buffer_storage();
+    const auto* storage = frame.cv_pixel_buffer_storage();
     if (!storage || !storage->pixel_buffer || storage->plane_count < 2 ||
         storage->coded_width < frame.width || storage->coded_height < frame.height) {
       error = "snapshot does not contain a supported CVPixelBuffer frame";
@@ -87,7 +87,7 @@ bool snapshot_cv_pixel_buffer_frame_set(
       continue;
     }
     const auto& frame = *snapshot.decision.frames[slot];
-    const auto* storage = frame.macos_cv_pixel_buffer_storage();
+    const auto* storage = frame.cv_pixel_buffer_storage();
     if (!storage || !storage->pixel_buffer || storage->plane_count < 2 ||
         storage->coded_width < frame.width || storage->coded_height < frame.height) {
       error = "snapshot contains a non-CVPixelBuffer frame";

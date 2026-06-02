@@ -5,7 +5,7 @@
  * without a valid HWND / initialized player.
  */
 
-#include "video_renderer/exports/ffi_exports.h"
+#include "renderer/exports/ffi_exports.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -2,11 +2,11 @@
 
 add_executable(video_renderer_tests
     test_main.cpp
-    ../video_renderer/exports/ffi_marshalling.cpp
-    ../video_renderer/exports/ffi_player_commands.cpp
-    ../video_renderer/exports/ffi_player_lifecycle.cpp
-    ../video_renderer/exports/ffi_process_globals.cpp
-    ../video_renderer/exports/ffi_player_registry.cpp
+    ../renderer/exports/ffi_marshalling.cpp
+    ../renderer/exports/ffi_player_commands.cpp
+    ../renderer/exports/ffi_player_lifecycle.cpp
+    ../renderer/exports/ffi_process_globals.cpp
+    ../renderer/exports/ffi_player_registry.cpp
     ../../windows/runner/native_player_registry.cpp
     renderer/test_utils.cpp
     renderer/test_clock.cpp

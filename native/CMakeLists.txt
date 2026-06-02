@@ -41,7 +41,7 @@ if(BUILD_ANALYSIS)
 endif()
 
 if(WIN32)
-    add_subdirectory(video_renderer)
+    add_subdirectory(renderer)
 else()
     include(cmake/PortableTargets.cmake)
     message(STATUS "video_renderer disabled: D3D11 backend is Windows-only")
@@ -58,7 +58,7 @@ if(WIN32 AND BUILD_ANALYSIS)
     void_apply_native_compile_options(VoidPlayerCli)
     target_include_directories(VoidPlayerCli PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
-        "${CMAKE_BINARY_DIR}/video_renderer")
+        "${CMAKE_BINARY_DIR}/renderer")
     target_link_libraries(VoidPlayerCli PRIVATE
         analysis_lib
         d3d11

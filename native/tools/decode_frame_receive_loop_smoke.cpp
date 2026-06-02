@@ -1,5 +1,5 @@
-#include "video_renderer/decode/codec_loop.h"
-#include "video_renderer/decode/decode_frame_receive_loop.h"
+#include "renderer/decode/codec_loop.h"
+#include "renderer/decode/decode_frame_receive_loop.h"
 
 #include <iostream>
 

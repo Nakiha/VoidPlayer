@@ -2,8 +2,8 @@
 #include "test_utils.h"
 #include "windows/d3d11/device.h"
 #include "windows/d3d11/shader.h"
-#include "video_renderer/overlay/analysis_overlay_renderer.h"
-#include "video_renderer/render/shader_constants.h"
+#include "renderer/overlay/analysis_overlay_renderer.h"
+#include "renderer/render/shader_constants.h"
 #include <cstddef>
 
 using namespace vr::test;

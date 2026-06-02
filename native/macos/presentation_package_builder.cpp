@@ -1,7 +1,7 @@
 #include "macos/presentation_package_builder.h"
 
 #include "macos/presentation_adapter.h"
-#include "video_renderer/render/presentation_snapshot.h"
+#include "renderer/render/presentation_snapshot.h"
 
 #include <CoreVideo/CoreVideo.h>
 
@@ -149,7 +149,7 @@ bool copy_snapshot_yuv_package(const vr::RendererDrawSnapshot& snapshot,
     const auto& frame = *snapshot.decision.frames[slot];
     const auto* nv12_storage = frame.cpu_nv12_storage();
     const auto* planar_storage = frame.cpu_planar_yuv_storage();
-    const auto* cv_storage = frame.macos_cv_pixel_buffer_storage();
+    const auto* cv_storage = frame.cv_pixel_buffer_storage();
     const uint8_t* y_source = nullptr;
     const uint8_t* uv_source = nullptr;
     const uint8_t* v_source = nullptr;

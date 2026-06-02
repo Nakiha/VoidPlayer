@@ -1,10 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/layout/layout_validation.h"
-#include "video_renderer/layout/layout_controller.h"
-#include "video_renderer/layout/layout_geometry.h"
-#include "video_renderer/render/render_loop_controller.h"
-#include "video_renderer/renderer_config_validation.h"
+#include "renderer/layout/layout_validation.h"
+#include "renderer/layout/layout_controller.h"
+#include "renderer/layout/layout_geometry.h"
+#include "renderer/render/render_loop_controller.h"
+#include "renderer/renderer_config_validation.h"
 
 #include <chrono>
 #include <cmath>

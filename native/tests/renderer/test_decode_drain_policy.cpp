@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/decode/codec_loop.h"
-#include "video_renderer/decode/decode_drain_policy.h"
+#include "renderer/decode/codec_loop.h"
+#include "renderer/decode/decode_drain_policy.h"
 
 extern "C" {
 #include <libavutil/error.h>

@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/decode/decoded_frame_publisher.h"
+#include "renderer/decode/decoded_frame_publisher.h"
 
 #include <cstring>
 #include <mutex>

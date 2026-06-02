@@ -756,7 +756,7 @@ Follow-up:
 
 Changed:
 
-- Added public ABI comments to `native/video_renderer/exports/ffi_exports.h` documenting that logging and crash-handler FFI convenience APIs mutate process-wide state.
+- Added public ABI comments to `native/renderer/exports/ffi_exports.h` documenting that logging and crash-handler FFI convenience APIs mutate process-wide state.
 - Split the global-state backlog into completed API warning and remaining host-provided logger/sink design.
 
 Verified:
@@ -1005,7 +1005,7 @@ Goal:
 
 Likely files:
 
-- `native/video_renderer/renderer.cpp`
+- `native/renderer/renderer.cpp`
 - D3D overlay helper/resource files.
 
 Validation:
@@ -1132,9 +1132,9 @@ Goal:
 
 Likely files:
 
-- `native/video_renderer/renderer.*`
-- new `native/video_renderer/analysis_overlay_renderer.*` or equivalent.
-- `native/video_renderer/CMakeLists.txt` / source list if needed.
+- `native/renderer/renderer.*`
+- new `native/renderer/analysis_overlay_renderer.*` or equivalent.
+- `native/renderer/CMakeLists.txt` / source list if needed.
 
 Validation:
 

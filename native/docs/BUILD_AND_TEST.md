@@ -280,5 +280,5 @@ dev script. Benchmarks do not replace playback/backend gates.
 
 ## Demo
 
-`video_renderer/demo/demo_video_renderer.py` and `video_renderer/demo/demo_seek.py` are development aids. Product behavior
+`renderer/demo/demo_video_renderer.py` and `renderer/demo/demo_seek.py` are development aids. Product behavior
 verification should use `dev.py launch`, native CTest, and platform UI automation.

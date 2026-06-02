@@ -1,5 +1,5 @@
-#include "video_renderer/render/presentation_snapshot.h"
-#include "video_renderer/render/presentation_package.h"
+#include "renderer/render/presentation_snapshot.h"
+#include "renderer/render/presentation_package.h"
 
 #include <cstdio>
 #include <memory>
@@ -86,6 +86,7 @@ int main() {
       snapshot.frames[0].file_id != 10 ||
       snapshot.frames[0].track_generation != 100 ||
       snapshot.frames[0].storage_kind != vr::FrameStorageKind::CpuRgba ||
+      snapshot.frames[0].storage_class != vr::FrameStorageClass::CpuPixels ||
       snapshot.frames[0].color_matrix != vr::VIDEO_COLOR_MATRIX_BT601 ||
       snapshot.frames[0].color_primaries != vr::VIDEO_COLOR_PRIMARIES_BT601) {
     return fail("presentation snapshot did not preserve CPU RGBA frame metadata");
@@ -94,6 +95,7 @@ int main() {
       snapshot.frames[1].file_id != 20 ||
       snapshot.frames[1].track_generation != 200 ||
       snapshot.frames[1].storage_kind != vr::FrameStorageKind::CpuNv12 ||
+      snapshot.frames[1].storage_class != vr::FrameStorageClass::CpuPixels ||
       !snapshot.frames[1].is_nv12 ||
       snapshot.frames[1].is_p010 ||
       snapshot.frames[1].y_stride != 8 ||

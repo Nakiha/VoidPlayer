@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/exports/ffi_marshalling.h"
-#include "video_renderer/exports/ffi_player_registry.h"
+#include "renderer/exports/ffi_marshalling.h"
+#include "renderer/exports/ffi_player_registry.h"
 
 using namespace vr;
 using namespace vr::ffi;

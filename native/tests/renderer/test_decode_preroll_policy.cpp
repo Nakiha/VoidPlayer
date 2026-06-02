@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/decode/decode_preroll_policy.h"
+#include "renderer/decode/decode_preroll_policy.h"
 
 using namespace vr;
 

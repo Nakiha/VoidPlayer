@@ -1,8 +1,8 @@
 #include "macos/metal_presentation_backend.h"
 
-#include "video_renderer/frame/frame_storage.h"
-#include "video_renderer/render/renderer_draw_snapshot.h"
-#include "video_renderer/render/presentation_snapshot.h"
+#include "renderer/frame/frame_storage.h"
+#include "renderer/render/renderer_draw_snapshot.h"
+#include "renderer/render/presentation_snapshot.h"
 
 #include <CoreVideo/CoreVideo.h>
 

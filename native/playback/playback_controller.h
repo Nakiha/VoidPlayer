@@ -1,7 +1,7 @@
 #pragma once
 
 #include "audio/audio_output.h"
-#include "video_renderer/clock.h"
+#include "renderer/clock.h"
 #include <cstdint>
 #include <functional>
 #include <memory>

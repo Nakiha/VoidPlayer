@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "test_utils.h"
-#include "video_renderer/clock.h"
+#include "renderer/clock.h"
 #include <thread>
 #include <chrono>
 

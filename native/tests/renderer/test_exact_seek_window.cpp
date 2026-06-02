@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/decode/exact_seek_window.h"
+#include "renderer/decode/exact_seek_window.h"
 
 using namespace vr;
 

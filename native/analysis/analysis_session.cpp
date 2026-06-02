@@ -116,7 +116,12 @@ VachunkOverlayFrameData AnalysisSession::read_vac2_overlay_frame(int frame_idx) 
     if (!overlay_chunk_index_loaded_) {
         refresh_overlay_chunk_index_locked();
     }
-    return read_overlay_frame_from_index_locked(frame_idx);
+    auto frame = read_overlay_frame_from_index_locked(frame_idx);
+    if (frame.feature_flags == 0 && frame.cus.empty()) {
+        refresh_overlay_chunk_index_locked();
+        frame = read_overlay_frame_from_index_locked(frame_idx);
+    }
+    return frame;
 }
 
 void AnalysisSession::load_overlay_chunk_index() const {

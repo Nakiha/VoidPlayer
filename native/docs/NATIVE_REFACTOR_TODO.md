@@ -19,7 +19,7 @@
 已核验为属实或基本属实：
 
 - FFmpeg runtime 合规仍需要 release 级闭环。当前顶层 `LICENSE` 是 GPL，`lib/app_metadata.dart` 标注 GPLv3/FFmpeg，`native/THIRD_PARTY_NATIVE.md` 和 staging 规则会复制 FFmpeg `README.txt` / `LICENSE*`；但还缺面向 release artifact 的 NOTICE/source-offer/configure-flags 检查。
-- `Renderer` 仍是大协调器。`native/video_renderer/renderer.h` 同时拥有 playback、track lifecycle、seek、layout、D3D11 backend、texture sharing、capture、analysis overlay、device-lost、render thread、metrics 和锁。
+- `Renderer` 仍是大协调器。`native/renderer/renderer.h` 同时拥有 playback、track lifecycle、seek、layout、D3D11 backend、texture sharing、capture、analysis overlay、device-lost、render thread、metrics 和锁。
 - Windows runner plugin 仍过大。`windows/runner/video_renderer_plugin.cpp` 约 1415 行，仍混合 MethodChannel handlers、player lifecycle、event bridge 和 process-global FFI diagnostics。
 - C FFI ABI v1 仍偏窄。`naki_vr_player_config_t.video_paths` 是 null-terminated `const char**`，很多 mutating API 仍返回 `void`，`last_error` 仍是 thread-local，`player` 参数暂未提供 per-player 错误状态。
 - config validation 仍分散。FFI 只校验 ABI/log/dimension/layout/speed 的一部分，MethodChannel 有自己的 dimension/speed/layout 检查，FrameConverter 又有独立的 `kMaxDecodedDimension` / `kMaxCpuFrameBytes`。
@@ -107,11 +107,11 @@ Status: done in Round 11.
 - FFI 的 `validate_player_config()` 只检查 ABI、log、width/height positive。
 - MethodChannel 在 `windows/runner/video_renderer_plugin.cpp` 中独立校验 width/height <= 16384、speed、layout。
 - `FrameConverter` 有单独 `kMaxDecodedDimension = 16384` 和 `kMaxCpuFrameBytes = 1GB`。
-- 当前只有 `native/video_renderer/layout/layout_validation.h` 针对 layout 做了共享校验。
+- 当前只有 `native/renderer/layout/layout_validation.h` 针对 layout 做了共享校验。
 
 TODO:
 
-- [x] 新增 `native/video_renderer/renderer_config_validation.h/.cpp`。
+- [x] 新增 `native/renderer/renderer_config_validation.h/.cpp`。
 - [x] 定义集中预算常量：max width/height、max path count、max tracks、max path bytes、max CPU frame bytes、max speed、loop range 规则；queued frames / deeper resource budgets 留给 P2 resource budget policy。
 - [x] 输出结构化 `RendererConfigValidationResult { ok, code, message }`，供 C++/FFI/runner/Python 复用。
 - [x] FFI `validate_player_config()` 改为转换后调用统一 validator，并限制 NULL-terminated path scan 上限。
@@ -164,7 +164,7 @@ TODO:
 - `native/docs/THREADING_MODEL.md` 已记录 lock order，可作为拆分护栏。
 - `build/chat/review_renderer.md` 的核验属实：风险已经从“职责边界还大”升级为“Renderer 状态访问模型和锁契约不一致”。
 - `build/chat/review_renderer_v2.md` 的新核验部分属实：prepared-frame UV/default 和 presenter 内部序列化描述已过时，但 `PresentDecision` 缺少 track identity 是真实错帧/错缓存风险。
-- `native/video_renderer/` 根目录已有 40+ 个 renderer 相关文件，policy/helper 平铺已经降低可审查性；但目录重组应等并发修复落地后单独做 mechanical patch。
+- `native/renderer/` 根目录已有 40+ 个 renderer 相关文件，policy/helper 平铺已经降低可审查性；但目录重组应等并发修复落地后单独做 mechanical patch。
 
 新增优先队列（来自 `build/chat/review_renderer.md` / `build/chat/review_renderer_v2.md`）：
 
@@ -699,7 +699,7 @@ TODO:
 - [x] CI matrix 增加 Debug build，至少覆盖 `BUILD_FFI=ON BUILD_TESTS=ON`。
 - [x] CI matrix 覆盖 `BUILD_ANALYSIS=OFF` 的 FFI build，以及 `BUILD_ANALYSIS=OFF BUILD_FFI=OFF BUILD_TESTS=ON` 的 no-FFI tests configure/build。
 - [ ] 增加 clang-cl configure/build job，先允许独立 warning baseline，再逐步收紧。本机当前未发现 `clang-cl`。
-- [ ] 增加 clang-tidy 或 cppcheck job，先限定 `native/common`、`native/windows/player`、`native/video_renderer/exports`。本机当前未发现 `clang-tidy` / `cppcheck`。
+- [ ] 增加 clang-tidy 或 cppcheck job，先限定 `native/common`、`native/windows/player`、`native/renderer/exports`。本机当前未发现 `clang-tidy` / `cppcheck`。
 - [x] 增加 clean dist smoke：检查 FFI DLL、header、FFmpeg DLL 和 notice 文件进入 `dist/ffi`。
 - [x] 增加 release compliance smoke，和 P0 合规任务联动。
 

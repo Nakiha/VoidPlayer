@@ -2,7 +2,7 @@
 
 #include "macos/native_player_state.h"
 #include "macos/presentation_adapter.h"
-#include "video_renderer/capture/bgra_capture_metrics.h"
+#include "renderer/capture/bgra_capture_metrics.h"
 
 #include <chrono>
 #include <mutex>

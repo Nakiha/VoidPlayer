@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/decode/frame_timestamp_rescaler.h"
+#include "renderer/decode/frame_timestamp_rescaler.h"
 
 extern "C" {
 #include <libavutil/frame.h>

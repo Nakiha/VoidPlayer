@@ -1,7 +1,7 @@
 #pragma once
 
 #include "playback/playback_controller.h"
-#include "video_renderer/renderer.h"
+#include "renderer/renderer.h"
 #include <functional>
 #include <shared_mutex>
 #include <string>

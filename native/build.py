@@ -74,6 +74,11 @@ def resolve_ffmpeg_root(
     )
 
 
+def env_flag(name: str) -> bool:
+    value = os.environ.get(name, "")
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
 def configure(
     build_dir: Path,
     script_dir: Path,
@@ -83,6 +88,7 @@ def configure(
     build_analysis_tests: bool = True,
     build_python: bool = True,
     build_ffi: bool = True,
+    use_local_deps: bool = False,
 ):
     cmake_args = [
         "cmake",
@@ -95,6 +101,8 @@ def configure(
         f"-DBUILD_PYTHON={'ON' if build_python else 'OFF'}",
         f"-DBUILD_FFI={'ON' if build_ffi else 'OFF'}",
     ]
+    if use_local_deps:
+        cmake_args.append("-DVOID_USE_LOCAL_DEPS=ON")
 
     if build_python:
         try:
@@ -166,6 +174,8 @@ def main():
                         help="Override the native build directory")
     parser.add_argument("--github", action="store_true",
                         help="Skip external analysis tool tests for lightweight GitHub CI")
+    parser.add_argument("--use-local-deps", action="store_true",
+                        help="Use native/_deps dependency sources instead of FetchContent downloads")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -177,6 +187,7 @@ def main():
     ).expanduser().resolve()
     build_type = "Debug" if args.debug else "Release"
     ffmpeg_root = resolve_ffmpeg_root(script_dir, platform_name, args.ffmpeg_root)
+    use_local_deps = args.use_local_deps or env_flag("VOID_USE_LOCAL_DEPS")
 
     if args.benchmarks_only:
         print("Configuring...", flush=True)
@@ -189,6 +200,7 @@ def main():
             build_analysis_tests=False,
             build_python=False,
             build_ffi=False,
+            use_local_deps=use_local_deps,
         )
 
         print(f"Building ({build_type})...", flush=True)
@@ -206,6 +218,7 @@ def main():
             script_dir,
             ffmpeg_root,
             build_analysis_tests=not args.github,
+            use_local_deps=use_local_deps,
         )
 
         print(f"Building ({build_type})...", flush=True)

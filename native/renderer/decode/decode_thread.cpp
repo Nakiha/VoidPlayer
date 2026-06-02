@@ -1,0 +1,735 @@
+#include "renderer/decode/decode_thread.h"
+#include "renderer/decode/av_frame_lifetime.h"
+#include "renderer/decode/codec_loop.h"
+#include "renderer/decode/decode_preroll_policy.h"
+#include "renderer/decode/exact_seek_frame_publisher.h"
+#include "renderer/decode/exact_seek_publish_policy.h"
+#include "renderer/decode/exact_seek_window.h"
+#include <spdlog/spdlog.h>
+#include <sstream>
+
+extern "C" {
+#include <libavutil/hwcontext.h>
+#include <libavutil/pixdesc.h>
+}
+
+namespace vr {
+
+namespace {
+constexpr int kRendererOwnedHwExtraFrames = 0;
+
+uint64_t estimate_av_yuv_surface_bytes(int width, int height, AVPixelFormat format) {
+    if (width <= 0 || height <= 0) {
+        return 0;
+    }
+    const uint64_t pixels = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+    switch (format) {
+    case AV_PIX_FMT_NV12:
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+        return pixels * 3 / 2;
+    case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_P016LE:
+    case AV_PIX_FMT_YUV420P10LE:
+        return pixels * 3;
+    case AV_PIX_FMT_YUV422P:
+    case AV_PIX_FMT_YUVJ422P:
+        return pixels * 2;
+    case AV_PIX_FMT_YUV422P10LE:
+        return pixels * 4;
+    case AV_PIX_FMT_YUV444P:
+    case AV_PIX_FMT_YUVJ444P:
+        return pixels * 3;
+    case AV_PIX_FMT_YUV444P10LE:
+        return pixels * 6;
+    default:
+        return 0;
+    }
+}
+
+const char* decode_device_mode_name(DecodeDeviceMode mode) {
+    switch (mode) {
+    case DecodeDeviceMode::IndependentDevice:
+        return "IndependentDevice";
+    case DecodeDeviceMode::SharedRenderDevice:
+        return "SharedRenderDevice";
+    case DecodeDeviceMode::FfmpegOwnedHwDownloadDevice:
+        return "FfmpegOwnedHwDownloadDevice";
+    }
+    return "Unknown";
+}
+
+bool renderer_owned_d3d11_supports_stream_format(AVPixelFormat format) {
+    switch (format) {
+    case AV_PIX_FMT_NONE:
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_NV12:
+    case AV_PIX_FMT_NV21:
+    case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_P016LE:
+    case AV_PIX_FMT_YUV420P12LE:
+    case AV_PIX_FMT_P012LE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+}  // namespace
+
+// get_format callback for hardware decode negotiation.
+// Reads the preferred hw pixel format from opaque pointer (per-instance).
+static enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
+                                         const enum AVPixelFormat* pix_fmts) {
+    auto* preferred = static_cast<AVPixelFormat*>(ctx->opaque);
+    AVPixelFormat fallback = AV_PIX_FMT_NONE;
+    for (const enum AVPixelFormat* p = pix_fmts; *p != AV_PIX_FMT_NONE; ++p) {
+        if (preferred && *p == *preferred) {
+            return *p;
+        }
+        if (*p == AV_PIX_FMT_D3D11) {
+            fallback = *p;
+        }
+    }
+    if (fallback != AV_PIX_FMT_NONE) {
+        spdlog::info("[DecodeThread] get_format: using D3D11 fallback");
+        return fallback;
+    }
+    spdlog::warn("[DecodeThread] HW pixel format not available in get_format, returning NONE");
+    return AV_PIX_FMT_NONE;
+}
+
+DecodeThread::DecodeThread(PacketQueue& input_queue, TrackBuffer& output_buffer,
+                           const AVCodecParameters* codec_params, AVRational time_base)
+    : input_queue_(input_queue)
+    , output_buffer_(output_buffer)
+    , codec_params_(codec_params)
+    , time_base_(time_base)
+{
+    codec_ = nullptr;
+    if (!codec_params) {
+        spdlog::error("[DecodeThread] codec_params is null");
+        return;
+    }
+    if (codec_params->codec_id == AV_CODEC_ID_AV1) {
+        codec_ = avcodec_find_decoder_by_name("av1");
+        if (codec_) {
+            spdlog::info("[DecodeThread] AV1: using native decoder first for hardware negotiation "
+                         "(libdav1d remains software fallback)");
+        }
+    }
+    if (!codec_) {
+        codec_ = avcodec_find_decoder(codec_params->codec_id);
+    }
+    if (!codec_) {
+        spdlog::error("[DecodeThread] No decoder found for codec_id={}",
+                      static_cast<int>(codec_params->codec_id));
+        return;
+    }
+
+    spdlog::info("[DecodeThread] Using decoder: {}", codec_->name);
+
+    if (!reset_codec_context(codec_)) {
+        return;
+    }
+
+    // NOTE: avcodec_open2 is NOT called here.
+    // It is deferred to start() so that enable_hardware_decode() can set
+    // hw_device_ctx before the codec is opened.
+}
+
+DecodeThread::~DecodeThread() {
+    stop();
+}
+
+bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
+                                           void* render_device,
+                                           std::recursive_mutex* device_mutex,
+                                           RenderBackendKind backend) {
+    if (!codec_ctx_ || !codec_) {
+        spdlog::warn("[DecodeThread] Cannot enable hw decode: codec not initialized");
+        return false;
+    }
+
+    if (mode == DecodeDeviceMode::SharedRenderDevice && !render_device) {
+        spdlog::warn("[DecodeThread] SharedRenderDevice requested without render_device");
+        return false;
+    }
+
+    decode_device_mode_ = mode;
+    native_device_ = (mode == DecodeDeviceMode::SharedRenderDevice) ? render_device : nullptr;
+    device_mutex_ = device_mutex;
+
+    const auto stream_format = static_cast<AVPixelFormat>(codec_params_->format);
+    if (backend == RenderBackendKind::D3D11 &&
+        mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice &&
+        !renderer_owned_d3d11_supports_stream_format(stream_format)) {
+        const char* name = av_get_pix_fmt_name(stream_format);
+        spdlog::info("[DecodeThread] Hardware decode disabled for stream pixel format {} ({}) "
+                     "because renderer-owned D3D11 path only supports NV12/P010-like 4:2:0 surfaces",
+                     static_cast<int>(stream_format), name ? name : "unknown");
+        hw_enabled_ = false;
+        const AVCodec* sw_codec = preferred_software_decoder();
+        if (sw_codec && sw_codec != codec_) {
+            spdlog::info("[DecodeThread] Switching decoder to {} for software fallback",
+                         sw_codec->name);
+            reset_codec_context(sw_codec);
+        }
+        return false;
+    }
+
+    HwDecodeInitParams hw_params;
+    hw_params.backend = backend;
+    hw_params.device_mode = mode;
+    hw_params.render_device = render_device;
+    hw_params.width = codec_params_->width;
+    hw_params.height = codec_params_->height;
+    hw_params.device_mutex = device_mutex;
+
+    spdlog::info("[DecodeThread] Hardware decode device mode: {}",
+                 decode_device_mode_name(mode));
+
+    auto result = try_hw_decode_providers(codec_, hw_params);
+
+    if (!result.success) {
+        spdlog::info("[DecodeThread] Hardware decode not available, will use software");
+        hw_enabled_ = false;
+        const AVCodec* sw_codec = preferred_software_decoder();
+        if (sw_codec && sw_codec != codec_) {
+            spdlog::info("[DecodeThread] Switching decoder to {} for software fallback", sw_codec->name);
+            reset_codec_context(sw_codec);
+        }
+        return false;
+    }
+
+    // Store hw device context and provider
+    hw_device_ctx_ = result.hw_device_ctx;
+    hw_provider_ = std::move(result.provider);  // Must outlive hw_device_ctx (owns D3D11 mutex + context)
+    hw_type_ = result.type;
+    hw_enabled_ = true;
+    hw_pix_fmt_ = result.hw_pix_fmt;
+
+    // Set hw_device_ctx on codec context BEFORE opening
+    codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx_);
+
+    // Increase the hw frame pool only when decoded hardware surfaces can be
+    // held by the render queue. Hwdownload paths release decoder surfaces
+    // immediately after transfer; forcing a large D3D11VA pool there is both
+    // unnecessary and can produce black transfer frames on some AV1 drivers.
+    if (hardware_surfaces_are_renderer_owned()) {
+        codec_ctx_->extra_hw_frames = kRendererOwnedHwExtraFrames;
+        spdlog::info("[DecodeThread] Renderer-owned hardware frame pool extra_hw_frames={}",
+                     codec_ctx_->extra_hw_frames);
+    }
+
+    // NOTE: We intentionally do NOT create hw_frames_ctx here.
+    // FFmpeg's internal ff_decode_get_hw_frames_ctx() will create one
+    // automatically when the codec is opened with hw_device_ctx set.
+    // This avoids configuration mismatches that caused 0-frame output.
+
+    // Set get_format callback with per-instance opaque pointer
+    codec_ctx_->get_format = get_hw_format;
+    codec_ctx_->opaque = &hw_pix_fmt_;
+
+    spdlog::info("[DecodeThread] Hardware decode enabled via {} (pix_fmt={})",
+                 hw_decode_type_name(result.type),
+                 static_cast<int>(result.hw_pix_fmt));
+    return true;
+}
+
+bool DecodeThread::open_codec() {
+    if (!hw_enabled_) {
+        const AVCodec* sw_codec = preferred_software_decoder();
+        if (sw_codec && sw_codec != codec_) {
+            spdlog::info("[DecodeThread] Using decoder: {} (software fallback)", sw_codec->name);
+            if (!reset_codec_context(sw_codec)) {
+                return false;
+            }
+        }
+    }
+
+    int ret = open_codec_seh_guarded(codec_ctx_, codec_, nullptr, codec_open_for_test_);
+    if (ret == 0) return true;
+
+    spdlog::error("[DecodeThread] Failed to open codec: {:#x}", static_cast<unsigned>(ret));
+
+    // If HW decode was attempted, try fallback to software
+    if (hw_enabled_) {
+        spdlog::info("[DecodeThread] Attempting software fallback...");
+
+        // Clean up hw state
+        if (codec_ctx_->hw_device_ctx) {
+            av_buffer_unref(&codec_ctx_->hw_device_ctx);
+        }
+        hw_enabled_ = false;
+        hw_pix_fmt_ = AV_PIX_FMT_NONE;
+
+        const AVCodec* sw_codec = preferred_software_decoder();
+        if (sw_codec && sw_codec != codec_) {
+            spdlog::info("[DecodeThread] Switching decoder to {} for software fallback", sw_codec->name);
+        }
+        if (!reset_codec_context(sw_codec ? sw_codec : codec_)) {
+            return false;
+        }
+
+        int ret2 = open_codec_seh_guarded(codec_ctx_, codec_, nullptr, codec_open_for_test_);
+        if (ret2 < 0) {
+            spdlog::error("[DecodeThread] Software fallback also failed: {:#x}", static_cast<unsigned>(ret2));
+            return false;
+        }
+
+        spdlog::info("[DecodeThread] Software fallback succeeded");
+        return true;
+    }
+
+    return false;
+}
+
+bool DecodeThread::reset_codec_context(const AVCodec* codec) {
+    if (!codec) {
+        spdlog::error("[DecodeThread] Cannot allocate codec context: decoder is null");
+        return false;
+    }
+
+    if (codec_ctx_) {
+        avcodec_free_context(&codec_ctx_);
+    }
+
+    codec_ = codec;
+    codec_ctx_ = avcodec_alloc_context3(codec_);
+    if (!codec_ctx_) {
+        spdlog::error("[DecodeThread] Failed to allocate codec context for {}", codec_->name);
+        return false;
+    }
+
+    int ret = avcodec_parameters_to_context(codec_ctx_, codec_params_);
+    if (ret < 0) {
+        spdlog::error("[DecodeThread] Failed to copy codec parameters for {}: {:#x}",
+                      codec_->name, static_cast<unsigned>(ret));
+        avcodec_free_context(&codec_ctx_);
+        return false;
+    }
+
+#ifdef AV_CODEC_FLAG_COPY_OPAQUE
+    codec_ctx_->flags |= AV_CODEC_FLAG_COPY_OPAQUE;
+#endif
+
+    return true;
+}
+
+const AVCodec* DecodeThread::preferred_software_decoder() const {
+    if (!codec_params_) {
+        return codec_;
+    }
+
+    if (codec_params_->codec_id == AV_CODEC_ID_AV1) {
+        const AVCodec* dav1d = avcodec_find_decoder_by_name("libdav1d");
+        if (dav1d) {
+            return dav1d;
+        }
+    }
+
+    return codec_;
+}
+
+bool DecodeThread::hardware_output_downloads_to_cpu() const {
+    return hw_enabled_ &&
+           decode_device_mode_ == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
+}
+
+bool DecodeThread::hardware_surfaces_are_renderer_owned() const {
+    return hw_enabled_ && !hardware_output_downloads_to_cpu();
+}
+
+bool DecodeThread::start() {
+    if (!codec_ctx_) {
+        spdlog::error("[DecodeThread] Cannot start: codec not initialized");
+        return false;
+    }
+    if (running_.load()) return false;
+
+    // Open codec (deferred from constructor so hw_device_ctx can be set first)
+    if (!open_codec()) {
+        spdlog::error("[DecodeThread] Cannot start: codec open failed");
+        return false;
+    }
+
+    spdlog::info("[DecodeThread] Codec opened successfully ({}x{})",
+                 codec_ctx_->width, codec_ctx_->height);
+
+    // Initialize the frame converter based on decode mode
+    bool conv_ok;
+    if (hw_enabled_) {
+        conv_ok = converter_.init_hardware(native_device_, nullptr,
+                                           codec_ctx_->width, codec_ctx_->height,
+                                           hw_type_,
+                                           hardware_output_downloads_to_cpu(),
+                                           device_mutex_);
+    } else {
+        conv_ok = converter_.init_software(codec_ctx_->width, codec_ctx_->height,
+                                           codec_ctx_->pix_fmt);
+    }
+    if (!conv_ok) {
+        spdlog::error("[DecodeThread] Failed to initialize frame converter");
+        return false;
+    }
+
+    output_buffer_.set_state(TrackState::Buffering);
+    hw_visibility_flush_pending_ = hw_enabled_;
+    running_.store(true);
+    thread_ = std::thread(&DecodeThread::run, this);
+    return true;
+}
+
+std::string DecodeThread::decoder_name() const {
+    const char* codec_name = codec_ && codec_->name ? codec_->name : "";
+    if (!hw_enabled_) {
+        return codec_name;
+    }
+    const char* hw_name = hw_provider_ ? hw_provider_->name() : "hardware";
+    std::ostringstream oss;
+    oss << hw_name << " / " << codec_name;
+    return oss.str();
+}
+
+DecodeMemoryStats DecodeThread::memory_stats() const {
+    DecodeMemoryStats stats;
+    stats.hardware_enabled = hw_enabled_;
+    stats.hardware_download_to_cpu = converter_.downloads_hardware_to_cpu();
+    stats.hw_format = hw_frames_format_.load(std::memory_order_relaxed);
+    stats.sw_format = hw_frames_sw_format_.load(std::memory_order_relaxed);
+    stats.hw_width = hw_frames_width_.load(std::memory_order_relaxed);
+    stats.hw_height = hw_frames_height_.load(std::memory_order_relaxed);
+    stats.hw_initial_pool_size =
+        hw_frames_initial_pool_size_.load(std::memory_order_relaxed);
+    stats.extra_hw_frames = codec_ctx_ ? codec_ctx_->extra_hw_frames : 0;
+    stats.estimated_hw_frame_bytes = estimate_av_yuv_surface_bytes(
+        stats.hw_width,
+        stats.hw_height,
+        static_cast<AVPixelFormat>(stats.sw_format));
+    if (stats.hw_initial_pool_size > 0) {
+        stats.estimated_hw_pool_bytes =
+            stats.estimated_hw_frame_bytes *
+            static_cast<uint64_t>(stats.hw_initial_pool_size);
+    }
+    stats.snapshot_pool = converter_.snapshot_pool_stats();
+    const auto exact_stats = exact_seek_candidates_.stats_snapshot();
+    stats.exact_seek_reorder_count = exact_stats.reorder_count;
+    stats.exact_seek_pending_count = exact_stats.pending_count;
+    stats.exact_seek_stable_frame_count = exact_stats.stable_frame_count;
+    stats.exact_seek_budget_drop_count = exact_stats.dropped_by_budget_count;
+    stats.exact_seek_candidate_cpu_bytes = exact_stats.candidate_cpu_bytes;
+    stats.exact_seek_stable_cpu_bytes = exact_stats.stable_cpu_bytes;
+    return stats;
+}
+
+void DecodeThread::stop() {
+    spdlog::info("[DecodeThread] stop() begin");
+    running_.store(false);
+    cancelled_.store(true, std::memory_order_release);
+    input_queue_.clear_eof();
+    input_queue_.abort();   // Unblock blocking pop
+    output_buffer_.abort(); // Unblock blocking push_frame
+    if (thread_.joinable()) {
+        spdlog::info("[DecodeThread] stop() waiting for decode thread join");
+        thread_.join();
+        spdlog::info("[DecodeThread] stop() decode thread joined");
+    }
+    exact_seek_candidates_.clear();
+    // Release output frames BEFORE freeing hw resources.
+    // TextureFrames hold hw_frame_ref (av_frame_ref) which reference
+    // hw_frames_ctx -> hw_device_ctx. If hw_device_ctx is freed first,
+    // the frame cleanup will access a freed device context (SIGSEGV).
+    spdlog::info("[DecodeThread] stop() clearing output frames");
+    output_buffer_.clear_frames();
+    spdlog::info("[DecodeThread] stop() output frames cleared");
+
+    if (codec_ctx_) {
+        spdlog::info("[DecodeThread] stop() freeing codec context");
+        avcodec_free_context(&codec_ctx_);
+        codec_ctx_ = nullptr;
+    }
+    if (hw_device_ctx_) {
+        spdlog::info("[DecodeThread] stop() releasing hw device context");
+        av_buffer_unref(&hw_device_ctx_);
+        hw_device_ctx_ = nullptr;
+    }
+    hw_provider_.reset();
+    spdlog::info("[DecodeThread] stop() end");
+}
+
+void DecodeThread::set_decode_paused(bool paused) {
+    decode_paused_.store(paused, std::memory_order_release);
+}
+
+void DecodeThread::set_pause_after_preroll(bool enabled) {
+    pause_after_preroll_.store(enabled, std::memory_order_release);
+}
+
+void DecodeThread::notify_seek(int64_t target_pts_us, SeekType type) {
+    cancelled_.store(true, std::memory_order_release);  // Abort in-progress decode
+    std::lock_guard<std::mutex> lock(seek_mutex_);
+    seek_.target_pts_us = target_pts_us;
+    seek_.type = type;
+    seek_.pending = true;
+}
+
+std::optional<DecodeSeekNotification> DecodeThread::take_pending_seek_notification() {
+    std::lock_guard<std::mutex> lock(seek_mutex_);
+    return take_pending_decode_seek(seek_);
+}
+
+bool DecodeThread::has_pending_seek_notification() {
+    std::lock_guard<std::mutex> lock(seek_mutex_);
+    return seek_.pending;
+}
+
+void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification& notification) {
+    cancelled_.store(false, std::memory_order_release);
+
+    spdlog::info("[DecodeThread] === SEEK START: target={:.3f}s, type={}, "
+                 "input_pq={}, output_buf={}, buf_state={}",
+                 notification.target_pts_us / 1e6,
+                 decode_seek_type_name(notification.type),
+                 input_queue_.size(),
+                 output_buffer_.total_count(),
+                 static_cast<int>(output_buffer_.state()));
+
+    reset_reusable_av_frame(frame);
+    exact_seek_candidates_.clear();
+    drain_decoder_before_next_packet_ = false;
+
+    // Always reset codec state on seek. During add-track initial seek,
+    // demux can race ahead and the decoder may have already accepted
+    // packets even though no frames have been published yet.
+    safe_flush_codec();
+    spdlog::info("[DecodeThread] Seek flush: codec buffers flushed (hw={})", hw_enabled_);
+
+    // NOTE: Do NOT drain input queue here! The DemuxThread already
+    // flushes the queue before seeking and then pushes NEW packets.
+    // Draining here would discard those fresh post-seek packets.
+    const auto state = build_decode_seek_epoch_start_state(notification, hw_enabled_);
+    exact_seek_target_us_ = state.exact_seek_target_us;
+    exact_seek_prefer_after_target_ = is_step_forward_seek_type(notification.type);
+    if (is_exact_seek_type(notification.type)) {
+        spdlog::info("[DecodeThread] Exact seek: will discard frames < {:.3f}s",
+                     notification.target_pts_us / 1e6);
+    }
+
+    post_seek_ = state.post_seek;
+    hw_visibility_flush_pending_ = state.hw_visibility_flush_pending;
+    eof_flushed_ = state.eof_flushed;
+    decode_paused_.store(state.decode_paused, std::memory_order_release);
+    output_buffer_.set_state(state.output_state);
+    spdlog::info("[DecodeThread] === SEEK DONE: state->Buffering, post_seek fast preroll, waiting for new packets");
+}
+
+void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us) {
+    int send_ret = send_codec_packet_seh_guarded(codec_ctx_, nullptr);
+    if (send_ret < 0 && send_ret != AVERROR(EAGAIN) && send_ret != AVERROR_EOF) {
+        if (codec_loop_is_seh_caught(send_ret)) {
+            output_buffer_.set_state(TrackState::Error);
+            running_.store(false, std::memory_order_release);
+        }
+        return;
+    }
+    while (true) {
+        int recv_ret = receive_codec_frame_seh_guarded(codec_ctx_, frame);
+        if (recv_ret < 0) break;
+        AvFrameUnrefGuard frame_guard(frame);
+        if (cancelled_.load(std::memory_order_acquire)) {
+            break;
+        }
+        if (target_us >= 0) {
+            rescale_ts(frame);
+            if (should_collect_exact_seek_candidate(frame->pts, target_us)) {
+                auto candidate = ExactSeekCandidateStore::make_candidate(frame);
+                if (candidate.frame) {
+                    collect_exact_seek_candidate(std::move(candidate));
+                }
+            }
+        }
+    }
+    safe_flush_codec();
+    eof_flushed_ = true;
+}
+
+void DecodeThread::safe_flush_codec() {
+    if (!codec_ctx_) {
+        return;
+    }
+    avcodec_flush_buffers(codec_ctx_);
+    if (hw_enabled_ && hw_provider_) {
+        hw_provider_->flush();
+    }
+}
+
+void DecodeThread::flush_reorder_buffer() {
+    exact_seek_candidates_.clear_pending();
+    drain_decoder_before_next_packet_ = false;
+    if (exact_seek_candidates_.reorder_empty()) {
+        return;
+    }
+    // Make the decode-device writes visible before exposing reordered frames
+    // to the render thread; otherwise the paused preview can sample a
+    // partially-written first seek frame.
+    auto publisher = make_frame_publisher();
+    publisher.flush_visibility_if_needed();
+    const size_t pushed_count = exact_seek_candidates_.reorder_count();
+    for (auto& f : exact_seek_candidates_.reorder_candidates()) {
+        if (!f.frame) {
+            continue;
+        }
+        publisher.flush_before_publish_if_needed(true);
+        if (!publisher.convert_and_push_frame(f.frame.get(), "exact-seek reorder flush")) {
+            break;
+        }
+    }
+    spdlog::info("[DecodeThread] Exact seek reorder: {} frames pushed",
+                 pushed_count);
+    exact_seek_candidates_.clear_reorder();
+    exact_seek_target_us_ = -1;
+}
+
+void DecodeThread::snapshot_exact_seek_candidate_if_needed(ExactSeekCandidate& candidate) {
+    if (!candidate.frame || !hw_enabled_ || converter_.downloads_hardware_to_cpu()) {
+        return;
+    }
+    auto stable = converter_.snapshot_hardware_frame(candidate.frame.get());
+    if (stable.has_value() && stable->texture_handle) {
+        candidate.stable_frame = std::move(stable);
+    }
+}
+
+void DecodeThread::collect_exact_seek_candidate(ExactSeekCandidate candidate) {
+    exact_seek_candidates_.collect(
+        std::move(candidate),
+        exact_seek_target_us_,
+        [this](ExactSeekCandidate& candidate_to_snapshot) {
+            snapshot_exact_seek_candidate_if_needed(candidate_to_snapshot);
+        });
+}
+
+void DecodeThread::log_hw_frame_context_once(const AVFrame* frame) {
+    if (!hw_enabled_ || hw_frames_ctx_logged_ || !frame || !frame->hw_frames_ctx) {
+        return;
+    }
+    auto* frames_ctx = reinterpret_cast<AVHWFramesContext*>(frame->hw_frames_ctx->data);
+    if (!frames_ctx) {
+        return;
+    }
+    hw_frames_format_.store(static_cast<int>(frames_ctx->format), std::memory_order_relaxed);
+    hw_frames_sw_format_.store(static_cast<int>(frames_ctx->sw_format), std::memory_order_relaxed);
+    hw_frames_width_.store(frames_ctx->width, std::memory_order_relaxed);
+    hw_frames_height_.store(frames_ctx->height, std::memory_order_relaxed);
+    hw_frames_initial_pool_size_.store(frames_ctx->initial_pool_size, std::memory_order_relaxed);
+    spdlog::info("[DecodeThread] HW frames ctx: format={}, sw_format={}, {}x{}, initial_pool_size={}, extra_hw_frames={}",
+                 static_cast<int>(frames_ctx->format),
+                 static_cast<int>(frames_ctx->sw_format),
+                 frames_ctx->width,
+                 frames_ctx->height,
+                 frames_ctx->initial_pool_size,
+                 codec_ctx_ ? codec_ctx_->extra_hw_frames : 0);
+    hw_frames_ctx_logged_ = true;
+}
+
+bool DecodeThread::exact_seek_preview_window_ready() const {
+    return exact_seek_candidates_.preview_window_ready(exact_seek_target_us_);
+}
+
+void DecodeThread::publish_exact_seek_window(size_t selected) {
+    if (selected >= exact_seek_candidates_.reorder_count()) {
+        return;
+    }
+
+    auto publisher = make_frame_publisher();
+    const auto publish_result = publish_exact_seek_preview_frames(
+        exact_seek_candidates_,
+        selected,
+        output_buffer_,
+        publisher,
+        hw_enabled_,
+        hw_provider_.get(),
+        hw_visibility_flush_pending_);
+    const auto completion = plan_exact_seek_preview_completion(
+        publish_result.can_publish,
+        publish_result.conversion_failed,
+        pause_after_preroll_.load(std::memory_order_acquire),
+        publish_result.selected_pts_us,
+        publish_result.published_count,
+        publish_result.pending_count);
+    if (!completion.apply) {
+        return;
+    }
+    output_buffer_.set_state(completion.output_state);
+    if (completion.pause_decode) {
+        decode_paused_.store(true, std::memory_order_release);
+    }
+    post_seek_ = completion.post_seek;
+    exact_seek_target_us_ = completion.exact_seek_target_us;
+    drain_decoder_before_next_packet_ = completion.drain_decoder_before_next_packet;
+    spdlog::info("[DecodeThread] Exact seek drain: preview frame ready pts={:.3f}s, published={} frames, pending={} frames, state->Ready",
+                 completion.selected_pts_us / 1e6,
+                 completion.published_count,
+                 completion.pending_count);
+}
+
+bool DecodeThread::publish_best_exact_seek_frame() {
+    if (exact_seek_target_us_ < 0 || exact_seek_candidates_.reorder_empty()) {
+        return false;
+    }
+
+    auto candidate_pts_us = exact_seek_candidates_.reorder_pts();
+    const auto selected = select_exact_seek_preview_index(
+        candidate_pts_us, exact_seek_target_us_, exact_seek_prefer_after_target_);
+    if (!selected.has_value()) {
+        return false;
+    }
+
+    const int64_t selected_pts = exact_seek_candidates_.reorder_at(*selected).pts_us;
+    const size_t collected = exact_seek_candidates_.reorder_count();
+    spdlog::info("[DecodeThread] Exact seek reorder: selected pts={:.3f}s from {} frames (target={:.3f}s)",
+                 selected_pts / 1e6, collected, exact_seek_target_us_ / 1e6);
+    publish_exact_seek_window(*selected);
+    return true;
+}
+
+void DecodeThread::publish_pending_exact_seek_frames() {
+    auto publisher = make_frame_publisher();
+    publish_pending_exact_seek_frame(exact_seek_candidates_, publisher);
+}
+
+bool DecodeThread::complete_preroll_if_ready() {
+    const auto output_state = output_buffer_.state();
+    if (output_state != TrackState::Buffering) {
+        return false;
+    }
+
+    const bool preroll_ready = is_decode_preroll_ready(
+        post_seek_,
+        hw_enabled_,
+        output_buffer_.total_count(),
+        output_buffer_.has_preroll());
+    const auto decision = choose_decode_preroll_transition(
+        output_state,
+        preroll_ready,
+        pause_after_preroll_.load(std::memory_order_acquire));
+    if (!decision.complete) {
+        return false;
+    }
+
+    spdlog::info("[DecodeThread] === Preroll complete: {} frames buffered, post_seek={}, state->Ready",
+                 output_buffer_.total_count(), post_seek_);
+    output_buffer_.set_state(decision.output_state);
+    if (decision.pause_decode) {
+        decode_paused_.store(true, std::memory_order_release);
+    }
+    if (decision.clear_post_seek) {
+        post_seek_ = false;
+    }
+    return true;
+}
+
+} // namespace vr

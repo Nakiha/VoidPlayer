@@ -1,15 +1,15 @@
 include_guard(GLOBAL)
 
 set(VOID_RENDERER_PORTABLE_OVERLAY_SOURCES
-    "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_renderer_portable_stub.cpp")
+    "${VOID_NATIVE_DIR}/renderer/overlay/analysis_overlay_renderer_portable_stub.cpp")
 if(BUILD_ANALYSIS)
     set(VOID_RENDERER_PORTABLE_OVERLAY_SOURCES
-        "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_primitives.cpp"
-        "${VOID_NATIVE_DIR}/video_renderer/overlay/analysis_overlay_renderer_portable.cpp")
+        "${VOID_NATIVE_DIR}/renderer/overlay/analysis_overlay_primitives.cpp"
+        "${VOID_NATIVE_DIR}/renderer/overlay/analysis_overlay_renderer_portable.cpp")
 endif()
 
 add_library(void_renderer_portable_driver OBJECT
-    "${VOID_NATIVE_DIR}/video_renderer/renderer.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer.cpp"
     ${VOID_RENDERER_PORTABLE_DRIVER_SOURCES}
     ${VOID_RENDERER_PORTABLE_OVERLAY_SOURCES}
 )

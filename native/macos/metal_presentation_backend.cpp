@@ -1,14 +1,14 @@
 #include "macos/metal_presentation_backend.h"
 
 #include "macos/presentation_package_builder.h"
-#include "video_renderer/layout/layout_geometry.h"
-#include "video_renderer/render/shader_constants.h"
-#include "video_renderer/render/presentation_backend_factory.h"
-#include "video_renderer/render/presentation_package.h"
+#include "renderer/layout/layout_geometry.h"
+#include "renderer/render/shader_constants.h"
+#include "renderer/render/presentation_backend_factory.h"
+#include "renderer/render/presentation_package.h"
 
 #if VOID_BUILD_ANALYSIS
-#include "video_renderer/overlay/analysis_overlay_renderer.h"
-#include "video_renderer/overlay/analysis_overlay_primitives.h"
+#include "renderer/overlay/analysis_overlay_renderer.h"
+#include "renderer/overlay/analysis_overlay_primitives.h"
 #endif
 
 #include <CoreVideo/CoreVideo.h>
@@ -194,7 +194,7 @@ uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
         hash_combine(hash, static_cast<uint64_t>(planar->plane_heights[plane]));
       }
       hash_combine(hash, static_cast<uint64_t>(planar->bytes_per_sample));
-    } else if (const auto* cv_pixel = frame->macos_cv_pixel_buffer_storage()) {
+    } else if (const auto* cv_pixel = frame->cv_pixel_buffer_storage()) {
       hash_combine(hash, pointer_bits(cv_pixel->pixel_buffer));
       hash_combine(hash, static_cast<uint64_t>(cv_pixel->pixel_format));
       hash_combine(hash, static_cast<uint64_t>(cv_pixel->plane_count));
@@ -498,7 +498,7 @@ std::pair<int32_t, int32_t> package_storage_extent(
       width = std::max(width, planar->plane_widths[0]);
       height = std::max(height, planar->plane_heights[0]);
     }
-    if (const auto* cv = frame->macos_cv_pixel_buffer_storage()) {
+    if (const auto* cv = frame->cv_pixel_buffer_storage()) {
       width = std::max(width, cv->coded_width);
       height = std::max(height, cv->coded_height);
     }

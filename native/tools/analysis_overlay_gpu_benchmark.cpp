@@ -4,7 +4,7 @@
 #include "analysis/cache/overlay_raster.h"
 #include "analysis/parsers/vachunk_parser.h"
 #include "embedded_shaders.h"
-#include "video_renderer/render/shader_constants.h"
+#include "renderer/render/shader_constants.h"
 
 #include <algorithm>
 #include <chrono>

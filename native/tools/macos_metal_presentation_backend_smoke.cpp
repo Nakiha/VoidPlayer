@@ -1,7 +1,7 @@
 #include "macos/metal_presentation_backend.h"
 
-#include "video_renderer/render/presentation_backend_factory.h"
-#include "video_renderer/render/renderer_draw_snapshot.h"
+#include "renderer/render/presentation_backend_factory.h"
+#include "renderer/render/renderer_draw_snapshot.h"
 
 #include <CoreVideo/CoreVideo.h>
 #include <algorithm>

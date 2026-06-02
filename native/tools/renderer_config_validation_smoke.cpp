@@ -1,4 +1,4 @@
-#include "video_renderer/renderer_config_validation.h"
+#include "renderer/renderer_config_validation.h"
 
 #include <iostream>
 #include <string>

@@ -1,8 +1,8 @@
 #include "native_player_bridge.h"
 
 #include "macos/native_player_state.h"
-#include "video_renderer/layout/layout_geometry.h"
-#include "video_renderer/render/shader_constants.h"
+#include "renderer/layout/layout_geometry.h"
+#include "renderer/render/shader_constants.h"
 
 #include <chrono>
 #include <cstdlib>

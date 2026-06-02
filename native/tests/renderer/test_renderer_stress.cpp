@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "test_utils.h"
-#include "video_renderer/renderer.h"
+#include "renderer/renderer.h"
 
 #include <atomic>
 #include <chrono>

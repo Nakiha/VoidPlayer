@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "video_renderer/decode/frame_converter.h"
+#include "renderer/decode/frame_converter.h"
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -606,7 +606,7 @@ TEST_CASE("FrameConverter: direct D3D11 hardware frame keeps AVFrame ownership",
     av_frame_free(&frame);
 }
 
-TEST_CASE("TextureFrame: storage exposes D3D11 NV12 metadata", "[frame_storage]") {
+TEST_CASE("TextureFrame: storage exposes hardware NV12 texture metadata", "[frame_storage]") {
     TextureFrame frame;
     auto* texture = reinterpret_cast<ID3D11Texture2D*>(0x1234);
     auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x5678), [](void*) {});
@@ -619,10 +619,11 @@ TEST_CASE("TextureFrame: storage exposes D3D11 NV12 metadata", "[frame_storage]"
     frame.storage = D3D11Nv12FrameStorage{texture, 7, ref};
 
     REQUIRE(frame.storage_kind() == FrameStorageKind::D3D11Nv12);
-    REQUIRE(frame.d3d11_nv12_storage() != nullptr);
-    REQUIRE(frame.d3d11_nv12_storage()->texture == texture);
-    REQUIRE(frame.d3d11_nv12_storage()->array_index == 7);
-    REQUIRE(frame.d3d11_nv12_storage()->frame_ref == ref);
+    REQUIRE(frame.storage_class() == FrameStorageClass::HardwareTexture);
+    REQUIRE(frame.hardware_nv12_texture_storage() != nullptr);
+    REQUIRE(frame.hardware_nv12_texture_storage()->texture == texture);
+    REQUIRE(frame.hardware_nv12_texture_storage()->array_index == 7);
+    REQUIRE(frame.hardware_nv12_texture_storage()->frame_ref == ref);
 }
 
 TEST_CASE("TextureFrame: storage exposes CPU NV12 metadata", "[frame_storage]") {
@@ -635,6 +636,7 @@ TEST_CASE("TextureFrame: storage exposes CPU NV12 metadata", "[frame_storage]") 
     frame.storage = CpuNv12FrameStorage{data, 64, 64};
 
     REQUIRE(frame.storage_kind() == FrameStorageKind::CpuNv12);
+    REQUIRE(frame.storage_class() == FrameStorageClass::CpuPixels);
     REQUIRE(frame.cpu_nv12_storage() != nullptr);
     REQUIRE(frame.cpu_nv12_storage()->data == data);
     REQUIRE(frame.cpu_nv12_storage()->y_stride == 64);
@@ -659,6 +661,7 @@ TEST_CASE("TextureFrame: storage exposes CPU planar YUV metadata", "[frame_stora
     };
 
     REQUIRE(frame.storage_kind() == FrameStorageKind::CpuPlanarYuv);
+    REQUIRE(frame.storage_class() == FrameStorageClass::CpuPixels);
     REQUIRE(frame.cpu_planar_yuv_storage() != nullptr);
     REQUIRE(frame.cpu_planar_yuv_storage()->frame_ref == ref);
     REQUIRE(frame.cpu_planar_yuv_storage()->planes[0] == &y);
@@ -668,7 +671,7 @@ TEST_CASE("TextureFrame: storage exposes CPU planar YUV metadata", "[frame_stora
     REQUIRE(frame.cpu_planar_yuv_storage()->bytes_per_sample == 1);
 }
 
-TEST_CASE("TextureFrame: storage exposes macOS CVPixelBuffer metadata", "[frame_storage]") {
+TEST_CASE("TextureFrame: storage exposes CVPixelBuffer metadata", "[frame_storage]") {
     TextureFrame frame;
     auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x2468), [](void*) {});
     void* pixel_buffer = reinterpret_cast<void*>(0x1357);
@@ -688,12 +691,13 @@ TEST_CASE("TextureFrame: storage exposes macOS CVPixelBuffer metadata", "[frame_
     };
 
     REQUIRE(frame.storage_kind() == FrameStorageKind::MacOSCVPixelBuffer);
-    REQUIRE(frame.macos_cv_pixel_buffer_storage() != nullptr);
-    REQUIRE(frame.macos_cv_pixel_buffer_storage()->pixel_buffer == pixel_buffer);
-    REQUIRE(frame.macos_cv_pixel_buffer_storage()->pixel_format == 0x34323066u);
-    REQUIRE(frame.macos_cv_pixel_buffer_storage()->plane_count == 2);
-    REQUIRE(frame.macos_cv_pixel_buffer_storage()->is_p010);
-    REQUIRE(frame.macos_cv_pixel_buffer_storage()->coded_width == 1920);
-    REQUIRE(frame.macos_cv_pixel_buffer_storage()->coded_height == 1080);
-    REQUIRE(frame.macos_cv_pixel_buffer_storage()->frame_ref == ref);
+    REQUIRE(frame.storage_class() == FrameStorageClass::CVPixelBuffer);
+    REQUIRE(frame.cv_pixel_buffer_storage() != nullptr);
+    REQUIRE(frame.cv_pixel_buffer_storage()->pixel_buffer == pixel_buffer);
+    REQUIRE(frame.cv_pixel_buffer_storage()->pixel_format == 0x34323066u);
+    REQUIRE(frame.cv_pixel_buffer_storage()->plane_count == 2);
+    REQUIRE(frame.cv_pixel_buffer_storage()->is_p010);
+    REQUIRE(frame.cv_pixel_buffer_storage()->coded_width == 1920);
+    REQUIRE(frame.cv_pixel_buffer_storage()->coded_height == 1080);
+    REQUIRE(frame.cv_pixel_buffer_storage()->frame_ref == ref);
 }

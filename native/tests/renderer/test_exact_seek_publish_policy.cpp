@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/decode/exact_seek_publish_policy.h"
+#include "renderer/decode/exact_seek_publish_policy.h"
 
 using namespace vr;
 

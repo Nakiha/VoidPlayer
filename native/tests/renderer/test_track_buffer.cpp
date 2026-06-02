@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include "video_renderer/buffer/track_buffer.h"
+#include "renderer/buffer/track_buffer.h"
 
 using namespace vr;
 

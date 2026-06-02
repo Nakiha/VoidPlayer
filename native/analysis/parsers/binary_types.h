@@ -359,3 +359,9 @@ inline constexpr uint64_t VACHUNK_FEATURE_CODEC_TOOLS = 1ull << 7;
 inline constexpr uint64_t VACHUNK_FEATURE_BIT_COST = 1ull << 8;
 
 #pragma pack(pop)
+
+namespace vr::analysis {
+
+using ::VachunkCuCommon;
+
+} // namespace vr::analysis

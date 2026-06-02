@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/exports/ffi_process_globals.h"
-#include "video_renderer/exports/ffi_player_registry.h"
+#include "renderer/exports/ffi_process_globals.h"
+#include "renderer/exports/ffi_player_registry.h"
 
 #include <string>
 

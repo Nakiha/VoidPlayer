@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include "test_utils.h"
-#include "video_renderer/decode/decode_thread.h"
+#include "renderer/decode/decode_thread.h"
 #include "media/demux_thread.h"
 #include "media/packet_queue.h"
-#include "video_renderer/buffer/track_buffer.h"
+#include "renderer/buffer/track_buffer.h"
 #include "media/seek_controller.h"
 #include <thread>
 #include <chrono>

@@ -12,7 +12,7 @@
 | `video_renderer_core` | FFmpeg demux/decode common logic, playback clock, queues, buffers, sync policies | Internal static library |
 | `video_renderer_lib` | Windows player/renderer facade, audio, D3D11 backend, optional analysis overlay implementation | Internal static library consumed by FFI/Python/tests |
 | `analysis_lib` | VAC2/VACHUNK cache, parsers, generators, analysis sessions | Internal static library, only when `BUILD_ANALYSIS=ON` |
-| `video_renderer_ffi` | C ABI exported through `video_renderer/exports/ffi_exports.h` | Public native ABI |
+| `video_renderer_ffi` | C ABI exported through `renderer/exports/ffi_exports.h` | Public native ABI |
 | `video_renderer_native` | pybind11 module for local demo/tooling | Developer-facing module |
 | `VoidPlayerCli` | Analysis cache inspection/generation CLI | Release/tooling executable, only when `BUILD_ANALYSIS=ON` |
 | `video_renderer_tests` / `analysis_tests` / `test_ffi_c` | CTest coverage | Test-only |
@@ -42,7 +42,7 @@ The next target names should be introduced only when they remove a real dependen
 
 ## Policy
 
-- Public ABI is limited to exported headers and symbols, currently `video_renderer/exports/ffi_exports.h` and `naki_vr_*`.
+- Public ABI is limited to exported headers and symbols, currently `renderer/exports/ffi_exports.h` and `naki_vr_*`.
 - Static libraries are internal unless explicitly documented here as release/tooling surfaces.
 - A target may depend on a more foundational target, but foundational targets must not include higher-level feature headers just for convenience.
 - New feature options need one default-path verification and one disabled-path verification before the tracker can mark them done.

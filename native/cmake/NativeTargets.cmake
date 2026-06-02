@@ -1,11 +1,11 @@
 if(BUILD_FFI)
     add_library(video_renderer_ffi SHARED
-        video_renderer/exports/ffi_exports.cpp
-        video_renderer/exports/ffi_marshalling.cpp
-        video_renderer/exports/ffi_player_commands.cpp
-        video_renderer/exports/ffi_player_lifecycle.cpp
-        video_renderer/exports/ffi_process_globals.cpp
-        video_renderer/exports/ffi_player_registry.cpp
+        renderer/exports/ffi_exports.cpp
+        renderer/exports/ffi_marshalling.cpp
+        renderer/exports/ffi_player_commands.cpp
+        renderer/exports/ffi_player_lifecycle.cpp
+        renderer/exports/ffi_process_globals.cpp
+        renderer/exports/ffi_player_registry.cpp
     )
     void_apply_native_compile_options(video_renderer_ffi)
 
@@ -33,7 +33,7 @@ endif()
 
 if(BUILD_PYTHON)
     pybind11_add_module(video_renderer_native
-        video_renderer/exports/bindings.cpp
+        renderer/exports/bindings.cpp
     )
     void_apply_native_compile_options(video_renderer_native)
 

@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/decode/decoded_frame_publisher.h"
-#include "video_renderer/decode/exact_seek_candidate_store.h"
-#include "video_renderer/decode/exact_seek_frame_publisher.h"
+#include "renderer/decode/decoded_frame_publisher.h"
+#include "renderer/decode/exact_seek_candidate_store.h"
+#include "renderer/decode/exact_seek_frame_publisher.h"
 
 #include <atomic>
 #include <cstring>

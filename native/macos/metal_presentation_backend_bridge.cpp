@@ -1,6 +1,6 @@
 #include "macos/metal_presentation_backend.h"
 
-#include "video_renderer/render/presentation_backend.h"
+#include "renderer/render/presentation_backend.h"
 
 VPMacOSMetalPresentationBackend* VPMacOSMetalPresentationBackendCreate(int32_t width,
                                                                        int32_t height) {

@@ -1,8 +1,8 @@
 #include "macos/presentation_adapter.h"
 
-#include "video_renderer/buffer/bidi_ring_buffer.h"
-#include "video_renderer/decode/yuv_to_bgra.h"
-#include "video_renderer/frame/frame_storage.h"
+#include "renderer/buffer/bidi_ring_buffer.h"
+#include "renderer/decode/yuv_to_bgra.h"
+#include "renderer/frame/frame_storage.h"
 
 #include <algorithm>
 #include <cstring>
@@ -255,18 +255,7 @@ const char* presentation_adapter_status_message(PresentationAdapterStatus status
 }
 
 bool presentation_adapter_supports_storage(vr::FrameStorageKind kind) {
-  switch (kind) {
-  case vr::FrameStorageKind::CpuRgba:
-  case vr::FrameStorageKind::CpuPlanarYuv:
-  case vr::FrameStorageKind::CpuNv12:
-    return true;
-  case vr::FrameStorageKind::Empty:
-  case vr::FrameStorageKind::D3D11Nv12:
-  case vr::FrameStorageKind::D3D11Texture:
-  case vr::FrameStorageKind::MacOSCVPixelBuffer:
-  default:
-    return false;
-  }
+  return vr::frame_storage_has_cpu_pixels(kind);
 }
 
 PresentationAdapterStatus copy_texture_frame_to_bgra_destination_checked(

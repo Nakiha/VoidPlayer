@@ -1,6 +1,6 @@
 #include "macos/native_player_state.h"
 
-#include "video_renderer/decode/hw/hw_decode_provider.h"
+#include "renderer/decode/hw/hw_decode_provider.h"
 
 #include <algorithm>
 #include <cctype>

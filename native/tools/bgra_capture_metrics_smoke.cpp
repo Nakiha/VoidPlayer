@@ -1,4 +1,4 @@
-#include "video_renderer/capture/bgra_capture_metrics.h"
+#include "renderer/capture/bgra_capture_metrics.h"
 
 #include <cmath>
 #include <cstdint>

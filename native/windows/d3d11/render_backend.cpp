@@ -1,9 +1,9 @@
 #include "windows/d3d11/render_backend.h"
 
 #include "embedded_shaders.h"
-#include "video_renderer/render/presentation_backend_factory.h"
-#include "video_renderer/render/presentation_snapshot.h"
-#include "video_renderer/render/shader_constants.h"
+#include "renderer/render/presentation_backend_factory.h"
+#include "renderer/render/presentation_snapshot.h"
+#include "renderer/render/shader_constants.h"
 
 #include <array>
 #include <chrono>

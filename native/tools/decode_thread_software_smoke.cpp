@@ -1,8 +1,8 @@
 #include "media/demux_thread.h"
 #include "media/packet_queue.h"
 #include "media/seek_controller.h"
-#include "video_renderer/buffer/track_buffer.h"
-#include "video_renderer/decode/decode_thread.h"
+#include "renderer/buffer/track_buffer.h"
+#include "renderer/decode/decode_thread.h"
 #include "tools/test_video_assets.h"
 
 #include <chrono>

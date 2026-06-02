@@ -1,6 +1,6 @@
 #include "macos/presentation_adapter.h"
 
-#include "video_renderer/buffer/bidi_ring_buffer.h"
+#include "renderer/buffer/bidi_ring_buffer.h"
 
 #include <algorithm>
 #include <array>
@@ -72,11 +72,17 @@ int check_adapter_identity() {
   if (!vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::CpuRgba) ||
       !vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::CpuNv12) ||
       !vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::CpuPlanarYuv) ||
+      !vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::CpuRgba) ||
+      !vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::CpuNv12) ||
+      !vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::CpuPlanarYuv) ||
+      vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::D3D11Texture) ||
+      vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::D3D11Nv12) ||
+      vr::frame_storage_has_cpu_pixels(vr::FrameStorageKind::MacOSCVPixelBuffer) ||
       vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::D3D11Texture) ||
       vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::D3D11Nv12) ||
       vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::MacOSCVPixelBuffer) ||
       vp_macos::presentation_adapter_supports_storage(vr::FrameStorageKind::Empty)) {
-    return fail("unexpected presentation adapter storage support matrix");
+    return fail("unexpected presentation adapter CPU storage support class");
   }
   return 0;
 }

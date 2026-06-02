@@ -1,6 +1,6 @@
 #pragma once
 
-#include "video_renderer/buffer/bidi_ring_buffer.h"
+#include "renderer/buffer/bidi_ring_buffer.h"
 #include "windows/d3d11/texture.h"
 #include <array>
 #include <functional>

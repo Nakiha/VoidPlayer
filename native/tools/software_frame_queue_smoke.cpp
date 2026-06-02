@@ -1,5 +1,5 @@
-#include "video_renderer/decode/frame_timestamp_rescaler.h"
-#include "video_renderer/decode/software_frame_publisher.h"
+#include "renderer/decode/frame_timestamp_rescaler.h"
+#include "renderer/decode/software_frame_publisher.h"
 
 #include <array>
 #include <cstdint>

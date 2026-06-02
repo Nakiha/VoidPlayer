@@ -1,5 +1,5 @@
-#include "video_renderer/render/presentation_loop_driver.h"
-#include "video_renderer/sync/render_sink.h"
+#include "renderer/render/presentation_loop_driver.h"
+#include "renderer/sync/render_sink.h"
 
 #include <cstdio>
 #include <memory>

@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include "test_utils.h"
-#include "video_renderer/sync/render_sink.h"
-#include "video_renderer/clock.h"
-#include "video_renderer/buffer/track_buffer.h"
+#include "renderer/sync/render_sink.h"
+#include "renderer/clock.h"
+#include "renderer/buffer/track_buffer.h"
 
 #include <memory>
 

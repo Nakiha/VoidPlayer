@@ -1,6 +1,6 @@
 #include "windows/player/native_player.h"
 #include "audio/audio_output_factory.h"
-#include "video_renderer/renderer_config_validation.h"
+#include "renderer/renderer_config_validation.h"
 #include <mutex>
 
 namespace vr {

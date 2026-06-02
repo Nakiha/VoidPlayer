@@ -45,7 +45,7 @@ native/
 ├── media/               # demux、packet queue、seek controller
 ├── audio/               # shared audio engine / miniaudio device output
 ├── playback/            # playback controller、clock/audio coordination
-├── video_renderer/      # shared renderer scheduler、decode、buffer、render contracts
+├── renderer/            # shared renderer scheduler、decode、buffer、render contracts
 │   ├── decode/          # DecodeThread、FrameConverter、hardware providers
 │   ├── render/          # PresentDecision、RendererDrawSnapshot、PresentationBackend
 │   ├── sync/            # RenderSink and present scheduling

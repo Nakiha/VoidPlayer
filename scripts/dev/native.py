@@ -27,6 +27,10 @@ FFMPEG_SUBMODULE_PATH = "native/analysis/vendor/ffmpeg"
 ZSTD_SUBMODULE_PATH = "native/analysis/vendor/zstd"
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").lower() in {"1", "true", "yes", "on"}
+
+
 def ensure_analysis_test_tools() -> None:
     """Prepare external tools required by native analysis tests."""
     ensure_ffmpeg_analyzer_tool()
@@ -54,6 +58,11 @@ def build_macos_analysis_cli() -> None:
         "-DBUILD_TESTS=ON",
         "-DBUILD_FFI=OFF",
         "-DBUILD_PYTHON=OFF",
+        *(
+            ["-DVOID_USE_LOCAL_DEPS=ON"]
+            if _env_flag("VOID_USE_LOCAL_DEPS")
+            else []
+        ),
     ], cwd=str(ROOT))
     run([
         "cmake",
@@ -668,6 +677,8 @@ def native_build(debug: bool, test: bool = True, github: bool = False) -> None:
         build_cmd.append("--debug")
     if github:
         build_cmd.append("--github")
+    if _env_flag("VOID_USE_LOCAL_DEPS"):
+        build_cmd.append("--use-local-deps")
     run(build_cmd, cwd=str(NATIVE_DIR))
 
     if test and github:
@@ -701,6 +712,11 @@ def native_build_macos(debug: bool, test: bool = True, github: bool = False) -> 
         "-DBUILD_ANALYSIS=OFF",
         f"-DBUILD_TESTS={'ON' if test else 'OFF'}",
         "-DBUILD_PYTHON=OFF",
+        *(
+            ["-DVOID_USE_LOCAL_DEPS=ON"]
+            if _env_flag("VOID_USE_LOCAL_DEPS")
+            else []
+        ),
     ], cwd=str(ROOT))
 
     header(f"Build native macOS ({build_type})")

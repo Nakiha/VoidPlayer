@@ -2,7 +2,7 @@
 
 ## C FFI
 
-头文件: `video_renderer/exports/ffi_exports.h`
+头文件: `renderer/exports/ffi_exports.h`
 
 所有导出函数使用 `naki_vr_` 前缀，通过宏 `NAKI_VR_FFI_EXPORT` 控制导出。
 
@@ -45,7 +45,7 @@ typedef struct naki_vr_player_config_t {
 
 所有跨 FFI 的 config/layout struct 必须先填 `size` 和 `abi_version`。FFI 层会校验 struct 大小、ABI 版本、log level、seek type、layout mode 和 pixel-size mode；失败时原有 bool/int API 仍返回失败值，详细原因通过 `naki_vr_last_error()` 查询。
 
-Renderer config 校验集中在 `video_renderer/renderer_config_validation.*`，C FFI、Python binding、`Renderer` / `NativePlayer` 初始化和 Windows runner MethodChannel 共享同一套规则。当前规则包括：尺寸必须为正且不超过 `16384`，至少一个视频路径、最多 4 条路径，路径非空、不含内嵌 null 且必须是合法 UTF-8，windowed mode 必须提供 HWND，headless mode 必须提供 DXGI adapter 且不能同时传 HWND。FFI v1 的 `video_paths` 仍是 NULL 终止数组；实现最多扫描 4 条路径，超过上限或缺少 NULL terminator 会返回 `NAKI_VR_ERR_INVALID_ARGUMENT`。
+Renderer config 校验集中在 `renderer/renderer_config_validation.*`，C FFI、Python binding、`Renderer` / `NativePlayer` 初始化和 Windows runner MethodChannel 共享同一套规则。当前规则包括：尺寸必须为正且不超过 `16384`，至少一个视频路径、最多 4 条路径，路径非空、不含内嵌 null 且必须是合法 UTF-8，windowed mode 必须提供 HWND，headless mode 必须提供 DXGI adapter 且不能同时传 HWND。FFI v1 的 `video_paths` 仍是 NULL 终止数组；实现最多扫描 4 条路径，超过上限或缺少 NULL terminator 会返回 `NAKI_VR_ERR_INVALID_ARGUMENT`。
 
 ABI v2 新增 `naki_vr_player_config_v2_t` 和 `naki_vr_player_initialize_v2()`。v2 config 使用 `(video_paths, video_path_count)`，不要求 NULL terminator；旧 v1 config 会继续保留兼容，但新绑定应优先使用 v2。
 
@@ -94,7 +94,7 @@ ABI v2 同时提供 `naki_vr_player_get_error(player, buf, cap)`，读取 player
 
 ## Python 绑定
 
-文件: `video_renderer/exports/bindings.cpp`
+文件: `renderer/exports/bindings.cpp`
 
 使用 pybind11 绑定，导出类：
 

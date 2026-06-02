@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/render/swap_chain_present_policy.h"
-#include "video_renderer/renderer.h"
+#include "renderer/render/swap_chain_present_policy.h"
+#include "renderer/renderer.h"
 
 using namespace vr;
 

@@ -3,7 +3,7 @@
 
 #include "macos/metal_presentation_backend_bridge.h"
 #include "macos/native_player_types.h"
-#include "video_renderer/renderer.h"
+#include "renderer/renderer.h"
 
 #include <atomic>
 #include <chrono>

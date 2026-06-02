@@ -11,9 +11,9 @@
 #include "windows/d3d11/frame_presenter.h"
 #include "windows/d3d11/headless_output.h"
 #include "windows/d3d11/texture.h"
-#include "video_renderer/capture/frame_capture_service.h"
-#include "video_renderer/decode/frame_converter.h"
-#include "video_renderer/renderer_limits.h"
+#include "renderer/capture/frame_capture_service.h"
+#include "renderer/decode/frame_converter.h"
+#include "renderer/renderer_limits.h"
 
 extern "C" {
 #include <libavutil/frame.h>

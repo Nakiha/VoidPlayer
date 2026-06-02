@@ -29,7 +29,7 @@ File
 
 ## DecodeThread
 
-头文件：`video_renderer/decode/decode_thread.h`
+头文件：`renderer/decode/decode_thread.h`
 
 职责：
 
@@ -62,7 +62,7 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 
 ## FrameConverter 输出路径
 
-头文件：`video_renderer/decode/frame_converter.h`
+头文件：`renderer/decode/frame_converter.h`
 
 `FrameConverter` 将 `AVFrame` 转为 `TextureFrame`。不支持的格式、非法几何尺寸、hwdownload 失败或 CPU pack 失败会返回
 `std::nullopt`，`DecodeThread` 随后进入错误状态，避免空 frame 进入 renderer。

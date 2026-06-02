@@ -1,4 +1,4 @@
-#include "video_renderer/decode/decoded_frame_sink.h"
+#include "renderer/decode/decoded_frame_sink.h"
 
 #include <atomic>
 #include <iostream>

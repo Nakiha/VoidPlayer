@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "video_renderer/decode/codec_loop.h"
+#include "renderer/decode/codec_loop.h"
 
 #include <mutex>
 

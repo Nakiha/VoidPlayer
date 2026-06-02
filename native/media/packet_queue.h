@@ -1,5 +1,5 @@
 #pragma once
-#include "video_renderer/renderer_limits.h"
+#include "renderer/renderer_limits.h"
 
 #include <deque>
 #include <mutex>

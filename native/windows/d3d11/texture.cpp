@@ -1,5 +1,5 @@
 #include "texture.h"
-#include "video_renderer/renderer_limits.h"
+#include "renderer/renderer_limits.h"
 #include <cstring>
 #include <dxgi.h>
 #include <spdlog/spdlog.h>

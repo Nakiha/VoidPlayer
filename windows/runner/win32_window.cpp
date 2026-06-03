@@ -54,6 +54,28 @@ void EnableFullDpiSupportIfAvailable(HWND hwnd) {
   FreeLibrary(user32_module);
 }
 
+HICON LoadAppIcon(int width, int height) {
+  return static_cast<HICON>(
+      LoadImage(GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON),
+                IMAGE_ICON, width, height, LR_DEFAULTCOLOR | LR_SHARED));
+}
+
+void SetWindowIcons(HWND window) {
+  if (!window) {
+    return;
+  }
+  if (HICON large_icon =
+          LoadAppIcon(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON))) {
+    SendMessage(window, WM_SETICON, ICON_BIG,
+                reinterpret_cast<LPARAM>(large_icon));
+  }
+  if (HICON small_icon = LoadAppIcon(GetSystemMetrics(SM_CXSMICON),
+                                     GetSystemMetrics(SM_CYSMICON))) {
+    SendMessage(window, WM_SETICON, ICON_SMALL,
+                reinterpret_cast<LPARAM>(small_icon));
+  }
+}
+
 }  // namespace
 
 // Manages the Win32Window's window class registration.
@@ -145,6 +167,7 @@ bool Win32Window::Create(const std::wstring& title,
     return false;
   }
 
+  SetWindowIcons(window);
   UpdateTheme(window);
 
   return OnCreate();
@@ -176,6 +199,7 @@ bool Win32Window::CreateWithBounds(const std::wstring& title,
     return false;
   }
 
+  SetWindowIcons(window);
   UpdateTheme(window);
 
   return OnCreate();

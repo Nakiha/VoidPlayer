@@ -65,6 +65,7 @@ def flutter_build_macos(debug: bool) -> None:
 
     run(cmd, cwd=str(ROOT))
     _install_macos_ffmpeg_analyzer(macos_app_bundle_path(debug))
+    _register_macos_app_bundle(macos_app_bundle_path(debug))
 
 
 def _install_macos_ffmpeg_analyzer(app_bundle: Path) -> None:
@@ -82,6 +83,27 @@ def _install_macos_ffmpeg_analyzer(app_bundle: Path) -> None:
     if not dest.exists() or analyzer.stat().st_mtime > dest.stat().st_mtime:
         shutil.copy2(analyzer, dest)
     dest.chmod(dest.stat().st_mode | 0o111)
+
+
+def _register_macos_app_bundle(app_bundle: Path) -> None:
+    if not _is_macos() or not app_bundle.exists():
+        return
+    try:
+        app_bundle.touch()
+    except OSError:
+        pass
+    lsregister = Path(
+        "/System/Library/Frameworks/CoreServices.framework/Frameworks/"
+        "LaunchServices.framework/Support/lsregister"
+    )
+    if lsregister.exists():
+        subprocess.run(
+            [str(lsregister), "-f", str(app_bundle)],
+            cwd=str(ROOT),
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
 
 def flutter_unit_test() -> None:
@@ -106,7 +128,7 @@ def _is_macos_launch_source(path: Path) -> bool:
         return False
     if parts[0] == "macos" and len(parts) > 1 and parts[1] in {"Pods", "Flutter"}:
         return False
-    if parts[0] in {"lib", "macos", "native", "third_party"}:
+    if parts[0] in {"assets", "lib", "macos", "native", "third_party"}:
         return path.suffix.lower() in {
             ".c",
             ".cc",
@@ -115,10 +137,14 @@ def _is_macos_launch_source(path: Path) -> bool:
             ".dart",
             ".h",
             ".hpp",
+            ".icns",
+            ".json",
             ".m",
             ".mm",
             ".metal",
+            ".png",
             ".podspec",
+            ".svg",
             ".swift",
             ".txt",
             ".yaml",
@@ -148,7 +174,7 @@ def _macos_app_stale(exe: Path) -> bool:
         if not rel_parts:
             dirnames[:] = [
                 name for name in dirnames
-                if name in {"lib", "macos", "native", "third_party"}
+                if name in {"assets", "lib", "macos", "native", "third_party"}
             ]
         elif rel_parts == ("macos",):
             dirnames[:] = [name for name in dirnames if name not in {"Flutter", "Pods"}]
@@ -253,6 +279,7 @@ def _cmd_launch_macos(args) -> None:
         print(f"ERROR: macOS app not found: {app_bundle}")
         sys.exit(1)
     _install_macos_ffmpeg_analyzer(app_bundle)
+    _register_macos_app_bundle(app_bundle)
 
     cmd = [str(exe)]
     if args.log_level:
@@ -414,6 +441,7 @@ def _cmd_mac_ui_test(args) -> None:
         print(f"ERROR: macOS app not found: {app_bundle}")
         sys.exit(1)
     _install_macos_ffmpeg_analyzer(app_bundle)
+    _register_macos_app_bundle(app_bundle)
 
     container_scripts_dir, container_media_dir = _macos_ui_test_container_dirs()
 

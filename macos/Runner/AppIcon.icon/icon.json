@@ -1,0 +1,30 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "extended-srgb:0.20392,0.20392,0.20392,1.00000",
+      "extended-srgb:0.09412,0.09412,0.09412,1.00000"
+    ]
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "voidplayer_play.png",
+          "is-glass" : false,
+          "name" : "voidplayer_play"
+        },
+        {
+          "image-name" : "voidplayer_tiles.png",
+          "is-glass" : false,
+          "name" : "voidplayer_tiles"
+        }
+      ]
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

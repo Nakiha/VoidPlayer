@@ -135,23 +135,24 @@ class PerformanceHealthSnapshot {
         ? 0
         : math.max(0, largeGapCount - previous.largeGapCount);
 
-    final nativeSlow =
-        drawP95Us >= 11_000 ||
-        backendP95Us >= 10_000 ||
-        metalP95Us >= 11_000 ||
-        metalBufferDelta > 0 ||
-        metalFailureDelta > 0 ||
-        largeGapDelta > 0 ||
-        monotonicViolationCount > 0;
-    final nativeSevere =
-        drawP95Us >= 22_000 ||
-        backendP95Us >= 20_000 ||
-        metalP95Us >= 22_000 ||
-        metalBufferDelta > 0 ||
-        metalFailureDelta > 0 ||
-        monotonicViolationCount > 0;
-
     final inputOrPlaybackActive = playing || layoutIntentHz >= 10;
+    final renderLatencySlow =
+        inputOrPlaybackActive &&
+        (drawP95Us >= 11_000 || backendP95Us >= 10_000 || metalP95Us >= 11_000);
+    final renderLatencySevere =
+        inputOrPlaybackActive &&
+        (drawP95Us >= 22_000 || backendP95Us >= 20_000 || metalP95Us >= 22_000);
+    final nativeHardPressure =
+        metalBufferDelta > 0 ||
+        metalFailureDelta > 0 ||
+        (playing && largeGapDelta > 0) ||
+        monotonicViolationCount > 0;
+    final nativeSlow = renderLatencySlow || nativeHardPressure;
+    final nativeSevere =
+        renderLatencySevere ||
+        metalBufferDelta > 0 ||
+        metalFailureDelta > 0 ||
+        monotonicViolationCount > 0;
     final displayTarget = displayRefreshHz >= 50
         ? displayRefreshHz
         : _fallbackDisplayTargetHz;
@@ -170,7 +171,7 @@ class PerformanceHealthSnapshot {
     final externalPressure =
         !nativeSlow && (displayTickLow || layoutDrawLow || hostIntervalHigh);
 
-    final decodePressure = _hasDecodePressure(diagnostics);
+    final decodePressure = playing && _hasDecodePressure(diagnostics);
 
     PerformanceHealthLevel level = PerformanceHealthLevel.ok;
     PerformanceHealthKind kind = PerformanceHealthKind.ok;
@@ -238,8 +239,8 @@ class PerformanceHealthSnapshot {
             : 'Native rendering is under pressure. Disable overlays or reduce tracks for smoother playback.',
       PerformanceHealthKind.externalDisplayPressure =>
         zh
-            ? '显示/GPU 压力较高，拖拽可能不流畅。可关闭 HDR 串流或减少同时运行的图形任务。'
-            : 'Display/GPU pressure is high. Close HDR streaming or other graphics-heavy apps for smoother dragging.',
+            ? '显示/GPU 压力较高，拖拽可能不流畅。可暂停外部显示、录屏、串流或其他图形高负载任务。'
+            : 'Display/GPU pressure is high. Pause external displays, screen recording, streaming, or other graphics-heavy work for smoother dragging.',
       PerformanceHealthKind.decodePressure =>
         zh
             ? '解码缓冲压力较高，建议减少轨道或关闭高负载媒体。'

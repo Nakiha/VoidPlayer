@@ -78,6 +78,14 @@ class MainWindowAnalysisCoordinator {
     return _enqueueOperation(_toggleOverlayPanelImpl);
   }
 
+  Future<void> activateOverlayPanelTracks() {
+    if (!analysisOverlaysEnabled) return Future.value();
+    return _enqueueOperation(() async {
+      _overlayPanelRequested = true;
+      await _syncOverlayPanelTracksImpl();
+    });
+  }
+
   Future<String?> ensureGeneratedForSlot(int slotIndex) {
     return _enqueueValueOperation(() async {
       if (slotIndex < 0 || slotIndex >= trackManager.entries.length) {
@@ -167,7 +175,18 @@ class MainWindowAnalysisCoordinator {
 
   Future<void> _syncOverlayPanelTracksImpl() async {
     if (!_overlayPanelRequested) return;
-    final requestedEntries = List<TrackEntry>.of(trackManager.entries);
+    final requestedFileIds = trackManager.entries
+        .map((entry) => entry.fileId)
+        .toSet();
+    await _activateOverlayTrackFileIdsImpl(requestedFileIds);
+  }
+
+  Future<void> _activateOverlayTrackFileIdsImpl(
+    Set<int> requestedFileIds,
+  ) async {
+    final requestedEntries = trackManager.entries
+        .where((entry) => requestedFileIds.contains(entry.fileId))
+        .toList(growable: false);
     if (requestedEntries.isEmpty) {
       _overlayPanelRequested = false;
       _stopOverlayPlaybackPrefetch();
@@ -175,6 +194,7 @@ class MainWindowAnalysisCoordinator {
       _notifyOverlayStateChanged();
       return;
     }
+    _overlayPanelRequested = true;
 
     final sources = <AnalysisOverlayTrackSource>[];
     for (final entry in requestedEntries) {

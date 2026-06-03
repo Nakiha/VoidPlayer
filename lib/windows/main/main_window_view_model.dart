@@ -238,14 +238,14 @@ class MainWindowMediaTimelineActions {
 
 class MainWindowAnalysisOverlayActions {
   final ValueChanged<AnalysisOverlayType> onTypeChanged;
-  final ValueChanged<Set<AnalysisOverlayLayer>> onLayersChanged;
   final ValueChanged<double> onOpacityChanged;
+  final Future<void> Function() onActivate;
   final VoidCallback onClose;
 
   const MainWindowAnalysisOverlayActions({
     required this.onTypeChanged,
-    required this.onLayersChanged,
     required this.onOpacityChanged,
+    required this.onActivate,
     required this.onClose,
   });
 }

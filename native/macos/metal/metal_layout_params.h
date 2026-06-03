@@ -113,6 +113,10 @@ struct MetalLayoutParams {
   uint32_t overlay_present1;
   uint32_t overlay_present2;
   uint32_t overlay_present3;
+  float background_color_r;
+  float background_color_g;
+  float background_color_b;
+  float background_color_a;
 };
 
 struct MetalOverlayLayerParams {

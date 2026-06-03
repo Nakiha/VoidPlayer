@@ -61,6 +61,7 @@ typedef struct VPMacOSNativePresentDecisionInfo {
   int32_t mode;
   int64_t current_pts_us;
   float split_pos;
+  float background_color[4];
   int32_t order[VPMacOSNativeMaxTracks];
   float display_offset_x[VPMacOSNativeMaxTracks];
   float display_offset_y[VPMacOSNativeMaxTracks];

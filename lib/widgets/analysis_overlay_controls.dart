@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -5,156 +6,52 @@ import 'package:flutter/material.dart';
 import '../analysis/analysis_overlay.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
 import '../l10n/app_localizations.dart';
-import '../track_manager.dart';
 
 const analysisOverlayControlBarKey = Key('analysis-overlay-control-bar');
+const analysisOverlayOpacityKey = ValueKey('analysis-overlay-opacity');
 
-class AnalysisOverlayControlBar extends StatefulWidget {
+class AnalysisOverlayControlBar extends StatelessWidget {
   static const double margin = 4.0;
+  static const double _innerPadding = 3.0;
 
-  final List<TrackEntry> entries;
   final AnalysisToolbarDataSource dataSource;
+  final bool panelReady;
   final bool panelActive;
-  final Set<int> readyTrackFileIds;
   final ValueChanged<AnalysisOverlayType> onTypeChanged;
-  final ValueChanged<Set<AnalysisOverlayLayer>> onLayersChanged;
   final ValueChanged<double> onOpacityChanged;
+  final Future<void> Function()? onActivateOverlay;
+  final VoidCallback? onDeactivateOverlay;
 
   const AnalysisOverlayControlBar({
     super.key,
-    required this.entries,
     required this.dataSource,
+    this.panelReady = true,
     this.panelActive = true,
-    this.readyTrackFileIds = const {},
     required this.onTypeChanged,
-    required this.onLayersChanged,
     required this.onOpacityChanged,
-  });
-
-  @override
-  State<AnalysisOverlayControlBar> createState() =>
-      _AnalysisOverlayControlBarState();
-}
-
-class _AnalysisOverlayControlBarState extends State<AnalysisOverlayControlBar> {
-  bool _syncSettingsToAll = true;
-  int? _primaryTrackFileId;
-
-  @override
-  void initState() {
-    super.initState();
-    _syncPrimaryTrack();
-  }
-
-  @override
-  void didUpdateWidget(covariant AnalysisOverlayControlBar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncPrimaryTrack();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final readyTrackIds = widget.panelActive
-        ? widget.dataSource.activeOverlayTrackFileIds
-        : widget.readyTrackFileIds;
-    if (widget.entries.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final primaryTrackFileId = _primaryTrackFileId;
-    return Row(
-      key: analysisOverlayControlBarKey,
-      children: [
-        for (int i = 0; i < widget.entries.length; i++) ...[
-          if (i > 0) const SizedBox(width: 4),
-          Expanded(
-            child: _AnalysisOverlayTrackPanel(
-              track: widget.entries[i],
-              primary: widget.entries[i].fileId == primaryTrackFileId,
-              overlayReady: readyTrackIds.contains(widget.entries[i].fileId),
-              syncSettingsToAll: _syncSettingsToAll,
-              config: widget.dataSource.overlayConfig,
-              onTypeChanged: widget.onTypeChanged,
-              onLayersChanged: widget.onLayersChanged,
-              onOpacityChanged: widget.onOpacityChanged,
-              onSyncSettingsToAllChanged: (value) {
-                setState(() {
-                  _syncSettingsToAll = value;
-                });
-              },
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  void _syncPrimaryTrack() {
-    if (widget.entries.isEmpty) {
-      _primaryTrackFileId = null;
-      return;
-    }
-    final overlayTrackIds = widget.dataSource.activeOverlayTrackFileIds;
-    final readyTrackIds = widget.panelActive
-        ? overlayTrackIds
-        : widget.readyTrackFileIds;
-    final current = _primaryTrackFileId;
-    if (current != null &&
-        widget.entries.any((entry) => entry.fileId == current) &&
-        readyTrackIds.contains(current)) {
-      return;
-    }
-    for (final entry in widget.entries) {
-      if (readyTrackIds.contains(entry.fileId)) {
-        _primaryTrackFileId = entry.fileId;
-        return;
-      }
-    }
-    _primaryTrackFileId = widget.entries.first.fileId;
-  }
-}
-
-class _AnalysisOverlayTrackPanel extends StatelessWidget {
-  final TrackEntry track;
-  final bool primary;
-  final bool overlayReady;
-  final bool syncSettingsToAll;
-  final AnalysisOverlayConfig config;
-  final ValueChanged<AnalysisOverlayType> onTypeChanged;
-  final ValueChanged<Set<AnalysisOverlayLayer>> onLayersChanged;
-  final ValueChanged<double> onOpacityChanged;
-  final ValueChanged<bool> onSyncSettingsToAllChanged;
-
-  const _AnalysisOverlayTrackPanel({
-    required this.track,
-    required this.primary,
-    required this.overlayReady,
-    required this.syncSettingsToAll,
-    required this.config,
-    required this.onTypeChanged,
-    required this.onLayersChanged,
-    required this.onOpacityChanged,
-    required this.onSyncSettingsToAllChanged,
+    this.onActivateOverlay,
+    this.onDeactivateOverlay,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final editable = overlayReady && (primary || !syncSettingsToAll);
-    final contentOpacity = editable ? 1.0 : 0.42;
-
+    final config = dataSource.overlayConfig;
+    final editable = panelReady || panelActive;
     return DecoratedBox(
+      key: analysisOverlayControlBarKey,
       decoration: BoxDecoration(
         color: colorScheme.surface.withValues(alpha: 0.86),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: primary
+          color: panelActive
               ? colorScheme.primary.withValues(alpha: 0.58)
               : colorScheme.outlineVariant.withValues(alpha: 0.28),
         ),
       ),
       child: Opacity(
-        opacity: contentOpacity,
+        opacity: editable ? 1.0 : 0.42,
         child: IgnorePointer(
           ignoring: !editable,
           child: SizedBox(
@@ -162,69 +59,31 @@ class _AnalysisOverlayTrackPanel extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const SizedBox(width: 4),
+                const SizedBox(width: AnalysisOverlayControlBar._innerPadding),
                 _OverlayTypeButtons(
-                  trackFileId: track.fileId,
                   value: config.type,
+                  panelActive: panelActive,
                   onChanged: onTypeChanged,
-                ),
-                const SizedBox(width: 6),
-                _OverlayPanelDivider(),
-                const SizedBox(width: 6),
-                _OverlayLayerButton(
-                  trackFileId: track.fileId,
-                  layer: AnalysisOverlayLayer.predictionMode,
-                  selected: config.layers.contains(
-                    AnalysisOverlayLayer.predictionMode,
-                  ),
-                  onChanged: _toggleLayer,
-                ),
-                _OverlayLayerButton(
-                  trackFileId: track.fileId,
-                  layer: AnalysisOverlayLayer.predictionLines,
-                  selected: config.layers.contains(
-                    AnalysisOverlayLayer.predictionLines,
-                  ),
-                  onChanged: _toggleLayer,
+                  onActivateOverlay: onActivateOverlay,
+                  onDeactivateOverlay: onDeactivateOverlay,
                 ),
                 const SizedBox(width: 6),
                 _OverlayPanelDivider(),
                 const SizedBox(width: 6),
                 Expanded(
                   child: _OverlayOpacitySlider(
-                    key: ValueKey('analysis-overlay-opacity-${track.fileId}'),
+                    key: analysisOverlayOpacityKey,
                     value: config.opacity,
                     onChanged: onOpacityChanged,
                   ),
                 ),
-                if (primary) ...[
-                  const SizedBox(width: 6),
-                  _OverlayPanelDivider(),
-                  const SizedBox(width: 6),
-                  _OverlayIconButton(
-                    key: ValueKey('analysis-overlay-sync-${track.fileId}'),
-                    selected: syncSettingsToAll,
-                    icon: Icons.sync,
-                    tooltip: AppLocalizations.of(
-                      context,
-                    )!.analysisOverlaySyncSettings,
-                    onPressed: () =>
-                        onSyncSettingsToAllChanged(!syncSettingsToAll),
-                  ),
-                ],
-                const SizedBox(width: 4),
+                const SizedBox(width: AnalysisOverlayControlBar._innerPadding),
               ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  void _toggleLayer(AnalysisOverlayLayer layer, bool selected) {
-    final layers = Set<AnalysisOverlayLayer>.of(config.layers);
-    selected ? layers.add(layer) : layers.remove(layer);
-    onLayersChanged(layers);
   }
 }
 
@@ -246,14 +105,18 @@ class _OverlayPanelDivider extends StatelessWidget {
 }
 
 class _OverlayTypeButtons extends StatelessWidget {
-  final int trackFileId;
   final AnalysisOverlayType value;
+  final bool panelActive;
   final ValueChanged<AnalysisOverlayType> onChanged;
+  final Future<void> Function()? onActivateOverlay;
+  final VoidCallback? onDeactivateOverlay;
 
   const _OverlayTypeButtons({
-    required this.trackFileId,
     required this.value,
+    required this.panelActive,
     required this.onChanged,
+    required this.onActivateOverlay,
+    required this.onDeactivateOverlay,
   });
 
   @override
@@ -263,11 +126,19 @@ class _OverlayTypeButtons extends StatelessWidget {
       children: [
         for (final type in AnalysisOverlayType.values)
           _OverlayIconButton(
-            key: ValueKey('analysis-overlay-type-$trackFileId-${type.name}'),
-            selected: value == type,
+            key: ValueKey('analysis-overlay-type-${type.name}'),
+            selected: panelActive && value == type,
             icon: _iconForType(type),
             tooltip: _tooltipForType(context, type),
-            onPressed: () => onChanged(type),
+            onPressed: () {
+              if (panelActive && value == type) {
+                onDeactivateOverlay?.call();
+                return;
+              }
+              onChanged(type);
+              final activate = onActivateOverlay;
+              if (!panelActive && activate != null) unawaited(activate());
+            },
           ),
       ],
     );
@@ -286,48 +157,6 @@ class _OverlayTypeButtons extends StatelessWidget {
       AnalysisOverlayType.qpHeatmap => l.analysisOverlayTypeQpHeatmap,
       AnalysisOverlayType.cuBitCostHeatmap =>
         l.analysisOverlayTypeCuBitCostHeatmap,
-    };
-  }
-}
-
-class _OverlayLayerButton extends StatelessWidget {
-  final int trackFileId;
-  final AnalysisOverlayLayer layer;
-  final bool selected;
-  final void Function(AnalysisOverlayLayer layer, bool selected) onChanged;
-
-  const _OverlayLayerButton({
-    required this.trackFileId,
-    required this.layer,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return _OverlayIconButton(
-      key: ValueKey('analysis-overlay-layer-$trackFileId-${layer.name}'),
-      selected: selected,
-      icon: _iconForLayer(layer),
-      tooltip: _tooltipForLayer(context, layer),
-      onPressed: () => onChanged(layer, !selected),
-    );
-  }
-
-  IconData _iconForLayer(AnalysisOverlayLayer layer) => switch (layer) {
-    AnalysisOverlayLayer.cuGrid => Icons.grid_on,
-    AnalysisOverlayLayer.predictionMode => Icons.label_outline,
-    AnalysisOverlayLayer.predictionLines => Icons.alt_route,
-  };
-
-  String _tooltipForLayer(BuildContext context, AnalysisOverlayLayer layer) {
-    final l = AppLocalizations.of(context)!;
-    return switch (layer) {
-      AnalysisOverlayLayer.cuGrid => l.analysisOverlayLayerCuGrid,
-      AnalysisOverlayLayer.predictionMode =>
-        l.analysisOverlayLayerPredictionMode,
-      AnalysisOverlayLayer.predictionLines =>
-        l.analysisOverlayLayerPredictionLines,
     };
   }
 }

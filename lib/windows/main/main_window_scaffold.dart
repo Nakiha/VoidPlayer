@@ -35,8 +35,9 @@ class MainWindowScaffold extends StatelessWidget {
       body: MediaHeaderOverlayPanelHost(
         entries: media.tracks,
         dataSource: media.analysisDataSource,
+        onOverlayActivate: actions.analysisOverlay.onActivate,
+        onOverlayDeactivate: actions.analysisOverlay.onClose,
         onTypeChanged: actions.analysisOverlay.onTypeChanged,
-        onLayersChanged: actions.analysisOverlay.onLayersChanged,
         onOpacityChanged: actions.analysisOverlay.onOpacityChanged,
         child: Stack(
           children: [

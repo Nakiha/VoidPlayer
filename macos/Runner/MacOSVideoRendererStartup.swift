@@ -19,6 +19,7 @@ enum MacOSVideoRendererStartupFactory {
     let requestedHeight = max(16, MacOSFlutterArguments.intArg(arguments, "height") ?? 1080)
     let useHardwareDecode =
       MacOSFlutterArguments.boolArg(arguments, "useHardwareDecode") ?? true
+    let viewportBackgroundColor = MacOSFlutterArguments.uint32Arg(arguments, "color")
     guard let firstPath = paths.first, !firstPath.isEmpty else {
       throw MacOSNativePlayerError.failed("createPlayer requires at least one media path")
     }
@@ -35,7 +36,8 @@ enum MacOSVideoRendererStartupFactory {
       firstPath: firstPath,
       requestedWidth: requestedWidth,
       requestedHeight: requestedHeight,
-      useHardwareDecode: useHardwareDecode
+      useHardwareDecode: useHardwareDecode,
+      viewportBackgroundColor: viewportBackgroundColor
     )
   }
 
@@ -76,12 +78,16 @@ enum MacOSVideoRendererStartupFactory {
     firstPath: String,
     requestedWidth: Int,
     requestedHeight: Int,
-    useHardwareDecode: Bool
+    useHardwareDecode: Bool,
+    viewportBackgroundColor: UInt32?
   ) throws -> MacOSVideoRendererStartup {
     guard let session = MacOSNativePlayerSession() else {
       throw MacOSNativePlayerError.failed("failed to allocate macOS native player")
     }
     session.setHardwareDecodeEnabled(useHardwareDecode)
+    if let viewportBackgroundColor {
+      session.setBackgroundColor(viewportBackgroundColor)
+    }
     try session.open(path: firstPath)
     let texture = MacOSFlutterTextureBridge(
       nativeWidth: requestedWidth,

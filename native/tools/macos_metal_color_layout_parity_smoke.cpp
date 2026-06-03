@@ -404,6 +404,7 @@ vr::RendererDrawSnapshot make_snapshot(const std::vector<vr::TextureFrame>& fram
   snapshot.layout = layout;
   snapshot.target_width = target_width;
   snapshot.target_height = target_height;
+  snapshot.background_color[3] = 1.0f;
   for (size_t slot = 0; slot < frames.size() && slot < vr::kMaxTracks; ++slot) {
     const auto& frame = frames[slot];
     snapshot.decision.frames[slot] = frame;
@@ -659,18 +660,23 @@ bool run_aspect_fit_case() {
       },
       5000);
   const auto snapshot = make_snapshot({frame}, 8, 4, layout);
-  return run_case("layout aspect fit black bars",
+  auto themed_snapshot = snapshot;
+  themed_snapshot.background_color[0] = 24.0f / 255.0f;
+  themed_snapshot.background_color[1] = 32.0f / 255.0f;
+  themed_snapshot.background_color[2] = 40.0f / 255.0f;
+  themed_snapshot.background_color[3] = 1.0f;
+  return run_case("layout aspect fit themed bars",
                   "bgra",
                   vr::VIDEO_COLOR_RANGE_FULL,
                   vr::VIDEO_COLOR_MATRIX_BT709,
                   8,
                   4,
-                  snapshot,
+                  themed_snapshot,
                   {
-                      {0, 1, {0, 0, 0, 255}},
+                      {0, 1, {40, 32, 24, 255}},
                       {3, 1, {0, 0, 220, 255}},
                       {4, 2, {0, 0, 220, 255}},
-                      {7, 1, {0, 0, 0, 255}},
+                      {7, 1, {40, 32, 24, 255}},
                   },
                   1);
 }

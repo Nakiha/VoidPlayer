@@ -97,6 +97,19 @@ void main() {
       expect(api.calls, isEmpty);
     });
 
+    test('passes cached viewport background into player creation', () async {
+      final api = _FakeNativePlayerApi();
+      final controller = NativePlayerController(api: api);
+
+      await controller.setViewportBackgroundColor(0xFF202124);
+      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
+
+      expect(api.calls, [
+        'createPlayer:320x180:a.mp4:bg=4280295716',
+        'setViewportBackgroundColor:4280295716',
+      ]);
+    });
+
     test('keeps disposed playback commands as no-ops', () async {
       final api = _FakeNativePlayerApi();
       final controller = NativePlayerController(api: api);
@@ -125,8 +138,14 @@ class _FakeNativePlayerApi implements NativePlayerApi {
     required int width,
     required int height,
     required bool useHardwareDecode,
+    int? viewportBackgroundColor,
   }) async {
-    calls.add('createPlayer:${width}x$height:${videoPaths.join('|')}');
+    final backgroundSuffix = viewportBackgroundColor == null
+        ? ''
+        : ':bg=$viewportBackgroundColor';
+    calls.add(
+      'createPlayer:${width}x$height:${videoPaths.join('|')}$backgroundSuffix',
+    );
     return const CreatePlayerResult(textureId: 1, tracks: []);
   }
 

@@ -34,7 +34,11 @@ final class MacOSNativePlayerSession {
   }
 
   func setBackgroundColor(_ color: Int) {
-    let value = UInt32(truncatingIfNeeded: color)
+    setBackgroundColor(UInt32(truncatingIfNeeded: color))
+  }
+
+  func setBackgroundColor(_ color: UInt32) {
+    let value = color
     let a = Float((value >> 24) & 0xFF) / 255.0
     let r = Float((value >> 16) & 0xFF) / 255.0
     let g = Float((value >> 8) & 0xFF) / 255.0

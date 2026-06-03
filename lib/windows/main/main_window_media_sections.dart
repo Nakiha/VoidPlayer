@@ -86,11 +86,6 @@ class MainWindowMediaHeader extends StatelessWidget {
       analysisDataSource: media.analysisDataSource,
       analysisOverlayButtonKey: media.analysisOverlayButtonKey,
       onMediaSwapped: mediaActions.onMediaSwapped,
-      onAnalysisOverlayPanelToggle:
-          actions.toolbar.onAnalysisOverlayPanelToggle,
-      onAnalysisOverlayTypeChanged: actions.analysisOverlay.onTypeChanged,
-      onAnalysisOverlayLayersChanged: actions.analysisOverlay.onLayersChanged,
-      onAnalysisOverlayOpacityChanged: actions.analysisOverlay.onOpacityChanged,
       onRemoveClicked: mediaActions.onRemoveTrack,
     );
   }

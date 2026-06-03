@@ -119,18 +119,36 @@ class FloatingSidePanelsSlot extends StatelessWidget {
     final visible = mediaInfoVisible || profilerVisible;
     return Positioned.fill(
       key: const ValueKey('floatingSidePanels'),
-      top: 48,
-      left: 12,
-      right: 12,
-      bottom: 12,
       child: IgnorePointer(
         ignoring: !visible,
-        child: _FloatingSidePanelStack(
-          mediaInfoVisible: mediaInfoVisible,
-          profilerVisible: profilerVisible,
-          tracks: tracks,
-          onCloseMediaInfo: onCloseMediaInfo,
-          onCloseProfiler: onCloseProfiler,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final availableWidth = math.max(0.0, constraints.maxWidth - 24);
+            final availableHeight = math.max(0.0, constraints.maxHeight - 60);
+            return Stack(
+              children: [
+                Positioned(
+                  top: 48,
+                  left: 12,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: availableWidth,
+                      maxHeight: availableHeight,
+                    ),
+                    child: _FloatingSidePanelStack(
+                      mediaInfoVisible: mediaInfoVisible,
+                      profilerVisible: profilerVisible,
+                      availableWidth: availableWidth,
+                      availableHeight: availableHeight,
+                      tracks: tracks,
+                      onCloseMediaInfo: onCloseMediaInfo,
+                      onCloseProfiler: onCloseProfiler,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -140,6 +158,8 @@ class FloatingSidePanelsSlot extends StatelessWidget {
 class _FloatingSidePanelStack extends StatelessWidget {
   final bool mediaInfoVisible;
   final bool profilerVisible;
+  final double availableWidth;
+  final double availableHeight;
   final List<TrackEntry> tracks;
   final VoidCallback onCloseMediaInfo;
   final VoidCallback onCloseProfiler;
@@ -147,6 +167,8 @@ class _FloatingSidePanelStack extends StatelessWidget {
   const _FloatingSidePanelStack({
     required this.mediaInfoVisible,
     required this.profilerVisible,
+    required this.availableWidth,
+    required this.availableHeight,
     required this.tracks,
     required this.onCloseMediaInfo,
     required this.onCloseProfiler,
@@ -154,65 +176,65 @@ class _FloatingSidePanelStack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Align(
-          alignment: Alignment.topLeft,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: constraints.maxWidth,
-              maxHeight: constraints.maxHeight,
-            ),
-            child: Scrollbar(
-              child: SingleChildScrollView(
-                clipBehavior: Clip.none,
-                child: Padding(
-                  padding: const EdgeInsets.only(
-                    right: _sidePanelShadowPadding,
-                    bottom: _sidePanelShadowPadding,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _AnimatedFloatingPanelSlot(
-                        visible: mediaInfoVisible,
-                        child: _FloatingPanelFrame(
-                          icon: Icons.info_outline,
-                          title: AppLocalizations.of(context)!.mediaInfo,
-                          onClose: onCloseMediaInfo,
-                          child: MediaInfoPage(tracks: tracks),
-                        ),
-                      ),
-                      _AnimatedSidePanelGap(
-                        visible: mediaInfoVisible && profilerVisible,
-                      ),
-                      _AnimatedFloatingPanelSlot(
-                        visible: profilerVisible,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            minWidth: 360,
-                            maxWidth: 560,
-                            maxHeight: 320,
-                          ),
-                          child: _FloatingPanelFrame(
-                            icon: Icons.speed,
-                            title: AppLocalizations.of(
-                              context,
-                            )!.performanceMonitor,
-                            onClose: onCloseProfiler,
-                            child: const Flexible(child: StatsPage()),
-                          ),
-                        ),
-                      ),
-                    ],
+    final mediaPanelWidth = math.max(
+      0.0,
+      availableWidth - _sidePanelShadowPadding,
+    );
+    final profilerPanelWidth = math.min(
+      560.0,
+      math.max(360.0, mediaPanelWidth),
+    );
+    final stackWidth = mediaInfoVisible ? mediaPanelWidth : profilerPanelWidth;
+    return SizedBox(
+      width: stackWidth + _sidePanelShadowPadding,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: availableHeight),
+        child: Padding(
+          padding: const EdgeInsets.only(
+            right: _sidePanelShadowPadding,
+            bottom: _sidePanelShadowPadding,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _AnimatedFloatingPanelSlot(
+                visible: mediaInfoVisible,
+                child: SizedBox(
+                  width: mediaPanelWidth,
+                  child: _FloatingPanelFrame(
+                    icon: Icons.info_outline,
+                    title: AppLocalizations.of(context)!.mediaInfo,
+                    onClose: onCloseMediaInfo,
+                    minWidth: 0,
+                    maxWidth: mediaPanelWidth,
+                    child: MediaInfoPage(tracks: tracks),
                   ),
                 ),
               ),
-            ),
+              _AnimatedSidePanelGap(
+                visible: mediaInfoVisible && profilerVisible,
+              ),
+              _AnimatedFloatingPanelSlot(
+                visible: profilerVisible,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minWidth: 360,
+                    maxWidth: 560,
+                    maxHeight: 320,
+                  ),
+                  child: _FloatingPanelFrame(
+                    icon: Icons.speed,
+                    title: AppLocalizations.of(context)!.performanceMonitor,
+                    onClose: onCloseProfiler,
+                    child: const Flexible(child: StatsPage()),
+                  ),
+                ),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -436,19 +458,23 @@ class _FloatingPanelFrame extends StatelessWidget {
   final String title;
   final VoidCallback onClose;
   final Widget child;
+  final double minWidth;
+  final double maxWidth;
 
   const _FloatingPanelFrame({
     required this.icon,
     required this.title,
     required this.onClose,
     required this.child,
+    this.minWidth = 360,
+    this.maxWidth = 560,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 360, maxWidth: 560),
+      constraints: BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
       child: Material(
         elevation: 12,
         color: theme.colorScheme.surface,
@@ -534,101 +560,120 @@ class _MediaInfoPageState extends State<MediaInfoPage> {
           : Scrollbar(
               controller: _verticalController,
               thumbVisibility: true,
-              child: SingleChildScrollView(
-                controller: _verticalController,
-                child: Scrollbar(
-                  controller: _horizontalController,
-                  thumbVisibility: true,
-                  thickness: 6,
-                  scrollbarOrientation: ScrollbarOrientation.bottom,
-                  child: SingleChildScrollView(
-                    controller: _horizontalController,
-                    scrollDirection: Axis.horizontal,
-                    child: Padding(
-                      padding: const EdgeInsets.only(
-                        bottom: _mediaInfoTableBottomScrollbarPadding,
-                      ),
-                      child: DataTable(
-                        horizontalMargin: 12,
-                        columnSpacing: 22,
-                        headingRowHeight: 34,
-                        dataRowMinHeight: 42,
-                        dataRowMaxHeight: 42,
-                        headingTextStyle: theme.textTheme.labelSmall,
-                        dataTextStyle: theme.textTheme.bodySmall,
-                        columns: [
-                          DataColumn(label: Text(l.track)),
-                          DataColumn(label: Text(l.duration)),
-                          DataColumn(label: Text(l.mediaInfoStartTime)),
-                          DataColumn(label: Text(l.mediaInfoResolution)),
-                          DataColumn(label: Text(l.mediaInfoCodec)),
-                          DataColumn(label: Text(l.mediaInfoFormat)),
-                          DataColumn(label: Text(l.mediaInfoBitrate)),
-                          DataColumn(label: Text(l.mediaInfoDecoder)),
-                          DataColumn(label: Text(l.open)),
-                        ],
-                        rows: widget.tracks.map((track) {
-                          final info = track.info;
-                          return DataRow(
-                            cells: [
-                              DataCell(
-                                _TableText(track.fileName, maxWidth: 180),
-                              ),
-                              DataCell(Text(_formatTimeUs(info.durationUs, l))),
-                              DataCell(
-                                Text(
-                                  _formatTimeUs(
-                                    info.startTimeUs,
-                                    l,
-                                    zeroOk: true,
-                                  ),
-                                ),
-                              ),
-                              DataCell(Text('${info.width}x${info.height}')),
-                              DataCell(
-                                _TableText(
-                                  _nonEmpty(
-                                    info.codecLongName,
-                                    info.codecName,
-                                    l,
-                                  ),
-                                  maxWidth: 260,
-                                ),
-                              ),
-                              DataCell(
-                                _TableText(
-                                  _nonEmpty(info.formatName, '', l),
-                                  maxWidth: 180,
-                                ),
-                              ),
-                              DataCell(Text(_formatBitrate(info.bitRate, l))),
-                              DataCell(
-                                _TableText(
-                                  _nonEmpty(info.decoderName, '', l),
-                                  maxWidth: 180,
-                                ),
-                              ),
-                              DataCell(
-                                IconButton(
-                                  onPressed: () => unawaited(
-                                    _locateFile(context, track.path),
-                                  ),
-                                  icon: const Icon(Icons.folder_open, size: 18),
-                                  tooltip: l.mediaInfoLocateFile,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 32,
-                                    height: 32,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        }).toList(),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    controller: _verticalController,
+                    child: Scrollbar(
+                      controller: _horizontalController,
+                      thumbVisibility: true,
+                      thickness: 6,
+                      scrollbarOrientation: ScrollbarOrientation.bottom,
+                      child: SingleChildScrollView(
+                        controller: _horizontalController,
+                        scrollDirection: Axis.horizontal,
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                            bottom: _mediaInfoTableBottomScrollbarPadding,
+                          ),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minWidth: constraints.maxWidth,
+                            ),
+                            child: DataTable(
+                              horizontalMargin: 12,
+                              columnSpacing: 22,
+                              headingRowHeight: 34,
+                              dataRowMinHeight: 42,
+                              dataRowMaxHeight: 42,
+                              headingTextStyle: theme.textTheme.labelSmall,
+                              dataTextStyle: theme.textTheme.bodySmall,
+                              columns: [
+                                DataColumn(label: Text(l.track)),
+                                DataColumn(label: Text(l.duration)),
+                                DataColumn(label: Text(l.mediaInfoStartTime)),
+                                DataColumn(label: Text(l.mediaInfoResolution)),
+                                DataColumn(label: Text(l.mediaInfoCodec)),
+                                DataColumn(label: Text(l.mediaInfoFormat)),
+                                DataColumn(label: Text(l.mediaInfoBitrate)),
+                                DataColumn(label: Text(l.mediaInfoDecoder)),
+                                DataColumn(label: Text(l.open)),
+                              ],
+                              rows: widget.tracks.map((track) {
+                                final info = track.info;
+                                return DataRow(
+                                  cells: [
+                                    DataCell(
+                                      _TableText(track.fileName, maxWidth: 180),
+                                    ),
+                                    DataCell(
+                                      Text(_formatTimeUs(info.durationUs, l)),
+                                    ),
+                                    DataCell(
+                                      Text(
+                                        _formatTimeUs(
+                                          info.startTimeUs,
+                                          l,
+                                          zeroOk: true,
+                                        ),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      Text('${info.width}x${info.height}'),
+                                    ),
+                                    DataCell(
+                                      _TableText(
+                                        _nonEmpty(
+                                          info.codecLongName,
+                                          info.codecName,
+                                          l,
+                                        ),
+                                        maxWidth: 260,
+                                      ),
+                                    ),
+                                    DataCell(
+                                      _TableText(
+                                        _nonEmpty(info.formatName, '', l),
+                                        maxWidth: 180,
+                                      ),
+                                    ),
+                                    DataCell(
+                                      Text(_formatBitrate(info.bitRate, l)),
+                                    ),
+                                    DataCell(
+                                      _TableText(
+                                        _nonEmpty(info.decoderName, '', l),
+                                        maxWidth: 180,
+                                      ),
+                                    ),
+                                    DataCell(
+                                      IconButton(
+                                        onPressed: () => unawaited(
+                                          _locateFile(context, track.path),
+                                        ),
+                                        icon: const Icon(
+                                          Icons.folder_open,
+                                          size: 18,
+                                        ),
+                                        tooltip: l.mediaInfoLocateFile,
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            const BoxConstraints.tightFor(
+                                              width: 32,
+                                              height: 32,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
     );

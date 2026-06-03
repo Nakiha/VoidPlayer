@@ -143,6 +143,7 @@ class _FakeNativePlayerApi implements NativePlayerApi {
     required int width,
     required int height,
     required bool useHardwareDecode,
+    int? viewportBackgroundColor,
   }) async {
     calls.add('createPlayer:${width}x$height:${videoPaths.join('|')}');
     return const CreatePlayerResult(textureId: 1, tracks: []);

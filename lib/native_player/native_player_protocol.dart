@@ -44,6 +44,7 @@ class NativePlayerKeys {
   static const slot = 'slot';
   static const path = 'path';
   static const useHardwareDecode = 'useHardwareDecode';
+  static const color = 'color';
   static const durationUs = 'durationUs';
   static const startTimeUs = 'startTimeUs';
   static const bitRate = 'bitRate';
@@ -82,7 +83,6 @@ class NativePlayerKeys {
   static const enabled = 'enabled';
   static const startUs = 'startUs';
   static const endUs = 'endUs';
-  static const color = 'color';
   static const offsetUs = 'offsetUs';
 }
 

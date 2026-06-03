@@ -523,9 +523,6 @@
   "analysisOverlayOpacity": "Overlay opacity",
   "@analysisOverlayOpacity": { "description": "Tooltip for the bitstream overlay opacity slider" },
 
-  "analysisOverlaySyncSettings": "Sync this panel to all overlay headers",
-  "@analysisOverlaySyncSettings": { "description": "Tooltip for syncing the active bitstream overlay panel settings to all track headers" },
-
   "mediaInfoNoTracks": "No tracks open",
   "@mediaInfoNoTracks": { "description": "Media information panel empty state" },
 

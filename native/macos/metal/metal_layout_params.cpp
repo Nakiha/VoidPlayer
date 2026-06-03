@@ -142,6 +142,10 @@ void fill_metal_layout_params(MetalLayoutParams& metalParams,
   metalParams.overlay_present1 = 0;
   metalParams.overlay_present2 = 0;
   metalParams.overlay_present3 = 0;
+  metalParams.background_color_r = decisionInfo.background_color[0];
+  metalParams.background_color_g = decisionInfo.background_color[1];
+  metalParams.background_color_b = decisionInfo.background_color[2];
+  metalParams.background_color_a = decisionInfo.background_color[3];
 }
 
 void set_metal_overlay_present(MetalLayoutParams& metalParams,

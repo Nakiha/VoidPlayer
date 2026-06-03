@@ -31,6 +31,11 @@ enum MacOSFlutterArguments {
     return intValue(map[key])
   }
 
+  static func uint32Arg(_ arguments: Any?, _ key: String) -> UInt32? {
+    guard let map = argumentMap(arguments) else { return nil }
+    return uint32Value(map[key])
+  }
+
   static func boolArg(_ arguments: Any?, _ key: String) -> Bool? {
     guard let map = argumentMap(arguments) else { return nil }
     if let value = map[key] as? Bool {
@@ -82,6 +87,25 @@ enum MacOSFlutterArguments {
     }
     if let value = value as? NSNumber {
       return value.intValue
+    }
+    return nil
+  }
+
+  static func uint32Value(_ value: Any?) -> UInt32? {
+    if let value = value as? UInt32 {
+      return value
+    }
+    if let value = value as? UInt64 {
+      return UInt32(truncatingIfNeeded: value)
+    }
+    if let value = value as? Int64 {
+      return UInt32(truncatingIfNeeded: value)
+    }
+    if let value = value as? Int {
+      return UInt32(truncatingIfNeeded: value)
+    }
+    if let value = value as? NSNumber {
+      return UInt32(truncatingIfNeeded: value.int64Value)
     }
     return nil
   }

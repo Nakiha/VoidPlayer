@@ -11,6 +11,7 @@ abstract interface class NativePlayerApi {
     required int width,
     required int height,
     required bool useHardwareDecode,
+    int? viewportBackgroundColor,
   });
 
   Future<void> destroyPlayer();
@@ -63,14 +64,21 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     required int width,
     required int height,
     required bool useHardwareDecode,
+    int? viewportBackgroundColor,
   }) async {
-    final map = await _channel
-        .invokeMethod<Map<dynamic, dynamic>>(NativePlayerMethods.createPlayer, {
-          NativePlayerKeys.videoPaths: videoPaths,
-          NativePlayerKeys.width: width,
-          NativePlayerKeys.height: height,
-          NativePlayerKeys.useHardwareDecode: useHardwareDecode,
-        });
+    final args = <String, dynamic>{
+      NativePlayerKeys.videoPaths: videoPaths,
+      NativePlayerKeys.width: width,
+      NativePlayerKeys.height: height,
+      NativePlayerKeys.useHardwareDecode: useHardwareDecode,
+    };
+    if (viewportBackgroundColor != null) {
+      args[NativePlayerKeys.color] = viewportBackgroundColor;
+    }
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      NativePlayerMethods.createPlayer,
+      args,
+    );
     return CreatePlayerResult.fromMap(
       NativePlayerPayloads.requireMap(map, NativePlayerMethods.createPlayer),
     );

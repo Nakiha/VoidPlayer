@@ -86,6 +86,7 @@ class NativePlayerController {
       width: width,
       height: height,
       useHardwareDecode: useHardwareDecode,
+      viewportBackgroundColor: _viewportBackgroundColor,
     );
     _textureId = result.textureId;
     if (_disposed) {

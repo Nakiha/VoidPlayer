@@ -67,6 +67,9 @@ void fill_present_decision_info_from_snapshot(
   out->track_count = constants.track_count;
   out->mode = constants.mode;
   out->split_pos = constants.split_pos;
+  for (size_t i = 0; i < 4; ++i) {
+    out->background_color[i] = constants.background_color[i];
+  }
   for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
     out->order[slot] = constants.order[slot];
     out->display_offset_x[slot] = constants.display_offset_x[slot];

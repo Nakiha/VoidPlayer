@@ -194,10 +194,192 @@ void main() {
     expect(openFileTaps, 1);
   });
 
-  testWidgets('media header toggles overlay panel from first track only', (
+  testWidgets('media header click toggles overlay panel with header widths', (
     tester,
   ) async {
-    var panelTaps = 0;
+    final openedTrack = track();
+    final secondTrack = const TrackEntry(
+      TrackInfo(
+        fileId: 2,
+        slot: 1,
+        path: 'second.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+    var activationTaps = 0;
+
+    await tester.pumpWidget(
+      _localized(
+        MediaHeaderOverlayPanelHost(
+          entries: [openedTrack, secondTrack],
+          dataSource: _FakeAnalysisToolbarDataSource(
+            cacheSnapshot: const AnalysisCacheSnapshot(
+              path: '',
+              totalBytes: 0,
+              indexedBytes: 0,
+              unindexedBytes: 0,
+              maxBytes: 0,
+              entries: [
+                AnalysisCacheEntryStats(
+                  hash: 'hash1',
+                  name: 'track.mp4',
+                  videoPath: 'track.mp4',
+                  videoBytes: 1,
+                  analysisBytes: 1,
+                  cachedAt: null,
+                  lastAccessedAt: null,
+                  complete: true,
+                ),
+                AnalysisCacheEntryStats(
+                  hash: 'hash2',
+                  name: 'second.mp4',
+                  videoPath: 'second.mp4',
+                  videoBytes: 1,
+                  analysisBytes: 1,
+                  cachedAt: null,
+                  lastAccessedAt: null,
+                  complete: true,
+                ),
+              ],
+            ),
+          ),
+          onOverlayActivate: () async => activationTaps++,
+          onOverlayDeactivate: () {},
+          onTypeChanged: (_) {},
+          onOpacityChanged: (_) {},
+          child: Column(
+            children: [
+              const Spacer(),
+              MediaHeaderBar(
+                entries: [openedTrack, secondTrack],
+                analysisDataSource: _FakeAnalysisToolbarDataSource(),
+                onMediaSwapped: (_, _) {},
+                onRemoveClicked: (_) {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    expect(find.widgetWithIcon(IconButton, Icons.grid_on), findsOneWidget);
+
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.grid_on));
+    await tester.pump(const Duration(milliseconds: 140));
+
+    expect(find.byKey(analysisOverlayControlBarKey), findsOneWidget);
+    expect(activationTaps, 0);
+    expect(find.byKey(analysisOverlayControlBarKey), findsOneWidget);
+
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.grid_on));
+    await tester.pump();
+
+    expect(find.byKey(analysisOverlayControlBarKey), findsNothing);
+  });
+
+  testWidgets('media header overlay panel follows header after layout shifts', (
+    tester,
+  ) async {
+    final openedTrack = track();
+    final secondTrack = const TrackEntry(
+      TrackInfo(
+        fileId: 2,
+        slot: 1,
+        path: 'second.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+    var footerHeight = 0.0;
+
+    await tester.pumpWidget(
+      _localized(
+        StatefulBuilder(
+          builder: (context, setState) {
+            return MediaHeaderOverlayPanelHost(
+              entries: [openedTrack, secondTrack],
+              dataSource: _FakeAnalysisToolbarDataSource(
+                cacheSnapshot: const AnalysisCacheSnapshot(
+                  path: '',
+                  totalBytes: 0,
+                  indexedBytes: 0,
+                  unindexedBytes: 0,
+                  maxBytes: 0,
+                  entries: [
+                    AnalysisCacheEntryStats(
+                      hash: 'hash1',
+                      name: 'track.mp4',
+                      videoPath: 'track.mp4',
+                      videoBytes: 1,
+                      analysisBytes: 1,
+                      cachedAt: null,
+                      lastAccessedAt: null,
+                      complete: true,
+                    ),
+                    AnalysisCacheEntryStats(
+                      hash: 'hash2',
+                      name: 'second.mp4',
+                      videoPath: 'second.mp4',
+                      videoBytes: 1,
+                      analysisBytes: 1,
+                      cachedAt: null,
+                      lastAccessedAt: null,
+                      complete: true,
+                    ),
+                  ],
+                ),
+              ),
+              onOverlayActivate: () async {},
+              onOverlayDeactivate: () {},
+              onTypeChanged: (_) {},
+              onOpacityChanged: (_) {},
+              child: Column(
+                children: [
+                  const Spacer(),
+                  MediaHeaderBar(
+                    entries: [openedTrack, secondTrack],
+                    analysisDataSource: _FakeAnalysisToolbarDataSource(),
+                    onMediaSwapped: (_, _) {},
+                    onRemoveClicked: (_) {},
+                  ),
+                  SizedBox(
+                    key: const ValueKey('media-header-footer'),
+                    height: footerHeight,
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => footerHeight = 80),
+                    child: const Text('shift'),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.grid_on));
+    await tester.pump(const Duration(milliseconds: 140));
+    final initialTop = tester
+        .getTopLeft(find.byKey(analysisOverlayControlBarKey))
+        .dy;
+
+    await tester.tap(find.text('shift'));
+    await tester.pump();
+    await tester.pump();
+
+    final shiftedTop = tester
+        .getTopLeft(find.byKey(analysisOverlayControlBarKey))
+        .dy;
+    expect(shiftedTop, closeTo(initialTop - 80, 1));
+  });
+
+  testWidgets('media header overlay button is only on the first track', (
+    tester,
+  ) async {
     final openedTrack = track();
     final secondTrack = const TrackEntry(
       TrackInfo(
@@ -215,10 +397,6 @@ void main() {
           entries: [openedTrack, secondTrack],
           analysisDataSource: _FakeAnalysisToolbarDataSource(),
           onMediaSwapped: (_, _) {},
-          onAnalysisOverlayPanelToggle: () async => panelTaps++,
-          onAnalysisOverlayTypeChanged: (_) {},
-          onAnalysisOverlayLayersChanged: (_) {},
-          onAnalysisOverlayOpacityChanged: (_) {},
           onRemoveClicked: (_) {},
         ),
       ),
@@ -226,9 +404,6 @@ void main() {
 
     await tester.pump();
     expect(find.widgetWithIcon(IconButton, Icons.grid_on), findsOneWidget);
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.grid_on));
-
-    expect(panelTaps, 1);
   });
 
   testWidgets('analysis panel reports cache without overlay controls', (
@@ -274,7 +449,6 @@ void main() {
   testWidgets('analysis overlay control bar switches type and opacity', (
     tester,
   ) async {
-    final openedTrack = track();
     var type = AnalysisOverlayType.cu;
     var opacity = 0.55;
     final source = _FakeAnalysisToolbarDataSource(
@@ -287,10 +461,8 @@ void main() {
     await tester.pumpWidget(
       _localized(
         AnalysisOverlayControlBar(
-          entries: [openedTrack],
           dataSource: source,
           onTypeChanged: (next) => type = next,
-          onLayersChanged: (_) {},
           onOpacityChanged: (next) => opacity = next,
         ),
       ),
@@ -311,10 +483,7 @@ void main() {
         'CU partitions',
         'QP heatmap',
         'Bit-cost heatmap',
-        'Prediction mode labels',
-        'Prediction lines',
         'Overlay opacity',
-        'Sync this panel to all overlay headers',
       ]),
     );
     for (final tooltip in tester.widgetList<Tooltip>(overlayTooltips)) {
@@ -323,16 +492,12 @@ void main() {
 
     await tester.tap(
       find.byKey(
-        ValueKey(
-          'analysis-overlay-type-${openedTrack.fileId}-${AnalysisOverlayType.qpHeatmap.name}',
-        ),
+        ValueKey('analysis-overlay-type-${AnalysisOverlayType.qpHeatmap.name}'),
       ),
     );
     expect(type, AnalysisOverlayType.qpHeatmap);
 
-    final slider = find.byKey(
-      ValueKey('analysis-overlay-opacity-${openedTrack.fileId}'),
-    );
+    final slider = find.byKey(analysisOverlayOpacityKey);
     await tester.tapAt(tester.getTopRight(slider) + const Offset(-2, 12));
     expect(opacity, greaterThan(0.55));
     await tester.tapAt(tester.getTopLeft(slider) + const Offset(0, 12));
@@ -342,80 +507,57 @@ void main() {
     expect(source.config.copyWith(opacity: 2).opacity, 1);
   });
 
-  testWidgets('analysis overlay sync disables inactive track panels by default', (
+  testWidgets('analysis overlay type segments toggle activation', (
     tester,
   ) async {
-    final openedTrack = track();
-    const secondTrack = TrackEntry(
-      TrackInfo(
-        fileId: 2,
-        slot: 1,
-        path: 'second.mp4',
-        width: 1920,
-        height: 1080,
-      ),
-    );
     var type = AnalysisOverlayType.cu;
+    var activations = 0;
+    var deactivations = 0;
     final source = _FakeAnalysisToolbarDataSource(
       overlayHash: 'hash1',
-      overlayTrackFileIds: const {1, 2},
-      cacheSnapshot: const AnalysisCacheSnapshot(
-        path: '',
-        totalBytes: 0,
-        indexedBytes: 0,
-        unindexedBytes: 0,
-        maxBytes: 0,
-        entries: [
-          AnalysisCacheEntryStats(
-            hash: 'hash1',
-            name: 'track.mp4',
-            videoPath: 'track.mp4',
-            videoBytes: 1,
-            analysisBytes: 1,
-            cachedAt: null,
-            lastAccessedAt: null,
-            complete: true,
-          ),
-          AnalysisCacheEntryStats(
-            hash: 'hash2',
-            name: 'second.mp4',
-            videoPath: 'second.mp4',
-            videoBytes: 1,
-            analysisBytes: 1,
-            cachedAt: null,
-            lastAccessedAt: null,
-            complete: true,
-          ),
-        ],
-      ),
+      config: const AnalysisOverlayConfig(),
     );
 
     await tester.pumpWidget(
       _localized(
         AnalysisOverlayControlBar(
-          entries: [openedTrack, secondTrack],
           dataSource: source,
           onTypeChanged: (next) => type = next,
-          onLayersChanged: (_) {},
           onOpacityChanged: (_) {},
+          onActivateOverlay: () async => activations++,
+          onDeactivateOverlay: () => deactivations++,
         ),
       ),
     );
 
-    final secondTrackQpButton = find.byKey(
-      ValueKey(
-        'analysis-overlay-type-${secondTrack.fileId}-${AnalysisOverlayType.qpHeatmap.name}',
+    await tester.tap(
+      find.byKey(
+        ValueKey('analysis-overlay-type-${AnalysisOverlayType.cu.name}'),
       ),
     );
-    await tester.tap(secondTrackQpButton, warnIfMissed: false);
-    expect(type, AnalysisOverlayType.cu);
+    expect(deactivations, 1);
+
+    await tester.pumpWidget(
+      _localized(
+        AnalysisOverlayControlBar(
+          dataSource: _FakeAnalysisToolbarDataSource(),
+          panelActive: false,
+          panelReady: true,
+          onTypeChanged: (next) => type = next,
+          onOpacityChanged: (_) {},
+          onActivateOverlay: () async => activations++,
+          onDeactivateOverlay: () => deactivations++,
+        ),
+      ),
+    );
 
     await tester.tap(
-      find.byKey(ValueKey('analysis-overlay-sync-${openedTrack.fileId}')),
+      find.byKey(
+        ValueKey('analysis-overlay-type-${AnalysisOverlayType.qpHeatmap.name}'),
+      ),
     );
-    await tester.pump();
-    await tester.tap(secondTrackQpButton);
     expect(type, AnalysisOverlayType.qpHeatmap);
+    expect(activations, 1);
   });
 
   testWidgets('canceling network stream dialog restores space shortcut', (

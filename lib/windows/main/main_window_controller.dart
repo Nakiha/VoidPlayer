@@ -310,18 +310,13 @@ class MainWindowController {
           );
           analysisCoordinator.updateOverlayConfig(config);
         },
-        onLayersChanged: (layers) {
-          final config = analysisGeneration.overlayConfig.copyWith(
-            layers: layers,
-          );
-          analysisCoordinator.updateOverlayConfig(config);
-        },
         onOpacityChanged: (opacity) {
           final config = analysisGeneration.overlayConfig.copyWith(
             opacity: opacity,
           );
           analysisCoordinator.updateOverlayConfig(config);
         },
+        onActivate: analysisCoordinator.activateOverlayPanelTracks,
         onClose: analysisCoordinator.deactivateOverlay,
       ),
       overlays: MainWindowOverlayActions(

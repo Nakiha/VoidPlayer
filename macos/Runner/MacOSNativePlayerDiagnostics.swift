@@ -171,7 +171,7 @@ extension MacOSNativePlayerSession {
       "decodeDroppedCount": Int64(min(UInt64(stats.decode_dropped_count), maxInt64)),
       "decodeElapsedMs": Int64(stats.decode_elapsed_ms),
       "decodeFps": stats.decode_fps,
-      "decodeFpsX1000": Int64(max(0.0, stats.decode_fps * 1000.0)),
+      "decodeFpsX1000": Self.finiteNonNegativeX1000(stats.decode_fps),
       "decodeAvgMs": stats.decode_avg_ms,
       "decodeMaxMs": stats.decode_max_ms,
       "rendererOwnedUploadCount": Int64(
@@ -182,8 +182,8 @@ extension MacOSNativePlayerSession {
       ),
       "rendererOwnedUploadElapsedMs": Int64(stats.renderer_owned_upload_elapsed_ms),
       "rendererOwnedUploadFps": stats.renderer_owned_upload_fps,
-      "rendererOwnedUploadFpsX1000": Int64(
-        max(0.0, stats.renderer_owned_upload_fps * 1000.0)
+      "rendererOwnedUploadFpsX1000": Self.finiteNonNegativeX1000(
+        stats.renderer_owned_upload_fps
       ),
       "rendererOwnedDirectYuvUploadCount": Int64(
         stats.renderer_owned_direct_yuv_upload_count
@@ -211,7 +211,7 @@ extension MacOSNativePlayerSession {
         min(UInt64(stats.aggregate_decode_frame_count), maxInt64)
       ),
       "aggregateDecodeFps": stats.aggregate_decode_fps,
-      "aggregateDecodeFpsX1000": Int64(max(0.0, stats.aggregate_decode_fps * 1000.0)),
+      "aggregateDecodeFpsX1000": Self.finiteNonNegativeX1000(stats.aggregate_decode_fps),
       "cpuFrameMemoryBytes": Int64(min(stats.cpu_frame_memory_bytes, maxInt64)),
       "packetQueueMemoryBytes": Int64(min(stats.packet_queue_memory_bytes, maxInt64)),
       "rendererOwnedStagingAllocationCount": Int64(
@@ -281,14 +281,33 @@ extension MacOSNativePlayerSession {
       ),
       "sourceFrameCacheHitRatioX1000": Self.ratioX1000(
         numerator: stats.source_frame_cache_hit_count,
-        denominator: stats.source_frame_cache_hit_count + stats.source_frame_cache_miss_count
+        denominator: Self.saturatingAdd(
+          stats.source_frame_cache_hit_count,
+          stats.source_frame_cache_miss_count
+        )
       ),
     ]
   }
 
   private static func ratioX1000(numerator: UInt64, denominator: UInt64) -> Int64 {
     guard denominator > 0 else { return 0 }
-    return Int64(min(numerator * 1000 / denominator, UInt64(Int64.max)))
+    let quotient = numerator / denominator
+    let remainder = numerator % denominator
+    let scaledQuotient = min(quotient, UInt64(Int64.max) / 1000) * 1000
+    let scaledRemainder = min(remainder, UInt64.max / 1000) * 1000 / denominator
+    return Int64(min(scaledQuotient + scaledRemainder, UInt64(Int64.max)))
+  }
+
+  private static func finiteNonNegativeX1000(_ value: Double) -> Int64 {
+    guard value.isFinite, value > 0 else { return 0 }
+    let scaledLimit = Double(Int64.max) / 1000.0
+    guard value < scaledLimit else { return Int64.max }
+    return Int64(value * 1000.0)
+  }
+
+  private static func saturatingAdd(_ lhs: UInt64, _ rhs: UInt64) -> UInt64 {
+    let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+    return overflow ? UInt64.max : sum
   }
 
   func trackDiagnostics() -> [[String: Any]] {
@@ -328,7 +347,7 @@ extension MacOSNativePlayerSession {
         ),
         "framesDecoded": Int64(min(track.frames_decoded, UInt64(Int64.max))),
         "decodeFps": track.decode_fps,
-        "decodeFpsX1000": Int64(max(0.0, track.decode_fps * 1000.0)),
+        "decodeFpsX1000": Self.finiteNonNegativeX1000(track.decode_fps),
         "decodeAvgMs": track.decode_avg_ms,
         "decodeMaxMs": track.decode_max_ms,
         "currentPtsUs": Int64(track.current_pts_us),

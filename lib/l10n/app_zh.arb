@@ -187,7 +187,6 @@
   "analysisOverlayLayerPredictionMode": "预测模式标签",
   "analysisOverlayLayerPredictionLines": "预测线",
   "analysisOverlayOpacity": "遮罩透明度",
-  "analysisOverlaySyncSettings": "同步此面板设置到所有遮罩头",
 
   "mediaInfoNoTracks": "当前没有打开的轨道",
   "mediaInfoStartTime": "起始时间",

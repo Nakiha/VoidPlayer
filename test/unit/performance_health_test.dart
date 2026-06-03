@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/performance/performance_health.dart';
 
@@ -12,6 +13,7 @@ void main() {
   test('classifies native render pressure from renderer latency', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
+      'isPlaying': true,
       'displayRefreshHzEstimate': 120.0,
       'displayTickHz': 118.0,
       'nativeRendererDrawP95Us': 12000.0,
@@ -45,6 +47,7 @@ void main() {
   test('classifies decode buffer pressure from track diagnostics', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
+      'isPlaying': true,
       'nativeTrackDiagnostics': [
         {'bufferState': 1, 'bufferCount': 0, 'bufferCapacity': 8},
       ],
@@ -68,5 +71,48 @@ void main() {
     expect(snapshot.level, PerformanceHealthLevel.severe);
     expect(snapshot.kind, PerformanceHealthKind.nativeRenderPressure);
     expect(snapshot.metalBufferExhaustionDelta, 1);
+  });
+
+  test('does not warn from static paused overlay redraw latency', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': false,
+      'layoutIntentHz': 0.0,
+      'nativeRendererDrawP95Us': 18000.0,
+      'nativeRendererDrawBackendP95Us': 16000.0,
+      'metalCommandCompletionP95Us': 17000.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+  });
+
+  testWidgets('display pressure feedback avoids environment-specific advice', (
+    tester,
+  ) async {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 70.0,
+      'layoutIntentHz': 100.0,
+      'layoutDrawHz': 65.0,
+    });
+    late String feedback;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        home: Builder(
+          builder: (context) {
+            feedback = snapshot.localizedFeedback(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(feedback, isNot(contains('HDR')));
+    expect(feedback, contains('external displays'));
+    expect(feedback, contains('screen recording'));
   });
 }

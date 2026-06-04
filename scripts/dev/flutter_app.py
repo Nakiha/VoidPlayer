@@ -65,6 +65,7 @@ def flutter_build_macos(debug: bool) -> None:
 
     run(cmd, cwd=str(ROOT))
     _install_macos_ffmpeg_analyzer(macos_app_bundle_path(debug))
+    _codesign_macos_app_bundle(macos_app_bundle_path(debug))
     _register_macos_app_bundle(macos_app_bundle_path(debug))
 
 
@@ -104,6 +105,30 @@ def _register_macos_app_bundle(app_bundle: Path) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+
+
+def _codesign_macos_app_bundle(app_bundle: Path) -> None:
+    if not _is_macos() or not app_bundle.exists():
+        return
+    identity = os.environ.get("VOIDPLAYER_MACOS_CODESIGN_IDENTITY", "-")
+    if identity.lower() in {"", "skip", "none", "0", "false"}:
+        return
+    codesign = shutil.which("codesign")
+    if not codesign:
+        return
+
+    header("Code sign macOS app bundle")
+    run(
+        [
+            codesign,
+            "--force",
+            "--deep",
+            "--sign",
+            identity,
+            str(app_bundle),
+        ],
+        cwd=str(ROOT),
+    )
 
 
 def flutter_unit_test() -> None:
@@ -279,6 +304,7 @@ def _cmd_launch_macos(args) -> None:
         print(f"ERROR: macOS app not found: {app_bundle}")
         sys.exit(1)
     _install_macos_ffmpeg_analyzer(app_bundle)
+    _codesign_macos_app_bundle(app_bundle)
     _register_macos_app_bundle(app_bundle)
 
     cmd = [str(exe)]
@@ -441,6 +467,7 @@ def _cmd_mac_ui_test(args) -> None:
         print(f"ERROR: macOS app not found: {app_bundle}")
         sys.exit(1)
     _install_macos_ffmpeg_analyzer(app_bundle)
+    _codesign_macos_app_bundle(app_bundle)
     _register_macos_app_bundle(app_bundle)
 
     container_scripts_dir, container_media_dir = _macos_ui_test_container_dirs()

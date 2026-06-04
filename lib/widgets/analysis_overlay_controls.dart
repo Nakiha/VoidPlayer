@@ -38,7 +38,7 @@ class AnalysisOverlayControlBar extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final config = dataSource.overlayConfig;
-    final editable = panelReady || panelActive;
+    final waitingForCache = !panelReady && !panelActive;
     return DecoratedBox(
       key: analysisOverlayControlBarKey,
       decoration: BoxDecoration(
@@ -47,40 +47,36 @@ class AnalysisOverlayControlBar extends StatelessWidget {
         border: Border.all(
           color: panelActive
               ? colorScheme.primary.withValues(alpha: 0.58)
-              : colorScheme.outlineVariant.withValues(alpha: 0.28),
+              : colorScheme.outlineVariant.withValues(
+                  alpha: waitingForCache ? 0.38 : 0.28,
+                ),
         ),
       ),
-      child: Opacity(
-        opacity: editable ? 1.0 : 0.42,
-        child: IgnorePointer(
-          ignoring: !editable,
-          child: SizedBox(
-            height: 30,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const SizedBox(width: AnalysisOverlayControlBar._innerPadding),
-                _OverlayTypeButtons(
-                  value: config.type,
-                  panelActive: panelActive,
-                  onChanged: onTypeChanged,
-                  onActivateOverlay: onActivateOverlay,
-                  onDeactivateOverlay: onDeactivateOverlay,
-                ),
-                const SizedBox(width: 6),
-                _OverlayPanelDivider(),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: _OverlayOpacitySlider(
-                    key: analysisOverlayOpacityKey,
-                    value: config.opacity,
-                    onChanged: onOpacityChanged,
-                  ),
-                ),
-                const SizedBox(width: AnalysisOverlayControlBar._innerPadding),
-              ],
+      child: SizedBox(
+        height: 30,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const SizedBox(width: AnalysisOverlayControlBar._innerPadding),
+            _OverlayTypeButtons(
+              value: config.type,
+              panelActive: panelActive,
+              onChanged: onTypeChanged,
+              onActivateOverlay: onActivateOverlay,
+              onDeactivateOverlay: onDeactivateOverlay,
             ),
-          ),
+            const SizedBox(width: 6),
+            _OverlayPanelDivider(),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _OverlayOpacitySlider(
+                key: analysisOverlayOpacityKey,
+                value: config.opacity,
+                onChanged: onOpacityChanged,
+              ),
+            ),
+            const SizedBox(width: AnalysisOverlayControlBar._innerPadding),
+          ],
         ),
       ),
     );

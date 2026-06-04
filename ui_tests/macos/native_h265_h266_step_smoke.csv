@@ -1,0 +1,26 @@
+# macOS regression for paused repeated step across HEVC hardware + VVC software tracks.
+# Run with:
+#   python dev.py mac-ui-test --build ui_tests/macos/native_h265_h266_step_smoke.csv
+@WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
+0.3, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+1.8, ASSERT_TRACK_COUNT, 1
+2.2, ADD_MEDIA, resources/video/h266_10s_1920x1080.mp4
+12.0, ASSERT_TRACK_COUNT, 2
+12.1, ASSERT_NATIVE_DIAGNOSTIC_STRING, primaryTrackDecodeMode, shared-renderer-videotoolbox
+12.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, secondaryTrackDecodeMode, shared-renderer-software
+12.3, SEEK_TO, 2950000
+13.1, ASSERT_POSITION_RANGE, 2930000, 3000000
+13.2, CAPTURE_VIEWPORT, dual_step_before
+13.3, ASSERT_CAPTURE_NOT_BLACK, dual_step_before, 0.5, 16.0
+13.4, STEP_FORWARD
+13.9, STEP_FORWARD
+14.4, STEP_FORWARD
+14.9, STEP_FORWARD
+15.4, ASSERT_POSITION_RANGE, 2960000, 3100000
+15.5, ASSERT_PRESENTED_FRAME_RANGE, 0, 2900000, 3150000
+15.6, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
+15.7, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+15.8, CAPTURE_VIEWPORT, dual_step_after
+15.9, ASSERT_CAPTURE_NOT_BLACK, dual_step_after, 0.5, 16.0
+16.0, QUIT, 0

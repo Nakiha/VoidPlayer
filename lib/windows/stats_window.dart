@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
@@ -310,8 +309,8 @@ class _StatsPageState extends State<StatsPage> {
                 DataColumn(label: Text(l.track)),
                 DataColumn(label: Text(l.fps)),
                 DataColumn(label: Text(l.bufferQueue)),
-                DataColumn(label: Text('Frame memory')),
-                DataColumn(label: Text('Packet queue')),
+                DataColumn(label: Text(l.frameMemory)),
+                DataColumn(label: Text(l.packetQueue)),
                 DataColumn(label: Text(l.decodeAvg)),
                 DataColumn(label: Text(l.decodeMax)),
                 DataColumn(label: Text(l.ptsUs)),
@@ -440,9 +439,6 @@ class StatsHealthSummarySection extends StatelessWidget {
 }
 
 class StatsMemorySummarySection extends StatelessWidget {
-  static const _minTableWidth = 520.0;
-  static const _cellWidth = 104.0;
-
   final StatsMemorySummary memory;
 
   const StatsMemorySummarySection({super.key, required this.memory});
@@ -451,104 +447,51 @@ class StatsMemorySummarySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final l = AppLocalizations.of(context)!;
     final metrics = [
       StatsMemoryMetric(
-        label: 'RSS',
+        label: l.memoryRss,
         value: _bytesText(memory.workingSetBytes),
         icon: Icons.memory_outlined,
       ),
       StatsMemoryMetric(
-        label: 'Private',
+        label: l.memoryPrivate,
         value: _bytesText(memory.privateBytes),
         icon: Icons.lock_outline,
       ),
       StatsMemoryMetric(
-        label: 'GPU',
+        label: l.memoryGpuFrames,
         value: _bytesText(memory.dedicatedGpuBytes),
         icon: Icons.developer_board_outlined,
       ),
       StatsMemoryMetric(
-        label: 'CPU frames',
+        label: l.memoryCpuFrames,
         value: _bytesText(memory.cpuFrameBytes),
         icon: Icons.view_in_ar_outlined,
       ),
       StatsMemoryMetric(
-        label: 'Packets',
+        label: l.memoryPackets,
         value: _bytesText(memory.packetQueueBytes),
         icon: Icons.all_inbox_outlined,
       ),
     ];
 
-    return ColoredBox(
-      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.18),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.monitor_heart_outlined,
-                  size: 15,
-                  color: colorScheme.primary,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: Row(
+        children: [
+          for (int i = 0; i < metrics.length; i++) ...[
+            Expanded(child: _MemoryMetricCell(metric: metrics[i])),
+            if (i != metrics.length - 1)
+              SizedBox(
+                width: 1,
+                height: 52,
+                child: ColoredBox(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.56),
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  'Memory',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final tableWidth = constraints.maxWidth.isFinite
-                    ? (constraints.maxWidth < _minTableWidth
-                          ? _minTableWidth
-                          : constraints.maxWidth)
-                    : _minTableWidth;
-                return SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: tableWidth,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: colorScheme.outlineVariant.withValues(
-                            alpha: 0.62,
-                          ),
-                        ),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        children: [
-                          for (int i = 0; i < metrics.length; i++) ...[
-                            Expanded(
-                              child: _MemoryMetricCell(metric: metrics[i]),
-                            ),
-                            if (i != metrics.length - 1)
-                              SizedBox(
-                                width: 1,
-                                height: 56,
-                                child: ColoredBox(
-                                  color: colorScheme.outlineVariant.withValues(
-                                    alpha: 0.62,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+              ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -564,10 +507,9 @@ class _MemoryMetricCell extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return SizedBox(
-      width: StatsMemorySummarySection._cellWidth,
-      height: 56,
+      height: 52,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
@@ -583,7 +525,7 @@ class _MemoryMetricCell extends StatelessWidget {
                 Expanded(
                   child: Text(
                     metric.label,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,

@@ -348,6 +348,7 @@ int VPMacOSNativePlayerCopyPerfStats(
         out->aggregate_decode_fps += track_stats.fps;
       }
       const auto memory_stats = player->renderer->gpu_memory_stats();
+      out->dedicated_gpu_usage_bytes = memory_stats.total_estimated_bytes;
       out->cpu_frame_memory_bytes = memory_stats.cpu_frame_bytes;
       out->packet_queue_memory_bytes = memory_stats.packet_queue_bytes;
       const auto backend_stats = player->renderer->presentation_backend_stats();

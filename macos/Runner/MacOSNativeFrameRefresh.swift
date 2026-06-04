@@ -32,7 +32,7 @@ enum MacOSNativeFrameRefresh {
         }
       )
       framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
-      presentationState.recordFrame(frameInfo)
+      presentationState.recordDiscontinuityFrame(frameInfo)
       logRefreshProfiler(
         route: "seek",
         startNs: startNs,
@@ -234,13 +234,37 @@ enum MacOSNativeFrameRefresh {
     let startNs = DispatchTime.now().uptimeNanoseconds
     let timeoutMs = 3_000
     do {
-      let previousFrameInfo = player.lastRendererOwnedFrameInfo()
       if forward {
         try player.stepForward()
       } else {
         try player.stepBackward()
       }
       let targetPtsUs = player.currentPtsUs()
+      let acceptStepFrame: (MacOSNativeFrameInfo) -> Bool = { frameInfo in
+        let nearStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 100_000) &&
+          frameInfo.ptsUs <= targetPtsUs + 100_000
+        let nearBackwardStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
+          frameInfo.ptsUs <= targetPtsUs + 100_000
+        return forward ? nearStepTarget : nearBackwardStepTarget
+      }
+      if let frameInfo = player.lastRendererOwnedFrameInfo(),
+         acceptStepFrame(frameInfo) {
+        _ = texture.publishRenderedTargetAndInstallNext(
+          player,
+          maxTrackSlots: maxTrackSlots,
+          frameInfo: frameInfo
+        )
+        framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
+        presentationState.recordFrame(frameInfo)
+        logRefreshProfiler(
+          route: forward ? "step-forward" : "step-backward",
+          startNs: startNs,
+          timeoutMs: timeoutMs,
+          result: "ok immediate",
+          ptsUs: frameInfo.ptsUs
+        )
+        return nil
+      }
       let (frameInfo, attempts) = try updateFromNativePlayerWithTransientRetry(
         route: forward ? "step-forward" : "step-backward",
         player,
@@ -248,17 +272,7 @@ enum MacOSNativeFrameRefresh {
         maxTrackSlots: maxTrackSlots,
         timeoutMs: timeoutMs,
         acceptFrame: { frameInfo in
-          let nearStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 100_000) &&
-            frameInfo.ptsUs <= targetPtsUs + 100_000
-          let nearBackwardStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
-            frameInfo.ptsUs <= targetPtsUs + 100_000
-          let acceptedTarget = forward ? nearStepTarget : nearBackwardStepTarget
-          guard acceptedTarget else { return false }
-          guard let previousFrameInfo,
-                previousFrameInfo.ptsUs != targetPtsUs else {
-            return true
-          }
-          return frameInfo.ptsUs != previousFrameInfo.ptsUs
+          acceptStepFrame(frameInfo)
         }
       )
       framePump.setTargetInstalled(player.rendererOwnedPresentationActive())

@@ -13,6 +13,8 @@ typealias MacOSTextureDiagnostics = (
   metalTextureCreationCount: Int,
   metalTextureFailureCount: Int,
   metalTextureLastError: String,
+  rendererOwnedPixelBufferBytes: Int,
+  rendererOwnedPixelBufferCount: Int,
   inFlightMetalBufferCount: Int,
   metalBufferExhaustionCount: Int
 )
@@ -357,6 +359,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       metalTextureCreationCount: metalTextureCreationCount,
       metalTextureFailureCount: metalTextureFailureCount,
       metalTextureLastError: metalTextureLastError,
+      rendererOwnedPixelBufferBytes: rendererOwnedPixelBufferBytesLocked(),
+      rendererOwnedPixelBufferCount: pixelBuffers.count,
       inFlightMetalBufferCount: pixelBufferStates.filter { $0 == .rendering }.count,
       metalBufferExhaustionCount: metalBufferExhaustionCount
     )
@@ -539,6 +543,12 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         return "d"
       }
     }.joined()
+  }
+
+  private func rendererOwnedPixelBufferBytesLocked() -> Int {
+    pixelBuffers.reduce(0) { total, buffer in
+      total + CVPixelBufferGetBytesPerRow(buffer) * CVPixelBufferGetHeight(buffer)
+    }
   }
 
   private func publishBufferLocked(

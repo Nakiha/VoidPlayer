@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/native_player/native_player_api.dart';
 import 'package:void_player/native_player/native_player_events.dart';
 import 'package:void_player/windows/stats_window.dart';
@@ -47,6 +50,43 @@ void main() {
     expect(snapshot.tracks.single.packetQueueMemoryBytes, 512);
     expect(snapshot.tracks.single.currentPtsUs, 123000);
   });
+
+  testWidgets(
+    'memory summary fits a compact profiler panel without scrolling',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: const Locale('zh'),
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const SizedBox(
+            width: 560,
+            child: StatsMemorySummarySection(
+              memory: StatsMemorySummary(
+                workingSetBytes: 255433113,
+                privateBytes: 268016025,
+                dedicatedGpuBytes: 122683392,
+                cpuFrameBytes: 0,
+                packetQueueBytes: 5033164,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(SingleChildScrollView), findsNothing);
+      expect(find.text('RSS'), findsOneWidget);
+      expect(find.text('私有'), findsOneWidget);
+      expect(find.text('GPU帧'), findsOneWidget);
+      expect(find.text('CPU帧'), findsOneWidget);
+      expect(find.text('包队列'), findsOneWidget);
+    },
+  );
 }
 
 class _FakeNativePlayerApi implements NativePlayerApi {

@@ -142,10 +142,11 @@ class PerformanceHealthSnapshot {
     final renderLatencySevere =
         inputOrPlaybackActive &&
         (drawP95Us >= 22_000 || backendP95Us >= 20_000 || metalP95Us >= 22_000);
+    final playbackCadenceGap = playing && largeGapDelta > 0;
     final nativeHardPressure =
         metalBufferDelta > 0 ||
         metalFailureDelta > 0 ||
-        (playing && largeGapDelta > 0) ||
+        playbackCadenceGap ||
         monotonicViolationCount > 0;
     final nativeSlow = renderLatencySlow || nativeHardPressure;
     final nativeSevere =
@@ -268,7 +269,7 @@ class PerformanceHealthSnapshot {
     if (metalBufferExhaustionCount > 0) {
       parts.add('ring $metalBufferExhaustionCount');
     }
-    if (largeGapCount > 0) {
+    if (playing && largeGapCount > 0) {
       parts.add('gap $largeGapCount');
     }
     return parts.isEmpty ? '-' : parts.join(' · ');

@@ -87,6 +87,30 @@ void main() {
     expect(snapshot.kind, PerformanceHealthKind.ok);
   });
 
+  testWidgets('hides large-gap details while paused', (tester) async {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': false,
+      'presentedFramePtsLargeGapCount': 2,
+    });
+    late String detail;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        home: Builder(
+          builder: (context) {
+            detail = snapshot.localizedDetail(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(detail, isNot(contains('gap')));
+  });
+
   testWidgets('display pressure feedback avoids environment-specific advice', (
     tester,
   ) async {

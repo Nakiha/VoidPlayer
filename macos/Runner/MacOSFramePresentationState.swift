@@ -62,6 +62,11 @@ final class MacOSFramePresentationState {
     recordPresentedPts(info.ptsUs)
   }
 
+  func recordDiscontinuityFrame(_ info: MacOSNativeFrameInfo) {
+    resetPtsTrace()
+    recordFrame(info)
+  }
+
   func seedPresentedFrame(ptsUs: Int, dtsUs: Int, durationUs: Int) {
     currentPtsUs = ptsUs
     lastPresentedPtsUs = ptsUs

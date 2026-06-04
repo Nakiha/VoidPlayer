@@ -163,6 +163,7 @@ typedef struct VPMacOSNativeTrackDiagnosticInfo {
 typedef struct VPMacOSNativePlayerPerfStats {
   uint64_t process_rss_bytes;
   uint64_t process_private_bytes;
+  uint64_t dedicated_gpu_usage_bytes;
   uint64_t decode_frame_count;
   uint64_t decode_dropped_count;
   int64_t decode_elapsed_ms;

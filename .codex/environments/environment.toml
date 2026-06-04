@@ -4,17 +4,10 @@ name = "void_player"
 
 [setup]
 script = """
-if command -v python3.12 >/dev/null 2>&1; then
-  export VOIDPLAYER_PYTHON=python3.12
-elif command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
-  export VOIDPLAYER_PYTHON=python3
-else
-  echo "VoidPlayer dev.py requires Python 3.10+; install python3.12 or put it on PATH." >&2
-  return 1
-fi
+python -c "import sys; raise SystemExit(sys.version_info < (3, 10))"
 """
 
 [[actions]]
 name = "运行"
 icon = "run"
-command = "${VOIDPLAYER_PYTHON:-python3.12} dev.py launch"
+command = "python dev.py launch"

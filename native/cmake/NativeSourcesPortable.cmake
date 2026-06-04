@@ -73,6 +73,17 @@ set(VOID_MEDIA_FFMPEG_SOURCES
 
 set(VOID_RENDERER_PORTABLE_DRIVER_SOURCES
     "${VOID_NATIVE_DIR}/renderer/audio_coordinator.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_events.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_headless.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_layout.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_lifecycle.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_metrics.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_playback.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_present.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_render_loop.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_step.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_tracks.cpp"
     "${VOID_NATIVE_DIR}/renderer/seek/renderer_seek_log_policy.cpp"
     "${VOID_NATIVE_DIR}/renderer/track/track_perf_baseline.cpp"
     "${VOID_NATIVE_DIR}/renderer/track/track_preroll_policy.cpp"

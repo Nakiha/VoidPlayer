@@ -9,7 +9,6 @@ if(BUILD_ANALYSIS)
 endif()
 
 add_library(void_renderer_portable_driver OBJECT
-    "${VOID_NATIVE_DIR}/renderer/renderer.cpp"
     ${VOID_RENDERER_PORTABLE_DRIVER_SOURCES}
     ${VOID_RENDERER_PORTABLE_OVERLAY_SOURCES}
 )

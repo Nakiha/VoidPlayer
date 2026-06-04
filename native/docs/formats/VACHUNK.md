@@ -4,8 +4,8 @@ VACHUNK is the target file format for derived analysis results generated from a
 VAC2 base index. Chunks are optional, range-scoped, feature-scoped, and safe to
 delete. The recommended file extension is `.vck`.
 
-Runtime code writes overlay data as VACHUNK files directly. There is no
-standalone legacy block-stat sidecar in the cache path.
+Runtime code writes overlay data as VACHUNK files directly. The cache path does
+not use a separate block-stat sidecar file.
 
 ## Purpose
 

@@ -58,7 +58,6 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `layout_geometry_smoke` | contract | PR fast | macOS native build | Shared layout geometry. |
 | `renderer_config_validation_smoke` | contract | PR fast | macOS native build | Renderer config validation. |
 | `presentation_snapshot_smoke` | contract | PR fast | macOS native build | Draw snapshot contract. |
-| `presentation_loop_driver_smoke` | contract | PR fast | macOS native build | Presentation loop driver behavior. |
 | `presentation_carry_forward_smoke` | contract | PR fast | FFmpeg media support | Frame carry-forward behavior. |
 | `software_frame_queue_smoke` | contract | PR fast | FFmpeg media support | Software frame queue behavior. |
 | `audio_mixer_smoke` | contract | PR fast | FFmpeg audio support | Mixer active-track behavior. |
@@ -118,21 +117,9 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
 | Local macOS package gate | manual before release candidate | `python3.12 dev.py gate macos-release-readiness` |
 
-The local `release-candidate` gate and the GitHub full native config matrix are separate pieces of release evidence:
-run both when preparing a release candidate.
-
-## Phase 2 Cleanup Decisions
-
-| Test or group | Decision | Reason |
-| --- | --- | --- |
-| `native_first_frame_smoke.csv` | Deleted. | Covered by `native_facade_smoke.csv` and `native_seek_frame_smoke.csv`. |
-| `native_playback_smoke.csv` | Deleted. | Playback advancement is covered by 4K60/VVC and playing seek/step canaries. |
-| `synthetic_texture_smoke.csv` | Deleted. | Early MVP synthetic texture path; renderer-owned Metal is the normal route. |
-| `native_audio_diagnostics_smoke.csv` | Merged into `native_audio_play_seek_smoke.csv`, then deleted. | Keeps audible-track diagnostics with the audio play/seek smoke. |
-| `native_frame_callback_lifecycle_smoke.csv` | Deleted. | `native_callback_stress_smoke.csv` remains the stronger nightly callback churn gate. |
-| 4K60/VVC/P010 macOS UI smokes | Keep as release/nightly canaries unless a PR touches codec/color/backend. | High value but heavier than channel/seek/layout smokes. |
-| Windows timeline exact seek resource scripts across codecs | Keep targeted, consider release matrix grouping. | Similar resource-risk shape across codecs. |
-| CTest names ending in `_smoke` that are contract tests | Rename later only if churn is acceptable. | Labels now carry intent without breaking references. |
+The local `release-candidate` gate and the GitHub full native config matrix are
+separate pieces of release evidence: run both when preparing a release
+candidate.
 
 ## Rules
 

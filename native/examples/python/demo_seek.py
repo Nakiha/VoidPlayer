@@ -6,7 +6,6 @@ from pathlib import Path
 _root_dir = Path(__file__).resolve().parents[3]
 _build_dirs = (
     _root_dir / "build" / "native" / "standalone" / "windows-msvc",
-    Path(__file__).resolve().parents[2] / "build-msvc",
 )
 for _build_dir in _build_dirs:
     for _cfg in ("Release", "Debug"):
@@ -23,7 +22,7 @@ from PySide6.QtGui import QWindow
 from PySide6.QtCore import QTimer
 from video_renderer_native import Renderer, RendererConfig, SeekType
 
-VIDEO_DIR = Path(__file__).resolve().parents[4] / "resources" / "video"
+VIDEO_DIR = _root_dir / "resources" / "video"
 
 
 class SeekDemo:

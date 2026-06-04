@@ -1,4 +1,4 @@
-#include "renderer/capture/frame_capture_service.h"
+#include "windows/d3d11/frame_capture_service.h"
 
 namespace vr {
 

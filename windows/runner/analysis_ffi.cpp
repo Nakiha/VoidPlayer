@@ -1327,7 +1327,6 @@ static bool generate_ffmpeg_vachunk(const std::string& exe_dir,
 
     const std::string analyzer_path = first_existing_tool_path({
         exe_dir + "\\tools\\ffmpeg-analysis\\void_ffmpeg_analyzer.exe",
-        exe_dir + "\\tools\\ffmpeg-analysis\\void_hevc_analyzer.exe",
     });
     spdlog::info("[Analysis] ffmpeg-analysis producer={} exists={} codec={}",
                  analyzer_path.empty() ? "(none)" : analyzer_path,

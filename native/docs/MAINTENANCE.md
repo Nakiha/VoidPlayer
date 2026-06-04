@@ -15,32 +15,27 @@
 
 ```bash
 # 完整构建 + 测试
-python native/build.py
+python dev.py test --native-only
 
-# 仅测试（增量）
-python native/build.py --test-only
+# 仅构建 native
+python dev.py build --native
 
-# 仅基准
-python native/build.py --benchmarks-only
+# PR 快速 gate
+python dev.py gate pr-fast
 
 # Debug 构建
-python native/build.py --debug
-
-# 显式平台/目录（覆盖 host 默认）
-python native/build.py --platform macos --build-dir build/native/standalone/macos-local
+python dev.py build --native --debug
 ```
 
-`native/build.py` 会按 host 选择默认构建目录和 FFmpeg root：
-Windows 使用 `build/native/standalone/windows-msvc` + `windows/libs/ffmpeg`，macOS 使用
-`build/native/standalone/macos` + `third_party/ffmpeg`。需要交叉验证时用
-`--platform`、`--build-dir`、`--ffmpeg-root` 显式指定，不要依赖隐式 Windows 路径。
+`native/build.py` 只保留为 `dev.py` 内部调用的 standalone CMake helper；
+日常开发和验证统一走项目根目录的 `dev.py`，避免平台产物目录和依赖检查分叉。
 
 ### 测试必须全绿
 
 提交前必须满足：
 
 ```bash
-python native/build.py --test-only   # 全部 PASS
+python dev.py test --native-only   # 全部 PASS
 ```
 
 测试文件位于 `native/tests/`，对应关系见 [构建与测试](BUILD_AND_TEST.md)。
@@ -60,7 +55,7 @@ python native/build.py --test-only   # 全部 PASS
 | 线程模型变更（新增/移除线程） | [THREADING_MODEL.md](THREADING_MODEL.md) |
 | 数据格式变更（TextureFrame 等） | [DATA_PIPELINE.md](DATA_PIPELINE.md) |
 | Clock / 同步逻辑变更 | [CLOCK_AND_SYNC.md](CLOCK_AND_SYNC.md) |
-| 缓冲区大小/状态机变更 | [BUFFER_DESIGN.md](BUFFER_DESIGN.md) |
+| 缓冲区大小/状态机变更 | [BUFFERING.md](BUFFERING.md) |
 | 解码路径变更（软解/硬解） | [DECODE_PIPELINE.md](DECODE_PIPELINE.md) |
 | 像素格式 / 色彩转换 / HDR-SDR 边界变更 | [COLOR_PIPELINE.md](COLOR_PIPELINE.md) |
 | Seek 逻辑变更 | [SEEK_STRATEGY.md](SEEK_STRATEGY.md) |
@@ -94,13 +89,23 @@ python native/build.py --test-only   # 全部 PASS
 | [THREADING_MODEL.md](THREADING_MODEL.md) | 线程模型 | 线程架构变更时 |
 | [DATA_PIPELINE.md](DATA_PIPELINE.md) | 数据流 | 帧格式变更时 |
 | [CLOCK_AND_SYNC.md](CLOCK_AND_SYNC.md) | 时钟同步 | 时钟逻辑变更时 |
-| [BUFFER_DESIGN.md](BUFFER_DESIGN.md) | 缓冲区 | 缓冲策略变更时 |
+| [BUFFERING.md](BUFFERING.md) | 缓冲区 | 缓冲策略变更时 |
 | [DECODE_PIPELINE.md](DECODE_PIPELINE.md) | 解码管线 | 解码路径变更时 |
 | [COLOR_PIPELINE.md](COLOR_PIPELINE.md) | 色彩管线 | 像素格式或色彩转换变更时 |
 | [SEEK_STRATEGY.md](SEEK_STRATEGY.md) | Seek 策略 | seek 逻辑变更时 |
 | [D3D11_BACKEND.md](D3D11_BACKEND.md) | D3D11 后端 | GPU 相关变更时 |
 | [FFI_AND_BINDINGS.md](FFI_AND_BINDINGS.md) | FFI 绑定 | API 签名变更时 |
 | [BUILD_AND_TEST.md](BUILD_AND_TEST.md) | 构建测试 | 构建/测试变更时 |
-| [NATIVE_REFACTOR_TODO.md](NATIVE_REFACTOR_TODO.md) | native 技术债修复轮次 | 每轮技术债修复完成时 |
+| [TEST_MATRIX.md](TEST_MATRIX.md) | 测试 ownership / gate 映射 | 新增、删除或重分类测试时 |
+| [TARGET_BOUNDARIES.md](TARGET_BOUNDARIES.md) | CMake target / feature 边界 | target 或 feature option 变更时 |
+| [MACOS_READINESS.md](MACOS_READINESS.md) | macOS readiness / release gates | macOS runner、package、release gate 变更时 |
+| [MACOS_PRESENTATION_BACKEND.md](MACOS_PRESENTATION_BACKEND.md) | macOS Metal presentation contract | macOS texture / Metal / CVPixelBuffer 路径变更时 |
+| [NATIVE_EVENT_PIPELINE.md](NATIVE_EVENT_PIPELINE.md) | native -> Dart EventChannel 合同 | native event envelope 或 bridge 变更时 |
+| [ANALYSIS_MODULE.md](ANALYSIS_MODULE.md) | analysis 模块入口 | analysis FFI、parser、generator 变更时 |
+| [ANALYSIS_CACHE.md](ANALYSIS_CACHE.md) | VAC2/VACHUNK cache contract | cache layout、chunk policy、generation contract 变更时 |
+| [ANALYSIS_OVERLAY.md](ANALYSIS_OVERLAY.md) | analysis overlay contract | overlay scene、hit-test、renderer integration 变更时 |
+| [FFMPEG_ANALYZER.md](FFMPEG_ANALYZER.md) | FFmpeg analyzer toolchain | analyzer build/hook/packaging 变更时 |
+| [MACOS_NATIVE_ABI.md](MACOS_NATIVE_ABI.md) | macOS native ABI | macOS C ABI struct/function 变更时 |
 | [MAINTENANCE.md](MAINTENANCE.md) | 本文档 | 维护流程变更时 |
-| CPP_VIDEO_RENDERER_DESIGN.md | 已归档 | 不再更新 |
+
+`native/docs/` 只保留当前行为和合同。

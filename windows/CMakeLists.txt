@@ -141,8 +141,7 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
 # FFmpeg-based analysis tool (required for HEVC/H.264 VACache overlay generation).
 # The analyzer is built out-of-band from the instrumented FFmpeg submodule.
 file(GLOB_RECURSE FFMPEG_ANALYSIS_GLOB
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/bin/windows-x64/void_ffmpeg_analyzer.exe"
-    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/bin/windows-x64/void_hevc_analyzer.exe")
+    "${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis/vendor/ffmpeg/bin/windows-x64/void_ffmpeg_analyzer.exe")
 if(DEFINED ENV{VOID_FFMPEG_ANALYZER} AND EXISTS "$ENV{VOID_FFMPEG_ANALYZER}")
   list(APPEND FFMPEG_ANALYSIS_GLOB "$ENV{VOID_FFMPEG_ANALYZER}")
 endif()

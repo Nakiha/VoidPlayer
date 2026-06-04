@@ -36,11 +36,8 @@ python3.12 dev.py gate macos-release-readiness
 python3.12 dev.py gate windows-preservation
 ```
 
-Native 子目录仍可直接使用 CMake/presets，但日常开发建议通过顶层 `dev.py` 保持平台产物和依赖检查一致。
-如需直接调用 legacy wrapper，`python native/build.py` 会按 host 选择平台默认：
-Windows -> `build/native/standalone/windows-msvc` / `windows/libs/ffmpeg`，macOS ->
-`build/native/standalone/macos` / `third_party/ffmpeg`；也可用 `--platform`、`--build-dir`、
-`--ffmpeg-root` 显式覆盖。
+Native 子目录仍可直接使用 CMake/presets，但日常开发应通过顶层 `dev.py` 保持平台产物和依赖检查一致。
+`native/build.py` 是 `dev.py` 的 standalone CMake helper，不作为常规用户入口记录。
 
 ## 构建产物目录
 
@@ -48,11 +45,11 @@ Windows -> `build/native/standalone/windows-msvc` / `windows/libs/ffmpeg`，macO
 
 | 目录 | 说明 |
 | --- | --- |
-| `build/native/standalone/` | `native/build.py`、native CMake presets、独立 CTest/FFI/Python 产物 |
+| `build/native/standalone/` | `dev.py build --native`、native CMake presets、独立 CTest/FFI/Python 产物 |
 | `build/native/runner/` | Flutter/Xcode runner 内嵌 native 静态库或中间产物 |
 | `build/native/analysis/` | analysis CLI 等辅助 native 工具构建目录 |
 
-历史目录如 `native/build-msvc`、`native/build-macos-*` 只作为旧缓存/旧命令兼容，不应再新增引用。
+旧构建目录如 `native/build-msvc`、`native/build-macos-*` 不属于当前产物布局，不应再新增引用。
 
 ## CMake 目标概览
 
@@ -65,6 +62,8 @@ Source ownership is split under `native/cmake/`:
 | `NativeSourcesMacOS.cmake` | macOS native bridge、Metal/CVPixelBuffer presentation |
 | `NativeSourcesAnalysis.cmake` | analysis cache/generator source list |
 | `NativeSourcesShaders.cmake` | embedded HLSL shader inputs |
+| `WindowsBindingTargets.cmake` | Windows FFI / pybind11 binding targets |
+| `NativeInstall.cmake` | FFI / Python dist staging rules |
 
 新增 native 源文件时先按 ownership 放进对应清单；`NativeSources.cmake` 只保留 shared path setup、includes 和通用 CMake helper functions。
 
@@ -91,7 +90,6 @@ Source ownership is split under `native/cmake/`:
 | `BUILD_PYTHON` | `ON` | 构建 pybind11 Python binding；找不到依赖时自动关闭 |
 | `BUILD_TESTS` | `ON` | 构建 CTest targets |
 | `BUILD_ANALYSIS` | `ON` | 构建 analysis cache/overlay/CLI；关闭时 renderer 使用 no-op overlay stub |
-| `BUILD_BENCHMARKS` | `OFF` | 构建 benchmark targets |
 
 ## Test Matrix
 
@@ -280,5 +278,5 @@ dev script. Benchmarks do not replace playback/backend gates.
 
 ## Demo
 
-`renderer/demo/demo_video_renderer.py` and `renderer/demo/demo_seek.py` are development aids. Product behavior
-verification should use `dev.py launch`, native CTest, and platform UI automation.
+`examples/python/demo_video_renderer.py` and `examples/python/demo_seek.py` are development aids.
+Product behavior verification should use `dev.py launch`, native CTest, and platform UI automation.

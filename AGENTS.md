@@ -118,7 +118,6 @@ Get-ChildItem "$env:APPDATA\VoidPlayer\logs" -File |
 - **Native 线程模型**: [native/docs/THREADING_MODEL.md](native/docs/THREADING_MODEL.md)
 - **Native 解码管线**: [native/docs/DECODE_PIPELINE.md](native/docs/DECODE_PIPELINE.md)
 - **Native 色彩管线**: [native/docs/COLOR_PIPELINE.md](native/docs/COLOR_PIPELINE.md)
-- **Native 平台后端计划**: [native/docs/RENDERER_PLATFORM_BACKEND_PLAN.md](native/docs/RENDERER_PLATFORM_BACKEND_PLAN.md)
-- **macOS 移植/发布准备**: [native/docs/MACOS_PORT_PLAN.md](native/docs/MACOS_PORT_PLAN.md)
+- **macOS 发布准备**: [native/docs/MACOS_READINESS.md](native/docs/MACOS_READINESS.md)
 - **macOS Presentation Backend**: [native/docs/MACOS_PRESENTATION_BACKEND.md](native/docs/MACOS_PRESENTATION_BACKEND.md)
 - **Native 构建与测试**: [native/docs/BUILD_AND_TEST.md](native/docs/BUILD_AND_TEST.md)

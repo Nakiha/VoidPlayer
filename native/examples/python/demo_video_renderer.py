@@ -23,7 +23,6 @@ from pathlib import Path
 _root_dir = Path(__file__).resolve().parents[3]
 _build_dirs = (
     _root_dir / "build" / "native" / "standalone" / "windows-msvc",
-    Path(__file__).resolve().parents[2] / "build-msvc",
 )
 for _build_dir in _build_dirs:
     for _cfg in ("Release", "Debug"):
@@ -43,7 +42,7 @@ from video_renderer_native import (
     LAYOUT_SIDE_BY_SIDE, LAYOUT_SPLIT_SCREEN,
 )
 
-VIDEO_DIR = Path(__file__).resolve().parents[4] / "resources" / "video"
+VIDEO_DIR = _root_dir / "resources" / "video"
 MODE_NAMES = {LAYOUT_SIDE_BY_SIDE: "SideBySide", LAYOUT_SPLIT_SCREEN: "SplitScreen"}
 
 

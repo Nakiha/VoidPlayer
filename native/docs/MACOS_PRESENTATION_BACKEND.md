@@ -25,7 +25,7 @@ The shared renderer builds a `RendererDrawSnapshot` from the current
 - consumes VideoToolbox `CVPixelBuffer` frames or software/fallback present
   packages;
 - runs the Metal layout/color path into the renderer-owned target;
-- when analysis overlay is active, the long-term route is to sample retained
+- when analysis overlay is active, high-refresh presentation samples retained
   per-track overlay layers during final composite; CU line layers retain
   direction markers and decode them to fixed screen-pixel black-edge/bright-center
   strokes at composite time, so zoom/pan does not re-raster target-size masks;
@@ -149,11 +149,11 @@ fallback reason, last draw error, frame callback/cadence counters, and
 per-track diagnostics. It should not treat `rendererOwnedPresentationActive`
 alone as proof that a frame was drawn.
 
-## Remaining Gates
+## Release Gates
 
 - Windows D3D11 capture parity against the same color/layout cases.
 - Further drop/late present-cadence diagnostics before raising 4K60 release
   thresholds beyond conservative canary checks.
 - Release staging for FFmpeg dylibs, license notices, crash/log paths, sandbox
   file access, signing, and notarization inputs.
-- macOS analysis UI/IPC design without adding another playback scheduler.
+- macOS analysis UI/IPC must not add another playback scheduler.

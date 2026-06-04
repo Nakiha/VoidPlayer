@@ -293,12 +293,9 @@ Suggested fields:
 - If `source_size` or `source_mtime_unix_ms` no longer matches the source file,
   higher layers should invalidate the hash directory.
 
-## Relationship To VAC1
+## VAC1 Compatibility
 
-VAC1 embedded complete sidecar payloads in one file. VAC2 replaces that with
-richer base tables and external derived chunks.
-
-VAC1-to-VAC2 migration was completed destructively for runtime cache writes:
-new analysis generation writes VAC2 base plus chunks, and stale VAC1 files are
-only treated as cleanup artifacts. Native runtime no longer builds or tests a
-VAC1 parser.
+VAC2 is the only runtime cache format written by native analysis. It stores rich
+base tables plus external derived chunks. VAC1 files are not parsed by native
+runtime code and are treated only as cleanup artifacts when encountered in cache
+directories.

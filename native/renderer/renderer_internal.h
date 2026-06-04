@@ -21,7 +21,7 @@
 #include "renderer/render/swap_chain_present_policy.h"
 #include "renderer/track/track_snapshot.h"
 #ifdef _WIN32
-#include "renderer/capture/frame_capture_service.h"
+#include "windows/d3d11/frame_capture_service.h"
 #include "windows/d3d11/render_backend.h"
 #endif
 #include <spdlog/spdlog.h>

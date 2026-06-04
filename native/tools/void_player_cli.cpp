@@ -361,7 +361,6 @@ std::string find_analyzer(const std::string& explicit_path) {
     const std::string exe_dir = vr::win_utf8::module_directory_utf8();
     const std::string candidates[] = {
         join_path(join_path(exe_dir, "tools"), join_path("ffmpeg-analysis", cli_executable_name("void_ffmpeg_analyzer"))),
-        join_path(join_path(exe_dir, "tools"), join_path("ffmpeg-analysis", cli_executable_name("void_hevc_analyzer"))),
         join_path(exe_dir, cli_executable_name("void_ffmpeg_analyzer")),
     };
     for (const auto& candidate : candidates) {

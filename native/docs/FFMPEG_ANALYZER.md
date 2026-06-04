@@ -124,12 +124,6 @@ The runtime tool expected by Windows analysis FFI is:
 native/analysis/vendor/ffmpeg/bin/windows-x64/void_ffmpeg_analyzer.exe
 ```
 
-or the temporary single-codec name:
-
-```text
-native/analysis/vendor/ffmpeg/bin/windows-x64/void_hevc_analyzer.exe
-```
-
 The command line contract is:
 
 ```text

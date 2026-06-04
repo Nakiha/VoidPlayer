@@ -1,24 +1,7 @@
-# Analysis Cache V2 Design
+# Analysis Cache
 
-This document describes the cache architecture for progressive analysis. The
-runtime cache now writes VAC2 base files plus VACHUNK derived chunks; the old
-VAC1 container remains only as migration history in this design note.
-
-## Problem
-
-The VAC1 pipeline treats analysis as a complete offline artifact:
-
-1. Scan or demux the whole file.
-2. Run codec-specific deep analyzers before the UI can use the result.
-3. Write every analysis payload into one VAC file.
-4. Allow analysis UI and overlay only after the whole artifact exists.
-
-That model blocks lightweight workflows. A user who only wants a few NAL unit
-details, a packet-size chart, a reference pyramid, or a short overlay window
-still pays the cost of deep analysis over the entire file.
-
-The target architecture separates always-useful base indexing from expensive
-derived analysis.
+This document describes the current cache architecture for progressive
+analysis. Runtime cache writes VAC2 base files plus VACHUNK derived chunks.
 
 ## Goals
 
@@ -42,7 +25,7 @@ derived analysis.
 
 ## Cache Layout
 
-The cache moves from one file per hash to one directory per hash:
+Runtime cache uses one directory per source hash:
 
 ```text
 cache/
@@ -85,7 +68,7 @@ It owns:
 - lightweight frame summaries
 - coarse timeline buckets and histograms
 
-The base index must be enough to seek source data for future analysis. A derived
+The base index must be enough to seek source data for derived analysis. A derived
 analyzer should be able to ask: "for frame N, where is the nearest random access
 point, which packets and parameter sets do I need, and which source byte ranges
 should be read?"
@@ -155,21 +138,11 @@ uses those names plus the VACHUNK header validation path rather than treating
 NAL-detail jobs can be single-unit chunks. They should parse the selected NAL
 using the parameter-set snapshot active at that point.
 
-## External Analyzer Retirement
+## Analyzer Contract
 
-The old external decoder flow was useful for historical full-file block-stat
-analysis, but it was a poor fit for progressive analysis because it was not
-built around seeking and partial decode jobs.
-
-Current direction:
-
-1. Use the vendored FFmpeg analyzer to emit VACHUNK overlay data directly for
-   supported codecs.
-2. Request bounded 64-frame overlay windows from Dart/native FFI instead of
-   generating full-file deep artifacts.
-3. Keep codec-specific hooks in the FFmpeg analyzer for H.264/HEVC/VVC and
-   extend that contract for future codecs instead of reintroducing full-file
-   decoder artifacts.
+- The vendored FFmpeg analyzer emits VACHUNK overlay data directly for supported codecs.
+- Dart/native FFI requests bounded overlay windows instead of full-file deep artifacts.
+- Codec-specific hooks live in the FFmpeg analyzer; runtime cache consumers read only validated VAC2/VACHUNK files.
 
 ## Concurrency And Locks
 
@@ -203,44 +176,7 @@ Recommended initial policy:
 - Export batch: may request larger sequential chunks, but still writes normal
   chunk files.
 
-## Migration Plan
-
-### Phase 1: Base-Only Cache
-
-- [x] Add VAC2 writer/reader.
-- [x] Generate packet, bitstream-unit, AU/frame, parameter-set, and lightweight
-  frame-summary sections.
-- [x] Allow analysis UI to open H.264/HEVC/VVC when only base data exists.
-- [x] Remove VAC1 as a runtime cache write path.
-
-### Phase 2: NAL Detail On Demand
-
-- Add native APIs to request and read NAL detail rows.
-- Cache detail chunks under `chunks/nalu_detail/`.
-- Use VAC2 parameter-set snapshots and source offsets.
-
-### Phase 3: Frame Summary Refinement
-
-- Add exact frame-summary chunks.
-- Let charts upgrade from base QP/ref quality to exact quality when chunks are
-  available.
-- Keep base reference pyramid usable without exact chunks.
-
-### Phase 4: Overlay Chunks
-
-- [x] Add request/ready APIs for overlay features.
-- [x] Generate CU/MB/QP/MV/bit-count overlay chunks for bounded frame windows.
-- [x] Gate and load main-window overlays from overlay VACHUNK chunks.
-
-### Phase 5: FFmpeg VVC Analyzer
-
-- [x] Extend the FFmpeg-based analyzer contract to VVC/H.266.
-- [x] Generate VVC overlay chunks through the FFmpeg analyzer path.
-- [x] Generate H.264/HEVC/VVC overlay chunks through the same analyzer path.
-- [x] Rebuild analyzer from clean objects when hook source/header signatures
-  change, preventing stale analyzer executables.
-
-## Testing
+## Verification
 
 Required test families:
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "windows/d3d11/headless_output.h"
+
 #include <mutex>
 #include <vector>
 

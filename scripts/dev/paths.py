@@ -11,7 +11,7 @@ BUILD_DIR = ROOT / "build"
 
 NATIVE_DIR = ROOT / "native"
 NATIVE_BUILD_PY = NATIVE_DIR / "build.py"
-DEMO_SCRIPT = NATIVE_DIR / "video_renderer" / "demo" / "demo_video_renderer.py"
+DEMO_SCRIPT = NATIVE_DIR / "examples" / "python" / "demo_video_renderer.py"
 NATIVE_BUILD_ROOT = BUILD_DIR / "native"
 NATIVE_STANDALONE_BUILD_ROOT = NATIVE_BUILD_ROOT / "standalone"
 NATIVE_RUNNER_BUILD_ROOT = NATIVE_BUILD_ROOT / "runner"
@@ -53,10 +53,9 @@ def find_ffmpeg_analyzer() -> Path:
         return Path(override)
 
     bin_dir = FFMPEG_ANALYZER_DIR / "bin" / host_platform_id()
-    for name in (executable_name("void_ffmpeg_analyzer"), executable_name("void_hevc_analyzer")):
-        path = bin_dir / name
-        if path.exists():
-            return path
+    path = bin_dir / executable_name("void_ffmpeg_analyzer")
+    if path.exists():
+        return path
     return bin_dir / executable_name("void_ffmpeg_analyzer")
 
 
@@ -109,11 +108,8 @@ def find_voidplayer_cli() -> Path:
             MACOS_NATIVE_ANALYSIS_BUILD_DIR / "VoidPlayerCli",
             MACOS_NATIVE_MAKE_BUILD_DIR / "VoidPlayerCli",
             NATIVE_BUILD_DIR / "VoidPlayerCli",
-            NATIVE_DIR / "build-macos-analysis" / "VoidPlayerCli",
-            NATIVE_DIR / "build-macos-make" / "VoidPlayerCli",
-            NATIVE_DIR / "build-macos" / "VoidPlayerCli",
         ):
             if candidate.exists():
                 return candidate
         return MACOS_NATIVE_ANALYSIS_BUILD_DIR / "VoidPlayerCli"
-    return NATIVE_DIR / "build" / executable_name("VoidPlayerCli")
+    return NATIVE_BUILD_DIR / executable_name("VoidPlayerCli")

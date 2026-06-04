@@ -1,12 +1,8 @@
-# macOS Port Plan
+# macOS Readiness
 
 VoidPlayer macOS support must converge on the existing native player pipeline. The macOS runner owns
 Cocoa windows, sandbox file access, platform-channel glue, Flutter texture registration, and
 `CVPixelBuffer` lifecycle only. Playback policy belongs in shared native code.
-
-Detailed implementation history is intentionally not recorded here; use git history for that. The
-current renderer unification work is tracked in
-[RENDERER_PLATFORM_BACKEND_PLAN.md](RENDERER_PLATFORM_BACKEND_PLAN.md).
 
 ## Current State
 
@@ -23,8 +19,8 @@ current renderer unification work is tracked in
 - Metal is the normal native presentation target for macOS playback. Swift installs the texture
   target, owns `CVPixelBuffer` lifecycle, and forwards successful frame notifications to Flutter;
   playback timing, seek/step/loop, layout, track lifecycle, refresh completion, and failure state live
-  in shared native code. Upload failures stay visible in diagnostics instead of silently falling back
-  to the old Swift copy path. CVPixelBuffer hardware-frame uploads are distinguished from staged YUV
+  in shared native code. Upload failures stay visible in diagnostics instead of silently switching to
+  a Swift-side copy path. CVPixelBuffer hardware-frame uploads are distinguished from staged YUV
   and BGRA package uploads in diagnostics.
 - macOS analysis FFI can build and answer basic handle/base-generation calls. The macOS dev/CI
   toolchain can also build `void_ffmpeg_analyzer`, generate VAC2 base + overlay VACHUNK through
@@ -59,28 +55,26 @@ Dart UI / Actions
 Windows and macOS should run the same scheduler. The backend decides how a chosen present decision is
 converted into a platform texture; it does not decide playback time.
 
-## Active Work
+## Stabilization Scope
 
-The active macOS work is no longer "make the MVP smoother" or "move macOS onto the shared renderer".
-That path is now feature-complete. The active work is stabilization:
+- Keep renderer-owned Metal presentation and VideoToolbox/software fallback diagnostics truthful.
+- Add deterministic Metal shader/layout/color parity coverage before raising performance thresholds.
+- Preserve Windows behavior after shared backend boundary changes.
+- Keep architecture docs and tests written as current backend contracts.
+- Keep release-level package, license, crash/log, file-permission, signing, and notarization
+  evidence current without moving playback policy back into Swift.
 
-1. Keep renderer-owned Metal presentation and VideoToolbox/software fallback diagnostics truthful.
-2. Add deterministic Metal shader/layout/color parity coverage before raising performance thresholds.
-3. Preserve Windows behavior after shared backend boundary changes.
-4. Convert remaining architecture docs and tests from migration notes to current backend contracts.
-5. Keep release-level package, license, crash/log, file-permission, signing, and notarization
-   evidence current without moving playback policy back into Swift.
+Use [MACOS_PRESENTATION_BACKEND.md](MACOS_PRESENTATION_BACKEND.md),
+[THREADING_MODEL.md](THREADING_MODEL.md), and [TARGET_BOUNDARIES.md](TARGET_BOUNDARIES.md)
+for the current backend contracts.
 
-See [RENDERER_PLATFORM_BACKEND_PLAN.md](RENDERER_PLATFORM_BACKEND_PLAN.md) for the phased execution
-plan.
-
-## Open Gates
+## Validation Gates
 
 - Metal shader output must stay aligned with the D3D11 layout/color contract through deterministic
   parity tests.
 - Presentation diagnostics should grow drop/late/present-cadence counters before 4K60 thresholds are
   treated as release gates.
-- macOS analysis UI/IPC support still needs a first-class design.
+- macOS analysis UI/IPC support must stay capability-gated until validated.
 - Windows preservation checks must run on a Windows host after renderer backend boundary changes.
 - macOS release-readiness now verifies FFmpeg dylibs, license notices, crash/log watcher wiring,
   sandbox file-picker inputs, package cleanliness, `@rpath`, codesign, and Release entitlements.

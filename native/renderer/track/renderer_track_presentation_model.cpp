@@ -171,8 +171,7 @@ RendererTrackPresentationModel::collect_seek_preview_presented_events(
 std::vector<LayoutTrackGeometryUpdate>
 RendererTrackPresentationModel::update_layout_track_geometry_from_decision(
     const PresentDecision& decision) {
-    return vr::update_layout_track_geometry_from_decision(
-        registry_.mutable_tracks_for_presentation(), decision);
+    return registry_.update_layout_track_geometry_from_decision(decision);
 }
 
 EmptyBufferEofClamp RendererTrackPresentationModel::empty_buffer_eof_clamp(

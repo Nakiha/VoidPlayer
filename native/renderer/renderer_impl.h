@@ -20,6 +20,7 @@
 #include "renderer/render/renderer_present_history.h"
 #include "renderer/render/renderer_present_command.h"
 #include "renderer/render/renderer_presentation_controller.h"
+#include "renderer/render/renderer_render_loop_command.h"
 #include "renderer/render/renderer_surface_state.h"
 #include "renderer/render/presentation_backend.h"
 #include "renderer/seek/seek_coordinator.h"
@@ -207,11 +208,6 @@ private:
                          SeekType type,
                          bool allow_deferred = true,
                          bool force_recreate_paused_hevc = false);
-    };
-
-    class RenderLoopCommandProcessor {
-    public:
-        static void run_body(Impl& renderer);
     };
 
     void render_loop() noexcept;

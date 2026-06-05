@@ -27,6 +27,12 @@ struct RendererPresentCommandContext {
     PresentationMetricsStore& metrics;
     std::atomic<bool>& shutting_down;
 
+    // Lock contract:
+    // - should_consume_pending_layout may be called with state_mutex held.
+    // - consume_pending_layout_locked and enter_terminal_device_lost_locked
+    //   require state_mutex held.
+    // - overlay_hooks must not take the renderer state lock.
+    // - playback_inactive_or_paused is called with state_mutex held.
     std::function<bool()> should_consume_pending_layout;
     std::function<void()> consume_pending_layout_locked;
     std::function<bool()> should_suppress_playback_present_for_viewport_compositor;

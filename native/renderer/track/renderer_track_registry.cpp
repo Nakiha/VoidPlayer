@@ -1,6 +1,7 @@
 #include "renderer/track/renderer_track_registry.h"
 
 #include "renderer/track/track_lifecycle.h"
+#include "renderer/track/track_present_policy.h"
 #include "renderer/track/track_preroll_policy.h"
 #include "renderer/track/track_step_policy.h"
 
@@ -20,10 +21,6 @@ std::unique_ptr<TrackPipeline> RendererTrackRegistry::create_pipeline(
 }
 
 TrackPipelineManager& RendererTrackRegistry::mutable_tracks_for_mutation() {
-    return tracks_;
-}
-
-TrackPipelineManager& RendererTrackRegistry::mutable_tracks_for_presentation() {
     return tracks_;
 }
 
@@ -235,6 +232,12 @@ TrackAddSeekResult RendererTrackRegistry::prepare_add_track_seek_to_clock(
     const TrackAddSeekHooks& hooks) const {
     return vr::prepare_add_track_seek_to_clock(
         track, current_pts_us, was_playing, hooks);
+}
+
+std::vector<LayoutTrackGeometryUpdate>
+RendererTrackRegistry::update_layout_track_geometry_from_decision(
+    const PresentDecision& decision) {
+    return vr::update_layout_track_geometry_from_decision(tracks_, decision);
 }
 
 } // namespace vr

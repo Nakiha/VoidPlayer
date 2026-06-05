@@ -1,7 +1,8 @@
 #pragma once
 
-#include "renderer/track/renderer_track_controller.h"
+#include "renderer/track/renderer_track_types.h"
 #include "renderer/track/track_pipeline.h"
+#include "renderer/track/track_pipeline_factory.h"
 
 #include <cstdint>
 #include <memory>
@@ -23,7 +24,6 @@ public:
         const SeekRequest* initial_seek) const;
 
     TrackPipelineManager& mutable_tracks_for_mutation();
-    TrackPipelineManager& mutable_tracks_for_presentation();
     const TrackPipelineManager& tracks_for_snapshot() const;
 
     void assign_missing_generations();
@@ -70,6 +70,8 @@ public:
         int64_t current_pts_us,
         bool was_playing,
         const TrackAddSeekHooks& hooks) const;
+    std::vector<LayoutTrackGeometryUpdate> update_layout_track_geometry_from_decision(
+        const PresentDecision& decision);
 
 private:
     TrackPipelineFactory factory_;

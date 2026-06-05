@@ -1,8 +1,9 @@
 #pragma once
 
-#include "renderer/track/renderer_track_controller.h"
+#include "renderer/track/renderer_track_types.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 

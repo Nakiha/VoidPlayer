@@ -7,6 +7,8 @@
 
 #include "common/logging.h"
 
+#include <spdlog/spdlog.h>
+
 namespace vr {
 
 // Render-domain helper for translating current track/layout/surface state into

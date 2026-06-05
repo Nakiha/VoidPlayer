@@ -1,7 +1,10 @@
 #pragma once
 
-#include "renderer/track/renderer_track_controller.h"
+#include "renderer/track/renderer_track_types.h"
 #include "renderer/track/track_perf_baseline.h"
+#include "renderer/track/track_present_policy.h"
+#include "renderer/track/track_preview_policy.h"
+#include "renderer/track/track_snapshot.h"
 
 #include <array>
 #include <chrono>

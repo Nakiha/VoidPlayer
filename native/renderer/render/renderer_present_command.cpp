@@ -1,8 +1,18 @@
 #include "renderer/render/renderer_present_command.h"
 
-#include "renderer/renderer_internal.h"
 #include "renderer/render/renderer_draw_snapshot_builder.h"
+#include "renderer/render/renderer_profiler_flags.h"
 #include "renderer/render/renderer_presentation_completion.h"
+#include "renderer/render/renderer_timing_utils.h"
+#include "renderer/render/renderer_viewport_trace.h"
+
+#include <atomic>
+#include <chrono>
+#include <cstring>
+#include <functional>
+#include <mutex>
+
+#include <spdlog/spdlog.h>
 
 namespace vr {
 namespace {

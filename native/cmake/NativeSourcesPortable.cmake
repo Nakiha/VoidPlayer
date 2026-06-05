@@ -18,7 +18,6 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/media/seek_controller.cpp"
     "${VOID_NATIVE_DIR}/renderer/capture/bgra_capture_metrics.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/presentation_package.cpp"
-    "${VOID_NATIVE_DIR}/renderer/render/presentation_loop_driver.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/render_loop_controller.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/presentation_scheduler.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/presentation_snapshot.cpp"
@@ -73,6 +72,10 @@ set(VOID_MEDIA_FFMPEG_SOURCES
 
 set(VOID_RENDERER_PORTABLE_DRIVER_SOURCES
     "${VOID_NATIVE_DIR}/renderer/audio_coordinator.cpp"
+    "${VOID_NATIVE_DIR}/renderer/events/renderer_event_bus.cpp"
+    "${VOID_NATIVE_DIR}/renderer/layout/renderer_layout_state.cpp"
+    "${VOID_NATIVE_DIR}/renderer/metrics/presentation_metrics_store.cpp"
+    "${VOID_NATIVE_DIR}/renderer/playback/renderer_timeline_controller.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer_events.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer_headless.cpp"
@@ -84,10 +87,17 @@ set(VOID_RENDERER_PORTABLE_DRIVER_SOURCES
     "${VOID_NATIVE_DIR}/renderer/renderer_render_loop.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer_step.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer_tracks.cpp"
+    "${VOID_NATIVE_DIR}/renderer/render/renderer_loop_driver.cpp"
+    "${VOID_NATIVE_DIR}/renderer/render/renderer_present_history.cpp"
+    "${VOID_NATIVE_DIR}/renderer/render/renderer_presentation_completion.cpp"
+    "${VOID_NATIVE_DIR}/renderer/render/renderer_presentation_controller.cpp"
+    "${VOID_NATIVE_DIR}/renderer/render/renderer_preview_state.cpp"
+    "${VOID_NATIVE_DIR}/renderer/render/renderer_surface_state.cpp"
     "${VOID_NATIVE_DIR}/renderer/seek/renderer_seek_log_policy.cpp"
     "${VOID_NATIVE_DIR}/renderer/track/track_perf_baseline.cpp"
     "${VOID_NATIVE_DIR}/renderer/track/track_preroll_policy.cpp"
     "${VOID_NATIVE_DIR}/renderer/track/track_snapshot.cpp"
+    "${VOID_NATIVE_DIR}/renderer/track/renderer_track_controller.cpp"
 )
 
 set(VOID_RENDERER_CORE_SOURCES

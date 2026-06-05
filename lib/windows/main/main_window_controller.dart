@@ -280,8 +280,10 @@ class MainWindowController {
         onZoomChanged: layoutCoordinator.onZoomComboChanged,
         onToggleFullScreen: _toggleFullScreen,
         onTogglePlay: playbackCoordinator.togglePlayPause,
-        onStepForward: () => player.stepForward(),
-        onStepBackward: () => player.stepBackward(),
+        onStepForward: () =>
+            fireAndLog('step forward', playbackCoordinator.stepForward()),
+        onStepBackward: () =>
+            fireAndLog('step backward', playbackCoordinator.stepBackward()),
         onSeek: playbackCoordinator.seekTo,
         onSliderHover: playbackCoordinator.onSliderHover,
         onLoopRangeEnabledChanged: (enabled) => fireAndLog(

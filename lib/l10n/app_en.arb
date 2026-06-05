@@ -148,6 +148,12 @@
   "bufferQueue": "Buffer queue",
   "@bufferQueue": { "description": "Stats table column: decoded frame buffers in use / capacity" },
 
+  "frameMemory": "Frame memory",
+  "@frameMemory": { "description": "Stats table column: decoded frame memory held by native buffers" },
+
+  "packetQueue": "Packet queue",
+  "@packetQueue": { "description": "Stats table column: packet queue memory" },
+
   "decodeAvg": "Decode Avg",
   "@decodeAvg": { "description": "Table column: average decode time" },
 
@@ -177,6 +183,21 @@
 
   "objectStatistics": "Object Statistics",
   "@objectStatistics": { "description": "Memory page header" },
+
+  "memoryRss": "RSS",
+  "@memoryRss": { "description": "Performance monitor memory metric: resident set size" },
+
+  "memoryPrivate": "Private",
+  "@memoryPrivate": { "description": "Performance monitor memory metric: private process memory" },
+
+  "memoryGpuFrames": "GPU frames",
+  "@memoryGpuFrames": { "description": "Performance monitor memory metric: estimated GPU frame resources" },
+
+  "memoryCpuFrames": "CPU frames",
+  "@memoryCpuFrames": { "description": "Performance monitor memory metric: decoded frame memory on CPU" },
+
+  "memoryPackets": "Packets",
+  "@memoryPackets": { "description": "Performance monitor memory metric: queued packets" },
 
   "memoryPlaceholder": "Memory monitoring data will appear here\nwhen native diagnostics are connected.",
   "@memoryPlaceholder": { "description": "Memory page placeholder" },

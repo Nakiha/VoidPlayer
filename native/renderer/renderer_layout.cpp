@@ -2,79 +2,59 @@
 
 namespace vr {
 
-void Renderer::apply_layout_locked(const LayoutState& state, uint64_t revision) {
-    layout_controller_.apply(
-        layout_, state, [this](int file_id) { return find_slot_by_file_id(file_id); });
-    layout_revision_ = std::max(layout_revision_ + 1, revision);
-    preview_drawn_ = false;
+void Renderer::Impl::apply_layout_locked(const LayoutState& state, uint64_t revision) {
+    layout_state_.apply_current(
+        state, revision, [this](int file_id) {
+            return track_controller_.find_slot_by_file_id(file_id);
+        });
+    loop_driver_.force_preview_redraw();
 }
 
-bool Renderer::should_present_frame_consume_pending_layout() const {
-    if (!playing_.load(std::memory_order_acquire) ||
-        playback_->clock().is_paused()) {
+bool Renderer::Impl::should_present_frame_consume_pending_layout() const {
+    if (!timeline_.playing() ||
+        timeline_.playback().clock().is_paused()) {
         return true;
     }
-    if (!presentation_backend_ ||
-        presentation_backend_->kind() != PresentationBackendKind::Metal) {
+    if (presentation_.backend_kind() != PresentationBackendKind::Metal) {
         return true;
     }
     return false;
 }
 
-void Renderer::note_viewport_compositor_activity() {
+void Renderer::Impl::note_viewport_compositor_activity() {
     const auto active_until =
         steady_clock_us_now() +
         std::chrono::duration_cast<std::chrono::microseconds>(
             kViewportCompositorActivityGrace)
             .count();
-    auto current = viewport_compositor_active_until_us_.load(std::memory_order_relaxed);
-    while (active_until > current &&
-           !viewport_compositor_active_until_us_.compare_exchange_weak(
-               current,
-               active_until,
-               std::memory_order_relaxed,
-               std::memory_order_relaxed)) {
-    }
+    layout_state_.note_viewport_compositor_activity(active_until);
 }
 
-bool Renderer::should_suppress_playback_present_for_viewport_compositor() const {
-    if (!playing_.load(std::memory_order_acquire) ||
-        playback_->clock().is_paused() ||
-        !presentation_backend_ ||
-        presentation_backend_->kind() != PresentationBackendKind::Metal) {
+bool Renderer::Impl::should_suppress_playback_present_for_viewport_compositor() const {
+    if (!timeline_.playing() ||
+        timeline_.playback().clock().is_paused() ||
+        presentation_.backend_kind() != PresentationBackendKind::Metal) {
         return false;
     }
-    return steady_clock_us_now() <
-           viewport_compositor_active_until_us_.load(std::memory_order_relaxed);
+    return layout_state_.viewport_compositor_active(steady_clock_us_now());
 }
 
-bool Renderer::consume_pending_layout_locked() {
-    std::optional<LayoutState> pending;
-    uint64_t pending_revision = 0;
-    {
-        std::lock_guard<std::mutex> lock(pending_layout_mutex_);
-        if (!pending_layout_.has_value()) {
-            return false;
-        }
-        pending = pending_layout_;
-        pending_revision = pending_layout_revision_;
-        pending_layout_.reset();
-        pending_layout_revision_ = 0;
+bool Renderer::Impl::consume_pending_layout_locked() {
+    const bool consumed = layout_state_.consume_pending_if_newer(
+        [this](int file_id) {
+            return track_controller_.find_slot_by_file_id(file_id);
+        });
+    if (consumed) {
+        loop_driver_.force_preview_redraw();
     }
-    if (pending_revision <= layout_revision_) {
-        return false;
-    }
-    apply_layout_locked(*pending, pending_revision);
-    return true;
+    return consumed;
 }
 
-void Renderer::clear_pending_layout_intent() {
-    std::lock_guard<std::mutex> lock(pending_layout_mutex_);
-    pending_layout_.reset();
-    pending_layout_revision_ = 0;
+void Renderer::Impl::clear_pending_layout_intent() {
+    layout_state_.clear_pending();
 }
 
-void Renderer::apply_layout(const LayoutState& state) {
+void Renderer::Impl::apply_layout(const LayoutState& state) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (auto validation = validate_layout_state(state); !validation.ok) {
         spdlog::warn("[Renderer] ignoring invalid layout: {}", validation.message);
@@ -82,20 +62,14 @@ void Renderer::apply_layout(const LayoutState& state) {
     }
 
     const uint64_t intent_revision =
-        layout_intent_revision_.fetch_add(1, std::memory_order_relaxed) + 1;
-    presentation_backend_metrics_.layout_intent_count.fetch_add(
-        1, std::memory_order_relaxed);
-    const bool playing_now = playing_.load(std::memory_order_acquire);
-    const bool defer_to_playback = playing_now && !playback_->clock().is_paused();
+        layout_state_.next_intent_revision();
+    presentation_metrics_.note_layout_intent();
+    const bool playing_now = timeline_.playing();
+    const bool defer_to_playback = playing_now && !timeline_.playback().clock().is_paused();
 
     if (defer_to_playback) {
-        {
-            std::lock_guard<std::mutex> lock(pending_layout_mutex_);
-            pending_layout_ = state;
-            pending_layout_revision_ = intent_revision;
-        }
-        presentation_backend_metrics_.layout_deferred_to_playback_count.fetch_add(
-            1, std::memory_order_relaxed);
+        layout_state_.set_pending(state, intent_revision);
+        presentation_metrics_.note_layout_deferred_to_playback();
         if (should_log_viewport_trace_event(false)) {
             spdlog::info(
                 "[ViewportTrace] native source=apply_layout layout_rev={} playing={} "
@@ -118,42 +92,33 @@ void Renderer::apply_layout(const LayoutState& state) {
     clear_pending_layout_intent();
     apply_layout_locked(state, intent_revision);
     if (should_log_viewport_trace_event(false)) {
+        const auto layout = layout_state_.current_for_draw();
         spdlog::info(
             "[ViewportTrace] native source=apply_layout layout_rev={} playing={} "
             "defer_to_playback={} mode={} zoom={:.4f} offset=({:.1f},{:.1f}) "
             "split={:.4f} pixel_mode={}",
-            layout_revision_,
+            layout_state_.current_revision(),
             playing_now,
             defer_to_playback,
-            layout_.mode,
-            layout_.zoom_ratio,
-            layout_.view_offset[0],
-            layout_.view_offset[1],
-            layout_.split_pos,
-            layout_.pixel_size_mode);
+            layout.mode,
+            layout.zoom_ratio,
+            layout.view_offset[0],
+            layout.view_offset[1],
+            layout.split_pos,
+            layout.pixel_size_mode);
     }
 }
 
-void Renderer::set_background_color(float r, float g, float b, float a) {
+void Renderer::Impl::set_background_color(float r, float g, float b, float a) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     std::lock_guard<std::mutex> lock(state_mutex_);
-    background_color_[0] = std::clamp(r, 0.0f, 1.0f);
-    background_color_[1] = std::clamp(g, 0.0f, 1.0f);
-    background_color_[2] = std::clamp(b, 0.0f, 1.0f);
-    background_color_[3] = std::clamp(a, 0.0f, 1.0f);
-    preview_drawn_ = false;
+    layout_state_.set_background_color(r, g, b, a);
+    loop_driver_.force_preview_redraw();
 }
 
-LayoutState Renderer::layout() const {
+LayoutState Renderer::Impl::layout() const {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    {
-        std::lock_guard<std::mutex> pending_lock(pending_layout_mutex_);
-        if (pending_layout_.has_value() &&
-            pending_layout_revision_ > layout_revision_) {
-            return *pending_layout_;
-        }
-    }
-    return layout_controller_.snapshot(layout_);
+    return layout_state_.public_snapshot();
 }
 
 // -- Dynamic track management --

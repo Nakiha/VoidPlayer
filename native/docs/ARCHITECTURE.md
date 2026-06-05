@@ -1,6 +1,6 @@
 # Native 模块架构概览
 
-> 本文档是 native 模块入口。它描述当前架构，不记录迁移流水；详细实现历史以 git history 为准。
+> 本文档是 native 模块入口，只描述当前架构和合同。
 
 ## 模块定位
 
@@ -49,12 +49,15 @@ native/
 │   ├── decode/          # DecodeThread、FrameConverter、hardware providers
 │   ├── render/          # PresentDecision、RendererDrawSnapshot、PresentationBackend
 │   ├── sync/            # RenderSink and present scheduling
-│   └── exports/         # C FFI / Python binding surfaces
+│   └── exports/         # C FFI and pybind11 C++ binding surfaces
+├── python/              # Python convenience package source for dist/python
 ├── windows/             # Windows native facade, crash hooks, and D3D11 backend
 │   ├── player/          # Windows NativePlayer facade
-│   ├── d3d11/           # Windows D3D11 backend implementation
+│   ├── decode/          # Windows D3D11VA decode integration
+│   ├── d3d11/           # Windows D3D11 backend, overlay, capture, and renderer compatibility hooks
 │   └── common/          # Windows process-global helpers
 ├── macos/               # macOS native bridge and Metal presentation backend
+├── examples/            # development-only demos and sample entrypoints
 ├── tests/               # Catch2 tests on Windows-oriented native targets
 ├── tools/               # native smoke binaries and CLIs
 └── docs/
@@ -116,16 +119,16 @@ presentation backend 开始：
 | [色彩管线](COLOR_PIPELINE.md) | YUV/RGB/P010、range/matrix、shader contract 和 parity gates |
 | [线程模型](THREADING_MODEL.md) | 线程角色、锁顺序、render loop 与 callback 边界 |
 | [时钟与同步](CLOCK_AND_SYNC.md) | Clock、倍速、A/V sync、loop timing |
-| [缓冲设计](BUFFER_DESIGN.md) | PacketQueue、TrackBuffer、preroll、BidiRingBuffer |
+| [缓冲合同](BUFFERING.md) | PacketQueue、TrackBuffer、preroll、BidiRingBuffer |
 | [Seek 策略](SEEK_STRATEGY.md) | seek controller、exact seek、preview publication |
+| [Native Event Pipeline](NATIVE_EVENT_PIPELINE.md) | native -> Dart EventChannel 事实事件合同 |
 
 ### Platform Backend
 
 | 文档 | 内容 |
 | --- | --- |
-| [Renderer 平台后端统一计划](RENDERER_PLATFORM_BACKEND_PLAN.md) | shared renderer + platform backend status/gates |
 | [D3D11 后端](D3D11_BACKEND.md) | Windows D3D11 device、shared texture、capture、device-loss behavior |
-| [macOS 移植计划](MACOS_PORT_PLAN.md) | macOS readiness、runner 边界、remaining gates |
+| [macOS Readiness](MACOS_READINESS.md) | macOS readiness、runner 边界、remaining gates |
 | [macOS Presentation Backend](MACOS_PRESENTATION_BACKEND.md) | macOS renderer-owned Metal route, fallback adapter, refresh, and diagnostics contract |
 
 ### Readiness / Release / Tooling
@@ -137,10 +140,16 @@ presentation backend 开始：
 | [Target 边界](TARGET_BOUNDARIES.md) | CMake target boundaries and feature options |
 | [Native 第三方清单](../THIRD_PARTY_NATIVE.md) | FFmpeg/zstd/spdlog/Catch2 license and package notes |
 
-### Historical / Todo
+### Analysis
 
 | 文档 | 内容 |
 | --- | --- |
-| [Native Refactor Todo](NATIVE_REFACTOR_TODO.md) | 历史技术债与后续 refactor notes |
-| [Native Stabilization Round](NATIVE_STABILIZATION_ROUND.md) | 历史 stabilization notes |
-| [Native Stabilization History](NATIVE_STABILIZATION_HISTORY.md) | 历史 patch log |
+| [Analysis 模块](ANALYSIS_MODULE.md) | VAC2/VACHUNK generation、parsers、FFI、benchmarks |
+| [Analysis Cache](ANALYSIS_CACHE.md) | VAC2 base + VACHUNK derived chunk cache contract |
+| [Analysis Overlay](ANALYSIS_OVERLAY.md) | 主窗口 codec block overlay、native renderer、hit-test contract |
+| [VAC2](formats/VAC2.md) | base analysis container format |
+| [VACHUNK](formats/VACHUNK.md) | derived analysis chunk format |
+
+### Documentation Rule
+
+`native/docs/` only describes current behavior and contracts.

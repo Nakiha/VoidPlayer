@@ -71,6 +71,28 @@ bool configure_and_start_track_pipeline(
     return true;
 }
 
+void stop_detached_track_pipeline(size_t slot,
+                                  std::unique_ptr<TrackPipeline>& track) {
+    if (!track) {
+        return;
+    }
+    if (track->decode_thread) {
+        spdlog::info("Renderer: stopping track[{}] decode ({})",
+                     slot,
+                     track->file_path);
+        track->decode_thread->stop();
+        spdlog::info("Renderer: track[{}] decode stopped", slot);
+    }
+    if (track->demux_thread) {
+        spdlog::info("Renderer: stopping track[{}] demux ({})",
+                     slot,
+                     track->file_path);
+        track->demux_thread->stop();
+        spdlog::info("Renderer: track[{}] demux stopped", slot);
+    }
+    track.reset();
+}
+
 InitialTrackOpenResult open_initial_track_pipelines(
     TrackPipelineManager& tracks,
     const std::vector<std::string>& video_paths,

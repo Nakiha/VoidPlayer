@@ -52,7 +52,3 @@ target_compile_definitions(video_renderer_lib PUBLIC
     VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>)
 
 void_configure_renderer_shaders("${CMAKE_CURRENT_BINARY_DIR}")
-
-if(BUILD_BENCHMARKS)
-    add_subdirectory(benchmarks)
-endif()

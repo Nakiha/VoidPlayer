@@ -1,9 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/preferences/playback_preferences.dart';
+import 'package:void_player/startup_options.dart';
+import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/controls_bar.dart';
 import 'package:void_player/windows/main/main_window_playback.dart';
 import 'package:void_player/windows/main/main_window_state.dart';
+import 'package:void_player/windows/main/main_window_timeline_metrics.dart';
 
 void main() {
   test('MainWindowStateStore skips redundant notifications', () {
@@ -75,4 +80,261 @@ void main() {
       );
     },
   );
+
+  group('MainWindowPlaybackCoordinator loop range step', () {
+    test('wraps forward step to loop start after crossing loop end', () async {
+      final fixture = _PlaybackFixture(stepForwardPtsUs: 1600000);
+      addTearDown(fixture.dispose);
+
+      await fixture.enableLoopRange(startUs: 1000000, endUs: 1500000);
+      await fixture.coordinator.stepForward();
+
+      expect(fixture.api.calls, contains('stepForward'));
+      expect(fixture.api.calls, contains('seek:1000000:2'));
+      expect(fixture.api.ptsUs, 1000000);
+      expect(fixture.store.value.currentPtsUs, 1000000);
+    });
+
+    test('clamps backward step to loop start below range', () async {
+      final fixture = _PlaybackFixture(stepBackwardPtsUs: 900000);
+      addTearDown(fixture.dispose);
+
+      await fixture.enableLoopRange(startUs: 1000000, endUs: 1500000);
+      await fixture.coordinator.stepBackward();
+
+      expect(fixture.api.calls, contains('stepBackward'));
+      expect(fixture.api.calls, contains('seek:1000000:2'));
+      expect(fixture.api.ptsUs, 1000000);
+      expect(fixture.store.value.currentPtsUs, 1000000);
+    });
+  });
+}
+
+class _PlaybackFixture {
+  final _PlaybackApi api;
+  late final NativePlayerController controller;
+  final MainWindowStateStore store = MainWindowStateStore();
+  final TrackManager tracks = TrackManager();
+  late final MainWindowTimelineMetrics metrics;
+  late final MainWindowPlaybackCoordinator coordinator;
+
+  _PlaybackFixture({int? stepForwardPtsUs, int? stepBackwardPtsUs})
+    : api = _PlaybackApi(
+        stepForwardPtsUs: stepForwardPtsUs,
+        stepBackwardPtsUs: stepBackwardPtsUs,
+      ) {
+    controller = NativePlayerController(api: api);
+    tracks.setTracks(const [
+      TrackInfo(
+        fileId: 1,
+        slot: 0,
+        path: 'clip.mp4',
+        width: 1920,
+        height: 1080,
+        durationUs: 2000000,
+      ),
+    ]);
+    metrics = MainWindowTimelineMetrics(
+      stateStore: store,
+      trackManager: tracks,
+    );
+    coordinator = MainWindowPlaybackCoordinator(
+      controller: controller,
+      trackManager: tracks,
+      startupOptions: const StartupOptions(),
+      stateStore: store,
+      timelineHoverNotifier: TimelineHoverStateNotifier(),
+      playbackPreferences: const _PlaybackPrefs(),
+      mounted: () => true,
+      timelineMetrics: metrics,
+    );
+  }
+
+  Future<void> enableLoopRange({
+    required int startUs,
+    required int endUs,
+  }) async {
+    await controller.createPlayer(['clip.mp4'], width: 1920, height: 1080);
+    store.setLoopRange(startUs, endUs);
+    store.setLoopRangeEnabled(true);
+    store.setPolledPlaybackState(startUs, metrics.effectiveDurationUs, false);
+    api.ptsUs = startUs;
+  }
+
+  void dispose() {
+    coordinator.dispose();
+    store.dispose();
+    tracks.dispose();
+  }
+}
+
+class TimelineHoverStateNotifier extends ValueNotifier<TimelineHoverState> {
+  TimelineHoverStateNotifier() : super(const TimelineHoverState());
+}
+
+class _PlaybackPrefs implements PlaybackPreferences {
+  const _PlaybackPrefs();
+
+  @override
+  DecodeMode get decodeMode => DecodeMode.preferHardware;
+
+  @override
+  bool get useHardwareDecode => decodeMode.useHardwareDecode;
+
+  @override
+  SeekAfterJumpBehavior get seekAfterJumpBehavior =>
+      SeekAfterJumpBehavior.keepPreviousState;
+
+  @override
+  ViewportPixelSizeMode get viewportPixelSizeMode =>
+      ViewportPixelSizeMode.uniformVideoPixels;
+}
+
+class _PlaybackApi implements NativePlayerApi {
+  final List<String> calls = [];
+  final int? stepForwardPtsUs;
+  final int? stepBackwardPtsUs;
+  int ptsUs = 1000000;
+
+  _PlaybackApi({this.stepForwardPtsUs, this.stepBackwardPtsUs});
+
+  @override
+  Stream<NativePlayerEvent> get events => const Stream.empty();
+
+  @override
+  Future<CreatePlayerResult> createPlayer({
+    required List<String> videoPaths,
+    required int width,
+    required int height,
+    required bool useHardwareDecode,
+    int? viewportBackgroundColor,
+  }) async {
+    calls.add('createPlayer');
+    return const CreatePlayerResult(
+      textureId: 1,
+      tracks: [
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'clip.mp4',
+          width: 1920,
+          height: 1080,
+          durationUs: 2000000,
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<void> destroyPlayer() async {
+    calls.add('destroyPlayer');
+  }
+
+  @override
+  Future<void> play() async {
+    calls.add('play');
+  }
+
+  @override
+  Future<void> pause() async {
+    calls.add('pause');
+  }
+
+  @override
+  Future<void> seek(int ptsUs, {int? requestId}) async {
+    calls.add('seek:$ptsUs:$requestId');
+    this.ptsUs = ptsUs;
+  }
+
+  @override
+  Future<void> setSpeed(double speed) async {
+    calls.add('setSpeed:$speed');
+  }
+
+  @override
+  Future<void> setLoopRange({
+    required bool enabled,
+    required int startUs,
+    required int endUs,
+  }) async {
+    calls.add('setLoopRange:$enabled:$startUs:$endUs');
+  }
+
+  @override
+  Future<void> setAudibleTrack(int? fileId) async {}
+
+  @override
+  Future<void> resize({required int width, required int height}) async {}
+
+  @override
+  Future<void> setViewportBackgroundColor(int colorValue) async {}
+
+  @override
+  Future<ViewportCapture> captureViewport({String? outputPath}) async {
+    return const ViewportCapture(
+      hash: 'hash',
+      width: 1,
+      height: 1,
+      avgLuma: 1,
+      nonBlackRatio: 1,
+    );
+  }
+
+  @override
+  Future<void> stepForward() async {
+    calls.add('stepForward');
+    ptsUs = stepForwardPtsUs ?? ptsUs;
+  }
+
+  @override
+  Future<void> stepBackward() async {
+    calls.add('stepBackward');
+    ptsUs = stepBackwardPtsUs ?? ptsUs;
+  }
+
+  @override
+  Future<int> currentPts() async {
+    calls.add('currentPts');
+    return ptsUs;
+  }
+
+  @override
+  Future<PresentedFrameTiming?> currentPresentedFrame(int fileId) async {
+    return null;
+  }
+
+  @override
+  Future<int> duration() async => 2000000;
+
+  @override
+  Future<bool> isPlaying() async => false;
+
+  @override
+  Future<void> applyLayout(LayoutState state) async {}
+
+  @override
+  Future<LayoutState> getLayout() async => const LayoutState();
+
+  @override
+  Future<TrackInfo> addTrack(
+    String videoPath, {
+    required bool useHardwareDecode,
+  }) async {
+    return TrackInfo(fileId: 2, slot: 1, path: videoPath, width: 1, height: 1);
+  }
+
+  @override
+  Future<void> removeTrack(int fileId) async {}
+
+  @override
+  Future<void> setTrackOffset({
+    required int fileId,
+    required int offsetUs,
+  }) async {}
+
+  @override
+  Future<List<TrackInfo>> getTracks() async => const [];
+
+  @override
+  Future<Map<String, dynamic>> getDiagnostics() async => const {};
 }

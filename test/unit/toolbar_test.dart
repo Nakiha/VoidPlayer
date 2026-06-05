@@ -560,6 +560,39 @@ void main() {
     expect(activations, 1);
   });
 
+  testWidgets(
+    'analysis overlay controls remain clickable before cache is ready',
+    (tester) async {
+      var type = AnalysisOverlayType.cu;
+      var activations = 0;
+
+      await tester.pumpWidget(
+        _localized(
+          AnalysisOverlayControlBar(
+            dataSource: _FakeAnalysisToolbarDataSource(),
+            panelActive: false,
+            panelReady: false,
+            onTypeChanged: (next) => type = next,
+            onOpacityChanged: (_) {},
+            onActivateOverlay: () async => activations++,
+            onDeactivateOverlay: () {},
+          ),
+        ),
+      );
+
+      await tester.tap(
+        find.byKey(
+          ValueKey(
+            'analysis-overlay-type-${AnalysisOverlayType.cuBitCostHeatmap.name}',
+          ),
+        ),
+      );
+
+      expect(type, AnalysisOverlayType.cuBitCostHeatmap);
+      expect(activations, 1);
+    },
+  );
+
   testWidgets('canceling network stream dialog restores space shortcut', (
     tester,
   ) async {

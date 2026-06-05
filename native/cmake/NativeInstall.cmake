@@ -60,7 +60,7 @@ if(BUILD_PYTHON AND TARGET video_renderer_native)
             "$<TARGET_FILE:video_renderer_native>"
             "${DIST_DIR}/python/"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/renderer/exports/__init__.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/python/video_renderer/__init__.py"
             "${DIST_DIR}/python/video_renderer/__init__.py"
         COMMENT "Installing Python artifacts to ${DIST_DIR}/python/..."
     )

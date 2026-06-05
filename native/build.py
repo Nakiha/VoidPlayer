@@ -1,4 +1,4 @@
-"""Build script for video_renderer_native module."""
+"""Internal helper for standalone native CMake builds."""
 import argparse
 import os
 import sys
@@ -83,7 +83,6 @@ def configure(
     build_dir: Path,
     script_dir: Path,
     ffmpeg_root: Path,
-    build_benchmarks: bool = False,
     build_tests: bool = True,
     build_analysis_tests: bool = True,
     build_python: bool = True,
@@ -95,7 +94,6 @@ def configure(
         "-B", str(build_dir),
         "-S", str(script_dir),
         f"-DFFMPEG_ROOT={ffmpeg_root}",
-        f"-DBUILD_BENCHMARKS={'ON' if build_benchmarks else 'OFF'}",
         f"-DBUILD_TESTS={'ON' if build_tests else 'OFF'}",
         f"-DBUILD_ANALYSIS_TESTS={'ON' if build_analysis_tests else 'OFF'}",
         f"-DBUILD_PYTHON={'ON' if build_python else 'OFF'}",
@@ -145,24 +143,13 @@ def native_executable_name(name: str, platform_name: str) -> str:
     return f"{name}.exe" if platform_name == "windows" else name
 
 
-def benchmark(build_dir: Path, build_type: str, platform_name: str):
-    if platform_name != "windows":
-        raise RuntimeError("pipeline_bench is currently a Windows native benchmark target")
-    exe = build_dir / build_type / native_executable_name("pipeline_bench", platform_name)
-    repo_root = Path(__file__).resolve().parents[1]
-    video = repo_root / "resources" / "video" / "h264_9s_1920x1080.mp4"
-    subprocess.check_call([str(exe), str(video)])
-
-
 def main():
-    parser = argparse.ArgumentParser(description="Build video_renderer_native")
+    parser = argparse.ArgumentParser(description="Build VoidPlayer standalone native targets")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--build-only", action="store_true",
                       help="Only compile, skip tests")
     mode.add_argument("--test-only", action="store_true",
                       help="Skip compilation, only run tests")
-    mode.add_argument("--benchmarks-only", action="store_true",
-                      help="Only compile and run pipeline benchmarks")
     parser.add_argument("--debug", action="store_true",
                         help="Build in Debug mode (no optimization, with PDB debug symbols)")
     parser.add_argument("--ffmpeg-root", type=str, default=None,
@@ -188,28 +175,6 @@ def main():
     build_type = "Debug" if args.debug else "Release"
     ffmpeg_root = resolve_ffmpeg_root(script_dir, platform_name, args.ffmpeg_root)
     use_local_deps = args.use_local_deps or env_flag("VOID_USE_LOCAL_DEPS")
-
-    if args.benchmarks_only:
-        print("Configuring...", flush=True)
-        configure(
-            build_dir,
-            script_dir,
-            ffmpeg_root,
-            build_benchmarks=True,
-            build_tests=False,
-            build_analysis_tests=False,
-            build_python=False,
-            build_ffi=False,
-            use_local_deps=use_local_deps,
-        )
-
-        print(f"Building ({build_type})...", flush=True)
-        build(build_dir, build_type)
-
-        print("Running benchmarks...", flush=True)
-        benchmark(build_dir, build_type, platform_name)
-        print("Done.", flush=True)
-        return
 
     if not args.test_only:
         print("Configuring...", flush=True)

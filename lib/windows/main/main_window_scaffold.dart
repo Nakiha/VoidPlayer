@@ -32,16 +32,18 @@ class MainWindowScaffold extends StatelessWidget {
     final viewportActions = actions.viewport;
     final overlayActions = actions.overlays;
     return Scaffold(
-      body: MediaHeaderOverlayPanelHost(
-        entries: media.tracks,
-        dataSource: media.analysisDataSource,
-        onOverlayActivate: actions.analysisOverlay.onActivate,
-        onOverlayDeactivate: actions.analysisOverlay.onClose,
-        onTypeChanged: actions.analysisOverlay.onTypeChanged,
-        onOpacityChanged: actions.analysisOverlay.onOpacityChanged,
-        child: Stack(
-          children: [
-            Column(
+      body: Stack(
+        children: [
+          // Content-scoped overlays stay inside this host. Window overlays
+          // below are later Stack siblings so their z-order stays explicit.
+          MediaHeaderOverlayPanelHost(
+            entries: media.tracks,
+            dataSource: media.analysisDataSource,
+            onOverlayActivate: actions.analysisOverlay.onActivate,
+            onOverlayDeactivate: actions.analysisOverlay.onClose,
+            onTypeChanged: actions.analysisOverlay.onTypeChanged,
+            onOpacityChanged: actions.analysisOverlay.onOpacityChanged,
+            child: Column(
               children: [
                 if (!overlays.fullScreen)
                   AxTreeRegion(
@@ -94,35 +96,35 @@ class MainWindowScaffold extends StatelessWidget {
                   ),
               ],
             ),
-            if (overlays.fullScreen)
-              FullScreenPointerCapture(
-                onActivity: overlayActions.onFullScreenPointerActivity,
-              ),
-            if (overlays.fullScreen && media.tracks.isNotEmpty)
-              FullScreenControlsOverlay(model: model, actions: actions),
-            if (overlays.dragging) const DragDropLayer(),
-            FloatingSidePanelsSlot(
-              mediaInfoVisible: overlays.mediaInfoVisible,
-              profilerVisible: overlays.profilerVisible,
-              tracks: media.tracks,
-              onCloseMediaInfo: overlayActions.onCloseMediaInfo,
-              onCloseProfiler: overlayActions.onCloseProfiler,
+          ),
+          if (overlays.fullScreen)
+            FullScreenPointerCapture(
+              onActivity: overlayActions.onFullScreenPointerActivity,
             ),
-            SettingsOverlaySlot(
-              visible: overlays.settingsVisible,
-              onClose: overlayActions.onCloseSettings,
-              onViewportPixelSizeModeChanged:
-                  overlayActions.onViewportPixelSizeModeChanged,
-            ),
-            PerformanceHealthFeedbackMonitor(
-              enabled: media.nativePlaybackAvailable && media.tracks.isNotEmpty,
-              trackCount: media.tracks.length,
-              profilerVisible: overlays.profilerVisible,
-              onOpenProfiler: toolbarActions.onProfiler,
-            ),
-            const AppFeedbackHost(),
-          ],
-        ),
+          if (overlays.fullScreen && media.tracks.isNotEmpty)
+            FullScreenControlsOverlay(model: model, actions: actions),
+          if (overlays.dragging) const DragDropLayer(),
+          FloatingSidePanelsSlot(
+            mediaInfoVisible: overlays.mediaInfoVisible,
+            profilerVisible: overlays.profilerVisible,
+            tracks: media.tracks,
+            onCloseMediaInfo: overlayActions.onCloseMediaInfo,
+            onCloseProfiler: overlayActions.onCloseProfiler,
+          ),
+          SettingsOverlaySlot(
+            visible: overlays.settingsVisible,
+            onClose: overlayActions.onCloseSettings,
+            onViewportPixelSizeModeChanged:
+                overlayActions.onViewportPixelSizeModeChanged,
+          ),
+          PerformanceHealthFeedbackMonitor(
+            enabled: media.nativePlaybackAvailable && media.tracks.isNotEmpty,
+            trackCount: media.tracks.length,
+            profilerVisible: overlays.profilerVisible,
+            onOpenProfiler: toolbarActions.onProfiler,
+          ),
+          const AppFeedbackHost(),
+        ],
       ),
     );
   }

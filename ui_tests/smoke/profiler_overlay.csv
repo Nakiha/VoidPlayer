@@ -5,6 +5,11 @@
 0.9,CAPTURE_FLUTTER,profiler_before,build/profiler_before.png
 1.0,OPEN_STATS
 1.5,OPEN_MEMORY
+1.6,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,processRssBytes,1
+1.61,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,processPrivateBytes,1
+1.62,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,dedicatedGpuUsageBytes,1
+1.63,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,cpuFrameMemoryBytes,0
+1.64,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,packetQueueMemoryBytes,1
 1.8,CAPTURE_FLUTTER,profiler_overlay,build/profiler_overlay.png
 1.9,ASSERT_CAPTURE_CHANGED,profiler_before,profiler_overlay
 2.0,ASSERT_CAPTURE_NOT_BLACK,profiler_overlay,0.01,4.0

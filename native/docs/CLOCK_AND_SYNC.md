@@ -125,7 +125,7 @@ struct PresentDecision {
 
 ## 音频同步策略
 
-当前播放器仍以外部播放 Clock / 视频渲染时钟为主时钟，音频输出按 track active 状态消费 PCM；Round 5 之后音频 PCM 队列不再只保存裸 samples，而是保存：
+当前播放器仍以外部播放 Clock / 视频渲染时钟为主时钟，音频输出按 track active 状态消费 PCM。音频 PCM 队列保存：
 
 - PCM chunk 的 `pts_us`、`duration_us`
 - seek 后的 stream `serial`
@@ -133,4 +133,4 @@ struct PresentDecision {
 
 `AudioDecodeThread::notify_seek(target_pts_us, type)` 会递增音频 buffer serial，并保留 seek target/type。seek 后旧 serial 的 PCM chunk 会被丢弃；新 chunk 如果早于目标点，会按 PTS 裁掉前缀；Exact seek 如果首个新 chunk 晚于目标点且 gap 较小，会先补一段 silence；Keyframe seek 或较大 gap 则记录 realign metric。
 
-miniaudio 是 native 设备输出后端，当前只接管 playback callback；解封装、解码、重采样、混音和 `PcmBuffer` 时间模型仍由 VoidPlayer 维护。后续调整 WASAPI/CoreAudio 参数时，应继续保留同一套 PCM 时间模型和 metrics。
+miniaudio 是 native 设备输出后端，当前只接管 playback callback；解封装、解码、重采样、混音和 `PcmBuffer` 时间模型仍由 VoidPlayer 维护。WASAPI/CoreAudio 设备参数必须继续使用同一套 PCM 时间模型和 metrics。

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(video_renderer_native VERSION 1.0.0 LANGUAGES C CXX)
+project(VoidPlayerNative VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,7 +29,6 @@ include(cmake/NativeSources.cmake)
 include(cmake/TestAssets.cmake)
 include(cmake/RuntimeArtifacts.cmake)
 
-option(BUILD_BENCHMARKS "Build native benchmark executables" OFF)
 option(BUILD_FFI "Build C FFI shared library" ON)
 option(VOID_ENABLE_WARNINGS_AS_ERRORS "Treat native compiler warnings as errors" OFF)
 set(VOID_SANITIZER "" CACHE STRING "Native sanitizer to enable: address, thread, or undefined")
@@ -44,7 +43,7 @@ if(WIN32)
     add_subdirectory(renderer)
 else()
     include(cmake/PortableTargets.cmake)
-    message(STATUS "video_renderer disabled: D3D11 backend is Windows-only")
+    message(STATUS "Windows D3D11 renderer targets disabled on this platform")
 endif()
 
 if(WIN32 AND BUILD_TESTS)
@@ -90,7 +89,7 @@ if(WIN32 AND BUILD_ANALYSIS)
 endif()
 
 if(WIN32)
-    include(cmake/NativeTargets.cmake)
+    include(cmake/WindowsBindingTargets.cmake)
 endif()
 include(cmake/NativeInstall.cmake)
 

@@ -1,0 +1,20 @@
+# macOS runner smoke for step actions inside an enabled loop range.
+# Native fair step chooses the next/previous frame; Flutter playback coordinator
+# keeps manual stepping inside the active loop range after native step settles.
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/native_loop_range_step_smoke.csv
+@WINDOW, 960, 540
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/loop_range_step_smoke.mp4, 120, 30, 320, 180
+0.3, ADD_MEDIA, build/generated/macos/loop_range_step_smoke.mp4
+1.3, ASSERT_TRACK_COUNT, 1
+1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
+1.5, SET_LOOP_RANGE, 1000000, 1020000
+1.6, SET_LOOP_ENABLED, 1
+2.4, ASSERT_PAUSED
+2.5, ASSERT_POSITION, 1000000, 80
+2.6, STEP_FORWARD
+3.2, ASSERT_POSITION, 1000000, 80
+3.3, STEP_BACKWARD
+3.9, ASSERT_POSITION, 1000000, 80
+4.0, SET_LOOP_ENABLED, 0
+4.2, QUIT, 0

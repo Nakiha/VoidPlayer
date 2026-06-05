@@ -108,6 +108,7 @@ extension MacOSNativePlayerSession {
       return [
         "processRssBytes": 0,
         "processPrivateBytes": 0,
+        "dedicatedGpuUsageBytes": 0,
         "decodeFrameCount": 0,
         "decodeDroppedCount": 0,
         "decodeElapsedMs": 0,
@@ -167,6 +168,9 @@ extension MacOSNativePlayerSession {
     return [
       "processRssBytes": Int64(min(stats.process_rss_bytes, maxInt64)),
       "processPrivateBytes": Int64(min(stats.process_private_bytes, maxInt64)),
+      "dedicatedGpuUsageBytes": Int64(
+        min(stats.dedicated_gpu_usage_bytes, maxInt64)
+      ),
       "decodeFrameCount": Int64(min(UInt64(stats.decode_frame_count), maxInt64)),
       "decodeDroppedCount": Int64(min(UInt64(stats.decode_dropped_count), maxInt64)),
       "decodeElapsedMs": Int64(stats.decode_elapsed_ms),

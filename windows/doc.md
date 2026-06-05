@@ -50,6 +50,6 @@ windows/
 |------|------|
 | [../lib/doc.md](../lib/doc.md) | Flutter / Dart UI 层入口 |
 | [../native/docs/ARCHITECTURE.md](../native/docs/ARCHITECTURE.md) | Native C++ 渲染引擎入口 |
-| [../native/docs/NATIVE_EVENT_PIPELINE_DESIGN.md](../native/docs/NATIVE_EVENT_PIPELINE_DESIGN.md) | native -> Dart EventChannel 事件通知设计 |
+| [../native/docs/NATIVE_EVENT_PIPELINE.md](../native/docs/NATIVE_EVENT_PIPELINE.md) | native -> Dart EventChannel 事件通知合同 |
 | [../native/docs/FFI_AND_BINDINGS.md](../native/docs/FFI_AND_BINDINGS.md) | Native FFI / Python 绑定说明 |
 | [../native/docs/MAINTENANCE.md](../native/docs/MAINTENANCE.md) | Native 层维护规范 |

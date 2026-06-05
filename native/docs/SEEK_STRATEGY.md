@@ -50,11 +50,11 @@ H.264 FLV 常见两种打包方式：
 
 需要 frame-accurate 暂停预览的 H.264/FLV 输入应在生成或 remux 时让关键帧重复 headers，例如 x264 `repeat-headers=1`，或转成参数集分布更适合随机访问的容器/码流。
 
-后续如果要改变行为，优先顺序是：
+行为变更必须满足以下约束：
 
-1. 在 demux/bitstream 层检测目标 IDR 附近是否已有 SPS/PPS。
-2. 对缺失参数集的 H.264/FLV 返回显式 unsupported-path status，或在 UI 层降级提示。
-3. 只有在能证明 extradata 注入不会破坏其他路径时，才考虑自动注入保存的 SPS/PPS。
+- demux/bitstream 层先检测目标 IDR 附近是否已有 SPS/PPS。
+- 对缺失参数集的 H.264/FLV 返回显式 unsupported-path status，或在 UI 层降级提示。
+- 自动注入保存的 SPS/PPS 需要先证明不会破坏其他 seek/decode 路径。
 
 ## 当前触发矩阵
 

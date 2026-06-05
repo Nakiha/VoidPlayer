@@ -1,8 +1,8 @@
 # D3D11 后端
 
 This document is Windows-specific. The shared renderer scheduler and
-platform-backend boundary are documented in [ARCHITECTURE.md](ARCHITECTURE.md)
-and [RENDERER_PLATFORM_BACKEND_PLAN.md](RENDERER_PLATFORM_BACKEND_PLAN.md).
+platform-backend boundary are documented in [ARCHITECTURE.md](ARCHITECTURE.md),
+[THREADING_MODEL.md](THREADING_MODEL.md), and [DATA_PIPELINE.md](DATA_PIPELINE.md).
 
 ## D3D11Device
 

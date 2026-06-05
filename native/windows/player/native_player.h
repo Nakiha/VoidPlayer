@@ -11,8 +11,7 @@
 namespace vr {
 
 /// Native player facade that owns playback control and the video renderer as
-/// peers. FFI can move to this type in the next phase without changing the
-/// renderer/video internals again.
+/// peers. FFI can adopt this type without changing the renderer/video internals.
 class NativePlayer {
 public:
     NativePlayer();

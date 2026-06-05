@@ -43,7 +43,7 @@ void validate_loop_range_or_throw(bool enabled, int64_t start_us, int64_t end_us
 } // namespace
 
 PYBIND11_MODULE(video_renderer_native, m) {
-    m.doc() = "Video Renderer Native Module - D3D11VA Multi-track Video Renderer";
+    m.doc() = "VoidPlayer native Python bindings for local demos and tooling";
 
     // SeekType enum
     py::enum_<vr::SeekType>(m, "SeekType")

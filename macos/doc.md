@@ -9,9 +9,8 @@ The current app minimum is macOS 14.0 because the vendored FFmpeg dylibs in
 Xcode runner passes the same deployment target into the native CMake build used
 by the app bundle.
 
-Implementation history lives in git history and
-`../native/docs/MACOS_PORT_PLAN.md`; this document describes the current runner
-contract.
+`../native/docs/MACOS_READINESS.md` records macOS native readiness gates. This
+document describes the current runner contract.
 
 ## Current Role
 
@@ -148,11 +147,11 @@ testing. Developer ID signing can be supplied with `--macos-sign-identity` or
 `--macos-notarize --macos-notary-profile` or
 `VOIDPLAYER_MACOS_NOTARY_PROFILE`.
 
-## Remaining Gates
+## Release Gates
 
 - Metal shader/layout/color parity against CPU reference and Windows D3D11.
 - Drop/late/present-cadence diagnostics before raising 4K60 release thresholds.
 - Windows preservation after shared renderer/backend changes.
 - Release staging: FFmpeg dylibs, license notices, crash/log paths, sandbox file
   access, signing, and notarization inputs.
-- macOS analysis UI/IPC design and validation.
+- macOS analysis UI/IPC validation.

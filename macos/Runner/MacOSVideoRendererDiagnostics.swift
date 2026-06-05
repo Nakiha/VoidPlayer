@@ -16,6 +16,8 @@ enum MacOSVideoRendererDiagnostics {
       metalTextureCreationCount: Int,
       metalTextureFailureCount: Int,
       metalTextureLastError: String,
+      rendererOwnedPixelBufferBytes: Int,
+      rendererOwnedPixelBufferCount: Int,
       inFlightMetalBufferCount: Int,
       metalBufferExhaustionCount: Int
     )?,
@@ -51,6 +53,10 @@ enum MacOSVideoRendererDiagnostics {
       int64Diagnostic(perfStats?["metalBufferExhaustionCount"])
     let textureMetalBufferExhaustionCount =
       Int64(textureStats?.metalBufferExhaustionCount ?? 0)
+    let nativeDedicatedGpuUsageBytes = int64Diagnostic(perfStats?["dedicatedGpuUsageBytes"])
+    let rendererOwnedPixelBufferBytes =
+      Int64(textureStats?.rendererOwnedPixelBufferBytes ?? 0)
+    let dedicatedGpuUsageBytes = nativeDedicatedGpuUsageBytes + rendererOwnedPixelBufferBytes
     var diagnostics: [String: Any] = [
       "platform": "macos",
       "backend": backendName,
@@ -239,6 +245,10 @@ enum MacOSVideoRendererDiagnostics {
         perfStats?["sourceFrameCacheHitRatioX1000"] ?? 0,
       "processRssBytes": perfStats?["processRssBytes"] ?? 0,
       "processPrivateBytes": perfStats?["processPrivateBytes"] ?? 0,
+      "dedicatedGpuUsageBytes": dedicatedGpuUsageBytes,
+      "nativeDedicatedGpuUsageBytes": nativeDedicatedGpuUsageBytes,
+      "rendererOwnedPixelBufferBytes": rendererOwnedPixelBufferBytes,
+      "rendererOwnedPixelBufferCount": textureStats?.rendererOwnedPixelBufferCount ?? 0,
       "nativeDecodeFrameCount": perfStats?["decodeFrameCount"] ?? 0,
       "nativeDecodeDroppedCount": perfStats?["decodeDroppedCount"] ?? 0,
       "nativeDecodeElapsedMs": perfStats?["decodeElapsedMs"] ?? 0,
@@ -250,6 +260,8 @@ enum MacOSVideoRendererDiagnostics {
       "nativeAggregateDecodeFrameCount": perfStats?["aggregateDecodeFrameCount"] ?? 0,
       "nativeAggregateDecodeFps": perfStats?["aggregateDecodeFps"] ?? 0.0,
       "nativeAggregateDecodeFpsX1000": perfStats?["aggregateDecodeFpsX1000"] ?? 0,
+      "cpuFrameMemoryBytes": perfStats?["cpuFrameMemoryBytes"] ?? 0,
+      "packetQueueMemoryBytes": perfStats?["packetQueueMemoryBytes"] ?? 0,
       "nativeCpuFrameMemoryBytes": perfStats?["cpuFrameMemoryBytes"] ?? 0,
       "nativePacketQueueMemoryBytes": perfStats?["packetQueueMemoryBytes"] ?? 0,
       "presentationFallbackReason": MacOSPresentationDiagnostics.fallbackReason(

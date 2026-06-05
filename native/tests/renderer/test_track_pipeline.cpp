@@ -1540,13 +1540,14 @@ TEST_CASE("TrackStepPolicy builds step-forward decisions",
         last_decision,
         decision));
     REQUIRE(decision.should_present);
-    REQUIRE(decision.current_pts_us == 1000);
+    REQUIRE(decision.current_pts_us == 2000);
     REQUIRE(decision.frames[1].has_value());
     REQUIRE(decision.frames[1]->pts_us == 2000);
 
     TextureFrame last_frame;
     last_frame.pts_us = 2000;
     last_decision.frames[1] = last_frame;
+    set_present_decision_track_identity(last_decision, 1, *manager[1]);
     REQUIRE(build_step_forward_decision(
         manager,
         1000,
@@ -1808,6 +1809,7 @@ TEST_CASE("TrackStepPolicy chooses step-forward exact-seek fallback targets",
     TextureFrame last_frame;
     last_frame.pts_us = 3000;
     last_decision.frames[0] = last_frame;
+    set_present_decision_track_identity(last_decision, 0, *manager[0]);
     const auto last_target = choose_step_forward_exact_seek_target(
         manager, 2000, 0, last_decision);
     REQUIRE(last_target.base_pts_us == 3100);
@@ -1822,6 +1824,8 @@ TEST_CASE("TrackStepPolicy chooses step-forward exact-seek fallback targets",
     TextureFrame future_last_frame;
     future_last_frame.pts_us = 70000;
     future_last_decision.frames[0] = future_last_frame;
+    set_present_decision_track_identity(
+        future_last_decision, 0, *future_manager[0]);
     const auto future_last_target = choose_step_forward_exact_seek_target(
         future_manager, 30000, 0, future_last_decision);
     REQUIRE(future_last_target.base_pts_us == 70100);
@@ -1872,6 +1876,7 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     visible_frame.pts_us = 60000;
     PresentDecision last_decision;
     last_decision.frames[0] = visible_frame;
+    set_present_decision_track_identity(last_decision, 0, *manager[0]);
     const auto visible_target = choose_step_backward_exact_seek_target(
         manager, 90000, last_decision);
     REQUIRE(visible_target.base_pts_us == 60000);
@@ -1881,10 +1886,21 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     future_visible_frame.pts_us = 130000;
     PresentDecision future_last_decision;
     future_last_decision.frames[0] = future_visible_frame;
+    set_present_decision_track_identity(
+        future_last_decision, 0, *manager[0]);
     const auto future_visible_target = choose_step_backward_exact_seek_target(
         manager, 90000, future_last_decision);
-    REQUIRE(future_visible_target.base_pts_us == 90000);
-    REQUIRE(future_visible_target.target_pts_us == 49000);
+    REQUIRE(future_visible_target.base_pts_us == 130000);
+    REQUIRE(future_visible_target.target_pts_us == 89000);
+
+    PresentDecision stale_future_last_decision;
+    stale_future_last_decision.frames[0] = future_visible_frame;
+    stale_future_last_decision.file_ids[0] = 99;
+    const auto stale_future_visible_target =
+        choose_step_backward_exact_seek_target(
+            manager, 90000, stale_future_last_decision);
+    REQUIRE(stale_future_visible_target.base_pts_us == 90000);
+    REQUIRE(stale_future_visible_target.target_pts_us == 49000);
 }
 
 TEST_CASE("TrackStepPolicy discards consumed step-forward frames",
@@ -1916,6 +1932,7 @@ TEST_CASE("TrackStepPolicy discards consumed step-forward frames",
     TextureFrame last_selected;
     last_selected.pts_us = 200;
     last_decision.frames[1] = last_selected;
+    set_present_decision_track_identity(last_decision, 1, *manager[1]);
 
     discard_step_forward_consumed_frames(
         manager,

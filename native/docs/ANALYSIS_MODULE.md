@@ -32,7 +32,7 @@ Analysis 使用三类自定义二进制格式，均为小端序，结构体使�
 - [VACHUNK](formats/VACHUNK.md) — 当前按需派生分析 chunk；保存 NAL detail、exact frame summary、overlay 数据
 
 VAC2 / VACHUNK 的总体设计见
-[Analysis Cache V2 Design](ANALYSIS_CACHE_V2_DESIGN.md)。当前 runtime cache
+[Analysis Cache](ANALYSIS_CACHE.md)。当前 runtime cache
 使用 VAC2 base + VACHUNK；runtime overlay 直接消费 overlay VACHUNK。
 
 ## 生成管线
@@ -156,7 +156,7 @@ CPU raster / cache toolchain 部分，报告写入
 完整覆盖热力图的 BGRA 清屏，并用固定 LUT 计算 QP / bit-density 颜色。GUI 当前对热力图
 和 prediction-mode 填充使用 16-byte packed rect structured buffer + D3D11 instanced quad
 pass，CU/MB 反色边界用同一 rect buffer 在 GPU 侧生成 R8 mask render target。该
-benchmark 不包含最终窗口合成，但报告会同时给出 legacy CPU texture upload、当前 GPU
+benchmark 不包含最终窗口合成，但报告会同时给出 CPU texture upload、当前 GPU
 rect upload 字节数估算，以及 rect upload CPU wall time、color pass、GPU mask pass、
 invert pass、full overlay pass 的 timestamp query 平均耗时。GUI 平滑 pan/zoom/resize
 会复用已上传的 overlay materialization。

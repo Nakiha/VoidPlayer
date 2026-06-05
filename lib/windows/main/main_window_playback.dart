@@ -155,6 +155,49 @@ class MainWindowPlaybackCoordinator {
     setPlaying(false);
   }
 
+  Future<void> stepForward() {
+    return _step(forward: true);
+  }
+
+  Future<void> stepBackward() {
+    return _step(forward: false);
+  }
+
+  Future<void> _step({required bool forward}) async {
+    if (_disposed) return;
+    _resumeAfterSeek = false;
+    _seekSerial++;
+    _pollSerial++;
+    cancelLoopBoundaryTimer();
+    if (forward) {
+      await controller.stepForward();
+    } else {
+      await controller.stepBackward();
+    }
+    if (_disposed || !mounted()) return;
+    setPlaying(false);
+
+    int steppedPtsUs;
+    try {
+      steppedPtsUs = await controller.currentPts();
+    } catch (_) {
+      steppedPtsUs = currentPtsUs();
+    }
+    if (_disposed || !mounted()) return;
+
+    if (loopRangeEnabled() && resolvedLoopEndUs > resolvedLoopStartUs) {
+      final startUs = resolvedLoopStartUs;
+      final endUs = resolvedLoopEndUs;
+      if ((forward && steppedPtsUs >= endUs) ||
+          (!forward && steppedPtsUs < startUs)) {
+        await _seekToAsync(startUs);
+        return;
+      }
+    }
+
+    setPolledPlaybackState(steppedPtsUs, durationUs(), false);
+  }
+
   void setSpeed(double speed) {
     if (_disposed) return;
     final clamped = speed > 0 ? speed : 1.0;

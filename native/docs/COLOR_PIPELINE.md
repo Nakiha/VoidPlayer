@@ -163,7 +163,7 @@ Current macOS release-readiness evidence:
   such as monotonic PTS, no large PTS gaps, duplicate PTS visibility, host
   interval samples/max/p95, and a high renderer-owned presentation ratio.
 
-Open stabilization gates before raising macOS release confidence further:
+Required evidence before raising macOS release confidence further:
 
 - D3D11 HLSL vs Metal shader parity for range, matrix, transfer, and odd
   dimensions.

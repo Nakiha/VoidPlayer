@@ -133,7 +133,7 @@ Crash handler 的实现位于 `windows/common/windows_crash_handler.*`。它不�
 | 目标 | 输出路径 | 说明 |
 |------|---------|------|
 | video_renderer_ffi | `build/native/standalone/windows-msvc/dist/ffi/` | DLL + 头文件 |
-| video_renderer_native | `build/native/standalone/windows-msvc/dist/python/` | .pyd + FFmpeg DLLs |
+| video_renderer_native | `build/native/standalone/windows-msvc/dist/python/` | .pyd、`video_renderer` convenience package、FFmpeg DLLs |
 
 C FFI 消费者需链接 `video_renderer_ffi.dll` 并包含 `ffi_exports.h`。
-Python 消费者 `import video_renderer_native` 即可。
+Python demo/tooling 可直接 `import video_renderer_native`，或从 `video_renderer` convenience package 导入常用类型。

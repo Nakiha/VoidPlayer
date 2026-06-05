@@ -122,7 +122,9 @@ void Renderer::Impl::step_forward() {
     }
 
     if (have_step_decision) {
-        PresentCommandProcessor::present_frame(*this, step_decision);
+        auto present_context = present_command_context();
+        RendererPresentCommandProcessor::present_frame(
+            present_context, step_decision);
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             present_history_.set(step_decision);
@@ -194,7 +196,9 @@ void Renderer::Impl::step_backward() {
         }
     }
     if (have_step_decision) {
-        PresentCommandProcessor::present_frame(*this, step_decision);
+        auto present_context = present_command_context();
+        RendererPresentCommandProcessor::present_frame(
+            present_context, step_decision);
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             present_history_.set(step_decision);

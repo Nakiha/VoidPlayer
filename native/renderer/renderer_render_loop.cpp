@@ -212,7 +212,9 @@ void Renderer::Impl::RenderLoopCommandProcessor::run_body(
                         present_history_.snapshot());
                 }
                 if (cached.has_frame) {
-                    PresentCommandProcessor::present_frame(renderer, cached.decision);
+                    auto present_context = renderer.present_command_context();
+                    RendererPresentCommandProcessor::present_frame(
+                        present_context, cached.decision);
                     drawn = true;
                     spdlog::debug("[Renderer] Paused frame (cached): pts={:.3f}s",
                                   cached.first_pts_us.has_value()
@@ -231,7 +233,9 @@ void Renderer::Impl::RenderLoopCommandProcessor::run_body(
                     }
                     if (snapshot.ready_to_present) {
                         auto& preview = snapshot.decision;
-                        PresentCommandProcessor::present_frame(renderer, preview);
+                        auto present_context = renderer.present_command_context();
+                        RendererPresentCommandProcessor::present_frame(
+                            present_context, preview);
                         drawn = true;
                         bool preserve_requested_clock = false;
                         RendererTrackReferenceSnapshot ref;
@@ -329,7 +333,9 @@ void Renderer::Impl::RenderLoopCommandProcessor::run_body(
                 track_controller_.apply_carry_forward(
                     present_history_.snapshot(), decision);
             }
-            PresentCommandProcessor::present_frame(renderer, decision);
+            auto present_context = renderer.present_command_context();
+            RendererPresentCommandProcessor::present_frame(
+                present_context, decision);
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 present_history_.set(decision);

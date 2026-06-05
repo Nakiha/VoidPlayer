@@ -18,6 +18,7 @@
 #include "renderer/render/renderer_draw_snapshot.h"
 #include "renderer/render/renderer_device_state.h"
 #include "renderer/render/renderer_present_history.h"
+#include "renderer/render/renderer_present_command.h"
 #include "renderer/render/renderer_presentation_controller.h"
 #include "renderer/render/renderer_surface_state.h"
 #include "renderer/render/presentation_backend.h"
@@ -208,28 +209,6 @@ private:
                          bool force_recreate_paused_hevc = false);
     };
 
-    class PresentCommandProcessor {
-    public:
-        static bool draw_paused_frame(Impl& renderer, const char* reason);
-        static bool redraw_layout(Impl& renderer);
-        static void present_frame(Impl& renderer,
-                                  const PresentDecision& decision);
-        static void finish_presented_draw(
-            Impl& renderer,
-            const char* source,
-            const RendererDrawSnapshot& snapshot,
-            uint64_t snapshot_layout_revision,
-            uint64_t snapshot_us,
-            std::chrono::steady_clock::time_point profiler_start,
-            bool attempted_draw,
-            RendererFrameCallback frame_callback,
-            std::function<void(const char*)> frame_failure_callback,
-            bool drew,
-            const char* frame_failure_error,
-            uint64_t backend_us,
-            const PresentationBackendFrameInfo* completed_frame_info);
-    };
-
     class RenderLoopCommandProcessor {
     public:
         static void run_body(Impl& renderer);
@@ -255,6 +234,7 @@ private:
     bool should_present_frame_consume_pending_layout() const;
     void note_viewport_compositor_activity();
     bool should_suppress_playback_present_for_viewport_compositor() const;
+    RendererPresentCommandContext present_command_context();
 
     /// Apply pending resize on the render thread.
     void do_resize(int width, int height);

@@ -88,6 +88,7 @@ set(VOID_RENDERER_PORTABLE_DRIVER_SOURCES
     "${VOID_NATIVE_DIR}/renderer/renderer_step.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer_tracks.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/renderer_loop_driver.cpp"
+    "${VOID_NATIVE_DIR}/renderer/render/renderer_present_command.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/renderer_present_history.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/renderer_presentation_completion.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/renderer_presentation_controller.cpp"
@@ -98,6 +99,9 @@ set(VOID_RENDERER_PORTABLE_DRIVER_SOURCES
     "${VOID_NATIVE_DIR}/renderer/track/track_preroll_policy.cpp"
     "${VOID_NATIVE_DIR}/renderer/track/track_snapshot.cpp"
     "${VOID_NATIVE_DIR}/renderer/track/renderer_track_controller.cpp"
+    "${VOID_NATIVE_DIR}/renderer/track/renderer_track_mutation_controller.cpp"
+    "${VOID_NATIVE_DIR}/renderer/track/renderer_track_presentation_model.cpp"
+    "${VOID_NATIVE_DIR}/renderer/track/renderer_track_registry.cpp"
 )
 
 set(VOID_RENDERER_CORE_SOURCES

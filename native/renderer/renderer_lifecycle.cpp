@@ -105,7 +105,7 @@ bool Renderer::Impl::initialize(const RendererConfig& config) {
 
     initialized_ = true;
 
-    track_controller_.perf_baseline_tracker().reset(std::chrono::steady_clock::now());
+    track_controller_.reset_perf_baseline(std::chrono::steady_clock::now());
 
     // Start render loop immediately (paused mode).
     // Decodes and displays first frame, fills buffers, but does not advance playback.
@@ -200,7 +200,7 @@ void Renderer::Impl::release_resources_locked() {
     timeline_.reset_loop_range();
     loop_driver_.clear_pending_resize();
     loop_driver_.reset_timing();
-    track_controller_.perf_baseline_tracker().reset();
+    track_controller_.reset_perf_baseline();
     initialized_ = false;
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
 }

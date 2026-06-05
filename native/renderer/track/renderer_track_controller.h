@@ -1,6 +1,5 @@
 #pragma once
 
-#include "renderer/track/track_perf_baseline.h"
 #include "renderer/track/track_pipeline_factory.h"
 #include "renderer/track/track_lifecycle.h"
 #include "renderer/track/track_preview_policy.h"
@@ -274,8 +273,8 @@ public:
         bool was_playing,
         const TrackAddSeekHooks& hooks) const;
 
-    TrackPerfBaselineTracker& perf_baseline_tracker();
-    const TrackPerfBaselineTracker& perf_baseline_tracker() const;
+    void reset_perf_baseline(std::chrono::steady_clock::time_point now);
+    void reset_perf_baseline();
 
 private:
     std::unique_ptr<RendererTrackRegistry> registry_;

@@ -16,6 +16,28 @@
 
 namespace vr {
 
+struct RendererRenderLoopCommandHooks {
+    // Requires state_mutex held.
+    std::function<void(const char* operation)> enter_terminal_device_lost_locked;
+    // Receive the already-held state lock because they may temporarily
+    // unlock/relock during long operations.
+    std::function<bool(std::unique_lock<std::mutex>& state_lock)>
+        apply_deferred_paused_hevc_seek_locked;
+    std::function<bool(std::unique_lock<std::mutex>& state_lock)>
+        apply_loop_range_locked;
+    // Requires state_mutex held.
+    std::function<void()> consume_pending_layout_locked;
+    std::function<void(int width, int height)> do_resize;
+    std::function<RendererPresentCommandContext()> present_command_context;
+    std::function<void(bool paused)> set_decode_paused_for_all_tracks;
+    // Requires state_mutex held.
+    std::function<void()> mark_paused_hevc_seek_preview_drawn_locked;
+    std::function<void(const PresentDecision& decision)>
+        emit_seek_preview_presented_events;
+    // Requires state_mutex held.
+    std::function<bool(int64_t end_pts_us)> settle_eof_locked;
+};
+
 struct RendererRenderLoopCommandContext {
     std::mutex& state_mutex;
     std::mutex& lifecycle_mutex;
@@ -27,24 +49,7 @@ struct RendererRenderLoopCommandContext {
     RendererLayoutState& layout;
     PresentationMetricsStore& metrics;
     std::unique_ptr<RenderSink>& render_sink;
-
-    // Lock contract:
-    // - *_locked hooks require state_mutex held by the caller.
-    // - apply_*_locked hooks receive the already-held state lock because they
-    //   may temporarily unlock/relock during long operations.
-    std::function<void(const char* operation)> enter_terminal_device_lost_locked;
-    std::function<bool(std::unique_lock<std::mutex>& state_lock)>
-        apply_deferred_paused_hevc_seek_locked;
-    std::function<bool(std::unique_lock<std::mutex>& state_lock)>
-        apply_loop_range_locked;
-    std::function<void()> consume_pending_layout_locked;
-    std::function<void(int width, int height)> do_resize;
-    std::function<RendererPresentCommandContext()> present_command_context;
-    std::function<void(bool paused)> set_decode_paused_for_all_tracks;
-    std::function<void()> mark_paused_hevc_seek_preview_drawn_locked;
-    std::function<void(const PresentDecision& decision)>
-        emit_seek_preview_presented_events;
-    std::function<bool(int64_t end_pts_us)> settle_eof_locked;
+    RendererRenderLoopCommandHooks hooks;
 };
 
 class RendererRenderLoopCommandProcessor {

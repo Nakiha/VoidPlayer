@@ -14,24 +14,26 @@ RendererPresentCommandContext Renderer::Impl::present_command_context() {
         loop_driver_,
         presentation_metrics_,
         shutting_down_,
-        [this]() {
-            return should_present_frame_consume_pending_layout();
-        },
-        [this]() {
-            consume_pending_layout_locked();
-        },
-        [this]() {
-            return should_suppress_playback_present_for_viewport_compositor();
-        },
-        [this]() {
-            return presentation_overlay_hooks();
-        },
-        [this](const char* operation) {
-            enter_terminal_device_lost_locked(operation);
-        },
-        [this]() {
-            return !timeline_.playing() ||
-                   timeline_.playback().clock().is_paused();
+        RendererPresentCommandHooks{
+            [this]() {
+                return should_present_frame_consume_pending_layout();
+            },
+            [this]() {
+                consume_pending_layout_locked();
+            },
+            [this]() {
+                return should_suppress_playback_present_for_viewport_compositor();
+            },
+            [this]() {
+                return presentation_overlay_hooks();
+            },
+            [this](const char* operation) {
+                enter_terminal_device_lost_locked(operation);
+            },
+            [this]() {
+                return !timeline_.playing() ||
+                       timeline_.playback().clock().is_paused();
+            },
         },
     };
 }

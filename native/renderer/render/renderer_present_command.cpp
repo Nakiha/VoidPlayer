@@ -138,8 +138,10 @@ RendererPresentationSubmitDispatchHooks dispatch_hooks(
     bool attempted_draw,
     bool* sync_completed,
     RendererPresentationDrawResult* sync_draw_result) {
-    auto enter_terminal_device_lost = context.enter_terminal_device_lost_locked;
-    auto playback_inactive_or_paused = context.playback_inactive_or_paused;
+    auto enter_terminal_device_lost =
+        context.hooks.enter_terminal_device_lost_locked;
+    auto playback_inactive_or_paused =
+        context.hooks.playback_inactive_or_paused;
     return RendererPresentationSubmitDispatchHooks{
         [&context, enter_terminal_device_lost, source]() {
             std::lock_guard<std::mutex> lock(context.state_mutex);
@@ -198,7 +200,7 @@ bool RendererPresentCommandProcessor::draw_paused_frame(
     bool has_frame = false;
     {
         std::lock_guard<std::mutex> lock(context.state_mutex);
-        context.consume_pending_layout_locked();
+        context.hooks.consume_pending_layout_locked();
         std::optional<PresentDecision> evaluated_decision;
         if (!decoded_preview_refresh && context.render_sink) {
             evaluated_decision = context.render_sink->evaluate();
@@ -241,8 +243,8 @@ void RendererPresentCommandProcessor::present_frame(
     {
         const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(context.state_mutex);
-        if (context.should_consume_pending_layout()) {
-            context.consume_pending_layout_locked();
+        if (context.hooks.should_consume_pending_layout()) {
+            context.hooks.consume_pending_layout_locked();
         }
         spdlog::debug("[present_frame] mode={}", context.layout.current_for_draw().mode);
         PresentDecision filtered_decision = decision;
@@ -258,7 +260,8 @@ void RendererPresentCommandProcessor::present_frame(
     }
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
     if (attempted_draw &&
-        context.should_suppress_playback_present_for_viewport_compositor()) {
+        context.hooks
+            .should_suppress_playback_present_for_viewport_compositor()) {
         const auto suppressed =
             context.metrics.note_playing_layout_redraw_suppressed();
         if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER") &&
@@ -281,7 +284,7 @@ void RendererPresentCommandProcessor::present_frame(
     request.poll_device_removed_label =
         context.surface.headless() ? "headless present" : nullptr;
     request.check_device_lost_after_draw = !context.surface.headless();
-    request.overlay_hooks = context.overlay_hooks();
+    request.overlay_hooks = context.hooks.overlay_hooks();
     request.should_abort_headless_publish =
         [&shutting_down = context.shutting_down]() {
             return shutting_down.load(std::memory_order_acquire);
@@ -368,7 +371,7 @@ bool RendererPresentCommandProcessor::redraw_layout(
     {
         const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(context.state_mutex);
-        context.consume_pending_layout_locked();
+        context.hooks.consume_pending_layout_locked();
         const auto decision_result =
             context.tracks.paused_layout_decision(context.history.snapshot());
         snapshot_layout_revision = context.layout.current_revision();
@@ -401,7 +404,7 @@ bool RendererPresentCommandProcessor::redraw_layout(
         context.surface.headless() ? nullptr : "viewport_composite";
     request.poll_device_removed_label =
         context.surface.headless() ? "headless redraw" : "viewport_composite";
-    request.overlay_hooks = context.overlay_hooks();
+    request.overlay_hooks = context.hooks.overlay_hooks();
     request.should_abort_headless_publish =
         [&shutting_down = context.shutting_down]() {
             return shutting_down.load(std::memory_order_acquire);

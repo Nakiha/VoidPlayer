@@ -23,6 +23,11 @@ struct PresentationBackendDrawHooks {
     PresentationBackendAsyncDrawCompleted async_draw_completed;
 };
 
+// Async draw contract:
+// - Backends that return completes_draw_asynchronously() must invoke
+//   async_draw_completed at most once for each accepted draw.
+// - shutdown() must drain, cancel, or otherwise make pending async completions
+//   unable to outlive renderer-owned completion state captured by callers.
 class PresentationBackend {
 public:
     virtual ~PresentationBackend() = default;

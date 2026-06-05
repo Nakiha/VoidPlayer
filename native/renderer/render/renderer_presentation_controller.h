@@ -85,6 +85,9 @@ struct RendererPresentationSubmitRequest {
     PresentationMetricsStore& metrics;
     RendererPresentationOverlayHooks overlay_hooks;
     std::function<bool()> should_abort_headless_publish;
+    // Async completions may capture renderer-owned state through the caller's
+    // context. The active backend must satisfy the PresentationBackend async
+    // shutdown contract before renderer resource teardown can release it.
     std::function<void(const RendererPresentationAsyncCompletion&)> async_completed;
 };
 

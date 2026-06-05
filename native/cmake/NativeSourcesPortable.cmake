@@ -93,6 +93,7 @@ set(VOID_RENDERER_PORTABLE_DRIVER_SOURCES
     "${VOID_NATIVE_DIR}/renderer/render/renderer_presentation_completion.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/renderer_presentation_controller.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/renderer_preview_state.cpp"
+    "${VOID_NATIVE_DIR}/renderer/render/renderer_render_loop_command.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/renderer_surface_state.cpp"
     "${VOID_NATIVE_DIR}/renderer/seek/renderer_seek_log_policy.cpp"
     "${VOID_NATIVE_DIR}/renderer/track/track_perf_baseline.cpp"

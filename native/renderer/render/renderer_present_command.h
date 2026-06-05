@@ -15,6 +15,20 @@
 
 namespace vr {
 
+struct RendererPresentCommandHooks {
+    // May be called with state_mutex held.
+    std::function<bool()> should_consume_pending_layout;
+    // Requires state_mutex held.
+    std::function<void()> consume_pending_layout_locked;
+    std::function<bool()> should_suppress_playback_present_for_viewport_compositor;
+    // Must not take the renderer state lock.
+    std::function<RendererPresentationOverlayHooks()> overlay_hooks;
+    // Requires state_mutex held.
+    std::function<void(const char* operation)> enter_terminal_device_lost_locked;
+    // Called with state_mutex held.
+    std::function<bool()> playback_inactive_or_paused;
+};
+
 struct RendererPresentCommandContext {
     std::mutex& state_mutex;
     RendererTrackController& tracks;
@@ -26,19 +40,7 @@ struct RendererPresentCommandContext {
     RendererLoopDriver& loop;
     PresentationMetricsStore& metrics;
     std::atomic<bool>& shutting_down;
-
-    // Lock contract:
-    // - should_consume_pending_layout may be called with state_mutex held.
-    // - consume_pending_layout_locked and enter_terminal_device_lost_locked
-    //   require state_mutex held.
-    // - overlay_hooks must not take the renderer state lock.
-    // - playback_inactive_or_paused is called with state_mutex held.
-    std::function<bool()> should_consume_pending_layout;
-    std::function<void()> consume_pending_layout_locked;
-    std::function<bool()> should_suppress_playback_present_for_viewport_compositor;
-    std::function<RendererPresentationOverlayHooks()> overlay_hooks;
-    std::function<void(const char* operation)> enter_terminal_device_lost_locked;
-    std::function<bool()> playback_inactive_or_paused;
+    RendererPresentCommandHooks hooks;
 };
 
 class RendererPresentCommandProcessor {

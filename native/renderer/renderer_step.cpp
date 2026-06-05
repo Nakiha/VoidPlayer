@@ -2,7 +2,7 @@
 
 namespace vr {
 
-void Renderer::step_forward() {
+void Renderer::Impl::step_forward() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     PresentDecision step_decision;
     bool have_step_decision = false;
@@ -13,24 +13,20 @@ void Renderer::step_forward() {
     PresentDecision conservative_step_decision;
     bool have_conservative_step_decision = false;
     const auto build_step_decision_locked = [this](PresentDecision& decision) {
-        return build_step_forward_decision_result(
-            tracks_,
-            playback_->clock().current_pts_us(),
-            compute_min_current_frame_duration_us(tracks_),
-            last_decision_,
+        return track_controller_.build_step_forward_decision(
+            timeline_.playback().clock().current_pts_us(),
+            present_history_.snapshot(),
             decision);
     };
     const auto apply_step_decision_locked =
         [this](const PresentDecision& decision) {
-            return apply_step_forward_decision(
-                tracks_,
-                playback_->clock().current_pts_us(),
+            return track_controller_.apply_step_forward_decision(
+                timeline_.playback().clock().current_pts_us(),
                 decision,
-                last_decision_);
+                present_history_.snapshot());
     };
     const auto set_video_decode_paused_locked = [this](bool paused) {
-        apply_track_video_decode_pause_state(
-            tracks_,
+        track_controller_.set_video_decode_paused(
             paused,
             [](size_t, TrackPipeline& track, bool paused) {
                 track.decode_thread->set_decode_paused(paused);
@@ -41,19 +37,19 @@ void Renderer::step_forward() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         const auto step_plan = plan_renderer_step_command(
             initialized_,
-            initialized_ && has_buffering_track(tracks_));
+            initialized_ && track_controller_.has_buffering_track());
         if (!step_plan.execute) return;
 
         if (step_plan.pause_clock) {
-            playback_->clock().pause();
+            timeline_.playback().clock().pause();
         }
-        playing_ = step_plan.playing;
+        timeline_.set_playing(step_plan.playing);
 
         const auto step_result = build_step_decision_locked(step_decision);
         if (step_result.has_decision && !step_result.needs_lookahead) {
             step_application = apply_step_decision_locked(step_decision);
             if (step_application.has_clock_target) {
-                playback_->clock().seek(step_application.clock_target_us);
+                timeline_.playback().clock().seek(step_application.clock_target_us);
             }
             have_step_decision = true;
         } else {
@@ -61,11 +57,10 @@ void Renderer::step_forward() {
                 conservative_step_decision = step_decision;
                 have_conservative_step_decision = true;
             }
-            discard_step_forward_consumed_frames(
-                tracks_,
-                playback_->clock().current_pts_us(),
-                last_decision_,
-                last_decision_);
+            track_controller_.discard_step_forward_consumed_frames(
+                timeline_.playback().clock().current_pts_us(),
+                present_history_.snapshot(),
+                present_history_.snapshot());
             set_video_decode_paused_locked(false);
             need_decode_wait = true;
         }
@@ -82,7 +77,7 @@ void Renderer::step_forward() {
                     set_video_decode_paused_locked(true);
                     step_application = apply_step_decision_locked(step_decision);
                     if (step_application.has_clock_target) {
-                        playback_->clock().seek(step_application.clock_target_us);
+                        timeline_.playback().clock().seek(step_application.clock_target_us);
                     }
                     have_step_decision = true;
                     break;
@@ -103,7 +98,7 @@ void Renderer::step_forward() {
                 step_decision = conservative_step_decision;
                 step_application = apply_step_decision_locked(step_decision);
                 if (step_application.has_clock_target) {
-                    playback_->clock().seek(step_application.clock_target_us);
+                    timeline_.playback().clock().seek(step_application.clock_target_us);
                 }
                 have_step_decision = true;
             }
@@ -112,11 +107,10 @@ void Renderer::step_forward() {
         if (!have_step_decision) {
             std::lock_guard<std::mutex> lock(state_mutex_);
             if (!initialized_) return;
-            const auto fallback_seek = choose_step_forward_exact_seek_target(
-                tracks_,
-                playback_->clock().current_pts_us(),
-                cached_duration_us_,
-                last_decision_);
+            const auto fallback_seek =
+                track_controller_.choose_step_forward_exact_seek_target(
+                    timeline_.playback().clock().current_pts_us(),
+                    present_history_.snapshot());
             exact_seek_target = fallback_seek.target_pts_us;
             spdlog::info("[Renderer] step_forward exact_seek: visible_pts={:.3f}s, clock_pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
                          fallback_seek.base_pts_us / 1e6,
@@ -131,7 +125,7 @@ void Renderer::step_forward() {
         present_frame(step_decision);
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
-            last_decision_ = step_decision;
+            present_history_.set(step_decision);
         }
         double pts = step_application.has_clock_target
                      ? step_application.presented_pts_us / 1e6 : -1.0;
@@ -143,11 +137,11 @@ void Renderer::step_forward() {
         std::unique_lock<std::mutex> lock(state_mutex_);
         seek_internal(lock, exact_seek_target, SeekType::ExactStepForward);
         spdlog::info("[Renderer] step_forward exact_seek done: clock_pts={:.3f}s",
-                     playback_->clock().current_pts_us() / 1e6);
+                     timeline_.playback().clock().current_pts_us() / 1e6);
     }
 }
 
-void Renderer::step_backward() {
+void Renderer::Impl::step_backward() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     PresentDecision step_decision;
     bool have_step_decision = false;
@@ -156,23 +150,22 @@ void Renderer::step_backward() {
         std::unique_lock<std::mutex> lock(state_mutex_);
         const auto step_plan = plan_renderer_step_command(
             initialized_,
-            initialized_ && has_buffering_track(tracks_));
+            initialized_ && track_controller_.has_buffering_track());
         if (!step_plan.execute) return;
 
         if (step_plan.pause_clock) {
-            playback_->clock().pause();
+            timeline_.playback().clock().pause();
         }
-        playing_ = step_plan.playing;
+        timeline_.set_playing(step_plan.playing);
 
-        if (build_step_backward_decision(
-                tracks_,
-                playback_->clock().current_pts_us(),
-                last_decision_,
+        if (track_controller_.build_step_backward_decision(
+                timeline_.playback().clock().current_pts_us(),
+                present_history_.snapshot(),
                 step_decision)) {
-            step_application = apply_step_backward_decision(
-                tracks_, step_decision);
+            step_application = track_controller_.apply_step_backward_decision(
+                step_decision);
             if (step_application.has_clock_target) {
-                playback_->clock().seek(step_application.clock_target_us);
+                timeline_.playback().clock().seek(step_application.clock_target_us);
             }
             have_step_decision = true;
         } else {
@@ -180,10 +173,10 @@ void Renderer::step_backward() {
             // Add 1ms margin: frame duration is integer-truncated (e.g. 1/60s → 16666us)
             // but actual PTS spacing is 16667us, so (pts - dur) overshoots the
             // previous frame by 1us and exact seek's "< target" check discards it.
-            const auto fallback_seek = choose_step_backward_exact_seek_target(
-                tracks_,
-                playback_->clock().current_pts_us(),
-                last_decision_);
+            const auto fallback_seek =
+                track_controller_.choose_step_backward_exact_seek_target(
+                    timeline_.playback().clock().current_pts_us(),
+                    present_history_.snapshot());
             const int64_t target = fallback_seek.target_pts_us;
             spdlog::info("[Renderer] step_backward exact_seek: visible_pts={:.3f}s, clock_pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
                          fallback_seek.base_pts_us / 1e6,
@@ -192,8 +185,8 @@ void Renderer::step_backward() {
                          target / 1e6);
             seek_internal(lock, target, SeekType::Exact);
             spdlog::info("[Renderer] step_backward exact_seek done: clock_pts={:.3f}s",
-                         playback_->clock().current_pts_us() / 1e6);
-            // Don't draw stale frame — seek_internal set preview_drawn_=false,
+                         timeline_.playback().clock().current_pts_us() / 1e6);
+            // Don't draw stale frame; seek_internal requested a preview redraw,
             // render loop will draw the new frame when decode completes.
             return;
         }
@@ -202,7 +195,7 @@ void Renderer::step_backward() {
         present_frame(step_decision);
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
-            last_decision_ = step_decision;
+            present_history_.set(step_decision);
         }
         double pts = step_application.has_clock_target
                      ? step_application.presented_pts_us / 1e6 : -1.0;

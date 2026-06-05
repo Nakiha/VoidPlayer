@@ -2,10 +2,12 @@
 
 #include "media/seek_controller.h"
 #include "renderer/seek/seek_coordinator.h"
+#include "renderer/track/renderer_track_controller.h"
 #include "renderer/track/track_lifecycle.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace vr {
 
@@ -67,5 +69,8 @@ TrackSeekClearedLogFacts build_track_seek_cleared_log_facts(
     const TrackSeekPreparationResult& preparation,
     const TrackSeekExecutionResult& execution,
     size_t buffered_frames_after);
+
+bool log_renderer_track_seek_application_results(
+    const std::vector<RendererTrackSeekApplicationResult>& seek_results);
 
 } // namespace vr

@@ -2,7 +2,7 @@
 
 namespace vr {
 
-bool Renderer::initialize(const RendererConfig& config) {
+bool Renderer::Impl::initialize(const RendererConfig& config) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 
     const auto validation = validate_renderer_config(config);
@@ -21,7 +21,7 @@ bool Renderer::initialize(const RendererConfig& config) {
     // windows_crash_handler module; Renderer initialization does not install hooks.
 
     std::lock_guard<std::mutex> state_lock(state_mutex_);
-    if (initialized_.load() || running_.load() || render_thread_.joinable()) {
+    if (initialized_.load() || loop_driver_.running() || loop_driver_.thread_joinable()) {
         spdlog::warn("Renderer: initialize called while already initialized or running");
         return false;
     }
@@ -31,56 +31,48 @@ bool Renderer::initialize(const RendererConfig& config) {
         return false;
     };
 
-    hwnd_ = config.hwnd;
-    headless_ = config.headless;
-    target_width_ = config.width;
-    target_height_ = config.height;
-    layout_intent_revision_.store(0, std::memory_order_relaxed);
-    layout_revision_ = 0;
-    last_presented_layout_revision_ = 0;
-    clear_pending_layout_intent();
+    surface_state_.configure(config);
+    layout_state_.reset_revisions();
     shutting_down_.store(false, std::memory_order_release);
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
-    reset_presentation_backend_metrics();
-    playback_session_started_by_renderer_ = false;
-    if (!playback_->audio_output()) {
-        playback_->start_session();
-        playback_session_started_by_renderer_ = true;
-    }
+    presentation_metrics_.reset();
+    timeline_.start_session_if_needed();
 
     PresentationBackendConfig backend_config;
-    backend_config.hwnd = hwnd_;
+    backend_config.hwnd = surface_state_.hwnd();
     backend_config.adapter = config.backend.adapter;
     backend_config.output = config.backend.output;
-    backend_config.width = target_width_;
-    backend_config.height = target_height_;
+    backend_config.width = surface_state_.width();
+    backend_config.height = surface_state_.height();
     backend_config.max_track_slots = config.backend.max_track_slots;
-    backend_config.headless = config.headless;
-    render_backend_kind_ = config.backend.type;
+    backend_config.headless = surface_state_.headless();
     const auto* backend_provider = config.backend.provider
         ? config.backend.provider
         : default_presentation_backend_provider();
-    auto backend = backend_provider && backend_provider->supports(config.backend.type)
-        ? backend_provider->create(config.backend.type)
+    auto backend = backend_provider &&
+                   backend_provider->supports(surface_state_.backend_kind())
+        ? backend_provider->create(surface_state_.backend_kind())
         : nullptr;
     if (!backend) {
         spdlog::error("Renderer: unsupported presentation backend {}",
-                      render_backend_kind_name(config.backend.type));
+                      render_backend_kind_name(surface_state_.backend_kind()));
         return fail();
     }
     if (!backend->initialize(backend_config)) {
         return fail();
     }
-    presentation_backend_ = std::move(backend);
+    presentation_.set_backend(std::move(backend));
 
     int next_initial_file_id = config.initial_file_id;
     const InitialTrackOpenHooks initial_track_hooks{
         [this](const std::string& path, bool use_hardware_decode) {
-            return create_pipeline(path, use_hardware_decode);
+            return track_controller_.create_pipeline(
+                path, use_hardware_decode, surface_state_.backend_kind());
         },
         [this, &next_initial_file_id]() {
             const int file_id = next_initial_file_id++;
-            next_file_id_ = std::max(next_file_id_, file_id + 1);
+            track_controller_.set_next_file_id(
+                std::max(track_controller_.next_file_id(), file_id + 1));
             return file_id;
         },
         TrackPipelineStartHooks{
@@ -90,47 +82,48 @@ bool Renderer::initialize(const RendererConfig& config) {
             [this](int file_id) { unregister_track_audio(file_id); },
         },
     };
-    open_initial_track_pipelines(
-        tracks_, config.video_paths, config.use_hardware_decode,
-        initial_track_hooks, "Renderer");
-    assign_missing_track_generations_locked();
+    track_controller_.open_initial_tracks(
+        config.video_paths, config.use_hardware_decode, initial_track_hooks, "Renderer");
+    track_controller_.assign_missing_generations();
 
-    if (!tracks_.has_active_tracks()) {
+    if (!track_controller_.has_active_tracks()) {
         spdlog::error("Renderer: no valid tracks");
         return fail();
     }
 
-    layout_controller_.reset(layout_);
-    layout_controller_.append_tracks(layout_, tracks_);
+    layout_state_.reset();
+    for (const auto& track : track_controller_.layout_track_references()) {
+        layout_state_.append_track(track.file_id, track.slot);
+    }
 
     // Setup render sink
-    render_sink_ = std::make_unique<RenderSink>(playback_->clock());
-    bind_existing_tracks_to_render_sink(tracks_, *render_sink_);
+    render_sink_ = std::make_unique<RenderSink>(timeline_.playback().clock());
+    track_controller_.bind_to_render_sink(*render_sink_);
 
     // Cache duration (immutable until tracks are added/removed)
-    cached_duration_us_ = compute_track_duration_cache(tracks_);
+    track_controller_.recompute_cached_duration();
 
     initialized_ = true;
 
-    perf_baseline_tracker_.reset(std::chrono::steady_clock::now());
+    track_controller_.perf_baseline_tracker().reset(std::chrono::steady_clock::now());
 
     // Start render loop immediately (paused mode).
     // Decodes and displays first frame, fills buffers, but does not advance playback.
-    running_ = true;
+    loop_driver_.set_running(true);
     try {
-        render_thread_ = std::thread(&Renderer::render_loop, this);
+        loop_driver_.start_thread(&Renderer::Impl::render_loop, this);
     } catch (const std::exception& e) {
         spdlog::error("Renderer: failed to start render thread: {}", e.what());
-        running_ = false;
+        loop_driver_.set_running(false);
         initialized_ = false;
         return fail();
     }
 
-    spdlog::info("Renderer: initialized with {} tracks", tracks_.count());
+    spdlog::info("Renderer: initialized with {} tracks", track_controller_.count());
     return true;
 }
 
-void Renderer::shutdown() {
+void Renderer::Impl::shutdown() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 
     bool has_resources = false;
@@ -143,15 +136,15 @@ void Renderer::shutdown() {
         }
 
         shutting_down_.store(true, std::memory_order_release);
-        running_ = false;
-        playing_ = false;
+        loop_driver_.set_running(false);
+        timeline_.set_playing(false);
     }
 
     spdlog::info("Renderer: shutdown begin");
 
-    if (render_thread_.joinable()) {
+    if (loop_driver_.thread_joinable()) {
         spdlog::info("Renderer: waiting for render thread join");
-        render_thread_.join();
+        loop_driver_.join_thread();
         spdlog::info("Renderer: render thread joined");
     }
 
@@ -163,65 +156,51 @@ void Renderer::shutdown() {
     spdlog::info("Renderer: shutdown complete");
 }
 
-bool Renderer::has_resources_locked() const {
-    return tracks_.has_active_tracks() ||
-           presentation_backend_ ||
+bool Renderer::Impl::has_resources_locked() const {
+    return track_controller_.has_active_tracks() ||
+           presentation_.has_backend() ||
            render_sink_ ||
            initialized_.load() ||
-           running_.load() ||
-           render_thread_.joinable();
+           loop_driver_.running() ||
+           loop_driver_.thread_joinable();
 }
 
-void Renderer::release_resources_locked() {
-    running_ = false;
-    playing_ = false;
+void Renderer::Impl::release_resources_locked() {
+    loop_driver_.set_running(false);
+    timeline_.set_playing(false);
     clear_event_callback();
 
     // Clear cached frames that may hold hw decode surface references.
     // Must happen before decode_thread->stop() frees hw_device_ctx,
     // otherwise hw_frame_ref cleanup will access a freed device context.
-    last_decision_ = PresentDecision();
-    presentation_scheduler_.reset();
+    present_history_.reset();
+    loop_driver_.reset_presentation_scheduler();
 
-    tracks_.stop_all([this](size_t, TrackPipeline& track) {
+    track_controller_.stop_all([this](size_t, TrackPipeline& track) {
         unregister_track_audio(track.file_id);
     });
 
     render_sink_.reset();
-    if (playback_ && playback_session_started_by_renderer_) {
-        playback_->stop_session();
-        playback_session_started_by_renderer_ = false;
-    }
-    if (presentation_backend_) {
-        presentation_backend_->shutdown();
-        presentation_backend_.reset();
-    }
+    timeline_.stop_session_if_started();
+    presentation_.shutdown_backend();
 
-    hwnd_ = nullptr;
-    headless_ = false;
-    target_width_ = 1920;
-    target_height_ = 1080;
-    cached_duration_us_ = 0;
-    next_file_id_ = 1;
-    next_track_generation_ = 1;
-    layout_controller_.reset(layout_);
-    layout_intent_revision_.store(0, std::memory_order_relaxed);
-    layout_revision_ = 0;
-    last_presented_layout_revision_ = 0;
-    clear_pending_layout_intent();
+    surface_state_.reset();
+    track_controller_.set_cached_duration_us(0);
+    track_controller_.reset_ids();
+    layout_state_.reset();
+    layout_state_.reset_revisions();
     if (analysis_overlay_renderer_) {
         analysis_overlay_renderer_->reset();
     }
-    preview_drawn_ = false;
-    was_buffering_ = false;
-    if (seek_coordinator_) {
-        seek_coordinator_->reset();
+    loop_driver_.reset_preview_state();
+    loop_driver_.reset_preroll_state();
+    if (timeline_.seek()) {
+        timeline_.seek()->reset();
     }
-    loop_range_ = LoopRangeState();
-    pending_width_.store(0);
-    pending_height_.store(0);
-    render_loop_controller_.reset();
-    perf_baseline_tracker_.reset();
+    timeline_.reset_loop_range();
+    loop_driver_.clear_pending_resize();
+    loop_driver_.reset_timing();
+    track_controller_.perf_baseline_tracker().reset();
     initialized_ = false;
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
 }

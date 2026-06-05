@@ -2,114 +2,74 @@
 
 namespace vr {
 
-void Renderer::set_frame_callback(RendererFrameCallback cb) {
+void Renderer::Impl::set_frame_callback(RendererFrameCallback cb) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 #ifdef _WIN32
-    if (auto* output = headless_output()) {
-        output->set_frame_callback([cb = std::move(cb)]() {
-            if (cb) {
-                cb(nullptr);
-            }
-        });
-        frame_callback_ = {};
+    if (presentation_.set_d3d_headless_frame_callback(cb)) {
         return;
     }
 #endif
-    frame_callback_ = std::move(cb);
+    presentation_.set_frame_callback(std::move(cb));
 }
 
-void Renderer::set_frame_failure_callback(std::function<void(const char*)> cb) {
+void Renderer::Impl::set_frame_failure_callback(std::function<void(const char*)> cb) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    frame_failure_callback_ = std::move(cb);
+    presentation_.set_frame_failure_callback(std::move(cb));
 }
 
-void Renderer::set_event_callback(RendererEventCallback cb) {
-    std::lock_guard<std::mutex> lock(event_callback_mutex_);
-    event_callback_ = std::move(cb);
+void Renderer::Impl::set_event_callback(RendererEventCallback cb) {
+    event_bus_.set_callback(std::move(cb));
 }
 
-bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
+bool Renderer::Impl::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
     snapshot = {};
 
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    auto* output = headless_output();
-    if (!output) {
-        presentation_backend_metrics_.texture_sharing_failure_count.fetch_add(
-            1, std::memory_order_relaxed);
-        return false;
-    }
-
-    std::lock_guard<std::mutex> lock(texture_mutex());
-    D3D11HeadlessOutputTextureLease lease;
-    if (!output->acquire_shared_texture_locked(lease)) {
-        presentation_backend_metrics_.texture_sharing_failure_count.fetch_add(
-            1, std::memory_order_relaxed);
-        return false;
-    }
-
-    snapshot.type = SharedTextureHandleType::D3D11SharedHandle;
-    snapshot.texture = lease.texture;
-    snapshot.handle = lease.handle;
-    snapshot.width = lease.width;
-    snapshot.height = lease.height;
-    snapshot.buffer_index = lease.buffer_index;
-    snapshot.buffer_generation = lease.generation;
-    return true;
+    return presentation_.acquire_d3d_shared_texture(
+        snapshot, presentation_metrics_);
 #else
     return false;
 #endif
 }
 
-void Renderer::release_shared_texture(int buffer_index, uint64_t buffer_generation) const {
+void Renderer::Impl::release_shared_texture(int buffer_index, uint64_t buffer_generation) const {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (auto* output = headless_output()) {
-        output->release_shared_texture(buffer_index, buffer_generation);
-    }
+    presentation_.release_d3d_shared_texture(buffer_index, buffer_generation);
 #else
     (void)buffer_index;
     (void)buffer_generation;
 #endif
 }
 
-std::mutex& Renderer::texture_mutex() const {
-#ifdef _WIN32
-    auto* output = headless_output();
-    return output ? output->texture_mutex() : texture_mutex_fallback_;
-#else
-    return texture_mutex_fallback_;
-#endif
-}
-
-void Renderer::resize(int width, int height) {
+void Renderer::Impl::resize(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 #ifdef _WIN32
-    if (!headless_ || !d3d_device()) return;
+    if (!surface_state_.headless() || !presentation_.d3d_device()) return;
 #else
-    if (!headless_ || !presentation_backend_) return;
+    if (!surface_state_.headless() || !presentation_.has_backend()) return;
 #endif
     const auto validation = validate_renderer_dimensions(width, height, "resize dimensions");
     if (!validation.ok) {
         spdlog::warn("[Renderer] ignoring invalid resize: {}", validation.message);
         return;
     }
-    pending_width_.store(width);
-    pending_height_.store(height);
+    loop_driver_.request_resize(width, height);
 }
 
-bool Renderer::update_headless_output(void* output,
+bool Renderer::Impl::update_headless_output(void* output,
                                       int width,
                                       int height,
                                       int max_track_slots) {
     RendererFrameCallback frame_callback;
-    auto frame_failure_callback = frame_failure_callback_snapshot();
+    auto frame_failure_callback = presentation_.frame_failure_callback_snapshot();
     std::string frame_failure_error;
     bool drew = false;
     bool attempted_draw = false;
     {
         std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-        if (!headless_ || !presentation_backend_) {
+        if (!surface_state_.headless() || !presentation_.has_backend()) {
             return false;
         }
         const auto validation =
@@ -119,47 +79,47 @@ bool Renderer::update_headless_output(void* output,
                          validation.message);
             return false;
         }
-        {
-            std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-            if (!presentation_backend_->update_headless_output(
-                    output, width, height, max_track_slots)) {
-                return false;
-            }
+        if (!presentation_.update_headless_output(
+                output, width, height, max_track_slots)) {
+            return false;
         }
 
         RendererDrawSnapshot snapshot;
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
-            const auto old_width = target_width_;
-            const auto old_height = target_height_;
-            if (old_width != width || old_height != height) {
-                const auto layout_tracks = snapshot_layout_track_geometry(tracks_);
-                adjust_layout_view_offset_for_resize(
-                    layout_, old_width, old_height, width, height, layout_tracks);
-                target_width_ = width;
-                target_height_ = height;
+            const auto resize = surface_state_.resize_if_changed(width, height);
+            if (resize.changed) {
+                const auto layout_tracks = track_controller_.layout_track_geometry();
+                layout_state_.adjust_view_offset_for_resize(
+                    resize.old_width,
+                    resize.old_height,
+                    resize.width,
+                    resize.height,
+                    layout_tracks);
             }
-            snapshot = build_draw_snapshot_locked(last_decision_);
+            loop_driver_.force_preview_redraw();
+            snapshot = build_draw_snapshot_locked(present_history_.snapshot());
         }
         if (present_decision_has_frame(snapshot.decision)) {
             attempted_draw = true;
-            std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-            drew = draw_frame(snapshot, "install_headless_output");
+            std::lock_guard<std::recursive_mutex> ctx_lock(presentation_.device_mutex());
+            drew = presentation_.draw_frame(snapshot,
+                                            "install_headless_output",
+                                            presentation_metrics_,
+                                            presentation_overlay_hooks());
             if (drew) {
-                frame_callback = frame_callback_;
+                frame_callback = presentation_.frame_callback_snapshot();
             } else {
-                frame_failure_error = presentation_backend_last_error();
+                frame_failure_error = presentation_.backend_last_error();
             }
         }
     }
     if (drew) {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        if (layout_revision_ > last_presented_layout_revision_) {
-            last_presented_layout_revision_ = layout_revision_;
-            presentation_backend_metrics_.layout_presented_count.fetch_add(
-                1, std::memory_order_relaxed);
+        if (layout_state_.mark_presented_if_newer(layout_state_.current_revision())) {
+            presentation_metrics_.note_layout_presented();
         }
-        preview_drawn_ = true;
+        loop_driver_.mark_preview_presented(true);
     }
     if (frame_callback && !shutting_down_.load(std::memory_order_acquire)) {
         frame_callback(nullptr);
@@ -171,12 +131,12 @@ bool Renderer::update_headless_output(void* output,
     return true;
 }
 
-bool Renderer::install_headless_output(void* output,
+bool Renderer::Impl::install_headless_output(void* output,
                                        int width,
                                        int height,
                                        int max_track_slots) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_ || !presentation_backend_) {
+    if (!surface_state_.headless() || !presentation_.has_backend()) {
         return false;
     }
     const auto validation =
@@ -186,29 +146,28 @@ bool Renderer::install_headless_output(void* output,
                      validation.message);
         return false;
     }
-    {
-        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        if (!presentation_backend_->update_headless_output(
-                output, width, height, max_track_slots)) {
-            return false;
-        }
+    if (!presentation_.update_headless_output(
+            output, width, height, max_track_slots)) {
+        return false;
     }
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        if (target_width_ == width && target_height_ == height) {
-            return true;
+        const auto resize = surface_state_.resize_if_changed(width, height);
+        if (resize.changed) {
+            const auto layout_tracks = track_controller_.layout_track_geometry();
+            layout_state_.adjust_view_offset_for_resize(
+                resize.old_width,
+                resize.old_height,
+                resize.width,
+                resize.height,
+                layout_tracks);
         }
-        const auto layout_tracks = snapshot_layout_track_geometry(tracks_);
-        adjust_layout_view_offset_for_resize(
-            layout_, target_width_, target_height_, width, height, layout_tracks);
-        target_width_ = width;
-        target_height_ = height;
-        preview_drawn_ = false;
+        loop_driver_.force_preview_redraw();
     }
     return true;
 }
 
-bool Renderer::install_headless_output_ring(const void* const* pixel_buffers,
+bool Renderer::Impl::install_headless_output_ring(const void* const* pixel_buffers,
                                             size_t pixel_buffer_count,
                                             void* displayed_pixel_buffer,
                                             void* protected_pixel_buffer,
@@ -216,7 +175,7 @@ bool Renderer::install_headless_output_ring(const void* const* pixel_buffers,
                                             int height,
                                             int max_track_slots) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_ || !presentation_backend_) {
+    if (!surface_state_.headless() || !presentation_.has_backend()) {
         return false;
     }
     const auto validation =
@@ -226,67 +185,62 @@ bool Renderer::install_headless_output_ring(const void* const* pixel_buffers,
                      validation.message);
         return false;
     }
-    {
-        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-        if (!presentation_backend_->update_headless_output_ring(pixel_buffers,
-                                                                pixel_buffer_count,
-                                                                displayed_pixel_buffer,
-                                                                protected_pixel_buffer,
-                                                                width,
-                                                                height,
-                                                                max_track_slots)) {
-            return false;
-        }
+    if (!presentation_.update_headless_output_ring(pixel_buffers,
+                                                   pixel_buffer_count,
+                                                   displayed_pixel_buffer,
+                                                   protected_pixel_buffer,
+                                                   width,
+                                                   height,
+                                                   max_track_slots)) {
+        return false;
     }
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        if (target_width_ == width && target_height_ == height) {
-            return true;
+        const auto resize = surface_state_.resize_if_changed(width, height);
+        if (resize.changed) {
+            const auto layout_tracks = track_controller_.layout_track_geometry();
+            layout_state_.adjust_view_offset_for_resize(
+                resize.old_width,
+                resize.old_height,
+                resize.width,
+                resize.height,
+                layout_tracks);
         }
-        const auto layout_tracks = snapshot_layout_track_geometry(tracks_);
-        adjust_layout_view_offset_for_resize(
-            layout_, target_width_, target_height_, width, height, layout_tracks);
-        target_width_ = width;
-        target_height_ = height;
-        preview_drawn_ = false;
+        loop_driver_.force_preview_redraw();
     }
     return true;
 }
 
-void Renderer::mark_headless_output_displayed(void* pixel_buffer) {
+void Renderer::Impl::mark_headless_output_displayed(void* pixel_buffer) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_ || !presentation_backend_) {
+    if (!surface_state_.headless() || !presentation_.has_backend()) {
         return;
     }
-    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    presentation_backend_->mark_headless_output_displayed(pixel_buffer);
+    presentation_.mark_headless_output_displayed(pixel_buffer);
 }
 
-void Renderer::protect_headless_output(void* pixel_buffer) {
+void Renderer::Impl::protect_headless_output(void* pixel_buffer) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_ || !presentation_backend_) {
+    if (!surface_state_.headless() || !presentation_.has_backend()) {
         return;
     }
-    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    presentation_backend_->protect_headless_output(pixel_buffer);
+    presentation_.protect_headless_output(pixel_buffer);
 }
 
-void Renderer::release_headless_output(void* pixel_buffer) {
+void Renderer::Impl::release_headless_output(void* pixel_buffer) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_ || !presentation_backend_) {
+    if (!surface_state_.headless() || !presentation_.has_backend()) {
         return;
     }
-    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    presentation_backend_->release_headless_output(pixel_buffer);
+    presentation_.release_headless_output(pixel_buffer);
 }
 
-void Renderer::clear_headless_output() {
+void Renderer::Impl::clear_headless_output() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!headless_ || !presentation_backend_) {
+    if (!surface_state_.headless() || !presentation_.has_backend()) {
         return;
     }
-    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    presentation_backend_->clear_headless_output();
+    presentation_.clear_headless_output();
 }
 
 } // namespace vr

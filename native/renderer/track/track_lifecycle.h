@@ -33,6 +33,9 @@ bool configure_and_start_track_pipeline(
     const TrackPipelineStartHooks& hooks,
     const char* log_context);
 
+void stop_detached_track_pipeline(size_t slot,
+                                  std::unique_ptr<TrackPipeline>& track);
+
 struct InitialTrackOpenHooks {
     std::function<std::unique_ptr<TrackPipeline>(
         const std::string& path,

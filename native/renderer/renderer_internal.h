@@ -1,5 +1,5 @@
 #pragma once
-#include "renderer/renderer.h"
+#include "renderer/renderer_impl.h"
 #include "renderer/overlay/analysis_overlay_renderer.h"
 #include "renderer/layout/layout_geometry.h"
 #include "renderer/layout/layout_validation.h"
@@ -20,10 +20,6 @@
 #include "renderer/render/render_thread_platform.h"
 #include "renderer/render/swap_chain_present_policy.h"
 #include "renderer/track/track_snapshot.h"
-#ifdef _WIN32
-#include "windows/d3d11/frame_capture_service.h"
-#include "windows/d3d11/render_backend.h"
-#endif
 #include <spdlog/spdlog.h>
 #include <algorithm>
 #include <array>
@@ -203,23 +199,6 @@ inline void log_viewport_draw_trace(const char* source,
         snapshot.layout.view_offset[1],
         snapshot.layout.split_pos,
         snapshot.layout.pixel_size_mode);
-}
-
-inline void stop_detached_track_pipeline(size_t slot, std::unique_ptr<TrackPipeline>& track) {
-    if (!track) {
-        return;
-    }
-    if (track->decode_thread) {
-        spdlog::info("Renderer: stopping track[{}] decode ({})", slot, track->file_path);
-        track->decode_thread->stop();
-        spdlog::info("Renderer: track[{}] decode stopped", slot);
-    }
-    if (track->demux_thread) {
-        spdlog::info("Renderer: stopping track[{}] demux ({})", slot, track->file_path);
-        track->demux_thread->stop();
-        spdlog::info("Renderer: track[{}] demux stopped", slot);
-    }
-    track.reset();
 }
 
 } // namespace vr

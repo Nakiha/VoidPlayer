@@ -198,29 +198,44 @@ public:
     void enter_terminal_render_loop_error_for_test(const char* reason);
 
 private:
+    class SeekCommandProcessor {
+    public:
+        static void seek(Impl& renderer,
+                         std::unique_lock<std::mutex>& state_lock,
+                         int64_t target_pts_us,
+                         SeekType type,
+                         bool allow_deferred = true,
+                         bool force_recreate_paused_hevc = false);
+    };
+
+    class PresentCommandProcessor {
+    public:
+        static bool draw_paused_frame(Impl& renderer, const char* reason);
+        static bool redraw_layout(Impl& renderer);
+        static void present_frame(Impl& renderer,
+                                  const PresentDecision& decision);
+        static void finish_presented_draw(
+            Impl& renderer,
+            const char* source,
+            const RendererDrawSnapshot& snapshot,
+            uint64_t snapshot_layout_revision,
+            uint64_t snapshot_us,
+            std::chrono::steady_clock::time_point profiler_start,
+            bool attempted_draw,
+            RendererFrameCallback frame_callback,
+            std::function<void(const char*)> frame_failure_callback,
+            bool drew,
+            const char* frame_failure_error,
+            uint64_t backend_us,
+            const PresentationBackendFrameInfo* completed_frame_info);
+    };
+
+    class RenderLoopCommandProcessor {
+    public:
+        static void run_body(Impl& renderer);
+    };
+
     void render_loop() noexcept;
-    void render_loop_body();
-    void finish_presented_draw(
-        const char* source,
-        const RendererDrawSnapshot& snapshot,
-        uint64_t snapshot_layout_revision,
-        uint64_t snapshot_us,
-        std::chrono::steady_clock::time_point profiler_start,
-        bool attempted_draw,
-        RendererFrameCallback frame_callback,
-        std::function<void(const char*)> frame_failure_callback,
-        bool drew,
-        const char* frame_failure_error,
-        uint64_t backend_us,
-        const PresentationBackendFrameInfo* completed_frame_info);
-    bool draw_paused_frame(const char* reason);
-    RendererDrawSnapshot build_draw_snapshot_locked(const PresentDecision& decision) const;
-    void update_track_geometry_from_decision_locked(const PresentDecision& decision);
-    void seek_internal(std::unique_lock<std::mutex>& state_lock,
-                       int64_t target_pts_us,
-                       SeekType type,
-                       bool allow_deferred = true,
-                       bool force_recreate_paused_hevc = false);
     void apply_playback_decode_state_locked(bool playback_active);
     void set_decode_paused_for_all_tracks(bool paused);
     void configure_track_seek_callback(TrackPipeline& track);
@@ -243,12 +258,6 @@ private:
 
     /// Apply pending resize on the render thread.
     void do_resize(int width, int height);
-
-    /// Draw frame, present/flush, set paused preview state.
-    void present_frame(const PresentDecision& decision);
-
-    /// Lightweight layout-only redraw of the cached present decision.
-    bool redraw_layout();
 
     /// Build draw hooks for the optional analysis overlay.
     RendererPresentationOverlayHooks presentation_overlay_hooks();

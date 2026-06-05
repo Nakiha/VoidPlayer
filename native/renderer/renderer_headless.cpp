@@ -1,4 +1,5 @@
 #include "renderer/renderer_internal.h"
+#include "renderer/render/renderer_draw_snapshot_builder.h"
 
 namespace vr {
 
@@ -98,7 +99,11 @@ bool Renderer::Impl::update_headless_output(void* output,
                     layout_tracks);
             }
             loop_driver_.force_preview_redraw();
-            snapshot = build_draw_snapshot_locked(present_history_.snapshot());
+            snapshot = RendererDrawSnapshotBuilder::build(
+                track_controller_,
+                layout_state_,
+                surface_state_,
+                present_history_.snapshot());
         }
         if (present_decision_has_frame(snapshot.decision)) {
             attempted_draw = true;

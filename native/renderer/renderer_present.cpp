@@ -1,9 +1,16 @@
 #include "renderer/renderer_internal.h"
+#include "renderer/render/renderer_draw_snapshot_builder.h"
 #include "renderer/render/renderer_presentation_completion.h"
 
 namespace vr {
 
-bool Renderer::Impl::draw_paused_frame(const char* reason) {
+bool Renderer::Impl::PresentCommandProcessor::draw_paused_frame(
+    Renderer::Impl& renderer,
+    const char* reason) {
+    auto& state_mutex_ = renderer.state_mutex_;
+    auto& render_sink_ = renderer.render_sink_;
+    auto& track_controller_ = renderer.track_controller_;
+    auto& present_history_ = renderer.present_history_;
     const bool interactive_refresh =
         reason && (std::strcmp(reason, "macos-renderer-owned-refresh") == 0 ||
                    std::strcmp(reason, "request_frame_refresh") == 0);
@@ -13,7 +20,7 @@ bool Renderer::Impl::draw_paused_frame(const char* reason) {
     bool has_frame = false;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
-        consume_pending_layout_locked();
+        renderer.consume_pending_layout_locked();
         std::optional<PresentDecision> evaluated_decision;
         if (!decoded_preview_refresh && render_sink_) {
             evaluated_decision = render_sink_->evaluate();
@@ -26,7 +33,7 @@ bool Renderer::Impl::draw_paused_frame(const char* reason) {
     if (!has_frame) {
         return false;
     }
-    present_frame(decision);
+    present_frame(renderer, decision);
     int ref = -1;
     {
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -37,7 +44,8 @@ bool Renderer::Impl::draw_paused_frame(const char* reason) {
     double pts = (ref >= 0 && decision.frames[ref].has_value())
                  ? decision.frames[ref]->pts_us / 1e6 : -1.0;
     if (interactive_refresh) {
-        spdlog::debug("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
+        spdlog::debug(
+            "[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
     } else {
         spdlog::info("[Renderer] draw_paused_frame({}): pts={:.3f}s", reason, pts);
     }
@@ -76,7 +84,7 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
         if (preview_draw_pending) {
             return true;
         }
-        if (redraw_layout()) {
+        if (PresentCommandProcessor::redraw_layout(*this)) {
             return true;
         }
         if (has_complete_cached_decision ||
@@ -86,23 +94,9 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
         }
     } else if (timeline_.playing() &&
                !timeline_.playback().clock().is_paused()) {
-        return redraw_layout();
+        return PresentCommandProcessor::redraw_layout(*this);
     }
-    return draw_paused_frame(refresh_reason);
-}
-
-RendererDrawSnapshot Renderer::Impl::build_draw_snapshot_locked(
-    const PresentDecision& decision) const {
-    RendererDrawSnapshot snapshot;
-    snapshot.decision = decision;
-    track_controller_.filter_present_decision(snapshot.decision);
-    snapshot.layout = layout_state_.current_for_draw();
-    snapshot.track_geometry = track_controller_.layout_track_geometry();
-    track_controller_.populate_draw_tracks(snapshot.tracks);
-    layout_state_.copy_background_color(snapshot.background_color);
-    snapshot.target_width = surface_state_.width();
-    snapshot.target_height = surface_state_.height();
-    return snapshot;
+    return PresentCommandProcessor::draw_paused_frame(*this, refresh_reason);
 }
 
 void Renderer::Impl::enter_terminal_device_lost_locked(const char* operation) {
@@ -161,7 +155,8 @@ void Renderer::Impl::enter_terminal_render_loop_error_locked(const char* reason)
     device_state_.store(plan.final_state, std::memory_order_release);
 }
 
-void Renderer::Impl::finish_presented_draw(
+void Renderer::Impl::PresentCommandProcessor::finish_presented_draw(
+    Renderer::Impl& renderer,
     const char* source,
     const RendererDrawSnapshot& snapshot,
     uint64_t snapshot_layout_revision,
@@ -174,7 +169,11 @@ void Renderer::Impl::finish_presented_draw(
     const char* frame_failure_error,
     uint64_t backend_us,
     const PresentationBackendFrameInfo* completed_frame_info) {
-    if (shutting_down_.load(std::memory_order_acquire)) {
+    auto& state_mutex_ = renderer.state_mutex_;
+    auto& layout_state_ = renderer.layout_state_;
+    auto& presentation_metrics_ = renderer.presentation_metrics_;
+    auto& loop_driver_ = renderer.loop_driver_;
+    if (renderer.shutting_down_.load(std::memory_order_acquire)) {
         return;
     }
 
@@ -203,7 +202,7 @@ void Renderer::Impl::finish_presented_draw(
     }
 
     const auto completion = plan_presentation_completion({
-        shutting_down_.load(std::memory_order_acquire),
+        renderer.shutting_down_.load(std::memory_order_acquire),
         attempted_draw,
         drew,
         stale_layout_after_draw,
@@ -251,7 +250,16 @@ void Renderer::Impl::finish_presented_draw(
                             backend_us);
 }
 
-void Renderer::Impl::present_frame(const PresentDecision& decision) {
+void Renderer::Impl::PresentCommandProcessor::present_frame(
+    Renderer::Impl& renderer,
+    const PresentDecision& decision) {
+    auto& state_mutex_ = renderer.state_mutex_;
+    auto& layout_state_ = renderer.layout_state_;
+    auto& track_controller_ = renderer.track_controller_;
+    auto& surface_state_ = renderer.surface_state_;
+    auto& presentation_metrics_ = renderer.presentation_metrics_;
+    auto& presentation_ = renderer.presentation_;
+    auto& loop_driver_ = renderer.loop_driver_;
     const auto profiler_start = std::chrono::steady_clock::now();
     RendererDrawSnapshot snapshot;
     uint64_t snapshot_layout_revision = 0;
@@ -259,20 +267,24 @@ void Renderer::Impl::present_frame(const PresentDecision& decision) {
     {
         const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(state_mutex_);
-        if (should_present_frame_consume_pending_layout()) {
-            consume_pending_layout_locked();
+        if (renderer.should_present_frame_consume_pending_layout()) {
+            renderer.consume_pending_layout_locked();
         }
         spdlog::debug("[present_frame] mode={}", layout_state_.current_for_draw().mode);
         PresentDecision filtered_decision = decision;
         track_controller_.filter_present_decision(filtered_decision);
-        update_track_geometry_from_decision_locked(filtered_decision);
-        snapshot = build_draw_snapshot_locked(filtered_decision);
+        RendererDrawSnapshotBuilder::update_track_geometry_from_decision(
+            track_controller_, filtered_decision);
+        snapshot = RendererDrawSnapshotBuilder::build(track_controller_,
+                                                      layout_state_,
+                                                      surface_state_,
+                                                      filtered_decision);
         snapshot_layout_revision = layout_state_.current_revision();
         snapshot_us = elapsed_us_since(snapshot_start);
     }
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
     if (attempted_draw &&
-        should_suppress_playback_present_for_viewport_compositor()) {
+        renderer.should_suppress_playback_present_for_viewport_compositor()) {
         const auto suppressed =
             presentation_metrics_.note_playing_layout_redraw_suppressed();
         if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER") &&
@@ -293,46 +305,50 @@ void Renderer::Impl::present_frame(const PresentDecision& decision) {
     request.poll_device_removed_label =
         surface_state_.headless() ? "headless present" : nullptr;
     request.check_device_lost_after_draw = !surface_state_.headless();
-    request.overlay_hooks = presentation_overlay_hooks();
+    request.overlay_hooks = renderer.presentation_overlay_hooks();
     request.should_abort_headless_publish =
-        [this]() { return shutting_down_.load(std::memory_order_acquire); };
+        [&renderer]() {
+            return renderer.shutting_down_.load(std::memory_order_acquire);
+        };
     request.async_completed =
-        [this,
+        [&renderer,
          snapshot,
          snapshot_layout_revision,
-         snapshot_us,
-         profiler_start,
-         attempted_draw](const RendererPresentationAsyncCompletion& completion) {
-            finish_presented_draw("present_frame",
-                                  snapshot,
-                                  snapshot_layout_revision,
-                                  snapshot_us,
-                                  profiler_start,
-                                  attempted_draw,
-                                  completion.callbacks.frame_callback,
-                                  completion.callbacks.frame_failure_callback,
-                                  completion.success,
-                                  completion.error,
-                                  completion.backend_us,
-                                  completion.frame_info);
+        snapshot_us,
+        profiler_start,
+        attempted_draw](const RendererPresentationAsyncCompletion& completion) {
+            finish_presented_draw(
+                renderer,
+                "present_frame",
+                snapshot,
+                snapshot_layout_revision,
+                snapshot_us,
+                profiler_start,
+                attempted_draw,
+                completion.callbacks.frame_callback,
+                completion.callbacks.frame_failure_callback,
+                completion.success,
+                completion.error,
+                completion.backend_us,
+                completion.frame_info);
         };
     RendererPresentationDrawResult sync_draw_result;
     bool sync_completed = false;
     presentation_.submit_and_dispatch(
         std::move(request),
         RendererPresentationSubmitDispatchHooks{
-            [this]() {
-                std::lock_guard<std::mutex> lock(state_mutex_);
-                enter_terminal_device_lost_locked("present_frame");
+            [&renderer]() {
+                std::lock_guard<std::mutex> lock(renderer.state_mutex_);
+                renderer.enter_terminal_device_lost_locked("present_frame");
             },
-            [this]() {
-                std::lock_guard<std::mutex> lock(state_mutex_);
-                if (!timeline_.playing() ||
-                    timeline_.playback().clock().is_paused()) {
-                    loop_driver_.mark_async_preview_pending();
+            [&renderer]() {
+                std::lock_guard<std::mutex> lock(renderer.state_mutex_);
+                if (!renderer.timeline_.playing() ||
+                    renderer.timeline_.playback().clock().is_paused()) {
+                    renderer.loop_driver_.mark_async_preview_pending();
                 }
             },
-            [this,
+            [&renderer,
              &sync_completed,
              &sync_draw_result,
              &snapshot,
@@ -342,18 +358,20 @@ void Renderer::Impl::present_frame(const PresentDecision& decision) {
              attempted_draw](const RendererPresentationSyncCompletion& completion) {
                 sync_completed = true;
                 sync_draw_result = completion.draw;
-                finish_presented_draw("present_frame",
-                                      snapshot,
-                                      snapshot_layout_revision,
-                                      snapshot_us,
-                                      profiler_start,
-                                      attempted_draw,
-                                      completion.draw.frame_callback,
-                                      completion.callbacks.frame_failure_callback,
-                                      completion.draw.drew,
-                                      completion.draw.failure_error.c_str(),
-                                      completion.draw.backend_us,
-                                      nullptr);
+                finish_presented_draw(
+                    renderer,
+                    "present_frame",
+                    snapshot,
+                    snapshot_layout_revision,
+                    snapshot_us,
+                    profiler_start,
+                    attempted_draw,
+                    completion.draw.frame_callback,
+                    completion.callbacks.frame_failure_callback,
+                    completion.draw.drew,
+                    completion.draw.failure_error.c_str(),
+                    completion.draw.backend_us,
+                    nullptr);
             },
         });
     if (!sync_completed) {
@@ -387,7 +405,15 @@ void Renderer::Impl::present_frame(const PresentDecision& decision) {
     }
 }
 
-bool Renderer::Impl::redraw_layout() {
+bool Renderer::Impl::PresentCommandProcessor::redraw_layout(
+    Renderer::Impl& renderer) {
+    auto& presentation_metrics_ = renderer.presentation_metrics_;
+    auto& state_mutex_ = renderer.state_mutex_;
+    auto& track_controller_ = renderer.track_controller_;
+    auto& present_history_ = renderer.present_history_;
+    auto& layout_state_ = renderer.layout_state_;
+    auto& surface_state_ = renderer.surface_state_;
+    auto& presentation_ = renderer.presentation_;
     if (presentation_metrics_
             .transient_backpressure_remaining(steady_clock_us_now())
             .count() > 0) {
@@ -400,7 +426,7 @@ bool Renderer::Impl::redraw_layout() {
     {
         const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(state_mutex_);
-        consume_pending_layout_locked();
+        renderer.consume_pending_layout_locked();
         const auto decision_result =
             track_controller_.paused_layout_decision(present_history_.snapshot());
         snapshot_layout_revision = layout_state_.current_revision();
@@ -417,8 +443,12 @@ bool Renderer::Impl::redraw_layout() {
         }
         const auto& decision = decision_result.decision;
         present_history_.set(decision);
-        update_track_geometry_from_decision_locked(decision);
-        snapshot = build_draw_snapshot_locked(decision);
+        RendererDrawSnapshotBuilder::update_track_geometry_from_decision(
+            track_controller_, decision);
+        snapshot = RendererDrawSnapshotBuilder::build(track_controller_,
+                                                      layout_state_,
+                                                      surface_state_,
+                                                      decision);
     }
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
     RendererPresentationSubmitRequest request(snapshot, presentation_metrics_);
@@ -428,17 +458,20 @@ bool Renderer::Impl::redraw_layout() {
         surface_state_.headless() ? nullptr : "viewport_composite";
     request.poll_device_removed_label =
         surface_state_.headless() ? "headless redraw" : "viewport_composite";
-    request.overlay_hooks = presentation_overlay_hooks();
+    request.overlay_hooks = renderer.presentation_overlay_hooks();
     request.should_abort_headless_publish =
-        [this]() { return shutting_down_.load(std::memory_order_acquire); };
+        [&renderer]() {
+            return renderer.shutting_down_.load(std::memory_order_acquire);
+        };
     request.async_completed =
-        [this,
+        [&renderer,
          snapshot,
          snapshot_layout_revision,
          snapshot_us,
          profiler_start,
          attempted_draw](const RendererPresentationAsyncCompletion& completion) {
-            finish_presented_draw("viewport_composite",
+            finish_presented_draw(renderer,
+                                  "viewport_composite",
                                   snapshot,
                                   snapshot_layout_revision,
                                   snapshot_us,
@@ -454,24 +487,25 @@ bool Renderer::Impl::redraw_layout() {
     return presentation_.submit_and_dispatch(
         std::move(request),
         RendererPresentationSubmitDispatchHooks{
-            [this]() {
-                std::lock_guard<std::mutex> lock(state_mutex_);
-                enter_terminal_device_lost_locked("viewport_composite");
+            [&renderer]() {
+                std::lock_guard<std::mutex> lock(renderer.state_mutex_);
+                renderer.enter_terminal_device_lost_locked("viewport_composite");
             },
-            [this]() {
-                std::lock_guard<std::mutex> lock(state_mutex_);
-                if (!timeline_.playing() ||
-                    timeline_.playback().clock().is_paused()) {
-                    loop_driver_.mark_async_preview_pending();
+            [&renderer]() {
+                std::lock_guard<std::mutex> lock(renderer.state_mutex_);
+                if (!renderer.timeline_.playing() ||
+                    renderer.timeline_.playback().clock().is_paused()) {
+                    renderer.loop_driver_.mark_async_preview_pending();
                 }
             },
-            [this,
+            [&renderer,
              &snapshot,
              snapshot_layout_revision,
              snapshot_us,
              profiler_start,
              attempted_draw](const RendererPresentationSyncCompletion& completion) {
-                finish_presented_draw("viewport_composite",
+                finish_presented_draw(renderer,
+                                      "viewport_composite",
                                       snapshot,
                                       snapshot_layout_revision,
                                       snapshot_us,

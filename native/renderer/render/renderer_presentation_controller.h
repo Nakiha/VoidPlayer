@@ -110,11 +110,14 @@ struct RendererPresentationD3DMemorySnapshot {
 };
 
 // Lock contract:
-// - Owns the presentation backend, device mutex, frame callbacks, and optional
-//   Windows capture service.
-// - Does not take renderer state/lifecycle/texture locks.
-// - Does not invoke host callbacks; callers snapshot callbacks and invoke them
-//   after releasing renderer/backend locks.
+// - Owns the presentation backend, backend device mutex, backend texture
+//   publication access, frame callback storage, and optional Windows capture
+//   service.
+// - May take backend texture locks only while holding device_mutex(), following
+//   device -> texture order.
+// - Does not take renderer state/lifecycle locks.
+// - Does not invoke host callbacks while holding device/texture locks; callers
+//   snapshot callbacks and invoke them after releasing renderer/backend locks.
 class RendererPresentationController {
 public:
     RendererPresentationController();
@@ -215,6 +218,7 @@ public:
 private:
     std::unique_ptr<PresentationBackend> backend_;
     mutable std::recursive_mutex device_mutex_;
+    mutable std::mutex callback_mutex_;
     RendererFrameCallback frame_callback_;
     std::function<void(const char*)> frame_failure_callback_;
 #ifdef _WIN32

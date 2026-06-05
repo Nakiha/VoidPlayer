@@ -35,7 +35,7 @@ void Renderer::Impl::seek(int64_t target_pts_us, SeekType type, int64_t request_
     if (request_id >= 0) {
         timeline_.begin_pending_seek_preview_event(request_id, target_pts_us);
     }
-    seek_internal(lock, target_pts_us, type);
+    SeekCommandProcessor::seek(*this, lock, target_pts_us, type);
 }
 
 void Renderer::Impl::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
@@ -102,11 +102,13 @@ AudioOutputStats Renderer::Impl::audio_output_stats() const {
     return timeline_.audio() ? timeline_.audio()->stats() : AudioOutputStats{};
 }
 
-void Renderer::Impl::seek_internal(std::unique_lock<std::mutex>& state_lock,
-                             int64_t target_pts_us,
-                             SeekType type,
-                             bool allow_deferred,
-                             bool force_recreate_paused_hevc) {
+void Renderer::Impl::SeekCommandProcessor::seek(
+    Renderer::Impl& renderer,
+    std::unique_lock<std::mutex>& state_lock,
+    int64_t target_pts_us,
+    SeekType type,
+    bool allow_deferred,
+    bool force_recreate_paused_hevc) {
     // Caller must hold lifecycle_mutex_ and state_mutex_.
     // See native/docs/SEEK_STRATEGY.md for codec/container-specific exact seek
     // limits, especially H.264 FLV streams without repeated SPS/PPS on IDR.
@@ -114,14 +116,14 @@ void Renderer::Impl::seek_internal(std::unique_lock<std::mutex>& state_lock,
         spdlog::error("[Renderer] seek_internal called without state lock");
         return;
     }
-    const bool playing_snapshot = timeline_.playing();
-    const auto seek_preparation = timeline_.prepare_seek(
+    const bool playing_snapshot = renderer.timeline_.playing();
+    const auto seek_preparation = renderer.timeline_.prepare_seek(
         target_pts_us,
         type,
-        track_controller_.effective_duration_us(),
+        renderer.track_controller_.effective_duration_us(),
         allow_deferred,
         playing_snapshot,
-        allow_deferred ? has_hevc_hw_track_locked() : false);
+        allow_deferred ? renderer.has_hevc_hw_track_locked() : false);
     target_pts_us = seek_preparation.target.target_pts_us;
     const auto clamp_log = build_seek_clamp_log_facts(seek_preparation.target);
     if (clamp_log.should_log) {
@@ -141,29 +143,29 @@ void Renderer::Impl::seek_internal(std::unique_lock<std::mutex>& state_lock,
     }
 
     const RendererTrackSeekHooks seek_hooks{
-        [this](int file_id, bool paused) {
-            if (timeline_.audio()) {
-                timeline_.audio()->set_track_decode_paused(file_id, paused);
+        [&renderer](int file_id, bool paused) {
+            if (renderer.timeline_.audio()) {
+                renderer.timeline_.audio()->set_track_decode_paused(file_id, paused);
             }
         },
-        [this](size_t slot) {
-            presentation_.reset_track(slot);
+        [&renderer](size_t slot) {
+            renderer.presentation_.reset_track(slot);
         },
-        [this, &state_lock](size_t slot, int64_t seek_target_us, SeekType seek_type) {
-            return recreate_pipeline_for_seek(
+        [&renderer, &state_lock](size_t slot, int64_t seek_target_us, SeekType seek_type) {
+            return renderer.recreate_pipeline_for_seek(
                 state_lock, slot, seek_target_us, seek_type);
         },
     };
-    const bool applied_seek = track_controller_.apply_seek_to_all_and_log(
+    const bool applied_seek = renderer.track_controller_.apply_seek_to_all_and_log(
         target_pts_us,
         type,
         playing_snapshot,
         force_recreate_paused_hevc,
         seek_hooks);
     if (applied_seek) {
-        loop_driver_.force_preview_redraw();
-        present_history_.reset();
-        loop_driver_.reset_presentation_scheduler();
+        renderer.loop_driver_.force_preview_redraw();
+        renderer.present_history_.reset();
+        renderer.loop_driver_.reset_presentation_scheduler();
     }
 }
 
@@ -176,7 +178,8 @@ bool Renderer::Impl::apply_deferred_paused_hevc_seek_locked(
     }
     spdlog::info("[Renderer] Applying deferred paused HEVC HW seek to {:.3f}s",
                  deferred->target_pts_us / 1e6);
-    seek_internal(state_lock, deferred->target_pts_us, deferred->type, false, true);
+    SeekCommandProcessor::seek(
+        *this, state_lock, deferred->target_pts_us, deferred->type, false, true);
     return true;
 }
 
@@ -188,7 +191,8 @@ bool Renderer::Impl::apply_loop_range_locked(std::unique_lock<std::mutex>& state
 
     spdlog::info("[Renderer] loop range boundary: pts={:.3f}s, seeking to {:.3f}s",
                  decision.current_pts_us / 1e6, decision.target_pts_us / 1e6);
-    seek_internal(state_lock, decision.target_pts_us, SeekType::Exact);
+    SeekCommandProcessor::seek(
+        *this, state_lock, decision.target_pts_us, SeekType::Exact);
     return true;
 }
 

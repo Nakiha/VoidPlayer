@@ -122,7 +122,7 @@ void Renderer::Impl::step_forward() {
     }
 
     if (have_step_decision) {
-        present_frame(step_decision);
+        PresentCommandProcessor::present_frame(*this, step_decision);
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             present_history_.set(step_decision);
@@ -135,7 +135,8 @@ void Renderer::Impl::step_forward() {
 
     if (need_exact_seek) {
         std::unique_lock<std::mutex> lock(state_mutex_);
-        seek_internal(lock, exact_seek_target, SeekType::ExactStepForward);
+        SeekCommandProcessor::seek(
+            *this, lock, exact_seek_target, SeekType::ExactStepForward);
         spdlog::info("[Renderer] step_forward exact_seek done: clock_pts={:.3f}s",
                      timeline_.playback().clock().current_pts_us() / 1e6);
     }
@@ -183,7 +184,8 @@ void Renderer::Impl::step_backward() {
                          fallback_seek.clock_pts_us / 1e6,
                          fallback_seek.frame_duration_us / 1e3,
                          target / 1e6);
-            seek_internal(lock, target, SeekType::Exact);
+            SeekCommandProcessor::seek(
+                *this, lock, target, SeekType::Exact);
             spdlog::info("[Renderer] step_backward exact_seek done: clock_pts={:.3f}s",
                          timeline_.playback().clock().current_pts_us() / 1e6);
             // Don't draw stale frame; seek_internal requested a preview redraw,
@@ -192,7 +194,7 @@ void Renderer::Impl::step_backward() {
         }
     }
     if (have_step_decision) {
-        present_frame(step_decision);
+        PresentCommandProcessor::present_frame(*this, step_decision);
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             present_history_.set(step_decision);

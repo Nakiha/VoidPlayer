@@ -1,4 +1,5 @@
 #include "renderer/renderer_internal.h"
+#include "renderer/render/renderer_draw_snapshot_builder.h"
 
 #ifdef _WIN32
 #include "windows/d3d11/render_backend.h"
@@ -36,7 +37,10 @@ void Renderer::Impl::do_resize(int width, int height) {
         const auto layout_tracks = track_controller_.layout_track_geometry();
         layout_state_.adjust_view_offset_for_resize(
             old_width, old_height, width, height, layout_tracks);
-        snapshot = build_draw_snapshot_locked(present_history_.snapshot());
+        snapshot = RendererDrawSnapshotBuilder::build(track_controller_,
+                                                      layout_state_,
+                                                      surface_state_,
+                                                      present_history_.snapshot());
     }
 
     RendererFrameCallback frame_callback;
@@ -75,7 +79,7 @@ void Renderer::Impl::render_loop() noexcept {
                  current_render_thread_id_string());
 
     try {
-        render_loop_body();
+        RenderLoopCommandProcessor::run_body(*this);
     } catch (const std::exception& e) {
         spdlog::error("[Renderer] Render loop crashed: {}", e.what());
         std::lock_guard<std::mutex> lock(state_mutex_);
@@ -90,13 +94,24 @@ void Renderer::Impl::render_loop() noexcept {
     spdlog::info("[Renderer] Render loop ended");
 }
 
-void Renderer::Impl::render_loop_body() {
+void Renderer::Impl::RenderLoopCommandProcessor::run_body(
+    Renderer::Impl& renderer) {
+    auto& loop_driver_ = renderer.loop_driver_;
+    auto& presentation_ = renderer.presentation_;
+    auto& state_mutex_ = renderer.state_mutex_;
+    auto& lifecycle_mutex_ = renderer.lifecycle_mutex_;
+    auto& timeline_ = renderer.timeline_;
+    auto& track_controller_ = renderer.track_controller_;
+    auto& presentation_metrics_ = renderer.presentation_metrics_;
+    auto& render_sink_ = renderer.render_sink_;
+    auto& present_history_ = renderer.present_history_;
+    auto& layout_state_ = renderer.layout_state_;
     loop_driver_.start_loop(std::chrono::steady_clock::now());
 
     while (loop_driver_.running()) {
         if (presentation_.poll_device_removed("render_loop")) {
             std::lock_guard<std::mutex> lock(state_mutex_);
-            enter_terminal_device_lost_locked("render_loop");
+            renderer.enter_terminal_device_lost_locked("render_loop");
             break;
         }
 
@@ -105,11 +120,11 @@ void Renderer::Impl::render_loop_body() {
                 lifecycle_mutex_, std::try_to_lock);
             if (lifecycle_lock.owns_lock()) {
                 std::unique_lock<std::mutex> lock(state_mutex_);
-                if (apply_deferred_paused_hevc_seek_locked(lock)) {
+                if (renderer.apply_deferred_paused_hevc_seek_locked(lock)) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
-                if (apply_loop_range_locked(lock)) {
+                if (renderer.apply_loop_range_locked(lock)) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
@@ -121,7 +136,7 @@ void Renderer::Impl::render_loop_body() {
             const auto resize =
                 loop_driver_.take_resize_decision(std::chrono::steady_clock::now());
             if (resize.should_apply) {
-                do_resize(resize.width, resize.height);
+                renderer.do_resize(resize.width, resize.height);
             }
         }
 
@@ -149,7 +164,7 @@ void Renderer::Impl::render_loop_body() {
                 timeline_.playback().clock().pause();
             }
             if (preroll_decision.resume_decode) {
-                set_decode_paused_for_all_tracks(false);
+                renderer.set_decode_paused_for_all_tracks(false);
             }
             if (preroll_decision.resume_clock) {
                 timeline_.playback().clock().resume();
@@ -183,7 +198,7 @@ void Renderer::Impl::render_loop_body() {
             bool should_draw_preview = false;
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
-                consume_pending_layout_locked();
+                renderer.consume_pending_layout_locked();
                 should_draw_preview = loop_driver_.begin_preview_draw_if_needed();
             }
             if (should_draw_preview) {
@@ -197,7 +212,7 @@ void Renderer::Impl::render_loop_body() {
                         present_history_.snapshot());
                 }
                 if (cached.has_frame) {
-                    present_frame(cached.decision);
+                    PresentCommandProcessor::present_frame(renderer, cached.decision);
                     drawn = true;
                     spdlog::debug("[Renderer] Paused frame (cached): pts={:.3f}s",
                                   cached.first_pts_us.has_value()
@@ -216,16 +231,16 @@ void Renderer::Impl::render_loop_body() {
                     }
                     if (snapshot.ready_to_present) {
                         auto& preview = snapshot.decision;
-                        present_frame(preview);
+                        PresentCommandProcessor::present_frame(renderer, preview);
                         drawn = true;
                         bool preserve_requested_clock = false;
                         RendererTrackReferenceSnapshot ref;
                         if (!playing_snapshot) {
                             std::lock_guard<std::mutex> lock(state_mutex_);
                             present_history_.set(preview);
-                            set_decode_paused_for_all_tracks(true);
+                            renderer.set_decode_paused_for_all_tracks(true);
                             preserve_requested_clock = true;
-                            mark_paused_hevc_seek_preview_drawn_locked();
+                            renderer.mark_paused_hevc_seek_preview_drawn_locked();
                             ref = track_controller_.first_active_reference();
                         } else {
                             std::lock_guard<std::mutex> lock(state_mutex_);
@@ -252,7 +267,7 @@ void Renderer::Impl::render_loop_body() {
                         }
                         spdlog::info("[Renderer] Paused frame: pts={:.3f}s",
                                      preview_pts_s);
-                        emit_seek_preview_presented_events(preview);
+                        renderer.emit_seek_preview_presented_events(preview);
                     }
                 }
                 if (!drawn) {
@@ -314,7 +329,7 @@ void Renderer::Impl::render_loop_body() {
                 track_controller_.apply_carry_forward(
                     present_history_.snapshot(), decision);
             }
-            present_frame(decision);
+            PresentCommandProcessor::present_frame(renderer, decision);
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 present_history_.set(decision);
@@ -359,7 +374,7 @@ void Renderer::Impl::render_loop_body() {
                 if (current > eof_clamp.max_end_pts_us) {
                     timeline_.playback().clock().seek(eof_clamp.max_end_pts_us);
                 }
-                if (settle_eof_locked(eof_clamp.max_end_pts_us)) {
+                if (renderer.settle_eof_locked(eof_clamp.max_end_pts_us)) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }

@@ -48,20 +48,4 @@ void Renderer::Impl::emit_seek_preview_presented_events(const PresentDecision& d
     }
 }
 
-void Renderer::Impl::update_track_geometry_from_decision_locked(const PresentDecision& decision) {
-    const auto updates =
-        track_controller_.update_layout_track_geometry_from_decision(decision);
-    for (const auto& update : updates) {
-        spdlog::info(
-            "[Renderer] track[{}] display geometry changed: {}x{} aspect={:.6f} -> {}x{} aspect={:.6f}",
-            update.slot,
-            update.old_width,
-            update.old_height,
-            update.old_aspect,
-            update.new_width,
-            update.new_height,
-            update.new_aspect);
-    }
-}
-
 } // namespace vr

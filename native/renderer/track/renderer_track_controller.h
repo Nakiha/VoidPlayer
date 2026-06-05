@@ -14,12 +14,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <string>
 #include <vector>
 
 namespace vr {
+
+class RendererTrackMutationController;
+class RendererTrackPresentationModel;
+class RendererTrackRegistry;
 
 struct TrackAddCommitHooks;
 
@@ -105,13 +110,23 @@ struct RendererTrackSeekApplicationResult {
     size_t buffered_frames_after = 0;
 };
 
+using RendererTrackBeforeStopCallback =
+    std::function<void(size_t slot, TrackPipeline& track)>;
+
 // Lock contract:
-// - Owns track pipeline storage/factory and track lifecycle counters/cache.
+// - Compatibility facade over track registry, mutation, and presentation-model
+//   ownership components.
 // - Does not take renderer locks or call host/platform callbacks.
 // - Current callers still hold owner locks around mutation sequences;
 //   future steps can move add/remove/seek orchestration behind command/result APIs.
 class RendererTrackController {
 public:
+    RendererTrackController();
+    ~RendererTrackController();
+
+    RendererTrackController(const RendererTrackController&) = delete;
+    RendererTrackController& operator=(const RendererTrackController&) = delete;
+
     std::unique_ptr<TrackPipeline> create_pipeline(
         const std::string& path,
         bool hw_decode,
@@ -219,7 +234,7 @@ public:
         const InitialTrackOpenHooks& hooks,
         const char* log_context);
     void bind_to_render_sink(RenderSink& render_sink) const;
-    void stop_all(const TrackPipelineManager::TrackCallback& before_stop = {});
+    void stop_all(const RendererTrackBeforeStopCallback& before_stop = {});
     RendererTrackAddReservation reserve_add_track(int requested_file_id);
     bool can_commit_add(size_t slot) const;
     TrackPipeline* commit_new_track(size_t slot,
@@ -263,12 +278,9 @@ public:
     const TrackPerfBaselineTracker& perf_baseline_tracker() const;
 
 private:
-    TrackPipelineFactory factory_;
-    TrackPipelineManager tracks_;
-    int next_file_id_ = 1;
-    uint64_t next_generation_ = 1;
-    int64_t cached_duration_us_ = 0;
-    TrackPerfBaselineTracker perf_baseline_tracker_;
+    std::unique_ptr<RendererTrackRegistry> registry_;
+    std::unique_ptr<RendererTrackMutationController> mutation_;
+    std::unique_ptr<RendererTrackPresentationModel> presentation_model_;
 };
 
 } // namespace vr

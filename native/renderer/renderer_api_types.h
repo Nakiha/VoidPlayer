@@ -1,10 +1,11 @@
 #pragma once
 
 #include "audio/audio_output_stats.h"
-#include "renderer/buffer/bidi_ring_buffer.h"
 #include "renderer/render/presentation_backend_types.h"
-#include "renderer/track/track_gpu_memory_stats.h"
+#include "renderer/time/media_timestamp_constants.h"
+#include "renderer/track/track_gpu_memory_stats_types.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <vector>

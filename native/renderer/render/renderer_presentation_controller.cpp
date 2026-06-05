@@ -73,24 +73,29 @@ std::recursive_mutex& RendererPresentationController::device_mutex() const {
 }
 
 void RendererPresentationController::set_frame_callback(RendererFrameCallback callback) {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
     frame_callback_ = std::move(callback);
 }
 
 void RendererPresentationController::clear_frame_callback() {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
     frame_callback_ = {};
 }
 
 RendererFrameCallback RendererPresentationController::frame_callback_snapshot() const {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
     return frame_callback_;
 }
 
 void RendererPresentationController::set_frame_failure_callback(
     std::function<void(const char*)> callback) {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
     frame_failure_callback_ = std::move(callback);
 }
 
 std::function<void(const char*)>
 RendererPresentationController::frame_failure_callback_snapshot() const {
+    std::lock_guard<std::mutex> lock(callback_mutex_);
     return frame_failure_callback_;
 }
 

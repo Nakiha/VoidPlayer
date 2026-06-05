@@ -1,26 +1,13 @@
 #pragma once
+#include "renderer/decode/frame_identity_types.h"
 #include "renderer/frame/frame_storage.h"
 #include <vector>
 #include <mutex>
 #include <optional>
 #include <cstdint>
-#include <limits>
 #include <memory>
 
 namespace vr {
-
-constexpr int64_t kNoTimestampUs = std::numeric_limits<int64_t>::min();
-constexpr int32_t kInvalidAnalysisFrameIndex = -1;
-constexpr int32_t kInvalidSourcePacketIndex = -1;
-constexpr int64_t kUnknownSourcePacketPosition = -1;
-
-enum class FrameIdentityMode : int32_t {
-    Unknown = 0,
-    RuntimeOrdinal = 1,
-    TimestampEstimated = 2,
-    SourcePacketIdentity = 3,
-    ExactAnalysisFrame = 4,
-};
 
 struct TextureFrame {
     int64_t pts_us = 0;

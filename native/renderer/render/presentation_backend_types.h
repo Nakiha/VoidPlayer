@@ -1,6 +1,6 @@
 #pragma once
 
-#include "renderer/buffer/bidi_ring_buffer.h"
+#include "renderer/decode/frame_identity_types.h"
 #include "renderer/render/backend_type.h"
 
 #include <cstdint>

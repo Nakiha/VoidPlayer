@@ -124,6 +124,14 @@
   "trackStatistics": "Track Statistics",
   "@trackStatistics": { "description": "Stats page header" },
 
+  "trackCount": "{count, plural, =1{1 track} other{{count} tracks}}",
+  "@trackCount": {
+    "description": "Short track count shown in the performance monitor summary",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
   "waitingDiagnostics": "Waiting for diagnostics data...",
   "@waitingDiagnostics": { "description": "Stats empty state" },
 

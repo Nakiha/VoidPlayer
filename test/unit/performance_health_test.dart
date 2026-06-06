@@ -58,6 +58,48 @@ void main() {
     expect(snapshot.reason, 'decode-buffer');
   });
 
+  test(
+    'classifies playback cadence pressure when presented fps trails media',
+    () {
+      final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+        'trackCount': 1,
+        'isPlaying': true,
+        'presentedFramePtsDistinctCount': 131,
+        'presentedFramePtsAdvanceUs': 6030000,
+        'presentedFrameExpectedIntervalUs': 33333,
+        'presentedFramePtsLargeGapCount': 0,
+        'presentedFramePtsMonotonicViolationCount': 0,
+        'nativeRendererDrawP95Us': 3500.0,
+        'nativeRendererDrawBackendP95Us': 3200.0,
+        'metalCommandCompletionP95Us': 3200.0,
+      });
+
+      expect(snapshot.level, PerformanceHealthLevel.warning);
+      expect(snapshot.kind, PerformanceHealthKind.playbackCadencePressure);
+      expect(snapshot.reason, 'playback-cadence');
+      expect(snapshot.presentedFrameRateHz, closeTo(21.6, 0.2));
+      expect(snapshot.expectedFrameRateHz, closeTo(30.0, 0.1));
+      expect(snapshot.playbackCadenceRatio, lessThan(0.82));
+    },
+  );
+
+  test('keeps healthy playback cadence near the media frame rate', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'presentedFramePtsDistinctCount': 179,
+      'presentedFramePtsAdvanceUs': 6030000,
+      'presentedFrameExpectedIntervalUs': 33333,
+      'nativeRendererDrawP95Us': 3500.0,
+      'nativeRendererDrawBackendP95Us': 3200.0,
+      'metalCommandCompletionP95Us': 3200.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+    expect(snapshot.playbackCadenceRatio, greaterThan(0.95));
+  });
+
   test('uses counter deltas for ring pressure', () {
     final previous = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
@@ -109,6 +151,88 @@ void main() {
 
     expect(snapshot.level, PerformanceHealthLevel.ok);
     expect(detail, isNot(contains('gap')));
+  });
+
+  testWidgets('keeps cadence out of summary detail while playing', (
+    tester,
+  ) async {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'presentedFramePtsDistinctCount': 131,
+      'presentedFramePtsAdvanceUs': 6030000,
+      'presentedFrameExpectedIntervalUs': 33333,
+    });
+    late String detail;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        home: Builder(
+          builder: (context) {
+            detail = snapshot.localizedDetail(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(detail, isNot(contains('cadence')));
+    expect(detail, isNot(contains('fps')));
+  });
+
+  testWidgets('shows idle display sampling without reporting 0Hz', (
+    tester,
+  ) async {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'displayRefreshHzEstimate': 121.0,
+      'displayTickHz': 0.0,
+    });
+    late String detail;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        home: Builder(
+          builder: (context) {
+            detail = snapshot.localizedDetail(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(detail, contains('display idle/121Hz'));
+    expect(detail, isNot(contains('display 0/121Hz')));
+  });
+
+  testWidgets('keeps layout sampling inside the display summary', (
+    tester,
+  ) async {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 120.0,
+      'layoutDrawHz': 92.0,
+      'nativeRendererDrawP95Us': 1800.0,
+    });
+    late String detail;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        home: Builder(
+          builder: (context) {
+            detail = snapshot.localizedDetail(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(detail, contains('display 120/120Hz'));
+    expect(detail, isNot(contains('layout')));
   });
 
   testWidgets('display pressure feedback avoids environment-specific advice', (

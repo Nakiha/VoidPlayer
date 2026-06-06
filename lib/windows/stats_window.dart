@@ -69,7 +69,7 @@ typedef _GetDiagNative = Pointer<NakiVrDiagnostics> Function();
 typedef _GetDiagDart = Pointer<NakiVrDiagnostics> Function();
 
 abstract interface class StatsDataSource {
-  Future<StatsSnapshot?> load();
+  Future<StatsSnapshot?> load({PerformanceHealthSnapshot? previousHealth});
 
   static StatsDataSource forCurrentPlatform() {
     if (Platform.isWindows) {
@@ -84,7 +84,9 @@ class WindowsFfiStatsDataSource implements StatsDataSource {
       .lookupFunction<_GetDiagNative, _GetDiagDart>('naki_vr_get_diagnostics');
 
   @override
-  Future<StatsSnapshot?> load() async {
+  Future<StatsSnapshot?> load({
+    PerformanceHealthSnapshot? previousHealth,
+  }) async {
     final ptr = _getDiag();
     if (ptr == nullptr) return null;
     final d = ptr.ref;
@@ -131,13 +133,19 @@ class NativeDiagnosticsStatsDataSource implements StatsDataSource {
   ]);
 
   @override
-  Future<StatsSnapshot?> load() async {
+  Future<StatsSnapshot?> load({
+    PerformanceHealthSnapshot? previousHealth,
+  }) async {
     final diagnostics = await api.getDiagnostics();
     final tracksValue =
         diagnostics['nativeTrackDiagnostics'] ?? diagnostics['tracks'];
     final tracks = tracksValue is List ? tracksValue : const <Object?>[];
+    final health = PerformanceHealthSnapshot.fromDiagnostics(
+      diagnostics,
+      previous: previousHealth,
+    );
     return StatsSnapshot(
-      health: PerformanceHealthSnapshot.fromDiagnostics(diagnostics),
+      health: health,
       memory: StatsMemorySummary(
         workingSetBytes: _intValue(
           diagnostics['processRssBytes'] ??
@@ -159,7 +167,12 @@ class NativeDiagnosticsStatsDataSource implements StatsDataSource {
       ),
       tracks: tracks
           .whereType<Map<dynamic, dynamic>>()
-          .map((track) => StatsTrackRow.fromDiagnostics(track))
+          .map(
+            (track) => StatsTrackRow.fromDiagnostics(
+              track,
+              fallbackFps: health.presentedFrameRateHz,
+            ),
+          )
           .toList(),
     );
   }
@@ -232,7 +245,7 @@ class _StatsPageState extends State<StatsPage> {
   }
 
   Future<void> _pollImpl() async {
-    final snapshot = await _dataSource.load();
+    final snapshot = await _dataSource.load(previousHealth: _health);
     if (snapshot == null) return;
     final health = snapshot.health;
     final memory = snapshot.memory;
@@ -371,6 +384,7 @@ class StatsHealthSummarySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final accent = switch (health.level) {
@@ -411,7 +425,7 @@ class StatsHealthSummarySection extends StatelessWidget {
                       ),
                       if (health.trackCount > 0)
                         Text(
-                          '${health.trackCount} tracks',
+                          l.trackCount(health.trackCount),
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -622,22 +636,39 @@ class StatsTrackRow {
     required this.currentDtsUs,
   });
 
-  factory StatsTrackRow.fromDiagnostics(Map<dynamic, dynamic> map) =>
-      StatsTrackRow(
-        fileId: _intValue(map['fileId']),
-        fps: _doubleValue(map['decodeFps'] ?? map['fps']),
-        avgDecodeMs: _doubleValue(map['decodeAvgMs'] ?? map['avgDecodeMs']),
-        maxDecodeMs: _doubleValue(map['decodeMaxMs'] ?? map['maxDecodeMs']),
-        bufferCount: _intValue(map['bufferCount']),
-        bufferCapacity: _intValue(map['bufferCapacity']),
-        bufferState: _intValue(map['bufferState']),
-        cpuFrameMemoryBytes: _intValue(
-          map['cpuFrameMemoryBytes'] ?? map['totalCpuFrameBytes'],
-        ),
-        packetQueueMemoryBytes: _intValue(map['packetQueueMemoryBytes']),
-        currentPtsUs: _intValue(map['currentPtsUs']),
-        currentDtsUs: _intValue(map['currentDtsUs'], fallback: _noTimestampUs),
-      );
+  factory StatsTrackRow.fromDiagnostics(
+    Map<dynamic, dynamic> map, {
+    double fallbackFps = 0,
+  }) => StatsTrackRow(
+    fileId: _intValue(map['fileId']),
+    fps: _presentationFps(map, fallbackFps: fallbackFps),
+    avgDecodeMs: _doubleValue(map['decodeAvgMs'] ?? map['avgDecodeMs']),
+    maxDecodeMs: _doubleValue(map['decodeMaxMs'] ?? map['maxDecodeMs']),
+    bufferCount: _intValue(map['bufferCount']),
+    bufferCapacity: _intValue(map['bufferCapacity']),
+    bufferState: _intValue(map['bufferState']),
+    cpuFrameMemoryBytes: _intValue(
+      map['cpuFrameMemoryBytes'] ?? map['totalCpuFrameBytes'],
+    ),
+    packetQueueMemoryBytes: _intValue(map['packetQueueMemoryBytes']),
+    currentPtsUs: _intValue(map['currentPtsUs']),
+    currentDtsUs: _intValue(map['currentDtsUs'], fallback: _noTimestampUs),
+  );
+
+  static double _presentationFps(
+    Map<dynamic, dynamic> map, {
+    required double fallbackFps,
+  }) {
+    final fps = _doubleValue(
+      map['presentationFps'] ??
+          map['presentedFps'] ??
+          map['nativeFramePresentationFps'] ??
+          map['fps'],
+    );
+    if (fps > 0) return fps;
+    if (fallbackFps > 0) return fallbackFps;
+    return _doubleValue(map['decodeFps']);
+  }
 
   static int _intValue(Object? value, {int fallback = 0}) {
     if (value is int) return value;

@@ -14,6 +14,7 @@ enum PerformanceHealthKind {
   nativeRenderPressure,
   externalDisplayPressure,
   decodePressure,
+  playbackCadencePressure,
 }
 
 class PerformanceHealthSnapshot {
@@ -28,6 +29,9 @@ class PerformanceHealthSnapshot {
   final double backendP95Us;
   final double metalP95Us;
   final double hostIntervalP95Ms;
+  final double playbackCadenceRatio;
+  final double presentedFrameRateHz;
+  final double expectedFrameRateHz;
   final int metalBufferExhaustionCount;
   final int metalBufferExhaustionDelta;
   final int metalFailureCount;
@@ -35,6 +39,9 @@ class PerformanceHealthSnapshot {
   final int largeGapCount;
   final int largeGapDelta;
   final int monotonicViolationCount;
+  final int presentedFramePtsDistinctCount;
+  final int presentedFramePtsAdvanceUs;
+  final int presentedFrameExpectedIntervalUs;
   final bool playing;
   final int trackCount;
 
@@ -50,6 +57,9 @@ class PerformanceHealthSnapshot {
     required this.backendP95Us,
     required this.metalP95Us,
     required this.hostIntervalP95Ms,
+    required this.playbackCadenceRatio,
+    required this.presentedFrameRateHz,
+    required this.expectedFrameRateHz,
     required this.metalBufferExhaustionCount,
     required this.metalBufferExhaustionDelta,
     required this.metalFailureCount,
@@ -57,6 +67,9 @@ class PerformanceHealthSnapshot {
     required this.largeGapCount,
     required this.largeGapDelta,
     required this.monotonicViolationCount,
+    required this.presentedFramePtsDistinctCount,
+    required this.presentedFramePtsAdvanceUs,
+    required this.presentedFrameExpectedIntervalUs,
     required this.playing,
     required this.trackCount,
   });
@@ -74,6 +87,9 @@ class PerformanceHealthSnapshot {
         backendP95Us: 0,
         metalP95Us: 0,
         hostIntervalP95Ms: 0,
+        playbackCadenceRatio: 0,
+        presentedFrameRateHz: 0,
+        expectedFrameRateHz: 0,
         metalBufferExhaustionCount: 0,
         metalBufferExhaustionDelta: 0,
         metalFailureCount: 0,
@@ -81,6 +97,9 @@ class PerformanceHealthSnapshot {
         largeGapCount: 0,
         largeGapDelta: 0,
         monotonicViolationCount: 0,
+        presentedFramePtsDistinctCount: 0,
+        presentedFramePtsAdvanceUs: 0,
+        presentedFrameExpectedIntervalUs: 0,
         playing: false,
         trackCount: trackCount,
       );
@@ -121,6 +140,16 @@ class PerformanceHealthSnapshot {
     final monotonicViolationCount = _intValue(
       diagnostics['presentedFramePtsMonotonicViolationCount'],
     );
+    final presentedFramePtsDistinctCount = _intValue(
+      diagnostics['presentedFramePtsDistinctCount'],
+    );
+    final presentedFramePtsAdvanceUs = _intValue(
+      diagnostics['presentedFramePtsAdvanceUs'],
+    );
+    final presentedFrameExpectedIntervalUs = _intValue(
+      diagnostics['presentedFrameExpectedIntervalUs'] ??
+          diagnostics['presentedFrameDurationLastUs'],
+    );
     final playing = _boolValue(diagnostics['isPlaying']);
     final metalBufferDelta = previous == null
         ? 0
@@ -134,6 +163,13 @@ class PerformanceHealthSnapshot {
     final largeGapDelta = previous == null
         ? 0
         : math.max(0, largeGapCount - previous.largeGapCount);
+    final cadence = _playbackCadence(
+      playing: playing,
+      distinctCount: presentedFramePtsDistinctCount,
+      advanceUs: presentedFramePtsAdvanceUs,
+      expectedIntervalUs: presentedFrameExpectedIntervalUs,
+      previous: previous,
+    );
 
     final inputOrPlaybackActive = playing || layoutIntentHz >= 10;
     final renderLatencySlow =
@@ -173,6 +209,16 @@ class PerformanceHealthSnapshot {
         !nativeSlow && (displayTickLow || layoutDrawLow || hostIntervalHigh);
 
     final decodePressure = playing && _hasDecodePressure(diagnostics);
+    final cadenceWarning =
+        playing &&
+        cadence.hasEnoughSignal &&
+        cadence.ratio > 0 &&
+        cadence.ratio < 0.82;
+    final cadenceSevere =
+        playing &&
+        cadence.hasEnoughSignal &&
+        cadence.ratio > 0 &&
+        cadence.ratio < 0.58;
 
     PerformanceHealthLevel level = PerformanceHealthLevel.ok;
     PerformanceHealthKind kind = PerformanceHealthKind.ok;
@@ -187,6 +233,12 @@ class PerformanceHealthSnapshot {
       level = PerformanceHealthLevel.warning;
       kind = PerformanceHealthKind.externalDisplayPressure;
       reason = 'display-pressure';
+    } else if (cadenceWarning) {
+      level = cadenceSevere
+          ? PerformanceHealthLevel.severe
+          : PerformanceHealthLevel.warning;
+      kind = PerformanceHealthKind.playbackCadencePressure;
+      reason = 'playback-cadence';
     } else if (decodePressure) {
       level = PerformanceHealthLevel.warning;
       kind = PerformanceHealthKind.decodePressure;
@@ -205,6 +257,9 @@ class PerformanceHealthSnapshot {
       backendP95Us: backendP95Us,
       metalP95Us: metalP95Us,
       hostIntervalP95Ms: hostIntervalP95Ms,
+      playbackCadenceRatio: cadence.ratio,
+      presentedFrameRateHz: cadence.presentedHz,
+      expectedFrameRateHz: cadence.expectedHz,
       metalBufferExhaustionCount: metalBufferExhaustionCount,
       metalBufferExhaustionDelta: metalBufferDelta,
       metalFailureCount: metalFailureCount,
@@ -212,6 +267,9 @@ class PerformanceHealthSnapshot {
       largeGapCount: largeGapCount,
       largeGapDelta: largeGapDelta,
       monotonicViolationCount: monotonicViolationCount,
+      presentedFramePtsDistinctCount: presentedFramePtsDistinctCount,
+      presentedFramePtsAdvanceUs: presentedFramePtsAdvanceUs,
+      presentedFrameExpectedIntervalUs: presentedFrameExpectedIntervalUs,
       playing: playing,
       trackCount: trackCount,
     );
@@ -228,6 +286,8 @@ class PerformanceHealthSnapshot {
       PerformanceHealthKind.externalDisplayPressure =>
         zh ? '显示/GPU 压力' : 'Display/GPU pressure',
       PerformanceHealthKind.decodePressure => zh ? '解码缓冲压力' : 'Decode pressure',
+      PerformanceHealthKind.playbackCadencePressure =>
+        zh ? '播放帧率不足' : 'Playback cadence',
     };
   }
 
@@ -246,6 +306,10 @@ class PerformanceHealthSnapshot {
         zh
             ? '解码缓冲压力较高，建议减少轨道或关闭高负载媒体。'
             : 'Decode buffers are under pressure. Reduce tracks or close heavy media.',
+      PerformanceHealthKind.playbackCadencePressure =>
+        zh
+            ? '播放呈现帧率低于素材帧率，画面可能卡顿。可打开性能监视器查看 cadence 与解码缓冲。'
+            : 'Presented playback cadence is below the media frame rate. Open the performance monitor to inspect cadence and decode buffers.',
       PerformanceHealthKind.ok => zh ? '播放状态正常。' : 'Playback looks healthy.',
     };
   }
@@ -253,12 +317,13 @@ class PerformanceHealthSnapshot {
   String localizedDetail(BuildContext context) {
     final parts = <String>[];
     if (displayRefreshHz > 0 || displayTickHz > 0) {
-      parts.add(
-        'display ${displayTickHz.toStringAsFixed(0)}/${displayRefreshHz.toStringAsFixed(0)}Hz',
-      );
-    }
-    if (layoutDrawHz > 0) {
-      parts.add('layout ${layoutDrawHz.toStringAsFixed(0)}Hz');
+      final tickText = displayTickHz > 0
+          ? displayTickHz.toStringAsFixed(0)
+          : 'idle';
+      final refreshText = displayRefreshHz > 0
+          ? displayRefreshHz.toStringAsFixed(0)
+          : '?';
+      parts.add('display $tickText/${refreshText}Hz');
     }
     if (drawP95Us > 0) {
       parts.add('draw p95 ${_usText(drawP95Us)}');
@@ -289,6 +354,9 @@ class PerformanceHealthSnapshot {
       backendP95Us == other.backendP95Us &&
       metalP95Us == other.metalP95Us &&
       hostIntervalP95Ms == other.hostIntervalP95Ms &&
+      playbackCadenceRatio == other.playbackCadenceRatio &&
+      presentedFrameRateHz == other.presentedFrameRateHz &&
+      expectedFrameRateHz == other.expectedFrameRateHz &&
       metalBufferExhaustionCount == other.metalBufferExhaustionCount &&
       metalBufferExhaustionDelta == other.metalBufferExhaustionDelta &&
       metalFailureCount == other.metalFailureCount &&
@@ -296,6 +364,10 @@ class PerformanceHealthSnapshot {
       largeGapCount == other.largeGapCount &&
       largeGapDelta == other.largeGapDelta &&
       monotonicViolationCount == other.monotonicViolationCount &&
+      presentedFramePtsDistinctCount == other.presentedFramePtsDistinctCount &&
+      presentedFramePtsAdvanceUs == other.presentedFramePtsAdvanceUs &&
+      presentedFrameExpectedIntervalUs ==
+          other.presentedFrameExpectedIntervalUs &&
       playing == other.playing &&
       trackCount == other.trackCount;
 
@@ -312,6 +384,9 @@ class PerformanceHealthSnapshot {
     backendP95Us.round(),
     metalP95Us.round(),
     (hostIntervalP95Ms * 10).round(),
+    (playbackCadenceRatio * 1000).round(),
+    (presentedFrameRateHz * 10).round(),
+    (expectedFrameRateHz * 10).round(),
     metalBufferExhaustionCount,
     metalBufferExhaustionDelta,
     metalFailureCount,
@@ -319,6 +394,9 @@ class PerformanceHealthSnapshot {
     largeGapCount,
     largeGapDelta,
     monotonicViolationCount,
+    presentedFramePtsDistinctCount,
+    presentedFramePtsAdvanceUs,
+    presentedFrameExpectedIntervalUs,
     playing,
     trackCount,
   ]);
@@ -338,6 +416,46 @@ class PerformanceHealthSnapshot {
       if (bufferCapacity > 0 && bufferCount <= 0) return true;
     }
     return false;
+  }
+
+  static _PlaybackCadenceSample _playbackCadence({
+    required bool playing,
+    required int distinctCount,
+    required int advanceUs,
+    required int expectedIntervalUs,
+    required PerformanceHealthSnapshot? previous,
+  }) {
+    if (!playing || expectedIntervalUs <= 0 || advanceUs <= 0) {
+      return const _PlaybackCadenceSample.zero();
+    }
+    final expectedHz = 1000000.0 / expectedIntervalUs;
+    var measuredDistinct = math.max(0, distinctCount - 1);
+    var measuredAdvanceUs = advanceUs;
+    if (previous != null &&
+        previous.playing &&
+        previous.presentedFrameExpectedIntervalUs > 0 &&
+        advanceUs >= previous.presentedFramePtsAdvanceUs &&
+        distinctCount >= previous.presentedFramePtsDistinctCount) {
+      measuredDistinct =
+          distinctCount - previous.presentedFramePtsDistinctCount;
+      measuredAdvanceUs = advanceUs - previous.presentedFramePtsAdvanceUs;
+    }
+    if (measuredAdvanceUs <= 0 || measuredDistinct <= 0) {
+      return _PlaybackCadenceSample(
+        ratio: 0,
+        presentedHz: 0,
+        expectedHz: expectedHz,
+        hasEnoughSignal: false,
+      );
+    }
+    final expectedFrames = measuredAdvanceUs / expectedIntervalUs;
+    final presentedHz = measuredDistinct * 1000000.0 / measuredAdvanceUs;
+    return _PlaybackCadenceSample(
+      ratio: expectedFrames > 0 ? measuredDistinct / expectedFrames : 0,
+      presentedHz: presentedHz,
+      expectedHz: expectedHz,
+      hasEnoughSignal: measuredAdvanceUs >= 500000 && expectedFrames >= 10,
+    );
   }
 
   static int _intValue(Object? value) {
@@ -363,6 +481,26 @@ class PerformanceHealthSnapshot {
     if (value >= 1000) return '${(value / 1000.0).toStringAsFixed(1)}ms';
     return '${value.toStringAsFixed(0)}us';
   }
+}
+
+class _PlaybackCadenceSample {
+  final double ratio;
+  final double presentedHz;
+  final double expectedHz;
+  final bool hasEnoughSignal;
+
+  const _PlaybackCadenceSample({
+    required this.ratio,
+    required this.presentedHz,
+    required this.expectedHz,
+    required this.hasEnoughSignal,
+  });
+
+  const _PlaybackCadenceSample.zero()
+    : ratio = 0,
+      presentedHz = 0,
+      expectedHz = 0,
+      hasEnoughSignal = false;
 }
 
 class PerformanceHealthFeedbackMonitor extends StatefulWidget {

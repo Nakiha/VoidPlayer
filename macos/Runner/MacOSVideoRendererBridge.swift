@@ -195,6 +195,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         textureStats: texture?.diagnostics(),
         textureDimensions: texture?.dimensions(),
         trackCount: tracks.count,
+        isPlaying: playback.currentIsPlaying(player: nativePlayer),
         presentationTargetInstalled: playback.targetInstalled,
         nativeEventDiagnostics: nativeEvents.diagnosticMap(),
         frameCallbackDiagnostics: frameCallbackDiagnostics(),

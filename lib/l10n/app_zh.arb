@@ -49,6 +49,7 @@
 
   "statsTitle": "Void Player - 性能统计",
   "trackStatistics": "轨道统计",
+  "trackCount": "{count} 条轨道",
   "waitingDiagnostics": "等待诊断数据...",
   "track": "轨道",
   "duration": "时长",

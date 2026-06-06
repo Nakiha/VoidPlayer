@@ -573,6 +573,63 @@
   "analysisOverlayOpacity": "Overlay opacity",
   "@analysisOverlayOpacity": { "description": "Tooltip for the bitstream overlay opacity slider" },
 
+  "quickMarkSync": "Sync to tracks",
+  "@quickMarkSync": { "description": "Tooltip for syncing a quick mark to other tracks" },
+
+  "quickMarkFocus": "Focus mark",
+  "@quickMarkFocus": { "description": "Tooltip for zooming and panning the viewport to inspect a quick mark" },
+
+  "quickMarkText": "Text",
+  "@quickMarkText": { "description": "Tooltip for editing quick mark text" },
+
+  "quickMarkBold": "Bold",
+  "@quickMarkBold": { "description": "Tooltip for toggling quick mark text bold style" },
+
+  "quickMarkTextSize": "Text size",
+  "@quickMarkTextSize": { "description": "Tooltip for quick mark text size selector" },
+
+  "quickMarkRectangle": "Rectangle",
+  "@quickMarkRectangle": { "description": "Tooltip for selecting the quick mark rectangle shape" },
+
+  "quickMarkArrow": "Arrow",
+  "@quickMarkArrow": { "description": "Tooltip for selecting the quick mark arrow shape" },
+
+  "quickMarkColor": "Color",
+  "@quickMarkColor": { "description": "Tooltip for quick mark color selector" },
+
+  "quickMarkColorRed": "Red",
+  "@quickMarkColorRed": { "description": "Quick mark color option: red" },
+
+  "quickMarkColorOrange": "Orange",
+  "@quickMarkColorOrange": { "description": "Quick mark color option: orange" },
+
+  "quickMarkColorYellow": "Yellow",
+  "@quickMarkColorYellow": { "description": "Quick mark color option: yellow" },
+
+  "quickMarkColorGreen": "Green",
+  "@quickMarkColorGreen": { "description": "Quick mark color option: green" },
+
+  "quickMarkColorCyan": "Cyan",
+  "@quickMarkColorCyan": { "description": "Quick mark color option: cyan" },
+
+  "quickMarkColorBlue": "Blue",
+  "@quickMarkColorBlue": { "description": "Quick mark color option: blue" },
+
+  "quickMarkColorPurple": "Purple",
+  "@quickMarkColorPurple": { "description": "Quick mark color option: purple" },
+
+  "quickMarkColorWhite": "White",
+  "@quickMarkColorWhite": { "description": "Quick mark color option: white" },
+
+  "quickMarkColorBlack": "Black",
+  "@quickMarkColorBlack": { "description": "Quick mark color option: black" },
+
+  "quickMarkStroke": "Stroke",
+  "@quickMarkStroke": { "description": "Tooltip for quick mark stroke width selector" },
+
+  "quickMarkStrokeWidth": "{width}px",
+  "@quickMarkStrokeWidth": { "description": "Quick mark stroke width label", "placeholders": { "width": { "type": "int" } } },
+
   "mediaInfoNoTracks": "No tracks open",
   "@mediaInfoNoTracks": { "description": "Media information panel empty state" },
 

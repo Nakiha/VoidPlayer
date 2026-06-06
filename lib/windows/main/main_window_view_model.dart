@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 
 import '../../analysis/analysis_overlay.dart';
 import '../../analysis/analysis_toolbar_data_source.dart';
+import '../../marks/quick_mark.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../session/playback_session.dart';
 import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
+import '../../viewport/display_geometry.dart';
 import '../../viewport/viewport_display_state.dart';
 import '../../widgets/loop_range_bar.dart';
 import 'main_window_state.dart';
@@ -56,6 +58,10 @@ class MainWindowViewportVm {
   final ViewportDisplayState viewportState;
   final LayoutState layout;
   final GlobalKey viewportKey;
+  final List<DisplayTrackGeometry> tracks;
+  final List<QuickMark> quickMarks;
+  final QuickMark? quickMarkDraft;
+  final int? selectedQuickMarkId;
 
   const MainWindowViewportVm({
     required this.viewMode,
@@ -64,6 +70,10 @@ class MainWindowViewportVm {
     required this.viewportState,
     required this.layout,
     required this.viewportKey,
+    required this.tracks,
+    required this.quickMarks,
+    required this.quickMarkDraft,
+    required this.selectedQuickMarkId,
   });
 }
 
@@ -213,6 +223,14 @@ class MainWindowViewportActions {
   final void Function(double scrollDelta, Offset localPos) onZoom;
   final void Function(bool panning, bool splitting) onPointerButton;
   final void Function(int width, int height, double devicePixelRatio) onResize;
+  final ValueChanged<Offset> onQuickMarkStart;
+  final ValueChanged<Offset> onQuickMarkUpdate;
+  final VoidCallback onQuickMarkEnd;
+  final VoidCallback onQuickMarkCancel;
+  final ValueChanged<int?> onQuickMarkSelect;
+  final ValueChanged<QuickMark> onQuickMarkChanged;
+  final ValueChanged<int> onQuickMarkDeleted;
+  final ValueChanged<int> onQuickMarkFocus;
 
   const MainWindowViewportActions({
     required this.onPan,
@@ -220,6 +238,14 @@ class MainWindowViewportActions {
     required this.onZoom,
     required this.onPointerButton,
     required this.onResize,
+    required this.onQuickMarkStart,
+    required this.onQuickMarkUpdate,
+    required this.onQuickMarkEnd,
+    required this.onQuickMarkCancel,
+    required this.onQuickMarkSelect,
+    required this.onQuickMarkChanged,
+    required this.onQuickMarkDeleted,
+    required this.onQuickMarkFocus,
   });
 }
 

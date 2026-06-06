@@ -3,12 +3,15 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../marks/quick_mark.dart';
 import '../platform/pointer_button_state_provider.dart';
 import '../utils/pointer_gesture_utils.dart';
 import '../video_renderer_controller.dart';
+import '../viewport/display_geometry.dart';
 import '../viewport/viewport_display_state.dart';
 import '../viewport/viewport_interaction.dart';
 import 'axtree_region.dart';
+import 'quick_mark_overlay.dart';
 
 class ViewportPanel extends StatefulWidget {
   final int? textureId;
@@ -24,6 +27,18 @@ class ViewportPanel extends StatefulWidget {
   final PointerButtonStateProvider pointerButtonStateProvider;
   final bool nativePlaybackAvailable;
   final ViewportInteractionPolicy interactionPolicy;
+  final List<DisplayTrackGeometry> trackGeometry;
+  final List<QuickMark> quickMarks;
+  final QuickMark? quickMarkDraft;
+  final int? selectedQuickMarkId;
+  final ValueChanged<Offset>? onQuickMarkStart;
+  final ValueChanged<Offset>? onQuickMarkUpdate;
+  final VoidCallback? onQuickMarkEnd;
+  final VoidCallback? onQuickMarkCancel;
+  final ValueChanged<int?>? onQuickMarkSelect;
+  final ValueChanged<QuickMark>? onQuickMarkChanged;
+  final ValueChanged<int>? onQuickMarkDeleted;
+  final ValueChanged<int>? onQuickMarkFocus;
 
   const ViewportPanel({
     super.key,
@@ -39,6 +54,18 @@ class ViewportPanel extends StatefulWidget {
     this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
     this.nativePlaybackAvailable = true,
     this.interactionPolicy = defaultViewportInteractionPolicy,
+    this.trackGeometry = const [],
+    this.quickMarks = const [],
+    this.quickMarkDraft,
+    this.selectedQuickMarkId,
+    this.onQuickMarkStart,
+    this.onQuickMarkUpdate,
+    this.onQuickMarkEnd,
+    this.onQuickMarkCancel,
+    this.onQuickMarkSelect,
+    this.onQuickMarkChanged,
+    this.onQuickMarkDeleted,
+    this.onQuickMarkFocus,
   });
 
   @override
@@ -52,10 +79,16 @@ class _ViewportPanelState extends State<ViewportPanel> {
   static const double _splitHandleVisualHeight = 38.0;
   static const double _wheelScrollDeltaPerStep = 120.0;
   static const double _wheelZoomFactorPerStep = 1.1;
+  static const double _quickMarkBorderHitWidth = 12.0;
+  static const double _quickMarkHandleHitSize = 18.0;
+  static const double _quickMarkPanelWidth = 428.0;
+  static const double _quickMarkPanelHeight = 36.0;
+  static const double _quickMarkPanelGap = 10.0;
 
   bool _panning = false;
   bool _splitting = false;
   bool _splitHandleDragging = false;
+  bool _quickMarkDragging = false;
   bool _panZoomScaling = false;
   Offset _lastMouseLocalPos = Offset.zero;
   Size _lastReportedLogicalSize = Size.zero;
@@ -67,13 +100,13 @@ class _ViewportPanelState extends State<ViewportPanel> {
     Offset localPosition, {
     bool allowWin32Recovery = false,
   }) {
-    if (_splitHandleDragging) return;
+    if (_splitHandleDragging || _quickMarkDragging) return;
 
     var dragIntent = widget.interactionPolicy.dragIntentForButtons(buttons);
     var wantsPan = dragIntent == ViewportDragIntent.pan;
     const wantsSplit = false;
     if (!wantsPan && !wantsSplit && allowWin32Recovery && buttons == 0) {
-      dragIntent = widget.pointerButtonStateProvider.isPrimaryButtonDown
+      dragIntent = widget.pointerButtonStateProvider.isSecondaryButtonDown
           ? ViewportDragIntent.pan
           : ViewportDragIntent.none;
       wantsPan = dragIntent == ViewportDragIntent.pan;
@@ -111,6 +144,324 @@ class _ViewportPanelState extends State<ViewportPanel> {
     return (localPosition.dx - handleX).abs() <= _splitHandleTouchWidth / 2;
   }
 
+  bool _isOnQuickMarkEditor(
+    BuildContext context,
+    Offset localPosition,
+    double devicePixelRatio,
+  ) {
+    if (widget.quickMarks.isEmpty ||
+        widget.trackGeometry.isEmpty ||
+        devicePixelRatio <= 0) {
+      return false;
+    }
+    final box = context.findRenderObject() as RenderBox;
+    if (!box.hasSize || box.size.width <= 0 || box.size.height <= 0) {
+      return false;
+    }
+    final projection = computeViewportLayoutProjection(
+      viewportWidth: (box.size.width * devicePixelRatio).round(),
+      viewportHeight: (box.size.height * devicePixelRatio).round(),
+      layout: widget.layout,
+      tracks: widget.trackGeometry,
+    );
+    final selectedMark = _selectedQuickMark;
+    final selectedRect = selectedMark == null
+        ? null
+        : _quickMarkLogicalRect(projection, selectedMark, devicePixelRatio);
+    if (selectedMark != null &&
+        selectedRect != null &&
+        _quickMarkPanelRect(selectedRect, box.size).contains(localPosition)) {
+      return true;
+    }
+    if (selectedMark != null &&
+        selectedRect != null &&
+        _isOnSelectedQuickMarkHandle(
+          selectedMark,
+          selectedRect,
+          localPosition,
+        )) {
+      return true;
+    }
+    for (final mark in widget.quickMarks) {
+      if (_isOnQuickMarkInteractiveArea(
+        projection,
+        mark,
+        localPosition,
+        devicePixelRatio,
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  QuickMark? get _selectedQuickMark {
+    final selectedId = widget.selectedQuickMarkId;
+    if (selectedId == null) return null;
+    for (final mark in widget.quickMarks) {
+      if (mark.id == selectedId) return mark;
+    }
+    return null;
+  }
+
+  bool _isOnSelectedQuickMarkHandle(
+    QuickMark mark,
+    Rect rect,
+    Offset position,
+  ) {
+    switch (mark.shape) {
+      case QuickMarkShape.rectangle:
+        return _isOnQuickMarkHandle(rect, position);
+      case QuickMarkShape.arrow:
+        return _isOnArrowEndpointHandle(rect, mark, position);
+    }
+  }
+
+  Rect? _quickMarkLogicalRect(
+    ViewportLayoutProjection projection,
+    QuickMark mark,
+    double devicePixelRatio,
+  ) {
+    final physicalRect = projection.viewportRectForSourceRect(
+      mark.fileId,
+      mark.sourceRect,
+    );
+    if (physicalRect == null || physicalRect.isEmpty) return null;
+    return Rect.fromLTRB(
+      physicalRect.left / devicePixelRatio,
+      physicalRect.top / devicePixelRatio,
+      physicalRect.right / devicePixelRatio,
+      physicalRect.bottom / devicePixelRatio,
+    );
+  }
+
+  bool _isOnQuickMarkBorder(Rect rect, Offset position) {
+    final expanded = rect.inflate(_quickMarkBorderHitWidth / 2);
+    final inner = rect.deflate(_quickMarkBorderHitWidth / 2);
+    return expanded.contains(position) && !inner.contains(position);
+  }
+
+  bool _isOnQuickMarkInteractiveArea(
+    ViewportLayoutProjection projection,
+    QuickMark mark,
+    Offset position,
+    double devicePixelRatio,
+  ) {
+    final projected = projection.viewportProjectionForSourceRect(
+      mark.fileId,
+      mark.sourceRect,
+    );
+    if (projected == null || projected.clipRect.isEmpty) return false;
+    final rect = Rect.fromLTRB(
+      projected.viewportRect.left / devicePixelRatio,
+      projected.viewportRect.top / devicePixelRatio,
+      projected.viewportRect.right / devicePixelRatio,
+      projected.viewportRect.bottom / devicePixelRatio,
+    );
+    final clipRect = Rect.fromLTRB(
+      projected.clipRect.left / devicePixelRatio,
+      projected.clipRect.top / devicePixelRatio,
+      projected.clipRect.right / devicePixelRatio,
+      projected.clipRect.bottom / devicePixelRatio,
+    );
+    final textRect = quickMarkTextHitRect(mark, rect, clipRect);
+    if (textRect != null && textRect.contains(position)) return true;
+    if (_isOnQuickMarkProjectedShape(mark, rect, clipRect, position)) {
+      return true;
+    }
+    if (!mark.syncAcrossTracks || widget.trackGeometry.length < 2) {
+      return false;
+    }
+    for (final track in widget.trackGeometry) {
+      if (track.fileId == mark.fileId) continue;
+      final syncedProjected = projection.viewportProjectionForSourceRect(
+        track.fileId,
+        mark.sourceRect,
+      );
+      if (syncedProjected == null || syncedProjected.clipRect.isEmpty) {
+        continue;
+      }
+      final syncedRect = Rect.fromLTRB(
+        syncedProjected.viewportRect.left / devicePixelRatio,
+        syncedProjected.viewportRect.top / devicePixelRatio,
+        syncedProjected.viewportRect.right / devicePixelRatio,
+        syncedProjected.viewportRect.bottom / devicePixelRatio,
+      );
+      final syncedClipRect = Rect.fromLTRB(
+        syncedProjected.clipRect.left / devicePixelRatio,
+        syncedProjected.clipRect.top / devicePixelRatio,
+        syncedProjected.clipRect.right / devicePixelRatio,
+        syncedProjected.clipRect.bottom / devicePixelRatio,
+      );
+      if (_isOnQuickMarkProjectedShape(
+        mark,
+        syncedRect,
+        syncedClipRect,
+        position,
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isOnQuickMarkProjectedShape(
+    QuickMark mark,
+    Rect rect,
+    Rect clipRect,
+    Offset position,
+  ) {
+    switch (mark.shape) {
+      case QuickMarkShape.rectangle:
+        return _isOnQuickMarkBorder(rect.intersect(clipRect), position);
+      case QuickMarkShape.arrow:
+        return _isOnQuickMarkArrow(rect, mark, position);
+    }
+  }
+
+  bool _isOnQuickMarkArrow(Rect rect, QuickMark mark, Offset position) {
+    final start = _sourcePointToQuickMarkRect(
+      rect,
+      mark.sourceRect,
+      mark.effectiveSourceStart,
+    );
+    final end = _sourcePointToQuickMarkRect(
+      rect,
+      mark.sourceRect,
+      mark.effectiveSourceEnd,
+    );
+    final hitWidth = math.max(_quickMarkBorderHitWidth, mark.strokeWidth + 10);
+    return _arrowSegments(start, end, mark.strokeWidth).any(
+      (segment) =>
+          _distanceToSegment(position, segment.start, segment.end) <=
+          hitWidth / 2,
+    );
+  }
+
+  List<({Offset start, Offset end})> _arrowSegments(
+    Offset start,
+    Offset end,
+    double baseStrokeWidth,
+  ) {
+    final delta = end - start;
+    if (delta.distance <= 0.1) {
+      return [(start: start, end: end)];
+    }
+    final angle = math.atan2(delta.dy, delta.dx);
+    final headLength = math.max(12.0, baseStrokeWidth * 4.0);
+    const headAngle = math.pi / 7.0;
+    final left = Offset(
+      end.dx - math.cos(angle - headAngle) * headLength,
+      end.dy - math.sin(angle - headAngle) * headLength,
+    );
+    final right = Offset(
+      end.dx - math.cos(angle + headAngle) * headLength,
+      end.dy - math.sin(angle + headAngle) * headLength,
+    );
+    return [
+      (start: start, end: end),
+      (start: end, end: left),
+      (start: end, end: right),
+    ];
+  }
+
+  double _distanceToSegment(Offset point, Offset start, Offset end) {
+    final segment = end - start;
+    final lengthSquared = segment.distanceSquared;
+    if (lengthSquared <= 1e-6) return (point - start).distance;
+    final pointDelta = point - start;
+    final t =
+        ((pointDelta.dx * segment.dx + pointDelta.dy * segment.dy) /
+                lengthSquared)
+            .clamp(0.0, 1.0)
+            .toDouble();
+    final nearest = Offset(
+      start.dx + segment.dx * t,
+      start.dy + segment.dy * t,
+    );
+    return (point - nearest).distance;
+  }
+
+  Offset _sourcePointToQuickMarkRect(
+    Rect viewportRect,
+    Rect sourceRect,
+    Offset sourcePoint,
+  ) {
+    final tx = sourceRect.width.abs() <= 1e-6
+        ? 0.5
+        : (sourcePoint.dx - sourceRect.left) / sourceRect.width;
+    final ty = sourceRect.height.abs() <= 1e-6
+        ? 0.5
+        : (sourcePoint.dy - sourceRect.top) / sourceRect.height;
+    return Offset(
+      viewportRect.left + viewportRect.width * tx,
+      viewportRect.top + viewportRect.height * ty,
+    );
+  }
+
+  bool _isOnQuickMarkHandle(Rect rect, Offset position) {
+    final centers = [
+      rect.topLeft,
+      Offset(rect.center.dx, rect.top),
+      rect.topRight,
+      Offset(rect.right, rect.center.dy),
+      rect.bottomRight,
+      Offset(rect.center.dx, rect.bottom),
+      rect.bottomLeft,
+      Offset(rect.left, rect.center.dy),
+    ];
+    final half = _quickMarkHandleHitSize / 2;
+    return centers.any(
+      (center) => Rect.fromCenter(
+        center: center,
+        width: _quickMarkHandleHitSize,
+        height: _quickMarkHandleHitSize,
+      ).inflate(half).contains(position),
+    );
+  }
+
+  bool _isOnArrowEndpointHandle(Rect rect, QuickMark mark, Offset position) {
+    final centers = [
+      _sourcePointToQuickMarkRect(
+        rect,
+        mark.sourceRect,
+        mark.effectiveSourceStart,
+      ),
+      _sourcePointToQuickMarkRect(
+        rect,
+        mark.sourceRect,
+        mark.effectiveSourceEnd,
+      ),
+    ];
+    return centers.any(
+      (center) => Rect.fromCenter(
+        center: center,
+        width: _quickMarkHandleHitSize,
+        height: _quickMarkHandleHitSize,
+      ).inflate(_quickMarkHandleHitSize / 2).contains(position),
+    );
+  }
+
+  Rect _quickMarkPanelRect(Rect markRect, Size viewportSize) {
+    final panelLeft = (markRect.center.dx - _quickMarkPanelWidth / 2)
+        .clamp(
+          8.0,
+          math.max(8.0, viewportSize.width - _quickMarkPanelWidth - 8.0),
+        )
+        .toDouble();
+    final belowTop = markRect.bottom + _quickMarkPanelGap;
+    final aboveTop = markRect.top - _quickMarkPanelGap - _quickMarkPanelHeight;
+    final panelTop = belowTop + _quickMarkPanelHeight <= viewportSize.height - 8
+        ? belowTop
+        : math.max(8.0, aboveTop);
+    return Rect.fromLTWH(
+      panelLeft,
+      panelTop,
+      _quickMarkPanelWidth,
+      _quickMarkPanelHeight,
+    );
+  }
+
   void _startSplitHandleDrag(BuildContext context, double viewportLocalX) {
     _splitHandleDragging = true;
     _splitting = true;
@@ -133,11 +484,50 @@ class _ViewportPanelState extends State<ViewportPanel> {
     widget.onPointerButton(false, false);
   }
 
+  bool _startQuickMarkDrag(Offset localPosition, double devicePixelRatio) {
+    final start = widget.onQuickMarkStart;
+    if (start == null || _splitHandleDragging) return false;
+    _quickMarkDragging = true;
+    _panning = false;
+    _splitting = false;
+    _lastMouseLocalPos = localPosition;
+    widget.onPointerButton(false, false);
+    start(localPosition * devicePixelRatio);
+    return true;
+  }
+
+  void _updateQuickMarkDrag(Offset localPosition, double devicePixelRatio) {
+    if (!_quickMarkDragging) return;
+    _lastMouseLocalPos = localPosition;
+    widget.onQuickMarkUpdate?.call(localPosition * devicePixelRatio);
+  }
+
+  void _endQuickMarkDrag() {
+    if (!_quickMarkDragging) return;
+    _quickMarkDragging = false;
+    widget.onQuickMarkEnd?.call();
+  }
+
+  void _cancelQuickMarkDrag() {
+    if (!_quickMarkDragging) return;
+    _quickMarkDragging = false;
+    widget.onQuickMarkCancel?.call();
+  }
+
   void _cancelPointerDragState() {
-    if (!_panning && !_splitting && !_splitHandleDragging) return;
+    if (!_panning &&
+        !_splitting &&
+        !_splitHandleDragging &&
+        !_quickMarkDragging) {
+      return;
+    }
+    final quickMarkDragging = _quickMarkDragging;
     _panning = false;
     _splitting = false;
     _splitHandleDragging = false;
+    if (quickMarkDragging) {
+      _cancelQuickMarkDrag();
+    }
     widget.onPointerButton(false, false);
   }
 
@@ -322,14 +712,29 @@ class _ViewportPanelState extends State<ViewportPanel> {
                 _startSplitHandleDrag(context, e.localPosition.dx);
                 return;
               }
+              if (_isOnQuickMarkEditor(
+                context,
+                e.localPosition,
+                devicePixelRatio,
+              )) {
+                return;
+              }
               _panning = false;
               _splitting = false;
               _lastMouseLocalPos = e.localPosition;
+              if (_startQuickMarkDrag(e.localPosition, devicePixelRatio)) {
+                return;
+              }
             }
             _syncDragButtons(e.buttons, e.localPosition);
             _updateSplitFromLocalX(context, e.localPosition.dx);
           },
           onPointerUp: (e) {
+            if (_quickMarkDragging &&
+                !widget.interactionPolicy.isPrimaryButtonDown(e.buttons)) {
+              _endQuickMarkDrag();
+              return;
+            }
             if (_splitHandleDragging) {
               _endSplitHandleDrag();
               return;
@@ -341,6 +746,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
             );
           },
           onPointerCancel: (_) {
+            if (_quickMarkDragging) {
+              _cancelQuickMarkDrag();
+              return;
+            }
             if (_splitHandleDragging) {
               _endSplitHandleDrag();
               return;
@@ -348,6 +757,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
             _syncDragButtons(0, _lastMouseLocalPos, allowWin32Recovery: true);
           },
           onPointerMove: (e) {
+            if (_quickMarkDragging) {
+              if (!widget.interactionPolicy.isPrimaryButtonDown(e.buttons)) {
+                _endQuickMarkDrag();
+              } else {
+                _updateQuickMarkDrag(e.localPosition, devicePixelRatio);
+              }
+              return;
+            }
             if (_splitHandleDragging) {
               if ((e.buttons & kPrimaryButton) == 0) {
                 _endSplitHandleDrag();
@@ -410,6 +827,18 @@ class _ViewportPanelState extends State<ViewportPanel> {
             fit: StackFit.expand,
             children: [
               ExcludeSemantics(child: Texture(textureId: widget.textureId!)),
+              QuickMarkOverlay(
+                layout: widget.layout,
+                tracks: widget.trackGeometry,
+                marks: widget.quickMarks,
+                draft: widget.quickMarkDraft,
+                selectedMarkId: widget.selectedQuickMarkId,
+                devicePixelRatio: devicePixelRatio,
+                onSelectedMarkChanged: widget.onQuickMarkSelect,
+                onMarkChanged: widget.onQuickMarkChanged,
+                onMarkDeleted: widget.onQuickMarkDeleted,
+                onMarkFocus: widget.onQuickMarkFocus,
+              ),
               if (widget.layout.mode == LayoutMode.splitScreen)
                 _buildSplitHandleSemantics(context, devicePixelRatio),
             ],

@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../../marks/quick_mark.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
@@ -274,6 +276,101 @@ class MainWindowLayoutCoordinator {
     setZoom(value);
   }
 
+  void focusQuickMark(QuickMark mark) {
+    if (_disposed) return;
+    if (viewportWidth <= 0 || viewportHeight <= 0 || trackManager.isEmpty) {
+      return;
+    }
+    final trackGeometry = tracks()
+        .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
+        .toList();
+    final targetTrack = _trackGeometryByFileId(trackGeometry, mark.fileId);
+    if (targetTrack == null) return;
+
+    final current = layout();
+    final orderedTracks = _orderedTracksForFocus(current, trackGeometry);
+    final slotIndex = orderedTracks.indexWhere(
+      (track) => track.fileId == mark.fileId,
+    );
+    if (slotIndex < 0) return;
+
+    final activeCount = orderedTracks.length;
+    final slotWidth = current.mode == LayoutMode.splitScreen || activeCount <= 1
+        ? viewportWidth.toDouble()
+        : viewportWidth / activeCount;
+    final slotHeight = viewportHeight.toDouble();
+    if (slotWidth <= 0 || slotHeight <= 0) return;
+
+    final visibleLocal = _visibleLocalRectForFocus(current, slotIndex);
+    if (visibleLocal.isEmpty) return;
+    final visibleWidth = slotWidth * visibleLocal.width;
+    final visibleHeight = slotHeight * visibleLocal.height;
+    if (visibleWidth <= 0 || visibleHeight <= 0) return;
+
+    final sourceBounds = _focusSourceBounds(mark);
+    final sourceAnchor = mark.shape == QuickMarkShape.arrow
+        ? mark.effectiveSourceEnd
+        : sourceBounds.center;
+    final baseDisplay = _displayPixelSizeForTrackAtZoom(
+      track: targetTrack,
+      tracks: trackGeometry,
+      layout: current.copyWith(zoomRatio: 1.0, viewOffsetX: 0, viewOffsetY: 0),
+      slotWidth: slotWidth,
+      slotHeight: slotHeight,
+    );
+    if (baseDisplay.width <= 0 || baseDisplay.height <= 0) return;
+
+    const targetFill = 0.55;
+    final zoomCandidates = <double>[];
+    final sourceWidth = math.max(sourceBounds.width, 0.04);
+    final sourceHeight = math.max(sourceBounds.height, 0.04);
+    zoomCandidates.add(
+      visibleWidth * targetFill / (baseDisplay.width * sourceWidth),
+    );
+    zoomCandidates.add(
+      visibleHeight * targetFill / (baseDisplay.height * sourceHeight),
+    );
+    final targetZoom = zoomCandidates
+        .where((value) => value.isFinite && value > 0)
+        .fold<double>(LayoutState.zoomMax, math.min)
+        .clamp(LayoutState.zoomMin, LayoutState.zoomMax)
+        .toDouble();
+
+    final targetDisplay = _displayPixelSizeForTrackAtZoom(
+      track: targetTrack,
+      tracks: trackGeometry,
+      layout: current.copyWith(
+        zoomRatio: targetZoom,
+        viewOffsetX: 0,
+        viewOffsetY: 0,
+      ),
+      slotWidth: slotWidth,
+      slotHeight: slotHeight,
+    );
+    if (targetDisplay.width <= 0 || targetDisplay.height <= 0) return;
+
+    final displaySizeX = targetDisplay.width / slotWidth;
+    final displaySizeY = targetDisplay.height / slotHeight;
+    final displayOffsetX = (1.0 - displaySizeX) * 0.5;
+    final displayOffsetY = (1.0 - displaySizeY) * 0.5;
+    final desiredLocal = visibleLocal.center;
+    final nextOffsetX =
+        (desiredLocal.dx - displayOffsetX - sourceAnchor.dx * displaySizeX) *
+        slotWidth;
+    final nextOffsetY =
+        (desiredLocal.dy - displayOffsetY - sourceAnchor.dy * displaySizeY) *
+        slotHeight;
+
+    setLayout(
+      current.copyWith(
+        zoomRatio: targetZoom,
+        viewOffsetX: nextOffsetX,
+        viewOffsetY: nextOffsetY,
+      ),
+    );
+    markLayoutDirty();
+  }
+
   void markLayoutDirty() {
     if (_disposed) return;
     _layoutDirty = true;
@@ -344,6 +441,103 @@ class MainWindowLayoutCoordinator {
 
   void _updateLayout(LayoutState Function(LayoutState current) update) {
     setLayout(update(layout()));
+  }
+
+  List<DisplayTrackGeometry> _orderedTracksForFocus(
+    LayoutState layout,
+    List<DisplayTrackGeometry> tracks,
+  ) {
+    final ordered = <DisplayTrackGeometry>[];
+    for (final fileId in layout.order) {
+      final index = tracks.indexWhere((track) => track.fileId == fileId);
+      if (index >= 0 && !ordered.contains(tracks[index])) {
+        ordered.add(tracks[index]);
+      }
+    }
+    for (final track in tracks) {
+      if (!ordered.contains(track)) ordered.add(track);
+    }
+    return ordered;
+  }
+
+  DisplayTrackGeometry? _trackGeometryByFileId(
+    List<DisplayTrackGeometry> tracks,
+    int fileId,
+  ) {
+    for (final track in tracks) {
+      if (track.fileId == fileId) return track;
+    }
+    return null;
+  }
+
+  Rect _visibleLocalRectForFocus(LayoutState layout, int slotIndex) {
+    if (layout.mode != LayoutMode.splitScreen) {
+      return const Rect.fromLTRB(0.0, 0.0, 1.0, 1.0);
+    }
+    final split = layout.splitPos.clamp(0.0, 1.0).toDouble();
+    if (slotIndex == 0) return Rect.fromLTRB(0.0, 0.0, split, 1.0);
+    if (slotIndex == 1) return Rect.fromLTRB(split, 0.0, 1.0, 1.0);
+    return Rect.zero;
+  }
+
+  Rect _focusSourceBounds(QuickMark mark) {
+    switch (mark.shape) {
+      case QuickMarkShape.rectangle:
+        return mark.sourceRect;
+      case QuickMarkShape.arrow:
+        return Rect.fromPoints(
+          mark.effectiveSourceStart,
+          mark.effectiveSourceEnd,
+        );
+    }
+  }
+
+  Size _displayPixelSizeForTrackAtZoom({
+    required DisplayTrackGeometry track,
+    required List<DisplayTrackGeometry> tracks,
+    required LayoutState layout,
+    required double slotWidth,
+    required double slotHeight,
+  }) {
+    final slotAspect = slotHeight > 0 ? slotWidth / slotHeight : 1.0;
+    var videoAspect = track.height > 0
+        ? track.width / track.height
+        : slotAspect;
+    if (!videoAspect.isFinite || videoAspect <= 0) videoAspect = slotAspect;
+
+    var trackScale = 1.0;
+    if (layout.pixelSizeMode == LayoutPixelSizeMode.uniformVideoPixels) {
+      var refTrack = track;
+      var maxPixels = -1;
+      for (final candidate in tracks) {
+        final pixels = candidate.width * candidate.height;
+        if (pixels > maxPixels) {
+          maxPixels = pixels;
+          refTrack = candidate;
+        }
+      }
+
+      double densityFor(DisplayTrackGeometry entry) {
+        final videoWidth = entry.width.toDouble();
+        final videoHeight = entry.height.toDouble();
+        if (videoWidth <= 0 || videoHeight <= 0) return 1.0;
+        return math.min(slotWidth / videoWidth, slotHeight / videoHeight);
+      }
+
+      final trackDensity = densityFor(track);
+      final refDensity = densityFor(refTrack);
+      trackScale = trackDensity > 0 ? refDensity / trackDensity : 1.0;
+    }
+
+    var fitScale = videoAspect > slotAspect ? slotAspect / videoAspect : 1.0;
+    fitScale *= trackScale;
+    if (!fitScale.isFinite || fitScale <= 0.0) fitScale = 1.0;
+    final displayScale = fitScale * layout.zoomRatio;
+    final dsX = slotAspect > 0
+        ? videoAspect * displayScale / slotAspect
+        : displayScale;
+    final dsY = displayScale;
+    return Size(dsX * slotWidth, dsY * slotHeight);
   }
 
   LayoutState _rescaleViewOffsetForLayoutChange(

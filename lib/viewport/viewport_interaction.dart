@@ -8,11 +8,13 @@ class ViewportInteractionPolicy {
   const ViewportInteractionPolicy();
 
   ViewportDragIntent dragIntentForButtons(int buttons) {
-    if ((buttons & kPrimaryButton) != 0) {
+    if ((buttons & kSecondaryButton) != 0) {
       return ViewportDragIntent.pan;
     }
     return ViewportDragIntent.none;
   }
+
+  bool isPrimaryButtonDown(int buttons) => (buttons & kPrimaryButton) != 0;
 
   bool isSecondaryButtonDown(int buttons) => (buttons & kSecondaryButton) != 0;
 }

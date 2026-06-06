@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/display_geometry.dart';
@@ -183,6 +184,122 @@ void main() {
     expect(afterSideBySide.dx, closeTo(before.dx, 1e-9));
     expect(afterSideBySide.dy, closeTo(before.dy, 1e-9));
   });
+
+  test('focus quick mark centers a rectangle with visual padding', () {
+    final stateStore = MainWindowStateStore()
+      ..setTextureId(1)
+      ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
+    addTearDown(stateStore.dispose);
+    final trackManager = TrackManager()..setTracks([track(1), track(2)]);
+    addTearDown(trackManager.dispose);
+    final coordinator = MainWindowLayoutCoordinator(
+      vsync: const TestVSync(),
+      controller: _FakeNativePlayerController(),
+      stateStore: stateStore,
+      trackManager: trackManager,
+      mounted: () => true,
+    );
+    addTearDown(coordinator.dispose);
+    coordinator.viewportWidth = 1600;
+    coordinator.viewportHeight = 900;
+    const mark = QuickMark(
+      id: 11,
+      fileId: 1,
+      ptsUs: 0,
+      sourceRect: Rect.fromLTRB(0.2, 0.3, 0.4, 0.5),
+    );
+
+    coordinator.focusQuickMark(mark);
+
+    final layout = stateStore.value.layout;
+    expect(layout.zoomRatio, greaterThan(1));
+    final projection = computeViewportLayoutProjection(
+      viewportWidth: coordinator.viewportWidth,
+      viewportHeight: coordinator.viewportHeight,
+      layout: layout,
+      tracks: trackManager.entries
+          .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
+          .toList(),
+    );
+    final projected = projection.viewportProjectionForSourceRect(
+      mark.fileId,
+      mark.sourceRect,
+    );
+    expect(projected, isNotNull);
+    expect(projected!.viewportRect.center.dx, closeTo(400, 0.001));
+    expect(projected.viewportRect.center.dy, closeTo(450, 0.001));
+    expect(projected.viewportRect.width, lessThan(800));
+    expect(projected.viewportRect.height, lessThan(900));
+  });
+
+  test('focus quick mark centers an arrow on its head', () {
+    final stateStore = MainWindowStateStore()
+      ..setTextureId(1)
+      ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
+    addTearDown(stateStore.dispose);
+    final trackManager = TrackManager()..setTracks([track(1), track(2)]);
+    addTearDown(trackManager.dispose);
+    final coordinator = MainWindowLayoutCoordinator(
+      vsync: const TestVSync(),
+      controller: _FakeNativePlayerController(),
+      stateStore: stateStore,
+      trackManager: trackManager,
+      mounted: () => true,
+    );
+    addTearDown(coordinator.dispose);
+    coordinator.viewportWidth = 1600;
+    coordinator.viewportHeight = 900;
+    const mark = QuickMark(
+      id: 11,
+      fileId: 1,
+      ptsUs: 0,
+      sourceRect: Rect.fromLTRB(0.2, 0.2, 0.7, 0.6),
+      sourceStart: Offset(0.2, 0.2),
+      sourceEnd: Offset(0.7, 0.6),
+      shape: QuickMarkShape.arrow,
+    );
+
+    coordinator.focusQuickMark(mark);
+
+    final layout = stateStore.value.layout;
+    final projection = computeViewportLayoutProjection(
+      viewportWidth: coordinator.viewportWidth,
+      viewportHeight: coordinator.viewportHeight,
+      layout: layout,
+      tracks: trackManager.entries
+          .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
+          .toList(),
+    );
+    final projected = projection.viewportProjectionForSourceRect(
+      mark.fileId,
+      mark.sourceRect,
+    );
+    expect(projected, isNotNull);
+    final arrowHead = _sourcePointToViewportRect(
+      projected!.viewportRect,
+      mark.sourceRect,
+      mark.effectiveSourceEnd,
+    );
+    expect(arrowHead.dx, closeTo(400, 0.001));
+    expect(arrowHead.dy, closeTo(450, 0.001));
+  });
+}
+
+Offset _sourcePointToViewportRect(
+  Rect viewportRect,
+  Rect sourceRect,
+  Offset sourcePoint,
+) {
+  final tx = sourceRect.width.abs() <= 1e-6
+      ? 0.5
+      : (sourcePoint.dx - sourceRect.left) / sourceRect.width;
+  final ty = sourceRect.height.abs() <= 1e-6
+      ? 0.5
+      : (sourcePoint.dy - sourceRect.top) / sourceRect.height;
+  return Offset(
+    viewportRect.left + viewportRect.width * tx,
+    viewportRect.top + viewportRect.height * ty,
+  );
 }
 
 class _FakeNativePlayerController extends NativePlayerController {

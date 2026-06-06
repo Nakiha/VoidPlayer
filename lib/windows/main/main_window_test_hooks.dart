@@ -631,7 +631,7 @@ class MainWindowTestHarness {
       PointerDownEvent(
         pointer: pointer,
         position: start,
-        buttons: kPrimaryButton,
+        buttons: kSecondaryButton,
         kind: PointerDeviceKind.mouse,
       ),
     );
@@ -647,7 +647,7 @@ class MainWindowTestHarness {
           pointer: pointer,
           position: next,
           delta: next - previous,
-          buttons: kPrimaryButton,
+          buttons: kSecondaryButton,
           kind: PointerDeviceKind.mouse,
         ),
       );
@@ -735,7 +735,7 @@ class MainWindowTestHarness {
       PointerDownEvent(
         pointer: pointer,
         position: start,
-        buttons: kPrimaryButton,
+        buttons: kSecondaryButton,
         kind: PointerDeviceKind.mouse,
       ),
     );
@@ -751,7 +751,7 @@ class MainWindowTestHarness {
           pointer: pointer,
           position: next,
           delta: next - previous,
-          buttons: kPrimaryButton,
+          buttons: kSecondaryButton,
           kind: PointerDeviceKind.mouse,
         ),
       );

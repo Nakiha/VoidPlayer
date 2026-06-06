@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../marks/quick_mark.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
@@ -32,6 +33,9 @@ class MainWindowStateModel {
   final bool fullScreenControlsVisible;
   final int? audibleTrackFileId;
   final PerformanceAlertPolicy performanceAlertPolicy;
+  final List<QuickMark> quickMarks;
+  final QuickMark? quickMarkDraft;
+  final int? selectedQuickMarkId;
 
   const MainWindowStateModel({
     this.textureId,
@@ -58,6 +62,9 @@ class MainWindowStateModel {
     this.fullScreenControlsVisible = false,
     this.audibleTrackFileId,
     this.performanceAlertPolicy = PerformanceAlertPolicy.sustained,
+    this.quickMarks = const [],
+    this.quickMarkDraft,
+    this.selectedQuickMarkId,
   });
 
   MainWindowStateModel copyWith({
@@ -85,6 +92,9 @@ class MainWindowStateModel {
     bool? fullScreenControlsVisible,
     Object? audibleTrackFileId = _mainWindowStateUnset,
     PerformanceAlertPolicy? performanceAlertPolicy,
+    List<QuickMark>? quickMarks,
+    Object? quickMarkDraft = _mainWindowStateUnset,
+    Object? selectedQuickMarkId = _mainWindowStateUnset,
   }) {
     return MainWindowStateModel(
       textureId: textureId == _mainWindowStateUnset
@@ -124,6 +134,13 @@ class MainWindowStateModel {
           : audibleTrackFileId as int?,
       performanceAlertPolicy:
           performanceAlertPolicy ?? this.performanceAlertPolicy,
+      quickMarks: quickMarks ?? this.quickMarks,
+      quickMarkDraft: quickMarkDraft == _mainWindowStateUnset
+          ? this.quickMarkDraft
+          : quickMarkDraft as QuickMark?,
+      selectedQuickMarkId: selectedQuickMarkId == _mainWindowStateUnset
+          ? this.selectedQuickMarkId
+          : selectedQuickMarkId as int?,
     );
   }
 }
@@ -176,6 +193,9 @@ class MainWindowStateStore extends ChangeNotifier {
         durationUs: 0,
         layout: const LayoutState(),
         syncOffsets: const {},
+        quickMarks: const [],
+        quickMarkDraft: null,
+        selectedQuickMarkId: null,
         loopRangeEnabled: false,
         nativeLoopRangeSynced: false,
         startupLoopRangeApplied: false,
@@ -300,6 +320,21 @@ class MainWindowStateStore extends ChangeNotifier {
   void setPerformanceAlertPolicy(PerformanceAlertPolicy policy) {
     if (_value.performanceAlertPolicy == policy) return;
     _set(_value.copyWith(performanceAlertPolicy: policy));
+  }
+
+  void setQuickMarks(List<QuickMark> marks) {
+    if (listEquals(_value.quickMarks, marks)) return;
+    _set(_value.copyWith(quickMarks: List.unmodifiable(marks)));
+  }
+
+  void setQuickMarkDraft(QuickMark? draft) {
+    if (_value.quickMarkDraft == draft) return;
+    _set(_value.copyWith(quickMarkDraft: draft));
+  }
+
+  void setSelectedQuickMarkId(int? id) {
+    if (_value.selectedQuickMarkId == id) return;
+    _set(_value.copyWith(selectedQuickMarkId: id));
   }
 }
 

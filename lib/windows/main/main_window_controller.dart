@@ -9,6 +9,7 @@ import '../../automation/test_runner.dart';
 import '../../automation/ui_automation_bridge.dart';
 import '../../config/app_config.dart';
 import '../../config/app_settings_repository.dart';
+import '../../marks/quick_mark.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../platform/main_window_platform.dart';
 import '../../platform/native_file_picker.dart';
@@ -20,6 +21,7 @@ import '../../startup_options.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
+import '../../viewport/display_geometry.dart';
 import '../../viewport/viewport_display_state.dart';
 import '../../widgets/loop_range_bar.dart';
 import 'main_window_actions.dart';
@@ -51,6 +53,9 @@ class MainWindowController {
   final TrackManager trackManager = TrackManager();
   final MainWindowStateStore stateStore = MainWindowStateStore();
   final PlaybackSession _session = const PlaybackSession.normal();
+  ViewportSourceHit? _quickMarkDragStart;
+  int? _quickMarkDragPtsUs;
+  int _nextQuickMarkId = 1;
   late final MainWindowTimelineMetrics timelineMetrics =
       MainWindowTimelineMetrics(
         stateStore: stateStore,
@@ -181,6 +186,21 @@ class MainWindowController {
         viewportState: _viewportState,
         layout: _layout,
         viewportKey: viewportKey,
+        tracks: trackManager.entries
+            .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
+            .toList(),
+        quickMarks: _quickMarks
+            .where((mark) => mark.ptsUs == _currentPtsUs)
+            .toList(),
+        quickMarkDraft: _quickMarkDraft,
+        selectedQuickMarkId:
+            _quickMarks.any(
+              (mark) =>
+                  mark.id == _selectedQuickMarkId &&
+                  mark.ptsUs == _currentPtsUs,
+            )
+            ? _selectedQuickMarkId
+            : null,
       ),
       media: MainWindowMediaVm(
         analysisEnabled:
@@ -311,6 +331,14 @@ class MainWindowController {
               devicePixelRatio,
               immediate: _fullScreenUiResizePending,
             ),
+        onQuickMarkStart: _startQuickMarkDrag,
+        onQuickMarkUpdate: _updateQuickMarkDrag,
+        onQuickMarkEnd: _finishQuickMarkDrag,
+        onQuickMarkCancel: _cancelQuickMarkDrag,
+        onQuickMarkSelect: _selectQuickMark,
+        onQuickMarkChanged: _updateQuickMark,
+        onQuickMarkDeleted: _deleteQuickMark,
+        onQuickMarkFocus: _focusQuickMark,
       ),
       mediaTimeline: MainWindowMediaTimelineActions(
         onMediaSwapped: (slotIndex, targetTrackIndex) {
@@ -675,6 +703,9 @@ class MainWindowController {
   bool get _isPlaying => _state.isPlaying;
   int get _currentPtsUs => _state.currentPtsUs;
   LayoutState get _layout => _state.layout;
+  List<QuickMark> get _quickMarks => _state.quickMarks;
+  QuickMark? get _quickMarkDraft => _state.quickMarkDraft;
+  int? get _selectedQuickMarkId => _state.selectedQuickMarkId;
   Map<int, int> get _syncOffsets => _state.syncOffsets;
   double get _timelineControlsWidth => _state.timelineControlsWidth;
   bool get _loopRangeEnabled => _state.loopRangeEnabled;
@@ -692,4 +723,130 @@ class MainWindowController {
   int get _resolvedLoopStartUs => playbackCoordinator.resolvedLoopStartUs;
   int get _resolvedLoopEndUs => playbackCoordinator.resolvedLoopEndUs;
   List<int> get _loopMarkerPtsUs => playbackCoordinator.loopMarkerPtsUs;
+
+  ViewportLayoutProjection? _quickMarkProjection() {
+    final viewportWidth = layoutCoordinator.viewportWidth;
+    final viewportHeight = layoutCoordinator.viewportHeight;
+    if (viewportWidth <= 0 || viewportHeight <= 0 || trackManager.isEmpty) {
+      return null;
+    }
+    return computeViewportLayoutProjection(
+      viewportWidth: viewportWidth,
+      viewportHeight: viewportHeight,
+      layout: _layout,
+      tracks: trackManager.entries
+          .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
+          .toList(),
+    );
+  }
+
+  void _startQuickMarkDrag(Offset physicalPosition) {
+    if (_textureId == null || trackManager.isEmpty) return;
+    final hit = _quickMarkProjection()?.hitTestPhysical(physicalPosition);
+    if (hit == null) return;
+    stateStore.setSelectedQuickMarkId(null);
+    _quickMarkDragStart = hit;
+    _quickMarkDragPtsUs = _currentPtsUs;
+    stateStore.setQuickMarkDraft(
+      QuickMark(
+        id: 0,
+        fileId: hit.fileId,
+        ptsUs: _quickMarkDragPtsUs!,
+        sourceRect: Rect.fromPoints(hit.sourceUv, hit.sourceUv),
+        sourceStart: hit.sourceUv,
+        sourceEnd: hit.sourceUv,
+      ),
+    );
+  }
+
+  void _updateQuickMarkDrag(Offset physicalPosition) {
+    final start = _quickMarkDragStart;
+    if (start == null) return;
+    final projection = _quickMarkProjection();
+    final end = projection?.sourceUvForTrackPhysical(
+      start.fileId,
+      physicalPosition,
+      clipToVisibleRegion: true,
+    );
+    if (end == null) return;
+    stateStore.setQuickMarkDraft(
+      QuickMark(
+        id: 0,
+        fileId: start.fileId,
+        ptsUs: _quickMarkDragPtsUs ?? _currentPtsUs,
+        sourceRect: Rect.fromPoints(start.sourceUv, end),
+        sourceStart: start.sourceUv,
+        sourceEnd: end,
+      ),
+    );
+  }
+
+  void _finishQuickMarkDrag() {
+    final draft = _quickMarkDraft;
+    _quickMarkDragStart = null;
+    _quickMarkDragPtsUs = null;
+    stateStore.setQuickMarkDraft(null);
+    if (draft == null ||
+        draft.sourceRect.width < 0.002 ||
+        draft.sourceRect.height < 0.002) {
+      return;
+    }
+    stateStore.setQuickMarks([
+      ..._quickMarks,
+      draft.copyWith(id: _nextQuickMarkId++),
+    ]);
+  }
+
+  void _cancelQuickMarkDrag() {
+    _quickMarkDragStart = null;
+    _quickMarkDragPtsUs = null;
+    stateStore.setQuickMarkDraft(null);
+  }
+
+  void _selectQuickMark(int? id) {
+    if (id != null &&
+        !_quickMarks.any(
+          (mark) => mark.id == id && mark.ptsUs == _currentPtsUs,
+        )) {
+      return;
+    }
+    stateStore.setSelectedQuickMarkId(id);
+  }
+
+  void _updateQuickMark(QuickMark updated) {
+    var found = false;
+    final next = _quickMarks
+        .map((mark) {
+          if (mark.id != updated.id) return mark;
+          found = true;
+          return updated;
+        })
+        .toList(growable: false);
+    if (!found) return;
+    stateStore.setQuickMarks(next);
+  }
+
+  void _deleteQuickMark(int id) {
+    final next = _quickMarks
+        .where((mark) => mark.id != id)
+        .toList(growable: false);
+    if (next.length == _quickMarks.length) return;
+    stateStore.setQuickMarks(next);
+    if (_selectedQuickMarkId == id) {
+      stateStore.setSelectedQuickMarkId(null);
+    }
+  }
+
+  void _focusQuickMark(int id) {
+    QuickMark? mark;
+    for (final candidate in _quickMarks) {
+      if (candidate.id == id) {
+        mark = candidate;
+        break;
+      }
+    }
+    if (mark == null || mark.ptsUs != _currentPtsUs) return;
+    stateStore.setSelectedQuickMarkId(id);
+    layoutCoordinator.focusQuickMark(mark);
+  }
 }

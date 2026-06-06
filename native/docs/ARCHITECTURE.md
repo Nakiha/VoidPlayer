@@ -75,6 +75,28 @@ native/
 | `TrackPipeline` | 每轨 demux/decode/buffer state，使用 file id + generation 防止 remove/re-add 串帧 |
 | `FrameConverter` | AVFrame 到 `TextureFrame`；保留硬解 surface 或做确定性 CPU pack |
 
+## Renderer ownership map
+
+`Renderer` 是 public facade，`Renderer::Impl` 是 private composition root。新增 renderer 行为时优先落到
+下面的 ownership 组件，不要把长逻辑继续塞进 `Renderer::Impl`：
+
+| 行为/状态 | 首选 owner |
+| --- | --- |
+| Playback/time/loop range/seek gate | `RendererTimelineController` |
+| Track lifetime、add/remove/recreate/seek/offset mutation | `RendererTrackMutationController` |
+| Track storage、slot/file id、generation、cached duration | `RendererTrackRegistry` |
+| Track snapshots、present decisions、paused preview、perf/memory diagnostics | `RendererTrackPresentationModel` |
+| Draw snapshot、paused redraw、layout redraw、present completion | `RendererPresentCommandProcessor` |
+| Render-thread cadence、preroll、paused preview scheduling、deadline sleep | `RendererRenderLoopCommandProcessor` + `RendererLoopDriver` |
+| Backend/device/texture/capture/callback storage | `RendererPresentationController` |
+| Layout revisions、pending layout intent、viewport compositor grace | `RendererLayoutState` |
+| Native event publication | `RendererEventBus` |
+| Presentation counters、timing、backpressure/device-loss diagnostics | `PresentationMetricsStore` |
+
+`RendererTrackController` 目前仍是 compatibility facade，向 registry / mutation / presentation model 转发；
+它不持有 renderer locks、不调用 host/platform callbacks。present/render-loop command context 中的
+`*_locked` hooks 必须由调用方持有 `state_mutex_` 调用，详见 [线程模型](THREADING_MODEL.md)。
+
 ## 数据流总览
 
 ```text

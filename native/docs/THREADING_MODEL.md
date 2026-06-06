@@ -195,8 +195,35 @@ not the normal active refresh command.
 
 ## Renderer Component Boundaries
 
-`Renderer` remains the facade and lifecycle owner. New code should keep policy in
-shared native components and keep platform backends focused on presentation.
+`Renderer` remains the public facade and lifecycle owner. `Renderer::Impl` is
+the private composition root: it wires shared renderer controllers together,
+owns the public lock surface, and adapts public API calls into smaller command
+contexts. New code should keep policy in shared native components and keep
+platform backends focused on presentation.
+
+Current shared renderer ownership is split as follows:
+
+- `RendererTrackController` is the compatibility facade over
+  `RendererTrackRegistry`, `RendererTrackMutationController`, and
+  `RendererTrackPresentationModel`.
+- `RendererTrackRegistry` owns track storage, slot/file identity, generation
+  allocation, and cached duration state.
+- `RendererTrackMutationController` owns add/remove/recreate/seek/offset/decode
+  pause mutations against existing track storage.
+- `RendererTrackPresentationModel` builds immutable track snapshots, present
+  decisions, paused-preview decisions, and per-track diagnostics.
+- `RendererPresentCommandProcessor` owns paused redraw, layout redraw, draw
+  snapshot submission, completion publication, and present diagnostics through
+  an explicit `RendererPresentCommandContext`.
+- `RendererRenderLoopCommandProcessor` owns render-thread cadence, preroll,
+  paused preview, scheduler ticks, EOF settle, and deadline sleep through an
+  explicit `RendererRenderLoopCommandContext`.
+- `RendererPresentationController` owns backend/device/callback/capture storage
+  and is the only shared renderer controller that submits to the platform
+  `PresentationBackend`.
+- `RendererLayoutState`, `RendererTimelineController`, `RendererEventBus`, and
+  `PresentationMetricsStore` own layout revisions, playback/seek/loop state,
+  native events, and presentation metrics respectively.
 
 - Render loop / tick / present scheduling: shared renderer code.
 - Track lifecycle, layout, seek, loop, EOF settle, and refresh completion: shared
@@ -208,8 +235,16 @@ shared native components and keep platform backends focused on presentation.
 - Analysis overlay raster/upload and future analysis IPC remain separate
   subsystem concerns; they should not introduce another playback scheduler.
 
-Before splitting another component, document whether it may take
-`state_mutex_`, call platform callbacks, or touch backend GPU resources.
+Present/render-loop command contexts may contain hooks whose names end in
+`_locked`. Those hooks require the caller to already hold `state_mutex_`.
+Hooks that receive `std::unique_lock<std::mutex>&` may temporarily unlock during
+long operations, but must preserve the documented renderer lock order when they
+relock. Hooks that call platform callbacks or submit GPU/backend work must say
+so at the hook boundary and must not run callbacks while renderer/backend locks
+are held.
+
+Before splitting another component, document whether it may take `state_mutex_`,
+call platform callbacks, or touch backend GPU resources.
 
 ## Thread Communication
 

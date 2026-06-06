@@ -6,6 +6,9 @@ class SettingsPageStyle {
   const SettingsPageStyle._();
 
   static const comboWidth = 260.0;
+  static const compactComboWidth = 180.0;
+  static const comboWrapBreakpoint = 320.0;
+  static const compactComboWidthRatio = 0.48;
   static const pagePadding = EdgeInsets.all(16);
   static const contentGap = SizedBox(height: 16);
   static const compactGap = SizedBox(height: 8);
@@ -100,7 +103,8 @@ class SettingsComboRow<T> extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 36),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          if (constraints.maxWidth < 420) {
+          final maxWidth = constraints.maxWidth;
+          if (maxWidth < SettingsPageStyle.comboWrapBreakpoint) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -113,11 +117,17 @@ class SettingsComboRow<T> extends StatelessWidget {
               ],
             );
           }
+          final comboWidth = maxWidth.isFinite
+              ? (maxWidth * SettingsPageStyle.compactComboWidthRatio).clamp(
+                  SettingsPageStyle.compactComboWidth,
+                  SettingsPageStyle.comboWidth,
+                )
+              : SettingsPageStyle.comboWidth;
           return Row(
             children: [
               Expanded(child: labelRow),
               const SizedBox(width: 16),
-              SizedBox(width: SettingsPageStyle.comboWidth, child: combo),
+              SizedBox(width: comboWidth.toDouble(), child: combo),
             ],
           );
         },

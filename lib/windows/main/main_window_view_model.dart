@@ -55,6 +55,7 @@ class MainWindowMediaVm {
   final List<TrackEntry> tracks;
   final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final int? audibleTrackFileId;
+  final PerformanceAlertPolicy performanceAlertPolicy;
   final AnalysisToolbarDataSource analysisDataSource;
   final GlobalKey analysisOverlayButtonKey;
 
@@ -69,6 +70,7 @@ class MainWindowMediaVm {
     required this.tracks,
     required this.syncOffsets,
     required this.audibleTrackFileId,
+    required this.performanceAlertPolicy,
     required this.analysisDataSource,
     required this.analysisOverlayButtonKey,
   });
@@ -255,6 +257,7 @@ class MainWindowOverlayActions {
   final VoidCallback onCloseProfiler;
   final VoidCallback onCloseSettings;
   final ValueChanged<ViewportPixelSizeMode> onViewportPixelSizeModeChanged;
+  final ValueChanged<PerformanceAlertPolicy> onPerformanceAlertPolicyChanged;
   final VoidCallback onFullScreenPointerActivity;
   final void Function(bool hovering) onFullScreenControlsHoverChanged;
 
@@ -263,6 +266,7 @@ class MainWindowOverlayActions {
     required this.onCloseProfiler,
     required this.onCloseSettings,
     required this.onViewportPixelSizeModeChanged,
+    required this.onPerformanceAlertPolicyChanged,
     required this.onFullScreenPointerActivity,
     required this.onFullScreenControlsHoverChanged,
   });

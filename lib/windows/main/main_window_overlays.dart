@@ -243,12 +243,14 @@ class SettingsOverlaySlot extends StatelessWidget {
   final bool visible;
   final VoidCallback onClose;
   final ValueChanged<ViewportPixelSizeMode> onViewportPixelSizeModeChanged;
+  final ValueChanged<PerformanceAlertPolicy> onPerformanceAlertPolicyChanged;
 
   const SettingsOverlaySlot({
     super.key,
     required this.visible,
     required this.onClose,
     required this.onViewportPixelSizeModeChanged,
+    required this.onPerformanceAlertPolicyChanged,
   });
 
   @override
@@ -260,6 +262,7 @@ class SettingsOverlaySlot extends StatelessWidget {
         builder: (context) => _SettingsDialog(
           onClose: onClose,
           onViewportPixelSizeModeChanged: onViewportPixelSizeModeChanged,
+          onPerformanceAlertPolicyChanged: onPerformanceAlertPolicyChanged,
         ),
         transitionBuilder: (context, animation, child) {
           return _ModalScrim(
@@ -738,10 +741,12 @@ class _TableText extends StatelessWidget {
 class _SettingsDialog extends StatelessWidget {
   final VoidCallback onClose;
   final ValueChanged<ViewportPixelSizeMode> onViewportPixelSizeModeChanged;
+  final ValueChanged<PerformanceAlertPolicy> onPerformanceAlertPolicyChanged;
 
   const _SettingsDialog({
     required this.onClose,
     required this.onViewportPixelSizeModeChanged,
+    required this.onPerformanceAlertPolicyChanged,
   });
 
   @override
@@ -806,6 +811,8 @@ class _SettingsDialog extends StatelessWidget {
                   child: SettingsPage(
                     onViewportPixelSizeModeChanged:
                         onViewportPixelSizeModeChanged,
+                    onPerformanceAlertPolicyChanged:
+                        onPerformanceAlertPolicyChanged,
                   ),
                 ),
               ],

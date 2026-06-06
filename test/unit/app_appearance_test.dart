@@ -34,6 +34,14 @@ class _FakeAppSettingsRepository implements AppSettingsRepository {
       ViewportPixelSizeMode.uniformVideoPixels;
 
   @override
+  DefaultAudioPlaybackPolicy defaultAudioPlaybackPolicy =
+      DefaultAudioPlaybackPolicy.muted;
+
+  @override
+  PerformanceAlertPolicy performanceAlertPolicy =
+      PerformanceAlertPolicy.sustained;
+
+  @override
   Map<String, String> securityScopedBookmarks = {};
 
   @override

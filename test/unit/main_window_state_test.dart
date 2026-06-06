@@ -6,6 +6,7 @@ import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/controls_bar.dart';
+import 'package:void_player/windows/main/main_window_media.dart';
 import 'package:void_player/windows/main/main_window_playback.dart';
 import 'package:void_player/windows/main/main_window_state.dart';
 import 'package:void_player/windows/main/main_window_timeline_metrics.dart';
@@ -108,6 +109,57 @@ void main() {
       expect(fixture.store.value.currentPtsUs, 1000000);
     });
   });
+
+  group('default audio policy', () {
+    const firstTrack = TrackInfo(
+      fileId: 1,
+      slot: 0,
+      path: 'clip.mp4',
+      width: 1920,
+      height: 1080,
+    );
+
+    test('keeps new tracks muted by default', () {
+      expect(
+        defaultAudibleTrackForPolicy(
+          policy: DefaultAudioPlaybackPolicy.muted,
+          currentAudibleTrack: null,
+          addedTracks: const [firstTrack],
+        ),
+        isNull,
+      );
+    });
+
+    test('can select the first added track by default', () {
+      expect(
+        defaultAudibleTrackForPolicy(
+          policy: DefaultAudioPlaybackPolicy.playFirstTrack,
+          currentAudibleTrack: null,
+          addedTracks: const [firstTrack],
+        ),
+        1,
+      );
+    });
+
+    test('keeps an existing audible track when adding muted-default media', () {
+      expect(
+        defaultAudibleTrackForPolicy(
+          policy: DefaultAudioPlaybackPolicy.muted,
+          currentAudibleTrack: 1,
+          addedTracks: const [
+            TrackInfo(
+              fileId: 2,
+              slot: 1,
+              path: 'second.mp4',
+              width: 1,
+              height: 1,
+            ),
+          ],
+        ),
+        1,
+      );
+    });
+  });
 }
 
 class _PlaybackFixture {
@@ -173,6 +225,14 @@ class TimelineHoverStateNotifier extends ValueNotifier<TimelineHoverState> {
 }
 
 class _PlaybackPrefs implements PlaybackPreferences {
+  @override
+  final DefaultAudioPlaybackPolicy defaultAudioPlaybackPolicy =
+      DefaultAudioPlaybackPolicy.muted;
+
+  @override
+  final PerformanceAlertPolicy performanceAlertPolicy =
+      PerformanceAlertPolicy.sustained;
+
   const _PlaybackPrefs();
 
   @override
@@ -261,7 +321,9 @@ class _PlaybackApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> setAudibleTrack(int? fileId) async {}
+  Future<void> setAudibleTrack(int? fileId) async {
+    calls.add('setAudibleTrack:$fileId');
+  }
 
   @override
   Future<void> resize({required int width, required int height}) async {}

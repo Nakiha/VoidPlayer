@@ -28,6 +28,12 @@ abstract class AppSettingsRepository {
   ViewportPixelSizeMode get viewportPixelSizeMode;
   set viewportPixelSizeMode(ViewportPixelSizeMode value);
 
+  DefaultAudioPlaybackPolicy get defaultAudioPlaybackPolicy;
+  set defaultAudioPlaybackPolicy(DefaultAudioPlaybackPolicy value);
+
+  PerformanceAlertPolicy get performanceAlertPolicy;
+  set performanceAlertPolicy(PerformanceAlertPolicy value);
+
   Map<String, String> get securityScopedBookmarks;
   set securityScopedBookmarks(Map<String, String> value);
 
@@ -103,6 +109,24 @@ class AppConfigSettingsRepository implements AppSettingsRepository {
   @override
   set viewportPixelSizeMode(ViewportPixelSizeMode value) {
     config.viewportPixelSizeMode = value;
+  }
+
+  @override
+  DefaultAudioPlaybackPolicy get defaultAudioPlaybackPolicy =>
+      config.defaultAudioPlaybackPolicy;
+
+  @override
+  set defaultAudioPlaybackPolicy(DefaultAudioPlaybackPolicy value) {
+    config.defaultAudioPlaybackPolicy = value;
+  }
+
+  @override
+  PerformanceAlertPolicy get performanceAlertPolicy =>
+      config.performanceAlertPolicy;
+
+  @override
+  set performanceAlertPolicy(PerformanceAlertPolicy value) {
+    config.performanceAlertPolicy = value;
   }
 
   @override

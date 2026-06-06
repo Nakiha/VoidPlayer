@@ -110,6 +110,14 @@ class _FakePlaybackPreferences implements PlaybackPreferences {
       ViewportPixelSizeMode.uniformVideoPixels;
 
   @override
+  DefaultAudioPlaybackPolicy get defaultAudioPlaybackPolicy =>
+      DefaultAudioPlaybackPolicy.muted;
+
+  @override
+  PerformanceAlertPolicy get performanceAlertPolicy =>
+      PerformanceAlertPolicy.sustained;
+
+  @override
   bool get useHardwareDecode => decodeMode.useHardwareDecode;
 }
 
@@ -139,6 +147,14 @@ class _FakeAppSettingsRepository implements AppSettingsRepository {
   @override
   ViewportPixelSizeMode viewportPixelSizeMode =
       ViewportPixelSizeMode.uniformVideoPixels;
+
+  @override
+  DefaultAudioPlaybackPolicy defaultAudioPlaybackPolicy =
+      DefaultAudioPlaybackPolicy.muted;
+
+  @override
+  PerformanceAlertPolicy performanceAlertPolicy =
+      PerformanceAlertPolicy.sustained;
 
   @override
   Map<String, String> securityScopedBookmarks = {};

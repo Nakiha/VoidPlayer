@@ -17,6 +17,20 @@ import 'main_window_media_lifecycle.dart';
 import 'main_window_state.dart';
 import 'main_window_timeline_metrics.dart';
 
+int? defaultAudibleTrackForPolicy({
+  required DefaultAudioPlaybackPolicy policy,
+  required int? currentAudibleTrack,
+  required List<TrackInfo> addedTracks,
+}) {
+  switch (policy) {
+    case DefaultAudioPlaybackPolicy.muted:
+      return currentAudibleTrack;
+    case DefaultAudioPlaybackPolicy.playFirstTrack:
+      if (currentAudibleTrack != null) return currentAudibleTrack;
+      return addedTracks.isEmpty ? null : addedTracks.first.fileId;
+  }
+}
+
 class MainWindowMediaCoordinator {
   final NativePlayerController controller;
   final TrackManager trackManager;
@@ -69,6 +83,16 @@ class MainWindowMediaCoordinator {
   void setAudibleTrackFileId(int? fileId) =>
       stateStore.setAudibleTrackFileId(fileId);
 
+  Future<void> _syncDefaultAudioPolicy(List<TrackInfo> addedTracks) async {
+    final nextAudibleTrack = defaultAudibleTrackForPolicy(
+      policy: playbackPreferences.defaultAudioPlaybackPolicy,
+      currentAudibleTrack: audibleTrackFileId(),
+      addedTracks: addedTracks,
+    );
+    setAudibleTrackFileId(nextAudibleTrack);
+    await controller.setAudibleTrack(nextAudibleTrack);
+  }
+
   Future<void> loadMediaPaths(List<String> paths) {
     if (paths.isEmpty) return Future<void>.value();
     if (_disposed) return Future<void>.value();
@@ -110,6 +134,8 @@ class MainWindowMediaCoordinator {
         if (!_alive) return;
         setTextureId(res.textureId);
         trackManager.setTracks(res.tracks);
+        await _syncDefaultAudioPolicy(res.tracks);
+        if (!_alive) return;
         await _applyInitialPtsOffsets(res.tracks);
         if (!_alive) return;
         final nativeLayout = await controller.getLayout();
@@ -156,6 +182,8 @@ class MainWindowMediaCoordinator {
           );
           if (!_alive) return;
           trackManager.addTrack(track);
+          await _syncDefaultAudioPolicy([track]);
+          if (!_alive) return;
           await _applyInitialPtsOffsets([track]);
           if (!_alive) return;
           lifecycle.applyStartupLoopRangeIfReady();

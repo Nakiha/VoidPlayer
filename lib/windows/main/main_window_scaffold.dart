@@ -116,11 +116,17 @@ class MainWindowScaffold extends StatelessWidget {
             onClose: overlayActions.onCloseSettings,
             onViewportPixelSizeModeChanged:
                 overlayActions.onViewportPixelSizeModeChanged,
+            onPerformanceAlertPolicyChanged:
+                overlayActions.onPerformanceAlertPolicyChanged,
           ),
           PerformanceHealthFeedbackMonitor(
-            enabled: media.nativePlaybackAvailable && media.tracks.isNotEmpty,
+            enabled:
+                media.nativePlaybackAvailable &&
+                media.tracks.isNotEmpty &&
+                media.performanceAlertPolicy.enabled,
             trackCount: media.tracks.length,
             profilerVisible: overlays.profilerVisible,
+            alertPolicy: media.performanceAlertPolicy,
             onOpenProfiler: toolbarActions.onProfiler,
           ),
           const AppFeedbackHost(),

@@ -208,6 +208,8 @@ class AppConfig {
   static const _seekAfterJumpBehaviorKey = 'seekAfterJumpBehavior';
   static const _decodeModeKey = 'decodeMode';
   static const _viewportPixelSizeModeKey = 'viewportPixelSizeMode';
+  static const _defaultAudioPlaybackPolicyKey = 'defaultAudioPlaybackPolicy';
+  static const _performanceAlertPolicyKey = 'performanceAlertPolicy';
   static const _defaultAnalysisCacheMaxBytes = 1024 * 1024 * 1024;
 
   /// Maximum analysis cache size in bytes. A value of 0 means unlimited.
@@ -277,5 +279,24 @@ class AppConfig {
 
   set viewportPixelSizeMode(ViewportPixelSizeMode value) {
     section(_preferencesKey)[_viewportPixelSizeModeKey] = value.storageValue;
+  }
+
+  DefaultAudioPlaybackPolicy get defaultAudioPlaybackPolicy {
+    final value = section(_preferencesKey)[_defaultAudioPlaybackPolicyKey];
+    return DefaultAudioPlaybackPolicy.fromStorage(value is String ? value : '');
+  }
+
+  set defaultAudioPlaybackPolicy(DefaultAudioPlaybackPolicy value) {
+    section(_preferencesKey)[_defaultAudioPlaybackPolicyKey] =
+        value.storageValue;
+  }
+
+  PerformanceAlertPolicy get performanceAlertPolicy {
+    final value = section(_preferencesKey)[_performanceAlertPolicyKey];
+    return PerformanceAlertPolicy.fromStorage(value is String ? value : '');
+  }
+
+  set performanceAlertPolicy(PerformanceAlertPolicy value) {
+    section(_preferencesKey)[_performanceAlertPolicyKey] = value.storageValue;
   }
 }

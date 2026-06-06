@@ -6,6 +6,7 @@ import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
+import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/media_header.dart';
@@ -79,6 +80,7 @@ MainWindowViewModel _model({required bool settingsVisible}) =>
         tracks: const [],
         syncOffsets: const {},
         audibleTrackFileId: null,
+        performanceAlertPolicy: PerformanceAlertPolicy.sustained,
         analysisDataSource: _FakeAnalysisToolbarDataSource(),
         analysisOverlayButtonKey: GlobalKey(),
       ),
@@ -162,6 +164,7 @@ final _noop = MainWindowViewActions(
     onCloseProfiler: () {},
     onCloseSettings: () {},
     onViewportPixelSizeModeChanged: (_) {},
+    onPerformanceAlertPolicyChanged: (_) {},
     onFullScreenPointerActivity: () {},
     onFullScreenControlsHoverChanged: (_) {},
   ),

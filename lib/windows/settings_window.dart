@@ -11,8 +11,13 @@ import 'settings/settings_page_style.dart';
 
 class SettingsPage extends StatefulWidget {
   final ValueChanged<ViewportPixelSizeMode>? onViewportPixelSizeModeChanged;
+  final ValueChanged<PerformanceAlertPolicy>? onPerformanceAlertPolicyChanged;
 
-  const SettingsPage({super.key, this.onViewportPixelSizeModeChanged});
+  const SettingsPage({
+    super.key,
+    this.onViewportPixelSizeModeChanged,
+    this.onPerformanceAlertPolicyChanged,
+  });
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -25,6 +30,7 @@ class _SettingsPageState extends State<SettingsPage> {
     const AppearanceSettingsPage(),
     PreferencesSettingsPage(
       onViewportPixelSizeModeChanged: widget.onViewportPixelSizeModeChanged,
+      onPerformanceAlertPolicyChanged: widget.onPerformanceAlertPolicyChanged,
     ),
     const CacheSettingsPage(),
     const _AboutPage(),

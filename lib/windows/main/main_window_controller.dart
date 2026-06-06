@@ -195,6 +195,7 @@ class MainWindowController {
         tracks: trackManager.entries,
         syncOffsets: _syncOffsets,
         audibleTrackFileId: _audibleTrackFileId,
+        performanceAlertPolicy: _performanceAlertPolicy,
         analysisDataSource: analysisToolbarDataSource,
         analysisOverlayButtonKey: analysisOverlayButtonKey,
       ),
@@ -326,6 +327,7 @@ class MainWindowController {
         onCloseProfiler: () => stateStore.setProfilerVisible(false),
         onCloseSettings: () => stateStore.setSettingsVisible(false),
         onViewportPixelSizeModeChanged: _setViewportPixelSizeMode,
+        onPerformanceAlertPolicyChanged: _setPerformanceAlertPolicy,
         onFullScreenPointerActivity: _showFullScreenControlsTemporarily,
         onFullScreenControlsHoverChanged: _setFullScreenControlsHovering,
       ),
@@ -466,6 +468,9 @@ class MainWindowController {
         pixelSizeMode: playbackPreferences.viewportPixelSizeMode.layoutValue,
       ),
     );
+    stateStore.setPerformanceAlertPolicy(
+      playbackPreferences.performanceAlertPolicy,
+    );
     analysisCoordinator = MainWindowAnalysisCoordinator(
       trackManager: trackManager,
       analysisProcesses: analysisProcesses,
@@ -546,6 +551,10 @@ class MainWindowController {
     layoutCoordinator.setPixelSizeMode(mode.layoutValue);
   }
 
+  void _setPerformanceAlertPolicy(PerformanceAlertPolicy policy) {
+    stateStore.setPerformanceAlertPolicy(policy);
+  }
+
   void _requestAnalysisOverlayRedraw() {
     if (!mounted()) return;
     fireAndLog('redraw analysis overlay', player.applyLayout(_layout));
@@ -617,6 +626,8 @@ class MainWindowController {
   bool get _fullScreen => _state.fullScreen;
   bool get _fullScreenControlsVisible => _state.fullScreenControlsVisible;
   int? get _audibleTrackFileId => _state.audibleTrackFileId;
+  PerformanceAlertPolicy get _performanceAlertPolicy =>
+      _state.performanceAlertPolicy;
   double get _timelineStartWidth => playbackCoordinator.timelineStartWidth;
   int get _resolvedLoopStartUs => playbackCoordinator.resolvedLoopStartUs;
   int get _resolvedLoopEndUs => playbackCoordinator.resolvedLoopEndUs;

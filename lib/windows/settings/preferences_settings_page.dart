@@ -9,10 +9,12 @@ import 'settings_page_style.dart';
 
 class PreferencesSettingsPage extends StatefulWidget {
   final ValueChanged<ViewportPixelSizeMode>? onViewportPixelSizeModeChanged;
+  final ValueChanged<PerformanceAlertPolicy>? onPerformanceAlertPolicyChanged;
 
   const PreferencesSettingsPage({
     super.key,
     this.onViewportPixelSizeModeChanged,
+    this.onPerformanceAlertPolicyChanged,
   });
 
   @override
@@ -24,6 +26,8 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
   late SeekAfterJumpBehavior _seekBehavior;
   late DecodeMode _decodeMode;
   late ViewportPixelSizeMode _pixelSizeMode;
+  late DefaultAudioPlaybackPolicy _defaultAudioPolicy;
+  late PerformanceAlertPolicy _performanceAlertPolicy;
 
   @override
   void initState() {
@@ -32,6 +36,8 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
     _seekBehavior = settings.seekAfterJumpBehavior;
     _decodeMode = settings.decodeMode;
     _pixelSizeMode = settings.viewportPixelSizeMode;
+    _defaultAudioPolicy = settings.defaultAudioPlaybackPolicy;
+    _performanceAlertPolicy = settings.performanceAlertPolicy;
   }
 
   Future<void> _setSeekBehavior(SeekAfterJumpBehavior behavior) async {
@@ -56,6 +62,23 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
     widget.onViewportPixelSizeModeChanged?.call(mode);
     final settings = AppSettingsScope.of(context);
     settings.viewportPixelSizeMode = mode;
+    await settings.save();
+  }
+
+  Future<void> _setDefaultAudioPolicy(DefaultAudioPlaybackPolicy policy) async {
+    if (_defaultAudioPolicy == policy) return;
+    setState(() => _defaultAudioPolicy = policy);
+    final settings = AppSettingsScope.of(context);
+    settings.defaultAudioPlaybackPolicy = policy;
+    await settings.save();
+  }
+
+  Future<void> _setPerformanceAlertPolicy(PerformanceAlertPolicy policy) async {
+    if (_performanceAlertPolicy == policy) return;
+    setState(() => _performanceAlertPolicy = policy);
+    widget.onPerformanceAlertPolicyChanged?.call(policy);
+    final settings = AppSettingsScope.of(context);
+    settings.performanceAlertPolicy = policy;
     await settings.save();
   }
 
@@ -96,6 +119,36 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
             },
             onChanged: (value) {
               unawaited(_setPixelSizeMode(value));
+            },
+          ),
+          SettingsPageStyle.contentGap,
+          SettingsComboRow<DefaultAudioPlaybackPolicy>(
+            label: l.defaultAudioPlaybackPolicy,
+            icon: Icons.volume_up,
+            value: _defaultAudioPolicy,
+            items: DefaultAudioPlaybackPolicy.values,
+            labelFor: (value) => switch (value) {
+              DefaultAudioPlaybackPolicy.muted => l.defaultAudioMuted,
+              DefaultAudioPlaybackPolicy.playFirstTrack =>
+                l.defaultAudioPlayFirstTrack,
+            },
+            onChanged: (value) {
+              unawaited(_setDefaultAudioPolicy(value));
+            },
+          ),
+          SettingsPageStyle.contentGap,
+          SettingsComboRow<PerformanceAlertPolicy>(
+            label: l.performanceAlertPolicy,
+            icon: Icons.speed,
+            value: _performanceAlertPolicy,
+            items: PerformanceAlertPolicy.values,
+            labelFor: (value) => switch (value) {
+              PerformanceAlertPolicy.once => l.performanceAlertOnce,
+              PerformanceAlertPolicy.sustained => l.performanceAlertSustained,
+              PerformanceAlertPolicy.disabled => l.performanceAlertDisabled,
+            },
+            onChanged: (value) {
+              unawaited(_setPerformanceAlertPolicy(value));
             },
           ),
           SettingsPageStyle.contentGap,

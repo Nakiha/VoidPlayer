@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/performance/performance_health.dart';
+import 'package:void_player/preferences/playback_preferences.dart';
 
 void main() {
   test('classifies empty diagnostics as healthy', () {
@@ -99,6 +100,63 @@ void main() {
     expect(snapshot.kind, PerformanceHealthKind.ok);
     expect(snapshot.playbackCadenceRatio, greaterThan(0.95));
   });
+
+  test('keeps normal 30fps media healthy on a high refresh display', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 0.0,
+      'presentedFrameHostIntervalP95Ms': 34.0,
+      'presentedFramePtsDistinctCount': 179,
+      'presentedFramePtsAdvanceUs': 6030000,
+      'presentedFrameExpectedIntervalUs': 33333,
+      'nativeRendererDrawP95Us': 2800.0,
+      'nativeRendererDrawBackendP95Us': 2600.0,
+      'metalCommandCompletionP95Us': 2800.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+  });
+
+  test('classifies PTS timeline gaps as playback cadence pressure', () {
+    final previous = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'presentedFramePtsLargeGapCount': 0,
+    });
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'presentedFramePtsLargeGapCount': 1,
+      'nativeRendererDrawP95Us': 3000.0,
+      'nativeRendererDrawBackendP95Us': 2500.0,
+      'metalCommandCompletionP95Us': 3000.0,
+    }, previous: previous);
+
+    expect(snapshot.level, PerformanceHealthLevel.warning);
+    expect(snapshot.kind, PerformanceHealthKind.playbackCadencePressure);
+    expect(snapshot.reason, 'playback-cadence');
+  });
+
+  test(
+    'classifies PTS monotonic violations as severe playback cadence pressure',
+    () {
+      final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+        'trackCount': 1,
+        'isPlaying': true,
+        'presentedFramePtsMonotonicViolationCount': 1,
+        'nativeRendererDrawP95Us': 3000.0,
+        'nativeRendererDrawBackendP95Us': 2500.0,
+        'metalCommandCompletionP95Us': 3000.0,
+      });
+
+      expect(snapshot.level, PerformanceHealthLevel.severe);
+      expect(snapshot.kind, PerformanceHealthKind.playbackCadencePressure);
+      expect(snapshot.reason, 'playback-cadence');
+    },
+  );
 
   test('uses counter deltas for ring pressure', () {
     final previous = PerformanceHealthSnapshot.fromDiagnostics({
@@ -263,4 +321,149 @@ void main() {
     expect(feedback, contains('external displays'));
     expect(feedback, contains('screen recording'));
   });
+
+  test('feedback policy requires sustained pressure and respects cooldown', () {
+    final policy = PerformanceHealthFeedbackPolicy();
+    final now = DateTime(2026, 6, 6, 12);
+    final pressure = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'nativeRendererDrawP95Us': 12000.0,
+    });
+
+    expect(_shouldShow(policy, snapshot: pressure, now: now), isFalse);
+    expect(
+      _shouldShow(
+        policy,
+        snapshot: pressure,
+        now: now.add(const Duration(milliseconds: 1500)),
+      ),
+      isFalse,
+    );
+    expect(
+      _shouldShow(
+        policy,
+        snapshot: pressure,
+        now: now.add(const Duration(seconds: 3)),
+      ),
+      isTrue,
+    );
+    expect(
+      _shouldShow(
+        policy,
+        snapshot: pressure,
+        now: now.add(const Duration(seconds: 10)),
+      ),
+      isFalse,
+    );
+    expect(
+      _shouldShow(
+        policy,
+        snapshot: pressure,
+        now: now.add(const Duration(seconds: 49)),
+      ),
+      isTrue,
+    );
+  });
+
+  test('feedback policy suppresses snackbar while profiler is visible', () {
+    final policy = PerformanceHealthFeedbackPolicy();
+    final now = DateTime(2026, 6, 6, 12);
+    final pressure = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'nativeRendererDrawP95Us': 12000.0,
+    });
+
+    for (var i = 0; i < 3; i += 1) {
+      expect(
+        _shouldShow(
+          policy,
+          snapshot: pressure,
+          profilerVisible: true,
+          now: now.add(Duration(seconds: i * 2)),
+        ),
+        isFalse,
+      );
+    }
+    expect(policy.pressureSamples, 3);
+  });
+
+  test('feedback policy can show only once per session', () {
+    final policy = PerformanceHealthFeedbackPolicy();
+    final now = DateTime(2026, 6, 6, 12);
+    final pressure = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'nativeRendererDrawP95Us': 12000.0,
+    });
+
+    for (var i = 0; i < 2; i += 1) {
+      expect(
+        _shouldShow(
+          policy,
+          snapshot: pressure,
+          alertPolicy: PerformanceAlertPolicy.once,
+          now: now.add(Duration(seconds: i)),
+        ),
+        isFalse,
+      );
+    }
+    expect(
+      _shouldShow(
+        policy,
+        snapshot: pressure,
+        alertPolicy: PerformanceAlertPolicy.once,
+        now: now.add(const Duration(seconds: 3)),
+      ),
+      isTrue,
+    );
+    expect(
+      _shouldShow(
+        policy,
+        snapshot: pressure,
+        alertPolicy: PerformanceAlertPolicy.once,
+        now: now.add(const Duration(minutes: 2)),
+      ),
+      isFalse,
+    );
+  });
+
+  test('feedback policy can be disabled', () {
+    final policy = PerformanceHealthFeedbackPolicy();
+    final now = DateTime(2026, 6, 6, 12);
+    final pressure = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'nativeRendererDrawP95Us': 12000.0,
+    });
+
+    for (var i = 0; i < 4; i += 1) {
+      expect(
+        _shouldShow(
+          policy,
+          snapshot: pressure,
+          alertPolicy: PerformanceAlertPolicy.disabled,
+          now: now.add(Duration(seconds: i)),
+        ),
+        isFalse,
+      );
+    }
+    expect(policy.pressureSamples, 0);
+  });
+}
+
+bool _shouldShow(
+  PerformanceHealthFeedbackPolicy policy, {
+  required PerformanceHealthSnapshot snapshot,
+  bool profilerVisible = false,
+  PerformanceAlertPolicy alertPolicy = PerformanceAlertPolicy.sustained,
+  required DateTime now,
+}) {
+  return policy.shouldShow(
+    snapshot: snapshot,
+    profilerVisible: profilerVisible,
+    alertPolicy: alertPolicy,
+    now: now,
+  );
 }

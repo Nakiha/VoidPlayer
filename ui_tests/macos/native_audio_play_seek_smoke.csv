@@ -6,12 +6,10 @@
 0.1, GENERATE_TEST_VIDEO_WITH_AUDIO, build/generated/macos/audio_seek_smoke.mp4, 120, 30, 320, 180
 0.4, ADD_MEDIA, build/generated/macos/audio_seek_smoke.mp4
 1.4, ASSERT_TRACK_COUNT, 1
-1.5, ASSERT_NATIVE_AUDIO, true, 48000, 1, 0
+1.5, ASSERT_NATIVE_AUDIO, true, 48000, 1, -1
 1.51, ASSERT_NATIVE_DIAGNOSTIC_BOOL, audioOutputDeviceInitialized, true
 1.52, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, audioOutputRegisteredTrackCount, 1
-1.53, ASSERT_NATIVE_DIAGNOSTIC_BOOL, audioOutputActiveTrackRegistered, true
-1.54, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, audioOutputSampleRate, 48000, 48000
-1.55, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, audioOutputChannels, 2, 2
+1.53, ASSERT_NATIVE_DIAGNOSTIC_BOOL, audioOutputActiveTrackRegistered, false
 1.6, SET_AUDIBLE_TRACK, -1
 1.7, ASSERT_NATIVE_AUDIO, true, 48000, 1, -1
 1.71, ASSERT_NATIVE_DIAGNOSTIC_BOOL, audioOutputActiveTrackRegistered, false

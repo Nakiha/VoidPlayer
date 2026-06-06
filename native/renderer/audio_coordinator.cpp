@@ -28,9 +28,6 @@ bool AudioCoordinator::register_track(int file_id,
         audio_packet_queue,
         stats.audio_codec_params,
         stats.audio_time_base);
-    if (added && audio->active_track() < 0) {
-        audio->set_active_track(file_id);
-    }
     return added;
 }
 

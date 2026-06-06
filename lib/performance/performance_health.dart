@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../feedback/app_feedback.dart';
 import '../l10n/app_localizations.dart';
 import '../native_player/native_player_api.dart';
+import '../preferences/playback_preferences.dart';
 
 enum PerformanceHealthLevel { ok, warning, severe }
 
@@ -178,18 +179,9 @@ class PerformanceHealthSnapshot {
     final renderLatencySevere =
         inputOrPlaybackActive &&
         (drawP95Us >= 22_000 || backendP95Us >= 20_000 || metalP95Us >= 22_000);
-    final playbackCadenceGap = playing && largeGapDelta > 0;
-    final nativeHardPressure =
-        metalBufferDelta > 0 ||
-        metalFailureDelta > 0 ||
-        playbackCadenceGap ||
-        monotonicViolationCount > 0;
+    final nativeHardPressure = metalBufferDelta > 0 || metalFailureDelta > 0;
     final nativeSlow = renderLatencySlow || nativeHardPressure;
-    final nativeSevere =
-        renderLatencySevere ||
-        metalBufferDelta > 0 ||
-        metalFailureDelta > 0 ||
-        monotonicViolationCount > 0;
+    final nativeSevere = renderLatencySevere || nativeHardPressure;
     final displayTarget = displayRefreshHz >= 50
         ? displayRefreshHz
         : _fallbackDisplayTargetHz;
@@ -201,24 +193,33 @@ class PerformanceHealthSnapshot {
         layoutIntentHz >= 30 &&
         layoutDrawHz > 0 &&
         layoutDrawHz < math.min(layoutIntentHz, displayTarget) * 0.70;
+    final expectedFrameIntervalMs = presentedFrameExpectedIntervalUs > 0
+        ? presentedFrameExpectedIntervalUs / 1000.0
+        : 1000.0 / displayTarget;
     final hostIntervalHigh =
         playing &&
         hostIntervalP95Ms > 0 &&
-        hostIntervalP95Ms > (1000.0 / displayTarget) * 2.4;
+        hostIntervalP95Ms >
+            math.max(1000.0 / displayTarget, expectedFrameIntervalMs) * 1.8;
     final externalPressure =
         !nativeSlow && (displayTickLow || layoutDrawLow || hostIntervalHigh);
 
     final decodePressure = playing && _hasDecodePressure(diagnostics);
+    final presentationTimelineAnomaly =
+        playing && (largeGapDelta > 0 || monotonicViolationCount > 0);
     final cadenceWarning =
         playing &&
-        cadence.hasEnoughSignal &&
-        cadence.ratio > 0 &&
-        cadence.ratio < 0.82;
+        ((cadence.hasEnoughSignal &&
+                cadence.ratio > 0 &&
+                cadence.ratio < 0.82) ||
+            presentationTimelineAnomaly ||
+            hostIntervalHigh);
     final cadenceSevere =
         playing &&
-        cadence.hasEnoughSignal &&
-        cadence.ratio > 0 &&
-        cadence.ratio < 0.58;
+        ((cadence.hasEnoughSignal &&
+                cadence.ratio > 0 &&
+                cadence.ratio < 0.58) ||
+            monotonicViolationCount > 0);
 
     PerformanceHealthLevel level = PerformanceHealthLevel.ok;
     PerformanceHealthKind kind = PerformanceHealthKind.ok;
@@ -229,20 +230,20 @@ class PerformanceHealthSnapshot {
           : PerformanceHealthLevel.warning;
       kind = PerformanceHealthKind.nativeRenderPressure;
       reason = 'native-render';
-    } else if (externalPressure) {
+    } else if (decodePressure) {
       level = PerformanceHealthLevel.warning;
-      kind = PerformanceHealthKind.externalDisplayPressure;
-      reason = 'display-pressure';
+      kind = PerformanceHealthKind.decodePressure;
+      reason = 'decode-buffer';
     } else if (cadenceWarning) {
       level = cadenceSevere
           ? PerformanceHealthLevel.severe
           : PerformanceHealthLevel.warning;
       kind = PerformanceHealthKind.playbackCadencePressure;
       reason = 'playback-cadence';
-    } else if (decodePressure) {
+    } else if (externalPressure) {
       level = PerformanceHealthLevel.warning;
-      kind = PerformanceHealthKind.decodePressure;
-      reason = 'decode-buffer';
+      kind = PerformanceHealthKind.externalDisplayPressure;
+      reason = 'display-pressure';
     }
 
     return PerformanceHealthSnapshot(
@@ -308,8 +309,8 @@ class PerformanceHealthSnapshot {
             : 'Decode buffers are under pressure. Reduce tracks or close heavy media.',
       PerformanceHealthKind.playbackCadencePressure =>
         zh
-            ? '播放呈现帧率低于素材帧率，画面可能卡顿。可打开性能监视器查看 cadence 与解码缓冲。'
-            : 'Presented playback cadence is below the media frame rate. Open the performance monitor to inspect cadence and decode buffers.',
+            ? '播放呈现帧率低于素材帧率，画面可能卡顿。可打开性能监视器查看帧率与解码缓冲。'
+            : 'Presented playback rate is below the media frame rate. Open the performance monitor to inspect frame rate and decode buffers.',
       PerformanceHealthKind.ok => zh ? '播放状态正常。' : 'Playback looks healthy.',
     };
   }
@@ -507,6 +508,7 @@ class PerformanceHealthFeedbackMonitor extends StatefulWidget {
   final bool enabled;
   final int trackCount;
   final bool profilerVisible;
+  final PerformanceAlertPolicy alertPolicy;
   final VoidCallback onOpenProfiler;
   final NativePlayerApi api;
 
@@ -515,6 +517,7 @@ class PerformanceHealthFeedbackMonitor extends StatefulWidget {
     required this.enabled,
     required this.trackCount,
     required this.profilerVisible,
+    this.alertPolicy = PerformanceAlertPolicy.sustained,
     required this.onOpenProfiler,
     this.api = const MethodChannelNativePlayerApi(),
   });
@@ -524,17 +527,64 @@ class PerformanceHealthFeedbackMonitor extends StatefulWidget {
       _PerformanceHealthFeedbackMonitorState();
 }
 
+@visibleForTesting
+class PerformanceHealthFeedbackPolicy {
+  static const pollInterval = Duration(milliseconds: 1500);
+  static const cooldown = Duration(seconds: 45);
+  static const requiredConsecutivePressureSamples = 3;
+
+  int _pressureSamples = 0;
+  DateTime? _lastFeedbackAt;
+
+  int get pressureSamples => _pressureSamples;
+
+  void reset() {
+    _pressureSamples = 0;
+    _lastFeedbackAt = null;
+  }
+
+  bool shouldShow({
+    required PerformanceHealthSnapshot snapshot,
+    required bool profilerVisible,
+    required PerformanceAlertPolicy alertPolicy,
+    required DateTime now,
+  }) {
+    if (alertPolicy == PerformanceAlertPolicy.disabled) {
+      _pressureSamples = 0;
+      return false;
+    }
+    if (!snapshot.isPressure) {
+      _pressureSamples = math.max(0, _pressureSamples - 1);
+      return false;
+    }
+    _pressureSamples += 1;
+    if (_pressureSamples < requiredConsecutivePressureSamples) {
+      return false;
+    }
+    if (profilerVisible) {
+      return false;
+    }
+    final last = _lastFeedbackAt;
+    if (last != null) {
+      if (alertPolicy == PerformanceAlertPolicy.once) {
+        return false;
+      }
+      if (now.difference(last) < cooldown) {
+        return false;
+      }
+    }
+    _lastFeedbackAt = now;
+    return true;
+  }
+}
+
 class _PerformanceHealthFeedbackMonitorState
     extends State<PerformanceHealthFeedbackMonitor> {
-  static const _pollInterval = Duration(milliseconds: 1500);
-  static const _cooldown = Duration(seconds: 45);
-  static const _requiredConsecutivePressureSamples = 3;
-
   Timer? _timer;
   Future<void>? _pollInFlight;
   PerformanceHealthSnapshot? _previous;
-  int _pressureSamples = 0;
-  DateTime? _lastFeedbackAt;
+  final PerformanceHealthFeedbackPolicy _feedbackPolicy =
+      PerformanceHealthFeedbackPolicy();
 
   @override
   void initState() {
@@ -548,7 +598,9 @@ class _PerformanceHealthFeedbackMonitorState
     _syncTimer();
     if (!widget.enabled || widget.trackCount <= 0) {
       _previous = null;
-      _pressureSamples = 0;
+      _feedbackPolicy.reset();
+    } else if (oldWidget.alertPolicy != widget.alertPolicy) {
+      _feedbackPolicy.reset();
     }
   }
 
@@ -569,7 +621,10 @@ class _PerformanceHealthFeedbackMonitorState
       return;
     }
     if (_timer != null) return;
-    _timer = Timer.periodic(_pollInterval, (_) => unawaited(_poll()));
+    _timer = Timer.periodic(
+      PerformanceHealthFeedbackPolicy.pollInterval,
+      (_) => unawaited(_poll()),
+    );
     unawaited(_poll());
   }
 
@@ -595,17 +650,13 @@ class _PerformanceHealthFeedbackMonitorState
       previous: _previous,
     );
     _previous = snapshot;
-    if (!snapshot.isPressure) {
-      _pressureSamples = math.max(0, _pressureSamples - 1);
-      return;
-    }
-    _pressureSamples += 1;
-    if (_pressureSamples < _requiredConsecutivePressureSamples) return;
-    if (widget.profilerVisible) return;
-    final now = DateTime.now();
-    final last = _lastFeedbackAt;
-    if (last != null && now.difference(last) < _cooldown) return;
-    _lastFeedbackAt = now;
+    final shouldShow = _feedbackPolicy.shouldShow(
+      snapshot: snapshot,
+      profilerVisible: widget.profilerVisible,
+      alertPolicy: widget.alertPolicy,
+      now: DateTime.now(),
+    );
+    if (!shouldShow) return;
     final l = AppLocalizations.of(context);
     AppFeedbackScope.read(context).show(
       AppFeedbackMessage(

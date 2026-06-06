@@ -327,6 +327,27 @@
   "viewportPixelSizeFillView": "Prefer filling view",
   "@viewportPixelSizeFillView": { "description": "Viewport pixel size mode: fit each video independently into its view slot" },
 
+  "defaultAudioPlaybackPolicy": "Default track audio",
+  "@defaultAudioPlaybackPolicy": { "description": "Preference label for the initial per-track audio state when media is loaded" },
+
+  "defaultAudioMuted": "Muted",
+  "@defaultAudioMuted": { "description": "Default track audio option: no track plays audio when media is loaded" },
+
+  "defaultAudioPlayFirstTrack": "Play first track",
+  "@defaultAudioPlayFirstTrack": { "description": "Default track audio option: first loaded track plays audio" },
+
+  "performanceAlertPolicy": "Playback performance alerts",
+  "@performanceAlertPolicy": { "description": "Preference label for playback/render stutter snackbar alerts" },
+
+  "performanceAlertOnce": "Only once",
+  "@performanceAlertOnce": { "description": "Performance alert option: show at most one snackbar per session" },
+
+  "performanceAlertSustained": "While pressure continues",
+  "@performanceAlertSustained": { "description": "Performance alert option: show repeated snackbar alerts while pressure continues" },
+
+  "performanceAlertDisabled": "Off",
+  "@performanceAlertDisabled": { "description": "Performance alert option: disable snackbar alerts" },
+
   "cacheMaxLimit": "Maximum cache size (0 = unlimited)",
   "@cacheMaxLimit": { "description": "Analysis cache maximum size setting label" },
 

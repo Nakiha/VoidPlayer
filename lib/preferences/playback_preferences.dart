@@ -59,10 +59,47 @@ enum ViewportPixelSizeMode {
   }
 }
 
+enum DefaultAudioPlaybackPolicy {
+  muted('muted'),
+  playFirstTrack('playFirstTrack');
+
+  const DefaultAudioPlaybackPolicy(this.storageValue);
+
+  final String storageValue;
+
+  static DefaultAudioPlaybackPolicy fromStorage(String value) {
+    return DefaultAudioPlaybackPolicy.values.firstWhere(
+      (policy) => policy.storageValue == value,
+      orElse: () => DefaultAudioPlaybackPolicy.muted,
+    );
+  }
+}
+
+enum PerformanceAlertPolicy {
+  once('once'),
+  sustained('sustained'),
+  disabled('disabled');
+
+  const PerformanceAlertPolicy(this.storageValue);
+
+  final String storageValue;
+
+  bool get enabled => this != PerformanceAlertPolicy.disabled;
+
+  static PerformanceAlertPolicy fromStorage(String value) {
+    return PerformanceAlertPolicy.values.firstWhere(
+      (policy) => policy.storageValue == value,
+      orElse: () => PerformanceAlertPolicy.sustained,
+    );
+  }
+}
+
 abstract class PlaybackPreferences {
   SeekAfterJumpBehavior get seekAfterJumpBehavior;
   DecodeMode get decodeMode;
   ViewportPixelSizeMode get viewportPixelSizeMode;
+  DefaultAudioPlaybackPolicy get defaultAudioPlaybackPolicy;
+  PerformanceAlertPolicy get performanceAlertPolicy;
 
   bool get useHardwareDecode => decodeMode.useHardwareDecode;
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../preferences/playback_preferences.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
 
@@ -30,6 +31,7 @@ class MainWindowStateModel {
   final bool fullScreen;
   final bool fullScreenControlsVisible;
   final int? audibleTrackFileId;
+  final PerformanceAlertPolicy performanceAlertPolicy;
 
   const MainWindowStateModel({
     this.textureId,
@@ -55,6 +57,7 @@ class MainWindowStateModel {
     this.fullScreen = false,
     this.fullScreenControlsVisible = false,
     this.audibleTrackFileId,
+    this.performanceAlertPolicy = PerformanceAlertPolicy.sustained,
   });
 
   MainWindowStateModel copyWith({
@@ -81,6 +84,7 @@ class MainWindowStateModel {
     bool? fullScreen,
     bool? fullScreenControlsVisible,
     Object? audibleTrackFileId = _mainWindowStateUnset,
+    PerformanceAlertPolicy? performanceAlertPolicy,
   }) {
     return MainWindowStateModel(
       textureId: textureId == _mainWindowStateUnset
@@ -118,6 +122,8 @@ class MainWindowStateModel {
       audibleTrackFileId: audibleTrackFileId == _mainWindowStateUnset
           ? this.audibleTrackFileId
           : audibleTrackFileId as int?,
+      performanceAlertPolicy:
+          performanceAlertPolicy ?? this.performanceAlertPolicy,
     );
   }
 }
@@ -289,6 +295,11 @@ class MainWindowStateStore extends ChangeNotifier {
   void setAudibleTrackFileId(int? fileId) {
     if (_value.audibleTrackFileId == fileId) return;
     _set(_value.copyWith(audibleTrackFileId: fileId));
+  }
+
+  void setPerformanceAlertPolicy(PerformanceAlertPolicy policy) {
+    if (_value.performanceAlertPolicy == policy) return;
+    _set(_value.copyWith(performanceAlertPolicy: policy));
   }
 }
 

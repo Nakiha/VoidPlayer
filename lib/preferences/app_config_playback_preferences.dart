@@ -18,5 +18,13 @@ class AppConfigPlaybackPreferences implements PlaybackPreferences {
       settings.viewportPixelSizeMode;
 
   @override
+  DefaultAudioPlaybackPolicy get defaultAudioPlaybackPolicy =>
+      settings.defaultAudioPlaybackPolicy;
+
+  @override
+  PerformanceAlertPolicy get performanceAlertPolicy =>
+      settings.performanceAlertPolicy;
+
+  @override
   bool get useHardwareDecode => decodeMode.useHardwareDecode;
 }

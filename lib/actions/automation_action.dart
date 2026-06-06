@@ -30,6 +30,14 @@ class CaptureFlutterAction extends AutomationAction {
     : super('CAPTURE_FLUTTER');
 }
 
+class CaptureWindowAction extends AutomationAction {
+  final String nameId;
+  final String? outputPath;
+
+  const CaptureWindowAction(this.nameId, {this.outputPath})
+    : super('CAPTURE_WINDOW');
+}
+
 class WindowMaximize extends AutomationAction {
   const WindowMaximize() : super('WINDOW_MAXIMIZE');
 }

@@ -162,7 +162,7 @@ FloatingActionButton(
 | 类别 | 指令 | 说明 |
 |------|------|------|
 | Action | `PLAY`, `PAUSE`, `SEEK_TO ptsUs`, `CLICK_TIMELINE_FRACTION fraction`, `SET_SPEED speed`, ... | 对应 PlayerAction，调用 controller 或真实 UI 交互路径 |
-| Automation | `SET_RENDER_SIZE width height`, `CAPTURE_VIEWPORT name`, `WINDOW_MAXIMIZE`, ... | release UI automation 专用命令，不注册快捷键 |
+| Automation | `SET_RENDER_SIZE width height`, `CAPTURE_VIEWPORT name`, `CAPTURE_WINDOW name`, `WINDOW_MAXIMIZE`, ... | release UI automation 专用命令，不注册快捷键 |
 | Wait | `WAIT_PLAYING timeoutMs`, `WAIT_PAUSED timeoutMs` | 轮询状态直到满足或超时 |
 | Assert | `ASSERT_PLAYING`, `ASSERT_POSITION ptsUs toleranceMs`, ... | 断言当前状态，失败则 throw |
 | Control | `QUIT exitCode` | 退出测试 |

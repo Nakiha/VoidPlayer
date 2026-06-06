@@ -152,6 +152,10 @@ class NativePlayerController {
     return _api.captureViewport(outputPath: outputPath);
   }
 
+  Future<ViewportCapture> captureWindow({String? outputPath}) {
+    return _api.captureWindow(outputPath: outputPath);
+  }
+
   Future<void> stepForward() {
     if (!_hasPlayerForCommand()) return Future.value();
     return _api.stepForward();

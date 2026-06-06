@@ -194,6 +194,17 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<ViewportCapture> captureWindow({String? outputPath}) async {
+    return const ViewportCapture(
+      hash: 'window-hash',
+      width: 1,
+      height: 1,
+      avgLuma: 1,
+      nonBlackRatio: 1,
+    );
+  }
+
+  @override
   Future<void> stepForward() async {}
 
   @override

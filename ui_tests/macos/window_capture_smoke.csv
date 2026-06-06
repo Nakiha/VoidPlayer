@@ -1,0 +1,9 @@
+# macOS runner smoke for platform final-window capture.
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/window_capture_smoke.csv
+@WINDOW, 960, 540
+0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.4, ASSERT_TRACK_COUNT, 1
+1.6, CAPTURE_WINDOW, macos_window, build/macos_window_capture.png
+1.7, ASSERT_CAPTURE_NOT_BLACK, macos_window, 0.01, 4.0
+2.0, QUIT, 0

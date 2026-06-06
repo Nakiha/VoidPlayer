@@ -190,7 +190,12 @@ void VideoRendererPlugin::RegisterWithRegistrar(
         adapter = view->GetGraphicsAdapter();
     }
 
-    auto plugin = std::make_unique<VideoRendererPlugin>(registrar, texture_registrar, adapter);
+    HWND window_handle = nullptr;
+    if (view) {
+        window_handle = view->GetNativeWindow();
+    }
+    auto plugin = std::make_unique<VideoRendererPlugin>(
+        registrar, texture_registrar, adapter, window_handle);
 
     channel->SetMethodCallHandler(
         [plugin_ptr = plugin.get()](const auto& call, auto result) {
@@ -218,9 +223,11 @@ void VideoRendererPlugin::RegisterWithRegistrar(
 VideoRendererPlugin::VideoRendererPlugin(
     flutter::PluginRegistrarWindows*,
     flutter::TextureRegistrar* texture_registrar,
-    IDXGIAdapter* dxgi_adapter)
+    IDXGIAdapter* dxgi_adapter,
+    HWND window_handle)
     : texture_bridge_(texture_registrar),
-      diagnostics_session_(std::make_shared<NativeDiagnosticsSession>()) {
+      diagnostics_session_(std::make_shared<NativeDiagnosticsSession>()),
+      window_handle_(window_handle) {
     RegisterMethodHandlers();
     GlobalNativeDiagnosticsSessionRegistry().Publish(diagnostics_session_);
 
@@ -403,6 +410,11 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
         "captureViewport",
         [this](const MethodCall& call, MethodResultPtr result) {
             CaptureViewport(call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
+        "captureWindow",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            CaptureWindow(call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
         "getLayout",
@@ -1413,6 +1425,60 @@ void VideoRendererPlugin::CaptureViewport(
         ReportMethodException(result.get(), "captureViewport", e);
     } catch (...) {
         ReportUnknownMethodException(result.get(), "captureViewport");
+    }
+}
+
+void VideoRendererPlugin::CaptureWindow(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    try {
+        std::string output_path;
+        if (arguments) {
+            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+            if (args) {
+                auto it = args->find(flutter::EncodableValue("outputPath"));
+                if (it != args->end() && !read_string_arg(it->second, output_path)) {
+                    result->Error("BAD_ARGS", "outputPath must be a string");
+                    return;
+                }
+            }
+        }
+
+        WindowCaptureResult capture;
+        const auto capture_status =
+            window_capture_.Capture(window_handle_, output_path, capture);
+        if (capture_status == WindowCaptureStatus::InvalidWindow) {
+            result->Error("NO_WINDOW", "Window handle is unavailable");
+            return;
+        }
+        if (capture_status == WindowCaptureStatus::CaptureFailed) {
+            result->Error("CAPTURE_FAILED", "Failed to capture window");
+            return;
+        }
+        if (capture_status == WindowCaptureStatus::SaveFailed) {
+            result->Error("CAPTURE_SAVE_FAILED", "Failed to save window PNG");
+            return;
+        }
+
+        flutter::EncodableMap map;
+        map[flutter::EncodableValue("hash")] = flutter::EncodableValue(capture.hash);
+        map[flutter::EncodableValue("width")] = flutter::EncodableValue(capture.width);
+        map[flutter::EncodableValue("height")] = flutter::EncodableValue(capture.height);
+        map[flutter::EncodableValue("avgLuma")] = flutter::EncodableValue(capture.avg_luma);
+        map[flutter::EncodableValue("nonBlackRatio")] =
+            flutter::EncodableValue(capture.non_black_ratio);
+        if (!capture.output_path.empty()) {
+            map[flutter::EncodableValue("outputPath")] =
+                flutter::EncodableValue(capture.output_path);
+        }
+        result->Success(flutter::EncodableValue(map));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "captureWindow", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "captureWindow", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "captureWindow");
     }
 }
 

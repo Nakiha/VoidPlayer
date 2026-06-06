@@ -15,6 +15,7 @@
 #include "native_player_registry.h"
 #include "renderer_event_bridge.h"
 #include "viewport_capture_service.h"
+#include "window_capture_service.h"
 
 #include <cstdint>
 #include <memory>
@@ -30,7 +31,8 @@ public:
 
     VideoRendererPlugin(flutter::PluginRegistrarWindows* registrar,
                         flutter::TextureRegistrar* texture_registrar,
-                        IDXGIAdapter* dxgi_adapter);
+                        IDXGIAdapter* dxgi_adapter,
+                        HWND window_handle);
     ~VideoRendererPlugin() override;
 
     VideoRendererPlugin(const VideoRendererPlugin&) = delete;
@@ -107,6 +109,9 @@ private:
     void CaptureViewport(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void CaptureWindow(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void GetLayout(
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void SetEventSink(std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
@@ -123,4 +128,6 @@ private:
     FilePickerService file_picker_;
     NativeLoggingBootstrap logging_bootstrap_;
     ViewportCaptureService viewport_capture_;
+    WindowCaptureService window_capture_;
+    HWND window_handle_ = nullptr;
 };

@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
+
+import 'package:path/path.dart' as p;
 
 import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
@@ -191,7 +194,7 @@ class TestRunner {
         await controller.resize(width, height);
       case CaptureViewportAction(:final nameId, :final outputPath):
         final capture = await controller.captureViewport(
-          outputPath: outputPath,
+          outputPath: _resolveCaptureOutputPath(outputPath),
         );
         _state.captures[nameId] = capture;
         log.info(
@@ -202,11 +205,22 @@ class TestRunner {
         );
       case CaptureFlutterAction(:final nameId, :final outputPath):
         final capture = await testHarness.captureFlutterFrame(
-          outputPath: outputPath,
+          outputPath: _resolveCaptureOutputPath(outputPath),
         );
         _state.captures[nameId] = capture;
         log.info(
           'TestRunner: CAPTURE_FLUTTER $nameId hash=${capture.hash} ${capture.width}x${capture.height}'
+          ' avgLuma=${capture.avgLuma.toStringAsFixed(2)}'
+          ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
+          '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
+        );
+      case CaptureWindowAction(:final nameId, :final outputPath):
+        final capture = await controller.captureWindow(
+          outputPath: _resolveCaptureOutputPath(outputPath),
+        );
+        _state.captures[nameId] = capture;
+        log.info(
+          'TestRunner: CAPTURE_WINDOW $nameId hash=${capture.hash} ${capture.width}x${capture.height}'
           ' avgLuma=${capture.avgLuma.toStringAsFixed(2)}'
           ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
           '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
@@ -370,6 +384,16 @@ class TestRunner {
           'TestRunner: CLEAR_ANALYSIS_CHUNKS cleared ${result.deletedCount} cache entrie(s)',
         );
     }
+  }
+
+  String? _resolveCaptureOutputPath(String? outputPath) {
+    if (outputPath == null || outputPath.trim().isEmpty) {
+      return outputPath;
+    }
+    if (!Platform.isMacOS || p.isAbsolute(outputPath)) {
+      return outputPath;
+    }
+    return p.join(File(scriptPath).parent.path, outputPath);
   }
 
   MainWindowTestHarness get testHarness => automation.testHarness;

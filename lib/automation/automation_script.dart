@@ -390,6 +390,18 @@ ScriptInstruction? _parseInstruction(
           outputPath: args.length >= 2 ? args[1] : null,
         ),
       );
+    case 'CAPTURE_WINDOW':
+      if (args.isEmpty) {
+        log.warning('CAPTURE_WINDOW needs a capture name: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        CaptureWindowAction(
+          args[0],
+          outputPath: args.length >= 2 ? args[1] : null,
+        ),
+      );
     case 'WINDOW_MAXIMIZE':
       return ScriptAutomationAction(time, const WindowMaximize());
     case 'WINDOW_RESTORE':

@@ -28,6 +28,7 @@ abstract interface class NativePlayerApi {
   Future<void> resize({required int width, required int height});
   Future<void> setViewportBackgroundColor(int colorValue);
   Future<ViewportCapture> captureViewport({String? outputPath});
+  Future<ViewportCapture> captureWindow({String? outputPath});
   Future<void> stepForward();
   Future<void> stepBackward();
   Future<int> currentPts();
@@ -163,6 +164,21 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     );
     return ViewportCapture.fromMap(
       NativePlayerPayloads.requireMap(map, NativePlayerMethods.captureViewport),
+    );
+  }
+
+  @override
+  Future<ViewportCapture> captureWindow({String? outputPath}) async {
+    final args = <String, dynamic>{};
+    if (outputPath != null) {
+      args[NativePlayerKeys.outputPath] = outputPath;
+    }
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      NativePlayerMethods.captureWindow,
+      args,
+    );
+    return ViewportCapture.fromMap(
+      NativePlayerPayloads.requireMap(map, NativePlayerMethods.captureWindow),
     );
   }
 

@@ -204,6 +204,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       ))
     case "captureViewport":
       result(MacOSViewportCapture.capture(texture: texture))
+    case "captureWindow":
+      result(MacOSViewportCapture.captureWindow(arguments: call.arguments))
     default:
       result(FlutterMethodNotImplemented)
     }

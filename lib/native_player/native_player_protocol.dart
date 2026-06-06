@@ -19,6 +19,7 @@ class NativePlayerMethods {
   static const resize = 'resize';
   static const setViewportBackgroundColor = 'setViewportBackgroundColor';
   static const captureViewport = 'captureViewport';
+  static const captureWindow = 'captureWindow';
   static const stepForward = 'stepForward';
   static const stepBackward = 'stepBackward';
   static const currentPts = 'currentPts';

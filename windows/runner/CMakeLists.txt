@@ -20,6 +20,7 @@ add_executable(${BINARY_NAME} WIN32
   "utils.cpp"
   "win32_window.cpp"
   "viewport_capture_service.cpp"
+  "window_capture_service.cpp"
   "video_renderer_plugin.cpp"
   "analysis_ffi.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"

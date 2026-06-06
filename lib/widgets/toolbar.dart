@@ -37,6 +37,13 @@ class AppToolBar extends StatelessWidget {
   final bool networkMediaAvailable;
   final bool sshRemoteMediaAvailable;
   final bool nativeFilePickerAvailable;
+  final bool canAddTrack;
+  final bool canOpenLocalMedia;
+  final bool canOpenNetworkMedia;
+  final bool canOpenSshMedia;
+  final bool canOpenMediaInfo;
+  final bool canOpenProfiler;
+  final bool canRunAnalysis;
   final bool analysisEnabled;
   final bool mediaInfoActive;
   final bool profilerActive;
@@ -60,6 +67,13 @@ class AppToolBar extends StatelessWidget {
     this.networkMediaAvailable = true,
     this.sshRemoteMediaAvailable = true,
     this.nativeFilePickerAvailable = true,
+    this.canAddTrack = true,
+    this.canOpenLocalMedia = true,
+    this.canOpenNetworkMedia = true,
+    this.canOpenSshMedia = true,
+    this.canOpenMediaInfo = true,
+    this.canOpenProfiler = true,
+    this.canRunAnalysis = true,
     this.analysisEnabled = false,
     this.mediaInfoActive = false,
     this.profilerActive = false,
@@ -86,9 +100,14 @@ class AppToolBar extends StatelessWidget {
           const Spacer(),
           _AddMediaButton(
             localFileEnabled:
-                localFilePlaybackAvailable && nativeFilePickerAvailable,
-            networkMediaEnabled: networkMediaAvailable,
-            sshRemoteMediaEnabled: sshRemoteMediaAvailable,
+                canAddTrack &&
+                canOpenLocalMedia &&
+                localFilePlaybackAvailable &&
+                nativeFilePickerAvailable,
+            networkMediaEnabled:
+                canAddTrack && canOpenNetworkMedia && networkMediaAvailable,
+            sshRemoteMediaEnabled:
+                canAddTrack && canOpenSshMedia && sshRemoteMediaAvailable,
             disabledTooltip: 'Playback is not available on this platform yet.',
             onOpenFile: onOpenFile,
             onOpenNetworkMedia: onOpenNetworkMedia,
@@ -97,7 +116,7 @@ class AppToolBar extends StatelessWidget {
           const SizedBox(width: 4),
           _ToolbarToggleButton(
             active: mediaInfoActive,
-            enabled: tracks.isNotEmpty,
+            enabled: canOpenMediaInfo && tracks.isNotEmpty,
             onPressed: onMediaInfo,
             icon: Icons.info_outline,
             tooltip: AppLocalizations.of(context)!.mediaInfo,
@@ -106,7 +125,7 @@ class AppToolBar extends StatelessWidget {
           // Profiler button
           _ToolbarToggleButton(
             active: profilerActive,
-            enabled: tracks.isNotEmpty,
+            enabled: canOpenProfiler && tracks.isNotEmpty,
             onPressed: onProfiler,
             icon: Icons.speed,
             tooltip: AppLocalizations.of(context)!.performanceMonitor,
@@ -114,7 +133,7 @@ class AppToolBar extends StatelessWidget {
           const SizedBox(width: 4),
           // Analysis button
           _AnalysisButton(
-            enabled: analysisEnabled,
+            enabled: canRunAnalysis && analysisEnabled,
             tracks: tracks,
             dataSource: analysisDataSource,
             onPressed: onAnalysis,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../analysis/analysis_overlay.dart';
 import '../../analysis/analysis_toolbar_data_source.dart';
 import '../../preferences/playback_preferences.dart';
+import '../../session/playback_session.dart';
 import '../../track_manager.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
@@ -12,6 +13,7 @@ import 'main_window_state.dart';
 
 class MainWindowViewModel {
   final GlobalKey fullFrameCaptureKey;
+  final MainWindowSessionVm session;
   final MainWindowViewportVm viewport;
   final MainWindowMediaVm media;
   final MainWindowPlaybackVm playback;
@@ -19,11 +21,32 @@ class MainWindowViewModel {
 
   const MainWindowViewModel({
     required this.fullFrameCaptureKey,
+    required this.session,
     required this.viewport,
     required this.media,
     required this.playback,
     required this.overlays,
   });
+}
+
+class MainWindowSessionVm {
+  final PlaybackSessionKind kind;
+  final SessionCapabilities capabilities;
+  final SessionRangeConstraint rangeConstraint;
+
+  const MainWindowSessionVm({
+    required this.kind,
+    required this.capabilities,
+    required this.rangeConstraint,
+  });
+
+  factory MainWindowSessionVm.fromSession(PlaybackSession session) {
+    return MainWindowSessionVm(
+      kind: session.kind,
+      capabilities: session.capabilities,
+      rangeConstraint: session.rangeConstraint,
+    );
+  }
 }
 
 class MainWindowViewportVm {

@@ -7,6 +7,7 @@ import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
+import 'package:void_player/session/playback_session.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/media_header.dart';
@@ -61,6 +62,7 @@ Widget _localized(Widget child) => MaterialApp(
 MainWindowViewModel _model({required bool settingsVisible}) =>
     MainWindowViewModel(
       fullFrameCaptureKey: GlobalKey(),
+      session: MainWindowSessionVm.fromSession(const PlaybackSession.normal()),
       viewport: MainWindowViewportVm(
         viewMode: 0,
         viewModeEnabled: true,

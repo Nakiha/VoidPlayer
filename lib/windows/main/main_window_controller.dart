@@ -15,6 +15,7 @@ import '../../platform/native_file_picker.dart';
 import '../../platform/platform_capabilities.dart';
 import '../../preferences/app_config_playback_preferences.dart';
 import '../../preferences/playback_preferences.dart';
+import '../../session/playback_session.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
@@ -49,6 +50,7 @@ class MainWindowController {
   final NativePlayerController player = NativePlayerController();
   final TrackManager trackManager = TrackManager();
   final MainWindowStateStore stateStore = MainWindowStateStore();
+  final PlaybackSession _session = const PlaybackSession.normal();
   late final MainWindowTimelineMetrics timelineMetrics =
       MainWindowTimelineMetrics(
         stateStore: stateStore,
@@ -171,6 +173,7 @@ class MainWindowController {
   MainWindowViewModel get viewModel {
     return MainWindowViewModel(
       fullFrameCaptureKey: fullFrameCaptureKey,
+      session: MainWindowSessionVm.fromSession(_session),
       viewport: MainWindowViewportVm(
         viewMode: _layout.mode,
         viewModeEnabled: _textureId != null,
@@ -248,24 +251,58 @@ class MainWindowController {
       ),
       toolbar: MainWindowToolbarActions(
         onViewModeChanged: (mode) {
+          if (!_capabilities.canChangeViewMode) return;
           layoutCoordinator.setLayoutMode(mode);
         },
-        onOpenFile: mediaCoordinator.openFile,
-        onOpenNetworkMedia: mediaCoordinator.addNetworkMedia,
-        onOpenSshRemoteMedia: mediaCoordinator.addSshRemoteMedia,
+        onOpenFile: () {
+          if (!_capabilities.canOpenLocalMedia || !_capabilities.canAddTrack) {
+            return Future<void>.value();
+          }
+          return mediaCoordinator.openFile();
+        },
+        onOpenNetworkMedia: (url) {
+          if (!_capabilities.canOpenNetworkMedia ||
+              !_capabilities.canAddTrack) {
+            return Future<void>.value();
+          }
+          return mediaCoordinator.addNetworkMedia(url);
+        },
+        onOpenSshRemoteMedia: (remotePath) {
+          if (!_capabilities.canOpenSshMedia || !_capabilities.canAddTrack) {
+            return Future<void>.value();
+          }
+          return mediaCoordinator.addSshRemoteMedia(remotePath);
+        },
         onMediaInfo: () {
-          if (trackManager.isEmpty) return;
+          if (!_capabilities.canOpenMediaInfo || trackManager.isEmpty) return;
           stateStore.setMediaInfoVisible(!_mediaInfoVisible);
         },
-        onAnalysis: analysisCoordinator.triggerAnalysis,
-        onAnalysisOverlayPanelToggle: analysisCoordinator.toggleOverlayPanel,
-        onProfiler: () => stateStore.setProfilerVisible(!_profilerVisible),
+        onAnalysis: () {
+          if (!_capabilities.canRunAnalysis) return Future<void>.value();
+          return analysisCoordinator.triggerAnalysis();
+        },
+        onAnalysisOverlayPanelToggle: () {
+          if (!_capabilities.canShowAnalysisOverlay) {
+            return Future<void>.value();
+          }
+          return analysisCoordinator.toggleOverlayPanel();
+        },
+        onProfiler: () {
+          if (!_capabilities.canOpenProfiler) return;
+          stateStore.setProfilerVisible(!_profilerVisible);
+        },
         onSettings: () => stateStore.setSettingsVisible(!_settingsVisible),
       ),
       viewport: MainWindowViewportActions(
-        onPan: layoutCoordinator.onPan,
+        onPan: (delta) {
+          if (!_capabilities.canPanViewport) return;
+          layoutCoordinator.onPan(delta);
+        },
         onSplit: layoutCoordinator.onSplit,
-        onZoom: layoutCoordinator.onZoom,
+        onZoom: (factor, localPos) {
+          if (!_capabilities.canZoomViewport) return;
+          layoutCoordinator.onZoom(factor, localPos);
+        },
         onPointerButton: layoutCoordinator.onPointerButton,
         onResize: (width, height, devicePixelRatio) =>
             layoutCoordinator.onViewportResize(
@@ -276,16 +313,28 @@ class MainWindowController {
             ),
       ),
       mediaTimeline: MainWindowMediaTimelineActions(
-        onMediaSwapped: mediaCoordinator.onMediaSwapped,
-        onRemoveTrack: mediaCoordinator.removeTrack,
-        onZoomChanged: layoutCoordinator.onZoomComboChanged,
+        onMediaSwapped: (slotIndex, targetTrackIndex) {
+          if (!_capabilities.canReorderTrack) return;
+          mediaCoordinator.onMediaSwapped(slotIndex, targetTrackIndex);
+        },
+        onRemoveTrack: (fileId) {
+          if (!_capabilities.canRemoveTrack) return;
+          mediaCoordinator.removeTrack(fileId);
+        },
+        onZoomChanged: (value) {
+          if (!_capabilities.canZoomViewport) return;
+          layoutCoordinator.onZoomComboChanged(value);
+        },
         onToggleFullScreen: _toggleFullScreen,
         onTogglePlay: playbackCoordinator.togglePlayPause,
         onStepForward: () =>
             fireAndLog('step forward', playbackCoordinator.stepForward()),
         onStepBackward: () =>
             fireAndLog('step backward', playbackCoordinator.stepBackward()),
-        onSeek: playbackCoordinator.seekTo,
+        onSeek: (ptsUs) {
+          if (!_capabilities.canSeek) return;
+          playbackCoordinator.seekTo(ptsUs);
+        },
         onSliderHover: playbackCoordinator.onSliderHover,
         onLoopRangeEnabledChanged: (enabled) => fireAndLog(
           'set loop range enabled',
@@ -301,9 +350,18 @@ class MainWindowController {
             ),
           );
         },
-        onReorder: trackManager.moveTrack,
-        onOffsetChanged: mediaCoordinator.onOffsetChanged,
-        onToggleTrackAudio: _toggleTrackAudio,
+        onReorder: (oldIndex, newIndex) {
+          if (!_capabilities.canReorderTrack) return;
+          trackManager.moveTrack(oldIndex, newIndex);
+        },
+        onOffsetChanged: (slot, offsetMs) {
+          if (!_capabilities.canAdjustTrackOffset) return;
+          mediaCoordinator.onOffsetChanged(slot, offsetMs);
+        },
+        onToggleTrackAudio: (fileId) {
+          if (!_capabilities.canToggleTrackAudio) return;
+          _toggleTrackAudio(fileId);
+        },
         onControlsWidthChanged: stateStore.setTimelineControlsWidth,
       ),
       analysisOverlay: MainWindowAnalysisOverlayActions(
@@ -544,6 +602,7 @@ class MainWindowController {
       showSettingsDialog: () => stateStore.setSettingsVisible(true),
       toggleFullScreen: _toggleFullScreen,
       exitFullScreen: _exitFullScreen,
+      capabilities: () => _capabilities,
     );
   }
 
@@ -628,6 +687,7 @@ class MainWindowController {
   int? get _audibleTrackFileId => _state.audibleTrackFileId;
   PerformanceAlertPolicy get _performanceAlertPolicy =>
       _state.performanceAlertPolicy;
+  SessionCapabilities get _capabilities => _session.capabilities;
   double get _timelineStartWidth => playbackCoordinator.timelineStartWidth;
   int get _resolvedLoopStartUs => playbackCoordinator.resolvedLoopStartUs;
   int get _resolvedLoopEndUs => playbackCoordinator.resolvedLoopEndUs;

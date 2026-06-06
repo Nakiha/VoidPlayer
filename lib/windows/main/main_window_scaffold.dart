@@ -28,6 +28,7 @@ class MainWindowScaffold extends StatelessWidget {
     final viewport = model.viewport;
     final media = model.media;
     final overlays = model.overlays;
+    final capabilities = model.session.capabilities;
     final toolbarActions = actions.toolbar;
     final viewportActions = actions.viewport;
     final overlayActions = actions.overlays;
@@ -60,7 +61,9 @@ class MainWindowScaffold extends StatelessWidget {
                       onSettings: toolbarActions.onSettings,
                       tracks: media.tracks,
                       analysisDataSource: media.analysisDataSource,
-                      viewModeEnabled: viewport.viewModeEnabled,
+                      viewModeEnabled:
+                          capabilities.canChangeViewMode &&
+                          viewport.viewModeEnabled,
                       nativePlaybackAvailable: media.nativePlaybackAvailable,
                       localFilePlaybackAvailable:
                           media.localFilePlaybackAvailable,
@@ -68,6 +71,13 @@ class MainWindowScaffold extends StatelessWidget {
                       sshRemoteMediaAvailable: media.sshRemoteMediaAvailable,
                       nativeFilePickerAvailable:
                           media.nativeFilePickerAvailable,
+                      canAddTrack: capabilities.canAddTrack,
+                      canOpenLocalMedia: capabilities.canOpenLocalMedia,
+                      canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
+                      canOpenSshMedia: capabilities.canOpenSshMedia,
+                      canOpenMediaInfo: capabilities.canOpenMediaInfo,
+                      canOpenProfiler: capabilities.canOpenProfiler,
+                      canRunAnalysis: capabilities.canRunAnalysis,
                       analysisEnabled: media.analysisEnabled,
                       mediaInfoActive: overlays.mediaInfoVisible,
                       profilerActive: overlays.profilerVisible,

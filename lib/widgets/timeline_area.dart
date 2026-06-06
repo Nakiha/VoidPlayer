@@ -17,6 +17,10 @@ class TimelineArea extends StatefulWidget {
   final ValueChanged<int> onToggleTrackAudio;
   final int? audibleTrackFileId;
   final ValueChanged<int> onRemoveTrack;
+  final bool canRemoveTrack;
+  final bool canReorderTrack;
+  final bool canAdjustTrackOffset;
+  final bool canToggleTrackAudio;
   final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final int maxEffectiveDurationUs;
   final int hoverPtsUs;
@@ -37,6 +41,10 @@ class TimelineArea extends StatefulWidget {
     required this.onToggleTrackAudio,
     this.audibleTrackFileId,
     required this.onRemoveTrack,
+    this.canRemoveTrack = true,
+    this.canReorderTrack = true,
+    this.canAdjustTrackOffset = true,
+    this.canToggleTrackAudio = true,
     this.syncOffsets = const {},
     this.maxEffectiveDurationUs = 0,
     this.hoverPtsUs = 0,
@@ -69,7 +77,7 @@ class _TimelineAreaState extends State<TimelineArea> {
             buildDefaultDragHandles: false,
             padding: EdgeInsets.zero,
             itemCount: widget.entries.length,
-            onReorder: widget.onReorder,
+            onReorder: widget.canReorderTrack ? widget.onReorder : (_, _) {},
             itemBuilder: (context, index) {
               final entry = widget.entries[index];
               final trackDuration = entry.info.durationUs;
@@ -115,6 +123,10 @@ class _TimelineAreaState extends State<TimelineArea> {
                 onOffsetChanged: (delta) =>
                     widget.onOffsetChanged(entry.fileId, delta),
                 onToggleAudio: () => widget.onToggleTrackAudio(entry.fileId),
+                canRemove: widget.canRemoveTrack,
+                canReorder: widget.canReorderTrack,
+                canAdjustOffset: widget.canAdjustTrackOffset,
+                canToggleAudio: widget.canToggleTrackAudio,
                 isAudible: widget.audibleTrackFileId == entry.fileId,
                 syncOffsetMs: offsetUs ~/ 1000,
                 controlsWidth: widget.controlsWidth,

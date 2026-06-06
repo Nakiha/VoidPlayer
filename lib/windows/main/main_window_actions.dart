@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../../actions/action_registry.dart';
 import '../../actions/player_action.dart';
+import '../../session/playback_session.dart';
 import '../../video_renderer_controller.dart';
 import 'main_window_analysis.dart';
 import 'main_window_layout.dart';
@@ -23,6 +24,7 @@ class MainWindowActionCoordinator {
   final void Function() showSettingsDialog;
   final void Function() toggleFullScreen;
   final void Function() exitFullScreen;
+  final SessionCapabilities Function() capabilities;
 
   MainWindowActionBinder? _binder;
 
@@ -40,12 +42,14 @@ class MainWindowActionCoordinator {
     required this.showSettingsDialog,
     required this.toggleFullScreen,
     required this.exitFullScreen,
+    required this.capabilities,
   });
 
   void bind() {
     _binder?.unbind();
     _binder = MainWindowActionBinder(
       actionRegistry: actionRegistry,
+      capabilities: capabilities,
       togglePlayPause: playbackCoordinator.togglePlayPause,
       play: playbackCoordinator.play,
       pause: playbackCoordinator.pause,
@@ -100,6 +104,7 @@ class MainWindowActionCoordinator {
 
 class MainWindowActionBinder {
   final ActionRegistry actionRegistry;
+  final SessionCapabilities Function() capabilities;
   final void Function() togglePlayPause;
   final Future<void> Function() play;
   final Future<void> Function() pause;
@@ -146,6 +151,7 @@ class MainWindowActionBinder {
 
   MainWindowActionBinder({
     required this.actionRegistry,
+    required this.capabilities,
     required this.togglePlayPause,
     required this.play,
     required this.pause,
@@ -188,6 +194,7 @@ class MainWindowActionBinder {
     _bind(const StepForward(), (_) => stepForward());
     _bind(const StepBackward(), (_) => stepBackward());
     _bind(const SeekTo(0), (action) {
+      if (!capabilities().canSeek) return Future<void>.value();
       final a = action as SeekTo;
       return seekTo(a.ptsUs);
     });
@@ -200,28 +207,49 @@ class MainWindowActionBinder {
       setSpeed(a.speed);
     });
 
-    _bind(const OpenFile(), (_) => openFile());
+    _bind(const OpenFile(), (_) {
+      final caps = capabilities();
+      if (!caps.canOpenLocalMedia || !caps.canAddTrack) {
+        return Future<void>.value();
+      }
+      return openFile();
+    });
     _bind(const AddMedia(''), (action) {
+      final caps = capabilities();
+      if (!caps.canOpenLocalMedia || !caps.canAddTrack) return;
       final a = action as AddMedia;
       addMediaByPath(a.path);
     });
     _bind(const AddNetworkMedia(''), (action) {
+      final caps = capabilities();
+      if (!caps.canOpenNetworkMedia || !caps.canAddTrack) {
+        return Future<void>.value();
+      }
       final a = action as AddNetworkMedia;
       return addNetworkMedia(a.url);
     });
     _bind(const AddSshMedia(''), (action) {
+      final caps = capabilities();
+      if (!caps.canOpenSshMedia || !caps.canAddTrack) {
+        return Future<void>.value();
+      }
       final a = action as AddSshMedia;
       return addSshRemoteMedia(a.remotePath);
     });
     _bind(const RemoveTrackAction(0), (action) {
+      if (!capabilities().canRemoveTrack) return Future<void>.value();
       final a = action as RemoveTrackAction;
       return removeTrack(a.fileId);
     });
     _bind(const SwapMediaHeader(0, 0), (action) {
+      if (!capabilities().canReorderTrack) return;
       final a = action as SwapMediaHeader;
       swapMediaHeader(a.slotIndex, a.targetTrackIndex);
     });
     _bind(const AdjustTrackOffset(0, 0), (action) {
+      if (!capabilities().canAdjustTrackOffset) {
+        return Future<void>.value();
+      }
       final a = action as AdjustTrackOffset;
       return adjustTrackOffset(a.slot, a.deltaMs);
     });
@@ -247,12 +275,17 @@ class MainWindowActionBinder {
       dragSplitHandle(a.targetFraction, steps: a.steps);
     });
 
-    _bind(const ToggleLayoutMode(), (_) => toggleLayoutMode());
+    _bind(const ToggleLayoutMode(), (_) {
+      if (!capabilities().canChangeViewMode) return;
+      toggleLayoutMode();
+    });
     _bind(const SetLayoutMode(0), (action) {
+      if (!capabilities().canChangeViewMode) return;
       final a = action as SetLayoutMode;
       setLayoutMode(a.mode);
     });
     _bind(const SetZoom(1.0), (action) {
+      if (!capabilities().canZoomViewport) return;
       final a = action as SetZoom;
       setZoom(a.ratio);
     });
@@ -261,6 +294,7 @@ class MainWindowActionBinder {
       setSplitPos(a.position);
     });
     _bind(const Pan(0, 0), (action) {
+      if (!capabilities().canPanViewport) return;
       final a = action as Pan;
       panByDelta(a.dx, a.dy);
     });
@@ -268,10 +302,22 @@ class MainWindowActionBinder {
     _bind(const ExitFullScreen(), (_) => exitFullScreen());
 
     _bind(const OpenSettings(), (_) => openSettings());
-    _bind(const OpenMediaInfo(), (_) => openMediaInfo());
-    _bind(const OpenStats(), (_) => openStats());
-    _bind(const OpenMemory(), (_) => openMemory());
-    _bind(const RunAnalysis(), (_) => runAnalysis());
+    _bind(const OpenMediaInfo(), (_) {
+      if (!capabilities().canOpenMediaInfo) return;
+      openMediaInfo();
+    });
+    _bind(const OpenStats(), (_) {
+      if (!capabilities().canOpenProfiler) return;
+      openStats();
+    });
+    _bind(const OpenMemory(), (_) {
+      if (!capabilities().canOpenProfiler) return;
+      openMemory();
+    });
+    _bind(const RunAnalysis(), (_) {
+      if (!capabilities().canRunAnalysis) return Future<void>.value();
+      return runAnalysis();
+    });
   }
 
   void unbind() {

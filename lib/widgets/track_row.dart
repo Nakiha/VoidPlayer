@@ -12,7 +12,8 @@ const double _lightAlternateRowOverlayOpacity = 0.035;
 /// Drag handle with hover highlight and grab cursor.
 class _DragHandle extends StatefulWidget {
   final int index;
-  const _DragHandle({required this.index});
+  final bool enabled;
+  const _DragHandle({required this.index, this.enabled = true});
 
   @override
   State<_DragHandle> createState() => _DragHandleState();
@@ -25,28 +26,35 @@ class _DragHandleState extends State<_DragHandle> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return MouseRegion(
-      cursor: SystemMouseCursors.grab,
+      cursor: widget.enabled
+          ? SystemMouseCursors.grab
+          : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
       child: ReorderableDragStartListener(
+        enabled: widget.enabled,
         index: widget.index,
-        child: AnimatedContainer(
+        child: AnimatedOpacity(
+          opacity: widget.enabled ? 1.0 : 0.38,
           duration: const Duration(milliseconds: 150),
-          width: 28,
-          height: 32,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: _hovering
-                ? colorScheme.onSurface.withValues(alpha: 0.08)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Icon(
-            Icons.drag_indicator,
-            size: 16,
-            color: _hovering
-                ? colorScheme.onSurface
-                : colorScheme.onSurfaceVariant,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 28,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: _hovering
+                  ? colorScheme.onSurface.withValues(alpha: 0.08)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Icon(
+              Icons.drag_indicator,
+              size: 16,
+              color: _hovering
+                  ? colorScheme.onSurface
+                  : colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       ),
@@ -143,6 +151,10 @@ class TrackRow extends StatelessWidget {
   final VoidCallback onRemove;
   final ValueChanged<int> onOffsetChanged;
   final VoidCallback onToggleAudio;
+  final bool canRemove;
+  final bool canReorder;
+  final bool canAdjustOffset;
+  final bool canToggleAudio;
   final bool isAudible;
   final int syncOffsetMs;
   final double controlsWidth;
@@ -168,6 +180,10 @@ class TrackRow extends StatelessWidget {
     required this.onRemove,
     required this.onOffsetChanged,
     required this.onToggleAudio,
+    this.canRemove = true,
+    this.canReorder = true,
+    this.canAdjustOffset = true,
+    this.canToggleAudio = true,
     this.isAudible = false,
     this.syncOffsetMs = 0,
     this.controlsWidth = 332,
@@ -206,7 +222,7 @@ class TrackRow extends StatelessWidget {
               Row(
                 children: [
                   // Drag handle with hover highlight
-                  _DragHandle(index: index),
+                  _DragHandle(index: index, enabled: canReorder),
                   // Controls panel
                   SizedBox(
                     width: controlsWidth,
@@ -228,7 +244,7 @@ class TrackRow extends StatelessWidget {
                             width: 24,
                             height: 24,
                             child: IconButton(
-                              onPressed: onToggleAudio,
+                              onPressed: canToggleAudio ? onToggleAudio : null,
                               icon: Icon(
                                 isAudible ? Icons.volume_up : Icons.volume_off,
                                 size: 15,
@@ -253,7 +269,9 @@ class TrackRow extends StatelessWidget {
                             width: 24,
                             height: 24,
                             child: IconButton(
-                              onPressed: () => onOffsetChanged(-10),
+                              onPressed: canAdjustOffset
+                                  ? () => onOffsetChanged(-10)
+                                  : null,
                               icon: const Icon(Icons.remove, size: 14),
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints.tightFor(
@@ -267,13 +285,16 @@ class TrackRow extends StatelessWidget {
                           ),
                           _OffsetField(
                             valueMs: syncOffsetMs,
+                            enabled: canAdjustOffset,
                             onChanged: onOffsetChanged,
                           ),
                           SizedBox(
                             width: 24,
                             height: 24,
                             child: IconButton(
-                              onPressed: () => onOffsetChanged(10),
+                              onPressed: canAdjustOffset
+                                  ? () => onOffsetChanged(10)
+                                  : null,
                               icon: const Icon(Icons.add, size: 14),
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints.tightFor(
@@ -290,7 +311,7 @@ class TrackRow extends StatelessWidget {
                             width: 28,
                             height: 28,
                             child: IconButton(
-                              onPressed: onRemove,
+                              onPressed: canRemove ? onRemove : null,
                               icon: const Icon(Icons.close, size: 16),
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints.tightFor(
@@ -415,9 +436,14 @@ ButtonStyle _removeTrackButtonStyle(ColorScheme colorScheme, double radius) {
 /// Uses a single TextField with FocusNode to avoid layout jumps between states.
 class _OffsetField extends StatefulWidget {
   final int valueMs;
+  final bool enabled;
   final ValueChanged<int> onChanged;
 
-  const _OffsetField({required this.valueMs, required this.onChanged});
+  const _OffsetField({
+    required this.valueMs,
+    this.enabled = true,
+    required this.onChanged,
+  });
 
   @override
   State<_OffsetField> createState() => _OffsetFieldState();
@@ -454,6 +480,7 @@ class _OffsetFieldState extends State<_OffsetField> {
   }
 
   void _onFocusChange() {
+    if (!widget.enabled) return;
     if (_focusNode.hasFocus && !_editing) {
       setState(() {
         _editing = true;
@@ -494,6 +521,7 @@ class _OffsetFieldState extends State<_OffsetField> {
     );
     return IntrinsicWidth(
       child: TextField(
+        enabled: widget.enabled,
         controller: _controller,
         focusNode: _focusNode,
         style: textStyle,

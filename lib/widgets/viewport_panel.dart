@@ -7,6 +7,7 @@ import '../platform/pointer_button_state_provider.dart';
 import '../utils/pointer_gesture_utils.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/viewport_display_state.dart';
+import '../viewport/viewport_interaction.dart';
 import 'axtree_region.dart';
 
 class ViewportPanel extends StatefulWidget {
@@ -22,6 +23,7 @@ class ViewportPanel extends StatefulWidget {
   final void Function(int width, int height, double devicePixelRatio)? onResize;
   final PointerButtonStateProvider pointerButtonStateProvider;
   final bool nativePlaybackAvailable;
+  final ViewportInteractionPolicy interactionPolicy;
 
   const ViewportPanel({
     super.key,
@@ -36,6 +38,7 @@ class ViewportPanel extends StatefulWidget {
     this.onResize,
     this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
     this.nativePlaybackAvailable = true,
+    this.interactionPolicy = defaultViewportInteractionPolicy,
   });
 
   @override
@@ -66,10 +69,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }) {
     if (_splitHandleDragging) return;
 
-    var wantsPan = (buttons & kPrimaryButton) != 0;
+    var dragIntent = widget.interactionPolicy.dragIntentForButtons(buttons);
+    var wantsPan = dragIntent == ViewportDragIntent.pan;
     const wantsSplit = false;
     if (!wantsPan && !wantsSplit && allowWin32Recovery && buttons == 0) {
-      wantsPan = widget.pointerButtonStateProvider.isPrimaryButtonDown;
+      dragIntent = widget.pointerButtonStateProvider.isPrimaryButtonDown
+          ? ViewportDragIntent.pan
+          : ViewportDragIntent.none;
+      wantsPan = dragIntent == ViewportDragIntent.pan;
     }
 
     if (!wantsPan && !wantsSplit) {

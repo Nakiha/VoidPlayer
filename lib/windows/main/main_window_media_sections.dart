@@ -47,6 +47,11 @@ class MediaTimelineSection extends StatelessWidget {
             onReorder: mediaActions.onReorder,
             onOffsetChanged: mediaActions.onOffsetChanged,
             onToggleTrackAudio: mediaActions.onToggleTrackAudio,
+            canRemoveTrack: model.session.capabilities.canRemoveTrack,
+            canReorderTrack: model.session.capabilities.canReorderTrack,
+            canAdjustTrackOffset:
+                model.session.capabilities.canAdjustTrackOffset,
+            canToggleTrackAudio: model.session.capabilities.canToggleTrackAudio,
             audibleTrackFileId: media.audibleTrackFileId,
             syncOffsets: media.syncOffsets,
             maxEffectiveDurationUs: playback.durationUs,
@@ -80,11 +85,15 @@ class MainWindowMediaHeader extends StatelessWidget {
     final media = model.media;
     final tracks = media.tracks;
     final mediaActions = actions.mediaTimeline;
+    final capabilities = model.session.capabilities;
     return MediaHeaderBar(
       entries: tracks,
-      analysisOverlayEnabled: media.analysisOverlayEnabled,
+      analysisOverlayEnabled:
+          capabilities.canShowAnalysisOverlay && media.analysisOverlayEnabled,
       analysisDataSource: media.analysisDataSource,
       analysisOverlayButtonKey: media.analysisOverlayButtonKey,
+      canRemoveTrack: capabilities.canRemoveTrack,
+      canReorderTrack: capabilities.canReorderTrack,
       onMediaSwapped: mediaActions.onMediaSwapped,
       onRemoveClicked: mediaActions.onRemoveTrack,
     );

@@ -23,6 +23,8 @@ class MediaHeaderBar extends StatelessWidget {
   final bool analysisOverlayEnabled;
   final AnalysisToolbarDataSource analysisDataSource;
   final Key? analysisOverlayButtonKey;
+  final bool canRemoveTrack;
+  final bool canReorderTrack;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final void Function(int fileId) onRemoveClicked;
 
@@ -32,6 +34,8 @@ class MediaHeaderBar extends StatelessWidget {
     this.analysisOverlayEnabled = true,
     required this.analysisDataSource,
     this.analysisOverlayButtonKey,
+    this.canRemoveTrack = true,
+    this.canReorderTrack = true,
     required this.onMediaSwapped,
     required this.onRemoveClicked,
   });
@@ -43,6 +47,8 @@ class MediaHeaderBar extends StatelessWidget {
       analysisOverlayEnabled: analysisOverlayEnabled,
       analysisDataSource: analysisDataSource,
       analysisOverlayButtonKey: analysisOverlayButtonKey,
+      canRemoveTrack: canRemoveTrack,
+      canReorderTrack: canReorderTrack,
       onMediaSwapped: onMediaSwapped,
       onRemoveClicked: onRemoveClicked,
     );
@@ -355,6 +361,8 @@ class _MediaHeaderBarWithCache extends StatefulWidget {
   final bool analysisOverlayEnabled;
   final AnalysisToolbarDataSource analysisDataSource;
   final Key? analysisOverlayButtonKey;
+  final bool canRemoveTrack;
+  final bool canReorderTrack;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final void Function(int fileId) onRemoveClicked;
 
@@ -363,6 +371,8 @@ class _MediaHeaderBarWithCache extends StatefulWidget {
     required this.analysisOverlayEnabled,
     required this.analysisDataSource,
     this.analysisOverlayButtonKey,
+    required this.canRemoveTrack,
+    required this.canReorderTrack,
     required this.onMediaSwapped,
     required this.onRemoveClicked,
   });
@@ -399,6 +409,8 @@ class _MediaHeaderBarWithCacheState extends State<_MediaHeaderBarWithCache> {
                           : null,
                       showOverlayPanelButton:
                           widget.analysisOverlayEnabled && i == 0,
+                      canRemoveTrack: widget.canRemoveTrack,
+                      canReorderTrack: widget.canReorderTrack,
                       onMediaSwapped: widget.onMediaSwapped,
                       onRemoveClicked: widget.onRemoveClicked,
                     ),
@@ -420,6 +432,8 @@ class _MediaHeader extends StatelessWidget {
   final AnalysisToolbarDataSource analysisDataSource;
   final Key? analysisOverlayButtonKey;
   final bool showOverlayPanelButton;
+  final bool canRemoveTrack;
+  final bool canReorderTrack;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final void Function(int fileId) onRemoveClicked;
 
@@ -430,6 +444,8 @@ class _MediaHeader extends StatelessWidget {
     required this.analysisDataSource,
     this.analysisOverlayButtonKey,
     required this.showOverlayPanelButton,
+    required this.canRemoveTrack,
+    required this.canReorderTrack,
     required this.onMediaSwapped,
     required this.onRemoveClicked,
   });
@@ -452,14 +468,20 @@ class _MediaHeader extends StatelessWidget {
               dataSource: analysisDataSource,
             ),
           Expanded(
-            child: _SourceComboBox(
-              entries: entries,
-              currentIndex: slotIndex,
-              onChanged: (targetIndex) {
-                if (targetIndex != slotIndex) {
-                  onMediaSwapped(slotIndex, targetIndex);
-                }
-              },
+            child: Opacity(
+              opacity: canReorderTrack ? 1.0 : 0.55,
+              child: IgnorePointer(
+                ignoring: !canReorderTrack,
+                child: _SourceComboBox(
+                  entries: entries,
+                  currentIndex: slotIndex,
+                  onChanged: (targetIndex) {
+                    if (targetIndex != slotIndex) {
+                      onMediaSwapped(slotIndex, targetIndex);
+                    }
+                  },
+                ),
+              ),
             ),
           ),
           SizedBox(
@@ -467,7 +489,9 @@ class _MediaHeader extends StatelessWidget {
             height: 28,
             child: IconButton(
               key: mediaHeaderRemoveButtonKey(entry.fileId),
-              onPressed: () => onRemoveClicked(entry.fileId),
+              onPressed: canRemoveTrack
+                  ? () => onRemoveClicked(entry.fileId)
+                  : null,
               icon: const Icon(Icons.close, size: 14),
               tooltip: AppLocalizations.of(context)!.removeTrack,
               padding: EdgeInsets.zero,

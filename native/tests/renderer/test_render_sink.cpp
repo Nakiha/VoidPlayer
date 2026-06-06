@@ -160,6 +160,42 @@ TEST_CASE("RenderSink: expired frame is advanced past", "[render_sink]") {
     REQUIRE(decision.should_present == false);
 }
 
+TEST_CASE("RenderSink: next PTS defines display window when duration metadata is bogus",
+          "[render_sink]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    auto track = std::make_shared<TrackBuffer>(4, 2);
+
+    TextureFrame frame1;
+    frame1.pts_us = 1000000;
+    frame1.duration_us = 100;
+    frame1.texture_handle = reinterpret_cast<void*>(0x1);
+    track->push_frame(frame1);
+
+    TextureFrame frame2;
+    frame2.pts_us = 1033333;
+    frame2.duration_us = 66666;
+    frame2.texture_handle = reinterpret_cast<void*>(0x2);
+    track->push_frame(frame2);
+
+    RenderSink sink(clock);
+    sink.set_track(0, track);
+
+    mt.t = 1010000;
+    PresentDecision decision = sink.evaluate();
+    REQUIRE(decision.should_present == true);
+    REQUIRE(decision.frames[0].has_value());
+    REQUIRE(decision.frames[0]->pts_us == 1000000);
+
+    mt.t = 1033333;
+    decision = sink.evaluate();
+    REQUIRE(decision.should_present == true);
+    REQUIRE(decision.frames[0].has_value());
+    REQUIRE(decision.frames[0]->pts_us == 1033333);
+}
+
 TEST_CASE("RenderSink: two tracks both ready present", "[render_sink]") {
     MockTimeSource mt{0};
     Clock clock([&mt]() { return mt.t; });

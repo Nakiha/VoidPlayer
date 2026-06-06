@@ -4,6 +4,21 @@
 #include <utility>
 
 namespace vr {
+namespace {
+
+std::optional<int64_t> frame_end_pts_us(const TrackBuffer& track,
+                                        const TextureFrame& frame) {
+    const auto next = track.peek(1);
+    if (next.has_value() && next->pts_us > frame.pts_us) {
+        return next->pts_us;
+    }
+    if (frame.duration_us > 0) {
+        return frame.pts_us + frame.duration_us;
+    }
+    return std::nullopt;
+}
+
+}  // namespace
 
 RenderSink::RenderSink(Clock& clock)
     : clock_(clock)
@@ -75,17 +90,12 @@ PresentDecision RenderSink::evaluate() {
             if (!frame.has_value()) {
                 break;
             }
-            // Zero-duration frames: advance only when the next frame's PTS has arrived
-            if (frame->duration_us == 0) {
-                auto next = track->peek(1);
-                if (next.has_value() && next->pts_us <= effective_pts) {
-                    if (!track->advance()) break;
-                    continue;
-                }
-                break;
-            }
-            // Frame is expired if its end time has passed
-            if (frame->pts_us + frame->duration_us <= effective_pts) {
+            // Prefer the next decoded presentation timestamp over AVFrame
+            // duration. Some phone Dolby/HLG HEVC files carry alternating
+            // 0.1ms/66ms duration metadata even though their PTS cadence is
+            // stable, and trusting that duration makes playback visibly skip.
+            const auto end_pts_us = frame_end_pts_us(*track, *frame);
+            if (end_pts_us.has_value() && *end_pts_us <= effective_pts) {
                 if (!track->advance()) {
                     break; // Cannot advance further
                 }
@@ -104,8 +114,9 @@ PresentDecision RenderSink::evaluate() {
         }
 
         // 3. Check if frame is in the display window
+        const auto end_pts_us = frame_end_pts_us(*track, *frame);
         if (frame->pts_us <= effective_pts &&
-            (frame->duration_us == 0 || effective_pts < frame->pts_us + frame->duration_us)) {
+            (!end_pts_us.has_value() || effective_pts < *end_pts_us)) {
             // Frame is in its display window - select it
             decision.frames[t] = frame;
             any_ready = true;

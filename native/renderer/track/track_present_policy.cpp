@@ -6,6 +6,21 @@
 #include <optional>
 
 namespace vr {
+namespace {
+
+std::optional<int64_t> frame_end_pts_us(const TrackBuffer& track,
+                                        const TextureFrame& frame) {
+    const auto next = track.peek(1);
+    if (next.has_value() && next->pts_us > frame.pts_us) {
+        return next->pts_us;
+    }
+    if (frame.duration_us > 0) {
+        return frame.pts_us + frame.duration_us;
+    }
+    return std::nullopt;
+}
+
+}  // namespace
 
 bool present_decision_has_frame(const PresentDecision& decision) {
     for (const auto& frame : decision.frames) {
@@ -232,10 +247,15 @@ std::optional<int64_t> compute_next_frame_event_pts_us(
         const int64_t effective_current_pts =
             current_pts_us - tracks[i]->offset_us;
 
+        const std::optional<int64_t> frame_end =
+            frame_end_pts_us(*tracks[i]->track_buffer, *frame);
+        if (frame->pts_us <= effective_current_pts && !frame_end.has_value()) {
+            continue;
+        }
         const int64_t event_pts =
             frame->pts_us > effective_current_pts
                 ? frame->pts_us + tracks[i]->offset_us
-                : frame->pts_us + frame->duration_us + tracks[i]->offset_us;
+                : *frame_end + tracks[i]->offset_us;
         if (!next_event_pts.has_value() || event_pts < *next_event_pts) {
             next_event_pts = event_pts;
         }

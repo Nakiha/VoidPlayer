@@ -1503,6 +1503,17 @@ TEST_CASE("TrackPresentPolicy computes next frame event PTS",
     next_event = compute_next_frame_event_pts_us(manager, 100);
     REQUIRE(next_event.has_value());
     REQUIRE(*next_event == 305);
+
+    auto bogus_duration_track = std::make_unique<TrackPipeline>();
+    bogus_duration_track->track_buffer = std::make_shared<TrackBuffer>();
+    bogus_duration_track->track_buffer->push_frame(make_frame(1000, 100));
+    bogus_duration_track->track_buffer->push_frame(make_frame(34333, 66666));
+    TrackPipelineManager bogus_duration_manager;
+    bogus_duration_manager[0] = std::move(bogus_duration_track);
+
+    next_event = compute_next_frame_event_pts_us(bogus_duration_manager, 1000);
+    REQUIRE(next_event.has_value());
+    REQUIRE(*next_event == 34333);
 }
 
 TEST_CASE("TrackStepPolicy builds step-forward decisions",

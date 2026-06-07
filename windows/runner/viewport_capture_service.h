@@ -24,4 +24,13 @@ public:
     ViewportCaptureStatus Capture(vr::NativePlayer& player,
                                   const std::string& output_path,
                                   ViewportCaptureResult& result) const;
+
+    ViewportCaptureStatus CaptureRegion(vr::NativePlayer& player,
+                                        int x,
+                                        int y,
+                                        int width,
+                                        int height,
+                                        int max_size,
+                                        const std::string& output_path,
+                                        ViewportCaptureResult& result) const;
 };

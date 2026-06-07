@@ -152,6 +152,25 @@ class NativePlayerController {
     return _api.captureViewport(outputPath: outputPath);
   }
 
+  Future<ViewportCapture> captureViewportRegion({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    required int maxSize,
+    String? outputPath,
+  }) {
+    _ensurePlayer(NativePlayerMethods.captureViewportRegion);
+    return _api.captureViewportRegion(
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      maxSize: maxSize,
+      outputPath: outputPath,
+    );
+  }
+
   Future<ViewportCapture> captureWindow({String? outputPath}) {
     return _api.captureWindow(outputPath: outputPath);
   }

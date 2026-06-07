@@ -76,6 +76,14 @@ void main() {
       await controller.play();
       await controller.seek(123);
       await controller.resize(640, 360);
+      await controller.captureViewportRegion(
+        x: 3,
+        y: 5,
+        width: 40,
+        height: 20,
+        maxSize: 64,
+        outputPath: '/tmp/region.png',
+      );
       await controller.destroyPlayerOnly();
 
       expect(api.calls, [
@@ -83,6 +91,7 @@ void main() {
         'play',
         'seek:123:null',
         'resize:640x360',
+        'captureViewportRegion:3,5 40x20 max=64 /tmp/region.png',
         'destroyPlayer',
       ]);
     });
@@ -207,6 +216,28 @@ class _FakeNativePlayerApi implements NativePlayerApi {
       height: 1,
       avgLuma: 1,
       nonBlackRatio: 1,
+    );
+  }
+
+  @override
+  Future<ViewportCapture> captureViewportRegion({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    required int maxSize,
+    String? outputPath,
+  }) async {
+    calls.add(
+      'captureViewportRegion:$x,$y ${width}x$height max=$maxSize $outputPath',
+    );
+    return ViewportCapture(
+      hash: 'region-hash',
+      width: width,
+      height: height,
+      avgLuma: 1,
+      nonBlackRatio: 1,
+      outputPath: outputPath,
     );
   }
 

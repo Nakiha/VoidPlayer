@@ -1,4 +1,5 @@
 import Cocoa
+import CoreVideo
 import FlutterMacOS
 import Foundation
 import ImageIO
@@ -26,6 +27,81 @@ enum MacOSViewportCapture {
       "overlayLineWeakWhiteCenters": metrics.overlayLineWeakWhiteCenters,
       "overlayLineBlackOnlyCenters": metrics.overlayLineBlackOnlyCenters,
     ]
+  }
+
+  static func captureRegion(texture: MacOSVideoTexture?, arguments: Any?) -> Any {
+    guard let texture else {
+      return FlutterError(
+        code: "NO_PLAYER",
+        message: "No macOS Flutter texture bridge is registered",
+        details: nil
+      )
+    }
+    let x = MacOSFlutterArguments.intArg(arguments, "x") ?? 0
+    let y = MacOSFlutterArguments.intArg(arguments, "y") ?? 0
+    let width = MacOSFlutterArguments.intArg(arguments, "width") ?? 0
+    let height = MacOSFlutterArguments.intArg(arguments, "height") ?? 0
+    let maxSize = MacOSFlutterArguments.intArg(arguments, "maxSize") ?? 0
+    guard width > 0, height > 0 else {
+      return FlutterError(
+        code: "BAD_ARGS",
+        message: "width and height must be positive",
+        details: nil
+      )
+    }
+
+    guard let unmanagedBuffer = texture.copyPixelBuffer() else {
+      return FlutterError(
+        code: "CAPTURE_FAILED",
+        message: "Failed to copy macOS texture pixel buffer",
+        details: nil
+      )
+    }
+    let pixelBuffer = unmanagedBuffer.takeRetainedValue()
+    guard let capture = captureBgraRegion(
+      buffer: pixelBuffer,
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      maxSize: maxSize
+    ) else {
+      return FlutterError(
+        code: "CAPTURE_FAILED",
+        message: "Failed to capture macOS viewport region",
+        details: nil
+      )
+    }
+
+    var outputPath: String?
+    if let path = MacOSFlutterArguments.stringArg(arguments, "outputPath"),
+       !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      guard let image = cgImage(
+        bgra: capture.bgra,
+        width: capture.width,
+        height: capture.height
+      ), savePng(image: image, path: path) else {
+        return FlutterError(
+          code: "CAPTURE_SAVE_FAILED",
+          message: "Failed to save macOS viewport region PNG",
+          details: nil
+        )
+      }
+      outputPath = path
+    }
+
+    let stats = captureStats(capture.bgra)
+    var map: [String: Any] = [
+      "hash": fnv1a64Hex(capture.bgra),
+      "width": capture.width,
+      "height": capture.height,
+      "avgLuma": stats.avgLuma,
+      "nonBlackRatio": stats.nonBlackRatio,
+    ]
+    if let outputPath {
+      map["outputPath"] = outputPath
+    }
+    return map
   }
 
   static func captureWindow(arguments: Any?) -> Any {
@@ -112,6 +188,77 @@ enum MacOSViewportCapture {
       return true
     }
     return ok ? bytes : nil
+  }
+
+  private static func captureBgraRegion(
+    buffer: CVPixelBuffer,
+    x: Int,
+    y: Int,
+    width: Int,
+    height: Int,
+    maxSize: Int
+  ) -> (bgra: [UInt8], width: Int, height: Int)? {
+    let sourceWidth = CVPixelBufferGetWidth(buffer)
+    let sourceHeight = CVPixelBufferGetHeight(buffer)
+    guard sourceWidth > 0, sourceHeight > 0 else { return nil }
+    let left = min(max(0, x), sourceWidth)
+    let top = min(max(0, y), sourceHeight)
+    let right = min(max(left, x + width), sourceWidth)
+    let bottom = min(max(top, y + height), sourceHeight)
+    let cropWidth = right - left
+    let cropHeight = bottom - top
+    guard cropWidth > 0, cropHeight > 0 else { return nil }
+
+    var scale = 1.0
+    if maxSize > 0 {
+      scale = min(1.0, Double(maxSize) / Double(max(cropWidth, cropHeight)))
+    }
+    let outputWidth = max(1, Int((Double(cropWidth) * scale).rounded()))
+    let outputHeight = max(1, Int((Double(cropHeight) * scale).rounded()))
+    var output = [UInt8](repeating: 0, count: outputWidth * outputHeight * 4)
+
+    CVPixelBufferLockBaseAddress(buffer, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+    guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+    let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
+    let pixels = baseAddress.assumingMemoryBound(to: UInt8.self)
+
+    for oy in 0..<outputHeight {
+      let sy = top + min(cropHeight - 1, oy * cropHeight / outputHeight)
+      for ox in 0..<outputWidth {
+        let sx = left + min(cropWidth - 1, ox * cropWidth / outputWidth)
+        let src = sy * bytesPerRow + sx * 4
+        let dst = (oy * outputWidth + ox) * 4
+        output[dst + 0] = pixels[src + 0]
+        output[dst + 1] = pixels[src + 1]
+        output[dst + 2] = pixels[src + 2]
+        output[dst + 3] = pixels[src + 3]
+      }
+    }
+    return (bgra: output, width: outputWidth, height: outputHeight)
+  }
+
+  private static func cgImage(bgra: [UInt8], width: Int, height: Int) -> CGImage? {
+    guard width > 0, height > 0, !bgra.isEmpty else { return nil }
+    let bytesPerRow = width * 4
+    var mutable = bgra
+    return mutable.withUnsafeMutableBytes { rawBuffer -> CGImage? in
+      guard let baseAddress = rawBuffer.baseAddress,
+            let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(
+              data: baseAddress,
+              width: width,
+              height: height,
+              bitsPerComponent: 8,
+              bytesPerRow: bytesPerRow,
+              space: colorSpace,
+              bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue |
+                CGBitmapInfo.byteOrder32Little.rawValue
+            ) else {
+        return nil
+      }
+      return context.makeImage()
+    }
   }
 
   private static func captureStats(_ bgra: [UInt8]) -> (avgLuma: Double, nonBlackRatio: Double) {

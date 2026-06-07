@@ -23,6 +23,7 @@ void main() {
 0.2,ADD_NETWORK_MEDIA,http://127.0.0.1:8765/h264_9s_1920x1080.mp4
 0.3,ADD_SSH_MEDIA,user@example.com:/videos/clip.mp4
 0.7,ASSERT_PLAYING
+0.75,CAPTURE_VIEWPORT_REGION,roi,1,2,30,40,50,build/roi.png
 0.8,SET_DECODE_MODE,forceSoftware
 0.85,SET_AUDIBLE_TRACK,-1
 0.9,ASSERT_CAPTURE_SPLIT_DIFF,cap,1.5,2.5,12
@@ -37,13 +38,14 @@ void main() {
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(16));
+    expect(instructions, hasLength(17));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
       200,
       300,
       500,
       700,
+      750,
       800,
       850,
       900,
@@ -102,6 +104,21 @@ void main() {
     );
     expect(
       instructions[5],
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<CaptureViewportRegionAction>()
+            .having((a) => a.nameId, 'nameId', 'roi')
+            .having((a) => a.x, 'x', 1)
+            .having((a) => a.y, 'y', 2)
+            .having((a) => a.width, 'width', 30)
+            .having((a) => a.height, 'height', 40)
+            .having((a) => a.maxSize, 'maxSize', 50)
+            .having((a) => a.outputPath, 'outputPath', 'build/roi.png'),
+      ),
+    );
+    expect(
+      instructions[6],
       isA<ScriptSetDecodeMode>().having(
         (i) => i.mode.storageValue,
         'mode',
@@ -109,11 +126,11 @@ void main() {
       ),
     );
     expect(
-      instructions[6],
+      instructions[7],
       isA<ScriptSetAudibleTrack>().having((i) => i.fileId, 'fileId', isNull),
     );
     expect(
-      instructions[7],
+      instructions[8],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -121,7 +138,7 @@ void main() {
       ),
     );
     expect(
-      instructions[8],
+      instructions[9],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -129,7 +146,7 @@ void main() {
       ),
     );
     expect(
-      instructions[9],
+      instructions[10],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -141,7 +158,7 @@ void main() {
       ),
     );
     expect(
-      instructions[10],
+      instructions[11],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -151,7 +168,7 @@ void main() {
       ),
     );
     expect(
-      instructions[11],
+      instructions[12],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -161,7 +178,7 @@ void main() {
       ),
     );
     expect(
-      instructions[12],
+      instructions[13],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -172,23 +189,19 @@ void main() {
       ),
     );
     expect(
-      instructions[13],
+      instructions[14],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
         isA<AssertTrackMetadata>()
             .having((a) => a.slot, 'slot', 0)
-            .having(
-              (a) => a.formatName,
-              'formatName',
-              'QuickTime / MOV',
-            )
+            .having((a) => a.formatName, 'formatName', 'QuickTime / MOV')
             .having((a) => a.decoderName, 'decoderName', 'VideoToolbox / h264'),
       ),
     );
-    expect(instructions[14], isA<ScriptCloseMainWindow>());
+    expect(instructions[15], isA<ScriptCloseMainWindow>());
     expect(
-      instructions[15],
+      instructions[16],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
   });

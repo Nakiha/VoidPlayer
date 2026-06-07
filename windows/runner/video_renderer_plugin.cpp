@@ -412,6 +412,11 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
             CaptureViewport(call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
+        "captureViewportRegion",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            CaptureViewportRegion(call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
         "captureWindow",
         [this](const MethodCall& call, MethodResultPtr result) {
             CaptureWindow(call.arguments(), std::move(result));
@@ -1425,6 +1430,89 @@ void VideoRendererPlugin::CaptureViewport(
         ReportMethodException(result.get(), "captureViewport", e);
     } catch (...) {
         ReportUnknownMethodException(result.get(), "captureViewport");
+    }
+}
+
+void VideoRendererPlugin::CaptureViewportRegion(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    try {
+    if (!player_) {
+        result->Error("NO_PLAYER", "Player not created");
+        return;
+    }
+    if (!arguments) {
+        result->Error("INVALID_ARGS", "Arguments required");
+        return;
+    }
+    const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+    if (!args) {
+        result->Error("INVALID_ARGS", "Arguments must be a map");
+        return;
+    }
+
+    const auto read_required_int = [&](const char* key, int& value) -> bool {
+        auto it = args->find(flutter::EncodableValue(key));
+        return it != args->end() && read_int_arg(it->second, value);
+    };
+
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    int max_size = 0;
+    if (!read_required_int("x", x) ||
+        !read_required_int("y", y) ||
+        !read_required_int("width", width) ||
+        !read_required_int("height", height) ||
+        !read_required_int("maxSize", max_size)) {
+        result->Error("BAD_ARGS", "x, y, width, height and maxSize must be integers");
+        return;
+    }
+    if (width <= 0 || height <= 0) {
+        result->Error("BAD_ARGS", "width and height must be positive");
+        return;
+    }
+
+    std::string output_path;
+    auto output_it = args->find(flutter::EncodableValue("outputPath"));
+    if (output_it != args->end() && !read_string_arg(output_it->second, output_path)) {
+        result->Error("BAD_ARGS", "outputPath must be a string");
+        return;
+    }
+
+    ViewportCaptureResult capture;
+    const auto capture_status =
+        viewport_capture_.CaptureRegion(
+            *player_, x, y, width, height, max_size, output_path, capture);
+    if (capture_status == ViewportCaptureStatus::CaptureFailed) {
+        result->Error("CAPTURE_FAILED", "Failed to capture viewport region");
+        return;
+    }
+    if (capture_status == ViewportCaptureStatus::SaveFailed) {
+        result->Error("CAPTURE_SAVE_FAILED", "Failed to save viewport region PNG");
+        return;
+    }
+
+    flutter::EncodableMap map;
+    map[flutter::EncodableValue("hash")] = flutter::EncodableValue(capture.hash);
+    map[flutter::EncodableValue("width")] = flutter::EncodableValue(capture.width);
+    map[flutter::EncodableValue("height")] = flutter::EncodableValue(capture.height);
+    map[flutter::EncodableValue("avgLuma")] = flutter::EncodableValue(capture.avg_luma);
+    map[flutter::EncodableValue("nonBlackRatio")] =
+        flutter::EncodableValue(capture.non_black_ratio);
+    if (!capture.output_path.empty()) {
+        map[flutter::EncodableValue("outputPath")] =
+            flutter::EncodableValue(capture.output_path);
+    }
+    result->Success(flutter::EncodableValue(map));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "captureViewportRegion", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "captureViewportRegion", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "captureViewportRegion");
     }
 }
 

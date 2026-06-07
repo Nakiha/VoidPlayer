@@ -378,6 +378,25 @@ ScriptInstruction? _parseInstruction(
           outputPath: args.length >= 2 ? args[1] : null,
         ),
       );
+    case 'CAPTURE_VIEWPORT_REGION':
+      if (args.length < 6) {
+        log.warning(
+          'CAPTURE_VIEWPORT_REGION needs name, x, y, width, height and maxSize: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        CaptureViewportRegionAction(
+          args[0],
+          x: int.parse(args[1]),
+          y: int.parse(args[2]),
+          width: int.parse(args[3]),
+          height: int.parse(args[4]),
+          maxSize: int.parse(args[5]),
+          outputPath: args.length >= 7 ? args[6] : null,
+        ),
+      );
     case 'CAPTURE_FLUTTER':
       if (args.isEmpty) {
         log.warning('CAPTURE_FLUTTER needs a capture name: $rawLine');

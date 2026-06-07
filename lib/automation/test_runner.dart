@@ -203,6 +203,32 @@ class TestRunner {
           ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
           '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
         );
+      case CaptureViewportRegionAction(
+        :final nameId,
+        :final x,
+        :final y,
+        :final width,
+        :final height,
+        :final maxSize,
+        :final outputPath,
+      ):
+        final capture = await controller.captureViewportRegion(
+          x: x,
+          y: y,
+          width: width,
+          height: height,
+          maxSize: maxSize,
+          outputPath: _resolveCaptureOutputPath(outputPath),
+        );
+        _state.captures[nameId] = capture;
+        log.info(
+          'TestRunner: CAPTURE_VIEWPORT_REGION $nameId '
+          'roi=$x,$y ${width}x$height max=$maxSize '
+          'hash=${capture.hash} ${capture.width}x${capture.height}'
+          ' avgLuma=${capture.avgLuma.toStringAsFixed(2)}'
+          ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
+          '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
+        );
       case CaptureFlutterAction(:final nameId, :final outputPath):
         final capture = await testHarness.captureFlutterFrame(
           outputPath: _resolveCaptureOutputPath(outputPath),

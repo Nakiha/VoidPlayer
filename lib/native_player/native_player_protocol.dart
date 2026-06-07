@@ -19,6 +19,7 @@ class NativePlayerMethods {
   static const resize = 'resize';
   static const setViewportBackgroundColor = 'setViewportBackgroundColor';
   static const captureViewport = 'captureViewport';
+  static const captureViewportRegion = 'captureViewportRegion';
   static const captureWindow = 'captureWindow';
   static const stepForward = 'stepForward';
   static const stepBackward = 'stepBackward';
@@ -39,6 +40,9 @@ class NativePlayerKeys {
   static const videoPaths = 'videoPaths';
   static const width = 'width';
   static const height = 'height';
+  static const x = 'x';
+  static const y = 'y';
+  static const maxSize = 'maxSize';
   static const textureId = 'textureId';
   static const tracks = 'tracks';
   static const fileId = 'fileId';

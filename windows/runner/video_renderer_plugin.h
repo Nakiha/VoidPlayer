@@ -109,6 +109,9 @@ private:
     void CaptureViewport(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void CaptureViewportRegion(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void CaptureWindow(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);

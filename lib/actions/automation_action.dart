@@ -22,6 +22,26 @@ class CaptureViewportAction extends AutomationAction {
     : super('CAPTURE_VIEWPORT');
 }
 
+class CaptureViewportRegionAction extends AutomationAction {
+  final String nameId;
+  final int x;
+  final int y;
+  final int width;
+  final int height;
+  final int maxSize;
+  final String? outputPath;
+
+  const CaptureViewportRegionAction(
+    this.nameId, {
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.maxSize,
+    this.outputPath,
+  }) : super('CAPTURE_VIEWPORT_REGION');
+}
+
 class CaptureFlutterAction extends AutomationAction {
   final String nameId;
   final String? outputPath;

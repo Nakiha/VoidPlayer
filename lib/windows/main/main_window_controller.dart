@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../../actions/action_registry.dart';
 import '../../analysis/analysis_manager.dart';
 import '../../analysis/analysis_toolbar_data_source.dart';
 import '../../app_log.dart';
+import '../../app_paths.dart';
 import '../../automation/test_runner.dart';
 import '../../automation/ui_automation_bridge.dart';
 import '../../config/app_config.dart';
@@ -67,8 +72,11 @@ class MainWindowController {
   int _quickMarkPersistenceSerial = 0;
   String _quickMarkTrackSignature = '';
   Timer? _quickMarkSaveTimer;
+  Timer? _quickMarkThumbnailTimer;
   Future<void>? _quickMarkSaveInFlight;
   bool _quickMarkSavePending = false;
+  bool _quickMarkThumbnailCaptureInFlight = false;
+  bool _quickMarkThumbnailRerunRequested = false;
   List<QuickMarkMediaRef> _pendingQuickMarkSaveRefs = const [];
   List<QuickMark> _pendingQuickMarkSaveMarks = const [];
   late final MainWindowTimelineMetrics timelineMetrics =
@@ -141,6 +149,7 @@ class MainWindowController {
        quickMarkRepository =
            quickMarkRepository ?? const NoopQuickMarkRepository() {
     _initCoordinators();
+    stateStore.addListener(_onStateChanged);
   }
 
   Listenable get listenable => _listenable;
@@ -167,6 +176,8 @@ class MainWindowController {
   Future<void> _closeGracefullyImpl() async {
     _fullScreenControlsTimer?.cancel();
     _quickMarkSaveTimer?.cancel();
+    _quickMarkThumbnailTimer?.cancel();
+    stateStore.removeListener(_onStateChanged);
     actionCoordinator.dispose();
     playbackCoordinator.dispose();
     await _flushQuickMarkSave();
@@ -193,6 +204,14 @@ class MainWindowController {
 
   void setAnalysisAccentColor(Color color) {
     analysisCoordinator.publishAccentColor(color.toARGB32());
+  }
+
+  void _onStateChanged() {
+    if (_quickMarkThumbnails.values.any(
+      (thumbnail) => thumbnail.status == QuickMarkThumbnailStatus.queued,
+    )) {
+      _scheduleQuickMarkThumbnailCapture();
+    }
   }
 
   MainWindowViewModel get viewModel {
@@ -892,6 +911,144 @@ class MainWindowController {
         _quickMarkSaveInFlight = null;
       }
     }
+  }
+
+  void _scheduleQuickMarkThumbnailCapture({
+    Duration delay = const Duration(milliseconds: 160),
+  }) {
+    if (!mounted() || _shutdownFuture != null) return;
+    if (_quickMarkThumbnailCaptureInFlight) {
+      _quickMarkThumbnailRerunRequested = true;
+      return;
+    }
+    _quickMarkThumbnailTimer?.cancel();
+    _quickMarkThumbnailTimer = Timer(delay, () {
+      _quickMarkThumbnailTimer = null;
+      unawaited(_captureQueuedQuickMarkThumbnails());
+    });
+  }
+
+  Future<void> _captureQueuedQuickMarkThumbnails() async {
+    if (_quickMarkThumbnailCaptureInFlight || !mounted() || !player.hasPlayer) {
+      return;
+    }
+    final projection = _quickMarkProjection();
+    if (projection == null) return;
+
+    _quickMarkThumbnailCaptureInFlight = true;
+    try {
+      final queued =
+          _quickMarkThumbnails.values
+              .where(
+                (thumbnail) =>
+                    thumbnail.status == QuickMarkThumbnailStatus.queued,
+              )
+              .toList(growable: false)
+            ..sort((a, b) => a.markId.compareTo(b.markId));
+      for (final thumbnail in queued) {
+        if (!mounted() || !player.hasPlayer) return;
+        final latest = _quickMarkThumbnails[thumbnail.markId];
+        if (latest == null ||
+            latest.sourceKey != thumbnail.sourceKey ||
+            latest.status != QuickMarkThumbnailStatus.queued) {
+          continue;
+        }
+        final mark = _quickMarkStore.markById(thumbnail.markId);
+        if (mark == null || !_isQuickMarkVisible(mark)) continue;
+        final rect = _quickMarkThumbnailViewportRect(projection, mark);
+        if (rect == null) continue;
+
+        try {
+          final outputPath = _quickMarkThumbnailOutputPath(thumbnail);
+          await Directory(p.dirname(outputPath)).create(recursive: true);
+          final capture = await player.captureViewportRegion(
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+            maxSize: 160,
+            outputPath: outputPath,
+          );
+          _replaceQuickMarkThumbnail(
+            thumbnail.markId,
+            thumbnail.copyWith(
+              status: QuickMarkThumbnailStatus.ready,
+              assetPath: capture.outputPath ?? outputPath,
+              error: null,
+            ),
+          );
+        } catch (e, stack) {
+          log.warning('[QuickMark] thumbnail capture failed', e, stack);
+          _replaceQuickMarkThumbnail(
+            thumbnail.markId,
+            thumbnail.copyWith(
+              status: QuickMarkThumbnailStatus.failed,
+              assetPath: null,
+              error: e.toString(),
+            ),
+          );
+        }
+      }
+    } finally {
+      _quickMarkThumbnailCaptureInFlight = false;
+      if (_quickMarkThumbnailRerunRequested) {
+        _quickMarkThumbnailRerunRequested = false;
+        _scheduleQuickMarkThumbnailCapture();
+      }
+    }
+  }
+
+  ({int left, int top, int width, int height})? _quickMarkThumbnailViewportRect(
+    ViewportLayoutProjection projection,
+    QuickMark mark,
+  ) {
+    final projected = projection.viewportProjectionForSourceRect(
+      mark.fileId,
+      mark.sourceRect,
+    );
+    if (projected == null) return null;
+    final bounds = Rect.fromLTWH(
+      0,
+      0,
+      projection.viewportWidth.toDouble(),
+      projection.viewportHeight.toDouble(),
+    );
+    final rect = projected.viewportRect
+        .intersect(projected.clipRect)
+        .intersect(bounds);
+    if (rect.isEmpty) return null;
+    final left = rect.left.floor().clamp(0, projection.viewportWidth).toInt();
+    final top = rect.top.floor().clamp(0, projection.viewportHeight).toInt();
+    final right = rect.right
+        .ceil()
+        .clamp(left, projection.viewportWidth)
+        .toInt();
+    final bottom = rect.bottom
+        .ceil()
+        .clamp(top, projection.viewportHeight)
+        .toInt();
+    final width = right - left;
+    final height = bottom - top;
+    if (width <= 0 || height <= 0) return null;
+    return (left: left, top: top, width: width, height: height);
+  }
+
+  String _quickMarkThumbnailOutputPath(QuickMarkThumbnail thumbnail) {
+    final digest = sha1.convert(utf8.encode(thumbnail.sourceKey)).toString();
+    return p.join(
+      AppPaths.current.rootDir,
+      'marks',
+      'thumbnails',
+      'mark_${thumbnail.markId}_${digest.substring(0, 16)}.png',
+    );
+  }
+
+  void _replaceQuickMarkThumbnail(int markId, QuickMarkThumbnail thumbnail) {
+    final current = _quickMarkThumbnails[markId];
+    if (current == null || current.sourceKey != thumbnail.sourceKey) return;
+    stateStore.setQuickMarkThumbnails(
+      Map.unmodifiable({..._quickMarkThumbnails, markId: thumbnail}),
+    );
   }
 
   ViewportLayoutProjection? _quickMarkProjection() {

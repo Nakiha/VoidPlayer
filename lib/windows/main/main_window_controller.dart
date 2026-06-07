@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import '../../actions/action_registry.dart';
 import '../../analysis/analysis_manager.dart';
 import '../../analysis/analysis_toolbar_data_source.dart';
+import '../../app_log.dart';
 import '../../automation/test_runner.dart';
 import '../../automation/ui_automation_bridge.dart';
 import '../../config/app_config.dart';
 import '../../config/app_settings_repository.dart';
 import '../../marks/quick_mark.dart';
+import '../../marks/quick_mark_persistence.dart';
 import '../../marks/quick_mark_store.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../platform/main_window_platform.dart';
@@ -49,6 +51,7 @@ class MainWindowController {
   final AnalysisToolbarDataSource analysisToolbarDataSource;
   final AppSettingsRepository appSettings;
   final PlaybackPreferences playbackPreferences;
+  final QuickMarkRepository quickMarkRepository;
 
   final NativePlayerController player = NativePlayerController();
   final TrackManager trackManager = TrackManager();
@@ -60,6 +63,13 @@ class MainWindowController {
   Future<QuickMarkAnchor>? _quickMarkDragAnchorFuture;
   int _quickMarkDragSerial = 0;
   int _nextQuickMarkId = 1;
+  int _quickMarkPersistenceSerial = 0;
+  String _quickMarkTrackSignature = '';
+  Timer? _quickMarkSaveTimer;
+  Future<void>? _quickMarkSaveInFlight;
+  bool _quickMarkSavePending = false;
+  List<QuickMarkMediaRef> _pendingQuickMarkSaveRefs = const [];
+  List<QuickMark> _pendingQuickMarkSaveMarks = const [];
   late final MainWindowTimelineMetrics timelineMetrics =
       MainWindowTimelineMetrics(
         stateStore: stateStore,
@@ -105,6 +115,7 @@ class MainWindowController {
     AnalysisToolbarDataSource? analysisToolbarDataSource,
     AppSettingsRepository? appSettings,
     PlaybackPreferences? playbackPreferences,
+    QuickMarkRepository? quickMarkRepository,
   }) : platformWindow =
            platformWindow ?? const WindowManagerMainWindowPlatform(),
        analysisProcesses =
@@ -125,7 +136,9 @@ class MainWindowController {
            playbackPreferences ??
            AppConfigPlaybackPreferences(
              appSettings ?? AppConfigSettingsRepository(AppConfig.instance),
-           ) {
+           ),
+       quickMarkRepository =
+           quickMarkRepository ?? const NoopQuickMarkRepository() {
     _initCoordinators();
   }
 
@@ -152,8 +165,10 @@ class MainWindowController {
 
   Future<void> _closeGracefullyImpl() async {
     _fullScreenControlsTimer?.cancel();
+    _quickMarkSaveTimer?.cancel();
     actionCoordinator.dispose();
     playbackCoordinator.dispose();
+    await _flushQuickMarkSave();
     mediaCoordinator.dispose();
     layoutCoordinator.dispose();
     timelineHoverNotifier.dispose();
@@ -730,6 +745,7 @@ class MainWindowController {
   void _onTrackManagerChanged() {
     stateStore.setLayout(_layout.copyWith(order: trackManager.order));
     layoutCoordinator.markLayoutDirty();
+    _reconcileQuickMarkPersistence();
     fireAndLog(
       'publish analysis track snapshot',
       analysisCoordinator.publishTrackSnapshot(),
@@ -777,6 +793,102 @@ class MainWindowController {
   int get _resolvedLoopStartUs => playbackCoordinator.resolvedLoopStartUs;
   int get _resolvedLoopEndUs => playbackCoordinator.resolvedLoopEndUs;
   List<int> get _loopMarkerPtsUs => playbackCoordinator.loopMarkerPtsUs;
+
+  List<QuickMarkMediaRef> _quickMarkMediaRefs() => [
+    for (final entry in trackManager.entries)
+      QuickMarkMediaRef(fileId: entry.fileId, path: entry.path),
+  ];
+
+  String _quickMarkMediaSignature(List<QuickMarkMediaRef> refs) {
+    return refs.map((ref) => '${ref.fileId}:${ref.mediaId}').join('|');
+  }
+
+  void _reconcileQuickMarkPersistence() {
+    final refs = _quickMarkMediaRefs();
+    final signature = _quickMarkMediaSignature(refs);
+    if (signature == _quickMarkTrackSignature) return;
+    _quickMarkTrackSignature = signature;
+    final serial = ++_quickMarkPersistenceSerial;
+    unawaited(_loadQuickMarksForMediaRefs(refs, signature, serial));
+  }
+
+  Future<void> _loadQuickMarksForMediaRefs(
+    List<QuickMarkMediaRef> refs,
+    String signature,
+    int serial,
+  ) async {
+    await _flushQuickMarkSave();
+    if (serial != _quickMarkPersistenceSerial ||
+        signature != _quickMarkTrackSignature) {
+      return;
+    }
+    if (refs.isEmpty) return;
+    try {
+      final loaded = await quickMarkRepository.loadForMediaRefs(refs);
+      if (serial != _quickMarkPersistenceSerial ||
+          signature != _quickMarkTrackSignature) {
+        return;
+      }
+      final loadedFileIds = loaded.map((mark) => mark.fileId).toSet();
+      final next = [
+        for (final mark in _quickMarks)
+          if (!loadedFileIds.contains(mark.fileId)) mark,
+        ...loaded,
+      ];
+      _applyQuickMarkStore(
+        QuickMarkStore(marks: next, nextId: _nextQuickMarkId),
+        persist: false,
+      );
+    } catch (e, stack) {
+      log.warning('[QuickMark] load failed', e, stack);
+    }
+  }
+
+  void _scheduleQuickMarkSave() {
+    _pendingQuickMarkSaveRefs = _quickMarkMediaRefs();
+    _pendingQuickMarkSaveMarks = List<QuickMark>.unmodifiable(_quickMarks);
+    _quickMarkSavePending = true;
+    _quickMarkSaveTimer?.cancel();
+    _quickMarkSaveTimer = Timer(
+      const Duration(milliseconds: 300),
+      () => unawaited(_savePendingQuickMarksNow()),
+    );
+  }
+
+  Future<void> _flushQuickMarkSave() async {
+    _quickMarkSaveTimer?.cancel();
+    _quickMarkSaveTimer = null;
+    await _savePendingQuickMarksNow();
+  }
+
+  Future<void> _savePendingQuickMarksNow() async {
+    final previous = _quickMarkSaveInFlight;
+    if (previous != null) {
+      try {
+        await previous;
+      } catch (_) {
+        // The original save call logs failures; later saves should continue.
+      }
+    }
+    if (!_quickMarkSavePending) return;
+    final refs = _pendingQuickMarkSaveRefs;
+    final marks = _pendingQuickMarkSaveMarks;
+    _quickMarkSavePending = false;
+    _pendingQuickMarkSaveRefs = const [];
+    _pendingQuickMarkSaveMarks = const [];
+    if (refs.isEmpty) return;
+    final save = quickMarkRepository.saveForMediaRefs(refs, marks);
+    _quickMarkSaveInFlight = save;
+    try {
+      await save;
+    } catch (e, stack) {
+      log.warning('[QuickMark] save failed', e, stack);
+    } finally {
+      if (identical(_quickMarkSaveInFlight, save)) {
+        _quickMarkSaveInFlight = null;
+      }
+    }
+  }
 
   ViewportLayoutProjection? _quickMarkProjection() {
     final viewportWidth = layoutCoordinator.viewportWidth;
@@ -970,9 +1082,10 @@ class MainWindowController {
     playbackCoordinator.seekTo(mark.anchor.ptsUs);
   }
 
-  void _applyQuickMarkStore(QuickMarkStore store) {
+  void _applyQuickMarkStore(QuickMarkStore store, {bool persist = true}) {
     _nextQuickMarkId = store.nextId;
     stateStore.setQuickMarks(store.marks);
+    if (persist) _scheduleQuickMarkSave();
   }
 
   Future<void> _removeTrack(int fileId) async {

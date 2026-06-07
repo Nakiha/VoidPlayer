@@ -8,6 +8,7 @@ import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/config/app_settings_repository.dart';
 import 'package:void_player/marks/quick_mark.dart';
+import 'package:void_player/marks/quick_mark_persistence.dart';
 import 'package:void_player/platform/analysis_process_host.dart';
 import 'package:void_player/platform/main_window_platform.dart';
 import 'package:void_player/platform/platform_capabilities.dart';
@@ -348,4 +349,82 @@ void main() {
       expect(viewModel.marks.tracksByFileId[1]?.path, '/tmp/video.mp4');
     },
   );
+
+  test(
+    'quick mark repository loads marks for runtime track file ids',
+    () async {
+      final repository = _FakeQuickMarkRepository(
+        loadedMarks: const [
+          QuickMark(
+            id: 8,
+            anchor: QuickMarkAnchor(fileId: 99, ptsUs: 1000, dtsUs: 1000),
+            sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+            text: 'persisted',
+          ),
+        ],
+      );
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+        quickMarkRepository: repository,
+      );
+      addTearDown(controller.dispose);
+      controller.start();
+
+      controller.trackManager.addTrack(
+        const TrackInfo(
+          fileId: 4,
+          slot: 0,
+          path: '/tmp/video.mp4',
+          width: 320,
+          height: 180,
+        ),
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(repository.loadedRefs.single.fileId, 4);
+      expect(repository.savedRefs, isEmpty);
+      expect(controller.viewModel.marks.allMarks, hasLength(1));
+      expect(controller.viewModel.marks.allMarks.single.fileId, 4);
+      expect(controller.viewModel.marks.allMarks.single.text, 'persisted');
+    },
+  );
+}
+
+class _FakeQuickMarkRepository implements QuickMarkRepository {
+  final List<QuickMark> loadedMarks;
+  List<QuickMarkMediaRef> loadedRefs = const [];
+  List<QuickMarkMediaRef> savedRefs = const [];
+
+  _FakeQuickMarkRepository({required this.loadedMarks});
+
+  @override
+  Future<List<QuickMark>> loadForMediaRefs(
+    List<QuickMarkMediaRef> mediaRefs,
+  ) async {
+    loadedRefs = List.unmodifiable(mediaRefs);
+    return loadedMarks
+        .map(
+          (mark) => mark.copyWith(
+            anchor: mark.anchor.copyWith(fileId: mediaRefs.first.fileId),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> saveForMediaRefs(
+    List<QuickMarkMediaRef> mediaRefs,
+    List<QuickMark> marks,
+  ) async {
+    savedRefs = List.unmodifiable(mediaRefs);
+  }
 }

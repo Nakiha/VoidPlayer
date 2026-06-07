@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../actions/action_registry.dart';
 import '../../config/app_settings_repository.dart';
+import '../../marks/quick_mark_persistence.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../platform/main_window_platform.dart';
 import '../../platform/native_file_picker.dart';
@@ -24,6 +25,7 @@ class MainWindow extends StatefulWidget {
   final PointerButtonStateProvider pointerButtonStateProvider;
   final AppSettingsRepository? appSettings;
   final PlaybackPreferences? playbackPreferences;
+  final QuickMarkRepository? quickMarkRepository;
   final Color? accentColor;
 
   const MainWindow({
@@ -38,6 +40,7 @@ class MainWindow extends StatefulWidget {
     this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
     this.appSettings,
     this.playbackPreferences,
+    this.quickMarkRepository,
     this.accentColor,
   });
 
@@ -63,6 +66,9 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       nativeFilePicker: widget.nativeFilePicker,
       appSettings: widget.appSettings,
       playbackPreferences: widget.playbackPreferences,
+      quickMarkRepository:
+          widget.quickMarkRepository ??
+          FileQuickMarkRepository.defaultLocation(),
       mounted: () => mounted,
     )..start(testScriptPath: widget.testScriptPath);
     MainWindowShutdownRegistry.register(this, _controller.closeGracefully);

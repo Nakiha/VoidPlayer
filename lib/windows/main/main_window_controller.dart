@@ -256,6 +256,8 @@ class MainWindowController {
         mediaInfoVisible: _mediaInfoVisible,
         profilerVisible: _profilerVisible,
         settingsVisible: _settingsVisible,
+        marksSidebarVisible: _marksSidebarVisible,
+        marksSidebarWidth: _marksSidebarWidth,
         fullScreen: _fullScreen,
         fullScreenControlsVisible: _fullScreenControlsVisible,
       ),
@@ -324,6 +326,7 @@ class MainWindowController {
           stateStore.setProfilerVisible(!_profilerVisible);
         },
         onSettings: () => stateStore.setSettingsVisible(!_settingsVisible),
+        onMarksSidebarToggle: _toggleMarksSidebar,
       ),
       viewport: MainWindowViewportActions(
         onPan: (delta) {
@@ -431,6 +434,8 @@ class MainWindowController {
         onCloseMediaInfo: () => stateStore.setMediaInfoVisible(false),
         onCloseProfiler: () => stateStore.setProfilerVisible(false),
         onCloseSettings: () => stateStore.setSettingsVisible(false),
+        onCloseMarksSidebar: () => _setMarksSidebarVisible(false),
+        onMarksSidebarWidthChanged: _setMarksSidebarWidth,
         onViewportPixelSizeModeChanged: _setViewportPixelSizeMode,
         onPerformanceAlertPolicyChanged: _setPerformanceAlertPolicy,
         onFullScreenPointerActivity: _showFullScreenControlsTemporarily,
@@ -443,6 +448,28 @@ class MainWindowController {
     final next = _audibleTrackFileId == fileId ? null : fileId;
     stateStore.setAudibleTrackFileId(next);
     fireAndLog('set audible track', player.setAudibleTrack(next));
+  }
+
+  void _toggleMarksSidebar() {
+    _setMarksSidebarVisible(!_marksSidebarVisible);
+  }
+
+  void _setMarksSidebarVisible(bool visible) {
+    if (_marksSidebarVisible == visible) return;
+    final viewportDelta = visible ? -_marksSidebarWidth : _marksSidebarWidth;
+    layoutCoordinator.requestPreemptViewportLogicalSizeDelta(
+      widthDelta: viewportDelta,
+    );
+    stateStore.setMarksSidebarVisible(visible);
+  }
+
+  void _setMarksSidebarWidth(double width) {
+    final next = width
+        .clamp(kMinMarksSidebarWidth, kMaxMarksSidebarWidth)
+        .toDouble();
+    final delta = next - _marksSidebarWidth;
+    if (delta == 0) return;
+    stateStore.setMarksSidebarWidth(next);
   }
 
   void _toggleFullScreen() {
@@ -735,6 +762,8 @@ class MainWindowController {
   bool get _mediaInfoVisible => _state.mediaInfoVisible;
   bool get _profilerVisible => _state.profilerVisible;
   bool get _settingsVisible => _state.settingsVisible;
+  bool get _marksSidebarVisible => _state.marksSidebarVisible;
+  double get _marksSidebarWidth => _state.marksSidebarWidth;
   bool get _fullScreen => _state.fullScreen;
   bool get _fullScreenControlsVisible => _state.fullScreenControlsVisible;
   int? get _audibleTrackFileId => _state.audibleTrackFileId;

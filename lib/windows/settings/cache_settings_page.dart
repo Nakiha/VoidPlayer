@@ -493,15 +493,18 @@ class _SmallPathButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
   final VoidCallback? onPressed;
+  final bool destructive;
 
   const _SmallPathButton({
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    this.destructive = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return SizedBox(
       width: 32,
       height: 32,
@@ -511,9 +514,48 @@ class _SmallPathButton extends StatelessWidget {
         tooltip: tooltip,
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        style: destructive
+            ? _cacheDeleteIconButtonStyle(colorScheme)
+            : IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
       ),
     );
   }
+}
+
+ButtonStyle _cacheDeleteIconButtonStyle(ColorScheme colorScheme) {
+  const size = Size.square(32);
+  final warningStates = {
+    WidgetState.hovered,
+    WidgetState.focused,
+    WidgetState.pressed,
+  };
+  return ButtonStyle(
+    padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+    fixedSize: const WidgetStatePropertyAll(size),
+    minimumSize: const WidgetStatePropertyAll(size),
+    maximumSize: const WidgetStatePropertyAll(size),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    shape: WidgetStatePropertyAll(
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+    ),
+    foregroundColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.disabled)) {
+        return colorScheme.onSurfaceVariant.withValues(alpha: 0.38);
+      }
+      if (states.any(warningStates.contains)) return colorScheme.error;
+      return colorScheme.onSurfaceVariant;
+    }),
+    backgroundColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.disabled)) return Colors.transparent;
+      if (states.any(warningStates.contains)) {
+        return colorScheme.error.withValues(alpha: 0.12);
+      }
+      return Colors.transparent;
+    }),
+    overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+  );
 }
 
 class _CacheListHeader extends StatelessWidget {
@@ -574,6 +616,7 @@ class _CacheListHeader extends StatelessWidget {
             icon: Icons.delete_outline,
             tooltip: l.deleteSelectedCache,
             onPressed: deleting || !hasSelection ? null : onDeleteSelected,
+            destructive: true,
           ),
         ],
       ),

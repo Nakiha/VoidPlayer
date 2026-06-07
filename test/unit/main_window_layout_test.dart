@@ -110,6 +110,34 @@ void main() {
     },
   );
 
+  test('queued logical viewport width delta preempts native resize', () async {
+    final stateStore = MainWindowStateStore()
+      ..setTextureId(1)
+      ..setLayout(const LayoutState());
+    addTearDown(stateStore.dispose);
+    final trackManager = TrackManager();
+    addTearDown(trackManager.dispose);
+    final controller = _FakeNativePlayerController();
+    final coordinator = MainWindowLayoutCoordinator(
+      vsync: const TestVSync(),
+      controller: controller,
+      stateStore: stateStore,
+      trackManager: trackManager,
+      mounted: () => true,
+    );
+    addTearDown(coordinator.dispose);
+    coordinator.viewportWidth = 400;
+    coordinator.viewportHeight = 200;
+    coordinator.viewportDevicePixelRatio = 2;
+
+    coordinator.requestPreemptViewportLogicalSizeDelta(widthDelta: -30);
+    await pumpEventQueue();
+
+    expect(controller.resizes, const [Size(340, 200)]);
+    expect(coordinator.viewportWidth, 340);
+    expect(coordinator.viewportHeight, 200);
+  });
+
   test('zoom combo changes are clamped through shared zoom path', () {
     final stateStore = MainWindowStateStore()
       ..setTextureId(1)

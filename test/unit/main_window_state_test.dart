@@ -82,6 +82,17 @@ void main() {
     },
   );
 
+  test('marks sidebar width is clamped to supported range', () {
+    final store = MainWindowStateStore();
+    addTearDown(store.dispose);
+
+    store.setMarksSidebarWidth(kMinMarksSidebarWidth - 100);
+    expect(store.value.marksSidebarWidth, kMinMarksSidebarWidth);
+
+    store.setMarksSidebarWidth(kMaxMarksSidebarWidth + 100);
+    expect(store.value.marksSidebarWidth, kMaxMarksSidebarWidth);
+  });
+
   group('MainWindowPlaybackCoordinator loop range step', () {
     test('wraps forward step to loop start after crossing loop end', () async {
       final fixture = _PlaybackFixture(stepForwardPtsUs: 1600000);

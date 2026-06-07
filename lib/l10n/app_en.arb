@@ -579,14 +579,14 @@
   "quickMarkFocus": "Focus mark",
   "@quickMarkFocus": { "description": "Tooltip for zooming and panning the viewport to inspect a quick mark" },
 
-  "quickMarkText": "Text",
-  "@quickMarkText": { "description": "Tooltip for editing quick mark text" },
+  "quickMarkText": "Annotation",
+  "@quickMarkText": { "description": "Tooltip for editing quick mark annotation text" },
 
   "quickMarkBold": "Bold",
   "@quickMarkBold": { "description": "Tooltip for toggling quick mark text bold style" },
 
-  "quickMarkTextSize": "Text size",
-  "@quickMarkTextSize": { "description": "Tooltip for quick mark text size selector" },
+  "quickMarkTextSize": "Annotation size",
+  "@quickMarkTextSize": { "description": "Tooltip for quick mark annotation text size selector" },
 
   "quickMarkRectangle": "Rectangle",
   "@quickMarkRectangle": { "description": "Tooltip for selecting the quick mark rectangle shape" },
@@ -629,6 +629,75 @@
 
   "quickMarkStrokeWidth": "{width}px",
   "@quickMarkStrokeWidth": { "description": "Quick mark stroke width label", "placeholders": { "width": { "type": "int" } } },
+
+  "quickMarkSidebarToggle": "Marks sidebar",
+  "@quickMarkSidebarToggle": { "description": "Toolbar tooltip for toggling the quick mark sidebar" },
+
+  "quickMarkSidebarTitle": "Marks",
+  "@quickMarkSidebarTitle": { "description": "Quick mark sidebar title" },
+
+  "quickMarkSidebarSearchHint": "Search annotation, time, track...",
+  "@quickMarkSidebarSearchHint": { "description": "Quick mark sidebar search field hint" },
+
+  "quickMarkSidebarCurrentFrame": "Current frame",
+  "@quickMarkSidebarCurrentFrame": { "description": "Current frame section title in the quick mark sidebar" },
+
+  "quickMarkSidebarAllMarks": "All marks",
+  "@quickMarkSidebarAllMarks": { "description": "All marks section title in the quick mark sidebar" },
+
+  "quickMarkSidebarTotalCount": "{count} total",
+  "@quickMarkSidebarTotalCount": { "description": "Quick mark sidebar total item count", "placeholders": { "count": { "type": "int" } } },
+
+  "quickMarkSidebarSelectedCount": "{count} selected",
+  "@quickMarkSidebarSelectedCount": { "description": "Quick mark sidebar selected item count", "placeholders": { "count": { "type": "int" } } },
+
+  "quickMarkSidebarSelectAll": "Select all marks",
+  "@quickMarkSidebarSelectAll": { "description": "Quick mark sidebar select all marks action tooltip" },
+
+  "quickMarkSidebarSelectMark": "Select mark",
+  "@quickMarkSidebarSelectMark": { "description": "Quick mark sidebar row checkbox tooltip" },
+
+  "quickMarkSidebarCancelSelection": "Cancel mark selection",
+  "@quickMarkSidebarCancelSelection": { "description": "Quick mark sidebar cancel selection action tooltip" },
+
+  "quickMarkSidebarDeleteSelected": "Delete selected marks",
+  "@quickMarkSidebarDeleteSelected": { "description": "Quick mark sidebar delete selected marks action tooltip" },
+
+  "quickMarkSidebarNoCurrentFrameMarks": "No marks on this frame",
+  "@quickMarkSidebarNoCurrentFrameMarks": { "description": "Current-frame marks empty state" },
+
+  "quickMarkSidebarNoMarks": "No marks yet",
+  "@quickMarkSidebarNoMarks": { "description": "Quick mark sidebar empty state when there are no marks" },
+
+  "quickMarkSidebarNoMatches": "No matching marks",
+  "@quickMarkSidebarNoMatches": { "description": "Quick mark sidebar empty state for search results" },
+
+  "quickMarkSidebarNoAnnotation": "No annotation",
+  "@quickMarkSidebarNoAnnotation": { "description": "Quick mark sidebar placeholder title for a mark without annotation text" },
+
+  "quickMarkSidebarAnnotationLabel": "Label annotation",
+  "@quickMarkSidebarAnnotationLabel": { "description": "Quick mark sidebar annotation text field label" },
+
+  "quickMarkSidebarUntitledRect": "Rect mark",
+  "@quickMarkSidebarUntitledRect": { "description": "Generated sidebar title for a rectangle mark without text" },
+
+  "quickMarkSidebarUntitledArrow": "Arrow mark",
+  "@quickMarkSidebarUntitledArrow": { "description": "Generated sidebar title for an arrow mark without text" },
+
+  "quickMarkSidebarSynced": "synced",
+  "@quickMarkSidebarSynced": { "description": "Quick mark sidebar sync status label" },
+
+  "quickMarkSidebarUnsynced": "unsynced",
+  "@quickMarkSidebarUnsynced": { "description": "Quick mark sidebar sync status label" },
+
+  "quickMarkSidebarInspector": "Label properties",
+  "@quickMarkSidebarInspector": { "description": "Quick mark sidebar inspector section title" },
+
+  "quickMarkSidebarJump": "Jump",
+  "@quickMarkSidebarJump": { "description": "Quick mark sidebar jump action label" },
+
+  "quickMarkSidebarTrackLabel": "Track {index}",
+  "@quickMarkSidebarTrackLabel": { "description": "Track label shown in the quick mark sidebar", "placeholders": { "index": { "type": "int" } } },
 
   "mediaInfoNoTracks": "No tracks open",
   "@mediaInfoNoTracks": { "description": "Media information panel empty state" },

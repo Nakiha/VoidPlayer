@@ -5,10 +5,13 @@ import '../../platform/pointer_button_state_provider.dart';
 import '../../widgets/app_feedback_host.dart';
 import '../../widgets/axtree_region.dart';
 import '../../widgets/media_header.dart';
+import '../../widgets/quick_mark_sidebar.dart';
+import '../../widgets/resizable_divider.dart';
 import '../../widgets/toolbar.dart';
 import '../../widgets/viewport_panel.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_overlays.dart';
+import 'main_window_state.dart';
 import 'main_window_view_model.dart';
 
 class MainWindowScaffold extends StatelessWidget {
@@ -59,6 +62,7 @@ class MainWindowScaffold extends StatelessWidget {
                       onAnalysis: toolbarActions.onAnalysis,
                       onProfiler: toolbarActions.onProfiler,
                       onSettings: toolbarActions.onSettings,
+                      onMarksSidebarToggle: toolbarActions.onMarksSidebarToggle,
                       tracks: media.tracks,
                       analysisDataSource: media.analysisDataSource,
                       viewModeEnabled:
@@ -81,34 +85,67 @@ class MainWindowScaffold extends StatelessWidget {
                       analysisEnabled: media.analysisEnabled,
                       mediaInfoActive: overlays.mediaInfoVisible,
                       profilerActive: overlays.profilerVisible,
+                      marksSidebarActive: overlays.marksSidebarVisible,
                     ),
                   ),
                 Expanded(
-                  child: ViewportPanel(
-                    key: viewport.viewportKey,
-                    textureId: viewport.textureId,
-                    viewportState: viewport.viewportState,
-                    errorText: viewport.viewportState.errorText,
-                    layout: viewport.layout,
-                    onPan: viewportActions.onPan,
-                    onSplit: viewportActions.onSplit,
-                    onZoom: viewportActions.onZoom,
-                    onPointerButton: viewportActions.onPointerButton,
-                    onResize: viewportActions.onResize,
-                    trackGeometry: viewport.tracks,
-                    quickMarks: viewport.quickMarks,
-                    quickMarkDraft: viewport.quickMarkDraft,
-                    selectedQuickMarkId: viewport.selectedQuickMarkId,
-                    onQuickMarkStart: viewportActions.onQuickMarkStart,
-                    onQuickMarkUpdate: viewportActions.onQuickMarkUpdate,
-                    onQuickMarkEnd: viewportActions.onQuickMarkEnd,
-                    onQuickMarkCancel: viewportActions.onQuickMarkCancel,
-                    onQuickMarkSelect: viewportActions.onQuickMarkSelect,
-                    onQuickMarkChanged: viewportActions.onQuickMarkChanged,
-                    onQuickMarkDeleted: viewportActions.onQuickMarkDeleted,
-                    onQuickMarkFocus: viewportActions.onQuickMarkFocus,
-                    pointerButtonStateProvider: pointerButtonStateProvider,
-                    nativePlaybackAvailable: media.nativePlaybackAvailable,
+                  child: Stack(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ViewportPanel(
+                              key: viewport.viewportKey,
+                              textureId: viewport.textureId,
+                              viewportState: viewport.viewportState,
+                              errorText: viewport.viewportState.errorText,
+                              layout: viewport.layout,
+                              onPan: viewportActions.onPan,
+                              onSplit: viewportActions.onSplit,
+                              onZoom: viewportActions.onZoom,
+                              onPointerButton: viewportActions.onPointerButton,
+                              onResize: viewportActions.onResize,
+                              trackGeometry: viewport.tracks,
+                              quickMarks: viewport.quickMarks,
+                              quickMarkDraft: viewport.quickMarkDraft,
+                              selectedQuickMarkId: viewport.selectedQuickMarkId,
+                              onQuickMarkStart:
+                                  viewportActions.onQuickMarkStart,
+                              onQuickMarkUpdate:
+                                  viewportActions.onQuickMarkUpdate,
+                              onQuickMarkEnd: viewportActions.onQuickMarkEnd,
+                              onQuickMarkCancel:
+                                  viewportActions.onQuickMarkCancel,
+                              onQuickMarkSelect:
+                                  viewportActions.onQuickMarkSelect,
+                              onQuickMarkChanged:
+                                  viewportActions.onQuickMarkChanged,
+                              onQuickMarkDeleted:
+                                  viewportActions.onQuickMarkDeleted,
+                              onQuickMarkFocus:
+                                  viewportActions.onQuickMarkFocus,
+                              pointerButtonStateProvider:
+                                  pointerButtonStateProvider,
+                              nativePlaybackAvailable:
+                                  media.nativePlaybackAvailable,
+                            ),
+                          ),
+                          if (overlays.marksSidebarVisible)
+                            QuickMarkSidebar(
+                              width: overlays.marksSidebarWidth,
+                              marks: model.marks,
+                              actions: actions.marks,
+                              onClose: overlayActions.onCloseMarksSidebar,
+                            ),
+                        ],
+                      ),
+                      if (overlays.marksSidebarVisible)
+                        _MarksSidebarResizeHandle(
+                          width: overlays.marksSidebarWidth,
+                          onWidthChanged:
+                              overlayActions.onMarksSidebarWidthChanged,
+                        ),
+                    ],
                   ),
                 ),
                 if (!overlays.fullScreen && media.tracks.isNotEmpty)
@@ -152,6 +189,52 @@ class MainWindowScaffold extends StatelessWidget {
             onOpenProfiler: toolbarActions.onProfiler,
           ),
           const AppFeedbackHost(),
+        ],
+      ),
+    );
+  }
+}
+
+class _MarksSidebarResizeHandle extends StatelessWidget {
+  final double width;
+  final ValueChanged<double> onWidthChanged;
+
+  const _MarksSidebarResizeHandle({
+    required this.width,
+    required this.onWidthChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Positioned(
+            top: 0,
+            right: width,
+            bottom: 0,
+            width: 1,
+            child: ExcludeSemantics(
+              child: ColoredBox(color: colorScheme.outlineVariant),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: width - kMarksSidebarResizeHandleWidth / 2,
+            bottom: 0,
+            width: kMarksSidebarResizeHandleWidth,
+            child: ExcludeSemantics(
+              child: ResizableVerticalDivider(
+                color: colorScheme.outlineVariant,
+                value: width,
+                minValue: kMinMarksSidebarWidth,
+                maxValue: kMaxMarksSidebarWidth,
+                deltaScale: -1,
+                onValueChanged: onWidthChanged,
+              ),
+            ),
+          ),
         ],
       ),
     );

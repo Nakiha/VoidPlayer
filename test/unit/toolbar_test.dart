@@ -125,6 +125,8 @@ void main() {
     bool? analysisEnabled,
     ActionRegistry? actionRegistry,
     VoidCallback? onTogglePlay,
+    VoidCallback? onMarksSidebarToggle,
+    bool marksSidebarActive = false,
   }) {
     final registry = actionRegistry;
     if (registry != null && onTogglePlay != null) {
@@ -141,10 +143,12 @@ void main() {
         onAnalysis: () async {},
         onProfiler: onProfiler,
         onSettings: () {},
+        onMarksSidebarToggle: onMarksSidebarToggle ?? () {},
         tracks: tracks,
         analysisDataSource:
             analysisDataSource ?? _FakeAnalysisToolbarDataSource(),
         analysisEnabled: analysisEnabled ?? tracks.isNotEmpty,
+        marksSidebarActive: marksSidebarActive,
       ),
     );
     return MaterialApp(
@@ -192,6 +196,23 @@ void main() {
 
     await tester.tap(find.text('Add Media'));
     expect(openFileTaps, 1);
+  });
+
+  testWidgets('marks sidebar toggle invokes the toolbar action', (
+    tester,
+  ) async {
+    var toggleTaps = 0;
+
+    await tester.pumpWidget(
+      buildToolbar(
+        tracks: [track()],
+        onProfiler: () {},
+        onMarksSidebarToggle: () => toggleTaps++,
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Marks sidebar'));
+    expect(toggleTaps, 1);
   });
 
   testWidgets('media header click toggles overlay panel with header widths', (

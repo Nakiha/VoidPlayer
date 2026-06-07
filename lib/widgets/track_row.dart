@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../video_renderer_controller.dart';
 import 'axtree_region.dart';
-import 'drag_excess_tracker.dart';
+import 'resizable_divider.dart';
 import 'track_content.dart';
 
 const double _trackSplitterWidth = 1.0;
@@ -54,84 +54,6 @@ class _DragHandleState extends State<_DragHandle> {
               color: _hovering
                   ? colorScheme.onSurface
                   : colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Vertical divider with drag-to-resize, hover highlight, and excess tracking.
-///
-/// When the splitter hits the min/max boundary, the "overshoot" distance is
-/// recorded. Dragging back must first consume this overshoot before the
-/// splitter resumes moving — so the mouse visually "catches up" to the handle.
-class _ResizableDivider extends StatefulWidget {
-  final Color color;
-  final double controlsWidth;
-  final ValueChanged<double> onWidthChanged;
-
-  const _ResizableDivider({
-    required this.color,
-    required this.controlsWidth,
-    required this.onWidthChanged,
-  });
-
-  @override
-  State<_ResizableDivider> createState() => _ResizableDividerState();
-}
-
-class _ResizableDividerState extends State<_ResizableDivider> {
-  bool _hovering = false;
-  final _dragTracker = DragExcessTracker();
-  late double _effectiveWidth;
-
-  @override
-  void initState() {
-    super.initState();
-    _effectiveWidth = widget.controlsWidth;
-  }
-
-  @override
-  void didUpdateWidget(covariant _ResizableDivider oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _effectiveWidth = widget.controlsWidth;
-    _dragTracker.sync(_effectiveWidth);
-  }
-
-  void _onDragStart(_) {
-    _effectiveWidth = widget.controlsWidth;
-    _dragTracker.start(_effectiveWidth);
-  }
-
-  void _onDragUpdate(DragUpdateDetails details) {
-    const minW = 160.0, maxW = 600.0;
-    _effectiveWidth = _dragTracker.update(
-      delta: details.delta.dx,
-      min: minW,
-      max: maxW,
-    );
-    widget.onWidthChanged(_effectiveWidth);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onHorizontalDragStart: _onDragStart,
-      onHorizontalDragUpdate: _onDragUpdate,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeColumn,
-        onEnter: (_) => setState(() => _hovering = true),
-        onExit: (_) => setState(() => _hovering = false),
-        child: SizedBox.expand(
-          child: Center(
-            child: Container(
-              width: _hovering ? 2 : 0,
-              color: _hovering
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.transparent,
             ),
           ),
         ),
@@ -368,10 +290,12 @@ class TrackRow extends StatelessWidget {
                 bottom: 0,
                 width: 9,
                 child: ExcludeSemantics(
-                  child: _ResizableDivider(
+                  child: ResizableVerticalDivider(
                     color: splitterColor,
-                    controlsWidth: controlsWidth,
-                    onWidthChanged: onControlsWidthChanged,
+                    value: controlsWidth,
+                    minValue: 160,
+                    maxValue: 600,
+                    onValueChanged: onControlsWidthChanged,
                   ),
                 ),
               ),

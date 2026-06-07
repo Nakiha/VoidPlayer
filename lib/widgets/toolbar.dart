@@ -29,6 +29,7 @@ class AppToolBar extends StatelessWidget {
   final Future<void> Function() onAnalysis;
   final VoidCallback onProfiler;
   final VoidCallback onSettings;
+  final VoidCallback onMarksSidebarToggle;
   final List<TrackEntry> tracks;
   final AnalysisToolbarDataSource analysisDataSource;
   final bool viewModeEnabled;
@@ -47,6 +48,7 @@ class AppToolBar extends StatelessWidget {
   final bool analysisEnabled;
   final bool mediaInfoActive;
   final bool profilerActive;
+  final bool marksSidebarActive;
 
   const AppToolBar({
     super.key,
@@ -59,6 +61,7 @@ class AppToolBar extends StatelessWidget {
     required this.onAnalysis,
     required this.onProfiler,
     required this.onSettings,
+    required this.onMarksSidebarToggle,
     required this.tracks,
     required this.analysisDataSource,
     this.viewModeEnabled = false,
@@ -77,6 +80,7 @@ class AppToolBar extends StatelessWidget {
     this.analysisEnabled = false,
     this.mediaInfoActive = false,
     this.profilerActive = false,
+    this.marksSidebarActive = false,
   });
 
   @override
@@ -150,6 +154,13 @@ class AppToolBar extends StatelessWidget {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             ),
+          ),
+          const SizedBox(width: 4),
+          _ToolbarToggleButton(
+            active: marksSidebarActive,
+            onPressed: onMarksSidebarToggle,
+            customIcon: const _SidebarToggleIcon(),
+            tooltip: AppLocalizations.of(context)!.quickMarkSidebarToggle,
           ),
         ],
       ),
@@ -375,14 +386,16 @@ class _ToolbarToggleButton extends StatelessWidget {
   final bool active;
   final bool enabled;
   final VoidCallback onPressed;
-  final IconData icon;
+  final IconData? icon;
+  final Widget? customIcon;
   final String tooltip;
 
   const _ToolbarToggleButton({
     required this.active,
     this.enabled = true,
     required this.onPressed,
-    required this.icon,
+    this.icon,
+    this.customIcon,
     required this.tooltip,
   });
 
@@ -392,7 +405,7 @@ class _ToolbarToggleButton extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     return IconButton(
       onPressed: enabled ? onPressed : null,
-      icon: Icon(icon, size: 18),
+      icon: customIcon ?? Icon(icon, size: 18),
       tooltip: tooltip,
       padding: EdgeInsets.zero,
       style: ButtonStyle(
@@ -425,6 +438,70 @@ class _ToolbarToggleButton extends StatelessWidget {
         }),
       ),
     );
+  }
+}
+
+class _SidebarToggleIcon extends StatelessWidget {
+  const _SidebarToggleIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _SidebarToggleIconPainter(
+        color: IconTheme.of(context).color ?? Colors.black,
+      ),
+      size: const Size(18, 18),
+    );
+  }
+}
+
+class _SidebarToggleIconPainter extends CustomPainter {
+  final Color color;
+
+  const _SidebarToggleIconPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()
+      ..color = color.withValues(alpha: 0.16)
+      ..style = PaintingStyle.fill;
+
+    final outer = RRect.fromRectAndRadius(
+      Rect.fromLTWH(2.0, 3.0, size.width - 4.0, size.height - 6.0),
+      const Radius.circular(2.5),
+    );
+    canvas.drawRRect(outer, stroke);
+
+    final sideRect = Rect.fromLTWH(
+      size.width - 7.0,
+      4.8,
+      3.6,
+      size.height - 9.6,
+    );
+    canvas.drawRect(sideRect, fill);
+    canvas.drawLine(
+      Offset(size.width - 8.2, 4.2),
+      Offset(size.width - 8.2, size.height - 4.2),
+      stroke,
+    );
+
+    final arrow = Path()
+      ..moveTo(5.0, size.height / 2)
+      ..lineTo(9.0, size.height / 2)
+      ..moveTo(7.4, size.height / 2 - 1.8)
+      ..lineTo(9.2, size.height / 2)
+      ..lineTo(7.4, size.height / 2 + 1.8);
+    canvas.drawPath(arrow, stroke..strokeCap = StrokeCap.round);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SidebarToggleIconPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
 

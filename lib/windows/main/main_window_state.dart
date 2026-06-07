@@ -7,6 +7,10 @@ import '../../viewport/viewport_display_state.dart';
 
 const Object _mainWindowStateUnset = Object();
 const double kDefaultTimelineControlsWidth = 332.0;
+const double kDefaultMarksSidebarWidth = 340.0;
+const double kMinMarksSidebarWidth = 260.0;
+const double kMaxMarksSidebarWidth = 560.0;
+const double kMarksSidebarResizeHandleWidth = 9.0;
 
 class MainWindowStateModel {
   final int? textureId;
@@ -29,6 +33,8 @@ class MainWindowStateModel {
   final bool mediaInfoVisible;
   final bool profilerVisible;
   final bool settingsVisible;
+  final bool marksSidebarVisible;
+  final double marksSidebarWidth;
   final bool fullScreen;
   final bool fullScreenControlsVisible;
   final int? audibleTrackFileId;
@@ -59,6 +65,8 @@ class MainWindowStateModel {
     this.mediaInfoVisible = false,
     this.profilerVisible = false,
     this.settingsVisible = false,
+    this.marksSidebarVisible = false,
+    this.marksSidebarWidth = kDefaultMarksSidebarWidth,
     this.fullScreen = false,
     this.fullScreenControlsVisible = false,
     this.audibleTrackFileId,
@@ -90,6 +98,8 @@ class MainWindowStateModel {
     bool? mediaInfoVisible,
     bool? profilerVisible,
     bool? settingsVisible,
+    bool? marksSidebarVisible,
+    double? marksSidebarWidth,
     bool? fullScreen,
     bool? fullScreenControlsVisible,
     Object? audibleTrackFileId = _mainWindowStateUnset,
@@ -129,6 +139,8 @@ class MainWindowStateModel {
       mediaInfoVisible: mediaInfoVisible ?? this.mediaInfoVisible,
       profilerVisible: profilerVisible ?? this.profilerVisible,
       settingsVisible: settingsVisible ?? this.settingsVisible,
+      marksSidebarVisible: marksSidebarVisible ?? this.marksSidebarVisible,
+      marksSidebarWidth: marksSidebarWidth ?? this.marksSidebarWidth,
       fullScreen: fullScreen ?? this.fullScreen,
       fullScreenControlsVisible:
           fullScreenControlsVisible ?? this.fullScreenControlsVisible,
@@ -211,6 +223,7 @@ class MainWindowStateStore extends ChangeNotifier {
         fullScreenControlsVisible: false,
         audibleTrackFileId: null,
         mediaInfoVisible: false,
+        marksSidebarVisible: false,
       ),
     );
   }
@@ -243,6 +256,14 @@ class MainWindowStateStore extends ChangeNotifier {
   void setTimelineControlsWidth(double width) {
     if (_value.timelineControlsWidth == width) return;
     _set(_value.copyWith(timelineControlsWidth: width));
+  }
+
+  void setMarksSidebarWidth(double width) {
+    final next = width
+        .clamp(kMinMarksSidebarWidth, kMaxMarksSidebarWidth)
+        .toDouble();
+    if (_value.marksSidebarWidth == next) return;
+    _set(_value.copyWith(marksSidebarWidth: next));
   }
 
   void setPolledPlaybackState(
@@ -307,6 +328,11 @@ class MainWindowStateStore extends ChangeNotifier {
   void setSettingsVisible(bool visible) {
     if (_value.settingsVisible == visible) return;
     _set(_value.copyWith(settingsVisible: visible));
+  }
+
+  void setMarksSidebarVisible(bool visible) {
+    if (_value.marksSidebarVisible == visible) return;
+    _set(_value.copyWith(marksSidebarVisible: visible));
   }
 
   void setFullScreen(bool fullScreen) {

@@ -27,6 +27,9 @@ class MainWindowLayoutCoordinator {
   bool _resizeDirty = false;
   bool _flushInProgress = false;
   bool _disposed = false;
+  Future<void>? _preemptResizeFuture;
+  int? _queuedPreemptWidth;
+  int? _queuedPreemptHeight;
 
   int viewportWidth = 0;
   int viewportHeight = 0;
@@ -270,6 +273,55 @@ class MainWindowLayoutCoordinator {
     viewportWidth = width;
     viewportHeight = height;
     await controller.resize(width, height);
+  }
+
+  void requestPreemptViewportLogicalSizeDelta({
+    double widthDelta = 0,
+    double heightDelta = 0,
+  }) {
+    if (_disposed || textureId() == null) return;
+    if (viewportWidth <= 0 || viewportHeight <= 0) return;
+    if (widthDelta == 0 && heightDelta == 0) return;
+    final dpr = viewportDevicePixelRatio > 0 ? viewportDevicePixelRatio : 1.0;
+    final baseWidth = _queuedPreemptWidth ?? viewportWidth;
+    final baseHeight = _queuedPreemptHeight ?? viewportHeight;
+    final nextWidth = (baseWidth + widthDelta * dpr)
+        .round()
+        .clamp(1, 1 << 30)
+        .toInt();
+    final nextHeight = (baseHeight + heightDelta * dpr)
+        .round()
+        .clamp(1, 1 << 30)
+        .toInt();
+    if (nextWidth == baseWidth && nextHeight == baseHeight) return;
+    _queuedPreemptWidth = nextWidth;
+    _queuedPreemptHeight = nextHeight;
+    if (_preemptResizeFuture == null) {
+      _preemptResizeFuture = _drainPreemptViewportResizeQueue();
+      fireAndLog('preempt queued viewport resize', _preemptResizeFuture!);
+    }
+  }
+
+  Future<void> _drainPreemptViewportResizeQueue() async {
+    try {
+      while (!_disposed && mounted()) {
+        final width = _queuedPreemptWidth;
+        final height = _queuedPreemptHeight;
+        if (width == null || height == null) break;
+        _queuedPreemptWidth = null;
+        _queuedPreemptHeight = null;
+        await preemptViewportResize(width: width, height: height);
+      }
+    } finally {
+      _preemptResizeFuture = null;
+      if (!_disposed &&
+          mounted() &&
+          _queuedPreemptWidth != null &&
+          _queuedPreemptHeight != null) {
+        _preemptResizeFuture = _drainPreemptViewportResizeQueue();
+        fireAndLog('preempt queued viewport resize', _preemptResizeFuture!);
+      }
+    }
   }
 
   void onZoomComboChanged(double value) {

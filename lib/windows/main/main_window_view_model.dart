@@ -170,6 +170,8 @@ class MainWindowOverlayVm {
   final bool mediaInfoVisible;
   final bool profilerVisible;
   final bool settingsVisible;
+  final bool marksSidebarVisible;
+  final double marksSidebarWidth;
   final bool fullScreen;
   final bool fullScreenControlsVisible;
 
@@ -178,6 +180,8 @@ class MainWindowOverlayVm {
     required this.mediaInfoVisible,
     required this.profilerVisible,
     required this.settingsVisible,
+    required this.marksSidebarVisible,
+    required this.marksSidebarWidth,
     required this.fullScreen,
     required this.fullScreenControlsVisible,
   });
@@ -225,6 +229,7 @@ class MainWindowToolbarActions {
   final Future<void> Function() onAnalysisOverlayPanelToggle;
   final VoidCallback onProfiler;
   final VoidCallback onSettings;
+  final VoidCallback onMarksSidebarToggle;
 
   const MainWindowToolbarActions({
     required this.onViewModeChanged,
@@ -236,6 +241,7 @@ class MainWindowToolbarActions {
     required this.onAnalysisOverlayPanelToggle,
     required this.onProfiler,
     required this.onSettings,
+    required this.onMarksSidebarToggle,
   });
 }
 
@@ -343,6 +349,8 @@ class MainWindowOverlayActions {
   final VoidCallback onCloseMediaInfo;
   final VoidCallback onCloseProfiler;
   final VoidCallback onCloseSettings;
+  final VoidCallback onCloseMarksSidebar;
+  final ValueChanged<double> onMarksSidebarWidthChanged;
   final ValueChanged<ViewportPixelSizeMode> onViewportPixelSizeModeChanged;
   final ValueChanged<PerformanceAlertPolicy> onPerformanceAlertPolicyChanged;
   final VoidCallback onFullScreenPointerActivity;
@@ -352,6 +360,8 @@ class MainWindowOverlayActions {
     required this.onCloseMediaInfo,
     required this.onCloseProfiler,
     required this.onCloseSettings,
+    required this.onCloseMarksSidebar,
+    required this.onMarksSidebarWidthChanged,
     required this.onViewportPixelSizeModeChanged,
     required this.onPerformanceAlertPolicyChanged,
     required this.onFullScreenPointerActivity,

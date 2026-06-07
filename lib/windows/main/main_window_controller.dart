@@ -13,6 +13,7 @@ import '../../config/app_settings_repository.dart';
 import '../../marks/quick_mark.dart';
 import '../../marks/quick_mark_persistence.dart';
 import '../../marks/quick_mark_store.dart';
+import '../../marks/quick_mark_thumbnail.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../platform/main_window_platform.dart';
 import '../../platform/native_file_picker.dart';
@@ -224,6 +225,7 @@ class MainWindowController {
         tracksByFileId: {
           for (final entry in trackManager.entries) entry.fileId: entry.info,
         },
+        thumbnailsByMarkId: _quickMarkThumbnails,
         currentPtsUs: _currentPtsUs,
       ),
       media: MainWindowMediaVm(
@@ -764,6 +766,8 @@ class MainWindowController {
   int get _currentPtsUs => _state.currentPtsUs;
   LayoutState get _layout => _state.layout;
   List<QuickMark> get _quickMarks => _state.quickMarks;
+  Map<int, QuickMarkThumbnail> get _quickMarkThumbnails =>
+      _state.quickMarkThumbnails;
   QuickMarkStore get _quickMarkStore =>
       QuickMarkStore(marks: _quickMarks, nextId: _nextQuickMarkId);
   QuickMarkFrameContext get _quickMarkFrameContext => QuickMarkFrameContext(
@@ -958,6 +962,9 @@ class MainWindowController {
     if (_textureId == null || trackManager.isEmpty) return;
     final hit = _quickMarkProjection()?.hitTestPhysical(physicalPosition);
     if (hit == null) return;
+    if (_isPlaying) {
+      unawaited(playbackCoordinator.pause());
+    }
     stateStore.setSelectedQuickMarkId(null);
     _quickMarkDragStart = hit;
     _quickMarkDragLatestPhysicalPosition = physicalPosition;
@@ -970,9 +977,7 @@ class MainWindowController {
           fallbackPtsUs: _currentPtsUs,
         );
     _quickMarkDragAnchor = initialAnchor;
-    _quickMarkDragAnchorFuture = _isPlaying
-        ? null
-        : _quickMarkAnchorForFileId(hit.fileId);
+    _quickMarkDragAnchorFuture = _quickMarkAnchorForFileId(hit.fileId);
     stateStore.setQuickMarkDraft(
       _quickMarkDraftForDrag(
         start: hit,
@@ -1085,6 +1090,12 @@ class MainWindowController {
   void _applyQuickMarkStore(QuickMarkStore store, {bool persist = true}) {
     _nextQuickMarkId = store.nextId;
     stateStore.setQuickMarks(store.marks);
+    stateStore.setQuickMarkThumbnails(
+      QuickMarkThumbnailStore.reconcile(
+        marks: store.marks,
+        current: _quickMarkThumbnails,
+      ),
+    );
     if (persist) _scheduleQuickMarkSave();
   }
 

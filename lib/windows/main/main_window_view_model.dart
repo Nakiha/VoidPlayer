@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../analysis/analysis_overlay.dart';
 import '../../analysis/analysis_toolbar_data_source.dart';
 import '../../marks/quick_mark.dart';
+import '../../marks/quick_mark_thumbnail.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../session/playback_session.dart';
 import '../../track_manager.dart';
@@ -85,6 +86,7 @@ class MainWindowMarksVm {
   final Set<int> visibleMarkIds;
   final int? selectedMarkId;
   final Map<int, TrackInfo> tracksByFileId;
+  final Map<int, QuickMarkThumbnail> thumbnailsByMarkId;
   final int currentPtsUs;
 
   const MainWindowMarksVm({
@@ -93,6 +95,7 @@ class MainWindowMarksVm {
     required this.visibleMarkIds,
     required this.selectedMarkId,
     required this.tracksByFileId,
+    required this.thumbnailsByMarkId,
     required this.currentPtsUs,
   });
 }

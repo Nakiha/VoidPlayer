@@ -293,6 +293,7 @@ MainWindowViewModel _model({
     visibleMarkIds: quickMarks.map((mark) => mark.id).toSet(),
     selectedMarkId: selectedQuickMarkId,
     tracksByFileId: tracksByFileId,
+    thumbnailsByMarkId: const {},
     currentPtsUs: 0,
   ),
   media: MainWindowMediaVm(

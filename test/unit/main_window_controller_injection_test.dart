@@ -9,6 +9,7 @@ import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/config/app_settings_repository.dart';
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/marks/quick_mark_persistence.dart';
+import 'package:void_player/marks/quick_mark_thumbnail.dart';
 import 'package:void_player/platform/analysis_process_host.dart';
 import 'package:void_player/platform/main_window_platform.dart';
 import 'package:void_player/platform/platform_capabilities.dart';
@@ -395,8 +396,46 @@ void main() {
       expect(controller.viewModel.marks.allMarks, hasLength(1));
       expect(controller.viewModel.marks.allMarks.single.fileId, 4);
       expect(controller.viewModel.marks.allMarks.single.text, 'persisted');
+      expect(
+        controller.viewModel.marks.thumbnailsByMarkId[8]?.status,
+        QuickMarkThumbnailStatus.queued,
+      );
     },
   );
+
+  test('starting a quick mark pauses playback immediately', () async {
+    final controller = MainWindowController(
+      actionRegistry: ActionRegistry(),
+      vsync: const TestVSync(),
+      startupOptions: const StartupOptions(),
+      mounted: () => true,
+      analysisGeneration: _FakeAnalysisGenerationService(),
+      analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+      appSettings: _FakeAppSettingsRepository(),
+      playbackPreferences: _FakePlaybackPreferences(),
+    );
+    addTearDown(controller.dispose);
+
+    controller.trackManager.addTrack(
+      const TrackInfo(
+        fileId: 1,
+        slot: 0,
+        path: '/tmp/video.mp4',
+        width: 320,
+        height: 180,
+      ),
+    );
+    controller.stateStore
+      ..setTextureId(1)
+      ..setPolledPlaybackState(1000, 10000, true);
+    controller.viewActions.viewport.onResize(320, 180, 1.0);
+
+    controller.viewActions.viewport.onQuickMarkStart(const Offset(160, 90));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.viewModel.playback.isPlaying, isFalse);
+    expect(controller.viewModel.viewport.quickMarkDraft, isNotNull);
+  });
 }
 
 class _FakeQuickMarkRepository implements QuickMarkRepository {

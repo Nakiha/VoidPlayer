@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
 import '../marks/quick_mark.dart';
+import '../marks/quick_mark_thumbnail.dart';
 import '../utils/time_format.dart';
 import '../windows/main/main_window_view_model.dart';
 import 'app_menu_combo.dart';
@@ -103,6 +105,7 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
                           final mark = scopedMarks[index];
                           return _QuickMarkRow(
                             mark: mark,
+                            thumbnail: widget.marks.thumbnailsByMarkId[mark.id],
                             selected: mark.id == widget.marks.selectedMarkId,
                             selectionActive: selectionActive,
                             checked: _selectedMarkIds.contains(mark.id),
@@ -527,6 +530,7 @@ class _EmptyMarksMessage extends StatelessWidget {
 
 class _QuickMarkRow extends StatefulWidget {
   final QuickMark mark;
+  final QuickMarkThumbnail? thumbnail;
   final bool selected;
   final bool selectionActive;
   final bool checked;
@@ -542,6 +546,7 @@ class _QuickMarkRow extends StatefulWidget {
 
   const _QuickMarkRow({
     required this.mark,
+    required this.thumbnail,
     required this.selected,
     required this.selectionActive,
     required this.checked,
@@ -606,7 +611,10 @@ class _QuickMarkRowState extends State<_QuickMarkRow> {
                       ),
                       child: Row(
                         children: [
-                          _QuickMarkPreview(mark: widget.mark),
+                          _QuickMarkPreview(
+                            mark: widget.mark,
+                            thumbnail: widget.thumbnail,
+                          ),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Column(
@@ -773,12 +781,15 @@ class _RowJumpButton extends StatelessWidget {
 
 class _QuickMarkPreview extends StatelessWidget {
   final QuickMark mark;
+  final QuickMarkThumbnail? thumbnail;
 
-  const _QuickMarkPreview({required this.mark});
+  const _QuickMarkPreview({required this.mark, this.thumbnail});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final thumbnail = this.thumbnail;
+    final assetPath = thumbnail?.assetPath;
     return SizedBox(
       width: 52,
       height: 52,
@@ -787,7 +798,45 @@ class _QuickMarkPreview extends StatelessWidget {
           color: colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(4),
         ),
-        child: CustomPaint(painter: _QuickMarkPreviewPainter(mark)),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (thumbnail?.hasAsset == true && assetPath != null)
+                Image.file(
+                  File(assetPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) =>
+                      CustomPaint(painter: _QuickMarkPreviewPainter(mark)),
+                )
+              else
+                CustomPaint(painter: _QuickMarkPreviewPainter(mark)),
+              if (thumbnail?.status == QuickMarkThumbnailStatus.queued)
+                Positioned(
+                  right: 4,
+                  bottom: 4,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.70),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const SizedBox.square(dimension: 6),
+                  ),
+                ),
+              if (thumbnail?.status == QuickMarkThumbnailStatus.failed)
+                Positioned(
+                  right: 3,
+                  bottom: 3,
+                  child: Icon(
+                    Icons.error_outline,
+                    size: 10,
+                    color: colorScheme.error.withValues(alpha: 0.80),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../marks/quick_mark.dart';
+import '../../marks/quick_mark_thumbnail.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/viewport_display_state.dart';
@@ -41,6 +42,7 @@ class MainWindowStateModel {
   final PerformanceAlertPolicy performanceAlertPolicy;
   final Map<int, QuickMarkAnchor> presentedFrameAnchors;
   final List<QuickMark> quickMarks;
+  final Map<int, QuickMarkThumbnail> quickMarkThumbnails;
   final QuickMark? quickMarkDraft;
   final int? selectedQuickMarkId;
 
@@ -73,6 +75,7 @@ class MainWindowStateModel {
     this.performanceAlertPolicy = PerformanceAlertPolicy.sustained,
     this.presentedFrameAnchors = const {},
     this.quickMarks = const [],
+    this.quickMarkThumbnails = const {},
     this.quickMarkDraft,
     this.selectedQuickMarkId,
   });
@@ -106,6 +109,7 @@ class MainWindowStateModel {
     PerformanceAlertPolicy? performanceAlertPolicy,
     Map<int, QuickMarkAnchor>? presentedFrameAnchors,
     List<QuickMark>? quickMarks,
+    Map<int, QuickMarkThumbnail>? quickMarkThumbnails,
     Object? quickMarkDraft = _mainWindowStateUnset,
     Object? selectedQuickMarkId = _mainWindowStateUnset,
   }) {
@@ -152,6 +156,7 @@ class MainWindowStateModel {
       presentedFrameAnchors:
           presentedFrameAnchors ?? this.presentedFrameAnchors,
       quickMarks: quickMarks ?? this.quickMarks,
+      quickMarkThumbnails: quickMarkThumbnails ?? this.quickMarkThumbnails,
       quickMarkDraft: quickMarkDraft == _mainWindowStateUnset
           ? this.quickMarkDraft
           : quickMarkDraft as QuickMark?,
@@ -212,6 +217,7 @@ class MainWindowStateStore extends ChangeNotifier {
         syncOffsets: const {},
         presentedFrameAnchors: const {},
         quickMarks: const [],
+        quickMarkThumbnails: const {},
         quickMarkDraft: null,
         selectedQuickMarkId: null,
         loopRangeEnabled: false,
@@ -366,6 +372,11 @@ class MainWindowStateStore extends ChangeNotifier {
   void setQuickMarks(List<QuickMark> marks) {
     if (listEquals(_value.quickMarks, marks)) return;
     _set(_value.copyWith(quickMarks: List.unmodifiable(marks)));
+  }
+
+  void setQuickMarkThumbnails(Map<int, QuickMarkThumbnail> thumbnails) {
+    if (mapEquals(_value.quickMarkThumbnails, thumbnails)) return;
+    _set(_value.copyWith(quickMarkThumbnails: Map.unmodifiable(thumbnails)));
   }
 
   void setQuickMarkDraft(QuickMark? draft) {

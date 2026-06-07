@@ -8,6 +8,7 @@ class AppPathSet {
   final String configFile;
   final String locksDir;
   final String logsDir;
+  final String storageDatabaseFile;
   final String analysisCacheDir;
   final String remoteCacheDir;
   final bool isPortable;
@@ -18,6 +19,7 @@ class AppPathSet {
     required this.configFile,
     required this.locksDir,
     required this.logsDir,
+    required this.storageDatabaseFile,
     required this.analysisCacheDir,
     required this.remoteCacheDir,
     required this.isPortable,
@@ -56,6 +58,7 @@ class AppPaths {
       configFile: pathContext.join(rootDir, 'config.json'),
       locksDir: pathContext.join(rootDir, 'locks'),
       logsDir: pathContext.join(rootDir, 'logs'),
+      storageDatabaseFile: pathContext.join(rootDir, 'storage.sqlite'),
       analysisCacheDir: pathContext.join(rootDir, 'cache'),
       remoteCacheDir: pathContext.join(rootDir, 'remote_cache'),
       isPortable: isPortable,

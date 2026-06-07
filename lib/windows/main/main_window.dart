@@ -68,7 +68,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
       playbackPreferences: widget.playbackPreferences,
       quickMarkRepository:
           widget.quickMarkRepository ??
-          FileQuickMarkRepository.defaultLocation(),
+          SqliteQuickMarkRepository.defaultLocation(),
       mounted: () => mounted,
     )..start(testScriptPath: widget.testScriptPath);
     MainWindowShutdownRegistry.register(this, _controller.closeGracefully);

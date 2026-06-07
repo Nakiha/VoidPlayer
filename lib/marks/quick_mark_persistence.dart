@@ -2,26 +2,37 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart';
 
-import '../app_log.dart';
+import '../analysis/file_hash.dart';
 import '../app_paths.dart';
-import '../utils/atomic_file.dart';
+import '../storage/storage_catalog.dart';
 import 'quick_mark.dart';
 
 class QuickMarkMediaRef {
   final int fileId;
   final String path;
   final String mediaId;
+  final String? mediaHash;
 
-  QuickMarkMediaRef({required this.fileId, required this.path, String? mediaId})
-    : mediaId = mediaId ?? mediaIdForPath(path);
+  QuickMarkMediaRef({
+    required this.fileId,
+    required this.path,
+    String? mediaId,
+    this.mediaHash,
+  }) : mediaId = mediaId ?? mediaIdForPath(path);
 
   static String mediaIdForPath(String path) {
     final trimmed = path.trim();
     if (trimmed.isEmpty) return '';
     if (trimmed.contains('://')) return trimmed;
     return p.normalize(trimmed);
+  }
+
+  static String fallbackHashForMediaId(String mediaId) {
+    return sha256.convert(utf8.encode(mediaId)).toString();
   }
 }
 
@@ -47,18 +58,14 @@ class NoopQuickMarkRepository implements QuickMarkRepository {
   ) => Future.value();
 }
 
-class FileQuickMarkRepository implements QuickMarkRepository {
-  static const String _format = 'voidplayer.quick_marks';
-  static const int _version = 1;
+class SqliteQuickMarkRepository implements QuickMarkRepository {
+  final String databasePath;
 
-  final File file;
+  SqliteQuickMarkRepository({required this.databasePath});
 
-  FileQuickMarkRepository(this.file);
-
-  factory FileQuickMarkRepository.defaultLocation() {
-    return FileQuickMarkRepository(
-      File(p.join(AppPaths.current.rootDir, 'annotations', 'local.vpmarks')),
-    );
+  factory SqliteQuickMarkRepository.defaultLocation() {
+    final paths = AppPaths.current;
+    return SqliteQuickMarkRepository(databasePath: paths.storageDatabaseFile);
   }
 
   @override
@@ -66,19 +73,40 @@ class FileQuickMarkRepository implements QuickMarkRepository {
     List<QuickMarkMediaRef> mediaRefs,
   ) async {
     if (mediaRefs.isEmpty) return const [];
-    final document = await _readDocument();
-    final mediaById = _firstMediaRefById(mediaRefs);
-    final marks = <QuickMark>[];
-    for (final entry in document.marks) {
-      final mediaRef = mediaById[entry.mediaId];
-      if (mediaRef == null) continue;
-      marks.add(
-        entry.mark.copyWith(
-          anchor: entry.mark.anchor.copyWith(fileId: mediaRef.fileId),
-        ),
-      );
+    final refs = await _resolveMediaRefs(mediaRefs);
+    final db = _open();
+    try {
+      _upsertMediaRefs(db, refs);
+      final refsByHash = {for (final ref in refs) ref.mediaHash!: ref};
+      final marks = <QuickMark>[];
+      for (final ref in refs) {
+        final rows = db.select(
+          'SELECT media_hash, payload_json FROM marks '
+          'WHERE media_hash = ? ORDER BY mark_id ASC',
+          [ref.mediaHash],
+        );
+        for (final row in rows) {
+          try {
+            final mediaHash = row['media_hash'] as String;
+            final mediaRef = refsByHash[mediaHash];
+            if (mediaRef == null) continue;
+            final decoded = jsonDecode(row['payload_json'] as String);
+            if (decoded is! Map) continue;
+            final mark = _quickMarkFromJson(Map<String, Object?>.from(decoded));
+            marks.add(
+              mark.copyWith(
+                anchor: mark.anchor.copyWith(fileId: mediaRef.fileId),
+              ),
+            );
+          } catch (_) {
+            continue;
+          }
+        }
+      }
+      return marks;
+    } finally {
+      db.close();
     }
-    return marks;
   }
 
   @override
@@ -87,113 +115,135 @@ class FileQuickMarkRepository implements QuickMarkRepository {
     List<QuickMark> marks,
   ) async {
     if (mediaRefs.isEmpty) return;
-    final document = await _readDocument();
-    final mediaByFileId = {for (final ref in mediaRefs) ref.fileId: ref};
-    final activeMediaIds = mediaRefs.map((ref) => ref.mediaId).toSet();
-    final nextMarks = [
-      for (final entry in document.marks)
-        if (!activeMediaIds.contains(entry.mediaId)) entry,
-      for (final mark in marks)
-        if (mediaByFileId[mark.fileId] case final mediaRef?)
-          _StoredQuickMark(
-            mediaId: mediaRef.mediaId,
-            mark: mark.copyWith(anchor: mark.anchor.copyWith(fileId: 0)),
-          ),
-    ];
-    final nextDocument = _QuickMarkDocument(marks: nextMarks);
-    await AtomicFileWriter.writeString(
-      file,
-      const JsonEncoder.withIndent('  ').convert(nextDocument.toJson()),
-    );
-  }
-
-  Map<String, QuickMarkMediaRef> _firstMediaRefById(
-    List<QuickMarkMediaRef> refs,
-  ) {
-    final result = <String, QuickMarkMediaRef>{};
-    for (final ref in refs) {
-      result.putIfAbsent(ref.mediaId, () => ref);
-    }
-    return result;
-  }
-
-  Future<_QuickMarkDocument> _readDocument() async {
-    if (!await file.exists()) return const _QuickMarkDocument();
+    final refs = await _resolveMediaRefs(mediaRefs);
+    final db = _open();
     try {
-      final decoded = jsonDecode(await file.readAsString());
-      if (decoded is Map<String, Object?>) {
-        return _QuickMarkDocument.fromJson(decoded);
-      }
-      log.warning('[QuickMark] ${file.path} root is not a JSON object');
-    } on FormatException catch (e, stack) {
-      log.warning('[QuickMark] failed to parse ${file.path}', e, stack);
-    } on FileSystemException catch (e, stack) {
-      log.warning('[QuickMark] failed to read ${file.path}', e, stack);
-    }
-    return const _QuickMarkDocument();
-  }
-}
-
-class _QuickMarkDocument {
-  final List<_StoredQuickMark> marks;
-
-  const _QuickMarkDocument({this.marks = const []});
-
-  factory _QuickMarkDocument.fromJson(Map<String, Object?> json) {
-    if (json['format'] != FileQuickMarkRepository._format) {
-      return const _QuickMarkDocument();
-    }
-    final version = json['version'];
-    if (version is! int || version > FileQuickMarkRepository._version) {
-      return const _QuickMarkDocument();
-    }
-    final rawMarks = json['marks'];
-    if (rawMarks is! List) return const _QuickMarkDocument();
-    final marks = <_StoredQuickMark>[];
-    for (final raw in rawMarks) {
-      if (raw is! Map) continue;
+      db.execute('BEGIN IMMEDIATE');
       try {
-        marks.add(_StoredQuickMark.fromJson(Map<String, Object?>.from(raw)));
-      } on FormatException {
+        _upsertMediaRefs(db, refs);
+        final refsByFileId = {for (final ref in refs) ref.fileId: ref};
+        for (final ref in refs) {
+          db.execute('DELETE FROM marks WHERE media_hash = ?', [ref.mediaHash]);
+        }
+        final insert = db.prepare(
+          'INSERT OR REPLACE INTO marks '
+          '(media_hash, mark_id, payload_json, updated_at_ms) '
+          'VALUES (?, ?, ?, ?)',
+        );
+        try {
+          final now = DateTime.now().millisecondsSinceEpoch;
+          for (final mark in marks) {
+            final ref = refsByFileId[mark.fileId];
+            if (ref == null) continue;
+            final storedMark = mark.copyWith(
+              anchor: mark.anchor.copyWith(fileId: 0),
+            );
+            insert.execute([
+              ref.mediaHash,
+              mark.id,
+              jsonEncode(_quickMarkToJson(storedMark)),
+              now,
+            ]);
+          }
+        } finally {
+          insert.close();
+        }
+        db.execute('COMMIT');
+      } catch (_) {
+        db.execute('ROLLBACK');
+        rethrow;
+      }
+    } finally {
+      db.close();
+    }
+  }
+
+  Database _open() {
+    Directory(p.dirname(databasePath)).createSync(recursive: true);
+    final db = sqlite3.open(databasePath);
+    db.execute('PRAGMA foreign_keys = ON');
+    db.execute('PRAGMA journal_mode = WAL');
+    StorageCatalog.ensureSchema(db);
+    return db;
+  }
+
+  Future<List<QuickMarkMediaRef>> _resolveMediaRefs(
+    List<QuickMarkMediaRef> refs,
+  ) async {
+    final resolved = <QuickMarkMediaRef>[];
+    for (final ref in refs) {
+      if (ref.mediaHash != null && ref.mediaHash!.isNotEmpty) {
+        resolved.add(ref);
         continue;
       }
+      resolved.add(
+        QuickMarkMediaRef(
+          fileId: ref.fileId,
+          path: ref.path,
+          mediaId: ref.mediaId,
+          mediaHash: await _hashForRef(ref),
+        ),
+      );
     }
-    return _QuickMarkDocument(marks: marks);
+    return resolved;
   }
 
-  Map<String, Object?> toJson() => {
-    'format': FileQuickMarkRepository._format,
-    'version': FileQuickMarkRepository._version,
-    'updatedAt': DateTime.now().toUtc().toIso8601String(),
-    'marks': [for (final mark in marks) mark.toJson()],
-  };
-}
-
-class _StoredQuickMark {
-  final String mediaId;
-  final QuickMark mark;
-
-  const _StoredQuickMark({required this.mediaId, required this.mark});
-
-  factory _StoredQuickMark.fromJson(Map<String, Object?> json) {
-    final mediaId = json['mediaId'];
-    final markJson = json['mark'];
-    if (mediaId is! String || mediaId.isEmpty || markJson is! Map) {
-      throw const FormatException('invalid stored quick mark');
+  Future<String> _hashForRef(QuickMarkMediaRef ref) async {
+    try {
+      final file = File(ref.path);
+      if (await file.exists()) return computeFileSha256(ref.path);
+    } catch (_) {
+      // Fall back to the stable media id for missing or inaccessible files.
     }
-    return _StoredQuickMark(
-      mediaId: mediaId,
-      mark: _quickMarkFromJson(Map<String, Object?>.from(markJson)),
+    return QuickMarkMediaRef.fallbackHashForMediaId(ref.mediaId);
+  }
+
+  void _upsertMediaRefs(Database db, List<QuickMarkMediaRef> refs) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final statement = db.prepare(
+      'INSERT INTO media '
+      '(hash, media_id, path, name, size, mtime_ms, first_seen_ms, last_accessed_ms) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?) '
+      'ON CONFLICT(hash) DO UPDATE SET '
+      'media_id = excluded.media_id, path = excluded.path, name = excluded.name, '
+      'size = excluded.size, mtime_ms = excluded.mtime_ms, '
+      'last_accessed_ms = excluded.last_accessed_ms',
     );
+    try {
+      for (final ref in refs) {
+        final stat = _safeFileStat(ref.path);
+        statement.execute([
+          ref.mediaHash,
+          ref.mediaId,
+          ref.path,
+          p.basename(ref.path),
+          stat.size,
+          stat.modifiedMs,
+          now,
+          now,
+        ]);
+      }
+    } finally {
+      statement.close();
+    }
   }
 
-  Map<String, Object?> toJson() => {
-    'mediaId': mediaId,
-    'mark': _quickMarkToJson(mark),
-  };
+  ({int size, int modifiedMs}) _safeFileStat(String path) {
+    try {
+      final stat = File(path).statSync();
+      if (stat.type == FileSystemEntityType.file) {
+        return (
+          size: stat.size,
+          modifiedMs: stat.modified.millisecondsSinceEpoch,
+        );
+      }
+    } catch (_) {}
+    return (size: 0, modifiedMs: 0);
+  }
 }
 
 Map<String, Object?> _quickMarkToJson(QuickMark mark) => {
+  'version': StorageCatalog.markPayloadVersion,
   'id': mark.id,
   'anchor': _anchorToJson(mark.anchor),
   'sourceRect': _rectToJson(mark.sourceRect),
@@ -209,6 +259,10 @@ Map<String, Object?> _quickMarkToJson(QuickMark mark) => {
 };
 
 QuickMark _quickMarkFromJson(Map<String, Object?> json) {
+  final version = _readInt(json, 'version') ?? 1;
+  if (version > StorageCatalog.markPayloadVersion) {
+    throw const FormatException('unsupported quick mark payload version');
+  }
   final id = _readInt(json, 'id');
   final anchorJson = json['anchor'];
   final rectJson = json['sourceRect'];

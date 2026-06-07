@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 
 import '../analysis/analysis_cache.dart';
 import '../app_paths.dart';
+import 'storage_catalog.dart';
 
 class StorageFileEntry {
   final String id;
@@ -147,14 +148,20 @@ class AppStorage {
     required String rootDir,
     int thumbnailMaxBytes = 0,
   }) async {
-    final annotationsPath = p.join(rootDir, 'annotations');
-    final thumbnailsPath = p.join(rootDir, 'marks', 'thumbnails');
-    final annotations = await _scanDirectory(
-      Directory(annotationsPath),
-      maxBytes: 0,
-    );
-    final thumbnails = await _scanDirectory(
-      Directory(thumbnailsPath),
+    final databasePath = p.join(rootDir, 'storage.sqlite');
+    if (await File(databasePath).exists()) {
+      try {
+        StorageCatalog(
+          databasePath: databasePath,
+        ).reconcileMissingThumbnailFiles();
+      } catch (_) {
+        // The settings page should keep opening if a developer manually leaves
+        // an old or corrupt catalog behind.
+      }
+    }
+    final annotations = await _scanStorageDatabaseFiles(rootDir, maxBytes: 0);
+    final thumbnails = await _scanMarkThumbnailFiles(
+      rootDir,
       maxBytes: thumbnailMaxBytes,
     );
     return MarkStorageSnapshot(
@@ -168,10 +175,7 @@ class AppStorage {
     String? rootDir,
   }) {
     final resolvedRoot = rootDir ?? AppPaths.current.rootDir;
-    return _deleteFilesInDirectory(
-      ids,
-      directory: p.join(resolvedRoot, 'annotations'),
-    );
+    return _deleteFilesInDirectory(ids, directory: resolvedRoot);
   }
 
   static Future<StorageDeleteResult> deleteMarkThumbnailFiles(
@@ -179,10 +183,7 @@ class AppStorage {
     String? rootDir,
   }) {
     final resolvedRoot = rootDir ?? AppPaths.current.rootDir;
-    return _deleteFilesInDirectory(
-      ids,
-      directory: p.join(resolvedRoot, 'marks', 'thumbnails'),
-    );
+    return _deleteFilesInDirectory(ids, directory: resolvedRoot);
   }
 
   static Future<StoragePruneResult> enforceMarkThumbnailLimit({
@@ -237,27 +238,88 @@ class AppStorage {
     String? rootDir,
   }) async {
     final resolvedRoot = rootDir ?? AppPaths.current.rootDir;
-    final thumbnailsDir = Directory(
-      p.join(resolvedRoot, 'marks', 'thumbnails'),
-    );
-    final before = await _scanDirectory(thumbnailsDir, maxBytes: 0);
-    if (await thumbnailsDir.exists()) {
-      await thumbnailsDir.delete(recursive: true);
+    final before = await _scanMarkThumbnailFiles(resolvedRoot, maxBytes: 0);
+    final cacheDir = Directory(p.join(resolvedRoot, 'cache'));
+    if (await cacheDir.exists()) {
+      await for (final entity in cacheDir.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is! Directory ||
+            p.basename(entity.path) != 'mark_thumbnails') {
+          continue;
+        }
+        try {
+          await entity.delete(recursive: true);
+        } on FileSystemException {
+          // Ignore directories that disappear during settings refresh.
+        }
+      }
     }
-    await thumbnailsDir.create(recursive: true);
+    final databasePath = p.join(resolvedRoot, 'storage.sqlite');
+    if (await File(databasePath).exists()) {
+      try {
+        StorageCatalog(
+          databasePath: databasePath,
+        ).reconcileMissingThumbnailFiles();
+      } catch (_) {
+        // Keep file cleanup independent from catalog health.
+      }
+    }
     return MarkThumbnailClearResult(
       deletedBytes: before.totalBytes,
       deletedFileCount: before.fileCount,
     );
   }
 
-  static Future<StorageFolderSnapshot> _scanDirectory(
-    Directory directory, {
+  static Future<StorageFolderSnapshot> _scanStorageDatabaseFiles(
+    String rootDir, {
     required int maxBytes,
   }) async {
-    if (!await directory.exists()) {
+    final entries = <StorageFileEntry>[];
+    var bytes = 0;
+    for (final name in const [
+      'storage.sqlite',
+      'storage.sqlite-wal',
+      'storage.sqlite-shm',
+    ]) {
+      final file = File(p.join(rootDir, name));
+      if (!await file.exists()) continue;
+      try {
+        final stat = await file.stat();
+        bytes += stat.size;
+        entries.add(
+          StorageFileEntry(
+            id: name,
+            name: name,
+            path: file.path,
+            bytes: stat.size,
+            modifiedAt: stat.modified,
+            accessedAt: stat.accessed,
+          ),
+        );
+      } on FileSystemException {
+        // Ignore files that disappear while the settings page is refreshing.
+      }
+    }
+    entries.sort((a, b) => b.lruTime.compareTo(a.lruTime));
+    return StorageFolderSnapshot(
+      path: rootDir,
+      totalBytes: bytes,
+      fileCount: entries.length,
+      maxBytes: maxBytes,
+      entries: entries,
+    );
+  }
+
+  static Future<StorageFolderSnapshot> _scanMarkThumbnailFiles(
+    String rootDir, {
+    required int maxBytes,
+  }) async {
+    final cacheDir = Directory(p.join(rootDir, 'cache'));
+    if (!await cacheDir.exists()) {
       return StorageFolderSnapshot(
-        path: directory.path,
+        path: cacheDir.path,
         totalBytes: 0,
         fileCount: 0,
         maxBytes: maxBytes,
@@ -266,17 +328,20 @@ class AppStorage {
     }
     var bytes = 0;
     final entries = <StorageFileEntry>[];
-    await for (final entity in directory.list(
+    await for (final entity in cacheDir.list(
       recursive: true,
       followLinks: false,
     )) {
-      if (entity is! File) continue;
+      if (entity is! File ||
+          !p.split(entity.path).contains('mark_thumbnails')) {
+        continue;
+      }
       try {
         final stat = await entity.stat();
         bytes += stat.size;
         entries.add(
           StorageFileEntry(
-            id: p.relative(entity.path, from: directory.path),
+            id: p.relative(entity.path, from: rootDir),
             name: p.basename(entity.path),
             path: entity.path,
             bytes: stat.size,
@@ -290,7 +355,7 @@ class AppStorage {
     }
     entries.sort((a, b) => b.lruTime.compareTo(a.lruTime));
     return StorageFolderSnapshot(
-      path: directory.path,
+      path: cacheDir.path,
       totalBytes: bytes,
       fileCount: entries.length,
       maxBytes: maxBytes,

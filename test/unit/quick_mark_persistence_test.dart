@@ -2,18 +2,29 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/marks/quick_mark_persistence.dart';
 
 void main() {
   late Directory dir;
-  late FileQuickMarkRepository repository;
+  late SqliteQuickMarkRepository repository;
+  late File mediaA;
+  late File mediaB;
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp(
       'void_player_quick_mark_persistence_test_',
     );
-    repository = FileQuickMarkRepository(File('${dir.path}/local.vpmarks'));
+    mediaA = File(p.join(dir.path, 'media', 'a.mp4'));
+    mediaB = File(p.join(dir.path, 'media', 'b.mp4'));
+    await mediaA.create(recursive: true);
+    await mediaA.writeAsBytes([1, 2, 3, 4]);
+    await mediaB.create(recursive: true);
+    await mediaB.writeAsBytes([5, 6, 7, 8]);
+    repository = SqliteQuickMarkRepository(
+      databasePath: p.join(dir.path, 'storage.sqlite'),
+    );
   });
 
   tearDown(() async {
@@ -22,7 +33,7 @@ void main() {
 
   test('saves and loads marks by stable media path', () async {
     await repository.saveForMediaRefs(
-      [QuickMarkMediaRef(fileId: 7, path: '/media/a.mp4')],
+      [QuickMarkMediaRef(fileId: 7, path: mediaA.path)],
       const [
         QuickMark(
           id: 3,
@@ -48,7 +59,7 @@ void main() {
     );
 
     final loaded = await repository.loadForMediaRefs([
-      QuickMarkMediaRef(fileId: 42, path: '/media/a.mp4'),
+      QuickMarkMediaRef(fileId: 42, path: mediaA.path),
     ]);
 
     expect(loaded, hasLength(1));
@@ -72,7 +83,7 @@ void main() {
 
   test('saving one media preserves marks for inactive media', () async {
     await repository.saveForMediaRefs(
-      [QuickMarkMediaRef(fileId: 1, path: '/media/a.mp4')],
+      [QuickMarkMediaRef(fileId: 1, path: mediaA.path)],
       const [
         QuickMark(
           id: 1,
@@ -83,7 +94,7 @@ void main() {
       ],
     );
     await repository.saveForMediaRefs(
-      [QuickMarkMediaRef(fileId: 2, path: '/media/b.mp4')],
+      [QuickMarkMediaRef(fileId: 2, path: mediaB.path)],
       const [
         QuickMark(
           id: 2,
@@ -95,8 +106,8 @@ void main() {
     );
 
     final loaded = await repository.loadForMediaRefs([
-      QuickMarkMediaRef(fileId: 10, path: '/media/a.mp4'),
-      QuickMarkMediaRef(fileId: 20, path: '/media/b.mp4'),
+      QuickMarkMediaRef(fileId: 10, path: mediaA.path),
+      QuickMarkMediaRef(fileId: 20, path: mediaB.path),
     ]);
 
     expect(loaded.map((mark) => mark.text).toSet(), {'a', 'b'});
@@ -104,5 +115,31 @@ void main() {
       'a:10',
       'b:20',
     });
+  });
+
+  test('uses content hash so marks survive path changes', () async {
+    await repository.saveForMediaRefs(
+      [QuickMarkMediaRef(fileId: 1, path: mediaA.path)],
+      const [
+        QuickMark(
+          id: 1,
+          anchor: QuickMarkAnchor(fileId: 1, ptsUs: 1000, dtsUs: 1000),
+          sourceRect: Rect.zero,
+          text: 'same bytes',
+        ),
+      ],
+    );
+
+    final moved = File(p.join(dir.path, 'renamed', 'a-renamed.mp4'));
+    await moved.create(recursive: true);
+    await moved.writeAsBytes(await mediaA.readAsBytes());
+
+    final loaded = await repository.loadForMediaRefs([
+      QuickMarkMediaRef(fileId: 99, path: moved.path),
+    ]);
+
+    expect(loaded, hasLength(1));
+    expect(loaded.single.fileId, 99);
+    expect(loaded.single.text, 'same bytes');
   });
 }

@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import '../../actions/action_registry.dart';
 import '../../analysis/analysis_manager.dart';
 import '../../analysis/analysis_toolbar_data_source.dart';
+import '../../analysis/file_hash.dart';
 import '../../app_log.dart';
 import '../../app_paths.dart';
 import '../../automation/test_runner.dart';
@@ -27,6 +28,7 @@ import '../../preferences/app_config_playback_preferences.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../session/playback_session.dart';
 import '../../startup_options.dart';
+import '../../storage/storage_catalog.dart';
 import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
@@ -77,6 +79,7 @@ class MainWindowController {
   bool _quickMarkSavePending = false;
   bool _quickMarkThumbnailCaptureInFlight = false;
   bool _quickMarkThumbnailRerunRequested = false;
+  final Map<int, String> _quickMarkMediaHashes = <int, String>{};
   List<QuickMarkMediaRef> _pendingQuickMarkSaveRefs = const [];
   List<QuickMark> _pendingQuickMarkSaveMarks = const [];
   late final MainWindowTimelineMetrics timelineMetrics =
@@ -822,6 +825,58 @@ class MainWindowController {
       QuickMarkMediaRef(fileId: entry.fileId, path: entry.path),
   ];
 
+  Future<List<QuickMarkMediaRef>> _quickMarkMediaRefsWithHashes(
+    List<QuickMarkMediaRef> refs,
+  ) async {
+    final activeFileIds = refs.map((ref) => ref.fileId).toSet();
+    _quickMarkMediaHashes.removeWhere(
+      (fileId, _) => !activeFileIds.contains(fileId),
+    );
+    final resolved = <QuickMarkMediaRef>[];
+    for (final ref in refs) {
+      final hash =
+          ref.mediaHash ??
+          _quickMarkMediaHashes[ref.fileId] ??
+          await _quickMarkMediaHashForPath(ref.path, ref.mediaId);
+      _quickMarkMediaHashes[ref.fileId] = hash;
+      resolved.add(
+        QuickMarkMediaRef(
+          fileId: ref.fileId,
+          path: ref.path,
+          mediaId: ref.mediaId,
+          mediaHash: hash,
+        ),
+      );
+    }
+    return resolved;
+  }
+
+  Future<String> _quickMarkMediaHashForPath(String path, String mediaId) async {
+    try {
+      final file = File(path);
+      if (await file.exists()) return computeFileSha256(path);
+    } catch (_) {
+      // Missing/inaccessible files cannot be content-addressed; keep a stable
+      // identity so the UI can still persist local draft data.
+    }
+    return QuickMarkMediaRef.fallbackHashForMediaId(mediaId);
+  }
+
+  Future<String?> _quickMarkMediaHashForFileId(int fileId) async {
+    final cached = _quickMarkMediaHashes[fileId];
+    if (cached != null && cached.isNotEmpty) return cached;
+    for (final entry in trackManager.entries) {
+      if (entry.fileId != fileId) continue;
+      final hash = await _quickMarkMediaHashForPath(
+        entry.path,
+        QuickMarkMediaRef.mediaIdForPath(entry.path),
+      );
+      _quickMarkMediaHashes[fileId] = hash;
+      return hash;
+    }
+    return null;
+  }
+
   String _quickMarkMediaSignature(List<QuickMarkMediaRef> refs) {
     return refs.map((ref) => '${ref.fileId}:${ref.mediaId}').join('|');
   }
@@ -847,7 +902,12 @@ class MainWindowController {
     }
     if (refs.isEmpty) return;
     try {
-      final loaded = await quickMarkRepository.loadForMediaRefs(refs);
+      final resolvedRefs = await _quickMarkMediaRefsWithHashes(refs);
+      if (serial != _quickMarkPersistenceSerial ||
+          signature != _quickMarkTrackSignature) {
+        return;
+      }
+      final loaded = await quickMarkRepository.loadForMediaRefs(resolvedRefs);
       if (serial != _quickMarkPersistenceSerial ||
           signature != _quickMarkTrackSignature) {
         return;
@@ -900,7 +960,14 @@ class MainWindowController {
     _pendingQuickMarkSaveRefs = const [];
     _pendingQuickMarkSaveMarks = const [];
     if (refs.isEmpty) return;
-    final save = quickMarkRepository.saveForMediaRefs(refs, marks);
+    late final List<QuickMarkMediaRef> resolvedRefs;
+    try {
+      resolvedRefs = await _quickMarkMediaRefsWithHashes(refs);
+    } catch (e, stack) {
+      log.warning('[QuickMark] media hash resolution failed', e, stack);
+      return;
+    }
+    final save = quickMarkRepository.saveForMediaRefs(resolvedRefs, marks);
     _quickMarkSaveInFlight = save;
     try {
       await save;
@@ -959,7 +1026,14 @@ class MainWindowController {
         if (rect == null) continue;
 
         try {
-          final outputPath = _quickMarkThumbnailOutputPath(thumbnail);
+          final mediaHash = await _quickMarkMediaHashForFileId(mark.fileId);
+          if (mediaHash == null) continue;
+          final renderDigest = _quickMarkThumbnailDigest(thumbnail);
+          final outputPath = _quickMarkThumbnailOutputPath(
+            mediaHash: mediaHash,
+            markId: mark.id,
+            renderDigest: renderDigest,
+          );
           await Directory(p.dirname(outputPath)).create(recursive: true);
           final capture = await player.captureViewportRegion(
             x: rect.left,
@@ -969,11 +1043,23 @@ class MainWindowController {
             maxSize: 160,
             outputPath: outputPath,
           );
+          final assetPath = capture.outputPath ?? outputPath;
+          final assetFile = File(assetPath);
+          if (await assetFile.exists()) {
+            final bytes = await assetFile.length();
+            StorageCatalog.defaultLocation().registerThumbnail(
+              mediaHash: mediaHash,
+              markId: mark.id,
+              renderDigest: renderDigest,
+              path: assetPath,
+              bytes: bytes,
+            );
+          }
           _replaceQuickMarkThumbnail(
             thumbnail.markId,
             thumbnail.copyWith(
               status: QuickMarkThumbnailStatus.ready,
-              assetPath: capture.outputPath ?? outputPath,
+              assetPath: assetPath,
               error: null,
             ),
           );
@@ -1082,13 +1168,24 @@ class MainWindowController {
     return (left: left, top: top, width: width, height: height);
   }
 
-  String _quickMarkThumbnailOutputPath(QuickMarkThumbnail thumbnail) {
-    final digest = sha1.convert(utf8.encode(thumbnail.sourceKey)).toString();
+  String _quickMarkThumbnailDigest(QuickMarkThumbnail thumbnail) {
+    return sha1
+        .convert(utf8.encode(thumbnail.sourceKey))
+        .toString()
+        .substring(0, 16);
+  }
+
+  String _quickMarkThumbnailOutputPath({
+    required String mediaHash,
+    required int markId,
+    required String renderDigest,
+  }) {
     return p.join(
-      AppPaths.current.rootDir,
-      'marks',
-      'thumbnails',
-      'mark_${thumbnail.markId}_${digest.substring(0, 16)}.png',
+      StorageCatalog.thumbnailDirectory(
+        rootDir: AppPaths.current.rootDir,
+        mediaHash: mediaHash,
+      ),
+      'mark_${markId}_$renderDigest.png',
     );
   }
 

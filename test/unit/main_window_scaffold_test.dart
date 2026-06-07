@@ -75,6 +75,14 @@ MainWindowViewModel _model({required bool settingsVisible}) =>
         quickMarkDraft: null,
         selectedQuickMarkId: null,
       ),
+      marks: MainWindowMarksVm(
+        allMarks: const [],
+        visibleMarks: const [],
+        visibleMarkIds: const {},
+        selectedMarkId: null,
+        tracksByFileId: const {},
+        currentPtsUs: 0,
+      ),
       media: MainWindowMediaVm(
         analysisEnabled: true,
         analysisOverlayEnabled: true,
@@ -148,6 +156,13 @@ final _noop = MainWindowViewActions(
     onQuickMarkChanged: (_) {},
     onQuickMarkDeleted: (_) {},
     onQuickMarkFocus: (_) {},
+  ),
+  marks: MainWindowMarksActions(
+    onJumpToMark: (_) {},
+    onSelectVisibleMark: (_) {},
+    onMarkChanged: (_) {},
+    onMarkDeleted: (_) {},
+    onFocusVisibleMark: (_) {},
   ),
   mediaTimeline: MainWindowMediaTimelineActions(
     onMediaSwapped: (_, _) {},

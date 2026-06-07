@@ -73,6 +73,9 @@ class QuickMarkAnchor {
 
   bool get hasAnalysisFrame => analysisFrameIndex >= 0;
 
+  bool get hasStrongIdentity =>
+      hasVac2Frame || hasAnalysisFrame || hasSourcePacketIdentity;
+
   bool matchesPresentedFrame(QuickMarkAnchor current) {
     if (fileId != current.fileId) return false;
     if (hasVac2Frame && current.hasVac2Frame) {
@@ -93,8 +96,20 @@ class QuickMarkAnchor {
               sourcePacketSize == current.sourcePacketSize)) {
         return true;
       }
+      return false;
     }
     return ptsUs == current.ptsUs && dtsUs == current.dtsUs;
+  }
+
+  bool matchesPresentedFrameOrTime(
+    QuickMarkAnchor current, {
+    required int fallbackToleranceUs,
+  }) {
+    if (fileId != current.fileId) return false;
+    if (hasStrongIdentity || current.hasStrongIdentity) {
+      return matchesPresentedFrame(current);
+    }
+    return (ptsUs - current.ptsUs).abs() <= fallbackToleranceUs;
   }
 
   QuickMarkAnchor copyWith({

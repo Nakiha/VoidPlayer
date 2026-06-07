@@ -69,4 +69,54 @@ void main() {
       isFalse,
     );
   });
+
+  test('quick mark anchor weak fallback uses time tolerance', () {
+    const markAnchor = QuickMarkAnchor(
+      fileId: 7,
+      ptsUs: 12000,
+      dtsUs: 12000,
+      durationUs: 4000,
+    );
+
+    expect(
+      markAnchor.matchesPresentedFrameOrTime(
+        const QuickMarkAnchor(fileId: 7, ptsUs: 13999, dtsUs: 13999),
+        fallbackToleranceUs: 2000,
+      ),
+      isTrue,
+    );
+    expect(
+      markAnchor.matchesPresentedFrameOrTime(
+        const QuickMarkAnchor(fileId: 7, ptsUs: 14001, dtsUs: 14001),
+        fallbackToleranceUs: 2000,
+      ),
+      isFalse,
+    );
+  });
+
+  test(
+    'quick mark anchor strong identity does not fall through to tolerance',
+    () {
+      const markAnchor = QuickMarkAnchor(
+        fileId: 7,
+        ptsUs: 12000,
+        dtsUs: 12000,
+        durationUs: 4000,
+        sourcePacketIndex: 8,
+      );
+
+      expect(
+        markAnchor.matchesPresentedFrameOrTime(
+          const QuickMarkAnchor(
+            fileId: 7,
+            ptsUs: 12000,
+            dtsUs: 12000,
+            sourcePacketIndex: 9,
+          ),
+          fallbackToleranceUs: 2000,
+        ),
+        isFalse,
+      );
+    },
+  );
 }

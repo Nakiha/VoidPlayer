@@ -7,6 +7,7 @@ import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/config/app_settings_repository.dart';
+import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/platform/analysis_process_host.dart';
 import 'package:void_player/platform/main_window_platform.dart';
 import 'package:void_player/platform/platform_capabilities.dart';
@@ -277,6 +278,74 @@ void main() {
 
       expect(controller.viewModel.media.analysisEnabled, isFalse);
       expect(controller.viewModel.media.analysisOverlayEnabled, isTrue);
+    },
+  );
+
+  test(
+    'quick mark view model keeps all marks separate from viewport marks',
+    () {
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+      );
+      addTearDown(controller.dispose);
+
+      controller.trackManager.addTrack(
+        const TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: '/tmp/video.mp4',
+          width: 320,
+          height: 180,
+        ),
+      );
+      controller.stateStore
+        ..setQuickMarks(const [
+          QuickMark(
+            id: 1,
+            anchor: QuickMarkAnchor(
+              fileId: 1,
+              ptsUs: 1000,
+              dtsUs: 1000,
+              durationUs: 1000,
+            ),
+            sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+          ),
+          QuickMark(
+            id: 2,
+            anchor: QuickMarkAnchor(
+              fileId: 1,
+              ptsUs: 4000,
+              dtsUs: 4000,
+              durationUs: 1000,
+            ),
+            sourceRect: Rect.fromLTRB(0.3, 0.3, 0.4, 0.4),
+          ),
+        ])
+        ..setSelectedQuickMarkId(2)
+        ..setPolledPlaybackState(
+          1000,
+          10000,
+          false,
+          presentedFrameAnchors: const {
+            1: QuickMarkAnchor(fileId: 1, ptsUs: 1000, dtsUs: 1000),
+          },
+        );
+
+      final viewModel = controller.viewModel;
+
+      expect(viewModel.viewport.quickMarks.map((mark) => mark.id), const [1]);
+      expect(viewModel.viewport.selectedQuickMarkId, isNull);
+      expect(viewModel.marks.allMarks.map((mark) => mark.id), const [1, 2]);
+      expect(viewModel.marks.visibleMarkIds, const {1});
+      expect(viewModel.marks.selectedMarkId, 2);
+      expect(viewModel.marks.tracksByFileId[1]?.path, '/tmp/video.mp4');
     },
   );
 }

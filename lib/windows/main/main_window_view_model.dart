@@ -17,6 +17,7 @@ class MainWindowViewModel {
   final GlobalKey fullFrameCaptureKey;
   final MainWindowSessionVm session;
   final MainWindowViewportVm viewport;
+  final MainWindowMarksVm marks;
   final MainWindowMediaVm media;
   final MainWindowPlaybackVm playback;
   final MainWindowOverlayVm overlays;
@@ -25,6 +26,7 @@ class MainWindowViewModel {
     required this.fullFrameCaptureKey,
     required this.session,
     required this.viewport,
+    required this.marks,
     required this.media,
     required this.playback,
     required this.overlays,
@@ -74,6 +76,24 @@ class MainWindowViewportVm {
     required this.quickMarks,
     required this.quickMarkDraft,
     required this.selectedQuickMarkId,
+  });
+}
+
+class MainWindowMarksVm {
+  final List<QuickMark> allMarks;
+  final List<QuickMark> visibleMarks;
+  final Set<int> visibleMarkIds;
+  final int? selectedMarkId;
+  final Map<int, TrackInfo> tracksByFileId;
+  final int currentPtsUs;
+
+  const MainWindowMarksVm({
+    required this.allMarks,
+    required this.visibleMarks,
+    required this.visibleMarkIds,
+    required this.selectedMarkId,
+    required this.tracksByFileId,
+    required this.currentPtsUs,
   });
 }
 
@@ -167,6 +187,7 @@ class MainWindowViewActions {
   final MainWindowDropActions drop;
   final MainWindowToolbarActions toolbar;
   final MainWindowViewportActions viewport;
+  final MainWindowMarksActions marks;
   final MainWindowMediaTimelineActions mediaTimeline;
   final MainWindowAnalysisOverlayActions analysisOverlay;
   final MainWindowOverlayActions overlays;
@@ -175,6 +196,7 @@ class MainWindowViewActions {
     required this.drop,
     required this.toolbar,
     required this.viewport,
+    required this.marks,
     required this.mediaTimeline,
     required this.analysisOverlay,
     required this.overlays,
@@ -246,6 +268,22 @@ class MainWindowViewportActions {
     required this.onQuickMarkChanged,
     required this.onQuickMarkDeleted,
     required this.onQuickMarkFocus,
+  });
+}
+
+class MainWindowMarksActions {
+  final ValueChanged<int> onJumpToMark;
+  final ValueChanged<int?> onSelectVisibleMark;
+  final ValueChanged<QuickMark> onMarkChanged;
+  final ValueChanged<int> onMarkDeleted;
+  final ValueChanged<int> onFocusVisibleMark;
+
+  const MainWindowMarksActions({
+    required this.onJumpToMark,
+    required this.onSelectVisibleMark,
+    required this.onMarkChanged,
+    required this.onMarkDeleted,
+    required this.onFocusVisibleMark,
   });
 }
 

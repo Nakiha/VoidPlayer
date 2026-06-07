@@ -25,6 +25,7 @@ class MainWindowActionCoordinator {
   final void Function() toggleFullScreen;
   final void Function() exitFullScreen;
   final SessionCapabilities Function() capabilities;
+  final FutureOr<void> Function(int fileId) removeTrack;
 
   MainWindowActionBinder? _binder;
 
@@ -43,6 +44,7 @@ class MainWindowActionCoordinator {
     required this.toggleFullScreen,
     required this.exitFullScreen,
     required this.capabilities,
+    required this.removeTrack,
   });
 
   void bind() {
@@ -62,7 +64,7 @@ class MainWindowActionCoordinator {
       addMediaByPath: mediaCoordinator.addMediaByPath,
       addNetworkMedia: mediaCoordinator.addNetworkMedia,
       addSshRemoteMedia: mediaCoordinator.addSshRemoteMedia,
-      removeTrack: mediaCoordinator.removeTrack,
+      removeTrack: removeTrack,
       swapMediaHeader: mediaCoordinator.onMediaSwapped,
       adjustTrackOffset: mediaCoordinator.onOffsetChangedForSlot,
       setLoopRangeEnabled: playbackCoordinator.setLoopRangeEnabled,

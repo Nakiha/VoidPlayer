@@ -179,6 +179,12 @@ class MainWindowController {
   }
 
   MainWindowViewModel get viewModel {
+    final visibleQuickMarks = _quickMarks
+        .where(_isQuickMarkVisible)
+        .toList(growable: false);
+    final visibleQuickMarkIds = visibleQuickMarks
+        .map((mark) => mark.id)
+        .toSet();
     return MainWindowViewModel(
       fullFrameCaptureKey: fullFrameCaptureKey,
       session: MainWindowSessionVm.fromSession(_session),
@@ -192,15 +198,21 @@ class MainWindowController {
         tracks: trackManager.entries
             .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
             .toList(),
-        quickMarks: _quickMarks.where(_isQuickMarkVisible).toList(),
+        quickMarks: visibleQuickMarks,
         quickMarkDraft: _quickMarkDraft,
-        selectedQuickMarkId:
-            _quickMarks.any(
-              (mark) =>
-                  mark.id == _selectedQuickMarkId && _isQuickMarkVisible(mark),
-            )
+        selectedQuickMarkId: visibleQuickMarkIds.contains(_selectedQuickMarkId)
             ? _selectedQuickMarkId
             : null,
+      ),
+      marks: MainWindowMarksVm(
+        allMarks: _quickMarks,
+        visibleMarks: visibleQuickMarks,
+        visibleMarkIds: visibleQuickMarkIds,
+        selectedMarkId: _selectedQuickMarkId,
+        tracksByFileId: {
+          for (final entry in trackManager.entries) entry.fileId: entry.info,
+        },
+        currentPtsUs: _currentPtsUs,
       ),
       media: MainWindowMediaVm(
         analysisEnabled:
@@ -340,6 +352,13 @@ class MainWindowController {
         onQuickMarkDeleted: _deleteQuickMark,
         onQuickMarkFocus: _focusQuickMark,
       ),
+      marks: MainWindowMarksActions(
+        onJumpToMark: _jumpToQuickMark,
+        onSelectVisibleMark: _selectQuickMark,
+        onMarkChanged: _updateQuickMark,
+        onMarkDeleted: _deleteQuickMark,
+        onFocusVisibleMark: _focusQuickMark,
+      ),
       mediaTimeline: MainWindowMediaTimelineActions(
         onMediaSwapped: (slotIndex, targetTrackIndex) {
           if (!_capabilities.canReorderTrack) return;
@@ -347,7 +366,7 @@ class MainWindowController {
         },
         onRemoveTrack: (fileId) {
           if (!_capabilities.canRemoveTrack) return;
-          mediaCoordinator.removeTrack(fileId);
+          fireAndLog('remove track', _removeTrack(fileId));
         },
         onZoomChanged: (value) {
           if (!_capabilities.canZoomViewport) return;
@@ -631,6 +650,7 @@ class MainWindowController {
       toggleFullScreen: _toggleFullScreen,
       exitFullScreen: _exitFullScreen,
       capabilities: () => _capabilities,
+      removeTrack: _removeTrack,
     );
   }
 
@@ -744,12 +764,15 @@ class MainWindowController {
 
   bool _isQuickMarkVisible(QuickMark mark) {
     final currentAnchor = _presentedFrameAnchors[mark.fileId];
-    if (currentAnchor != null) {
-      return mark.anchor.matchesPresentedFrame(currentAnchor);
-    }
     final toleranceUs = mark.anchor.durationUs > 0
         ? (mark.anchor.durationUs / 2).round()
         : 0;
+    if (currentAnchor != null) {
+      return mark.anchor.matchesPresentedFrameOrTime(
+        currentAnchor,
+        fallbackToleranceUs: toleranceUs,
+      );
+    }
     return (mark.ptsUs - _currentPtsUs).abs() <= toleranceUs;
   }
 
@@ -805,32 +828,39 @@ class MainWindowController {
     _quickMarkDragStart = hit;
     _quickMarkDragLatestPhysicalPosition = physicalPosition;
     final serial = ++_quickMarkDragSerial;
-    final fallbackAnchor = QuickMarkAnchor.fromPresentedFrame(
-      fileId: hit.fileId,
-      timing: null,
-      fallbackPtsUs: _currentPtsUs,
-    );
-    _quickMarkDragAnchor = fallbackAnchor;
-    _quickMarkDragAnchorFuture = _quickMarkAnchorForFileId(hit.fileId);
+    final initialAnchor =
+        _presentedFrameAnchors[hit.fileId] ??
+        QuickMarkAnchor.fromPresentedFrame(
+          fileId: hit.fileId,
+          timing: null,
+          fallbackPtsUs: _currentPtsUs,
+        );
+    _quickMarkDragAnchor = initialAnchor;
+    _quickMarkDragAnchorFuture = _isPlaying
+        ? null
+        : _quickMarkAnchorForFileId(hit.fileId);
     stateStore.setQuickMarkDraft(
       _quickMarkDraftForDrag(
         start: hit,
         end: hit.sourceUv,
-        anchor: fallbackAnchor,
+        anchor: initialAnchor,
       ),
     );
-    unawaited(
-      _quickMarkDragAnchorFuture!.then((anchor) {
-        if (_quickMarkDragSerial != serial || _quickMarkDragStart != hit) {
-          return;
-        }
-        _quickMarkDragAnchor = anchor;
-        final latest = _quickMarkDragLatestPhysicalPosition;
-        if (latest != null) {
-          _updateQuickMarkDraftForDrag(latest);
-        }
-      }),
-    );
+    final anchorFuture = _quickMarkDragAnchorFuture;
+    if (anchorFuture != null) {
+      unawaited(
+        anchorFuture.then((anchor) {
+          if (_quickMarkDragSerial != serial || _quickMarkDragStart != hit) {
+            return;
+          }
+          _quickMarkDragAnchor = anchor;
+          final latest = _quickMarkDragLatestPhysicalPosition;
+          if (latest != null) {
+            _updateQuickMarkDraftForDrag(latest);
+          }
+        }),
+      );
+    }
   }
 
   void _updateQuickMarkDrag(Offset physicalPosition) {
@@ -913,6 +943,18 @@ class MainWindowController {
     }
   }
 
+  void _deleteQuickMarksForFileId(int fileId) {
+    final next = _quickMarks
+        .where((mark) => mark.fileId != fileId)
+        .toList(growable: false);
+    if (next.length == _quickMarks.length) return;
+    stateStore.setQuickMarks(next);
+    if (_selectedQuickMarkId != null &&
+        !next.any((mark) => mark.id == _selectedQuickMarkId)) {
+      stateStore.setSelectedQuickMarkId(null);
+    }
+  }
+
   void _focusQuickMark(int id) {
     QuickMark? mark;
     for (final candidate in _quickMarks) {
@@ -924,5 +966,24 @@ class MainWindowController {
     if (mark == null || !_isQuickMarkVisible(mark)) return;
     stateStore.setSelectedQuickMarkId(id);
     layoutCoordinator.focusQuickMark(mark);
+  }
+
+  void _jumpToQuickMark(int id) {
+    QuickMark? mark;
+    for (final candidate in _quickMarks) {
+      if (candidate.id == id) {
+        mark = candidate;
+        break;
+      }
+    }
+    if (mark == null) return;
+    stateStore.setSelectedQuickMarkId(id);
+    playbackCoordinator.seekTo(mark.anchor.ptsUs);
+  }
+
+  Future<void> _removeTrack(int fileId) async {
+    await mediaCoordinator.removeTrack(fileId);
+    if (trackManager.entries.any((entry) => entry.fileId == fileId)) return;
+    _deleteQuickMarksForFileId(fileId);
   }
 }

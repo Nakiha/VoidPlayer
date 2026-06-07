@@ -453,7 +453,7 @@ class MainWindowPlaybackCoordinator {
     final entries = trackManager.entries.toList(growable: false);
     final timings = await Future.wait([
       for (final entry in entries)
-        controller.currentPresentedFrame(entry.info.fileId),
+        _safeCurrentPresentedFrame(entry.info.fileId),
     ]);
     return {
       for (var i = 0; i < entries.length; i++)
@@ -463,6 +463,14 @@ class MainWindowPlaybackCoordinator {
           fallbackPtsUs: currentPtsUs(),
         ),
     };
+  }
+
+  Future<PresentedFrameTiming?> _safeCurrentPresentedFrame(int fileId) async {
+    try {
+      return await controller.currentPresentedFrame(fileId);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> setLoopRangeEnabled(bool enabled) async {

@@ -1814,7 +1814,8 @@ class _QuickMarkPainter extends CustomPainter {
     if (rect.width <= 0 || rect.height <= 0) return;
 
     final strokeWidth = draft ? mark.strokeWidth + 0.5 : mark.strokeWidth;
-    final textLayout = !draft && mark.shape == QuickMarkShape.arrow
+    final hasVisibleText = !draft && mark.text.trim().isNotEmpty;
+    final textLayout = hasVisibleText && mark.shape == QuickMarkShape.arrow
         ? _textLayoutForMark(mark, rect, clipRect)
         : null;
     if (selected) {
@@ -1858,7 +1859,7 @@ class _QuickMarkPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round
         ..color = draft ? mark.color.withValues(alpha: 0.82) : mark.color,
     );
-    if (!draft && mark.id != editingTextMarkId) {
+    if (hasVisibleText && mark.id != editingTextMarkId) {
       _drawText(canvas, mark, rect, clipRect);
     }
   }

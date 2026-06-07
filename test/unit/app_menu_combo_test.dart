@@ -42,6 +42,58 @@ void main() {
 
     expect(selected, 'Two');
   });
+
+  testWidgets('custom button and menu item builders use shared menu behavior', (
+    tester,
+  ) async {
+    var selected = 'One';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: AppMenuCombo<String>(
+              value: selected,
+              width: 160,
+              minMenuWidth: 140,
+              items: const ['One', 'Two'],
+              labelFor: (value) => value,
+              onChanged: (value) {
+                selected = value;
+              },
+              buttonBuilder: (context, value, open) => Row(
+                children: [
+                  Expanded(
+                    child: Text('Button $value', overflow: TextOverflow.clip),
+                  ),
+                  AppMenuComboArrow(open: open, size: 14),
+                ],
+              ),
+              itemBuilder: (context, value, label, selected) => Row(
+                children: [
+                  if (selected) const Icon(Icons.check, size: 16),
+                  Expanded(
+                    child: Text('Custom $label', overflow: TextOverflow.clip),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Button One'), findsOneWidget);
+
+    await tester.tap(find.byType(AppMenuCombo<String>));
+    await tester.pumpAndSettle();
+    expect(find.text('Custom Two'), findsOneWidget);
+
+    await tester.tap(find.text('Custom Two'));
+    await tester.pumpAndSettle();
+
+    expect(selected, 'Two');
+  });
 }
 
 class _ComboHost extends StatefulWidget {

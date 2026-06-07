@@ -8,9 +8,19 @@ class AppMenuCombo<T> extends StatefulWidget {
   final List<T> items;
   final String Function(T value) labelFor;
   final ValueChanged<T> onChanged;
+  final Widget Function(BuildContext context, T value, bool open)?
+  buttonBuilder;
+  final Widget Function(
+    BuildContext context,
+    T value,
+    String label,
+    bool selected,
+  )?
+  itemBuilder;
   final double? width;
   final double height;
   final double itemHeight;
+  final double? minMenuWidth;
   final double maxMenuWidth;
   final EdgeInsetsGeometry buttonPadding;
   final EdgeInsetsGeometry itemPadding;
@@ -33,9 +43,12 @@ class AppMenuCombo<T> extends StatefulWidget {
     required this.items,
     required this.labelFor,
     required this.onChanged,
+    this.buttonBuilder,
+    this.itemBuilder,
     this.width,
     this.height = 32,
     this.itemHeight = 36,
+    this.minMenuWidth,
     this.maxMenuWidth = 520,
     this.buttonPadding = const EdgeInsets.symmetric(horizontal: 8),
     this.itemPadding = const EdgeInsets.only(left: 12, right: 16),
@@ -239,6 +252,7 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
                 textStyle: widget.menuTextStyle,
                 showSelectedCheck: widget.showSelectedCheck,
                 iconFor: widget.iconFor,
+                itemBuilder: widget.itemBuilder,
                 onSelected: (item) {
                   _closeMenu(
                     onClosed: () {
@@ -281,13 +295,12 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
         Theme.of(context).textTheme.bodySmall ??
         const TextStyle();
     final measuredWidth = _measureMenuWidth(textStyle, textDirection);
+    final minWidth = math.max(anchorRect.width, widget.minMenuWidth ?? 0);
     final maxWidth = math.max(
-      anchorRect.width,
+      minWidth,
       math.min(widget.maxMenuWidth, overlaySize.width - _viewPadding * 2),
     );
-    final width = math
-        .max(anchorRect.width, measuredWidth)
-        .clamp(anchorRect.width, maxWidth);
+    final width = math.max(minWidth, measuredWidth).clamp(minWidth, maxWidth);
 
     final desiredHeight =
         widget.items.length * widget.itemHeight + _menuVerticalPadding * 2;
@@ -351,6 +364,11 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
         ?.copyWith(color: widget.foregroundColor);
     final iconColor = widget.foregroundColor ?? theme.iconTheme.color;
     final buttonLabel = widget.buttonLabel ?? widget.labelFor(widget.value);
+    final buttonContent = widget.buttonBuilder?.call(
+      context,
+      widget.value,
+      _isOpen,
+    );
     final child = CompositedTransformTarget(
       link: _layerLink,
       child: SizedBox(
@@ -372,36 +390,38 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
               ),
               child: Padding(
                 padding: widget.buttonPadding,
-                child: Row(
-                  children: [
-                    if (widget.buttonLeadingIcon != null) ...[
-                      Icon(
-                        widget.buttonLeadingIcon,
-                        size: widget.iconSize,
-                        color: iconColor,
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    Expanded(
-                      child: Text(
-                        buttonLabel,
-                        style: labelStyle,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
+                child:
+                    buttonContent ??
+                    Row(
+                      children: [
+                        if (widget.buttonLeadingIcon != null) ...[
+                          Icon(
+                            widget.buttonLeadingIcon,
+                            size: widget.iconSize,
+                            color: iconColor,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Expanded(
+                          child: Text(
+                            buttonLabel,
+                            style: labelStyle,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                        AnimatedRotation(
+                          turns: _isOpen ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 120),
+                          curve: Curves.easeOutCubic,
+                          child: Icon(
+                            Icons.arrow_drop_down,
+                            size: widget.iconSize,
+                            color: iconColor,
+                          ),
+                        ),
+                      ],
                     ),
-                    AnimatedRotation(
-                      turns: _isOpen ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 120),
-                      curve: Curves.easeOutCubic,
-                      child: Icon(
-                        Icons.arrow_drop_down,
-                        size: widget.iconSize,
-                        color: iconColor,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ),
           ),
@@ -414,6 +434,29 @@ class _AppMenuComboState<T> extends State<AppMenuCombo<T>>
       child: widget.width == null
           ? child
           : SizedBox(width: widget.width, child: child),
+    );
+  }
+}
+
+class AppMenuComboArrow extends StatelessWidget {
+  final bool open;
+  final double size;
+  final Color? color;
+
+  const AppMenuComboArrow({
+    super.key,
+    required this.open,
+    this.size = 18,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedRotation(
+      turns: open ? 0.5 : 0,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutCubic,
+      child: Icon(Icons.arrow_drop_down, size: size, color: color),
     );
   }
 }
@@ -431,6 +474,13 @@ class _MenuSurface<T> extends StatelessWidget {
   final TextStyle? textStyle;
   final bool showSelectedCheck;
   final IconData? Function(T value)? iconFor;
+  final Widget Function(
+    BuildContext context,
+    T value,
+    String label,
+    bool selected,
+  )?
+  itemBuilder;
 
   const _MenuSurface({
     required this.value,
@@ -445,6 +495,7 @@ class _MenuSurface<T> extends StatelessWidget {
     required this.textStyle,
     required this.showSelectedCheck,
     required this.iconFor,
+    required this.itemBuilder,
   });
 
   @override
@@ -476,6 +527,12 @@ class _MenuSurface<T> extends StatelessWidget {
                   textStyle: textStyle,
                   showSelectedCheck: showSelectedCheck,
                   icon: iconFor?.call(items[i]),
+                  customChild: itemBuilder?.call(
+                    context,
+                    items[i],
+                    labelFor(items[i]),
+                    items[i] == value,
+                  ),
                   onSelected: onSelected,
                 ),
             ],
@@ -497,6 +554,7 @@ class _MenuOption<T> extends StatelessWidget {
   final TextStyle? textStyle;
   final bool showSelectedCheck;
   final IconData? icon;
+  final Widget? customChild;
   final ValueChanged<T> onSelected;
 
   const _MenuOption({
@@ -510,6 +568,7 @@ class _MenuOption<T> extends StatelessWidget {
     required this.textStyle,
     required this.showSelectedCheck,
     required this.icon,
+    required this.customChild,
     required this.onSelected,
   });
 
@@ -527,39 +586,44 @@ class _MenuOption<T> extends StatelessWidget {
           onTap: () => onSelected(value),
           child: Padding(
             padding: padding,
-            child: Row(
-              children: [
-                if (showSelectedCheck || icon != null) ...[
-                  SizedBox(
-                    width: _AppMenuComboState._leadingWidth,
-                    child: selected && showSelectedCheck
-                        ? Icon(
-                            Icons.check,
-                            size: 16,
-                            color: theme.colorScheme.primary,
-                          )
-                        : icon == null
-                        ? null
-                        : Icon(
-                            icon,
-                            size: 16,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                  ),
-                  const SizedBox(width: _AppMenuComboState._leadingGap),
-                ],
-                Expanded(
-                  child: Text(
-                    label,
-                    style: (textStyle ?? theme.textTheme.bodySmall)?.copyWith(
-                      color: selected ? theme.colorScheme.primary : null,
+            child:
+                customChild ??
+                Row(
+                  children: [
+                    if (showSelectedCheck || icon != null) ...[
+                      SizedBox(
+                        width: _AppMenuComboState._leadingWidth,
+                        child: selected && showSelectedCheck
+                            ? Icon(
+                                Icons.check,
+                                size: 16,
+                                color: theme.colorScheme.primary,
+                              )
+                            : icon == null
+                            ? null
+                            : Icon(
+                                icon,
+                                size: 16,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                      ),
+                      const SizedBox(width: _AppMenuComboState._leadingGap),
+                    ],
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: (textStyle ?? theme.textTheme.bodySmall)
+                            ?.copyWith(
+                              color: selected
+                                  ? theme.colorScheme.primary
+                                  : null,
+                            ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
+                  ],
                 ),
-              ],
-            ),
           ),
         ),
       ),

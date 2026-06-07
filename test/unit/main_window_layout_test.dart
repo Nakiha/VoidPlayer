@@ -204,8 +204,7 @@ void main() {
     coordinator.viewportHeight = 900;
     const mark = QuickMark(
       id: 11,
-      fileId: 1,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 1, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.2, 0.3, 0.4, 0.5),
     );
 
@@ -251,8 +250,7 @@ void main() {
     coordinator.viewportHeight = 900;
     const mark = QuickMark(
       id: 11,
-      fileId: 1,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 1, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.2, 0.2, 0.7, 0.6),
       sourceStart: Offset(0.2, 0.2),
       sourceEnd: Offset(0.7, 0.6),

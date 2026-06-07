@@ -33,6 +33,7 @@ class MainWindowStateModel {
   final bool fullScreenControlsVisible;
   final int? audibleTrackFileId;
   final PerformanceAlertPolicy performanceAlertPolicy;
+  final Map<int, QuickMarkAnchor> presentedFrameAnchors;
   final List<QuickMark> quickMarks;
   final QuickMark? quickMarkDraft;
   final int? selectedQuickMarkId;
@@ -62,6 +63,7 @@ class MainWindowStateModel {
     this.fullScreenControlsVisible = false,
     this.audibleTrackFileId,
     this.performanceAlertPolicy = PerformanceAlertPolicy.sustained,
+    this.presentedFrameAnchors = const {},
     this.quickMarks = const [],
     this.quickMarkDraft,
     this.selectedQuickMarkId,
@@ -92,6 +94,7 @@ class MainWindowStateModel {
     bool? fullScreenControlsVisible,
     Object? audibleTrackFileId = _mainWindowStateUnset,
     PerformanceAlertPolicy? performanceAlertPolicy,
+    Map<int, QuickMarkAnchor>? presentedFrameAnchors,
     List<QuickMark>? quickMarks,
     Object? quickMarkDraft = _mainWindowStateUnset,
     Object? selectedQuickMarkId = _mainWindowStateUnset,
@@ -134,6 +137,8 @@ class MainWindowStateModel {
           : audibleTrackFileId as int?,
       performanceAlertPolicy:
           performanceAlertPolicy ?? this.performanceAlertPolicy,
+      presentedFrameAnchors:
+          presentedFrameAnchors ?? this.presentedFrameAnchors,
       quickMarks: quickMarks ?? this.quickMarks,
       quickMarkDraft: quickMarkDraft == _mainWindowStateUnset
           ? this.quickMarkDraft
@@ -193,6 +198,7 @@ class MainWindowStateStore extends ChangeNotifier {
         durationUs: 0,
         layout: const LayoutState(),
         syncOffsets: const {},
+        presentedFrameAnchors: const {},
         quickMarks: const [],
         quickMarkDraft: null,
         selectedQuickMarkId: null,
@@ -239,10 +245,17 @@ class MainWindowStateStore extends ChangeNotifier {
     _set(_value.copyWith(timelineControlsWidth: width));
   }
 
-  void setPolledPlaybackState(int ptsUs, int durationUs, bool playing) {
+  void setPolledPlaybackState(
+    int ptsUs,
+    int durationUs,
+    bool playing, {
+    Map<int, QuickMarkAnchor>? presentedFrameAnchors,
+  }) {
     if (_value.currentPtsUs == ptsUs &&
         _value.durationUs == durationUs &&
-        _value.isPlaying == playing) {
+        _value.isPlaying == playing &&
+        (presentedFrameAnchors == null ||
+            mapEquals(_value.presentedFrameAnchors, presentedFrameAnchors))) {
       return;
     }
     _set(
@@ -250,6 +263,8 @@ class MainWindowStateStore extends ChangeNotifier {
         currentPtsUs: ptsUs,
         durationUs: durationUs,
         isPlaying: playing,
+        presentedFrameAnchors:
+            presentedFrameAnchors ?? _value.presentedFrameAnchors,
       ),
     );
   }

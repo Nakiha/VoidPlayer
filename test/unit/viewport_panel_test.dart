@@ -8,6 +8,7 @@ import 'package:void_player/platform/pointer_button_state_provider.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/display_geometry.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
+import 'package:void_player/widgets/app_menu_combo.dart';
 import 'package:void_player/widgets/viewport_panel.dart';
 
 class _FakePointerButtonStateProvider implements PointerButtonStateProvider {
@@ -256,8 +257,7 @@ void main() {
           quickMarks: const [
             QuickMark(
               id: 11,
-              fileId: 7,
-              ptsUs: 0,
+              anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
               sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
             ),
           ],
@@ -290,8 +290,7 @@ void main() {
         quickMarks: const [
           QuickMark(
             id: 11,
-            fileId: 7,
-            ptsUs: 0,
+            anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
             sourceRect: Rect.fromLTRB(0.25, 0.25, 0.75, 0.75),
             sourceStart: Offset(0.25, 0.25),
             sourceEnd: Offset(0.75, 0.75),
@@ -315,8 +314,7 @@ void main() {
     final deleted = <int>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
     );
     await tester.pumpWidget(
@@ -344,8 +342,7 @@ void main() {
     final changes = <QuickMark>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
     );
     await tester.pumpWidget(
@@ -386,8 +383,7 @@ void main() {
     final changes = <QuickMark>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
       text: 'label',
     );
@@ -424,8 +420,7 @@ void main() {
     final changes = <QuickMark>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
     );
     expect(mark.syncAcrossTracks, isTrue);
@@ -457,8 +452,7 @@ void main() {
     final changes = <QuickMark>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
     );
     await tester.pumpWidget(
@@ -475,23 +469,24 @@ void main() {
       ),
     );
 
-    final colorMenu = tester.widget<PopupMenuButton<Color>>(
+    final colorMenu = tester.widget<AppMenuCombo<Color>>(
       find.byWidgetPredicate(
         (widget) =>
-            widget is PopupMenuButton<Color> && widget.tooltip == 'Color',
+            widget is AppMenuCombo<Color> &&
+            widget.items.contains(const Color(0xFFBF5AF2)),
       ),
     );
-    colorMenu.onSelected?.call(const Color(0xFFBF5AF2));
+    colorMenu.onChanged(const Color(0xFFBF5AF2));
     await tester.pump();
     expect(changes.last.color, const Color(0xFFBF5AF2));
 
-    final strokeMenu = tester.widget<PopupMenuButton<double>>(
+    final strokeMenu = tester.widget<AppMenuCombo<double>>(
       find.byWidgetPredicate(
         (widget) =>
-            widget is PopupMenuButton<double> && widget.tooltip == 'Stroke',
+            widget is AppMenuCombo<double> && widget.items.contains(5.0),
       ),
     );
-    strokeMenu.onSelected?.call(5.0);
+    strokeMenu.onChanged(5.0);
     await tester.pump();
     expect(changes.last.strokeWidth, 5.0);
   });
@@ -504,8 +499,7 @@ void main() {
     final focused = <int>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
     );
     await tester.pumpWidget(
@@ -536,8 +530,7 @@ void main() {
       final selections = <int?>[];
       const mark = QuickMark(
         id: 11,
-        fileId: 7,
-        ptsUs: 0,
+        anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
         sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
       );
       await tester.pumpWidget(
@@ -570,8 +563,7 @@ void main() {
     final changes = <QuickMark>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
       text: 'label',
     );
@@ -626,8 +618,7 @@ void main() {
     final zooms = <({double factor, Offset position})>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
       text: 'label',
     );
@@ -660,8 +651,7 @@ void main() {
     final changes = <QuickMark>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
       text: 'label',
     );
@@ -699,8 +689,7 @@ void main() {
     final selections = <int?>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
       text: 'label',
     );
@@ -736,8 +725,7 @@ void main() {
     final zooms = <({double factor, Offset position})>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
     );
     await tester.pumpWidget(
@@ -768,8 +756,7 @@ void main() {
     final changes = <QuickMark>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.75, 0.75),
       sourceStart: Offset(0.25, 0.25),
       sourceEnd: Offset(0.75, 0.75),
@@ -810,8 +797,7 @@ void main() {
     final changes = <QuickMark>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
     );
     await tester.pumpWidget(
@@ -849,8 +835,7 @@ void main() {
     final changes = <QuickMark>[];
     const mark = QuickMark(
       id: 11,
-      fileId: 7,
-      ptsUs: 0,
+      anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
       sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
       sourceStart: Offset(0.25, 0.25),
       sourceEnd: Offset(0.5, 0.5),
@@ -892,8 +877,7 @@ void main() {
       final changes = <QuickMark>[];
       const mark = QuickMark(
         id: 11,
-        fileId: 7,
-        ptsUs: 0,
+        anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
         sourceRect: Rect.fromLTRB(0.25, 0.25, 0.5, 0.5),
         sourceStart: Offset(0.25, 0.25),
         sourceEnd: Offset(0.5, 0.5),

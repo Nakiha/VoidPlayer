@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../app_log.dart';
+import '../../marks/quick_mark.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
@@ -74,8 +75,17 @@ class MainWindowPlaybackCoordinator {
   void setSeekPreview(int ptsUs) => stateStore.setSeekPreview(ptsUs);
   void setPendingSeek(int? ptsUs, DateTime? at) =>
       stateStore.setPendingSeek(ptsUs, at);
-  void setPolledPlaybackState(int ptsUs, int durationUs, bool playing) =>
-      stateStore.setPolledPlaybackState(ptsUs, durationUs, playing);
+  void setPolledPlaybackState(
+    int ptsUs,
+    int durationUs,
+    bool playing, {
+    Map<int, QuickMarkAnchor>? presentedFrameAnchors,
+  }) => stateStore.setPolledPlaybackState(
+    ptsUs,
+    durationUs,
+    playing,
+    presentedFrameAnchors: presentedFrameAnchors,
+  );
   bool loopRangeEnabled() => _state.loopRangeEnabled;
   void setLoopRangeEnabledState(bool enabled) =>
       stateStore.setLoopRangeEnabled(enabled);
@@ -381,12 +391,14 @@ class MainWindowPlaybackCoordinator {
         controller.currentPts(),
         controller.duration(),
         controller.isPlaying(),
+        _pollPresentedFrameAnchors(),
       ]);
       if (_disposed || !mounted() || serial != _pollSerial) return;
 
       var pts = results[0] as int;
       final dur = results[1] as int;
       final playing = results[2] as bool;
+      final presentedFrameAnchors = results[3] as Map<int, QuickMarkAnchor>?;
       final seekUs = pendingSeekUs();
       if (seekUs != null) {
         final seekAge = pendingSeekAt() == null
@@ -413,17 +425,44 @@ class MainWindowPlaybackCoordinator {
 
       if (pts == currentPtsUs() &&
           dur == durationUs() &&
-          playing == isPlaying()) {
+          playing == isPlaying() &&
+          (presentedFrameAnchors == null ||
+              mapEquals(_state.presentedFrameAnchors, presentedFrameAnchors))) {
         return;
       }
 
-      setPolledPlaybackState(pts, dur, playing);
+      setPolledPlaybackState(
+        pts,
+        dur,
+        playing,
+        presentedFrameAnchors: presentedFrameAnchors,
+      );
       if (playing) {
         scheduleLoopBoundaryTimer(fromPtsUs: pts);
       } else {
         cancelLoopBoundaryTimer();
       }
     } catch (_) {}
+  }
+
+  Future<Map<int, QuickMarkAnchor>?> _pollPresentedFrameAnchors() async {
+    if (_state.quickMarks.isEmpty && _state.quickMarkDraft == null) {
+      return null;
+    }
+    if (trackManager.isEmpty) return const {};
+    final entries = trackManager.entries.toList(growable: false);
+    final timings = await Future.wait([
+      for (final entry in entries)
+        controller.currentPresentedFrame(entry.info.fileId),
+    ]);
+    return {
+      for (var i = 0; i < entries.length; i++)
+        entries[i].info.fileId: QuickMarkAnchor.fromPresentedFrame(
+          fileId: entries[i].info.fileId,
+          timing: timings[i],
+          fallbackPtsUs: currentPtsUs(),
+        ),
+    };
   }
 
   Future<void> setLoopRangeEnabled(bool enabled) async {

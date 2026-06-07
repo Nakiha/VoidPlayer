@@ -54,7 +54,10 @@ class MainWindowController {
   final MainWindowStateStore stateStore = MainWindowStateStore();
   final PlaybackSession _session = const PlaybackSession.normal();
   ViewportSourceHit? _quickMarkDragStart;
-  int? _quickMarkDragPtsUs;
+  Offset? _quickMarkDragLatestPhysicalPosition;
+  QuickMarkAnchor? _quickMarkDragAnchor;
+  Future<QuickMarkAnchor>? _quickMarkDragAnchorFuture;
+  int _quickMarkDragSerial = 0;
   int _nextQuickMarkId = 1;
   late final MainWindowTimelineMetrics timelineMetrics =
       MainWindowTimelineMetrics(
@@ -189,15 +192,12 @@ class MainWindowController {
         tracks: trackManager.entries
             .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
             .toList(),
-        quickMarks: _quickMarks
-            .where((mark) => mark.ptsUs == _currentPtsUs)
-            .toList(),
+        quickMarks: _quickMarks.where(_isQuickMarkVisible).toList(),
         quickMarkDraft: _quickMarkDraft,
         selectedQuickMarkId:
             _quickMarks.any(
               (mark) =>
-                  mark.id == _selectedQuickMarkId &&
-                  mark.ptsUs == _currentPtsUs,
+                  mark.id == _selectedQuickMarkId && _isQuickMarkVisible(mark),
             )
             ? _selectedQuickMarkId
             : null,
@@ -706,6 +706,8 @@ class MainWindowController {
   List<QuickMark> get _quickMarks => _state.quickMarks;
   QuickMark? get _quickMarkDraft => _state.quickMarkDraft;
   int? get _selectedQuickMarkId => _state.selectedQuickMarkId;
+  Map<int, QuickMarkAnchor> get _presentedFrameAnchors =>
+      _state.presentedFrameAnchors;
   Map<int, int> get _syncOffsets => _state.syncOffsets;
   double get _timelineControlsWidth => _state.timelineControlsWidth;
   bool get _loopRangeEnabled => _state.loopRangeEnabled;
@@ -740,28 +742,49 @@ class MainWindowController {
     );
   }
 
-  void _startQuickMarkDrag(Offset physicalPosition) {
-    if (_textureId == null || trackManager.isEmpty) return;
-    final hit = _quickMarkProjection()?.hitTestPhysical(physicalPosition);
-    if (hit == null) return;
-    stateStore.setSelectedQuickMarkId(null);
-    _quickMarkDragStart = hit;
-    _quickMarkDragPtsUs = _currentPtsUs;
-    stateStore.setQuickMarkDraft(
-      QuickMark(
-        id: 0,
-        fileId: hit.fileId,
-        ptsUs: _quickMarkDragPtsUs!,
-        sourceRect: Rect.fromPoints(hit.sourceUv, hit.sourceUv),
-        sourceStart: hit.sourceUv,
-        sourceEnd: hit.sourceUv,
-      ),
+  bool _isQuickMarkVisible(QuickMark mark) {
+    final currentAnchor = _presentedFrameAnchors[mark.fileId];
+    if (currentAnchor != null) {
+      return mark.anchor.matchesPresentedFrame(currentAnchor);
+    }
+    final toleranceUs = mark.anchor.durationUs > 0
+        ? (mark.anchor.durationUs / 2).round()
+        : 0;
+    return (mark.ptsUs - _currentPtsUs).abs() <= toleranceUs;
+  }
+
+  Future<QuickMarkAnchor> _quickMarkAnchorForFileId(int fileId) async {
+    PresentedFrameTiming? timing;
+    try {
+      timing = await player.currentPresentedFrame(fileId);
+    } catch (_) {
+      timing = null;
+    }
+    return QuickMarkAnchor.fromPresentedFrame(
+      fileId: fileId,
+      timing: timing,
+      fallbackPtsUs: _currentPtsUs,
     );
   }
 
-  void _updateQuickMarkDrag(Offset physicalPosition) {
+  QuickMark _quickMarkDraftForDrag({
+    required ViewportSourceHit start,
+    required Offset end,
+    required QuickMarkAnchor anchor,
+  }) {
+    return QuickMark(
+      id: 0,
+      anchor: anchor,
+      sourceRect: Rect.fromPoints(start.sourceUv, end),
+      sourceStart: start.sourceUv,
+      sourceEnd: end,
+    );
+  }
+
+  void _updateQuickMarkDraftForDrag(Offset physicalPosition) {
     final start = _quickMarkDragStart;
-    if (start == null) return;
+    final anchor = _quickMarkDragAnchor;
+    if (start == null || anchor == null) return;
     final projection = _quickMarkProjection();
     final end = projection?.sourceUvForTrackPhysical(
       start.fileId,
@@ -770,21 +793,71 @@ class MainWindowController {
     );
     if (end == null) return;
     stateStore.setQuickMarkDraft(
-      QuickMark(
-        id: 0,
-        fileId: start.fileId,
-        ptsUs: _quickMarkDragPtsUs ?? _currentPtsUs,
-        sourceRect: Rect.fromPoints(start.sourceUv, end),
-        sourceStart: start.sourceUv,
-        sourceEnd: end,
-      ),
+      _quickMarkDraftForDrag(start: start, end: end, anchor: anchor),
     );
   }
 
-  void _finishQuickMarkDrag() {
+  void _startQuickMarkDrag(Offset physicalPosition) {
+    if (_textureId == null || trackManager.isEmpty) return;
+    final hit = _quickMarkProjection()?.hitTestPhysical(physicalPosition);
+    if (hit == null) return;
+    stateStore.setSelectedQuickMarkId(null);
+    _quickMarkDragStart = hit;
+    _quickMarkDragLatestPhysicalPosition = physicalPosition;
+    final serial = ++_quickMarkDragSerial;
+    final fallbackAnchor = QuickMarkAnchor.fromPresentedFrame(
+      fileId: hit.fileId,
+      timing: null,
+      fallbackPtsUs: _currentPtsUs,
+    );
+    _quickMarkDragAnchor = fallbackAnchor;
+    _quickMarkDragAnchorFuture = _quickMarkAnchorForFileId(hit.fileId);
+    stateStore.setQuickMarkDraft(
+      _quickMarkDraftForDrag(
+        start: hit,
+        end: hit.sourceUv,
+        anchor: fallbackAnchor,
+      ),
+    );
+    unawaited(
+      _quickMarkDragAnchorFuture!.then((anchor) {
+        if (_quickMarkDragSerial != serial || _quickMarkDragStart != hit) {
+          return;
+        }
+        _quickMarkDragAnchor = anchor;
+        final latest = _quickMarkDragLatestPhysicalPosition;
+        if (latest != null) {
+          _updateQuickMarkDraftForDrag(latest);
+        }
+      }),
+    );
+  }
+
+  void _updateQuickMarkDrag(Offset physicalPosition) {
+    _quickMarkDragLatestPhysicalPosition = physicalPosition;
+    _updateQuickMarkDraftForDrag(physicalPosition);
+  }
+
+  void _finishQuickMarkDrag() async {
+    final serial = _quickMarkDragSerial;
+    final anchorFuture = _quickMarkDragAnchorFuture;
+    if (anchorFuture != null) {
+      final anchor = await anchorFuture;
+      if (_quickMarkDragSerial != serial) return;
+      if (_quickMarkDragSerial == serial && _quickMarkDragStart != null) {
+        _quickMarkDragAnchor = anchor;
+        final latest = _quickMarkDragLatestPhysicalPosition;
+        if (latest != null) {
+          _updateQuickMarkDraftForDrag(latest);
+        }
+      }
+    }
     final draft = _quickMarkDraft;
     _quickMarkDragStart = null;
-    _quickMarkDragPtsUs = null;
+    _quickMarkDragLatestPhysicalPosition = null;
+    _quickMarkDragAnchor = null;
+    _quickMarkDragAnchorFuture = null;
+    _quickMarkDragSerial++;
     stateStore.setQuickMarkDraft(null);
     if (draft == null ||
         draft.sourceRect.width < 0.002 ||
@@ -799,14 +872,17 @@ class MainWindowController {
 
   void _cancelQuickMarkDrag() {
     _quickMarkDragStart = null;
-    _quickMarkDragPtsUs = null;
+    _quickMarkDragLatestPhysicalPosition = null;
+    _quickMarkDragAnchor = null;
+    _quickMarkDragAnchorFuture = null;
+    _quickMarkDragSerial++;
     stateStore.setQuickMarkDraft(null);
   }
 
   void _selectQuickMark(int? id) {
     if (id != null &&
         !_quickMarks.any(
-          (mark) => mark.id == id && mark.ptsUs == _currentPtsUs,
+          (mark) => mark.id == id && _isQuickMarkVisible(mark),
         )) {
       return;
     }
@@ -845,7 +921,7 @@ class MainWindowController {
         break;
       }
     }
-    if (mark == null || mark.ptsUs != _currentPtsUs) return;
+    if (mark == null || !_isQuickMarkVisible(mark)) return;
     stateStore.setSelectedQuickMarkId(id);
     layoutCoordinator.focusQuickMark(mark);
   }

@@ -1222,39 +1222,46 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
   Widget _colorCombo(QuickMark mark) {
     final l = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
-    return PopupMenuButton<Color>(
-      tooltip: l.quickMarkColor,
-      initialValue: mark.color,
-      onSelected: (color) =>
-          widget.onMarkChanged?.call(mark.copyWith(color: color)),
-      itemBuilder: (context) => [
-        for (final color in _colors)
-          PopupMenuItem<Color>(
-            value: color,
-            child: _QuickMarkColorOption(
-              color: color,
-              label: _colorLabel(l, color),
-              selected: color == mark.color,
-            ),
-          ),
-      ],
-      child: _QuickMarkPopupButton(
+    return Tooltip(
+      message: l.quickMarkColor,
+      child: AppMenuCombo<Color>(
         width: 46,
-        child: Row(
+        height: _panelButtonSize,
+        value: mark.color,
+        items: _colors,
+        labelFor: (color) => _colorLabel(l, color),
+        onChanged: (color) =>
+            widget.onMarkChanged?.call(mark.copyWith(color: color)),
+        minMenuWidth: 136,
+        maxMenuWidth: 180,
+        itemHeight: 30,
+        buttonPadding: const EdgeInsets.only(left: 6, right: 2),
+        itemPadding: const EdgeInsets.only(left: 10, right: 12),
+        borderRadius: BorderRadius.circular(4),
+        backgroundColor: Colors.transparent,
+        foregroundColor: colorScheme.onSurfaceVariant,
+        iconSize: 16,
+        showSelectedCheck: false,
+        buttonBuilder: (context, color, open) => Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _QuickMarkColorSwatch(
-              color: mark.color,
+              color: color,
               selected: true,
               colorScheme: colorScheme,
             ),
-            const SizedBox(width: 3),
-            Icon(
-              Icons.arrow_drop_down,
-              size: 14,
+            const SizedBox(width: 2),
+            AppMenuComboArrow(
+              open: open,
+              size: 16,
               color: colorScheme.onSurfaceVariant,
             ),
           ],
+        ),
+        itemBuilder: (context, color, label, selected) => _QuickMarkColorOption(
+          color: color,
+          label: label,
+          selected: selected,
         ),
       ),
     );
@@ -1264,44 +1271,56 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
     final l = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final strokeLabel = l.quickMarkStrokeWidth(mark.strokeWidth.round());
-    return PopupMenuButton<double>(
-      tooltip: l.quickMarkStroke,
-      initialValue: mark.strokeWidth,
-      onSelected: (width) =>
-          widget.onMarkChanged?.call(mark.copyWith(strokeWidth: width)),
-      itemBuilder: (context) => [
-        for (final width in _strokeWidths)
-          PopupMenuItem<double>(
-            value: width,
-            child: _QuickMarkStrokeOption(
-              label: l.quickMarkStrokeWidth(width.round()),
-              width: width,
-              selected: width == mark.strokeWidth,
-            ),
-          ),
-      ],
-      child: _QuickMarkPopupButton(
+    return Tooltip(
+      message: l.quickMarkStroke,
+      child: AppMenuCombo<double>(
         width: 80,
-        child: Row(
+        height: _panelButtonSize,
+        value: mark.strokeWidth,
+        items: _strokeWidths,
+        labelFor: (width) => l.quickMarkStrokeWidth(width.round()),
+        onChanged: (width) =>
+            widget.onMarkChanged?.call(mark.copyWith(strokeWidth: width)),
+        minMenuWidth: 132,
+        maxMenuWidth: 160,
+        itemHeight: 30,
+        buttonPadding: const EdgeInsets.only(left: 6, right: 2),
+        itemPadding: const EdgeInsets.only(left: 10, right: 12),
+        borderRadius: BorderRadius.circular(4),
+        backgroundColor: Colors.transparent,
+        foregroundColor: colorScheme.onSurfaceVariant,
+        iconSize: 16,
+        showSelectedCheck: false,
+        buttonBuilder: (context, width, open) => Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              strokeLabel,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
+            SizedBox(
+              width: 28,
+              child: Text(
+                strokeLabel,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+                overflow: TextOverflow.clip,
+                maxLines: 1,
               ),
             ),
-            const SizedBox(width: 5),
-            _QuickMarkStrokePreview(width: mark.strokeWidth),
-            const SizedBox(width: 2),
-            Icon(
-              Icons.arrow_drop_down,
+            const SizedBox(width: 3),
+            _QuickMarkStrokePreview(width: width, previewWidth: 18),
+            AppMenuComboArrow(
+              open: open,
               size: 14,
               color: colorScheme.onSurfaceVariant,
             ),
           ],
         ),
+        itemBuilder: (context, width, label, selected) =>
+            _QuickMarkStrokeOption(
+              label: label,
+              width: width,
+              selected: selected,
+            ),
       ),
     );
   }
@@ -1724,7 +1743,7 @@ class _QuickMarkPainter extends CustomPainter {
           _drawMark(
             canvas,
             mark.copyWith(
-              fileId: track.fileId,
+              anchor: mark.anchor.copyWith(fileId: track.fileId),
               color: _syncedMarkColor(mark.color),
               text: '',
             ),
@@ -2120,37 +2139,6 @@ class _QuickMarkDeleteButton extends StatelessWidget {
   }
 }
 
-class _QuickMarkPopupButton extends StatelessWidget {
-  final double width;
-  final Widget child;
-
-  const _QuickMarkPopupButton({required this.width, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: width,
-      height: 28,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(4),
-        clipBehavior: Clip.antiAlias,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: IconTheme(
-            data: IconThemeData(color: colorScheme.onSurfaceVariant),
-            child: child,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _QuickMarkColorOption extends StatelessWidget {
   final Color color;
   final String label;
@@ -2263,14 +2251,15 @@ class _QuickMarkStrokeOption extends StatelessWidget {
 
 class _QuickMarkStrokePreview extends StatelessWidget {
   final double width;
+  final double previewWidth;
 
-  const _QuickMarkStrokePreview({required this.width});
+  const _QuickMarkStrokePreview({required this.width, this.previewWidth = 20});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      width: 20,
+      width: previewWidth,
       height: width.clamp(1.0, 8.0).toDouble(),
       decoration: BoxDecoration(
         color: colorScheme.onSurfaceVariant,

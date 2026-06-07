@@ -10,6 +10,9 @@ abstract class AppSettingsRepository {
   int get analysisCacheMaxBytes;
   set analysisCacheMaxBytes(int value);
 
+  int get markThumbnailCacheMaxBytes;
+  set markThumbnailCacheMaxBytes(int value);
+
   String get themeModePreference;
   set themeModePreference(String value);
 
@@ -59,6 +62,14 @@ class AppConfigSettingsRepository implements AppSettingsRepository {
   @override
   set analysisCacheMaxBytes(int value) {
     config.analysisCacheMaxBytes = value;
+  }
+
+  @override
+  int get markThumbnailCacheMaxBytes => config.markThumbnailCacheMaxBytes;
+
+  @override
+  set markThumbnailCacheMaxBytes(int value) {
+    config.markThumbnailCacheMaxBytes = value;
   }
 
   @override

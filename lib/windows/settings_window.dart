@@ -64,7 +64,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             NavigationRailDestination(
               icon: const Icon(Icons.storage),
-              label: Text(l.cache),
+              label: Text(l.storage),
             ),
             NavigationRailDestination(
               icon: const Icon(Icons.info_outline),

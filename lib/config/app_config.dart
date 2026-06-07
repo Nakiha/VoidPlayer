@@ -202,6 +202,7 @@ class AppConfig {
 
   static const _preferencesKey = 'preferences';
   static const _analysisCacheMaxBytesKey = 'analysisCacheMaxBytes';
+  static const _markThumbnailCacheMaxBytesKey = 'markThumbnailCacheMaxBytes';
   static const _themeModeKey = 'themeMode';
   static const _accentColorModeKey = 'accentColorMode';
   static const _customAccentColorKey = 'customAccentColor';
@@ -211,6 +212,7 @@ class AppConfig {
   static const _defaultAudioPlaybackPolicyKey = 'defaultAudioPlaybackPolicy';
   static const _performanceAlertPolicyKey = 'performanceAlertPolicy';
   static const _defaultAnalysisCacheMaxBytes = 1024 * 1024 * 1024;
+  static const _defaultMarkThumbnailCacheMaxBytes = 512 * 1024 * 1024;
 
   /// Maximum analysis cache size in bytes. A value of 0 means unlimited.
   int get analysisCacheMaxBytes {
@@ -221,6 +223,19 @@ class AppConfig {
 
   set analysisCacheMaxBytes(int value) {
     section(_preferencesKey)[_analysisCacheMaxBytesKey] = value < 0 ? 0 : value;
+  }
+
+  /// Maximum mark thumbnail cache size in bytes. A value of 0 means unlimited.
+  int get markThumbnailCacheMaxBytes {
+    final value = section(_preferencesKey)[_markThumbnailCacheMaxBytesKey];
+    if (value is num && value >= 0) return value.toInt();
+    return _defaultMarkThumbnailCacheMaxBytes;
+  }
+
+  set markThumbnailCacheMaxBytes(int value) {
+    section(_preferencesKey)[_markThumbnailCacheMaxBytesKey] = value < 0
+        ? 0
+        : value;
   }
 
   String get themeModePreference {

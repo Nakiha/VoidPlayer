@@ -131,6 +131,9 @@ class _FakeAppSettingsRepository implements AppSettingsRepository {
   int analysisCacheMaxBytes = 0;
 
   @override
+  int markThumbnailCacheMaxBytes = 0;
+
+  @override
   String themeModePreference = 'system';
 
   @override

@@ -599,6 +599,26 @@ bool RendererPresentationController::capture_d3d_headless_front_buffer(
         *output, device_mutex_, bgra, width, height);
 }
 
+bool RendererPresentationController::capture_d3d_headless_front_buffer_region(
+    int x,
+    int y,
+    int width,
+    int height,
+    std::vector<uint8_t>& bgra,
+    int& region_width,
+    int& region_height) const {
+    auto* output = d3d_headless_output();
+    if (!frame_capture_ || !output) {
+        bgra.clear();
+        region_width = 0;
+        region_height = 0;
+        return false;
+    }
+    return frame_capture_->capture_headless_front_buffer_region(
+        *output, device_mutex_, x, y, width, height, bgra, region_width,
+        region_height);
+}
+
 D3D11RenderBackend* RendererPresentationController::d3d_backend() const {
     if (!backend_ || backend_->kind() != PresentationBackendKind::D3D11) {
         return nullptr;

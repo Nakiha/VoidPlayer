@@ -193,6 +193,13 @@ public:
 
     /// Capture the currently published headless frame as packed BGRA bytes.
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
+    bool capture_front_buffer_region(int x,
+                                     int y,
+                                     int width,
+                                     int height,
+                                     std::vector<uint8_t>& bgra,
+                                     int& region_width,
+                                     int& region_height);
 
     // Native test seams for lifecycle states that are otherwise only reachable
     // through render-thread or host-callback timing.

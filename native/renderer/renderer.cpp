@@ -282,6 +282,17 @@ bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int&
     return impl_->capture_front_buffer(bgra, width, height);
 }
 
+bool Renderer::capture_front_buffer_region(int x,
+                                           int y,
+                                           int width,
+                                           int height,
+                                           std::vector<uint8_t>& bgra,
+                                           int& region_width,
+                                           int& region_height) {
+    return impl_->capture_front_buffer_region(
+        x, y, width, height, bgra, region_width, region_height);
+}
+
 bool Renderer::has_event_callback_for_test() const {
     return impl_->has_event_callback_for_test();
 }

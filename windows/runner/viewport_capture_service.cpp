@@ -238,17 +238,18 @@ ViewportCaptureStatus ViewportCaptureService::CaptureRegion(
     result = {};
     result.output_path = output_path;
 
-    std::vector<uint8_t> bgra;
-    int source_width = 0;
-    int source_height = 0;
-    if (!player.capture_front_buffer(bgra, source_width, source_height)) {
+    std::vector<uint8_t> region_bgra;
+    int region_width = 0;
+    int region_height = 0;
+    if (!player.capture_front_buffer_region(
+            x, y, width, height, region_bgra, region_width, region_height)) {
         return ViewportCaptureStatus::CaptureFailed;
     }
 
     int output_width = 0;
     int output_height = 0;
     auto region = CropAndResizeBgra(
-        bgra, source_width, source_height, x, y, width, height, max_size,
+        region_bgra, region_width, region_height, 0, 0, region_width, region_height, max_size,
         output_width, output_height);
     if (region.empty()) {
         return ViewportCaptureStatus::CaptureFailed;

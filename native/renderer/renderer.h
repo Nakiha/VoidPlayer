@@ -121,6 +121,13 @@ public:
 
     bool request_frame_refresh(const char* reason);
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
+    bool capture_front_buffer_region(int x,
+                                     int y,
+                                     int width,
+                                     int height,
+                                     std::vector<uint8_t>& bgra,
+                                     int& region_width,
+                                     int& region_height);
 
     bool has_event_callback_for_test() const;
     void enter_terminal_render_loop_error_for_test(const char* reason);

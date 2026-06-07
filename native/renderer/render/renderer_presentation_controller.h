@@ -211,6 +211,13 @@ public:
     bool capture_d3d_headless_front_buffer(std::vector<uint8_t>& bgra,
                                            int& width,
                                            int& height) const;
+    bool capture_d3d_headless_front_buffer_region(int x,
+                                                  int y,
+                                                  int width,
+                                                  int height,
+                                                  std::vector<uint8_t>& bgra,
+                                                  int& region_width,
+                                                  int& region_height) const;
     D3D11RenderBackend* d3d_backend() const;
     D3D11Device* d3d_device() const;
     D3D11FramePresenter* d3d_frame_presenter() const;

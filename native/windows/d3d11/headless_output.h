@@ -67,6 +67,15 @@ public:
                                        std::vector<uint8_t>& bgra,
                                        int& width,
                                        int& height);
+    bool capture_front_buffer_region_snapshot(
+        const D3D11HeadlessOutputFrontBufferSnapshot& snapshot,
+        int x,
+        int y,
+        int width,
+        int height,
+        std::vector<uint8_t>& bgra,
+        int& region_width,
+        int& region_height);
 
     void set_frame_callback(std::function<void()> cb);
     D3D11HeadlessOutputMemoryStats memory_stats() const;

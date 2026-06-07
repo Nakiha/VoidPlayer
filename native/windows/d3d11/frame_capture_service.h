@@ -20,6 +20,15 @@ public:
                                        std::vector<uint8_t>& bgra,
                                        int& width,
                                        int& height) const;
+    bool capture_headless_front_buffer_region(D3D11HeadlessOutput& output,
+                                              std::recursive_mutex& device_mutex,
+                                              int x,
+                                              int y,
+                                              int width,
+                                              int height,
+                                              std::vector<uint8_t>& bgra,
+                                              int& region_width,
+                                              int& region_height) const;
 };
 
 } // namespace vr

@@ -167,4 +167,33 @@ bool Renderer::Impl::capture_front_buffer(std::vector<uint8_t>& bgra, int& width
 #endif
 }
 
+bool Renderer::Impl::capture_front_buffer_region(int x,
+                                                 int y,
+                                                 int width,
+                                                 int height,
+                                                 std::vector<uint8_t>& bgra,
+                                                 int& region_width,
+                                                 int& region_height) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!surface_state_.headless()) {
+        bgra.clear();
+        region_width = 0;
+        region_height = 0;
+        return false;
+    }
+    return presentation_.capture_d3d_headless_front_buffer_region(
+        x, y, width, height, bgra, region_width, region_height);
+#else
+    (void)x;
+    (void)y;
+    (void)width;
+    (void)height;
+    bgra.clear();
+    region_width = 0;
+    region_height = 0;
+    return false;
+#endif
+}
+
 } // namespace vr

@@ -67,6 +67,13 @@ public:
     void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
     void resize(int width, int height);
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
+    bool capture_front_buffer_region(int x,
+                                     int y,
+                                     int width,
+                                     int height,
+                                     std::vector<uint8_t>& bgra,
+                                     int& region_width,
+                                     int& region_height);
 
     PlaybackController& playback() { return playback_; }
     const PlaybackController& playback() const { return playback_; }

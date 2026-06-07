@@ -608,6 +608,46 @@ TEST_CASE("FrameCaptureService captures the current headless front buffer",
     cleanup_test_device(dev, hwnd);
 }
 
+TEST_CASE("FrameCaptureService captures clipped headless front-buffer regions",
+          "[d3d11][headless_output][capture]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::D3D11HeadlessOutput output;
+    REQUIRE(output.initialize(dev->device(), dev->context(), 96, 48));
+
+    std::recursive_mutex device_mutex;
+    {
+        std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex);
+        std::lock_guard<std::mutex> tex_lock(output.texture_mutex());
+        auto* rtv = output.begin_frame_locked();
+        REQUIRE(rtv != nullptr);
+        const float clear_color[4] = {0.5f, 0.1f, 0.2f, 1.0f};
+        dev->context()->ClearRenderTargetView(rtv, clear_color);
+        REQUIRE(output.publish_frame_locked() == nullptr);
+    }
+
+    vr::FrameCaptureService service;
+    std::vector<uint8_t> bgra;
+    int width = -1;
+    int height = -1;
+    REQUIRE(service.capture_headless_front_buffer_region(
+        output, device_mutex, 80, 40, 40, 20, bgra, width, height));
+    REQUIRE(width == 16);
+    REQUIRE(height == 8);
+    REQUIRE(bgra.size() == static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+
+    bool has_nonzero = false;
+    for (uint8_t byte : bgra) {
+        if (byte != 0) {
+            has_nonzero = true;
+            break;
+        }
+    }
+    REQUIRE(has_nonzero);
+
+    output.shutdown();
+    cleanup_test_device(dev, hwnd);
+}
+
 TEST_CASE("D3D11HeadlessOutput does not reuse in-flight shared buffers",
           "[d3d11][headless_output]") {
     auto [dev, hwnd] = create_test_device();

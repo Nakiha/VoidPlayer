@@ -341,4 +341,22 @@ bool NativePlayer::capture_front_buffer(std::vector<uint8_t>& bgra,
     return renderer_.capture_front_buffer(bgra, width, height);
 }
 
+bool NativePlayer::capture_front_buffer_region(int x,
+                                               int y,
+                                               int width,
+                                               int height,
+                                               std::vector<uint8_t>& bgra,
+                                               int& region_width,
+                                               int& region_height) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (!renderer_ready_locked()) {
+        bgra.clear();
+        region_width = 0;
+        region_height = 0;
+        return false;
+    }
+    return renderer_.capture_front_buffer_region(
+        x, y, width, height, bgra, region_width, region_height);
+}
+
 } // namespace vr

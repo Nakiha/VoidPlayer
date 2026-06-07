@@ -276,6 +276,98 @@ bool D3D11HeadlessOutput::capture_front_buffer_snapshot(
     return true;
 }
 
+bool D3D11HeadlessOutput::capture_front_buffer_region_snapshot(
+    const D3D11HeadlessOutputFrontBufferSnapshot& snapshot,
+    int x,
+    int y,
+    int width,
+    int height,
+    std::vector<uint8_t>& bgra,
+    int& region_width,
+    int& region_height) {
+    bgra.clear();
+    region_width = 0;
+    region_height = 0;
+    if (!device_ || !context_ || !snapshot.texture || width <= 0 || height <= 0) {
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    snapshot.texture->GetDesc(&desc);
+    const int source_width = static_cast<int>(desc.Width);
+    const int source_height = static_cast<int>(desc.Height);
+    if (source_width <= 0 || source_height <= 0) {
+        return false;
+    }
+
+    const int left = std::clamp(x, 0, source_width);
+    const int top = std::clamp(y, 0, source_height);
+    const int right = static_cast<int>(
+        std::clamp(static_cast<int64_t>(x) + width, int64_t{0},
+                   static_cast<int64_t>(source_width)));
+    const int bottom = static_cast<int>(
+        std::clamp(static_cast<int64_t>(y) + height, int64_t{0},
+                   static_cast<int64_t>(source_height)));
+    if (right <= left || bottom <= top) {
+        return false;
+    }
+
+    region_width = right - left;
+    region_height = bottom - top;
+
+    D3D11_TEXTURE2D_DESC staging_desc = desc;
+    staging_desc.Width = static_cast<UINT>(region_width);
+    staging_desc.Height = static_cast<UINT>(region_height);
+    staging_desc.Usage = D3D11_USAGE_STAGING;
+    staging_desc.BindFlags = 0;
+    staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    staging_desc.MiscFlags = 0;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+    HRESULT hr = device_->CreateTexture2D(&staging_desc, nullptr, &staging);
+    if (FAILED(hr) || !staging) {
+        spdlog::error("[D3D11HeadlessOutput] capture_front_buffer_region: "
+                      "failed to create staging texture: {:#x}",
+                      static_cast<unsigned long>(hr));
+        region_width = 0;
+        region_height = 0;
+        return false;
+    }
+
+    D3D11_BOX source_box = {};
+    source_box.left = static_cast<UINT>(left);
+    source_box.top = static_cast<UINT>(top);
+    source_box.front = 0;
+    source_box.right = static_cast<UINT>(right);
+    source_box.bottom = static_cast<UINT>(bottom);
+    source_box.back = 1;
+    context_->CopySubresourceRegion(
+        staging.Get(), 0, 0, 0, 0, snapshot.texture.Get(), 0, &source_box);
+    context_->Flush();
+
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    hr = context_->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) {
+        spdlog::error("[D3D11HeadlessOutput] capture_front_buffer_region: Map failed: {:#x}",
+                      static_cast<unsigned long>(hr));
+        region_width = 0;
+        region_height = 0;
+        return false;
+    }
+
+    bgra.resize(static_cast<size_t>(region_width) * static_cast<size_t>(region_height) * 4);
+    const auto* src = static_cast<const uint8_t*>(mapped.pData);
+    const size_t dst_stride = static_cast<size_t>(region_width) * 4;
+    for (int row = 0; row < region_height; ++row) {
+        std::memcpy(bgra.data() + static_cast<size_t>(row) * dst_stride,
+                    src + static_cast<size_t>(row) * mapped.RowPitch,
+                    dst_stride);
+    }
+
+    context_->Unmap(staging.Get(), 0);
+    return true;
+}
+
 void D3D11HeadlessOutput::set_frame_callback(std::function<void()> cb) {
     std::lock_guard<std::mutex> lock(texture_mutex_);
     frame_callback_ = std::move(cb);

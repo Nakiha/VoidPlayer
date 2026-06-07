@@ -1,5 +1,4 @@
-import 'dart:ui';
-
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/action_registry.dart';
 import 'package:void_player/analysis/analysis_cache.dart';
@@ -436,6 +435,96 @@ void main() {
     expect(controller.viewModel.playback.isPlaying, isFalse);
     expect(controller.viewModel.viewport.quickMarkDraft, isNotNull);
   });
+
+  test(
+    'arrow quick mark thumbnail capture is centered on arrow head',
+    () async {
+      final channel = const MethodChannel('video_renderer');
+      final captureArgs = <Map<dynamic, dynamic>>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            switch (call.method) {
+              case 'createPlayer':
+                return {
+                  'textureId': 1,
+                  'tracks': const <Map<String, Object?>>[],
+                };
+              case 'currentPts':
+                return 0;
+              case 'duration':
+                return 10000;
+              case 'isPlaying':
+                return false;
+              case 'currentPresentedFrame':
+                return {'ptsUs': 0, 'dtsUs': 0};
+              case 'captureViewportRegion':
+                final args = Map<dynamic, dynamic>.from(call.arguments as Map);
+                captureArgs.add(args);
+                return {
+                  'hash': 'region',
+                  'width': 100,
+                  'height': 80,
+                  'avgLuma': 1.0,
+                  'nonBlackRatio': 1.0,
+                  'outputPath': args['outputPath'],
+                };
+              default:
+                return null;
+            }
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final repository = _FakeQuickMarkRepository(
+        loadedMarks: const [
+          QuickMark(
+            id: 21,
+            anchor: QuickMarkAnchor(fileId: 99, ptsUs: 0, dtsUs: 0),
+            sourceRect: Rect.fromLTRB(0.2, 0.2, 0.7, 0.6),
+            sourceStart: Offset(0.2, 0.2),
+            sourceEnd: Offset(0.7, 0.6),
+            shape: QuickMarkShape.arrow,
+          ),
+        ],
+      );
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+        quickMarkRepository: repository,
+      );
+      addTearDown(controller.dispose);
+      await controller.player.createPlayer(['a.mp4'], width: 400, height: 200);
+      controller.stateStore.setTextureId(1);
+      controller.viewActions.viewport.onResize(400, 200, 1.0);
+      controller.start();
+      controller.trackManager.addTrack(
+        const TrackInfo(
+          fileId: 4,
+          slot: 0,
+          path: '/tmp/video.mp4',
+          width: 100,
+          height: 100,
+        ),
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 260));
+
+      expect(captureArgs, isNotEmpty);
+      final args = captureArgs.single;
+      expect(args['x'], 190);
+      expect(args['y'], 80);
+      expect(args['width'], 100);
+      expect(args['height'], 80);
+    },
+  );
 }
 
 class _FakeQuickMarkRepository implements QuickMarkRepository {

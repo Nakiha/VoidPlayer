@@ -1017,6 +1017,55 @@ class MainWindowController {
         .intersect(projected.clipRect)
         .intersect(bounds);
     if (rect.isEmpty) return null;
+    final targetRect = mark.shape == QuickMarkShape.arrow
+        ? _arrowThumbnailViewportRect(projected, mark, rect)
+        : rect;
+    if (targetRect.isEmpty) return null;
+    return _roundedViewportRect(
+      targetRect.intersect(projected.clipRect).intersect(bounds),
+      projection,
+    );
+  }
+
+  Rect _arrowThumbnailViewportRect(
+    ViewportProjectedSourceRect projected,
+    QuickMark mark,
+    Rect visibleRect,
+  ) {
+    final center = _sourcePointToViewportRect(
+      projected.viewportRect,
+      mark.sourceRect,
+      mark.effectiveSourceEnd,
+    );
+    return Rect.fromCenter(
+      center: center,
+      width: visibleRect.width,
+      height: visibleRect.height,
+    );
+  }
+
+  Offset _sourcePointToViewportRect(
+    Rect viewportRect,
+    Rect sourceRect,
+    Offset sourcePoint,
+  ) {
+    final tx = sourceRect.width.abs() <= 1e-6
+        ? 0.5
+        : (sourcePoint.dx - sourceRect.left) / sourceRect.width;
+    final ty = sourceRect.height.abs() <= 1e-6
+        ? 0.5
+        : (sourcePoint.dy - sourceRect.top) / sourceRect.height;
+    return Offset(
+      viewportRect.left + viewportRect.width * tx,
+      viewportRect.top + viewportRect.height * ty,
+    );
+  }
+
+  ({int left, int top, int width, int height})? _roundedViewportRect(
+    Rect rect,
+    ViewportLayoutProjection projection,
+  ) {
+    if (rect.isEmpty) return null;
     final left = rect.left.floor().clamp(0, projection.viewportWidth).toInt();
     final top = rect.top.floor().clamp(0, projection.viewportHeight).toInt();
     final right = rect.right

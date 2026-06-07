@@ -10,6 +10,7 @@ import '../../automation/ui_automation_bridge.dart';
 import '../../config/app_config.dart';
 import '../../config/app_settings_repository.dart';
 import '../../marks/quick_mark.dart';
+import '../../marks/quick_mark_store.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../platform/main_window_platform.dart';
 import '../../platform/native_file_picker.dart';
@@ -179,12 +180,10 @@ class MainWindowController {
   }
 
   MainWindowViewModel get viewModel {
-    final visibleQuickMarks = _quickMarks
-        .where(_isQuickMarkVisible)
-        .toList(growable: false);
-    final visibleQuickMarkIds = visibleQuickMarks
-        .map((mark) => mark.id)
-        .toSet();
+    final markView = _quickMarkStore.view(
+      context: _quickMarkFrameContext,
+      selectedMarkId: _selectedQuickMarkId,
+    );
     return MainWindowViewModel(
       fullFrameCaptureKey: fullFrameCaptureKey,
       session: MainWindowSessionVm.fromSession(_session),
@@ -198,17 +197,15 @@ class MainWindowController {
         tracks: trackManager.entries
             .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
             .toList(),
-        quickMarks: visibleQuickMarks,
+        quickMarks: markView.visibleMarks,
         quickMarkDraft: _quickMarkDraft,
-        selectedQuickMarkId: visibleQuickMarkIds.contains(_selectedQuickMarkId)
-            ? _selectedQuickMarkId
-            : null,
+        selectedQuickMarkId: markView.visibleSelectedMarkId,
       ),
       marks: MainWindowMarksVm(
-        allMarks: _quickMarks,
-        visibleMarks: visibleQuickMarks,
-        visibleMarkIds: visibleQuickMarkIds,
-        selectedMarkId: _selectedQuickMarkId,
+        allMarks: markView.allMarks,
+        visibleMarks: markView.visibleMarks,
+        visibleMarkIds: markView.visibleMarkIds,
+        selectedMarkId: markView.selectedMarkId,
         tracksByFileId: {
           for (final entry in trackManager.entries) entry.fileId: entry.info,
         },
@@ -751,6 +748,12 @@ class MainWindowController {
   int get _currentPtsUs => _state.currentPtsUs;
   LayoutState get _layout => _state.layout;
   List<QuickMark> get _quickMarks => _state.quickMarks;
+  QuickMarkStore get _quickMarkStore =>
+      QuickMarkStore(marks: _quickMarks, nextId: _nextQuickMarkId);
+  QuickMarkFrameContext get _quickMarkFrameContext => QuickMarkFrameContext(
+    currentPtsUs: _currentPtsUs,
+    presentedFrameAnchors: _presentedFrameAnchors,
+  );
   QuickMark? get _quickMarkDraft => _state.quickMarkDraft;
   int? get _selectedQuickMarkId => _state.selectedQuickMarkId;
   Map<int, QuickMarkAnchor> get _presentedFrameAnchors =>
@@ -792,17 +795,7 @@ class MainWindowController {
   }
 
   bool _isQuickMarkVisible(QuickMark mark) {
-    final currentAnchor = _presentedFrameAnchors[mark.fileId];
-    final toleranceUs = mark.anchor.durationUs > 0
-        ? (mark.anchor.durationUs / 2).round()
-        : 0;
-    if (currentAnchor != null) {
-      return mark.anchor.matchesPresentedFrameOrTime(
-        currentAnchor,
-        fallbackToleranceUs: toleranceUs,
-      );
-    }
-    return (mark.ptsUs - _currentPtsUs).abs() <= toleranceUs;
+    return _quickMarkStore.isVisible(mark, _quickMarkFrameContext);
   }
 
   Future<QuickMarkAnchor> _quickMarkAnchorForFileId(int fileId) async {
@@ -923,10 +916,7 @@ class MainWindowController {
         draft.sourceRect.height < 0.002) {
       return;
     }
-    stateStore.setQuickMarks([
-      ..._quickMarks,
-      draft.copyWith(id: _nextQuickMarkId++),
-    ]);
+    _applyQuickMarkStore(_quickMarkStore.add(draft));
   }
 
   void _cancelQuickMarkDrag() {
@@ -939,75 +929,50 @@ class MainWindowController {
   }
 
   void _selectQuickMark(int? id) {
-    if (id != null &&
-        !_quickMarks.any(
-          (mark) => mark.id == id && _isQuickMarkVisible(mark),
-        )) {
-      return;
+    if (id != null) {
+      final mark = _quickMarkStore.markById(id);
+      if (mark == null || !_isQuickMarkVisible(mark)) return;
     }
     stateStore.setSelectedQuickMarkId(id);
   }
 
   void _updateQuickMark(QuickMark updated) {
-    var found = false;
-    final next = _quickMarks
-        .map((mark) {
-          if (mark.id != updated.id) return mark;
-          found = true;
-          return updated;
-        })
-        .toList(growable: false);
-    if (!found) return;
-    stateStore.setQuickMarks(next);
+    _applyQuickMarkStore(_quickMarkStore.update(updated));
   }
 
   void _deleteQuickMark(int id) {
-    final next = _quickMarks
-        .where((mark) => mark.id != id)
-        .toList(growable: false);
-    if (next.length == _quickMarks.length) return;
-    stateStore.setQuickMarks(next);
+    _applyQuickMarkStore(_quickMarkStore.delete(id));
     if (_selectedQuickMarkId == id) {
       stateStore.setSelectedQuickMarkId(null);
     }
   }
 
   void _deleteQuickMarksForFileId(int fileId) {
-    final next = _quickMarks
-        .where((mark) => mark.fileId != fileId)
-        .toList(growable: false);
-    if (next.length == _quickMarks.length) return;
-    stateStore.setQuickMarks(next);
+    final nextStore = _quickMarkStore.deleteForFileId(fileId);
+    _applyQuickMarkStore(nextStore);
     if (_selectedQuickMarkId != null &&
-        !next.any((mark) => mark.id == _selectedQuickMarkId)) {
+        !nextStore.contains(_selectedQuickMarkId!)) {
       stateStore.setSelectedQuickMarkId(null);
     }
   }
 
   void _focusQuickMark(int id) {
-    QuickMark? mark;
-    for (final candidate in _quickMarks) {
-      if (candidate.id == id) {
-        mark = candidate;
-        break;
-      }
-    }
+    final mark = _quickMarkStore.markById(id);
     if (mark == null || !_isQuickMarkVisible(mark)) return;
     stateStore.setSelectedQuickMarkId(id);
     layoutCoordinator.focusQuickMark(mark);
   }
 
   void _jumpToQuickMark(int id) {
-    QuickMark? mark;
-    for (final candidate in _quickMarks) {
-      if (candidate.id == id) {
-        mark = candidate;
-        break;
-      }
-    }
+    final mark = _quickMarkStore.markById(id);
     if (mark == null) return;
     stateStore.setSelectedQuickMarkId(id);
     playbackCoordinator.seekTo(mark.anchor.ptsUs);
+  }
+
+  void _applyQuickMarkStore(QuickMarkStore store) {
+    _nextQuickMarkId = store.nextId;
+    stateStore.setQuickMarks(store.marks);
   }
 
   Future<void> _removeTrack(int fileId) async {

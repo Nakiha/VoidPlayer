@@ -58,6 +58,35 @@ void main() {
     expect(thumbnails[1]?.assetPath, '/tmp/thumb.png');
   });
 
+  test('keeps ready asset when only runtime file id changes', () {
+    final sourceKey = QuickMarkThumbnailStore.sourceKeyForMark(mark);
+    final thumbnails = QuickMarkThumbnailStore.reconcile(
+      marks: [mark.copyWith(anchor: mark.anchor.copyWith(fileId: 99))],
+      current: {
+        1: QuickMarkThumbnail(
+          markId: 1,
+          sourceKey: sourceKey,
+          status: QuickMarkThumbnailStatus.ready,
+          assetPath: '/tmp/thumb.png',
+        ),
+      },
+    );
+
+    expect(thumbnails[1]?.status, QuickMarkThumbnailStatus.ready);
+    expect(thumbnails[1]?.assetPath, '/tmp/thumb.png');
+  });
+
+  test('source key ignores runtime file id', () {
+    final sameVisualMark = mark.copyWith(
+      anchor: mark.anchor.copyWith(fileId: 99),
+    );
+
+    expect(
+      QuickMarkThumbnailStore.sourceKeyForMark(sameVisualMark),
+      QuickMarkThumbnailStore.sourceKeyForMark(mark),
+    );
+  });
+
   test(
     'requeues thumbnail when mark source changes and prunes deleted marks',
     () {

@@ -5,6 +5,13 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../app_paths.dart';
 
+class StorageCatalogThumbnail {
+  final String path;
+  final int bytes;
+
+  const StorageCatalogThumbnail({required this.path, required this.bytes});
+}
+
 class StorageCatalog {
   static const int schemaVersion = 1;
   static const int markPayloadVersion = 1;
@@ -49,6 +56,50 @@ class StorageCatalog {
           now,
           thumbnailCacheVersion,
         ],
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  StorageCatalogThumbnail? findThumbnail({
+    required String mediaHash,
+    required int markId,
+    required String renderDigest,
+  }) {
+    final db = open();
+    try {
+      final rows = db.select(
+        'SELECT path, bytes FROM thumbnail_cache '
+        'WHERE media_hash = ? AND mark_id = ? AND render_digest = ? '
+        'AND cache_version = ? '
+        'LIMIT 1',
+        [mediaHash, markId, renderDigest, thumbnailCacheVersion],
+      );
+      if (rows.isEmpty) return null;
+      final row = rows.first;
+      final path = row['path'] as String;
+      if (!File(path).existsSync()) {
+        db.execute(
+          'DELETE FROM thumbnail_cache '
+          'WHERE media_hash = ? AND mark_id = ? AND render_digest = ?',
+          [mediaHash, markId, renderDigest],
+        );
+        return null;
+      }
+      db.execute(
+        'UPDATE thumbnail_cache SET last_accessed_ms = ? '
+        'WHERE media_hash = ? AND mark_id = ? AND render_digest = ?',
+        [
+          DateTime.now().millisecondsSinceEpoch,
+          mediaHash,
+          markId,
+          renderDigest,
+        ],
+      );
+      return StorageCatalogThumbnail(
+        path: path,
+        bytes: row['bytes'] as int? ?? File(path).lengthSync(),
       );
     } finally {
       db.close();

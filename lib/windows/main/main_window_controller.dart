@@ -1169,10 +1169,11 @@ class MainWindowController {
   }
 
   String _quickMarkThumbnailDigest(QuickMarkThumbnail thumbnail) {
-    return sha1
-        .convert(utf8.encode(thumbnail.sourceKey))
-        .toString()
-        .substring(0, 16);
+    return _quickMarkThumbnailDigestForSourceKey(thumbnail.sourceKey);
+  }
+
+  String _quickMarkThumbnailDigestForSourceKey(String sourceKey) {
+    return sha1.convert(utf8.encode(sourceKey)).toString().substring(0, 16);
   }
 
   String _quickMarkThumbnailOutputPath({
@@ -1195,6 +1196,54 @@ class MainWindowController {
     stateStore.setQuickMarkThumbnails(
       Map.unmodifiable({..._quickMarkThumbnails, markId: thumbnail}),
     );
+  }
+
+  Future<void> _hydrateQuickMarkThumbnailsFromCatalog(
+    List<QuickMark> marks,
+  ) async {
+    if (marks.isEmpty || _quickMarkThumbnails.isEmpty) return;
+    if (!await File(AppPaths.current.storageDatabaseFile).exists()) return;
+    final updates = <int, QuickMarkThumbnail>{};
+    final catalog = StorageCatalog.defaultLocation();
+    for (final mark in marks) {
+      final thumbnail = _quickMarkThumbnails[mark.id];
+      if (thumbnail == null ||
+          thumbnail.status != QuickMarkThumbnailStatus.queued) {
+        continue;
+      }
+      final mediaHash = await _quickMarkMediaHashForFileId(mark.fileId);
+      if (mediaHash == null) continue;
+      final cached = (() {
+        try {
+          return catalog.findThumbnail(
+            mediaHash: mediaHash,
+            markId: mark.id,
+            renderDigest: _quickMarkThumbnailDigest(thumbnail),
+          );
+        } catch (_) {
+          return null;
+        }
+      })();
+      if (cached == null) continue;
+      updates[mark.id] = thumbnail.copyWith(
+        status: QuickMarkThumbnailStatus.ready,
+        assetPath: cached.path,
+        error: null,
+      );
+    }
+    if (!mounted() || updates.isEmpty) return;
+    final next = Map<int, QuickMarkThumbnail>.of(_quickMarkThumbnails);
+    var changed = false;
+    for (final entry in updates.entries) {
+      final current = next[entry.key];
+      final updated = entry.value;
+      if (current == null || current.sourceKey != updated.sourceKey) continue;
+      next[entry.key] = updated;
+      changed = true;
+    }
+    if (changed) {
+      stateStore.setQuickMarkThumbnails(Map.unmodifiable(next));
+    }
   }
 
   ViewportLayoutProjection? _quickMarkProjection() {
@@ -1399,6 +1448,7 @@ class MainWindowController {
         current: _quickMarkThumbnails,
       ),
     );
+    unawaited(_hydrateQuickMarkThumbnailsFromCatalog(store.marks));
     if (persist) _scheduleQuickMarkSave();
   }
 

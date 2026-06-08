@@ -85,8 +85,6 @@ class QuickMarkThumbnailStore {
       ..write('v1')
       ..write('|id=')
       ..write(mark.id)
-      ..write('|file=')
-      ..write(mark.fileId)
       ..write('|pts=')
       ..write(mark.anchor.ptsUs)
       ..write('|dts=')

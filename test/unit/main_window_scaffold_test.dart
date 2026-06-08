@@ -78,9 +78,7 @@ void main() {
     expect(find.byTooltip('Delete selected marks'), findsOneWidget);
   });
 
-  testWidgets('marks sidebar row tap selects and jump button seeks', (
-    tester,
-  ) async {
+  testWidgets('marks sidebar row tap jumps to mark', (tester) async {
     final feedback = AppFeedbackController();
     addTearDown(feedback.dispose);
     final selectedVisible = <int?>[];
@@ -121,13 +119,61 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('quick-mark-sidebar-row-1')));
     await tester.pump();
 
-    expect(selectedVisible, equals([1]));
-    expect(jumped, isEmpty);
-
-    await tester.tap(find.byKey(const ValueKey('quick-mark-sidebar-jump-1')));
-    await tester.pump();
-
+    expect(selectedVisible, isEmpty);
     expect(jumped, equals([1]));
+    expect(
+      find.byKey(const ValueKey('quick-mark-sidebar-jump-1')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('marks sidebar scrolls selected mark into view', (tester) async {
+    final feedback = AppFeedbackController();
+    addTearDown(feedback.dispose);
+    final marks = [
+      for (var i = 1; i <= 24; i++)
+        _quickMark(
+          i,
+          Rect.fromLTWH(0.1, 0.02 * i, 0.2, 0.03),
+          ptsUs: i * 1000000,
+        ),
+    ];
+
+    await tester.pumpWidget(
+      _localized(
+        AppFeedbackScope(
+          controller: feedback,
+          child: MainWindowScaffold(
+            model: _model(
+              settingsVisible: false,
+              marksSidebarVisible: true,
+              quickMarks: marks,
+              selectedQuickMarkId: 24,
+              tracksByFileId: const {
+                1: TrackInfo(
+                  fileId: 1,
+                  slot: 0,
+                  path: '/tmp/clip.mp4',
+                  width: 1920,
+                  height: 1080,
+                ),
+              },
+            ),
+            actions: _noopWithMarkActions(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final selectedRow = find.byKey(const ValueKey('quick-mark-sidebar-row-24'));
+    expect(selectedRow, findsOneWidget);
+    final sidebar = tester.getRect(find.byType(QuickMarkSidebar));
+    final row = tester.getRect(selectedRow);
+    expect(row.top, greaterThanOrEqualTo(sidebar.top));
+    expect(row.bottom, lessThanOrEqualTo(sidebar.bottom));
   });
 
   testWidgets(
@@ -340,10 +386,10 @@ MainWindowViewModel _model({
   ),
 );
 
-QuickMark _quickMark(int id, Rect rect) {
+QuickMark _quickMark(int id, Rect rect, {int ptsUs = 0}) {
   return QuickMark(
     id: id,
-    anchor: const QuickMarkAnchor(fileId: 1, ptsUs: 0, dtsUs: 0),
+    anchor: QuickMarkAnchor(fileId: 1, ptsUs: ptsUs, dtsUs: ptsUs),
     sourceRect: rect,
   );
 }

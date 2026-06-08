@@ -31,6 +31,7 @@ class QuickMarkSidebar extends StatefulWidget {
 
 class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
   static const _toolButtonSize = 28.0;
+  static const _rowExtent = 62.0;
   static const _colors = [
     Color(0xFFFF3B30),
     Color(0xFFFF9500),
@@ -56,12 +57,30 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
   static const _strokeWidths = [1.0, 2.0, 3.0, 5.0, 8.0];
 
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
   final Set<int> _selectedMarkIds = {};
   var _scope = _QuickMarkSidebarScope.all;
 
   @override
+  void initState() {
+    super.initState();
+    _scheduleScrollSelectedIntoView();
+  }
+
+  @override
+  void didUpdateWidget(covariant QuickMarkSidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.marks.selectedMarkId != widget.marks.selectedMarkId ||
+        oldWidget.marks.allMarks != widget.marks.allMarks ||
+        oldWidget.marks.visibleMarks != widget.marks.visibleMarks) {
+      _scheduleScrollSelectedIntoView();
+    }
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -70,9 +89,7 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
     final l = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
     final selected = _selectedMark;
-    final scopedMarks = _scope == _QuickMarkSidebarScope.current
-        ? _filteredMarks(widget.marks.visibleMarks)
-        : _filteredMarks(_sortedMarks(widget.marks.allMarks));
+    final scopedMarks = _scopedMarks();
     final scopedMarkIds = scopedMarks.map((mark) => mark.id).toSet();
     final selectedScopedIds = _selectedMarkIds.intersection(scopedMarkIds);
     final selectionActive = _selectedMarkIds.isNotEmpty;
@@ -99,6 +116,7 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
                         text: _emptyText(l, searchActive: _query.isNotEmpty),
                       )
                     : ListView.builder(
+                        controller: _scrollController,
                         padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
                         itemCount: scopedMarks.length,
                         itemBuilder: (context, index) {
@@ -116,9 +134,7 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
                             subtitle: _subtitleFor(l, mark),
                             timecode: formatTimePad2(mark.anchor.ptsUs),
                             trackLabel: _trackLabel(mark.fileId),
-                            onTap: () =>
-                                widget.actions.onSelectVisibleMark(mark.id),
-                            onJump: () => widget.actions.onJumpToMark(mark.id),
+                            onTap: () => widget.actions.onJumpToMark(mark.id),
                             onCheckedChanged: (checked) =>
                                 _setMarkChecked(mark.id, checked),
                           );
@@ -152,6 +168,12 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
       if (mark.id == id) return mark;
     }
     return null;
+  }
+
+  List<QuickMark> _scopedMarks() {
+    return _scope == _QuickMarkSidebarScope.current
+        ? _filteredMarks(widget.marks.visibleMarks)
+        : _filteredMarks(_sortedMarks(widget.marks.allMarks));
   }
 
   String get _query => _searchController.text.trim().toLowerCase();
@@ -192,6 +214,43 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
     for (final id in ids) {
       widget.actions.onMarkDeleted(id);
     }
+  }
+
+  void _scheduleScrollSelectedIntoView() {
+    final selectedMarkId = widget.marks.selectedMarkId;
+    if (selectedMarkId == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scrollSelectedIntoView(selectedMarkId);
+    });
+  }
+
+  void _scrollSelectedIntoView(int markId) {
+    if (!_scrollController.hasClients) return;
+    final marks = _scopedMarks();
+    final index = marks.indexWhere((mark) => mark.id == markId);
+    if (index < 0) return;
+    final position = _scrollController.position;
+    final rowTop = index * _rowExtent;
+    final rowBottom = rowTop + _rowExtent;
+    final visibleTop = position.pixels;
+    final visibleBottom = visibleTop + position.viewportDimension;
+    double? target;
+    if (rowTop < visibleTop) {
+      target = rowTop;
+    } else if (rowBottom > visibleBottom) {
+      target = rowBottom - position.viewportDimension;
+    }
+    if (target == null) return;
+    final clamped = target.clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    _scrollController.animateTo(
+      clamped,
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Widget _buildSearchRow(AppLocalizations l) {
@@ -281,9 +340,7 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
     final title = _scope == _QuickMarkSidebarScope.current
         ? l.quickMarkSidebarCurrentFrame
         : l.quickMarkSidebarAllMarks;
-    final scopedMarks = _scope == _QuickMarkSidebarScope.current
-        ? _filteredMarks(widget.marks.visibleMarks)
-        : _filteredMarks(_sortedMarks(widget.marks.allMarks));
+    final scopedMarks = _scopedMarks();
     final hasSelection = selectedCount > 0;
     return SizedBox(
       height: 34,
@@ -541,7 +598,6 @@ class _QuickMarkRow extends StatefulWidget {
   final String timecode;
   final String trackLabel;
   final VoidCallback onTap;
-  final VoidCallback onJump;
   final ValueChanged<bool> onCheckedChanged;
 
   const _QuickMarkRow({
@@ -557,7 +613,6 @@ class _QuickMarkRow extends StatefulWidget {
     required this.timecode,
     required this.trackLabel,
     required this.onTap,
-    required this.onJump,
     required this.onCheckedChanged,
   });
 
@@ -699,12 +754,6 @@ class _QuickMarkRowState extends State<_QuickMarkRow> {
                         onPressed: () =>
                             widget.onCheckedChanged(!widget.checked),
                       ),
-                      _RowJumpButton(
-                        buttonKey: ValueKey(
-                          'quick-mark-sidebar-jump-${widget.mark.id}',
-                        ),
-                        onPressed: widget.onJump,
-                      ),
                     ],
                   ),
                 ],
@@ -745,32 +794,6 @@ class _SelectionCheckbox extends StatelessWidget {
         color: checked ? colorScheme.primary : colorScheme.onSurfaceVariant,
         style: _quickMarkToggleButtonStyle(
           checked,
-          colorScheme,
-          const Size.square(26),
-        ),
-      ),
-    );
-  }
-}
-
-class _RowJumpButton extends StatelessWidget {
-  final Key buttonKey;
-  final VoidCallback onPressed;
-
-  const _RowJumpButton({required this.buttonKey, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: AppLocalizations.of(context)!.quickMarkSidebarJump,
-      child: IconButton(
-        key: buttonKey,
-        onPressed: onPressed,
-        icon: const Icon(Icons.near_me_outlined, size: 18),
-        color: colorScheme.onSurfaceVariant,
-        style: _quickMarkToggleButtonStyle(
-          false,
           colorScheme,
           const Size.square(26),
         ),

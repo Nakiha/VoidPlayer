@@ -10,7 +10,9 @@ class StorageFileEntry {
   final String id;
   final String name;
   final String path;
+  final String? subtitle;
   final int bytes;
+  final int itemCount;
   final DateTime modifiedAt;
   final DateTime accessedAt;
 
@@ -18,7 +20,9 @@ class StorageFileEntry {
     required this.id,
     required this.name,
     required this.path,
+    this.subtitle,
     required this.bytes,
+    this.itemCount = 1,
     required this.modifiedAt,
     required this.accessedAt,
   });
@@ -159,9 +163,17 @@ class AppStorage {
         // an old or corrupt catalog behind.
       }
     }
-    final annotations = await _scanStorageDatabaseFiles(rootDir, maxBytes: 0);
-    final thumbnails = await _scanMarkThumbnailFiles(
+    final catalog = File(databasePath).existsSync()
+        ? StorageCatalog(databasePath: databasePath)
+        : null;
+    final annotations = await _scanMarkDataByMedia(
       rootDir,
+      catalog: catalog,
+      maxBytes: 0,
+    );
+    final thumbnails = await _scanMarkThumbnailsByMedia(
+      rootDir,
+      catalog: catalog,
       maxBytes: thumbnailMaxBytes,
     );
     return MarkStorageSnapshot(
@@ -175,7 +187,16 @@ class AppStorage {
     String? rootDir,
   }) {
     final resolvedRoot = rootDir ?? AppPaths.current.rootDir;
-    return _deleteFilesInDirectory(ids, directory: resolvedRoot);
+    final databasePath = p.join(resolvedRoot, 'storage.sqlite');
+    if (!File(databasePath).existsSync()) {
+      return Future.value(
+        StorageDeleteResult(deletedIds: ids.toList(), failuresById: const {}),
+      );
+    }
+    final result = StorageCatalog(
+      databasePath: databasePath,
+    ).deleteMarksForMediaHashes(ids);
+    return Future.value(_deleteResultFromCatalog(result));
   }
 
   static Future<StorageDeleteResult> deleteMarkThumbnailFiles(
@@ -183,7 +204,16 @@ class AppStorage {
     String? rootDir,
   }) {
     final resolvedRoot = rootDir ?? AppPaths.current.rootDir;
-    return _deleteFilesInDirectory(ids, directory: resolvedRoot);
+    final databasePath = p.join(resolvedRoot, 'storage.sqlite');
+    if (!File(databasePath).existsSync()) {
+      return Future.value(
+        StorageDeleteResult(deletedIds: ids.toList(), failuresById: const {}),
+      );
+    }
+    final result = StorageCatalog(
+      databasePath: databasePath,
+    ).deleteThumbnailsForMediaHashes(ids);
+    return Future.value(_deleteResultFromCatalog(result));
   }
 
   static Future<StoragePruneResult> enforceMarkThumbnailLimit({
@@ -238,7 +268,13 @@ class AppStorage {
     String? rootDir,
   }) async {
     final resolvedRoot = rootDir ?? AppPaths.current.rootDir;
-    final before = await _scanMarkThumbnailFiles(resolvedRoot, maxBytes: 0);
+    final before = await _scanMarkThumbnailsByMedia(
+      resolvedRoot,
+      catalog: File(p.join(resolvedRoot, 'storage.sqlite')).existsSync()
+          ? StorageCatalog(databasePath: p.join(resolvedRoot, 'storage.sqlite'))
+          : null,
+      maxBytes: 0,
+    );
     final cacheDir = Directory(p.join(resolvedRoot, 'cache'));
     if (await cacheDir.exists()) {
       await for (final entity in cacheDir.list(
@@ -272,130 +308,105 @@ class AppStorage {
     );
   }
 
-  static Future<StorageFolderSnapshot> _scanStorageDatabaseFiles(
+  static Future<StorageFolderSnapshot> _scanMarkDataByMedia(
     String rootDir, {
+    required StorageCatalog? catalog,
     required int maxBytes,
   }) async {
-    final entries = <StorageFileEntry>[];
-    var bytes = 0;
-    for (final name in const [
-      'storage.sqlite',
-      'storage.sqlite-wal',
-      'storage.sqlite-shm',
-    ]) {
-      final file = File(p.join(rootDir, name));
-      if (!await file.exists()) continue;
-      try {
-        final stat = await file.stat();
-        bytes += stat.size;
-        entries.add(
-          StorageFileEntry(
-            id: name,
-            name: name,
-            path: file.path,
-            bytes: stat.size,
-            modifiedAt: stat.modified,
-            accessedAt: stat.accessed,
-          ),
-        );
-      } on FileSystemException {
-        // Ignore files that disappear while the settings page is refreshing.
-      }
-    }
-    entries.sort((a, b) => b.lruTime.compareTo(a.lruTime));
+    final entries = catalog == null
+        ? const <StorageFileEntry>[]
+        : _entriesFromMediaUsage(catalog.listMarkDataUsage());
+    final bytes = entries.fold<int>(0, (sum, entry) => sum + entry.bytes);
     return StorageFolderSnapshot(
       path: rootDir,
       totalBytes: bytes,
-      fileCount: entries.length,
+      fileCount: entries.fold<int>(0, (sum, entry) => sum + entry.itemCount),
       maxBytes: maxBytes,
       entries: entries,
     );
   }
 
-  static Future<StorageFolderSnapshot> _scanMarkThumbnailFiles(
+  static Future<StorageFolderSnapshot> _scanMarkThumbnailsByMedia(
     String rootDir, {
+    required StorageCatalog? catalog,
     required int maxBytes,
   }) async {
-    final cacheDir = Directory(p.join(rootDir, 'cache'));
-    if (!await cacheDir.exists()) {
+    final cacheDir = p.join(rootDir, 'cache');
+    if (catalog == null) {
       return StorageFolderSnapshot(
-        path: cacheDir.path,
+        path: cacheDir,
         totalBytes: 0,
         fileCount: 0,
         maxBytes: maxBytes,
         entries: const [],
       );
     }
-    var bytes = 0;
-    final entries = <StorageFileEntry>[];
-    await for (final entity in cacheDir.list(
-      recursive: true,
-      followLinks: false,
-    )) {
-      if (entity is! File ||
-          !p.split(entity.path).contains('mark_thumbnails')) {
-        continue;
-      }
-      try {
-        final stat = await entity.stat();
-        bytes += stat.size;
-        entries.add(
-          StorageFileEntry(
-            id: p.relative(entity.path, from: rootDir),
-            name: p.basename(entity.path),
-            path: entity.path,
-            bytes: stat.size,
-            modifiedAt: stat.modified,
-            accessedAt: stat.accessed,
-          ),
-        );
-      } on FileSystemException {
-        // Ignore files that disappear while the settings page is refreshing.
-      }
-    }
-    entries.sort((a, b) => b.lruTime.compareTo(a.lruTime));
+    final entries = _entriesFromMediaUsage(catalog.listThumbnailUsage());
+    final bytes = entries.fold<int>(0, (sum, entry) => sum + entry.bytes);
     return StorageFolderSnapshot(
-      path: cacheDir.path,
+      path: cacheDir,
       totalBytes: bytes,
-      fileCount: entries.length,
+      fileCount: entries.fold<int>(0, (sum, entry) => sum + entry.itemCount),
       maxBytes: maxBytes,
       entries: entries,
     );
   }
 
-  static Future<StorageDeleteResult> _deleteFilesInDirectory(
-    Iterable<String> ids, {
-    required String directory,
-  }) async {
-    final uniqueIds = ids.toSet();
-    final deletedIds = <String>[];
-    final failuresById = <String, List<String>>{};
-    for (final id in uniqueIds) {
-      if (!_isSafeRelativeFileId(id)) {
-        failuresById[id] = [id];
-        continue;
-      }
-      final file = File(p.join(directory, id));
-      try {
-        if (await file.exists()) {
-          await file.delete();
-        }
-        deletedIds.add(id);
-      } on FileSystemException catch (e) {
-        failuresById[id] = [e.path ?? file.path];
-      } catch (_) {
-        failuresById[id] = [file.path];
+  static List<StorageFileEntry> _entriesFromMediaUsage(
+    List<StorageCatalogMediaUsage> usage,
+  ) {
+    final nameCounts = <String, int>{};
+    final pathCounts = <String, int>{};
+    for (final item in usage) {
+      nameCounts[item.name] = (nameCounts[item.name] ?? 0) + 1;
+      if (item.path.isNotEmpty) {
+        pathCounts[item.path] = (pathCounts[item.path] ?? 0) + 1;
       }
     }
-    return StorageDeleteResult(
-      deletedIds: deletedIds,
-      failuresById: failuresById,
-    );
+    final entries = [
+      for (final item in usage)
+        StorageFileEntry(
+          id: item.mediaHash,
+          name: _displayNameForMedia(
+            item,
+            nameCounts: nameCounts,
+            pathCounts: pathCounts,
+          ),
+          path: item.path.isNotEmpty ? item.path : item.mediaHash,
+          subtitle: item.path.isNotEmpty ? item.path : null,
+          bytes: item.bytes,
+          itemCount: item.itemCount,
+          modifiedAt: item.modifiedAt,
+          accessedAt: item.accessedAt,
+        ),
+    ];
+    entries.sort((a, b) => b.lruTime.compareTo(a.lruTime));
+    return entries;
   }
 
-  static bool _isSafeRelativeFileId(String id) {
-    if (id.isEmpty || p.isAbsolute(id)) return false;
-    final parts = p.split(p.normalize(id));
-    return !parts.contains('..');
+  static String _displayNameForMedia(
+    StorageCatalogMediaUsage item, {
+    required Map<String, int> nameCounts,
+    required Map<String, int> pathCounts,
+  }) {
+    final duplicateName = (nameCounts[item.name] ?? 0) > 1;
+    final duplicatePath =
+        item.path.isNotEmpty && (pathCounts[item.path] ?? 0) > 1;
+    final name = item.name.isNotEmpty ? item.name : item.mediaHash;
+    if (!duplicateName && !duplicatePath) return name;
+    return '$name #${_shortHash(item.mediaHash)}';
+  }
+
+  static String _shortHash(String hash) {
+    return hash.length <= 6 ? hash : hash.substring(0, 6);
+  }
+
+  static StorageDeleteResult _deleteResultFromCatalog(
+    StorageCatalogDeleteResult result,
+  ) {
+    return StorageDeleteResult(
+      deletedIds: result.deletedMediaHashes,
+      failuresById: result.failuresByMediaHash,
+    );
   }
 }

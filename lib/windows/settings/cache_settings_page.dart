@@ -1348,7 +1348,7 @@ class _StorageEntryTile extends StatelessWidget {
         ),
         title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text(
-          entry.path,
+          entry.subtitle ?? entry.path,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),

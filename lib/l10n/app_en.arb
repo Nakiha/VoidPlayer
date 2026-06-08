@@ -378,11 +378,11 @@
   "openStoragePath": "Open storage folder",
   "@openStoragePath": { "description": "Open application storage folder tooltip" },
 
-  "markDataFiles": "Mark data files",
-  "@markDataFiles": { "description": "Section title for mark data files" },
+  "markDataFiles": "Mark data",
+  "@markDataFiles": { "description": "Section title for mark data grouped by media" },
 
-  "markThumbnailFiles": "Mark thumbnail files",
-  "@markThumbnailFiles": { "description": "Section title for mark thumbnail files" },
+  "markThumbnailFiles": "Mark thumbnails",
+  "@markThumbnailFiles": { "description": "Section title for mark thumbnails grouped by media" },
 
   "markDataNoEntries": "No mark data",
   "@markDataNoEntries": { "description": "Empty state for mark data files" },

@@ -51,4 +51,65 @@ void main() {
       expect(catalog.reconcileMissingThumbnailFiles(), 0);
     },
   );
+
+  test('lists media grouped mark and thumbnail usage', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'void_storage_catalog_usage_',
+    );
+    addTearDown(() => root.delete(recursive: true));
+
+    final catalog = StorageCatalog(
+      databasePath: p.join(root.path, 'storage.sqlite'),
+    );
+    final db = catalog.open();
+    try {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      db.execute(
+        'INSERT INTO media '
+        '(hash, media_id, path, name, size, mtime_ms, first_seen_ms, last_accessed_ms) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          'media_hash',
+          '/media/a.mp4',
+          '/media/a.mp4',
+          'a.mp4',
+          0,
+          now,
+          now,
+          now,
+        ],
+      );
+      db.execute(
+        'INSERT INTO marks '
+        '(media_hash, mark_id, payload_json, updated_at_ms) '
+        'VALUES (?, ?, ?, ?)',
+        ['media_hash', 1, '{"version":1}', now],
+      );
+    } finally {
+      db.close();
+    }
+
+    final thumbnail = File(
+      p.join(root.path, 'cache', 'media_hash', 'mark_thumbnails', 'a.png'),
+    );
+    await thumbnail.create(recursive: true);
+    await thumbnail.writeAsBytes([1, 2, 3]);
+    catalog.registerThumbnail(
+      mediaHash: 'media_hash',
+      markId: 1,
+      renderDigest: 'digest',
+      path: thumbnail.path,
+      bytes: 3,
+    );
+
+    final markUsage = catalog.listMarkDataUsage();
+    final thumbnailUsage = catalog.listThumbnailUsage();
+
+    expect(markUsage.single.mediaHash, 'media_hash');
+    expect(markUsage.single.name, 'a.mp4');
+    expect(markUsage.single.path, '/media/a.mp4');
+    expect(markUsage.single.itemCount, 1);
+    expect(thumbnailUsage.single.mediaHash, 'media_hash');
+    expect(thumbnailUsage.single.bytes, 3);
+  });
 }

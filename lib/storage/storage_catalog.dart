@@ -12,6 +12,36 @@ class StorageCatalogThumbnail {
   const StorageCatalogThumbnail({required this.path, required this.bytes});
 }
 
+class StorageCatalogMediaUsage {
+  final String mediaHash;
+  final String name;
+  final String path;
+  final int bytes;
+  final int itemCount;
+  final DateTime modifiedAt;
+  final DateTime accessedAt;
+
+  const StorageCatalogMediaUsage({
+    required this.mediaHash,
+    required this.name,
+    required this.path,
+    required this.bytes,
+    required this.itemCount,
+    required this.modifiedAt,
+    required this.accessedAt,
+  });
+}
+
+class StorageCatalogDeleteResult {
+  final List<String> deletedMediaHashes;
+  final Map<String, List<String>> failuresByMediaHash;
+
+  const StorageCatalogDeleteResult({
+    required this.deletedMediaHashes,
+    required this.failuresByMediaHash,
+  });
+}
+
 class StorageCatalog {
   static const int schemaVersion = 1;
   static const int markPayloadVersion = 1;
@@ -106,6 +136,117 @@ class StorageCatalog {
     }
   }
 
+  List<StorageCatalogMediaUsage> listMarkDataUsage() {
+    final db = open();
+    try {
+      final rows = db.select('''
+        SELECT
+          m.hash AS media_hash,
+          m.name AS name,
+          m.path AS path,
+          SUM(LENGTH(k.payload_json)) AS bytes,
+          COUNT(*) AS item_count,
+          MAX(k.updated_at_ms) AS modified_ms,
+          m.last_accessed_ms AS accessed_ms
+        FROM marks k
+        JOIN media m ON m.hash = k.media_hash
+        GROUP BY m.hash
+        ORDER BY modified_ms DESC
+      ''');
+      return [for (final row in rows) _usageFromRow(row)];
+    } finally {
+      db.close();
+    }
+  }
+
+  List<StorageCatalogMediaUsage> listThumbnailUsage() {
+    final db = open();
+    try {
+      final rows = db.select(
+        '''
+        SELECT
+          t.media_hash AS media_hash,
+          COALESCE(m.name, t.media_hash) AS name,
+          COALESCE(m.path, '') AS path,
+          SUM(t.bytes) AS bytes,
+          COUNT(*) AS item_count,
+          MAX(t.updated_at_ms) AS modified_ms,
+          MAX(t.last_accessed_ms) AS accessed_ms
+        FROM thumbnail_cache t
+        LEFT JOIN media m ON m.hash = t.media_hash
+        WHERE t.cache_version = ?
+        GROUP BY t.media_hash
+        ORDER BY modified_ms DESC
+      ''',
+        [thumbnailCacheVersion],
+      );
+      return [for (final row in rows) _usageFromRow(row)];
+    } finally {
+      db.close();
+    }
+  }
+
+  StorageCatalogDeleteResult deleteMarksForMediaHashes(
+    Iterable<String> mediaHashes,
+  ) {
+    final db = open();
+    final deleted = <String>[];
+    final failures = <String, List<String>>{};
+    try {
+      final uniqueHashes = mediaHashes.where(_isSafeMediaHash).toSet();
+      for (final hash in mediaHashes) {
+        if (!_isSafeMediaHash(hash)) failures[hash] = [hash];
+      }
+      for (final hash in uniqueHashes) {
+        try {
+          final failedPaths = _deleteThumbnailsForHash(db, hash);
+          if (failedPaths.isNotEmpty) {
+            failures[hash] = failedPaths;
+            continue;
+          }
+          db.execute('DELETE FROM marks WHERE media_hash = ?', [hash]);
+          deleted.add(hash);
+        } catch (_) {
+          failures[hash] = [hash];
+        }
+      }
+      return StorageCatalogDeleteResult(
+        deletedMediaHashes: deleted,
+        failuresByMediaHash: failures,
+      );
+    } finally {
+      db.close();
+    }
+  }
+
+  StorageCatalogDeleteResult deleteThumbnailsForMediaHashes(
+    Iterable<String> mediaHashes,
+  ) {
+    final db = open();
+    final deleted = <String>[];
+    final failures = <String, List<String>>{};
+    try {
+      final uniqueHashes = mediaHashes.where(_isSafeMediaHash).toSet();
+      for (final hash in mediaHashes) {
+        if (!_isSafeMediaHash(hash)) failures[hash] = [hash];
+      }
+      for (final hash in uniqueHashes) {
+        final failedPaths = _deleteThumbnailsForHash(db, hash);
+        if (failedPaths.isNotEmpty) {
+          failures[hash] = failedPaths;
+          continue;
+        }
+        deleted.add(hash);
+      }
+      return StorageCatalogDeleteResult(
+        deletedMediaHashes: deleted,
+        failuresByMediaHash: failures,
+      );
+    } finally {
+      db.close();
+    }
+  }
+
   int reconcileMissingThumbnailFiles() {
     final db = open();
     try {
@@ -190,5 +331,59 @@ class StorageCatalog {
       'thumbnail_cache_version',
       '$thumbnailCacheVersion',
     ]);
+  }
+
+  static StorageCatalogMediaUsage _usageFromRow(Row row) {
+    final hash = row['media_hash'] as String;
+    final name = row['name'] as String? ?? hash;
+    final path = row['path'] as String? ?? '';
+    return StorageCatalogMediaUsage(
+      mediaHash: hash,
+      name: name.isEmpty ? hash : name,
+      path: path,
+      bytes: _readInt(row['bytes']),
+      itemCount: _readInt(row['item_count']),
+      modifiedAt: _dateFromMs(_readInt(row['modified_ms'])),
+      accessedAt: _dateFromMs(_readInt(row['accessed_ms'])),
+    );
+  }
+
+  static List<String> _deleteThumbnailsForHash(Database db, String hash) {
+    final failedPaths = <String>[];
+    final rows = db.select(
+      'SELECT path FROM thumbnail_cache WHERE media_hash = ?',
+      [hash],
+    );
+    for (final row in rows) {
+      final path = row['path'] as String;
+      try {
+        final file = File(path);
+        if (file.existsSync()) file.deleteSync();
+      } on FileSystemException catch (e) {
+        failedPaths.add(e.path ?? path);
+      } catch (_) {
+        failedPaths.add(path);
+      }
+    }
+    if (failedPaths.isEmpty) {
+      db.execute('DELETE FROM thumbnail_cache WHERE media_hash = ?', [hash]);
+    }
+    return failedPaths;
+  }
+
+  static int _readInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return 0;
+  }
+
+  static DateTime _dateFromMs(int milliseconds) {
+    if (milliseconds <= 0) return DateTime.fromMillisecondsSinceEpoch(0);
+    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+  }
+
+  static bool _isSafeMediaHash(String hash) {
+    if (hash.isEmpty || hash.length > 128) return false;
+    return RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(hash);
   }
 }

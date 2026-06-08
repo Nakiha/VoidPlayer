@@ -72,7 +72,10 @@ class MainWindowPlaybackCoordinator {
   int durationUs() => _state.durationUs;
   int? pendingSeekUs() => _state.pendingSeekUs;
   DateTime? pendingSeekAt() => _state.pendingSeekAt;
-  void setSeekPreview(int ptsUs) => stateStore.setSeekPreview(ptsUs);
+  void setSeekPreview(int ptsUs) => stateStore.setSeekPreview(
+    ptsUs,
+    presentedFrameAnchors: _fallbackPresentedFrameAnchors(ptsUs),
+  );
   void setPendingSeek(int? ptsUs, DateTime? at) =>
       stateStore.setPendingSeek(ptsUs, at);
   void setPolledPlaybackState(

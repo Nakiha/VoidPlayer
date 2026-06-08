@@ -244,13 +244,16 @@ class MainWindowStateStore extends ChangeNotifier {
     _set(_value.copyWith(playbackSpeed: speed));
   }
 
-  void setSeekPreview(int ptsUs) {
+  void setSeekPreview(
+    int ptsUs, {
+    Map<int, QuickMarkAnchor> presentedFrameAnchors = const {},
+  }) {
     _set(
       _value.copyWith(
         currentPtsUs: ptsUs,
         pendingSeekUs: ptsUs,
         pendingSeekAt: DateTime.now(),
-        presentedFrameAnchors: const {},
+        presentedFrameAnchors: presentedFrameAnchors,
       ),
     );
   }

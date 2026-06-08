@@ -143,6 +143,10 @@ void main() {
       );
 
       fixture.coordinator.seekTo(1500000);
+      expect(fixture.store.value.currentPtsUs, 1500000);
+      expect(fixture.store.value.pendingSeekUs, 1500000);
+      expect(fixture.store.value.presentedFrameAnchors[1]?.ptsUs, 1500000);
+
       await tester.pump();
       fixture.coordinator.startPolling();
       await tester.pump(const Duration(milliseconds: 250));

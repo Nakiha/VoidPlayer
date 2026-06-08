@@ -115,6 +115,13 @@ void main() {
     );
 
     expect(find.textContaining('Track 1'), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('quick-mark-sidebar-row-1')),
+        matching: find.byIcon(Icons.circle),
+      ),
+      findsNothing,
+    );
 
     await tester.tap(find.byKey(const ValueKey('quick-mark-sidebar-row-1')));
     await tester.pump();

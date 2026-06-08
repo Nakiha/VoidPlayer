@@ -621,140 +621,186 @@ class _QuickMarkRow extends StatefulWidget {
 }
 
 class _QuickMarkRowState extends State<_QuickMarkRow> {
+  static const _radius = 4.0;
+  static const _stateBorderWidth = 1.2;
+  static const _currentFrameRailWidth = 3.0;
+
   var _hovering = false;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final background = widget.selected
-        ? colorScheme.primary.withValues(alpha: 0.16)
+    final selected = widget.selected;
+    final currentFrame = widget.visibleOnCurrentFrame;
+    final baseBackground = colorScheme.surfaceContainerHighest.withValues(
+      alpha: colorScheme.brightness == Brightness.dark ? 0.20 : 0.46,
+    );
+    final hoverBackground = colorScheme.surfaceContainerHighest.withValues(
+      alpha: colorScheme.brightness == Brightness.dark ? 0.36 : 0.70,
+    );
+    final currentFrameBackground = colorScheme.primary.withValues(
+      alpha: colorScheme.brightness == Brightness.dark ? 0.10 : 0.05,
+    );
+    final selectedBackground = colorScheme.primary.withValues(alpha: 0.16);
+    final background = selected
+        ? selectedBackground
+        : currentFrame
+        ? currentFrameBackground
         : _hovering
-        ? colorScheme.surfaceContainerHighest.withValues(
-            alpha: colorScheme.brightness == Brightness.dark ? 0.36 : 0.70,
-          )
-        : colorScheme.surfaceContainerHighest.withValues(
-            alpha: colorScheme.brightness == Brightness.dark ? 0.20 : 0.46,
-          );
+        ? hoverBackground
+        : baseBackground;
+    final borderColor = selected ? colorScheme.primary : Colors.transparent;
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovering = true),
         onExit: (_) => setState(() => _hovering = false),
         child: Material(
-          color: background,
-          borderRadius: BorderRadius.circular(4),
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(_radius),
           clipBehavior: Clip.antiAlias,
           child: SizedBox(
             height: 60,
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Row(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: BorderRadius.circular(_radius),
+                border: Border.all(
+                  color: borderColor,
+                  width: _stateBorderWidth,
+                ),
+              ),
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Expanded(
-                    child: InkWell(
-                      key: ValueKey('quick-mark-sidebar-row-${widget.mark.id}'),
-                      onTap: widget.selectionActive
-                          ? () => widget.onCheckedChanged(!widget.checked)
-                          : widget.onTap,
-                      borderRadius: BorderRadius.circular(3),
-                      hoverColor: Colors.transparent,
-                      focusColor: Colors.transparent,
-                      highlightColor: Colors.transparent,
-                      splashColor: Colors.transparent,
-                      overlayColor: const WidgetStatePropertyAll(
-                        Colors.transparent,
-                      ),
-                      child: Row(
-                        children: [
-                          _QuickMarkPreview(
-                            mark: widget.mark,
-                            thumbnail: widget.thumbnail,
+                  if (currentFrame && !selected)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: _currentFrameRailWidth,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary.withValues(alpha: 0.70),
+                          borderRadius: const BorderRadius.horizontal(
+                            left: Radius.circular(_radius),
                           ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        ),
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            key: ValueKey(
+                              'quick-mark-sidebar-row-${widget.mark.id}',
+                            ),
+                            onTap: widget.selectionActive
+                                ? () => widget.onCheckedChanged(!widget.checked)
+                                : widget.onTap,
+                            borderRadius: BorderRadius.circular(3),
+                            hoverColor: Colors.transparent,
+                            focusColor: Colors.transparent,
+                            highlightColor: Colors.transparent,
+                            splashColor: Colors.transparent,
+                            overlayColor: const WidgetStatePropertyAll(
+                              Colors.transparent,
+                            ),
+                            child: Row(
                               children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      widget.timecode,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w700,
+                                _QuickMarkPreview(
+                                  mark: widget.mark,
+                                  thumbnail: widget.thumbnail,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceEvenly,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Text(
+                                            widget.timecode,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelSmall
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
                                           ),
-                                    ),
-                                    if (widget.visibleOnCurrentFrame) ...[
-                                      const SizedBox(width: 4),
-                                      Icon(
-                                        Icons.circle,
-                                        size: 5,
-                                        color: colorScheme.primary,
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              widget.trackLabel,
+                                              textAlign: TextAlign.right,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelSmall
+                                                  ?.copyWith(
+                                                    color: colorScheme
+                                                        .onSurfaceVariant,
+                                                    fontSize: 10,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        widget.trackLabel,
-                                        textAlign: TextAlign.right,
+                                      Text(
+                                        widget.subtitle,
                                         overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
                                         style: Theme.of(context)
                                             .textTheme
                                             .labelSmall
                                             ?.copyWith(
-                                              color:
-                                                  colorScheme.onSurfaceVariant,
+                                              color: colorScheme
+                                                  .onSurfaceVariant
+                                                  .withValues(alpha: 0.82),
                                               fontSize: 10,
                                             ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                Text(
-                                  widget.subtitle,
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: colorScheme.onSurfaceVariant
-                                            .withValues(alpha: 0.82),
-                                        fontSize: 10,
+                                      Text(
+                                        widget.title,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              color: widget.titleMuted
+                                                  ? colorScheme.onSurfaceVariant
+                                                        .withValues(alpha: 0.70)
+                                                  : colorScheme.onSurface,
+                                            ),
                                       ),
-                                ),
-                                Text(
-                                  widget.title,
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: widget.titleMuted
-                                            ? colorScheme.onSurfaceVariant
-                                                  .withValues(alpha: 0.70)
-                                            : colorScheme.onSurface,
-                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _SelectionCheckbox(
-                        buttonKey: ValueKey(
-                          'quick-mark-sidebar-checkbox-${widget.mark.id}',
                         ),
-                        checked: widget.checked,
-                        onPressed: () =>
-                            widget.onCheckedChanged(!widget.checked),
-                      ),
-                    ],
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _SelectionCheckbox(
+                              buttonKey: ValueKey(
+                                'quick-mark-sidebar-checkbox-${widget.mark.id}',
+                              ),
+                              checked: widget.checked,
+                              onPressed: () =>
+                                  widget.onCheckedChanged(!widget.checked),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

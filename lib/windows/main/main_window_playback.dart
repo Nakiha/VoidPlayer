@@ -398,19 +398,30 @@ class MainWindowPlaybackCoordinator {
       var pts = results[0] as int;
       final dur = results[1] as int;
       final playing = results[2] as bool;
-      final presentedFrameAnchors = results[3] as Map<int, QuickMarkAnchor>?;
+      var presentedFrameAnchors = results[3] as Map<int, QuickMarkAnchor>?;
       final seekUs = pendingSeekUs();
       if (seekUs != null) {
         final seekAge = pendingSeekAt() == null
             ? Duration.zero
             : DateTime.now().difference(pendingSeekAt()!);
-        final settled = (pts - seekUs).abs() <= 50000;
+        const seekSettleToleranceUs = 50000;
+        final clockSettled = (pts - seekUs).abs() <= seekSettleToleranceUs;
+        final anchorsSettled = _presentedFrameAnchorsMatchSeekTarget(
+          presentedFrameAnchors,
+          seekUs,
+          toleranceUs: seekSettleToleranceUs,
+        );
+        final settled = clockSettled && anchorsSettled;
         if (settled) {
           setPendingSeek(null, null);
         } else if (seekAge < const Duration(milliseconds: 1500)) {
           pts = seekUs;
+          presentedFrameAnchors = _fallbackPresentedFrameAnchors(seekUs);
         } else {
           setPendingSeek(null, null);
+          if (!anchorsSettled) {
+            presentedFrameAnchors = _fallbackPresentedFrameAnchors(seekUs);
+          }
         }
       }
 
@@ -471,6 +482,32 @@ class MainWindowPlaybackCoordinator {
     } catch (_) {
       return null;
     }
+  }
+
+  bool _presentedFrameAnchorsMatchSeekTarget(
+    Map<int, QuickMarkAnchor>? anchors,
+    int targetPtsUs, {
+    required int toleranceUs,
+  }) {
+    if (anchors == null || anchors.isEmpty) return false;
+    for (final anchor in anchors.values) {
+      if ((anchor.ptsUs - targetPtsUs).abs() > toleranceUs) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Map<int, QuickMarkAnchor> _fallbackPresentedFrameAnchors(int ptsUs) {
+    if (trackManager.isEmpty) return const {};
+    return {
+      for (final entry in trackManager.entries)
+        entry.info.fileId: QuickMarkAnchor(
+          fileId: entry.info.fileId,
+          ptsUs: ptsUs,
+          dtsUs: ptsUs,
+        ),
+    };
   }
 
   Future<void> setLoopRangeEnabled(bool enabled) async {

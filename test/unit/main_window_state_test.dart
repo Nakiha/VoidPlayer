@@ -1,5 +1,8 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/startup_options.dart';
 import 'package:void_player/track_manager.dart';
@@ -91,6 +94,65 @@ void main() {
 
     store.setMarksSidebarWidth(kMaxMarksSidebarWidth + 100);
     expect(store.value.marksSidebarWidth, kMaxMarksSidebarWidth);
+  });
+
+  test('seek preview clears stale presented frame anchors', () {
+    final store = MainWindowStateStore();
+    addTearDown(store.dispose);
+
+    store.setPolledPlaybackState(
+      1000000,
+      2000000,
+      false,
+      presentedFrameAnchors: const {
+        1: QuickMarkAnchor(fileId: 1, ptsUs: 1000000, dtsUs: 1000000),
+      },
+    );
+
+    store.setSeekPreview(1500000);
+
+    expect(store.value.currentPtsUs, 1500000);
+    expect(store.value.pendingSeekUs, 1500000);
+    expect(store.value.presentedFrameAnchors, isEmpty);
+  });
+
+  testWidgets('pending seek suppresses stale presented frame anchors', (
+    tester,
+  ) async {
+    final fixture = _PlaybackFixture();
+    try {
+      fixture.api.presentedFrameTiming = const PresentedFrameTiming(
+        ptsUs: 1000000,
+        dtsUs: 1000000,
+      );
+      fixture.store.setTextureId(1);
+      fixture.store.setQuickMarks(const [
+        QuickMark(
+          id: 1,
+          anchor: QuickMarkAnchor(fileId: 1, ptsUs: 1000000, dtsUs: 1000000),
+          sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+        ),
+      ]);
+      fixture.store.setPolledPlaybackState(
+        1000000,
+        fixture.metrics.effectiveDurationUs,
+        false,
+        presentedFrameAnchors: const {
+          1: QuickMarkAnchor(fileId: 1, ptsUs: 1000000, dtsUs: 1000000),
+        },
+      );
+
+      fixture.coordinator.seekTo(1500000);
+      await tester.pump();
+      fixture.coordinator.startPolling();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(fixture.store.value.currentPtsUs, 1500000);
+      expect(fixture.store.value.pendingSeekUs, 1500000);
+      expect(fixture.store.value.presentedFrameAnchors[1]?.ptsUs, 1500000);
+    } finally {
+      fixture.dispose();
+    }
   });
 
   group('MainWindowPlaybackCoordinator loop range step', () {
@@ -266,6 +328,7 @@ class _PlaybackApi implements NativePlayerApi {
   final int? stepForwardPtsUs;
   final int? stepBackwardPtsUs;
   int ptsUs = 1000000;
+  PresentedFrameTiming? presentedFrameTiming;
 
   _PlaybackApi({this.stepForwardPtsUs, this.stepBackwardPtsUs});
 
@@ -403,7 +466,7 @@ class _PlaybackApi implements NativePlayerApi {
 
   @override
   Future<PresentedFrameTiming?> currentPresentedFrame(int fileId) async {
-    return null;
+    return presentedFrameTiming;
   }
 
   @override

@@ -250,6 +250,7 @@ class MainWindowStateStore extends ChangeNotifier {
         currentPtsUs: ptsUs,
         pendingSeekUs: ptsUs,
         pendingSeekAt: DateTime.now(),
+        presentedFrameAnchors: const {},
       ),
     );
   }

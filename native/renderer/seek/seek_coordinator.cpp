@@ -100,14 +100,18 @@ LoopRangeSeekDecision choose_loop_range_seek(
     return decision;
 }
 
-SeekCoordinator::SeekCoordinator(std::chrono::milliseconds paused_hevc_settle_delay)
-    : paused_hevc_settle_delay_(paused_hevc_settle_delay) {}
+SeekCoordinator::SeekCoordinator(
+    std::chrono::milliseconds paused_hevc_settle_delay,
+    std::chrono::milliseconds paused_hevc_in_flight_timeout)
+    : paused_hevc_settle_delay_(paused_hevc_settle_delay)
+    , paused_hevc_in_flight_timeout_(paused_hevc_in_flight_timeout) {}
 
 void SeekCoordinator::reset() {
     deferred_paused_hevc_seek_.reset();
     paused_hevc_seek_in_flight_ = false;
     paused_hevc_initial_settle_done_ = false;
     paused_hevc_seek_settle_until_ = Clock::time_point{};
+    paused_hevc_seek_in_flight_since_ = Clock::time_point{};
 }
 
 bool SeekCoordinator::should_defer_paused_hevc_seek(bool playing,
@@ -119,8 +123,17 @@ bool SeekCoordinator::should_defer_paused_hevc_seek(bool playing,
     }
 
     const auto now = Clock::now();
+    if (paused_hevc_seek_in_flight_ &&
+        paused_hevc_seek_in_flight_since_ != Clock::time_point{} &&
+        now - paused_hevc_seek_in_flight_since_ >=
+            paused_hevc_in_flight_timeout_) {
+        paused_hevc_seek_in_flight_ = false;
+        paused_hevc_seek_in_flight_since_ = Clock::time_point{};
+        deferred_paused_hevc_seek_.reset();
+    }
     if (!paused_hevc_seek_in_flight_ && now >= paused_hevc_seek_settle_until_) {
         paused_hevc_seek_in_flight_ = true;
+        paused_hevc_seek_in_flight_since_ = now;
         deferred_paused_hevc_seek_.reset();
         return false;
     }
@@ -130,16 +143,25 @@ bool SeekCoordinator::should_defer_paused_hevc_seek(bool playing,
 }
 
 std::optional<SeekRequest> SeekCoordinator::take_deferred_paused_hevc_seek(bool playing) {
+    const auto now = Clock::now();
+    if (paused_hevc_seek_in_flight_ &&
+        paused_hevc_seek_in_flight_since_ != Clock::time_point{} &&
+        now - paused_hevc_seek_in_flight_since_ >=
+            paused_hevc_in_flight_timeout_) {
+        paused_hevc_seek_in_flight_ = false;
+        paused_hevc_seek_in_flight_since_ = Clock::time_point{};
+    }
     if (playing ||
         !deferred_paused_hevc_seek_.has_value() ||
         paused_hevc_seek_in_flight_ ||
-        Clock::now() < paused_hevc_seek_settle_until_) {
+        now < paused_hevc_seek_settle_until_) {
         return std::nullopt;
     }
 
     auto deferred = deferred_paused_hevc_seek_;
     deferred_paused_hevc_seek_.reset();
     paused_hevc_seek_in_flight_ = true;
+    paused_hevc_seek_in_flight_since_ = now;
     return deferred;
 }
 
@@ -150,6 +172,7 @@ void SeekCoordinator::mark_paused_hevc_preview_drawn(bool has_hevc_hw_track) {
 
     if (paused_hevc_seek_in_flight_) {
         paused_hevc_seek_in_flight_ = false;
+        paused_hevc_seek_in_flight_since_ = Clock::time_point{};
         paused_hevc_seek_settle_until_ = Clock::now() + paused_hevc_settle_delay_;
         return;
     }

@@ -322,6 +322,43 @@ TEST_CASE("SeekCoordinator: serializes paused HEVC exact seeks during settle win
     REQUIRE(coordinator.paused_hevc_seek_in_flight());
 }
 
+TEST_CASE("SeekCoordinator: stale paused HEVC in-flight seek releases deferred seek",
+          "[seek][coordinator]") {
+    SeekCoordinator coordinator(
+        std::chrono::milliseconds(100),
+        std::chrono::milliseconds(1));
+
+    REQUIRE_FALSE(coordinator.should_defer_paused_hevc_seek(
+        false, true, 1000, SeekType::Exact));
+    REQUIRE(coordinator.paused_hevc_seek_in_flight());
+    REQUIRE(coordinator.should_defer_paused_hevc_seek(
+        false, true, 2000, SeekType::Exact));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    const auto deferred = coordinator.take_deferred_paused_hevc_seek(false);
+    REQUIRE(deferred.has_value());
+    REQUIRE(deferred->target_pts_us == 2000);
+    REQUIRE(coordinator.paused_hevc_seek_in_flight());
+}
+
+TEST_CASE("SeekCoordinator: stale paused HEVC in-flight seek allows new seek",
+          "[seek][coordinator]") {
+    SeekCoordinator coordinator(
+        std::chrono::milliseconds(100),
+        std::chrono::milliseconds(1));
+
+    REQUIRE_FALSE(coordinator.should_defer_paused_hevc_seek(
+        false, true, 1000, SeekType::Exact));
+    REQUIRE(coordinator.should_defer_paused_hevc_seek(
+        false, true, 2000, SeekType::Exact));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    REQUIRE_FALSE(coordinator.should_defer_paused_hevc_seek(
+        false, true, 3000, SeekType::Exact));
+    REQUIRE(coordinator.paused_hevc_seek_in_flight());
+    REQUIRE_FALSE(coordinator.has_pending_deferred_seek());
+}
+
 TEST_CASE("SeekCoordinator: reset clears deferred state", "[seek][coordinator]") {
     SeekCoordinator coordinator(std::chrono::milliseconds(1));
 

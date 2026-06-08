@@ -99,7 +99,10 @@ LoopRangeSeekDecision choose_loop_range_seek(
 
 class SeekCoordinator {
 public:
-    explicit SeekCoordinator(std::chrono::milliseconds paused_hevc_settle_delay);
+    explicit SeekCoordinator(
+        std::chrono::milliseconds paused_hevc_settle_delay,
+        std::chrono::milliseconds paused_hevc_in_flight_timeout =
+            std::chrono::milliseconds(750));
 
     void reset();
     bool should_defer_paused_hevc_seek(bool playing,
@@ -116,10 +119,12 @@ private:
     using Clock = std::chrono::steady_clock;
 
     const std::chrono::milliseconds paused_hevc_settle_delay_;
+    const std::chrono::milliseconds paused_hevc_in_flight_timeout_;
     std::optional<SeekRequest> deferred_paused_hevc_seek_;
     bool paused_hevc_seek_in_flight_ = false;
     bool paused_hevc_initial_settle_done_ = false;
     Clock::time_point paused_hevc_seek_settle_until_{};
+    Clock::time_point paused_hevc_seek_in_flight_since_{};
 };
 
 } // namespace vr

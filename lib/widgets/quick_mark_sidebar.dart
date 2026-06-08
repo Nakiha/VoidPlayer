@@ -460,15 +460,12 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
     final shape = mark.shape == QuickMarkShape.rectangle
         ? l.quickMarkRectangle
         : l.quickMarkArrow;
-    final sync = mark.syncAcrossTracks
-        ? l.quickMarkSidebarSynced
-        : l.quickMarkSidebarUnsynced;
     final rect = mark.sourceRect;
     final geometry =
         '${(rect.left * 100).round()},${(rect.top * 100).round()} '
         '${(rect.width.abs() * 100).round()}x'
         '${(rect.height.abs() * 100).round()}%';
-    return '$shape · $sync · $geometry';
+    return '$shape · $geometry';
   }
 
   String _trackLabel(int fileId) {

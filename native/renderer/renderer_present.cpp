@@ -85,8 +85,13 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
         return RendererPresentCommandProcessor::redraw_layout(present_context);
     }
     auto present_context = present_command_context();
-    return RendererPresentCommandProcessor::draw_paused_frame(
+    const bool drew = RendererPresentCommandProcessor::draw_paused_frame(
         present_context, refresh_reason);
+    if (drew && std::strcmp(refresh_reason, "seek_frame_refresh") == 0) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        mark_paused_hevc_seek_preview_drawn_locked();
+    }
+    return drew;
 }
 
 void Renderer::Impl::enter_terminal_device_lost_locked(const char* operation) {

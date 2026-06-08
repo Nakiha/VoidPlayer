@@ -7,17 +7,23 @@ enum MacOSNativeLayoutDrawResult {
   case failed
 }
 
+enum MacOSNativeSeekRefreshResult {
+  case presented
+  case pending
+  case failed(FlutterError)
+}
+
 enum MacOSNativeFrameRefresh {
   static func seekAndRefresh(
     player: MacOSNativePlayerSession,
     texture: MacOSFlutterTextureBridge,
     targetPtsUs: Int,
+    timeoutMs: Int = 3_000,
     maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
     framePump: MacOSNativeFramePump
-  ) -> FlutterError? {
+  ) -> MacOSNativeSeekRefreshResult {
     let startNs = DispatchTime.now().uptimeNanoseconds
-    let timeoutMs = 3_000
     do {
       player.seek(targetPtsUs)
       let (frameInfo, attempts) = try updateFromNativePlayerWithTransientRetry(
@@ -40,20 +46,24 @@ enum MacOSNativeFrameRefresh {
         result: attempts > 1 ? "ok attempts=\(attempts)" : "ok",
         ptsUs: frameInfo.ptsUs
       )
-      return nil
+      return .presented
     } catch {
+      let transient = (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true
       logRefreshProfiler(
         route: "seek",
         startNs: startNs,
         timeoutMs: timeoutMs,
-        result: "error:\(error)",
+        result: transient ? "pending:\(error)" : "error:\(error)",
         ptsUs: -1
       )
-      return FlutterError(
+      if transient {
+        return .pending
+      }
+      return .failed(FlutterError(
         code: "DECODE_FAILED",
         message: "Failed to decode macOS video frame",
         details: "\(error)"
-      )
+      ))
     }
   }
 

@@ -54,11 +54,18 @@ final class MacOSTransportController {
     context.playback.stopForBlockingCommand(player: context.player, pausePlayer: true)
     let settledPtsUs = max(0, min(context.activeDurationUs, targetPtsUs))
     context.presentationState.setCurrentPts(settledPtsUs)
-    if let error = refreshDecodedFrameIfNeeded(targetPtsUs: settledPtsUs, context: context) {
+    let refreshResult = refreshDecodedFrameIfNeeded(
+      targetPtsUs: settledPtsUs,
+      timeoutMs: resumeAfterSeek ? 3_000 : 180,
+      context: context
+    )
+    if case .failed(let error) = refreshResult {
       return error
     }
-    context.markFrameAvailable()
-    context.emitSeekPreviewPresented(requestId, settledPtsUs)
+    if case .presented = refreshResult {
+      context.markFrameAvailable()
+      context.emitSeekPreviewPresented(requestId, settledPtsUs)
+    }
     if resumeAfterSeek {
       context.playback.resumeIfNeeded(
         true,
@@ -99,18 +106,20 @@ final class MacOSTransportController {
 
   private func refreshDecodedFrameIfNeeded(
     targetPtsUs: Int,
+    timeoutMs: Int,
     context: MacOSTransportContext
-  ) -> FlutterError? {
+  ) -> MacOSNativeSeekRefreshResult {
     guard context.nativeBackendActive,
           let player = context.player,
           let texture = context.texture else {
-      return nil
+      return .presented
     }
 
     return MacOSNativeFrameRefresh.seekAndRefresh(
       player: player,
       texture: texture,
       targetPtsUs: targetPtsUs,
+      timeoutMs: timeoutMs,
       maxTrackSlots: context.maxTrackSlots,
       presentationState: context.presentationState,
       framePump: context.playback.framePumpForRefresh

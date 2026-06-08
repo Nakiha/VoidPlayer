@@ -623,7 +623,6 @@ class _QuickMarkRow extends StatefulWidget {
 class _QuickMarkRowState extends State<_QuickMarkRow> {
   static const _radius = 4.0;
   static const _stateBorderWidth = 1.2;
-  static const _currentFrameRailWidth = 3.0;
 
   var _hovering = false;
 
@@ -638,14 +637,11 @@ class _QuickMarkRowState extends State<_QuickMarkRow> {
     final hoverBackground = colorScheme.surfaceContainerHighest.withValues(
       alpha: colorScheme.brightness == Brightness.dark ? 0.36 : 0.70,
     );
-    final currentFrameBackground = colorScheme.primary.withValues(
-      alpha: colorScheme.brightness == Brightness.dark ? 0.10 : 0.05,
-    );
     final selectedBackground = colorScheme.primary.withValues(alpha: 0.16);
     final background = selected
         ? selectedBackground
         : currentFrame
-        ? currentFrameBackground
+        ? selectedBackground
         : _hovering
         ? hoverBackground
         : baseBackground;
@@ -670,139 +666,117 @@ class _QuickMarkRowState extends State<_QuickMarkRow> {
                   width: _stateBorderWidth,
                 ),
               ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (currentFrame && !selected)
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: _currentFrameRailWidth,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: colorScheme.primary.withValues(alpha: 0.70),
-                          borderRadius: const BorderRadius.horizontal(
-                            left: Radius.circular(_radius),
-                          ),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        key: ValueKey(
+                          'quick-mark-sidebar-row-${widget.mark.id}',
                         ),
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            key: ValueKey(
-                              'quick-mark-sidebar-row-${widget.mark.id}',
+                        onTap: widget.selectionActive
+                            ? () => widget.onCheckedChanged(!widget.checked)
+                            : widget.onTap,
+                        borderRadius: BorderRadius.circular(3),
+                        hoverColor: Colors.transparent,
+                        focusColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                        splashColor: Colors.transparent,
+                        overlayColor: const WidgetStatePropertyAll(
+                          Colors.transparent,
+                        ),
+                        child: Row(
+                          children: [
+                            _QuickMarkPreview(
+                              mark: widget.mark,
+                              thumbnail: widget.thumbnail,
                             ),
-                            onTap: widget.selectionActive
-                                ? () => widget.onCheckedChanged(!widget.checked)
-                                : widget.onTap,
-                            borderRadius: BorderRadius.circular(3),
-                            hoverColor: Colors.transparent,
-                            focusColor: Colors.transparent,
-                            highlightColor: Colors.transparent,
-                            splashColor: Colors.transparent,
-                            overlayColor: const WidgetStatePropertyAll(
-                              Colors.transparent,
-                            ),
-                            child: Row(
-                              children: [
-                                _QuickMarkPreview(
-                                  mark: widget.mark,
-                                  thumbnail: widget.thumbnail,
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceEvenly,
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  Row(
                                     children: [
-                                      Row(
-                                        children: [
-                                          Text(
-                                            widget.timecode,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelSmall
-                                                ?.copyWith(
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Expanded(
-                                            child: Text(
-                                              widget.trackLabel,
-                                              textAlign: TextAlign.right,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .labelSmall
-                                                  ?.copyWith(
-                                                    color: colorScheme
-                                                        .onSurfaceVariant,
-                                                    fontSize: 10,
-                                                  ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
                                       Text(
-                                        widget.subtitle,
-                                        overflow: TextOverflow.ellipsis,
-                                        maxLines: 1,
+                                        widget.timecode,
                                         style: Theme.of(context)
                                             .textTheme
                                             .labelSmall
                                             ?.copyWith(
-                                              color: colorScheme
-                                                  .onSurfaceVariant
-                                                  .withValues(alpha: 0.82),
-                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
                                             ),
                                       ),
-                                      Text(
-                                        widget.title,
-                                        overflow: TextOverflow.ellipsis,
-                                        maxLines: 1,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelSmall
-                                            ?.copyWith(
-                                              color: widget.titleMuted
-                                                  ? colorScheme.onSurfaceVariant
-                                                        .withValues(alpha: 0.70)
-                                                  : colorScheme.onSurface,
-                                            ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          widget.trackLabel,
+                                          textAlign: TextAlign.right,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall
+                                              ?.copyWith(
+                                                color: colorScheme
+                                                    .onSurfaceVariant,
+                                                fontSize: 10,
+                                              ),
+                                        ),
                                       ),
                                     ],
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _SelectionCheckbox(
-                              buttonKey: ValueKey(
-                                'quick-mark-sidebar-checkbox-${widget.mark.id}',
+                                  Text(
+                                    widget.subtitle,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: colorScheme.onSurfaceVariant
+                                              .withValues(alpha: 0.82),
+                                          fontSize: 10,
+                                        ),
+                                  ),
+                                  Text(
+                                    widget.title,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: widget.titleMuted
+                                              ? colorScheme.onSurfaceVariant
+                                                    .withValues(alpha: 0.70)
+                                              : colorScheme.onSurface,
+                                        ),
+                                  ),
+                                ],
                               ),
-                              checked: widget.checked,
-                              onPressed: () =>
-                                  widget.onCheckedChanged(!widget.checked),
                             ),
                           ],
                         ),
+                      ),
+                    ),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _SelectionCheckbox(
+                          buttonKey: ValueKey(
+                            'quick-mark-sidebar-checkbox-${widget.mark.id}',
+                          ),
+                          checked: widget.checked,
+                          onPressed: () =>
+                              widget.onCheckedChanged(!widget.checked),
+                        ),
                       ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

@@ -30,10 +30,9 @@ TEST_CASE("PacketQueue: push and pop preserves order", "[packet_queue]") {
     for (int i = 0; i < 3; ++i) {
         auto result = pq.pop();
         REQUIRE(result.status == PacketPopStatus::Packet);
-        auto* pkt = result.packet;
+        auto* pkt = result.packet.get();
         REQUIRE(pkt != nullptr);
         REQUIRE(pkt->pts == i * 1000);
-        av_packet_free(&pkt);
     }
 }
 
@@ -54,16 +53,15 @@ TEST_CASE("PacketQueue: capacity enforced", "[packet_queue]") {
     // Third push should block; use try_pop to drain
     auto pop_result = pq.try_pop();
     REQUIRE(pop_result.status == PacketPopStatus::Packet);
-    auto* popped = pop_result.packet;
+    auto* popped = pop_result.packet.get();
     REQUIRE(popped != nullptr);
-    av_packet_free(&popped);
 }
 
 TEST_CASE("PacketQueue: try_pop on empty returns nullptr", "[packet_queue]") {
     PacketQueue pq(10);
     auto result = pq.try_pop();
     REQUIRE(result.status == PacketPopStatus::Empty);
-    REQUIRE(result.packet == nullptr);
+    REQUIRE(result.packet.get() == nullptr);
     REQUIRE(pq.empty() == true);
 }
 
@@ -78,10 +76,9 @@ TEST_CASE("PacketQueue: try_push returns false when full", "[packet_queue]") {
 
     auto pop_result = pq.pop();
     REQUIRE(pop_result.status == PacketPopStatus::Packet);
-    auto* popped = pop_result.packet;
+    auto* popped = pop_result.packet.get();
     REQUIRE(popped != nullptr);
     REQUIRE(popped->pts == 1);
-    av_packet_free(&popped);
 }
 
 TEST_CASE("PacketQueue: abort wakes popper", "[packet_queue]") {
@@ -90,7 +87,7 @@ TEST_CASE("PacketQueue: abort wakes popper", "[packet_queue]") {
     std::thread consumer([&]() {
         auto result = pq.pop();
         REQUIRE(result.status == PacketPopStatus::Aborted);
-        REQUIRE(result.packet == nullptr);
+        REQUIRE(result.packet.get() == nullptr);
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -105,7 +102,7 @@ TEST_CASE("PacketQueue: EOF wakes popper", "[packet_queue]") {
     std::thread consumer([&]() {
         auto result = pq.pop();
         REQUIRE(result.status == PacketPopStatus::Eof);
-        REQUIRE(result.packet == nullptr);
+        REQUIRE(result.packet.get() == nullptr);
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -120,7 +117,7 @@ TEST_CASE("PacketQueue: flush wakes popper", "[packet_queue]") {
     std::thread consumer([&]() {
         auto result = pq.pop();
         REQUIRE(result.status == PacketPopStatus::Flushed);
-        REQUIRE(result.packet == nullptr);
+        REQUIRE(result.packet.get() == nullptr);
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -136,7 +133,7 @@ TEST_CASE("PacketQueue: pop distinguishes abort flush EOF and empty",
         pq.abort();
         auto result = pq.pop();
         REQUIRE(result.status == PacketPopStatus::Aborted);
-        REQUIRE(result.packet == nullptr);
+        REQUIRE(result.packet.get() == nullptr);
     }
 
     {
@@ -144,7 +141,7 @@ TEST_CASE("PacketQueue: pop distinguishes abort flush EOF and empty",
         pq.flush();
         auto result = pq.try_pop();
         REQUIRE(result.status == PacketPopStatus::Flushed);
-        REQUIRE(result.packet == nullptr);
+        REQUIRE(result.packet.get() == nullptr);
         REQUIRE(pq.try_pop().status == PacketPopStatus::Empty);
     }
 
@@ -153,7 +150,7 @@ TEST_CASE("PacketQueue: pop distinguishes abort flush EOF and empty",
         pq.signal_eof();
         auto result = pq.try_pop();
         REQUIRE(result.status == PacketPopStatus::Eof);
-        REQUIRE(result.packet == nullptr);
+        REQUIRE(result.packet.get() == nullptr);
     }
 }
 
@@ -192,10 +189,9 @@ TEST_CASE("PacketQueue: reset after abort", "[packet_queue]") {
     pq.push(pkt);
     auto pop_result = pq.pop();
     REQUIRE(pop_result.status == PacketPopStatus::Packet);
-    auto* popped = pop_result.packet;
+    auto* popped = pop_result.packet.get();
     REQUIRE(popped != nullptr);
     REQUIRE(popped->pts == 42);
-    av_packet_free(&popped);
 }
 
 TEST_CASE("PacketQueue: flush discards all packets", "[packet_queue]") {
@@ -237,14 +233,12 @@ TEST_CASE("PacketQueue: deterministic nonblocking sequence preserves FIFO and st
             const auto result = pq.try_pop();
             if (expected.empty()) {
                 REQUIRE(result.status == PacketPopStatus::Empty);
-                REQUIRE(result.packet == nullptr);
+                REQUIRE(result.packet.get() == nullptr);
             } else {
                 REQUIRE(result.status == PacketPopStatus::Packet);
-                REQUIRE(result.packet != nullptr);
-                REQUIRE(result.packet->pts == expected.front());
+                REQUIRE(result.packet.get() != nullptr);
+                REQUIRE(result.packet.get()->pts == expected.front());
                 expected.pop_front();
-                auto* pkt = result.packet;
-                av_packet_free(&pkt);
             }
         } else if (op == 3) {
             pq.flush();
@@ -252,14 +246,14 @@ TEST_CASE("PacketQueue: deterministic nonblocking sequence preserves FIFO and st
             REQUIRE(pq.empty());
             auto result = pq.try_pop();
             REQUIRE(result.status == PacketPopStatus::Flushed);
-            REQUIRE(result.packet == nullptr);
+            REQUIRE(result.packet.get() == nullptr);
             REQUIRE(pq.try_pop().status == PacketPopStatus::Empty);
         } else if (op == 4) {
             pq.signal_eof();
             if (expected.empty()) {
                 auto result = pq.try_pop();
                 REQUIRE(result.status == PacketPopStatus::Eof);
-                REQUIRE(result.packet == nullptr);
+                REQUIRE(result.packet.get() == nullptr);
             }
             pq.clear_eof();
             REQUIRE_FALSE(pq.is_eof());
@@ -268,7 +262,7 @@ TEST_CASE("PacketQueue: deterministic nonblocking sequence preserves FIFO and st
             REQUIRE(pq.is_aborted());
             auto result = pq.try_pop();
             REQUIRE(result.status == PacketPopStatus::Aborted);
-            REQUIRE(result.packet == nullptr);
+            REQUIRE(result.packet.get() == nullptr);
             auto* pkt = make_packet(next_pts);
             REQUIRE_FALSE(pq.try_push(pkt));
             av_packet_free(&pkt);

@@ -194,10 +194,10 @@ DecodeThread::DecodeLoopStepResult DecodeThread::run_decode_loop_step(
 
     // Non-blocking pop with short sleep allows seek_pending to be checked promptly.
     PacketPopResult packet_result = input_queue_.try_pop();
-    AVPacket* pkt = packet_result.packet;
+    auto packet = std::move(packet_result.packet);
     const auto pop_action = choose_decode_packet_pop_action(
         packet_result.status,
-        pkt != nullptr,
+        packet.get() != nullptr,
         running_.load(std::memory_order_acquire),
         cancelled_.load(std::memory_order_acquire));
     if (pop_action != DecodePacketPopAction::ProcessPacket) {
@@ -214,7 +214,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::run_decode_loop_step(
 
     eof_flushed_ = false;
 
-    return process_decode_packet(pkt, scratch);
+    return process_decode_packet(packet, scratch);
 }
 
 DecodeThread::DecodeLoopStepResult DecodeThread::drain_before_next_packet(
@@ -265,7 +265,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::drain_before_next_packet(
 }
 
 DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
-    AVPacket*& pkt,
+    AvPacketOwner& packet,
     DecodeLoopScratch& scratch) {
     AVFrame* frame = scratch.frame;
     auto& publisher = scratch.publisher;
@@ -273,7 +273,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
 
     auto batch_t0 = std::chrono::steady_clock::now();
     const auto packet_send_result = send_decode_packet(
-        pkt,
+        packet,
         DecodePacketSendCallbacks{
             [this]() {
                 // If decode is paused (seek transition), discard the

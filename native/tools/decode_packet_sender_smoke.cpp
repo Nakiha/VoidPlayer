@@ -15,14 +15,14 @@ int fail(const char* message) {
     return 1;
 }
 
-AVPacket* make_packet() {
-    return av_packet_alloc();
+vr::AvPacketOwner make_packet() {
+    return vr::AvPacketOwner::allocate();
 }
 
 } // namespace
 
 int main() {
-    AVPacket* sent_packet = make_packet();
+    auto sent_packet = make_packet();
     if (!sent_packet) {
         return fail("failed to allocate sent packet");
     }
@@ -39,11 +39,10 @@ int main() {
             {},
         });
     if (!sent.sent || sent_packet || send_calls != 1) {
-        av_packet_free(&sent_packet);
         return fail("decode packet sender did not send and release packet");
     }
 
-    AVPacket* discarded_packet = make_packet();
+    auto discarded_packet = make_packet();
     if (!discarded_packet) {
         return fail("failed to allocate discarded packet");
     }
@@ -56,11 +55,10 @@ int main() {
             {},
         });
     if (!discarded.discarded_before_decode || discarded_packet) {
-        av_packet_free(&discarded_packet);
         return fail("decode packet sender did not discard packet");
     }
 
-    AVPacket* fatal_packet = make_packet();
+    auto fatal_packet = make_packet();
     if (!fatal_packet) {
         return fail("failed to allocate fatal packet");
     }
@@ -73,11 +71,10 @@ int main() {
             {},
         });
     if (!fatal.stop_with_error || fatal_packet) {
-        av_packet_free(&fatal_packet);
         return fail("decode packet sender did not report fatal send");
     }
 
-    AVPacket* skipped_packet = make_packet();
+    auto skipped_packet = make_packet();
     if (!skipped_packet) {
         return fail("failed to allocate skipped packet");
     }
@@ -91,7 +88,6 @@ int main() {
             [&](int) { ++logged; },
         });
     if (!skipped.skipped || skipped.stop_with_error || skipped_packet || logged != 1) {
-        av_packet_free(&skipped_packet);
         return fail("decode packet sender did not skip recoverable send error");
     }
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "media/av_packet_lifetime.h"
+
 #include <functional>
 
 struct AVPacket;
@@ -22,7 +24,7 @@ struct DecodePacketSendResult {
 };
 
 DecodePacketSendResult send_decode_packet(
-    AVPacket*& packet,
+    AvPacketOwner& packet,
     const DecodePacketSendCallbacks& callbacks);
 
 } // namespace vr

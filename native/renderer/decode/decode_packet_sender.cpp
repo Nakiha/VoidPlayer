@@ -2,14 +2,10 @@
 
 #include "renderer/decode/decode_loop_policy.h"
 
-extern "C" {
-#include <libavcodec/packet.h>
-}
-
 namespace vr {
 
 DecodePacketSendResult send_decode_packet(
-    AVPacket*& packet,
+    AvPacketOwner& packet,
     const DecodePacketSendCallbacks& callbacks) {
     DecodePacketSendResult result;
     if (!packet) {
@@ -19,21 +15,21 @@ DecodePacketSendResult send_decode_packet(
 
     if (callbacks.should_discard_before_decode &&
         callbacks.should_discard_before_decode()) {
-        av_packet_free(&packet);
+        packet.reset();
         result.discarded_before_decode = true;
         return result;
     }
 
     if (callbacks.should_abort_before_send &&
         callbacks.should_abort_before_send()) {
-        av_packet_free(&packet);
+        packet.reset();
         result.aborted_before_send = true;
         return result;
     }
 
-    const int ret = callbacks.send_packet ? callbacks.send_packet(packet) : -1;
+    const int ret = callbacks.send_packet ? callbacks.send_packet(packet.get()) : -1;
     const auto send_action = choose_decode_packet_send_action(ret);
-    av_packet_free(&packet);
+    packet.reset();
 
     if (send_action == DecodePacketSendAction::StopWithError) {
         result.stop_with_error = true;

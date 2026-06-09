@@ -1,4 +1,5 @@
 #include "audio/audio_decode_thread.h"
+#include "renderer/decode/av_frame_lifetime.h"
 
 #include "audio/audio_constants.h"
 #include "audio/pcm_buffer.h"
@@ -161,8 +162,9 @@ void AudioDecodeThread::receive_frames(AVFrame* frame) {
 }
 
 void AudioDecodeThread::run() {
-    AVFrame* frame = av_frame_alloc();
-    if (!frame) return;
+    auto frame_owner = AvFrameOwner::allocate();
+    if (!frame_owner) return;
+    AVFrame* frame = frame_owner.get();
     while (running_.load()) {
         if (decode_paused_.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -170,15 +172,14 @@ void AudioDecodeThread::run() {
         }
         flush_after_seek_if_needed();
         PacketPopResult packet_result = input_queue_.pop();
-        AVPacket* pkt = packet_result.packet;
-        if (packet_result.status != PacketPopStatus::Packet || !pkt) {
+        auto packet = std::move(packet_result.packet);
+        if (packet_result.status != PacketPopStatus::Packet || !packet) {
             if (!running_.load()) break;
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
         flush_after_seek_if_needed();
-        int ret = avcodec_send_packet(codec_ctx_, pkt);
-        av_packet_free(&pkt);
+        int ret = avcodec_send_packet(codec_ctx_, packet.get());
         if (ret < 0 && ret != AVERROR(EAGAIN)) {
             spdlog::warn("[AudioDecodeThread] send_packet failed: {:#x}",
                          static_cast<unsigned>(ret));
@@ -186,7 +187,6 @@ void AudioDecodeThread::run() {
         }
         receive_frames(frame);
     }
-    av_frame_free(&frame);
 }
 
 int64_t AudioDecodeThread::frame_pts_us(const AVFrame* frame) const {

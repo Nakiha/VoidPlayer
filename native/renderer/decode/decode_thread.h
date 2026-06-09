@@ -121,7 +121,7 @@ private:
     void run();
     DecodeLoopStepResult run_decode_loop_step(DecodeLoopScratch& scratch);
     DecodeLoopStepResult drain_before_next_packet(DecodeLoopScratch& scratch);
-    DecodeLoopStepResult process_decode_packet(AVPacket*& packet, DecodeLoopScratch& scratch);
+    DecodeLoopStepResult process_decode_packet(AvPacketOwner& packet, DecodeLoopScratch& scratch);
     DecodeLoopStepResult stop_decode_loop_with_error();
 
     /// Attempt to open codec. Returns true on success.

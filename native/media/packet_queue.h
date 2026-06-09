@@ -1,10 +1,10 @@
 #pragma once
+#include "media/av_packet_lifetime.h"
 #include "renderer/renderer_limits.h"
 
 #include <deque>
 #include <mutex>
 #include <condition_variable>
-#include <memory>
 #include <cstdint>
 #include <atomic>
 
@@ -24,7 +24,7 @@ enum class PacketPopStatus {
 
 struct PacketPopResult {
     PacketPopStatus status = PacketPopStatus::Empty;
-    AVPacket* packet = nullptr;
+    AvPacketOwner packet;
 };
 
 class PacketQueue {
@@ -66,13 +66,10 @@ public:
     bool is_aborted() const;
 
 private:
-    static void packet_deleter(AVPacket* pkt);
-    using PacketPtr = std::unique_ptr<AVPacket, decltype(&packet_deleter)>;
-
     mutable std::mutex mutex_;
     std::condition_variable not_full_;
     std::condition_variable not_empty_;
-    std::deque<PacketPtr> queue_;
+    std::deque<AvPacketOwner> queue_;
     size_t capacity_;
     bool aborted_ = false;
     bool flushed_ = false;

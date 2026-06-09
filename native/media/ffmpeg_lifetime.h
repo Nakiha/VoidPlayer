@@ -24,6 +24,7 @@ public:
 
     static AvCodecContextOwner allocate(const AVCodec* codec) noexcept;
     AVCodecContext* get() const noexcept;
+    AVCodecContext* operator->() const noexcept;
     AVCodecContext* release() noexcept;
     void reset(AVCodecContext* context = nullptr) noexcept;
     explicit operator bool() const noexcept;
@@ -92,6 +93,7 @@ public:
 
     static AvBufferRefOwner allocate(size_t size) noexcept;
     AVBufferRef* get() const noexcept;
+    AVBufferRef* operator->() const noexcept;
     AVBufferRef* release() noexcept;
     void reset(AVBufferRef* ref = nullptr) noexcept;
     explicit operator bool() const noexcept;

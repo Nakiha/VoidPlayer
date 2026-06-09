@@ -34,6 +34,10 @@ AVCodecContext* AvCodecContextOwner::get() const noexcept {
     return context_;
 }
 
+AVCodecContext* AvCodecContextOwner::operator->() const noexcept {
+    return context_;
+}
+
 AVCodecContext* AvCodecContextOwner::release() noexcept {
     AVCodecContext* context = context_;
     context_ = nullptr;
@@ -166,6 +170,10 @@ AvBufferRefOwner AvBufferRefOwner::allocate(size_t size) noexcept {
 }
 
 AVBufferRef* AvBufferRefOwner::get() const noexcept {
+    return ref_;
+}
+
+AVBufferRef* AvBufferRefOwner::operator->() const noexcept {
     return ref_;
 }
 

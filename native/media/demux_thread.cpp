@@ -370,13 +370,14 @@ AVRational DemuxThread::time_base_for_stream(int stream_index) const {
 void DemuxThread::run() {
     spdlog::info("[DemuxThread] Demux loop started");
 
-    AVPacket* pkt = av_packet_alloc();
-    if (!pkt) {
+    auto packet = AvPacketOwner::allocate();
+    if (!packet) {
         spdlog::error("[DemuxThread] Failed to allocate packet");
         running_.store(false, std::memory_order_release);
         abort_outputs();
         return;
     }
+    AVPacket* pkt = packet.get();
 
     int seek_stream_idx = stats_.video_stream_index >= 0
         ? stats_.video_stream_index
@@ -507,7 +508,6 @@ void DemuxThread::run() {
         }
     }
 
-    av_packet_free(&pkt);
     // Signal decode thread that no more packets will come
     abort_outputs();
     spdlog::info("[DemuxThread] Demux loop ended");

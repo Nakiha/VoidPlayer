@@ -74,7 +74,7 @@ bool DecodeThread::drain_codec_at_eof(
     AVFrame* frame,
     const std::function<void(AVFrame*)>& rescale_ts,
     DecodedFramePublisher& publisher) {
-    int send_ret = send_codec_packet_seh_guarded(codec_ctx_, nullptr);
+    int send_ret = send_codec_packet_seh_guarded(codec_ctx_.get(), nullptr);
     const auto send_action = choose_eof_codec_send_action(send_ret);
     if (send_action != EofCodecSendAction::ReceiveFrames) {
         if (send_action == EofCodecSendAction::StopWithError) {
@@ -83,7 +83,7 @@ bool DecodeThread::drain_codec_at_eof(
         return true;
     }
     while (true) {
-        int ret = receive_codec_frame_seh_guarded(codec_ctx_, frame);
+        int ret = receive_codec_frame_seh_guarded(codec_ctx_.get(), frame);
         const auto receive_action = choose_eof_codec_receive_action(ret);
         if (receive_action == DecodeDrainReceiveAction::StopWithError) {
             stop_decode_loop_with_error();
@@ -233,7 +233,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::drain_before_next_packet(
             },
             [this](AVFrame* frame_to_receive) {
                 return receive_codec_frame_seh_guarded(
-                    codec_ctx_, frame_to_receive, hw_enabled_, device_mutex_);
+                    codec_ctx_.get(), frame_to_receive, hw_enabled_, device_mutex_);
             },
             rescale_ts,
             [this](const AVFrame* ready_frame) {
@@ -292,7 +292,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
             },
             [this](AVPacket* packet_to_send) {
                 return send_codec_packet_seh_guarded(
-                    codec_ctx_, packet_to_send, hw_enabled_, device_mutex_);
+                    codec_ctx_.get(), packet_to_send, hw_enabled_, device_mutex_);
             },
             [](int send_ret) {
                 spdlog::error("[DecodeThread] Error sending packet: {:#x}",
@@ -320,7 +320,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
             },
             [this](AVFrame* frame_to_receive) {
                 return receive_codec_frame_seh_guarded(
-                    codec_ctx_, frame_to_receive, hw_enabled_, device_mutex_);
+                    codec_ctx_.get(), frame_to_receive, hw_enabled_, device_mutex_);
             },
             rescale_ts,
             [this](const AVFrame* ready_frame) {

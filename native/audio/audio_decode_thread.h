@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/audio_track_registry.h"
+#include "media/ffmpeg_lifetime.h"
 #include "media/packet_queue.h"
 
 #include <atomic>
@@ -47,8 +48,8 @@ private:
     const AVCodecParameters* codec_params_;
     AVRational time_base_;
     const AVCodec* codec_ = nullptr;
-    AVCodecContext* codec_ctx_ = nullptr;
-    SwrContext* swr_ = nullptr;
+    AvCodecContextOwner codec_ctx_;
+    SwrContextOwner swr_;
     std::thread thread_;
     std::atomic<bool> running_{false};
     std::atomic<bool> decode_paused_{true};

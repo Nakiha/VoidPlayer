@@ -107,6 +107,10 @@ TEST_CASE("Renderer config validation covers speed and loop range",
 
     REQUIRE(validate_loop_range(false, 0, 0).ok);
     REQUIRE(validate_loop_range(true, 0, 1000).ok);
+    REQUIRE(validate_loop_range(
+        true,
+        media_time_from_us(0),
+        media_time_from_us(1000)).ok);
     REQUIRE_FALSE(validate_loop_range(true, -1, 1000).ok);
     REQUIRE_FALSE(validate_loop_range(true, 1000, 1000).ok);
 }

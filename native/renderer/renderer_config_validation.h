@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/media_time.h"
 #include "common/native_result.h"
 #include "renderer/renderer_config.h"
 #include "renderer/renderer_limits.h"
@@ -24,6 +25,11 @@ RendererConfigValidationResult validate_renderer_config(
     const RendererConfig& config);
 
 RendererConfigValidationResult validate_playback_speed(double speed);
+
+RendererConfigValidationResult validate_loop_range(
+    bool enabled,
+    MediaTime start,
+    MediaTime end);
 
 RendererConfigValidationResult validate_loop_range(
     bool enabled,

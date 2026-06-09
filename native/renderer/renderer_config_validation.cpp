@@ -126,10 +126,20 @@ RendererConfigValidationResult validate_loop_range(
     bool enabled,
     int64_t start_us,
     int64_t end_us) {
+    return validate_loop_range(
+        enabled,
+        media_time_from_us(start_us),
+        media_time_from_us(end_us));
+}
+
+RendererConfigValidationResult validate_loop_range(
+    bool enabled,
+    MediaTime start,
+    MediaTime end) {
     if (!enabled) {
         return ok_result();
     }
-    if (start_us < 0 || end_us <= start_us) {
+    if (media_time_us(start) < 0 || end <= start) {
         return invalid("loop range must satisfy 0 <= start < end");
     }
     return ok_result();

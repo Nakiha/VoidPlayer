@@ -18,9 +18,6 @@ public:
     void flush() override;
     HwDecodeType type() const override { return HwDecodeType::VideoToolbox; }
     const char* name() const override { return "VideoToolbox"; }
-
-private:
-    AVBufferRef* hw_device_ctx_ = nullptr;
 };
 
 } // namespace vr

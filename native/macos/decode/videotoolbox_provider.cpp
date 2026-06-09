@@ -1,5 +1,7 @@
 #include "macos/decode/videotoolbox_provider.h"
 
+#include "media/ffmpeg_lifetime.h"
+
 #include <spdlog/spdlog.h>
 
 extern "C" {
@@ -49,9 +51,9 @@ HwDecodeInitResult VideoToolboxProvider::init(const HwDecodeInitParams& params) 
         return result;
     }
 
-    AVBufferRef* hw_dev_ref = nullptr;
+    AvBufferRefOwner hw_dev_ref;
     const int ret = av_hwdevice_ctx_create(
-        &hw_dev_ref,
+        hw_dev_ref.put(),
         AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
         nullptr,
         nullptr,
@@ -63,18 +65,14 @@ HwDecodeInitResult VideoToolboxProvider::init(const HwDecodeInitParams& params) 
         return result;
     }
 
-    hw_device_ctx_ = hw_dev_ref;
     result.success = true;
-    result.hw_device_ctx = hw_dev_ref;
+    result.hw_device_ctx = hw_dev_ref.release();
     result.hw_pix_fmt = AV_PIX_FMT_VIDEOTOOLBOX;
     result.type = HwDecodeType::VideoToolbox;
     return result;
 }
 
 void VideoToolboxProvider::shutdown() {
-    // The AVBufferRef is transferred to DecodeThread on success. If init()
-    // fails before transfer, this still makes repeated tests deterministic.
-    hw_device_ctx_ = nullptr;
 }
 
 void VideoToolboxProvider::flush() {

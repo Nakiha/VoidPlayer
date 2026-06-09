@@ -1,5 +1,6 @@
 #include "macos/player/native_player_state.h"
 
+#include "media/ffmpeg_lifetime.h"
 #include "renderer/decode/hw/hw_decode_provider.h"
 
 #include <algorithm>
@@ -77,9 +78,8 @@ bool probe_videotoolbox_h264() {
       result.success &&
       result.type == vr::HwDecodeType::VideoToolbox &&
       result.hw_device_ctx;
-  if (result.hw_device_ctx) {
-    av_buffer_unref(&result.hw_device_ctx);
-  }
+  vr::AvBufferRefOwner hw_device_ctx(result.hw_device_ctx);
+  result.hw_device_ctx = nullptr;
   if (result.provider) {
     result.provider->shutdown();
   }

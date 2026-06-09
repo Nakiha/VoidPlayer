@@ -1,4 +1,7 @@
 #include "windows/decode/d3d11va_provider.h"
+
+#include "media/ffmpeg_lifetime.h"
+
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <thread>
@@ -120,8 +123,8 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     const bool ffmpeg_owned_hwdownload_device =
         params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
     if (ffmpeg_owned_hwdownload_device) {
-        AVBufferRef* hw_dev_ref = nullptr;
-        int ret = av_hwdevice_ctx_create(&hw_dev_ref, AV_HWDEVICE_TYPE_D3D11VA,
+        AvBufferRefOwner hw_dev_ref;
+        int ret = av_hwdevice_ctx_create(hw_dev_ref.put(), AV_HWDEVICE_TYPE_D3D11VA,
                                          nullptr, nullptr, 0);
         if (ret < 0 || !hw_dev_ref) {
             spdlog::error("[D3D11VA] av_hwdevice_ctx_create failed for {}: {}",
@@ -140,7 +143,7 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
                      avcodec_get_name(probed_codec_id_), width, height);
 
         result.success = true;
-        result.hw_device_ctx = hw_dev_ref;
+        result.hw_device_ctx = hw_dev_ref.release();
         result.hw_pix_fmt = (probed_pix_fmt_ != AV_PIX_FMT_NONE) ? probed_pix_fmt_ : AV_PIX_FMT_D3D11;
         result.type = HwDecodeType::D3D11VA;
         return result;
@@ -172,7 +175,7 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     }
 
     // 1. Allocate FFmpeg hardware device context
-    AVBufferRef* hw_dev_ref = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_D3D11VA);
+    AvBufferRefOwner hw_dev_ref(av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_D3D11VA));
     if (!hw_dev_ref) {
         spdlog::error("[D3D11VA] Failed to allocate hw device context");
         return result;
@@ -221,10 +224,9 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     }
 
     // 5. Initialize the hardware device context
-    int ret = av_hwdevice_ctx_init(hw_dev_ref);
+    int ret = av_hwdevice_ctx_init(hw_dev_ref.get());
     if (ret < 0) {
         spdlog::error("[D3D11VA] av_hwdevice_ctx_init failed: {}", ret);
-        av_buffer_unref(&hw_dev_ref);
         device_mutex_.reset();
         active_mutex_ = nullptr;
         uses_shared_device_ = false;
@@ -240,7 +242,7 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
                  static_cast<unsigned int>(d3d11_ctx->MiscFlags));
 
     result.success = true;
-    result.hw_device_ctx = hw_dev_ref;
+    result.hw_device_ctx = hw_dev_ref.release();
     result.hw_pix_fmt = (probed_pix_fmt_ != AV_PIX_FMT_NONE) ? probed_pix_fmt_ : AV_PIX_FMT_D3D11VA_VLD;
     result.type = HwDecodeType::D3D11VA;
     return result;

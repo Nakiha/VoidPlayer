@@ -11,29 +11,22 @@
 #include <fstream>
 #include <filesystem>
 #include <sstream>
+#include <vector>
 
 using namespace vr;
 
 namespace {
 
-// Helper: drain N packets from the queue, returning them as a vector.
-// Caller is responsible for freeing the packets.
-std::vector<AVPacket*> drain_packets(PacketQueue& pq, int count) {
-    std::vector<AVPacket*> packets;
+std::vector<AvPacketOwner> drain_packets(PacketQueue& pq, int count) {
+    std::vector<AvPacketOwner> packets;
     for (int i = 0; i < count; ++i) {
         auto result = pq.pop();
-        auto* pkt = result.packet;
+        auto packet = std::move(result.packet);
+        auto* pkt = packet.get();
         if (!pkt) break;
-        packets.push_back(pkt);
+        packets.push_back(std::move(packet));
     }
     return packets;
-}
-
-void free_packets(std::vector<AVPacket*>& packets) {
-    for (auto* pkt : packets) {
-        av_packet_free(&pkt);
-    }
-    packets.clear();
 }
 
 std::string get_h264_path() {
@@ -255,11 +248,13 @@ TEST_CASE("DemuxThread: drained packets have correct stream_index",
     REQUIRE(packets.size() >= 5);
 
     int expected_stream_index = demux.stats().video_stream_index;
-    for (auto* pkt : packets) {
+    for (const auto& packet : packets) {
+        const auto* pkt = packet.get();
+        REQUIRE(pkt != nullptr);
         REQUIRE(pkt->stream_index == expected_stream_index);
     }
 
-    free_packets(packets);
+    packets.clear();
     demux.stop();
 }
 
@@ -279,7 +274,7 @@ TEST_CASE("DemuxThread: private CDN FLV AV1 fallback emits packets",
 
     auto packet_result = pq.pop();
     REQUIRE(packet_result.status == PacketPopStatus::Packet);
-    AVPacket* pkt = packet_result.packet;
+    AVPacket* pkt = packet_result.packet.get();
     REQUIRE(pkt != nullptr);
     REQUIRE(pkt->stream_index == demux.stats().video_stream_index);
     REQUIRE(pkt->dts == 40);
@@ -287,7 +282,6 @@ TEST_CASE("DemuxThread: private CDN FLV AV1 fallback emits packets",
     REQUIRE(pkt->size == 3);
     REQUIRE((pkt->flags & AV_PKT_FLAG_KEY) != 0);
 
-    av_packet_free(&pkt);
     demux.stop();
     std::filesystem::remove(path);
 }
@@ -310,13 +304,12 @@ TEST_CASE("DemuxThread: private CDN FLV VVC fallback emits packets",
 
     auto packet_result = pq.pop();
     REQUIRE(packet_result.status == PacketPopStatus::Packet);
-    AVPacket* pkt = packet_result.packet;
+    AVPacket* pkt = packet_result.packet.get();
     REQUIRE(pkt != nullptr);
     REQUIRE(pkt->dts == 40);
     REQUIRE(pkt->pts == 45);
     REQUIRE(pkt->size == 3);
 
-    av_packet_free(&pkt);
     demux.stop();
     std::filesystem::remove(path);
 }
@@ -420,11 +413,12 @@ TEST_CASE("DemuxThread: audio output receives only first audio stream",
     REQUIRE(packets.size() >= 5);
 
     const int expected_stream_index = demux.stats().audio_stream_index;
-    for (auto* pkt : packets) {
+    for (const auto& packet : packets) {
+        const auto* pkt = packet.get();
+        REQUIRE(pkt != nullptr);
         REQUIRE(pkt->stream_index == expected_stream_index);
     }
 
-    free_packets(packets);
     demux.stop();
     std::filesystem::remove(path);
 }
@@ -448,7 +442,7 @@ TEST_CASE("DemuxThread: first packet has reasonable PTS", "[demux_thread]") {
     // Pop the first packet
     auto packet_result = pq.pop();
     REQUIRE(packet_result.status == PacketPopStatus::Packet);
-    auto* pkt = packet_result.packet;
+    auto* pkt = packet_result.packet.get();
     REQUIRE(pkt != nullptr);
 
     // PTS should be a reasonable microsecond value: >= 0 and < duration
@@ -456,7 +450,6 @@ TEST_CASE("DemuxThread: first packet has reasonable PTS", "[demux_thread]") {
     REQUIRE(pkt->pts >= 0);
     REQUIRE(pkt->pts < demux.stats().duration_us);
 
-    av_packet_free(&pkt);
     demux.stop();
 }
 

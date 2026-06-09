@@ -3,12 +3,6 @@
 
 namespace vr {
 
-void PacketQueue::packet_deleter(AVPacket* pkt) {
-    if (pkt) {
-        av_packet_free(&pkt);
-    }
-}
-
 PacketQueue::PacketQueue(size_t capacity)
     : capacity_(capacity)
 {}
@@ -22,8 +16,7 @@ bool PacketQueue::push(AVPacket* pkt) {
     not_full_.wait(lock, [this]() { return queue_.size() < capacity_ || aborted_; });
     if (aborted_) return false;  // caller retains ownership of pkt
     flushed_ = false;
-    auto ptr = PacketPtr(pkt, &packet_deleter);
-    queue_.push_back(std::move(ptr));
+    queue_.emplace_back(pkt);
     not_empty_.notify_one();
     return true;
 }
@@ -32,8 +25,7 @@ bool PacketQueue::try_push(AVPacket* pkt) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (aborted_ || queue_.size() >= capacity_) return false;
     flushed_ = false;
-    auto ptr = PacketPtr(pkt, &packet_deleter);
-    queue_.push_back(std::move(ptr));
+    queue_.emplace_back(pkt);
     not_empty_.notify_one();
     return true;
 }
@@ -45,41 +37,41 @@ PacketPopResult PacketQueue::pop() {
                eof_.load(std::memory_order_acquire);
     });
     if (aborted_ && queue_.empty()) {
-        return {PacketPopStatus::Aborted, nullptr};
+        return {PacketPopStatus::Aborted, AvPacketOwner{}};
     }
     if (flushed_ && queue_.empty()) {
         flushed_ = false;
-        return {PacketPopStatus::Flushed, nullptr};
+        return {PacketPopStatus::Flushed, AvPacketOwner{}};
     }
     if (queue_.empty()) {
-        return {PacketPopStatus::Eof, nullptr};
+        return {PacketPopStatus::Eof, AvPacketOwner{}};
     }
     auto ptr = std::move(queue_.front());
     queue_.pop_front();
     not_full_.notify_one();
-    return {PacketPopStatus::Packet, ptr.release()};
+    return {PacketPopStatus::Packet, std::move(ptr)};
 }
 
 PacketPopResult PacketQueue::try_pop() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (aborted_) {
-        return {PacketPopStatus::Aborted, nullptr};
+        return {PacketPopStatus::Aborted, AvPacketOwner{}};
     }
     if (flushed_ && queue_.empty()) {
         flushed_ = false;
-        return {PacketPopStatus::Flushed, nullptr};
+        return {PacketPopStatus::Flushed, AvPacketOwner{}};
     }
     if (queue_.empty()) {
         return {
             eof_.load(std::memory_order_acquire)
                 ? PacketPopStatus::Eof
                 : PacketPopStatus::Empty,
-            nullptr};
+            AvPacketOwner{}};
     }
     auto ptr = std::move(queue_.front());
     queue_.pop_front();
     not_full_.notify_one();
-    return {PacketPopStatus::Packet, ptr.release()};
+    return {PacketPopStatus::Packet, std::move(ptr)};
 }
 
 void PacketQueue::flush() {

@@ -1,11 +1,26 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "media/seek_controller.h"
 #include "renderer/seek/seek_coordinator.h"
 
 #include <chrono>
 #include <thread>
 
 using namespace vr;
+
+TEST_CASE("SeekController: accepts strongly typed media time requests",
+          "[seek][controller]") {
+    SeekController controller;
+
+    controller.request_seek(media_time_from_us(12345), SeekType::Exact);
+
+    auto request = controller.take_pending();
+    REQUIRE(request.has_value());
+    REQUIRE(request->target_pts_us == 12345);
+    REQUIRE(request->target_time() == media_time_from_us(12345));
+    REQUIRE(request->type == SeekType::Exact);
+    REQUIRE_FALSE(controller.has_pending_seek());
+}
 
 TEST_CASE("SeekTargetPolicy: clamps requested target to playable range",
           "[seek][coordinator][target]") {

@@ -1,10 +1,8 @@
 #include "media/source_packet_identity.h"
 
-#include <cstring>
+#include "media/ffmpeg_lifetime.h"
 
-extern "C" {
-#include <libavutil/buffer.h>
-}
+#include <cstring>
 
 namespace vr {
 
@@ -21,14 +19,13 @@ bool attach_source_packet_identity(AVPacket* packet, const SourcePacketIdentity&
     if (!packet || !valid_identity(identity)) {
         return false;
     }
-    AVBufferRef* buffer = av_buffer_alloc(sizeof(SourcePacketIdentity));
-    if (!buffer || !buffer->data) {
-        av_buffer_unref(&buffer);
+    auto buffer = AvBufferRefOwner::allocate(sizeof(SourcePacketIdentity));
+    if (!buffer || !buffer.get()->data) {
         return false;
     }
-    std::memcpy(buffer->data, &identity, sizeof(SourcePacketIdentity));
+    std::memcpy(buffer.get()->data, &identity, sizeof(SourcePacketIdentity));
     av_buffer_unref(&packet->opaque_ref);
-    packet->opaque_ref = buffer;
+    packet->opaque_ref = buffer.release();
     packet->opaque = nullptr;
     return true;
 }

@@ -205,14 +205,14 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
     }
 
     // Store hw device context and provider
-    hw_device_ctx_ = result.hw_device_ctx;
+    hw_device_ctx_.reset(result.hw_device_ctx);
     hw_provider_ = std::move(result.provider);  // Must outlive hw_device_ctx (owns D3D11 mutex + context)
     hw_type_ = result.type;
     hw_enabled_ = true;
     hw_pix_fmt_ = result.hw_pix_fmt;
 
     // Set hw_device_ctx on codec context BEFORE opening
-    codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx_);
+    codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx_.get());
 
     // Increase the hw frame pool only when decoded hardware surfaces can be
     // held by the render queue. Hwdownload paths release decoder surfaces
@@ -250,7 +250,7 @@ bool DecodeThread::open_codec() {
         }
     }
 
-    int ret = open_codec_seh_guarded(codec_ctx_, codec_, nullptr, codec_open_for_test_);
+    int ret = open_codec_seh_guarded(codec_ctx_.get(), codec_, nullptr, codec_open_for_test_);
     if (ret == 0) return true;
 
     spdlog::error("[DecodeThread] Failed to open codec: {:#x}", static_cast<unsigned>(ret));
@@ -274,7 +274,7 @@ bool DecodeThread::open_codec() {
             return false;
         }
 
-        int ret2 = open_codec_seh_guarded(codec_ctx_, codec_, nullptr, codec_open_for_test_);
+        int ret2 = open_codec_seh_guarded(codec_ctx_.get(), codec_, nullptr, codec_open_for_test_);
         if (ret2 < 0) {
             spdlog::error("[DecodeThread] Software fallback also failed: {:#x}", static_cast<unsigned>(ret2));
             return false;
@@ -293,22 +293,20 @@ bool DecodeThread::reset_codec_context(const AVCodec* codec) {
         return false;
     }
 
-    if (codec_ctx_) {
-        avcodec_free_context(&codec_ctx_);
-    }
+    codec_ctx_.reset();
 
     codec_ = codec;
-    codec_ctx_ = avcodec_alloc_context3(codec_);
+    codec_ctx_ = AvCodecContextOwner::allocate(codec_);
     if (!codec_ctx_) {
         spdlog::error("[DecodeThread] Failed to allocate codec context for {}", codec_->name);
         return false;
     }
 
-    int ret = avcodec_parameters_to_context(codec_ctx_, codec_params_);
+    int ret = avcodec_parameters_to_context(codec_ctx_.get(), codec_params_);
     if (ret < 0) {
         spdlog::error("[DecodeThread] Failed to copy codec parameters for {}: {:#x}",
                       codec_->name, static_cast<unsigned>(ret));
-        avcodec_free_context(&codec_ctx_);
+        codec_ctx_.reset();
         return false;
     }
 
@@ -448,13 +446,11 @@ void DecodeThread::stop() {
 
     if (codec_ctx_) {
         spdlog::info("[DecodeThread] stop() freeing codec context");
-        avcodec_free_context(&codec_ctx_);
-        codec_ctx_ = nullptr;
+        codec_ctx_.reset();
     }
     if (hw_device_ctx_) {
         spdlog::info("[DecodeThread] stop() releasing hw device context");
-        av_buffer_unref(&hw_device_ctx_);
-        hw_device_ctx_ = nullptr;
+        hw_device_ctx_.reset();
     }
     hw_provider_.reset();
     spdlog::info("[DecodeThread] stop() end");
@@ -527,7 +523,7 @@ void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification
 }
 
 void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*)>& rescale_ts, int64_t target_us) {
-    int send_ret = send_codec_packet_seh_guarded(codec_ctx_, nullptr);
+    int send_ret = send_codec_packet_seh_guarded(codec_ctx_.get(), nullptr);
     if (send_ret < 0 && send_ret != AVERROR(EAGAIN) && send_ret != AVERROR_EOF) {
         if (codec_loop_is_seh_caught(send_ret)) {
             output_buffer_.set_state(TrackState::Error);
@@ -536,7 +532,7 @@ void DecodeThread::drain_codec(AVFrame* frame, const std::function<void(AVFrame*
         return;
     }
     while (true) {
-        int recv_ret = receive_codec_frame_seh_guarded(codec_ctx_, frame);
+        int recv_ret = receive_codec_frame_seh_guarded(codec_ctx_.get(), frame);
         if (recv_ret < 0) break;
         AvFrameUnrefGuard frame_guard(frame);
         if (cancelled_.load(std::memory_order_acquire)) {
@@ -560,7 +556,7 @@ void DecodeThread::safe_flush_codec() {
     if (!codec_ctx_) {
         return;
     }
-    avcodec_flush_buffers(codec_ctx_);
+    avcodec_flush_buffers(codec_ctx_.get());
     if (hw_enabled_ && hw_provider_) {
         hw_provider_->flush();
     }

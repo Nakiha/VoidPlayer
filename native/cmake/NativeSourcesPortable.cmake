@@ -30,6 +30,8 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
 )
 
 set(VOID_MEDIA_FFMPEG_SOURCES
+    "${VOID_NATIVE_DIR}/media/av_packet_lifetime.cpp"
+    "${VOID_NATIVE_DIR}/media/ffmpeg_lifetime.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_decode_thread.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_engine.cpp"
     "${VOID_NATIVE_DIR}/audio/audio_mixer.cpp"

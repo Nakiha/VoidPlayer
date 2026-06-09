@@ -1,4 +1,6 @@
 #pragma once
+#include "common/media_time.h"
+
 #include <cstdint>
 #include <atomic>
 #include <mutex>
@@ -23,6 +25,10 @@ inline bool is_step_forward_seek_type(SeekType type) {
 struct SeekRequest {
     int64_t target_pts_us = 0;
     SeekType type = SeekType::Keyframe;
+
+    MediaTime target_time() const noexcept {
+        return media_time_from_us(target_pts_us);
+    }
 };
 
 /// Thread-safe seek request coordinator.
@@ -32,6 +38,7 @@ public:
     SeekController();
 
     /// Submit a seek request (called from any thread, typically the playback owner).
+    void request_seek(MediaTime target_pts, SeekType type);
     void request_seek(int64_t target_pts_us, SeekType type);
 
     /// Check if a seek request is pending (lock-free, for polling).

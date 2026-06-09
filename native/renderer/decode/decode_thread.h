@@ -1,4 +1,5 @@
 #pragma once
+#include "media/ffmpeg_lifetime.h"
 #include "media/packet_queue.h"
 #include "renderer/decode/codec_loop.h"
 #include "renderer/buffer/track_buffer.h"
@@ -77,7 +78,7 @@ public:
 
     /// Returns true if the decoder was successfully initialized in the constructor.
     /// If false, start() will always fail — caller should not use this instance.
-    bool is_valid() const { return codec_ctx_ != nullptr; }
+    bool is_valid() const { return static_cast<bool>(codec_ctx_); }
 
     /// Enable hardware decode using an explicit decode device strategy.
     /// Must be called before start(). On failure, falls back to software.
@@ -121,7 +122,7 @@ private:
     void run();
     DecodeLoopStepResult run_decode_loop_step(DecodeLoopScratch& scratch);
     DecodeLoopStepResult drain_before_next_packet(DecodeLoopScratch& scratch);
-    DecodeLoopStepResult process_decode_packet(AVPacket*& packet, DecodeLoopScratch& scratch);
+    DecodeLoopStepResult process_decode_packet(AvPacketOwner& packet, DecodeLoopScratch& scratch);
     DecodeLoopStepResult stop_decode_loop_with_error();
 
     /// Attempt to open codec. Returns true on success.
@@ -204,7 +205,7 @@ private:
     TrackBuffer& output_buffer_;
     FrameConverter converter_;
 
-    AVCodecContext* codec_ctx_ = nullptr;
+    AvCodecContextOwner codec_ctx_;
     const AVCodec* codec_ = nullptr;
     const AVCodecParameters* codec_params_;
     AVRational time_base_;
@@ -213,7 +214,7 @@ private:
     // Hardware decode state
     void* native_device_ = nullptr;
     DecodeDeviceMode decode_device_mode_ = DecodeDeviceMode::IndependentDevice;
-    AVBufferRef* hw_device_ctx_ = nullptr;   // Owned, from provider
+    AvBufferRefOwner hw_device_ctx_;   // Owned, from provider
     bool hw_enabled_ = false;
     HwDecodeType hw_type_ = HwDecodeType::None;
     std::unique_ptr<HwDecodeProvider> hw_provider_;  // Holds mutex lifetime

@@ -1,5 +1,6 @@
 #include "renderer/decode/hardware_frame_converter.h"
 
+#include "renderer/decode/av_frame_lifetime.h"
 #include "renderer/decode/frame_color_metadata.h"
 #include "renderer/decode/frame_identity.h"
 #include "renderer/decode/software_frame_packer.h"
@@ -153,28 +154,25 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
     }
 
     if (download_to_cpu_) {
-        AVFrame* sw_frame = av_frame_alloc();
+        auto sw_frame = AvFrameOwner::allocate();
         if (!sw_frame) {
             spdlog::error("[HardwareFrameConverter] Failed to allocate hw download frame");
             return std::nullopt;
         }
 
-        const int ret = av_hwframe_transfer_data(sw_frame, frame, 0);
+        const int ret = av_hwframe_transfer_data(sw_frame.get(), frame, 0);
         if (ret < 0) {
             spdlog::error("[HardwareFrameConverter] av_hwframe_transfer_data failed: {:#x}",
                           static_cast<unsigned>(ret));
-            av_frame_free(&sw_frame);
             return std::nullopt;
         }
 
         TextureFrame result = make_texture_frame_metadata(frame);
-        result.color = color_info_from_av_frame(sw_frame);
-        downloaded_format_ = static_cast<AVPixelFormat>(sw_frame->format);
-        if (!convert_frame_to_cpu_nv12(sw_frame, "hw-download", result)) {
-            av_frame_free(&sw_frame);
+        result.color = color_info_from_av_frame(sw_frame.get());
+        downloaded_format_ = static_cast<AVPixelFormat>(sw_frame.get()->format);
+        if (!convert_frame_to_cpu_nv12(sw_frame.get(), "hw-download", result)) {
             return std::nullopt;
         }
-        av_frame_free(&sw_frame);
         return result;
     }
 

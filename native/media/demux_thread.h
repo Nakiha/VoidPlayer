@@ -1,4 +1,5 @@
 #pragma once
+#include "media/ffmpeg_lifetime.h"
 #include "media/packet_queue.h"
 #include "media/seek_controller.h"
 #include <thread>
@@ -117,7 +118,7 @@ public:
     void fail_next_read_for_test(int error_code);
 
     const DemuxStats& stats() const { return stats_; }
-    AVFormatContext* format_context() const { return fmt_ctx_; }
+    AVFormatContext* format_context() const { return fmt_ctx_.get(); }
 
 private:
     struct OutputRoute {
@@ -138,7 +139,7 @@ private:
 
     std::string file_path_;
     SeekController& seek_controller_;
-    AVFormatContext* fmt_ctx_ = nullptr;
+    AvFormatContextOwner fmt_ctx_;
     std::unique_ptr<PrivateCdnFlvDemuxer> private_flv_demuxer_;
     std::atomic<int64_t> open_deadline_ns_{0};
     DemuxStats stats_;

@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/marks/quick_mark.dart';
+import 'package:void_player/marks/quick_mark_store.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/startup_options.dart';
 import 'package:void_player/track_manager.dart';
@@ -129,7 +130,13 @@ void main() {
       fixture.store.setQuickMarks(const [
         QuickMark(
           id: 1,
-          anchor: QuickMarkAnchor(fileId: 1, ptsUs: 1000000, dtsUs: 1000000),
+          anchor: QuickMarkAnchor(
+            fileId: 1,
+            ptsUs: 1500000,
+            dtsUs: 1400000,
+            sourcePacketIndex: 8,
+            sourcePacketSize: 1024,
+          ),
           sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
         ),
       ]);
@@ -146,6 +153,19 @@ void main() {
       expect(fixture.store.value.currentPtsUs, 1500000);
       expect(fixture.store.value.pendingSeekUs, 1500000);
       expect(fixture.store.value.presentedFrameAnchors[1]?.ptsUs, 1500000);
+      expect(
+        QuickMarkStore(marks: fixture.store.value.quickMarks)
+            .view(
+              context: QuickMarkFrameContext(
+                currentPtsUs: fixture.store.value.currentPtsUs,
+                presentedFrameAnchors:
+                    fixture.store.value.presentedFrameAnchors,
+              ),
+              selectedMarkId: 1,
+            )
+            .visibleMarkIds,
+        const {1},
+      );
 
       await tester.pump();
       fixture.coordinator.startPolling();

@@ -106,7 +106,7 @@ class QuickMarkAnchor {
     required int fallbackToleranceUs,
   }) {
     if (fileId != current.fileId) return false;
-    if (hasStrongIdentity || current.hasStrongIdentity) {
+    if (hasStrongIdentity && current.hasStrongIdentity) {
       return matchesPresentedFrame(current);
     }
     return (ptsUs - current.ptsUs).abs() <= fallbackToleranceUs;

@@ -95,6 +95,28 @@ void main() {
   });
 
   test(
+    'quick mark anchor strong mark can match weak seek preview fallback',
+    () {
+      const markAnchor = QuickMarkAnchor(
+        fileId: 7,
+        ptsUs: 12000,
+        dtsUs: 10000,
+        sourcePacketIndex: 8,
+        sourcePacketSize: 1024,
+        sourcePacketPos: 2048,
+      );
+
+      expect(
+        markAnchor.matchesPresentedFrameOrTime(
+          const QuickMarkAnchor(fileId: 7, ptsUs: 12000, dtsUs: 12000),
+          fallbackToleranceUs: 0,
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'quick mark anchor strong identity does not fall through to tolerance',
     () {
       const markAnchor = QuickMarkAnchor(

@@ -8,15 +8,12 @@ namespace vr {
 namespace {
 
 RendererConfigValidationResult ok_result() {
-    return {};
+    return native_ok();
 }
 
 RendererConfigValidationResult invalid(std::string message) {
-    RendererConfigValidationResult result;
-    result.ok = false;
-    result.code = RendererConfigValidationCode::InvalidArgument;
-    result.message = std::move(message);
-    return result;
+    return native_error(RendererConfigValidationCode::InvalidArgument,
+                        std::move(message));
 }
 
 RendererConfigValidationResult validate_headless_backend(

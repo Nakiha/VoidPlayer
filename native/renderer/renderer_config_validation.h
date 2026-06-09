@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/native_result.h"
 #include "renderer/renderer_config.h"
 #include "renderer/renderer_limits.h"
 
@@ -8,18 +9,8 @@
 
 namespace vr {
 
-enum class RendererConfigValidationCode {
-    Ok = 0,
-    InvalidArgument,
-};
-
-struct RendererConfigValidationResult {
-    bool ok = true;
-    RendererConfigValidationCode code = RendererConfigValidationCode::Ok;
-    std::string message;
-
-    explicit operator bool() const { return ok; }
-};
+using RendererConfigValidationCode = NativeErrorCode;
+using RendererConfigValidationResult = NativeResult<void>;
 
 RendererConfigValidationResult validate_renderer_dimensions(
     int width,

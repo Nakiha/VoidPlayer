@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/widgets.dart';
+import 'package:path/path.dart' as p;
 
 import '../../app_log.dart';
 import '../../config/app_settings_repository.dart';
@@ -42,6 +44,7 @@ class MainWindowMediaCoordinator {
   final NativeFilePicker nativeFilePicker;
   final AppSettingsRepository appSettings;
   final bool Function() mounted;
+  final ValueChanged<int>? onDuplicateMediaSkipped;
   final SshRemoteMediaService sshRemoteMedia;
   Future<void>? _loadInFlight;
   bool _disposed = false;
@@ -57,6 +60,7 @@ class MainWindowMediaCoordinator {
     this.nativeFilePicker = const MethodChannelNativeFilePicker(),
     required this.appSettings,
     required this.mounted,
+    this.onDuplicateMediaSkipped,
     this.sshRemoteMedia = const SshRemoteMediaService(),
   });
 
@@ -115,6 +119,8 @@ class MainWindowMediaCoordinator {
     if (!_alive) return;
     await _activateSecurityScopedBookmarks(paths);
     if (!_alive) return;
+    final uniquePaths = await _filterDuplicateMedia(paths);
+    if (!_alive || uniquePaths.isEmpty) return;
 
     if (textureId() == null) {
       setViewportState(const ViewportDisplayState.loading());
@@ -126,7 +132,7 @@ class MainWindowMediaCoordinator {
             ? layoutCoordinator.viewportHeight
             : 1080;
         final res = await controller.createPlayer(
-          paths,
+          uniquePaths,
           width: initialWidth,
           height: initialHeight,
           useHardwareDecode: playbackPreferences.useHardwareDecode,
@@ -167,7 +173,7 @@ class MainWindowMediaCoordinator {
         }
       }
     } else {
-      for (final path in paths) {
+      for (final path in uniquePaths) {
         if (!_alive) return;
         try {
           final previousTrackCount = trackManager.count;
@@ -192,6 +198,17 @@ class MainWindowMediaCoordinator {
         }
       }
     }
+  }
+
+  Future<List<String>> _filterDuplicateMedia(List<String> paths) async {
+    final result = await filterDuplicateMediaSources(
+      paths,
+      existingSources: trackManager.entries.map((entry) => entry.path),
+    );
+    if (result.skippedCount > 0) {
+      onDuplicateMediaSkipped?.call(result.skippedCount);
+    }
+    return result.uniqueSources;
   }
 
   void addMediaByPath(String path) {
@@ -430,4 +447,67 @@ class MainWindowMediaCoordinator {
       setSyncOffsets(nextOffsets);
     }
   }
+}
+
+class DuplicateMediaFilterResult {
+  final List<String> uniqueSources;
+  final int skippedCount;
+
+  const DuplicateMediaFilterResult({
+    required this.uniqueSources,
+    required this.skippedCount,
+  });
+}
+
+Future<DuplicateMediaFilterResult> filterDuplicateMediaSources(
+  List<String> sources, {
+  Iterable<String> existingSources = const [],
+}) async {
+  final known = <String>{};
+  for (final source in existingSources) {
+    known.add(await mediaSourceIdentity(source));
+  }
+
+  var skipped = 0;
+  final unique = <String>[];
+  for (final source in sources) {
+    final identity = await mediaSourceIdentity(source);
+    if (!known.add(identity)) {
+      skipped += 1;
+      continue;
+    }
+    unique.add(source);
+  }
+
+  return DuplicateMediaFilterResult(
+    uniqueSources: unique,
+    skippedCount: skipped,
+  );
+}
+
+Future<String> mediaSourceIdentity(String source) async {
+  final uri = Uri.tryParse(source);
+  if (uri != null && uri.hasScheme && !_looksLikeWindowsDrivePath(source)) {
+    if (uri.scheme == 'file') {
+      return _localFileIdentity(uri.toFilePath(windows: Platform.isWindows));
+    }
+    return uri.normalizePath().toString();
+  }
+
+  return _localFileIdentity(source);
+}
+
+Future<String> _localFileIdentity(String source) async {
+  try {
+    return p.normalize(await File(source).resolveSymbolicLinks());
+  } catch (_) {
+    return p.normalize(File(source).absolute.path);
+  }
+}
+
+bool _looksLikeWindowsDrivePath(String source) {
+  return source.length >= 2 &&
+      source.codeUnitAt(1) == 0x3A &&
+      ((source.codeUnitAt(0) >= 0x41 && source.codeUnitAt(0) <= 0x5A) ||
+          (source.codeUnitAt(0) >= 0x61 && source.codeUnitAt(0) <= 0x7A));
 }

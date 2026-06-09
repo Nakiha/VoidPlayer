@@ -26,6 +26,7 @@ platform service 注入、MethodChannel/EventChannel 调用编排，以及平台
 | [Analysis Overlay Refresh 设计](docs/ANALYSIS_OVERLAY_REFRESH_DESIGN.md) | seek preview 事件驱动刷新、PTS/DTS 匹配、VACHUNK window 和 native chunk index 策略 |
 | [Analysis 窗口架构](docs/ANALYSIS_WINDOW_ARCHITECTURE.md) | analysis app/page/workspace/chart/NALU/test runner 的职责边界 |
 | [存储 Catalog](docs/STORAGE_CATALOG.md) | Flutter 侧 SQLite 索引、标注数据和缩略图落盘格式 |
+| [App Feedback](docs/APP_FEEDBACK.md) | Flutter 侧轻量通知入口、适用边界和统一约束 |
 | [Action 设计](docs/ACTION_DESIGN.md) | 快捷键、UI 按钮、测试脚本共用的 Action 抽象 |
 | [Action 维护](docs/ACTION_MAINTENANCE.md) | 新增/修改/移除 Action 与 Assert 的维护清单 |
 | [AXTree 维护](docs/AXTREE_MAINTENANCE.md) | 主窗口 / analysis 窗口 Semantics、UIA、识图分割维护规则 |

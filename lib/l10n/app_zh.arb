@@ -4,6 +4,7 @@
   "appTitle": "Void Player",
 
   "addMedia": "添加媒体",
+  "duplicateMediaSkipped": "该媒体已添加，已跳过 {count} 个重复项。",
   "settings": "设置",
   "performanceMonitor": "性能监视器",
   "mediaInfo": "媒体信息",

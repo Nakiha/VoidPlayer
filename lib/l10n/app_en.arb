@@ -7,6 +7,9 @@
   "addMedia": "Add Media",
   "@addMedia": { "description": "Add media button label" },
 
+  "duplicateMediaSkipped": "Media already added. Skipped {count} duplicate item(s).",
+  "@duplicateMediaSkipped": { "description": "Feedback shown when the user tries to add the same media source more than once", "placeholders": { "count": { "type": "int" } } },
+
   "settings": "Settings",
   "@settings": { "description": "Settings tooltip/nav label" },
 

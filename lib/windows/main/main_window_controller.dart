@@ -61,6 +61,7 @@ class MainWindowController {
   final AppSettingsRepository appSettings;
   final PlaybackPreferences playbackPreferences;
   final QuickMarkRepository quickMarkRepository;
+  final ValueChanged<int>? onDuplicateMediaSkipped;
 
   final NativePlayerController player = NativePlayerController();
   final TrackManager trackManager = TrackManager();
@@ -129,6 +130,7 @@ class MainWindowController {
     AppSettingsRepository? appSettings,
     PlaybackPreferences? playbackPreferences,
     QuickMarkRepository? quickMarkRepository,
+    this.onDuplicateMediaSkipped,
   }) : platformWindow =
            platformWindow ?? const WindowManagerMainWindowPlatform(),
        analysisProcesses =
@@ -698,6 +700,7 @@ class MainWindowController {
       nativeFilePicker: nativeFilePicker,
       appSettings: appSettings,
       mounted: mounted,
+      onDuplicateMediaSkipped: onDuplicateMediaSkipped,
     );
     testHarness = MainWindowTestHarness(
       viewportKey: viewportKey,

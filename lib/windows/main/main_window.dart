@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../actions/action_registry.dart';
 import '../../config/app_settings_repository.dart';
+import '../../feedback/app_feedback.dart';
+import '../../l10n/app_localizations.dart';
 import '../../marks/quick_mark_persistence.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../platform/main_window_platform.dart';
@@ -70,6 +72,7 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
           widget.quickMarkRepository ??
           SqliteQuickMarkRepository.defaultLocation(),
       mounted: () => mounted,
+      onDuplicateMediaSkipped: _showDuplicateMediaSkipped,
     )..start(testScriptPath: widget.testScriptPath);
     MainWindowShutdownRegistry.register(this, _controller.closeGracefully);
   }
@@ -113,5 +116,16 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     if (_lastAnalysisAccentColor == value) return;
     _lastAnalysisAccentColor = value;
     _controller.setAnalysisAccentColor(accentColor);
+  }
+
+  void _showDuplicateMediaSkipped(int count) {
+    if (!mounted) return;
+    final l = AppLocalizations.of(context);
+    final message = l == null
+        ? 'Media already added. Skipped $count duplicate item(s).'
+        : l.duplicateMediaSkipped(count);
+    AppFeedbackScope.read(context).show(
+      AppFeedbackMessage(text: message, severity: AppFeedbackSeverity.warning),
+    );
   }
 }

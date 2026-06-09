@@ -52,6 +52,9 @@ lib/
 └── main.dart                      # app bootstrap 入口
 ```
 
+`lib/l10n/app_*.arb` 是本地化 source of truth；`app_localizations*.dart`
+是 Flutter 生成物，已被 `.gitignore` 忽略，不手改、不提交。
+
 ## 分层
 
 ```text

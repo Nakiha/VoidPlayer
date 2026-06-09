@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/analysis_overlay_controls.dart';
 import '../../widgets/controls_bar.dart';
 import '../../widgets/loop_range_bar.dart';
 import '../../widgets/media_header.dart';
@@ -25,6 +26,21 @@ class MediaTimelineSection extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        AnalysisOverlayStrip(
+          entries: media.tracks,
+          dataSource: media.analysisDataSource,
+          visible:
+              model.session.capabilities.canShowAnalysisOverlay &&
+              media.analysisOverlayEnabled &&
+              model.overlays.analysisOverlayControlsVisible,
+          onTypeChanged: actions.analysisOverlay.onTypeChanged,
+          onOpacityChanged: actions.analysisOverlay.onOpacityChanged,
+          onActivateOverlay: actions.analysisOverlay.onActivate,
+          onDeactivateOverlay: actions.analysisOverlay.onClose,
+          onClose: () {
+            actions.toolbar.onAnalysisOverlayPanelToggle();
+          },
+        ),
         MainWindowMediaHeader(model: model, actions: actions),
         MainWindowControlsBar(model: model, actions: actions),
         LoopRangeBar(
@@ -90,10 +106,15 @@ class MainWindowMediaHeader extends StatelessWidget {
       entries: tracks,
       analysisOverlayEnabled:
           capabilities.canShowAnalysisOverlay && media.analysisOverlayEnabled,
+      analysisOverlayControlsVisible:
+          model.overlays.analysisOverlayControlsVisible,
       analysisDataSource: media.analysisDataSource,
       analysisOverlayButtonKey: media.analysisOverlayButtonKey,
       canRemoveTrack: capabilities.canRemoveTrack,
       canReorderTrack: capabilities.canReorderTrack,
+      onAnalysisOverlayControlsToggle: () {
+        actions.toolbar.onAnalysisOverlayPanelToggle();
+      },
       onMediaSwapped: mediaActions.onMediaSwapped,
       onRemoveClicked: mediaActions.onRemoveTrack,
     );
@@ -171,6 +192,21 @@ class FullScreenControlsPanel extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                AnalysisOverlayStrip(
+                  entries: model.media.tracks,
+                  dataSource: model.media.analysisDataSource,
+                  visible:
+                      model.session.capabilities.canShowAnalysisOverlay &&
+                      model.media.analysisOverlayEnabled &&
+                      model.overlays.analysisOverlayControlsVisible,
+                  onTypeChanged: actions.analysisOverlay.onTypeChanged,
+                  onOpacityChanged: actions.analysisOverlay.onOpacityChanged,
+                  onActivateOverlay: actions.analysisOverlay.onActivate,
+                  onDeactivateOverlay: actions.analysisOverlay.onClose,
+                  onClose: () {
+                    actions.toolbar.onAnalysisOverlayPanelToggle();
+                  },
+                ),
                 MainWindowMediaHeader(model: model, actions: actions),
                 MainWindowControlsBar(model: model, actions: actions),
               ],

@@ -1,14 +1,8 @@
-import 'dart:async';
-import 'dart:math' as math;
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../analysis/analysis_manager.dart';
-import '../analysis/analysis_overlay.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
 import '../l10n/app_localizations.dart';
 import '../track_manager.dart';
-import 'analysis_overlay_controls.dart';
 import 'app_menu_combo.dart';
 
 Key mediaHeaderRemoveButtonKey(int fileId) =>
@@ -21,10 +15,12 @@ Key mediaHeaderRemoveButtonKey(int fileId) =>
 class MediaHeaderBar extends StatelessWidget {
   final List<TrackEntry> entries;
   final bool analysisOverlayEnabled;
+  final bool analysisOverlayControlsVisible;
   final AnalysisToolbarDataSource analysisDataSource;
   final Key? analysisOverlayButtonKey;
   final bool canRemoveTrack;
   final bool canReorderTrack;
+  final VoidCallback? onAnalysisOverlayControlsToggle;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final void Function(int fileId) onRemoveClicked;
 
@@ -32,10 +28,12 @@ class MediaHeaderBar extends StatelessWidget {
     super.key,
     required this.entries,
     this.analysisOverlayEnabled = true,
+    this.analysisOverlayControlsVisible = false,
     required this.analysisDataSource,
     this.analysisOverlayButtonKey,
     this.canRemoveTrack = true,
     this.canReorderTrack = true,
+    this.onAnalysisOverlayControlsToggle,
     required this.onMediaSwapped,
     required this.onRemoveClicked,
   });
@@ -45,334 +43,39 @@ class MediaHeaderBar extends StatelessWidget {
     return _MediaHeaderBarWithCache(
       entries: entries,
       analysisOverlayEnabled: analysisOverlayEnabled,
+      analysisOverlayControlsVisible: analysisOverlayControlsVisible,
       analysisDataSource: analysisDataSource,
       analysisOverlayButtonKey: analysisOverlayButtonKey,
       canRemoveTrack: canRemoveTrack,
       canReorderTrack: canReorderTrack,
+      onAnalysisOverlayControlsToggle: onAnalysisOverlayControlsToggle,
       onMediaSwapped: onMediaSwapped,
       onRemoveClicked: onRemoveClicked,
     );
   }
 }
 
-class MediaHeaderOverlayPanelHost extends StatefulWidget {
-  final List<TrackEntry> entries;
-  final AnalysisToolbarDataSource dataSource;
-  final Future<void> Function() onOverlayActivate;
-  final VoidCallback onOverlayDeactivate;
-  final ValueChanged<AnalysisOverlayType> onTypeChanged;
-  final ValueChanged<double> onOpacityChanged;
-  final Widget child;
-
-  const MediaHeaderOverlayPanelHost({
-    super.key,
-    required this.entries,
-    required this.dataSource,
-    required this.onOverlayActivate,
-    required this.onOverlayDeactivate,
-    required this.onTypeChanged,
-    required this.onOpacityChanged,
-    required this.child,
-  });
-
-  static MediaHeaderOverlayPanelHostState? maybeOf(BuildContext context) {
-    final scope = context
-        .getElementForInheritedWidgetOfExactType<
-          _MediaHeaderOverlayPanelScope
-        >()
-        ?.widget;
-    return scope is _MediaHeaderOverlayPanelScope ? scope.state : null;
-  }
-
-  @override
-  State<MediaHeaderOverlayPanelHost> createState() =>
-      MediaHeaderOverlayPanelHostState();
-}
-
-class _MediaHeaderOverlayPanelScope extends InheritedWidget {
-  final MediaHeaderOverlayPanelHostState state;
-
-  const _MediaHeaderOverlayPanelScope({
-    required this.state,
-    required super.child,
-  });
-
-  @override
-  bool updateShouldNotify(covariant _MediaHeaderOverlayPanelScope oldWidget) {
-    return oldWidget.state != state;
-  }
-}
-
-enum _HeaderOverlayPanelPhase { hidden, shown, closing }
-
-class MediaHeaderOverlayPanelHostState
-    extends State<MediaHeaderOverlayPanelHost>
-    with SingleTickerProviderStateMixin {
-  final GlobalKey _hostStackKey = GlobalKey();
-  Rect? _anchorRect;
-  BuildContext? _anchorContext;
-  bool _anchorRefreshScheduled = false;
-  _HeaderOverlayPanelPhase _panelPhase = _HeaderOverlayPanelPhase.hidden;
-  Set<int> _cachedTrackFileIds = const {};
-  Future<void>? _cacheRefreshInFlight;
-  String? _lastDataSourceSignature;
-  late final AnimationController _panelAnimationController;
-  late final Animation<double> _panelOpacity;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.dataSource.addListener(_handleDataSourceChanged);
-    _lastDataSourceSignature = _dataSourceSignature();
-    _panelAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 130),
-      reverseDuration: const Duration(milliseconds: 110),
-    );
-    _panelOpacity = CurvedAnimation(
-      parent: _panelAnimationController,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant MediaHeaderOverlayPanelHost oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.dataSource != widget.dataSource) {
-      oldWidget.dataSource.removeListener(_handleDataSourceChanged);
-      widget.dataSource.addListener(_handleDataSourceChanged);
-      _lastDataSourceSignature = _dataSourceSignature();
-    }
-    if (widget.entries.isEmpty) {
-      _removePanel();
-    } else if (_isPanelVisible) {
-      _scheduleAnchorRefresh();
-      unawaited(refreshCachedTrackFileIds());
-      setState(() {});
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.dataSource.removeListener(_handleDataSourceChanged);
-    _panelAnimationController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _MediaHeaderOverlayPanelScope(
-      state: this,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return Stack(
-            key: _hostStackKey,
-            clipBehavior: Clip.none,
-            children: [
-              widget.child,
-              if (_isPanelVisible && widget.entries.isNotEmpty)
-                _buildPanel(context, constraints),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildPanel(BuildContext context, BoxConstraints constraints) {
-    _scheduleAnchorRefresh();
-    final anchor = _anchorRect;
-    if (anchor == null) return const SizedBox.shrink();
-    const panelMargin = AnalysisOverlayControlBar.margin;
-    final rightInset = math.max(panelMargin, anchor.left);
-    final panelWidth = math.max(
-      1.0,
-      constraints.maxWidth - anchor.left - rightInset,
-    );
-    final left = anchor.left
-        .clamp(0.0, math.max(0.0, constraints.maxWidth - panelWidth))
-        .toDouble();
-    final bottom = math.max(
-      0.0,
-      constraints.maxHeight - anchor.top + panelMargin,
-    );
-    return Positioned(
-      left: left,
-      bottom: bottom,
-      width: panelWidth,
-      child: IgnorePointer(
-        ignoring: _panelPhase == _HeaderOverlayPanelPhase.hidden,
-        child: FadeTransition(
-          opacity: _panelOpacity,
-          child: Material(
-            color: Colors.transparent,
-            child: AnalysisOverlayControlBar(
-              dataSource: widget.dataSource,
-              panelReady: _cachedTrackFileIds.isNotEmpty,
-              panelActive: widget.dataSource.overlayPanelVisible,
-              onTypeChanged: widget.onTypeChanged,
-              onOpacityChanged: widget.onOpacityChanged,
-              onActivateOverlay: widget.onOverlayActivate,
-              onDeactivateOverlay: widget.onOverlayDeactivate,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void toggleFrom(BuildContext anchorContext) {
-    if (_isPanelVisible) {
-      _removePanel();
-      return;
-    }
-    showFrom(anchorContext);
-  }
-
-  void showFrom(BuildContext anchorContext) {
-    if (widget.entries.isEmpty) return;
-    _anchorContext = anchorContext;
-    _updateAnchor(anchorContext);
-    _showPanel();
-    unawaited(refreshCachedTrackFileIds());
-  }
-
-  bool _updateAnchor(BuildContext anchorContext) {
-    final hostBox = _hostStackKey.currentContext?.findRenderObject();
-    final targetBox = anchorContext.findRenderObject();
-    if (hostBox is! RenderBox || targetBox is! RenderBox) return false;
-    final globalTopLeft = targetBox.localToGlobal(Offset.zero);
-    final localTopLeft = hostBox.globalToLocal(globalTopLeft);
-    final nextRect = localTopLeft & targetBox.size;
-    if (_anchorRect == nextRect) return false;
-    _anchorRect = nextRect;
-    return true;
-  }
-
-  void _showPanel() {
-    setState(() {
-      _panelPhase = _HeaderOverlayPanelPhase.shown;
-    });
-    _panelAnimationController.forward();
-  }
-
-  void _removePanel() {
-    if (_panelAnimationController.isAnimating ||
-        _panelAnimationController.value != 0) {
-      _panelAnimationController.value = 0;
-    }
-    if (_panelPhase == _HeaderOverlayPanelPhase.hidden && _anchorRect == null) {
-      return;
-    }
-    setState(() {
-      _panelPhase = _HeaderOverlayPanelPhase.hidden;
-      _anchorRect = null;
-      _anchorContext = null;
-    });
-  }
-
-  bool get _isPanelVisible =>
-      _panelPhase == _HeaderOverlayPanelPhase.shown ||
-      _panelPhase == _HeaderOverlayPanelPhase.closing;
-
-  bool get isPanelVisible => _isPanelVisible;
-
-  Future<void> refreshCachedTrackFileIds() async {
-    final existing = _cacheRefreshInFlight;
-    if (existing != null) return existing;
-    final entries = List<TrackEntry>.of(widget.entries);
-    if (entries.isEmpty) return;
-    late final Future<void> future;
-    future =
-        (() async {
-          final snapshot = await widget.dataSource.snapshot();
-          if (!mounted) return;
-          final ready = <int>{};
-          for (final entry in entries) {
-            final status = widget.dataSource.statusForPath(entry.path);
-            final statusHash = status?.hash;
-            if ((status?.isCached ?? false) &&
-                statusHash != null &&
-                widget.dataSource.supportsOverlayForHash(statusHash)) {
-              ready.add(entry.fileId);
-              continue;
-            }
-            for (final cacheEntry in snapshot.entries) {
-              if (cacheEntry.videoPath == entry.path &&
-                  cacheEntry.complete &&
-                  widget.dataSource.supportsOverlayForHash(cacheEntry.hash)) {
-                ready.add(entry.fileId);
-                break;
-              }
-            }
-          }
-          if (setEquals(ready, _cachedTrackFileIds)) return;
-          setState(() {
-            _cachedTrackFileIds = ready;
-          });
-        })().whenComplete(() {
-          if (identical(_cacheRefreshInFlight, future)) {
-            _cacheRefreshInFlight = null;
-          }
-        });
-    _cacheRefreshInFlight = future;
-    return future;
-  }
-
-  void _handleDataSourceChanged() {
-    if (!mounted) return;
-    final signature = _dataSourceSignature();
-    if (signature == _lastDataSourceSignature) return;
-    _lastDataSourceSignature = signature;
-    if (_isPanelVisible) setState(() {});
-  }
-
-  void _scheduleAnchorRefresh() {
-    if (_anchorRefreshScheduled || !_isPanelVisible) return;
-    final anchorContext = _anchorContext;
-    if (anchorContext == null) return;
-    _anchorRefreshScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _anchorRefreshScheduled = false;
-      if (!mounted || !_isPanelVisible) return;
-      if (_updateAnchor(anchorContext)) {
-        setState(() {});
-      }
-    });
-  }
-
-  String _dataSourceSignature() {
-    final activeTrackIds = widget.dataSource.activeOverlayTrackFileIds.toList()
-      ..sort();
-    final config = widget.dataSource.overlayConfig;
-    return [
-      widget.dataSource.state.name,
-      widget.dataSource.overlayPanelVisible,
-      activeTrackIds.join('|'),
-      config.type.name,
-      config.opacity.toStringAsFixed(3),
-    ].join(';');
-  }
-}
-
 class _MediaHeaderBarWithCache extends StatefulWidget {
   final List<TrackEntry> entries;
   final bool analysisOverlayEnabled;
+  final bool analysisOverlayControlsVisible;
   final AnalysisToolbarDataSource analysisDataSource;
   final Key? analysisOverlayButtonKey;
   final bool canRemoveTrack;
   final bool canReorderTrack;
+  final VoidCallback? onAnalysisOverlayControlsToggle;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final void Function(int fileId) onRemoveClicked;
 
   const _MediaHeaderBarWithCache({
     required this.entries,
     required this.analysisOverlayEnabled,
+    required this.analysisOverlayControlsVisible,
     required this.analysisDataSource,
     this.analysisOverlayButtonKey,
     required this.canRemoveTrack,
     required this.canReorderTrack,
+    this.onAnalysisOverlayControlsToggle,
     required this.onMediaSwapped,
     required this.onRemoveClicked,
   });
@@ -404,6 +107,8 @@ class _MediaHeaderBarWithCacheState extends State<_MediaHeaderBarWithCache> {
                       slotIndex: i,
                       entries: widget.entries,
                       analysisDataSource: widget.analysisDataSource,
+                      analysisOverlayControlsVisible:
+                          widget.analysisOverlayControlsVisible,
                       analysisOverlayButtonKey: i == 0
                           ? widget.analysisOverlayButtonKey
                           : null,
@@ -411,6 +116,8 @@ class _MediaHeaderBarWithCacheState extends State<_MediaHeaderBarWithCache> {
                           widget.analysisOverlayEnabled && i == 0,
                       canRemoveTrack: widget.canRemoveTrack,
                       canReorderTrack: widget.canReorderTrack,
+                      onAnalysisOverlayControlsToggle:
+                          widget.onAnalysisOverlayControlsToggle,
                       onMediaSwapped: widget.onMediaSwapped,
                       onRemoveClicked: widget.onRemoveClicked,
                     ),
@@ -430,10 +137,12 @@ class _MediaHeader extends StatelessWidget {
   final int slotIndex;
   final List<TrackEntry> entries;
   final AnalysisToolbarDataSource analysisDataSource;
+  final bool analysisOverlayControlsVisible;
   final Key? analysisOverlayButtonKey;
   final bool showOverlayPanelButton;
   final bool canRemoveTrack;
   final bool canReorderTrack;
+  final VoidCallback? onAnalysisOverlayControlsToggle;
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
   final void Function(int fileId) onRemoveClicked;
 
@@ -442,10 +151,12 @@ class _MediaHeader extends StatelessWidget {
     required this.slotIndex,
     required this.entries,
     required this.analysisDataSource,
+    required this.analysisOverlayControlsVisible,
     this.analysisOverlayButtonKey,
     required this.showOverlayPanelButton,
     required this.canRemoveTrack,
     required this.canReorderTrack,
+    required this.onAnalysisOverlayControlsToggle,
     required this.onMediaSwapped,
     required this.onRemoveClicked,
   });
@@ -466,6 +177,8 @@ class _MediaHeader extends StatelessWidget {
             _HeaderOverlayPanelButton(
               key: analysisOverlayButtonKey,
               dataSource: analysisDataSource,
+              controlsVisible: analysisOverlayControlsVisible,
+              onPressed: onAnalysisOverlayControlsToggle,
             ),
           Expanded(
             child: Opacity(
@@ -532,8 +245,15 @@ ButtonStyle _removeTrackButtonStyle(ColorScheme colorScheme, double radius) {
 
 class _HeaderOverlayPanelButton extends StatefulWidget {
   final AnalysisToolbarDataSource dataSource;
+  final bool controlsVisible;
+  final VoidCallback? onPressed;
 
-  const _HeaderOverlayPanelButton({super.key, required this.dataSource});
+  const _HeaderOverlayPanelButton({
+    super.key,
+    required this.dataSource,
+    required this.controlsVisible,
+    required this.onPressed,
+  });
 
   @override
   State<_HeaderOverlayPanelButton> createState() =>
@@ -545,12 +265,12 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final host = MediaHeaderOverlayPanelHost.maybeOf(context);
-    final active = host?.isPanelVisible ?? false;
+    final active =
+        widget.controlsVisible || widget.dataSource.overlayPanelVisible;
     final working = _isAnalysisWorking(widget.dataSource.state);
-    final tooltip = active
-        ? AppLocalizations.of(context)!.analysisOverlayDeactivate
-        : AppLocalizations.of(context)!.analysisOverlayActivate;
+    final tooltip = widget.controlsVisible
+        ? AppLocalizations.of(context)!.analysisOverlayControlsHide
+        : AppLocalizations.of(context)!.analysisOverlayControlsShow;
     return SizedBox(
       width: 28,
       height: 28,
@@ -558,7 +278,7 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton> {
         message: tooltip,
         excludeFromSemantics: true,
         child: IconButton(
-          onPressed: () => host?.toggleFrom(context),
+          onPressed: widget.onPressed,
           icon: working
               ? const SizedBox(
                   width: 13,

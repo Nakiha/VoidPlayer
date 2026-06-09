@@ -603,6 +603,12 @@
   "analysisOverlayDeactivate": "Disable bitstream overlay",
   "@analysisOverlayDeactivate": { "description": "Tooltip for disabling the active bitstream overlay from the media header activation toggle" },
 
+  "analysisOverlayControlsShow": "Show bitstream overlay controls",
+  "@analysisOverlayControlsShow": { "description": "Tooltip for showing the inline bitstream overlay controls strip from the media header" },
+
+  "analysisOverlayControlsHide": "Hide bitstream overlay controls",
+  "@analysisOverlayControlsHide": { "description": "Tooltip for hiding the inline bitstream overlay controls strip from the media header" },
+
   "analysisOverlayTypeCu": "CU partitions",
   "@analysisOverlayTypeCu": { "description": "Tooltip for the CU partition overlay type button" },
 

@@ -1,14 +1,219 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../analysis/analysis_overlay.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
 import '../l10n/app_localizations.dart';
+import '../track_manager.dart';
 
 const analysisOverlayControlBarKey = Key('analysis-overlay-control-bar');
 const analysisOverlayOpacityKey = ValueKey('analysis-overlay-opacity');
+const analysisOverlayStripKey = ValueKey('analysis-overlay-strip');
+
+class AnalysisOverlayStrip extends StatefulWidget {
+  static const double height = 34.0;
+
+  final List<TrackEntry> entries;
+  final AnalysisToolbarDataSource dataSource;
+  final bool visible;
+  final ValueChanged<AnalysisOverlayType> onTypeChanged;
+  final ValueChanged<double> onOpacityChanged;
+  final Future<void> Function() onActivateOverlay;
+  final VoidCallback onDeactivateOverlay;
+  final VoidCallback onClose;
+
+  const AnalysisOverlayStrip({
+    super.key,
+    required this.entries,
+    required this.dataSource,
+    required this.visible,
+    required this.onTypeChanged,
+    required this.onOpacityChanged,
+    required this.onActivateOverlay,
+    required this.onDeactivateOverlay,
+    required this.onClose,
+  });
+
+  @override
+  State<AnalysisOverlayStrip> createState() => _AnalysisOverlayStripState();
+}
+
+class _AnalysisOverlayStripState extends State<AnalysisOverlayStrip> {
+  Set<int> _cachedTrackFileIds = const {};
+  Future<void>? _cacheRefreshInFlight;
+  String? _lastDataSourceSignature;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.dataSource.addListener(_handleDataSourceChanged);
+    _lastDataSourceSignature = _dataSourceSignature();
+    if (widget.visible) unawaited(_refreshCachedTrackFileIds());
+  }
+
+  @override
+  void didUpdateWidget(covariant AnalysisOverlayStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dataSource != widget.dataSource) {
+      oldWidget.dataSource.removeListener(_handleDataSourceChanged);
+      widget.dataSource.addListener(_handleDataSourceChanged);
+      _lastDataSourceSignature = _dataSourceSignature();
+      _cachedTrackFileIds = const {};
+    }
+    if (!widget.visible || widget.entries.isEmpty) {
+      if (_cachedTrackFileIds.isNotEmpty) {
+        setState(() => _cachedTrackFileIds = const {});
+      }
+      return;
+    }
+    if (!listEquals(oldWidget.entries, widget.entries) ||
+        !oldWidget.visible && widget.visible) {
+      unawaited(_refreshCachedTrackFileIds());
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.dataSource.removeListener(_handleDataSourceChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.visible || widget.entries.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final colorScheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      key: analysisOverlayStripKey,
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow.withValues(alpha: 0.92),
+        border: Border(
+          top: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.6),
+          ),
+          bottom: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.44),
+          ),
+        ),
+      ),
+      child: SizedBox(
+        height: AnalysisOverlayStrip.height,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(4, 2, 4, 2),
+          child: Row(
+            children: [
+              Expanded(
+                child: AnalysisOverlayControlBar(
+                  dataSource: widget.dataSource,
+                  panelReady: _cachedTrackFileIds.isNotEmpty,
+                  panelActive: widget.dataSource.overlayPanelVisible,
+                  onTypeChanged: widget.onTypeChanged,
+                  onOpacityChanged: widget.onOpacityChanged,
+                  onActivateOverlay: widget.onActivateOverlay,
+                  onDeactivateOverlay: widget.onDeactivateOverlay,
+                ),
+              ),
+              const SizedBox(width: 4),
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: IconButton(
+                  onPressed: widget.onClose,
+                  icon: const Icon(Icons.close, size: 15),
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 28,
+                    height: 28,
+                  ),
+                  style: ButtonStyle(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: WidgetStatePropertyAll(
+                      RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    foregroundColor: WidgetStatePropertyAll(
+                      colorScheme.onSurfaceVariant,
+                    ),
+                    overlayColor: WidgetStatePropertyAll(
+                      colorScheme.primary.withValues(alpha: 0.10),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _refreshCachedTrackFileIds() async {
+    final existing = _cacheRefreshInFlight;
+    if (existing != null) return existing;
+    final entries = List<TrackEntry>.of(widget.entries);
+    if (entries.isEmpty) return;
+    late final Future<void> future;
+    future =
+        (() async {
+          final snapshot = await widget.dataSource.snapshot();
+          if (!mounted) return;
+          final ready = <int>{};
+          for (final entry in entries) {
+            final status = widget.dataSource.statusForPath(entry.path);
+            final statusHash = status?.hash;
+            if ((status?.isCached ?? false) &&
+                statusHash != null &&
+                widget.dataSource.supportsOverlayForHash(statusHash)) {
+              ready.add(entry.fileId);
+              continue;
+            }
+            for (final cacheEntry in snapshot.entries) {
+              if (cacheEntry.videoPath == entry.path &&
+                  cacheEntry.complete &&
+                  widget.dataSource.supportsOverlayForHash(cacheEntry.hash)) {
+                ready.add(entry.fileId);
+                break;
+              }
+            }
+          }
+          if (setEquals(ready, _cachedTrackFileIds)) return;
+          setState(() => _cachedTrackFileIds = ready);
+        })().whenComplete(() {
+          if (identical(_cacheRefreshInFlight, future)) {
+            _cacheRefreshInFlight = null;
+          }
+        });
+    _cacheRefreshInFlight = future;
+    return future;
+  }
+
+  void _handleDataSourceChanged() {
+    if (!mounted) return;
+    final signature = _dataSourceSignature();
+    if (signature == _lastDataSourceSignature) return;
+    _lastDataSourceSignature = signature;
+    if (widget.visible) setState(() {});
+  }
+
+  String _dataSourceSignature() {
+    final activeTrackIds = widget.dataSource.activeOverlayTrackFileIds.toList()
+      ..sort();
+    final config = widget.dataSource.overlayConfig;
+    return [
+      widget.dataSource.state.name,
+      widget.dataSource.overlayPanelVisible,
+      activeTrackIds.join('|'),
+      config.type.name,
+      config.opacity.toStringAsFixed(3),
+    ].join(';');
+  }
+}
 
 class AnalysisOverlayControlBar extends StatelessWidget {
   static const double margin = 4.0;

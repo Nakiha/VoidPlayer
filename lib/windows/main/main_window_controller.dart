@@ -34,6 +34,7 @@ import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/display_geometry.dart';
 import '../../viewport/viewport_display_state.dart';
+import '../../widgets/analysis_overlay_controls.dart';
 import '../../widgets/loop_range_bar.dart';
 import 'main_window_actions.dart';
 import 'main_window_analysis.dart';
@@ -292,6 +293,7 @@ class MainWindowController {
         mediaInfoVisible: _mediaInfoVisible,
         profilerVisible: _profilerVisible,
         settingsVisible: _settingsVisible,
+        analysisOverlayControlsVisible: _analysisOverlayControlsVisible,
         marksSidebarVisible: _marksSidebarVisible,
         marksSidebarWidth: _marksSidebarWidth,
         fullScreen: _fullScreen,
@@ -355,7 +357,8 @@ class MainWindowController {
           if (!_capabilities.canShowAnalysisOverlay) {
             return Future<void>.value();
           }
-          return analysisCoordinator.toggleOverlayPanel();
+          _setAnalysisOverlayControlsVisible(!_analysisOverlayControlsVisible);
+          return Future<void>.value();
         },
         onProfiler: () {
           if (!_capabilities.canOpenProfiler) return;
@@ -497,6 +500,19 @@ class MainWindowController {
       widthDelta: viewportDelta,
     );
     stateStore.setMarksSidebarVisible(visible);
+  }
+
+  void _setAnalysisOverlayControlsVisible(bool visible) {
+    if (_analysisOverlayControlsVisible == visible) return;
+    if (!_fullScreen) {
+      final viewportDelta = visible
+          ? -AnalysisOverlayStrip.height
+          : AnalysisOverlayStrip.height;
+      layoutCoordinator.requestPreemptViewportLogicalSizeDelta(
+        heightDelta: viewportDelta,
+      );
+    }
+    stateStore.setAnalysisOverlayControlsVisible(visible);
   }
 
   void _setMarksSidebarWidth(double width) {
@@ -807,6 +823,8 @@ class MainWindowController {
   bool get _mediaInfoVisible => _state.mediaInfoVisible;
   bool get _profilerVisible => _state.profilerVisible;
   bool get _settingsVisible => _state.settingsVisible;
+  bool get _analysisOverlayControlsVisible =>
+      _state.analysisOverlayControlsVisible;
   bool get _marksSidebarVisible => _state.marksSidebarVisible;
   double get _marksSidebarWidth => _state.marksSidebarWidth;
   bool get _fullScreen => _state.fullScreen;

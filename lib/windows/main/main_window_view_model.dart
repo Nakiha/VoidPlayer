@@ -173,6 +173,7 @@ class MainWindowOverlayVm {
   final bool mediaInfoVisible;
   final bool profilerVisible;
   final bool settingsVisible;
+  final bool analysisOverlayControlsVisible;
   final bool marksSidebarVisible;
   final double marksSidebarWidth;
   final bool fullScreen;
@@ -183,6 +184,7 @@ class MainWindowOverlayVm {
     required this.mediaInfoVisible,
     required this.profilerVisible,
     required this.settingsVisible,
+    required this.analysisOverlayControlsVisible,
     required this.marksSidebarVisible,
     required this.marksSidebarWidth,
     required this.fullScreen,

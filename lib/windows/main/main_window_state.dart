@@ -34,6 +34,7 @@ class MainWindowStateModel {
   final bool mediaInfoVisible;
   final bool profilerVisible;
   final bool settingsVisible;
+  final bool analysisOverlayControlsVisible;
   final bool marksSidebarVisible;
   final double marksSidebarWidth;
   final bool fullScreen;
@@ -67,6 +68,7 @@ class MainWindowStateModel {
     this.mediaInfoVisible = false,
     this.profilerVisible = false,
     this.settingsVisible = false,
+    this.analysisOverlayControlsVisible = false,
     this.marksSidebarVisible = false,
     this.marksSidebarWidth = kDefaultMarksSidebarWidth,
     this.fullScreen = false,
@@ -101,6 +103,7 @@ class MainWindowStateModel {
     bool? mediaInfoVisible,
     bool? profilerVisible,
     bool? settingsVisible,
+    bool? analysisOverlayControlsVisible,
     bool? marksSidebarVisible,
     double? marksSidebarWidth,
     bool? fullScreen,
@@ -143,6 +146,8 @@ class MainWindowStateModel {
       mediaInfoVisible: mediaInfoVisible ?? this.mediaInfoVisible,
       profilerVisible: profilerVisible ?? this.profilerVisible,
       settingsVisible: settingsVisible ?? this.settingsVisible,
+      analysisOverlayControlsVisible:
+          analysisOverlayControlsVisible ?? this.analysisOverlayControlsVisible,
       marksSidebarVisible: marksSidebarVisible ?? this.marksSidebarVisible,
       marksSidebarWidth: marksSidebarWidth ?? this.marksSidebarWidth,
       fullScreen: fullScreen ?? this.fullScreen,
@@ -229,6 +234,7 @@ class MainWindowStateStore extends ChangeNotifier {
         fullScreenControlsVisible: false,
         audibleTrackFileId: null,
         mediaInfoVisible: false,
+        analysisOverlayControlsVisible: false,
         marksSidebarVisible: false,
       ),
     );
@@ -338,6 +344,11 @@ class MainWindowStateStore extends ChangeNotifier {
   void setSettingsVisible(bool visible) {
     if (_value.settingsVisible == visible) return;
     _set(_value.copyWith(settingsVisible: visible));
+  }
+
+  void setAnalysisOverlayControlsVisible(bool visible) {
+    if (_value.analysisOverlayControlsVisible == visible) return;
+    _set(_value.copyWith(analysisOverlayControlsVisible: visible));
   }
 
   void setMarksSidebarVisible(bool visible) {

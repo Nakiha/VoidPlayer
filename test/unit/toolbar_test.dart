@@ -215,7 +215,7 @@ void main() {
     expect(toggleTaps, 1);
   });
 
-  testWidgets('media header click toggles overlay panel with header widths', (
+  testWidgets('media header click toggles overlay controls request', (
     tester,
   ) async {
     final openedTrack = track();
@@ -228,58 +228,16 @@ void main() {
         height: 1080,
       ),
     );
-    var activationTaps = 0;
+    var toggleTaps = 0;
 
     await tester.pumpWidget(
       _localized(
-        MediaHeaderOverlayPanelHost(
+        MediaHeaderBar(
           entries: [openedTrack, secondTrack],
-          dataSource: _FakeAnalysisToolbarDataSource(
-            cacheSnapshot: const AnalysisCacheSnapshot(
-              path: '',
-              totalBytes: 0,
-              indexedBytes: 0,
-              unindexedBytes: 0,
-              maxBytes: 0,
-              entries: [
-                AnalysisCacheEntryStats(
-                  hash: 'hash1',
-                  name: 'track.mp4',
-                  videoPath: 'track.mp4',
-                  videoBytes: 1,
-                  analysisBytes: 1,
-                  cachedAt: null,
-                  lastAccessedAt: null,
-                  complete: true,
-                ),
-                AnalysisCacheEntryStats(
-                  hash: 'hash2',
-                  name: 'second.mp4',
-                  videoPath: 'second.mp4',
-                  videoBytes: 1,
-                  analysisBytes: 1,
-                  cachedAt: null,
-                  lastAccessedAt: null,
-                  complete: true,
-                ),
-              ],
-            ),
-          ),
-          onOverlayActivate: () async => activationTaps++,
-          onOverlayDeactivate: () {},
-          onTypeChanged: (_) {},
-          onOpacityChanged: (_) {},
-          child: Column(
-            children: [
-              const Spacer(),
-              MediaHeaderBar(
-                entries: [openedTrack, secondTrack],
-                analysisDataSource: _FakeAnalysisToolbarDataSource(),
-                onMediaSwapped: (_, _) {},
-                onRemoveClicked: (_) {},
-              ),
-            ],
-          ),
+          analysisDataSource: _FakeAnalysisToolbarDataSource(),
+          onAnalysisOverlayControlsToggle: () => toggleTaps++,
+          onMediaSwapped: (_, _) {},
+          onRemoveClicked: (_) {},
         ),
       ),
     );
@@ -288,114 +246,40 @@ void main() {
     expect(find.widgetWithIcon(IconButton, Icons.grid_on), findsOneWidget);
 
     await tester.tap(find.widgetWithIcon(IconButton, Icons.grid_on));
-    await tester.pump(const Duration(milliseconds: 140));
-
-    expect(find.byKey(analysisOverlayControlBarKey), findsOneWidget);
-    expect(activationTaps, 0);
-    expect(find.byKey(analysisOverlayControlBarKey), findsOneWidget);
-
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.grid_on));
     await tester.pump();
 
+    expect(toggleTaps, 1);
     expect(find.byKey(analysisOverlayControlBarKey), findsNothing);
   });
 
-  testWidgets('media header overlay panel follows header after layout shifts', (
+  testWidgets('analysis overlay strip close hides controls only', (
     tester,
   ) async {
     final openedTrack = track();
-    final secondTrack = const TrackEntry(
-      TrackInfo(
-        fileId: 2,
-        slot: 1,
-        path: 'second.mp4',
-        width: 1920,
-        height: 1080,
-      ),
-    );
-    var footerHeight = 0.0;
+    var closeTaps = 0;
+    var deactivateTaps = 0;
 
     await tester.pumpWidget(
       _localized(
-        StatefulBuilder(
-          builder: (context, setState) {
-            return MediaHeaderOverlayPanelHost(
-              entries: [openedTrack, secondTrack],
-              dataSource: _FakeAnalysisToolbarDataSource(
-                cacheSnapshot: const AnalysisCacheSnapshot(
-                  path: '',
-                  totalBytes: 0,
-                  indexedBytes: 0,
-                  unindexedBytes: 0,
-                  maxBytes: 0,
-                  entries: [
-                    AnalysisCacheEntryStats(
-                      hash: 'hash1',
-                      name: 'track.mp4',
-                      videoPath: 'track.mp4',
-                      videoBytes: 1,
-                      analysisBytes: 1,
-                      cachedAt: null,
-                      lastAccessedAt: null,
-                      complete: true,
-                    ),
-                    AnalysisCacheEntryStats(
-                      hash: 'hash2',
-                      name: 'second.mp4',
-                      videoPath: 'second.mp4',
-                      videoBytes: 1,
-                      analysisBytes: 1,
-                      cachedAt: null,
-                      lastAccessedAt: null,
-                      complete: true,
-                    ),
-                  ],
-                ),
-              ),
-              onOverlayActivate: () async {},
-              onOverlayDeactivate: () {},
-              onTypeChanged: (_) {},
-              onOpacityChanged: (_) {},
-              child: Column(
-                children: [
-                  const Spacer(),
-                  MediaHeaderBar(
-                    entries: [openedTrack, secondTrack],
-                    analysisDataSource: _FakeAnalysisToolbarDataSource(),
-                    onMediaSwapped: (_, _) {},
-                    onRemoveClicked: (_) {},
-                  ),
-                  SizedBox(
-                    key: const ValueKey('media-header-footer'),
-                    height: footerHeight,
-                  ),
-                  TextButton(
-                    onPressed: () => setState(() => footerHeight = 80),
-                    child: const Text('shift'),
-                  ),
-                ],
-              ),
-            );
-          },
+        AnalysisOverlayStrip(
+          entries: [openedTrack],
+          dataSource: _FakeAnalysisToolbarDataSource(overlayHash: 'hash1'),
+          visible: true,
+          onTypeChanged: (_) {},
+          onOpacityChanged: (_) {},
+          onActivateOverlay: () async {},
+          onDeactivateOverlay: () => deactivateTaps++,
+          onClose: () => closeTaps++,
         ),
       ),
     );
 
     await tester.pump();
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.grid_on));
-    await tester.pump(const Duration(milliseconds: 140));
-    final initialTop = tester
-        .getTopLeft(find.byKey(analysisOverlayControlBarKey))
-        .dy;
+    expect(find.byKey(analysisOverlayStripKey), findsOneWidget);
 
-    await tester.tap(find.text('shift'));
-    await tester.pump();
-    await tester.pump();
-
-    final shiftedTop = tester
-        .getTopLeft(find.byKey(analysisOverlayControlBarKey))
-        .dy;
-    expect(shiftedTop, closeTo(initialTop - 80, 1));
+    await tester.tap(find.byTooltip('Close'));
+    expect(closeTaps, 1);
+    expect(deactivateTaps, 0);
   });
 
   testWidgets('media header overlay button is only on the first track', (

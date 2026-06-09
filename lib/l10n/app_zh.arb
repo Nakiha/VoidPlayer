@@ -212,6 +212,8 @@
   "analysisCacheStatusFailed": "分析缓存失败",
   "analysisOverlayActivate": "启用码流遮罩",
   "analysisOverlayDeactivate": "关闭码流遮罩",
+  "analysisOverlayControlsShow": "显示码流遮罩控制条",
+  "analysisOverlayControlsHide": "隐藏码流遮罩控制条",
   "analysisOverlayTypeCu": "CU 划分",
   "analysisOverlayTypePrediction": "预测模式",
   "analysisOverlayTypePredictionLines": "预测线",

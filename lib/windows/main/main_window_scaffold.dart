@@ -4,7 +4,6 @@ import '../../performance/performance_health.dart';
 import '../../platform/pointer_button_state_provider.dart';
 import '../../widgets/app_feedback_host.dart';
 import '../../widgets/axtree_region.dart';
-import '../../widgets/media_header.dart';
 import '../../widgets/quick_mark_sidebar.dart';
 import '../../widgets/resizable_divider.dart';
 import '../../widgets/toolbar.dart';
@@ -38,123 +37,125 @@ class MainWindowScaffold extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
-          // Content-scoped overlays stay inside this host. Window overlays
-          // below are later Stack siblings so their z-order stays explicit.
-          MediaHeaderOverlayPanelHost(
-            entries: media.tracks,
-            dataSource: media.analysisDataSource,
-            onOverlayActivate: actions.analysisOverlay.onActivate,
-            onOverlayDeactivate: actions.analysisOverlay.onClose,
-            onTypeChanged: actions.analysisOverlay.onTypeChanged,
-            onOpacityChanged: actions.analysisOverlay.onOpacityChanged,
-            child: Column(
-              children: [
-                if (!overlays.fullScreen)
-                  AxTreeRegion(
-                    label: 'Main toolbar',
-                    child: AppToolBar(
-                      viewMode: viewport.viewMode,
-                      onViewModeChanged: toolbarActions.onViewModeChanged,
-                      onOpenFile: toolbarActions.onOpenFile,
-                      onOpenNetworkMedia: toolbarActions.onOpenNetworkMedia,
-                      onOpenSshRemoteMedia: toolbarActions.onOpenSshRemoteMedia,
-                      onMediaInfo: toolbarActions.onMediaInfo,
-                      onAnalysis: toolbarActions.onAnalysis,
-                      onProfiler: toolbarActions.onProfiler,
-                      onSettings: toolbarActions.onSettings,
-                      onMarksSidebarToggle: toolbarActions.onMarksSidebarToggle,
-                      tracks: media.tracks,
-                      analysisDataSource: media.analysisDataSource,
-                      viewModeEnabled:
-                          capabilities.canChangeViewMode &&
-                          viewport.viewModeEnabled,
-                      nativePlaybackAvailable: media.nativePlaybackAvailable,
-                      localFilePlaybackAvailable:
-                          media.localFilePlaybackAvailable,
-                      networkMediaAvailable: media.networkMediaAvailable,
-                      sshRemoteMediaAvailable: media.sshRemoteMediaAvailable,
-                      nativeFilePickerAvailable:
-                          media.nativeFilePickerAvailable,
-                      canAddTrack: capabilities.canAddTrack,
-                      canOpenLocalMedia: capabilities.canOpenLocalMedia,
-                      canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
-                      canOpenSshMedia: capabilities.canOpenSshMedia,
-                      canOpenMediaInfo: capabilities.canOpenMediaInfo,
-                      canOpenProfiler: capabilities.canOpenProfiler,
-                      canRunAnalysis: capabilities.canRunAnalysis,
-                      analysisEnabled: media.analysisEnabled,
-                      mediaInfoActive: overlays.mediaInfoVisible,
-                      profilerActive: overlays.profilerVisible,
-                      marksSidebarActive: overlays.marksSidebarVisible,
-                    ),
-                  ),
-                Expanded(
-                  child: Stack(
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ViewportPanel(
-                              key: viewport.viewportKey,
-                              textureId: viewport.textureId,
-                              viewportState: viewport.viewportState,
-                              errorText: viewport.viewportState.errorText,
-                              layout: viewport.layout,
-                              onPan: viewportActions.onPan,
-                              onSplit: viewportActions.onSplit,
-                              onZoom: viewportActions.onZoom,
-                              onPointerButton: viewportActions.onPointerButton,
-                              onResize: viewportActions.onResize,
-                              trackGeometry: viewport.tracks,
-                              quickMarks: viewport.quickMarks,
-                              quickMarkDraft: viewport.quickMarkDraft,
-                              selectedQuickMarkId: viewport.selectedQuickMarkId,
-                              onQuickMarkStart:
-                                  viewportActions.onQuickMarkStart,
-                              onQuickMarkUpdate:
-                                  viewportActions.onQuickMarkUpdate,
-                              onQuickMarkEnd: viewportActions.onQuickMarkEnd,
-                              onQuickMarkCancel:
-                                  viewportActions.onQuickMarkCancel,
-                              onQuickMarkSelect:
-                                  viewportActions.onQuickMarkSelect,
-                              onQuickMarkChanged:
-                                  viewportActions.onQuickMarkChanged,
-                              onQuickMarkDeleted:
-                                  viewportActions.onQuickMarkDeleted,
-                              onQuickMarkFocus:
-                                  viewportActions.onQuickMarkFocus,
-                              pointerButtonStateProvider:
-                                  pointerButtonStateProvider,
-                              nativePlaybackAvailable:
-                                  media.nativePlaybackAvailable,
-                            ),
-                          ),
-                          if (overlays.marksSidebarVisible)
-                            QuickMarkSidebar(
-                              width: overlays.marksSidebarWidth,
-                              marks: model.marks,
-                              actions: actions.marks,
-                              onClose: overlayActions.onCloseMarksSidebar,
-                            ),
-                        ],
-                      ),
-                      if (overlays.marksSidebarVisible)
-                        _MarksSidebarResizeHandle(
-                          width: overlays.marksSidebarWidth,
-                          onWidthChanged:
-                              overlayActions.onMarksSidebarWidthChanged,
-                        ),
-                    ],
+          Column(
+            children: [
+              if (!overlays.fullScreen)
+                AxTreeRegion(
+                  label: 'Main toolbar',
+                  child: AppToolBar(
+                    viewMode: viewport.viewMode,
+                    onViewModeChanged: toolbarActions.onViewModeChanged,
+                    onOpenFile: toolbarActions.onOpenFile,
+                    onOpenNetworkMedia: toolbarActions.onOpenNetworkMedia,
+                    onOpenSshRemoteMedia: toolbarActions.onOpenSshRemoteMedia,
+                    onMediaInfo: toolbarActions.onMediaInfo,
+                    onAnalysis: toolbarActions.onAnalysis,
+                    onProfiler: toolbarActions.onProfiler,
+                    onSettings: toolbarActions.onSettings,
+                    onMarksSidebarToggle: toolbarActions.onMarksSidebarToggle,
+                    tracks: media.tracks,
+                    analysisDataSource: media.analysisDataSource,
+                    viewModeEnabled:
+                        capabilities.canChangeViewMode &&
+                        viewport.viewModeEnabled,
+                    nativePlaybackAvailable: media.nativePlaybackAvailable,
+                    localFilePlaybackAvailable:
+                        media.localFilePlaybackAvailable,
+                    networkMediaAvailable: media.networkMediaAvailable,
+                    sshRemoteMediaAvailable: media.sshRemoteMediaAvailable,
+                    nativeFilePickerAvailable: media.nativeFilePickerAvailable,
+                    canAddTrack: capabilities.canAddTrack,
+                    canOpenLocalMedia: capabilities.canOpenLocalMedia,
+                    canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
+                    canOpenSshMedia: capabilities.canOpenSshMedia,
+                    canOpenMediaInfo: capabilities.canOpenMediaInfo,
+                    canOpenProfiler: capabilities.canOpenProfiler,
+                    canRunAnalysis: capabilities.canRunAnalysis,
+                    analysisEnabled: media.analysisEnabled,
+                    mediaInfoActive: overlays.mediaInfoVisible,
+                    profilerActive: overlays.profilerVisible,
+                    marksSidebarActive: overlays.marksSidebarVisible,
                   ),
                 ),
-                if (!overlays.fullScreen && media.tracks.isNotEmpty)
-                  AxTreeRegion(
-                    label: 'Playback timeline',
-                    child: MediaTimelineSection(model: model, actions: actions),
-                  ),
-              ],
-            ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: ViewportPanel(
+                                  key: viewport.viewportKey,
+                                  textureId: viewport.textureId,
+                                  viewportState: viewport.viewportState,
+                                  errorText: viewport.viewportState.errorText,
+                                  layout: viewport.layout,
+                                  onPan: viewportActions.onPan,
+                                  onSplit: viewportActions.onSplit,
+                                  onZoom: viewportActions.onZoom,
+                                  onPointerButton:
+                                      viewportActions.onPointerButton,
+                                  onResize: viewportActions.onResize,
+                                  trackGeometry: viewport.tracks,
+                                  quickMarks: viewport.quickMarks,
+                                  quickMarkDraft: viewport.quickMarkDraft,
+                                  selectedQuickMarkId:
+                                      viewport.selectedQuickMarkId,
+                                  onQuickMarkStart:
+                                      viewportActions.onQuickMarkStart,
+                                  onQuickMarkUpdate:
+                                      viewportActions.onQuickMarkUpdate,
+                                  onQuickMarkEnd:
+                                      viewportActions.onQuickMarkEnd,
+                                  onQuickMarkCancel:
+                                      viewportActions.onQuickMarkCancel,
+                                  onQuickMarkSelect:
+                                      viewportActions.onQuickMarkSelect,
+                                  onQuickMarkChanged:
+                                      viewportActions.onQuickMarkChanged,
+                                  onQuickMarkDeleted:
+                                      viewportActions.onQuickMarkDeleted,
+                                  onQuickMarkFocus:
+                                      viewportActions.onQuickMarkFocus,
+                                  pointerButtonStateProvider:
+                                      pointerButtonStateProvider,
+                                  nativePlaybackAvailable:
+                                      media.nativePlaybackAvailable,
+                                ),
+                              ),
+                              if (!overlays.fullScreen &&
+                                  media.tracks.isNotEmpty)
+                                AxTreeRegion(
+                                  label: 'Playback timeline',
+                                  child: MediaTimelineSection(
+                                    model: model,
+                                    actions: actions,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (overlays.marksSidebarVisible)
+                          QuickMarkSidebar(
+                            width: overlays.marksSidebarWidth,
+                            marks: model.marks,
+                            actions: actions.marks,
+                            onClose: overlayActions.onCloseMarksSidebar,
+                          ),
+                      ],
+                    ),
+                    if (overlays.marksSidebarVisible)
+                      _MarksSidebarResizeHandle(
+                        width: overlays.marksSidebarWidth,
+                        onWidthChanged:
+                            overlayActions.onMarksSidebarWidthChanged,
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
           if (overlays.fullScreen)
             FullScreenPointerCapture(

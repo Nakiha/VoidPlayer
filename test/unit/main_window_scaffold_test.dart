@@ -10,19 +10,20 @@ import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/session/playback_session.dart';
+import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
+import 'package:void_player/viewport/display_geometry.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
-import 'package:void_player/widgets/media_header.dart';
+import 'package:void_player/widgets/analysis_overlay_controls.dart';
 import 'package:void_player/widgets/quick_mark_sidebar.dart';
+import 'package:void_player/widgets/viewport_panel.dart';
 import 'package:void_player/windows/main/main_window_overlays.dart';
 import 'package:void_player/windows/main/main_window_scaffold.dart';
 import 'package:void_player/windows/main/main_window_state.dart';
 import 'package:void_player/windows/main/main_window_view_model.dart';
 
 void main() {
-  testWidgets('settings overlay is layered above media header panel host', (
-    tester,
-  ) async {
+  testWidgets('settings overlay is layered above main content', (tester) async {
     final feedback = AppFeedbackController();
     addTearDown(feedback.dispose);
 
@@ -43,17 +44,60 @@ void main() {
           .descendant(of: find.byType(Scaffold), matching: find.byType(Stack))
           .first,
     );
-    final hostIndex = rootStack.children.indexWhere(
-      (child) => child is MediaHeaderOverlayPanelHost,
+    final contentIndex = rootStack.children.indexWhere(
+      (child) => child is Column,
     );
     final settingsIndex = rootStack.children.indexWhere(
       (child) => child is SettingsOverlaySlot,
     );
 
-    expect(hostIndex, isNonNegative);
+    expect(contentIndex, isNonNegative);
     expect(settingsIndex, isNonNegative);
-    expect(settingsIndex, greaterThan(hostIndex));
+    expect(settingsIndex, greaterThan(contentIndex));
   });
+
+  testWidgets(
+    'analysis overlay strip stays below viewport beside marks sidebar',
+    (tester) async {
+      final feedback = AppFeedbackController();
+      addTearDown(feedback.dispose);
+      final mediaTrack = const TrackEntry(
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'track.mp4',
+          width: 1920,
+          height: 1080,
+        ),
+      );
+
+      await tester.pumpWidget(
+        _localized(
+          AppFeedbackScope(
+            controller: feedback,
+            child: MainWindowScaffold(
+              model: _model(
+                settingsVisible: false,
+                marksSidebarVisible: true,
+                analysisOverlayControlsVisible: true,
+                tracks: [mediaTrack],
+              ),
+              actions: _noop,
+            ),
+          ),
+        ),
+      );
+
+      final viewportRect = tester.getRect(find.byType(ViewportPanel));
+      final stripRect = tester.getRect(find.byKey(analysisOverlayStripKey));
+      final sidebarRect = tester.getRect(find.byType(QuickMarkSidebar));
+
+      expect(stripRect.top, greaterThanOrEqualTo(viewportRect.bottom));
+      expect(stripRect.right, lessThanOrEqualTo(sidebarRect.left));
+      expect(sidebarRect.top, lessThanOrEqualTo(viewportRect.top));
+      expect(sidebarRect.bottom, greaterThanOrEqualTo(stripRect.bottom));
+    },
+  );
 
   testWidgets('marks sidebar renders with list header actions', (tester) async {
     final feedback = AppFeedbackController();
@@ -322,6 +366,8 @@ Widget _localized(Widget child) => MaterialApp(
 MainWindowViewModel _model({
   required bool settingsVisible,
   bool marksSidebarVisible = false,
+  bool analysisOverlayControlsVisible = false,
+  List<TrackEntry> tracks = const [],
   List<QuickMark> quickMarks = const [],
   int? selectedQuickMarkId,
   Map<int, TrackInfo> tracksByFileId = const {},
@@ -335,7 +381,9 @@ MainWindowViewModel _model({
     viewportState: const ViewportDisplayState.empty(),
     layout: const LayoutState(),
     viewportKey: GlobalKey(),
-    tracks: const [],
+    tracks: tracks
+        .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
+        .toList(),
     quickMarks: const [],
     quickMarkDraft: null,
     selectedQuickMarkId: null,
@@ -357,7 +405,7 @@ MainWindowViewModel _model({
     networkMediaAvailable: true,
     sshRemoteMediaAvailable: true,
     nativeFilePickerAvailable: true,
-    tracks: const [],
+    tracks: tracks,
     syncOffsets: const {},
     audibleTrackFileId: null,
     performanceAlertPolicy: PerformanceAlertPolicy.sustained,
@@ -386,6 +434,7 @@ MainWindowViewModel _model({
     mediaInfoVisible: false,
     profilerVisible: false,
     settingsVisible: settingsVisible,
+    analysisOverlayControlsVisible: analysisOverlayControlsVisible,
     marksSidebarVisible: marksSidebarVisible,
     marksSidebarWidth: kDefaultMarksSidebarWidth,
     fullScreen: false,

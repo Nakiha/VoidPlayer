@@ -83,13 +83,22 @@ python dev.py gate macos-ui-smoke
 如果自动化脚本无法覆盖本轮风险，需要在最终说明里写清楚缺口，例如缺少哪个 Action、Assert 或启动参数。
 多个 UI 影响面叠加时，优先把相关 CSV 放在同一条 `python dev.py ui-test --build ...` 命令中串行执行，避免重复构建和手动遗漏。
 
+## 新增测试时机
+
+- 改动纯 Dart 状态机、数据模型、Action 分发、持久化序列化、时间/帧锚定、列表过滤排序或 coordinator 决策时，优先新增或更新 `test/unit/` 中的 Flutter/Dart 测试，用最小输入锁住边界条件；不要只依赖上屏 UI 自动化。
+- 改动 Flutter widget 的布局、命中测试、焦点、快捷键、悬浮态、编辑态或 view model 到 widget 的绑定时，优先补对应 widget/unit 测试；只有真实平台事件、native texture、窗口尺寸或输入设备路径无法在 widget 测试覆盖时，再补 `ui_tests/**/*.csv`。
+- 改动 native C++ 的可独立计算逻辑、seek/clock/layout/presentation decision、cache/index/parser 或格式转换边界时，优先补 native 单元测试，并运行 `python dev.py test --native-only` 或覆盖该模块的 gate。
+- 修复回归 bug 时，先在最低层可复现该 bug 的测试层级加回归用例：Dart 单测能复现就不用升到 UI 脚本；只有跨 Flutter/native 上屏同步、runner 集成或真实输入序列才升到 UI 自动化。
+
 ## UI 自动化选择
 
+- UI 自动化是最高成本验证层。新增 CSV 前先判断能否用 Dart/widget/native 单测覆盖；能下沉就下沉，不能下沉时优先更新既有同目录脚本，而不是新增相邻场景脚本。
 - `ui_tests/analysis/` 覆盖主窗体 spawn analysis 窗体、analysis 子窗体脚本、IPC track 更新；修改 `lib/windows/analysis/`、analysis 启动/IPC 流程、analysis toolbar 入口或 analysis cache/overlay 交互时，优先从这里选脚本，而不是只跑 smoke。
 - `ui_tests/timeline/` 覆盖真实 timeline pointer/click 路径；修改 timeline / seek / 硬解上屏相关逻辑时，优先选这里的真实点击路径脚本，而不是只跑直接调用 native seek 的脚本。
 - `ui_tests/seek/` 覆盖直接 seek / step / rapid seek；`ui_tests/loop/` 覆盖 loop range；`ui_tests/viewport/` 覆盖窗口尺寸、pan/zoom、split 布局；`ui_tests/track/` 覆盖轨道级修改；`ui_tests/codec/` 覆盖 codec 上屏 smoke；`ui_tests/local/` 是依赖个人绝对路径的非通用回归。
 - `ui_tests/macos/` 覆盖 macOS runner、FlutterTexture/CVPixelBuffer、Metal presentation、VideoToolbox/software fallback、layout/seek/audio/callback 生命周期；macOS 改动优先从这里选脚本。
-- 如果本次改动影响特定交互，应顺手新增或更新一条对应目录下的 `ui_tests/**/*.csv`，再用 `python dev.py ui-test --build ...` 执行它完成验证。
+- 只有本次改动依赖真实上屏、native texture、runner 集成、窗口尺寸、平台输入序列、跨 Flutter/native 时序或 codec/hardware 后端时，才新增或更新 `ui_tests/**/*.csv`；纯 Flutter 状态、列表筛选、view model、coordinator 分支、数据落盘等回归应优先落到 `test/unit/` 或 native 单测。
+- 新增 UI CSV 时要说明它覆盖的独有风险；如果只是已有 smoke/regression 的参数变体，优先扩展原脚本或补单测。stress/resource/visual/hash 类脚本不要放入默认验证路径，除非本轮改动正好触碰对应风险。
 - 如果自动化脚本无法覆盖本次改动，需要在最终说明里明确写出阻塞点，以及还缺少哪个 Action / Assert / 启动参数。
 - 修改 native C++ 模块时，仍应至少运行 `python dev.py test` 或 `python dev.py test --native-only`；如果改动同时影响主窗口交互，补跑一条带 `--build` 的 UI 脚本。
 

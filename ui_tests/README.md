@@ -13,6 +13,27 @@ python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
 Pick scripts by the area touched by the change. For broad UI refactors, run a
 small smoke script first, then one or more scripts from the affected folder.
 
+## Governance
+
+UI CSV scripts launch the real app and should stay focused on risks that cannot
+be covered cheaply below this layer: native texture presentation, runner/window
+integration, platform input sequences, cross Flutter/native timing, visual/hash
+assertions, codec backends, and end-to-end process boundaries.
+
+Before adding a new script, prefer these cheaper options:
+
+- Add or update a Dart unit/widget test for Flutter state, view models,
+  coordinator branches, filtering/sorting, persistence, shortcuts, focus, and
+  hit testing.
+- Add or update a native unit test for deterministic renderer, seek/clock,
+  layout, parser, cache/index, or conversion logic.
+- Extend an existing script in the same folder when the new case is only a
+  parameter variant of an existing smoke/regression.
+
+Use new CSV files for distinct user-visible workflows or platform/backend
+regressions. Keep stress/resource/visual/hash scripts out of default smoke
+paths unless the current change specifically touches that risk.
+
 ## Folders
 
 | Folder | Scope |

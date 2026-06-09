@@ -1,4 +1,5 @@
 #include "windows/decode/d3d11_frame_snapshot.h"
+#include "renderer/decode/av_frame_lifetime.h"
 #include <spdlog/spdlog.h>
 
 #ifdef _WIN32
@@ -209,15 +210,15 @@ bool populate_d3d11_hardware_texture_frame(AVFrame* frame, TextureFrame& result)
     result.texture_array_index = static_cast<int>(
         reinterpret_cast<intptr_t>(frame->data[1]));
 
-    AVFrame* ref_frame = av_frame_alloc();
+    auto ref_frame_owner = AvFrameOwner::allocate();
+    AVFrame* ref_frame = ref_frame_owner.get();
     if (ref_frame && av_frame_ref(ref_frame, frame) >= 0) {
-        result.hw_frame_ref = std::shared_ptr<void>(ref_frame, [](void* p) {
+        result.hw_frame_ref = std::shared_ptr<void>(ref_frame_owner.release(), [](void* p) {
             AVFrame* f = static_cast<AVFrame*>(p);
             av_frame_free(&f);
         });
     } else {
         spdlog::warn("[D3D11FrameSnapshot] Failed to ref hw frame, texture may be recycled early");
-        if (ref_frame) av_frame_free(&ref_frame);
     }
 
     result.storage = D3D11Nv12FrameStorage{

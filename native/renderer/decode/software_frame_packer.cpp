@@ -1,4 +1,5 @@
 #include "renderer/decode/software_frame_packer.h"
+#include "renderer/decode/av_frame_lifetime.h"
 #include "renderer/renderer_limits.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
@@ -545,18 +546,18 @@ bool wrap_frame_as_cpu_planar_yuv420(const AVFrame* frame,
         return false;
     }
 
-    AVFrame* ref_frame = av_frame_alloc();
+    auto ref_frame_owner = AvFrameOwner::allocate();
+    AVFrame* ref_frame = ref_frame_owner.get();
     if (!ref_frame) {
         spdlog::error("[FrameConverter] Failed to allocate software planar frame ref");
         return false;
     }
     if (av_frame_ref(ref_frame, frame) < 0) {
         spdlog::error("[FrameConverter] Failed to ref software planar frame");
-        av_frame_free(&ref_frame);
         return false;
     }
 
-    auto frame_ref = std::shared_ptr<void>(ref_frame, [](void* p) {
+    auto frame_ref = std::shared_ptr<void>(ref_frame_owner.release(), [](void* p) {
         AVFrame* f = static_cast<AVFrame*>(p);
         av_frame_free(&f);
     });

@@ -1435,8 +1435,10 @@ class MainWindowController {
   void _jumpToQuickMark(int id) {
     final mark = _quickMarkStore.markById(id);
     if (mark == null) return;
+    if (!_isQuickMarkVisible(mark)) {
+      playbackCoordinator.seekTo(mark.anchor.ptsUs);
+    }
     stateStore.setSelectedQuickMarkId(id);
-    playbackCoordinator.seekTo(mark.anchor.ptsUs);
   }
 
   void _applyQuickMarkStore(QuickMarkStore store, {bool persist = true}) {

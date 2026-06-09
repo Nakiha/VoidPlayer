@@ -353,6 +353,75 @@ void main() {
     },
   );
 
+  test('quick mark jump previews target frame before selecting the mark', () {
+    final controller = MainWindowController(
+      actionRegistry: ActionRegistry(),
+      vsync: const TestVSync(),
+      startupOptions: const StartupOptions(),
+      mounted: () => true,
+      analysisGeneration: _FakeAnalysisGenerationService(),
+      analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+      appSettings: _FakeAppSettingsRepository(),
+      playbackPreferences: _FakePlaybackPreferences(),
+    );
+    addTearDown(controller.dispose);
+
+    controller.trackManager.addTrack(
+      const TrackInfo(
+        fileId: 1,
+        slot: 0,
+        path: '/tmp/video.mp4',
+        width: 320,
+        height: 180,
+      ),
+    );
+    controller.stateStore
+      ..setQuickMarks(const [
+        QuickMark(
+          id: 1,
+          anchor: QuickMarkAnchor(
+            fileId: 1,
+            ptsUs: 1000,
+            dtsUs: 1000,
+            durationUs: 1000,
+          ),
+          sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+        ),
+        QuickMark(
+          id: 2,
+          anchor: QuickMarkAnchor(
+            fileId: 1,
+            ptsUs: 5000,
+            dtsUs: 4900,
+            sourcePacketIndex: 8,
+            sourcePacketSize: 1024,
+          ),
+          sourceRect: Rect.fromLTRB(0.3, 0.3, 0.4, 0.4),
+        ),
+      ])
+      ..setPolledPlaybackState(
+        1000,
+        10000,
+        false,
+        presentedFrameAnchors: const {
+          1: QuickMarkAnchor(fileId: 1, ptsUs: 1000, dtsUs: 1000),
+        },
+      );
+
+    expect(
+      controller.viewModel.viewport.quickMarks.map((mark) => mark.id),
+      const [1],
+    );
+
+    controller.viewActions.marks.onJumpToMark(2);
+
+    final viewModel = controller.viewModel;
+    expect(controller.stateStore.value.currentPtsUs, 5000);
+    expect(controller.stateStore.value.pendingSeekUs, 5000);
+    expect(viewModel.viewport.quickMarks.map((mark) => mark.id), const [2]);
+    expect(viewModel.viewport.selectedQuickMarkId, 2);
+  });
+
   test(
     'quick mark repository loads marks for runtime track file ids',
     () async {

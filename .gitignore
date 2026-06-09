@@ -48,6 +48,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# clangd / LSP
+compile_commands.json
+
 # Native build artifacts
 /native/build
 /native/build-*
@@ -68,6 +71,7 @@ app.*.map.json
 /macos/Runner.xcodeproj/xcuserdata
 /macos/Runner.xcworkspace/xcuserdata
 /macos/Runner.xcworkspace/xcshareddata/swiftpm
+.cache
 
 # Generated l10n files (source of truth is .arb)
 lib/l10n/app_localizations*.dart

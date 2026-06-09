@@ -8,7 +8,8 @@
       "cacheVariables": {
         "BUILD_PYTHON": "ON",
         "BUILD_FFI": "ON",
-        "BUILD_TESTS": "ON"
+        "BUILD_TESTS": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {
@@ -51,7 +52,8 @@
         "BUILD_ANALYSIS": "OFF",
         "BUILD_PYTHON": "OFF",
         "BUILD_FFI": "OFF",
-        "BUILD_TESTS": "ON"
+        "BUILD_TESTS": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       },
       "condition": {
         "type": "equals",

@@ -93,6 +93,7 @@ def configure(
         "cmake",
         "-B", str(build_dir),
         "-S", str(script_dir),
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
         f"-DFFMPEG_ROOT={ffmpeg_root}",
         f"-DBUILD_TESTS={'ON' if build_tests else 'OFF'}",
         f"-DBUILD_ANALYSIS_TESTS={'ON' if build_analysis_tests else 'OFF'}",

@@ -95,6 +95,7 @@ public:
     AVBufferRef* get() const noexcept;
     AVBufferRef* operator->() const noexcept;
     AVBufferRef* release() noexcept;
+    AVBufferRef** put() noexcept;
     void reset(AVBufferRef* ref = nullptr) noexcept;
     explicit operator bool() const noexcept;
 

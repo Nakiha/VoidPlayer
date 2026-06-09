@@ -183,6 +183,11 @@ AVBufferRef* AvBufferRefOwner::release() noexcept {
     return ref;
 }
 
+AVBufferRef** AvBufferRefOwner::put() noexcept {
+    reset();
+    return &ref_;
+}
+
 void AvBufferRefOwner::reset(AVBufferRef* ref) noexcept {
     if (ref_) {
         av_buffer_unref(&ref_);

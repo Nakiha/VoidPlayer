@@ -247,7 +247,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_ANALYSIS=ON
           -DBUILD_ANALYSIS_TESTS=OFF
-          -DBUILD_TESTS=OFF
+          -DBUILD_TESTS=ON
           -DBUILD_FFI=OFF
           -DBUILD_PYTHON=OFF
 

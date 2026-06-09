@@ -219,7 +219,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     if fileId >= 0, let player = nativePlayer {
       for track in player.trackDiagnostics() {
         if (track["fileId"] as? Int) == fileId {
-          return [
+          let frame: [String: Any] = [
             "ptsUs": track["currentPtsUs"] as? Int64 ?? -1,
             "dtsUs": track["currentDtsUs"] as? Int64 ?? Int64.min,
             "analysisFrameIndex": track["analysisFrameIndex"] as? Int ?? -1,
@@ -230,6 +230,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
             "sourcePacketPtsUs": track["sourcePacketPtsUs"] as? Int64 ?? Int64.min,
             "sourcePacketDtsUs": track["sourcePacketDtsUs"] as? Int64 ?? Int64.min,
           ]
+          return frame
         }
       }
     }

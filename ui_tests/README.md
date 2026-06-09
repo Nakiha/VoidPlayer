@@ -12,6 +12,17 @@ python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
 
 Pick scripts by the area touched by the change. For broad UI refactors, run a
 small smoke script first, then one or more scripts from the affected folder.
+See [`AUDIT.md`](AUDIT.md) for the current cleanup audit and growth policy.
+
+## Commands
+
+- `python dev.py ui-test ...` launches the Windows runner directly with the CSV
+  script path.
+- `python dev.py mac-ui-test ...` launches the macOS `.app` bundle through
+  `/usr/bin/open`, copies scripts/media into the app sandbox, rewrites
+  `ADD_MEDIA` fixture paths, re-signs/registers the bundle, and scans macOS
+  crash reports. Use it for `ui_tests/macos/` and for macOS app-bundle,
+  sandbox, Metal/FlutterTexture, VideoToolbox, audio, or window lifecycle risks.
 
 ## Governance
 

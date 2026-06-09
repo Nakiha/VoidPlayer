@@ -485,20 +485,20 @@ void DemuxThread::run() {
                 attach_source_packet_identity(pkt, identity);
             }
 
-            AVPacket* out = av_packet_clone(pkt);
+            auto out = AvPacketOwner::clone(pkt);
             if (!out) {
                 spdlog::error("[DemuxThread] Failed to clone packet");
                 continue;
             }
 
             const bool pushed = route.optional
-                ? route.queue->try_push(out)
-                : route.queue->push(out);
+                ? route.queue->try_push(out.get())
+                : route.queue->push(out.get());
             if (!pushed) {
-                av_packet_free(&out);
                 // Queue aborted or full — don't permanently exit, just drop this packet
                 continue;
             }
+            out.release();
             delivered = true;
         }
         av_packet_unref(pkt);

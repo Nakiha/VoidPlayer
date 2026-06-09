@@ -55,9 +55,7 @@ bool DemuxThread::open() {
         std::unique_lock<std::mutex> lock(lifecycle_mutex_);
         running_.store(false, std::memory_order_release);
         open_deadline_ns_.store(0, std::memory_order_release);
-        if (fmt_ctx_) {
-            avformat_close_input(&fmt_ctx_);
-        }
+        fmt_ctx_.reset();
         if (private_flv_demuxer_) {
             private_flv_demuxer_.reset();
         }
@@ -97,7 +95,7 @@ bool DemuxThread::open() {
         open_deadline_ns_.store(0, std::memory_order_release);
         spdlog::info("[DemuxThread] Using private CDN FLV demuxer for {}", file_path_);
     } else {
-        fmt_ctx_ = avformat_alloc_context();
+        fmt_ctx_ = AvFormatContextOwner::allocate();
         if (!fmt_ctx_) {
             spdlog::error("[DemuxThread] Failed to allocate format context: {}", file_path_);
             return fail_open();
@@ -108,12 +106,12 @@ bool DemuxThread::open() {
         // Open format context on the calling thread so stats are available immediately.
         // Install the interrupt callback before open/find_stream_info so stop() or an
         // open timeout can break blocked probes.
-        int ret = avformat_open_input(&fmt_ctx_, file_path_.c_str(), nullptr, nullptr);
+        int ret = avformat_open_input(fmt_ctx_.mutable_address(), file_path_.c_str(), nullptr, nullptr);
         if (ret < 0) {
             spdlog::error("[DemuxThread] Failed to open input: {}", file_path_);
             return fail_open();
         }
-        ret = avformat_find_stream_info(fmt_ctx_, nullptr);
+        ret = avformat_find_stream_info(fmt_ctx_.get(), nullptr);
         if (ret < 0) {
             spdlog::error("[DemuxThread] Failed to find stream info");
             return fail_open();
@@ -217,9 +215,7 @@ bool DemuxThread::open() {
         open_deadline_ns_.store(0, std::memory_order_release);
         if (!running_.load(std::memory_order_acquire)) {
             spdlog::info("[DemuxThread] Open cancelled before demux thread start: {}", file_path_);
-            if (fmt_ctx_) {
-                avformat_close_input(&fmt_ctx_);
-            }
+            fmt_ctx_.reset();
             if (private_flv_demuxer_) {
                 private_flv_demuxer_.reset();
             }
@@ -275,7 +271,7 @@ void DemuxThread::stop() {
         std::lock_guard<std::mutex> lock(lifecycle_mutex_);
         if (fmt_ctx_) {
             spdlog::info("[DemuxThread] stop() closing input: {}", file_path_);
-            avformat_close_input(&fmt_ctx_);
+            fmt_ctx_.reset();
         }
         if (private_flv_demuxer_) {
             spdlog::info("[DemuxThread] stop() closing private CDN FLV demuxer: {}", file_path_);
@@ -409,7 +405,7 @@ void DemuxThread::run() {
                 time_base_for_stream(seek_stream_idx));
             int seek_ret = private_flv_demuxer_
                 ? private_flv_demuxer_->seek(seek_stream_idx, target_tb)
-                : av_seek_frame(fmt_ctx_, seek_stream_idx, target_tb, AVSEEK_FLAG_BACKWARD);
+                : av_seek_frame(fmt_ctx_.get(), seek_stream_idx, target_tb, AVSEEK_FLAG_BACKWARD);
             if (seek_ret < 0) {
                 spdlog::error("[DemuxThread] av_seek_frame FAILED: target={:.3f}s, ret={:#x}",
                              req.target_pts_us / 1e6, static_cast<unsigned>(seek_ret));
@@ -419,7 +415,7 @@ void DemuxThread::run() {
                 if (private_flv_demuxer_) {
                     private_flv_demuxer_->flush();
                 } else {
-                    avformat_flush(fmt_ctx_);
+                    avformat_flush(fmt_ctx_.get());
                 }
                 spdlog::info("[DemuxThread] av_seek_frame OK: target={:.3f}s", req.target_pts_us / 1e6);
             }
@@ -452,7 +448,7 @@ void DemuxThread::run() {
             ? forced_read_error
             : (private_flv_demuxer_
                 ? private_flv_demuxer_->read_packet(pkt)
-                : av_read_frame(fmt_ctx_, pkt));
+                : av_read_frame(fmt_ctx_.get(), pkt));
         if (ret < 0) {
             if (ret == AVERROR_EOF) {
                 spdlog::info("[DemuxThread] EOF reached after {} packets, waiting for seek",

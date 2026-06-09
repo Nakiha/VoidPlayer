@@ -1,7 +1,11 @@
 #pragma once
 
+#include <cstddef>
+
 struct AVCodec;
 struct AVCodecContext;
+struct AVBufferRef;
+struct AVFormatContext;
 struct SwrContext;
 
 namespace vr {
@@ -48,6 +52,52 @@ public:
 
 private:
     SwrContext* context_ = nullptr;
+};
+
+class AvFormatContextOwner {
+public:
+    AvFormatContextOwner() noexcept = default;
+    explicit AvFormatContextOwner(AVFormatContext* context) noexcept;
+    ~AvFormatContextOwner();
+
+    AvFormatContextOwner(const AvFormatContextOwner&) = delete;
+    AvFormatContextOwner& operator=(const AvFormatContextOwner&) = delete;
+
+    AvFormatContextOwner(AvFormatContextOwner&& other) noexcept;
+    AvFormatContextOwner& operator=(AvFormatContextOwner&& other) noexcept;
+
+    static AvFormatContextOwner allocate() noexcept;
+    AVFormatContext* get() const noexcept;
+    AVFormatContext* operator->() const noexcept;
+    AVFormatContext* release() noexcept;
+    AVFormatContext** mutable_address() noexcept;
+    void reset(AVFormatContext* context = nullptr) noexcept;
+    explicit operator bool() const noexcept;
+
+private:
+    AVFormatContext* context_ = nullptr;
+};
+
+class AvBufferRefOwner {
+public:
+    AvBufferRefOwner() noexcept = default;
+    explicit AvBufferRefOwner(AVBufferRef* ref) noexcept;
+    ~AvBufferRefOwner();
+
+    AvBufferRefOwner(const AvBufferRefOwner&) = delete;
+    AvBufferRefOwner& operator=(const AvBufferRefOwner&) = delete;
+
+    AvBufferRefOwner(AvBufferRefOwner&& other) noexcept;
+    AvBufferRefOwner& operator=(AvBufferRefOwner&& other) noexcept;
+
+    static AvBufferRefOwner allocate(size_t size) noexcept;
+    AVBufferRef* get() const noexcept;
+    AVBufferRef* release() noexcept;
+    void reset(AVBufferRef* ref = nullptr) noexcept;
+    explicit operator bool() const noexcept;
+
+private:
+    AVBufferRef* ref_ = nullptr;
 };
 
 } // namespace vr

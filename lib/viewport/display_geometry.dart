@@ -55,8 +55,8 @@ class ViewportLayoutProjection {
     required this.mode,
     required this.splitPos,
     required this.orderedTracks,
-    required Map<int, _TrackProjection> tracksByFileId,
-  }) : _tracksByFileId = tracksByFileId;
+    required this._tracksByFileId,
+  });
 
   bool get isValid => viewportWidth > 0 && viewportHeight > 0;
 

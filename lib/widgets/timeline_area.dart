@@ -77,7 +77,9 @@ class _TimelineAreaState extends State<TimelineArea> {
             buildDefaultDragHandles: false,
             padding: EdgeInsets.zero,
             itemCount: widget.entries.length,
-            onReorder: widget.canReorderTrack ? widget.onReorder : (_, _) {},
+            onReorderItem: widget.canReorderTrack
+                ? _handleReorderItem
+                : (_, _) {},
             itemBuilder: (context, index) {
               final entry = widget.entries[index];
               final trackDuration = entry.info.durationUs;
@@ -147,5 +149,10 @@ class _TimelineAreaState extends State<TimelineArea> {
         );
       },
     );
+  }
+
+  void _handleReorderItem(int oldIndex, int newIndex) {
+    final legacyNewIndex = oldIndex < newIndex ? newIndex + 1 : newIndex;
+    widget.onReorder(oldIndex, legacyNewIndex);
   }
 }

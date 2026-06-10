@@ -539,7 +539,7 @@ class _MemoryMetricCell extends StatelessWidget {
                 Expanded(
                   child: Text(
                     metric.label,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,

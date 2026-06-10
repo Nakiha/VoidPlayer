@@ -2,6 +2,8 @@
 
 ## 入口命令
 
+当前主干工具链基线是 Flutter `3.44.1` stable / Dart `3.12.1`。
+
 项目根目录优先使用 `dev.py`。它会串起 native build、CTest、Flutter build、UI automation 和 package staging。
 
 ```bash

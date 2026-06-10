@@ -44,15 +44,12 @@ enum AppAccentPreference {
 
 class AppAppearanceController extends ChangeNotifier {
   AppAppearanceController._({
-    required AppSettingsRepository settings,
+    required this._settings,
     required this.systemAccentColor,
-    required AppThemePreference themePreference,
-    required AppAccentPreference accentPreference,
-    required Color customAccentColor,
-  }) : _settings = settings,
-       _themePreference = themePreference,
-       _accentPreference = accentPreference,
-       _customAccentColor = customAccentColor;
+    required this._themePreference,
+    required this._accentPreference,
+    required this._customAccentColor,
+  });
 
   factory AppAppearanceController.load({
     required AppSettingsRepository settings,

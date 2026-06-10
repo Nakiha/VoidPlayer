@@ -18,8 +18,7 @@ class AnalysisIpcClient extends ChangeNotifier {
   bool _connected = true;
   bool _disposed = false;
 
-  AnalysisIpcClient._(this._socket, {required int maxLineLength})
-    : _maxLineLength = maxLineLength;
+  AnalysisIpcClient._(this._socket, {required this._maxLineLength});
 
   List<AnalysisIpcTrack> get tracks => List.unmodifiable(_tracks);
   int? get accentColorValue => _accentColorValue;

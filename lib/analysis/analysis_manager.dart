@@ -185,13 +185,10 @@ abstract class AnalysisGenerationService {
 class AnalysisManager extends ChangeNotifier
     implements AnalysisGenerationService {
   AnalysisManager._({
-    AnalysisGenerationSettings settings =
-        const AppConfigAnalysisGenerationSettings(),
     AnalysisCacheService cache = const DefaultAnalysisCacheService(),
     AnalysisNativeService native = const DefaultAnalysisNativeService(),
     AnalysisGenerationQueue? generationQueue,
-  }) : _settings = settings,
-       _cache = cache,
+  }) : _cache = cache,
        _native = native,
        _generationQueue =
            generationQueue ??
@@ -199,7 +196,8 @@ class AnalysisManager extends ChangeNotifier
 
   static final AnalysisManager instance = AnalysisManager._();
 
-  final AnalysisGenerationSettings _settings;
+  final AnalysisGenerationSettings _settings =
+      const AppConfigAnalysisGenerationSettings();
   final AnalysisCacheService _cache;
   final AnalysisNativeService _native;
   final AnalysisGenerationQueue _generationQueue;

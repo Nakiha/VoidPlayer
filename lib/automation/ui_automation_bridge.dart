@@ -5,6 +5,8 @@ import '../platform/analysis_process_host.dart';
 import '../video_renderer_controller.dart';
 import '../windows/main/main_window_test_hooks.dart';
 
+// ignore_for_file: prefer_initializing_formals
+
 /// Explicit release UI automation bridge exposed by the main window.
 ///
 /// This keeps automation wiring visible without making TestRunner part of the

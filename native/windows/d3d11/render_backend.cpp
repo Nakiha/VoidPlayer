@@ -1,6 +1,7 @@
 #include "windows/d3d11/render_backend.h"
 
 #include "embedded_shaders.h"
+#include "renderer/overlay/analysis_overlay_renderer.h"
 #include "renderer/render/presentation_backend_factory.h"
 #include "renderer/render/presentation_snapshot.h"
 #include "renderer/render/shader_constants.h"
@@ -182,6 +183,43 @@ void D3D11RenderBackend::release_shared_texture(
     uint64_t buffer_generation) {
     if (headless_output_) {
         headless_output_->release_shared_texture(buffer_index, buffer_generation);
+    }
+}
+
+void D3D11RenderBackend::snapshot_memory_stats(
+    RendererGpuMemoryStats& stats,
+    std::array<uint64_t, kMaxTracks>& presenter_copy_texture_bytes_by_slot)
+    const {
+    if (frame_presenter_) {
+        const auto presenter_stats = frame_presenter_->memory_stats();
+        stats.presenter_texture_bytes = presenter_stats.total_estimated_bytes;
+        stats.total_estimated_bytes += stats.presenter_texture_bytes;
+        for (size_t i = 0;
+             i < kMaxTracks && i < presenter_stats.slots.size();
+             ++i) {
+            presenter_copy_texture_bytes_by_slot[i] =
+                presenter_stats.slots[i].render_nv12_copy_texture_bytes;
+        }
+    }
+
+    if (headless_output_) {
+        const auto headless_stats = headless_output_->memory_stats();
+        stats.headless_output_bytes = headless_stats.estimated_bytes;
+        stats.headless_width = headless_stats.width;
+        stats.headless_height = headless_stats.height;
+        stats.headless_buffer_count = headless_stats.buffer_count;
+        stats.total_estimated_bytes += stats.headless_output_bytes;
+    }
+
+    if (resources_) {
+        const auto overlay_stats =
+            snapshot_analysis_overlay_memory_stats(*resources_);
+        stats.analysis_overlay_bytes = overlay_stats.estimated_bytes;
+        stats.analysis_overlay_width = overlay_stats.width;
+        stats.analysis_overlay_height = overlay_stats.height;
+        if (stats.analysis_overlay_bytes > 0) {
+            stats.total_estimated_bytes += stats.analysis_overlay_bytes;
+        }
     }
 }
 

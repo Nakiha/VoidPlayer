@@ -16,10 +16,7 @@ namespace vr {
 
 class PresentationMetricsStore;
 class D3D11Device;
-class D3D11FramePresenter;
-class D3D11HeadlessOutput;
 class D3D11RenderBackend;
-struct D3D11RenderResources;
 
 struct RendererPresentationOverlayHooks {
     std::function<void(PresentationBackend&, const RendererDrawSnapshot&)> draw_overlay;
@@ -216,9 +213,6 @@ public:
                                     uint64_t buffer_generation) const;
     D3D11RenderBackend* d3d_backend() const;
     D3D11Device* d3d_device() const;
-    D3D11FramePresenter* d3d_frame_presenter() const;
-    D3D11HeadlessOutput* d3d_headless_output() const;
-    D3D11RenderResources* d3d_resources() const;
 #endif
 
 private:

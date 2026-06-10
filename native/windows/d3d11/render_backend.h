@@ -75,6 +75,10 @@ public:
         std::function<void()> callback) override;
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot);
     void release_shared_texture(int buffer_index, uint64_t buffer_generation);
+    void snapshot_memory_stats(
+        RendererGpuMemoryStats& stats,
+        std::array<uint64_t, kMaxTracks>& presenter_copy_texture_bytes_by_slot)
+        const;
 
     D3D11Device* device() const { return device_.get(); }
     TextureManager* texture_manager() const { return texture_manager_.get(); }

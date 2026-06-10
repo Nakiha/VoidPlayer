@@ -1,12 +1,9 @@
 #include "renderer/render/renderer_presentation_controller.h"
 
 #include "renderer/metrics/presentation_metrics_store.h"
-#include "renderer/overlay/analysis_overlay_renderer.h"
 #include "renderer/render/swap_chain_present_policy.h"
 
 #ifdef _WIN32
-#include "windows/d3d11/frame_presenter.h"
-#include "windows/d3d11/headless_output.h"
 #include "windows/d3d11/render_backend.h"
 #endif
 
@@ -457,40 +454,10 @@ RendererPresentationController::d3d_memory_snapshot() const {
     RendererPresentationD3DMemorySnapshot result;
 #ifdef _WIN32
     std::lock_guard<std::recursive_mutex> device_lock(device_mutex_);
-    if (auto* presenter = d3d_frame_presenter()) {
-        const auto presenter_stats = presenter->memory_stats();
-        result.stats.presenter_texture_bytes =
-            presenter_stats.total_estimated_bytes;
-        result.stats.total_estimated_bytes +=
-            result.stats.presenter_texture_bytes;
-        for (size_t i = 0;
-             i < kMaxTracks && i < presenter_stats.slots.size();
-             ++i) {
-            result.presenter_copy_texture_bytes_by_slot[i] =
-                presenter_stats.slots[i].render_nv12_copy_texture_bytes;
-        }
-    }
-
-    if (auto* output = d3d_headless_output()) {
-        const auto headless_stats = output->memory_stats();
-        result.stats.headless_output_bytes = headless_stats.estimated_bytes;
-        result.stats.headless_width = headless_stats.width;
-        result.stats.headless_height = headless_stats.height;
-        result.stats.headless_buffer_count = headless_stats.buffer_count;
-        result.stats.total_estimated_bytes +=
-            result.stats.headless_output_bytes;
-    }
-
-    if (auto* resources = d3d_resources()) {
-        const auto overlay_stats =
-            snapshot_analysis_overlay_memory_stats(*resources);
-        result.stats.analysis_overlay_bytes = overlay_stats.estimated_bytes;
-        result.stats.analysis_overlay_width = overlay_stats.width;
-        result.stats.analysis_overlay_height = overlay_stats.height;
-        if (result.stats.analysis_overlay_bytes > 0) {
-            result.stats.total_estimated_bytes +=
-                result.stats.analysis_overlay_bytes;
-        }
+    if (auto* backend = d3d_backend()) {
+        backend->snapshot_memory_stats(
+            result.stats,
+            result.presenter_copy_texture_bytes_by_slot);
     }
 #endif
     return result;
@@ -564,20 +531,6 @@ D3D11Device* RendererPresentationController::d3d_device() const {
     return backend ? backend->device() : nullptr;
 }
 
-D3D11FramePresenter* RendererPresentationController::d3d_frame_presenter() const {
-    auto* backend = d3d_backend();
-    return backend ? backend->frame_presenter() : nullptr;
-}
-
-D3D11HeadlessOutput* RendererPresentationController::d3d_headless_output() const {
-    auto* backend = d3d_backend();
-    return backend ? backend->headless_output() : nullptr;
-}
-
-D3D11RenderResources* RendererPresentationController::d3d_resources() const {
-    auto* backend = d3d_backend();
-    return backend ? backend->resources() : nullptr;
-}
 #endif
 
 } // namespace vr

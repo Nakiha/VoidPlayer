@@ -393,21 +393,22 @@ bool D3D11RenderBackend::draw_frame(const RendererDrawSnapshot& snapshot,
         }
     }
 
-    ShaderConstants cb = {};
+    const auto presentation = build_presentation_snapshot(
+        decision,
+        snapshot.layout,
+        snapshot.track_geometry,
+        snapshot.target_width,
+        snapshot.target_height,
+        snapshot.background_color);
+    ShaderConstants cb = presentation.constants;
     bool constants_ready = false;
 
     if (resources.compiled_shader.constant_buffer) {
-        populate_layout_shader_constants(
-            cb,
-            snapshot.layout,
-            snapshot.track_geometry,
-            snapshot.target_width,
-            snapshot.target_height);
+        // Shared presentation snapshot owns layout/color defaults. D3D only
+        // patches the resource-dependent masks/scales discovered while
+        // preparing SRVs above.
         cb.nv12_mask = 0;
         cb.planar_yuv_mask = 0;
-        for (int i = 0; i < 4; ++i) {
-            cb.background_color[i] = snapshot.background_color[i];
-        }
 
         for (size_t i = 0; i < kMaxTracks; ++i) {
             if (!snapshot.tracks[i].active) {
@@ -420,35 +421,19 @@ bool D3D11RenderBackend::draw_frame(const RendererDrawSnapshot& snapshot,
                 continue;
             }
             const bool frame_matches_track =
+                decision.frames[i].has_value() &&
                 decision.file_ids[i] == snapshot.tracks[i].file_id &&
                 decision.track_generations[i] == snapshot.tracks[i].generation;
-            const VideoColorInfo color =
-                decision.frames[i].has_value() && frame_matches_track
-                    ? decision.frames[i]->color
-                    : VideoColorInfo{};
-            cb.color_range[i] = color.range != VIDEO_COLOR_RANGE_UNKNOWN
-                ? color.range
-                : VIDEO_COLOR_RANGE_LIMITED;
-            cb.color_matrix[i] = color.matrix != VIDEO_COLOR_MATRIX_UNKNOWN
-                ? color.matrix
-                : default_presentation_color_matrix_for_size(
-                    snapshot.tracks[i].video_width,
-                    snapshot.tracks[i].video_height);
-            cb.color_transfer[i] = color.transfer != VIDEO_COLOR_TRANSFER_UNKNOWN
-                ? color.transfer
-                : VIDEO_COLOR_TRANSFER_SDR;
-            cb.color_primaries[i] = color.primaries != VIDEO_COLOR_PRIMARIES_UNKNOWN
-                ? color.primaries
-                : default_presentation_color_primaries_for_matrix(cb.color_matrix[i]);
-            if (decision.frames[i].has_value() &&
-                frame_matches_track &&
-                decision.frames[i]->cpu_planar_yuv_storage()) {
+            if (!frame_matches_track) {
+                cb.nv12_uv_scale_x[i] = 1.0f;
+                cb.nv12_uv_scale_y[i] = 1.0f;
+                continue;
+            }
+            if (decision.frames[i]->cpu_planar_yuv_storage()) {
                 cb.planar_yuv_mask |= (1 << static_cast<int>(i));
                 cb.nv12_uv_scale_x[i] = 1.0f;
                 cb.nv12_uv_scale_y[i] = 1.0f;
-            } else if (decision.frames[i].has_value() &&
-                       frame_matches_track &&
-                       decision.frames[i]->is_nv12) {
+            } else if (decision.frames[i]->is_nv12) {
                 cb.nv12_mask |= (1 << static_cast<int>(i));
                 cb.nv12_uv_scale_x[i] = prepared_frames[i].nv12_uv_scale_x;
                 cb.nv12_uv_scale_y[i] = prepared_frames[i].nv12_uv_scale_y;

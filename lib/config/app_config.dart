@@ -13,6 +13,7 @@ import '../utils/file_lock.dart';
 /// Structure:
 /// ```json
 /// {
+///   "schemaVersion": 1,
 ///   "window": { "x": 100, "y": 200, "width": 1280, "height": 720 },
 ///   "shortcuts": { ... },
 ///   "preferences": { ... },
@@ -21,6 +22,9 @@ import '../utils/file_lock.dart';
 /// ```
 class AppConfig {
   AppConfig._();
+
+  static const currentSchemaVersion = 1;
+  static const _schemaVersionKey = 'schemaVersion';
 
   static AppConfig? _instance;
   static bool get isInitialized => _instance != null;
@@ -40,14 +44,14 @@ class AppConfig {
     await instance._migrateLegacyConfigIfNeeded(paths);
 
     if (!await instance._file.exists()) {
-      instance._data = {};
+      instance._data = migrateData({});
     } else {
       try {
         await FileLockService.withShared(instance._lockPath, () async {
           final content = await instance._file.readAsString();
           final decoded = jsonDecode(content);
           if (decoded is Map) {
-            instance._data = Map<String, dynamic>.from(decoded);
+            instance._data = migrateData(Map<String, dynamic>.from(decoded));
           } else {
             log.warning(
               '[Config] config root is ${decoded.runtimeType}; using defaults',
@@ -74,6 +78,20 @@ class AppConfig {
     }
 
     _instance = instance;
+  }
+
+  static Map<String, dynamic> migrateData(Map<String, dynamic> data) {
+    final migrated = Map<String, dynamic>.from(data);
+    final version = migrated[_schemaVersionKey];
+    if (version is! int || version < currentSchemaVersion) {
+      migrated[_schemaVersionKey] = currentSchemaVersion;
+    }
+    return migrated;
+  }
+
+  int get schemaVersion {
+    final version = _data[_schemaVersionKey];
+    return version is int ? version : currentSchemaVersion;
   }
 
   /// Persists the current in-memory state to disk.

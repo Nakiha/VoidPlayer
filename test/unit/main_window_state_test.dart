@@ -126,6 +126,12 @@ void main() {
         ptsUs: 1000000,
         dtsUs: 1000000,
       );
+      await fixture.controller.createPlayer(
+        ['clip.mp4'],
+        width: 1920,
+        height: 1080,
+      );
+      fixture.api.calls.clear();
       fixture.store.setTextureId(1);
       fixture.store.setQuickMarks(const [
         QuickMark(
@@ -171,6 +177,8 @@ void main() {
       fixture.coordinator.startPolling();
       await tester.pump(const Duration(milliseconds: 250));
 
+      expect(fixture.api.calls, contains('getPlaybackSnapshot:true'));
+      expect(fixture.api.calls, isNot(contains('currentPresentedFrame:1')));
       expect(fixture.store.value.currentPtsUs, 1500000);
       expect(fixture.store.value.pendingSeekUs, 1500000);
       expect(fixture.store.value.presentedFrameAnchors[1]?.ptsUs, 1500000);
@@ -490,6 +498,7 @@ class _PlaybackApi implements NativePlayerApi {
 
   @override
   Future<PresentedFrameTiming?> currentPresentedFrame(int fileId) async {
+    calls.add('currentPresentedFrame:$fileId');
     return presentedFrameTiming;
   }
 
@@ -498,6 +507,21 @@ class _PlaybackApi implements NativePlayerApi {
 
   @override
   Future<bool> isPlaying() async => false;
+
+  @override
+  Future<PlaybackSnapshot> getPlaybackSnapshot({
+    bool includePresentedFrames = false,
+  }) async {
+    calls.add('getPlaybackSnapshot:$includePresentedFrames');
+    return PlaybackSnapshot(
+      currentPtsUs: ptsUs,
+      durationUs: 2000000,
+      isPlaying: false,
+      presentedFrames: includePresentedFrames && presentedFrameTiming != null
+          ? {1: presentedFrameTiming!}
+          : const {},
+    );
+  }
 
   @override
   Future<void> applyLayout(LayoutState state) async {}

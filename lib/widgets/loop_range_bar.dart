@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import '../utils/async_guard.dart';
 import '../utils/time_format.dart';
 import 'drag_excess_tracker.dart';
 
@@ -16,9 +17,9 @@ class LoopRangeBar extends StatelessWidget {
   final int startUs;
   final int endUs;
   final int durationUs;
-  final ValueChanged<bool> onEnabledChanged;
+  final Future<void> Function(bool enabled) onEnabledChanged;
   final void Function(int startUs, int endUs) onRangeChanged;
-  final ValueChanged<LoopRangeHandle>? onRangeChangeEnd;
+  final Future<void> Function(LoopRangeHandle handle)? onRangeChangeEnd;
 
   const LoopRangeBar({
     super.key,
@@ -64,7 +65,12 @@ class LoopRangeBar extends StatelessWidget {
                     const SizedBox(width: 4),
                     _CompactSwitch(
                       value: enabled,
-                      onChanged: durationUs > 0 ? onEnabledChanged : null,
+                      onChanged: durationUs > 0
+                          ? (value) => fireAndLog(
+                              'set loop range enabled',
+                              onEnabledChanged(value),
+                            )
+                          : null,
                     ),
                     const Spacer(),
                   ],
@@ -168,7 +174,7 @@ class _LoopRangeTimeline extends StatefulWidget {
   final int endUs;
   final int durationUs;
   final void Function(int startUs, int endUs) onRangeChanged;
-  final ValueChanged<LoopRangeHandle>? onRangeChangeEnd;
+  final Future<void> Function(LoopRangeHandle handle)? onRangeChangeEnd;
 
   const _LoopRangeTimeline({
     required this.enabled,
@@ -282,10 +288,10 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
               )
             : null,
         onHorizontalDragEnd: interactive
-            ? (_) => widget.onRangeChangeEnd?.call(handle)
+            ? (_) => _endRangeChange(handle)
             : null,
         onHorizontalDragCancel: interactive
-            ? () => widget.onRangeChangeEnd?.call(handle)
+            ? () => _endRangeChange(handle)
             : null,
         child: MouseRegion(
           cursor: interactive
@@ -376,6 +382,12 @@ class _LoopRangeTimelineState extends State<_LoopRangeTimeline> {
       LoopRangeHandle.start => _startTracker,
       LoopRangeHandle.end => _endTracker,
     };
+  }
+
+  void _endRangeChange(LoopRangeHandle handle) {
+    final onRangeChangeEnd = widget.onRangeChangeEnd;
+    if (onRangeChangeEnd == null) return;
+    fireAndLog('finish loop range change', onRangeChangeEnd(handle));
   }
 }
 

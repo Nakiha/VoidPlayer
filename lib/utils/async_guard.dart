@@ -9,3 +9,27 @@ void fireAndLog(String operation, Future<void> future) {
     }),
   );
 }
+
+Future<void> runGuardedAction(
+  String operation,
+  FutureOr<void> Function() action, {
+  void Function(Object error, StackTrace stack)? onError,
+}) async {
+  try {
+    final result = action();
+    if (result is Future) {
+      await result;
+    }
+  } catch (error, stack) {
+    log.severe('$operation failed', error, stack);
+    onError?.call(error, stack);
+  }
+}
+
+void fireGuardedAction(
+  String operation,
+  FutureOr<void> Function() action, {
+  void Function(Object error, StackTrace stack)? onError,
+}) {
+  unawaited(runGuardedAction(operation, action, onError: onError));
+}

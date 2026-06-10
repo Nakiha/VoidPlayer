@@ -5,6 +5,7 @@ import 'package:void_player/analysis/analysis_cache.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
+import 'package:void_player/app_log.dart';
 import 'package:void_player/config/app_settings_repository.dart';
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/marks/quick_mark_persistence.dart';
@@ -18,11 +19,16 @@ import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/windows/main/main_window_controller.dart';
 
 class _FakeMainWindowPlatform implements MainWindowPlatform {
-  @override
-  Future<Rect> getBounds() => Future.value(Rect.zero);
+  final List<bool> fullScreenCalls = [];
 
   @override
-  Future<void> setFullScreen(bool fullScreen) => Future.value();
+  Future<Rect> getBounds() =>
+      Future.value(const Rect.fromLTWH(0, 0, 1280, 720));
+
+  @override
+  Future<void> setFullScreen(bool fullScreen) async {
+    fullScreenCalls.add(fullScreen);
+  }
 }
 
 class _FakeAnalysisGenerationService implements AnalysisGenerationService {
@@ -222,6 +228,10 @@ class _FakeAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  setUpAll(() async {
+    await initLogging(['--log-level=flutter=OFF']);
+  });
+
   test('MainWindowController keeps injected platform services', () {
     final platformWindow = _FakeMainWindowPlatform();
     final analysisProcesses = UnsupportedAnalysisProcessHost();
@@ -282,6 +292,44 @@ void main() {
 
       expect(controller.viewModel.media.analysisEnabled, isFalse);
       expect(controller.viewModel.media.analysisOverlayEnabled, isTrue);
+      expect(
+        controller.viewModel.media.externalAnalysisWindowsCapability.detail,
+        contains('analysis UI/IPC'),
+      );
+      expect(
+        controller.viewModel.media.networkMediaPlaybackCapability.detail,
+        contains('network media playback'),
+      );
+    },
+  );
+
+  testWidgets(
+    'fullscreen toggle delegates to platform and updates view model',
+    (tester) async {
+      final platformWindow = _FakeMainWindowPlatform();
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        platformWindow: platformWindow,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+      );
+      addTearDown(controller.dispose);
+
+      controller.viewActions.mediaTimeline.onToggleFullScreen();
+      await tester.pump();
+      await tester.pump();
+
+      expect(platformWindow.fullScreenCalls, const [true]);
+      expect(controller.viewModel.overlays.fullScreen, isTrue);
+      expect(controller.viewModel.overlays.fullScreenControlsVisible, isTrue);
+
+      controller.fullScreenCoordinator.dispose();
+      await tester.pump();
     },
   );
 
@@ -352,6 +400,60 @@ void main() {
       expect(viewModel.marks.tracksByFileId[1]?.path, '/tmp/video.mp4');
     },
   );
+
+  test('media timeline offset failure reports user action error', () async {
+    const channel = MethodChannel('video_renderer');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          switch (call.method) {
+            case 'createPlayer':
+              return {'textureId': 1, 'tracks': const <Map<String, Object?>>[]};
+            case 'setTrackOffset':
+              throw PlatformException(
+                code: 'native-error',
+                message: 'offset failed',
+              );
+            default:
+              return null;
+          }
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final failures = <String>[];
+    final controller = MainWindowController(
+      actionRegistry: ActionRegistry(),
+      vsync: const TestVSync(),
+      startupOptions: const StartupOptions(),
+      mounted: () => true,
+      analysisGeneration: _FakeAnalysisGenerationService(),
+      analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+      appSettings: _FakeAppSettingsRepository(),
+      playbackPreferences: _FakePlaybackPreferences(),
+      onUserActionFailed: (operation, error) {
+        failures.add('$operation: $error');
+      },
+    );
+    addTearDown(controller.dispose);
+    await controller.player.createPlayer(const ['/tmp/video.mp4']);
+    controller.trackManager.addTrack(
+      const TrackInfo(
+        fileId: 1,
+        slot: 0,
+        path: '/tmp/video.mp4',
+        width: 320,
+        height: 180,
+      ),
+    );
+
+    await controller.viewActions.mediaTimeline.onOffsetChanged(1, 10);
+
+    expect(failures, hasLength(1));
+    expect(failures.single, contains('adjust track offset'));
+    expect(failures.single, contains('offset failed'));
+  });
 
   test('quick mark jump previews target frame before selecting the mark', () {
     final controller = MainWindowController(

@@ -1,20 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../../utils/async_guard.dart';
 import '../../widgets/analysis_overlay_controls.dart';
 import '../../widgets/controls_bar.dart';
 import '../../widgets/loop_range_bar.dart';
 import '../../widgets/media_header.dart';
 import '../../widgets/timeline_area.dart';
 import 'main_window_state.dart';
+import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';
 
 class MediaTimelineSection extends StatelessWidget {
   final MainWindowViewModel model;
+  final MainWindowViewHandles handles;
   final MainWindowViewActions actions;
 
   const MediaTimelineSection({
     super.key,
     required this.model,
+    required this.handles,
     required this.actions,
   });
 
@@ -41,10 +45,10 @@ class MediaTimelineSection extends StatelessWidget {
             actions.toolbar.onAnalysisOverlayPanelToggle();
           },
         ),
-        MainWindowMediaHeader(model: model, actions: actions),
-        MainWindowControlsBar(model: model, actions: actions),
+        MainWindowMediaHeader(model: model, handles: handles, actions: actions),
+        MainWindowControlsBar(model: model, handles: handles, actions: actions),
         LoopRangeBar(
-          key: playback.loopRangeBarKey,
+          key: handles.loopRangeBarKey,
           timelineStartWidth: playback.timelineStartWidth,
           enabled: playback.loopRangeEnabled,
           startUs: playback.loopStartUs,
@@ -55,7 +59,7 @@ class MediaTimelineSection extends StatelessWidget {
           onRangeChangeEnd: mediaActions.onLoopRangeChangeEnd,
         ),
         ValueListenableBuilder<TimelineHoverState>(
-          valueListenable: playback.timelineHoverListenable,
+          valueListenable: handles.timelineHoverListenable,
           builder: (context, hover, _) => TimelineArea(
             entries: media.tracks,
             currentPtsUs: playback.currentPtsUs,
@@ -88,11 +92,13 @@ class MediaTimelineSection extends StatelessWidget {
 
 class MainWindowMediaHeader extends StatelessWidget {
   final MainWindowViewModel model;
+  final MainWindowViewHandles handles;
   final MainWindowViewActions actions;
 
   const MainWindowMediaHeader({
     super.key,
     required this.model,
+    required this.handles,
     required this.actions,
   });
 
@@ -109,25 +115,28 @@ class MainWindowMediaHeader extends StatelessWidget {
       analysisOverlayControlsVisible:
           model.overlays.analysisOverlayControlsVisible,
       analysisDataSource: media.analysisDataSource,
-      analysisOverlayButtonKey: media.analysisOverlayButtonKey,
+      analysisOverlayButtonKey: handles.analysisOverlayButtonKey,
       canRemoveTrack: capabilities.canRemoveTrack,
       canReorderTrack: capabilities.canReorderTrack,
       onAnalysisOverlayControlsToggle: () {
         actions.toolbar.onAnalysisOverlayPanelToggle();
       },
       onMediaSwapped: mediaActions.onMediaSwapped,
-      onRemoveClicked: mediaActions.onRemoveTrack,
+      onRemoveClicked: (fileId) =>
+          fireAndLog('remove track', mediaActions.onRemoveTrack(fileId)),
     );
   }
 }
 
 class MainWindowControlsBar extends StatelessWidget {
   final MainWindowViewModel model;
+  final MainWindowViewHandles handles;
   final MainWindowViewActions actions;
 
   const MainWindowControlsBar({
     super.key,
     required this.model,
+    required this.handles,
     required this.actions,
   });
 
@@ -137,8 +146,8 @@ class MainWindowControlsBar extends StatelessWidget {
     final mediaActions = actions.mediaTimeline;
     return ExcludeSemantics(
       child: ControlsBar(
-        key: playback.controlsBarKey,
-        timelineKey: playback.timelineSliderKey,
+        key: handles.controlsBarKey,
+        timelineKey: handles.timelineSliderKey,
         timelineStartWidth: playback.timelineStartWidth,
         zoomRatio: model.viewport.layout.zoomRatio,
         onZoomChanged: mediaActions.onZoomChanged,
@@ -162,11 +171,13 @@ class MainWindowControlsBar extends StatelessWidget {
 
 class FullScreenControlsPanel extends StatelessWidget {
   final MainWindowViewModel model;
+  final MainWindowViewHandles handles;
   final MainWindowViewActions actions;
 
   const FullScreenControlsPanel({
     super.key,
     required this.model,
+    required this.handles,
     required this.actions,
   });
 
@@ -207,8 +218,16 @@ class FullScreenControlsPanel extends StatelessWidget {
                     actions.toolbar.onAnalysisOverlayPanelToggle();
                   },
                 ),
-                MainWindowMediaHeader(model: model, actions: actions),
-                MainWindowControlsBar(model: model, actions: actions),
+                MainWindowMediaHeader(
+                  model: model,
+                  handles: handles,
+                  actions: actions,
+                ),
+                MainWindowControlsBar(
+                  model: model,
+                  handles: handles,
+                  actions: actions,
+                ),
               ],
             ),
           ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
 
+import '../app_log.dart';
 import 'analysis_ffi.dart';
 
 abstract class AnalysisNativeService {
@@ -130,7 +131,8 @@ class _NativeAnalysisGenerationPoller {
     List<AnalysisGenerationJobResult> results;
     try {
       results = AnalysisFfi.pollGenerationJobs();
-    } catch (_) {
+    } catch (error, stack) {
+      log.warning('analysis generation job polling failed', error, stack);
       for (final completer in _jobs.values) {
         if (!completer.isCompleted) completer.complete(false);
       }

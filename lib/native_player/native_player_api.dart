@@ -43,6 +43,9 @@ abstract interface class NativePlayerApi {
   Future<PresentedFrameTiming?> currentPresentedFrame(int fileId);
   Future<int> duration();
   Future<bool> isPlaying();
+  Future<PlaybackSnapshot> getPlaybackSnapshot({
+    bool includePresentedFrames = false,
+  });
   Future<void> applyLayout(LayoutState state);
   Future<LayoutState> getLayout();
   Future<TrackInfo> addTrack(
@@ -233,8 +236,13 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
 
   @override
   Future<int> currentPts() async {
-    return await _channel.invokeMethod<int>(NativePlayerMethods.currentPts) ??
-        0;
+    final value = await _channel.invokeMethod<Object?>(
+      NativePlayerMethods.currentPts,
+    );
+    return NativePlayerPayloads.requireValue<int>(
+      value,
+      NativePlayerMethods.currentPts,
+    );
   }
 
   @override
@@ -250,13 +258,40 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
 
   @override
   Future<int> duration() async {
-    return await _channel.invokeMethod<int>(NativePlayerMethods.duration) ?? 0;
+    final value = await _channel.invokeMethod<Object?>(
+      NativePlayerMethods.duration,
+    );
+    return NativePlayerPayloads.requireValue<int>(
+      value,
+      NativePlayerMethods.duration,
+    );
   }
 
   @override
   Future<bool> isPlaying() async {
-    return await _channel.invokeMethod<bool>(NativePlayerMethods.isPlaying) ??
-        false;
+    final value = await _channel.invokeMethod<Object?>(
+      NativePlayerMethods.isPlaying,
+    );
+    return NativePlayerPayloads.requireValue<bool>(
+      value,
+      NativePlayerMethods.isPlaying,
+    );
+  }
+
+  @override
+  Future<PlaybackSnapshot> getPlaybackSnapshot({
+    bool includePresentedFrames = false,
+  }) async {
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      NativePlayerMethods.getPlaybackSnapshot,
+      {NativePlayerKeys.includePresentedFrames: includePresentedFrames},
+    );
+    return PlaybackSnapshot.fromMap(
+      NativePlayerPayloads.requireMap(
+        map,
+        NativePlayerMethods.getPlaybackSnapshot,
+      ),
+    );
   }
 
   @override

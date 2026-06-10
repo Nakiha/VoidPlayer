@@ -1,10 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../analysis/analysis_overlay.dart';
 import '../../analysis/analysis_toolbar_data_source.dart';
 import '../../marks/quick_mark.dart';
 import '../../marks/quick_mark_thumbnail.dart';
+import '../../platform/platform_capabilities.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../session/playback_session.dart';
 import '../../track_manager.dart';
@@ -12,10 +12,8 @@ import '../../video_renderer_controller.dart';
 import '../../viewport/display_geometry.dart';
 import '../../viewport/viewport_display_state.dart';
 import '../../widgets/loop_range_bar.dart';
-import 'main_window_state.dart';
 
 class MainWindowViewModel {
-  final GlobalKey fullFrameCaptureKey;
   final MainWindowSessionVm session;
   final MainWindowViewportVm viewport;
   final MainWindowMarksVm marks;
@@ -24,7 +22,6 @@ class MainWindowViewModel {
   final MainWindowOverlayVm overlays;
 
   const MainWindowViewModel({
-    required this.fullFrameCaptureKey,
     required this.session,
     required this.viewport,
     required this.marks,
@@ -60,7 +57,6 @@ class MainWindowViewportVm {
   final int? textureId;
   final ViewportDisplayState viewportState;
   final LayoutState layout;
-  final GlobalKey viewportKey;
   final List<DisplayTrackGeometry> tracks;
   final List<QuickMark> quickMarks;
   final QuickMark? quickMarkDraft;
@@ -72,7 +68,6 @@ class MainWindowViewportVm {
     required this.textureId,
     required this.viewportState,
     required this.layout,
-    required this.viewportKey,
     required this.tracks,
     required this.quickMarks,
     required this.quickMarkDraft,
@@ -108,12 +103,17 @@ class MainWindowMediaVm {
   final bool networkMediaAvailable;
   final bool sshRemoteMediaAvailable;
   final bool nativeFilePickerAvailable;
+  final PlatformCapability localFilePlaybackCapability;
+  final PlatformCapability networkMediaPlaybackCapability;
+  final PlatformCapability sshRemoteMediaPlaybackCapability;
+  final PlatformCapability nativeFilePickerCapability;
+  final PlatformCapability externalAnalysisWindowsCapability;
+  final PlatformCapability analysisOverlaysCapability;
   final List<TrackEntry> tracks;
   final Map<int, int> syncOffsets; // fileId -> offset in microseconds
   final int? audibleTrackFileId;
   final PerformanceAlertPolicy performanceAlertPolicy;
   final AnalysisToolbarDataSource analysisDataSource;
-  final GlobalKey analysisOverlayButtonKey;
 
   const MainWindowMediaVm({
     required this.analysisEnabled,
@@ -123,18 +123,21 @@ class MainWindowMediaVm {
     required this.networkMediaAvailable,
     required this.sshRemoteMediaAvailable,
     required this.nativeFilePickerAvailable,
+    required this.localFilePlaybackCapability,
+    required this.networkMediaPlaybackCapability,
+    required this.sshRemoteMediaPlaybackCapability,
+    required this.nativeFilePickerCapability,
+    required this.externalAnalysisWindowsCapability,
+    required this.analysisOverlaysCapability,
     required this.tracks,
     required this.syncOffsets,
     required this.audibleTrackFileId,
     required this.performanceAlertPolicy,
     required this.analysisDataSource,
-    required this.analysisOverlayButtonKey,
   });
 }
 
 class MainWindowPlaybackVm {
-  final GlobalKey timelineSliderKey;
-  final GlobalKey controlsBarKey;
   final double timelineStartWidth;
   final bool isPlaying;
   final int currentPtsUs;
@@ -142,16 +145,12 @@ class MainWindowPlaybackVm {
   final List<int> markerUs;
   final int? seekMinUs;
   final int? seekMaxUs;
-  final GlobalKey loopRangeBarKey;
   final bool loopRangeEnabled;
   final int loopStartUs;
   final int loopEndUs;
-  final ValueListenable<TimelineHoverState> timelineHoverListenable;
   final double controlsWidth;
 
   const MainWindowPlaybackVm({
-    required this.timelineSliderKey,
-    required this.controlsBarKey,
     required this.timelineStartWidth,
     required this.isPlaying,
     required this.currentPtsUs,
@@ -159,11 +158,9 @@ class MainWindowPlaybackVm {
     required this.markerUs,
     required this.seekMinUs,
     required this.seekMaxUs,
-    required this.loopRangeBarKey,
     required this.loopRangeEnabled,
     required this.loopStartUs,
     required this.loopEndUs,
-    required this.timelineHoverListenable,
     required this.controlsWidth,
   });
 }
@@ -300,19 +297,19 @@ class MainWindowMarksActions {
 
 class MainWindowMediaTimelineActions {
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
-  final ValueChanged<int> onRemoveTrack;
+  final Future<void> Function(int fileId) onRemoveTrack;
   final ValueChanged<double> onZoomChanged;
   final VoidCallback onToggleFullScreen;
-  final VoidCallback onTogglePlay;
-  final VoidCallback onStepForward;
-  final VoidCallback onStepBackward;
+  final Future<void> Function() onTogglePlay;
+  final Future<void> Function() onStepForward;
+  final Future<void> Function() onStepBackward;
   final ValueChanged<int> onSeek;
   final void Function(int hoverUs, bool hovering) onSliderHover;
-  final ValueChanged<bool> onLoopRangeEnabledChanged;
+  final Future<void> Function(bool enabled) onLoopRangeEnabledChanged;
   final void Function(int startUs, int endUs) onLoopRangeChanged;
-  final ValueChanged<LoopRangeHandle>? onLoopRangeChangeEnd;
+  final Future<void> Function(LoopRangeHandle handle)? onLoopRangeChangeEnd;
   final void Function(int oldIndex, int newIndex) onReorder;
-  final void Function(int slot, int offsetMs) onOffsetChanged;
+  final Future<void> Function(int slot, int offsetMs) onOffsetChanged;
   final ValueChanged<int> onToggleTrackAudio;
   final ValueChanged<double> onControlsWidthChanged;
 

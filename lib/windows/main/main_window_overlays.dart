@@ -11,6 +11,7 @@ import '../../track_manager.dart';
 import '../settings_window.dart';
 import '../stats_window.dart';
 import 'main_window_media_sections.dart';
+import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';
 
 const _sidePanelGap = 10.0;
@@ -39,11 +40,13 @@ class FullScreenPointerCapture extends StatelessWidget {
 
 class FullScreenControlsOverlay extends StatelessWidget {
   final MainWindowViewModel model;
+  final MainWindowViewHandles handles;
   final MainWindowViewActions actions;
 
   const FullScreenControlsOverlay({
     super.key,
     required this.model,
+    required this.handles,
     required this.actions,
   });
 
@@ -56,8 +59,11 @@ class FullScreenControlsOverlay extends StatelessWidget {
       bottom: 12,
       child: AnimatedOverlaySlot(
         visible: model.overlays.fullScreenControlsVisible,
-        builder: (context) =>
-            FullScreenControlsPanel(model: model, actions: actions),
+        builder: (context) => FullScreenControlsPanel(
+          model: model,
+          handles: handles,
+          actions: actions,
+        ),
         transitionBuilder: (context, animation, child) {
           final offset = Tween<Offset>(
             begin: const Offset(0, 0.18),

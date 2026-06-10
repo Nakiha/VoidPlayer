@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../track_manager.dart';
+import '../utils/async_guard.dart';
 import '../utils/pts_range.dart';
 import 'track_row.dart';
 
@@ -13,10 +14,10 @@ class TimelineArea extends StatefulWidget {
   final List<TrackEntry> entries;
   final int currentPtsUs;
   final void Function(int oldIndex, int newIndex) onReorder;
-  final void Function(int slot, int offsetMs) onOffsetChanged;
+  final Future<void> Function(int slot, int offsetMs) onOffsetChanged;
   final ValueChanged<int> onToggleTrackAudio;
   final int? audibleTrackFileId;
-  final ValueChanged<int> onRemoveTrack;
+  final Future<void> Function(int fileId) onRemoveTrack;
   final bool canRemoveTrack;
   final bool canReorderTrack;
   final bool canAdjustTrackOffset;
@@ -121,9 +122,14 @@ class _TimelineAreaState extends State<TimelineArea> {
                 playheadPosition: playheadPosition,
                 durationRatio: clipRatio,
                 offsetRatio: offsetRatio,
-                onRemove: () => widget.onRemoveTrack(entry.fileId),
-                onOffsetChanged: (delta) =>
-                    widget.onOffsetChanged(entry.fileId, delta),
+                onRemove: () => fireAndLog(
+                  'remove track',
+                  widget.onRemoveTrack(entry.fileId),
+                ),
+                onOffsetChanged: (delta) => fireAndLog(
+                  'adjust track offset',
+                  widget.onOffsetChanged(entry.fileId, delta),
+                ),
                 onToggleAudio: () => widget.onToggleTrackAudio(entry.fileId),
                 canRemove: widget.canRemoveTrack,
                 canReorder: widget.canReorderTrack,

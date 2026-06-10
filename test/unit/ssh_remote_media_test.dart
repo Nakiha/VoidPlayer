@@ -1,5 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/remote/ssh_remote_media.dart';
+import 'package:void_player/widgets/open_ssh_remote_file_dialog.dart';
 
 void main() {
   test('parses scp-style remote paths', () {
@@ -75,5 +78,21 @@ void main() {
       ),
       'sftp://zhuhongwei@192.168.1.103/Users/zhuhongwei/video.mp4',
     );
+  });
+
+  testWidgets('SSH search dialog reports validation errors', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: const Scaffold(body: OpenSshRemoteFileDialog()),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Host and directory are required.'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Search'), findsOneWidget);
   });
 }

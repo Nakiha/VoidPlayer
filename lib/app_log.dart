@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -108,6 +109,16 @@ class LogConfig {
     }
   }
 
+  LogConfig _withLogsDir(String value) {
+    return LogConfig(
+      flutter: flutter,
+      native: native,
+      ffmpeg: ffmpeg,
+      logsDir: value,
+      processRole: processRole,
+    );
+  }
+
   /// Returns the native log level as spdlog string.
   String get nativeLevelName {
     if (native == Level.ALL) return 'trace';
@@ -131,6 +142,8 @@ class LogConfig {
 
 late LogConfig _logConfig;
 late Logger _root;
+StreamSubscription<LogRecord>? _rootSubscription;
+bool _loggingInitialized = false;
 
 /// The parsed log config. Available after [initLogging].
 LogConfig get logConfig => _logConfig;
@@ -138,12 +151,31 @@ LogConfig get logConfig => _logConfig;
 /// The root Logger. Available after [initLogging].
 Logger get log => _root;
 
+void logFine(String message, [Object? error, StackTrace? stackTrace]) {
+  if (!_loggingInitialized) return;
+  _root.fine(message, error, stackTrace);
+}
+
+void logWarning(String message, [Object? error, StackTrace? stackTrace]) {
+  if (!_loggingInitialized) return;
+  _root.warning(message, error, stackTrace);
+}
+
 /// Initialize logging system. Call once at app startup, before runApp.
 ///
 /// [args] are the CLI arguments from `getDartEntryPointArguments()`.
 /// Returns the resolved [LogConfig] so callers can pass native level to plugin.
-Future<LogConfig> initLogging(List<String> args) async {
-  _logConfig = LogConfig.parse(args);
+Future<LogConfig> initLogging(
+  List<String> args, {
+  String? logsDirOverride,
+}) async {
+  await _resetFileSink();
+  await _rootSubscription?.cancel();
+  _rootSubscription = null;
+
+  _logConfig = logsDirOverride == null
+      ? LogConfig.parse(args)
+      : LogConfig.parse(args)._withLogsDir(logsDirOverride);
 
   final logsDir = Directory(_logConfig.logsDir);
   if (!await logsDir.exists()) {
@@ -153,8 +185,9 @@ Future<LogConfig> initLogging(List<String> args) async {
   _cleanOldLogs(_logConfig.logsDir);
 
   _root = Logger.root;
+  _loggingInitialized = true;
   _root.level = _logConfig.flutter;
-  _root.onRecord.listen(_dispatchRecord);
+  _rootSubscription = _root.onRecord.listen(_dispatchRecord);
 
   FlutterError.onError = (details) {
     _root.warning(
@@ -214,6 +247,10 @@ const int _kMaxFiles = 30;
 RandomAccessFile? _raf;
 int _currentFileSize = 0;
 String? _cachedDateStr;
+final Queue<String> _pendingFileLines = Queue<String>();
+bool _fileFlushScheduled = false;
+bool _fileFlushInProgress = false;
+Completer<void>? _fileFlushCompleter;
 
 void _dispatchRecord(LogRecord record) {
   final line = _formatRecord(record);
@@ -227,31 +264,104 @@ void _dispatchRecord(LogRecord record) {
 
 void _writeFile(String line) {
   try {
-    _ensureLogOpen();
-    if (_raf == null) return;
-
-    final bytes = utf8.encode('$line\n');
-    _currentFileSize += bytes.length;
-    _raf!.writeFromSync(bytes);
-
-    if (_currentFileSize >= _kMaxFileSize) {
-      _raf!.closeSync();
-      _raf = null;
-      _cachedDateStr = null;
-      _cleanOldLogs(_logConfig.logsDir);
-    }
+    _pendingFileLines.add(line);
+    _scheduleFileFlush();
   } catch (_) {
     // Never let logging crash the app
   }
 }
 
-void _ensureLogOpen() {
+void _scheduleFileFlush() {
+  if (_fileFlushScheduled || _fileFlushInProgress) return;
+  _fileFlushScheduled = true;
+  scheduleMicrotask(() {
+    _fileFlushScheduled = false;
+    unawaited(_flushFileQueue());
+  });
+}
+
+Future<void> flushLogFile() async {
+  while (_pendingFileLines.isNotEmpty ||
+      _fileFlushScheduled ||
+      _fileFlushInProgress) {
+    await _flushFileQueue();
+    if (_fileFlushScheduled && !_fileFlushInProgress) {
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+}
+
+Future<void> _flushFileQueue() {
+  if (_fileFlushInProgress) {
+    return _fileFlushCompleter?.future ?? Future<void>.value();
+  }
+  final completer = Completer<void>();
+  _fileFlushCompleter = completer;
+  _fileFlushInProgress = true;
+
+  Future<void>(() async {
+    try {
+      while (_pendingFileLines.isNotEmpty) {
+        await _ensureLogOpen();
+        final file = _raf;
+        if (file == null) return;
+
+        final buffer = StringBuffer();
+        var count = 0;
+        while (_pendingFileLines.isNotEmpty && count < 256) {
+          buffer.writeln(_pendingFileLines.removeFirst());
+          count++;
+        }
+        final bytes = utf8.encode(buffer.toString());
+        _currentFileSize += bytes.length;
+        await file.writeFrom(bytes);
+
+        if (_currentFileSize >= _kMaxFileSize) {
+          await file.close();
+          if (identical(_raf, file)) {
+            _raf = null;
+            _cachedDateStr = null;
+          }
+          _cleanOldLogs(_logConfig.logsDir);
+        }
+      }
+    } catch (_) {
+      _pendingFileLines.clear();
+    } finally {
+      _fileFlushInProgress = false;
+      _fileFlushCompleter = null;
+      completer.complete();
+      if (_pendingFileLines.isNotEmpty) _scheduleFileFlush();
+    }
+  });
+
+  return completer.future;
+}
+
+Future<void> _resetFileSink() async {
+  try {
+    await flushLogFile();
+    await _raf?.close();
+  } catch (_) {
+    // Never let logging teardown crash tests or app startup.
+  } finally {
+    _raf = null;
+    _currentFileSize = 0;
+    _cachedDateStr = null;
+    _pendingFileLines.clear();
+    _fileFlushScheduled = false;
+    _fileFlushInProgress = false;
+    _fileFlushCompleter = null;
+  }
+}
+
+Future<void> _ensureLogOpen() async {
   final now = DateTime.now();
   final dateStr = DateFormat('yyyy-MM-dd').format(now);
 
   if (_cachedDateStr == dateStr && _raf != null) return;
 
-  _raf?.closeSync();
+  await _raf?.close();
   _raf = null;
   _cachedDateStr = dateStr;
 
@@ -259,8 +369,8 @@ void _ensureLogOpen() {
   final logPath = p.join(_logConfig.logsDir, logName);
 
   final file = File(logPath);
-  _raf = file.openSync(mode: FileMode.append);
-  _currentFileSize = _raf!.lengthSync();
+  _raf = await file.open(mode: FileMode.append);
+  _currentFileSize = await _raf!.length();
 }
 
 void _cleanOldLogs(String logsDir) {

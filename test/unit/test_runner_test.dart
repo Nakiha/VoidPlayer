@@ -242,6 +242,17 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   Future<bool> isPlaying() async => false;
 
   @override
+  Future<PlaybackSnapshot> getPlaybackSnapshot({
+    bool includePresentedFrames = false,
+  }) async {
+    return const PlaybackSnapshot(
+      currentPtsUs: 0,
+      durationUs: 0,
+      isPlaying: false,
+    );
+  }
+
+  @override
   Future<void> applyLayout(LayoutState state) async {}
 
   @override

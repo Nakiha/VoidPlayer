@@ -60,6 +60,14 @@ void ReportUnknownMethodException(PluginResult* result, const std::string& metho
     ReportMethodException(result, method, "NATIVE_EXCEPTION", "Unknown native exception");
 }
 
+flutter::EncodableValue enc_i64(int64_t value) {
+    return flutter::EncodableValue(static_cast<int64_t>(value));
+}
+
+flutter::EncodableValue enc_i32(int32_t value) {
+    return flutter::EncodableValue(static_cast<int32_t>(value));
+}
+
 flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
     flutter::EncodableMap map;
     map[flutter::EncodableValue("fileId")] = flutter::EncodableValue(info.file_id);
@@ -75,6 +83,31 @@ flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
     map[flutter::EncodableValue("codecLongName")] = flutter::EncodableValue(info.codec_long_name);
     map[flutter::EncodableValue("decoderName")] = flutter::EncodableValue(info.decoder_name);
     return map;
+}
+
+flutter::EncodableMap make_presented_frame_map(const vr::TrackPerfStats& stats) {
+    flutter::EncodableMap frame;
+    frame[flutter::EncodableValue("fileId")] =
+        flutter::EncodableValue(stats.file_id);
+    frame[flutter::EncodableValue("ptsUs")] =
+        enc_i64(stats.current_pts_us);
+    frame[flutter::EncodableValue("dtsUs")] =
+        enc_i64(stats.current_dts_us);
+    frame[flutter::EncodableValue("analysisFrameIndex")] =
+        enc_i32(stats.analysis_frame_index);
+    frame[flutter::EncodableValue("frameIdentityMode")] =
+        enc_i32(static_cast<int32_t>(stats.frame_identity_mode));
+    frame[flutter::EncodableValue("sourcePacketIndex")] =
+        enc_i32(stats.source_packet_index);
+    frame[flutter::EncodableValue("sourcePacketSize")] =
+        enc_i32(stats.source_packet_size);
+    frame[flutter::EncodableValue("sourcePacketPos")] =
+        enc_i64(stats.source_packet_pos);
+    frame[flutter::EncodableValue("sourcePacketPtsUs")] =
+        enc_i64(stats.source_packet_pts);
+    frame[flutter::EncodableValue("sourcePacketDtsUs")] =
+        enc_i64(stats.source_packet_dts);
+    return frame;
 }
 
 std::string format_ffmpeg_version(unsigned version) {
@@ -385,6 +418,11 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
         "isPlaying",
         [this](const MethodCall&, MethodResultPtr result) {
             IsPlaying(std::move(result));
+        });
+    method_dispatcher_.Register(
+        "getPlaybackSnapshot",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            GetPlaybackSnapshot(call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
         "applyLayout",
@@ -1157,23 +1195,23 @@ void VideoRendererPlugin::CurrentPresentedFrame(
     }
     flutter::EncodableMap frame;
     frame[flutter::EncodableValue("ptsUs")] =
-        flutter::EncodableValue(found ? selected_stats.current_pts_us : -1);
-    frame[flutter::EncodableValue("dtsUs")] = flutter::EncodableValue(
-        found ? selected_stats.current_dts_us : std::numeric_limits<int64_t>::min());
+        enc_i64(found ? selected_stats.current_pts_us : -1);
+    frame[flutter::EncodableValue("dtsUs")] =
+        enc_i64(found ? selected_stats.current_dts_us : std::numeric_limits<int64_t>::min());
     frame[flutter::EncodableValue("analysisFrameIndex")] =
-        flutter::EncodableValue(found ? selected_stats.analysis_frame_index : -1);
+        enc_i32(found ? selected_stats.analysis_frame_index : -1);
     frame[flutter::EncodableValue("frameIdentityMode")] =
-        flutter::EncodableValue(found ? static_cast<int32_t>(selected_stats.frame_identity_mode) : 0);
+        enc_i32(found ? static_cast<int32_t>(selected_stats.frame_identity_mode) : 0);
     frame[flutter::EncodableValue("sourcePacketIndex")] =
-        flutter::EncodableValue(found ? selected_stats.source_packet_index : -1);
+        enc_i32(found ? selected_stats.source_packet_index : -1);
     frame[flutter::EncodableValue("sourcePacketSize")] =
-        flutter::EncodableValue(found ? selected_stats.source_packet_size : 0);
+        enc_i32(found ? selected_stats.source_packet_size : 0);
     frame[flutter::EncodableValue("sourcePacketPos")] =
-        flutter::EncodableValue(found ? selected_stats.source_packet_pos : -1);
+        enc_i64(found ? selected_stats.source_packet_pos : -1);
     frame[flutter::EncodableValue("sourcePacketPtsUs")] =
-        flutter::EncodableValue(found ? selected_stats.source_packet_pts : std::numeric_limits<int64_t>::min());
+        enc_i64(found ? selected_stats.source_packet_pts : std::numeric_limits<int64_t>::min());
     frame[flutter::EncodableValue("sourcePacketDtsUs")] =
-        flutter::EncodableValue(found ? selected_stats.source_packet_dts : std::numeric_limits<int64_t>::min());
+        enc_i64(found ? selected_stats.source_packet_dts : std::numeric_limits<int64_t>::min());
     result->Success(flutter::EncodableValue(frame));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "currentPresentedFrame", e);
@@ -1207,6 +1245,54 @@ void VideoRendererPlugin::IsPlaying(
         ReportMethodException(result.get(), "isPlaying", e);
     } catch (...) {
         ReportUnknownMethodException(result.get(), "isPlaying");
+    }
+}
+
+void VideoRendererPlugin::GetPlaybackSnapshot(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+
+    try {
+    bool include_presented_frames = false;
+    if (arguments) {
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (!args) {
+            result->Error("INVALID_ARGS", "Arguments must be a map");
+            return;
+        }
+        auto it = args->find(flutter::EncodableValue("includePresentedFrames"));
+        if (it != args->end() && !read_bool_arg(it->second, include_presented_frames)) {
+            result->Error("BAD_ARGS", "includePresentedFrames must be a boolean");
+            return;
+        }
+    }
+
+    flutter::EncodableMap snapshot;
+    snapshot[flutter::EncodableValue("currentPtsUs")] =
+        enc_i64(player_ ? player_->current_pts_us() : 0);
+    snapshot[flutter::EncodableValue("durationUs")] =
+        enc_i64(player_ ? player_->duration_us() : 0);
+    snapshot[flutter::EncodableValue("isPlaying")] =
+        flutter::EncodableValue(player_ ? player_->is_playing() : false);
+
+    if (include_presented_frames) {
+        flutter::EncodableList frames;
+        if (player_) {
+            for (const auto& stats : player_->track_perf_stats()) {
+                frames.push_back(flutter::EncodableValue(make_presented_frame_map(stats)));
+            }
+        }
+        snapshot[flutter::EncodableValue("presentedFrames")] =
+            flutter::EncodableValue(frames);
+    }
+
+    result->Success(flutter::EncodableValue(snapshot));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(result.get(), "getPlaybackSnapshot", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(result.get(), "getPlaybackSnapshot", e);
+    } catch (...) {
+        ReportUnknownMethodException(result.get(), "getPlaybackSnapshot");
     }
 }
 

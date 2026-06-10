@@ -8,6 +8,7 @@ import '../../l10n/app_localizations.dart';
 import '../../platform/path_launcher.dart';
 import '../../storage/app_storage.dart';
 import '../../theme/app_appearance.dart';
+import '../../utils/async_guard.dart';
 import 'settings_page_style.dart';
 
 const _cacheListTrailingPadding = 12.0;
@@ -58,10 +59,10 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
       ..addListener(_onAnalysisLimitFocusChanged);
     _thumbnailLimitFocusNode = FocusNode()
       ..addListener(_onThumbnailLimitFocusChanged);
-    _refresh();
+    fireAndLog('refresh cache settings', _refresh());
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 5),
-      (_) => _refresh(),
+      (_) => fireAndLog('refresh cache settings', _refresh()),
     );
   }
 
@@ -69,10 +70,16 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
   void dispose() {
     _refreshTimer?.cancel();
     if (_analysisLimitFocusNode.hasFocus) {
-      unawaited(_saveAnalysisLimit(refresh: false));
+      fireAndLog(
+        'save analysis cache limit',
+        _saveAnalysisLimit(refresh: false),
+      );
     }
     if (_thumbnailLimitFocusNode.hasFocus) {
-      unawaited(_saveThumbnailLimit(refresh: false));
+      fireAndLog(
+        'save mark thumbnail cache limit',
+        _saveThumbnailLimit(refresh: false),
+      );
     }
     _analysisLimitFocusNode.removeListener(_onAnalysisLimitFocusChanged);
     _thumbnailLimitFocusNode.removeListener(_onThumbnailLimitFocusChanged);
@@ -140,7 +147,12 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
                     width: 32,
                     height: 32,
                     child: IconButton(
-                      onPressed: _loading ? null : _refresh,
+                      onPressed: _loading
+                          ? null
+                          : () => fireAndLog(
+                              'refresh cache settings',
+                              _refresh(),
+                            ),
                       icon: const Icon(Icons.refresh, size: 18),
                       tooltip: l.refresh,
                       padding: EdgeInsets.zero,
@@ -164,7 +176,10 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
                   limitController: _analysisLimitController,
                   limitFocusNode: _analysisLimitFocusNode,
                   pathLauncher: widget.pathLauncher,
-                  onLimitSubmitted: () => _saveAnalysisLimit(),
+                  onLimitSubmitted: () => fireAndLog(
+                    'save analysis cache limit',
+                    _saveAnalysisLimit(),
+                  ),
                   onSelectAll: _selectAllAnalysisEntries,
                   onCancelSelection: _clearAnalysisSelection,
                   onDeleteSelected: _deleteSelectedAnalysis,
@@ -195,7 +210,10 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
                   limitLabel: l.markThumbnailCacheMaxLimit,
                   limitReachedText: l.markThumbnailCacheLimitReached,
                   deleteTooltip: l.deleteSelectedMarkThumbnails,
-                  onLimitSubmitted: () => _saveThumbnailLimit(),
+                  onLimitSubmitted: () => fireAndLog(
+                    'save mark thumbnail cache limit',
+                    _saveThumbnailLimit(),
+                  ),
                   onSelectAll: _selectAllThumbnailEntries,
                   onCancelSelection: _clearThumbnailSelection,
                   onDeleteSelected: _deleteSelectedThumbnails,
@@ -243,13 +261,13 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
 
   void _onAnalysisLimitFocusChanged() {
     if (!_analysisLimitFocusNode.hasFocus) {
-      unawaited(_saveAnalysisLimit());
+      fireAndLog('save analysis cache limit', _saveAnalysisLimit());
     }
   }
 
   void _onThumbnailLimitFocusChanged() {
     if (!_thumbnailLimitFocusNode.hasFocus) {
-      unawaited(_saveThumbnailLimit());
+      fireAndLog('save mark thumbnail cache limit', _saveThumbnailLimit());
     }
   }
 
@@ -1038,7 +1056,10 @@ class _CachePathRow extends StatelessWidget {
           icon: Icons.copy,
           tooltip: copyTooltip,
           onPressed: () {
-            unawaited(Clipboard.setData(ClipboardData(text: path)));
+            fireAndLog(
+              'copy storage path',
+              Clipboard.setData(ClipboardData(text: path)),
+            );
           },
         ),
         const SizedBox(width: 4),
@@ -1046,7 +1067,7 @@ class _CachePathRow extends StatelessWidget {
           icon: Icons.folder_open,
           tooltip: openTooltip,
           onPressed: () {
-            unawaited(pathLauncher.openFolder(path));
+            fireAndLog('open storage folder', pathLauncher.openFolder(path));
           },
         ),
       ],

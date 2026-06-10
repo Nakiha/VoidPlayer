@@ -8,6 +8,7 @@ import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/marks/quick_mark.dart';
+import 'package:void_player/platform/platform_capabilities.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/session/playback_session.dart';
 import 'package:void_player/track_manager.dart';
@@ -20,6 +21,7 @@ import 'package:void_player/widgets/viewport_panel.dart';
 import 'package:void_player/windows/main/main_window_overlays.dart';
 import 'package:void_player/windows/main/main_window_scaffold.dart';
 import 'package:void_player/windows/main/main_window_state.dart';
+import 'package:void_player/windows/main/main_window_view_handles.dart';
 import 'package:void_player/windows/main/main_window_view_model.dart';
 
 void main() {
@@ -33,6 +35,7 @@ void main() {
           controller: feedback,
           child: MainWindowScaffold(
             model: _model(settingsVisible: false),
+            handles: _handles(),
             actions: _noop,
           ),
         ),
@@ -82,6 +85,7 @@ void main() {
                 analysisOverlayControlsVisible: true,
                 tracks: [mediaTrack],
               ),
+              handles: _handles(),
               actions: _noop,
             ),
           ),
@@ -109,6 +113,7 @@ void main() {
           controller: feedback,
           child: MainWindowScaffold(
             model: _model(settingsVisible: false, marksSidebarVisible: true),
+            handles: _handles(),
             actions: _noop,
           ),
         ),
@@ -149,6 +154,7 @@ void main() {
                 ),
               },
             ),
+            handles: _handles(),
             actions: _noopWithMarkActions(
               onJumpToMark: jumped.add,
               onSelectVisibleMark: selectedVisible.add,
@@ -210,6 +216,7 @@ void main() {
                 ),
               },
             ),
+            handles: _handles(),
             actions: _noopWithMarkActions(),
           ),
         ),
@@ -250,6 +257,7 @@ void main() {
                 quickMarks: marks,
                 selectedQuickMarkId: 1,
               ),
+              handles: _handles(),
               actions: _noopWithMarkActions(
                 onSelectVisibleMark: selectedVisible.add,
                 onMarkDeleted: deleted.add,
@@ -291,6 +299,7 @@ void main() {
               ],
               selectedQuickMarkId: 1,
             ),
+            handles: _handles(),
             actions: _noop,
           ),
         ),
@@ -336,6 +345,7 @@ void main() {
           controller: feedback,
           child: MainWindowScaffold(
             model: _model(settingsVisible: false, marksSidebarVisible: true),
+            handles: _handles(),
             actions: _noopWithOverlayActions(
               onMarksSidebarWidthChanged: widths.add,
             ),
@@ -363,6 +373,16 @@ Widget _localized(Widget child) => MaterialApp(
   home: child,
 );
 
+MainWindowViewHandles _handles() => MainWindowViewHandles(
+  fullFrameCaptureKey: GlobalKey(),
+  viewportKey: GlobalKey(),
+  analysisOverlayButtonKey: GlobalKey(),
+  timelineSliderKey: GlobalKey(),
+  controlsBarKey: GlobalKey(),
+  loopRangeBarKey: GlobalKey(),
+  timelineHoverListenable: ValueNotifier(const TimelineHoverState()),
+);
+
 MainWindowViewModel _model({
   required bool settingsVisible,
   bool marksSidebarVisible = false,
@@ -372,7 +392,6 @@ MainWindowViewModel _model({
   int? selectedQuickMarkId,
   Map<int, TrackInfo> tracksByFileId = const {},
 }) => MainWindowViewModel(
-  fullFrameCaptureKey: GlobalKey(),
   session: MainWindowSessionVm.fromSession(const PlaybackSession.normal()),
   viewport: MainWindowViewportVm(
     viewMode: 0,
@@ -380,7 +399,6 @@ MainWindowViewModel _model({
     textureId: null,
     viewportState: const ViewportDisplayState.empty(),
     layout: const LayoutState(),
-    viewportKey: GlobalKey(),
     tracks: tracks
         .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
         .toList(),
@@ -405,16 +423,25 @@ MainWindowViewModel _model({
     networkMediaAvailable: true,
     sshRemoteMediaAvailable: true,
     nativeFilePickerAvailable: true,
+    localFilePlaybackCapability:
+        PlatformCapabilities.windows.localFilePlaybackCapability,
+    networkMediaPlaybackCapability:
+        PlatformCapabilities.windows.networkMediaPlaybackCapability,
+    sshRemoteMediaPlaybackCapability:
+        PlatformCapabilities.windows.sshRemoteMediaPlaybackCapability,
+    nativeFilePickerCapability:
+        PlatformCapabilities.windows.nativeFilePickerCapability,
+    externalAnalysisWindowsCapability:
+        PlatformCapabilities.windows.externalAnalysisWindowsCapability,
+    analysisOverlaysCapability:
+        PlatformCapabilities.windows.analysisOverlaysCapability,
     tracks: tracks,
     syncOffsets: const {},
     audibleTrackFileId: null,
     performanceAlertPolicy: PerformanceAlertPolicy.sustained,
     analysisDataSource: _FakeAnalysisToolbarDataSource(),
-    analysisOverlayButtonKey: GlobalKey(),
   ),
   playback: MainWindowPlaybackVm(
-    timelineSliderKey: GlobalKey(),
-    controlsBarKey: GlobalKey(),
     timelineStartWidth: 280,
     isPlaying: false,
     currentPtsUs: 0,
@@ -422,11 +449,9 @@ MainWindowViewModel _model({
     markerUs: const [],
     seekMinUs: null,
     seekMaxUs: null,
-    loopRangeBarKey: GlobalKey(),
     loopRangeEnabled: false,
     loopStartUs: 0,
     loopEndUs: 0,
-    timelineHoverListenable: ValueNotifier(const TimelineHoverState()),
     controlsWidth: 280,
   ),
   overlays: MainWindowOverlayVm(
@@ -492,19 +517,19 @@ final _noop = MainWindowViewActions(
   ),
   mediaTimeline: MainWindowMediaTimelineActions(
     onMediaSwapped: (_, _) {},
-    onRemoveTrack: (_) {},
+    onRemoveTrack: (_) async {},
     onZoomChanged: (_) {},
     onToggleFullScreen: () {},
-    onTogglePlay: () {},
-    onStepForward: () {},
-    onStepBackward: () {},
+    onTogglePlay: () async {},
+    onStepForward: () async {},
+    onStepBackward: () async {},
     onSeek: (_) {},
     onSliderHover: (_, _) {},
-    onLoopRangeEnabledChanged: (_) {},
+    onLoopRangeEnabledChanged: (_) async {},
     onLoopRangeChanged: (_, _) {},
     onLoopRangeChangeEnd: null,
     onReorder: (_, _) {},
-    onOffsetChanged: (_, _) {},
+    onOffsetChanged: (_, _) async {},
     onToggleTrackAudio: (_) {},
     onControlsWidthChanged: (_) {},
   ),

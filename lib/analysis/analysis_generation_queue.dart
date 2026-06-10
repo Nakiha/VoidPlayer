@@ -1,3 +1,4 @@
+import '../app_log.dart';
 import 'analysis_cache_service.dart';
 import 'analysis_native_service.dart';
 
@@ -36,7 +37,9 @@ class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
     late final Future<bool> task;
     late final Future<void> exclusiveMarker;
     task = previous
-        .catchError((_) {})
+        .catchError((Object error, StackTrace stack) {
+          log.warning('previous base analysis generation failed', error, stack);
+        })
         .then((_) {
           return cache.withHashExclusiveLock(hash, () async {
             return native.generateVac2Base(videoPath, hash, maxCacheBytes);
@@ -47,9 +50,15 @@ class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
             _exclusiveByHash.remove(hash);
           }
         });
-    exclusiveMarker = task.then<void>((_) {}, onError: (_) {});
+    exclusiveMarker = _observeTaskCompletion(
+      task,
+      'base analysis generation marker completed after failure',
+    );
     _exclusiveByHash[hash] = exclusiveMarker;
-    _baseQueue = task.then<void>((_) {}, onError: (_) {});
+    _baseQueue = _observeTaskCompletion(
+      task,
+      'base analysis queue advanced after failure',
+    );
     return task;
   }
 
@@ -62,16 +71,33 @@ class SerialAnalysisGenerationQueue implements AnalysisGenerationQueue {
     required int maxCacheBytes,
   }) {
     final waitForBase = _exclusiveByHash[hash] ?? Future<void>.value();
-    return waitForBase.catchError((_) {}).then((_) {
-      return cache.withHashSharedLock(hash, () async {
-        return native.generateOverlayChunk(
-          videoPath: videoPath,
-          hash: hash,
-          startFrame: startFrame,
-          endFrame: endFrame,
-          maxCacheBytes: maxCacheBytes,
-        );
-      });
-    });
+    return waitForBase
+        .catchError((Object error, StackTrace stack) {
+          log.warning(
+            'base analysis generation failed before overlay chunk',
+            error,
+            stack,
+          );
+        })
+        .then((_) {
+          return cache.withHashSharedLock(hash, () async {
+            return native.generateOverlayChunk(
+              videoPath: videoPath,
+              hash: hash,
+              startFrame: startFrame,
+              endFrame: endFrame,
+              maxCacheBytes: maxCacheBytes,
+            );
+          });
+        });
+  }
+
+  Future<void> _observeTaskCompletion<T>(Future<T> task, String label) {
+    return task.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stack) {
+        log.fine(label, error, stack);
+      },
+    );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../performance/performance_health.dart';
+import '../../platform/platform_capabilities.dart';
 import '../../platform/pointer_button_state_provider.dart';
 import '../../widgets/app_feedback_host.dart';
 import '../../widgets/axtree_region.dart';
@@ -11,16 +12,19 @@ import '../../widgets/viewport_panel.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_overlays.dart';
 import 'main_window_state.dart';
+import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';
 
 class MainWindowScaffold extends StatelessWidget {
   final MainWindowViewModel model;
+  final MainWindowViewHandles handles;
   final MainWindowViewActions actions;
   final PointerButtonStateProvider pointerButtonStateProvider;
 
   const MainWindowScaffold({
     super.key,
     required this.model,
+    required this.handles,
     required this.actions,
     this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
   });
@@ -64,6 +68,17 @@ class MainWindowScaffold extends StatelessWidget {
                     networkMediaAvailable: media.networkMediaAvailable,
                     sshRemoteMediaAvailable: media.sshRemoteMediaAvailable,
                     nativeFilePickerAvailable: media.nativeFilePickerAvailable,
+                    addMediaDisabledTooltip: _firstCapabilityDetail([
+                      media.localFilePlaybackCapability,
+                      media.nativeFilePickerCapability,
+                      media.networkMediaPlaybackCapability,
+                      media.sshRemoteMediaPlaybackCapability,
+                    ]),
+                    analysisDisabledTooltip:
+                        _capabilityDetail(
+                          media.externalAnalysisWindowsCapability,
+                        ) ??
+                        _capabilityDetail(media.analysisOverlaysCapability),
                     canAddTrack: capabilities.canAddTrack,
                     canOpenLocalMedia: capabilities.canOpenLocalMedia,
                     canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
@@ -87,7 +102,7 @@ class MainWindowScaffold extends StatelessWidget {
                             children: [
                               Expanded(
                                 child: ViewportPanel(
-                                  key: viewport.viewportKey,
+                                  key: handles.viewportKey,
                                   textureId: viewport.textureId,
                                   viewportState: viewport.viewportState,
                                   errorText: viewport.viewportState.errorText,
@@ -131,6 +146,7 @@ class MainWindowScaffold extends StatelessWidget {
                                   label: 'Playback timeline',
                                   child: MediaTimelineSection(
                                     model: model,
+                                    handles: handles,
                                     actions: actions,
                                   ),
                                 ),
@@ -162,7 +178,11 @@ class MainWindowScaffold extends StatelessWidget {
               onActivity: overlayActions.onFullScreenPointerActivity,
             ),
           if (overlays.fullScreen && media.tracks.isNotEmpty)
-            FullScreenControlsOverlay(model: model, actions: actions),
+            FullScreenControlsOverlay(
+              model: model,
+              handles: handles,
+              actions: actions,
+            ),
           if (overlays.dragging) const DragDropLayer(),
           FloatingSidePanelsSlot(
             mediaInfoVisible: overlays.mediaInfoVisible,
@@ -194,6 +214,26 @@ class MainWindowScaffold extends StatelessWidget {
       ),
     );
   }
+}
+
+String? _firstCapabilityDetail(Iterable<PlatformCapability> capabilities) {
+  for (final capability in capabilities) {
+    final detail = _capabilityDetail(capability);
+    if (detail != null && !capability.isAvailable) return detail;
+  }
+  for (final capability in capabilities) {
+    final detail = _capabilityDetail(capability);
+    if (detail != null && capability.state != CapabilityState.supported) {
+      return detail;
+    }
+  }
+  return null;
+}
+
+String? _capabilityDetail(PlatformCapability capability) {
+  final detail = capability.detail;
+  if (detail == null || detail.isEmpty) return null;
+  return detail;
 }
 
 class _MarksSidebarResizeHandle extends StatelessWidget {

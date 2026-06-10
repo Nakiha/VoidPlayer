@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../utils/async_guard.dart';
 import 'time_label.dart';
 import 'timeline_slider.dart';
 import 'zoom_combo_box.dart';
@@ -28,10 +29,10 @@ class ControlsBar extends StatelessWidget {
   final ValueChanged<double> onZoomChanged;
   final bool isPlaying;
   final bool isFullScreen;
-  final VoidCallback onTogglePlay;
+  final Future<void> Function() onTogglePlay;
   final VoidCallback onToggleFullScreen;
-  final VoidCallback onStepForward;
-  final VoidCallback onStepBackward;
+  final Future<void> Function() onStepForward;
+  final Future<void> Function() onStepBackward;
   final int currentPtsUs;
   final int durationUs;
   final ValueChanged<int> onSeek;
@@ -121,19 +122,22 @@ class ControlsBar extends StatelessWidget {
                             ),
                           if (showStep)
                             _ControlIconButton(
-                              onPressed: onStepBackward,
+                              onPressed: () =>
+                                  fireAndLog('step backward', onStepBackward()),
                               icon: Icons.skip_previous,
                               iconSize: 18,
                             ),
                           if (showPlay)
                             _ControlIconButton(
-                              onPressed: onTogglePlay,
+                              onPressed: () =>
+                                  fireAndLog('toggle playback', onTogglePlay()),
                               icon: isPlaying ? Icons.pause : Icons.play_arrow,
                               iconSize: 20,
                             ),
                           if (showStep)
                             _ControlIconButton(
-                              onPressed: onStepForward,
+                              onPressed: () =>
+                                  fireAndLog('step forward', onStepForward()),
                               icon: Icons.skip_next,
                               iconSize: 18,
                             ),

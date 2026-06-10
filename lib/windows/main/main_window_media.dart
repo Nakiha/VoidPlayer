@@ -104,7 +104,15 @@ class MainWindowMediaCoordinator {
     final previous = _loadInFlight;
     late final Future<void> next;
     next =
-        (previous == null ? Future<void>.value() : previous.catchError((_) {}))
+        (previous == null
+                ? Future<void>.value()
+                : previous.catchError((Object error, StackTrace stack) {
+                    log.warning(
+                      'previous media load failed before queued load',
+                      error,
+                      stack,
+                    );
+                  }))
             .then((_) => _loadMediaPathsImpl(paths))
             .whenComplete(() {
               if (identical(_loadInFlight, next)) {
@@ -395,7 +403,12 @@ class MainWindowMediaCoordinator {
     if (pendingSeekUs() == null) {
       try {
         targetUs = await controller.currentPts();
-      } catch (_) {
+      } catch (error, stack) {
+        log.fine(
+          'currentPts fallback failed during track refresh',
+          error,
+          stack,
+        );
         targetUs = currentPtsUs();
       }
     }
@@ -500,7 +513,8 @@ Future<String> mediaSourceIdentity(String source) async {
 Future<String> _localFileIdentity(String source) async {
   try {
     return p.normalize(await File(source).resolveSymbolicLinks());
-  } catch (_) {
+  } catch (error, stack) {
+    logFine('media source identity fallback: source=$source', error, stack);
     return p.normalize(File(source).absolute.path);
   }
 }

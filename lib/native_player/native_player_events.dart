@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../app_log.dart';
 import 'native_player_protocol.dart';
 
 enum NativePlayerEventType { seekPreviewPresented, trackError, unknown }
@@ -79,7 +80,19 @@ class NativePlayerEventStream {
         (event) =>
             NativePlayerEvent.fromMap(Map<dynamic, dynamic>.from(event as Map)),
       )
-      .where((event) => event.schemaVersion == 1)
+      .where((event) {
+        if (event.schemaVersion != 1) {
+          log.warning(
+            'Dropping native player event with unsupported schema '
+            '${event.schemaVersion}: ${event.rawType}',
+          );
+          return false;
+        }
+        if (event.type == NativePlayerEventType.unknown) {
+          log.fine('Received unknown native player event: ${event.rawType}');
+        }
+        return true;
+      })
       .asBroadcastStream();
 
   const NativePlayerEventStream();

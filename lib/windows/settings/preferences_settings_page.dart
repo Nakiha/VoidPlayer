@@ -1,10 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../theme/app_appearance.dart';
+import '../../utils/async_guard.dart';
 import 'settings_page_style.dart';
 
 class PreferencesSettingsPage extends StatefulWidget {
@@ -103,7 +102,10 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
                 l.seekBehaviorKeepPreviousState,
             },
             onChanged: (value) {
-              unawaited(_setSeekBehavior(value));
+              fireAndLog(
+                'set seek behavior preference',
+                _setSeekBehavior(value),
+              );
             },
           ),
           SettingsPageStyle.contentGap,
@@ -118,7 +120,10 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
               ViewportPixelSizeMode.fillView => l.viewportPixelSizeFillView,
             },
             onChanged: (value) {
-              unawaited(_setPixelSizeMode(value));
+              fireAndLog(
+                'set viewport pixel size preference',
+                _setPixelSizeMode(value),
+              );
             },
           ),
           SettingsPageStyle.contentGap,
@@ -133,7 +138,10 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
                 l.defaultAudioPlayFirstTrack,
             },
             onChanged: (value) {
-              unawaited(_setDefaultAudioPolicy(value));
+              fireAndLog(
+                'set default audio preference',
+                _setDefaultAudioPolicy(value),
+              );
             },
           ),
           SettingsPageStyle.contentGap,
@@ -148,7 +156,10 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
               PerformanceAlertPolicy.disabled => l.performanceAlertDisabled,
             },
             onChanged: (value) {
-              unawaited(_setPerformanceAlertPolicy(value));
+              fireAndLog(
+                'set performance alert preference',
+                _setPerformanceAlertPolicy(value),
+              );
             },
           ),
           SettingsPageStyle.contentGap,
@@ -162,7 +173,7 @@ class _PreferencesSettingsPageState extends State<PreferencesSettingsPage> {
               DecodeMode.forceSoftware => l.decodeModeForceSoftware,
             },
             onChanged: (value) {
-              unawaited(_setDecodeMode(value));
+              fireAndLog('set decode mode preference', _setDecodeMode(value));
             },
           ),
         ],

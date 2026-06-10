@@ -8,33 +8,13 @@ import '../app_log.dart';
 import '../config/app_config.dart';
 import '../platform/analysis_process_host.dart';
 import '../platform/main_window_platform.dart';
+import '../platform/main_window_shutdown.dart';
 import '../platform/native_file_picker.dart';
 import '../platform/platform_capabilities.dart';
 import '../platform/system_accent_watcher.dart';
+import '../platform/window_bootstrap_args.dart';
+import '../platform/window_bounds_policy.dart';
 import '../startup_options.dart';
-
-bool _hasFlag(List<String> args, String name) =>
-    args.any((arg) => arg == name || arg.startsWith('$name='));
-
-({double width, double height})? _parseTestWindowHeader(String scriptPath) {
-  try {
-    final file = File(scriptPath);
-    if (!file.existsSync()) return null;
-    for (final rawLine in file.readAsLinesSync()) {
-      final line = rawLine.trim();
-      if (!line.startsWith('@')) continue;
-      final parts = line.split(',').map((s) => s.trim()).toList();
-      if (parts.isEmpty) continue;
-      final key = parts.first.toUpperCase();
-      if (key == '@WINDOW' && parts.length >= 3) {
-        return (width: double.parse(parts[1]), height: double.parse(parts[2]));
-      }
-    }
-  } catch (_) {
-    // Ignore malformed test header and fall back to normal config handling.
-  }
-  return null;
-}
 
 Future<void> _applyInitialMainWindowBounds({
   required ({double width, double height})? testWindow,
@@ -45,8 +25,35 @@ Future<void> _applyInitialMainWindowBounds({
     return;
   }
 
-  await windowManager.setSize(const Size(1280, 720));
+  final savedRect = AppConfig.instance.windowRect;
+  if (isRestorableWindowRect(savedRect)) {
+    await windowManager.setBounds(savedRect!);
+    return;
+  }
+
+  await windowManager.setSize(kDefaultMainWindowSize);
   await windowManager.center();
+}
+
+class _CloseHandler with WindowListener {
+  @override
+  void onWindowClose() async {
+    windowManager.removeListener(this);
+    try {
+      final bounds = await windowManager.getBounds();
+      AppConfig.instance.windowRect = bounds;
+      await AppConfig.instance.save();
+    } catch (error, stack) {
+      log.warning('[macOS] window state save failed', error, stack);
+    }
+    try {
+      await MainWindowShutdownRegistry.closeGracefully();
+    } catch (error, stack) {
+      log.severe('[macOS] main window shutdown failed', error, stack);
+    }
+    await windowManager.setPreventClose(false);
+    await windowManager.close();
+  }
 }
 
 Future<void> runMacOSVoidPlayer(List<String> args) async {
@@ -56,13 +63,13 @@ Future<void> runMacOSVoidPlayer(List<String> args) async {
   }
 
   String? testScriptPath;
-  final silentUiTest = _hasFlag(args, '--silent-ui-test');
+  final silentUiTest = hasCliFlag(args, '--silent-ui-test');
   final scriptIdx = args.indexOf('--test-script');
   if (scriptIdx >= 0 && scriptIdx + 1 < args.length) {
     testScriptPath = args[scriptIdx + 1];
   }
   final testWindow = testScriptPath != null
-      ? _parseTestWindowHeader(testScriptPath)
+      ? parseTestWindowHeader(testScriptPath)
       : null;
 
   final startupOptions = StartupOptions.parse(args);
@@ -75,8 +82,10 @@ Future<void> runMacOSVoidPlayer(List<String> args) async {
     ..silentUiTest = silentUiTest;
 
   await windowManager.ensureInitialized();
-  await windowManager.setMinimumSize(const Size(520, 360));
+  await windowManager.setMinimumSize(kMinimumMainWindowSize);
   await _applyInitialMainWindowBounds(testWindow: testWindow);
+  await windowManager.setPreventClose(true);
+  windowManager.addListener(_CloseHandler());
   await windowManager.show(inactive: silentUiTest);
 
   log.info('Application starting (macOS baseline), silentUiTest=$silentUiTest');

@@ -7,13 +7,13 @@ import '../../l10n/app_localizations.dart';
 import '../../marks/quick_mark_persistence.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../platform/main_window_platform.dart';
+import '../../platform/main_window_shutdown.dart';
 import '../../platform/native_file_picker.dart';
 import '../../platform/platform_capabilities.dart';
 import '../../platform/pointer_button_state_provider.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
 import 'main_window_controller.dart';
-import 'main_window_shutdown.dart';
 import 'main_window_view.dart';
 
 class MainWindow extends StatefulWidget {
@@ -73,8 +73,24 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
           SqliteQuickMarkRepository.defaultLocation(),
       mounted: () => mounted,
       onDuplicateMediaSkipped: _showDuplicateMediaSkipped,
+      onUserActionFailed: _showUserActionFailed,
     )..start(testScriptPath: widget.testScriptPath);
     MainWindowShutdownRegistry.register(this, _controller.closeGracefully);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncViewportBackgroundColor(context);
+    _syncAnalysisAccentColor();
+  }
+
+  @override
+  void didUpdateWidget(MainWindow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.accentColor != widget.accentColor) {
+      _syncAnalysisAccentColor();
+    }
   }
 
   @override
@@ -86,12 +102,11 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    _syncViewportBackgroundColor(context);
-    _syncAnalysisAccentColor();
     return ListenableBuilder(
       listenable: _controller.listenable,
       builder: (context, _) => MainWindowView(
         model: _controller.viewModel,
+        handles: _controller.viewHandles,
         actions: _controller.viewActions,
         pointerButtonStateProvider: widget.pointerButtonStateProvider,
       ),
@@ -127,5 +142,10 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
     AppFeedbackScope.read(context).show(
       AppFeedbackMessage(text: message, severity: AppFeedbackSeverity.warning),
     );
+  }
+
+  void _showUserActionFailed(String operation, Object error) {
+    if (!mounted) return;
+    AppFeedbackScope.read(context).showError('$operation failed: $error');
   }
 }

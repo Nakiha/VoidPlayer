@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../../analysis/analysis_manager.dart';
 import '../../analysis/analysis_overlay.dart';
+import '../../app_log.dart';
 import '../../native_player/native_player_protocol.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../track_manager.dart';
@@ -410,7 +411,9 @@ class MainWindowAnalysisCoordinator {
     unawaited(
       _enqueueOperation(
         () => _refreshOverlayForCurrentFrameImpl(notifyOnSuccess: false),
-      ).catchError((_) {}),
+      ).catchError((Object error, StackTrace stack) {
+        log.fine('overlay playback prefetch failed', error, stack);
+      }),
     );
   }
 
@@ -421,7 +424,12 @@ class MainWindowAnalysisCoordinator {
     if (provider == null) return null;
     try {
       return await provider(track.fileId);
-    } catch (_) {
+    } catch (error, stack) {
+      log.fine(
+        'presented frame lookup failed: fileId=${track.fileId}',
+        error,
+        stack,
+      );
       return null;
     }
   }
@@ -480,7 +488,9 @@ class MainWindowAnalysisCoordinator {
     final previous = _operationInFlight;
     late final Future<void> future;
     future = (previous ?? Future<void>.value())
-        .catchError((_) {})
+        .catchError((Object error, StackTrace stack) {
+          log.warning('previous analysis operation failed', error, stack);
+        })
         .then((_) async {
           if (_disposed) return;
           await operation();
@@ -499,12 +509,14 @@ class MainWindowAnalysisCoordinator {
     final previous = _operationInFlight;
     late final Future<T?> future;
     late final Future<void> completion;
-    future = (previous ?? Future<void>.value()).catchError((_) {}).then((
-      _,
-    ) async {
-      if (_disposed) return null;
-      return operation();
-    });
+    future = (previous ?? Future<void>.value())
+        .catchError((Object error, StackTrace stack) {
+          log.warning('previous analysis value operation failed', error, stack);
+        })
+        .then((_) async {
+          if (_disposed) return null;
+          return operation();
+        });
     completion = future.whenComplete(() {
       if (identical(_operationInFlight, completion)) {
         _operationInFlight = null;

@@ -176,6 +176,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       result(currentPresentedFrame(arguments: call.arguments))
     case "isPlaying":
       result(playback.currentIsPlaying(player: nativePlayer))
+    case "getPlaybackSnapshot":
+      result(playbackSnapshot(arguments: call.arguments))
     case "getLayout":
       result(presentation.layout)
     case "applyLayout":
@@ -235,6 +237,39 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
     }
     return presentationState.currentPresentedFrameMap()
+  }
+
+  private func playbackSnapshot(arguments: Any?) -> Any {
+    let includePresentedFrames =
+      MacOSFlutterArguments.boolArg(arguments, "includePresentedFrames") ?? false
+    var snapshot: [String: Any] = [
+      "currentPtsUs": transport.currentPts(player: nativePlayer, presentationState: presentationState),
+      "durationUs": tracks.isEmpty ? 0 : tracks.currentDurationUs,
+      "isPlaying": playback.currentIsPlaying(player: nativePlayer),
+    ]
+    if includePresentedFrames {
+      snapshot["presentedFrames"] = currentPresentedFrames()
+    }
+    return snapshot
+  }
+
+  private func currentPresentedFrames() -> [[String: Any]] {
+    guard textureId != nil, let player = nativePlayer else { return [] }
+    return player.trackDiagnostics().compactMap { track in
+      guard let fileId = track["fileId"] as? Int else { return nil }
+      return [
+        "fileId": fileId,
+        "ptsUs": track["currentPtsUs"] as? Int64 ?? -1,
+        "dtsUs": track["currentDtsUs"] as? Int64 ?? Int64.min,
+        "analysisFrameIndex": track["analysisFrameIndex"] as? Int ?? -1,
+        "frameIdentityMode": track["frameIdentityMode"] as? Int ?? 0,
+        "sourcePacketIndex": track["sourcePacketIndex"] as? Int ?? -1,
+        "sourcePacketSize": track["sourcePacketSize"] as? Int ?? 0,
+        "sourcePacketPos": track["sourcePacketPos"] as? Int64 ?? -1,
+        "sourcePacketPtsUs": track["sourcePacketPtsUs"] as? Int64 ?? Int64.min,
+        "sourcePacketDtsUs": track["sourcePacketDtsUs"] as? Int64 ?? Int64.min,
+      ]
+    }
   }
 
   private func createPlayer(arguments: Any?) -> Any {

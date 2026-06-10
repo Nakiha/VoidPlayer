@@ -8,6 +8,7 @@ import '../analysis/analysis_overlay.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
 import '../l10n/app_localizations.dart';
 import '../track_manager.dart';
+import '../utils/async_guard.dart';
 
 const analysisOverlayControlBarKey = Key('analysis-overlay-control-bar');
 const analysisOverlayOpacityKey = ValueKey('analysis-overlay-opacity');
@@ -51,7 +52,12 @@ class _AnalysisOverlayStripState extends State<AnalysisOverlayStrip> {
     super.initState();
     widget.dataSource.addListener(_handleDataSourceChanged);
     _lastDataSourceSignature = _dataSourceSignature();
-    if (widget.visible) unawaited(_refreshCachedTrackFileIds());
+    if (widget.visible) {
+      fireAndLog(
+        'refresh analysis overlay cached tracks',
+        _refreshCachedTrackFileIds(),
+      );
+    }
   }
 
   @override
@@ -71,7 +77,10 @@ class _AnalysisOverlayStripState extends State<AnalysisOverlayStrip> {
     }
     if (!listEquals(oldWidget.entries, widget.entries) ||
         !oldWidget.visible && widget.visible) {
-      unawaited(_refreshCachedTrackFileIds());
+      fireAndLog(
+        'refresh analysis overlay cached tracks',
+        _refreshCachedTrackFileIds(),
+      );
     }
   }
 
@@ -338,7 +347,9 @@ class _OverlayTypeButtons extends StatelessWidget {
               }
               onChanged(type);
               final activate = onActivateOverlay;
-              if (!panelActive && activate != null) unawaited(activate());
+              if (!panelActive && activate != null) {
+                fireAndLog('activate analysis overlay', activate());
+              }
             },
           ),
       ],

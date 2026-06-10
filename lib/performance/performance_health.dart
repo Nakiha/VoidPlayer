@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../app_log.dart';
 import '../feedback/app_feedback.dart';
 import '../l10n/app_localizations.dart';
 import '../native_player/native_player_api.dart';
@@ -641,7 +642,8 @@ class _PerformanceHealthFeedbackMonitorState
     Map<String, dynamic> diagnostics;
     try {
       diagnostics = await widget.api.getDiagnostics();
-    } catch (_) {
+    } catch (error, stack) {
+      log.fine('performance diagnostics poll failed', error, stack);
       return;
     }
     if (!mounted) return;

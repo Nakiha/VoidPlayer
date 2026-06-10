@@ -123,6 +123,14 @@ void main() {
     Future<void> Function(String url)? onOpenNetworkMedia,
     AnalysisToolbarDataSource? analysisDataSource,
     bool? analysisEnabled,
+    bool canAddTrack = true,
+    bool canRunAnalysis = true,
+    bool localFilePlaybackAvailable = true,
+    bool networkMediaAvailable = true,
+    bool sshRemoteMediaAvailable = true,
+    bool nativeFilePickerAvailable = true,
+    String? addMediaDisabledTooltip,
+    String? analysisDisabledTooltip,
     ActionRegistry? actionRegistry,
     VoidCallback? onTogglePlay,
     VoidCallback? onMarksSidebarToggle,
@@ -147,6 +155,14 @@ void main() {
         tracks: tracks,
         analysisDataSource:
             analysisDataSource ?? _FakeAnalysisToolbarDataSource(),
+        localFilePlaybackAvailable: localFilePlaybackAvailable,
+        networkMediaAvailable: networkMediaAvailable,
+        sshRemoteMediaAvailable: sshRemoteMediaAvailable,
+        nativeFilePickerAvailable: nativeFilePickerAvailable,
+        addMediaDisabledTooltip: addMediaDisabledTooltip,
+        analysisDisabledTooltip: analysisDisabledTooltip,
+        canAddTrack: canAddTrack,
+        canRunAnalysis: canRunAnalysis,
         analysisEnabled: analysisEnabled ?? tracks.isNotEmpty,
         marksSidebarActive: marksSidebarActive,
       ),
@@ -196,6 +212,45 @@ void main() {
 
     await tester.tap(find.text('Add Media'));
     expect(openFileTaps, 1);
+  });
+
+  testWidgets('add media disabled state exposes platform detail tooltip', (
+    tester,
+  ) async {
+    const detail = 'macOS phase 1 does not enable network media playback.';
+
+    await tester.pumpWidget(
+      buildToolbar(
+        tracks: const [],
+        onProfiler: () {},
+        canAddTrack: false,
+        localFilePlaybackAvailable: false,
+        networkMediaAvailable: false,
+        sshRemoteMediaAvailable: false,
+        nativeFilePickerAvailable: false,
+        addMediaDisabledTooltip: detail,
+      ),
+    );
+
+    expect(find.byTooltip(detail), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets('analysis disabled state exposes platform detail tooltip', (
+    tester,
+  ) async {
+    const detail = 'macOS analysis UI/IPC remains capability-gated.';
+
+    await tester.pumpWidget(
+      buildToolbar(
+        tracks: [track()],
+        onProfiler: () {},
+        canRunAnalysis: false,
+        analysisEnabled: false,
+        analysisDisabledTooltip: detail,
+      ),
+    );
+
+    expect(find.byTooltip(detail), findsOneWidget);
   });
 
   testWidgets('marks sidebar toggle invokes the toolbar action', (

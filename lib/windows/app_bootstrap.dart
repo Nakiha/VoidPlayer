@@ -8,40 +8,19 @@ import 'package:window_manager/window_manager.dart' hide WindowManager;
 import '../app.dart';
 import '../app_log.dart';
 import '../config/app_config.dart';
+import '../platform/main_window_shutdown.dart';
 import '../platform/native_file_picker.dart';
 import '../platform/platform_capabilities.dart';
+import '../platform/window_bootstrap_args.dart';
+import '../platform/window_bounds_policy.dart';
 import '../startup_options.dart';
 import 'analysis/analysis_window.dart';
 import 'analysis/ipc/analysis_ipc_client.dart';
 import 'main/main_window_platform.dart';
-import 'main/main_window_shutdown.dart';
 import 'system_accent_watcher.dart';
 import 'win32_pointer_button_state_provider.dart';
 import 'win32ffi.dart';
 import 'window_manager.dart';
-
-({double width, double height})? _parseTestWindowHeader(String scriptPath) {
-  try {
-    final file = File(scriptPath);
-    if (!file.existsSync()) return null;
-    for (final rawLine in file.readAsLinesSync()) {
-      final line = rawLine.trim();
-      if (!line.startsWith('@')) continue;
-      final parts = line.split(',').map((s) => s.trim()).toList();
-      if (parts.isEmpty) continue;
-      final key = parts.first.toUpperCase();
-      if (key == '@WINDOW' && parts.length >= 3) {
-        return (width: double.parse(parts[1]), height: double.parse(parts[2]));
-      }
-    }
-  } catch (_) {
-    // Ignore malformed test header and fall back to normal config handling.
-  }
-  return null;
-}
-
-bool _hasFlag(List<String> args, String name) =>
-    args.any((arg) => arg == name || arg.startsWith('$name='));
 
 const MethodChannel _windowBootstrapChannel = MethodChannel(
   'void_player/window_bootstrap',
@@ -116,9 +95,7 @@ int _currentFlutterRunnerHwnd() {
 Color _getWindowsAccentColor() => Color(Win32FFI.getDwmAccentColorArgb());
 
 bool _isRestorableMainWindowRect(Rect? rect) {
-  if (rect == null) return false;
-  if (rect.width < 520 || rect.height < 360) return false;
-  return Win32FFI.isRectOnScreen(rect);
+  return isRestorableWindowRect(rect, isOnScreen: Win32FFI.isRectOnScreen);
 }
 
 Future<void> _showWindowForModeWithTrace({
@@ -173,15 +150,23 @@ class _CloseHandler with WindowListener {
   @override
   void onWindowClose() async {
     windowManager.removeListener(this);
-    final bounds = await windowManager.getBounds();
-    AppConfig.instance.windowRect = bounds;
-    await AppConfig.instance.save();
+    try {
+      final bounds = await windowManager.getBounds();
+      AppConfig.instance.windowRect = bounds;
+      await AppConfig.instance.save();
+    } catch (error, stack) {
+      log.warning('[Startup] window state save failed', error, stack);
+    }
     try {
       await MainWindowShutdownRegistry.closeGracefully();
-    } catch (e, stack) {
-      log.severe('[Startup] main window shutdown failed', e, stack);
+    } catch (error, stack) {
+      log.severe('[Startup] main window shutdown failed', error, stack);
     }
-    await WindowManager.closeAllAnalysisWindows();
+    try {
+      await WindowManager.closeAllAnalysisWindows();
+    } catch (error, stack) {
+      log.warning('[Startup] analysis window close failed', error, stack);
+    }
     await windowManager.setPreventClose(false);
     await windowManager.close();
   }
@@ -196,7 +181,7 @@ Future<void> _runStandaloneAnalysis(List<String> args) async {
   final hashes = <String>[];
   final fileNames = <String?>[];
   String? testScriptPath;
-  final silentUiTest = _hasFlag(args, '--silent-ui-test');
+  final silentUiTest = hasCliFlag(args, '--silent-ui-test');
   int x = 100, y = 100, width = 800, height = 600;
   int accentColorValue = 0xFF0078D4;
   int? analysisIpcPort;
@@ -314,13 +299,13 @@ Future<void> runVoidPlayer(List<String> args) async {
 
   final startupTrace = _StartupTrace();
   String? testScriptPath;
-  final silentUiTest = _hasFlag(args, '--silent-ui-test');
+  final silentUiTest = hasCliFlag(args, '--silent-ui-test');
   final scriptIdx = args.indexOf('--test-script');
   if (scriptIdx >= 0 && scriptIdx + 1 < args.length) {
     testScriptPath = args[scriptIdx + 1];
   }
   final testWindow = testScriptPath != null
-      ? _parseTestWindowHeader(testScriptPath)
+      ? parseTestWindowHeader(testScriptPath)
       : null;
 
   final startupOptions = StartupOptions.parse(args);
@@ -335,7 +320,7 @@ Future<void> runVoidPlayer(List<String> args) async {
   startupTrace.mark('config initialized');
 
   await windowManager.ensureInitialized();
-  await windowManager.setMinimumSize(const Size(520, 360));
+  await windowManager.setMinimumSize(kMinimumMainWindowSize);
   startupTrace.mark('window manager initialized');
 
   await _applyInitialMainWindowBounds(testWindow: testWindow);

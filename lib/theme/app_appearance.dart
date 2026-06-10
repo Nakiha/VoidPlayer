@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../config/app_settings_repository.dart';
+import '../utils/async_guard.dart';
 
 enum AppThemePreference {
   system('system'),
@@ -115,7 +116,7 @@ class AppAppearanceController extends ChangeNotifier {
     _customAccentSaveTimer?.cancel();
     _customAccentSaveTimer = Timer(const Duration(milliseconds: 400), () {
       _customAccentSaveTimer = null;
-      unawaited(_settings.save());
+      fireAndLog('save custom accent color', _settings.save());
     });
   }
 
@@ -125,7 +126,7 @@ class AppAppearanceController extends ChangeNotifier {
     _customAccentSaveTimer?.cancel();
     _customAccentSaveTimer = null;
     if (hadPendingCustomAccentSave) {
-      unawaited(_settings.save());
+      fireAndLog('save pending custom accent color', _settings.save());
     }
     super.dispose();
   }

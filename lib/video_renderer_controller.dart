@@ -1,3 +1,4 @@
+import 'app_log.dart';
 import 'native_player/native_player_api.dart';
 import 'native_player/native_player_events.dart';
 import 'native_player/native_player_protocol.dart';
@@ -8,6 +9,7 @@ export 'native_player/native_player_protocol.dart';
 
 class NativePlayerController {
   final NativePlayerApi _api;
+  final bool strictCommandOrder;
   int? _textureId;
   bool _disposed = false;
   Future<CreatePlayerResult>? _createInFlight;
@@ -15,8 +17,10 @@ class NativePlayerController {
   Future<void>? _disposeFuture;
   int? _viewportBackgroundColor;
 
-  NativePlayerController({NativePlayerApi? api})
-    : _api = api ?? const MethodChannelNativePlayerApi();
+  NativePlayerController({
+    NativePlayerApi? api,
+    this.strictCommandOrder = false,
+  }) : _api = api ?? const MethodChannelNativePlayerApi();
 
   int? get textureId => _textureId;
   bool get isDisposed => _disposed;
@@ -37,8 +41,12 @@ class NativePlayerController {
     }
   }
 
-  bool _hasPlayerForCommand() {
-    return canAcceptCommands;
+  bool _hasPlayerForCommand(String method) {
+    if (canAcceptCommands) return true;
+    if (strictCommandOrder) {
+      _ensurePlayer(method);
+    }
+    return false;
   }
 
   Future<CreatePlayerResult> createPlayer(
@@ -103,22 +111,24 @@ class NativePlayerController {
   }
 
   Future<void> play() {
-    if (!_hasPlayerForCommand()) return Future.value();
+    if (!_hasPlayerForCommand(NativePlayerMethods.play)) return Future.value();
     return _api.play();
   }
 
   Future<void> pause() {
-    if (!_hasPlayerForCommand()) return Future.value();
+    if (!_hasPlayerForCommand(NativePlayerMethods.pause)) return Future.value();
     return _api.pause();
   }
 
   Future<void> seek(int ptsUs, {int? requestId}) {
-    if (!_hasPlayerForCommand()) return Future.value();
+    if (!_hasPlayerForCommand(NativePlayerMethods.seek)) return Future.value();
     return _api.seek(ptsUs, requestId: requestId);
   }
 
   Future<void> setSpeed(double speed) {
-    if (!_hasPlayerForCommand()) return Future.value();
+    if (!_hasPlayerForCommand(NativePlayerMethods.setSpeed)) {
+      return Future.value();
+    }
     return _api.setSpeed(speed);
   }
 
@@ -127,17 +137,23 @@ class NativePlayerController {
     required int startUs,
     required int endUs,
   }) {
-    if (!_hasPlayerForCommand()) return Future.value();
+    if (!_hasPlayerForCommand(NativePlayerMethods.setLoopRange)) {
+      return Future.value();
+    }
     return _api.setLoopRange(enabled: enabled, startUs: startUs, endUs: endUs);
   }
 
   Future<void> setAudibleTrack(int? fileId) {
-    if (!_hasPlayerForCommand()) return Future.value();
+    if (!_hasPlayerForCommand(NativePlayerMethods.setAudibleTrack)) {
+      return Future.value();
+    }
     return _api.setAudibleTrack(fileId);
   }
 
   Future<void> resize(int width, int height) {
-    if (!_hasPlayerForCommand()) return Future.value();
+    if (!_hasPlayerForCommand(NativePlayerMethods.resize)) {
+      return Future.value();
+    }
     return _api.resize(width: width, height: height);
   }
 
@@ -176,38 +192,63 @@ class NativePlayerController {
   }
 
   Future<void> stepForward() {
-    if (!_hasPlayerForCommand()) return Future.value();
+    if (!_hasPlayerForCommand(NativePlayerMethods.stepForward)) {
+      return Future.value();
+    }
     return _api.stepForward();
   }
 
   Future<void> stepBackward() {
-    if (!_hasPlayerForCommand()) return Future.value();
+    if (!_hasPlayerForCommand(NativePlayerMethods.stepBackward)) {
+      return Future.value();
+    }
     return _api.stepBackward();
   }
 
   Future<int> currentPts() {
-    if (!_hasPlayerForCommand()) return Future.value(0);
+    if (!_hasPlayerForCommand(NativePlayerMethods.currentPts)) {
+      return Future.value(0);
+    }
     return _api.currentPts();
   }
 
   Future<PresentedFrameTiming?> currentPresentedFrame(int fileId) {
-    if (!_hasPlayerForCommand()) return Future.value(null);
+    if (!_hasPlayerForCommand(NativePlayerMethods.currentPresentedFrame)) {
+      return Future.value(null);
+    }
     return _api.currentPresentedFrame(fileId);
   }
 
   Future<int> duration() {
-    if (!_hasPlayerForCommand()) return Future.value(0);
+    if (!_hasPlayerForCommand(NativePlayerMethods.duration)) {
+      return Future.value(0);
+    }
     return _api.duration();
   }
 
   Future<bool> isPlaying() {
-    if (!_hasPlayerForCommand()) return Future.value(false);
+    if (!_hasPlayerForCommand(NativePlayerMethods.isPlaying)) {
+      return Future.value(false);
+    }
     return _api.isPlaying();
+  }
+
+  Future<PlaybackSnapshot> getPlaybackSnapshot({
+    bool includePresentedFrames = false,
+  }) {
+    if (!_hasPlayerForCommand(NativePlayerMethods.getPlaybackSnapshot)) {
+      return Future.value(PlaybackSnapshot.empty);
+    }
+    return _api.getPlaybackSnapshot(
+      includePresentedFrames: includePresentedFrames,
+    );
   }
 
   /// Atomically apply layout state and trigger redraw if paused.
   Future<void> applyLayout(LayoutState state) {
-    if (!_hasPlayerForCommand()) return Future.value();
+    if (!_hasPlayerForCommand(NativePlayerMethods.applyLayout)) {
+      return Future.value();
+    }
     return _api.applyLayout(state);
   }
 
@@ -247,13 +288,17 @@ class NativePlayerController {
 
   /// Get current track info list.
   Future<List<TrackInfo>> getTracks() {
-    if (!_hasPlayerForCommand()) return Future.value(const []);
+    if (!_hasPlayerForCommand(NativePlayerMethods.getTracks)) {
+      return Future.value(const []);
+    }
     return _api.getTracks();
   }
 
   /// Get diagnostics data (placeholder, requires native counters).
   Future<Map<String, dynamic>> getDiagnostics() {
-    if (!_hasPlayerForCommand()) return Future.value(const {});
+    if (!_hasPlayerForCommand(NativePlayerMethods.getDiagnostics)) {
+      return Future.value(const {});
+    }
     return _api.getDiagnostics();
   }
 
@@ -288,7 +333,9 @@ class NativePlayerController {
     if (creating != null) {
       try {
         await creating;
-      } catch (_) {}
+      } catch (error, stack) {
+        log.fine('createPlayer failed before destroy completed', error, stack);
+      }
     }
     final textureId = _textureId;
     _textureId = null;

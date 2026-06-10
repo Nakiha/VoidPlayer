@@ -27,6 +27,7 @@ class NativePlayerMethods {
   static const currentPresentedFrame = 'currentPresentedFrame';
   static const duration = 'duration';
   static const isPlaying = 'isPlaying';
+  static const getPlaybackSnapshot = 'getPlaybackSnapshot';
   static const applyLayout = 'applyLayout';
   static const getLayout = 'getLayout';
   static const addTrack = 'addTrack';
@@ -82,6 +83,10 @@ class NativePlayerKeys {
   static const sourcePacketPos = 'sourcePacketPos';
   static const sourcePacketPtsUs = 'sourcePacketPtsUs';
   static const sourcePacketDtsUs = 'sourcePacketDtsUs';
+  static const currentPtsUs = 'currentPtsUs';
+  static const isPlaying = 'isPlaying';
+  static const includePresentedFrames = 'includePresentedFrames';
+  static const presentedFrames = 'presentedFrames';
   static const requestId = 'requestId';
   static const targetPtsUs = 'targetPtsUs';
   static const speed = 'speed';
@@ -99,16 +104,112 @@ class NativePlayerPayloads {
     String method,
   ) {
     if (map == null) {
-      throw StateError('$method returned invalid payload: null');
+      throw NativeProtocolException(
+        context: method,
+        reason: 'expected a map payload',
+        payload: null,
+      );
     }
     return map;
   }
 
   static TrackInfo trackInfoFromValue(Object? value, String context) {
     if (value is! Map) {
-      throw StateError('$context returned invalid track payload: $value');
+      throw NativeProtocolException(
+        context: context,
+        reason: 'expected a track map payload',
+        payload: value,
+      );
     }
     return TrackInfo.fromMap(Map<dynamic, dynamic>.from(value));
+  }
+
+  static T requireField<T>(
+    Map<dynamic, dynamic> map,
+    String key,
+    String context,
+  ) {
+    final value = map[key];
+    if (value is T) return value;
+    throw NativeProtocolException(
+      context: context,
+      reason: 'expected "$key" to be $T',
+      payload: map,
+    );
+  }
+
+  static T requireValue<T>(Object? value, String context) {
+    if (value is T) return value;
+    throw NativeProtocolException(
+      context: context,
+      reason: 'expected value to be $T',
+      payload: value,
+    );
+  }
+
+  static T optionalField<T>(
+    Map<dynamic, dynamic> map,
+    String key,
+    T defaultValue,
+    String context,
+  ) {
+    final value = map[key];
+    if (value == null) return defaultValue;
+    if (value is T) return value;
+    throw NativeProtocolException(
+      context: context,
+      reason: 'expected "$key" to be $T when present',
+      payload: map,
+    );
+  }
+
+  static int optionalInt(
+    Map<dynamic, dynamic> map,
+    String key,
+    int defaultValue,
+    String context,
+  ) {
+    final value = map[key];
+    if (value == null) return defaultValue;
+    if (value is num) return value.toInt();
+    throw NativeProtocolException(
+      context: context,
+      reason: 'expected "$key" to be numeric when present',
+      payload: map,
+    );
+  }
+
+  static double optionalDouble(
+    Map<dynamic, dynamic> map,
+    String key,
+    double defaultValue,
+    String context,
+  ) {
+    final value = map[key];
+    if (value == null) return defaultValue;
+    if (value is num) return value.toDouble();
+    throw NativeProtocolException(
+      context: context,
+      reason: 'expected "$key" to be numeric when present',
+      payload: map,
+    );
+  }
+}
+
+class NativeProtocolException implements Exception {
+  final String context;
+  final String reason;
+  final Object? payload;
+
+  const NativeProtocolException({
+    required this.context,
+    required this.reason,
+    this.payload,
+  });
+
+  @override
+  String toString() {
+    return 'NativeProtocolException($context): $reason; payload=$payload';
   }
 }
 
@@ -163,6 +264,84 @@ class PresentedFrameTiming {
   bool get isValid => ptsUs >= 0 || hasStableSourceIdentity;
 }
 
+class PlaybackSnapshot {
+  final int currentPtsUs;
+  final int durationUs;
+  final bool isPlaying;
+  final Map<int, PresentedFrameTiming> presentedFrames;
+
+  const PlaybackSnapshot({
+    required this.currentPtsUs,
+    required this.durationUs,
+    required this.isPlaying,
+    this.presentedFrames = const {},
+  });
+
+  static const empty = PlaybackSnapshot(
+    currentPtsUs: 0,
+    durationUs: 0,
+    isPlaying: false,
+  );
+
+  factory PlaybackSnapshot.fromMap(Map<dynamic, dynamic> map) {
+    const context = NativePlayerMethods.getPlaybackSnapshot;
+    return PlaybackSnapshot(
+      currentPtsUs: NativePlayerPayloads.requireField<int>(
+        map,
+        NativePlayerKeys.currentPtsUs,
+        context,
+      ),
+      durationUs: NativePlayerPayloads.requireField<int>(
+        map,
+        NativePlayerKeys.durationUs,
+        context,
+      ),
+      isPlaying: NativePlayerPayloads.requireField<bool>(
+        map,
+        NativePlayerKeys.isPlaying,
+        context,
+      ),
+      presentedFrames: _presentedFramesFromValue(
+        map[NativePlayerKeys.presentedFrames],
+      ),
+    );
+  }
+
+  static Map<int, PresentedFrameTiming> _presentedFramesFromValue(
+    Object? value,
+  ) {
+    if (value == null) return const {};
+    if (value is! List) {
+      throw NativeProtocolException(
+        context: NativePlayerMethods.getPlaybackSnapshot,
+        reason: 'expected "presentedFrames" to be a list when present',
+        payload: value,
+      );
+    }
+    final frames = <int, PresentedFrameTiming>{};
+    for (final item in value) {
+      if (item is! Map) {
+        throw NativeProtocolException(
+          context: NativePlayerMethods.getPlaybackSnapshot,
+          reason: 'expected presented frame entry to be a map',
+          payload: item,
+        );
+      }
+      final map = Map<dynamic, dynamic>.from(item);
+      final fileId = NativePlayerPayloads.requireField<int>(
+        map,
+        NativePlayerKeys.fileId,
+        NativePlayerMethods.getPlaybackSnapshot,
+      );
+      final timing = PresentedFrameTiming.fromMap(map);
+      if (timing.isValid) {
+        frames[fileId] = timing;
+      }
+    }
+    return Map.unmodifiable(frames);
+  }
+}
+
 /// Layout mode constants matching native defines.
 class LayoutMode {
   static const int sideBySide = 0;
@@ -204,20 +383,78 @@ class TrackInfo {
     this.decoderName = '',
   });
 
-  factory TrackInfo.fromMap(Map<dynamic, dynamic> map) => TrackInfo(
-    fileId: map[NativePlayerKeys.fileId] as int,
-    slot: map[NativePlayerKeys.slot] as int,
-    path: map[NativePlayerKeys.path] as String,
-    width: map[NativePlayerKeys.width] as int,
-    height: map[NativePlayerKeys.height] as int,
-    durationUs: map[NativePlayerKeys.durationUs] as int? ?? 0,
-    startTimeUs: map[NativePlayerKeys.startTimeUs] as int? ?? 0,
-    bitRate: map[NativePlayerKeys.bitRate] as int? ?? 0,
-    formatName: map[NativePlayerKeys.formatName] as String? ?? '',
-    codecName: map[NativePlayerKeys.codecName] as String? ?? '',
-    codecLongName: map[NativePlayerKeys.codecLongName] as String? ?? '',
-    decoderName: map[NativePlayerKeys.decoderName] as String? ?? '',
-  );
+  factory TrackInfo.fromMap(Map<dynamic, dynamic> map) {
+    const context = 'TrackInfo';
+    return TrackInfo(
+      fileId: NativePlayerPayloads.requireField<int>(
+        map,
+        NativePlayerKeys.fileId,
+        context,
+      ),
+      slot: NativePlayerPayloads.requireField<int>(
+        map,
+        NativePlayerKeys.slot,
+        context,
+      ),
+      path: NativePlayerPayloads.requireField<String>(
+        map,
+        NativePlayerKeys.path,
+        context,
+      ),
+      width: NativePlayerPayloads.requireField<int>(
+        map,
+        NativePlayerKeys.width,
+        context,
+      ),
+      height: NativePlayerPayloads.requireField<int>(
+        map,
+        NativePlayerKeys.height,
+        context,
+      ),
+      durationUs: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.durationUs,
+        0,
+        context,
+      ),
+      startTimeUs: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.startTimeUs,
+        0,
+        context,
+      ),
+      bitRate: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.bitRate,
+        0,
+        context,
+      ),
+      formatName: NativePlayerPayloads.optionalField<String>(
+        map,
+        NativePlayerKeys.formatName,
+        '',
+        context,
+      ),
+      codecName: NativePlayerPayloads.optionalField<String>(
+        map,
+        NativePlayerKeys.codecName,
+        '',
+        context,
+      ),
+      codecLongName: NativePlayerPayloads.optionalField<String>(
+        map,
+        NativePlayerKeys.codecLongName,
+        '',
+        context,
+      ),
+      decoderName: NativePlayerPayloads.optionalField<String>(
+        map,
+        NativePlayerKeys.decoderName,
+        '',
+        context,
+      ),
+    );
+  }
 }
 
 /// Result of createPlayer, containing texture ID and initial track info.
@@ -228,17 +465,17 @@ class CreatePlayerResult {
   const CreatePlayerResult({required this.textureId, required this.tracks});
 
   factory CreatePlayerResult.fromMap(Map<dynamic, dynamic> payload) {
-    final textureId = payload[NativePlayerKeys.textureId];
-    if (textureId is! int) {
-      throw StateError(
-        'createPlayer returned invalid textureId: '
-        '${payload[NativePlayerKeys.textureId]}',
-      );
-    }
+    final textureId = NativePlayerPayloads.requireField<int>(
+      payload,
+      NativePlayerKeys.textureId,
+      NativePlayerMethods.createPlayer,
+    );
     final tracksValue = payload[NativePlayerKeys.tracks];
     if (tracksValue != null && tracksValue is! List) {
-      throw StateError(
-        'createPlayer returned invalid tracks payload: $tracksValue',
+      throw NativeProtocolException(
+        context: NativePlayerMethods.createPlayer,
+        reason: 'expected "tracks" to be a list when present',
+        payload: payload,
       );
     }
     final tracksList = tracksValue as List<dynamic>? ?? [];
@@ -282,38 +519,86 @@ class ViewportCapture {
     this.outputPath,
   });
 
-  factory ViewportCapture.fromMap(Map<dynamic, dynamic> map) => ViewportCapture(
-    hash: map[NativePlayerKeys.hash] as String,
-    width: map[NativePlayerKeys.width] as int,
-    height: map[NativePlayerKeys.height] as int,
-    avgLuma: (map[NativePlayerKeys.avgLuma] as num?)?.toDouble() ?? 0.0,
-    nonBlackRatio:
-        (map[NativePlayerKeys.nonBlackRatio] as num?)?.toDouble() ?? 0.0,
-    regionAvgLuma: _doubleMap(map[NativePlayerKeys.regionAvgLuma]),
-    regionNonBlackRatio: _doubleMap(map[NativePlayerKeys.regionNonBlackRatio]),
-    overlayLineStyleMetricsAvailable:
-        map.containsKey(NativePlayerKeys.overlayLinePairedCenters) &&
-        map.containsKey(NativePlayerKeys.overlayLineWeakWhiteCenters) &&
-        map.containsKey(NativePlayerKeys.overlayLineBlackOnlyCenters),
-    overlayLinePairedCenters:
-        (map[NativePlayerKeys.overlayLinePairedCenters] as num?)?.toInt() ?? 0,
-    overlayLineWeakWhiteCenters:
-        (map[NativePlayerKeys.overlayLineWeakWhiteCenters] as num?)?.toInt() ??
+  factory ViewportCapture.fromMap(Map<dynamic, dynamic> map) {
+    const context = 'ViewportCapture';
+    return ViewportCapture(
+      hash: NativePlayerPayloads.requireField<String>(
+        map,
+        NativePlayerKeys.hash,
+        context,
+      ),
+      width: NativePlayerPayloads.requireField<int>(
+        map,
+        NativePlayerKeys.width,
+        context,
+      ),
+      height: NativePlayerPayloads.requireField<int>(
+        map,
+        NativePlayerKeys.height,
+        context,
+      ),
+      avgLuma: NativePlayerPayloads.optionalDouble(
+        map,
+        NativePlayerKeys.avgLuma,
+        0.0,
+        context,
+      ),
+      nonBlackRatio: NativePlayerPayloads.optionalDouble(
+        map,
+        NativePlayerKeys.nonBlackRatio,
+        0.0,
+        context,
+      ),
+      regionAvgLuma: _doubleMap(map[NativePlayerKeys.regionAvgLuma]),
+      regionNonBlackRatio: _doubleMap(
+        map[NativePlayerKeys.regionNonBlackRatio],
+      ),
+      overlayLineStyleMetricsAvailable:
+          map.containsKey(NativePlayerKeys.overlayLinePairedCenters) &&
+          map.containsKey(NativePlayerKeys.overlayLineWeakWhiteCenters) &&
+          map.containsKey(NativePlayerKeys.overlayLineBlackOnlyCenters),
+      overlayLinePairedCenters: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.overlayLinePairedCenters,
         0,
-    overlayLineBlackOnlyCenters:
-        (map[NativePlayerKeys.overlayLineBlackOnlyCenters] as num?)?.toInt() ??
+        context,
+      ),
+      overlayLineWeakWhiteCenters: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.overlayLineWeakWhiteCenters,
         0,
-    outputPath: map[NativePlayerKeys.outputPath] as String?,
-  );
+        context,
+      ),
+      overlayLineBlackOnlyCenters: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.overlayLineBlackOnlyCenters,
+        0,
+        context,
+      ),
+      outputPath: NativePlayerPayloads.optionalField<String?>(
+        map,
+        NativePlayerKeys.outputPath,
+        null,
+        context,
+      ),
+    );
+  }
 }
 
 Map<String, double> _doubleMap(Object? raw) {
   if (raw is! Map) {
     return const {};
   }
-  return raw.map(
-    (key, value) => MapEntry('$key', (value as num?)?.toDouble() ?? 0.0),
-  );
+  return raw.map((key, value) {
+    if (value is! num) {
+      throw NativeProtocolException(
+        context: 'ViewportCapture',
+        reason: 'expected region metric "$key" to be numeric',
+        payload: raw,
+      );
+    }
+    return MapEntry('$key', value.toDouble());
+  });
 }
 
 /// Immutable snapshot of the layout state.
@@ -354,22 +639,69 @@ class LayoutState {
     NativePlayerKeys.order: order,
   };
 
-  factory LayoutState.fromMap(Map<dynamic, dynamic> map) => LayoutState(
-    mode:
-        (map[NativePlayerKeys.mode] as num?)?.toInt() ?? LayoutMode.sideBySide,
-    splitPos: (map[NativePlayerKeys.splitPos] as num?)?.toDouble() ?? 0.5,
-    zoomRatio: (map[NativePlayerKeys.zoomRatio] as num?)?.toDouble() ?? 1.0,
-    viewOffsetX: (map[NativePlayerKeys.viewOffsetX] as num?)?.toDouble() ?? 0.0,
-    viewOffsetY: (map[NativePlayerKeys.viewOffsetY] as num?)?.toDouble() ?? 0.0,
-    pixelSizeMode:
-        (map[NativePlayerKeys.pixelSizeMode] as num?)?.toInt() ??
+  factory LayoutState.fromMap(Map<dynamic, dynamic> map) {
+    const context = 'LayoutState';
+    final orderValue = map[NativePlayerKeys.order];
+    if (orderValue != null && orderValue is! List) {
+      throw NativeProtocolException(
+        context: context,
+        reason: 'expected "order" to be a list when present',
+        payload: map,
+      );
+    }
+    final orderList = orderValue as List<dynamic>?;
+    final List<int> order = orderList == null
+        ? const [0, 1, 2, 3]
+        : orderList.map<int>((Object? entry) {
+            if (entry is! num) {
+              throw NativeProtocolException(
+                context: context,
+                reason: 'expected "order" entries to be numeric',
+                payload: map,
+              );
+            }
+            return entry.toInt();
+          }).toList();
+    return LayoutState(
+      mode: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.mode,
+        LayoutMode.sideBySide,
+        context,
+      ),
+      splitPos: NativePlayerPayloads.optionalDouble(
+        map,
+        NativePlayerKeys.splitPos,
+        0.5,
+        context,
+      ),
+      zoomRatio: NativePlayerPayloads.optionalDouble(
+        map,
+        NativePlayerKeys.zoomRatio,
+        1.0,
+        context,
+      ),
+      viewOffsetX: NativePlayerPayloads.optionalDouble(
+        map,
+        NativePlayerKeys.viewOffsetX,
+        0.0,
+        context,
+      ),
+      viewOffsetY: NativePlayerPayloads.optionalDouble(
+        map,
+        NativePlayerKeys.viewOffsetY,
+        0.0,
+        context,
+      ),
+      pixelSizeMode: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.pixelSizeMode,
         LayoutPixelSizeMode.uniformVideoPixels,
-    order:
-        (map[NativePlayerKeys.order] as List<dynamic>?)
-            ?.map((e) => (e as num).toInt())
-            .toList() ??
-        const [0, 1, 2, 3],
-  );
+        context,
+      ),
+      order: order,
+    );
+  }
 
   LayoutState copyWith({
     int? mode,

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'actions/action_registry.dart';
@@ -14,6 +15,7 @@ import 'platform/system_accent_watcher.dart';
 import 'preferences/app_config_playback_preferences.dart';
 import 'startup_options.dart';
 import 'theme/app_appearance.dart';
+import 'theme/app_typography.dart';
 import 'windows/main/main_window.dart';
 
 class VoidPlayerApp extends StatefulWidget {
@@ -46,15 +48,6 @@ class VoidPlayerApp extends StatefulWidget {
 }
 
 class _VoidPlayerAppState extends State<VoidPlayerApp> {
-  static const _fontFamily = 'Segoe UI';
-  static const _fontFamilyFallback = [
-    'Microsoft YaHei UI',
-    'Microsoft YaHei',
-    'Microsoft JhengHei UI',
-    'Microsoft JhengHei',
-    'SimSun',
-  ];
-
   late final ActionRegistry _actionRegistry = ActionRegistry();
   late final AppFeedbackController _feedbackController =
       AppFeedbackController();
@@ -96,6 +89,7 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
       animation: _appearance,
       builder: (context, _) {
         final accentColor = _appearance.accentColor;
+        final typography = AppTypography.forPlatform(defaultTargetPlatform);
         return AppFeedbackScope(
           controller: _feedbackController,
           child: AppSettingsScope(
@@ -109,8 +103,8 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
                 themeAnimationDuration: const Duration(milliseconds: 180),
                 themeAnimationCurve: Curves.easeOutCubic,
                 theme: ThemeData(
-                  fontFamily: _fontFamily,
-                  fontFamilyFallback: _fontFamilyFallback,
+                  fontFamily: typography.fontFamily,
+                  fontFamilyFallback: typography.fontFamilyFallback,
                   tooltipTheme: const TooltipThemeData(
                     excludeFromSemantics: true,
                   ),
@@ -120,8 +114,8 @@ class _VoidPlayerAppState extends State<VoidPlayerApp> {
                   ),
                 ),
                 darkTheme: ThemeData(
-                  fontFamily: _fontFamily,
-                  fontFamilyFallback: _fontFamilyFallback,
+                  fontFamily: typography.fontFamily,
+                  fontFamilyFallback: typography.fontFamilyFallback,
                   tooltipTheme: const TooltipThemeData(
                     excludeFromSemantics: true,
                   ),

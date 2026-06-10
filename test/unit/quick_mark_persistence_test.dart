@@ -142,4 +142,28 @@ void main() {
     expect(loaded.single.fileId, 99);
     expect(loaded.single.text, 'same bytes');
   });
+
+  test('uses stable media id fallback when media file is missing', () async {
+    final missingPath = p.join(dir.path, 'missing', 'offline.mp4');
+
+    await repository.saveForMediaRefs(
+      [QuickMarkMediaRef(fileId: 1, path: missingPath)],
+      const [
+        QuickMark(
+          id: 1,
+          anchor: QuickMarkAnchor(fileId: 1, ptsUs: 1000, dtsUs: 1000),
+          sourceRect: Rect.zero,
+          text: 'offline',
+        ),
+      ],
+    );
+
+    final loaded = await repository.loadForMediaRefs([
+      QuickMarkMediaRef(fileId: 9, path: missingPath),
+    ]);
+
+    expect(loaded, hasLength(1));
+    expect(loaded.single.fileId, 9);
+    expect(loaded.single.text, 'offline');
+  });
 }

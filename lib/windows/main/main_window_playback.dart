@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../../app_log.dart';
 import '../../marks/quick_mark.dart';
@@ -56,7 +57,9 @@ class MainWindowPlaybackCoordinator {
   }) {
     _nativeEventSubscription = controller.events.listen(
       _handleNativePlayerEvent,
-      onError: (_) {},
+      onError: (Object error, StackTrace stack) {
+        log.warning('Native player event stream failed', error, stack);
+      },
     );
   }
 
@@ -136,12 +139,12 @@ class MainWindowPlaybackCoordinator {
     _loopRangeSyncSerial++;
   }
 
-  void togglePlayPause() {
+  Future<void> togglePlayPause() async {
     if (_disposed) return;
     if (isPlaying()) {
-      unawaited(pause());
+      await pause();
     } else {
-      unawaited(play());
+      await play();
     }
   }
 
@@ -193,7 +196,12 @@ class MainWindowPlaybackCoordinator {
     int steppedPtsUs;
     try {
       steppedPtsUs = await controller.currentPts();
-    } catch (_) {
+    } catch (error, stack) {
+      log.warning(
+        'step playback current PTS fallback: forward=$forward',
+        error,
+        stack,
+      );
       steppedPtsUs = currentPtsUs();
     }
     if (_disposed || !mounted()) return;
@@ -221,7 +229,11 @@ class MainWindowPlaybackCoordinator {
 
   void seekTo(int ptsUs) {
     if (_disposed) return;
-    unawaited(_seekToAsync(ptsUs).catchError((_) {}));
+    unawaited(
+      _seekToAsync(ptsUs).catchError((Object error, StackTrace stack) {
+        log.warning('seek failed: targetPtsUs=$ptsUs', error, stack);
+      }),
+    );
   }
 
   Future<void> seekToAndWait(int ptsUs) {
@@ -273,7 +285,15 @@ class MainWindowPlaybackCoordinator {
         'Seek preview event timed out; refreshing overlay by current frame '
         'fallback (requestId=$seekSerial, targetPtsUs=$targetPtsUs)',
       );
-      unawaited(seekSettled(targetPtsUs).catchError((_) {}));
+      unawaited(
+        seekSettled(targetPtsUs).catchError((Object error, StackTrace stack) {
+          log.warning(
+            'seek settled fallback failed: targetPtsUs=$targetPtsUs',
+            error,
+            stack,
+          );
+        }),
+      );
     });
   }
 
@@ -292,7 +312,13 @@ class MainWindowPlaybackCoordinator {
         trackFileId: event.trackFileId!,
         ptsUs: event.ptsUs!,
         dtsUs: event.dtsUs!,
-      ).catchError((_) {}),
+      ).catchError((Object error, StackTrace stack) {
+        log.warning(
+          'seek preview callback failed: requestId=$requestId',
+          error,
+          stack,
+        );
+      }),
     );
   }
 
@@ -376,7 +402,9 @@ class MainWindowPlaybackCoordinator {
     var pts = pendingSeekUs() ?? currentPtsUs();
     try {
       pts = await controller.currentPts();
-    } catch (_) {}
+    } catch (error, stack) {
+      log.fine('loop boundary currentPts fallback failed', error, stack);
+    }
 
     if (_disposed || !mounted() || !loopRangeEnabled() || !isPlaying()) return;
     if (pts < endUs - 12000) {
@@ -390,18 +418,13 @@ class MainWindowPlaybackCoordinator {
     if (_disposed || textureId() == null) return;
     final serial = ++_pollSerial;
     try {
-      final results = await Future.wait([
-        controller.currentPts(),
-        controller.duration(),
-        controller.isPlaying(),
-        _pollPresentedFrameAnchors(),
-      ]);
+      final snapshot = await _pollPlaybackSnapshot();
       if (_disposed || !mounted() || serial != _pollSerial) return;
 
-      var pts = results[0] as int;
-      final dur = results[1] as int;
-      final playing = results[2] as bool;
-      var presentedFrameAnchors = results[3] as Map<int, QuickMarkAnchor>?;
+      var pts = snapshot.currentPtsUs;
+      final dur = snapshot.durationUs;
+      final playing = snapshot.isPlaying;
+      var presentedFrameAnchors = _anchorsFromSnapshot(snapshot);
       final seekUs = pendingSeekUs();
       if (seekUs != null) {
         final seekAge = pendingSeekAt() == null
@@ -456,13 +479,64 @@ class MainWindowPlaybackCoordinator {
       } else {
         cancelLoopBoundaryTimer();
       }
-    } catch (_) {}
+    } catch (error, stack) {
+      log.fine('playback poll failed', error, stack);
+    }
   }
 
-  Future<Map<int, QuickMarkAnchor>?> _pollPresentedFrameAnchors() async {
-    if (_state.quickMarks.isEmpty && _state.quickMarkDraft == null) {
-      return null;
+  Future<PlaybackSnapshot> _pollPlaybackSnapshot() async {
+    final includePresentedFrames = _needsPresentedFrameAnchors;
+    try {
+      return await controller.getPlaybackSnapshot(
+        includePresentedFrames: includePresentedFrames,
+      );
+    } on MissingPluginException {
+      return _pollLegacyPlaybackSnapshot(
+        includePresentedFrames: includePresentedFrames,
+      );
     }
+  }
+
+  Future<PlaybackSnapshot> _pollLegacyPlaybackSnapshot({
+    required bool includePresentedFrames,
+  }) async {
+    final results = await Future.wait([
+      controller.currentPts(),
+      controller.duration(),
+      controller.isPlaying(),
+      if (includePresentedFrames) _pollPresentedFrameTimings(),
+    ]);
+    final presentedFrames = includePresentedFrames
+        ? results[3] as Map<int, PresentedFrameTiming?>
+        : const <int, PresentedFrameTiming?>{};
+    return PlaybackSnapshot(
+      currentPtsUs: results[0] as int,
+      durationUs: results[1] as int,
+      isPlaying: results[2] as bool,
+      presentedFrames: {
+        for (final entry in presentedFrames.entries)
+          if (entry.value?.isValid ?? false) entry.key: entry.value!,
+      },
+    );
+  }
+
+  bool get _needsPresentedFrameAnchors =>
+      _state.quickMarks.isNotEmpty || _state.quickMarkDraft != null;
+
+  Map<int, QuickMarkAnchor>? _anchorsFromSnapshot(PlaybackSnapshot snapshot) {
+    if (!_needsPresentedFrameAnchors) return null;
+    if (trackManager.isEmpty) return const {};
+    return {
+      for (final entry in trackManager.entries)
+        entry.info.fileId: QuickMarkAnchor.fromPresentedFrame(
+          fileId: entry.info.fileId,
+          timing: snapshot.presentedFrames[entry.info.fileId],
+          fallbackPtsUs: snapshot.currentPtsUs,
+        ),
+    };
+  }
+
+  Future<Map<int, PresentedFrameTiming?>> _pollPresentedFrameTimings() async {
     if (trackManager.isEmpty) return const {};
     final entries = trackManager.entries.toList(growable: false);
     final timings = await Future.wait([
@@ -471,18 +545,19 @@ class MainWindowPlaybackCoordinator {
     ]);
     return {
       for (var i = 0; i < entries.length; i++)
-        entries[i].info.fileId: QuickMarkAnchor.fromPresentedFrame(
-          fileId: entries[i].info.fileId,
-          timing: timings[i],
-          fallbackPtsUs: currentPtsUs(),
-        ),
+        entries[i].info.fileId: timings[i],
     };
   }
 
   Future<PresentedFrameTiming?> _safeCurrentPresentedFrame(int fileId) async {
     try {
       return await controller.currentPresentedFrame(fileId);
-    } catch (_) {
+    } catch (error, stack) {
+      log.fine(
+        'current presented frame poll failed: fileId=$fileId',
+        error,
+        stack,
+      );
       return null;
     }
   }
@@ -620,7 +695,13 @@ class MainWindowPlaybackCoordinator {
               scheduleLoopBoundaryTimer();
             }
           })
-          .catchError((_) {
+          .catchError((Object error, StackTrace stack) {
+            log.warning(
+              'native loop range sync failed: enabled=$enabled '
+              'startUs=$startUs endUs=$endUs',
+              error,
+              stack,
+            );
             if (_disposed || !mounted() || serial != _loopRangeSyncSerial) {
               return;
             }

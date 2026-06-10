@@ -62,7 +62,7 @@ void main() {
           'textureId': 1,
           'tracks': 'not-a-list',
         }),
-        throwsStateError,
+        throwsA(isA<NativeProtocolException>()),
       );
     });
   });
@@ -104,6 +104,23 @@ void main() {
       await controller.seek(123);
 
       expect(api.calls, isEmpty);
+    });
+
+    test('delegates playback snapshot after player creation', () async {
+      final api = _FakeNativePlayerApi();
+      final controller = NativePlayerController(api: api);
+
+      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
+      final snapshot = await controller.getPlaybackSnapshot(
+        includePresentedFrames: true,
+      );
+
+      expect(snapshot.currentPtsUs, 1234);
+      expect(snapshot.presentedFrames[1]?.ptsUs, 1234);
+      expect(api.calls, [
+        'createPlayer:320x180:a.mp4',
+        'getPlaybackSnapshot:true',
+      ]);
     });
 
     test('passes cached viewport background into player creation', () async {
@@ -285,6 +302,21 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   Future<bool> isPlaying() async {
     calls.add('isPlaying');
     return false;
+  }
+
+  @override
+  Future<PlaybackSnapshot> getPlaybackSnapshot({
+    bool includePresentedFrames = false,
+  }) async {
+    calls.add('getPlaybackSnapshot:$includePresentedFrames');
+    return PlaybackSnapshot(
+      currentPtsUs: 1234,
+      durationUs: 5000,
+      isPlaying: false,
+      presentedFrames: includePresentedFrames
+          ? const {1: PresentedFrameTiming(ptsUs: 1234, dtsUs: 1200)}
+          : const {},
+    );
   }
 
   @override

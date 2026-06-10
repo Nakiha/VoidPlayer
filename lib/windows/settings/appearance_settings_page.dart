@@ -1,10 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_appearance.dart';
+import '../../utils/async_guard.dart';
 import 'settings_page_style.dart';
 
 class AppearanceSettingsPage extends StatelessWidget {
@@ -48,7 +47,10 @@ class _AppearanceSettingsContent extends StatelessWidget {
               AppThemePreference.dark => l.darkMode,
             },
             onChanged: (value) {
-              unawaited(controller.setThemePreference(value));
+              fireAndLog(
+                'set theme preference',
+                controller.setThemePreference(value),
+              );
             },
           ),
           SettingsPageStyle.contentGap,
@@ -62,7 +64,10 @@ class _AppearanceSettingsContent extends StatelessWidget {
               AppAccentPreference.custom => l.custom,
             },
             onChanged: (value) {
-              unawaited(controller.setAccentPreference(value));
+              fireAndLog(
+                'set accent preference',
+                controller.setAccentPreference(value),
+              );
             },
           ),
           AnimatedSize(
@@ -75,7 +80,10 @@ class _AppearanceSettingsContent extends StatelessWidget {
                     child: _AccentColorPicker(
                       color: controller.customAccentColor,
                       onChanged: (color) {
-                        unawaited(controller.setCustomAccentColor(color));
+                        fireAndLog(
+                          'set custom accent color',
+                          controller.setCustomAccentColor(color),
+                        );
                       },
                     ),
                   )

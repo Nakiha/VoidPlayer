@@ -107,7 +107,7 @@ class MainWindowActionCoordinator {
 class MainWindowActionBinder {
   final ActionRegistry actionRegistry;
   final SessionCapabilities Function() capabilities;
-  final void Function() togglePlayPause;
+  final FutureOr<void> Function() togglePlayPause;
   final Future<void> Function() play;
   final Future<void> Function() pause;
   final Future<void> Function() stepForward;

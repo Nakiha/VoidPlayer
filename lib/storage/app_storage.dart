@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../analysis/analysis_cache.dart';
+import '../app_log.dart';
 import '../app_paths.dart';
 import 'storage_catalog.dart';
 
@@ -158,9 +159,10 @@ class AppStorage {
         StorageCatalog(
           databasePath: databasePath,
         ).reconcileMissingThumbnailFiles();
-      } catch (_) {
+      } catch (error, stack) {
         // The settings page should keep opening if a developer manually leaves
         // an old or corrupt catalog behind.
+        log.warning('mark storage catalog reconciliation failed', error, stack);
       }
     }
     final catalog = File(databasePath).existsSync()
@@ -298,8 +300,13 @@ class AppStorage {
         StorageCatalog(
           databasePath: databasePath,
         ).reconcileMissingThumbnailFiles();
-      } catch (_) {
+      } catch (error, stack) {
         // Keep file cleanup independent from catalog health.
+        log.warning(
+          'mark thumbnail catalog reconciliation failed after cleanup',
+          error,
+          stack,
+        );
       }
     }
     return MarkThumbnailClearResult(

@@ -96,6 +96,9 @@ private:
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void IsPlaying(
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void GetPlaybackSnapshot(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void ApplyLayout(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);

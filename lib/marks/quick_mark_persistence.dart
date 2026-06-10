@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
 import '../analysis/file_hash.dart';
+import '../app_log.dart';
 import '../app_paths.dart';
 import '../storage/storage_catalog.dart';
 import 'quick_mark.dart';
@@ -98,7 +99,13 @@ class SqliteQuickMarkRepository implements QuickMarkRepository {
                 anchor: mark.anchor.copyWith(fileId: mediaRef.fileId),
               ),
             );
-          } catch (_) {
+          } catch (error, stack) {
+            logWarning(
+              '[QuickMarkRepository] skipped invalid mark payload: '
+              'mediaHash=${row['media_hash']}',
+              error,
+              stack,
+            );
             continue;
           }
         }
@@ -149,9 +156,9 @@ class SqliteQuickMarkRepository implements QuickMarkRepository {
           insert.close();
         }
         db.execute('COMMIT');
-      } catch (_) {
+      } catch (error, stack) {
         db.execute('ROLLBACK');
-        rethrow;
+        Error.throwWithStackTrace(error, stack);
       }
     } finally {
       db.close();
@@ -192,8 +199,13 @@ class SqliteQuickMarkRepository implements QuickMarkRepository {
     try {
       final file = File(ref.path);
       if (await file.exists()) return computeFileSha256(ref.path);
-    } catch (_) {
-      // Fall back to the stable media id for missing or inaccessible files.
+    } catch (error, stack) {
+      logFine(
+        '[QuickMarkRepository] media hash fallback: '
+        'path=${ref.path} mediaId=${ref.mediaId}',
+        error,
+        stack,
+      );
     }
     return QuickMarkMediaRef.fallbackHashForMediaId(ref.mediaId);
   }
@@ -237,7 +249,13 @@ class SqliteQuickMarkRepository implements QuickMarkRepository {
           modifiedMs: stat.modified.millisecondsSinceEpoch,
         );
       }
-    } catch (_) {}
+    } catch (error, stack) {
+      logFine(
+        '[QuickMarkRepository] file stat fallback: path=$path',
+        error,
+        stack,
+      );
+    }
     return (size: 0, modifiedMs: 0);
   }
 }

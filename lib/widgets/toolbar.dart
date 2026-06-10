@@ -8,6 +8,7 @@ import '../analysis/analysis_toolbar_data_source.dart';
 import '../feedback/app_feedback.dart';
 import '../l10n/app_localizations.dart';
 import '../track_manager.dart';
+import '../utils/async_guard.dart';
 import 'app_menu_combo.dart';
 import 'open_network_stream_dialog.dart';
 import 'open_ssh_remote_file_dialog.dart';
@@ -38,6 +39,8 @@ class AppToolBar extends StatelessWidget {
   final bool networkMediaAvailable;
   final bool sshRemoteMediaAvailable;
   final bool nativeFilePickerAvailable;
+  final String? addMediaDisabledTooltip;
+  final String? analysisDisabledTooltip;
   final bool canAddTrack;
   final bool canOpenLocalMedia;
   final bool canOpenNetworkMedia;
@@ -70,6 +73,8 @@ class AppToolBar extends StatelessWidget {
     this.networkMediaAvailable = true,
     this.sshRemoteMediaAvailable = true,
     this.nativeFilePickerAvailable = true,
+    this.addMediaDisabledTooltip,
+    this.analysisDisabledTooltip,
     this.canAddTrack = true,
     this.canOpenLocalMedia = true,
     this.canOpenNetworkMedia = true,
@@ -112,7 +117,9 @@ class AppToolBar extends StatelessWidget {
                 canAddTrack && canOpenNetworkMedia && networkMediaAvailable,
             sshRemoteMediaEnabled:
                 canAddTrack && canOpenSshMedia && sshRemoteMediaAvailable,
-            disabledTooltip: 'Playback is not available on this platform yet.',
+            disabledTooltip:
+                addMediaDisabledTooltip ??
+                'Playback is not available on this platform yet.',
             onOpenFile: onOpenFile,
             onOpenNetworkMedia: onOpenNetworkMedia,
             onOpenSshRemoteMedia: onOpenSshRemoteMedia,
@@ -140,6 +147,7 @@ class AppToolBar extends StatelessWidget {
             enabled: canRunAnalysis && analysisEnabled,
             tracks: tracks,
             dataSource: analysisDataSource,
+            disabledTooltip: analysisDisabledTooltip,
             onPressed: onAnalysis,
           ),
           const SizedBox(width: 4),
@@ -219,7 +227,10 @@ class _AddMediaButton extends StatelessWidget {
             children: [
               InkWell(
                 onTap: anyEnabled
-                    ? () => unawaited(_openFirstEnabled(context))
+                    ? () => fireAndLog(
+                        'open first enabled media source',
+                        _openFirstEnabled(context),
+                      )
                     : null,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
@@ -273,11 +284,20 @@ class _AddMediaButton extends StatelessWidget {
                         onChanged: (choice) {
                           switch (choice) {
                             case _AddMediaChoice.localFile:
-                              unawaited(_openLocalFile(context));
+                              fireAndLog(
+                                'open local media',
+                                _openLocalFile(context),
+                              );
                             case _AddMediaChoice.networkStream:
-                              unawaited(_openNetworkDialog(context));
+                              fireAndLog(
+                                'open network media dialog',
+                                _openNetworkDialog(context),
+                              );
                             case _AddMediaChoice.sshRemoteFile:
-                              unawaited(_openSshDialog(context));
+                              fireAndLog(
+                                'open SSH media dialog',
+                                _openSshDialog(context),
+                              );
                           }
                         },
                         menuTextStyle: theme.textTheme.bodySmall,
@@ -509,12 +529,14 @@ class _AnalysisButton extends StatefulWidget {
   final bool enabled;
   final List<TrackEntry> tracks;
   final AnalysisToolbarDataSource dataSource;
+  final String? disabledTooltip;
   final Future<void> Function() onPressed;
 
   const _AnalysisButton({
     required this.enabled,
     required this.tracks,
     required this.dataSource,
+    this.disabledTooltip,
     required this.onPressed,
   });
 
@@ -574,6 +596,10 @@ class _AnalysisButtonState extends State<_AnalysisButton>
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    final tooltip = widget.enabled
+        ? l.analysisClickToAnalyze
+        : widget.disabledTooltip ?? l.analysisClickToAnalyze;
     return MouseRegion(
       onEnter: (_) {
         _hoveringButton = true;
@@ -585,28 +611,31 @@ class _AnalysisButtonState extends State<_AnalysisButton>
       },
       child: CompositedTransformTarget(
         link: _layerLink,
-        child: SizedBox(
-          width: 32,
-          height: 32,
-          child: IconButton(
-            onPressed: !widget.enabled || _isWorking
-                ? null
-                : () => unawaited(_handlePressed()),
-            icon: _isWorking
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Icon(
-                    _isError ? Icons.error_outline : Icons.analytics_outlined,
-                    size: 18,
-                    color: _isError
-                        ? Theme.of(context).colorScheme.error
-                        : null,
-                  ),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        child: Tooltip(
+          message: tooltip,
+          child: SizedBox(
+            width: 32,
+            height: 32,
+            child: IconButton(
+              onPressed: !widget.enabled || _isWorking
+                  ? null
+                  : () => fireAndLog('run analysis', _handlePressed()),
+              icon: _isWorking
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      _isError ? Icons.error_outline : Icons.analytics_outlined,
+                      size: 18,
+                      color: _isError
+                          ? Theme.of(context).colorScheme.error
+                          : null,
+                    ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            ),
           ),
         ),
       ),
@@ -697,7 +726,7 @@ class _AnalysisButtonState extends State<_AnalysisButton>
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(milliseconds: 180), () {
       if (_hoveringButton || _hoveringPanel) return;
-      unawaited(_fadeOutPanel());
+      fireAndLog('hide analysis hover panel', _fadeOutPanel());
     });
   }
 
@@ -766,17 +795,19 @@ class _AnalysisHoverPanelState extends State<_AnalysisHoverPanel> {
   void initState() {
     super.initState();
     widget.dataSource.addListener(_refresh);
-    unawaited(_refresh());
+    fireAndLog('refresh analysis hover panel', _refresh());
     _refreshTimer = Timer.periodic(
       const Duration(milliseconds: 700),
-      (_) => unawaited(_refresh()),
+      (_) => fireAndLog('refresh analysis hover panel', _refresh()),
     );
   }
 
   @override
   void didUpdateWidget(covariant _AnalysisHoverPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.tracks != widget.tracks) unawaited(_refresh());
+    if (oldWidget.tracks != widget.tracks) {
+      fireAndLog('refresh analysis hover panel', _refresh());
+    }
   }
 
   @override

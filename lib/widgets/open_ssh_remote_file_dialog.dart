@@ -1,9 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../remote/ssh_remote_media.dart';
+import '../utils/async_guard.dart';
 
 class OpenSshRemoteFileDialog extends StatefulWidget {
   final SshRemoteMediaService service;
@@ -92,7 +91,8 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
                       isDense: true,
                     ),
                     onChanged: (_) => _clearSearchMessage(),
-                    onSubmitted: (_) => unawaited(_search()),
+                    onSubmitted: (_) =>
+                        fireAndLog('search SSH remote media', _search()),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -105,7 +105,8 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
                       isDense: true,
                     ),
                     onChanged: (_) => _clearSearchMessage(),
-                    onSubmitted: (_) => unawaited(_search()),
+                    onSubmitted: (_) =>
+                        fireAndLog('search SSH remote media', _search()),
                   ),
                 ),
               ],
@@ -122,14 +123,18 @@ class _OpenSshRemoteFileDialogState extends State<OpenSshRemoteFileDialog> {
                       isDense: true,
                     ),
                     onChanged: (_) => _clearSearchMessage(),
-                    onSubmitted: (_) => unawaited(_search()),
+                    onSubmitted: (_) =>
+                        fireAndLog('search SSH remote media', _search()),
                   ),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
                   height: 40,
                   child: FilledButton.icon(
-                    onPressed: _searching ? null : () => unawaited(_search()),
+                    onPressed: _searching
+                        ? null
+                        : () =>
+                              fireAndLog('search SSH remote media', _search()),
                     icon: _searching
                         ? const SizedBox(
                             width: 16,

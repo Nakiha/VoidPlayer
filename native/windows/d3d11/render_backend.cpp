@@ -105,6 +105,53 @@ void D3D11RenderBackend::move_track(size_t from, size_t to) {
     }
 }
 
+bool D3D11RenderBackend::capture_front_buffer(std::vector<uint8_t>& bgra,
+                                              int& width,
+                                              int& height) {
+    bgra.clear();
+    width = 0;
+    height = 0;
+    if (!headless_output_) {
+        return false;
+    }
+
+    D3D11HeadlessOutputFrontBufferSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> tex_lock(headless_output_->texture_mutex());
+        if (!headless_output_->snapshot_front_buffer_locked(snapshot)) {
+            return false;
+        }
+    }
+    return headless_output_->capture_front_buffer_snapshot(
+        snapshot, bgra, width, height);
+}
+
+bool D3D11RenderBackend::capture_front_buffer_region(
+    int x,
+    int y,
+    int width,
+    int height,
+    std::vector<uint8_t>& bgra,
+    int& region_width,
+    int& region_height) {
+    bgra.clear();
+    region_width = 0;
+    region_height = 0;
+    if (!headless_output_) {
+        return false;
+    }
+
+    D3D11HeadlessOutputFrontBufferSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> tex_lock(headless_output_->texture_mutex());
+        if (!headless_output_->snapshot_front_buffer_locked(snapshot)) {
+            return false;
+        }
+    }
+    return headless_output_->capture_front_buffer_region_snapshot(
+        snapshot, x, y, width, height, bgra, region_width, region_height);
+}
+
 bool D3D11RenderBackend::initialize_device(const D3D11RenderBackendConfig& config) {
     device_ = std::make_unique<D3D11Device>();
     if (config.headless) {

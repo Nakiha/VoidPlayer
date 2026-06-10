@@ -53,7 +53,6 @@ class D3D11FramePresenter;
 class D3D11HeadlessOutput;
 class D3D11RenderBackend;
 struct D3D11RenderResources;
-class FrameCaptureService;
 class ShaderManager;
 class TextureManager;
 class AudioCoordinator;

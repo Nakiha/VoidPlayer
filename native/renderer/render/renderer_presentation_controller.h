@@ -14,7 +14,6 @@
 
 namespace vr {
 
-class FrameCaptureService;
 class PresentationMetricsStore;
 class D3D11Device;
 class D3D11FramePresenter;
@@ -114,8 +113,7 @@ struct RendererPresentationD3DMemorySnapshot {
 
 // Lock contract:
 // - Owns the presentation backend, backend device mutex, backend texture
-//   publication access, frame callback storage, and optional Windows capture
-//   service.
+//   publication access, and frame callback storage.
 // - May take backend texture locks only while holding device_mutex(), following
 //   device -> texture order.
 // - Does not take renderer state/lifecycle locks.
@@ -196,6 +194,13 @@ public:
     bool capture_backend_front_buffer(std::vector<uint8_t>& bgra,
                                       int& width,
                                       int& height);
+    bool capture_backend_front_buffer_region(int x,
+                                             int y,
+                                             int width,
+                                             int height,
+                                             std::vector<uint8_t>& bgra,
+                                             int& region_width,
+                                             int& region_height);
     RendererPresentationD3DMemorySnapshot d3d_memory_snapshot() const;
     bool resize_renderer_managed_headless_output(int width,
                                                  int height,
@@ -208,16 +213,6 @@ public:
                                     PresentationMetricsStore& metrics) const;
     void release_d3d_shared_texture(int buffer_index,
                                     uint64_t buffer_generation) const;
-    bool capture_d3d_headless_front_buffer(std::vector<uint8_t>& bgra,
-                                           int& width,
-                                           int& height) const;
-    bool capture_d3d_headless_front_buffer_region(int x,
-                                                  int y,
-                                                  int width,
-                                                  int height,
-                                                  std::vector<uint8_t>& bgra,
-                                                  int& region_width,
-                                                  int& region_height) const;
     D3D11RenderBackend* d3d_backend() const;
     D3D11Device* d3d_device() const;
     D3D11FramePresenter* d3d_frame_presenter() const;
@@ -231,9 +226,6 @@ private:
     mutable std::mutex callback_mutex_;
     RendererFrameCallback frame_callback_;
     std::function<void(const char*)> frame_failure_callback_;
-#ifdef _WIN32
-    std::unique_ptr<FrameCaptureService> frame_capture_;
-#endif
 };
 
 } // namespace vr

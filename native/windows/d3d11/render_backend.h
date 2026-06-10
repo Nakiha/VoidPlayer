@@ -72,6 +72,16 @@ public:
     D3D11HeadlessOutput* headless_output() const { return headless_output_.get(); }
     ShaderManager* shader_manager() const { return shader_manager_.get(); }
     D3D11RenderResources* resources() const { return resources_.get(); }
+    bool capture_front_buffer(std::vector<uint8_t>& bgra,
+                              int& width,
+                              int& height) override;
+    bool capture_front_buffer_region(int x,
+                                     int y,
+                                     int width,
+                                     int height,
+                                     std::vector<uint8_t>& bgra,
+                                     int& region_width,
+                                     int& region_height) override;
     bool draw_frame(const RendererDrawSnapshot& snapshot,
                     const PresentationBackendDrawHooks& hooks) override;
 

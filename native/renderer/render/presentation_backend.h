@@ -62,6 +62,13 @@ public:
     virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }
     virtual bool capture_front_buffer(std::vector<uint8_t>&, int&, int&) { return false; }
+    virtual bool capture_front_buffer_region(int,
+                                             int,
+                                             int,
+                                             int,
+                                             std::vector<uint8_t>&,
+                                             int&,
+                                             int&) { return false; }
     virtual const char* last_error() const { return ""; }
     virtual bool draw_frame(const RendererDrawSnapshot& snapshot,
                             const PresentationBackendDrawHooks& hooks) = 0;

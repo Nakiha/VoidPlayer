@@ -5,7 +5,6 @@
 #include "renderer/render/swap_chain_present_policy.h"
 
 #ifdef _WIN32
-#include "windows/d3d11/frame_capture_service.h"
 #include "windows/d3d11/frame_presenter.h"
 #include "windows/d3d11/headless_output.h"
 #include "windows/d3d11/render_backend.h"
@@ -29,11 +28,7 @@ uint64_t presentation_elapsed_us_since(
 
 } // namespace
 
-RendererPresentationController::RendererPresentationController() {
-#ifdef _WIN32
-    frame_capture_ = std::make_unique<FrameCaptureService>();
-#endif
-}
+RendererPresentationController::RendererPresentationController() = default;
 
 RendererPresentationController::~RendererPresentationController() = default;
 
@@ -455,6 +450,31 @@ bool RendererPresentationController::capture_backend_front_buffer(
     return false;
 }
 
+bool RendererPresentationController::capture_backend_front_buffer_region(
+    int x,
+    int y,
+    int width,
+    int height,
+    std::vector<uint8_t>& bgra,
+    int& region_width,
+    int& region_height) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (backend_ && backend_->capture_front_buffer_region(
+                        x,
+                        y,
+                        width,
+                        height,
+                        bgra,
+                        region_width,
+                        region_height)) {
+        return true;
+    }
+    bgra.clear();
+    region_width = 0;
+    region_height = 0;
+    return false;
+}
+
 RendererPresentationD3DMemorySnapshot
 RendererPresentationController::d3d_memory_snapshot() const {
     RendererPresentationD3DMemorySnapshot result;
@@ -582,41 +602,6 @@ void RendererPresentationController::release_d3d_shared_texture(
     if (auto* output = d3d_headless_output()) {
         output->release_shared_texture(buffer_index, buffer_generation);
     }
-}
-
-bool RendererPresentationController::capture_d3d_headless_front_buffer(
-    std::vector<uint8_t>& bgra,
-    int& width,
-    int& height) const {
-    auto* output = d3d_headless_output();
-    if (!frame_capture_ || !output) {
-        bgra.clear();
-        width = 0;
-        height = 0;
-        return false;
-    }
-    return frame_capture_->capture_headless_front_buffer(
-        *output, device_mutex_, bgra, width, height);
-}
-
-bool RendererPresentationController::capture_d3d_headless_front_buffer_region(
-    int x,
-    int y,
-    int width,
-    int height,
-    std::vector<uint8_t>& bgra,
-    int& region_width,
-    int& region_height) const {
-    auto* output = d3d_headless_output();
-    if (!frame_capture_ || !output) {
-        bgra.clear();
-        region_width = 0;
-        region_height = 0;
-        return false;
-    }
-    return frame_capture_->capture_headless_front_buffer_region(
-        *output, device_mutex_, x, y, width, height, bgra, region_width,
-        region_height);
 }
 
 D3D11RenderBackend* RendererPresentationController::d3d_backend() const {

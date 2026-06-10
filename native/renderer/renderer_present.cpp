@@ -151,16 +151,6 @@ void Renderer::Impl::enter_terminal_render_loop_error_locked(const char* reason)
 }
 
 bool Renderer::Impl::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
-#ifdef _WIN32
-    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless()) {
-        bgra.clear();
-        width = 0;
-        height = 0;
-        return false;
-    }
-    return presentation_.capture_d3d_headless_front_buffer(bgra, width, height);
-#else
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!surface_state_.headless()) {
         bgra.clear();
@@ -169,7 +159,6 @@ bool Renderer::Impl::capture_front_buffer(std::vector<uint8_t>& bgra, int& width
         return false;
     }
     return presentation_.capture_backend_front_buffer(bgra, width, height);
-#endif
 }
 
 bool Renderer::Impl::capture_front_buffer_region(int x,
@@ -179,7 +168,6 @@ bool Renderer::Impl::capture_front_buffer_region(int x,
                                                  std::vector<uint8_t>& bgra,
                                                  int& region_width,
                                                  int& region_height) {
-#ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     if (!surface_state_.headless()) {
         bgra.clear();
@@ -187,18 +175,8 @@ bool Renderer::Impl::capture_front_buffer_region(int x,
         region_height = 0;
         return false;
     }
-    return presentation_.capture_d3d_headless_front_buffer_region(
+    return presentation_.capture_backend_front_buffer_region(
         x, y, width, height, bgra, region_width, region_height);
-#else
-    (void)x;
-    (void)y;
-    (void)width;
-    (void)height;
-    bgra.clear();
-    region_width = 0;
-    region_height = 0;
-    return false;
-#endif
 }
 
 } // namespace vr

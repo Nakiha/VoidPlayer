@@ -38,6 +38,15 @@ public:
     virtual void shutdown() = 0;
     virtual bool headless() const = 0;
     virtual bool renderer_manages_headless_publish() const { return false; }
+    virtual bool begin_renderer_managed_headless_frame() { return true; }
+    virtual std::function<void()> publish_renderer_managed_headless_frame(const char*) {
+        return {};
+    }
+    virtual bool resize_renderer_managed_headless_output(int, int) { return false; }
+    virtual void cleanup_renderer_managed_headless_pending_buffers() {}
+    virtual bool set_renderer_managed_headless_frame_callback(std::function<void()>) {
+        return false;
+    }
     virtual bool completes_draw_asynchronously() const { return false; }
     virtual bool supports_swap_chain_present() const { return false; }
     virtual bool poll_device_removed(const char*) { return false; }

@@ -65,6 +65,13 @@ public:
     bool present_swap_chain(int sync_interval) override;
     void reset_track(size_t slot) override;
     void move_track(size_t from, size_t to) override;
+    bool begin_renderer_managed_headless_frame() override;
+    std::function<void()> publish_renderer_managed_headless_frame(
+        const char* label) override;
+    bool resize_renderer_managed_headless_output(int width, int height) override;
+    void cleanup_renderer_managed_headless_pending_buffers() override;
+    bool set_renderer_managed_headless_frame_callback(
+        std::function<void()> callback) override;
 
     D3D11Device* device() const { return device_.get(); }
     TextureManager* texture_manager() const { return texture_manager_.get(); }

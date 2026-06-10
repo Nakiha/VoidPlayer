@@ -5,11 +5,9 @@ namespace vr {
 
 void Renderer::Impl::set_frame_callback(RendererFrameCallback cb) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-#ifdef _WIN32
-    if (presentation_.set_d3d_headless_frame_callback(cb)) {
+    if (presentation_.set_renderer_managed_headless_frame_callback(cb)) {
         return;
     }
-#endif
     presentation_.set_frame_callback(std::move(cb));
 }
 

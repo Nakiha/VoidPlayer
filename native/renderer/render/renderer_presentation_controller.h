@@ -206,9 +206,10 @@ public:
                                                  int height,
                                                  PresentationMetricsStore& metrics);
     void cleanup_renderer_managed_headless_pending_buffers();
+    bool set_renderer_managed_headless_frame_callback(
+        RendererFrameCallback callback);
 
 #ifdef _WIN32
-    bool set_d3d_headless_frame_callback(RendererFrameCallback callback);
     bool acquire_d3d_shared_texture(SharedTextureSnapshot& snapshot,
                                     PresentationMetricsStore& metrics) const;
     void release_d3d_shared_texture(int buffer_index,

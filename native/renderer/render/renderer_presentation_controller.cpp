@@ -216,54 +216,31 @@ bool RendererPresentationController::draw_renderer_managed_headless_and_publish(
     RendererPresentationOverlayHooks overlay_hooks,
     const std::function<bool()>& should_abort,
     RendererFrameCallback& callback) {
-#ifdef _WIN32
     callback = {};
     if (should_abort && should_abort()) {
         return false;
     }
-    auto* output = d3d_headless_output();
-    auto* resources = d3d_resources();
-    if (!output || !resources) {
+    if (!backend_ || !backend_->begin_renderer_managed_headless_frame()) {
         return false;
-    }
-    {
-        std::lock_guard<std::mutex> tex_lock(output->texture_mutex());
-        auto* rtv = output->begin_frame_locked();
-        if (!rtv) {
-            return false;
-        }
-        resources->cached_rtv = rtv;
     }
     if (!draw_frame(snapshot, source, metrics, std::move(overlay_hooks))) {
         return false;
     }
     const auto publish_start = std::chrono::steady_clock::now();
-    output->wait_gpu_idle(source);
-    {
-        std::lock_guard<std::mutex> tex_lock(output->texture_mutex());
-        auto published_callback = output->publish_frame_locked();
-        callback = published_callback
-            ? RendererFrameCallback(
-                  [published_callback = std::move(published_callback)](
-                      const PresentationBackendFrameInfo*) mutable {
-                      published_callback();
-                  })
-            : RendererFrameCallback();
-    }
+    auto published_callback =
+        backend_->publish_renderer_managed_headless_frame(source);
+    callback = published_callback
+        ? RendererFrameCallback(
+              [published_callback = std::move(published_callback)](
+                  const PresentationBackendFrameInfo*) mutable {
+                  published_callback();
+              })
+        : RendererFrameCallback();
     if (should_abort && should_abort()) {
         callback = {};
     }
     metrics.note_present_publish(presentation_elapsed_us_since(publish_start));
     return true;
-#else
-    (void)snapshot;
-    (void)source;
-    (void)metrics;
-    (void)overlay_hooks;
-    (void)should_abort;
-    callback = {};
-    return false;
-#endif
 }
 
 bool RendererPresentationController::draw_frame(
@@ -523,52 +500,38 @@ bool RendererPresentationController::resize_renderer_managed_headless_output(
     int width,
     int height,
     PresentationMetricsStore& metrics) {
-#ifdef _WIN32
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
-    auto* output = d3d_headless_output();
-    if (!output) {
+    if (!backend_ ||
+        !backend_->resize_renderer_managed_headless_output(width, height)) {
         return false;
-    }
-    {
-        std::lock_guard<std::mutex> tex_lock(output->texture_mutex());
-        if (!output->resize_locked(width, height)) {
-            return false;
-        }
     }
     metrics.note_shared_texture_resize();
     return true;
-#else
-    (void)width;
-    (void)height;
-    (void)metrics;
-    return false;
-#endif
 }
 
 void RendererPresentationController::cleanup_renderer_managed_headless_pending_buffers() {
-#ifdef _WIN32
-    if (auto* output = d3d_headless_output()) {
-        output->cleanup_expired_pending_buffers();
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    if (backend_) {
+        backend_->cleanup_renderer_managed_headless_pending_buffers();
     }
-#endif
 }
 
-#ifdef _WIN32
-bool RendererPresentationController::set_d3d_headless_frame_callback(
+bool RendererPresentationController::set_renderer_managed_headless_frame_callback(
     RendererFrameCallback callback) {
-    auto* output = d3d_headless_output();
-    if (!output) {
+    if (!backend_ ||
+        !backend_->set_renderer_managed_headless_frame_callback(
+            [callback = std::move(callback)]() {
+                if (callback) {
+                    callback(nullptr);
+                }
+            })) {
         return false;
     }
-    output->set_frame_callback([callback = std::move(callback)]() {
-        if (callback) {
-            callback(nullptr);
-        }
-    });
     clear_frame_callback();
     return true;
 }
 
+#ifdef _WIN32
 bool RendererPresentationController::acquire_d3d_shared_texture(
     SharedTextureSnapshot& snapshot,
     PresentationMetricsStore& metrics) const {

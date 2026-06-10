@@ -10,6 +10,7 @@
 #include <dxgi.h>
 #include <memory>
 #include <spdlog/spdlog.h>
+#include <utility>
 #include <vector>
 
 namespace vr {
@@ -103,6 +104,54 @@ void D3D11RenderBackend::move_track(size_t from, size_t to) {
     if (frame_presenter_) {
         frame_presenter_->move_track(from, to);
     }
+}
+
+bool D3D11RenderBackend::begin_renderer_managed_headless_frame() {
+    if (!headless_output_ || !resources_) {
+        return false;
+    }
+    std::lock_guard<std::mutex> tex_lock(headless_output_->texture_mutex());
+    auto* rtv = headless_output_->begin_frame_locked();
+    if (!rtv) {
+        return false;
+    }
+    resources_->cached_rtv = rtv;
+    return true;
+}
+
+std::function<void()> D3D11RenderBackend::publish_renderer_managed_headless_frame(
+    const char* label) {
+    if (!headless_output_) {
+        return {};
+    }
+    headless_output_->wait_gpu_idle(label);
+    std::lock_guard<std::mutex> tex_lock(headless_output_->texture_mutex());
+    return headless_output_->publish_frame_locked();
+}
+
+bool D3D11RenderBackend::resize_renderer_managed_headless_output(
+    int width,
+    int height) {
+    if (!headless_output_) {
+        return false;
+    }
+    std::lock_guard<std::mutex> tex_lock(headless_output_->texture_mutex());
+    return headless_output_->resize_locked(width, height);
+}
+
+void D3D11RenderBackend::cleanup_renderer_managed_headless_pending_buffers() {
+    if (headless_output_) {
+        headless_output_->cleanup_expired_pending_buffers();
+    }
+}
+
+bool D3D11RenderBackend::set_renderer_managed_headless_frame_callback(
+    std::function<void()> callback) {
+    if (!headless_output_) {
+        return false;
+    }
+    headless_output_->set_frame_callback(std::move(callback));
+    return true;
 }
 
 bool D3D11RenderBackend::capture_front_buffer(std::vector<uint8_t>& bgra,

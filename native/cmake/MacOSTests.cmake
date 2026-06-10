@@ -54,6 +54,22 @@ target_link_libraries(macos_native_abi_smoke PRIVATE
 add_test(NAME macos_native_abi_smoke COMMAND macos_native_abi_smoke)
 void_label_test(macos_native_abi_smoke "macos;abi;contract")
 
+add_executable(macos_metal_contract_smoke
+    "${VOID_NATIVE_DIR}/tools/macos_metal_contract_smoke.cpp"
+)
+void_apply_native_compile_options(macos_metal_contract_smoke)
+target_link_libraries(macos_metal_contract_smoke PRIVATE
+    void_macos_native_player
+)
+add_test(NAME macos_metal_contract_smoke COMMAND macos_metal_contract_smoke)
+void_label_test(macos_metal_contract_smoke "macos;abi;backend;contract")
+
+add_test(NAME macos_metal_shader_generated_check
+    COMMAND ${CMAKE_COMMAND}
+        -DVOID_NATIVE_DIR=${VOID_NATIVE_DIR}
+        -P "${VOID_NATIVE_DIR}/cmake/CheckMacOSMetalShaderInc.cmake")
+void_label_test(macos_metal_shader_generated_check "macos;shader;contract")
+
 add_executable(macos_metal_uploader_smoke
     "${VOID_NATIVE_DIR}/tools/macos_metal_uploader_smoke.mm"
 )

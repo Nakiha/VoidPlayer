@@ -1,6 +1,7 @@
 #ifndef VOIDPLAYER_MACOS_METAL_UPLOADER_INTERNAL_H_
 #define VOIDPLAYER_MACOS_METAL_UPLOADER_INTERNAL_H_
 
+#include "macos/metal/metal_concurrency_policy.h"
 #include "macos/metal/metal_layout_params.h"
 #include "macos/metal/metal_uploader_bridge.h"
 
@@ -15,7 +16,8 @@
 
 const char* VPMacOSMetalUploaderStatusMessageForCode(int status);
 
-constexpr size_t VPMacOSMetalFrameResourcePoolSize = 3;
+constexpr size_t VPMacOSMetalFrameResourcePoolSize =
+    vp_macos::kMetalPresentConcurrencyPolicy.frame_resource_pool_size;
 
 struct VPMacOSMetalFrameResources {
   std::atomic<bool> in_flight;
@@ -36,6 +38,58 @@ struct VPMacOSMetalFrameResources {
         overlay_direct_line_rect_bytes(0) {}
 };
 
+struct VPMacOSMetalFrameResourcePool {
+  std::array<VPMacOSMetalFrameResources, VPMacOSMetalFrameResourcePoolSize> slots;
+
+  VPMacOSMetalFrameResources* tryAcquire() {
+    for (auto& resource : slots) {
+      bool expected = false;
+      if (resource.in_flight.compare_exchange_strong(
+              expected, true, std::memory_order_acq_rel, std::memory_order_acquire)) {
+        return &resource;
+      }
+    }
+    return nullptr;
+  }
+};
+
+struct VPMacOSMetalPipelineRegistry {
+  id<MTLLibrary> library = nil;
+  id<MTLComputePipelineState> layout_package = nil;
+  id<MTLComputePipelineState> layout_cv_single = nil;
+  id<MTLComputePipelineState> layout_cv_set = nil;
+  id<MTLComputePipelineState> overlay_legacy_fill = nil;
+  id<MTLComputePipelineState> overlay_legacy_line_mask = nil;
+  id<MTLComputePipelineState> overlay_legacy_line_contrast = nil;
+  id<MTLComputePipelineState> overlay_legacy_motion = nil;
+  id<MTLComputePipelineState> overlay_layer_clear = nil;
+  id<MTLComputePipelineState> overlay_layer_fill_compute = nil;
+  id<MTLComputePipelineState> overlay_layer_line_mask = nil;
+  id<MTLComputePipelineState> overlay_layer_line_composite = nil;
+  id<MTLComputePipelineState> overlay_layer_motion = nil;
+  id<MTLComputePipelineState> overlay_direct_line = nil;
+  id<MTLRenderPipelineState> overlay_layer_fill_render = nil;
+
+  bool packagePathAvailable() const { return layout_package != nil; }
+  bool cvSinglePathAvailable() const { return layout_cv_single != nil; }
+  bool cvSetPathAvailable() const { return layout_cv_set != nil; }
+  bool directLineOverlayAvailable() const { return overlay_direct_line != nil; }
+  bool overlayLayerAvailable(bool needs_fill_rects, bool needs_motion_lines) const {
+    return overlay_layer_clear != nil &&
+        (!needs_fill_rects ||
+         overlay_layer_fill_render != nil || overlay_layer_fill_compute != nil) &&
+        (!needs_motion_lines || overlay_layer_motion != nil);
+  }
+  bool legacyOverlayAvailable(bool needs_fill_rects,
+                              bool needs_line_rects,
+                              bool needs_motion_lines) const {
+    return (!needs_fill_rects || overlay_legacy_fill != nil) &&
+        (!needs_line_rects ||
+         (overlay_legacy_line_mask != nil && overlay_legacy_line_contrast != nil)) &&
+        (!needs_motion_lines || overlay_legacy_motion != nil);
+  }
+};
+
 @interface VPMacOSMetalUploaderImpl : NSObject {
  @private
   id<MTLDevice> _device;
@@ -44,27 +98,15 @@ struct VPMacOSMetalFrameResources {
   id<MTLBuffer> _overlayLineRectBuffer;
   id<MTLBuffer> _overlayMotionLineBuffer;
   id<MTLBuffer> _overlayLineMaskBuffer;
-  id<MTLComputePipelineState> _layoutPipeline;
-  id<MTLComputePipelineState> _cvPixelBufferPipeline;
-  id<MTLComputePipelineState> _cvPixelBufferSetPipeline;
-  id<MTLComputePipelineState> _overlayFillRectPipeline;
-  id<MTLComputePipelineState> _overlayLineMaskPipeline;
-  id<MTLComputePipelineState> _overlayLineContrastPipeline;
-  id<MTLComputePipelineState> _overlayMotionLinePipeline;
-  id<MTLComputePipelineState> _overlayLayerClearPipeline;
-  id<MTLComputePipelineState> _overlayLayerFillRectPipeline;
-  id<MTLComputePipelineState> _overlayLayerLineMaskPipeline;
-  id<MTLComputePipelineState> _overlayLayerLineCompositePipeline;
-  id<MTLComputePipelineState> _overlayLayerMotionLinePipeline;
-  id<MTLComputePipelineState> _overlayDirectLinePipeline;
-  id<MTLRenderPipelineState> _overlayLayerFillRectRenderPipeline;
+  VPMacOSMetalPipelineRegistry _pipelines;
   id<MTLTexture> _transparentOverlayTexture;
   std::array<id<MTLTexture>, VPMacOSNativeMaxTracks> _overlayLayerTextures;
-  std::array<uint64_t, VPMacOSNativeMaxTracks> _overlayLayerGenerations;
+  std::array<std::atomic<uint64_t>, VPMacOSNativeMaxTracks> _overlayLayerCommittedGenerations;
+  std::array<std::atomic<uint64_t>, VPMacOSNativeMaxTracks> _overlayLayerPendingGenerations;
   std::array<int32_t, VPMacOSNativeMaxTracks> _overlayLayerWidths;
   std::array<int32_t, VPMacOSNativeMaxTracks> _overlayLayerHeights;
   CVMetalTextureCacheRef _textureCache;
-  std::array<VPMacOSMetalFrameResources, VPMacOSMetalFrameResourcePoolSize> _frameResourcePool;
+  VPMacOSMetalFrameResourcePool _frameResourcePool;
   std::atomic<bool> _overlayLayerResourcesInFlight;
   std::atomic<int64_t> _directYuvUploadCount;
   std::atomic<int64_t> _cvPixelBufferUploadCount;

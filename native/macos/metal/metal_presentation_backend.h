@@ -69,7 +69,20 @@ public:
   void protect_target(void* pixel_buffer);
   void release_target(void* pixel_buffer);
   bool copy_last_draw_frame_info(VPMacOSNativeFrameInfo* out) const;
-  void complete_async_draw_result(const VPMacOSNativeFrameInfo& frame_info,
+  struct DrawTicket {
+    uint64_t sequence = 0;
+    uint64_t target_pixel_buffer_address = 0;
+    uint64_t source_signature = 0;
+    uint64_t overlay_generation = 0;
+    const char* path = "unknown";
+  };
+
+  DrawTicket make_draw_ticket(uint64_t target_pixel_buffer_address,
+                              uint64_t source_signature,
+                              uint64_t overlay_generation,
+                              const char* path);
+  void complete_async_draw_result(const DrawTicket& ticket,
+                                  const VPMacOSNativeFrameInfo& frame_info,
                                   bool success,
                                   const char* error,
                                   int64_t total_us,
@@ -145,6 +158,7 @@ private:
   mutable std::mutex async_mutex_;
   std::condition_variable async_cv_;
   uint64_t in_flight_draws_ = 0;
+  uint64_t next_draw_ticket_sequence_ = 0;
   bool async_shutdown_ = false;
   enum class TargetState {
     Available,

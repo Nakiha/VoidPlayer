@@ -3,7 +3,9 @@
 
 #include "macos/metal/metal_uploader_bridge.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace vp_macos {
 
@@ -132,6 +134,21 @@ struct MetalOverlayLinePassParams {
   uint32_t pass;
   uint32_t reserved0;
 };
+
+static_assert(VPMacOSNativeMaxTracks == 4,
+              "Metal shader ABI flattens exactly four track slots");
+static_assert(std::is_standard_layout<MetalLayoutParams>::value,
+              "MetalLayoutParams must stay standard-layout for shader ABI offsets");
+static_assert(sizeof(MetalLayoutParams) == 436,
+              "MetalLayoutParams size must match the MSL LayoutParams mirror");
+static_assert(offsetof(MetalLayoutParams, overlay_present0) == 404,
+              "MetalLayoutParams overlay field offset must match MSL LayoutParams");
+static_assert(offsetof(MetalLayoutParams, background_color_r) == 420,
+              "MetalLayoutParams background color offset must match MSL LayoutParams");
+static_assert(sizeof(MetalOverlayLayerParams) == 16,
+              "MetalOverlayLayerParams must match the MSL constant layout");
+static_assert(sizeof(MetalOverlayLinePassParams) == 16,
+              "MetalOverlayLinePassParams must match the MSL constant layout");
 
 void write_first_present_frame_info(const VPMacOSNativePresentDecisionInfo& decision_info,
                                     VPMacOSNativeFrameInfo* out);

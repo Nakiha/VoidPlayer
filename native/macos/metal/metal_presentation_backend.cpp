@@ -1,5 +1,6 @@
 #include "macos/metal/metal_presentation_backend.h"
 
+#include "macos/metal/metal_concurrency_policy.h"
 #include "macos/presentation/presentation_package_builder.h"
 #include "renderer/layout/layout_geometry.h"
 #include "renderer/render/shader_constants.h"
@@ -104,6 +105,7 @@ struct AsyncDrawContext {
   MetalPresentationBackend* backend = nullptr;
   vr::PresentationBackendDrawHooks hooks;
   OverlayCompositeResult overlay;
+  MetalPresentationBackend::DrawTicket ticket;
   const char* path = "unknown";
   int32_t storage = VPMacOSNativePresentPackageStorageUnavailable;
   int64_t copy_us = 0;
@@ -797,9 +799,10 @@ bool MetalPresentationBackend::try_begin_async_draw(const char* source) {
   // The uploader can accept multiple per-frame resource slots, but this backend
   // still presents into one installed CVPixelBuffer target at a time. Keep
   // renderer-owned draws serialized until target ownership moves fully native.
-  constexpr uint64_t kMaxAsyncRendererOwnedDraws = 1;
+  const uint64_t max_async_renderer_owned_draws =
+      vp_macos::kMetalPresentConcurrencyPolicy.max_single_target_in_flight;
   std::lock_guard<std::mutex> lock(async_mutex_);
-  if (in_flight_draws_ >= kMaxAsyncRendererOwnedDraws) {
+  if (in_flight_draws_ >= max_async_renderer_owned_draws) {
     ++metal_buffer_exhaustion_count_;
     set_last_error("renderer-owned Metal async draw deferred by backpressure");
     if (macos_profiler_enabled() &&
@@ -809,7 +812,7 @@ bool MetalPresentationBackend::try_begin_async_draw(const char* source) {
           "[MetalProfiler] async_backpressure source={} in_flight={} limit={} count={}",
           source ? source : "",
           in_flight_draws_,
-          kMaxAsyncRendererOwnedDraws,
+          max_async_renderer_owned_draws,
           metal_buffer_exhaustion_count_);
     }
     return false;
@@ -824,8 +827,9 @@ void* MetalPresentationBackend::try_acquire_ring_draw_target(const char* source)
     set_last_error("renderer-owned Metal presentation backend is shutting down");
     return nullptr;
   }
-  constexpr uint64_t kMaxAsyncRendererOwnedDraws = 3;
-  if (in_flight_draws_ >= kMaxAsyncRendererOwnedDraws) {
+  const uint64_t max_async_renderer_owned_draws =
+      vp_macos::kMetalPresentConcurrencyPolicy.max_ring_in_flight;
+  if (in_flight_draws_ >= max_async_renderer_owned_draws) {
     ++metal_buffer_exhaustion_count_;
     set_last_error("renderer-owned Metal async draw deferred by backpressure");
     return nullptr;
@@ -898,7 +902,23 @@ bool MetalPresentationBackend::shutting_down_async() const {
   return async_shutdown_;
 }
 
+MetalPresentationBackend::DrawTicket MetalPresentationBackend::make_draw_ticket(
+    uint64_t target_pixel_buffer_address,
+    uint64_t source_signature,
+    uint64_t overlay_generation,
+    const char* path) {
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  DrawTicket ticket;
+  ticket.sequence = ++next_draw_ticket_sequence_;
+  ticket.target_pixel_buffer_address = target_pixel_buffer_address;
+  ticket.source_signature = source_signature;
+  ticket.overlay_generation = overlay_generation;
+  ticket.path = path ? path : "unknown";
+  return ticket;
+}
+
 void MetalPresentationBackend::complete_async_draw_result(
+    const DrawTicket& ticket,
     const VPMacOSNativeFrameInfo& frame_info,
     bool success,
     const char* error,
@@ -932,26 +952,49 @@ void MetalPresentationBackend::complete_async_draw_result(
     if (!success) {
       ++metal_command_failure_count_;
     }
+    if (success) {
+      record_overlay_result(overlay_expected,
+                            overlay_applied,
+                            gpu_attempted,
+                            gpu_succeeded,
+                            cpu_attempted,
+                            fill_rect_count,
+                            line_rect_count);
+      mark_draw_success(frame_info);
+    } else {
+      record_overlay_result(overlay_expected,
+                            false,
+                            gpu_attempted,
+                            false,
+                            cpu_attempted,
+                            fill_rect_count,
+                            line_rect_count);
+      mark_draw_failure(error ? error : "renderer-owned Metal async draw failed");
+    }
+    if (target_ring_enabled_ && ticket.target_pixel_buffer_address != 0) {
+      for (auto& slot : target_ring_) {
+        if (pointer_bits(slot.pixel_buffer) != ticket.target_pixel_buffer_address) {
+          continue;
+        }
+        if (slot.state == TargetState::InFlight) {
+          if (success) {
+            slot.state = TargetState::Completed;
+          } else if (ticket.target_pixel_buffer_address == displayed_target_address_) {
+            slot.state = TargetState::Displayed;
+          } else if (ticket.target_pixel_buffer_address == protected_target_address_) {
+            slot.state = TargetState::Protected;
+          } else {
+            slot.state = TargetState::Available;
+          }
+        }
+        break;
+      }
+    }
+    if (in_flight_draws_ > 0) {
+      --in_flight_draws_;
+    }
   }
-  if (success) {
-    record_overlay_result(overlay_expected,
-                          overlay_applied,
-                          gpu_attempted,
-                          gpu_succeeded,
-                          cpu_attempted,
-                          fill_rect_count,
-                          line_rect_count);
-    mark_draw_success(frame_info);
-  } else {
-    record_overlay_result(overlay_expected,
-                          false,
-                          gpu_attempted,
-                          false,
-                          cpu_attempted,
-                          fill_rect_count,
-                          line_rect_count);
-    mark_draw_failure(error ? error : "renderer-owned Metal async draw failed");
-  }
+  async_cv_.notify_all();
 }
 
 void metal_async_upload_completed(void* user_data,
@@ -967,14 +1010,15 @@ void metal_async_upload_completed(void* user_data,
   }
   auto* backend = context->backend;
   const bool success = ret == 0;
-  frame_info.target_pixel_buffer_address = context->target_pixel_buffer_address;
+  frame_info.target_pixel_buffer_address = context->ticket.target_pixel_buffer_address;
   auto overlay = context->overlay;
   if (overlay.expected) {
     overlay.gpu_attempted = true;
     overlay.gpu_succeeded = success;
     overlay.applied = success;
   }
-  backend->complete_async_draw_result(frame_info,
+  backend->complete_async_draw_result(context->ticket,
+                                      frame_info,
                                       success,
                                       error,
                                       total_us,
@@ -985,18 +1029,21 @@ void metal_async_upload_completed(void* user_data,
                                       overlay.cpu_attempted,
                                       overlay.fill_rect_count,
                                       overlay.line_rect_count);
-  backend->complete_ring_draw_target(context->target_pixel_buffer_address, success);
-  backend->finish_async_draw();
   if (macos_profiler_enabled() &&
       (!success || gpu_wait_us >= 8000 || total_us >= 8000)) {
     spdlog::info(
         "[MetalProfiler] async_complete path={} success={} ret={} gpu_us={} total_us={} "
-        "bytes={} storage={} overlay_expected={} overlay_applied={} error={}",
+        "ticket={} target={} source={} overlay_generation={} bytes={} storage={} "
+        "overlay_expected={} overlay_applied={} error={}",
         context->path,
         success,
         ret,
         gpu_wait_us,
         total_us,
+        context->ticket.sequence,
+        context->ticket.target_pixel_buffer_address,
+        context->ticket.source_signature,
+        context->ticket.overlay_generation,
         context->bytes,
         context->storage,
         overlay.expected,
@@ -1243,6 +1290,10 @@ bool MetalPresentationBackend::draw_frame(
       context->path = "cvpixelbuffer";
       context->storage = VPMacOSNativePresentPackageStorageCVPixelBuffer;
       context->target_pixel_buffer_address = pointer_bits(target_pixel_buffer);
+      context->ticket = make_draw_ticket(context->target_pixel_buffer_address,
+                                         source_signature,
+                                         overlay_set.generation,
+                                         context->path);
       if (!use_target_ring && !try_begin_async_draw(hooks.draw_source)) {
         delete context;
         log_profiler("cvpixelbuffer-backpressure",
@@ -1407,6 +1458,10 @@ bool MetalPresentationBackend::draw_frame(
       context->path = "cvpixelbuffer-set";
       context->storage = VPMacOSNativePresentPackageStorageCVPixelBuffer;
       context->target_pixel_buffer_address = pointer_bits(target_pixel_buffer);
+      context->ticket = make_draw_ticket(context->target_pixel_buffer_address,
+                                         source_signature,
+                                         overlay_set.generation,
+                                         context->path);
       if (!use_target_ring && !try_begin_async_draw(hooks.draw_source)) {
         delete context;
         log_profiler("cvpixelbuffer-set-backpressure",
@@ -1638,6 +1693,10 @@ bool MetalPresentationBackend::draw_frame(
     context->storage = package.storage;
     context->bytes = package.used_bytes;
     context->target_pixel_buffer_address = pointer_bits(target_pixel_buffer);
+    context->ticket = make_draw_ticket(context->target_pixel_buffer_address,
+                                       source_signature,
+                                       overlay_set.generation,
+                                       context->path);
     if (!use_target_ring && !try_begin_async_draw(hooks.draw_source)) {
       const char* failed_path = context->path;
       delete context;

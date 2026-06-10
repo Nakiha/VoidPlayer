@@ -1,6 +1,7 @@
 #pragma once
 
 #include "renderer/render/presentation_backend.h"
+#include "renderer/renderer_api_types.h"
 #include "windows/d3d11/device.h"
 #include "windows/d3d11/frame_presenter.h"
 #include "windows/d3d11/headless_output.h"
@@ -72,6 +73,8 @@ public:
     void cleanup_renderer_managed_headless_pending_buffers() override;
     bool set_renderer_managed_headless_frame_callback(
         std::function<void()> callback) override;
+    bool acquire_shared_texture(SharedTextureSnapshot& snapshot);
+    void release_shared_texture(int buffer_index, uint64_t buffer_generation);
 
     D3D11Device* device() const { return device_.get(); }
     TextureManager* texture_manager() const { return texture_manager_.get(); }

@@ -536,34 +536,19 @@ bool RendererPresentationController::acquire_d3d_shared_texture(
     SharedTextureSnapshot& snapshot,
     PresentationMetricsStore& metrics) const {
     snapshot = {};
-    auto* output = d3d_headless_output();
-    if (!output) {
+    auto* backend = d3d_backend();
+    if (!backend || !backend->acquire_shared_texture(snapshot)) {
         metrics.note_texture_sharing_failure();
         return false;
     }
-
-    std::lock_guard<std::mutex> lock(output->texture_mutex());
-    D3D11HeadlessOutputTextureLease lease;
-    if (!output->acquire_shared_texture_locked(lease)) {
-        metrics.note_texture_sharing_failure();
-        return false;
-    }
-
-    snapshot.type = SharedTextureHandleType::D3D11SharedHandle;
-    snapshot.texture = lease.texture;
-    snapshot.handle = lease.handle;
-    snapshot.width = lease.width;
-    snapshot.height = lease.height;
-    snapshot.buffer_index = lease.buffer_index;
-    snapshot.buffer_generation = lease.generation;
     return true;
 }
 
 void RendererPresentationController::release_d3d_shared_texture(
     int buffer_index,
     uint64_t buffer_generation) const {
-    if (auto* output = d3d_headless_output()) {
-        output->release_shared_texture(buffer_index, buffer_generation);
+    if (auto* backend = d3d_backend()) {
+        backend->release_shared_texture(buffer_index, buffer_generation);
     }
 }
 

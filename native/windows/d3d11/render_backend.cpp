@@ -154,6 +154,37 @@ bool D3D11RenderBackend::set_renderer_managed_headless_frame_callback(
     return true;
 }
 
+bool D3D11RenderBackend::acquire_shared_texture(
+    SharedTextureSnapshot& snapshot) {
+    snapshot = {};
+    if (!headless_output_) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(headless_output_->texture_mutex());
+    D3D11HeadlessOutputTextureLease lease;
+    if (!headless_output_->acquire_shared_texture_locked(lease)) {
+        return false;
+    }
+
+    snapshot.type = SharedTextureHandleType::D3D11SharedHandle;
+    snapshot.texture = lease.texture;
+    snapshot.handle = lease.handle;
+    snapshot.width = lease.width;
+    snapshot.height = lease.height;
+    snapshot.buffer_index = lease.buffer_index;
+    snapshot.buffer_generation = lease.generation;
+    return true;
+}
+
+void D3D11RenderBackend::release_shared_texture(
+    int buffer_index,
+    uint64_t buffer_generation) {
+    if (headless_output_) {
+        headless_output_->release_shared_texture(buffer_index, buffer_generation);
+    }
+}
+
 bool D3D11RenderBackend::capture_front_buffer(std::vector<uint8_t>& bgra,
                                               int& width,
                                               int& height) {

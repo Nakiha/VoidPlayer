@@ -1,12 +1,12 @@
 # macOS HDR Exploration
 
-This document tracks the current VoidPlayer macOS HDR/EDR path. The code still
-uses some `spike` names internally, but the product direction is now a default
-Auto policy rather than an opt-in environment-only experiment.
+This document tracks the current VoidPlayer macOS HDR/EDR path. The product
+direction is now a default Auto policy rather than an opt-in environment-only
+experiment.
 
 ## Flutter Fork Pin
 
-The spike depends on a local Flutter engine patch that exposes the current
+The HDR compositor depends on a local Flutter engine patch that exposes the current
 macOS Flutter surface texture to the runner.
 
 | Item | Value |
@@ -72,7 +72,8 @@ headroom.
 
 The old spike variables `VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE`,
 `VOIDPLAYER_NATIVE_COMPOSITOR_EDR`, and `VOIDPLAYER_FLUTTER_HDR_SPIKE` remain
-accepted as compatibility aliases during the exploration.
+accepted as compatibility aliases. Prefer `VOIDPLAYER_MACOS_PRESENTATION_MODE`
+or `VOIDPLAYER_NATIVE_COMPOSITOR=1` for new local runs.
 
 Diagnostics expose the decision:
 
@@ -94,7 +95,7 @@ The current evidence proves the pipeline shape, not final visual calibration:
   texture in a native `CAMetalLayer`.
 - The EDR route allocates a renderer-owned `kCVPixelFormatType_64RGBAHalf`
   target and presents through `MTLPixelFormatRGBA16Float`.
-- `DEBUG_NATIVE_COMPOSITOR_SPIKE` reports direct half-float video target
+- `DEBUG_NATIVE_COMPOSITOR` reports direct half-float video target
   diagnostics:
   - `nativeCompositorEDRVideoMaxRGBX1000`
   - `nativeCompositorEDRVideoPixelsOver1X1000`
@@ -132,7 +133,7 @@ SDR content through EDR compositor:
 
 ```bash
 VOIDPLAYER_MACOS_PRESENTATION_MODE=native-compositor-edr \
-  python dev.py mac-ui-test ui_tests/macos/native_compositor_flutter_overlay_spike.csv
+  python dev.py mac-ui-test ui_tests/macos/native_compositor_flutter_overlay_smoke.csv
 ```
 
 This script asserts that SDR remains within reference white while using an EDR
@@ -162,12 +163,10 @@ That file is not a portable repository fixture.
 
 ## Remaining Work
 
-- Replace remaining internal spike naming with product-facing native compositor
-  names.
 - Add user-facing Auto / Force SDR / Force HDR settings after the default Auto
   policy has soaked.
 - Calibrate HLG/PQ mapping against display EDR headroom instead of using the
-  current simple spike constants.
+  current simple HDR constants.
 - Add proper Display P3 / Rec.2020 gamut mapping.
 - Treat Dolby Vision RPU metadata as later color-quality work; the current
   path uses the base HLG/PQ layer.

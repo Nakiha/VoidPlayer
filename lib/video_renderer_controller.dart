@@ -136,9 +136,9 @@ class NativePlayerController {
     return _api.debugFlutterSurfaceInfo();
   }
 
-  Future<Map<String, dynamic>> debugNativeCompositorSpike() {
+  Future<Map<String, dynamic>> debugNativeCompositor() {
     _ensureAlive();
-    return _api.debugNativeCompositorSpike();
+    return _api.debugNativeCompositor();
   }
 
   Future<void> seek(int ptsUs, {int? requestId}) {

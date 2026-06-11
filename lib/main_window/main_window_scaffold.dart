@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../native_compositor_spike_flags.dart';
+import '../native_compositor_flags.dart';
 import '../performance/performance_health.dart';
 import '../platform/platform_capabilities.dart';
 import '../platform/pointer_button_state_provider.dart';
@@ -40,9 +40,9 @@ class MainWindowScaffold extends StatelessWidget {
     final toolbarActions = actions.toolbar;
     final viewportActions = actions.viewport;
     final overlayActions = actions.overlays;
-    final nativeCompositorSpike = NativeCompositorSpikeFlags.nativeCompositor;
+    final nativeCompositor = NativeCompositorFlags.nativeCompositor;
     final nativeCompositorViewportActive =
-        nativeCompositorSpike &&
+        nativeCompositor &&
         viewport.textureId != null &&
         viewport.viewportState.status == ViewportDisplayStatus.active;
     final shellBackgroundColor = Theme.of(context).scaffoldBackgroundColor;

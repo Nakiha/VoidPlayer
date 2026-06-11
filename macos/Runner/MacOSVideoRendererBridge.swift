@@ -11,7 +11,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var eventChannel: FlutterEventChannel?
   private weak var flutterEngine: FlutterEngine?
   private weak var contentView: NSView?
-  private var nativeCompositorSpike: MacOSNativeCompositorSpikeView?
+  private var nativeCompositor: MacOSNativeCompositorView?
   private let lifecycle: MacOSPlayerLifecycleController
   private let tracks = MacOSVideoTrackController()
   private let presentation = MacOSPresentationController()
@@ -215,15 +215,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         presentationDiagnostics: presentationState.diagnosticMap()
       )
       diagnostics.merge(MacOSPresentationConfiguration.current.diagnostics) { _, next in next }
-      if let nativeCompositorSpike {
-        diagnostics.merge(nativeCompositorSpike.diagnostics()) { _, next in next }
+      if let nativeCompositor {
+        diagnostics.merge(nativeCompositor.diagnostics()) { _, next in next }
       }
       result(diagnostics)
     case "debugFlutterSurfaceInfo":
       result(debugFlutterSurfaceInfo())
-    case "debugNativeCompositorSpike":
-      if let nativeCompositorSpike {
-        var diagnostics = nativeCompositorSpike.diagnostics()
+    case "debugNativeCompositor", "debugNativeCompositorSpike":
+      if let nativeCompositor {
+        var diagnostics = nativeCompositor.diagnostics()
         if let state = nativePlayer?.rendererOwnedPresentationState() {
           diagnostics.merge(Self.rendererOwnedColorDiagnostics(from: state)) { _, next in next }
         }
@@ -231,6 +231,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       } else {
         var diagnostics = MacOSPresentationConfiguration.current.diagnostics
         diagnostics.merge([
+          "nativeCompositorEnabled": false,
           "nativeCompositorSpikeEnabled": false,
           "nativeCompositorLastFailure": "native compositor presentation mode is not enabled",
         ]) { _, next in next }
@@ -267,7 +268,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
     let infos = engine.voidPlayerHDRCurrentFlutterSurfaceInfos()
     guard let info = infos.first else {
-      NSLog("VoidPlayer HDR spike: no Flutter front surface is currently available")
+      NSLog("VoidPlayer HDR compositor: no Flutter front surface is currently available")
       return FlutterError(code: "NO_FLUTTER_SURFACE", message: "No Flutter front surface", details: nil)
     }
 
@@ -280,7 +281,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     payload["nativeIOSurfaceObjectAvailable"] = ioSurface != nil
 
     NSLog(
-      "VoidPlayer HDR spike: stole Flutter texture available=%@ ioSurface=%@ pointer=%@ format=%@ size=%@x%@ wideGamut=%@",
+      "VoidPlayer HDR compositor: stole Flutter texture available=%@ ioSurface=%@ pointer=%@ format=%@ size=%@x%@ wideGamut=%@",
       texture != nil ? "true" : "false",
       ioSurface != nil ? "true" : "false",
       String(describing: payload["texturePointer"] ?? "nil"),
@@ -293,8 +294,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func setNativeCompositorViewportRect(arguments: Any?) {
-    guard let nativeCompositorSpike else { return }
-    nativeCompositorSpike.setViewportRect(
+    guard let nativeCompositor else { return }
+    nativeCompositor.setViewportRect(
       left: MacOSFlutterArguments.intArg(arguments, "left") ?? 0,
       top: MacOSFlutterArguments.intArg(arguments, "top") ?? 0,
       width: MacOSFlutterArguments.intArg(arguments, "width") ?? 0,
@@ -372,7 +373,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
     )
     ensureNativeCompositorMatchesCurrentConfiguration()
-    nativeCompositorSpike?.setVideoTexture(texture)
+    nativeCompositor?.setVideoTexture(texture)
     return result
   }
 
@@ -381,7 +382,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
     MacOSPresentationConfiguration.resetForNoMedia()
     ensureNativeCompositorMatchesCurrentConfiguration()
-    nativeCompositorSpike?.setVideoTexture(nil)
+    nativeCompositor?.setVideoTexture(nil)
   }
 
   private func destroyPlayerForWindowClose() {
@@ -433,31 +434,31 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     frameAvailableCount += 1
     frameAvailableRate.record()
     lifecycle.markFrameAvailable()
-    nativeCompositorSpike?.setVideoTexture(texture)
+    nativeCompositor?.setVideoTexture(texture)
   }
 
   private func ensureNativeCompositorMatchesCurrentConfiguration() {
     let configuration = MacOSPresentationConfiguration.current
     guard configuration.nativeCompositorEnabled else {
-      nativeCompositorSpike?.detach()
-      nativeCompositorSpike = nil
+      nativeCompositor?.detach()
+      nativeCompositor = nil
       return
     }
-    let currentMode = nativeCompositorSpike?.diagnostics()["macOSPresentationMode"] as? String
+    let currentMode = nativeCompositor?.diagnostics()["macOSPresentationMode"] as? String
     let currentReason =
-      nativeCompositorSpike?.diagnostics()["macOSPresentationReason"] as? String
+      nativeCompositor?.diagnostics()["macOSPresentationReason"] as? String
     if currentMode == configuration.mode.rawValue &&
         currentReason == configuration.reason {
       return
     }
-    nativeCompositorSpike?.detach()
-    nativeCompositorSpike = nil
+    nativeCompositor?.detach()
+    nativeCompositor = nil
     guard let engine = flutterEngine,
           let contentView,
-          let compositor = MacOSNativeCompositorSpikeView(engine: engine) else {
+          let compositor = MacOSNativeCompositorView(engine: engine) else {
       return
     }
-    nativeCompositorSpike = compositor
+    nativeCompositor = compositor
     compositor.attach(to: contentView)
   }
 

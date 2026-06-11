@@ -291,8 +291,8 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<Map<String, dynamic>> debugNativeCompositorSpike() async {
-    calls.add('debugNativeCompositorSpike');
+  Future<Map<String, dynamic>> debugNativeCompositor() async {
+    calls.add('debugNativeCompositor');
     return const {};
   }
 

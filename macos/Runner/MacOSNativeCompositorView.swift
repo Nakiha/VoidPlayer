@@ -5,7 +5,7 @@ import IOSurface
 import Metal
 import QuartzCore
 
-final class MacOSNativeCompositorSpikeView: NSView {
+final class MacOSNativeCompositorView: NSView {
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue
   private let pipeline: MTLRenderPipelineState
@@ -17,7 +17,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
   private weak var videoTexture: MacOSVideoTexture?
   private let metalLayer = CAMetalLayer()
   private let compositorQueue = DispatchQueue(
-    label: "dev.nakiha.voidplayer.macos.native-compositor-spike",
+    label: "dev.nakiha.voidplayer.macos.native-compositor",
     qos: .userInteractive
   )
   private let compositorQueueKey = DispatchSpecificKey<Bool>()
@@ -125,7 +125,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
       self?.drawComposite()
     }
     displayLink?.start()
-    NSLog("VoidPlayer native compositor spike: installed")
+    NSLog("VoidPlayer native compositor: installed")
   }
 
   func detach() {
@@ -184,6 +184,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
   private func diagnosticsOnCompositorQueue() -> [String: Any] {
     var result = configuration.diagnostics
     result.merge([
+      "nativeCompositorEnabled": true,
       "nativeCompositorSpikeEnabled": true,
       "nativeCompositorFrames": frameCount,
       "nativeCompositorVideoTextureAvailable": lastVideoTextureAvailable,
@@ -296,7 +297,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
       compositorDirty = false
       if frameCount == 1 || frameCount % 120 == 0 {
         NSLog(
-          "VoidPlayer native compositor spike: composite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d",
+          "VoidPlayer native compositor: composite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d",
           frameCount,
           outputMode,
           video.width,
@@ -577,7 +578,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
     lastCompositeSucceeded = false
     lastFailure = message
     if frameCount == 1 || frameCount % 120 == 0 {
-      NSLog("VoidPlayer native compositor spike: \(message)")
+      NSLog("VoidPlayer native compositor: \(message)")
     }
   }
 

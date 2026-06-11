@@ -264,11 +264,11 @@ class TestRunner {
           'nativeTextureObjectAvailable=${info['nativeTextureObjectAvailable']} '
           'nativeIOSurfaceObjectAvailable=${info['nativeIOSurfaceObjectAvailable']}',
         );
-      case DebugNativeCompositorSpikeAction():
-        final info = await controller.debugNativeCompositorSpike();
+      case DebugNativeCompositorAction():
+        final info = await controller.debugNativeCompositor();
         log.info(
-          'TestRunner: DEBUG_NATIVE_COMPOSITOR_SPIKE '
-          'enabled=${info['nativeCompositorSpikeEnabled']} '
+          'TestRunner: DEBUG_NATIVE_COMPOSITOR '
+          'enabled=${info['nativeCompositorEnabled']} '
           'frames=${info['nativeCompositorFrames']} '
           'succeeded=${info['nativeCompositorLastCompositeSucceeded']} '
           'mode=${info['nativeCompositorOutputMode']} '

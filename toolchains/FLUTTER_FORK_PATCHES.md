@@ -26,7 +26,7 @@ engine revision, Dart SDK version, clean git checkout, and patch markers.
 ## Patch Summary
 
 The current fork exposes the macOS Flutter backing surface to the runner for
-the HDR compositor spike. The app uses this to composite native video under the
+the HDR compositor. The app uses this to composite native video under the
 Flutter UI in a native `CAMetalLayer`.
 
 Changed Flutter files in `04b75e628e3`:
@@ -38,11 +38,11 @@ Changed Flutter files in `04b75e628e3`:
 | `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterSurface.h` | Exposes IOSurface/Metal texture metadata internally. |
 | `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterSurface.mm` | Carries the backing IOSurface/texture through the surface wrapper. |
 | `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterSurfaceManager.mm` | Keeps presented front surfaces discoverable. |
-| `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterSurfaceManagerTest.mm` | Covers the surface manager behavior changed by the spike. |
-| `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterCompositor.mm` | Adds spike diagnostics around compositor surface flow. |
-| `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterDartProject.mm` | Adds spike-specific configuration plumbing. |
-| `engine/src/flutter/shell/platform/embedder/embedder.cc` | Adds temporary HDR spike diagnostics for Metal backing-store wrapping. |
-| `engine/src/flutter/shell/platform/embedder/embedder_external_view_embedder.cc` | Adds temporary HDR spike diagnostics for external-view submit/target flow. |
+| `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterSurfaceManagerTest.mm` | Covers the surface manager behavior changed by the compositor export patch. |
+| `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterCompositor.mm` | Adds compositor diagnostics around surface flow. |
+| `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterDartProject.mm` | Adds VoidPlayer compositor configuration plumbing. |
+| `engine/src/flutter/shell/platform/embedder/embedder.cc` | Adds temporary HDR compositor diagnostics for Metal backing-store wrapping. |
+| `engine/src/flutter/shell/platform/embedder/embedder_external_view_embedder.cc` | Adds temporary HDR compositor diagnostics for external-view submit/target flow. |
 
 ## Local Workflow
 

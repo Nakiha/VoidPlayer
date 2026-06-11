@@ -1,7 +1,7 @@
 import 'dart:io';
 
-class NativeCompositorSpikeFlags {
-  const NativeCompositorSpikeFlags._();
+class NativeCompositorFlags {
+  const NativeCompositorFlags._();
 
   static bool get nativeCompositor {
     if (!Platform.isMacOS) {
@@ -20,6 +20,7 @@ class NativeCompositorSpikeFlags {
         mode == 'compositor' ||
         mode == 'edr' ||
         mode == 'hdr' ||
+        Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR'] == '1' ||
         Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE'] == '1';
   }
 }

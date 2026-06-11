@@ -24,6 +24,7 @@ class NativePlayerMethods {
   static const captureViewportRegion = 'captureViewportRegion';
   static const captureWindow = 'captureWindow';
   static const debugFlutterSurfaceInfo = 'debugFlutterSurfaceInfo';
+  static const debugNativeCompositor = 'debugNativeCompositor';
   static const debugNativeCompositorSpike = 'debugNativeCompositorSpike';
   static const stepForward = 'stepForward';
   static const stepBackward = 'stepBackward';

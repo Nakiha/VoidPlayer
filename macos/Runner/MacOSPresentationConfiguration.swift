@@ -155,14 +155,24 @@ struct MacOSPresentationEnvironment {
         break
       }
     }
-    if environment["VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE"] == "1" {
+    if environment["VOIDPLAYER_NATIVE_COMPOSITOR"] == "1" ||
+        environment["VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE"] == "1" {
+      let isCurrentAlias = environment["VOIDPLAYER_NATIVE_COMPOSITOR"] == "1"
       if environment["VOIDPLAYER_NATIVE_COMPOSITOR_EDR"] == "1" ||
         environment["VOIDPLAYER_FLUTTER_HDR_SPIKE"] == "1" {
-        request = "legacy-native-compositor-edr"
+        if isCurrentAlias {
+          request = "native-compositor-edr-env"
+        } else {
+          request = "legacy-native-compositor-edr"
+        }
         overrideMode = .nativeCompositorEDR
         return
       }
-      request = "legacy-native-compositor-sdr"
+      if isCurrentAlias {
+        request = "native-compositor-sdr-env"
+      } else {
+        request = "legacy-native-compositor-sdr"
+      }
       overrideMode = .nativeCompositorSDR
       return
     }

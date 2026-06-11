@@ -289,7 +289,7 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   Future<Map<String, dynamic>> debugFlutterSurfaceInfo() async => const {};
 
   @override
-  Future<Map<String, dynamic>> debugNativeCompositorSpike() async => const {};
+  Future<Map<String, dynamic>> debugNativeCompositor() async => const {};
 
   @override
   Future<void> stepForward() async {}

@@ -62,9 +62,8 @@ class DebugFlutterSurfaceInfoAction extends AutomationAction {
   const DebugFlutterSurfaceInfoAction() : super('DEBUG_FLUTTER_SURFACE_INFO');
 }
 
-class DebugNativeCompositorSpikeAction extends AutomationAction {
-  const DebugNativeCompositorSpikeAction()
-    : super('DEBUG_NATIVE_COMPOSITOR_SPIKE');
+class DebugNativeCompositorAction extends AutomationAction {
+  const DebugNativeCompositorAction() : super('DEBUG_NATIVE_COMPOSITOR');
 }
 
 class WindowMaximize extends AutomationAction {

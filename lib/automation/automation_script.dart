@@ -426,11 +426,9 @@ ScriptInstruction? _parseInstruction(
         time,
         const DebugFlutterSurfaceInfoAction(),
       );
+    case 'DEBUG_NATIVE_COMPOSITOR':
     case 'DEBUG_NATIVE_COMPOSITOR_SPIKE':
-      return ScriptAutomationAction(
-        time,
-        const DebugNativeCompositorSpikeAction(),
-      );
+      return ScriptAutomationAction(time, const DebugNativeCompositorAction());
     case 'WINDOW_MAXIMIZE':
       return ScriptAutomationAction(time, const WindowMaximize());
     case 'WINDOW_RESTORE':

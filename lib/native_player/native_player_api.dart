@@ -46,7 +46,7 @@ abstract interface class NativePlayerApi {
   });
   Future<ViewportCapture> captureWindow({String? outputPath});
   Future<Map<String, dynamic>> debugFlutterSurfaceInfo();
-  Future<Map<String, dynamic>> debugNativeCompositorSpike();
+  Future<Map<String, dynamic>> debugNativeCompositor();
   Future<void> stepForward();
   Future<void> stepBackward();
   Future<int> currentPts();
@@ -270,14 +270,14 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<Map<String, dynamic>> debugNativeCompositorSpike() async {
+  Future<Map<String, dynamic>> debugNativeCompositor() async {
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
-      NativePlayerMethods.debugNativeCompositorSpike,
+      NativePlayerMethods.debugNativeCompositor,
     );
     return Map<String, dynamic>.from(
       NativePlayerPayloads.requireMap(
         map,
-        NativePlayerMethods.debugNativeCompositorSpike,
+        NativePlayerMethods.debugNativeCompositor,
       ),
     );
   }

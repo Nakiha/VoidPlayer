@@ -7,7 +7,7 @@
 0.3, ADD_MEDIA, build/generated/macos/native_auto_sdr_policy.mp4
 1.3, ASSERT_TRACK_COUNT, 1
 1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
-1.5, DEBUG_NATIVE_COMPOSITOR_SPIKE
+1.5, DEBUG_NATIVE_COMPOSITOR
 1.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationRequest, auto
 1.54, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationReason, auto-sdr-only
 1.56, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-sdr

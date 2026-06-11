@@ -118,6 +118,21 @@ add_test(NAME macos_metal_color_layout_parity_smoke
     COMMAND macos_metal_color_layout_parity_smoke)
 void_label_test(macos_metal_color_layout_parity_smoke "macos;backend;contract")
 
+add_executable(macos_metal_color_reference_smoke
+    "${VOID_NATIVE_DIR}/tools/macos_metal_color_reference_smoke.cpp"
+    "${VOID_NATIVE_DIR}/renderer/color/color_reference.cpp"
+)
+void_apply_native_compile_options(macos_metal_color_reference_smoke)
+target_include_directories(macos_metal_color_reference_smoke PRIVATE
+    "${VOID_NATIVE_DIR}"
+)
+target_link_libraries(macos_metal_color_reference_smoke PRIVATE
+    void_macos_native_player
+)
+add_test(NAME macos_metal_color_reference_smoke
+    COMMAND macos_metal_color_reference_smoke)
+void_label_test(macos_metal_color_reference_smoke "macos;hdr;color;backend;contract")
+
 add_executable(macos_hdr_sdr_compositor_demo
     "${VOID_NATIVE_DIR}/tools/macos_hdr_sdr_compositor_demo.mm"
 )

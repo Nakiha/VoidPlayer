@@ -50,7 +50,10 @@ struct ScopedPixelBuffer {
   }
 };
 
-ScopedPixelBuffer create_pixel_buffer(OSType pixel_format, int width, int height) {
+ScopedPixelBuffer create_pixel_buffer(OSType pixel_format,
+                                      int width,
+                                      int height,
+                                      bool iosurface = true) {
   ScopedPixelBuffer holder;
   CFDictionaryRef io_surface_properties = CFDictionaryCreate(
       kCFAllocatorDefault,
@@ -59,19 +62,19 @@ ScopedPixelBuffer create_pixel_buffer(OSType pixel_format, int width, int height
       0,
       &kCFTypeDictionaryKeyCallBacks,
       &kCFTypeDictionaryValueCallBacks);
-  const void* keys[] = {
-      kCVPixelBufferMetalCompatibilityKey,
-      kCVPixelBufferIOSurfacePropertiesKey,
-  };
-  const void* values[] = {
-      kCFBooleanTrue,
-      io_surface_properties,
-  };
+  const void* keys[2] = {kCVPixelBufferMetalCompatibilityKey, nullptr};
+  const void* values[2] = {kCFBooleanTrue, nullptr};
+  int count = 1;
+  if (iosurface) {
+    keys[count] = kCVPixelBufferIOSurfacePropertiesKey;
+    values[count] = io_surface_properties;
+    ++count;
+  }
   CFDictionaryRef attrs = CFDictionaryCreate(
       kCFAllocatorDefault,
       keys,
       values,
-      2,
+      count,
       &kCFTypeDictionaryKeyCallBacks,
       &kCFTypeDictionaryValueCallBacks);
   CVPixelBufferCreate(kCFAllocatorDefault,
@@ -151,9 +154,72 @@ uint32_t neutral_chroma_code(int bit_depth) {
   return static_cast<uint32_t>(std::lround((128.0 / 255.0) * max_value));
 }
 
+uint32_t p010_storage_code(int code) {
+  return static_cast<uint32_t>(code) << 6u;
+}
+
 void write_le16(std::vector<uint8_t>& data, size_t offset, uint16_t value) {
   data[offset] = static_cast<uint8_t>(value & 0xffu);
   data[offset + 1] = static_cast<uint8_t>(value >> 8u);
+}
+
+void write_cv_pixel_buffer(CVPixelBufferRef buffer,
+                           int y_code,
+                           int u_code,
+                           int v_code,
+                           bool p010) {
+  if (!buffer ||
+      CVPixelBufferLockBaseAddress(buffer, 0) != kCVReturnSuccess) {
+    return;
+  }
+  auto* y_plane =
+      static_cast<uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(buffer, 0));
+  auto* uv_plane =
+      static_cast<uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(buffer, 1));
+  const size_t y_stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0);
+  const size_t uv_stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1);
+  const int width = static_cast<int>(CVPixelBufferGetWidthOfPlane(buffer, 0));
+  const int height = static_cast<int>(CVPixelBufferGetHeightOfPlane(buffer, 0));
+  const int uv_width = static_cast<int>(CVPixelBufferGetWidthOfPlane(buffer, 1));
+  const int uv_height = static_cast<int>(CVPixelBufferGetHeightOfPlane(buffer, 1));
+  if (y_plane && uv_plane) {
+    if (p010) {
+      const uint16_t y_value = static_cast<uint16_t>(y_code << 6u);
+      const uint16_t u_value = static_cast<uint16_t>(u_code << 6u);
+      const uint16_t v_value = static_cast<uint16_t>(v_code << 6u);
+      for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+          auto* sample = reinterpret_cast<uint16_t*>(
+              y_plane + static_cast<size_t>(y) * y_stride +
+              static_cast<size_t>(x) * 2u);
+          *sample = y_value;
+        }
+      }
+      for (int y = 0; y < uv_height; ++y) {
+        for (int x = 0; x < uv_width; ++x) {
+          auto* sample = reinterpret_cast<uint16_t*>(
+              uv_plane + static_cast<size_t>(y) * uv_stride +
+              static_cast<size_t>(x) * 4u);
+          sample[0] = u_value;
+          sample[1] = v_value;
+        }
+      }
+    } else {
+      for (int y = 0; y < height; ++y) {
+        std::fill_n(y_plane + static_cast<size_t>(y) * y_stride,
+                    width,
+                    static_cast<uint8_t>(y_code));
+      }
+      for (int y = 0; y < uv_height; ++y) {
+        uint8_t* row = uv_plane + static_cast<size_t>(y) * uv_stride;
+        for (int x = 0; x < uv_width; ++x) {
+          row[x * 2 + 0] = static_cast<uint8_t>(u_code);
+          row[x * 2 + 1] = static_cast<uint8_t>(v_code);
+        }
+      }
+    }
+  }
+  CVPixelBufferUnlockBaseAddress(buffer, 0);
 }
 
 struct PackageData {
@@ -245,6 +311,41 @@ PackageData make_package(int y_code,
   return result;
 }
 
+VPMacOSNativePresentDecisionInfo make_decision(
+    int yuv_format,
+    const vr::ColorReferenceConfig& config) {
+  VPMacOSNativePresentDecisionInfo decision = {};
+  decision.should_present = 1;
+  decision.frame_count = 1;
+  decision.track_count = 1;
+  decision.order[0] = 0;
+  decision.display_offset_x[0] = 0.0f;
+  decision.display_offset_y[0] = 0.0f;
+  decision.inv_display_size_x[0] = 1.0f;
+  decision.inv_display_size_y[0] = 1.0f;
+  decision.source_width[0] = kWidth;
+  decision.source_height[0] = kHeight;
+  decision.yuv_format[0] = yuv_format;
+  decision.y_offset[0] = 0;
+  decision.uv_offset[0] = 0;
+  decision.y_stride[0] = kWidth * (yuv_format == VPMacOSNativePresentFormatP010 ? 2 : 1);
+  decision.uv_stride[0] = kWidth * (yuv_format == VPMacOSNativePresentFormatP010 ? 2 : 1);
+  decision.coded_width[0] = kWidth;
+  decision.coded_height[0] = kHeight;
+  decision.nv12_uv_scale_x[0] = 1.0f;
+  decision.nv12_uv_scale_y[0] = 1.0f;
+  decision.color_range[0] = config.range;
+  decision.color_matrix[0] = config.matrix;
+  decision.color_transfer[0] = config.transfer;
+  decision.color_primaries[0] = config.primaries;
+  decision.frames[0].present = 1;
+  decision.frames[0].slot = 0;
+  decision.frames[0].width = kWidth;
+  decision.frames[0].height = kHeight;
+  decision.frames[0].pts_us = 2000 + yuv_format;
+  return decision;
+}
+
 struct Case {
   const char* name = "";
   int y_code = 0;
@@ -257,6 +358,34 @@ struct Case {
 };
 
 bool compare_case(VPMacOSMetalUploader* uploader, const Case& test_case) {
+  const auto expected_config = [&] {
+    auto copy = test_case.config;
+    copy.output_edr = true;
+    return copy;
+  }();
+  const vr::ColorReferenceYuv sample = {
+      vr::color_reference_unorm_to_float(
+          static_cast<uint32_t>(test_case.y_code), test_case.bit_depth),
+      vr::color_reference_unorm_to_float(
+          static_cast<uint32_t>(test_case.u_code), test_case.bit_depth),
+      vr::color_reference_unorm_to_float(
+          static_cast<uint32_t>(test_case.v_code), test_case.bit_depth),
+  };
+  const auto expected = vr::color_reference_sample_yuv(sample, expected_config);
+  const bool p010 = test_case.yuv_format == VPMacOSNativePresentFormatP010;
+  const vr::ColorReferenceYuv cv_sample = p010
+      ? vr::ColorReferenceYuv{
+            vr::color_reference_unorm_to_float(
+                p010_storage_code(test_case.y_code), 16),
+            vr::color_reference_unorm_to_float(
+                p010_storage_code(test_case.u_code), 16),
+            vr::color_reference_unorm_to_float(
+                p010_storage_code(test_case.v_code), 16),
+        }
+      : sample;
+  const auto cv_expected =
+      vr::color_reference_sample_yuv(cv_sample, expected_config);
+
   auto target = create_pixel_buffer(kCVPixelFormatType_64RGBAHalf, kWidth, kHeight);
   if (!target.buffer) {
     std::fprintf(stderr, "%s failed: could not create RGBA half target\n", test_case.name);
@@ -282,26 +411,15 @@ bool compare_case(VPMacOSMetalUploader* uploader, const Case& test_case) {
       error,
       sizeof(error));
   if (ret != 0) {
-    std::fprintf(stderr, "%s failed: Metal upload error=%s\n", test_case.name, error);
+    std::fprintf(stderr, "%s package failed: Metal upload error=%s\n", test_case.name, error);
     return false;
   }
 
   Rgba actual;
   if (!read_rgba_half(target.buffer, 2, 2, &actual)) {
-    std::fprintf(stderr, "%s failed: could not read RGBA half target\n", test_case.name);
+    std::fprintf(stderr, "%s package failed: could not read RGBA half target\n", test_case.name);
     return false;
   }
-  auto expected_config = test_case.config;
-  expected_config.output_edr = true;
-  const vr::ColorReferenceYuv sample = {
-      vr::color_reference_unorm_to_float(
-          static_cast<uint32_t>(test_case.y_code), test_case.bit_depth),
-      vr::color_reference_unorm_to_float(
-          static_cast<uint32_t>(test_case.u_code), test_case.bit_depth),
-      vr::color_reference_unorm_to_float(
-          static_cast<uint32_t>(test_case.v_code), test_case.bit_depth),
-  };
-  const auto expected = vr::color_reference_sample_yuv(sample, expected_config);
   const double dr = std::abs(actual.r - expected.r);
   const double dg = std::abs(actual.g - expected.g);
   const double db = std::abs(actual.b - expected.b);
@@ -324,6 +442,80 @@ bool compare_case(VPMacOSMetalUploader* uploader, const Case& test_case) {
                  dg,
                  db,
                  da,
+                 test_case.tolerance);
+    return false;
+  }
+
+  auto cv_target = create_pixel_buffer(kCVPixelFormatType_64RGBAHalf, kWidth, kHeight);
+  auto source = create_pixel_buffer(
+      p010 ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+           : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+      kWidth,
+      kHeight);
+  if (!cv_target.buffer || !source.buffer) {
+    std::fprintf(stderr, "%s cvpixelbuffer failed: could not create buffers\n",
+                 test_case.name);
+    return false;
+  }
+  write_cv_pixel_buffer(source.buffer,
+                        test_case.y_code,
+                        test_case.u_code,
+                        test_case.v_code,
+                        p010);
+  VPMacOSNativeCVPixelBufferPresentFrame cv_frame = {};
+  cv_frame.pixel_buffer = source.buffer;
+  cv_frame.pixel_format = p010 ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+                               : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
+  cv_frame.plane_count = 2;
+  cv_frame.is_p010 = p010 ? 1 : 0;
+  cv_frame.coded_width = kWidth;
+  cv_frame.coded_height = kHeight;
+  cv_frame.decision = make_decision(test_case.yuv_format, test_case.config);
+  VPMacOSNativeFrameInfo cv_info = {};
+  char cv_error[512] = {};
+  const int cv_ret = VPMacOSMetalUploaderCopyCVPixelBufferPresentFrameWithLayout(
+      uploader,
+      &cv_frame,
+      cv_target.buffer,
+      kWidth,
+      kHeight,
+      &cv_info,
+      cv_error,
+      sizeof(cv_error));
+  if (cv_ret != 0) {
+    std::fprintf(stderr, "%s cvpixelbuffer failed: Metal upload error=%s\n",
+                 test_case.name,
+                 cv_error);
+    return false;
+  }
+  Rgba cv_actual;
+  if (!read_rgba_half(cv_target.buffer, 2, 2, &cv_actual)) {
+    std::fprintf(stderr, "%s cvpixelbuffer failed: could not read RGBA half target\n",
+                 test_case.name);
+    return false;
+  }
+  const double cv_dg = std::abs(cv_actual.g - cv_expected.g);
+  const double cv_db = std::abs(cv_actual.b - cv_expected.b);
+  const double cv_da = std::abs(cv_actual.a - 1.0);
+  const double cv_dr_expected = std::abs(cv_actual.r - cv_expected.r);
+  if (cv_dr_expected > test_case.tolerance || cv_dg > test_case.tolerance ||
+      cv_db > test_case.tolerance || cv_da > test_case.tolerance) {
+    std::fprintf(stderr,
+                 "%s cvpixelbuffer failed: actual=(%.6f, %.6f, %.6f, %.6f) "
+                 "expected=(%.6f, %.6f, %.6f, 1.000000) "
+                 "diff=(%.6f, %.6f, %.6f, %.6f) tolerance=%.6f\n",
+                 test_case.name,
+                 cv_actual.r,
+                 cv_actual.g,
+                 cv_actual.b,
+                 cv_actual.a,
+                 cv_expected.r,
+                 cv_expected.g,
+                 cv_expected.b,
+                 cv_dr_expected,
+                 cv_dg,
+                 cv_db,
+                 cv_da,
                  test_case.tolerance);
     return false;
   }

@@ -11,10 +11,17 @@ from .paths import ROOT
 
 
 CONFIG_PATH = ROOT / "dev_config.json"
+LOCAL_CONFIG_PATH = ROOT / "dev_config.local.json"
 
 
 def load_dev_config(path: Path = CONFIG_PATH) -> None:
     """Load project-local dev settings before running a dev command."""
+    _load_dev_config_file(path)
+    if path == CONFIG_PATH:
+        _load_dev_config_file(LOCAL_CONFIG_PATH)
+
+
+def _load_dev_config_file(path: Path) -> None:
     if not path.exists():
         return
 

@@ -40,6 +40,31 @@ def _unsupported_on_current_platform(command: str, replacement: str | None = Non
     sys.exit(1)
 
 
+def _flutter_bin() -> str:
+    return os.environ.get("VOIDPLAYER_FLUTTER_BIN", "flutter")
+
+
+def _flutter_cmd(*args: str, local_engine: bool = False) -> list[str]:
+    cmd = [_flutter_bin(), *args]
+    if local_engine:
+        cmd.extend(_flutter_local_engine_args())
+    return cmd
+
+
+def _flutter_local_engine_args() -> list[str]:
+    engine_src = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH")
+    engine = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
+    engine_host = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST")
+    args: list[str] = []
+    if engine_src:
+        args.append(f"--local-engine-src-path={engine_src}")
+    if engine:
+        args.append(f"--local-engine={engine}")
+    if engine_host:
+        args.append(f"--local-engine-host={engine_host}")
+    return args
+
+
 def flutter_build(debug: bool) -> None:
     """Build Flutter Windows app."""
     build_type = "Debug" if debug else "Release"
@@ -47,7 +72,7 @@ def flutter_build(debug: bool) -> None:
 
     header(f"Build Flutter ({build_type})")
 
-    cmd = ["flutter", "build", "windows"]
+    cmd = _flutter_cmd("build", "windows")
     cmd.append("--debug" if debug else "--release")
 
     run(cmd, cwd=str(ROOT))
@@ -60,7 +85,7 @@ def flutter_build_macos(debug: bool) -> None:
 
     header(f"Build Flutter macOS ({build_type})")
 
-    cmd = ["flutter", "build", "macos"]
+    cmd = _flutter_cmd("build", "macos", local_engine=True)
     cmd.append("--debug" if debug else "--release")
 
     run(cmd, cwd=str(ROOT))
@@ -134,10 +159,10 @@ def _codesign_macos_app_bundle(app_bundle: Path) -> None:
 def flutter_unit_test() -> None:
     """Run Flutter/Dart unit tests that do not launch the Windows app."""
     header("Analyze Flutter")
-    run(["flutter", "analyze"], cwd=str(ROOT))
+    run(_flutter_cmd("analyze"), cwd=str(ROOT))
 
     header("Test Flutter unit")
-    run(["flutter", "test", "test/unit"], cwd=str(ROOT))
+    run(_flutter_cmd("test", "test/unit"), cwd=str(ROOT))
 
 
 def _is_macos_launch_source(path: Path) -> bool:
@@ -245,7 +270,12 @@ def cmd_build(args) -> None:
 def cmd_run(args) -> None:
     """Run the Flutter application via flutter run."""
     device = "macos" if _is_macos() else "windows"
-    flutter_args = ["flutter", "run", "-d", device]
+    flutter_args = _flutter_cmd(
+        "run",
+        "-d",
+        device,
+        local_engine=_is_macos(),
+    )
     flutter_args.append("--debug" if args.debug else "--release")
 
     if args.log_level:

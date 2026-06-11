@@ -38,6 +38,23 @@ void main() {
     expect(snapshot.isPlaying, isFalse);
   });
 
+  test('tolerant no-player commands report diagnostics', () async {
+    final diagnostics = <String>[];
+    final controller = NativePlayerController(
+      onNoopCommand: (method, reason) => diagnostics.add('$method:$reason'),
+    );
+
+    await controller.play();
+    await controller.currentPts();
+    await controller.getDiagnostics();
+
+    expect(diagnostics, [
+      'play:player not created',
+      'currentPts:player not created',
+      'getDiagnostics:player not created',
+    ]);
+  });
+
   test(
     'strict command order rejects tolerant no-op commands before creation',
     () {
@@ -161,6 +178,111 @@ void main() {
       expect(snapshot.currentPtsUs, 1234);
       expect(snapshot.isPlaying, isTrue);
       expect(snapshot.presentedFrames[11]?.dtsUs, 1200);
+    },
+  );
+
+  test(
+    'structural getter null payloads are protocol errors after creation',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'createPlayer') {
+              return {
+                'textureId': 7,
+                'tracks': <Map<String, Object>>[
+                  {
+                    'fileId': 11,
+                    'slot': 0,
+                    'path': 'a.mp4',
+                    'width': 1920,
+                    'height': 1080,
+                  },
+                ],
+              };
+            }
+            if (call.method == 'destroyPlayer') return null;
+            return null;
+          });
+      final controller = NativePlayerController();
+
+      await controller.createPlayer(const ['a.mp4']);
+      addTearDown(controller.dispose);
+
+      await expectLater(
+        controller.getLayout(),
+        throwsA(isA<NativeProtocolException>()),
+      );
+      await expectLater(
+        controller.getTracks(),
+        throwsA(isA<NativeProtocolException>()),
+      );
+      await expectLater(
+        controller.getDiagnostics(),
+        throwsA(isA<NativeProtocolException>()),
+      );
+    },
+  );
+
+  test('diagnostics rejects non-string keys with protocol error', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'createPlayer') {
+            return {
+              'textureId': 7,
+              'tracks': <Map<String, Object>>[
+                {
+                  'fileId': 11,
+                  'slot': 0,
+                  'path': 'a.mp4',
+                  'width': 1920,
+                  'height': 1080,
+                },
+              ],
+            };
+          }
+          if (call.method == 'getDiagnostics') {
+            return {1: 'bad-key'};
+          }
+          if (call.method == 'destroyPlayer') return null;
+          return null;
+        });
+    final controller = NativePlayerController();
+
+    await controller.createPlayer(const ['a.mp4']);
+    addTearDown(controller.dispose);
+
+    await expectLater(
+      controller.getDiagnostics(),
+      throwsA(
+        isA<NativeProtocolException>().having(
+          (error) => error.reason,
+          'reason',
+          contains('diagnostics keys'),
+        ),
+      ),
+    );
+  });
+
+  test(
+    'disposed playback commands report diagnostics while staying tolerant',
+    () async {
+      final diagnostics = <String>[];
+      final controller = NativePlayerController(
+        onNoopCommand: (method, reason) => diagnostics.add('$method:$reason'),
+      );
+
+      await controller.dispose();
+      await controller.play();
+      await controller.seek(1000);
+      await controller.resize(640, 360);
+      await controller.setViewportBackgroundColor(0xFF000000);
+
+      expect(diagnostics, [
+        'play:controller disposed',
+        'seek:controller disposed',
+        'resize:controller disposed',
+        'setViewportBackgroundColor:controller disposed',
+      ]);
     },
   );
 }

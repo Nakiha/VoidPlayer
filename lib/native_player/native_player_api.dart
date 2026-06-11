@@ -252,7 +252,10 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
       {NativePlayerKeys.fileId: fileId},
     );
     if (map == null) return null;
-    final timing = PresentedFrameTiming.fromMap(map);
+    final timing = PresentedFrameTiming.fromMap(
+      map,
+      context: NativePlayerMethods.currentPresentedFrame,
+    );
     return timing.isValid ? timing : null;
   }
 
@@ -304,10 +307,12 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
 
   @override
   Future<LayoutState> getLayout() async {
-    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+    final map = await _channel.invokeMethod<Object?>(
       NativePlayerMethods.getLayout,
     );
-    return LayoutState.fromMap(map ?? {});
+    return LayoutState.fromMap(
+      NativePlayerPayloads.requireMap(map, NativePlayerMethods.getLayout),
+    );
   }
 
   @override
@@ -343,25 +348,36 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
 
   @override
   Future<List<TrackInfo>> getTracks() async {
-    final list = await _channel.invokeMethod<List<dynamic>>(
+    final list = await _channel.invokeMethod<Object?>(
       NativePlayerMethods.getTracks,
     );
-    return list
-            ?.map(
-              (e) => NativePlayerPayloads.trackInfoFromValue(
-                e,
-                NativePlayerMethods.getTracks,
-              ),
-            )
-            .toList() ??
-        [];
+    return NativePlayerPayloads.requireList(list, NativePlayerMethods.getTracks)
+        .map(
+          (e) => NativePlayerPayloads.trackInfoFromValue(
+            e,
+            NativePlayerMethods.getTracks,
+          ),
+        )
+        .toList();
   }
 
   @override
   Future<Map<String, dynamic>> getDiagnostics() async {
-    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+    final map = await _channel.invokeMethod<Object?>(
       NativePlayerMethods.getDiagnostics,
     );
-    return Map<String, dynamic>.from(map ?? {});
+    final payload = NativePlayerPayloads.requireMap(
+      map,
+      NativePlayerMethods.getDiagnostics,
+    );
+    try {
+      return Map<String, dynamic>.from(payload);
+    } catch (_) {
+      throw NativeProtocolException(
+        context: NativePlayerMethods.getDiagnostics,
+        reason: 'expected diagnostics keys to be strings',
+        payload: payload,
+      );
+    }
   }
 }

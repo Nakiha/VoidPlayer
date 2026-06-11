@@ -43,6 +43,24 @@ void main() {
     );
   });
 
+  test('viewport capture rejects non-map region metrics', () {
+    expect(
+      () => ViewportCapture.fromMap(const {
+        'hash': 'abc',
+        'width': 320,
+        'height': 180,
+        'regionAvgLuma': 'bright',
+      }),
+      throwsA(
+        isA<NativeProtocolException>().having(
+          (error) => error.reason,
+          'reason',
+          contains('regionAvgLuma'),
+        ),
+      ),
+    );
+  });
+
   test('playback snapshot parses presented frames by file id', () {
     final snapshot = PlaybackSnapshot.fromMap(const {
       'currentPtsUs': 123,
@@ -57,5 +75,18 @@ void main() {
     expect(snapshot.durationUs, 456);
     expect(snapshot.isPlaying, isTrue);
     expect(snapshot.presentedFrames[7]?.ptsUs, 120);
+  });
+
+  test('presented frame timing rejects payload type drift', () {
+    expect(
+      () => PresentedFrameTiming.fromMap(const {'ptsUs': '120', 'dtsUs': 100}),
+      throwsA(
+        isA<NativeProtocolException>().having(
+          (error) => error.reason,
+          'reason',
+          contains('ptsUs'),
+        ),
+      ),
+    );
   });
 }

@@ -42,7 +42,8 @@ class NativePlayerEvent {
       dtsUs != PresentedFrameTiming.noTimestampUs;
 
   factory NativePlayerEvent.fromMap(Map<dynamic, dynamic> map) {
-    final rawType = map['type'] as String? ?? '';
+    final typeValue = map['type'];
+    final rawType = typeValue is String ? typeValue : '';
     return NativePlayerEvent(
       schemaVersion: _asInt(map['schemaVersion']) ?? 0,
       sequence: _asInt(map['sequence']) ?? 0,

@@ -99,18 +99,38 @@ class NativePlayerKeys {
 class NativePlayerPayloads {
   const NativePlayerPayloads._();
 
-  static Map<dynamic, dynamic> requireMap(
-    Map<dynamic, dynamic>? map,
-    String method,
-  ) {
-    if (map == null) {
+  static Map<dynamic, dynamic> requireMap(Object? value, String method) {
+    if (value is Map) {
+      return Map<dynamic, dynamic>.from(value);
+    }
+    if (value == null) {
       throw NativeProtocolException(
         context: method,
         reason: 'expected a map payload',
         payload: null,
       );
     }
-    return map;
+    throw NativeProtocolException(
+      context: method,
+      reason: 'expected a map payload',
+      payload: value,
+    );
+  }
+
+  static List<dynamic> requireList(Object? value, String method) {
+    if (value is List) return value;
+    if (value == null) {
+      throw NativeProtocolException(
+        context: method,
+        reason: 'expected a list payload',
+        payload: null,
+      );
+    }
+    throw NativeProtocolException(
+      context: method,
+      reason: 'expected a list payload',
+      payload: value,
+    );
   }
 
   static TrackInfo trackInfoFromValue(Object? value, String context) {
@@ -240,21 +260,71 @@ class PresentedFrameTiming {
     this.sourcePacketDtsUs = noTimestampUs,
   });
 
-  factory PresentedFrameTiming.fromMap(Map<dynamic, dynamic> map) {
+  factory PresentedFrameTiming.fromMap(
+    Map<dynamic, dynamic> map, {
+    String context = 'PresentedFrameTiming',
+  }) {
     return PresentedFrameTiming(
-      ptsUs: map[NativePlayerKeys.ptsUs] as int? ?? -1,
-      dtsUs: map[NativePlayerKeys.dtsUs] as int? ?? -1,
-      durationUs: map[NativePlayerKeys.durationUs] as int? ?? 0,
-      analysisFrameIndex:
-          map[NativePlayerKeys.analysisFrameIndex] as int? ?? -1,
-      frameIdentityMode: map[NativePlayerKeys.frameIdentityMode] as int? ?? 0,
-      sourcePacketIndex: map[NativePlayerKeys.sourcePacketIndex] as int? ?? -1,
-      sourcePacketSize: map[NativePlayerKeys.sourcePacketSize] as int? ?? 0,
-      sourcePacketPos: map[NativePlayerKeys.sourcePacketPos] as int? ?? -1,
-      sourcePacketPtsUs:
-          map[NativePlayerKeys.sourcePacketPtsUs] as int? ?? noTimestampUs,
-      sourcePacketDtsUs:
-          map[NativePlayerKeys.sourcePacketDtsUs] as int? ?? noTimestampUs,
+      ptsUs: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.ptsUs,
+        -1,
+        context,
+      ),
+      dtsUs: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.dtsUs,
+        -1,
+        context,
+      ),
+      durationUs: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.durationUs,
+        0,
+        context,
+      ),
+      analysisFrameIndex: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.analysisFrameIndex,
+        -1,
+        context,
+      ),
+      frameIdentityMode: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.frameIdentityMode,
+        0,
+        context,
+      ),
+      sourcePacketIndex: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.sourcePacketIndex,
+        -1,
+        context,
+      ),
+      sourcePacketSize: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.sourcePacketSize,
+        0,
+        context,
+      ),
+      sourcePacketPos: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.sourcePacketPos,
+        -1,
+        context,
+      ),
+      sourcePacketPtsUs: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.sourcePacketPtsUs,
+        noTimestampUs,
+        context,
+      ),
+      sourcePacketDtsUs: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.sourcePacketDtsUs,
+        noTimestampUs,
+        context,
+      ),
     );
   }
 
@@ -333,7 +403,10 @@ class PlaybackSnapshot {
         NativePlayerKeys.fileId,
         NativePlayerMethods.getPlaybackSnapshot,
       );
-      final timing = PresentedFrameTiming.fromMap(map);
+      final timing = PresentedFrameTiming.fromMap(
+        map,
+        context: NativePlayerMethods.getPlaybackSnapshot,
+      );
       if (timing.isValid) {
         frames[fileId] = timing;
       }
@@ -549,9 +622,11 @@ class ViewportCapture {
         0.0,
         context,
       ),
-      regionAvgLuma: _doubleMap(map[NativePlayerKeys.regionAvgLuma]),
+      regionAvgLuma: _doubleMap(map, NativePlayerKeys.regionAvgLuma, context),
       regionNonBlackRatio: _doubleMap(
-        map[NativePlayerKeys.regionNonBlackRatio],
+        map,
+        NativePlayerKeys.regionNonBlackRatio,
+        context,
       ),
       overlayLineStyleMetricsAvailable:
           map.containsKey(NativePlayerKeys.overlayLinePairedCenters) &&
@@ -585,14 +660,26 @@ class ViewportCapture {
   }
 }
 
-Map<String, double> _doubleMap(Object? raw) {
-  if (raw is! Map) {
+Map<String, double> _doubleMap(
+  Map<dynamic, dynamic> payload,
+  String key,
+  String context,
+) {
+  final raw = payload[key];
+  if (raw == null) {
     return const {};
+  }
+  if (raw is! Map) {
+    throw NativeProtocolException(
+      context: context,
+      reason: 'expected "$key" to be a map when present',
+      payload: payload,
+    );
   }
   return raw.map((key, value) {
     if (value is! num) {
       throw NativeProtocolException(
-        context: 'ViewportCapture',
+        context: context,
         reason: 'expected region metric "$key" to be numeric',
         payload: raw,
       );

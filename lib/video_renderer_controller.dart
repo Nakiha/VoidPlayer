@@ -10,6 +10,7 @@ export 'native_player/native_player_protocol.dart';
 class NativePlayerController {
   final NativePlayerApi _api;
   final bool strictCommandOrder;
+  final void Function(String method, String reason)? onNoopCommand;
   int? _textureId;
   bool _disposed = false;
   Future<CreatePlayerResult>? _createInFlight;
@@ -20,6 +21,7 @@ class NativePlayerController {
   NativePlayerController({
     NativePlayerApi? api,
     this.strictCommandOrder = false,
+    this.onNoopCommand,
   }) : _api = api ?? const MethodChannelNativePlayerApi();
 
   int? get textureId => _textureId;
@@ -46,7 +48,16 @@ class NativePlayerController {
     if (strictCommandOrder) {
       _ensurePlayer(method);
     }
+    _reportNoopCommand(
+      method,
+      _disposed ? 'controller disposed' : 'player not created',
+    );
     return false;
+  }
+
+  void _reportNoopCommand(String method, String reason) {
+    logFine('NativePlayerController.$method ignored: $reason');
+    onNoopCommand?.call(method, reason);
   }
 
   Future<CreatePlayerResult> createPlayer(
@@ -158,6 +169,13 @@ class NativePlayerController {
   }
 
   Future<void> setViewportBackgroundColor(int colorValue) {
+    if (_disposed) {
+      _reportNoopCommand(
+        NativePlayerMethods.setViewportBackgroundColor,
+        'controller disposed',
+      );
+      return Future.value();
+    }
     _viewportBackgroundColor = colorValue;
     if (!canAcceptCommands) return Future.value();
     return _api.setViewportBackgroundColor(colorValue);

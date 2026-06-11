@@ -42,9 +42,10 @@ float4 sample_cv_yuv_track(texture2d<float, access::read> y_texture,
     rgb -= (1.0 / 255.0);
   }
   return float4(
-      tone_map_to_sdr(rgb,
-                      color_transfer_at(params, track_slot),
-                      color_primaries_at(params, track_slot)),
+      map_to_output(rgb,
+                    color_transfer_at(params, track_slot),
+                    color_primaries_at(params, track_slot),
+                    params.output_edr != 0),
       1.0);
 }
 
@@ -207,4 +208,3 @@ kernel void layout_cv_yuv_set_copy(
                                overlay3));
   destination.write(color, gid);
 }
-

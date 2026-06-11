@@ -48,6 +48,26 @@ int metal_upload_failure(char* error, size_t error_size, const char* message) {
   return -2;
 }
 
+bool pixel_buffer_is_edr_target(CVPixelBufferRef pixel_buffer) {
+  return pixel_buffer &&
+      CVPixelBufferGetPixelFormatType(pixel_buffer) == kCVPixelFormatType_64RGBAHalf;
+}
+
+bool pixel_buffer_is_supported_target(CVPixelBufferRef pixel_buffer) {
+  if (!pixel_buffer) {
+    return false;
+  }
+  const OSType pixel_format = CVPixelBufferGetPixelFormatType(pixel_buffer);
+  return pixel_format == kCVPixelFormatType_32BGRA ||
+      pixel_format == kCVPixelFormatType_64RGBAHalf;
+}
+
+MTLPixelFormat metal_pixel_format_for_target(CVPixelBufferRef pixel_buffer) {
+  return pixel_buffer_is_edr_target(pixel_buffer)
+      ? MTLPixelFormatRGBA16Float
+      : MTLPixelFormatBGRA8Unorm;
+}
+
 int64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
   return std::chrono::duration_cast<std::chrono::microseconds>(
              std::chrono::steady_clock::now() - start)
@@ -282,9 +302,9 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   case VPMacOSMetalUploaderStatusSizeMismatch:
     return "native Metal pixel buffer dimensions do not match the presentation surface";
   case VPMacOSMetalUploaderStatusUnsupportedPixelFormat:
-    return "native Metal pixel buffer must be 32-bit BGRA";
+    return "native Metal pixel buffer must be 32-bit BGRA or 64-bit RGBA half";
   case VPMacOSMetalUploaderStatusTextureWrapFailed:
-    return "failed to wrap CVPixelBuffer as a Metal BGRA texture";
+    return "failed to wrap CVPixelBuffer as a Metal destination texture";
   default:
     return "unknown native Metal pixel buffer validation failure";
   }
@@ -408,14 +428,14 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
       CVPixelBufferGetHeight(pixelBuffer) != static_cast<size_t>(height)) {
     return VPMacOSMetalUploaderStatusSizeMismatch;
   }
-  if (CVPixelBufferGetPixelFormatType(pixelBuffer) != kCVPixelFormatType_32BGRA) {
+  if (!pixel_buffer_is_supported_target(pixelBuffer)) {
     return VPMacOSMetalUploaderStatusUnsupportedPixelFormat;
   }
   vp_macos::ScopedCVMetalTexture metalTexture;
   const CVReturn status = vp_macos::create_cv_metal_texture(
       _textureCache,
       pixelBuffer,
-      MTLPixelFormatBGRA8Unorm,
+      metal_pixel_format_for_target(pixelBuffer),
       width,
       height,
       0,
@@ -1140,12 +1160,13 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   auto* metalParams =
       static_cast<vp_macos::MetalLayoutParams*>([frameResource->layout_params_buffer contents]);
   vp_macos::fill_metal_layout_params(*metalParams, decisionInfo, width, height);
+  metalParams->output_edr = pixel_buffer_is_edr_target(pixelBuffer) ? 1u : 0u;
 
   vp_macos::ScopedCVMetalTexture destinationRef;
   const CVReturn textureStatus = vp_macos::create_cv_metal_texture(
       _textureCache,
       pixelBuffer,
-      MTLPixelFormatBGRA8Unorm,
+      metal_pixel_format_for_target(pixelBuffer),
       width,
       height,
       0,
@@ -1309,6 +1330,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   auto* metalParams =
       static_cast<vp_macos::MetalLayoutParams*>([frameResource->layout_params_buffer contents]);
   vp_macos::fill_metal_layout_params(*metalParams, frame->decision, width, height);
+  metalParams->output_edr = pixel_buffer_is_edr_target(pixelBuffer) ? 1u : 0u;
   vp_macos::write_first_present_frame_info(frame->decision, out);
 
   CVPixelBufferRef sourcePixelBuffer =
@@ -1338,7 +1360,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(
       _textureCache,
       pixelBuffer,
-      MTLPixelFormatBGRA8Unorm,
+      metal_pixel_format_for_target(pixelBuffer),
       width,
       height,
       0,
@@ -1513,6 +1535,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   auto* metalParams =
       static_cast<vp_macos::MetalLayoutParams*>([frameResource->layout_params_buffer contents]);
   vp_macos::fill_metal_layout_params(*metalParams, frameSet->decision, width, height);
+  metalParams->output_edr = pixel_buffer_is_edr_target(pixelBuffer) ? 1u : 0u;
   vp_macos::write_first_present_frame_info(frameSet->decision, out);
 
   std::array<vp_macos::ScopedCVMetalTexture, VPMacOSNativeMaxTracks> sourceYRefs;
@@ -1578,7 +1601,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(
       _textureCache,
       pixelBuffer,
-      MTLPixelFormatBGRA8Unorm,
+      metal_pixel_format_for_target(pixelBuffer),
       width,
       height,
       0,
@@ -1905,7 +1928,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   const CVReturn destinationStatus = vp_macos::create_cv_metal_texture(
       _textureCache,
       pixelBuffer,
-      MTLPixelFormatBGRA8Unorm,
+      metal_pixel_format_for_target(pixelBuffer),
       width,
       height,
       0,

@@ -287,12 +287,35 @@ int main() {
           64,
           32,
           VPMacOSMetalUploaderStatusUnsupportedPixelFormat,
-          "native Metal pixel buffer must be 32-bit BGRA")) {
+          "native Metal pixel buffer must be 32-bit BGRA or 64-bit RGBA half")) {
     CFRelease(argb);
     CFRelease(bgra);
     VPMacOSMetalUploaderDestroy(uploader);
     return fail("native Metal uploader did not report unsupported-pixel-format status");
   }
+
+  CVPixelBufferRef rgba_half =
+      create_pixel_buffer(kCVPixelFormatType_64RGBAHalf, 64, 32);
+  if (!rgba_half) {
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("failed to create RGBA half CVPixelBuffer");
+  }
+  if (!expect_validation(
+          uploader,
+          rgba_half,
+          64,
+          32,
+          VPMacOSMetalUploaderStatusOk,
+          "")) {
+    CFRelease(rgba_half);
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    return fail("native Metal uploader rejected valid RGBA half CVPixelBuffer");
+  }
+  CFRelease(rgba_half);
 
   CVPixelBufferRef planar_buffer =
       create_pixel_buffer(kCVPixelFormatType_32BGRA, 4, 4);

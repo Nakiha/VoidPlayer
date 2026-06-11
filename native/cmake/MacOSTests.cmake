@@ -107,6 +107,23 @@ add_test(NAME macos_metal_color_layout_parity_smoke
     COMMAND macos_metal_color_layout_parity_smoke)
 void_label_test(macos_metal_color_layout_parity_smoke "macos;backend;contract")
 
+add_executable(macos_hdr_sdr_compositor_demo
+    "${VOID_NATIVE_DIR}/tools/macos_hdr_sdr_compositor_demo.mm"
+)
+void_apply_native_compile_options(macos_hdr_sdr_compositor_demo)
+target_compile_options(macos_hdr_sdr_compositor_demo PRIVATE
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
+)
+target_link_libraries(macos_hdr_sdr_compositor_demo PRIVATE
+    "-framework AppKit"
+    "-framework Metal"
+    "-framework MetalKit"
+    "-framework QuartzCore"
+)
+add_test(NAME macos_hdr_sdr_compositor_headless
+    COMMAND macos_hdr_sdr_compositor_demo --headless)
+void_label_test(macos_hdr_sdr_compositor_headless "macos;hdr;backend;canary")
+
 add_executable(macos_crash_handler_smoke
     "${VOID_NATIVE_DIR}/tools/macos_crash_handler_smoke.cpp"
 )

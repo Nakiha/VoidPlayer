@@ -130,6 +130,7 @@ struct LayoutParams {
   float background_color_g;
   float background_color_b;
   float background_color_a;
+  uint output_edr;
 };
 
 uint frame_present_at(constant LayoutParams& params, uint index) {
@@ -388,6 +389,31 @@ float4 viewport_background_color(constant LayoutParams& params) {
 	  return saturate(rgb);
 	}
 
+	float3 map_to_edr(float3 rgb, int transfer, int primaries) {
+	  if (transfer == kColorTransferPQ) {
+	    float3 lin = pq_to_linear_nits(rgb) / 203.0;
+	    return max(convert_linear_primaries_to_bt709(lin, primaries), 0.0);
+	  }
+	  if (transfer == kColorTransferHLG) {
+	    float3 lin = hlg_to_linear(rgb) * 4.0;
+	    return max(convert_linear_primaries_to_bt709(lin, primaries), 0.0);
+	  }
+	  if (primaries == kColorPrimariesBT2020) {
+	    return max(convert_linear_primaries_to_bt709(srgb_to_linear(rgb), primaries), 0.0);
+	  }
+	  return srgb_to_linear(rgb);
+	}
+
+	float3 map_to_output(float3 rgb,
+	                     int transfer,
+	                     int primaries,
+	                     bool output_edr) {
+	  if (output_edr) {
+	    return map_to_edr(rgb, transfer, primaries);
+	  }
+	  return tone_map_to_sdr(rgb, transfer, primaries);
+	}
+
 	float yuv_sample_to_float(device const uchar* source, uint offset, bool is_p010) {
 	  if (is_p010) {
 	    uint lo = uint(source[offset]);
@@ -459,9 +485,10 @@ float4 viewport_background_color(constant LayoutParams& params) {
 	    rgb -= (1.0 / 255.0);
 	  }
 	  return float4(
-	      tone_map_to_sdr(rgb,
-	                      color_transfer_at(params, track_slot),
-	                      color_primaries_at(params, track_slot)),
+	      map_to_output(rgb,
+	                    color_transfer_at(params, track_slot),
+	                    color_primaries_at(params, track_slot),
+	                    params.output_edr != 0),
 	      1.0);
 	}
 
@@ -751,9 +778,10 @@ float4 sample_cv_yuv_track(texture2d<float, access::read> y_texture,
     rgb -= (1.0 / 255.0);
   }
   return float4(
-      tone_map_to_sdr(rgb,
-                      color_transfer_at(params, track_slot),
-                      color_primaries_at(params, track_slot)),
+      map_to_output(rgb,
+                    color_transfer_at(params, track_slot),
+                    color_primaries_at(params, track_slot),
+                    params.output_edr != 0),
       1.0);
 }
 
@@ -916,7 +944,6 @@ kernel void layout_cv_yuv_set_copy(
                                overlay3));
   destination.write(color, gid);
 }
-
 struct OverlayGpuRect {
   uint rect_uv0;
   uint rect_uv1;

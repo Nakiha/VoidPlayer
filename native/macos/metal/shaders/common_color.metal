@@ -64,6 +64,31 @@
 	  return saturate(rgb);
 	}
 
+	float3 map_to_edr(float3 rgb, int transfer, int primaries) {
+	  if (transfer == kColorTransferPQ) {
+	    float3 lin = pq_to_linear_nits(rgb) / 203.0;
+	    return max(convert_linear_primaries_to_bt709(lin, primaries), 0.0);
+	  }
+	  if (transfer == kColorTransferHLG) {
+	    float3 lin = hlg_to_linear(rgb) * 4.0;
+	    return max(convert_linear_primaries_to_bt709(lin, primaries), 0.0);
+	  }
+	  if (primaries == kColorPrimariesBT2020) {
+	    return max(convert_linear_primaries_to_bt709(srgb_to_linear(rgb), primaries), 0.0);
+	  }
+	  return srgb_to_linear(rgb);
+	}
+
+	float3 map_to_output(float3 rgb,
+	                     int transfer,
+	                     int primaries,
+	                     bool output_edr) {
+	  if (output_edr) {
+	    return map_to_edr(rgb, transfer, primaries);
+	  }
+	  return tone_map_to_sdr(rgb, transfer, primaries);
+	}
+
 	float yuv_sample_to_float(device const uchar* source, uint offset, bool is_p010) {
 	  if (is_p010) {
 	    uint lo = uint(source[offset]);
@@ -135,8 +160,9 @@
 	    rgb -= (1.0 / 255.0);
 	  }
 	  return float4(
-	      tone_map_to_sdr(rgb,
-	                      color_transfer_at(params, track_slot),
-	                      color_primaries_at(params, track_slot)),
+	      map_to_output(rgb,
+	                    color_transfer_at(params, track_slot),
+	                    color_primaries_at(params, track_slot),
+	                    params.output_edr != 0),
 	      1.0);
 	}

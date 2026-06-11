@@ -14,11 +14,12 @@ int fail(const char* message) {
 }  // namespace
 
 int main() {
-  if (sizeof(vp_macos::MetalLayoutParams) != 436) {
+  if (sizeof(vp_macos::MetalLayoutParams) != 440) {
     return fail("MetalLayoutParams size drifted from the shader ABI");
   }
   if (offsetof(vp_macos::MetalLayoutParams, overlay_present0) != 404 ||
-      offsetof(vp_macos::MetalLayoutParams, background_color_r) != 420) {
+      offsetof(vp_macos::MetalLayoutParams, background_color_r) != 420 ||
+      offsetof(vp_macos::MetalLayoutParams, output_edr) != 436) {
     return fail("MetalLayoutParams offsets drifted from the shader ABI");
   }
   if (VPMacOSNativeMaxTracks != 4) {

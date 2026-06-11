@@ -203,8 +203,7 @@ class PerformanceHealthSnapshot {
         hostIntervalP95Ms > 0 &&
         hostIntervalP95Ms >
             math.max(1000.0 / displayTarget, expectedFrameIntervalMs) * 1.8;
-    final externalPressure =
-        !nativeSlow && (displayTickLow || layoutDrawLow || hostIntervalHigh);
+    final externalPressure = !nativeSlow && (displayTickLow || layoutDrawLow);
 
     final decodePressure = playing && _hasDecodePressure(diagnostics);
     final presentationTimelineAnomaly =
@@ -214,8 +213,7 @@ class PerformanceHealthSnapshot {
         ((cadence.hasEnoughSignal &&
                 cadence.ratio > 0 &&
                 cadence.ratio < 0.82) ||
-            presentationTimelineAnomaly ||
-            hostIntervalHigh);
+            presentationTimelineAnomaly);
     final cadenceSevere =
         playing &&
         ((cadence.hasEnoughSignal &&

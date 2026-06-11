@@ -101,6 +101,29 @@ void main() {
     expect(snapshot.playbackCadenceRatio, greaterThan(0.95));
   });
 
+  test('keeps host interval spikes healthy when cadence is stable', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 118.0,
+      'layoutIntentHz': 58.5,
+      'layoutDrawHz': 76.7,
+      'presentedFrameHostIntervalP95Ms': 396.0,
+      'presentedFramePtsDistinctCount': 179,
+      'presentedFramePtsAdvanceUs': 6030000,
+      'presentedFrameExpectedIntervalUs': 33333,
+      'nativeRendererDrawP95Us': 2200.0,
+      'nativeRendererDrawBackendP95Us': 2100.0,
+      'metalCommandCompletionP95Us': 2000.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+    expect(snapshot.playbackCadenceRatio, greaterThan(0.95));
+    expect(snapshot.diagnosticSummary, contains('host-interval-high'));
+  });
+
   test('keeps normal 30fps media healthy on a high refresh display', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,

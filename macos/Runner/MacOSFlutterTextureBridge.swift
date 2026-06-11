@@ -22,6 +22,7 @@ typealias MacOSTextureDiagnostics = (
 protocol MacOSVideoTexture: FlutterTexture {
   func resize(width: Int, height: Int) -> Bool
   func dimensions() -> (width: Int, height: Int)
+  func presentationGeneration() -> Int
   func captureMetrics() -> (
     width: Int,
     height: Int,
@@ -307,6 +308,13 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     defer { lock.unlock() }
 
     return (width: width, height: height)
+  }
+
+  func presentationGeneration() -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+
+    return lastPublishedNativeUploadCount
   }
 
   func captureMetrics() -> (

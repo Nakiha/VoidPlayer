@@ -43,6 +43,13 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
     return (width: width, height: height)
   }
 
+  func presentationGeneration() -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+
+    return rebuildCount
+  }
+
   func captureMetrics() -> (
     width: Int,
     height: Int,

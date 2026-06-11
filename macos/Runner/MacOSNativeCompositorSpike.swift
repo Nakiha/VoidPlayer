@@ -38,11 +38,17 @@ final class MacOSNativeCompositorSpikeView: NSView {
   private var lastVideoMetricsSampleNs: UInt64 = 0
   private var lastFlutterAlphaMetricsSampleNs: UInt64 = 0
   private var skippedInFlightFrames = 0
+  private var skippedStaticFrames = 0
+  private var compositorDirty = true
+  private var displayLinkWarmUntilNs: UInt64 = 0
+  private var lastPresentedVideoSourceKey: UInt64 = 0
+  private var lastPresentedFlutterSourceKey: UInt64 = 0
   private var explicitHoleRect: SIMD4<Float>?
   private var lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
   private let inFlightSemaphore = DispatchSemaphore(value: 2)
 
   private static let metricsSampleIntervalNs: UInt64 = 1_000_000_000
+  private static let displayLinkWarmGraceNs: UInt64 = 250_000_000
 
   static var isEnabled: Bool {
     MacOSPresentationConfiguration.current.nativeCompositorEnabled
@@ -107,6 +113,9 @@ final class MacOSNativeCompositorSpikeView: NSView {
       width: max(1.0, bounds.width * scale),
       height: max(1.0, bounds.height * scale)
     )
+    compositorQueue.async { [weak self] in
+      self?.markCompositorDirty()
+    }
   }
 
   func attach(to parent: NSView) {
@@ -122,6 +131,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
   func setVideoTexture(_ texture: MacOSVideoTexture?) {
     compositorQueue.async { [weak self] in
       self?.videoTexture = texture
+      self?.markCompositorDirty()
     }
   }
 
@@ -136,6 +146,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
     guard width > 0, height > 0, surfaceWidth > 0, surfaceHeight > 0 else {
       compositorQueue.async { [weak self] in
         self?.explicitHoleRect = nil
+        self?.markCompositorDirty()
       }
       return
     }
@@ -145,8 +156,13 @@ final class MacOSNativeCompositorSpikeView: NSView {
     let maxY = Float(min(surfaceHeight, top + height)) / Float(surfaceHeight)
     let rect = SIMD4<Float>(minX, minY, maxX, maxY)
     compositorQueue.async { [weak self] in
-      self?.explicitHoleRect = rect
-      self?.lastHoleRect = rect
+      guard let self else { return }
+      let changed = explicitHoleRect != rect
+      explicitHoleRect = rect
+      lastHoleRect = rect
+      if changed {
+        markCompositorDirty()
+      }
     }
   }
 
@@ -188,21 +204,32 @@ final class MacOSNativeCompositorSpikeView: NSView {
       "nativeCompositorVideoSRGBToLinearEnabled": lastVideoSRGBToLinearEnabled,
       "nativeCompositorFlutterSRGBToLinearEnabled": lastFlutterSRGBToLinearEnabled,
       "nativeCompositorSkippedInFlightFrames": skippedInFlightFrames,
+      "nativeCompositorSkippedStaticFrames": skippedStaticFrames,
     ]) { _, next in next }
     return result
   }
 
   private func drawComposite() {
     autoreleasepool {
-      guard let video = currentVideoMetalTexture() else {
+      guard let videoSnapshot = currentVideoMetalTexture() else {
         setHiddenOnMain(true)
         recordFailure("no video texture")
         return
       }
-      guard let flutter = currentFlutterMetalTexture() else {
+      guard let flutterSnapshot = currentFlutterMetalTexture() else {
         recordFailure("no Flutter texture")
         return
       }
+      let nowNs = DispatchTime.now().uptimeNanoseconds
+      let sourceChanged =
+        videoSnapshot.sourceKey != lastPresentedVideoSourceKey ||
+        flutterSnapshot.sourceKey != lastPresentedFlutterSourceKey
+      if !compositorDirty && !sourceChanged && nowNs >= displayLinkWarmUntilNs {
+        skippedStaticFrames += 1
+        return
+      }
+      let video = videoSnapshot.texture
+      let flutter = flutterSnapshot.texture
       var holeRect = explicitHoleRect ?? lastHoleRect
       var colorFlags = SIMD4<Float>(
         outputPixelFormat == .rgba16Float ? 1.0 : 0.0,
@@ -258,6 +285,9 @@ final class MacOSNativeCompositorSpikeView: NSView {
       lastFailure = ""
       lastVideoSRGBToLinearEnabled = colorFlags.y > 0.5
       lastFlutterSRGBToLinearEnabled = colorFlags.z > 0.5
+      lastPresentedVideoSourceKey = videoSnapshot.sourceKey
+      lastPresentedFlutterSourceKey = flutterSnapshot.sourceKey
+      compositorDirty = false
       if frameCount == 1 || frameCount % 120 == 0 {
         NSLog(
           "VoidPlayer native compositor spike: composite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d",
@@ -272,6 +302,11 @@ final class MacOSNativeCompositorSpikeView: NSView {
         )
       }
     }
+  }
+
+  private func markCompositorDirty() {
+    compositorDirty = true
+    displayLinkWarmUntilNs = DispatchTime.now().uptimeNanoseconds + Self.displayLinkWarmGraceNs
   }
 
   private func setHiddenOnMain(_ hidden: Bool) {
@@ -292,12 +327,27 @@ final class MacOSNativeCompositorSpikeView: NSView {
     }
   }
 
-  private func currentVideoMetalTexture() -> MTLTexture? {
-    guard let retainedBuffer = videoTexture?.copyPixelBuffer() else {
+  private struct VideoTextureSnapshot {
+    let texture: MTLTexture
+    let sourceKey: UInt64
+  }
+
+  private struct FlutterTextureSnapshot {
+    let texture: MTLTexture
+    let sourceKey: UInt64
+  }
+
+  private func currentVideoMetalTexture() -> VideoTextureSnapshot? {
+    guard let videoTexture,
+          let retainedBuffer = videoTexture.copyPixelBuffer() else {
       lastVideoTextureAvailable = false
       return nil
     }
     let pixelBuffer = retainedBuffer.takeRetainedValue()
+    let generation = videoTexture.presentationGeneration()
+    let sourceKey = generation > 0
+      ? UInt64(generation)
+      : UInt64(UInt(bitPattern: Unmanaged.passUnretained(pixelBuffer).toOpaque()))
     let width = CVPixelBufferGetWidth(pixelBuffer)
     let height = CVPixelBufferGetHeight(pixelBuffer)
     maybeUpdateVideoEDRMetrics(pixelBuffer: pixelBuffer)
@@ -322,7 +372,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
       lastVideoTextureAvailable = false
       return nil
     }
-    return texture
+    return VideoTextureSnapshot(texture: texture, sourceKey: sourceKey)
   }
 
   private func maybeUpdateVideoEDRMetrics(pixelBuffer: CVPixelBuffer) {
@@ -389,7 +439,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
       : 0
   }
 
-  private func currentFlutterMetalTexture() -> MTLTexture? {
+  private func currentFlutterMetalTexture() -> FlutterTextureSnapshot? {
     guard let info = engine?.voidPlayerHDRCurrentFlutterSurfaceInfos().first,
           let texture = info["texture"] as? MTLTexture else {
       lastFlutterTextureAvailable = false
@@ -398,7 +448,26 @@ final class MacOSNativeCompositorSpikeView: NSView {
     if explicitHoleRect == nil {
       maybeUpdateFlutterAlphaMetrics(info: info)
     }
-    return texture
+    return FlutterTextureSnapshot(
+      texture: texture,
+      sourceKey: flutterSurfaceSourceKey(info: info, texture: texture)
+    )
+  }
+
+  private func flutterSurfaceSourceKey(info: [String: Any], texture: MTLTexture) -> UInt64 {
+    if let ioSurfaceId = info["ioSurfaceId"] as? UInt64 {
+      return ioSurfaceId
+    }
+    if let ioSurfaceId = info["ioSurfaceId"] as? Int {
+      return UInt64(max(0, ioSurfaceId))
+    }
+    if let texturePointer = info["texturePointer"] as? UInt64 {
+      return texturePointer
+    }
+    if let texturePointer = info["texturePointer"] as? Int {
+      return UInt64(max(0, texturePointer))
+    }
+    return UInt64(UInt(bitPattern: Unmanaged.passUnretained(texture as AnyObject).toOpaque()))
   }
 
   private func maybeUpdateFlutterAlphaMetrics(info: [String: Any]) {

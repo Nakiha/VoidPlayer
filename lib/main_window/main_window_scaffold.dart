@@ -45,10 +45,7 @@ class MainWindowScaffold extends StatelessWidget {
         nativeCompositorSpike &&
         viewport.textureId != null &&
         viewport.viewportState.status == ViewportDisplayStatus.active;
-    final shellBackgroundColor =
-        Theme.of(context).brightness == Brightness.light
-        ? Theme.of(context).colorScheme.surfaceContainerHighest
-        : Theme.of(context).colorScheme.surfaceContainerLowest;
+    final shellBackgroundColor = Theme.of(context).scaffoldBackgroundColor;
     return Scaffold(
       backgroundColor: nativeCompositorViewportActive
           ? Colors.transparent
@@ -61,7 +58,7 @@ class MainWindowScaffold extends StatelessWidget {
                 AxTreeRegion(
                   label: 'Main toolbar',
                   child: _NativeCompositorOpaqueRegion(
-                    enabled: nativeCompositorSpike,
+                    enabled: nativeCompositorViewportActive,
                     color: shellBackgroundColor,
                     child: AppToolBar(
                       viewMode: viewport.viewMode,
@@ -168,7 +165,7 @@ class MainWindowScaffold extends StatelessWidget {
                                 AxTreeRegion(
                                   label: 'Playback timeline',
                                   child: _NativeCompositorOpaqueRegion(
-                                    enabled: nativeCompositorSpike,
+                                    enabled: nativeCompositorViewportActive,
                                     color: shellBackgroundColor,
                                     child: MediaTimelineSection(
                                       model: model,
@@ -182,7 +179,7 @@ class MainWindowScaffold extends StatelessWidget {
                         ),
                         if (overlays.marksSidebarVisible)
                           _NativeCompositorOpaqueRegion(
-                            enabled: nativeCompositorSpike,
+                            enabled: nativeCompositorViewportActive,
                             color: shellBackgroundColor,
                             child: QuickMarkSidebar(
                               width: overlays.marksSidebarWidth,

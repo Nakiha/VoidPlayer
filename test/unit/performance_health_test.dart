@@ -59,6 +59,51 @@ void main() {
     expect(snapshot.reason, 'decode-buffer');
   });
 
+  test('ignores empty decode buffers for tracks already past their end', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 2,
+      'isPlaying': true,
+      'nativeTrackDiagnostics': [
+        {
+          'bufferState': 0,
+          'bufferCount': 4,
+          'bufferCapacity': 4,
+          'durationUs': 9400000,
+          'currentPtsUs': 4014000,
+        },
+        {
+          'bufferState': 0,
+          'bufferCount': 0,
+          'bufferCapacity': 1,
+          'durationUs': 3000000,
+          'currentPtsUs': 4014000,
+        },
+      ],
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+  });
+
+  test('keeps empty decode buffers as pressure before track end', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'nativeTrackDiagnostics': [
+        {
+          'bufferState': 0,
+          'bufferCount': 0,
+          'bufferCapacity': 1,
+          'durationUs': 9400000,
+          'currentPtsUs': 4014000,
+        },
+      ],
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.warning);
+    expect(snapshot.kind, PerformanceHealthKind.decodePressure);
+  });
+
   test(
     'classifies playback cadence pressure when presented fps trails media',
     () {

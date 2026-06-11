@@ -470,6 +470,7 @@ class PerformanceHealthSnapshot {
     if (tracks is! List) return false;
     for (final track in tracks) {
       if (track is! Map) continue;
+      if (_trackAtOrPastEnd(track)) continue;
       final bufferState = _intValue(track['bufferState']);
       final bufferCount = _intValue(track['bufferCount']);
       final bufferCapacity = _intValue(track['bufferCapacity']);
@@ -477,6 +478,16 @@ class PerformanceHealthSnapshot {
       if (bufferCapacity > 0 && bufferCount <= 0) return true;
     }
     return false;
+  }
+
+  static bool _trackAtOrPastEnd(Map<dynamic, dynamic> track) {
+    final durationUs = _intValue(track['durationUs']);
+    if (durationUs <= 0) return false;
+    final currentPtsUs = _intValue(track['currentPtsUs'] ?? track['ptsUs']);
+    final offsetUs = _intValue(track['offsetUs']);
+    final endUs = offsetUs + durationUs;
+    const tailGraceUs = 100000;
+    return currentPtsUs >= endUs - tailGraceUs;
   }
 
   static _PlaybackCadenceSample _playbackCadence({

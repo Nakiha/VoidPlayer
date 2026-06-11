@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
-import 'package:void_player/windows/main/main_window_media.dart';
+import 'package:void_player/main_window/main_window_media.dart';
 
 void main() {
   test('media filter skips duplicate sources in the same batch', () async {

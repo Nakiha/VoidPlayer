@@ -16,11 +16,11 @@ import '../platform/window_bounds_policy.dart';
 import '../startup_options.dart';
 import 'analysis/analysis_window.dart';
 import 'analysis/ipc/analysis_ipc_client.dart';
-import 'main/main_window_platform.dart';
 import 'system_accent_watcher.dart';
 import 'win32_pointer_button_state_provider.dart';
 import 'win32ffi.dart';
 import 'window_manager.dart';
+import 'windows_main_window_platform.dart';
 
 const MethodChannel _windowBootstrapChannel = MethodChannel(
   'void_player/window_bootstrap',

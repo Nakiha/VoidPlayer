@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/l10n/app_localizations.dart';
+import 'package:void_player/main_window/main_window_overlays.dart';
 import 'package:void_player/native_player/native_player_protocol.dart';
 import 'package:void_player/platform/path_launcher.dart';
 import 'package:void_player/track_manager.dart';
-import 'package:void_player/windows/main/main_window_overlays.dart';
 
 void _setViewportSize(WidgetTester tester, Size size) {
   tester.view.physicalSize = size;

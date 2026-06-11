@@ -2,6 +2,10 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/main_window/main_window_media.dart';
+import 'package:void_player/main_window/main_window_playback.dart';
+import 'package:void_player/main_window/main_window_state.dart';
+import 'package:void_player/main_window/main_window_timeline_metrics.dart';
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/marks/quick_mark_store.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
@@ -10,10 +14,6 @@ import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
 import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/controls_bar.dart';
-import 'package:void_player/windows/main/main_window_media.dart';
-import 'package:void_player/windows/main/main_window_playback.dart';
-import 'package:void_player/windows/main/main_window_state.dart';
-import 'package:void_player/windows/main/main_window_timeline_metrics.dart';
 
 void main() {
   test('MainWindowStateStore skips redundant notifications', () {

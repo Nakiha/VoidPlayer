@@ -13,7 +13,7 @@ platform service 注入、MethodChannel/EventChannel 调用编排，以及平台
 - UI 只组合 widget 和 view model，不直接承载播放/布局业务。
 - 主窗口业务由 `MainWindowController` 组合多个 coordinator。
 - Native 播放、渲染与解码能力通过 `NativePlayerController` 暴露，Flutter 层不直接处理帧数据；Windows D3D11 shared texture 和 macOS CVPixelBuffer/FlutterTexture 都是平台细节。
-- Windows 专属能力集中在 `lib/windows/`，其中主窗口在 `lib/windows/main/`，analysis 窗口在 `lib/windows/analysis/`，跨窗口基础设施留在 `lib/windows/` 根目录。
+- 跨平台主窗口在 `lib/main_window/`。Windows 专属能力集中在 `lib/windows/`，其中 analysis 窗口在 `lib/windows/analysis/`，跨窗口基础设施留在 `lib/windows/` 根目录。
 - macOS runner/platform services 由 `macos/` 和平台能力开关承接；native playback 已可用，analysis UI/IPC 仍 capability-gated。
 
 ## 详细文档索引

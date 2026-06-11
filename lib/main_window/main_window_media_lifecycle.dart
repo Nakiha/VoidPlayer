@@ -1,4 +1,4 @@
-import '../../track_manager.dart';
+import '../track_manager.dart';
 import 'main_window_playback.dart';
 import 'main_window_state.dart';
 

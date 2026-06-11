@@ -1,8 +1,8 @@
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 
-import '../../platform/pointer_button_state_provider.dart';
-import '../../utils/media_source.dart';
+import '../platform/pointer_button_state_provider.dart';
+import '../utils/media_source.dart';
 import 'main_window_scaffold.dart';
 import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';

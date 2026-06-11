@@ -7,6 +7,11 @@ import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
+import 'package:void_player/main_window/main_window_overlays.dart';
+import 'package:void_player/main_window/main_window_scaffold.dart';
+import 'package:void_player/main_window/main_window_state.dart';
+import 'package:void_player/main_window/main_window_view_handles.dart';
+import 'package:void_player/main_window/main_window_view_model.dart';
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/platform/platform_capabilities.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
@@ -18,11 +23,6 @@ import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/analysis_overlay_controls.dart';
 import 'package:void_player/widgets/quick_mark_sidebar.dart';
 import 'package:void_player/widgets/viewport_panel.dart';
-import 'package:void_player/windows/main/main_window_overlays.dart';
-import 'package:void_player/windows/main/main_window_scaffold.dart';
-import 'package:void_player/windows/main/main_window_state.dart';
-import 'package:void_player/windows/main/main_window_view_handles.dart';
-import 'package:void_player/windows/main/main_window_view_model.dart';
 
 void main() {
   testWidgets('settings overlay is layered above main content', (tester) async {

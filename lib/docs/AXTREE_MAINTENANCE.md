@@ -82,7 +82,7 @@ hover/tooltip/焦点状态发出 accessibility 更新，Windows accessibility br
 | 区域 | 文件 |
 | --- | --- |
 | AXTree helper | `lib/widgets/axtree_region.dart` |
-| 主窗口区域边界 | `lib/windows/main/main_window_scaffold.dart` |
+| 主窗口区域边界 | `lib/main_window/main_window_scaffold.dart` |
 | Texture / 分屏 handle | `lib/widgets/viewport_panel.dart` |
 | seek slider | `lib/widgets/timeline_slider.dart` |
 | loop range | `lib/widgets/loop_range_bar.dart` |

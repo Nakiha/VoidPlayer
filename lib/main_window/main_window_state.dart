@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
 
-import '../../marks/quick_mark.dart';
-import '../../marks/quick_mark_thumbnail.dart';
-import '../../preferences/playback_preferences.dart';
-import '../../video_renderer_controller.dart';
-import '../../viewport/viewport_display_state.dart';
+import '../marks/quick_mark.dart';
+import '../marks/quick_mark_thumbnail.dart';
+import '../preferences/playback_preferences.dart';
+import '../video_renderer_controller.dart';
+import '../viewport/viewport_display_state.dart';
 
 const Object _mainWindowStateUnset = Object();
 const double kDefaultTimelineControlsWidth = 332.0;

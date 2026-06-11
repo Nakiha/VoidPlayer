@@ -7,6 +7,7 @@ import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
 import 'package:void_player/app_log.dart';
 import 'package:void_player/config/app_settings_repository.dart';
+import 'package:void_player/main_window/main_window_controller.dart';
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/marks/quick_mark_persistence.dart';
 import 'package:void_player/marks/quick_mark_thumbnail.dart';
@@ -16,7 +17,6 @@ import 'package:void_player/platform/platform_capabilities.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/startup_options.dart';
 import 'package:void_player/video_renderer_controller.dart';
-import 'package:void_player/windows/main/main_window_controller.dart';
 
 class _FakeMainWindowPlatform implements MainWindowPlatform {
   final List<bool> fullScreenCalls = [];

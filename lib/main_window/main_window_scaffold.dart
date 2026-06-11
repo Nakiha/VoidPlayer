@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../../performance/performance_health.dart';
-import '../../platform/platform_capabilities.dart';
-import '../../platform/pointer_button_state_provider.dart';
-import '../../widgets/app_feedback_host.dart';
-import '../../widgets/axtree_region.dart';
-import '../../widgets/quick_mark_sidebar.dart';
-import '../../widgets/resizable_divider.dart';
-import '../../widgets/toolbar.dart';
-import '../../widgets/viewport_panel.dart';
+import '../performance/performance_health.dart';
+import '../platform/platform_capabilities.dart';
+import '../platform/pointer_button_state_provider.dart';
+import '../widgets/app_feedback_host.dart';
+import '../widgets/axtree_region.dart';
+import '../widgets/quick_mark_sidebar.dart';
+import '../widgets/resizable_divider.dart';
+import '../widgets/toolbar.dart';
+import '../widgets/viewport_panel.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_overlays.dart';
 import 'main_window_state.dart';

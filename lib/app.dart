@@ -6,6 +6,7 @@ import 'config/app_config.dart';
 import 'config/app_settings_repository.dart';
 import 'feedback/app_feedback.dart';
 import 'l10n/app_localizations.dart';
+import 'main_window/main_window.dart';
 import 'platform/analysis_process_host.dart';
 import 'platform/main_window_platform.dart';
 import 'platform/native_file_picker.dart';
@@ -16,7 +17,6 @@ import 'preferences/app_config_playback_preferences.dart';
 import 'startup_options.dart';
 import 'theme/app_appearance.dart';
 import 'theme/app_typography.dart';
-import 'windows/main/main_window.dart';
 
 class VoidPlayerApp extends StatefulWidget {
   final Color accentColor;

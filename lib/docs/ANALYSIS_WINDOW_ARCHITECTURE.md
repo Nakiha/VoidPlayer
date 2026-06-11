@@ -32,7 +32,7 @@ analysis/
 - `page/analysis_page.dart` 保持薄壳，不放页面级数据状态；状态和交互逻辑归 `page/analysis_page_controller.dart`。
 - 图表绘制和 hit-test 逻辑按图表类型拆分；共享坐标轴/scrollbar 逻辑归 `charts/analysis_chart_common.dart`。
 - NALU 列表/详情归 `widgets/analysis_nalu.dart`。
-- 主窗口触发 analysis 的流程在 `lib/windows/main/main_window_analysis.dart`；跨进程生命周期在 `lib/windows/window_manager.dart`。
+- 主窗口触发 analysis 的流程在 `lib/main_window/main_window_analysis.dart`；跨进程生命周期在 `lib/windows/window_manager.dart`。
 - 主窗口只依赖 `ipc/analysis_ipc_server.dart` / `ipc/analysis_ipc_models.dart`；analysis 子进程只依赖 `ipc/analysis_ipc_client.dart` / `ipc/analysis_ipc_models.dart`。
 - analysis 子窗体脚本只放 analysis 专属指令，不复用主窗口 `PlayerAction`。
 - Analysis 文件之间使用普通 `import`，不要重新引入 `part` / `part of` 来共享私有状态。跨文件需要访问页面状态时，优先补窄接口或 view model。

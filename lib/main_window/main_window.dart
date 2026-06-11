@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../actions/action_registry.dart';
-import '../../config/app_settings_repository.dart';
-import '../../feedback/app_feedback.dart';
-import '../../l10n/app_localizations.dart';
-import '../../marks/quick_mark_persistence.dart';
-import '../../native_player/native_player_protocol.dart';
-import '../../platform/analysis_process_host.dart';
-import '../../platform/main_window_platform.dart';
-import '../../platform/main_window_shutdown.dart';
-import '../../platform/native_file_picker.dart';
-import '../../platform/platform_capabilities.dart';
-import '../../platform/pointer_button_state_provider.dart';
-import '../../preferences/playback_preferences.dart';
-import '../../startup_options.dart';
+import '../actions/action_registry.dart';
+import '../config/app_settings_repository.dart';
+import '../feedback/app_feedback.dart';
+import '../l10n/app_localizations.dart';
+import '../marks/quick_mark_persistence.dart';
+import '../native_player/native_player_protocol.dart';
+import '../platform/analysis_process_host.dart';
+import '../platform/main_window_platform.dart';
+import '../platform/main_window_shutdown.dart';
+import '../platform/native_file_picker.dart';
+import '../platform/platform_capabilities.dart';
+import '../platform/pointer_button_state_provider.dart';
+import '../preferences/playback_preferences.dart';
+import '../startup_options.dart';
 import 'main_window_controller.dart';
 import 'main_window_view.dart';
 

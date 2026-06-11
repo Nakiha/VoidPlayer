@@ -2,14 +2,14 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../feedback/app_feedback.dart';
-import '../../l10n/app_localizations.dart';
-import '../../platform/path_launcher.dart';
-import '../../preferences/playback_preferences.dart';
-import '../../track_manager.dart';
-import '../../utils/async_guard.dart';
-import '../settings_window.dart';
-import '../stats_window.dart';
+import '../feedback/app_feedback.dart';
+import '../l10n/app_localizations.dart';
+import '../platform/path_launcher.dart';
+import '../preferences/playback_preferences.dart';
+import '../track_manager.dart';
+import '../utils/async_guard.dart';
+import '../windows/settings_window.dart';
+import '../windows/stats_window.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';

@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import '../../app_log.dart';
-import '../../marks/quick_mark.dart';
-import '../../preferences/playback_preferences.dart';
-import '../../startup_options.dart';
-import '../../track_manager.dart';
-import '../../utils/async_guard.dart';
-import '../../video_renderer_controller.dart';
+import '../app_log.dart';
+import '../marks/quick_mark.dart';
+import '../preferences/playback_preferences.dart';
+import '../startup_options.dart';
+import '../track_manager.dart';
+import '../utils/async_guard.dart';
+import '../video_renderer_controller.dart';
 import 'main_window_state.dart';
 import 'main_window_timeline_metrics.dart';
 

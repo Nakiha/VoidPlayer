@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
+import '../main_window/main_window_view_model.dart';
 import '../marks/quick_mark.dart';
 import '../marks/quick_mark_thumbnail.dart';
 import '../utils/time_format.dart';
-import '../windows/main/main_window_view_model.dart';
 import 'app_menu_combo.dart';
 
 class QuickMarkSidebar extends StatefulWidget {

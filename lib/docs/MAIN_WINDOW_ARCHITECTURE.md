@@ -33,16 +33,16 @@ MainWindowView
 
 | 文件 | 职责 |
 |------|------|
-| `lib/windows/main/main_window.dart` | 薄 widget shell，不放业务 |
-| `lib/windows/main/main_window_controller.dart` | facade，生命周期和跨 coordinator 协调 |
-| `lib/windows/main/main_window_composition.dart` | composition root（part of controller），coordinator 装配和 UI 自动化 bootstrap |
-| `lib/windows/main/main_window_state.dart` | `MainWindowStateModel` + `MainWindowStateStore`，以及高频局部 listenable state |
-| `lib/windows/main/main_window_view.dart` | 纯 view，吃 `MainWindowViewModel` 和 `MainWindowViewActions` |
-| `lib/windows/main/main_window_actions.dart` | ActionRegistry 绑定/解绑生命周期 |
-| `lib/windows/main/main_window_playback.dart` | play/pause/seek、polling、loop range、timeline hover |
-| `lib/windows/main/main_window_layout.dart` | viewport resize debounce、pan/zoom/split、native layout flush |
-| `lib/windows/main/main_window_media.dart` | open/add/remove media、track offset、effective duration |
-| `lib/windows/main/main_window_analysis.dart` | analysis IPC snapshot、analysis window trigger、main-window overlay activation/refresh |
+| `lib/main_window/main_window.dart` | 薄 widget shell，不放业务 |
+| `lib/main_window/main_window_controller.dart` | facade，生命周期和跨 coordinator 协调 |
+| `lib/main_window/main_window_composition.dart` | composition root（part of controller），coordinator 装配和 UI 自动化 bootstrap |
+| `lib/main_window/main_window_state.dart` | `MainWindowStateModel` + `MainWindowStateStore`，以及高频局部 listenable state |
+| `lib/main_window/main_window_view.dart` | 纯 view，吃 `MainWindowViewModel` 和 `MainWindowViewActions` |
+| `lib/main_window/main_window_actions.dart` | ActionRegistry 绑定/解绑生命周期 |
+| `lib/main_window/main_window_playback.dart` | play/pause/seek、polling、loop range、timeline hover |
+| `lib/main_window/main_window_layout.dart` | viewport resize debounce、pan/zoom/split、native layout flush |
+| `lib/main_window/main_window_media.dart` | open/add/remove media、track offset、effective duration |
+| `lib/main_window/main_window_analysis.dart` | analysis IPC snapshot、analysis window trigger、main-window overlay activation/refresh |
 | `lib/automation/main_window_harness.dart` | UI 自动化专用 pointer simulation、frame capture（automation 层，主窗口只注入 GlobalKey/getter） |
 
 ## 生命周期

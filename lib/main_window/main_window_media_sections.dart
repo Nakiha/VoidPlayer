@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../utils/async_guard.dart';
-import '../../widgets/analysis_overlay_controls.dart';
-import '../../widgets/controls_bar.dart';
-import '../../widgets/loop_range_bar.dart';
-import '../../widgets/media_header.dart';
-import '../../widgets/timeline_area.dart';
+import '../utils/async_guard.dart';
+import '../widgets/analysis_overlay_controls.dart';
+import '../widgets/controls_bar.dart';
+import '../widgets/loop_range_bar.dart';
+import '../widgets/media_header.dart';
+import '../widgets/timeline_area.dart';
 import 'main_window_state.dart';
 import 'main_window_view_handles.dart';
 import 'main_window_view_model.dart';

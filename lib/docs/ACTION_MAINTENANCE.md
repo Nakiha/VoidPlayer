@@ -5,7 +5,7 @@
 ### 新增 Action
 
 1. 在 `lib/actions/player_action.dart` 中添加新的 sealed subclass
-2. 在 `lib/windows/main/main_window_actions.dart` 中通过 `MainWindowActionBinder` 绑定 callback
+2. 在 `lib/main_window/main_window_actions.dart` 中通过 `MainWindowActionBinder` 绑定 callback
 3. 如需快捷键，在构造函数中传入 `LogicalKeyboardKey`，并完成下面的「新增快捷键」步骤
 4. 如需自动化脚本触发，在 `lib/automation/automation_script.dart` 中补指令解析
 5. 更新本文档的 Action 清单
@@ -181,5 +181,5 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `lib/automation/automation_probe.dart` | 自动化指标/截图辅助查询 |
 | `lib/automation/automation_run_state.dart` | 单次自动化运行中的 capture/baseline 状态 |
 | `lib/automation/test_video_generator.dart` | `GENERATE_TEST_VIDEO` 的 ffmpeg 测试视频生成 |
-| `lib/windows/main/main_window_actions.dart` | 主窗口 Action 绑定表和 bind/unbind 生命周期 |
+| `lib/main_window/main_window_actions.dart` | 主窗口 Action 绑定表和 bind/unbind 生命周期 |
 | `lib/l10n/action_labels.dart` | `resolveActionLabel()` — labelKey → l10n 映射 |

@@ -4,12 +4,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../../marks/quick_mark.dart';
-import '../../track_manager.dart';
-import '../../utils/async_guard.dart';
-import '../../video_renderer_controller.dart';
-import '../../viewport/display_geometry.dart';
-import '../../widgets/analysis_overlay_controls.dart';
+import '../marks/quick_mark.dart';
+import '../track_manager.dart';
+import '../utils/async_guard.dart';
+import '../video_renderer_controller.dart';
+import '../viewport/display_geometry.dart';
+import '../widgets/analysis_overlay_controls.dart';
 import 'main_window_state.dart';
 
 class MainWindowLayoutCoordinator {

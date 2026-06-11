@@ -1,5 +1,5 @@
-import '../../track_manager.dart';
-import '../../utils/pts_range.dart';
+import '../track_manager.dart';
+import '../utils/pts_range.dart';
 import 'main_window_state.dart';
 
 class MainWindowTimelineMetrics {

@@ -2,10 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
+import 'package:void_player/main_window/main_window_analysis.dart';
 import 'package:void_player/native_player/native_player_protocol.dart';
 import 'package:void_player/platform/analysis_process_host.dart';
 import 'package:void_player/track_manager.dart';
-import 'package:void_player/windows/main/main_window_analysis.dart';
 
 class _CountingAnalysisGenerationService extends ChangeNotifier
     implements AnalysisGenerationService {

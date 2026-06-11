@@ -2,8 +2,8 @@ import 'dart:ui';
 
 import 'package:window_manager/window_manager.dart';
 
-import '../../platform/main_window_platform.dart';
-import '../win32ffi.dart';
+import '../platform/main_window_platform.dart';
+import 'win32ffi.dart';
 
 class WindowsMainWindowPlatform implements MainWindowPlatform {
   const WindowsMainWindowPlatform();

@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/main_window/main_window.dart';
 import 'package:void_player/native_player/native_player_protocol.dart';
-import 'package:void_player/windows/main/main_window.dart';
 
 void main() {
   test('user action failure message prefers PlatformException message', () {

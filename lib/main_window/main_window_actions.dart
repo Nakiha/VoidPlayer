@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import '../../actions/action_registry.dart';
-import '../../actions/player_action.dart';
-import '../../automation/main_window_harness.dart';
-import '../../session/playback_session.dart';
-import '../../video_renderer_controller.dart';
+import '../actions/action_registry.dart';
+import '../actions/player_action.dart';
+import '../automation/main_window_harness.dart';
+import '../session/playback_session.dart';
+import '../video_renderer_controller.dart';
 import 'main_window_analysis.dart';
 import 'main_window_layout.dart';
 import 'main_window_media.dart';

@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/main_window/main_window_state.dart';
+import 'package:void_player/main_window/main_window_timeline_metrics.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/video_renderer_controller.dart';
-import 'package:void_player/windows/main/main_window_state.dart';
-import 'package:void_player/windows/main/main_window_timeline_metrics.dart';
 
 TrackInfo _track(int fileId, int durationUs, {int startTimeUs = 0}) =>
     TrackInfo(

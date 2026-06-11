@@ -1,14 +1,14 @@
-import '../../analysis/analysis_toolbar_data_source.dart';
-import '../../marks/quick_mark.dart';
-import '../../marks/quick_mark_store.dart';
-import '../../marks/quick_mark_thumbnail.dart';
-import '../../platform/platform_capabilities.dart';
-import '../../preferences/playback_preferences.dart';
-import '../../session/playback_session.dart';
-import '../../track_manager.dart';
-import '../../video_renderer_controller.dart';
-import '../../viewport/display_geometry.dart';
-import '../../viewport/viewport_display_state.dart';
+import '../analysis/analysis_toolbar_data_source.dart';
+import '../marks/quick_mark.dart';
+import '../marks/quick_mark_store.dart';
+import '../marks/quick_mark_thumbnail.dart';
+import '../platform/platform_capabilities.dart';
+import '../preferences/playback_preferences.dart';
+import '../session/playback_session.dart';
+import '../track_manager.dart';
+import '../video_renderer_controller.dart';
+import '../viewport/display_geometry.dart';
+import '../viewport/viewport_display_state.dart';
 import 'main_window_view_model.dart';
 
 class MainWindowViewModelFactory {

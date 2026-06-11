@@ -3,15 +3,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
-import '../../analysis/analysis_manager.dart';
-import '../../analysis/analysis_overlay.dart';
-import '../../app_log.dart';
-import '../../native_player/native_player_protocol.dart';
-import '../../platform/analysis_process_host.dart';
-import '../../track_manager.dart';
-import '../../utils/async_guard.dart';
-import '../analysis/ipc/analysis_ipc_models.dart';
-import '../analysis/ipc/analysis_ipc_server.dart';
+import '../analysis/analysis_manager.dart';
+import '../analysis/analysis_overlay.dart';
+import '../app_log.dart';
+import '../native_player/native_player_protocol.dart';
+import '../platform/analysis_process_host.dart';
+import '../track_manager.dart';
+import '../utils/async_guard.dart';
+import '../windows/analysis/ipc/analysis_ipc_models.dart';
+import '../windows/analysis/ipc/analysis_ipc_server.dart';
 
 class MainWindowAnalysisCoordinator {
   static const Duration _overlayPlaybackPrefetchInterval = Duration(

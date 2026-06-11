@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../platform/main_window_platform.dart';
-import '../../utils/async_guard.dart';
+import '../platform/main_window_platform.dart';
+import '../utils/async_guard.dart';
 import 'main_window_layout.dart';
 import 'main_window_state.dart';
 

@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import '../app_log.dart';
 import '../platform/analysis_process_host.dart';
+import '../utils/async_guard.dart';
 import 'process_log_args.dart';
 import 'win32ffi.dart';
 
@@ -214,7 +215,8 @@ class AnalysisProcessManager implements AnalysisProcessHost {
 
     _attachProcessLogs(process, 'AnalysisProcess:$key');
 
-    unawaited(
+    fireAndLogFine(
+      'observe analysis process exit',
       process.exitCode.then((code) {
         log.info(
           '[WindowManager] analysis process for $key exited with code $code',
@@ -270,7 +272,8 @@ class AnalysisProcessManager implements AnalysisProcessHost {
 
     _attachProcessLogs(process, 'AnalysisWorkspaceProcess');
 
-    unawaited(
+    fireAndLogFine(
+      'observe analysis workspace process exit',
       process.exitCode.then((code) {
         log.info('[WindowManager] analysis workspace exited with code $code');
         _analysisProcesses.remove(key);

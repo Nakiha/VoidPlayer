@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/native_player/native_player_protocol.dart';
+import 'package:void_player/platform/path_launcher.dart';
 import 'package:void_player/track_manager.dart';
 import 'package:void_player/windows/main/main_window_overlays.dart';
 
@@ -44,6 +45,21 @@ const _twoTracks = [
     ),
   ),
 ];
+
+class _FakePathLauncher implements PathLauncher {
+  final List<String> locatedPaths = [];
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<void> locateFile(String path) async {
+    locatedPaths.add(path);
+  }
+
+  @override
+  Future<void> openFolder(String path) async {}
+}
 
 void main() {
   testWidgets('floating side panels leave uncovered viewport interactive', (
@@ -146,6 +162,30 @@ void main() {
     final tableWidth = tester.getSize(find.byType(DataTable)).width;
     expect(mediaInfoWidth, greaterThan(700));
     expect(tableWidth, closeTo(mediaInfoWidth, 1));
+  });
+
+  testWidgets('media info locate button delegates to path launcher', (
+    tester,
+  ) async {
+    _setViewportSize(tester, const Size(1600, 600));
+    final launcher = _FakePathLauncher();
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: MediaInfoPage(
+            tracks: [_twoTracks.first],
+            pathLauncher: launcher,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Locate file'));
+    await tester.pump();
+
+    expect(launcher.locatedPaths, ['h264_9s_1920x1080.mp4']);
   });
 
   testWidgets('floating side panels animate newly added lower panel', (

@@ -1,9 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../../analysis/analysis_ffi.dart';
 import '../../../analysis/nalu_types.dart';
+import '../../../utils/async_guard.dart';
 import '../testing/analysis_test_host.dart';
 import '../testing/analysis_test_runner.dart';
 import '../widgets/analysis_split_layout_controller.dart';
@@ -99,7 +98,10 @@ class AnalysisPageState extends State<AnalysisPage>
       final scriptPath = widget.testScriptPath;
       if (!mounted || scriptPath == null || _testStarted) return;
       _testStarted = true;
-      unawaited(runAnalysisTestScript(scriptPath));
+      fireAndLogFine(
+        'run analysis test script',
+        runAnalysisTestScript(scriptPath),
+      );
     });
   }
 

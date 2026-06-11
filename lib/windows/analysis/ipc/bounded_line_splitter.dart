@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import '../../../utils/async_guard.dart';
+
 const int analysisIpcMaxLineLength = 64 * 1024;
 
 class BoundedLineSplitter extends StreamTransformerBase<String, String> {
@@ -25,7 +27,10 @@ class BoundedLineSplitter extends StreamTransformerBase<String, String> {
       controller.addError(
         FormatException('line exceeds $maxLineLength characters'),
       );
-      unawaited(subscription.cancel());
+      fireAndLogFine(
+        'cancel oversized line subscription',
+        subscription.cancel(),
+      );
     }
 
     controller = StreamController<String>(

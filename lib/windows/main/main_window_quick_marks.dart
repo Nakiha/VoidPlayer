@@ -15,6 +15,7 @@ import '../../marks/quick_mark_store.dart';
 import '../../marks/quick_mark_thumbnail.dart';
 import '../../storage/storage_catalog.dart';
 import '../../track_manager.dart';
+import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/display_geometry.dart';
 import 'main_window_layout.dart';
@@ -98,7 +99,10 @@ class MainWindowQuickMarkCoordinator {
     if (signature == _trackSignature) return;
     _trackSignature = signature;
     final serial = ++_persistenceSerial;
-    unawaited(_loadForMediaRefs(refs, signature, serial));
+    fireAndLogFine(
+      'load quick marks',
+      _loadForMediaRefs(refs, signature, serial),
+    );
   }
 
   Future<void> flushSave() async {
@@ -112,7 +116,7 @@ class MainWindowQuickMarkCoordinator {
     final hit = _projection()?.hitTestPhysical(physicalPosition);
     if (hit == null) return;
     if (_isPlaying) {
-      unawaited(playbackCoordinator.pause());
+      fireAndLog('pause playback for quick mark', playbackCoordinator.pause());
     }
     stateStore.setSelectedQuickMarkId(null);
     _dragStart = hit;
@@ -132,7 +136,8 @@ class MainWindowQuickMarkCoordinator {
     );
     final anchorFuture = _dragAnchorFuture;
     if (anchorFuture != null) {
-      unawaited(
+      fireAndLogFine(
+        'resolve quick mark drag anchor',
         anchorFuture.then((anchor) {
           if (_dragSerial != serial || _dragStart != hit) return;
           _dragAnchor = anchor;
@@ -344,7 +349,7 @@ class MainWindowQuickMarkCoordinator {
     _saveTimer?.cancel();
     _saveTimer = Timer(
       const Duration(milliseconds: 300),
-      () => unawaited(_savePendingNow()),
+      () => fireAndLogFine('save quick marks', _savePendingNow()),
     );
   }
 
@@ -395,7 +400,10 @@ class MainWindowQuickMarkCoordinator {
     _thumbnailTimer?.cancel();
     _thumbnailTimer = Timer(delay, () {
       _thumbnailTimer = null;
-      unawaited(_captureQueuedThumbnails());
+      fireAndLogFine(
+        'capture quick mark thumbnails',
+        _captureQueuedThumbnails(),
+      );
     });
   }
 
@@ -728,7 +736,10 @@ class MainWindowQuickMarkCoordinator {
         current: thumbnails,
       ),
     );
-    unawaited(_hydrateThumbnailsFromCatalog(nextStore.marks));
+    fireAndLogFine(
+      'hydrate quick mark thumbnails',
+      _hydrateThumbnailsFromCatalog(nextStore.marks),
+    );
     if (persist) _scheduleSave();
   }
 }

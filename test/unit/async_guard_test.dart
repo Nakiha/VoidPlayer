@@ -55,4 +55,21 @@ void main() {
     expect(reportedError, isA<StateError>());
     expect(reportedError.toString(), contains('fire failed'));
   });
+
+  test('fireAndLogFine reports background failures', () async {
+    Object? reportedError;
+
+    fireAndLogFine(
+      'background poll',
+      Future<void>.error(StateError('poll failed')),
+      onError: (error, _) {
+        reportedError = error;
+      },
+    );
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(reportedError, isA<StateError>());
+    expect(reportedError.toString(), contains('poll failed'));
+  });
 }

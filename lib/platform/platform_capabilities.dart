@@ -12,6 +12,22 @@ class PlatformCapability {
 
   const PlatformCapability(this.state, {this.detail});
 
+  String get statusLabel {
+    return switch (state) {
+      CapabilityState.supported => 'Supported',
+      CapabilityState.unsupported => 'Not available',
+      CapabilityState.experimental => 'Experimental',
+      CapabilityState.sandboxLimited => 'Sandbox limited',
+      CapabilityState.localOnly => 'Local only',
+    };
+  }
+
+  String get userMessage {
+    final text = detail;
+    if (text != null && text.isNotEmpty) return text;
+    return statusLabel;
+  }
+
   bool get isAvailable {
     switch (state) {
       case CapabilityState.supported:
@@ -23,6 +39,18 @@ class PlatformCapability {
         return false;
     }
   }
+}
+
+String? firstCapabilityUserMessage(Iterable<PlatformCapability> capabilities) {
+  for (final capability in capabilities) {
+    if (!capability.isAvailable) return capability.userMessage;
+  }
+  for (final capability in capabilities) {
+    if (capability.state != CapabilityState.supported) {
+      return capability.userMessage;
+    }
+  }
+  return null;
 }
 
 class PlatformCapabilities {

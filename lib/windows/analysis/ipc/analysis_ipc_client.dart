@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../../../app_log.dart';
+import '../../../utils/async_guard.dart';
 import 'analysis_ipc_models.dart';
 import 'bounded_line_splitter.dart';
 
@@ -44,7 +45,7 @@ class AnalysisIpcClient extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    unawaited(_subscription.cancel());
+    fireAndLogFine('cancel analysis IPC subscription', _subscription.cancel());
     _socket.destroy();
     super.dispose();
   }

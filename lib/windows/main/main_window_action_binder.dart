@@ -154,11 +154,11 @@ extension MainWindowViewActionBinding on MainWindowController {
           if (!_capabilities.canReorderTrack) return;
           trackManager.moveTrack(oldIndex, newIndex);
         },
-        onOffsetChanged: (slot, offsetMs) {
+        onOffsetChanged: (fileId, offsetMs) {
           if (!_capabilities.canAdjustTrackOffset) return Future<void>.value();
           return _runUserAction(
             'adjust track offset',
-            () => mediaCoordinator.onOffsetChanged(slot, offsetMs),
+            () => mediaCoordinator.onOffsetChanged(fileId, offsetMs),
           );
         },
         onToggleTrackAudio: (fileId) {

@@ -13,6 +13,10 @@ import '../../viewport/display_geometry.dart';
 import '../../viewport/viewport_display_state.dart';
 import '../../widgets/loop_range_bar.dart';
 
+typedef AsyncUiAction = Future<void> Function();
+typedef AsyncUiAction1<T> = Future<void> Function(T value);
+typedef AsyncUiAction2<A, B> = Future<void> Function(A first, B second);
+
 class MainWindowViewModel {
   final MainWindowSessionVm session;
   final MainWindowViewportVm viewport;
@@ -223,12 +227,12 @@ class MainWindowDropActions {
 
 class MainWindowToolbarActions {
   final ValueChanged<int> onViewModeChanged;
-  final Future<void> Function() onOpenFile;
-  final Future<void> Function(String url) onOpenNetworkMedia;
-  final Future<void> Function(String remotePath) onOpenSshRemoteMedia;
+  final AsyncUiAction onOpenFile;
+  final AsyncUiAction1<String> onOpenNetworkMedia;
+  final AsyncUiAction1<String> onOpenSshRemoteMedia;
   final VoidCallback onMediaInfo;
-  final Future<void> Function() onAnalysis;
-  final Future<void> Function() onAnalysisOverlayPanelToggle;
+  final AsyncUiAction onAnalysis;
+  final AsyncUiAction onAnalysisOverlayPanelToggle;
   final VoidCallback onProfiler;
   final VoidCallback onSettings;
   final VoidCallback onMarksSidebarToggle;
@@ -297,19 +301,19 @@ class MainWindowMarksActions {
 
 class MainWindowMediaTimelineActions {
   final void Function(int slotIndex, int targetTrackIndex) onMediaSwapped;
-  final Future<void> Function(int fileId) onRemoveTrack;
+  final AsyncUiAction1<int> onRemoveTrack;
   final ValueChanged<double> onZoomChanged;
   final VoidCallback onToggleFullScreen;
-  final Future<void> Function() onTogglePlay;
-  final Future<void> Function() onStepForward;
-  final Future<void> Function() onStepBackward;
+  final AsyncUiAction onTogglePlay;
+  final AsyncUiAction onStepForward;
+  final AsyncUiAction onStepBackward;
   final ValueChanged<int> onSeek;
   final void Function(int hoverUs, bool hovering) onSliderHover;
-  final Future<void> Function(bool enabled) onLoopRangeEnabledChanged;
+  final AsyncUiAction1<bool> onLoopRangeEnabledChanged;
   final void Function(int startUs, int endUs) onLoopRangeChanged;
-  final Future<void> Function(LoopRangeHandle handle)? onLoopRangeChangeEnd;
+  final AsyncUiAction1<LoopRangeHandle>? onLoopRangeChangeEnd;
   final void Function(int oldIndex, int newIndex) onReorder;
-  final Future<void> Function(int slot, int offsetMs) onOffsetChanged;
+  final AsyncUiAction2<int, int> onOffsetChanged;
   final ValueChanged<int> onToggleTrackAudio;
   final ValueChanged<double> onControlsWidthChanged;
 
@@ -336,7 +340,7 @@ class MainWindowMediaTimelineActions {
 class MainWindowAnalysisOverlayActions {
   final ValueChanged<AnalysisOverlayType> onTypeChanged;
   final ValueChanged<double> onOpacityChanged;
-  final Future<void> Function() onActivate;
+  final AsyncUiAction onActivate;
   final VoidCallback onClose;
 
   const MainWindowAnalysisOverlayActions({

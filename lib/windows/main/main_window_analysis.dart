@@ -9,6 +9,7 @@ import '../../app_log.dart';
 import '../../native_player/native_player_protocol.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../track_manager.dart';
+import '../../utils/async_guard.dart';
 import '../analysis/ipc/analysis_ipc_models.dart';
 import '../analysis/ipc/analysis_ipc_server.dart';
 
@@ -408,12 +409,11 @@ class MainWindowAnalysisCoordinator {
       return;
     }
     if (_operationInFlight != null) return;
-    unawaited(
+    fireAndLogFine(
+      'overlay playback prefetch',
       _enqueueOperation(
         () => _refreshOverlayForCurrentFrameImpl(notifyOnSuccess: false),
-      ).catchError((Object error, StackTrace stack) {
-        log.fine('overlay playback prefetch failed', error, stack);
-      }),
+      ),
     );
   }
 
@@ -467,7 +467,10 @@ class MainWindowAnalysisCoordinator {
   }
 
   void _handleAnalysisWindowExited() {
-    unawaited(_enqueueOperation(_deactivateIpcWorkspace));
+    fireAndLogFine(
+      'deactivate analysis IPC workspace',
+      _enqueueOperation(_deactivateIpcWorkspace),
+    );
   }
 
   Future<void> _deactivateIpcWorkspace() async {

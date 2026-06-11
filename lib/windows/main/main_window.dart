@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../actions/action_registry.dart';
 import '../../config/app_settings_repository.dart';
 import '../../feedback/app_feedback.dart';
 import '../../l10n/app_localizations.dart';
 import '../../marks/quick_mark_persistence.dart';
+import '../../native_player/native_player_protocol.dart';
 import '../../platform/analysis_process_host.dart';
 import '../../platform/main_window_platform.dart';
 import '../../platform/main_window_shutdown.dart';
@@ -146,6 +148,25 @@ class _MainWindowState extends State<MainWindow> with TickerProviderStateMixin {
 
   void _showUserActionFailed(String operation, Object error) {
     if (!mounted) return;
-    AppFeedbackScope.read(context).showError('$operation failed: $error');
+    AppFeedbackScope.read(
+      context,
+    ).showError(formatMainWindowUserActionFailure(operation, error));
   }
+}
+
+String formatMainWindowUserActionFailure(String operation, Object error) {
+  return '$operation failed: ${_userActionFailureDetail(error)}';
+}
+
+String _userActionFailureDetail(Object error) {
+  if (error is PlatformException) {
+    final message = error.message?.trim();
+    if (message != null && message.isNotEmpty) return message;
+    final code = error.code.trim();
+    if (code.isNotEmpty) return code;
+  }
+  if (error is NativeProtocolException) {
+    return error.reason;
+  }
+  return error.toString();
 }

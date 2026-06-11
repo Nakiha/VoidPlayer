@@ -57,7 +57,7 @@ class AppConfig {
               '[Config] config root is ${decoded.runtimeType}; using defaults',
             );
             await instance._backupCorruptConfig();
-            instance._data = {};
+            instance._data = migrateData({});
           }
         });
       } on FormatException catch (e, stack) {
@@ -67,13 +67,13 @@ class AppConfig {
           stack,
         );
         await instance._backupCorruptConfig();
-        instance._data = {};
+        instance._data = migrateData({});
       } on FileSystemException catch (e, stack) {
         log.warning('[Config] config read failed; using defaults', e, stack);
-        instance._data = {};
+        instance._data = migrateData({});
       } catch (e, stack) {
         log.warning('[Config] config load failed; using defaults', e, stack);
-        instance._data = {};
+        instance._data = migrateData({});
       }
     }
 
@@ -86,7 +86,25 @@ class AppConfig {
     if (version is! int || version < currentSchemaVersion) {
       migrated[_schemaVersionKey] = currentSchemaVersion;
     }
+    _normalizeSection(migrated, _windowKey);
+    _normalizeSection(migrated, 'shortcuts');
+    _normalizeSection(migrated, _preferencesKey);
+    _normalizeSection(migrated, _macosKey);
     return migrated;
+  }
+
+  static void _normalizeSection(Map<String, dynamic> data, String key) {
+    final raw = data[key];
+    if (raw == null) return;
+    if (raw is! Map) {
+      data.remove(key);
+      return;
+    }
+    data[key] = Map<String, dynamic>.fromEntries(
+      raw.entries
+          .where((entry) => entry.key is String)
+          .map((entry) => MapEntry(entry.key as String, entry.value)),
+    );
   }
 
   int get schemaVersion {

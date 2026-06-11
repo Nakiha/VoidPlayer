@@ -8,6 +8,7 @@ import '../../marks/quick_mark.dart';
 import '../../preferences/playback_preferences.dart';
 import '../../startup_options.dart';
 import '../../track_manager.dart';
+import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import 'main_window_state.dart';
 import 'main_window_timeline_metrics.dart';
@@ -123,7 +124,13 @@ class MainWindowPlaybackCoordinator {
     _pollTimer?.cancel();
     _loopBoundaryTimer?.cancel();
     _seekSettledTimer?.cancel();
-    unawaited(_nativeEventSubscription?.cancel());
+    final nativeEventSubscription = _nativeEventSubscription;
+    if (nativeEventSubscription != null) {
+      fireAndLogFine(
+        'cancel native player event subscription',
+        nativeEventSubscription.cancel(),
+      );
+    }
     _nativeEventSubscription = null;
   }
 
@@ -223,7 +230,7 @@ class MainWindowPlaybackCoordinator {
     if (_disposed) return;
     final clamped = speed > 0 ? speed : 1.0;
     setPlaybackSpeed(clamped);
-    unawaited(controller.setSpeed(clamped));
+    fireAndLog('set playback speed', controller.setSpeed(clamped));
     scheduleLoopBoundaryTimer();
   }
 
@@ -617,7 +624,7 @@ class MainWindowPlaybackCoordinator {
     setStartupLoopRangeApplied(true);
     log.info('Applying startup loop range: ${range.startUs}:${range.endUs} us');
     setLoopRange(range.startUs, range.endUs);
-    unawaited(setLoopRangeEnabled(true));
+    fireAndLog('apply startup loop range', setLoopRangeEnabled(true));
   }
 
   Future<void> setLoopRange(

@@ -14,7 +14,7 @@ class TimelineArea extends StatefulWidget {
   final List<TrackEntry> entries;
   final int currentPtsUs;
   final void Function(int oldIndex, int newIndex) onReorder;
-  final Future<void> Function(int slot, int offsetMs) onOffsetChanged;
+  final Future<void> Function(int fileId, int offsetMs) onOffsetChanged;
   final ValueChanged<int> onToggleTrackAudio;
   final int? audibleTrackFileId;
   final Future<void> Function(int fileId) onRemoveTrack;

@@ -163,7 +163,17 @@ class AnalysisOverlayChunkScheduler {
         _pendingJobs.isNotEmpty) {
       final job = _pendingJobs.removeAt(0);
       _activeSubmissions++;
-      unawaited(_runJob(job));
+      unawaited(
+        _runJob(job).catchError((Object error, StackTrace stack) {
+          onLog?.call(
+            '[Analysis] overlay chunk job completion failed: '
+            '${job.request.hash} '
+            'frames=${job.request.startFrame}..${job.request.endFrame}: $error',
+            error,
+            stack,
+          );
+        }),
+      );
     }
   }
 

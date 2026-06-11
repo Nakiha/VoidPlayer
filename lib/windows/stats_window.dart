@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../native_player/native_player_api.dart';
 import '../performance/performance_health.dart';
+import '../utils/async_guard.dart';
 
 // ---- FFI bindings ----
 
@@ -223,9 +224,9 @@ class _StatsPageState extends State<StatsPage> {
     _dataSource = widget.dataSource ?? StatsDataSource.forCurrentPlatform();
     _timer = Timer.periodic(
       const Duration(milliseconds: 500),
-      (_) => unawaited(_poll()),
+      (_) => fireAndLogFine('poll stats panel', _poll()),
     );
-    unawaited(_poll());
+    fireAndLogFine('poll stats panel', _poll());
   }
 
   @override

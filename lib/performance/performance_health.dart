@@ -8,6 +8,7 @@ import '../feedback/app_feedback.dart';
 import '../l10n/app_localizations.dart';
 import '../native_player/native_player_api.dart';
 import '../preferences/playback_preferences.dart';
+import '../utils/async_guard.dart';
 
 enum PerformanceHealthLevel { ok, warning, severe }
 
@@ -624,9 +625,9 @@ class _PerformanceHealthFeedbackMonitorState
     if (_timer != null) return;
     _timer = Timer.periodic(
       PerformanceHealthFeedbackPolicy.pollInterval,
-      (_) => unawaited(_poll()),
+      (_) => fireAndLogFine('poll performance health', _poll()),
     );
-    unawaited(_poll());
+    fireAndLogFine('poll performance health', _poll());
   }
 
   Future<void> _poll() {

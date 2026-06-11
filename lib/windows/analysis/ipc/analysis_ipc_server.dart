@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import '../../../app_log.dart';
+import '../../../utils/async_guard.dart';
 import 'analysis_ipc_models.dart';
 import 'bounded_line_splitter.dart';
 
@@ -124,14 +125,26 @@ class AnalysisIpcServer {
           onDone: () {
             handshakeTimer.cancel();
             _clients.remove(socket);
-            unawaited(subscription?.cancel());
+            final activeSubscription = subscription;
+            if (activeSubscription != null) {
+              fireAndLogFine(
+                'cancel analysis IPC client subscription',
+                activeSubscription.cancel(),
+              );
+            }
           },
           onError: (Object error, StackTrace stack) {
             handshakeTimer.cancel();
             _clients.remove(socket);
             log.warning('[AnalysisIpcServer] client error: $error');
             socket.destroy();
-            unawaited(subscription?.cancel());
+            final activeSubscription = subscription;
+            if (activeSubscription != null) {
+              fireAndLogFine(
+                'cancel failed analysis IPC client subscription',
+                activeSubscription.cancel(),
+              );
+            }
           },
           cancelOnError: true,
         );

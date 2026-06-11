@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../app_log.dart';
+import '../utils/async_guard.dart';
 import '../utils/file_lock.dart';
 import 'analysis_cache_service.dart';
 import 'analysis_ffi.dart';
@@ -1000,7 +1001,8 @@ class AnalysisManager extends ChangeNotifier
       final containsPresentedFrame =
           request.targetFrame >= range.startFrame &&
           request.targetFrame <= range.endFrame;
-      unawaited(
+      fireAndLogFine(
+        'ensure overlay chunk range',
         _ensureOverlayChunkRange(
           hash: request.source.hash,
           videoPath: request.source.path,

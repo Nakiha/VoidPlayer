@@ -10,6 +10,19 @@ void fireAndLog(String operation, Future<void> future) {
   );
 }
 
+void fireAndLogFine(
+  String operation,
+  Future<void> future, {
+  void Function(Object error, StackTrace stack)? onError,
+}) {
+  unawaited(
+    future.catchError((Object error, StackTrace stack) {
+      log.fine('$operation failed', error, stack);
+      onError?.call(error, stack);
+    }),
+  );
+}
+
 Future<void> runGuardedAction(
   String operation,
   FutureOr<void> Function() action, {

@@ -22,4 +22,32 @@ void main() {
 
     expect(migrated['schemaVersion'], 99);
   });
+
+  test('migrateData normalizes known map sections', () {
+    final migrated = AppConfig.migrateData({
+      'preferences': {'themeMode': 'dark', 42: 'ignored'},
+      'macos': {
+        'securityScopedBookmarks': {'/tmp/video.mp4': 'bookmark'},
+      },
+      'shortcuts': {'playPause': 'Space'},
+    });
+
+    expect(migrated['preferences'], {'themeMode': 'dark'});
+    expect(migrated['macos'], {
+      'securityScopedBookmarks': {'/tmp/video.mp4': 'bookmark'},
+    });
+    expect(migrated['shortcuts'], {'playPause': 'Space'});
+  });
+
+  test('migrateData removes malformed known sections', () {
+    final migrated = AppConfig.migrateData({
+      'window': 'old-window-shape',
+      'preferences': ['dark'],
+      'customRoot': {'left': 'alone'},
+    });
+
+    expect(migrated.containsKey('window'), isFalse);
+    expect(migrated.containsKey('preferences'), isFalse);
+    expect(migrated['customRoot'], {'left': 'alone'});
+  });
 }

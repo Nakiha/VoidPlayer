@@ -68,17 +68,16 @@ class MainWindowScaffold extends StatelessWidget {
                     networkMediaAvailable: media.networkMediaAvailable,
                     sshRemoteMediaAvailable: media.sshRemoteMediaAvailable,
                     nativeFilePickerAvailable: media.nativeFilePickerAvailable,
-                    addMediaDisabledTooltip: _firstCapabilityDetail([
+                    addMediaDisabledTooltip: firstCapabilityUserMessage([
                       media.localFilePlaybackCapability,
                       media.nativeFilePickerCapability,
                       media.networkMediaPlaybackCapability,
                       media.sshRemoteMediaPlaybackCapability,
                     ]),
-                    analysisDisabledTooltip:
-                        _capabilityDetail(
-                          media.externalAnalysisWindowsCapability,
-                        ) ??
-                        _capabilityDetail(media.analysisOverlaysCapability),
+                    analysisDisabledTooltip: firstCapabilityUserMessage([
+                      media.externalAnalysisWindowsCapability,
+                      media.analysisOverlaysCapability,
+                    ]),
                     canAddTrack: capabilities.canAddTrack,
                     canOpenLocalMedia: capabilities.canOpenLocalMedia,
                     canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
@@ -214,26 +213,6 @@ class MainWindowScaffold extends StatelessWidget {
       ),
     );
   }
-}
-
-String? _firstCapabilityDetail(Iterable<PlatformCapability> capabilities) {
-  for (final capability in capabilities) {
-    final detail = _capabilityDetail(capability);
-    if (detail != null && !capability.isAvailable) return detail;
-  }
-  for (final capability in capabilities) {
-    final detail = _capabilityDetail(capability);
-    if (detail != null && capability.state != CapabilityState.supported) {
-      return detail;
-    }
-  }
-  return null;
-}
-
-String? _capabilityDetail(PlatformCapability capability) {
-  final detail = capability.detail;
-  if (detail == null || detail.isEmpty) return null;
-  return detail;
 }
 
 class _MarksSidebarResizeHandle extends StatelessWidget {

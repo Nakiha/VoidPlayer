@@ -84,14 +84,24 @@ VOIDPLAYER_MACOS_PRESENTATION_MODE=native-compositor-edr \
   python dev.py mac-ui-test ui_tests/macos/native_compositor_flutter_overlay_spike.csv
 ```
 
+This script asserts that SDR remains within reference white while using an EDR
+target: `nativeCompositorEDRVideoMaxRGBX1000 == 1000` and
+`nativeCompositorEDRVideoPixelsOver1X1000 == 0`.
+
 Local Dolby/HLG sample:
 
 ```bash
 VOIDPLAYER_MACOS_PRESENTATION_MODE=native-compositor-edr \
-  python dev.py mac-ui-test build/tmp/dolby_hlg_edr_compositor.csv
+  python dev.py mac-ui-test ui_tests/local/dolby_hlg_edr_compositor.csv
 ```
 
-The local Dolby/HLG CSV references:
+The local Dolby/HLG CSV asserts that the half-float target contains values
+above SDR reference white:
+
+- `nativeCompositorEDRVideoMaxRGBX1000 >= 1001`
+- `nativeCompositorEDRVideoPixelsOver1X1000 >= 1`
+
+It references:
 
 ```text
 /Users/zhuhongwei/Desktop/VID_20260605_212405_DOLBY.mp4

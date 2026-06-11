@@ -50,6 +50,54 @@ void main() {
       expect(api.calls, ['createPlayer:320x180:a.mp4', 'destroyPlayer']);
       expect(runtime.quitCodes, [0]);
     });
+
+    test('native diagnostic int-at-least assertions pass', () async {
+      final api = _FakeNativePlayerApi(
+        diagnostics: const {
+          'nativeCompositorEDRVideoMaxRGBX1000': 3979,
+        },
+      );
+      final controller = NativePlayerController(api: api);
+      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
+
+      final runtime = _FakeRuntime();
+      final runner = TestRunner(
+        scriptPath: _writeScript('''
+0.0,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,nativeCompositorEDRVideoMaxRGBX1000,1001
+0.1,QUIT,0
+'''),
+        automation: _bridge(controller),
+        runtime: runtime,
+      );
+
+      await runner.run();
+
+      expect(runtime.quitCodes, [0]);
+    });
+
+    test('native diagnostic int-at-least assertions fail', () async {
+      final api = _FakeNativePlayerApi(
+        diagnostics: const {
+          'nativeCompositorEDRVideoMaxRGBX1000': 1000,
+        },
+      );
+      final controller = NativePlayerController(api: api);
+      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
+
+      final runtime = _FakeRuntime();
+      final runner = TestRunner(
+        scriptPath: _writeScript('''
+0.0,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,nativeCompositorEDRVideoMaxRGBX1000,1001
+0.1,QUIT,0
+'''),
+        automation: _bridge(controller),
+        runtime: runtime,
+      );
+
+      await runner.run();
+
+      expect(runtime.quitCodes, [1]);
+    });
   });
 }
 
@@ -138,6 +186,9 @@ class _FakeRuntime implements UiAutomationRuntime {
 
 class _FakeNativePlayerApi implements NativePlayerApi {
   final calls = <String>[];
+  final Map<String, dynamic> diagnostics;
+
+  _FakeNativePlayerApi({this.diagnostics = const {}});
 
   @override
   Stream<NativePlayerEvent> get events => const Stream.empty();
@@ -300,5 +351,5 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   Future<List<TrackInfo>> getTracks() async => const [];
 
   @override
-  Future<Map<String, dynamic>> getDiagnostics() async => const {};
+  Future<Map<String, dynamic>> getDiagnostics() async => diagnostics;
 }

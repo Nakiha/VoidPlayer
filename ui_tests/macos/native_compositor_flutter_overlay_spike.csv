@@ -7,6 +7,11 @@
 1.3, ASSERT_NATIVE_BACKEND, macos-native-player, true
 1.6, DEBUG_FLUTTER_SURFACE_INFO
 1.7, DEBUG_NATIVE_COMPOSITOR_SPIKE
+1.72, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-edr
+1.73, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorEDREnabled, true
+1.74, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorVideoPixelFormat, 64RGBAHalf
+1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorEDRVideoMaxRGBX1000, 1000, 1000
+1.76, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorEDRVideoPixelsOver1X1000, 0, 0
 1.8, CAPTURE_WINDOW, native_compositor_flutter_overlay
 1.9, ASSERT_CAPTURE_NOT_BLACK, native_compositor_flutter_overlay, 0.01, 4.0
 2.1, QUIT, 0

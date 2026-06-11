@@ -36,6 +36,7 @@ void main() {
 1.1,ASSERT_NATIVE_AUDIO,true,48000,1,-1
 1.2,ASSERT_NATIVE_DIAGNOSTIC_STRING,presentationAdapter,cvpixelbuffer-bgra-copy
 1.3,ASSERT_NATIVE_DIAGNOSTIC_BOOL,metalTextureValid,true
+1.35,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,nativeCompositorEDRVideoMaxRGBX1000,1001
 1.4,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,textureWidth,320,1920
 1.45,ASSERT_TRACK_METADATA,0,QuickTime / MOV,VideoToolbox / h264
 1.5,CLOSE_MAIN_WINDOW
@@ -43,7 +44,7 @@ void main() {
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(17));
+    expect(instructions, hasLength(18));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
       200,
@@ -58,6 +59,7 @@ void main() {
       1100,
       1200,
       1300,
+      1350,
       1400,
       1450,
       1500,
@@ -187,6 +189,20 @@ void main() {
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
+        isA<AssertNativeDiagnosticIntAtLeast>()
+            .having(
+              (a) => a.key,
+              'key',
+              'nativeCompositorEDRVideoMaxRGBX1000',
+            )
+            .having((a) => a.minValue, 'minValue', 1001),
+      ),
+    );
+    expect(
+      instructions[14],
+      isA<ScriptAssert>().having(
+        (i) => i.assertion,
+        'assertion',
         isA<AssertNativeDiagnosticIntRange>()
             .having((a) => a.key, 'key', 'textureWidth')
             .having((a) => a.minValue, 'minValue', 320)
@@ -194,7 +210,7 @@ void main() {
       ),
     );
     expect(
-      instructions[14],
+      instructions[15],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -204,9 +220,12 @@ void main() {
             .having((a) => a.decoderName, 'decoderName', 'VideoToolbox / h264'),
       ),
     );
-    expect(instructions[15], isA<ScriptCloseMainWindow>());
     expect(
       instructions[16],
+      isA<ScriptCloseMainWindow>(),
+    );
+    expect(
+      instructions[17],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
   });

@@ -63,6 +63,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private let hashPrefix: String
   private var pixelBuffers: [CVPixelBuffer] = []
   private var pixelBufferStates: [NativePixelBufferState] = []
+  private var resizeFallbackDisplayBuffer: CVPixelBuffer?
   private var displayBufferIndex = 0
   private var drawBufferIndex = 0
   private var lastCopiedBufferIndex: Int?
@@ -97,6 +98,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     defer { lock.unlock() }
 
     guard width != self.width || height != self.height else { return false }
+    resizeFallbackDisplayBuffer = pixelBufferLocked(displayBufferIndex)
     self.width = width
     self.height = height
     presentationTarget.resize(width: width, height: height)
@@ -243,6 +245,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         lastPublishedNativeUploadCount,
         pending.publishToken.nativeUploadCount
       )
+      resizeFallbackDisplayBuffer = nil
       return .alreadyPublished
     }
     guard let publishBufferIndex = pendingBufferIndex,
@@ -297,9 +300,15 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     lock.lock()
     defer { lock.unlock() }
 
-    guard let pixelBuffer = pixelBufferLocked(displayBufferIndex) else { return nil }
-    lastCopiedBufferIndex = displayBufferIndex
-    nativeTargetPlayer?.protectMetalPresentationTarget(pixelBuffer)
+    let usingResizeFallback = resizeFallbackDisplayBuffer != nil
+    guard let pixelBuffer = resizeFallbackDisplayBuffer
+      ?? pixelBufferLocked(displayBufferIndex) else { return nil }
+    if usingResizeFallback {
+      lastCopiedBufferIndex = nil
+    } else {
+      lastCopiedBufferIndex = displayBufferIndex
+      nativeTargetPlayer?.protectMetalPresentationTarget(pixelBuffer)
+    }
     return Unmanaged.passRetained(pixelBuffer)
   }
 
@@ -429,6 +438,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     }
     if publishBufferIndex == displayBufferIndex {
       lastPublishedNativeUploadCount = max(lastPublishedNativeUploadCount, nativeUploadCount)
+      resizeFallbackDisplayBuffer = nil
       return false
     }
     guard pixelBufferStates.indices.contains(publishBufferIndex),
@@ -591,6 +601,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       player.markMetalPresentationTargetDisplayed(displayBuffer)
       validateMetalTextureLocked(buffer: displayBuffer)
     }
+    resizeFallbackDisplayBuffer = nil
     _ = chooseNextDrawBufferLocked()
   }
 

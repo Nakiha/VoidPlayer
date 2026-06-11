@@ -761,6 +761,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           _updateSplitFromLocalX(context, e.localPosition.dx);
         },
         child: Listener(
+          behavior: HitTestBehavior.opaque,
           onPointerDown: (e) {
             if ((e.buttons & kPrimaryButton) != 0) {
               if (_isOnSplitHandle(context, e.localPosition)) {

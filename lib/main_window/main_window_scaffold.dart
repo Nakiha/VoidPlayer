@@ -10,6 +10,7 @@ import '../widgets/quick_mark_sidebar.dart';
 import '../widgets/resizable_divider.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/viewport_panel.dart';
+import '../viewport/viewport_display_state.dart';
 import 'main_window_media_sections.dart';
 import 'main_window_overlays.dart';
 import 'main_window_state.dart';
@@ -40,12 +41,18 @@ class MainWindowScaffold extends StatelessWidget {
     final viewportActions = actions.viewport;
     final overlayActions = actions.overlays;
     final nativeCompositorSpike = NativeCompositorSpikeFlags.nativeCompositor;
+    final nativeCompositorViewportActive =
+        nativeCompositorSpike &&
+        viewport.textureId != null &&
+        viewport.viewportState.status == ViewportDisplayStatus.active;
     final shellBackgroundColor =
         Theme.of(context).brightness == Brightness.light
         ? Theme.of(context).colorScheme.surfaceContainerHighest
         : Theme.of(context).colorScheme.surfaceContainerLowest;
     return Scaffold(
-      backgroundColor: nativeCompositorSpike ? Colors.transparent : null,
+      backgroundColor: nativeCompositorViewportActive
+          ? Colors.transparent
+          : null,
       body: Stack(
         children: [
           Column(
@@ -152,7 +159,8 @@ class MainWindowScaffold extends StatelessWidget {
                                       pointerButtonStateProvider,
                                   nativePlaybackAvailable:
                                       media.nativePlaybackAvailable,
-                                  nativeCompositorHole: nativeCompositorSpike,
+                                  nativeCompositorHole:
+                                      nativeCompositorViewportActive,
                                 ),
                               ),
                               if (!overlays.fullScreen &&

@@ -166,6 +166,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
         return
       }
       guard let video = currentVideoMetalTexture() else {
+        isHidden = true
         recordFailure("no video texture")
         return
       }
@@ -195,6 +196,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
       commandBuffer.present(drawable)
       commandBuffer.commit()
 
+      isHidden = false
       frameCount += 1
       lastVideoTextureAvailable = true
       lastFlutterTextureAvailable = true

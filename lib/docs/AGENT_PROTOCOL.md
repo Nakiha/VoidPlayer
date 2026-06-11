@@ -48,6 +48,7 @@ token 错误、JSON 非法、行超长都会直接断开连接。
 | Method | 参数 | 返回 |
 |--------|------|------|
 | `getSession` | — | `media`(每轨 fileId/slotIndex/path/mediaHash/sourceId)+ `playback`(isPlaying/currentPtsUs/durationUs) |
+| `addMedia` | `path` | `{trackCount}`，加载一个媒体文件为新轨道（沙盒平台上路径必须对 app 可读） |
 | `getMarks` | — | 裁决导出文档(版本、媒体 lineage、全部标注含裁决字段),与 `EXPORT_MARKS` 输出同构 |
 | `exportMarks` | `path` | 把导出文档写到文件,返回 `{path}` |
 | `play` / `pause` | — | `{}` |
@@ -88,11 +89,28 @@ token 错误、JSON 非法、行超长都会直接断开连接。
 
 ## 典型 agent 循环
 
-1. agent 产出编码候选,启动播放器:`--agent-connection-file=… ` + 启动脚本里
-   `ADD_MEDIA` 各候选、`SET_MEDIA_SOURCE_ID` 声明同源分组(或连上后调 `setMediaSourceId`)。
+1. agent 产出编码候选,启动播放器:`--agent-connection-file=…`,连上后逐个
+   `addMedia` 加载候选、`setMediaSourceId` 声明同源分组。
 2. 人评审,在侧边栏标缺陷类型/严重度。
 3. agent 轮询 `getMarks`(或会话结束前调 `exportMarks`)收集裁决,按 `sourceId` join
    回编码参数,进入下一轮调参。
+
+## 客户端与 CLI
+
+Python 客户端在 [scripts/dev/agent_client.py](../../scripts/dev/agent_client.py)
+(`VoidPlayerAgentClient`),agent 脚本可直接 import;命令行入口:
+
+```bash
+# 对运行中的实例执行单个动词
+python dev.py agent session --connection-file /path/to/connection.json
+python dev.py agent add-media --connection-file … --path /path/to/clip.mp4
+python dev.py agent set-source-id --connection-file … --slot 0 --source-id clip01
+python dev.py agent marks --connection-file …
+python dev.py agent export --connection-file … --path /path/to/verdicts.json
+
+# 真实 app 端到端协议冒烟(macOS)
+python dev.py agent-smoke
+```
 
 ## 安全边界
 

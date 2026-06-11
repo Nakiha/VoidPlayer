@@ -123,6 +123,7 @@ extension MainWindowComposition on MainWindowController {
       handler: MainWindowAgentHandler(
         stateStore: stateStore,
         trackManager: trackManager,
+        mediaCoordinator: mediaCoordinator,
         playbackCoordinator: playbackCoordinator,
         quickMarkCoordinator: quickMarkCoordinator,
       ),

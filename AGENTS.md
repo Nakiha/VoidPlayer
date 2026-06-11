@@ -29,6 +29,10 @@ python dev.py launch --log-level flutter=DEBUG,native=TRACE
 # Native demo
 python dev.py demo
 
+# Agent 协议(常驻控制通道,见 lib/docs/AGENT_PROTOCOL.md)
+python dev.py agent-smoke
+python dev.py agent session --connection-file <path>
+
 # 测试
 python dev.py test
 python dev.py test --native-only

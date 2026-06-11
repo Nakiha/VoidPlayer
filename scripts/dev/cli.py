@@ -24,6 +24,18 @@ def _require_windows_command(command: str) -> None:
     sys.exit(1)
 
 
+def _cmd_agent(args) -> None:
+    from .agent_client import cmd_agent as impl
+
+    impl(args)
+
+
+def _cmd_agent_smoke(args) -> None:
+    from .agent_client import cmd_agent_smoke as impl
+
+    impl(args)
+
+
 def cmd_analysis_resize_stress(args) -> None:
     _require_windows_command("analysis-resize-stress")
     from .analysis_resize_stress import cmd_analysis_resize_stress as impl
@@ -172,6 +184,45 @@ Examples:
     p_mac_ui_test.add_argument("--visible", action="store_true",
                                help="Show and focus test windows instead of using silent no-activate mode")
 
+    p_agent = sub.add_parser(
+        "agent",
+        help="Run one agent protocol verb against a running VoidPlayer "
+        "instance (see lib/docs/AGENT_PROTOCOL.md)",
+    )
+    p_agent.add_argument(
+        "verb",
+        choices=("session", "marks", "export", "play", "pause", "seek",
+                 "set-source-id", "add-media"),
+    )
+    p_agent.add_argument("--connection-file", required=True,
+                         help="Path passed to --agent-connection-file at launch")
+    p_agent.add_argument("--timeout", type=float, default=30.0,
+                         help="Seconds to wait for the connection file")
+    p_agent.add_argument("--path", default=None, help="Output path for export")
+    p_agent.add_argument("--pts-us", type=int, default=None,
+                         help="Seek target in microseconds")
+    p_agent.add_argument("--slot", type=int, default=None,
+                         help="Track slot index for set-source-id")
+    p_agent.add_argument("--source-id", default=None,
+                         help="Source lineage id for set-source-id")
+
+    p_agent_smoke = sub.add_parser(
+        "agent-smoke",
+        help="End-to-end agent protocol smoke against the real macOS app",
+    )
+    p_agent_smoke_build = p_agent_smoke.add_mutually_exclusive_group()
+    p_agent_smoke_build.add_argument("--debug", dest="debug",
+                                     action="store_true",
+                                     help="Use Debug build (default)")
+    p_agent_smoke_build.add_argument("--release", dest="debug",
+                                     action="store_false",
+                                     help="Use Release build")
+    p_agent_smoke.set_defaults(debug=True)
+    p_agent_smoke.add_argument("--build", action="store_true",
+                               help="Build Flutter app before launch")
+    p_agent_smoke.add_argument("--log-level", type=str, default=None,
+                               help="Log level, e.g. 'flutter=DEBUG'")
+
     p_analysis_resize = sub.add_parser(
         "analysis-resize-stress",
         help="Launch standalone analysis and stress-resize its window",
@@ -256,6 +307,8 @@ def main() -> None:
         "package": cmd_package,
         "ui-test": cmd_ui_test,
         "mac-ui-test": cmd_mac_ui_test,
+        "agent": _cmd_agent,
+        "agent-smoke": _cmd_agent_smoke,
         "analysis-resize-stress": cmd_analysis_resize_stress,
         "analysis-benchmark": cmd_analysis_benchmark,
         "analysis-overlay-benchmark": cmd_analysis_overlay_benchmark,

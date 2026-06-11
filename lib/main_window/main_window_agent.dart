@@ -1,5 +1,6 @@
 import '../agent/agent_protocol_server.dart';
 import '../track_manager.dart';
+import 'main_window_media.dart';
 import 'main_window_playback.dart';
 import 'main_window_quick_marks.dart';
 import 'main_window_state.dart';
@@ -9,12 +10,14 @@ import 'main_window_state.dart';
 class MainWindowAgentHandler implements AgentRequestHandler {
   final MainWindowStateStore stateStore;
   final TrackManager trackManager;
+  final MainWindowMediaCoordinator mediaCoordinator;
   final MainWindowPlaybackCoordinator playbackCoordinator;
   final MainWindowQuickMarkCoordinator quickMarkCoordinator;
 
   MainWindowAgentHandler({
     required this.stateStore,
     required this.trackManager,
+    required this.mediaCoordinator,
     required this.playbackCoordinator,
     required this.quickMarkCoordinator,
   });
@@ -27,6 +30,10 @@ class MainWindowAgentHandler implements AgentRequestHandler {
     switch (method) {
       case 'getSession':
         return _getSession();
+      case 'addMedia':
+        final path = _requireString(params, 'path');
+        await mediaCoordinator.loadMediaPaths([path]);
+        return {'trackCount': trackManager.count};
       case 'getMarks':
         return quickMarkCoordinator.buildMarksExportDocument();
       case 'exportMarks':

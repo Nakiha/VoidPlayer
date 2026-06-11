@@ -78,41 +78,86 @@ class SqliteQuickMarkRepository implements QuickMarkRepository {
     final db = _open();
     try {
       _upsertMediaRefs(db, refs);
-      final refsByHash = {for (final ref in refs) ref.mediaHash!: ref};
-      final marks = <QuickMark>[];
+      final refsByHash = <String, List<QuickMarkMediaRef>>{};
       for (final ref in refs) {
+        refsByHash.putIfAbsent(ref.mediaHash!, () => []).add(ref);
+      }
+      final marks = <QuickMark>[];
+      for (final entry in refsByHash.entries) {
+        final mediaHash = entry.key;
+        _healFallbackRows(db, mediaHash, entry.value.first);
         final rows = db.select(
-          'SELECT media_hash, payload_json FROM marks '
+          'SELECT payload_json FROM marks '
           'WHERE media_hash = ? ORDER BY mark_id ASC',
-          [ref.mediaHash],
+          [mediaHash],
         );
         for (final row in rows) {
+          final QuickMark mark;
           try {
-            final mediaHash = row['media_hash'] as String;
-            final mediaRef = refsByHash[mediaHash];
-            if (mediaRef == null) continue;
             final decoded = jsonDecode(row['payload_json'] as String);
             if (decoded is! Map) continue;
-            final mark = _quickMarkFromJson(Map<String, Object?>.from(decoded));
-            marks.add(
-              mark.copyWith(
-                anchor: mark.anchor.copyWith(fileId: mediaRef.fileId),
-              ),
-            );
+            mark = _quickMarkFromJson(Map<String, Object?>.from(decoded));
           } catch (error, stack) {
             logWarning(
               '[QuickMarkRepository] skipped invalid mark payload: '
-              'mediaHash=${row['media_hash']}',
+              'mediaHash=$mediaHash',
               error,
               stack,
             );
             continue;
+          }
+          for (final ref in entry.value) {
+            marks.add(
+              mark.copyWith(anchor: mark.anchor.copyWith(fileId: ref.fileId)),
+            );
           }
         }
       }
       return marks;
     } finally {
       db.close();
+    }
+  }
+
+  /// Moves mark rows persisted under the fallback hash (sha256 of the media
+  /// id, used while the file content was unreadable) over to the content
+  /// hash, so annotations made during degraded sessions stay visible.
+  void _healFallbackRows(
+    Database db,
+    String contentHash,
+    QuickMarkMediaRef ref,
+  ) {
+    final fallbackHash = QuickMarkMediaRef.fallbackHashForMediaId(ref.mediaId);
+    if (fallbackHash == contentHash) return;
+    final orphaned = db.select(
+      'SELECT COUNT(*) AS n FROM marks WHERE media_hash = ?',
+      [fallbackHash],
+    );
+    if ((orphaned.first['n'] as int) == 0) return;
+    db.execute('BEGIN IMMEDIATE');
+    try {
+      db.execute(
+        'INSERT OR IGNORE INTO marks '
+        '(media_hash, mark_id, payload_json, updated_at_ms) '
+        'SELECT ?, mark_id, payload_json, updated_at_ms FROM marks '
+        'WHERE media_hash = ?',
+        [contentHash, fallbackHash],
+      );
+      db.execute('DELETE FROM marks WHERE media_hash = ?', [fallbackHash]);
+      db.execute('DELETE FROM media WHERE hash = ?', [fallbackHash]);
+      db.execute('COMMIT');
+      logWarning(
+        '[QuickMarkRepository] migrated marks from fallback hash: '
+        'mediaId=${ref.mediaId}',
+      );
+    } catch (error, stack) {
+      db.execute('ROLLBACK');
+      logWarning(
+        '[QuickMarkRepository] fallback hash migration failed: '
+        'mediaId=${ref.mediaId}',
+        error,
+        stack,
+      );
     }
   }
 
@@ -128,9 +173,18 @@ class SqliteQuickMarkRepository implements QuickMarkRepository {
       db.execute('BEGIN IMMEDIATE');
       try {
         _upsertMediaRefs(db, refs);
-        final refsByFileId = {for (final ref in refs) ref.fileId: ref};
+        // When several refs share one content hash, the first ref owns the
+        // persisted set; otherwise the per-hash delete-and-reinsert below
+        // would multiply the distributed copies on every round trip.
+        final ownerByHash = <String, QuickMarkMediaRef>{};
         for (final ref in refs) {
-          db.execute('DELETE FROM marks WHERE media_hash = ?', [ref.mediaHash]);
+          ownerByHash.putIfAbsent(ref.mediaHash!, () => ref);
+        }
+        final refsByFileId = {
+          for (final ref in ownerByHash.values) ref.fileId: ref,
+        };
+        for (final hash in ownerByHash.keys) {
+          db.execute('DELETE FROM marks WHERE media_hash = ?', [hash]);
         }
         final insert = db.prepare(
           'INSERT OR REPLACE INTO marks '
@@ -196,15 +250,21 @@ class SqliteQuickMarkRepository implements QuickMarkRepository {
   }
 
   Future<String> _hashForRef(QuickMarkMediaRef ref) async {
+    Object? failure;
+    StackTrace? failureStack;
     try {
       final file = File(ref.path);
       if (await file.exists()) return computeFileSha256(ref.path);
     } catch (error, stack) {
-      logFine(
+      failure = error;
+      failureStack = stack;
+    }
+    if (!ref.mediaId.contains('://')) {
+      logWarning(
         '[QuickMarkRepository] media hash fallback: '
         'path=${ref.path} mediaId=${ref.mediaId}',
-        error,
-        stack,
+        failure,
+        failureStack,
       );
     }
     return QuickMarkMediaRef.fallbackHashForMediaId(ref.mediaId);

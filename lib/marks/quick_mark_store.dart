@@ -44,6 +44,39 @@ class QuickMarkStore {
     return math.max(nextId, highestId + 1);
   }
 
+  /// Merges marks loaded from persistence into the in-memory set.
+  ///
+  /// Loaded marks replace any current marks belonging to the same files.
+  /// Persisted mark ids are only unique per media, so ids that collide with
+  /// kept or previously merged marks are remapped to fresh ids; non-colliding
+  /// ids stay stable to preserve thumbnail-cache hits.
+  static QuickMarkStore mergeLoaded({
+    required List<QuickMark> current,
+    required List<QuickMark> loaded,
+    int nextId = 1,
+  }) {
+    final loadedFileIds = {for (final mark in loaded) mark.fileId};
+    final kept = [
+      for (final mark in current)
+        if (!loadedFileIds.contains(mark.fileId)) mark,
+    ];
+    final usedIds = {for (final mark in kept) mark.id};
+    var counter = _normalizedNextId(kept, nextId);
+    final merged = [...kept];
+    for (final mark in loaded) {
+      var id = mark.id;
+      if (id <= 0 || usedIds.contains(id)) {
+        while (usedIds.contains(counter)) {
+          counter++;
+        }
+        id = counter++;
+      }
+      usedIds.add(id);
+      merged.add(id == mark.id ? mark : mark.copyWith(id: id));
+    }
+    return QuickMarkStore(marks: merged, nextId: math.max(nextId, counter));
+  }
+
   bool get isEmpty => marks.isEmpty;
 
   QuickMark? markById(int id) {

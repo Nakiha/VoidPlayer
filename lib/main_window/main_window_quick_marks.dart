@@ -282,14 +282,23 @@ class MainWindowQuickMarkCoordinator {
   }
 
   Future<String> _mediaHashForPath(String path, String mediaId) async {
+    Object? failure;
+    StackTrace? failureStack;
     try {
       final file = File(path);
       if (await file.exists()) return computeFileSha256(path);
     } catch (error, stack) {
-      logFine(
+      failure = error;
+      failureStack = stack;
+    }
+    // Remote media never has local content; the media-id hash is its stable
+    // identity. For local files this degradation makes marks land in a
+    // fallback bucket, so make it visible.
+    if (!mediaId.contains('://')) {
+      logWarning(
         '[QuickMark] media hash fallback: path=$path mediaId=$mediaId',
-        error,
-        stack,
+        failure,
+        failureStack,
       );
     }
     return QuickMarkMediaRef.fallbackHashForMediaId(mediaId);
@@ -327,14 +336,12 @@ class MainWindowQuickMarkCoordinator {
       if (serial != _persistenceSerial || signature != _trackSignature) return;
       final loaded = await repository.loadForMediaRefs(resolvedRefs);
       if (serial != _persistenceSerial || signature != _trackSignature) return;
-      final loadedFileIds = loaded.map((mark) => mark.fileId).toSet();
-      final next = [
-        for (final mark in _quickMarks)
-          if (!loadedFileIds.contains(mark.fileId)) mark,
-        ...loaded,
-      ];
       _applyStore(
-        QuickMarkStore(marks: next, nextId: _nextQuickMarkId),
+        QuickMarkStore.mergeLoaded(
+          current: _quickMarks,
+          loaded: loaded,
+          nextId: _nextQuickMarkId,
+        ),
         persist: false,
       );
     } catch (e, stack) {

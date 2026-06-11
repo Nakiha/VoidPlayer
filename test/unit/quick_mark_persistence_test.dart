@@ -166,4 +166,71 @@ void main() {
     expect(loaded.single.fileId, 9);
     expect(loaded.single.text, 'offline');
   });
+
+  test('heals marks stored under fallback hash once content is readable', () async {
+    final missing = File(p.join(dir.path, 'media', 'missing.mp4'));
+    await repository.saveForMediaRefs(
+      [QuickMarkMediaRef(fileId: 1, path: missing.path)],
+      const [
+        QuickMark(
+          id: 4,
+          anchor: QuickMarkAnchor(fileId: 1, ptsUs: 5000, dtsUs: 5000),
+          sourceRect: Rect.zero,
+          text: 'fallback',
+        ),
+      ],
+    );
+
+    await missing.create(recursive: true);
+    await missing.writeAsBytes([9, 9, 9, 9]);
+
+    final loaded = await repository.loadForMediaRefs([
+      QuickMarkMediaRef(fileId: 2, path: missing.path),
+    ]);
+
+    expect(loaded, hasLength(1));
+    expect(loaded.single.text, 'fallback');
+    expect(loaded.single.fileId, 2);
+
+    final reloaded = await repository.loadForMediaRefs([
+      QuickMarkMediaRef(fileId: 3, path: missing.path),
+    ]);
+    expect(reloaded, hasLength(1), reason: 'healed rows must not duplicate');
+  });
+
+  test('distributes marks to every ref sharing the same content', () async {
+    final copy = File(p.join(dir.path, 'media', 'a_copy.mp4'));
+    await copy.create(recursive: true);
+    await copy.writeAsBytes(await mediaA.readAsBytes());
+
+    await repository.saveForMediaRefs(
+      [QuickMarkMediaRef(fileId: 1, path: mediaA.path)],
+      const [
+        QuickMark(
+          id: 1,
+          anchor: QuickMarkAnchor(fileId: 1, ptsUs: 1000, dtsUs: 1000),
+          sourceRect: Rect.zero,
+          text: 'shared',
+        ),
+      ],
+    );
+
+    final refs = [
+      QuickMarkMediaRef(fileId: 10, path: mediaA.path),
+      QuickMarkMediaRef(fileId: 20, path: copy.path),
+    ];
+    final loaded = await repository.loadForMediaRefs(refs);
+
+    expect(loaded, hasLength(2));
+    expect(loaded.map((mark) => mark.fileId).toSet(), {10, 20});
+    expect(loaded.map((mark) => mark.text).toSet(), {'shared'});
+
+    await repository.saveForMediaRefs(refs, loaded);
+    final roundTrip = await repository.loadForMediaRefs(refs);
+    expect(
+      roundTrip,
+      hasLength(2),
+      reason: 'same-content refs must not multiply marks across round trips',
+    );
+  });
 }

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -94,5 +95,103 @@ void main() {
     expect(view.visibleMarkIds, const {1});
     expect(view.selectedMarkId, 2);
     expect(view.visibleSelectedMarkId, isNull);
+  });
+
+  test('mergeLoaded replaces marks for loaded files and keeps others', () {
+    const keptMark = QuickMark(
+      id: 5,
+      anchor: QuickMarkAnchor(fileId: 9, ptsUs: 1000, dtsUs: 1000),
+      sourceRect: Rect.zero,
+      text: 'kept',
+    );
+    const staleMark = QuickMark(
+      id: 6,
+      anchor: QuickMarkAnchor(fileId: 1, ptsUs: 2000, dtsUs: 2000),
+      sourceRect: Rect.zero,
+      text: 'stale',
+    );
+    const loadedMark = QuickMark(
+      id: 1,
+      anchor: QuickMarkAnchor(fileId: 1, ptsUs: 3000, dtsUs: 3000),
+      sourceRect: Rect.zero,
+      text: 'loaded',
+    );
+
+    final store = QuickMarkStore.mergeLoaded(
+      current: const [keptMark, staleMark],
+      loaded: const [loadedMark],
+      nextId: 7,
+    );
+
+    expect(store.marks.map((mark) => mark.text), ['kept', 'loaded']);
+    expect(store.nextId, greaterThanOrEqualTo(7));
+  });
+
+  test('mergeLoaded remaps colliding ids across media', () {
+    const memoryMark = QuickMark(
+      id: 1,
+      anchor: QuickMarkAnchor(fileId: 9, ptsUs: 1000, dtsUs: 1000),
+      sourceRect: Rect.zero,
+      text: 'memory',
+    );
+    const loadedA = QuickMark(
+      id: 1,
+      anchor: QuickMarkAnchor(fileId: 1, ptsUs: 2000, dtsUs: 2000),
+      sourceRect: Rect.zero,
+      text: 'a1',
+    );
+    const loadedB = QuickMark(
+      id: 1,
+      anchor: QuickMarkAnchor(fileId: 2, ptsUs: 3000, dtsUs: 3000),
+      sourceRect: Rect.zero,
+      text: 'b1',
+    );
+    const loadedB2 = QuickMark(
+      id: 2,
+      anchor: QuickMarkAnchor(fileId: 2, ptsUs: 4000, dtsUs: 4000),
+      sourceRect: Rect.zero,
+      text: 'b2',
+    );
+
+    final store = QuickMarkStore.mergeLoaded(
+      current: const [memoryMark],
+      loaded: const [loadedA, loadedB, loadedB2],
+      nextId: 1,
+    );
+
+    final ids = store.marks.map((mark) => mark.id).toList();
+    expect(ids.toSet(), hasLength(4), reason: 'all ids must be unique');
+    final byText = {for (final mark in store.marks) mark.text: mark};
+    expect(byText['memory']!.id, 1);
+    expect(byText['a1']!.fileId, 1);
+    expect(byText['b1']!.fileId, 2);
+    expect(byText['b2']!.fileId, 2);
+    expect(store.nextId, greaterThan(ids.reduce(math.max)));
+  });
+
+  test('mergeLoaded keeps non-colliding loaded ids stable', () {
+    const loadedA = QuickMark(
+      id: 3,
+      anchor: QuickMarkAnchor(fileId: 1, ptsUs: 2000, dtsUs: 2000),
+      sourceRect: Rect.zero,
+      text: 'a3',
+    );
+    const loadedB = QuickMark(
+      id: 8,
+      anchor: QuickMarkAnchor(fileId: 2, ptsUs: 3000, dtsUs: 3000),
+      sourceRect: Rect.zero,
+      text: 'b8',
+    );
+
+    final store = QuickMarkStore.mergeLoaded(
+      current: const [],
+      loaded: const [loadedA, loadedB],
+      nextId: 1,
+    );
+
+    final byText = {for (final mark in store.marks) mark.text: mark};
+    expect(byText['a3']!.id, 3);
+    expect(byText['b8']!.id, 8);
+    expect(store.nextId, 9);
   });
 }

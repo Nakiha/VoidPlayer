@@ -52,6 +52,10 @@ typedef struct VPMacOSNativePresentFrameInfo {
   int64_t source_packet_pos;
   int64_t source_packet_pts;
   int64_t source_packet_dts;
+  int32_t color_range;
+  int32_t color_matrix;
+  int32_t color_transfer;
+  int32_t color_primaries;
 } VPMacOSNativePresentFrameInfo;
 
 typedef struct VPMacOSNativePresentDecisionInfo {

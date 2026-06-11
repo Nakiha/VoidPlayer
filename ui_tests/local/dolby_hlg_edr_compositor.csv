@@ -14,6 +14,10 @@
 2.55, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoSampleCount, 1
 2.56, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoMaxRGBX1000, 1001
 2.57, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoPixelsOver1X1000, 1
+2.58, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorRange, limited
+2.59, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorMatrix, bt2020-ncl
+2.60, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, hlg
+2.61, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorPrimaries, bt2020
 2.7, CAPTURE_WINDOW, dolby_hlg_edr_compositor
 2.8, ASSERT_CAPTURE_NOT_BLACK, dolby_hlg_edr_compositor, 0.01, 4.0
 3.0, QUIT, 0

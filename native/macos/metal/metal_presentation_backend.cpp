@@ -682,6 +682,10 @@ bool MetalPresentationBackend::copy_last_frame_info(
   out->source_packet_pos = last_draw_frame_info_.source_packet_pos;
   out->source_packet_pts = last_draw_frame_info_.source_packet_pts;
   out->source_packet_dts = last_draw_frame_info_.source_packet_dts;
+  out->color_range = last_draw_frame_info_.color_range;
+  out->color_matrix = last_draw_frame_info_.color_matrix;
+  out->color_transfer = last_draw_frame_info_.color_transfer;
+  out->color_primaries = last_draw_frame_info_.color_primaries;
   out->target_pixel_buffer_address =
       last_draw_frame_info_.target_pixel_buffer_address;
   out->layout_revision = 0;
@@ -1064,6 +1068,10 @@ void metal_async_upload_completed(void* user_data,
     backend_frame_info.source_packet_pos = frame_info.source_packet_pos;
     backend_frame_info.source_packet_pts = frame_info.source_packet_pts;
     backend_frame_info.source_packet_dts = frame_info.source_packet_dts;
+    backend_frame_info.color_range = frame_info.color_range;
+    backend_frame_info.color_matrix = frame_info.color_matrix;
+    backend_frame_info.color_transfer = frame_info.color_transfer;
+    backend_frame_info.color_primaries = frame_info.color_primaries;
     backend_frame_info.target_pixel_buffer_address =
         frame_info.target_pixel_buffer_address;
     backend_frame_info.layout_revision = 0;

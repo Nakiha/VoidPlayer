@@ -247,6 +247,14 @@ void VPMacOSNativePlayer::on_frame_available(
           completed_frame_info->source_packet_pts;
       last_renderer_owned_frame_info.source_packet_dts =
           completed_frame_info->source_packet_dts;
+      last_renderer_owned_frame_info.color_range =
+          completed_frame_info->color_range;
+      last_renderer_owned_frame_info.color_matrix =
+          completed_frame_info->color_matrix;
+      last_renderer_owned_frame_info.color_transfer =
+          completed_frame_info->color_transfer;
+      last_renderer_owned_frame_info.color_primaries =
+          completed_frame_info->color_primaries;
       last_renderer_owned_frame_info.target_pixel_buffer_address =
           completed_frame_info->target_pixel_buffer_address;
       last_renderer_owned_layout_revision = completed_frame_info->layout_revision;

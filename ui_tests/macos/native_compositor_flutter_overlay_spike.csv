@@ -12,6 +12,10 @@
 1.74, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorVideoPixelFormat, 64RGBAHalf
 1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorEDRVideoMaxRGBX1000, 1000, 1000
 1.76, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorEDRVideoPixelsOver1X1000, 0, 0
+1.77, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorRange, limited
+1.78, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorMatrix, bt709
+1.79, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, sdr
+1.80, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorPrimaries, bt709
 1.8, CAPTURE_WINDOW, native_compositor_flutter_overlay
 1.9, ASSERT_CAPTURE_NOT_BLACK, native_compositor_flutter_overlay, 0.01, 4.0
 2.1, QUIT, 0

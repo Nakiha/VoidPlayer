@@ -24,6 +24,10 @@ void write_first_present_frame_info(const VPMacOSNativePresentDecisionInfo& deci
       out->source_packet_pos = decisionInfo.frames[slot].source_packet_pos;
       out->source_packet_pts = decisionInfo.frames[slot].source_packet_pts;
       out->source_packet_dts = decisionInfo.frames[slot].source_packet_dts;
+      out->color_range = decisionInfo.color_range[slot];
+      out->color_matrix = decisionInfo.color_matrix[slot];
+      out->color_transfer = decisionInfo.color_transfer[slot];
+      out->color_primaries = decisionInfo.color_primaries[slot];
       break;
     }
   }

@@ -37,6 +37,10 @@ typedef struct VPMacOSNativeFrameInfo {
   int64_t source_packet_pos;
   int64_t source_packet_pts;
   int64_t source_packet_dts;
+  int32_t color_range;
+  int32_t color_matrix;
+  int32_t color_transfer;
+  int32_t color_primaries;
   uint64_t target_pixel_buffer_address;
 } VPMacOSNativeFrameInfo;
 

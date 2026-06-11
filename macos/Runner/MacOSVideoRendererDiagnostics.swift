@@ -82,6 +82,22 @@ enum MacOSVideoRendererDiagnostics {
       "rendererOwnedUploadStorageKind": rendererOwnedState["uploadStorageKind"] ?? "unavailable",
       "rendererOwnedLastSuccessfulFramePtsUs":
         rendererOwnedState["lastSuccessfulFramePtsUs"] ?? 0,
+      "rendererOwnedLastFrameColorRangeCode":
+        rendererOwnedState["lastFrameColorRangeCode"] ?? 0,
+      "rendererOwnedLastFrameColorRange":
+        rendererOwnedState["lastFrameColorRange"] ?? "unknown",
+      "rendererOwnedLastFrameColorMatrixCode":
+        rendererOwnedState["lastFrameColorMatrixCode"] ?? 0,
+      "rendererOwnedLastFrameColorMatrix":
+        rendererOwnedState["lastFrameColorMatrix"] ?? "unknown",
+      "rendererOwnedLastFrameColorTransferCode":
+        rendererOwnedState["lastFrameColorTransferCode"] ?? 0,
+      "rendererOwnedLastFrameColorTransfer":
+        rendererOwnedState["lastFrameColorTransfer"] ?? "unknown",
+      "rendererOwnedLastFrameColorPrimariesCode":
+        rendererOwnedState["lastFrameColorPrimariesCode"] ?? 0,
+      "rendererOwnedLastFrameColorPrimaries":
+        rendererOwnedState["lastFrameColorPrimaries"] ?? "unknown",
       "rendererOwnedOverlayLastExpected":
         rendererOwnedState["overlayLastExpected"] ?? false,
       "rendererOwnedOverlayLastApplied":
@@ -332,6 +348,14 @@ enum MacOSVideoRendererDiagnostics {
       "targetHeight": 0,
       "uploadStorageKind": "unavailable",
       "lastSuccessfulFramePtsUs": 0,
+      "lastFrameColorRangeCode": 0,
+      "lastFrameColorRange": "unknown",
+      "lastFrameColorMatrixCode": 0,
+      "lastFrameColorMatrix": "unknown",
+      "lastFrameColorTransferCode": 0,
+      "lastFrameColorTransfer": "unknown",
+      "lastFrameColorPrimariesCode": 0,
+      "lastFrameColorPrimaries": "unknown",
       "overlayLastExpected": false,
       "overlayLastApplied": false,
       "overlayLastFillRectCount": 0,

@@ -109,6 +109,26 @@ int frame_color_matrix(const vr::TextureFrame& frame) {
       : frame.color.matrix;
 }
 
+int frame_color_transfer(const vr::TextureFrame& frame) {
+  return frame.color.transfer == vr::VIDEO_COLOR_TRANSFER_UNKNOWN
+      ? vr::VIDEO_COLOR_TRANSFER_SDR
+      : frame.color.transfer;
+}
+
+int frame_color_primaries(const vr::TextureFrame& frame) {
+  if (frame.color.primaries != vr::VIDEO_COLOR_PRIMARIES_UNKNOWN) {
+    return frame.color.primaries;
+  }
+  const int matrix = frame_color_matrix(frame);
+  if (matrix == vr::VIDEO_COLOR_MATRIX_BT2020_NCL) {
+    return vr::VIDEO_COLOR_PRIMARIES_BT2020;
+  }
+  if (matrix == vr::VIDEO_COLOR_MATRIX_BT601) {
+    return vr::VIDEO_COLOR_PRIMARIES_BT601;
+  }
+  return vr::VIDEO_COLOR_PRIMARIES_BT709;
+}
+
 void write_frame_info(const vr::TextureFrame& frame, VPMacOSNativeFrameInfo* out) {
   if (!out) {
     return;
@@ -126,6 +146,10 @@ void write_frame_info(const vr::TextureFrame& frame, VPMacOSNativeFrameInfo* out
   out->source_packet_pos = frame.source_packet_pos;
   out->source_packet_pts = frame.source_packet_pts;
   out->source_packet_dts = frame.source_packet_dts;
+  out->color_range = frame_color_range(frame);
+  out->color_matrix = frame_color_matrix(frame);
+  out->color_transfer = frame_color_transfer(frame);
+  out->color_primaries = frame_color_primaries(frame);
 }
 
 bool copy_cpu_rgba_to_bgra(const vr::TextureFrame& frame,

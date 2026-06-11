@@ -225,7 +225,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       result(debugFlutterSurfaceInfo())
     case "debugNativeCompositorSpike":
       if let nativeCompositorSpike {
-        result(nativeCompositorSpike.diagnostics())
+        var diagnostics = nativeCompositorSpike.diagnostics()
+        if let state = nativePlayer?.rendererOwnedPresentationState() {
+          diagnostics.merge(Self.rendererOwnedColorDiagnostics(from: state)) { _, next in next }
+        }
+        result(diagnostics)
       } else {
         var diagnostics = MacOSPresentationConfiguration.current.diagnostics
         diagnostics.merge([
@@ -243,6 +247,19 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  private static func rendererOwnedColorDiagnostics(from state: [String: Any]) -> [String: Any] {
+    [
+      "rendererOwnedLastFrameColorRangeCode": state["lastFrameColorRangeCode"] ?? 0,
+      "rendererOwnedLastFrameColorRange": state["lastFrameColorRange"] ?? "unknown",
+      "rendererOwnedLastFrameColorMatrixCode": state["lastFrameColorMatrixCode"] ?? 0,
+      "rendererOwnedLastFrameColorMatrix": state["lastFrameColorMatrix"] ?? "unknown",
+      "rendererOwnedLastFrameColorTransferCode": state["lastFrameColorTransferCode"] ?? 0,
+      "rendererOwnedLastFrameColorTransfer": state["lastFrameColorTransfer"] ?? "unknown",
+      "rendererOwnedLastFrameColorPrimariesCode": state["lastFrameColorPrimariesCode"] ?? 0,
+      "rendererOwnedLastFrameColorPrimaries": state["lastFrameColorPrimaries"] ?? "unknown",
+    ]
   }
 
   private func debugFlutterSurfaceInfo() -> Any {

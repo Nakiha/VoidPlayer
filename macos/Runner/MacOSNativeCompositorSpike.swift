@@ -28,6 +28,8 @@ final class MacOSNativeCompositorSpikeView: NSView {
   private var lastEDRVideoSampleCount = 0
   private var lastEDRVideoMaxRGBX1000 = 0
   private var lastEDRVideoPixelsOver1X1000 = 0
+  private var lastVideoSRGBToLinearEnabled = false
+  private var lastFlutterSRGBToLinearEnabled = false
   private var explicitHoleRect: SIMD4<Float>?
   private var lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
 
@@ -155,6 +157,8 @@ final class MacOSNativeCompositorSpikeView: NSView {
       "nativeCompositorEDRVideoSampleCount": lastEDRVideoSampleCount,
       "nativeCompositorEDRVideoMaxRGBX1000": lastEDRVideoMaxRGBX1000,
       "nativeCompositorEDRVideoPixelsOver1X1000": lastEDRVideoPixelsOver1X1000,
+      "nativeCompositorVideoSRGBToLinearEnabled": lastVideoSRGBToLinearEnabled,
+      "nativeCompositorFlutterSRGBToLinearEnabled": lastFlutterSRGBToLinearEnabled,
     ]) { _, next in next }
     return result
   }
@@ -191,6 +195,17 @@ final class MacOSNativeCompositorSpikeView: NSView {
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 0
       )
+      var colorFlags = SIMD4<Float>(
+        outputPixelFormat == .rgba16Float ? 1.0 : 0.0,
+        shouldConvertSRGBToLinear(texture: video) ? 1.0 : 0.0,
+        shouldConvertSRGBToLinear(texture: flutter) ? 1.0 : 0.0,
+        0.0
+      )
+      encoder.setFragmentBytes(
+        &colorFlags,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 1
+      )
       encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
       encoder.endEncoding()
       commandBuffer.present(drawable)
@@ -202,6 +217,8 @@ final class MacOSNativeCompositorSpikeView: NSView {
       lastFlutterTextureAvailable = true
       lastCompositeSucceeded = true
       lastFailure = ""
+      lastVideoSRGBToLinearEnabled = colorFlags.y > 0.5
+      lastFlutterSRGBToLinearEnabled = colorFlags.z > 0.5
       if frameCount == 1 || frameCount % 120 == 0 {
         NSLog(
           "VoidPlayer native compositor spike: composite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d",
@@ -215,6 +232,18 @@ final class MacOSNativeCompositorSpikeView: NSView {
           Int(metalLayer.drawableSize.height)
         )
       }
+    }
+  }
+
+  private func shouldConvertSRGBToLinear(texture: MTLTexture) -> Bool {
+    guard outputPixelFormat == .rgba16Float else {
+      return false
+    }
+    switch texture.pixelFormat {
+    case .bgra8Unorm, .rgba8Unorm:
+      return true
+    default:
+      return false
     }
   }
 
@@ -489,11 +518,35 @@ final class MacOSNativeCompositorSpikeView: NSView {
         return out;
       }
 
+      float srgbChannelToLinear(float value) {
+        float c = clamp(value, 0.0, 1.0);
+        return c <= 0.04045
+          ? c / 12.92
+          : pow((c + 0.055) / 1.055, 2.4);
+      }
+
+      float3 srgbToLinear(float3 color) {
+        return float3(
+          srgbChannelToLinear(color.r),
+          srgbChannelToLinear(color.g),
+          srgbChannelToLinear(color.b)
+        );
+      }
+
+      float3 premultipliedSRGBToLinear(float3 premultipliedColor, float alpha) {
+        if (alpha <= 0.0001) {
+          return float3(0.0);
+        }
+        float3 straightSRGB = clamp(premultipliedColor / alpha, 0.0, 1.0);
+        return srgbToLinear(straightSRGB) * alpha;
+      }
+
       fragment float4 fs_main(
         VertexOut in [[stage_in]],
         texture2d<float> videoTexture [[texture(0)]],
         texture2d<float> flutterTexture [[texture(1)]],
-        constant float4& holeRect [[buffer(0)]]
+        constant float4& holeRect [[buffer(0)]],
+        constant float4& colorFlags [[buffer(1)]]
       ) {
         constexpr sampler s(address::clamp_to_edge, filter::linear);
         float2 uv = clamp(in.uv, 0.0, 1.0);
@@ -509,7 +562,13 @@ final class MacOSNativeCompositorSpikeView: NSView {
         float4 video = insideHole ? videoTexture.sample(s, videoUv) : float4(0.0);
         float4 flutter = flutterTexture.sample(s, uv);
         float alpha = clamp(flutter.a, 0.0, 1.0);
-        float3 rgb = flutter.rgb + video.rgb * (1.0 - alpha);
+        float3 videoRgb = colorFlags.y > 0.5
+          ? srgbToLinear(video.rgb)
+          : video.rgb;
+        float3 flutterRgb = colorFlags.z > 0.5
+          ? premultipliedSRGBToLinear(flutter.rgb, alpha)
+          : flutter.rgb;
+        float3 rgb = flutterRgb + videoRgb * (1.0 - alpha);
         return float4(rgb, 1.0);
       }
       """

@@ -10,8 +10,10 @@
 1.72, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-edr
 1.73, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorEDREnabled, true
 1.74, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorVideoPixelFormat, 64RGBAHalf
-1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorEDRVideoMaxRGBX1000, 1000, 1000
+1.75, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorEDRVideoMaxRGBX1000, 0, 1000
 1.76, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorEDRVideoPixelsOver1X1000, 0, 0
+1.765, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorVideoSRGBToLinearEnabled, false
+1.766, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorFlutterSRGBToLinearEnabled, true
 1.77, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorRange, limited
 1.78, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorMatrix, bt709
 1.79, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, sdr

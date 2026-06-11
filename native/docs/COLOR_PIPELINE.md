@@ -153,6 +153,29 @@ macOS uses the same metadata and layout contract through Metal:
 - Swift does not apply color policy; it only owns texture lifecycle and frame
   notification, except for selecting the native compositor layer color space.
 
+Local VideoToolbox probing on Apple Silicon showed that macOS can return more
+than NV12/P010-style 4:2:0 surfaces. The probe decoded synthetic H.264, HEVC,
+VP9, and ProRes streams with VideoToolbox and recorded the first decoded
+`CVPixelBuffer` format:
+
+| Source format | VideoToolbox format | Plane layout |
+| --- | --- | --- |
+| 8-bit 4:2:0 limited / full | `420v` / `420f` | Y full resolution, CbCr half width and half height. |
+| 10-bit 4:2:0 limited / full | `x420` / `xf20` | Y full resolution, CbCr half width and half height. |
+| 8-bit 4:2:2 limited / full | `422v` / `422f` | Y full resolution, CbCr half width and full height. |
+| 10-bit 4:2:2 limited / full | `x422` / `xf22` | Y full resolution, CbCr half width and full height. |
+| 8-bit 4:4:4 limited / full | `444v` / `444f` | Y full resolution, CbCr full width and full height. |
+| 10-bit 4:4:4 limited / full | `x444` / `xf44` | Y full resolution, CbCr full width and full height. |
+| ProRes 4444 | `y416` | Packed 16-bit RGBA/YUVA-like surface with no CoreVideo planes. |
+
+The current direct path only accepts the first two rows. Supporting the rest is
+incremental rather than a renderer rewrite, but it requires a real format table:
+`CVPixelBuffer` OSType -> chroma layout, bit depth, range expectation, plane
+wrapping, shader sampling, CPU reference, and parity tests. The safest expansion
+order is `422v/422f/x422/xf22` first, then `444v/444f/x444/xf44`, and packed
+formats such as `y416` last. Until then, 4:2:2 / 4:4:4 streams are deliberately
+kept on the software fallback path.
+
 The macOS Metal shader path must stay equivalent to the CPU reference for range
 expansion, matrix selection, odd-dimension chroma packing, P010 high-bit
 interpretation, EDR transfer/gamut mapping, and SDR tone mapping. Unsupported

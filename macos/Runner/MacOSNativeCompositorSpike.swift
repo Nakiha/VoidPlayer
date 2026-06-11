@@ -30,8 +30,14 @@ final class MacOSNativeCompositorSpikeView: NSView {
   private var lastEDRVideoPixelsOver1X1000 = 0
   private var lastVideoSRGBToLinearEnabled = false
   private var lastFlutterSRGBToLinearEnabled = false
+  private var lastVideoMetricsSampleNs: UInt64 = 0
+  private var lastFlutterAlphaMetricsSampleNs: UInt64 = 0
+  private var skippedInFlightFrames = 0
   private var explicitHoleRect: SIMD4<Float>?
   private var lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
+  private let inFlightSemaphore = DispatchSemaphore(value: 2)
+
+  private static let metricsSampleIntervalNs: UInt64 = 1_000_000_000
 
   static var isEnabled: Bool {
     MacOSPresentationConfiguration.current.nativeCompositorEnabled
@@ -159,16 +165,13 @@ final class MacOSNativeCompositorSpikeView: NSView {
       "nativeCompositorEDRVideoPixelsOver1X1000": lastEDRVideoPixelsOver1X1000,
       "nativeCompositorVideoSRGBToLinearEnabled": lastVideoSRGBToLinearEnabled,
       "nativeCompositorFlutterSRGBToLinearEnabled": lastFlutterSRGBToLinearEnabled,
+      "nativeCompositorSkippedInFlightFrames": skippedInFlightFrames,
     ]) { _, next in next }
     return result
   }
 
   private func drawComposite() {
     autoreleasepool {
-      guard let drawable = metalLayer.nextDrawable() else {
-        recordFailure("no drawable")
-        return
-      }
       guard let video = currentVideoMetalTexture() else {
         isHidden = true
         recordFailure("no video texture")
@@ -178,28 +181,39 @@ final class MacOSNativeCompositorSpikeView: NSView {
         recordFailure("no Flutter texture")
         return
       }
-      guard let commandBuffer = commandQueue.makeCommandBuffer(),
-            let encoder = commandBuffer.makeRenderCommandEncoder(
-              descriptor: renderPassDescriptor(drawable: drawable)
-            ) else {
-        recordFailure("failed to create command encoder")
-        return
-      }
-
-      encoder.setRenderPipelineState(pipeline)
-      encoder.setFragmentTexture(video, index: 0)
-      encoder.setFragmentTexture(flutter, index: 1)
       var holeRect = explicitHoleRect ?? lastHoleRect
-      encoder.setFragmentBytes(
-        &holeRect,
-        length: MemoryLayout<SIMD4<Float>>.stride,
-        index: 0
-      )
       var colorFlags = SIMD4<Float>(
         outputPixelFormat == .rgba16Float ? 1.0 : 0.0,
         shouldConvertSRGBToLinear(texture: video) ? 1.0 : 0.0,
         shouldConvertSRGBToLinear(texture: flutter) ? 1.0 : 0.0,
         0.0
+      )
+      guard inFlightSemaphore.wait(timeout: .now()) == .success else {
+        skippedInFlightFrames += 1
+        return
+      }
+      guard let drawable = metalLayer.nextDrawable() else {
+        inFlightSemaphore.signal()
+        recordFailure("no drawable")
+        return
+      }
+      guard let commandBuffer = commandQueue.makeCommandBuffer(),
+            let encoder = commandBuffer.makeRenderCommandEncoder(
+              descriptor: renderPassDescriptor(drawable: drawable)
+            ) else {
+        inFlightSemaphore.signal()
+        recordFailure("failed to create command encoder")
+        return
+      }
+      let inFlightSemaphore = self.inFlightSemaphore
+
+      encoder.setRenderPipelineState(pipeline)
+      encoder.setFragmentTexture(video, index: 0)
+      encoder.setFragmentTexture(flutter, index: 1)
+      encoder.setFragmentBytes(
+        &holeRect,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 0
       )
       encoder.setFragmentBytes(
         &colorFlags,
@@ -208,6 +222,9 @@ final class MacOSNativeCompositorSpikeView: NSView {
       )
       encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
       encoder.endEncoding()
+      commandBuffer.addCompletedHandler { _ in
+        inFlightSemaphore.signal()
+      }
       commandBuffer.present(drawable)
       commandBuffer.commit()
 
@@ -255,7 +272,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
     let pixelBuffer = retainedBuffer.takeRetainedValue()
     let width = CVPixelBufferGetWidth(pixelBuffer)
     let height = CVPixelBufferGetHeight(pixelBuffer)
-    updateVideoEDRMetrics(pixelBuffer: pixelBuffer)
+    maybeUpdateVideoEDRMetrics(pixelBuffer: pixelBuffer)
     let metalPixelFormat: MTLPixelFormat =
       CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_64RGBAHalf
       ? .rgba16Float
@@ -280,7 +297,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
     return texture
   }
 
-  private func updateVideoEDRMetrics(pixelBuffer: CVPixelBuffer) {
+  private func maybeUpdateVideoEDRMetrics(pixelBuffer: CVPixelBuffer) {
     let format = CVPixelBufferGetPixelFormatType(pixelBuffer)
     lastVideoPixelFormat = Self.pixelFormatName(format)
     guard format == kCVPixelFormatType_64RGBAHalf else {
@@ -289,6 +306,12 @@ final class MacOSNativeCompositorSpikeView: NSView {
       lastEDRVideoPixelsOver1X1000 = 0
       return
     }
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    if lastVideoMetricsSampleNs > 0 &&
+        nowNs - lastVideoMetricsSampleNs < Self.metricsSampleIntervalNs {
+      return
+    }
+    lastVideoMetricsSampleNs = nowNs
     guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else {
       lastEDRVideoSampleCount = 0
       lastEDRVideoMaxRGBX1000 = 0
@@ -344,11 +367,19 @@ final class MacOSNativeCompositorSpikeView: NSView {
       lastFlutterTextureAvailable = false
       return nil
     }
-    updateFlutterAlphaMetrics(info: info)
+    if explicitHoleRect == nil {
+      maybeUpdateFlutterAlphaMetrics(info: info)
+    }
     return texture
   }
 
-  private func updateFlutterAlphaMetrics(info: [String: Any]) {
+  private func maybeUpdateFlutterAlphaMetrics(info: [String: Any]) {
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    if lastFlutterAlphaMetricsSampleNs > 0 &&
+        nowNs - lastFlutterAlphaMetricsSampleNs < Self.metricsSampleIntervalNs {
+      return
+    }
+    lastFlutterAlphaMetricsSampleNs = nowNs
     guard let rawSurface = info["ioSurface"] else {
       lastFlutterAlphaAverageX1000 = -1
       lastFlutterTransparentRatioX1000 = -1

@@ -278,6 +278,7 @@ class TestRunner {
           'edrOver1X1000=${info['nativeCompositorEDRVideoPixelsOver1X1000']} '
           'videoSRGBToLinear=${info['nativeCompositorVideoSRGBToLinearEnabled']} '
           'flutterSRGBToLinear=${info['nativeCompositorFlutterSRGBToLinearEnabled']} '
+          'skippedInFlight=${info['nativeCompositorSkippedInFlightFrames']} '
           'video=${info['nativeCompositorVideoTextureAvailable']} '
           'flutter=${info['nativeCompositorFlutterTextureAvailable']} '
           'flutterAlphaX1000=${info['nativeCompositorFlutterAlphaAverageX1000']} '

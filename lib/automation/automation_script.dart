@@ -533,9 +533,7 @@ ScriptInstruction? _parseInstruction(
       return ScriptAutomationAction(time, const ClearMarks());
     case 'ADD_QUICK_MARK':
       if (args.length < 5) {
-        log.warning(
-          'ADD_QUICK_MARK needs slot and normalized rect: $rawLine',
-        );
+        log.warning('ADD_QUICK_MARK needs slot and normalized rect: $rawLine');
         return null;
       }
       final defectType = args.length > 5 && args[5].trim().isNotEmpty

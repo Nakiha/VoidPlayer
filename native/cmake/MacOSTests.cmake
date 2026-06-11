@@ -34,6 +34,17 @@ target_link_libraries(software_frame_packer_smoke PRIVATE
 add_test(NAME software_frame_packer_smoke COMMAND software_frame_packer_smoke)
 void_label_test(software_frame_packer_smoke "contract;portable")
 
+add_executable(color_reference_smoke
+    "${VOID_NATIVE_DIR}/tools/color_reference_smoke.cpp"
+    "${VOID_NATIVE_DIR}/renderer/color/color_reference.cpp"
+)
+void_apply_native_compile_options(color_reference_smoke)
+target_include_directories(color_reference_smoke PRIVATE
+    "${VOID_NATIVE_DIR}"
+)
+add_test(NAME color_reference_smoke COMMAND color_reference_smoke)
+void_label_test(color_reference_smoke "hdr;color;contract;portable")
+
 add_executable(macos_presentation_adapter_smoke
     "${VOID_NATIVE_DIR}/tools/macos_presentation_adapter_smoke.cpp"
 )

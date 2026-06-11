@@ -14,8 +14,11 @@ on:
       - "lib/**"
       - "pubspec.lock"
       - "pubspec.yaml"
+      - "scripts/ci/**"
+      - "scripts/dev/**"
       - "test/**"
       - "third_party/desktop_drop/**"
+      - "toolchains/**"
   pull_request:
     paths:
       - ".github/workflows/flutter.yml"
@@ -25,8 +28,11 @@ on:
       - "lib/**"
       - "pubspec.lock"
       - "pubspec.yaml"
+      - "scripts/ci/**"
+      - "scripts/dev/**"
       - "test/**"
       - "third_party/desktop_drop/**"
+      - "toolchains/**"
 
 concurrency:
   group: flutter-${{ github.ref }}
@@ -42,17 +48,23 @@ jobs:
           lfs: false
           submodules: false
 
-      - uses: subosito/flutter-action@v2
+      - uses: actions/setup-python@v5
         with:
-          channel: stable
-          flutter-version: "3.44.1"
-          cache: true
+          python-version: "3.12"
+
+      - uses: actions/cache@v4
+        with:
+          path: .toolchains/flutter
+          key: voidplayer-flutter-${{ runner.os }}-${{ hashFiles('toolchains/flutter.lock.json') }}
+
+      - name: Bootstrap pinned Flutter toolchain
+        run: PYTHON=python3.12 scripts/ci/bootstrap_flutter_toolchain.sh
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Check formatting
-        run: dart format --set-exit-if-changed .
+        run: dart format --set-exit-if-changed lib test
 
       - name: Analyze
         run: flutter analyze

@@ -16,12 +16,13 @@ LOCAL_CONFIG_PATH = ROOT / "dev_config.local.json"
 
 def load_dev_config(path: Path = CONFIG_PATH) -> None:
     """Load project-local dev settings before running a dev command."""
-    _load_dev_config_file(path)
+    inherited_env = set(os.environ)
+    _load_dev_config_file(path, inherited_env)
     if path == CONFIG_PATH:
-        _load_dev_config_file(LOCAL_CONFIG_PATH)
+        _load_dev_config_file(LOCAL_CONFIG_PATH, inherited_env)
 
 
-def _load_dev_config_file(path: Path) -> None:
+def _load_dev_config_file(path: Path, inherited_env: set[str]) -> None:
     if not path.exists():
         return
 
@@ -37,12 +38,14 @@ def _load_dev_config_file(path: Path) -> None:
     if not isinstance(env, dict):
         raise ValueError(f"{path}: 'env' must be an object")
 
-    _apply_env(env)
+    _apply_env(env, inherited_env)
 
 
-def _apply_env(env: dict[str, Any]) -> None:
+def _apply_env(env: dict[str, Any], inherited_env: set[str]) -> None:
     for key, value in env.items():
         name = str(key)
+        if name in inherited_env:
+            continue
         if value is None:
             os.environ.pop(name, None)
         else:

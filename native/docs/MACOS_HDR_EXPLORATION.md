@@ -17,12 +17,16 @@ macOS Flutter surface texture to the runner.
 | Fork release ref | `voidplayer-flutter-3.44.1-hdr.1` |
 | Fork patch branch | `voidplayer/hdr-surface-export-3.44.1` |
 | Fork commit | `04b75e628e3a7c7ffc66f14e50f760564ab2e9f2` |
+| Patch inventory | `toolchains/FLUTTER_FORK_PATCHES.md` |
 | App worktree | `/Users/zhuhongwei/Documents/yorune/VoidPlayer.worktrees/hdr-support-exploration` |
 
 All `dev.py` commands that invoke Flutter validate the active SDK against
 `toolchains/flutter.lock.json` before running `flutter`. This check verifies the
 framework revision, engine revision, Dart SDK version, git checkout revision, a
 clean fork working tree, and VoidPlayer patch markers.
+
+The `flutterVersion` string reported by Flutter is informational for fork
+checkouts. The revision fields above are the stable lock.
 
 Use:
 

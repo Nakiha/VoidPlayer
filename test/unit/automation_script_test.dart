@@ -190,11 +190,7 @@ void main() {
         (i) => i.assertion,
         'assertion',
         isA<AssertNativeDiagnosticIntAtLeast>()
-            .having(
-              (a) => a.key,
-              'key',
-              'nativeCompositorEDRVideoMaxRGBX1000',
-            )
+            .having((a) => a.key, 'key', 'nativeCompositorEDRVideoMaxRGBX1000')
             .having((a) => a.minValue, 'minValue', 1001),
       ),
     );
@@ -220,10 +216,7 @@ void main() {
             .having((a) => a.decoderName, 'decoderName', 'VideoToolbox / h264'),
       ),
     );
-    expect(
-      instructions[16],
-      isA<ScriptCloseMainWindow>(),
-    );
+    expect(instructions[16], isA<ScriptCloseMainWindow>());
     expect(
       instructions[17],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),

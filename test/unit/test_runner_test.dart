@@ -53,9 +53,7 @@ void main() {
 
     test('native diagnostic int-at-least assertions pass', () async {
       final api = _FakeNativePlayerApi(
-        diagnostics: const {
-          'nativeCompositorEDRVideoMaxRGBX1000': 3979,
-        },
+        diagnostics: const {'nativeCompositorEDRVideoMaxRGBX1000': 3979},
       );
       final controller = NativePlayerController(api: api);
       await controller.createPlayer(['a.mp4'], width: 320, height: 180);
@@ -77,9 +75,7 @@ void main() {
 
     test('native diagnostic int-at-least assertions fail', () async {
       final api = _FakeNativePlayerApi(
-        diagnostics: const {
-          'nativeCompositorEDRVideoMaxRGBX1000': 1000,
-        },
+        diagnostics: const {'nativeCompositorEDRVideoMaxRGBX1000': 1000},
       );
       final controller = NativePlayerController(api: api);
       await controller.createPlayer(['a.mp4'], width: 320, height: 180);

@@ -185,7 +185,6 @@ def check_flutter_toolchain() -> ToolchainCheckResult:
         "frameworkRevision": lock.framework_revision,
         "engineRevision": lock.engine_revision,
         "dartSdkVersion": lock.dart_sdk_version,
-        "flutterVersion": lock.flutter_version,
     }
     for key, expected in expected_pairs.items():
         actual = version.get(key)

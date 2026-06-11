@@ -46,6 +46,7 @@ private final class MacOSViewportDisplayLinkCallbackContext {
 
 final class MacOSViewportDisplayLink {
   private let lock = NSLock()
+  private let deliveryQueue: DispatchQueue
   private let onTick: () -> Void
   private var displayLink: CVDisplayLink?
   private var displayLinkUserData: UnsafeMutableRawPointer?
@@ -80,7 +81,8 @@ final class MacOSViewportDisplayLink {
     return running
   }
 
-  init(onTick: @escaping () -> Void) {
+  init(deliveryQueue: DispatchQueue = .main, onTick: @escaping () -> Void) {
+    self.deliveryQueue = deliveryQueue
     self.onTick = onTick
   }
 
@@ -290,7 +292,7 @@ final class MacOSViewportDisplayLink {
     mainTickScheduled = true
     lock.unlock()
 
-    DispatchQueue.main.async { [weak self] in
+    deliveryQueue.async { [weak self] in
       guard let self else { return }
       self.lock.lock()
       self.mainTickScheduled = false

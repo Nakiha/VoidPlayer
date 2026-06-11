@@ -16,6 +16,11 @@ final class MacOSNativeCompositorSpikeView: NSView {
   private weak var engine: FlutterEngine?
   private weak var videoTexture: MacOSVideoTexture?
   private let metalLayer = CAMetalLayer()
+  private let compositorQueue = DispatchQueue(
+    label: "dev.nakiha.voidplayer.macos.native-compositor-spike",
+    qos: .userInteractive
+  )
+  private let compositorQueueKey = DispatchSpecificKey<Bool>()
   private var displayLink: MacOSViewportDisplayLink?
   private var frameCount = 0
   private var lastVideoTextureAvailable = false
@@ -70,6 +75,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
     self.textureCache = cache
     self.engine = engine
     super.init(frame: .zero)
+    compositorQueue.setSpecific(key: compositorQueueKey, value: true)
 
     wantsLayer = true
     layer = metalLayer
@@ -106,7 +112,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
   func attach(to parent: NSView) {
     frame = parent.bounds
     parent.addSubview(self, positioned: .above, relativeTo: nil)
-    displayLink = MacOSViewportDisplayLink { [weak self] in
+    displayLink = MacOSViewportDisplayLink(deliveryQueue: compositorQueue) { [weak self] in
       self?.drawComposite()
     }
     displayLink?.start()
@@ -114,7 +120,9 @@ final class MacOSNativeCompositorSpikeView: NSView {
   }
 
   func setVideoTexture(_ texture: MacOSVideoTexture?) {
-    videoTexture = texture
+    compositorQueue.async { [weak self] in
+      self?.videoTexture = texture
+    }
   }
 
   func setViewportRect(
@@ -126,18 +134,32 @@ final class MacOSNativeCompositorSpikeView: NSView {
     surfaceHeight: Int
   ) {
     guard width > 0, height > 0, surfaceWidth > 0, surfaceHeight > 0 else {
-      explicitHoleRect = nil
+      compositorQueue.async { [weak self] in
+        self?.explicitHoleRect = nil
+      }
       return
     }
     let minX = Float(max(0, left)) / Float(surfaceWidth)
     let minY = Float(max(0, top)) / Float(surfaceHeight)
     let maxX = Float(min(surfaceWidth, left + width)) / Float(surfaceWidth)
     let maxY = Float(min(surfaceHeight, top + height)) / Float(surfaceHeight)
-    explicitHoleRect = SIMD4<Float>(minX, minY, maxX, maxY)
-    lastHoleRect = explicitHoleRect!
+    let rect = SIMD4<Float>(minX, minY, maxX, maxY)
+    compositorQueue.async { [weak self] in
+      self?.explicitHoleRect = rect
+      self?.lastHoleRect = rect
+    }
   }
 
   func diagnostics() -> [String: Any] {
+    if DispatchQueue.getSpecific(key: compositorQueueKey) == true {
+      return diagnosticsOnCompositorQueue()
+    }
+    return compositorQueue.sync {
+      diagnosticsOnCompositorQueue()
+    }
+  }
+
+  private func diagnosticsOnCompositorQueue() -> [String: Any] {
     var result = configuration.diagnostics
     result.merge([
       "nativeCompositorSpikeEnabled": true,
@@ -173,7 +195,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
   private func drawComposite() {
     autoreleasepool {
       guard let video = currentVideoMetalTexture() else {
-        isHidden = true
+        setHiddenOnMain(true)
         recordFailure("no video texture")
         return
       }
@@ -228,7 +250,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
       commandBuffer.present(drawable)
       commandBuffer.commit()
 
-      isHidden = false
+      setHiddenOnMain(false)
       frameCount += 1
       lastVideoTextureAvailable = true
       lastFlutterTextureAvailable = true
@@ -249,6 +271,12 @@ final class MacOSNativeCompositorSpikeView: NSView {
           Int(metalLayer.drawableSize.height)
         )
       }
+    }
+  }
+
+  private func setHiddenOnMain(_ hidden: Bool) {
+    DispatchQueue.main.async { [weak self] in
+      self?.isHidden = hidden
     }
   }
 

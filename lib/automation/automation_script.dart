@@ -521,6 +521,30 @@ ScriptInstruction? _parseInstruction(
         time,
         GenerateAnalysisCache(int.parse(args[0])),
       );
+    case 'CLEAR_MARKS':
+      return ScriptAutomationAction(time, const ClearMarks());
+    case 'ADD_QUICK_MARK':
+      if (args.length < 5) {
+        log.warning(
+          'ADD_QUICK_MARK needs slot and normalized rect: $rawLine',
+        );
+        return null;
+      }
+      final defectType = args.length > 5 && args[5].trim().isNotEmpty
+          ? args[5].trim()
+          : null;
+      return ScriptAutomationAction(
+        time,
+        AddQuickMark(
+          slotIndex: int.parse(args[0]),
+          left: double.parse(args[1]),
+          top: double.parse(args[2]),
+          width: double.parse(args[3]),
+          height: double.parse(args[4]),
+          defectType: defectType,
+          severity: args.length > 6 ? int.parse(args[6]) : null,
+        ),
+      );
     case 'EXPORT_MARKS':
       if (args.isEmpty || args[0].trim().isEmpty) {
         log.warning('EXPORT_MARKS needs output path: $rawLine');
@@ -677,6 +701,12 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAssert(time, AssertTrackCount(int.parse(args[0])));
+    case 'ASSERT_MARK_COUNT':
+      if (args.isEmpty) {
+        log.warning('ASSERT_MARK_COUNT missing count argument: $rawLine');
+        return null;
+      }
+      return ScriptAssert(time, AssertMarkCount(int.parse(args[0])));
     case 'ASSERT_TRACK_ORDER':
       if (args.isEmpty) {
         log.warning('ASSERT_TRACK_ORDER missing file_id arguments: $rawLine');

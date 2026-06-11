@@ -212,6 +212,36 @@ class ClearAnalysisChunks extends AutomationAction {
   const ClearAnalysisChunks() : super('CLEAR_ANALYSIS_CHUNKS');
 }
 
+/// Deletes every quick mark in the session and persists the empty set, so
+/// scripted sessions start from a clean slate even when storage already has
+/// marks for the same media content.
+class ClearMarks extends AutomationAction {
+  const ClearMarks() : super('CLEAR_MARKS');
+}
+
+/// Injects an agent-authored quick mark on the current frame of a slot:
+/// a candidate region (normalized source coordinates) optionally tagged
+/// with a defect type and severity for a human to confirm or reject.
+class AddQuickMark extends AutomationAction {
+  final int slotIndex;
+  final double left;
+  final double top;
+  final double width;
+  final double height;
+  final String? defectType;
+  final int? severity;
+
+  const AddQuickMark({
+    required this.slotIndex,
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+    this.defectType,
+    this.severity,
+  }) : super('ADD_QUICK_MARK');
+}
+
 /// Writes the verdict export document (all loaded media with lineage plus
 /// in-memory marks including judgment fields) to a JSON file, so agents can
 /// collect human verdicts from script-driven sessions.

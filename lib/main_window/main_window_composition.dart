@@ -151,6 +151,19 @@ extension MainWindowComposition on MainWindowController {
               analysisCoordinator.ensureGeneratedForSlot,
           setMediaSourceIdForSlot: quickMarkCoordinator.declareSourceIdForSlot,
           exportMarksToFile: quickMarkCoordinator.exportMarksToFile,
+          addQuickMark: (action) => quickMarkCoordinator.addAgentMark(
+            slotIndex: action.slotIndex,
+            sourceRect: Rect.fromLTWH(
+              action.left,
+              action.top,
+              action.width,
+              action.height,
+            ),
+            defectType: action.defectType,
+            severity: action.severity,
+          ),
+          clearMarks: quickMarkCoordinator.clearAllMarks,
+          quickMarkCount: () => quickMarkCoordinator.markCount,
           setAnalysisOverlayType: (type) {
             analysisCoordinator.updateOverlayConfig(
               analysisGeneration.overlayConfig.withTypeDefaults(type),

@@ -40,6 +40,7 @@ class TestRunner {
     state: _state,
     analysisProcesses: automation.analysisProcesses,
     effectiveDurationUs: automation.effectiveDurationUs,
+    quickMarkCount: automation.quickMarkCount,
   );
 
   /// Parse and execute the test script. Exits the process on QUIT or failure.
@@ -386,9 +387,21 @@ class TestRunner {
         log.info(
           'TestRunner: GENERATE_ANALYSIS_CACHE slot=$slotIndex hash=$hash',
         );
+      case ClearMarks():
+        log.info('TestRunner: CLEAR_MARKS');
+        automation.clearMarks();
+      case AddQuickMark():
+        log.info(
+          'TestRunner: ADD_QUICK_MARK slot=${action.slotIndex} '
+          'rect=(${action.left},${action.top},'
+          '${action.width},${action.height}) '
+          'defect=${action.defectType} severity=${action.severity}',
+        );
+        await automation.addQuickMark(action);
       case ExportMarks(:final outputPath):
-        log.info('TestRunner: EXPORT_MARKS $outputPath');
-        await automation.exportMarksToFile(outputPath);
+        final resolvedPath = _resolveCaptureOutputPath(outputPath)!;
+        log.info('TestRunner: EXPORT_MARKS $resolvedPath');
+        await automation.exportMarksToFile(resolvedPath);
       case SetMediaSourceId(:final slotIndex, :final sourceId):
         log.info(
           'TestRunner: SET_MEDIA_SOURCE_ID slot=$slotIndex sourceId=$sourceId',

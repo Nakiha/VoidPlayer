@@ -1,4 +1,5 @@
 import '../actions/action_registry.dart';
+import '../actions/automation_action.dart';
 import '../actions/player_action.dart';
 import '../analysis/analysis_overlay.dart';
 import '../platform/analysis_process_host.dart';
@@ -22,6 +23,9 @@ class UiAutomationBridge {
   final Future<void> Function(int slotIndex, String sourceId)
   setMediaSourceIdForSlot;
   final Future<void> Function(String outputPath) exportMarksToFile;
+  final Future<void> Function(AddQuickMark action) addQuickMark;
+  final void Function() clearMarks;
+  final int Function() quickMarkCount;
   final void Function(AnalysisOverlayType type) setAnalysisOverlayType;
   final void Function(Set<AnalysisOverlayLayer> layers)
   setAnalysisOverlayLayers;
@@ -38,6 +42,9 @@ class UiAutomationBridge {
     required this.generateAnalysisCacheForSlot,
     required this.setMediaSourceIdForSlot,
     required this.exportMarksToFile,
+    required this.addQuickMark,
+    required this.clearMarks,
+    required this.quickMarkCount,
     required this.setAnalysisOverlayType,
     required this.setAnalysisOverlayLayers,
     required this.setAnalysisOverlayOpacity,

@@ -131,6 +131,8 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `CLICK_MEDIA_HEADER_REMOVE_BUTTON` | fileId | 点击指定 fileId 的 media header 移除按钮，覆盖真实按钮路径 |
 | `SET_MEDIA_SOURCE_ID` | slot, sourceId | 声明指定 slot 媒体的源 lineage（同源不同编码的 join key），写入 storage catalog |
 | `EXPORT_MARKS` | outputPath | 把裁决导出文档（媒体 lineage + 全部标注含裁决字段）写成 JSON 文件，供 agent 收集人的裁决 |
+| `ADD_QUICK_MARK` | slot, left, top, width, height, defectType?, severity? | 在指定 slot 当前已上屏帧注入 agent 候选标注（归一化源坐标，origin=agent），供人确认 |
+| `CLEAR_MARKS` | — | 删除会话内全部标注并持久化空集；脚本会话用它保证密闭性（同内容媒体会按 hash 加载历史标注） |
 
 ## Assert 清单
 
@@ -142,6 +144,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `ASSERT_PAUSED` | — | 断言已暂停 |
 | `ASSERT_POSITION` | ptsUs, toleranceMs | 断言播放位置 |
 | `ASSERT_TRACK_COUNT` | count | 断言轨道数量 |
+| `ASSERT_MARK_COUNT` | count | 断言当前会话内存中的 quick mark 数量 |
 | `ASSERT_NATIVE_BACKEND` | backend, available | 断言平台诊断中的 native backend 名称与可用状态 |
 | `ASSERT_TRACK_METADATA` | slot, formatName, decoderName | 断言指定轨道的媒体格式/解码器元数据 |
 | `ASSERT_PRESENTED_FRAME_RANGE` | fileId, minUs, maxUs | 断言指定文件当前已上屏帧 PTS 位于范围内 |

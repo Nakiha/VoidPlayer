@@ -22,12 +22,14 @@ class AutomationAssertExecutor {
   final AutomationRunState state;
   final AnalysisProcessHost analysisProcesses;
   final int Function() effectiveDurationUs;
+  final int Function() quickMarkCount;
 
   const AutomationAssertExecutor({
     required this.probe,
     required this.state,
     required this.analysisProcesses,
     required this.effectiveDurationUs,
+    required this.quickMarkCount,
   });
 
   Future<void> execute(PlayerAssert assertion) async {
@@ -62,6 +64,11 @@ class AutomationAssertExecutor {
           throw AssertionError(
             'Expected track count $count, got ${tracks.length}',
           );
+        }
+      case AssertMarkCount(:final count):
+        final actual = quickMarkCount();
+        if (actual != count) {
+          throw AssertionError('Expected mark count $count, got $actual');
         }
       case AssertTrackOrder(:final fileIds):
         final layout = await controller.getLayout();

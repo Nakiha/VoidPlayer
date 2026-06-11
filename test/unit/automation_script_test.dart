@@ -254,4 +254,39 @@ void main() {
         (instructions.single as ScriptAutomationAction).action as ExportMarks;
     expect(action.outputPath, 'build/verdicts.json');
   });
+
+  test('parses ADD_QUICK_MARK with rect and judgment fields', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_add_mark_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('''
+0.1,ADD_QUICK_MARK,0,0.25,0.25,0.2,0.15,banding,3
+0.2,ADD_QUICK_MARK,1,0.1,0.1,0.3,0.3
+0.3,ADD_QUICK_MARK,0,0.1
+0.4,ASSERT_MARK_COUNT,2
+''');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(3));
+    final tagged =
+        (instructions[0] as ScriptAutomationAction).action as AddQuickMark;
+    expect(tagged.slotIndex, 0);
+    expect(tagged.left, 0.25);
+    expect(tagged.height, 0.15);
+    expect(tagged.defectType, 'banding');
+    expect(tagged.severity, 3);
+
+    final bare =
+        (instructions[1] as ScriptAutomationAction).action as AddQuickMark;
+    expect(bare.defectType, isNull);
+    expect(bare.severity, isNull);
+
+    final assertion = (instructions[2] as ScriptAssert).assertion;
+    expect(assertion, isA<AssertMarkCount>());
+    expect((assertion as AssertMarkCount).count, 2);
+  });
 }

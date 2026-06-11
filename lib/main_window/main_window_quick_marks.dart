@@ -242,6 +242,47 @@ class MainWindowQuickMarkCoordinator {
     return store.isVisible(mark, frameContext);
   }
 
+  /// Injects an agent-authored mark anchored to the current presented frame
+  /// of the track in [slotIndex]. This is the inbound half of the review
+  /// loop: algorithms flag candidate regions, a human confirms or rejects.
+  Future<void> addAgentMark({
+    required int slotIndex,
+    required Rect sourceRect,
+    String? defectType,
+    int? severity,
+    String text = '',
+  }) async {
+    final entries = trackManager.entries;
+    if (slotIndex < 0 || slotIndex >= entries.length) {
+      throw RangeError(
+        'slot $slotIndex out of range (${entries.length} tracks)',
+      );
+    }
+    final anchor = await _anchorForFileId(entries[slotIndex].fileId);
+    _applyStore(
+      store.add(
+        QuickMark(
+          id: 0,
+          anchor: anchor,
+          sourceRect: sourceRect,
+          origin: QuickMarkOrigin.agent,
+          defectType: defectType,
+          severity: severity,
+          text: text,
+        ),
+      ),
+    );
+  }
+
+  int get markCount => _quickMarks.length;
+
+  /// Deletes every mark in the session and persists the empty set.
+  void clearAllMarks() {
+    if (_quickMarks.isEmpty) return;
+    _applyStore(QuickMarkStore(marks: const [], nextId: _nextQuickMarkId));
+    stateStore.setSelectedQuickMarkId(null);
+  }
+
   /// Builds the versioned verdict export document for the current session:
   /// every loaded track with its lineage plus all in-memory marks including
   /// judgment fields. This is the outbound channel of the review loop.

@@ -28,9 +28,13 @@ analysis 目前没有发布过对外稳定版本，本轮采用 breaking change�
 
 ## SQLite
 
-数据库 schema 版本记录在 `schema_meta.schema_version`，当前为 `1`。标注 payload
-和缩略图缓存也分别记录 `mark_payload_version`、`thumbnail_cache_version`，当前都为
-`1`。
+数据库 schema 版本记录在 `schema_meta.schema_version`，当前为 `2`。标注 payload
+记录在 `mark_payload_version`，当前为 `2`；缩略图缓存记录在
+`thumbnail_cache_version`，当前为 `1`。
+
+schema v1 → v2 变更：`media` 表新增 `source_id` 列（幂等 ALTER，旧库打开时自动迁移）；
+mark payload v1 → v2 新增裁决字段（`origin`、`defectType`、`severity`、`attributes`），
+v1 行读取时取默认值，无需数据迁移。
 
 ### `schema_meta`
 
@@ -51,6 +55,7 @@ analysis 目前没有发布过对外稳定版本，本轮采用 breaking change�
 | `mtime_ms` | INTEGER NOT NULL | 最近一次看到的文件修改时间 |
 | `first_seen_ms` | INTEGER NOT NULL | 首次登记时间 |
 | `last_accessed_ms` | INTEGER NOT NULL | 最近访问时间 |
+| `source_id` | TEXT | 源 lineage：此媒体是哪个源片段的编码，同源不同编码共享同一 id；由 `SET_MEDIA_SOURCE_ID` automation 命令声明 |
 
 ### `marks`
 
@@ -61,7 +66,20 @@ analysis 目前没有发布过对外稳定版本，本轮采用 breaking change�
 | `payload_json` | TEXT NOT NULL | 标注 payload |
 | `updated_at_ms` | INTEGER NOT NULL | 最近更新时间 |
 
-主键是 `(media_hash, mark_id)`。`payload_json.version` 当前为 `1`。
+主键是 `(media_hash, mark_id)`。`payload_json.version` 当前为 `2`。
+
+payload v2 裁决字段（HITL 主观评审用）：
+
+- `origin`: 标注作者，`human` / `agent` / `metric`，默认 `human`。算法预筛出的候选
+  区域以 `agent` / `metric` 写入，由人确认后改写。
+- `defectType`: 缺陷分类，自由字符串；预置候选见 `QuickMarkDefectTypes`
+  （banding/blocking/ringing/mosquito_noise/blur/flicker/color_shift）。
+- `severity`: 严重度 1–5，可空；越界值读取时按空处理。
+- `attributes`: 自由 JSON map，存放算法输出等扩展数据（如
+  `{"algorithm": "vmaf", "score": 23.5}`），新增自定义算法不需要 bump 版本。
+
+逐帧指标曲线（PSNR/VMAF 等批量派生数据）不进 SQLite，走 analysis cache
+（VAC2/VACHUNK 模式）按媒体桶落盘，通过 `media.source_id` 与标注 join。
 
 ### `thumbnail_cache`
 

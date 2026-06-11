@@ -386,6 +386,11 @@ class TestRunner {
         log.info(
           'TestRunner: GENERATE_ANALYSIS_CACHE slot=$slotIndex hash=$hash',
         );
+      case SetMediaSourceId(:final slotIndex, :final sourceId):
+        log.info(
+          'TestRunner: SET_MEDIA_SOURCE_ID slot=$slotIndex sourceId=$sourceId',
+        );
+        await automation.setMediaSourceIdForSlot(slotIndex, sourceId);
       case SetAnalysisOverlayType(:final type):
         log.info('TestRunner: SET_ANALYSIS_OVERLAY_TYPE ${type.name}');
         automation.setAnalysisOverlayType(type);

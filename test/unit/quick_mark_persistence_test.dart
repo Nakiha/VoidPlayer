@@ -1,8 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart';
+import 'package:void_player/analysis/file_hash.dart';
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/marks/quick_mark_persistence.dart';
 
@@ -232,5 +235,94 @@ void main() {
       hasLength(2),
       reason: 'same-content refs must not multiply marks across round trips',
     );
+  });
+
+  test('round-trips judgment fields in payload v2', () async {
+    final refs = [QuickMarkMediaRef(fileId: 1, path: mediaA.path)];
+    await repository.saveForMediaRefs(refs, const [
+      QuickMark(
+        id: 1,
+        anchor: QuickMarkAnchor(fileId: 1, ptsUs: 1000, dtsUs: 1000),
+        sourceRect: Rect.zero,
+        origin: QuickMarkOrigin.metric,
+        defectType: QuickMarkDefectTypes.banding,
+        severity: 4,
+        attributes: {'algorithm': 'vmaf', 'score': 23.5},
+      ),
+    ]);
+
+    final loaded = await repository.loadForMediaRefs(refs);
+    final mark = loaded.single;
+    expect(mark.origin, QuickMarkOrigin.metric);
+    expect(mark.defectType, QuickMarkDefectTypes.banding);
+    expect(mark.severity, 4);
+    expect(mark.attributes['algorithm'], 'vmaf');
+    expect(mark.attributes['score'], 23.5);
+  });
+
+  test('reads v1 payload rows with judgment defaults', () async {
+    final refs = [QuickMarkMediaRef(fileId: 1, path: mediaA.path)];
+    // Establish the media row, then plant a raw v1 payload.
+    await repository.saveForMediaRefs(refs, const []);
+    final hash = await computeFileSha256(mediaA.path);
+    final db = sqlite3.open(repository.databasePath);
+    try {
+      db.execute(
+        'INSERT INTO marks (media_hash, mark_id, payload_json, updated_at_ms) '
+        'VALUES (?, ?, ?, ?)',
+        [
+          hash,
+          1,
+          jsonEncode({
+            'version': 1,
+            'id': 1,
+            'anchor': {'ptsUs': 1000, 'dtsUs': 1000},
+            'sourceRect': {'left': 0, 'top': 0, 'width': 0.1, 'height': 0.1},
+            'text': 'legacy',
+          }),
+          0,
+        ],
+      );
+    } finally {
+      db.close();
+    }
+
+    final loaded = await repository.loadForMediaRefs(refs);
+    final mark = loaded.single;
+    expect(mark.text, 'legacy');
+    expect(mark.origin, QuickMarkOrigin.human);
+    expect(mark.defectType, isNull);
+    expect(mark.severity, isNull);
+    expect(mark.attributes, isEmpty);
+  });
+
+  test('rejects out-of-range severity on read', () async {
+    final refs = [QuickMarkMediaRef(fileId: 1, path: mediaA.path)];
+    await repository.saveForMediaRefs(refs, const []);
+    final hash = await computeFileSha256(mediaA.path);
+    final db = sqlite3.open(repository.databasePath);
+    try {
+      db.execute(
+        'INSERT INTO marks (media_hash, mark_id, payload_json, updated_at_ms) '
+        'VALUES (?, ?, ?, ?)',
+        [
+          hash,
+          1,
+          jsonEncode({
+            'version': 2,
+            'id': 1,
+            'anchor': {'ptsUs': 1000, 'dtsUs': 1000},
+            'sourceRect': {'left': 0, 'top': 0, 'width': 0.1, 'height': 0.1},
+            'severity': 99,
+          }),
+          0,
+        ],
+      );
+    } finally {
+      db.close();
+    }
+
+    final loaded = await repository.loadForMediaRefs(refs);
+    expect(loaded.single.severity, isNull);
   });
 }

@@ -1,8 +1,40 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
+
 import '../native_player/native_player_protocol.dart';
 
 enum QuickMarkShape { rectangle, arrow }
+
+/// Who authored a mark. Human verdicts are the ground truth of the
+/// review loop; agent and metric marks are candidates routed to a human.
+enum QuickMarkOrigin { human, agent, metric }
+
+/// Preset defect vocabulary for subjective quality review. `defectType` is a
+/// free string so custom taxonomies need no schema change; these are the
+/// suggestions surfaced in the editor UI.
+abstract final class QuickMarkDefectTypes {
+  static const String banding = 'banding';
+  static const String blocking = 'blocking';
+  static const String ringing = 'ringing';
+  static const String mosquitoNoise = 'mosquito_noise';
+  static const String blur = 'blur';
+  static const String flicker = 'flicker';
+  static const String colorShift = 'color_shift';
+
+  static const List<String> presets = [
+    banding,
+    blocking,
+    ringing,
+    mosquitoNoise,
+    blur,
+    flicker,
+    colorShift,
+  ];
+}
+
+const int kQuickMarkSeverityMin = 1;
+const int kQuickMarkSeverityMax = 5;
 
 class QuickMarkAnchor {
   static const int noTimestampUs = -9223372036854775808;
@@ -194,6 +226,10 @@ class QuickMark {
   final bool textBold;
   final double textFontSize;
   final bool syncAcrossTracks;
+  final QuickMarkOrigin origin;
+  final String? defectType;
+  final int? severity;
+  final Map<String, Object?> attributes;
 
   const QuickMark({
     required this.id,
@@ -208,7 +244,15 @@ class QuickMark {
     this.textBold = true,
     this.textFontSize = 14.0,
     this.syncAcrossTracks = true,
-  });
+    this.origin = QuickMarkOrigin.human,
+    this.defectType,
+    this.severity,
+    this.attributes = const {},
+  }) : assert(
+         severity == null ||
+             (severity >= kQuickMarkSeverityMin &&
+                 severity <= kQuickMarkSeverityMax),
+       );
 
   int get fileId => anchor.fileId;
   int get ptsUs => anchor.ptsUs;
@@ -229,6 +273,10 @@ class QuickMark {
     bool? textBold,
     double? textFontSize,
     bool? syncAcrossTracks,
+    QuickMarkOrigin? origin,
+    Object? defectType = _quickMarkUnset,
+    Object? severity = _quickMarkUnset,
+    Map<String, Object?>? attributes,
   }) {
     return QuickMark(
       id: id ?? this.id,
@@ -243,6 +291,12 @@ class QuickMark {
       textBold: textBold ?? this.textBold,
       textFontSize: textFontSize ?? this.textFontSize,
       syncAcrossTracks: syncAcrossTracks ?? this.syncAcrossTracks,
+      origin: origin ?? this.origin,
+      defectType: defectType == _quickMarkUnset
+          ? this.defectType
+          : defectType as String?,
+      severity: severity == _quickMarkUnset ? this.severity : severity as int?,
+      attributes: attributes ?? this.attributes,
     );
   }
 
@@ -261,7 +315,11 @@ class QuickMark {
             other.text == text &&
             other.textBold == textBold &&
             other.textFontSize == textFontSize &&
-            other.syncAcrossTracks == syncAcrossTracks;
+            other.syncAcrossTracks == syncAcrossTracks &&
+            other.origin == origin &&
+            other.defectType == defectType &&
+            other.severity == severity &&
+            mapEquals(other.attributes, attributes);
   }
 
   @override
@@ -278,5 +336,9 @@ class QuickMark {
     textBold,
     textFontSize,
     syncAcrossTracks,
+    origin,
+    defectType,
+    severity,
+    Object.hashAllUnordered(attributes.keys),
   );
 }

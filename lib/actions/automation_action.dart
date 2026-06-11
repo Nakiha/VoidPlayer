@@ -211,3 +211,14 @@ class SetAnalysisOverlayOpacity extends AutomationAction {
 class ClearAnalysisChunks extends AutomationAction {
   const ClearAnalysisChunks() : super('CLEAR_ANALYSIS_CHUNKS');
 }
+
+/// Declares the source lineage of a loaded track: which original clip the
+/// media in [slotIndex] is an encode of. Agents use this when loading encode
+/// candidates so annotations can be joined across encodes of the same source.
+class SetMediaSourceId extends AutomationAction {
+  final int slotIndex;
+  final String sourceId;
+
+  const SetMediaSourceId(this.slotIndex, this.sourceId)
+    : super('SET_MEDIA_SOURCE_ID');
+}

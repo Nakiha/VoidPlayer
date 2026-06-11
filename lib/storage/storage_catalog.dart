@@ -43,8 +43,8 @@ class StorageCatalogDeleteResult {
 }
 
 class StorageCatalog {
-  static const int schemaVersion = 1;
-  static const int markPayloadVersion = 1;
+  static const int schemaVersion = 2;
+  static const int markPayloadVersion = 2;
   static const int thumbnailCacheVersion = 1;
 
   final String databasePath;
@@ -294,9 +294,12 @@ class StorageCatalog {
         size INTEGER NOT NULL DEFAULT 0,
         mtime_ms INTEGER NOT NULL DEFAULT 0,
         first_seen_ms INTEGER NOT NULL,
-        last_accessed_ms INTEGER NOT NULL
+        last_accessed_ms INTEGER NOT NULL,
+        source_id TEXT
       )
     ''');
+    // Schema v1 databases predate the source_id lineage column.
+    _ensureColumn(db, table: 'media', column: 'source_id', definition: 'TEXT');
     db.execute('''
       CREATE TABLE IF NOT EXISTS marks (
         media_hash TEXT NOT NULL REFERENCES media(hash) ON DELETE CASCADE,
@@ -331,6 +334,60 @@ class StorageCatalog {
       'thumbnail_cache_version',
       '$thumbnailCacheVersion',
     ]);
+  }
+
+  static void _ensureColumn(
+    Database db, {
+    required String table,
+    required String column,
+    required String definition,
+  }) {
+    final columns = db.select('PRAGMA table_info($table)');
+    final exists = columns.any((row) => row['name'] == column);
+    if (!exists) {
+      db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    }
+  }
+
+  /// Declares which source a media file is an encode of. Marks stay keyed by
+  /// media hash; the source id is the join key that lets annotations on one
+  /// encode be looked up against sibling encodes of the same source.
+  void setMediaSourceId({required String mediaHash, String? sourceId}) {
+    final db = open();
+    try {
+      db.execute('UPDATE media SET source_id = ? WHERE hash = ?', [
+        sourceId,
+        mediaHash,
+      ]);
+    } finally {
+      db.close();
+    }
+  }
+
+  String? sourceIdForMediaHash(String mediaHash) {
+    final db = open();
+    try {
+      final rows = db.select('SELECT source_id FROM media WHERE hash = ?', [
+        mediaHash,
+      ]);
+      if (rows.isEmpty) return null;
+      return rows.first['source_id'] as String?;
+    } finally {
+      db.close();
+    }
+  }
+
+  List<String> mediaHashesForSourceId(String sourceId) {
+    final db = open();
+    try {
+      final rows = db.select(
+        'SELECT hash FROM media WHERE source_id = ? ORDER BY hash',
+        [sourceId],
+      );
+      return [for (final row in rows) row['hash'] as String];
+    } finally {
+      db.close();
+    }
   }
 
   static StorageCatalogMediaUsage _usageFromRow(Row row) {

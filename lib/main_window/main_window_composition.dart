@@ -131,6 +131,7 @@ extension MainWindowComposition on MainWindowController {
           toggleAnalysisOverlayPanel: analysisCoordinator.toggleOverlayPanel,
           generateAnalysisCacheForSlot:
               analysisCoordinator.ensureGeneratedForSlot,
+          setMediaSourceIdForSlot: quickMarkCoordinator.declareSourceIdForSlot,
           setAnalysisOverlayType: (type) {
             analysisCoordinator.updateOverlayConfig(
               analysisGeneration.overlayConfig.withTypeDefaults(type),

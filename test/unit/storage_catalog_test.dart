@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart';
 import 'package:void_player/storage/storage_catalog.dart';
 
 void main() {
@@ -111,5 +112,46 @@ void main() {
     expect(markUsage.single.itemCount, 1);
     expect(thumbnailUsage.single.mediaHash, 'media_hash');
     expect(thumbnailUsage.single.bytes, 3);
+  });
+
+  test('migrates v1 media table to add source_id and stores lineage', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'void_player_storage_catalog_migration_test_',
+    );
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final dbPath = p.join(root.path, 'v1.sqlite');
+    final db = sqlite3.open(dbPath);
+    try {
+      db.execute('''
+        CREATE TABLE media (
+          hash TEXT PRIMARY KEY,
+          media_id TEXT NOT NULL,
+          path TEXT NOT NULL,
+          name TEXT NOT NULL,
+          size INTEGER NOT NULL DEFAULT 0,
+          mtime_ms INTEGER NOT NULL DEFAULT 0,
+          first_seen_ms INTEGER NOT NULL,
+          last_accessed_ms INTEGER NOT NULL
+        )
+      ''');
+      db.execute(
+        'INSERT INTO media (hash, media_id, path, name, first_seen_ms, last_accessed_ms) '
+        "VALUES ('abc', 'id', '/x', 'x', 0, 0)",
+      );
+    } finally {
+      db.close();
+    }
+
+    final catalog = StorageCatalog(databasePath: dbPath);
+    expect(catalog.sourceIdForMediaHash('abc'), isNull);
+
+    catalog.setMediaSourceId(mediaHash: 'abc', sourceId: 'clip01');
+    expect(catalog.sourceIdForMediaHash('abc'), 'clip01');
+    expect(catalog.mediaHashesForSourceId('clip01'), ['abc']);
+
+    catalog.setMediaSourceId(mediaHash: 'abc', sourceId: null);
+    expect(catalog.sourceIdForMediaHash('abc'), isNull);
   });
 }

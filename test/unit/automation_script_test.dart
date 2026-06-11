@@ -4,9 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/automation_action.dart';
 import 'package:void_player/actions/player_action.dart';
 import 'package:void_player/actions/player_assert.dart';
+import 'package:void_player/app_log.dart';
 import 'package:void_player/automation/automation_script.dart';
 
 void main() {
+  setUpAll(() async {
+    await initLogging(['--log-level=flutter=OFF']);
+  });
+
   test('parses and sorts release ui automation instructions', () {
     final file = File(
       '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_automation_script_test.csv',
@@ -204,5 +209,29 @@ void main() {
       instructions[16],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
+  });
+
+  test('parses SET_MEDIA_SOURCE_ID with slot and source id', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_source_id_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('''
+0.1,SET_MEDIA_SOURCE_ID,1,clip01_v2
+0.2,SET_MEDIA_SOURCE_ID,0
+0.3,SET_MEDIA_SOURCE_ID,0,   
+''');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1), reason: 'malformed lines are dropped');
+    final instruction = instructions.single;
+    expect(instruction, isA<ScriptAutomationAction>());
+    final action =
+        (instruction as ScriptAutomationAction).action as SetMediaSourceId;
+    expect(action.slotIndex, 1);
+    expect(action.sourceId, 'clip01_v2');
   });
 }

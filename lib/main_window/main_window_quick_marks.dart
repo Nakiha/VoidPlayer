@@ -241,6 +241,27 @@ class MainWindowQuickMarkCoordinator {
     return store.isVisible(mark, frameContext);
   }
 
+  /// Declares the source lineage of the track in [slotIndex]: which original
+  /// clip this media is an encode of. The id lands in the storage catalog so
+  /// annotations can be joined across encodes of the same source.
+  Future<void> declareSourceIdForSlot(int slotIndex, String sourceId) async {
+    final entries = trackManager.entries;
+    if (slotIndex < 0 || slotIndex >= entries.length) {
+      throw RangeError(
+        'slot $slotIndex out of range (${entries.length} tracks)',
+      );
+    }
+    final fileId = entries[slotIndex].fileId;
+    final mediaHash = await _mediaHashForFileId(fileId);
+    if (mediaHash == null) {
+      throw StateError('no media hash for slot $slotIndex (fileId $fileId)');
+    }
+    StorageCatalog.defaultLocation().setMediaSourceId(
+      mediaHash: mediaHash,
+      sourceId: sourceId,
+    );
+  }
+
   MainWindowStateModel get _state => stateStore.value;
 
   int? get _textureId => _state.textureId;

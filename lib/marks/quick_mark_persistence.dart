@@ -334,6 +334,10 @@ Map<String, Object?> _quickMarkToJson(QuickMark mark) => {
   'textBold': mark.textBold,
   'textFontSize': mark.textFontSize,
   'syncAcrossTracks': mark.syncAcrossTracks,
+  'origin': mark.origin.name,
+  if (mark.defectType != null) 'defectType': mark.defectType,
+  if (mark.severity != null) 'severity': mark.severity,
+  if (mark.attributes.isNotEmpty) 'attributes': mark.attributes,
 };
 
 QuickMark _quickMarkFromJson(Map<String, Object?> json) {
@@ -362,6 +366,41 @@ QuickMark _quickMarkFromJson(Map<String, Object?> json) {
     syncAcrossTracks: json['syncAcrossTracks'] is bool
         ? json['syncAcrossTracks'] as bool
         : true,
+    origin: _originFromJson(json['origin']),
+    defectType: json['defectType'] is String
+        ? json['defectType'] as String
+        : null,
+    severity: _severityFromJson(json['severity']),
+    attributes: _attributesFromJson(json['attributes']),
+  );
+}
+
+QuickMarkOrigin _originFromJson(Object? raw) {
+  if (raw is String) {
+    for (final origin in QuickMarkOrigin.values) {
+      if (origin.name == raw) return origin;
+    }
+  }
+  return QuickMarkOrigin.human;
+}
+
+int? _severityFromJson(Object? raw) {
+  final value = raw is int ? raw : (raw is num ? raw.toInt() : null);
+  if (value == null) return null;
+  if (value < kQuickMarkSeverityMin || value > kQuickMarkSeverityMax) {
+    return null;
+  }
+  return value;
+}
+
+Map<String, Object?> _attributesFromJson(Object? raw) {
+  if (raw is! Map) return const {};
+  return Map.unmodifiable(
+    Map<String, Object?>.fromEntries(
+      raw.entries
+          .where((entry) => entry.key is String)
+          .map((entry) => MapEntry(entry.key as String, entry.value)),
+    ),
   );
 }
 

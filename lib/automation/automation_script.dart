@@ -521,6 +521,20 @@ ScriptInstruction? _parseInstruction(
         time,
         GenerateAnalysisCache(int.parse(args[0])),
       );
+    case 'SET_MEDIA_SOURCE_ID':
+      if (args.length < 2) {
+        log.warning('SET_MEDIA_SOURCE_ID needs slot and source id: $rawLine');
+        return null;
+      }
+      final sourceId = args[1].trim();
+      if (sourceId.isEmpty) {
+        log.warning('SET_MEDIA_SOURCE_ID needs non-empty source id: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        SetMediaSourceId(int.parse(args[0]), sourceId),
+      );
     case 'SET_ANALYSIS_OVERLAY_TYPE':
       if (args.isEmpty) {
         log.warning('SET_ANALYSIS_OVERLAY_TYPE needs type: $rawLine');

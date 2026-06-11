@@ -120,6 +120,18 @@
 	  return tone_map_to_sdr(rgb, transfer, primaries);
 	}
 
+	float4 map_sdr_ui_to_output(float4 color, bool output_edr) {
+	  color = saturate(color);
+	  if (!output_edr) {
+	    return color;
+	  }
+	  return float4(convert_linear_bt709_to_display_p3(srgb_to_linear(color.rgb)), color.a);
+	}
+
+	float4 viewport_background_output_color(constant LayoutParams& params) {
+	  return map_sdr_ui_to_output(viewport_background_color(params), params.output_edr != 0);
+	}
+
 	float yuv_sample_to_float(device const uchar* source, uint offset, bool is_p010) {
 	  if (is_p010) {
 	    uint lo = uint(source[offset]);

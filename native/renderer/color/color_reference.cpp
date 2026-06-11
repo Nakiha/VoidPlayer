@@ -1,5 +1,6 @@
 #include "renderer/color/color_reference.h"
 
+#include "renderer/color/color_strategy.h"
 #include "renderer/frame/frame_storage.h"
 
 #include <algorithm>
@@ -30,14 +31,74 @@ ColorReferenceRgb max_rgb(ColorReferenceRgb rgb, double floor) {
     return rgb;
 }
 
+ColorReferenceRgb convert_linear_bt2020_to_display_p3(ColorReferenceRgb rgb) {
+    return {
+        kBT2020ToDisplayP3RFromR * rgb.r +
+            kBT2020ToDisplayP3RFromG * rgb.g +
+            kBT2020ToDisplayP3RFromB * rgb.b,
+        kBT2020ToDisplayP3GFromR * rgb.r +
+            kBT2020ToDisplayP3GFromG * rgb.g +
+            kBT2020ToDisplayP3GFromB * rgb.b,
+        kBT2020ToDisplayP3BFromR * rgb.r +
+            kBT2020ToDisplayP3BFromG * rgb.g +
+            kBT2020ToDisplayP3BFromB * rgb.b,
+    };
+}
+
+ColorReferenceRgb convert_linear_bt709_to_display_p3(ColorReferenceRgb rgb) {
+    return {
+        kBT709ToDisplayP3RFromR * rgb.r +
+            kBT709ToDisplayP3RFromG * rgb.g +
+            kBT709ToDisplayP3RFromB * rgb.b,
+        kBT709ToDisplayP3GFromR * rgb.r +
+            kBT709ToDisplayP3GFromG * rgb.g +
+            kBT709ToDisplayP3GFromB * rgb.b,
+        kBT709ToDisplayP3BFromR * rgb.r +
+            kBT709ToDisplayP3BFromG * rgb.g +
+            kBT709ToDisplayP3BFromB * rgb.b,
+    };
+}
+
+ColorReferenceRgb convert_linear_bt601_to_display_p3(ColorReferenceRgb rgb) {
+    return {
+        kBT601ToDisplayP3RFromR * rgb.r +
+            kBT601ToDisplayP3RFromG * rgb.g +
+            kBT601ToDisplayP3RFromB * rgb.b,
+        kBT601ToDisplayP3GFromR * rgb.r +
+            kBT601ToDisplayP3GFromG * rgb.g +
+            kBT601ToDisplayP3GFromB * rgb.b,
+        kBT601ToDisplayP3BFromR * rgb.r +
+            kBT601ToDisplayP3BFromG * rgb.g +
+            kBT601ToDisplayP3BFromB * rgb.b,
+    };
+}
+
+ColorReferenceRgb convert_linear_primaries_to_display_p3(
+    ColorReferenceRgb rgb,
+    int primaries) {
+    if (primaries == VIDEO_COLOR_PRIMARIES_BT2020) {
+        return convert_linear_bt2020_to_display_p3(rgb);
+    }
+    if (primaries == VIDEO_COLOR_PRIMARIES_BT601) {
+        return convert_linear_bt601_to_display_p3(rgb);
+    }
+    return convert_linear_bt709_to_display_p3(rgb);
+}
+
 ColorReferenceRgb convert_linear_primaries_to_bt709(
     ColorReferenceRgb rgb,
     int primaries) {
     if (primaries == VIDEO_COLOR_PRIMARIES_BT2020) {
         return {
-            1.6605 * rgb.r - 0.5876 * rgb.g - 0.0728 * rgb.b,
-            -0.1246 * rgb.r + 1.1329 * rgb.g - 0.0083 * rgb.b,
-            -0.0182 * rgb.r - 0.1006 * rgb.g + 1.1187 * rgb.b,
+            kBT2020ToBT709RFromR * rgb.r +
+                kBT2020ToBT709RFromG * rgb.g +
+                kBT2020ToBT709RFromB * rgb.b,
+            kBT2020ToBT709GFromR * rgb.r +
+                kBT2020ToBT709GFromG * rgb.g +
+                kBT2020ToBT709GFromB * rgb.b,
+            kBT2020ToBT709BFromR * rgb.r +
+                kBT2020ToBT709BFromG * rgb.g +
+                kBT2020ToBT709BFromB * rgb.b,
         };
     }
     return rgb;
@@ -92,14 +153,14 @@ ColorReferenceRgb reinhard(ColorReferenceRgb rgb) {
 
 ColorReferenceRgb tone_map_to_sdr(ColorReferenceRgb rgb,
                                   int transfer,
-                                  int primaries) {
+    int primaries) {
     if (transfer == VIDEO_COLOR_TRANSFER_PQ) {
-        auto lin = scale(pq_to_linear_nits(rgb), 1.0 / 203.0);
+        auto lin = scale(pq_to_linear_nits(rgb), 1.0 / kHDRReferenceWhiteNits);
         lin = convert_linear_primaries_to_bt709(lin, primaries);
         return saturate_rgb(linear_to_srgb(reinhard(lin)));
     }
     if (transfer == VIDEO_COLOR_TRANSFER_HLG) {
-        auto lin = scale(hlg_to_linear(rgb), 4.0);
+        auto lin = scale(hlg_to_linear(rgb), kHLGEDRHeadroomScale);
         lin = convert_linear_primaries_to_bt709(lin, primaries);
         return saturate_rgb(linear_to_srgb(reinhard(lin)));
     }
@@ -112,20 +173,21 @@ ColorReferenceRgb tone_map_to_sdr(ColorReferenceRgb rgb,
 
 ColorReferenceRgb map_to_edr(ColorReferenceRgb rgb,
                              int transfer,
-                             int primaries) {
+    int primaries) {
     if (transfer == VIDEO_COLOR_TRANSFER_PQ) {
-        auto lin = scale(pq_to_linear_nits(rgb), 1.0 / 203.0);
-        return max_rgb(convert_linear_primaries_to_bt709(lin, primaries), 0.0);
+        auto lin = scale(pq_to_linear_nits(rgb), 1.0 / kHDRReferenceWhiteNits);
+        return max_rgb(convert_linear_primaries_to_display_p3(lin, primaries),
+                       0.0);
     }
     if (transfer == VIDEO_COLOR_TRANSFER_HLG) {
-        auto lin = scale(hlg_to_linear(rgb), 4.0);
-        return max_rgb(convert_linear_primaries_to_bt709(lin, primaries), 0.0);
+        auto lin = scale(hlg_to_linear(rgb), kHLGEDRHeadroomScale);
+        return max_rgb(convert_linear_primaries_to_display_p3(lin, primaries),
+                       0.0);
     }
-    if (primaries == VIDEO_COLOR_PRIMARIES_BT2020) {
-        auto lin = convert_linear_primaries_to_bt709(srgb_to_linear(rgb), primaries);
-        return max_rgb(lin, 0.0);
-    }
-    return srgb_to_linear(rgb);
+    return max_rgb(convert_linear_primaries_to_display_p3(
+                       srgb_to_linear(rgb),
+                       primaries),
+                   0.0);
 }
 
 } // namespace

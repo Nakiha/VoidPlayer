@@ -1,5 +1,6 @@
 #include "renderer/color/color_reference.h"
 
+#include "renderer/color/color_strategy.h"
 #include "renderer/frame/frame_storage.h"
 
 #include <cmath>
@@ -98,11 +99,15 @@ bool expect_between(const char* name, double value, double low, double high) {
 
 int main() {
   const double sdr_white = vr::color_reference_srgb_to_linear(254.0 / 255.0);
-  const double bt2020_white_r = 1.6605 - 0.5876 - 0.0728;
-  const double bt2020_white_g = -0.1246 + 1.1329 - 0.0083;
-  const double bt2020_white_b = -0.0182 - 0.1006 + 1.1187;
+  const double bt2020_p3_white_r = vr::kBT2020ToDisplayP3RFromR +
+      vr::kBT2020ToDisplayP3RFromG + vr::kBT2020ToDisplayP3RFromB;
+  const double bt2020_p3_white_g = vr::kBT2020ToDisplayP3GFromR +
+      vr::kBT2020ToDisplayP3GFromG + vr::kBT2020ToDisplayP3GFromB;
+  const double bt2020_p3_white_b = vr::kBT2020ToDisplayP3BFromR +
+      vr::kBT2020ToDisplayP3BFromG + vr::kBT2020ToDisplayP3BFromB;
   const double pq_203_nits =
-      vr::color_reference_pq_to_linear_nits(0.5806889) / 203.0;
+      vr::color_reference_pq_to_linear_nits(0.5806889) /
+      vr::kHDRReferenceWhiteNits;
 
   const std::vector<Case> cases = {
       {
@@ -132,7 +137,11 @@ int main() {
                  vr::VIDEO_COLOR_TRANSFER_HLG,
                  vr::VIDEO_COLOR_PRIMARIES_BT2020,
                  true),
-          {bt2020_white_r * 4.0, bt2020_white_g * 4.0, bt2020_white_b * 4.0},
+          {
+              bt2020_p3_white_r * vr::kHLGEDRHeadroomScale,
+              bt2020_p3_white_g * vr::kHLGEDRHeadroomScale,
+              bt2020_p3_white_b * vr::kHLGEDRHeadroomScale,
+          },
           1e-5,
       },
       {
@@ -143,9 +152,9 @@ int main() {
                  vr::VIDEO_COLOR_PRIMARIES_BT2020,
                  true),
           {
-              bt2020_white_r * pq_203_nits,
-              bt2020_white_g * pq_203_nits,
-              bt2020_white_b * pq_203_nits,
+              bt2020_p3_white_r * pq_203_nits,
+              bt2020_p3_white_g * pq_203_nits,
+              bt2020_p3_white_b * pq_203_nits,
           },
           5e-5,
       },
@@ -175,11 +184,42 @@ int main() {
           vr::VIDEO_COLOR_PRIMARIES_BT2020,
           true,
       });
-  const bool bt2020_red_ok = close_rgb(bt2020_red, {1.6605, 0.0, 0.0}, 1e-6);
+  const bool bt2020_red_ok = close_rgb(
+      bt2020_red,
+      {
+          vr::kBT2020ToDisplayP3RFromR,
+          0.0,
+          vr::kBT2020ToDisplayP3BFromR,
+      },
+      1e-6);
   ok = bt2020_red_ok && ok;
   if (!bt2020_red_ok) {
     std::fprintf(stderr, "bt2020 red primary transform failed: ");
     print_rgb("actual", bt2020_red);
+    std::fprintf(stderr, "\n");
+  }
+
+  const auto bt709_red = vr::color_reference_map_to_output(
+      {1.0, 0.0, 0.0},
+      {
+          vr::VIDEO_COLOR_RANGE_FULL,
+          vr::VIDEO_COLOR_MATRIX_BT709,
+          vr::VIDEO_COLOR_TRANSFER_SDR,
+          vr::VIDEO_COLOR_PRIMARIES_BT709,
+          true,
+      });
+  const bool bt709_red_ok = close_rgb(
+      bt709_red,
+      {
+          vr::kBT709ToDisplayP3RFromR,
+          vr::kBT709ToDisplayP3GFromR,
+          vr::kBT709ToDisplayP3BFromR,
+      },
+      1e-6);
+  ok = bt709_red_ok && ok;
+  if (!bt709_red_ok) {
+    std::fprintf(stderr, "bt709 red primary transform failed: ");
+    print_rgb("actual", bt709_red);
     std::fprintf(stderr, "\n");
   }
 

@@ -9,11 +9,11 @@ import '../actions/player_action.dart';
 import '../analysis/analysis_cache.dart';
 import '../app_log.dart';
 import '../video_renderer_controller.dart';
-import '../windows/main/main_window_test_hooks.dart';
 import 'automation_assert_executor.dart';
 import 'automation_probe.dart';
 import 'automation_run_state.dart';
 import 'automation_script.dart';
+import 'main_window_harness.dart';
 import 'ui_automation_bridge.dart';
 import 'ui_automation_runtime.dart';
 

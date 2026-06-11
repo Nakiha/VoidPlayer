@@ -3,7 +3,7 @@ import '../actions/player_action.dart';
 import '../analysis/analysis_overlay.dart';
 import '../platform/analysis_process_host.dart';
 import '../video_renderer_controller.dart';
-import '../windows/main/main_window_test_hooks.dart';
+import 'main_window_harness.dart';
 
 // ignore_for_file: prefer_initializing_formals
 

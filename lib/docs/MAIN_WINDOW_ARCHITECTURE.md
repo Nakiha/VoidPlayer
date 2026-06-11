@@ -42,7 +42,7 @@ MainWindowView
 | `lib/windows/main/main_window_layout.dart` | viewport resize debounce、pan/zoom/split、native layout flush |
 | `lib/windows/main/main_window_media.dart` | open/add/remove media、track offset、effective duration |
 | `lib/windows/main/main_window_analysis.dart` | analysis IPC snapshot、analysis window trigger、main-window overlay activation/refresh |
-| `lib/windows/main/main_window_test_hooks.dart` | UI 自动化专用 pointer simulation |
+| `lib/automation/main_window_harness.dart` | UI 自动化专用 pointer simulation、frame capture（automation 层，主窗口只注入 GlobalKey/getter） |
 
 ## 生命周期
 

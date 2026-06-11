@@ -1,20 +1,21 @@
-import 'dart:ffi';
 import 'dart:io';
-import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:window_manager/window_manager.dart' as wm;
 
-import '../../app_log.dart';
-import '../../native_player/native_player_protocol.dart';
-import '../../widgets/analysis_overlay_controls.dart';
-import '../../widgets/media_header.dart';
+import '../app_log.dart';
+import '../native_player/native_player_protocol.dart';
+import '../widgets/analysis_overlay_controls.dart';
+import '../widgets/media_header.dart';
+import 'capture_metrics.dart';
+import 'win32_native_input.dart';
 
+/// Drives the main window through synthetic pointer events, native mouse
+/// injection, and frame captures during UI automation. The main window only
+/// supplies the widget handles and timeline getters passed to the constructor.
 class MainWindowTestHarness {
   final GlobalKey viewportKey;
   final GlobalKey timelineSliderKey;
@@ -54,7 +55,7 @@ class MainWindowTestHarness {
         throw StateError('Failed to read Flutter frame pixels');
       }
       final rawRgba = rawData.buffer.asUint8List();
-      final stats = _computeRgbaStats(rawRgba);
+      final stats = computeRgbaStats(rawRgba);
       String? resolvedOutputPath;
       if (outputPath != null && outputPath.trim().isNotEmpty) {
         final pngData = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -67,7 +68,7 @@ class MainWindowTestHarness {
         resolvedOutputPath = outputPath;
       }
       return ViewportCapture(
-        hash: _captureHash(rawRgba),
+        hash: computeCaptureHash(rawRgba),
         width: image.width,
         height: image.height,
         avgLuma: stats.avgLuma,
@@ -501,11 +502,11 @@ class MainWindowTestHarness {
       'screen=($x, $y) window=(${windowPosition.dx.toStringAsFixed(1)}, '
       '${windowPosition.dy.toStringAsFixed(1)}) scale=${scale.toStringAsFixed(2)}',
     );
-    _setCursorPos(x, y);
+    nativeSetCursorPos(x, y);
     await Future<void>.delayed(const Duration(milliseconds: 40));
-    _mouseEvent(_mouseEventLeftDown, 0, 0, 0, 0);
+    nativeMouseLeftDown();
     await Future<void>.delayed(const Duration(milliseconds: 40));
-    _mouseEvent(_mouseEventLeftUp, 0, 0, 0, 0);
+    nativeMouseLeftUp();
     await Future<void>.delayed(const Duration(milliseconds: 80));
   }
 
@@ -523,7 +524,7 @@ class MainWindowTestHarness {
     );
     for (final local in points) {
       final appGlobal = renderObject.localToGlobal(local);
-      _setCursorPos(
+      nativeSetCursorPos(
         ((windowPosition.dx + appGlobal.dx) * scale).round(),
         ((windowPosition.dy + appGlobal.dy) * scale).round(),
       );
@@ -532,7 +533,7 @@ class MainWindowTestHarness {
     final exitGlobal = renderObject.localToGlobal(
       Offset(renderObject.size.width - 1, renderObject.size.height + 24),
     );
-    _setCursorPos(
+    nativeSetCursorPos(
       ((windowPosition.dx + exitGlobal.dx) * scale).round(),
       ((windowPosition.dy + exitGlobal.dy) * scale).round(),
     );
@@ -697,7 +698,7 @@ class MainWindowTestHarness {
         if (rawData == null) {
           throw StateError('Failed to read Flutter frame pixels');
         }
-        final score = _computeViewportOverlayLineScore(
+        final score = computeViewportOverlayLineScore(
           rgba: rawData.buffer.asUint8List(),
           imageWidth: image.width,
           imageHeight: image.height,
@@ -872,197 +873,3 @@ class MainWindowTestHarness {
     );
   }
 }
-
-class _RgbaCaptureStats {
-  final double avgLuma;
-  final double nonBlackRatio;
-
-  const _RgbaCaptureStats({required this.avgLuma, required this.nonBlackRatio});
-}
-
-class ViewportOverlayDragSampleMetric {
-  final double baselineScore;
-  final double minScore;
-  final double avgScore;
-  final double minRatio;
-  final int samples;
-  final int dropSamples;
-  final double minScoreRatio;
-  final int maxDropSamples;
-
-  const ViewportOverlayDragSampleMetric({
-    required this.baselineScore,
-    required this.minScore,
-    required this.avgScore,
-    required this.minRatio,
-    required this.samples,
-    required this.dropSamples,
-    required this.minScoreRatio,
-    required this.maxDropSamples,
-  });
-
-  factory ViewportOverlayDragSampleMetric.fromScores({
-    required double baselineScore,
-    required List<double> scores,
-    required double minScoreRatio,
-    required int maxDropSamples,
-  }) {
-    final samples = scores.length;
-    final minScore = scores.isEmpty ? 0.0 : scores.reduce(math.min);
-    final avgScore = scores.isEmpty
-        ? 0.0
-        : scores.reduce((a, b) => a + b) / samples;
-    final minRatio = baselineScore <= 0 ? 0.0 : minScore / baselineScore;
-    final dropSamples = scores
-        .where(
-          (score) => baselineScore > 0 && score / baselineScore < minScoreRatio,
-        )
-        .length;
-    return ViewportOverlayDragSampleMetric(
-      baselineScore: baselineScore,
-      minScore: minScore,
-      avgScore: avgScore,
-      minRatio: minRatio,
-      samples: samples,
-      dropSamples: dropSamples,
-      minScoreRatio: minScoreRatio,
-      maxDropSamples: maxDropSamples,
-    );
-  }
-
-  bool get stable => dropSamples <= maxDropSamples;
-
-  String get failureMessage =>
-      'Viewport overlay line score dropped during drag: '
-      'baseline=${baselineScore.toStringAsFixed(6)} '
-      'min=${minScore.toStringAsFixed(6)} '
-      'avg=${avgScore.toStringAsFixed(6)} '
-      'minRatio=${minRatio.toStringAsFixed(3)} '
-      'dropSamples=$dropSamples/$samples '
-      'thresholdRatio=$minScoreRatio maxDropSamples=$maxDropSamples';
-
-  String summary() =>
-      'DRAG_VIEWPORT_SAMPLE_OVERLAY summary: '
-      'baseline=${baselineScore.toStringAsFixed(6)} '
-      'min=${minScore.toStringAsFixed(6)} '
-      'avg=${avgScore.toStringAsFixed(6)} '
-      'minRatio=${minRatio.toStringAsFixed(3)} '
-      'dropSamples=$dropSamples/$samples '
-      'thresholdRatio=$minScoreRatio maxDropSamples=$maxDropSamples';
-}
-
-_RgbaCaptureStats _computeRgbaStats(Uint8List rgba) {
-  final pixelCount = rgba.length ~/ 4;
-  if (pixelCount == 0) {
-    return const _RgbaCaptureStats(avgLuma: 0, nonBlackRatio: 0);
-  }
-
-  var lumaSum = 0;
-  var nonBlack = 0;
-  for (var i = 0; i < pixelCount; i++) {
-    final off = i * 4;
-    final r = rgba[off];
-    final g = rgba[off + 1];
-    final b = rgba[off + 2];
-    final luma = (77 * r + 150 * g + 29 * b) >> 8;
-    lumaSum += luma;
-    if (r > 8 || g > 8 || b > 8) nonBlack++;
-  }
-
-  return _RgbaCaptureStats(
-    avgLuma: lumaSum / pixelCount,
-    nonBlackRatio: nonBlack / pixelCount,
-  );
-}
-
-String _captureHash(Uint8List bytes) =>
-    sha256.convert(bytes).toString().substring(0, 16);
-
-double _computeViewportOverlayLineScore({
-  required Uint8List rgba,
-  required int imageWidth,
-  required int imageHeight,
-  required RenderBox viewportBox,
-  required GlobalKey captureRootKey,
-}) {
-  final rootContext = captureRootKey.currentContext;
-  final rootObject = rootContext?.findRenderObject();
-  if (rootContext == null ||
-      rootObject is! RenderRepaintBoundary ||
-      !rootObject.hasSize) {
-    throw StateError('Flutter frame capture root is not mounted');
-  }
-  if (imageWidth <= 2 || imageHeight <= 2) {
-    return 0.0;
-  }
-
-  final rootTopLeft = rootObject.localToGlobal(Offset.zero);
-  final viewportTopLeft = viewportBox.localToGlobal(Offset.zero);
-  final pixelRatio = imageWidth / rootObject.size.width;
-  final x0 = ((viewportTopLeft.dx - rootTopLeft.dx) * pixelRatio).floor().clamp(
-    0,
-    imageWidth - 2,
-  );
-  final y0 = ((viewportTopLeft.dy - rootTopLeft.dy) * pixelRatio).floor().clamp(
-    0,
-    imageHeight - 2,
-  );
-  final x1 =
-      ((viewportTopLeft.dx - rootTopLeft.dx + viewportBox.size.width) *
-              pixelRatio)
-          .ceil()
-          .clamp(x0 + 1, imageWidth - 1);
-  final y1 =
-      ((viewportTopLeft.dy - rootTopLeft.dy + viewportBox.size.height) *
-              pixelRatio)
-          .ceil()
-          .clamp(y0 + 1, imageHeight - 1);
-
-  const sampleStep = 2;
-  const edgeThreshold = 42;
-  var strongEdges = 0;
-  var samples = 0;
-
-  int lumaAt(int x, int y) {
-    final off = (y * imageWidth + x) * 4;
-    final r = rgba[off];
-    final g = rgba[off + 1];
-    final b = rgba[off + 2];
-    return (77 * r + 150 * g + 29 * b) >> 8;
-  }
-
-  for (var y = y0; y < y1 - 1; y += sampleStep) {
-    for (var x = x0; x < x1 - 1; x += sampleStep) {
-      final luma = lumaAt(x, y);
-      final right = lumaAt(x + 1, y);
-      final down = lumaAt(x, y + 1);
-      if (math.max((luma - right).abs(), (luma - down).abs()) >=
-          edgeThreshold) {
-        strongEdges++;
-      }
-      samples++;
-    }
-  }
-
-  return samples == 0 ? 0.0 : strongEdges / samples;
-}
-
-final _user32 = DynamicLibrary.open('user32.dll');
-const _mouseEventLeftDown = 0x0002;
-const _mouseEventLeftUp = 0x0004;
-final _setCursorPos = _user32
-    .lookupFunction<
-      Int32 Function(Int32 x, Int32 y),
-      int Function(int x, int y)
-    >('SetCursorPos');
-final _mouseEvent = _user32
-    .lookupFunction<
-      Void Function(
-        Uint32 dwFlags,
-        Uint32 dx,
-        Uint32 dy,
-        Uint32 dwData,
-        IntPtr dwExtraInfo,
-      ),
-      void Function(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo)
-    >('mouse_event');

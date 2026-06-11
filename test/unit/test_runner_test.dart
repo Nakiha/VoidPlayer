@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/action_registry.dart';
 import 'package:void_player/app_log.dart';
+import 'package:void_player/automation/main_window_harness.dart';
 import 'package:void_player/automation/test_runner.dart';
 import 'package:void_player/automation/ui_automation_bridge.dart';
 import 'package:void_player/automation/ui_automation_runtime.dart';
 import 'package:void_player/platform/analysis_process_host.dart';
 import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/video_renderer_controller.dart';
-import 'package:void_player/windows/main/main_window_test_hooks.dart';
 
 void main() {
   setUpAll(() async {

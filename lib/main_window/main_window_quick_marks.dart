@@ -10,6 +10,7 @@ import '../analysis/file_hash.dart';
 import '../app_log.dart';
 import '../app_paths.dart';
 import '../marks/quick_mark.dart';
+import '../marks/quick_mark_export.dart';
 import '../marks/quick_mark_persistence.dart';
 import '../marks/quick_mark_store.dart';
 import '../marks/quick_mark_thumbnail.dart';
@@ -239,6 +240,41 @@ class MainWindowQuickMarkCoordinator {
 
   bool isVisible(QuickMark mark) {
     return store.isVisible(mark, frameContext);
+  }
+
+  /// Builds the versioned verdict export document for the current session:
+  /// every loaded track with its lineage plus all in-memory marks including
+  /// judgment fields. This is the outbound channel of the review loop.
+  Future<Map<String, Object?>> buildMarksExportDocument() async {
+    final entries = trackManager.entries;
+    final media = <QuickMarkExportMedia>[];
+    final catalog = StorageCatalog.defaultLocation();
+    for (var slot = 0; slot < entries.length; slot++) {
+      final entry = entries[slot];
+      final hash = await _mediaHashForFileId(entry.fileId);
+      media.add(
+        QuickMarkExportMedia(
+          fileId: entry.fileId,
+          slotIndex: slot,
+          path: entry.path,
+          mediaHash: hash,
+          sourceId: hash == null ? null : catalog.sourceIdForMediaHash(hash),
+        ),
+      );
+    }
+    return buildQuickMarkExportDocument(
+      media: media,
+      marks: _quickMarks,
+      generatedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  Future<void> exportMarksToFile(String path) async {
+    final document = await buildMarksExportDocument();
+    final file = File(path);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(jsonEncode(document), flush: true);
+    log.info('[QuickMark] exported ${_quickMarks.length} marks to $path');
   }
 
   /// Declares the source lineage of the track in [slotIndex]: which original

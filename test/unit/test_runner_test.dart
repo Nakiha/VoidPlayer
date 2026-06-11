@@ -87,6 +87,7 @@ UiAutomationBridge _bridge(NativePlayerController controller) {
     toggleAnalysisOverlayPanel: () async {},
     generateAnalysisCacheForSlot: (_) async => 'hash',
     setMediaSourceIdForSlot: (_, _) async {},
+    exportMarksToFile: (_) async {},
     setAnalysisOverlayType: (_) {},
     setAnalysisOverlayLayers: (_) {},
     setAnalysisOverlayOpacity: (_) {},

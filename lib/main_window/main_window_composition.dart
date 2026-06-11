@@ -132,6 +132,7 @@ extension MainWindowComposition on MainWindowController {
           generateAnalysisCacheForSlot:
               analysisCoordinator.ensureGeneratedForSlot,
           setMediaSourceIdForSlot: quickMarkCoordinator.declareSourceIdForSlot,
+          exportMarksToFile: quickMarkCoordinator.exportMarksToFile,
           setAnalysisOverlayType: (type) {
             analysisCoordinator.updateOverlayConfig(
               analysisGeneration.overlayConfig.withTypeDefaults(type),

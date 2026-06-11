@@ -386,6 +386,9 @@ class TestRunner {
         log.info(
           'TestRunner: GENERATE_ANALYSIS_CACHE slot=$slotIndex hash=$hash',
         );
+      case ExportMarks(:final outputPath):
+        log.info('TestRunner: EXPORT_MARKS $outputPath');
+        await automation.exportMarksToFile(outputPath);
       case SetMediaSourceId(:final slotIndex, :final sourceId):
         log.info(
           'TestRunner: SET_MEDIA_SOURCE_ID slot=$slotIndex sourceId=$sourceId',

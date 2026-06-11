@@ -521,6 +521,12 @@ ScriptInstruction? _parseInstruction(
         time,
         GenerateAnalysisCache(int.parse(args[0])),
       );
+    case 'EXPORT_MARKS':
+      if (args.isEmpty || args[0].trim().isEmpty) {
+        log.warning('EXPORT_MARKS needs output path: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(time, ExportMarks(args[0].trim()));
     case 'SET_MEDIA_SOURCE_ID':
       if (args.length < 2) {
         log.warning('SET_MEDIA_SOURCE_ID needs slot and source id: $rawLine');

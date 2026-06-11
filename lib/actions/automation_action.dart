@@ -212,6 +212,15 @@ class ClearAnalysisChunks extends AutomationAction {
   const ClearAnalysisChunks() : super('CLEAR_ANALYSIS_CHUNKS');
 }
 
+/// Writes the verdict export document (all loaded media with lineage plus
+/// in-memory marks including judgment fields) to a JSON file, so agents can
+/// collect human verdicts from script-driven sessions.
+class ExportMarks extends AutomationAction {
+  final String outputPath;
+
+  const ExportMarks(this.outputPath) : super('EXPORT_MARKS');
+}
+
 /// Declares the source lineage of a loaded track: which original clip the
 /// media in [slotIndex] is an encode of. Agents use this when loading encode
 /// candidates so annotations can be joined across encodes of the same source.

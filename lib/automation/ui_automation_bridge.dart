@@ -21,6 +21,7 @@ class UiAutomationBridge {
   final Future<String?> Function(int slotIndex) generateAnalysisCacheForSlot;
   final Future<void> Function(int slotIndex, String sourceId)
   setMediaSourceIdForSlot;
+  final Future<void> Function(String outputPath) exportMarksToFile;
   final void Function(AnalysisOverlayType type) setAnalysisOverlayType;
   final void Function(Set<AnalysisOverlayLayer> layers)
   setAnalysisOverlayLayers;
@@ -36,6 +37,7 @@ class UiAutomationBridge {
     required this.toggleAnalysisOverlayPanel,
     required this.generateAnalysisCacheForSlot,
     required this.setMediaSourceIdForSlot,
+    required this.exportMarksToFile,
     required this.setAnalysisOverlayType,
     required this.setAnalysisOverlayLayers,
     required this.setAnalysisOverlayOpacity,

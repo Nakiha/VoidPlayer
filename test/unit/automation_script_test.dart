@@ -234,4 +234,24 @@ void main() {
     expect(action.slotIndex, 1);
     expect(action.sourceId, 'clip01_v2');
   });
+
+  test('parses EXPORT_MARKS with output path', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_export_marks_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('''
+0.1,EXPORT_MARKS,build/verdicts.json
+0.2,EXPORT_MARKS
+''');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1));
+    final action =
+        (instructions.single as ScriptAutomationAction).action as ExportMarks;
+    expect(action.outputPath, 'build/verdicts.json');
+  });
 }

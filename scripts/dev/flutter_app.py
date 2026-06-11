@@ -10,6 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from .flutter_toolchain import flutter_cmd
 from .native import ensure_ffmpeg_analyzer_tool, native_build, native_build_macos
 from .paths import (
     DEMO_SCRIPT,
@@ -40,29 +41,8 @@ def _unsupported_on_current_platform(command: str, replacement: str | None = Non
     sys.exit(1)
 
 
-def _flutter_bin() -> str:
-    return os.environ.get("VOIDPLAYER_FLUTTER_BIN", "flutter")
-
-
 def _flutter_cmd(*args: str, local_engine: bool = False) -> list[str]:
-    cmd = [_flutter_bin(), *args]
-    if local_engine:
-        cmd.extend(_flutter_local_engine_args())
-    return cmd
-
-
-def _flutter_local_engine_args() -> list[str]:
-    engine_src = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH")
-    engine = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
-    engine_host = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST")
-    args: list[str] = []
-    if engine_src:
-        args.append(f"--local-engine-src-path={engine_src}")
-    if engine:
-        args.append(f"--local-engine={engine}")
-    if engine_host:
-        args.append(f"--local-engine-host={engine_host}")
-    return args
+    return flutter_cmd(*args, local_engine=local_engine)
 
 
 def flutter_build(debug: bool) -> None:

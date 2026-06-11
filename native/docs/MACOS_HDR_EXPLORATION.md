@@ -12,26 +12,42 @@ macOS Flutter surface texture to the runner.
 | Item | Value |
 | --- | --- |
 | Flutter baseline | `3.44.1` stable |
-| Local fork | `/Users/zhuhongwei/Documents/yorune/VoidPlayer-Flutter` |
-| Engine patch branch | `voidplayer/hdr-surface-export-3.44.1` |
-| Engine patch commit | `04b75e628e3 Expose macOS Flutter surface info for VoidPlayer HDR spike` |
+| Toolchain lock | `toolchains/flutter.lock.json` |
+| Fork repo | `https://github.com/Nakiha/VoidPlayer-Flutter.git` |
+| Fork release ref | `voidplayer-flutter-3.44.1-hdr.1` |
+| Fork patch branch | `voidplayer/hdr-surface-export-3.44.1` |
+| Fork commit | `04b75e628e3a7c7ffc66f14e50f760564ab2e9f2` |
 | App worktree | `/Users/zhuhongwei/Documents/yorune/VoidPlayer.worktrees/hdr-support-exploration` |
 
-Local app builds should use `dev_config.local.json` to point at the fork and
-local engine:
+All `dev.py` commands that invoke Flutter validate the active SDK against
+`toolchains/flutter.lock.json` before running `flutter`. This check verifies the
+framework revision, engine revision, Dart SDK version, git checkout revision, a
+clean fork working tree, and VoidPlayer patch markers.
+
+Use:
+
+```bash
+python dev.py toolchain doctor
+python dev.py toolchain bootstrap-flutter
+```
+
+`dev_config.local.json` may point at an existing fork checkout and local engine
+build, but it does not replace the lock:
 
 ```json
 {
-  "flutter": {
-    "executable": "/Users/zhuhongwei/Documents/yorune/VoidPlayer-Flutter/bin/flutter",
-    "localEngineSrcPath": "/Users/zhuhongwei/Documents/yorune/VoidPlayer-Flutter/engine/src",
-    "localEngine": "host_debug_unopt_arm64",
-    "localEngineHost": "host_debug_unopt_arm64"
+  "env": {
+    "VOIDPLAYER_FLUTTER_BIN": "/Users/zhuhongwei/Documents/yorune/VoidPlayer-Flutter/bin/flutter",
+    "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": "/Users/zhuhongwei/Documents/yorune/VoidPlayer-Flutter/engine/src",
+    "VOIDPLAYER_FLUTTER_LOCAL_ENGINE": "host_debug_unopt_arm64",
+    "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST": "host_debug_unopt_arm64"
   }
 }
 ```
 
-`dev_config.local.json` is intentionally ignored by git.
+`dev_config.local.json` is intentionally ignored by git. If the configured
+checkout drifts from the lock, the build fails before producing a VoidPlayer
+binary.
 
 ## Presentation Modes
 
@@ -120,4 +136,4 @@ That file is not a portable repository fixture.
 - Add proper Display P3 / Rec.2020 gamut mapping.
 - Treat Dolby Vision RPU metadata as later color-quality work; the current
   path uses the base HLG/PQ layer.
-- Push and protect the Flutter fork branch before any app PR depends on it.
+- Protect the Flutter fork release ref before any app PR depends on it.

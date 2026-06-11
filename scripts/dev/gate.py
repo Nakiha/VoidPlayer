@@ -91,7 +91,6 @@ def _run_macos_ui_nightly() -> None:
 
 def _run_windows_preservation() -> None:
     _python_dev("test", "--native-only")
-    run(["flutter", "build", "windows", "--release"], cwd=str(ROOT))
     _python_dev("ui-test", "--build", "ui_tests/smoke/basic.csv")
 
 

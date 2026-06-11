@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "voidplayer-flutter",
+  "upstreamFlutter": "3.44.1",
+  "flutterVersion": "3.45.0-1.0.pre-38",
+  "dartSdkVersion": "3.12.1",
+  "frameworkRevision": "04b75e628e3a7c7ffc66f14e50f760564ab2e9f2",
+  "engineRevision": "c416acfeb8126e097f758c664aaa3da929e27da0",
+  "forkRemote": "https://github.com/Nakiha/VoidPlayer-Flutter.git",
+  "forkRef": "voidplayer-flutter-3.44.1-hdr.1",
+  "forkBranch": "voidplayer/hdr-surface-export-3.44.1",
+  "forkCommit": "04b75e628e3a7c7ffc66f14e50f760564ab2e9f2",
+  "defaultInstallPath": ".toolchains/flutter",
+  "requiredPatchMarkers": [
+    {
+      "path": "engine/src/flutter/shell/platform/darwin/macos/framework/Headers/FlutterEngine.h",
+      "contains": "voidPlayerHDRCurrentFlutterSurfaceInfos"
+    },
+    {
+      "path": "engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterEngine.mm",
+      "contains": "VoidPlayerHDRSerializableSurfaceInfo"
+    }
+  ]
+}

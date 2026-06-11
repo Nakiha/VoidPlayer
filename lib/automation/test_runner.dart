@@ -274,6 +274,8 @@ class TestRunner {
           'mode=${info['nativeCompositorOutputMode']} '
           'pixelFormat=${info['nativeCompositorOutputPixelFormat']} '
           'edr=${info['nativeCompositorEDREnabled']} '
+          'edrMaxRGBX1000=${info['nativeCompositorEDRVideoMaxRGBX1000']} '
+          'edrOver1X1000=${info['nativeCompositorEDRVideoPixelsOver1X1000']} '
           'video=${info['nativeCompositorVideoTextureAvailable']} '
           'flutter=${info['nativeCompositorFlutterTextureAvailable']} '
           'flutterAlphaX1000=${info['nativeCompositorFlutterAlphaAverageX1000']} '

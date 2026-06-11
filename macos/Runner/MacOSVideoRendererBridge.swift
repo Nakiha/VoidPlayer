@@ -216,6 +216,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         viewportDiagnostics: presentation.diagnosticMap(),
         presentationDiagnostics: presentationState.diagnosticMap()
       )
+      diagnostics.merge(MacOSPresentationConfiguration.current.diagnostics) { _, next in next }
       if let nativeCompositorSpike {
         diagnostics.merge(nativeCompositorSpike.diagnostics()) { _, next in next }
       }
@@ -226,10 +227,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       if let nativeCompositorSpike {
         result(nativeCompositorSpike.diagnostics())
       } else {
-        result([
+        var diagnostics = MacOSPresentationConfiguration.current.diagnostics
+        diagnostics.merge([
           "nativeCompositorSpikeEnabled": false,
-          "nativeCompositorLastFailure": "VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE is not enabled",
-        ])
+          "nativeCompositorLastFailure": "native compositor presentation mode is not enabled",
+        ]) { _, next in next }
+        result(diagnostics)
       }
     case "captureViewport":
       result(MacOSViewportCapture.capture(texture: texture))

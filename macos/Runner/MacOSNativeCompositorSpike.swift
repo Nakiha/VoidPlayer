@@ -9,6 +9,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue
   private let pipeline: MTLRenderPipelineState
+  private let configuration: MacOSPresentationConfiguration
   private let outputPixelFormat: MTLPixelFormat
   private let outputMode: String
   private let textureCache: CVMetalTextureCache
@@ -23,23 +24,20 @@ final class MacOSNativeCompositorSpikeView: NSView {
   private var lastFailure = "not drawn"
   private var lastFlutterAlphaAverageX1000 = -1
   private var lastFlutterTransparentRatioX1000 = -1
+  private var lastVideoPixelFormat = "unknown"
+  private var lastEDRVideoSampleCount = 0
+  private var lastEDRVideoMaxRGBX1000 = 0
+  private var lastEDRVideoPixelsOver1X1000 = 0
   private var explicitHoleRect: SIMD4<Float>?
   private var lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
 
   static var isEnabled: Bool {
-    ProcessInfo.processInfo.environment["VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE"] == "1"
-  }
-
-  private static var useEDROutput: Bool {
-    let environment = ProcessInfo.processInfo.environment
-    return environment["VOIDPLAYER_NATIVE_COMPOSITOR_EDR"] == "1" ||
-      environment["VOIDPLAYER_FLUTTER_HDR_SPIKE"] == "1"
+    MacOSPresentationConfiguration.current.nativeCompositorEnabled
   }
 
   init?(engine: FlutterEngine) {
-    let outputPixelFormat: MTLPixelFormat = Self.useEDROutput
-      ? .rgba16Float
-      : .bgra8Unorm
+    let configuration = MacOSPresentationConfiguration.current
+    let outputPixelFormat = configuration.compositorPixelFormat
     guard let device = MTLCreateSystemDefaultDevice(),
           let commandQueue = device.makeCommandQueue(),
           let pipeline = Self.makePipeline(
@@ -58,8 +56,9 @@ final class MacOSNativeCompositorSpikeView: NSView {
     self.device = device
     self.commandQueue = commandQueue
     self.pipeline = pipeline
+    self.configuration = configuration
     self.outputPixelFormat = outputPixelFormat
-    self.outputMode = outputPixelFormat == .rgba16Float ? "edr-rgba16float" : "sdr-bgra8unorm"
+    self.outputMode = configuration.compositorOutputMode
     self.textureCache = cache
     self.engine = engine
     super.init(frame: .zero)
@@ -131,7 +130,8 @@ final class MacOSNativeCompositorSpikeView: NSView {
   }
 
   func diagnostics() -> [String: Any] {
-    return [
+    var result = configuration.diagnostics
+    result.merge([
       "nativeCompositorSpikeEnabled": true,
       "nativeCompositorFrames": frameCount,
       "nativeCompositorVideoTextureAvailable": lastVideoTextureAvailable,
@@ -151,7 +151,12 @@ final class MacOSNativeCompositorSpikeView: NSView {
       "nativeCompositorEDREnabled": outputPixelFormat == .rgba16Float,
       "nativeCompositorEDRWantsExtendedDynamicRangeContent":
         metalLayer.wantsExtendedDynamicRangeContent,
-    ]
+      "nativeCompositorVideoPixelFormat": lastVideoPixelFormat,
+      "nativeCompositorEDRVideoSampleCount": lastEDRVideoSampleCount,
+      "nativeCompositorEDRVideoMaxRGBX1000": lastEDRVideoMaxRGBX1000,
+      "nativeCompositorEDRVideoPixelsOver1X1000": lastEDRVideoPixelsOver1X1000,
+    ]) { _, next in next }
+    return result
   }
 
   private func drawComposite() {
@@ -219,6 +224,7 @@ final class MacOSNativeCompositorSpikeView: NSView {
     let pixelBuffer = retainedBuffer.takeRetainedValue()
     let width = CVPixelBufferGetWidth(pixelBuffer)
     let height = CVPixelBufferGetHeight(pixelBuffer)
+    updateVideoEDRMetrics(pixelBuffer: pixelBuffer)
     let metalPixelFormat: MTLPixelFormat =
       CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_64RGBAHalf
       ? .rgba16Float
@@ -241,6 +247,64 @@ final class MacOSNativeCompositorSpikeView: NSView {
       return nil
     }
     return texture
+  }
+
+  private func updateVideoEDRMetrics(pixelBuffer: CVPixelBuffer) {
+    let format = CVPixelBufferGetPixelFormatType(pixelBuffer)
+    lastVideoPixelFormat = Self.pixelFormatName(format)
+    guard format == kCVPixelFormatType_64RGBAHalf else {
+      lastEDRVideoSampleCount = 0
+      lastEDRVideoMaxRGBX1000 = 0
+      lastEDRVideoPixelsOver1X1000 = 0
+      return
+    }
+    guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else {
+      lastEDRVideoSampleCount = 0
+      lastEDRVideoMaxRGBX1000 = 0
+      lastEDRVideoPixelsOver1X1000 = 0
+      return
+    }
+    defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+    guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+      lastEDRVideoSampleCount = 0
+      lastEDRVideoMaxRGBX1000 = 0
+      lastEDRVideoPixelsOver1X1000 = 0
+      return
+    }
+
+    let width = CVPixelBufferGetWidth(pixelBuffer)
+    let height = CVPixelBufferGetHeight(pixelBuffer)
+    let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+    let words = baseAddress.assumingMemoryBound(to: UInt16.self)
+    let sampleColumns = min(96, max(1, width))
+    let sampleRows = min(96, max(1, height))
+    var sampleCount = 0
+    var overOneCount = 0
+    var maxRGB: Float = 0.0
+
+    for row in 0..<sampleRows {
+      let y = sampleRows == 1 ? 0 : row * (height - 1) / (sampleRows - 1)
+      let rowOffset = y * bytesPerRow / MemoryLayout<UInt16>.stride
+      for column in 0..<sampleColumns {
+        let x = sampleColumns == 1 ? 0 : column * (width - 1) / (sampleColumns - 1)
+        let pixelOffset = rowOffset + x * 4
+        let r = Self.floatFromHalf(words[pixelOffset])
+        let g = Self.floatFromHalf(words[pixelOffset + 1])
+        let b = Self.floatFromHalf(words[pixelOffset + 2])
+        let pixelMax = max(r, max(g, b))
+        maxRGB = max(maxRGB, pixelMax)
+        if pixelMax > 1.0 {
+          overOneCount += 1
+        }
+        sampleCount += 1
+      }
+    }
+
+    lastEDRVideoSampleCount = sampleCount
+    lastEDRVideoMaxRGBX1000 = Int((maxRGB * 1000.0).rounded())
+    lastEDRVideoPixelsOver1X1000 = sampleCount > 0
+      ? overOneCount * 1000 / sampleCount
+      : 0
   }
 
   private func currentFlutterMetalTexture() -> MTLTexture? {
@@ -350,6 +414,47 @@ final class MacOSNativeCompositorSpikeView: NSView {
     if frameCount == 1 || frameCount % 120 == 0 {
       NSLog("VoidPlayer native compositor spike: \(message)")
     }
+  }
+
+  private static func pixelFormatName(_ format: OSType) -> String {
+    switch format {
+    case kCVPixelFormatType_32BGRA:
+      return "32BGRA"
+    case kCVPixelFormatType_64RGBAHalf:
+      return "64RGBAHalf"
+    default:
+      return String(format)
+    }
+  }
+
+  private static func floatFromHalf(_ value: UInt16) -> Float {
+    let sign = (UInt32(value & 0x8000)) << 16
+    let exponent = Int((value & 0x7C00) >> 10)
+    let mantissa = UInt32(value & 0x03FF)
+    let bits: UInt32
+    if exponent == 0 {
+      if mantissa == 0 {
+        bits = sign
+      } else {
+        var normalizedMantissa = mantissa
+        var normalizedExponent = -14
+        while (normalizedMantissa & 0x0400) == 0 {
+          normalizedMantissa <<= 1
+          normalizedExponent -= 1
+        }
+        normalizedMantissa &= 0x03FF
+        bits = sign |
+          (UInt32(normalizedExponent + 127) << 23) |
+          (normalizedMantissa << 13)
+      }
+    } else if exponent == 0x1F {
+      bits = sign | 0x7F800000 | (mantissa << 13)
+    } else {
+      bits = sign |
+        (UInt32(exponent - 15 + 127) << 23) |
+        (mantissa << 13)
+    }
+    return Float(bitPattern: bits)
   }
 
   private static func makePipeline(

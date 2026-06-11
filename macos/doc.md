@@ -53,7 +53,9 @@ a second frame pump, playback clock, seek policy, loop policy, or layout
 compositor.
 
 The detailed presentation contract is documented in
-`../native/docs/MACOS_PRESENTATION_BACKEND.md`.
+`../native/docs/MACOS_PRESENTATION_BACKEND.md`. The gated HDR/EDR native
+compositor exploration, Flutter fork pin, and local validation commands are
+tracked in `../native/docs/MACOS_HDR_EXPLORATION.md`.
 
 ## Capabilities
 

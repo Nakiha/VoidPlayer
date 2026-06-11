@@ -53,11 +53,6 @@ enum MacOSNativeFramePublishOutcome: Equatable {
 
 final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private static let rendererOwnedPixelBufferCount = 4
-  private static var useEDRRendererTarget: Bool {
-    let environment = ProcessInfo.processInfo.environment
-    return environment["VOIDPLAYER_NATIVE_COMPOSITOR_EDR"] == "1" ||
-      environment["VOIDPLAYER_FLUTTER_HDR_SPIKE"] == "1"
-  }
 
   private let lock = NSLock()
   private(set) var width: Int
@@ -86,9 +81,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   init(nativeWidth: Int, nativeHeight: Int) {
     self.width = nativeWidth
     self.height = nativeHeight
-    self.pixelFormat = Self.useEDRRendererTarget
-      ? kCVPixelFormatType_64RGBAHalf
-      : kCVPixelFormatType_32BGRA
+    self.pixelFormat = MacOSPresentationConfiguration.current.rendererTargetPixelFormat
     self.presentationTarget = MacOSNativeMetalPresentationTarget(
       width: nativeWidth,
       height: nativeHeight

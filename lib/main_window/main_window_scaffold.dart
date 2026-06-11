@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../hdr_spike_flags.dart';
+import '../native_compositor_spike_flags.dart';
 import '../performance/performance_health.dart';
 import '../platform/platform_capabilities.dart';
 import '../platform/pointer_button_state_provider.dart';
@@ -39,7 +39,7 @@ class MainWindowScaffold extends StatelessWidget {
     final toolbarActions = actions.toolbar;
     final viewportActions = actions.viewport;
     final overlayActions = actions.overlays;
-    final nativeCompositorSpike = HDRSpikeFlags.nativeCompositor;
+    final nativeCompositorSpike = NativeCompositorSpikeFlags.nativeCompositor;
     final shellBackgroundColor =
         Theme.of(context).brightness == Brightness.light
         ? Theme.of(context).colorScheme.surfaceContainerHighest

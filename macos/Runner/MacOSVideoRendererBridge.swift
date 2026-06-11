@@ -1,5 +1,6 @@
 import Cocoa
 import FlutterMacOS
+import Metal
 
 final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private static let channelName = "video_renderer"
@@ -8,6 +9,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private var methodChannel: FlutterMethodChannel?
   private var eventChannel: FlutterEventChannel?
+  private weak var flutterEngine: FlutterEngine?
+  private var nativeCompositorSpike: MacOSNativeCompositorSpikeView?
   private let lifecycle: MacOSPlayerLifecycleController
   private let tracks = MacOSVideoTrackController()
   private let presentation = MacOSPresentationController()
@@ -21,9 +24,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var frameAvailableCount = 0
   private var profilerSummaryTimer: DispatchSourceTimer?
 
-  init(textureRegistry: FlutterTextureRegistry) {
-    self.lifecycle = MacOSPlayerLifecycleController(textureRegistry: textureRegistry)
+  init(engine: FlutterEngine, contentView: NSView) {
+    self.flutterEngine = engine
+    self.lifecycle = MacOSPlayerLifecycleController(textureRegistry: engine)
     super.init()
+    if MacOSNativeCompositorSpikeView.isEnabled,
+       let compositor = MacOSNativeCompositorSpikeView(engine: engine) {
+      nativeCompositorSpike = compositor
+      compositor.attach(to: contentView)
+    }
   }
 
   deinit {
@@ -50,8 +59,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     lifecycle.nativePlayer
   }
 
-  static func register(with engine: FlutterEngine) {
-    let bridge = MacOSVideoRendererBridge(textureRegistry: engine)
+  static func register(with engine: FlutterEngine, contentView: NSView) {
+    let bridge = MacOSVideoRendererBridge(engine: engine, contentView: contentView)
     activeInstance = bridge
     let messenger = engine.binaryMessenger
     let channel = FlutterMethodChannel(name: channelName, binaryMessenger: messenger)
@@ -126,6 +135,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "resize":
       presentation.resize(arguments: call.arguments, context: presentationContext())
       result(nil)
+    case "setNativeCompositorViewportRect":
+      setNativeCompositorViewportRect(arguments: call.arguments)
+      result(nil)
     case "play":
       playback.play(
         player: nativePlayer,
@@ -190,7 +202,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "activateSecurityScopedBookmarks":
       MacOSFilePicker.activateSecurityScopedBookmarks(arguments: call.arguments, result: result)
     case "getDiagnostics":
-      result(MacOSVideoRendererDiagnostics.map(
+      var diagnostics = MacOSVideoRendererDiagnostics.map(
         backendName: backendName,
         player: nativePlayer,
         textureId: textureId,
@@ -203,7 +215,22 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         frameCallbackDiagnostics: frameCallbackDiagnostics(),
         viewportDiagnostics: presentation.diagnosticMap(),
         presentationDiagnostics: presentationState.diagnosticMap()
-      ))
+      )
+      if let nativeCompositorSpike {
+        diagnostics.merge(nativeCompositorSpike.diagnostics()) { _, next in next }
+      }
+      result(diagnostics)
+    case "debugFlutterSurfaceInfo":
+      result(debugFlutterSurfaceInfo())
+    case "debugNativeCompositorSpike":
+      if let nativeCompositorSpike {
+        result(nativeCompositorSpike.diagnostics())
+      } else {
+        result([
+          "nativeCompositorSpikeEnabled": false,
+          "nativeCompositorLastFailure": "VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE is not enabled",
+        ])
+      }
     case "captureViewport":
       result(MacOSViewportCapture.capture(texture: texture))
     case "captureViewportRegion":
@@ -213,6 +240,50 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  private func debugFlutterSurfaceInfo() -> Any {
+    guard let engine = flutterEngine else {
+      return FlutterError(code: "NO_ENGINE", message: "Flutter engine is unavailable", details: nil)
+    }
+
+    let infos = engine.voidPlayerHDRCurrentFlutterSurfaceInfos()
+    guard let info = infos.first else {
+      NSLog("VoidPlayer HDR spike: no Flutter front surface is currently available")
+      return FlutterError(code: "NO_FLUTTER_SURFACE", message: "No Flutter front surface", details: nil)
+    }
+
+    let texture = info["texture"] as? MTLTexture
+    let ioSurface = info["ioSurface"]
+    var payload = info
+    payload.removeValue(forKey: "texture")
+    payload.removeValue(forKey: "ioSurface")
+    payload["nativeTextureObjectAvailable"] = texture != nil
+    payload["nativeIOSurfaceObjectAvailable"] = ioSurface != nil
+
+    NSLog(
+      "VoidPlayer HDR spike: stole Flutter texture available=%@ ioSurface=%@ pointer=%@ format=%@ size=%@x%@ wideGamut=%@",
+      texture != nil ? "true" : "false",
+      ioSurface != nil ? "true" : "false",
+      String(describing: payload["texturePointer"] ?? "nil"),
+      String(describing: payload["texturePixelFormat"] ?? "unknown"),
+      String(describing: payload["textureWidth"] ?? "0"),
+      String(describing: payload["textureHeight"] ?? "0"),
+      String(describing: payload["wideGamut"] ?? "false")
+    )
+    return payload
+  }
+
+  private func setNativeCompositorViewportRect(arguments: Any?) {
+    guard let nativeCompositorSpike else { return }
+    nativeCompositorSpike.setViewportRect(
+      left: MacOSFlutterArguments.intArg(arguments, "left") ?? 0,
+      top: MacOSFlutterArguments.intArg(arguments, "top") ?? 0,
+      width: MacOSFlutterArguments.intArg(arguments, "width") ?? 0,
+      height: MacOSFlutterArguments.intArg(arguments, "height") ?? 0,
+      surfaceWidth: MacOSFlutterArguments.intArg(arguments, "surfaceWidth") ?? 0,
+      surfaceHeight: MacOSFlutterArguments.intArg(arguments, "surfaceHeight") ?? 0
+    )
   }
 
   private func currentPresentedFrame(arguments: Any?) -> Any? {
@@ -273,7 +344,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func createPlayer(arguments: Any?) -> Any {
-    lifecycle.create(
+    let result = lifecycle.create(
       arguments: arguments,
       playback: playback,
       tracks: tracks,
@@ -282,11 +353,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         self?.markFrameAvailable()
       }
     )
+    nativeCompositorSpike?.setVideoTexture(texture)
+    return result
   }
 
   private func destroyPlayer() {
     presentation.resetLayout()
     lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
+    nativeCompositorSpike?.setVideoTexture(nil)
   }
 
   private func destroyPlayerForWindowClose() {
@@ -338,6 +412,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     frameAvailableCount += 1
     frameAvailableRate.record()
     lifecycle.markFrameAvailable()
+    nativeCompositorSpike?.setVideoTexture(texture)
   }
 
   private func frameCallbackDiagnostics() -> [String: Any] {

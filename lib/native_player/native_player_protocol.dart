@@ -17,10 +17,14 @@ class NativePlayerMethods {
   static const setLoopRange = 'setLoopRange';
   static const setAudibleTrack = 'setAudibleTrack';
   static const resize = 'resize';
+  static const setNativeCompositorViewportRect =
+      'setNativeCompositorViewportRect';
   static const setViewportBackgroundColor = 'setViewportBackgroundColor';
   static const captureViewport = 'captureViewport';
   static const captureViewportRegion = 'captureViewportRegion';
   static const captureWindow = 'captureWindow';
+  static const debugFlutterSurfaceInfo = 'debugFlutterSurfaceInfo';
+  static const debugNativeCompositorSpike = 'debugNativeCompositorSpike';
   static const stepForward = 'stepForward';
   static const stepBackward = 'stepBackward';
   static const currentPts = 'currentPts';
@@ -43,7 +47,11 @@ class NativePlayerKeys {
   static const height = 'height';
   static const x = 'x';
   static const y = 'y';
+  static const left = 'left';
+  static const top = 'top';
   static const maxSize = 'maxSize';
+  static const surfaceWidth = 'surfaceWidth';
+  static const surfaceHeight = 'surfaceHeight';
   static const textureId = 'textureId';
   static const tracks = 'tracks';
   static const fileId = 'fileId';

@@ -252,6 +252,37 @@ class TestRunner {
           ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
           '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
         );
+      case DebugFlutterSurfaceInfoAction():
+        final info = await controller.debugFlutterSurfaceInfo();
+        log.info(
+          'TestRunner: DEBUG_FLUTTER_SURFACE_INFO '
+          'texturePointer=${info['texturePointer']} '
+          'texturePixelFormat=${info['texturePixelFormat']} '
+          'textureSize=${info['textureWidth']}x${info['textureHeight']} '
+          'ioSurfaceId=${info['ioSurfaceId']} '
+          'wideGamut=${info['wideGamut']} '
+          'nativeTextureObjectAvailable=${info['nativeTextureObjectAvailable']} '
+          'nativeIOSurfaceObjectAvailable=${info['nativeIOSurfaceObjectAvailable']}',
+        );
+      case DebugNativeCompositorSpikeAction():
+        final info = await controller.debugNativeCompositorSpike();
+        log.info(
+          'TestRunner: DEBUG_NATIVE_COMPOSITOR_SPIKE '
+          'enabled=${info['nativeCompositorSpikeEnabled']} '
+          'frames=${info['nativeCompositorFrames']} '
+          'succeeded=${info['nativeCompositorLastCompositeSucceeded']} '
+          'mode=${info['nativeCompositorOutputMode']} '
+          'pixelFormat=${info['nativeCompositorOutputPixelFormat']} '
+          'edr=${info['nativeCompositorEDREnabled']} '
+          'video=${info['nativeCompositorVideoTextureAvailable']} '
+          'flutter=${info['nativeCompositorFlutterTextureAvailable']} '
+          'flutterAlphaX1000=${info['nativeCompositorFlutterAlphaAverageX1000']} '
+          'flutterTransparentX1000=${info['nativeCompositorFlutterTransparentRatioX1000']} '
+          'hole=${info['nativeCompositorHoleLeftX1000']},${info['nativeCompositorHoleTopX1000']}-'
+          '${info['nativeCompositorHoleRightX1000']},${info['nativeCompositorHoleBottomX1000']} '
+          'drawable=${info['nativeCompositorDrawableWidth']}x${info['nativeCompositorDrawableHeight']} '
+          'failure=${info['nativeCompositorLastFailure']}',
+        );
       case WindowMaximize():
         log.info('TestRunner: WINDOW_MAXIMIZE');
         await runtime.maximizeWindow();

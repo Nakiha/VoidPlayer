@@ -131,6 +131,16 @@ class NativePlayerController {
     return _api.pause();
   }
 
+  Future<Map<String, dynamic>> debugFlutterSurfaceInfo() {
+    _ensureAlive();
+    return _api.debugFlutterSurfaceInfo();
+  }
+
+  Future<Map<String, dynamic>> debugNativeCompositorSpike() {
+    _ensureAlive();
+    return _api.debugNativeCompositorSpike();
+  }
+
   Future<void> seek(int ptsUs, {int? requestId}) {
     if (!_hasPlayerForCommand(NativePlayerMethods.seek)) return Future.value();
     return _api.seek(ptsUs, requestId: requestId);
@@ -166,6 +176,25 @@ class NativePlayerController {
       return Future.value();
     }
     return _api.resize(width: width, height: height);
+  }
+
+  Future<void> setNativeCompositorViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  }) {
+    _ensureAlive();
+    return _api.setNativeCompositorViewportRect(
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      surfaceWidth: surfaceWidth,
+      surfaceHeight: surfaceHeight,
+    );
   }
 
   Future<void> setViewportBackgroundColor(int colorValue) {

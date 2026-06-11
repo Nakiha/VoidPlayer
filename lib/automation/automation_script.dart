@@ -421,6 +421,16 @@ ScriptInstruction? _parseInstruction(
           outputPath: args.length >= 2 ? args[1] : null,
         ),
       );
+    case 'DEBUG_FLUTTER_SURFACE_INFO':
+      return ScriptAutomationAction(
+        time,
+        const DebugFlutterSurfaceInfoAction(),
+      );
+    case 'DEBUG_NATIVE_COMPOSITOR_SPIKE':
+      return ScriptAutomationAction(
+        time,
+        const DebugNativeCompositorSpikeAction(),
+      );
     case 'WINDOW_MAXIMIZE':
       return ScriptAutomationAction(time, const WindowMaximize());
     case 'WINDOW_RESTORE':

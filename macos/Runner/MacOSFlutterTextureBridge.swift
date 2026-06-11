@@ -53,10 +53,16 @@ enum MacOSNativeFramePublishOutcome: Equatable {
 
 final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private static let rendererOwnedPixelBufferCount = 4
+  private static var useEDRRendererTarget: Bool {
+    let environment = ProcessInfo.processInfo.environment
+    return environment["VOIDPLAYER_NATIVE_COMPOSITOR_EDR"] == "1" ||
+      environment["VOIDPLAYER_FLUTTER_HDR_SPIKE"] == "1"
+  }
 
   private let lock = NSLock()
   private(set) var width: Int
   private(set) var height: Int
+  private let pixelFormat: OSType
   private let presentationTarget: MacOSNativeMetalPresentationTarget
   private let hashPrefix: String
   private var pixelBuffers: [CVPixelBuffer] = []
@@ -80,6 +86,9 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   init(nativeWidth: Int, nativeHeight: Int) {
     self.width = nativeWidth
     self.height = nativeHeight
+    self.pixelFormat = Self.useEDRRendererTarget
+      ? kCVPixelFormatType_64RGBAHalf
+      : kCVPixelFormatType_32BGRA
     self.presentationTarget = MacOSNativeMetalPresentationTarget(
       width: nativeWidth,
       height: nativeHeight
@@ -467,7 +476,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         metalTextureLastError = "failed to allocate renderer-owned CVPixelBuffer"
         return
       }
-      MacOSSyntheticTexturePattern.clear(buffer: nextBuffer, width: width, height: height)
+      clearPixelBufferLocked(nextBuffer)
       nextBuffers.append(nextBuffer)
     }
     guard !nextBuffers.isEmpty else {
@@ -494,12 +503,23 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       kCFAllocatorDefault,
       width,
       height,
-      kCVPixelFormatType_32BGRA,
+      pixelFormat,
       attributes,
       &nextBuffer
     )
     guard status == kCVReturnSuccess else { return nil }
     return nextBuffer
+  }
+
+  private func clearPixelBufferLocked(_ buffer: CVPixelBuffer) {
+    if pixelFormat == kCVPixelFormatType_32BGRA {
+      MacOSSyntheticTexturePattern.clear(buffer: buffer, width: width, height: height)
+      return
+    }
+    CVPixelBufferLockBaseAddress(buffer, [])
+    defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+    guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else { return }
+    memset(baseAddress, 0, CVPixelBufferGetBytesPerRow(buffer) * CVPixelBufferGetHeight(buffer))
   }
 
   private func validateMetalTextureLocked(buffer: CVPixelBuffer) {

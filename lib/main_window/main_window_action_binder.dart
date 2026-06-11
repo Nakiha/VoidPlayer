@@ -93,6 +93,20 @@ extension MainWindowViewActionBinding on MainWindowController {
               devicePixelRatio,
               immediate: fullScreenCoordinator.uiResizePending,
             ),
+        onNativeCompositorViewportRect:
+            (left, top, width, height, surfaceWidth, surfaceHeight) {
+              fireAndLog(
+                'set native compositor viewport rect',
+                player.setNativeCompositorViewportRect(
+                  left: left,
+                  top: top,
+                  width: width,
+                  height: height,
+                  surfaceWidth: surfaceWidth,
+                  surfaceHeight: surfaceHeight,
+                ),
+              );
+            },
         onQuickMarkStart: quickMarkCoordinator.startDrag,
         onQuickMarkUpdate: quickMarkCoordinator.updateDrag,
         onQuickMarkEnd: quickMarkCoordinator.finishDrag,

@@ -499,6 +499,7 @@ final _noop = MainWindowViewActions(
     onZoom: (_, _) {},
     onPointerButton: (_, _) {},
     onResize: (_, _, _) {},
+    onNativeCompositorViewportRect: (_, _, _, _, _, _) {},
     onQuickMarkStart: (_) {},
     onQuickMarkUpdate: (_) {},
     onQuickMarkEnd: () {},

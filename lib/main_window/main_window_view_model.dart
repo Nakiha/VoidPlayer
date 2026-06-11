@@ -257,6 +257,15 @@ class MainWindowViewportActions {
   final void Function(double scrollDelta, Offset localPos) onZoom;
   final void Function(bool panning, bool splitting) onPointerButton;
   final void Function(int width, int height, double devicePixelRatio) onResize;
+  final void Function(
+    int left,
+    int top,
+    int width,
+    int height,
+    int surfaceWidth,
+    int surfaceHeight,
+  )
+  onNativeCompositorViewportRect;
   final ValueChanged<Offset> onQuickMarkStart;
   final ValueChanged<Offset> onQuickMarkUpdate;
   final VoidCallback onQuickMarkEnd;
@@ -272,6 +281,7 @@ class MainWindowViewportActions {
     required this.onZoom,
     required this.onPointerButton,
     required this.onResize,
+    required this.onNativeCompositorViewportRect,
     required this.onQuickMarkStart,
     required this.onQuickMarkUpdate,
     required this.onQuickMarkEnd,

@@ -13,7 +13,10 @@ class MainFlutterWindow: NSWindow {
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
 
-    MacOSVideoRendererBridge.register(with: flutterViewController.engine)
+    MacOSVideoRendererBridge.register(
+      with: flutterViewController.engine,
+      contentView: flutterViewController.view
+    )
     QuickMarkCursorBridge.register(with: flutterViewController.engine)
     RegisterGeneratedPlugins(registry: flutterViewController)
 

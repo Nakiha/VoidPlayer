@@ -58,6 +58,15 @@ class CaptureWindowAction extends AutomationAction {
     : super('CAPTURE_WINDOW');
 }
 
+class DebugFlutterSurfaceInfoAction extends AutomationAction {
+  const DebugFlutterSurfaceInfoAction() : super('DEBUG_FLUTTER_SURFACE_INFO');
+}
+
+class DebugNativeCompositorSpikeAction extends AutomationAction {
+  const DebugNativeCompositorSpikeAction()
+    : super('DEBUG_NATIVE_COMPOSITOR_SPIKE');
+}
+
 class WindowMaximize extends AutomationAction {
   const WindowMaximize() : super('WINDOW_MAXIMIZE');
 }

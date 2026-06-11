@@ -1,0 +1,9 @@
+# macOS HDR exploration smoke: verify the local Flutter engine exposes the presented
+# Flutter Metal backing texture to native runner code.
+# Run with:
+#   VOIDPLAYER_FLUTTER_HDR_SPIKE=1 python dev.py mac-ui-test ui_tests/macos/hdr_flutter_surface_spike.csv
+@WINDOW, 1280, 720
+0.8, DEBUG_FLUTTER_SURFACE_INFO
+0.9, CAPTURE_FLUTTER, flutter_surface_spike
+1.0, ASSERT_CAPTURE_NOT_BLACK, flutter_surface_spike, 0.01, 4.0
+1.2, QUIT, 0

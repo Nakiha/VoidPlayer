@@ -435,6 +435,16 @@ class _PlaybackApi implements NativePlayerApi {
   Future<void> resize({required int width, required int height}) async {}
 
   @override
+  Future<void> setNativeCompositorViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  }) async {}
+
+  @override
   Future<void> setViewportBackgroundColor(int colorValue) async {}
 
   @override
@@ -477,6 +487,12 @@ class _PlaybackApi implements NativePlayerApi {
       nonBlackRatio: 1,
     );
   }
+
+  @override
+  Future<Map<String, dynamic>> debugFlutterSurfaceInfo() async => const {};
+
+  @override
+  Future<Map<String, dynamic>> debugNativeCompositorSpike() async => const {};
 
   @override
   Future<void> stepForward() async {

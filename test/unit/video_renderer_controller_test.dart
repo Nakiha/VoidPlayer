@@ -220,6 +220,20 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<void> setNativeCompositorViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  }) async {
+    calls.add(
+      'setNativeCompositorViewportRect:$left,$top ${width}x$height surface=${surfaceWidth}x$surfaceHeight',
+    );
+  }
+
+  @override
   Future<void> setViewportBackgroundColor(int colorValue) async {
     calls.add('setViewportBackgroundColor:$colorValue');
   }
@@ -268,6 +282,18 @@ class _FakeNativePlayerApi implements NativePlayerApi {
       avgLuma: 1,
       nonBlackRatio: 1,
     );
+  }
+
+  @override
+  Future<Map<String, dynamic>> debugFlutterSurfaceInfo() async {
+    calls.add('debugFlutterSurfaceInfo');
+    return const {};
+  }
+
+  @override
+  Future<Map<String, dynamic>> debugNativeCompositorSpike() async {
+    calls.add('debugNativeCompositorSpike');
+    return const {};
   }
 
   @override

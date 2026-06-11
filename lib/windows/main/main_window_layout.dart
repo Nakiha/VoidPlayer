@@ -9,6 +9,7 @@ import '../../track_manager.dart';
 import '../../utils/async_guard.dart';
 import '../../video_renderer_controller.dart';
 import '../../viewport/display_geometry.dart';
+import '../../widgets/analysis_overlay_controls.dart';
 import 'main_window_state.dart';
 
 class MainWindowLayoutCoordinator {
@@ -273,6 +274,38 @@ class MainWindowLayoutCoordinator {
     viewportWidth = width;
     viewportHeight = height;
     await controller.resize(width, height);
+  }
+
+  void toggleMarksSidebar() {
+    setMarksSidebarVisible(!_state.marksSidebarVisible);
+  }
+
+  void setMarksSidebarVisible(bool visible) {
+    if (_state.marksSidebarVisible == visible) return;
+    final viewportDelta = visible
+        ? -_state.marksSidebarWidth
+        : _state.marksSidebarWidth;
+    requestPreemptViewportLogicalSizeDelta(widthDelta: viewportDelta);
+    stateStore.setMarksSidebarVisible(visible);
+  }
+
+  void setMarksSidebarWidth(double width) {
+    final next = width
+        .clamp(kMinMarksSidebarWidth, kMaxMarksSidebarWidth)
+        .toDouble();
+    if (next == _state.marksSidebarWidth) return;
+    stateStore.setMarksSidebarWidth(next);
+  }
+
+  void setAnalysisOverlayControlsVisible(bool visible) {
+    if (_state.analysisOverlayControlsVisible == visible) return;
+    if (!_state.fullScreen) {
+      final viewportDelta = visible
+          ? -AnalysisOverlayStrip.height
+          : AnalysisOverlayStrip.height;
+      requestPreemptViewportLogicalSizeDelta(heightDelta: viewportDelta);
+    }
+    stateStore.setAnalysisOverlayControlsVisible(visible);
   }
 
   void requestPreemptViewportLogicalSizeDelta({

@@ -63,7 +63,9 @@ extension MainWindowViewActionBinding on MainWindowController {
           if (!_capabilities.canShowAnalysisOverlay) {
             return Future<void>.value();
           }
-          _setAnalysisOverlayControlsVisible(!_analysisOverlayControlsVisible);
+          layoutCoordinator.setAnalysisOverlayControlsVisible(
+            !_analysisOverlayControlsVisible,
+          );
           return Future<void>.value();
         },
         onProfiler: () {
@@ -71,7 +73,7 @@ extension MainWindowViewActionBinding on MainWindowController {
           stateStore.setProfilerVisible(!_profilerVisible);
         },
         onSettings: () => stateStore.setSettingsVisible(!_settingsVisible),
-        onMarksSidebarToggle: _toggleMarksSidebar,
+        onMarksSidebarToggle: layoutCoordinator.toggleMarksSidebar,
       ),
       viewport: MainWindowViewportActions(
         onPan: (delta) {
@@ -163,7 +165,7 @@ extension MainWindowViewActionBinding on MainWindowController {
         },
         onToggleTrackAudio: (fileId) {
           if (!_capabilities.canToggleTrackAudio) return;
-          _toggleTrackAudio(fileId);
+          playbackCoordinator.toggleTrackAudio(fileId);
         },
         onControlsWidthChanged: stateStore.setTimelineControlsWidth,
       ),
@@ -190,10 +192,12 @@ extension MainWindowViewActionBinding on MainWindowController {
         onCloseMediaInfo: () => stateStore.setMediaInfoVisible(false),
         onCloseProfiler: () => stateStore.setProfilerVisible(false),
         onCloseSettings: () => stateStore.setSettingsVisible(false),
-        onCloseMarksSidebar: () => _setMarksSidebarVisible(false),
-        onMarksSidebarWidthChanged: _setMarksSidebarWidth,
-        onViewportPixelSizeModeChanged: _setViewportPixelSizeMode,
-        onPerformanceAlertPolicyChanged: _setPerformanceAlertPolicy,
+        onCloseMarksSidebar: () =>
+            layoutCoordinator.setMarksSidebarVisible(false),
+        onMarksSidebarWidthChanged: layoutCoordinator.setMarksSidebarWidth,
+        onViewportPixelSizeModeChanged: (mode) =>
+            layoutCoordinator.setPixelSizeMode(mode.layoutValue),
+        onPerformanceAlertPolicyChanged: stateStore.setPerformanceAlertPolicy,
         onFullScreenPointerActivity:
             fullScreenCoordinator.showControlsTemporarily,
         onFullScreenControlsHoverChanged:

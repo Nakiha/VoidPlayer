@@ -155,6 +155,12 @@ class MainWindowPlaybackCoordinator {
     }
   }
 
+  void toggleTrackAudio(int fileId) {
+    final next = _state.audibleTrackFileId == fileId ? null : fileId;
+    stateStore.setAudibleTrackFileId(next);
+    fireAndLog('set audible track', controller.setAudibleTrack(next));
+  }
+
   Future<void> play() async {
     if (_disposed) return;
     _resumeAfterSeek = false;

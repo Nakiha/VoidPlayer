@@ -34,7 +34,8 @@ MainWindowView
 | 文件 | 职责 |
 |------|------|
 | `lib/windows/main/main_window.dart` | 薄 widget shell，不放业务 |
-| `lib/windows/main/main_window_controller.dart` | facade，装配和协调各 coordinator |
+| `lib/windows/main/main_window_controller.dart` | facade，生命周期和跨 coordinator 协调 |
+| `lib/windows/main/main_window_composition.dart` | composition root（part of controller），coordinator 装配和 UI 自动化 bootstrap |
 | `lib/windows/main/main_window_state.dart` | `MainWindowStateModel` + `MainWindowStateStore`，以及高频局部 listenable state |
 | `lib/windows/main/main_window_view.dart` | 纯 view，吃 `MainWindowViewModel` 和 `MainWindowViewActions` |
 | `lib/windows/main/main_window_actions.dart` | ActionRegistry 绑定/解绑生命周期 |

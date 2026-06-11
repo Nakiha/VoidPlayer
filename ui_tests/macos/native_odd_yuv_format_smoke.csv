@@ -1,0 +1,28 @@
+# macOS native smoke for uncommon software YUV layouts. These FFV1 fixtures
+# force the decoder to output 4:2:2 / 4:4:4 frames so the explicit
+# NV12/P010 pack/downsample paths are exercised without libswscale fallback.
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/native_odd_yuv_format_smoke.csv
+@WINDOW, 960, 540
+0.0, SET_DECODE_MODE, forceSoftware
+0.3, ADD_MEDIA, resources/video/ffv1_yuv422p_8bit.mkv
+1.2, ASSERT_TRACK_COUNT, 1
+1.25, ASSERT_NATIVE_DIAGNOSTIC_STRING, primaryTrackDecodeMode, shared-renderer-software
+1.3, CAPTURE_VIEWPORT, ffv1_yuv422p_8bit
+1.4, ASSERT_CAPTURE_NOT_BLACK, ffv1_yuv422p_8bit, 0.5, 16.0
+1.5, ADD_MEDIA, resources/video/ffv1_yuv444p_8bit.mkv
+2.4, ASSERT_TRACK_COUNT, 2
+2.5, CAPTURE_VIEWPORT, ffv1_yuv444p_8bit_pair
+2.6, ASSERT_CAPTURE_NOT_BLACK, ffv1_yuv444p_8bit_pair, 0.5, 16.0
+2.7, ADD_MEDIA, resources/video/ffv1_yuv422p10le.mkv
+3.8, ASSERT_TRACK_COUNT, 3
+3.9, CAPTURE_VIEWPORT, ffv1_yuv422p10le_triple
+4.0, ASSERT_CAPTURE_NOT_BLACK, ffv1_yuv422p10le_triple, 0.5, 16.0
+4.1, ADD_MEDIA, resources/video/ffv1_yuv444p10le.mkv
+5.4, ASSERT_TRACK_COUNT, 4
+5.5, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
+5.55, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferMetalUploadFailureCount, 0, 0
+5.6, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+5.7, CAPTURE_VIEWPORT, ffv1_odd_yuv_four_track
+5.8, ASSERT_CAPTURE_NOT_BLACK, ffv1_odd_yuv_four_track, 0.5, 16.0
+5.9, QUIT, 0

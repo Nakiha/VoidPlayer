@@ -139,6 +139,9 @@ macOS uses the same metadata and layout contract through Metal:
 
 - VideoToolbox zero-copy frames keep their `CVPixelBuffer` storage when the
   codec and pixel format are supported by the renderer-owned Metal path.
+- VideoToolbox renderer-owned direct decode is gated to 4:2:0-like stream
+  formats before codec open; 4:2:2 / 4:4:4 streams fall back to software decode
+  until dedicated CVPixelBuffer/shader layouts exist.
 - Software/fallback frames use explicit YUV or BGRA present packages.
 - The Metal uploader validates target size, BGRA pixel-buffer compatibility,
   `CVMetalTextureCache` wrapping, storage kind, and package dimensions before

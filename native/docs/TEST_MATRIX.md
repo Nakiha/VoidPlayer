@@ -10,10 +10,11 @@ and UI tests into gates and records cleanup decisions that changed the active se
 | PR fast | Stable, high-signal checks for shared native logic and platform backend canaries. | `python3.12 dev.py gate pr-fast` |
 | Windows preservation | Windows runner/D3D11 preservation after shared renderer/backend changes. | `python dev.py gate windows-preservation` |
 | macOS stabilization | macOS native playback and renderer-owned Metal confidence. | `python3.12 dev.py gate macos-ui-smoke` |
+| macOS HDR EDR | Local HLG/PQ Auto promotion evidence on an EDR-capable display. | `python3.12 dev.py gate macos-hdr-edr-smoke` |
 | Nightly/headed | Slower headed UI, stress, audio, 4K/cadence, and lifecycle churn. | `python3.12 dev.py gate macos-ui-nightly` or Windows UI suites |
 | macOS release readiness | macOS package stage, FFmpeg dylibs, `@rpath`, notices, entitlements, sandbox/crash-log inputs, and codesign smoke. | `python3.12 dev.py gate macos-release-readiness` |
 | Release candidate | Full native config matrix, platform UI preservation, package, compliance, signing inputs. | `python3.12 dev.py gate release-candidate` plus CI full matrix |
-| Manual/local | Tests needing local media, audible speakers, external paths, or long perf runs. | `ui_tests/local/**`, manual audio/perf scripts |
+| Manual/local | Tests needing local media, audible speakers, external paths, EDR display headroom, or long perf runs. | `ui_tests/local/**`, `macos-hdr-edr-smoke`, manual audio/perf scripts |
 
 ## CTest Labels
 
@@ -93,6 +94,8 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `ui_tests/macos/native_seek_frame_smoke.csv` | Renderer-owned refresh after seek. | macOS stabilization. |
 | `ui_tests/macos/native_layout_split_smoke.csv` | Shared layout through Metal presentation. | macOS stabilization. |
 | `ui_tests/macos/native_controls_smoke.csv` | Basic native play/pause/seek/step command smoke. | macOS stabilization. |
+| `ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv` | Default Auto policy keeps SDR media on the SDR native-compositor target and avoids EDR layer promotion. | macOS stabilization. |
+| `ui_tests/macos/native_compositor_auto_hlg_policy_smoke.csv` | Portable HLG fixture promotes Auto to the EDR compositor and verifies `64RGBAHalf` output above SDR reference white. | Local `macos-hdr-edr-smoke`; requires an EDR-capable display. |
 | `ui_tests/macos/native_media_header_remove_smoke.csv` | Real media-header remove button path for native fileId 0 and remaining-track presentation. | Targeted track/header changes; candidate for stabilization smoke after the layout smoke gate is stable. |
 | `ui_tests/macos/analysis_gated_smoke.csv` | macOS analysis FFI, media-header overlay panel/activation, and gated external analysis window behavior. | Nightly/headed or targeted analysis overlay changes. |
 | `ui_tests/analysis/overlay_seek_boundary_hevc_aq.csv` / `overlay_seek_boundary_vvc.csv` | Real timeline seek near VACHUNK window boundaries; validates async chunk readiness, native overlay rebinding, and redraw. | Targeted analysis overlay changes on Windows or macOS; use `mac-ui-test --build` for macOS renderer-owned Metal. |
@@ -115,6 +118,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `.github/workflows/native.yml` | weekly or manual `full_matrix=true` | full Windows native config matrix |
 | `.github/workflows/macos-ui.yml` | weekly | `python3.12 dev.py gate macos-ui-smoke` |
 | `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
+| Local HDR EDR gate | manual on EDR-capable macOS display before merging HDR compositor changes | `python3.12 dev.py gate macos-hdr-edr-smoke` |
 | Local macOS package gate | manual before release candidate | `python3.12 dev.py gate macos-release-readiness` |
 
 The local `release-candidate` gate and the GitHub full native config matrix are

@@ -12,6 +12,11 @@ MACOS_UI_SMOKE = [
     "ui_tests/macos/native_seek_frame_smoke.csv",
     "ui_tests/macos/native_layout_split_smoke.csv",
     "ui_tests/macos/native_controls_smoke.csv",
+    "ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv",
+]
+
+MACOS_HDR_EDR_SMOKE = [
+    "ui_tests/macos/native_compositor_auto_hlg_policy_smoke.csv",
 ]
 
 MACOS_UI_NIGHTLY = [
@@ -89,6 +94,10 @@ def _run_macos_ui_nightly() -> None:
     _python_dev("mac-ui-test", "--build", *MACOS_UI_NIGHTLY)
 
 
+def _run_macos_hdr_edr_smoke() -> None:
+    _python_dev("mac-ui-test", "--build", *MACOS_HDR_EDR_SMOKE)
+
+
 def _run_windows_preservation() -> None:
     _python_dev("test", "--native-only")
     _python_dev("ui-test", "--build", "ui_tests/smoke/basic.csv")
@@ -150,6 +159,12 @@ def cmd_gate(args: argparse.Namespace) -> None:
         if not _is_macos():
             _unsupported(profile, "macOS")
         _run_macos_ui_nightly()
+        return
+
+    if profile == "macos-hdr-edr-smoke":
+        if not _is_macos():
+            _unsupported(profile, "macOS with an EDR-capable display")
+        _run_macos_hdr_edr_smoke()
         return
 
     if profile == "windows-preservation":

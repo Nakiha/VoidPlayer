@@ -108,19 +108,18 @@ are not HDR luminance proof because macOS can tone-map screenshots.
 Default SDR Auto policy:
 
 ```bash
-python dev.py mac-ui-test --build \
-  ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv
+python dev.py gate macos-ui-smoke
 ```
 
-This asserts `macOSPresentationReason=auto-sdr-only`,
+The smoke gate includes `native_compositor_auto_sdr_policy_smoke.csv`, which
+asserts `macOSPresentationReason=auto-sdr-only`,
 `macOSPresentationMode=native-compositor-sdr`, and
 `nativeCompositorVideoPixelFormat=32BGRA`.
 
-Portable HLG Auto policy:
+Portable HLG Auto policy on an EDR-capable display:
 
 ```bash
-python dev.py mac-ui-test --build \
-  ui_tests/macos/native_compositor_auto_hlg_policy_smoke.csv
+python dev.py gate macos-hdr-edr-smoke
 ```
 
 This generates a small 10-bit HEVC/HLG fixture and asserts

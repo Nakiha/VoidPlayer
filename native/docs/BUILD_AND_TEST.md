@@ -34,6 +34,7 @@ Named gates wrap the canonical command sets:
 python3.12 dev.py gate pr-fast
 python3.12 dev.py gate macos-ui-smoke
 python3.12 dev.py gate macos-ui-nightly
+python3.12 dev.py gate macos-hdr-edr-smoke
 python3.12 dev.py gate macos-release-readiness
 python3.12 dev.py gate windows-preservation
 ```
@@ -147,6 +148,7 @@ python3.12 dev.py gate macos-ui-smoke
 | --- | --- |
 | `native_facade_smoke.csv` | channel、metadata、diagnostics、首帧健康 |
 | `native_controls_smoke.csv` | basic play/pause/seek/step commands |
+| `native_compositor_auto_sdr_policy_smoke.csv` | default Auto policy keeps SDR media on the SDR native-compositor target |
 | `native_seek_frame_smoke.csv` | seek preview / renderer-owned refresh |
 | `native_loop_range_smoke.csv` | loop policy |
 | `native_audio_play_seek_smoke.csv` | miniaudio/CoreAudio playback、seek、audible-track diagnostics |
@@ -160,6 +162,17 @@ python3.12 dev.py gate macos-ui-smoke
 Native macOS CTest includes `videotoolbox_provider_smoke`, `macos_metal_uploader_smoke`,
 `macos_metal_presentation_backend_smoke`, `renderer_metal_headless_smoke`, and
 `macos_native_player_shared_renderer_smoke`.
+
+HDR Auto promotion needs a real EDR-capable display, so it is an explicit local
+gate rather than a hosted CI default:
+
+```bash
+python3.12 dev.py gate macos-hdr-edr-smoke
+```
+
+This gate generates a portable 10-bit HEVC/HLG fixture and asserts that Auto
+selects `native-compositor-edr`, uses the `64RGBAHalf` target, and produces
+values above SDR reference white.
 
 ## Windows Preservation Gate
 
@@ -191,6 +204,8 @@ python3.12 dev.py gate macos-native-sanitizers
 `.github/workflows/macos-ui.yml` provides a separate headed macOS UI workflow. It runs `macos-ui-smoke` weekly and can
 be manually dispatched with either `macos-ui-smoke` or `macos-ui-nightly`; it is intentionally not part of the regular
 push/PR native workflow.
+
+`macos-hdr-edr-smoke` is local/manual because hosted macOS runners do not guarantee EDR display headroom.
 
 `ui_tests/local/**` is manual/local only and must not be added to CI.
 

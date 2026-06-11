@@ -79,6 +79,7 @@ Examples:
   python dev.py test --native-only --github
   python dev.py gate pr-fast
   python dev.py gate macos-ui-smoke
+  python dev.py gate macos-hdr-edr-smoke
   python dev.py gate macos-release-readiness
   python dev.py package
   python dev.py package --installer
@@ -143,6 +144,7 @@ Examples:
             "macos-native-sanitizers",
             "macos-ui-smoke",
             "macos-ui-nightly",
+            "macos-hdr-edr-smoke",
             "macos-release-readiness",
             "windows-preservation",
             "release-candidate",

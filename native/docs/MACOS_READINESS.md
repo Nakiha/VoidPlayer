@@ -22,6 +22,9 @@ Cocoa windows, sandbox file access, platform-channel glue, Flutter texture regis
   in shared native code. Upload failures stay visible in diagnostics instead of silently switching to
   a Swift-side copy path. CVPixelBuffer hardware-frame uploads are distinguished from staged YUV
   and BGRA package uploads in diagnostics.
+- The default macOS presentation policy is Auto: SDR media stays on the SDR native-compositor target,
+  while PQ/HLG media promotes to the EDR compositor only when the active display reports usable EDR
+  headroom.
 - macOS analysis FFI can build and answer basic handle/base-generation calls. The macOS dev/CI
   toolchain can also build `void_ffmpeg_analyzer`, generate VAC2 base + overlay VACHUNK through
   portable `VoidPlayerCli`, and reopen the produced cache files. Runtime overlay activation through
@@ -88,6 +91,7 @@ for the current backend contracts.
 | macOS runner or texture path | `flutter build macos --debug` plus targeted `python dev.py mac-ui-test ...` |
 | Shared renderer scheduling | macOS native tests plus Windows native/UI preservation checks |
 | Metal/color/layout behavior | native parity tests plus targeted macOS UI capture smokes |
+| macOS HDR Auto policy | `python dev.py gate macos-ui-smoke` for SDR policy plus `python dev.py gate macos-hdr-edr-smoke` on an EDR-capable display |
 | Packaging | `python dev.py gate macos-release-readiness` |
 
 Representative local macOS smoke set:
@@ -101,4 +105,5 @@ Current stabilization gate:
 ```bash
 python3.12 dev.py gate pr-fast
 python3.12 dev.py gate macos-ui-smoke
+python3.12 dev.py gate macos-hdr-edr-smoke
 ```

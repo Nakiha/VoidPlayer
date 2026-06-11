@@ -280,6 +280,66 @@ class PerformanceHealthSnapshot {
 
   bool get isPressure => level != PerformanceHealthLevel.ok;
 
+  String get diagnosticSummary {
+    final externalSignals = _externalPressureSignals();
+    final parts = <String>[
+      'level=${level.name}',
+      'kind=${kind.name}',
+      if (reason.isNotEmpty) 'reason=$reason',
+      'playing=$playing',
+      'tracks=$trackCount',
+      'display=${_hzText(displayTickHz)}/${_hzText(displayRefreshHz)}',
+      'layout=intent ${_hzText(layoutIntentHz)} draw ${_hzText(layoutDrawHz)}',
+      'drawP95=${_usText(drawP95Us)}',
+      'backendP95=${_usText(backendP95Us)}',
+      'metalP95=${_usText(metalP95Us)}',
+      if (hostIntervalP95Ms > 0)
+        'hostIntervalP95=${hostIntervalP95Ms.toStringAsFixed(2)}ms',
+      if (playbackCadenceRatio > 0)
+        'cadence=${playbackCadenceRatio.toStringAsFixed(3)} '
+            '${_hzText(presentedFrameRateHz)}/${_hzText(expectedFrameRateHz)}',
+      if (externalSignals.isNotEmpty)
+        'externalSignals=${externalSignals.join(",")}',
+      if (metalBufferExhaustionCount > 0 || metalBufferExhaustionDelta > 0)
+        'ring=$metalBufferExhaustionCount(+${metalBufferExhaustionDelta})',
+      if (metalFailureCount > 0 || metalFailureDelta > 0)
+        'metalFailures=$metalFailureCount(+${metalFailureDelta})',
+      if (largeGapCount > 0 || largeGapDelta > 0)
+        'ptsGaps=$largeGapCount(+${largeGapDelta})',
+      if (monotonicViolationCount > 0)
+        'ptsMonotonicViolations=$monotonicViolationCount',
+    ];
+    return parts.join(' ');
+  }
+
+  List<String> _externalPressureSignals() {
+    final inputOrPlaybackActive = playing || layoutIntentHz >= 10;
+    final displayTarget = displayRefreshHz >= 50
+        ? displayRefreshHz
+        : _fallbackDisplayTargetHz;
+    final signals = <String>[];
+    if (inputOrPlaybackActive &&
+        displayTickHz > 0 &&
+        displayTickHz < displayTarget * 0.72) {
+      signals.add('display-tick-low');
+    }
+    if (layoutIntentHz >= 30 &&
+        layoutDrawHz > 0 &&
+        layoutDrawHz < math.min(layoutIntentHz, displayTarget) * 0.70) {
+      signals.add('layout-draw-low');
+    }
+    final expectedFrameIntervalMs = presentedFrameExpectedIntervalUs > 0
+        ? presentedFrameExpectedIntervalUs / 1000.0
+        : 1000.0 / displayTarget;
+    if (playing &&
+        hostIntervalP95Ms > 0 &&
+        hostIntervalP95Ms >
+            math.max(1000.0 / displayTarget, expectedFrameIntervalMs) * 1.8) {
+      signals.add('host-interval-high');
+    }
+    return signals;
+  }
+
   String localizedTitle(BuildContext context) {
     final zh = Localizations.localeOf(context).languageCode == 'zh';
     return switch (kind) {
@@ -484,6 +544,11 @@ class PerformanceHealthSnapshot {
     if (value >= 1000) return '${(value / 1000.0).toStringAsFixed(1)}ms';
     return '${value.toStringAsFixed(0)}us';
   }
+
+  static String _hzText(double value) {
+    if (value <= 0) return '0Hz';
+    return '${value.toStringAsFixed(1)}Hz';
+  }
 }
 
 class _PlaybackCadenceSample {
@@ -585,6 +650,8 @@ class _PerformanceHealthFeedbackMonitorState
   Timer? _timer;
   Future<void>? _pollInFlight;
   PerformanceHealthSnapshot? _previous;
+  String? _lastPressureLogKey;
+  DateTime? _lastPressureLogAt;
   final PerformanceHealthFeedbackPolicy _feedbackPolicy =
       PerformanceHealthFeedbackPolicy();
 
@@ -659,6 +726,7 @@ class _PerformanceHealthFeedbackMonitorState
       alertPolicy: widget.alertPolicy,
       now: DateTime.now(),
     );
+    _logDiagnosticSample(snapshot, shouldShow: shouldShow);
     if (!shouldShow) return;
     final l = AppLocalizations.of(context);
     AppFeedbackScope.read(context).show(
@@ -671,6 +739,40 @@ class _PerformanceHealthFeedbackMonitorState
         onAction: widget.onOpenProfiler,
         duration: const Duration(seconds: 6),
       ),
+    );
+  }
+
+  void _logDiagnosticSample(
+    PerformanceHealthSnapshot snapshot, {
+    required bool shouldShow,
+  }) {
+    final now = DateTime.now();
+    if (!snapshot.isPressure) {
+      if (_lastPressureLogKey != null) {
+        log.info('performance health recovered: ${snapshot.diagnosticSummary}');
+      }
+      _lastPressureLogKey = null;
+      _lastPressureLogAt = null;
+      return;
+    }
+
+    final key =
+        '${snapshot.level.name}/${snapshot.kind.name}/'
+        '${snapshot.reason}';
+    final lastAt = _lastPressureLogAt;
+    final shouldThrottle =
+        !shouldShow &&
+        key == _lastPressureLogKey &&
+        lastAt != null &&
+        now.difference(lastAt) < const Duration(seconds: 5);
+    if (shouldThrottle) return;
+
+    _lastPressureLogKey = key;
+    _lastPressureLogAt = now;
+    final feedback = shouldShow ? ' feedback=show' : '';
+    log.info(
+      'performance health pressure sample$feedback: '
+      '${snapshot.diagnosticSummary}',
     );
   }
 }

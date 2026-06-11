@@ -10,7 +10,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from .flutter_toolchain import flutter_cmd
+from .flutter_toolchain import (
+    flutter_cmd,
+    local_engine_args_for_mode,
+    local_engine_name_for_mode,
+    local_engine_output_path,
+)
 from .native import ensure_ffmpeg_analyzer_tool, native_build, native_build_macos
 from .paths import (
     DEMO_SCRIPT,
@@ -45,6 +50,28 @@ def _flutter_cmd(*args: str, local_engine: bool = False) -> list[str]:
     return flutter_cmd(*args, local_engine=local_engine)
 
 
+def _macos_local_engine_args(debug: bool) -> list[str]:
+    args = local_engine_args_for_mode(debug)
+    engine_name = local_engine_name_for_mode(debug)
+    engine_path = local_engine_output_path(engine_name)
+    if engine_path is None:
+        print("ERROR: macOS Flutter local engine is not configured.")
+        print("Run:")
+        print("  python dev.py toolchain bootstrap-flutter")
+        sys.exit(1)
+    if not engine_path.exists():
+        mode = "Debug" if debug else "Release"
+        print(f"ERROR: macOS {mode} Flutter local engine is missing: {engine_path}")
+        if debug:
+            print("Expected the configured debug local engine to exist.")
+        else:
+            print("Build the patched release engine first, or set:")
+            print("  VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE=host_release_arm64")
+            print("  VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE=host_release_arm64")
+        sys.exit(1)
+    return args
+
+
 def flutter_build(debug: bool) -> None:
     """Build Flutter Windows app."""
     build_type = "Debug" if debug else "Release"
@@ -62,16 +89,46 @@ def flutter_build_macos(debug: bool) -> None:
     """Build Flutter macOS app."""
     build_type = "Debug" if debug else "Release"
     ensure_ffmpeg_analyzer_tool()
+    _prepare_macos_flutter_engine_mode(debug)
 
     header(f"Build Flutter macOS ({build_type})")
 
-    cmd = _flutter_cmd("build", "macos", local_engine=True)
+    cmd = _flutter_cmd("build", "macos")
+    cmd.extend(_macos_local_engine_args(debug))
     cmd.append("--debug" if debug else "--release")
 
     run(cmd, cwd=str(ROOT))
     _install_macos_ffmpeg_analyzer(macos_app_bundle_path(debug))
     _codesign_macos_app_bundle(macos_app_bundle_path(debug))
     _register_macos_app_bundle(macos_app_bundle_path(debug))
+
+
+def _prepare_macos_flutter_engine_mode(debug: bool) -> None:
+    mode = "local-engine-debug" if debug else "local-engine-release"
+    build_dir = ROOT / "build" / "macos"
+    marker = build_dir / ".voidplayer_flutter_engine_mode"
+    previous = ""
+    try:
+        previous = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+
+    for path in (
+        build_dir / "Build" / "Intermediates.noindex" / "SwiftExplicitPrecompiledModules",
+        build_dir / "ModuleCache.noindex",
+    ):
+        if path.exists():
+            shutil.rmtree(path)
+
+    if previous and previous != mode:
+        for path in (
+            build_dir / "Build" / "Intermediates.noindex",
+        ):
+            if path.exists():
+                shutil.rmtree(path)
+
+    build_dir.mkdir(parents=True, exist_ok=True)
+    marker.write_text(mode + "\n", encoding="utf-8")
 
 
 def _install_macos_ffmpeg_analyzer(app_bundle: Path) -> None:
@@ -250,18 +307,21 @@ def cmd_build(args) -> None:
 def cmd_run(args) -> None:
     """Run the Flutter application via flutter run."""
     device = "macos" if _is_macos() else "windows"
+    debug = bool(args.debug)
     flutter_args = _flutter_cmd(
         "run",
         "-d",
         device,
-        local_engine=_is_macos(),
+        local_engine=False,
     )
-    flutter_args.append("--debug" if args.debug else "--release")
+    if _is_macos():
+        flutter_args.extend(_macos_local_engine_args(debug))
+    flutter_args.append("--debug" if debug else "--release")
 
     if args.log_level:
         flutter_args.extend(["--", f"--log-level={args.log_level}"])
 
-    header(f"Run Flutter ({'debug' if args.debug else 'release'})")
+    header(f"Run Flutter ({'debug' if debug else 'release'})")
     run(flutter_args, cwd=str(ROOT))
 
 
@@ -284,10 +344,11 @@ def _cmd_launch(args) -> None:
         _cmd_launch_macos(args)
         return
 
-    exe = app_exe_path(args.debug)
+    debug = bool(args.debug)
+    exe = app_exe_path(debug)
 
     if args.build or not exe.exists():
-        flutter_build(args.debug)
+        flutter_build(debug)
 
     if not exe.exists():
         print(f"ERROR: exe not found: {exe}")
@@ -304,11 +365,12 @@ def _cmd_launch(args) -> None:
 
 
 def _cmd_launch_macos(args) -> None:
-    app_bundle = macos_app_bundle_path(args.debug)
-    exe = macos_app_exe_path(args.debug)
+    debug = bool(args.debug)
+    app_bundle = macos_app_bundle_path(debug)
+    exe = macos_app_exe_path(debug)
 
     if args.build or not app_bundle.exists() or _macos_app_stale(exe):
-        flutter_build_macos(args.debug)
+        flutter_build_macos(debug)
 
     if not app_bundle.exists() or not exe.exists():
         print(f"ERROR: macOS app not found: {app_bundle}")

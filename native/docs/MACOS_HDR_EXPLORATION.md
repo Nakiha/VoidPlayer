@@ -44,7 +44,9 @@ build, but it does not replace the lock:
     "VOIDPLAYER_FLUTTER_BIN": "/Users/zhuhongwei/Documents/yorune/VoidPlayer-Flutter/bin/flutter",
     "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": "/Users/zhuhongwei/Documents/yorune/VoidPlayer-Flutter/engine/src",
     "VOIDPLAYER_FLUTTER_LOCAL_ENGINE": "host_debug_unopt_arm64",
-    "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST": "host_debug_unopt_arm64"
+    "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST": "host_debug_unopt_arm64",
+    "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": "host_release_arm64",
+    "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE": "host_release_arm64"
   }
 }
 ```

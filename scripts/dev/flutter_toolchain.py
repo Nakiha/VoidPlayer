@@ -92,6 +92,59 @@ def local_engine_args() -> list[str]:
     engine_src = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH")
     engine = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
     engine_host = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST")
+    return _local_engine_args(engine_src, engine, engine_host)
+
+
+def local_engine_args_for_mode(debug: bool) -> list[str]:
+    engine_src = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH")
+    if debug:
+        engine = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
+        engine_host = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST")
+    else:
+        engine = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE")
+        engine_host = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE")
+        if not engine:
+            engine = _derive_release_engine_name(
+                os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
+            )
+        if not engine_host:
+            engine_host = _derive_release_engine_name(
+                os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST")
+            )
+    return _local_engine_args(engine_src, engine, engine_host)
+
+
+def local_engine_name_for_mode(debug: bool) -> str | None:
+    if debug:
+        return os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
+    return (
+        os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE")
+        or _derive_release_engine_name(os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE"))
+    )
+
+
+def local_engine_output_path(engine_name: str | None) -> Path | None:
+    engine_src = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH")
+    if not engine_src or not engine_name:
+        return None
+    return Path(engine_src) / "out" / engine_name
+
+
+def _derive_release_engine_name(engine: str | None) -> str | None:
+    if not engine:
+        return None
+    if "debug_unopt" in engine:
+        return engine.replace("debug_unopt", "release")
+    if "debug" in engine:
+        return engine.replace("debug", "release")
+    return engine
+
+
+def _local_engine_args(
+    engine_src: str | None,
+    engine: str | None,
+    engine_host: str | None,
+) -> list[str]:
     args: list[str] = []
     if engine_src:
         args.append(f"--local-engine-src-path={engine_src}")

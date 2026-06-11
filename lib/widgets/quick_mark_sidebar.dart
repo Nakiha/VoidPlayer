@@ -1156,6 +1156,22 @@ class _QuickMarkInspectorState extends State<_QuickMarkInspector> {
                 const _PanelGap(),
                 const _PanelSeparator(),
                 const _PanelGap(),
+                _DefectTypeCombo(
+                  value: widget.mark.defectType,
+                  onChanged: (defectType) => widget.onChanged(
+                    widget.mark.copyWith(defectType: defectType),
+                  ),
+                ),
+                const _PanelGap(),
+                _SeverityCombo(
+                  value: widget.mark.severity,
+                  onChanged: (severity) => widget.onChanged(
+                    widget.mark.copyWith(severity: severity),
+                  ),
+                ),
+                const _PanelGap(),
+                const _PanelSeparator(),
+                const _PanelGap(),
                 _DeleteToolButton(onPressed: widget.onDelete),
                 const _PanelGap(),
                 const _PanelSeparator(),
@@ -1340,6 +1356,110 @@ class _FontSizeCombo extends StatelessWidget {
         onChanged: onChanged,
         textStyle: theme.textTheme.bodySmall?.copyWith(
           color: colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        ),
+        menuTextStyle: theme.textTheme.bodySmall,
+        maxMenuWidth: 92,
+        itemHeight: 30,
+        buttonPadding: const EdgeInsets.only(left: 6, right: 2),
+        itemPadding: const EdgeInsets.only(left: 10, right: 14),
+        borderRadius: BorderRadius.circular(4),
+        backgroundColor: Colors.transparent,
+        foregroundColor: colorScheme.onSurfaceVariant,
+        iconSize: 16,
+      ),
+    );
+  }
+}
+
+class _DefectTypeCombo extends StatelessWidget {
+  /// Sentinel item standing in for "no defect type" since AppMenuCombo items
+  /// cannot be null.
+  static const String _none = '';
+
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  const _DefectTypeCombo({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final current = value ?? _none;
+    final items = [
+      _none,
+      ...QuickMarkDefectTypes.presets,
+      if (current != _none && !QuickMarkDefectTypes.presets.contains(current))
+        current,
+    ];
+    return Tooltip(
+      message: l.quickMarkDefectType,
+      child: AppMenuCombo<String>(
+        width: 86,
+        height: _QuickMarkSidebarState._toolButtonSize,
+        value: current,
+        items: items,
+        labelFor: (item) => item == _none ? l.quickMarkJudgmentNone : item,
+        onChanged: (item) => onChanged(item == _none ? null : item),
+        textStyle: theme.textTheme.bodySmall?.copyWith(
+          color: value == null
+              ? colorScheme.onSurfaceVariant
+              : colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+        menuTextStyle: theme.textTheme.bodySmall,
+        maxMenuWidth: 150,
+        itemHeight: 30,
+        buttonPadding: const EdgeInsets.only(left: 6, right: 2),
+        itemPadding: const EdgeInsets.only(left: 10, right: 14),
+        borderRadius: BorderRadius.circular(4),
+        backgroundColor: Colors.transparent,
+        foregroundColor: colorScheme.onSurfaceVariant,
+        iconSize: 16,
+      ),
+    );
+  }
+}
+
+class _SeverityCombo extends StatelessWidget {
+  /// Sentinel for "no severity"; real values are 1-5.
+  static const int _none = 0;
+
+  final int? value;
+  final ValueChanged<int?> onChanged;
+
+  const _SeverityCombo({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final items = [
+      _none,
+      for (
+        var severity = kQuickMarkSeverityMin;
+        severity <= kQuickMarkSeverityMax;
+        severity++
+      )
+        severity,
+    ];
+    return Tooltip(
+      message: l.quickMarkSeverity,
+      child: AppMenuCombo<int>(
+        width: 52,
+        height: _QuickMarkSidebarState._toolButtonSize,
+        value: value ?? _none,
+        items: items,
+        labelFor: (item) =>
+            item == _none ? l.quickMarkJudgmentNone : 'S$item',
+        onChanged: (item) => onChanged(item == _none ? null : item),
+        textStyle: theme.textTheme.bodySmall?.copyWith(
+          color: value == null
+              ? colorScheme.onSurfaceVariant
+              : colorScheme.onSurface,
           fontWeight: FontWeight.w600,
         ),
         menuTextStyle: theme.textTheme.bodySmall,

@@ -660,6 +660,15 @@
   "quickMarkArrow": "Arrow",
   "@quickMarkArrow": { "description": "Tooltip for selecting the quick mark arrow shape" },
 
+  "quickMarkDefectType": "Defect",
+  "@quickMarkDefectType": { "description": "Tooltip for quick mark defect type selector" },
+
+  "quickMarkSeverity": "Severity",
+  "@quickMarkSeverity": { "description": "Tooltip for quick mark severity selector" },
+
+  "quickMarkJudgmentNone": "None",
+  "@quickMarkJudgmentNone": { "description": "Option clearing quick mark defect type or severity" },
+
   "quickMarkColor": "Color",
   "@quickMarkColor": { "description": "Tooltip for quick mark color selector" },
 

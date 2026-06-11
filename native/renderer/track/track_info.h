@@ -1,5 +1,7 @@
 #pragma once
 
+#include "renderer/frame/frame_storage.h"
+
 #include <cstdint>
 #include <string>
 
@@ -19,6 +21,7 @@ struct TrackInfo {
     std::string codec_name;
     std::string codec_long_name;
     std::string decoder_name;
+    VideoColorInfo color;
 };
 
 } // namespace vr

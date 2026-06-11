@@ -128,6 +128,12 @@ final class MacOSNativeCompositorSpikeView: NSView {
     NSLog("VoidPlayer native compositor spike: installed")
   }
 
+  func detach() {
+    displayLink?.stop()
+    displayLink = nil
+    removeFromSuperview()
+  }
+
   func setVideoTexture(_ texture: MacOSVideoTexture?) {
     compositorQueue.async { [weak self] in
       self?.videoTexture = texture

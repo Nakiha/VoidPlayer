@@ -81,6 +81,20 @@ enum MacOSVideoRendererStartupFactory {
     useHardwareDecode: Bool,
     viewportBackgroundColor: UInt32?
   ) throws -> MacOSVideoRendererStartup {
+    let probedTracks = paths.compactMap { path in
+      try? MacOSNativePlayerSession.probeTrack(path: path)
+    }
+    let hasHDRTrack = probedTracks.contains { $0.isHDR }
+    let configuration = MacOSPresentationConfiguration.resolve(hasHDRTrack: hasHDRTrack)
+    MacOSPresentationConfiguration.updateCurrent(configuration)
+    NSLog(
+      "VoidPlayer macOS presentation policy: request=%@ mode=%@ reason=%@ hdrTrack=%@",
+      configuration.request,
+      configuration.mode.rawValue,
+      configuration.reason,
+      hasHDRTrack ? "true" : "false"
+    )
+
     guard let session = MacOSNativePlayerSession() else {
       throw MacOSNativePlayerError.failed("failed to allocate macOS native player")
     }
@@ -117,7 +131,11 @@ enum MacOSVideoRendererStartupFactory {
           formatName: firstMetadata.formatName,
           codecName: firstMetadata.codecName,
           codecLongName: firstMetadata.codecLongName,
-          decoderName: firstMetadata.decoderName
+          decoderName: firstMetadata.decoderName,
+          colorRange: firstMetadata.colorRange,
+          colorMatrix: firstMetadata.colorMatrix,
+          colorTransfer: firstMetadata.colorTransfer,
+          colorPrimaries: firstMetadata.colorPrimaries
         ),
         decoderName: session.decoderName()
       )

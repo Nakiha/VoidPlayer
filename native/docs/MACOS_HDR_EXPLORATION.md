@@ -1,8 +1,8 @@
 # macOS HDR Exploration
 
-This document tracks the current VoidPlayer macOS HDR/EDR spike. The goal is to
-keep the native-composited route reproducible while it is still gated from the
-normal release path.
+This document tracks the current VoidPlayer macOS HDR/EDR path. The code still
+uses some `spike` names internally, but the product direction is now a default
+Auto policy rather than an opt-in environment-only experiment.
 
 ## Flutter Fork Pin
 
@@ -55,20 +55,32 @@ build, but it does not replace the lock:
 checkout drifts from the lock, the build fails before producing a VoidPlayer
 binary.
 
-## Presentation Modes
+## Presentation Policy
 
-The normal app path remains Flutter texture presentation. The spike is selected
-with `VOIDPLAYER_MACOS_PRESENTATION_MODE`:
+macOS defaults to `VOIDPLAYER_MACOS_PRESENTATION_MODE=auto`. Auto uses the
+native compositor but keeps SDR media on the SDR BGRA target, so simply opening
+an SDR video does not create an EDR layer or reserve display headroom. PQ/HLG
+tracks are promoted to the EDR compositor when the display reports potential EDR
+headroom.
 
-| Mode | Behavior |
+| Request | Behavior |
 | --- | --- |
-| unset / `flutter-texture-sdr` | Existing FlutterTexture / BGRA path. |
-| `native-compositor-sdr` | Native window compositor overlays the stolen Flutter surface over a BGRA native video target. |
-| `native-compositor-edr` | Native compositor uses `CAMetalLayer.rgba16Float`, `wantsExtendedDynamicRangeContent`, and an RGBA half renderer-owned target. |
+| unset / `auto` | SDR media -> `native-compositor-sdr`; PQ/HLG media on an EDR-capable display -> `native-compositor-edr`. |
+| `flutter-texture-sdr` | Existing FlutterTexture / BGRA path for compatibility and bisecting. |
+| `native-compositor-sdr` | Force native window compositor with a BGRA native video target. |
+| `native-compositor-edr` | Force `CAMetalLayer.rgba16Float`, `wantsExtendedDynamicRangeContent`, and an RGBA half renderer-owned target when EDR headroom is available. |
 
 The old spike variables `VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE`,
 `VOIDPLAYER_NATIVE_COMPOSITOR_EDR`, and `VOIDPLAYER_FLUTTER_HDR_SPIKE` remain
 accepted as compatibility aliases during the exploration.
+
+Diagnostics expose the decision:
+
+- `macOSPresentationRequest`
+- `macOSPresentationReason`
+- `macOSPresentationMode`
+- `macOSPresentationEDROutputEnabled`
+- `macOSDisplayEDRHeadroomX1000`
 
 ## What Is Verified
 
@@ -93,11 +105,29 @@ are not HDR luminance proof because macOS can tone-map screenshots.
 
 ## Local Validation
 
-Default path:
+Default SDR Auto policy:
 
 ```bash
-python dev.py mac-ui-test --build ui_tests/macos/native_facade_smoke.csv
+python dev.py mac-ui-test --build \
+  ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv
 ```
+
+This asserts `macOSPresentationReason=auto-sdr-only`,
+`macOSPresentationMode=native-compositor-sdr`, and
+`nativeCompositorVideoPixelFormat=32BGRA`.
+
+Portable HLG Auto policy:
+
+```bash
+python dev.py mac-ui-test --build \
+  ui_tests/macos/native_compositor_auto_hlg_policy_smoke.csv
+```
+
+This generates a small 10-bit HEVC/HLG fixture and asserts
+`macOSPresentationReason=auto-hdr-track`,
+`macOSPresentationMode=native-compositor-edr`,
+`nativeCompositorVideoPixelFormat=64RGBAHalf`, and
+`nativeCompositorEDRVideoMaxRGBX1000 >= 1001`.
 
 SDR content through EDR compositor:
 
@@ -133,10 +163,10 @@ That file is not a portable repository fixture.
 
 ## Remaining Work
 
-- Replace spike naming with a product-facing presentation capability and user
-  preference once the path is ready to expose.
-- Add automated assertions for `nativeCompositorEDRVideoMaxRGBX1000 > 1000`
-  on a portable HDR fixture.
+- Replace remaining internal spike naming with product-facing native compositor
+  names.
+- Add user-facing Auto / Force SDR / Force HDR settings after the default Auto
+  policy has soaked.
 - Calibrate HLG/PQ mapping against display EDR headroom instead of using the
   current simple spike constants.
 - Add proper Display P3 / Rec.2020 gamut mapping.

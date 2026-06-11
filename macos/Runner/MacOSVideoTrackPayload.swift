@@ -22,7 +22,11 @@ enum MacOSVideoTrackPayload {
     formatName: String,
     codecName: String,
     codecLongName: String,
-    decoderName: String
+    decoderName: String,
+    colorRange: Int = 0,
+    colorMatrix: Int = 0,
+    colorTransfer: Int = 0,
+    colorPrimaries: Int = 0
   ) -> [String: Any] {
     return [
       "fileId": fileId,
@@ -37,6 +41,10 @@ enum MacOSVideoTrackPayload {
       "codecName": codecName,
       "codecLongName": codecLongName,
       "decoderName": decoderName,
+      "colorRange": colorRange,
+      "colorMatrix": colorMatrix,
+      "colorTransfer": colorTransfer,
+      "colorPrimaries": colorPrimaries,
     ]
   }
 
@@ -57,7 +65,11 @@ enum MacOSVideoTrackPayload {
       formatName: nonEmpty(metadata.formatName, nativeFormatName),
       codecName: nonEmpty(metadata.codecName, nativeCodecName),
       codecLongName: nonEmpty(metadata.codecLongName, nativeCodecLongName),
-      decoderName: nonEmpty(metadata.decoderName, decoderName)
+      decoderName: nonEmpty(metadata.decoderName, decoderName),
+      colorRange: metadata.colorRange,
+      colorMatrix: metadata.colorMatrix,
+      colorTransfer: metadata.colorTransfer,
+      colorPrimaries: metadata.colorPrimaries
     )
   }
 

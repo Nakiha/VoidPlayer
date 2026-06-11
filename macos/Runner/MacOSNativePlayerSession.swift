@@ -29,6 +29,21 @@ final class MacOSNativePlayerSession {
     }
   }
 
+  static func probeTrack(path: String) throws -> MacOSNativeTrackMetadata {
+    var info = VPMacOSNativeTrackInfo()
+    var error = [CChar](repeating: 0, count: 1024)
+    let ret = path.withCString { pathPointer in
+      VPMacOSNativeProbeTrackInfo(pathPointer, &info, &error, error.count)
+    }
+    if ret != 0 {
+      let message = String(cString: error)
+      throw MacOSNativePlayerError.failed(
+        message.isEmpty ? "macOS native player probe failed with code \(ret)" : message
+      )
+    }
+    return Self.trackMetadata(from: info)
+  }
+
   func setHardwareDecodeEnabled(_ enabled: Bool) {
     VPMacOSNativePlayerSetHardwareDecodeEnabled(handle, enabled ? 1 : 0)
   }
@@ -105,7 +120,11 @@ final class MacOSNativePlayerSession {
       formatName: cString(info.format_name),
       codecName: cString(info.codec_name),
       codecLongName: cString(info.codec_long_name),
-      decoderName: cString(info.decoder_name)
+      decoderName: cString(info.decoder_name),
+      colorRange: Int(info.color_range),
+      colorMatrix: Int(info.color_matrix),
+      colorTransfer: Int(info.color_transfer),
+      colorPrimaries: Int(info.color_primaries)
     )
   }
 

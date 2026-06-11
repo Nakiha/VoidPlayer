@@ -66,6 +66,10 @@ class NativePlayerKeys {
   static const codecName = 'codecName';
   static const codecLongName = 'codecLongName';
   static const decoderName = 'decoderName';
+  static const colorRange = 'colorRange';
+  static const colorMatrix = 'colorMatrix';
+  static const colorTransfer = 'colorTransfer';
+  static const colorPrimaries = 'colorPrimaries';
   static const hash = 'hash';
   static const avgLuma = 'avgLuma';
   static const nonBlackRatio = 'nonBlackRatio';
@@ -448,6 +452,10 @@ class TrackInfo {
   final String codecName;
   final String codecLongName;
   final String decoderName;
+  final int colorRange;
+  final int colorMatrix;
+  final int colorTransfer;
+  final int colorPrimaries;
 
   const TrackInfo({
     required this.fileId,
@@ -462,6 +470,10 @@ class TrackInfo {
     this.codecName = '',
     this.codecLongName = '',
     this.decoderName = '',
+    this.colorRange = 0,
+    this.colorMatrix = 0,
+    this.colorTransfer = 0,
+    this.colorPrimaries = 0,
   });
 
   factory TrackInfo.fromMap(Map<dynamic, dynamic> map) {
@@ -532,6 +544,30 @@ class TrackInfo {
         map,
         NativePlayerKeys.decoderName,
         '',
+        context,
+      ),
+      colorRange: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.colorRange,
+        0,
+        context,
+      ),
+      colorMatrix: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.colorMatrix,
+        0,
+        context,
+      ),
+      colorTransfer: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.colorTransfer,
+        0,
+        context,
+      ),
+      colorPrimaries: NativePlayerPayloads.optionalInt(
+        map,
+        NativePlayerKeys.colorPrimaries,
+        0,
         context,
       ),
     );

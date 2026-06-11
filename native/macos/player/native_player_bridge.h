@@ -48,6 +48,10 @@ int VPMacOSNativePlayerOpen(VPMacOSNativePlayer* player,
                             const char* path,
                             char* error,
                             size_t error_size);
+int VPMacOSNativeProbeTrackInfo(const char* path,
+                                VPMacOSNativeTrackInfo* out,
+                                char* error,
+                                size_t error_size);
 int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
                                 const char* path,
                                 int32_t file_id,

@@ -39,6 +39,26 @@ The renderer-owned target is a Metal-compatible, IOSurface-backed BGRA
 short locked section. Native owns the Metal device, command queue,
 `CVMetalTextureCache`, validation, upload, draw, and failure accounting.
 
+## Native Compositor Auto Policy
+
+The HDR path uses a native `CAMetalLayer` compositor above Flutter. Flutter still
+owns controls, hit testing, and the transparent viewport hole; the native layer
+draws video underneath and composites the exported Flutter surface back on top.
+
+On macOS the default request is Auto:
+
+- SDR-only media uses `native-compositor-sdr`: BGRA renderer-owned target,
+  `MTLPixelFormatBGRA8Unorm`, no EDR layer.
+- PQ/HLG media uses `native-compositor-edr` when the display reports potential
+  EDR headroom: `kCVPixelFormatType_64RGBAHalf`, `MTLPixelFormatRGBA16Float`,
+  `wantsExtendedDynamicRangeContent`, and extended linear Display P3.
+- If HDR media is opened on a display without EDR headroom, Auto remains on the
+  SDR compositor and reports `macOSPresentationReason=auto-hdr-display-unavailable`.
+
+`VOIDPLAYER_MACOS_PRESENTATION_MODE` can force `flutter-texture-sdr`,
+`native-compositor-sdr`, or `native-compositor-edr` for diagnostics and
+bisecting. Product defaults should rely on Auto.
+
 ## Storage Kinds
 
 | Storage kind | Route | Notes |

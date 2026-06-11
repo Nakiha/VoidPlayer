@@ -10,6 +10,8 @@ enum MacOSPresentationMode: String {
 
 struct MacOSPresentationConfiguration {
   let mode: MacOSPresentationMode
+  let request: String
+  let reason: String
 
   var nativeCompositorEnabled: Bool {
     mode == .nativeCompositorSDR || mode == .nativeCompositorEDR
@@ -34,36 +36,121 @@ struct MacOSPresentationConfiguration {
   var diagnostics: [String: Any] {
     [
       "macOSPresentationMode": mode.rawValue,
+      "macOSPresentationRequest": request,
+      "macOSPresentationReason": reason,
       "macOSPresentationNativeCompositorEnabled": nativeCompositorEnabled,
       "macOSPresentationEDROutputEnabled": edrOutputEnabled,
       "macOSDisplayEDRHeadroomX1000": Self.displayEDRHeadroomX1000(),
     ]
   }
 
-  static let current = MacOSPresentationConfiguration(
-    mode: MacOSPresentationMode.fromEnvironment(ProcessInfo.processInfo.environment)
+  static let environment = MacOSPresentationEnvironment(
+    environment: ProcessInfo.processInfo.environment
   )
+
+  private static let lock = NSLock()
+  private static var resolvedCurrent = MacOSPresentationConfiguration(
+    mode: .nativeCompositorSDR,
+    request: environment.request,
+    reason: "auto-unresolved-sdr"
+  )
+
+  static var current: MacOSPresentationConfiguration {
+    lock.lock()
+    defer { lock.unlock() }
+    return resolvedCurrent
+  }
+
+  static func resetForNoMedia() {
+    updateCurrent(resolve(hasHDRTrack: false))
+  }
+
+  static func resolve(hasHDRTrack: Bool) -> MacOSPresentationConfiguration {
+    let environment = Self.environment
+    switch environment.overrideMode {
+    case .flutterTextureSDR:
+      return MacOSPresentationConfiguration(
+        mode: .flutterTextureSDR,
+        request: environment.request,
+        reason: "forced-flutter-texture-sdr"
+      )
+    case .nativeCompositorSDR:
+      return MacOSPresentationConfiguration(
+        mode: .nativeCompositorSDR,
+        request: environment.request,
+        reason: "forced-native-compositor-sdr"
+      )
+    case .nativeCompositorEDR:
+      return MacOSPresentationConfiguration(
+        mode: displaySupportsEDR ? .nativeCompositorEDR : .nativeCompositorSDR,
+        request: environment.request,
+        reason: displaySupportsEDR ? "forced-native-compositor-edr" : "edr-display-unavailable"
+      )
+    case nil:
+      if hasHDRTrack && displaySupportsEDR {
+        return MacOSPresentationConfiguration(
+          mode: .nativeCompositorEDR,
+          request: environment.request,
+          reason: "auto-hdr-track"
+        )
+      }
+      return MacOSPresentationConfiguration(
+        mode: .nativeCompositorSDR,
+        request: environment.request,
+        reason: hasHDRTrack ? "auto-hdr-display-unavailable" : "auto-sdr-only"
+      )
+    }
+  }
+
+  static func updateCurrent(_ configuration: MacOSPresentationConfiguration) {
+    lock.lock()
+    resolvedCurrent = configuration
+    lock.unlock()
+  }
+
+  static var displaySupportsEDR: Bool {
+    displayEDRHeadroomX1000() > 1000
+  }
 
   private static func displayEDRHeadroomX1000() -> Int {
     let screen = NSScreen.main
     if #available(macOS 10.15, *) {
-      let headroom = screen?.maximumExtendedDynamicRangeColorComponentValue ?? 1.0
+      var headroom = screen?.maximumExtendedDynamicRangeColorComponentValue ?? 1.0
+      if #available(macOS 14.0, *) {
+        headroom = max(
+          headroom,
+          screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1.0
+        )
+      }
       return Int((headroom * 1000.0).rounded())
     }
     return 1000
   }
 }
 
-private extension MacOSPresentationMode {
-  static func fromEnvironment(_ environment: [String: String]) -> MacOSPresentationMode {
+struct MacOSPresentationEnvironment {
+  let request: String
+  let overrideMode: MacOSPresentationMode?
+
+  init(environment: [String: String]) {
     if let rawMode = environment["VOIDPLAYER_MACOS_PRESENTATION_MODE"]?.lowercased() {
       switch rawMode {
       case "native-compositor-edr", "edr", "hdr":
-        return .nativeCompositorEDR
+        request = rawMode
+        overrideMode = .nativeCompositorEDR
+        return
       case "native-compositor-sdr", "native", "compositor":
-        return .nativeCompositorSDR
+        request = rawMode
+        overrideMode = .nativeCompositorSDR
+        return
       case "flutter-texture-sdr", "flutter", "sdr":
-        return .flutterTextureSDR
+        request = rawMode
+        overrideMode = .flutterTextureSDR
+        return
+      case "auto":
+        request = "auto"
+        overrideMode = nil
+        return
       default:
         break
       }
@@ -71,10 +158,15 @@ private extension MacOSPresentationMode {
     if environment["VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE"] == "1" {
       if environment["VOIDPLAYER_NATIVE_COMPOSITOR_EDR"] == "1" ||
         environment["VOIDPLAYER_FLUTTER_HDR_SPIKE"] == "1" {
-        return .nativeCompositorEDR
+        request = "legacy-native-compositor-edr"
+        overrideMode = .nativeCompositorEDR
+        return
       }
-      return .nativeCompositorSDR
+      request = "legacy-native-compositor-sdr"
+      overrideMode = .nativeCompositorSDR
+      return
     }
-    return .flutterTextureSDR
+    request = "auto"
+    overrideMode = nil
   }
 }

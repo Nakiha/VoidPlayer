@@ -195,14 +195,6 @@ class PerformanceHealthSnapshot {
         layoutIntentHz >= 30 &&
         layoutDrawHz > 0 &&
         layoutDrawHz < math.min(layoutIntentHz, displayTarget) * 0.70;
-    final expectedFrameIntervalMs = presentedFrameExpectedIntervalUs > 0
-        ? presentedFrameExpectedIntervalUs / 1000.0
-        : 1000.0 / displayTarget;
-    final hostIntervalHigh =
-        playing &&
-        hostIntervalP95Ms > 0 &&
-        hostIntervalP95Ms >
-            math.max(1000.0 / displayTarget, expectedFrameIntervalMs) * 1.8;
     final externalPressure = !nativeSlow && (displayTickLow || layoutDrawLow);
 
     final decodePressure = playing && _hasDecodePressure(diagnostics);
@@ -299,11 +291,11 @@ class PerformanceHealthSnapshot {
       if (externalSignals.isNotEmpty)
         'externalSignals=${externalSignals.join(",")}',
       if (metalBufferExhaustionCount > 0 || metalBufferExhaustionDelta > 0)
-        'ring=$metalBufferExhaustionCount(+${metalBufferExhaustionDelta})',
+        'ring=$metalBufferExhaustionCount(+$metalBufferExhaustionDelta)',
       if (metalFailureCount > 0 || metalFailureDelta > 0)
-        'metalFailures=$metalFailureCount(+${metalFailureDelta})',
+        'metalFailures=$metalFailureCount(+$metalFailureDelta)',
       if (largeGapCount > 0 || largeGapDelta > 0)
-        'ptsGaps=$largeGapCount(+${largeGapDelta})',
+        'ptsGaps=$largeGapCount(+$largeGapDelta)',
       if (monotonicViolationCount > 0)
         'ptsMonotonicViolations=$monotonicViolationCount',
     ];

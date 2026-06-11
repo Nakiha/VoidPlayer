@@ -10,6 +10,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var methodChannel: FlutterMethodChannel?
   private var eventChannel: FlutterEventChannel?
   private weak var flutterEngine: FlutterEngine?
+  private weak var contentView: NSView?
   private var nativeCompositorSpike: MacOSNativeCompositorSpikeView?
   private let lifecycle: MacOSPlayerLifecycleController
   private let tracks = MacOSVideoTrackController()
@@ -26,13 +27,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   init(engine: FlutterEngine, contentView: NSView) {
     self.flutterEngine = engine
+    self.contentView = contentView
     self.lifecycle = MacOSPlayerLifecycleController(textureRegistry: engine)
     super.init()
-    if MacOSNativeCompositorSpikeView.isEnabled,
-       let compositor = MacOSNativeCompositorSpikeView(engine: engine) {
-      nativeCompositorSpike = compositor
-      compositor.attach(to: contentView)
-    }
+    ensureNativeCompositorMatchesCurrentConfiguration()
   }
 
   deinit {
@@ -373,6 +371,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         self?.markFrameAvailable()
       }
     )
+    ensureNativeCompositorMatchesCurrentConfiguration()
     nativeCompositorSpike?.setVideoTexture(texture)
     return result
   }
@@ -380,6 +379,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func destroyPlayer() {
     presentation.resetLayout()
     lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
+    MacOSPresentationConfiguration.resetForNoMedia()
+    ensureNativeCompositorMatchesCurrentConfiguration()
     nativeCompositorSpike?.setVideoTexture(nil)
   }
 
@@ -433,6 +434,31 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     frameAvailableRate.record()
     lifecycle.markFrameAvailable()
     nativeCompositorSpike?.setVideoTexture(texture)
+  }
+
+  private func ensureNativeCompositorMatchesCurrentConfiguration() {
+    let configuration = MacOSPresentationConfiguration.current
+    guard configuration.nativeCompositorEnabled else {
+      nativeCompositorSpike?.detach()
+      nativeCompositorSpike = nil
+      return
+    }
+    let currentMode = nativeCompositorSpike?.diagnostics()["macOSPresentationMode"] as? String
+    let currentReason =
+      nativeCompositorSpike?.diagnostics()["macOSPresentationReason"] as? String
+    if currentMode == configuration.mode.rawValue &&
+        currentReason == configuration.reason {
+      return
+    }
+    nativeCompositorSpike?.detach()
+    nativeCompositorSpike = nil
+    guard let engine = flutterEngine,
+          let contentView,
+          let compositor = MacOSNativeCompositorSpikeView(engine: engine) else {
+      return
+    }
+    nativeCompositorSpike = compositor
+    compositor.attach(to: contentView)
   }
 
   private func frameCallbackDiagnostics() -> [String: Any] {

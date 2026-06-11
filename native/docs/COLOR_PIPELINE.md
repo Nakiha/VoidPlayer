@@ -98,7 +98,10 @@ Soft/hard parity requirement:
 
 ## Color Metadata
 
-`FrameConverter` reads these fields from `AVFrame` and carries them into
+The macOS runner probes `AVCodecParameters` before creating the renderer-owned
+target so Auto presentation can decide whether a track needs EDR. `DemuxThread`
+also stores the same stream-level metadata in `TrackInfo`, while
+`FrameConverter` reads per-frame `AVFrame` metadata and carries it into
 presentation packages and renderer-owned frames:
 
 | Metadata | Supported values |
@@ -117,6 +120,10 @@ Defaults:
   uses BT.709; smaller content uses BT.601.
 - Unknown transfer defaults to SDR.
 - Unknown primaries are inferred from the matrix.
+
+Dolby Vision dynamic metadata / RPU is not consumed yet. Dolby Vision profile 8
+and similar files are displayed through their base HLG/PQ layer when FFmpeg
+reports that transfer metadata; full Dolby Vision grading remains future work.
 
 ## Windows HLSL / D3D11 Path
 

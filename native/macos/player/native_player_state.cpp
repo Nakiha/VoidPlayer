@@ -379,6 +379,10 @@ VPMacOSNativeTrackInfo VPMacOSNativePlayer::track_info_for_file_id_locked(
         out.codec_long_name, sizeof(out.codec_long_name), info.codec_long_name);
     vp_macos::write_error(
         out.decoder_name, sizeof(out.decoder_name), info.decoder_name);
+    out.color_range = info.color.range;
+    out.color_matrix = info.color.matrix;
+    out.color_transfer = info.color.transfer;
+    out.color_primaries = info.color.primaries;
     return out;
   }
   return out;

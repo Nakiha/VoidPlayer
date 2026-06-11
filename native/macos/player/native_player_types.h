@@ -12,7 +12,7 @@ extern "C" {
 typedef struct VPMacOSNativePlayer VPMacOSNativePlayer;
 typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
 
-#define VP_MACOS_NATIVE_API_VERSION 1u
+#define VP_MACOS_NATIVE_API_VERSION 2u
 
 typedef enum VPMacOSNativeStatus {
   VPMacOSNativeStatusOk = 0,
@@ -65,6 +65,10 @@ typedef struct VPMacOSNativeTrackInfo {
   char codec_name[64];
   char codec_long_name[128];
   char decoder_name[128];
+  int32_t color_range;
+  int32_t color_matrix;
+  int32_t color_transfer;
+  int32_t color_primaries;
 } VPMacOSNativeTrackInfo;
 
 typedef struct VPMacOSCaptureMetrics {

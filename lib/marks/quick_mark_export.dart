@@ -25,6 +25,14 @@ class QuickMarkExportMedia {
     required this.mediaHash,
     required this.sourceId,
   });
+
+  Map<String, Object?> toJson() => {
+    'fileId': fileId,
+    'slotIndex': slotIndex,
+    'path': path,
+    'mediaHash': mediaHash,
+    'sourceId': sourceId,
+  };
 }
 
 Map<String, Object?> buildQuickMarkExportDocument({
@@ -36,16 +44,7 @@ Map<String, Object?> buildQuickMarkExportDocument({
   return {
     'version': quickMarkExportVersion,
     'generatedAtMs': generatedAtMs,
-    'media': [
-      for (final entry in media)
-        {
-          'fileId': entry.fileId,
-          'slotIndex': entry.slotIndex,
-          'path': entry.path,
-          'mediaHash': entry.mediaHash,
-          'sourceId': entry.sourceId,
-        },
-    ],
+    'media': [for (final entry in media) entry.toJson()],
     'marks': [
       for (final mark in marks)
         _markToExportJson(mark, mediaByFileId[mark.fileId]),

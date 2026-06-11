@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../actions/action_registry.dart';
+import '../agent/agent_protocol_server.dart';
 import '../analysis/analysis_manager.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
 import '../automation/main_window_harness.dart';
@@ -25,6 +26,7 @@ import '../video_renderer_controller.dart';
 import '../viewport/viewport_display_state.dart';
 import '../widgets/loop_range_bar.dart';
 import 'main_window_actions.dart';
+import 'main_window_agent.dart';
 import 'main_window_analysis.dart';
 import 'main_window_fullscreen.dart';
 import 'main_window_layout.dart';
@@ -86,6 +88,7 @@ class MainWindowController {
     timelineHoverListenable: timelineHoverNotifier,
   );
   Future<void>? _shutdownFuture;
+  AgentProtocolServer? _agentServer;
 
   late final MainWindowAnalysisCoordinator analysisCoordinator;
   late final MainWindowTestHarness testHarness;
@@ -148,6 +151,7 @@ class MainWindowController {
     trackManager.addListener(_onTrackManagerChanged);
     actionCoordinator.bind();
     playbackCoordinator.startPolling();
+    _maybeStartAgentServer();
     _maybeStartTestRunner(testScriptPath);
   }
 
@@ -165,6 +169,9 @@ class MainWindowController {
 
   Future<void> _closeGracefullyImpl() async {
     stateStore.removeListener(_onStateChanged);
+    final agentServer = _agentServer;
+    _agentServer = null;
+    if (agentServer != null) await agentServer.dispose();
     actionCoordinator.dispose();
     playbackCoordinator.dispose();
     fullScreenCoordinator.dispose();

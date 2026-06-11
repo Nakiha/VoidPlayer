@@ -7,18 +7,34 @@ class StartupLoopRange {
 
 class StartupOptions {
   final StartupLoopRange? loopRange;
+
+  /// When set, the resident agent protocol server starts and writes its
+  /// loopback port and auth token to this file.
+  final String? agentConnectionFile;
   final List<String> warnings;
 
-  const StartupOptions({this.loopRange, this.warnings = const []});
+  const StartupOptions({
+    this.loopRange,
+    this.agentConnectionFile,
+    this.warnings = const [],
+  });
 
   static StartupOptions parse(List<String> args) {
     StartupLoopRange? loopRange;
+    String? agentConnectionFile;
     final warnings = <String>[];
 
     for (var i = 0; i < args.length; i++) {
       final arg = args[i];
       try {
-        if (arg.startsWith('--loop-range-us=')) {
+        if (arg.startsWith('--agent-connection-file=')) {
+          final value = arg.substring('--agent-connection-file='.length).trim();
+          if (value.isEmpty) {
+            warnings.add('Ignored empty --agent-connection-file');
+          } else {
+            agentConnectionFile = value;
+          }
+        } else if (arg.startsWith('--loop-range-us=')) {
           loopRange = _parseRange(
             arg.substring('--loop-range-us='.length),
             defaultUnit: _TimeUnit.microseconds,
@@ -42,7 +58,11 @@ class StartupOptions {
       }
     }
 
-    return StartupOptions(loopRange: loopRange, warnings: warnings);
+    return StartupOptions(
+      loopRange: loopRange,
+      agentConnectionFile: agentConnectionFile,
+      warnings: warnings,
+    );
   }
 }
 

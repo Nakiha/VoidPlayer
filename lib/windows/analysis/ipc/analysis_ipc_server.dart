@@ -5,8 +5,8 @@ import 'dart:math';
 
 import '../../../app_log.dart';
 import '../../../utils/async_guard.dart';
+import '../../../utils/bounded_line_splitter.dart';
 import 'analysis_ipc_models.dart';
-import 'bounded_line_splitter.dart';
 
 const Duration analysisIpcHandshakeTimeout = Duration(seconds: 5);
 

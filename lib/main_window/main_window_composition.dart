@@ -116,6 +116,24 @@ extension MainWindowComposition on MainWindowController {
     );
   }
 
+  void _maybeStartAgentServer() {
+    final connectionFilePath = startupOptions.agentConnectionFile;
+    if (connectionFilePath == null) return;
+    final server = AgentProtocolServer(
+      handler: MainWindowAgentHandler(
+        stateStore: stateStore,
+        trackManager: trackManager,
+        playbackCoordinator: playbackCoordinator,
+        quickMarkCoordinator: quickMarkCoordinator,
+      ),
+    );
+    _agentServer = server;
+    fireAndLog(
+      'start agent protocol server',
+      server.start(connectionFilePath: connectionFilePath),
+    );
+  }
+
   void _maybeStartTestRunner(String? path) {
     if (path == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {

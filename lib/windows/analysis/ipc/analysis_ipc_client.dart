@@ -6,8 +6,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../../app_log.dart';
 import '../../../utils/async_guard.dart';
+import '../../../utils/bounded_line_splitter.dart';
 import 'analysis_ipc_models.dart';
-import 'bounded_line_splitter.dart';
 
 class AnalysisIpcClient extends ChangeNotifier {
   final Socket _socket;

@@ -246,6 +246,15 @@ class MainWindowQuickMarkCoordinator {
   /// every loaded track with its lineage plus all in-memory marks including
   /// judgment fields. This is the outbound channel of the review loop.
   Future<Map<String, Object?>> buildMarksExportDocument() async {
+    return buildQuickMarkExportDocument(
+      media: await buildExportMedia(),
+      marks: _quickMarks,
+      generatedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  /// Describes every loaded track with its media hash and source lineage.
+  Future<List<QuickMarkExportMedia>> buildExportMedia() async {
     final entries = trackManager.entries;
     final media = <QuickMarkExportMedia>[];
     final catalog = StorageCatalog.defaultLocation();
@@ -262,11 +271,7 @@ class MainWindowQuickMarkCoordinator {
         ),
       );
     }
-    return buildQuickMarkExportDocument(
-      media: media,
-      marks: _quickMarks,
-      generatedAtMs: DateTime.now().millisecondsSinceEpoch,
-    );
+    return media;
   }
 
   Future<void> exportMarksToFile(String path) async {

@@ -255,11 +255,13 @@ bool D3D11Device::initialize_headless(IDXGIAdapter* adapter, int width, int heig
         }
         spdlog::warn(
             "[D3D11] VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1; "
-            "falling back to WARP for hosted CI headless smoke only");
+            "falling back to WARP without video support for hosted CI headless smoke only");
         device_.Reset();
         context_.Reset();
+        const UINT ci_fallback_flags =
+            create_device_flags & ~static_cast<UINT>(D3D11_CREATE_DEVICE_VIDEO_SUPPORT);
         if (!create_device(nullptr, D3D_DRIVER_TYPE_WARP,
-                           create_device_flags, obtained_level)) {
+                           ci_fallback_flags, obtained_level)) {
             spdlog::error("[D3D11] Failed to create fallback WARP headless device");
             return false;
         }

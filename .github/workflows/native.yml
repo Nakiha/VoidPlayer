@@ -218,11 +218,11 @@ jobs:
         shell: pwsh
         run: python scripts/dev/check_release_compliance.py
 
-      - name: Run Windows preservation gate
+      - name: Run Windows UI preservation smoke
         shell: pwsh
         env:
           VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER: "1"
-        run: python dev.py gate windows-preservation
+        run: python dev.py ui-test --build ui_tests/smoke/basic.csv
 
   macos-native-test:
     name: macOS native test

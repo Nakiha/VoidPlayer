@@ -333,14 +333,24 @@ void VPMacOSNativePlayer::record_presentation_failure_locked(
 }
 
 void VPMacOSNativePlayer::on_frame_failed(const char* error) {
+  uint64_t failure_count = 0;
+  int suppressed_refresh_count = 0;
+  std::string message = error ? std::string(error) : std::string();
   {
     std::lock_guard<std::mutex> callback_lock(callback_mutex);
     if (manual_refresh_callback_suppression_count > 0) {
       --manual_refresh_callback_suppression_count;
+      suppressed_refresh_count = 1;
     }
-    record_presentation_failure_locked(
-        error ? std::string(error) : std::string(), false);
+    record_presentation_failure_locked(message, false);
+    failure_count = renderer_owned_presentation_draw_failure_count;
+    message = renderer_owned_presentation_last_error;
   }
+  spdlog::warn(
+      "[MacOSFrameRefresh] frame_failed failures={} suppressed_manual_refresh={} error={}",
+      failure_count,
+      suppressed_refresh_count,
+      message);
   presentation_condition.notify_all();
 }
 

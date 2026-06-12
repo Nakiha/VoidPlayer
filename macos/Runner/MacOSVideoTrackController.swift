@@ -27,6 +27,10 @@ final class MacOSVideoTrackController {
     store.isEmpty
   }
 
+  var hasHDRTrack: Bool {
+    store.hasHDRTrack
+  }
+
   var currentDurationUs: Int {
     store.currentDurationUs
   }

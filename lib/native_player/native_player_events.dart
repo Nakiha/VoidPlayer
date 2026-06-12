@@ -5,7 +5,12 @@ import 'package:flutter/services.dart';
 import '../app_log.dart';
 import 'native_player_protocol.dart';
 
-enum NativePlayerEventType { seekPreviewPresented, trackError, unknown }
+enum NativePlayerEventType {
+  seekPreviewPresented,
+  trackError,
+  nativeCompositorState,
+  unknown,
+}
 
 class NativePlayerEvent {
   final int schemaVersion;
@@ -19,6 +24,12 @@ class NativePlayerEvent {
   final int? dtsUs;
   final int? targetPtsUs;
   final int? errorCode;
+  final bool nativeCompositorActive;
+  final bool nativeCompositorRequested;
+  final bool nativeCompositorEDREnabled;
+  final String nativeCompositorMode;
+  final String nativeCompositorReason;
+  final String nativeCompositorFailure;
 
   const NativePlayerEvent({
     required this.schemaVersion,
@@ -32,6 +43,12 @@ class NativePlayerEvent {
     this.dtsUs,
     this.targetPtsUs,
     this.errorCode,
+    this.nativeCompositorActive = false,
+    this.nativeCompositorRequested = false,
+    this.nativeCompositorEDREnabled = false,
+    this.nativeCompositorMode = '',
+    this.nativeCompositorReason = '',
+    this.nativeCompositorFailure = '',
   });
 
   bool get hasPresentedFrame =>
@@ -51,6 +68,7 @@ class NativePlayerEvent {
       type: switch (rawType) {
         'seekPreviewPresented' => NativePlayerEventType.seekPreviewPresented,
         'trackError' => NativePlayerEventType.trackError,
+        'nativeCompositorState' => NativePlayerEventType.nativeCompositorState,
         _ => NativePlayerEventType.unknown,
       },
       timestampUs: _asInt(map['timestampUs']) ?? 0,
@@ -60,6 +78,12 @@ class NativePlayerEvent {
       dtsUs: _asInt(map['dtsUs']),
       targetPtsUs: _asInt(map['targetPtsUs']),
       errorCode: _asInt(map['errorCode']),
+      nativeCompositorActive: _asBool(map['nativeCompositorActive']),
+      nativeCompositorRequested: _asBool(map['nativeCompositorRequested']),
+      nativeCompositorEDREnabled: _asBool(map['nativeCompositorEDREnabled']),
+      nativeCompositorMode: _asString(map['nativeCompositorMode']),
+      nativeCompositorReason: _asString(map['nativeCompositorReason']),
+      nativeCompositorFailure: _asString(map['nativeCompositorFailure']),
     );
   }
 
@@ -67,6 +91,16 @@ class NativePlayerEvent {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return null;
+  }
+
+  static bool _asBool(Object? value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    return false;
+  }
+
+  static String _asString(Object? value) {
+    return value is String ? value : '';
   }
 }
 

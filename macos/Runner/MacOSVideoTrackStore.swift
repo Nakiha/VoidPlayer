@@ -12,6 +12,15 @@ final class MacOSVideoTrackStore {
     tracks.isEmpty
   }
 
+  var hasHDRTrack: Bool {
+    tracks.contains { track in
+      let transfer = MacOSFlutterArguments.intValue(track["colorTransfer"]) ??
+        MacOSNativeColorTransfer.unknown
+      return transfer == MacOSNativeColorTransfer.pq ||
+        transfer == MacOSNativeColorTransfer.hlg
+    }
+  }
+
   func reset() {
     tracks.removeAll()
     currentDurationUs = 0

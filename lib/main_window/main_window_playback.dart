@@ -312,6 +312,18 @@ class MainWindowPlaybackCoordinator {
 
   void _handleNativePlayerEvent(NativePlayerEvent event) {
     if (_disposed || !mounted()) return;
+    if (event.type == NativePlayerEventType.nativeCompositorState) {
+      stateStore.setNativeCompositorActive(event.nativeCompositorActive);
+      if (event.nativeCompositorRequested &&
+          !event.nativeCompositorActive &&
+          event.nativeCompositorFailure.isNotEmpty) {
+        log.warning(
+          'Native compositor unavailable; using Flutter texture fallback: '
+          '${event.nativeCompositorFailure}',
+        );
+      }
+      return;
+    }
     if (event.type != NativePlayerEventType.seekPreviewPresented) return;
     final requestId = event.requestId;
     if (requestId == null || requestId != _seekSerial) return;

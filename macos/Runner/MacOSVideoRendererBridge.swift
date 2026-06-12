@@ -12,6 +12,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private weak var flutterEngine: FlutterEngine?
   private weak var contentView: NSView?
   private var nativeCompositor: MacOSNativeCompositorView?
+  private var lastNativeCompositorFailure = "not initialized"
   private let lifecycle: MacOSPlayerLifecycleController
   private let tracks = MacOSVideoTrackController()
   private let presentation = MacOSPresentationController()
@@ -408,6 +409,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nativePlayer: nativePlayer,
       textureDimensions: texture?.dimensions()
     )
+    refreshPresentationPolicyForCurrentTracks()
     if addResult.refreshCurrentFrame {
       presentation.refreshCurrentFrame(context: presentationContext())
     }
@@ -426,6 +428,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     if removeResult.destroyPlayer {
       destroyPlayer()
     } else if removeResult.refreshCurrentFrame {
+      refreshPresentationPolicyForCurrentTracks()
       presentation.refreshCurrentFrame(context: presentationContext())
     }
   }
@@ -442,6 +445,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     guard configuration.nativeCompositorEnabled else {
       nativeCompositor?.detach()
       nativeCompositor = nil
+      lastNativeCompositorFailure = "native compositor presentation mode is not enabled"
+      emitNativeCompositorState()
       return
     }
     let currentMode = nativeCompositor?.diagnostics()["macOSPresentationMode"] as? String
@@ -449,17 +454,69 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nativeCompositor?.diagnostics()["macOSPresentationReason"] as? String
     if currentMode == configuration.mode.rawValue &&
         currentReason == configuration.reason {
+      emitNativeCompositorState()
       return
     }
     nativeCompositor?.detach()
     nativeCompositor = nil
     guard let engine = flutterEngine,
-          let contentView,
-          let compositor = MacOSNativeCompositorView(engine: engine) else {
+          let contentView else {
+      lastNativeCompositorFailure = "Flutter engine or content view is unavailable"
+      emitNativeCompositorState()
+      return
+    }
+    guard let compositor = MacOSNativeCompositorView(engine: engine) else {
+      lastNativeCompositorFailure = "native compositor initialization failed"
+      emitNativeCompositorState()
       return
     }
     nativeCompositor = compositor
     compositor.attach(to: contentView)
+    lastNativeCompositorFailure = ""
+    nativeCompositor?.setVideoTexture(texture)
+    emitNativeCompositorState()
+  }
+
+  private func refreshPresentationPolicyForCurrentTracks() {
+    guard backendName == MacOSVideoTrackPayload.nativeFormatName else { return }
+    let nextConfiguration = MacOSPresentationConfiguration.resolve(
+      hasHDRTrack: tracks.hasHDRTrack
+    )
+    let previousConfiguration = MacOSPresentationConfiguration.current
+    guard nextConfiguration.mode != previousConfiguration.mode ||
+            nextConfiguration.reason != previousConfiguration.reason else {
+      return
+    }
+    MacOSPresentationConfiguration.updateCurrent(nextConfiguration)
+    NSLog(
+      "VoidPlayer macOS presentation policy: request=%@ mode=%@ reason=%@ hdrTrack=%@",
+      nextConfiguration.request,
+      nextConfiguration.mode.rawValue,
+      nextConfiguration.reason,
+      tracks.hasHDRTrack ? "true" : "false"
+    )
+    if let nativeTexture {
+      let pixelFormatChanged = nativeTexture.setRendererTargetPixelFormat(
+        nextConfiguration.rendererTargetPixelFormat,
+        player: nativePlayer
+      )
+      if pixelFormatChanged {
+        playback.setTargetInstalled(false)
+      }
+    }
+    ensureNativeCompositorMatchesCurrentConfiguration()
+  }
+
+  private func emitNativeCompositorState() {
+    let configuration = MacOSPresentationConfiguration.current
+    nativeEvents.emitNativeCompositorState(
+      active: nativeCompositor != nil,
+      requested: configuration.nativeCompositorEnabled,
+      edrEnabled: configuration.edrOutputEnabled,
+      mode: configuration.mode.rawValue,
+      reason: configuration.reason,
+      failure: nativeCompositor == nil ? lastNativeCompositorFailure : ""
+    )
   }
 
   private func frameCallbackDiagnostics() -> [String: Any] {
@@ -669,6 +726,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
     nativeEvents.onListen(events)
+    emitNativeCompositorState()
     return nil
   }
 

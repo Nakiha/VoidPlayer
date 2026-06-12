@@ -17,6 +17,7 @@ MACOS_UI_SMOKE = [
 
 MACOS_HDR_EDR_SMOKE = [
     "ui_tests/macos/native_compositor_auto_hlg_policy_smoke.csv",
+    "ui_tests/macos/native_compositor_add_hlg_promotes_edr_smoke.csv",
 ]
 
 MACOS_UI_NIGHTLY = [

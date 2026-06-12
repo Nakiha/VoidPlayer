@@ -48,6 +48,37 @@ final class MacOSNativeEventState {
     }
   }
 
+  func emitNativeCompositorState(
+    active: Bool,
+    requested: Bool,
+    edrEnabled: Bool,
+    mode: String,
+    reason: String,
+    failure: String
+  ) {
+    guard let eventSink else {
+      dropNoSinkCount += 1
+      return
+    }
+    sequence += 1
+    emitCount += 1
+    let payload: [String: Any] = [
+      "schemaVersion": 1,
+      "sequence": sequence,
+      "type": "nativeCompositorState",
+      "timestampUs": Int(Date().timeIntervalSince1970 * 1_000_000),
+      "nativeCompositorActive": active,
+      "nativeCompositorRequested": requested,
+      "nativeCompositorEDREnabled": edrEnabled,
+      "nativeCompositorMode": mode,
+      "nativeCompositorReason": reason,
+      "nativeCompositorFailure": failure,
+    ]
+    DispatchQueue.main.async {
+      eventSink(payload)
+    }
+  }
+
   func diagnosticMap() -> [String: Any] {
     [
       "nativeEventListenCount": listenCount,

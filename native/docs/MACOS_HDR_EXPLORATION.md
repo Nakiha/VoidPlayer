@@ -147,7 +147,9 @@ python3.12 dev.py gate macos-release-readiness
 python dev.py gate windows-preservation
 ```
 
-`macos-hdr-edr-smoke` requires an EDR-capable local display. The GitHub-hosted
+`macos-hdr-edr-smoke` requires an EDR-capable local display and covers both
+initial HLG Auto promotion and adding an HLG track to an already-created SDR
+session. The GitHub-hosted
 Windows UI preservation workflow is useful merge evidence, but it runs with
 documented CI-only fallbacks because hosted Windows does not expose the same GPU
 shape as a real desktop release machine. A local Windows preservation run remains

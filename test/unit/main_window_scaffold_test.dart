@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -126,6 +128,55 @@ void main() {
     expect(find.byTooltip('Cancel mark selection'), findsOneWidget);
     expect(find.byTooltip('Delete selected marks'), findsOneWidget);
   });
+
+  testWidgets(
+    'native compositor hole waits for runtime compositor activation',
+    (tester) async {
+      if (!Platform.isMacOS) return;
+      final feedback = AppFeedbackController();
+      addTearDown(feedback.dispose);
+
+      await tester.pumpWidget(
+        _localized(
+          AppFeedbackScope(
+            controller: feedback,
+            child: MainWindowScaffold(
+              model: _model(
+                settingsVisible: false,
+                textureId: 7,
+                viewportState: const ViewportDisplayState.active(),
+                nativeCompositorActive: false,
+              ),
+              handles: _handles(),
+              actions: _noop,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(Texture), findsOneWidget);
+
+      await tester.pumpWidget(
+        _localized(
+          AppFeedbackScope(
+            controller: feedback,
+            child: MainWindowScaffold(
+              model: _model(
+                settingsVisible: false,
+                textureId: 7,
+                viewportState: const ViewportDisplayState.active(),
+                nativeCompositorActive: true,
+              ),
+              handles: _handles(),
+              actions: _noop,
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(Texture), findsNothing);
+    },
+  );
 
   testWidgets('marks sidebar row tap jumps to mark', (tester) async {
     final feedback = AppFeedbackController();
@@ -385,6 +436,9 @@ MainWindowViewHandles _handles() => MainWindowViewHandles(
 
 MainWindowViewModel _model({
   required bool settingsVisible,
+  int? textureId,
+  ViewportDisplayState viewportState = const ViewportDisplayState.empty(),
+  bool nativeCompositorActive = false,
   bool marksSidebarVisible = false,
   bool analysisOverlayControlsVisible = false,
   List<TrackEntry> tracks = const [],
@@ -396,8 +450,9 @@ MainWindowViewModel _model({
   viewport: MainWindowViewportVm(
     viewMode: 0,
     viewModeEnabled: true,
-    textureId: null,
-    viewportState: const ViewportDisplayState.empty(),
+    textureId: textureId,
+    nativeCompositorActive: nativeCompositorActive,
+    viewportState: viewportState,
     layout: const LayoutState(),
     tracks: tracks
         .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))

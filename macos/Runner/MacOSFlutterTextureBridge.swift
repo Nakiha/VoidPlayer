@@ -58,7 +58,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private let lock = NSLock()
   private(set) var width: Int
   private(set) var height: Int
-  private let pixelFormat: OSType
+  private var pixelFormat: OSType
   private let presentationTarget: MacOSNativeMetalPresentationTarget
   private let hashPrefix: String
   private var pixelBuffers: [CVPixelBuffer] = []
@@ -317,6 +317,22 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     defer { lock.unlock() }
 
     return (width: width, height: height)
+  }
+
+  func setRendererTargetPixelFormat(
+    _ nextPixelFormat: OSType,
+    player: MacOSNativePlayerSession?
+  ) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+
+    guard pixelFormat != nextPixelFormat else { return false }
+    player?.clearMetalPresentationTarget()
+    nativeTargetPlayer = nil
+    resizeFallbackDisplayBuffer = nil
+    pixelFormat = nextPixelFormat
+    rebuildPixelBuffersLocked()
+    return true
   }
 
   func presentationGeneration() -> Int {

@@ -442,6 +442,17 @@ int request_renderer_owned_frame_refresh(
       ++player->manual_refresh_callback_suppression_count;
     }
   }
+  const bool log_manual_refresh = refresh_min_pts_us >= 0;
+  if (log_manual_refresh) {
+    spdlog::info(
+        "[MacOSFrameRefresh] begin min_pts_us={} timeout_ms={} baseline_upload={} "
+        "target_generation={} suppress_callback={}",
+        refresh_min_pts_us,
+        bounded_timeout_ms,
+        baseline_upload_count,
+        baseline_target_generation,
+        suppress_frame_callback);
+  }
 
   auto trigger_renderer_refresh = [&]() -> bool {
     std::string message;
@@ -601,6 +612,20 @@ int request_renderer_owned_frame_refresh(
           out->pts_us,
           refresh_clock_us);
     }
+    if (log_manual_refresh) {
+      spdlog::info(
+          "[MacOSFrameRefresh] presented pts_us={} dts_us={} duration_us={} "
+          "clock_us={} min_pts_us={} elapsed_ms={} attempts={} upload={}->{}",
+          out->pts_us,
+          out->dts_us,
+          out->duration_us,
+          refresh_clock_us,
+          refresh_min_pts_us,
+          elapsed_ms,
+          refresh_attempts,
+          baseline_upload_count,
+          player->renderer_owned_presentation_upload_count);
+    }
     write_error(error, error_size, "");
     return 0;
   }
@@ -617,6 +642,16 @@ int request_renderer_owned_frame_refresh(
           player->renderer_owned_presentation_draw_failure_count,
           player->renderer_owned_presentation_last_error);
     }
+    spdlog::warn(
+        "[MacOSFrameRefresh] draw_failed elapsed_ms={} timeout_ms={} attempts={} "
+        "min_pts_us={} baseline_upload={} upload={} error={}",
+        elapsed_ms,
+        bounded_timeout_ms,
+        refresh_attempts,
+        refresh_min_pts_us,
+        baseline_upload_count,
+        player->renderer_owned_presentation_upload_count,
+        player->renderer_owned_presentation_last_error);
     write_error(error, error_size,
                 player->renderer_owned_presentation_last_error.empty()
                     ? "renderer-owned Metal frame refresh failed"
@@ -638,6 +673,21 @@ int request_renderer_owned_frame_refresh(
         player->renderer_owned_presentation_draw_failure_count,
         refresh_clock_us);
   }
+  spdlog::warn(
+      "[MacOSFrameRefresh] timeout elapsed_ms={} timeout_ms={} attempts={} "
+      "min_pts_us={} clock_us={} baseline_upload={} upload={} baseline_failure={} "
+      "failures={} deferred_by_backpressure={} last_backpressure_error={}",
+      elapsed_ms,
+      bounded_timeout_ms,
+      refresh_attempts,
+      refresh_min_pts_us,
+      refresh_clock_us,
+      baseline_upload_count,
+      player->renderer_owned_presentation_upload_count,
+      baseline_draw_failure_count,
+      player->renderer_owned_presentation_draw_failure_count,
+      refresh_deferred_by_backpressure,
+      last_refresh_backpressure_error);
   if (refresh_deferred_by_backpressure &&
       !last_refresh_backpressure_error.empty()) {
     write_error(error, error_size, last_refresh_backpressure_error);

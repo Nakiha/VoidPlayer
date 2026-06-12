@@ -272,6 +272,15 @@ void VPMacOSNativePlayer::on_frame_available(
       --manual_refresh_callback_suppression_count;
       suppress_external_callback = true;
     }
+    if (suppress_external_callback) {
+      spdlog::info(
+          "[MacOSFrameRefresh] frame_available pts_us={} upload_count={} layout_revision={} "
+          "target_buffer=0x{:x}",
+          pts_us,
+          upload_count,
+          last_renderer_owned_layout_revision,
+          last_renderer_owned_frame_info.target_pixel_buffer_address);
+    }
     if (!suppress_external_callback) {
       callback = frame_available_callback;
       user_data = frame_available_user_data;

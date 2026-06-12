@@ -195,8 +195,13 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "getLayout":
       result(presentation.layout)
     case "applyLayout":
-      presentation.applyLayout(arguments: call.arguments, context: presentationContext())
-      result(nil)
+      presentation.applyLayout(arguments: call.arguments, context: presentationContext()) { outcome in
+        MacOSProfilerLog.traceEvent(String(
+          format: "VoidPlayer viewport trace swift event=apply-layout-result outcome=%@",
+          outcome
+        ))
+        result(nil)
+      }
     case "getTracks":
       result(tracks.tracks)
     case "pickFiles":

@@ -33,6 +33,11 @@ enum MacOSProfilerLog {
     }
     NSLog("%@", message())
   }
+
+  static func traceEvent(_ message: @autoclosure () -> String) {
+    guard traceEnabled else { return }
+    NSLog("%@", message())
+  }
 }
 
 final class MacOSRateWindow {

@@ -214,6 +214,23 @@ final class MacOSNativeCompositorView: NSView {
       viewportLayoutFlags = nextFlags
       if changed {
         viewportTransformGeneration &+= 1
+        let message = String(
+          format: "VoidPlayer viewport trace swift event=compositor-transform enabled=%d generation=%llu scale=(%.4f,%.4f) translate=(%.4f,%.4f) mode=%d split=%.4f tracks=%d",
+          enabled ? 1 : 0,
+          viewportTransformGeneration,
+          nextTransform.x,
+          nextTransform.y,
+          nextTransform.z,
+          nextTransform.w,
+          mode,
+          safeSplit,
+          activeTrackCount
+        )
+        if enabled {
+          MacOSProfilerLog.trace(message)
+        } else {
+          MacOSProfilerLog.traceEvent(message)
+        }
         markCompositorDirty()
       }
     }

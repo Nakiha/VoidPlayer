@@ -88,6 +88,8 @@ jobs:
         run: PYTHON=python3.12 scripts/ci/bootstrap_flutter_toolchain.sh
 
       - name: Bootstrap pinned macOS Flutter engine
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: scripts/ci/bootstrap_flutter_macos_engine.sh
 
       - name: Run macOS UI gate

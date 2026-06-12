@@ -88,6 +88,12 @@ codec hook files/headers. When H.264/HEVC/VVC hook code changes, the next build
 forces a clean analyzer rebuild so stale object files do not leave an old tool
 beside a freshly built runner.
 
+GitHub-hosted Windows UI preservation may set
+`VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER=1` to run the basic playback smoke
+without building this out-of-band tool. That escape hatch is only for smoke
+tests that do not open analysis overlay; release/package builds and analysis
+gates should leave it unset so a missing analyzer remains a hard failure.
+
 The current configure shape is:
 
 ```bash

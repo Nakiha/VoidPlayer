@@ -220,6 +220,8 @@ jobs:
 
       - name: Run Windows preservation gate
         shell: pwsh
+        env:
+          VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER: "1"
         run: python dev.py gate windows-preservation
 
   macos-native-test:

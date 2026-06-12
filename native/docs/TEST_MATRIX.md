@@ -116,7 +116,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | --- | --- | --- |
 | `.github/workflows/native.yml` | push / PR | native PR fast, macOS native fast, macOS runner build, macOS analysis smoke |
 | `.github/workflows/native.yml` | weekly or manual `full_matrix=true` | full Windows native config matrix |
-| `.github/workflows/native.yml` | manual `windows_ui_preservation=true` | `python dev.py gate windows-preservation` on GitHub-hosted Windows |
+| `.github/workflows/native.yml` | manual `windows_ui_preservation=true` | `python dev.py gate windows-preservation` on GitHub-hosted Windows; skips analyzer tool bundling because `ui_tests/smoke/basic.csv` does not cover analysis overlay |
 | `.github/workflows/macos-ui.yml` | weekly | `python3.12 dev.py gate macos-ui-smoke` |
 | `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
 | Local HDR EDR gate | manual on EDR-capable macOS display before merging HDR compositor changes | `python3.12 dev.py gate macos-hdr-edr-smoke` |

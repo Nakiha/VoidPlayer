@@ -126,6 +126,14 @@ The local `release-candidate` gate and the GitHub full native config matrix are
 separate pieces of release evidence: run both when preparing a release
 candidate.
 
+For the macOS HDR/native-compositor merge, treat these as the minimum merge
+evidence set: `toolchain doctor`, macOS local-engine bootstrap, `pr-fast`,
+`macos-ui-smoke`, local `macos-hdr-edr-smoke` on an EDR-capable display,
+`macos-release-readiness`, Windows preservation, and green GitHub Flutter/Native
+checks. The GitHub-hosted Windows UI preservation job may use documented
+CI-only adapter fallbacks; do not treat that fallback as release coverage for a
+real Windows desktop GPU.
+
 ## Rules
 
 - Do not add `ui_tests/local/**` to CI.

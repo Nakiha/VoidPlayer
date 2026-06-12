@@ -3,7 +3,7 @@
 VoidPlayer pins build-critical external tools with lock files in this directory.
 
 `flutter.lock.json` is the source of truth for the Flutter SDK fork required by
-HDR/native-compositor exploration builds. Dev commands that invoke Flutter check
+HDR/native-compositor builds. Dev commands that invoke Flutter check
 the active SDK against this lock before building or testing.
 
 `FLUTTER_FORK_PATCHES.md` records the fork patch inventory and upgrade flow.

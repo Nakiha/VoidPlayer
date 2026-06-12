@@ -140,6 +140,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "setNativeCompositorViewportTransform":
       setNativeCompositorViewportTransform(arguments: call.arguments)
       result(nil)
+    case "prepareNativeCompositorSourceCache":
+      prepareNativeCompositorSourceCache(arguments: call.arguments)
+      result(nil)
+    case "clearNativeCompositorSourceCache":
+      clearNativeCompositorSourceCache(arguments: call.arguments)
+      result(nil)
     case "play":
       playback.play(
         player: nativePlayer,
@@ -326,6 +332,142 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       splitPos: MacOSFlutterArguments.doubleArg(arguments, "splitPos") ?? 0.5,
       activeTrackCount: MacOSFlutterArguments.intArg(arguments, "activeTrackCount") ?? 1
     )
+  }
+
+  private func prepareNativeCompositorSourceCache(arguments: Any?) {
+    guard let nativeCompositor else { return }
+    guard let player = nativePlayer else {
+      nativeCompositor.setSourceCache(textures: [], order: [], error: "native player unavailable")
+      return
+    }
+    let sourceSlots = MacOSFlutterArguments.intListArg(arguments, "sourceSlots")
+    let sourceOrder = MacOSFlutterArguments.intListArg(arguments, "sourceOrder")
+    let displayOffsetX = MacOSFlutterArguments.doubleListArg(arguments, "displayOffsetX")
+    let displayOffsetY = MacOSFlutterArguments.doubleListArg(arguments, "displayOffsetY")
+    let invDisplaySizeX = MacOSFlutterArguments.doubleListArg(arguments, "invDisplaySizeX")
+    let invDisplaySizeY = MacOSFlutterArguments.doubleListArg(arguments, "invDisplaySizeY")
+    let viewOffsetUvX = MacOSFlutterArguments.doubleListArg(arguments, "viewOffsetUvX")
+    let viewOffsetUvY = MacOSFlutterArguments.doubleListArg(arguments, "viewOffsetUvY")
+    let trackPayloads = tracks.tracks
+    if trackPayloads.isEmpty || sourceSlots.isEmpty {
+      nativeCompositor.setSourceCache(textures: [], order: sourceOrder, error: "no source tracks")
+      return
+    }
+
+    let outputPixelFormat = MacOSPresentationConfiguration.current.edrOutputEnabled
+      ? kCVPixelFormatType_64RGBAHalf
+      : kCVPixelFormatType_32BGRA
+    let maxBytes = 384 * 1024 * 1024
+    let attributes = [
+      kCVPixelBufferCGImageCompatibilityKey as String: true,
+      kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+      kCVPixelBufferMetalCompatibilityKey as String: true,
+      kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+    ] as CFDictionary
+
+    struct PendingSource {
+      let texture: MacOSNativeCompositorSourceTexture
+      var target: VPMacOSNativeSourceFrameBakeTarget
+    }
+
+    var pending: [PendingSource] = []
+    var totalBytes = 0
+    for payload in trackPayloads {
+      guard let slot = payload["slot"] as? Int,
+            sourceSlots.contains(slot),
+            let fileId = payload["fileId"] as? Int,
+            let width = payload["width"] as? Int,
+            let height = payload["height"] as? Int,
+            width > 0,
+            height > 0 else {
+        continue
+      }
+      let estimatedBytes = width * height * (outputPixelFormat == kCVPixelFormatType_64RGBAHalf ? 8 : 4)
+      if totalBytes + estimatedBytes > maxBytes {
+        nativeCompositor.setSourceCache(
+          textures: [],
+          order: sourceOrder,
+          error: "source cache memory cap exceeded"
+        )
+        return
+      }
+      var pixelBuffer: CVPixelBuffer?
+      let status = CVPixelBufferCreate(
+        kCFAllocatorDefault,
+        width,
+        height,
+        outputPixelFormat,
+        attributes,
+        &pixelBuffer
+      )
+      guard status == kCVReturnSuccess, let pixelBuffer else {
+        nativeCompositor.setSourceCache(
+          textures: [],
+          order: sourceOrder,
+          error: "failed to allocate source cache pixel buffer"
+        )
+        return
+      }
+      totalBytes += CVPixelBufferGetBytesPerRow(pixelBuffer) *
+        CVPixelBufferGetHeight(pixelBuffer)
+      let projectionIndex = slot
+      let texture = MacOSNativeCompositorSourceTexture(
+        pixelBuffer: pixelBuffer,
+        sourceSlot: slot,
+        fileId: fileId,
+        width: width,
+        height: height,
+        displayOffsetX: Float(doubleAt(displayOffsetX, projectionIndex)),
+        displayOffsetY: Float(doubleAt(displayOffsetY, projectionIndex)),
+        invDisplaySizeX: Float(doubleAt(invDisplaySizeX, projectionIndex)),
+        invDisplaySizeY: Float(doubleAt(invDisplaySizeY, projectionIndex)),
+        viewOffsetUvX: Float(doubleAt(viewOffsetUvX, projectionIndex)),
+        viewOffsetUvY: Float(doubleAt(viewOffsetUvY, projectionIndex))
+      )
+      var target = VPMacOSNativeSourceFrameBakeTarget()
+      target.pixel_buffer = UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque())
+      target.source_slot = Int32(slot)
+      target.source_file_id = Int32(fileId)
+      target.width = Int32(width)
+      target.height = Int32(height)
+      target.drawn = 0
+      VPMacOSNativeFrameInfoInit(&target.frame_info)
+      pending.append(PendingSource(texture: texture, target: target))
+    }
+
+    guard !pending.isEmpty else {
+      nativeCompositor.setSourceCache(textures: [], order: sourceOrder, error: "no source cache targets")
+      return
+    }
+    let maxWidth = pending.map { $0.texture.width }.max() ?? 1
+    let maxHeight = pending.map { $0.texture.height }.max() ?? 1
+    let bakeTarget = MacOSNativeMetalPresentationTarget(width: maxWidth, height: maxHeight)
+    var nativeTargets = pending.map { $0.target }
+    let result = nativeTargets.withUnsafeMutableBufferPointer { buffer in
+      bakeTarget.bakeCurrentFrameSources(player: player, targets: buffer)
+    }
+    if result.drawnCount <= 0 {
+      nativeCompositor.setSourceCache(textures: [], order: sourceOrder, error: result.error)
+      return
+    }
+    var bakedTextures: [MacOSNativeCompositorSourceTexture] = []
+    for index in pending.indices {
+      if nativeTargets[index].drawn != 0 {
+        bakedTextures.append(pending[index].texture)
+      }
+    }
+    nativeCompositor.setSourceCache(textures: bakedTextures, order: sourceOrder)
+  }
+
+  private func clearNativeCompositorSourceCache(arguments: Any?) {
+    nativeCompositor?.clearSourceCache(
+      reason: MacOSFlutterArguments.stringArg(arguments, "reason") ?? "clear requested"
+    )
+  }
+
+  private func doubleAt(_ values: [Double], _ index: Int) -> Double {
+    guard values.indices.contains(index) else { return 0.0 }
+    return values[index]
   }
 
   private func currentPresentedFrame(arguments: Any?) -> Any? {

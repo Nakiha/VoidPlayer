@@ -44,6 +44,17 @@ abstract interface class NativePlayerApi {
     required double splitPos,
     required int activeTrackCount,
   });
+  Future<void> prepareNativeCompositorSourceCache({
+    required List<int> sourceSlots,
+    required List<int> sourceOrder,
+    required List<double> displayOffsetX,
+    required List<double> displayOffsetY,
+    required List<double> invDisplaySizeX,
+    required List<double> invDisplaySizeY,
+    required List<double> viewOffsetUvX,
+    required List<double> viewOffsetUvY,
+  });
+  Future<void> clearNativeCompositorSourceCache({required String reason});
   Future<void> setViewportBackgroundColor(int colorValue);
   Future<ViewportCapture> captureViewport({String? outputPath});
   Future<ViewportCapture> captureViewportRegion({
@@ -220,6 +231,40 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
         NativePlayerKeys.splitPos: splitPos,
         NativePlayerKeys.activeTrackCount: activeTrackCount,
       },
+    );
+  }
+
+  @override
+  Future<void> prepareNativeCompositorSourceCache({
+    required List<int> sourceSlots,
+    required List<int> sourceOrder,
+    required List<double> displayOffsetX,
+    required List<double> displayOffsetY,
+    required List<double> invDisplaySizeX,
+    required List<double> invDisplaySizeY,
+    required List<double> viewOffsetUvX,
+    required List<double> viewOffsetUvY,
+  }) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.prepareNativeCompositorSourceCache,
+      {
+        NativePlayerKeys.sourceSlots: sourceSlots,
+        NativePlayerKeys.sourceOrder: sourceOrder,
+        NativePlayerKeys.displayOffsetX: displayOffsetX,
+        NativePlayerKeys.displayOffsetY: displayOffsetY,
+        NativePlayerKeys.invDisplaySizeX: invDisplaySizeX,
+        NativePlayerKeys.invDisplaySizeY: invDisplaySizeY,
+        NativePlayerKeys.viewOffsetUvX: viewOffsetUvX,
+        NativePlayerKeys.viewOffsetUvY: viewOffsetUvY,
+      },
+    );
+  }
+
+  @override
+  Future<void> clearNativeCompositorSourceCache({required String reason}) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.clearNativeCompositorSourceCache,
+      {NativePlayerKeys.reason: reason},
     );
   }
 

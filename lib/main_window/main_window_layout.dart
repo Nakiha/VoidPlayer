@@ -14,9 +14,6 @@ import 'main_window_state.dart';
 
 class MainWindowLayoutCoordinator {
   static const Duration viewportResizeDebounce = Duration(milliseconds: 80);
-  static const Duration nativeCompositorTransformFlushInterval = Duration(
-    milliseconds: 120,
-  );
   static const double timelineTrackRowLogicalHeight = 40.0;
 
   final TickerProvider vsync;
@@ -34,7 +31,6 @@ class MainWindowLayoutCoordinator {
   Future<void>? _preemptResizeFuture;
   int? _queuedPreemptWidth;
   int? _queuedPreemptHeight;
-  Timer? _nativeCompositorTransformFlushTimer;
   bool _nativeCompositorTransformActive = false;
   int _nativeCompositorTransformGeneration = 0;
   double _nativeCompositorSampleScaleX = 1.0;
@@ -69,7 +65,6 @@ class MainWindowLayoutCoordinator {
   void dispose() {
     _disposed = true;
     _resizeDebounceTimer?.cancel();
-    _nativeCompositorTransformFlushTimer?.cancel();
     _ticker?.dispose();
     _ticker = null;
   }
@@ -136,7 +131,10 @@ class MainWindowLayoutCoordinator {
       (layout) =>
           layout.copyWith(viewOffsetX: nextOffsetX, viewOffsetY: nextOffsetY),
     );
-    final transformed = _updateNativeCompositorPanTransform(Offset(dx, dy));
+    final transformed = _updateNativeCompositorPanTransform(
+      Offset(dx, dy),
+      baseLayout: current,
+    );
     markLayoutDirty(deferNativeCompositorFlush: transformed);
   }
 
@@ -166,6 +164,7 @@ class MainWindowLayoutCoordinator {
       final transformed = _updateNativeCompositorZoomTransform(
         actualFactor: newZoom / currentLayout.zoomRatio,
         physicalLocalPosition: localPos,
+        baseLayout: currentLayout,
       );
       markLayoutDirty(deferNativeCompositorFlush: transformed);
       return;
@@ -213,6 +212,7 @@ class MainWindowLayoutCoordinator {
     final transformed = _updateNativeCompositorZoomTransform(
       actualFactor: actualFactor,
       physicalLocalPosition: localPos,
+      baseLayout: currentLayout,
     );
     markLayoutDirty(deferNativeCompositorFlush: transformed);
   }
@@ -493,7 +493,6 @@ class MainWindowLayoutCoordinator {
     if (_disposed) return;
     _layoutDirty = true;
     if (deferNativeCompositorFlush) {
-      _scheduleNativeCompositorViewportTransformFlush();
       return;
     }
     _startTicker();
@@ -576,16 +575,20 @@ class MainWindowLayoutCoordinator {
             layout().mode == LayoutMode.splitScreen);
   }
 
-  void _ensureNativeCompositorViewportTransform() {
+  void _ensureNativeCompositorViewportTransform({LayoutState? baseLayout}) {
     if (_nativeCompositorTransformActive) return;
     _nativeCompositorTransformActive = true;
     _nativeCompositorSampleScaleX = 1.0;
     _nativeCompositorSampleScaleY = 1.0;
     _nativeCompositorSampleTranslateX = 0.0;
     _nativeCompositorSampleTranslateY = 0.0;
+    _prepareNativeCompositorSourceCache(baseLayout ?? layout());
   }
 
-  bool _updateNativeCompositorPanTransform(Offset physicalDelta) {
+  bool _updateNativeCompositorPanTransform(
+    Offset physicalDelta, {
+    LayoutState? baseLayout,
+  }) {
     if (!_canUseNativeCompositorViewportTransform) {
       _cancelNativeCompositorViewportTransform();
       return false;
@@ -595,7 +598,7 @@ class MainWindowLayoutCoordinator {
         : 1;
     final slotWidth = viewportWidth / activeTracks;
     if (slotWidth <= 0 || viewportHeight <= 0) return false;
-    _ensureNativeCompositorViewportTransform();
+    _ensureNativeCompositorViewportTransform(baseLayout: baseLayout);
     _nativeCompositorSampleTranslateX -=
         _nativeCompositorSampleScaleX * physicalDelta.dx / slotWidth;
     _nativeCompositorSampleTranslateY -=
@@ -607,6 +610,7 @@ class MainWindowLayoutCoordinator {
   bool _updateNativeCompositorZoomTransform({
     required double actualFactor,
     required Offset physicalLocalPosition,
+    LayoutState? baseLayout,
   }) {
     if (!_canUseNativeCompositorViewportTransform ||
         actualFactor <= 0 ||
@@ -622,7 +626,7 @@ class MainWindowLayoutCoordinator {
         : 1;
     final slotWidth = viewportWidth / activeTracks;
     if (slotWidth <= 0 || viewportHeight <= 0) return false;
-    _ensureNativeCompositorViewportTransform();
+    _ensureNativeCompositorViewportTransform(baseLayout: baseLayout);
     final slotIndex = (physicalLocalPosition.dx / slotWidth).floor().clamp(
       0,
       activeTracks - 1,
@@ -646,6 +650,68 @@ class MainWindowLayoutCoordinator {
     return true;
   }
 
+  void _prepareNativeCompositorSourceCache(LayoutState baseLayout) {
+    if (!_canUseNativeCompositorViewportTransform) return;
+    final entries = tracks();
+    if (entries.isEmpty) return;
+    final trackGeometry = entries
+        .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
+        .toList();
+    final projection = computeViewportLayoutProjection(
+      viewportWidth: viewportWidth,
+      viewportHeight: viewportHeight,
+      layout: baseLayout,
+      tracks: trackGeometry,
+    );
+    final sourceSlots = <int>[];
+    final sourceOrder = List<int>.filled(4, 0);
+    final displayOffsetX = List<double>.filled(4, 0.0);
+    final displayOffsetY = List<double>.filled(4, 0.0);
+    final invDisplaySizeX = List<double>.filled(4, 0.0);
+    final invDisplaySizeY = List<double>.filled(4, 0.0);
+    final viewOffsetUvX = List<double>.filled(4, 0.0);
+    final viewOffsetUvY = List<double>.filled(4, 0.0);
+    final entriesByFileId = {for (final entry in entries) entry.fileId: entry};
+
+    for (final entry in entries) {
+      final slot = entry.slot;
+      if (slot < 0 || slot >= 4) continue;
+      final trackProjection = projection.projectionForFileId(entry.fileId);
+      if (trackProjection == null) continue;
+      sourceSlots.add(slot);
+      displayOffsetX[slot] = trackProjection.displayOffsetX;
+      displayOffsetY[slot] = trackProjection.displayOffsetY;
+      invDisplaySizeX[slot] = trackProjection.invDisplaySizeX;
+      invDisplaySizeY[slot] = trackProjection.invDisplaySizeY;
+      viewOffsetUvX[slot] = trackProjection.viewOffsetUvX;
+      viewOffsetUvY[slot] = trackProjection.viewOffsetUvY;
+    }
+    for (
+      var index = 0;
+      index < projection.orderedTracks.length && index < 4;
+      index++
+    ) {
+      final entry = entriesByFileId[projection.orderedTracks[index].fileId];
+      if (entry != null && entry.slot >= 0 && entry.slot < 4) {
+        sourceOrder[index] = entry.slot;
+      }
+    }
+    if (sourceSlots.isEmpty) return;
+    fireAndLog(
+      'prepare native compositor source cache',
+      controller.prepareNativeCompositorSourceCache(
+        sourceSlots: sourceSlots,
+        sourceOrder: sourceOrder,
+        displayOffsetX: displayOffsetX,
+        displayOffsetY: displayOffsetY,
+        invDisplaySizeX: invDisplaySizeX,
+        invDisplaySizeY: invDisplaySizeY,
+        viewOffsetUvX: viewOffsetUvX,
+        viewOffsetUvY: viewOffsetUvY,
+      ),
+    );
+  }
+
   void _publishNativeCompositorViewportTransform() {
     if (!_nativeCompositorTransformActive || _disposed) return;
     _nativeCompositorTransformGeneration += 1;
@@ -665,34 +731,13 @@ class MainWindowLayoutCoordinator {
     );
   }
 
-  void _scheduleNativeCompositorViewportTransformFlush() {
-    if (!_nativeCompositorTransformActive) return;
-    if (_nativeCompositorTransformFlushTimer != null) return;
-    _nativeCompositorTransformFlushTimer = Timer(
-      nativeCompositorTransformFlushInterval,
-      _flushNativeCompositorViewportTransformInteraction,
-    );
-  }
-
-  void _flushNativeCompositorViewportTransformInteraction() {
-    _nativeCompositorTransformFlushTimer?.cancel();
-    _nativeCompositorTransformFlushTimer = null;
-    if (_nativeCompositorTransformActive && _layoutDirty) {
-      _startTicker();
-    }
-  }
-
   void _finishNativeCompositorViewportTransformInteraction() {
-    _nativeCompositorTransformFlushTimer?.cancel();
-    _nativeCompositorTransformFlushTimer = null;
     if (_nativeCompositorTransformActive && _layoutDirty) {
       _startTicker();
     }
   }
 
   void _cancelNativeCompositorViewportTransform() {
-    _nativeCompositorTransformFlushTimer?.cancel();
-    _nativeCompositorTransformFlushTimer = null;
     if (!_nativeCompositorTransformActive) return;
     _nativeCompositorTransformActive = false;
     _nativeCompositorSampleScaleX = 1.0;
@@ -711,6 +756,12 @@ class MainWindowLayoutCoordinator {
         mode: layout().mode,
         splitPos: layout().splitPos,
         activeTrackCount: trackCount(),
+      ),
+    );
+    fireAndLog(
+      'clear native compositor source cache',
+      controller.clearNativeCompositorSourceCache(
+        reason: 'transform cancelled',
       ),
     );
   }
@@ -740,14 +791,18 @@ class MainWindowLayoutCoordinator {
 
   void _resetNativeCompositorViewportTransformAfterAuthoritativeLayout() {
     if (!_nativeCompositorTransformActive) return;
-    _nativeCompositorTransformFlushTimer?.cancel();
-    _nativeCompositorTransformFlushTimer = null;
     _nativeCompositorTransformActive = false;
     _nativeCompositorSampleScaleX = 1.0;
     _nativeCompositorSampleScaleY = 1.0;
     _nativeCompositorSampleTranslateX = 0.0;
     _nativeCompositorSampleTranslateY = 0.0;
     _nativeCompositorTransformGeneration += 1;
+    fireAndLog(
+      'clear native compositor source cache',
+      controller.clearNativeCompositorSourceCache(
+        reason: 'authoritative layout applied',
+      ),
+    );
   }
 
   void _rebaseNativeCompositorViewportTransformAfterAuthoritativeLayout({

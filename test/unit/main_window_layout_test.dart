@@ -160,7 +160,7 @@ void main() {
   });
 
   test(
-    'paused native compositor pan defers renderer layout to throttled commit',
+    'paused native compositor pan uses source cache until final layout',
     () async {
       final stateStore = MainWindowStateStore()
         ..setTextureId(1)
@@ -186,6 +186,13 @@ void main() {
       await pumpEventQueue();
 
       expect(controller.appliedLayouts, isEmpty);
+      expect(
+        controller.calls,
+        containsAllInOrder([
+          'prepareNativeCompositorSourceCache',
+          'setNativeCompositorViewportTransform',
+        ]),
+      );
       expect(controller.transforms, hasLength(1));
       expect(controller.transforms.single.enabled, isTrue);
       expect(controller.transforms.single.translateX, closeTo(-0.2, 1e-9));
@@ -200,6 +207,12 @@ void main() {
       expect(controller.appliedLayouts.single.viewOffsetX, 160);
       expect(controller.appliedLayouts.single.viewOffsetY, -90);
       expect(controller.transforms, hasLength(1));
+      expect(
+        controller.calls,
+        contains(
+          'clearNativeCompositorSourceCache:authoritative layout applied',
+        ),
+      );
     },
   );
 
@@ -468,6 +481,27 @@ class _FakeNativePlayerController extends NativePlayerController {
         activeTrackCount: activeTrackCount,
       ),
     );
+  }
+
+  @override
+  Future<void> prepareNativeCompositorSourceCache({
+    required List<int> sourceSlots,
+    required List<int> sourceOrder,
+    required List<double> displayOffsetX,
+    required List<double> displayOffsetY,
+    required List<double> invDisplaySizeX,
+    required List<double> invDisplaySizeY,
+    required List<double> viewOffsetUvX,
+    required List<double> viewOffsetUvY,
+  }) async {
+    calls.add('prepareNativeCompositorSourceCache');
+  }
+
+  @override
+  Future<void> clearNativeCompositorSourceCache({
+    required String reason,
+  }) async {
+    calls.add('clearNativeCompositorSourceCache:$reason');
   }
 
   @override

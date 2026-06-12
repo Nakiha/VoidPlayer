@@ -1,5 +1,6 @@
 #include "native_player_bridge.h"
 
+#include "macos/metal/metal_presentation_backend.h"
 #include "macos/player/native_player_state.h"
 
 #include <algorithm>
@@ -36,6 +37,32 @@ std::string target_address_summary(const std::vector<void*>& targets) {
     stream << "0x" << std::hex << pointer_address(target) << std::dec << ",";
   }
   return stream.str();
+}
+
+void copy_frame_info(const vr::PresentationBackendFrameInfo& source,
+                     VPMacOSNativeFrameInfo* out) {
+  if (!out) {
+    return;
+  }
+  VPMacOSNativeFrameInfoInit(out);
+  out->width = source.width;
+  out->height = source.height;
+  out->pts_us = source.pts_us;
+  out->dts_us = source.dts_us;
+  out->duration_us = source.duration_us;
+  out->analysis_frame_index = source.analysis_frame_index;
+  out->frame_identity_mode = source.frame_identity_mode;
+  out->source_packet_index = source.source_packet_index;
+  out->source_packet_size = source.source_packet_size;
+  out->source_packet_pos = source.source_packet_pos;
+  out->source_packet_pts = source.source_packet_pts;
+  out->source_packet_dts = source.source_packet_dts;
+  out->color_range = source.color_range;
+  out->color_matrix = source.color_matrix;
+  out->color_transfer = source.color_transfer;
+  out->color_primaries = source.color_primaries;
+  out->target_pixel_buffer_address = source.target_pixel_buffer_address;
+  out->layout_revision = source.layout_revision;
 }
 
 }  // namespace
@@ -758,4 +785,62 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
     size_t error_size) {
   return request_renderer_owned_frame_refresh(player, timeout_ms, flags, out,
                                               error, error_size);
+}
+
+int VPMacOSNativePlayerBakeCurrentFrameSources(
+    VPMacOSNativePlayer* player,
+    VPMacOSMetalPresentationBackend* backend,
+    VPMacOSNativeSourceFrameBakeTarget* targets,
+    size_t target_count,
+    char* error,
+    size_t error_size) {
+  if (!player || !backend || !targets || target_count == 0) {
+    write_error(error, error_size, "invalid source frame bake arguments");
+    return -1;
+  }
+
+  std::vector<vr::PresentationSourceFrameTarget> renderer_targets;
+  renderer_targets.reserve(target_count);
+  for (size_t i = 0; i < target_count; ++i) {
+    VPMacOSNativeFrameInfoInit(&targets[i].frame_info);
+    targets[i].drawn = 0;
+    vr::PresentationSourceFrameTarget target;
+    target.output = targets[i].pixel_buffer;
+    target.source_slot = targets[i].source_slot;
+    target.source_file_id = targets[i].source_file_id;
+    target.width = targets[i].width;
+    target.height = targets[i].height;
+    renderer_targets.push_back(target);
+  }
+
+  std::string message;
+  bool ok = false;
+  {
+    std::lock_guard<std::mutex> lock(player->mutex);
+    if (!player->renderer_active_locked()) {
+      write_error(error, error_size, "renderer is not active");
+      return -1;
+    }
+    ok = player->renderer->draw_current_frame_sources(
+        backend->impl,
+        renderer_targets.data(),
+        renderer_targets.size(),
+        &message);
+  }
+  if (!ok) {
+    write_error(error, error_size, message.empty() ? "source frame bake failed" : message);
+    return -1;
+  }
+
+  int drawn_count = 0;
+  for (size_t i = 0; i < target_count; ++i) {
+    targets[i].source_file_id = renderer_targets[i].source_file_id;
+    targets[i].drawn = renderer_targets[i].drawn;
+    copy_frame_info(renderer_targets[i].frame_info, &targets[i].frame_info);
+    if (targets[i].drawn) {
+      ++drawn_count;
+    }
+  }
+  write_error(error, error_size, "");
+  return drawn_count > 0 ? drawn_count : -1;
 }

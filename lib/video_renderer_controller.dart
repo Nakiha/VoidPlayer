@@ -220,6 +220,34 @@ class NativePlayerController {
     );
   }
 
+  Future<void> prepareNativeCompositorSourceCache({
+    required List<int> sourceSlots,
+    required List<int> sourceOrder,
+    required List<double> displayOffsetX,
+    required List<double> displayOffsetY,
+    required List<double> invDisplaySizeX,
+    required List<double> invDisplaySizeY,
+    required List<double> viewOffsetUvX,
+    required List<double> viewOffsetUvY,
+  }) {
+    _ensureAlive();
+    return _api.prepareNativeCompositorSourceCache(
+      sourceSlots: sourceSlots,
+      sourceOrder: sourceOrder,
+      displayOffsetX: displayOffsetX,
+      displayOffsetY: displayOffsetY,
+      invDisplaySizeX: invDisplaySizeX,
+      invDisplaySizeY: invDisplaySizeY,
+      viewOffsetUvX: viewOffsetUvX,
+      viewOffsetUvY: viewOffsetUvY,
+    );
+  }
+
+  Future<void> clearNativeCompositorSourceCache({required String reason}) {
+    if (_disposed) return Future.value();
+    return _api.clearNativeCompositorSourceCache(reason: reason);
+  }
+
   Future<void> setViewportBackgroundColor(int colorValue) {
     if (_disposed) {
       _reportNoopCommand(

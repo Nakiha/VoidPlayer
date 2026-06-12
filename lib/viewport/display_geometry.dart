@@ -47,7 +47,7 @@ class ViewportLayoutProjection {
   final int mode;
   final double splitPos;
   final List<DisplayTrackGeometry> orderedTracks;
-  final Map<int, _TrackProjection> _tracksByFileId;
+  final Map<int, ViewportTrackProjection> _tracksByFileId;
 
   const ViewportLayoutProjection._({
     required this.viewportWidth,
@@ -59,6 +59,9 @@ class ViewportLayoutProjection {
   });
 
   bool get isValid => viewportWidth > 0 && viewportHeight > 0;
+
+  ViewportTrackProjection? projectionForFileId(int fileId) =>
+      _tracksByFileId[fileId];
 
   ViewportSourceHit? hitTestPhysical(Offset physicalPosition) {
     final target = _displayTrackForGlobalUv(
@@ -266,7 +269,7 @@ ViewportLayoutProjection computeViewportLayoutProjection({
   final slotWidth = _slotWidthForLayout(viewportWidth, layout, activeCount);
   final slotHeight = viewportHeight.toDouble();
   final slotAspect = slotHeight > 0 ? slotWidth / slotHeight : 1.0;
-  final tracksByFileId = <int, _TrackProjection>{};
+  final tracksByFileId = <int, ViewportTrackProjection>{};
 
   for (final track in tracks) {
     var videoAspect = track.height > 0
@@ -297,7 +300,7 @@ ViewportLayoutProjection computeViewportLayoutProjection({
     final dsY = displayScale;
     final displayPixelWidth = dsX * slotWidth;
     final displayPixelHeight = dsY * slotHeight;
-    tracksByFileId[track.fileId] = _TrackProjection(
+    tracksByFileId[track.fileId] = ViewportTrackProjection(
       displayOffsetX: (1.0 - dsX) * 0.5,
       displayOffsetY: (1.0 - dsY) * 0.5,
       invDisplaySizeX: dsX.abs() > 1e-4 ? 1.0 / dsX : 0.0,
@@ -387,7 +390,7 @@ Size computeDisplayPixelSizeForLayout({
   return Size(dsX * slotWidth, dsY * slotHeight);
 }
 
-class _TrackProjection {
+class ViewportTrackProjection {
   final double displayOffsetX;
   final double displayOffsetY;
   final double invDisplaySizeX;
@@ -395,7 +398,7 @@ class _TrackProjection {
   final double viewOffsetUvX;
   final double viewOffsetUvY;
 
-  const _TrackProjection({
+  const ViewportTrackProjection({
     required this.displayOffsetX,
     required this.displayOffsetY,
     required this.invDisplaySizeX,

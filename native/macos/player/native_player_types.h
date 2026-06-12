@@ -54,6 +54,16 @@ static inline void VPMacOSNativeFrameInfoInit(VPMacOSNativeFrameInfo* out) {
   out->api_version = VP_MACOS_NATIVE_API_VERSION;
 }
 
+typedef struct VPMacOSNativeSourceFrameBakeTarget {
+  void* pixel_buffer;
+  int32_t source_slot;
+  int32_t source_file_id;
+  int32_t width;
+  int32_t height;
+  int32_t drawn;
+  VPMacOSNativeFrameInfo frame_info;
+} VPMacOSNativeSourceFrameBakeTarget;
+
 typedef struct VPMacOSNativeTrackInfo {
   int32_t file_id;
   int32_t slot;

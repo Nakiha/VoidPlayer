@@ -119,4 +119,20 @@ enum MacOSFlutterArguments {
     }
     return [0, 1, 2, 3]
   }
+
+  static func intListArg(_ arguments: Any?, _ key: String) -> [Int] {
+    guard let map = argumentMap(arguments) else { return [] }
+    return intListValue(map[key])
+  }
+
+  static func doubleListArg(_ arguments: Any?, _ key: String) -> [Double] {
+    guard let map = argumentMap(arguments) else { return [] }
+    if let values = map[key] as? [Double] {
+      return values
+    }
+    if let values = map[key] as? [Any] {
+      return values.compactMap { doubleValue($0) }
+    }
+    return []
+  }
 }

@@ -189,6 +189,10 @@ public:
     /// Request an immediate redraw of the currently presentable frame.
     /// Returns false when the renderer cannot issue a refresh command.
     bool request_frame_refresh(const char* reason);
+    bool draw_current_frame_sources(PresentationBackend& backend,
+                                    PresentationSourceFrameTarget* targets,
+                                    size_t target_count,
+                                    std::string* error);
 
     /// Capture the currently published headless frame as packed BGRA bytes.
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);

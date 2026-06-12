@@ -21,6 +21,10 @@ class NativePlayerMethods {
       'setNativeCompositorViewportRect';
   static const setNativeCompositorViewportTransform =
       'setNativeCompositorViewportTransform';
+  static const prepareNativeCompositorSourceCache =
+      'prepareNativeCompositorSourceCache';
+  static const clearNativeCompositorSourceCache =
+      'clearNativeCompositorSourceCache';
   static const setViewportBackgroundColor = 'setViewportBackgroundColor';
   static const captureViewport = 'captureViewport';
   static const captureViewportRegion = 'captureViewportRegion';
@@ -60,6 +64,15 @@ class NativePlayerKeys {
   static const translateX = 'translateX';
   static const translateY = 'translateY';
   static const activeTrackCount = 'activeTrackCount';
+  static const sourceSlots = 'sourceSlots';
+  static const sourceOrder = 'sourceOrder';
+  static const displayOffsetX = 'displayOffsetX';
+  static const displayOffsetY = 'displayOffsetY';
+  static const invDisplaySizeX = 'invDisplaySizeX';
+  static const invDisplaySizeY = 'invDisplaySizeY';
+  static const viewOffsetUvX = 'viewOffsetUvX';
+  static const viewOffsetUvY = 'viewOffsetUvY';
+  static const reason = 'reason';
   static const textureId = 'textureId';
   static const tracks = 'tracks';
   static const fileId = 'fileId';

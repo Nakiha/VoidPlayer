@@ -2,6 +2,69 @@
 #include "renderer/render/renderer_draw_snapshot_builder.h"
 
 namespace vr {
+namespace {
+
+bool set_error(std::string* error, const char* message) {
+    if (error) {
+        *error = message ? message : "";
+    }
+    return false;
+}
+
+LayoutState source_frame_identity_layout() {
+    LayoutState layout;
+    layout.mode = LAYOUT_SIDE_BY_SIDE;
+    layout.split_pos = 0.5f;
+    layout.zoom_ratio = 1.0f;
+    layout.view_offset[0] = 0.0f;
+    layout.view_offset[1] = 0.0f;
+    layout.pixel_size_mode = PIXEL_SIZE_FILL_VIEW;
+    layout.order[0] = 0;
+    layout.order[1] = -1;
+    layout.order[2] = -1;
+    layout.order[3] = -1;
+    return layout;
+}
+
+RendererDrawSnapshot make_source_frame_snapshot(
+    const PresentDecision& decision,
+    size_t source_slot,
+    const float background_color[4]) {
+    RendererDrawSnapshot snapshot;
+    snapshot.decision.should_present = true;
+    snapshot.decision.current_pts_us = decision.current_pts_us;
+    snapshot.decision.frames[0] = decision.frames[source_slot];
+    snapshot.decision.file_ids[0] = decision.file_ids[source_slot];
+    snapshot.decision.track_generations[0] =
+        decision.track_generations[source_slot];
+    snapshot.layout = source_frame_identity_layout();
+    if (snapshot.decision.frames[0].has_value()) {
+        const auto& frame = *snapshot.decision.frames[0];
+        snapshot.track_geometry[0].active = true;
+        snapshot.track_geometry[0].width = frame.width;
+        snapshot.track_geometry[0].height = frame.height;
+        snapshot.track_geometry[0].aspect =
+            frame.height > 0
+                ? static_cast<float>(frame.width) / static_cast<float>(frame.height)
+                : 1.0f;
+        snapshot.tracks[0].active = true;
+        snapshot.tracks[0].file_id = snapshot.decision.file_ids[0];
+        snapshot.tracks[0].generation = snapshot.decision.track_generations[0];
+        snapshot.tracks[0].video_width = frame.width;
+        snapshot.tracks[0].video_height = frame.height;
+        snapshot.tracks[0].video_aspect = snapshot.track_geometry[0].aspect;
+        snapshot.target_width = frame.width;
+        snapshot.target_height = frame.height;
+    }
+    if (background_color) {
+        for (int i = 0; i < 4; ++i) {
+            snapshot.background_color[i] = background_color[i];
+        }
+    }
+    return snapshot;
+}
+
+}  // namespace
 
 void Renderer::Impl::set_frame_callback(RendererFrameCallback cb) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
@@ -244,6 +307,95 @@ void Renderer::Impl::clear_headless_output() {
         return;
     }
     presentation_.clear_headless_output();
+}
+
+bool Renderer::Impl::draw_current_frame_sources(
+    PresentationBackend& backend,
+    PresentationSourceFrameTarget* targets,
+    size_t target_count,
+    std::string* error) {
+    if (!targets || target_count == 0) {
+        return set_error(error, "source frame bake target list is empty");
+    }
+
+    PresentDecision decision;
+    float background_color[4] = {};
+    {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        if (!surface_state_.headless() || !presentation_.has_backend()) {
+            return set_error(error, "renderer is not using a headless presentation backend");
+        }
+        if (timeline_.playing()) {
+            return set_error(error, "source frame bake requires paused playback");
+        }
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        const auto decision_result =
+            track_controller_.paused_layout_decision(present_history_.snapshot());
+        if (!decision_result.has_frame) {
+            return set_error(error, "no complete paused frame is available for source bake");
+        }
+        decision = decision_result.decision;
+        track_controller_.filter_present_decision(decision);
+        RendererDrawSnapshotBuilder::update_track_geometry_from_decision(
+            track_controller_, decision);
+        layout_state_.copy_background_color(background_color);
+    }
+
+    bool any_drawn = false;
+    std::string last_error;
+    for (size_t i = 0; i < target_count; ++i) {
+        auto& target = targets[i];
+        target.drawn = 0;
+        target.frame_info = {};
+        const int slot = target.source_slot;
+        if (!target.output || slot < 0 ||
+            slot >= static_cast<int>(decision.frames.size()) ||
+            !decision.frames[static_cast<size_t>(slot)].has_value()) {
+            continue;
+        }
+        const auto& frame = *decision.frames[static_cast<size_t>(slot)];
+        if (target.width != frame.width || target.height != frame.height ||
+            target.width <= 0 || target.height <= 0) {
+            last_error = "source frame bake target dimensions do not match source frame";
+            continue;
+        }
+
+        auto snapshot = make_source_frame_snapshot(
+            decision, static_cast<size_t>(slot), background_color);
+        if (!backend.update_headless_output(
+                target.output, target.width, target.height, 1)) {
+            last_error = backend.last_error();
+            if (last_error.empty()) {
+                last_error = "source frame bake backend did not accept target";
+            }
+            continue;
+        }
+        if (!backend.draw_frame(snapshot, PresentationBackendDrawHooks{})) {
+            last_error = backend.last_error();
+            if (last_error.empty()) {
+                last_error = "source frame bake draw failed";
+            }
+            continue;
+        }
+        PresentationBackendFrameInfo frame_info;
+        if (backend.copy_last_frame_info(&frame_info)) {
+            target.frame_info = frame_info;
+        }
+        target.source_file_id = decision.file_ids[static_cast<size_t>(slot)];
+        target.drawn = 1;
+        any_drawn = true;
+    }
+
+    if (!any_drawn) {
+        return set_error(
+            error,
+            last_error.empty() ? "source frame bake produced no frames"
+                               : last_error.c_str());
+    }
+    if (error) {
+        error->clear();
+    }
+    return true;
 }
 
 } // namespace vr

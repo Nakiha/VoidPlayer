@@ -278,6 +278,13 @@ bool Renderer::request_frame_refresh(const char* reason) {
     return impl_->request_frame_refresh(reason);
 }
 
+bool Renderer::draw_current_frame_sources(PresentationBackend& backend,
+                                          PresentationSourceFrameTarget* targets,
+                                          size_t target_count,
+                                          std::string* error) {
+    return impl_->draw_current_frame_sources(backend, targets, target_count, error);
+}
+
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
     return impl_->capture_front_buffer(bgra, width, height);
 }

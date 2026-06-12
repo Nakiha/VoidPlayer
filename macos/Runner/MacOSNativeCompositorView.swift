@@ -5,6 +5,20 @@ import IOSurface
 import Metal
 import QuartzCore
 
+struct MacOSNativeCompositorSourceTexture {
+  let pixelBuffer: CVPixelBuffer
+  let sourceSlot: Int
+  let fileId: Int
+  let width: Int
+  let height: Int
+  let displayOffsetX: Float
+  let displayOffsetY: Float
+  let invDisplaySizeX: Float
+  let invDisplaySizeY: Float
+  let viewOffsetUvX: Float
+  let viewOffsetUvY: Float
+}
+
 final class MacOSNativeCompositorView: NSView {
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue
@@ -51,6 +65,10 @@ final class MacOSNativeCompositorView: NSView {
   private var viewportTransformGeneration: UInt64 = 0
   private var viewportTransformBaseDisplayedLayoutRevision: UInt64 = 0
   private var displayedLayoutRevision: UInt64 = 0
+  private var sourceCacheTextures: [MacOSNativeCompositorSourceTexture] = []
+  private var sourceCacheOrder = SIMD4<Float>(0, 1, 2, 3)
+  private var sourceCacheGeneration: UInt64 = 0
+  private var sourceCacheLastError = ""
   private let compositeRate = MacOSRateWindow()
   private let inFlightSemaphore = DispatchSemaphore(value: 2)
 
@@ -249,6 +267,51 @@ final class MacOSNativeCompositorView: NSView {
     }
   }
 
+  func setSourceCache(
+    textures: [MacOSNativeCompositorSourceTexture],
+    order: [Int],
+    error: String = ""
+  ) {
+    let safeOrder = SIMD4<Float>(
+      Float(order.indices.contains(0) ? order[0] : 0),
+      Float(order.indices.contains(1) ? order[1] : 1),
+      Float(order.indices.contains(2) ? order[2] : 2),
+      Float(order.indices.contains(3) ? order[3] : 3)
+    )
+    compositorQueue.async { [weak self] in
+      guard let self else { return }
+      sourceCacheTextures = textures
+      sourceCacheOrder = safeOrder
+      sourceCacheLastError = error
+      sourceCacheGeneration &+= 1
+      markCompositorDirty()
+      MacOSProfilerLog.traceEvent(String(
+        format: "VoidPlayer viewport trace swift event=source-cache-set generation=%llu count=%d error=%@",
+        sourceCacheGeneration,
+        textures.count,
+        error
+      ))
+    }
+  }
+
+  func clearSourceCache(reason: String) {
+    compositorQueue.async { [weak self] in
+      guard let self else { return }
+      if sourceCacheTextures.isEmpty && sourceCacheLastError.isEmpty {
+        return
+      }
+      sourceCacheTextures = []
+      sourceCacheLastError = reason
+      sourceCacheGeneration &+= 1
+      markCompositorDirty()
+      MacOSProfilerLog.traceEvent(String(
+        format: "VoidPlayer viewport trace swift event=source-cache-clear generation=%llu reason=%@",
+        sourceCacheGeneration,
+        reason
+      ))
+    }
+  }
+
   func diagnostics() -> [String: Any] {
     if DispatchQueue.getSpecific(key: compositorQueueKey) == true {
       return diagnosticsOnCompositorQueue()
@@ -306,6 +369,17 @@ final class MacOSNativeCompositorView: NSView {
         Int(viewportSampleTransform.z * 1000.0),
       "nativeCompositorViewportTransformTranslateYX1000":
         Int(viewportSampleTransform.w * 1000.0),
+      "nativeCompositorSourceCacheActive":
+        viewportTransformEffectiveEnabled() && !sourceCacheTextures.isEmpty,
+      "nativeCompositorSourceCacheTextureCount": sourceCacheTextures.count,
+      "nativeCompositorSourceCacheGeneration": Int(
+        min(sourceCacheGeneration, UInt64(Int.max))
+      ),
+      "nativeCompositorSourceCacheBytes": sourceCacheTextures.reduce(0) { total, entry in
+        total + CVPixelBufferGetBytesPerRow(entry.pixelBuffer) *
+          CVPixelBufferGetHeight(entry.pixelBuffer)
+      },
+      "nativeCompositorSourceCacheLastError": sourceCacheLastError,
     ]) { _, next in next }
     return result
   }
@@ -331,6 +405,9 @@ final class MacOSNativeCompositorView: NSView {
       }
       let video = videoSnapshot.texture
       let flutter = flutterSnapshot.texture
+      let sourceCache = currentSourceCacheMetalTextures()
+      let sourceCacheActive =
+        viewportTransformEffectiveEnabled() && !sourceCache.textures.isEmpty
       displayedLayoutRevision = max(displayedLayoutRevision, videoSnapshot.layoutRevision)
       var holeRect = explicitHoleRect ?? lastHoleRect
       var sampleTransform = viewportSampleTransform
@@ -343,8 +420,16 @@ final class MacOSNativeCompositorView: NSView {
         outputPixelFormat == .rgba16Float ? 1.0 : 0.0,
         shouldConvertSRGBToLinear(texture: video) ? 1.0 : 0.0,
         shouldConvertSRGBToLinear(texture: flutter) ? 1.0 : 0.0,
-        0.0
+        sourceCacheActive ? 1.0 : 0.0
       )
+      var sourcePresentFlags = sourceCache.presentFlags
+      var sourceOrder = sourceCache.order
+      var sourceDisplayOffsetX = sourceCache.displayOffsetX
+      var sourceDisplayOffsetY = sourceCache.displayOffsetY
+      var sourceInvDisplaySizeX = sourceCache.invDisplaySizeX
+      var sourceInvDisplaySizeY = sourceCache.invDisplaySizeY
+      var sourceViewOffsetUvX = sourceCache.viewOffsetUvX
+      var sourceViewOffsetUvY = sourceCache.viewOffsetUvY
       guard inFlightSemaphore.wait(timeout: .now()) == .success else {
         skippedInFlightFrames += 1
         return
@@ -367,6 +452,10 @@ final class MacOSNativeCompositorView: NSView {
       encoder.setRenderPipelineState(pipeline)
       encoder.setFragmentTexture(video, index: 0)
       encoder.setFragmentTexture(flutter, index: 1)
+      encoder.setFragmentTexture(sourceCache.textures[0] ?? video, index: 2)
+      encoder.setFragmentTexture(sourceCache.textures[1] ?? video, index: 3)
+      encoder.setFragmentTexture(sourceCache.textures[2] ?? video, index: 4)
+      encoder.setFragmentTexture(sourceCache.textures[3] ?? video, index: 5)
       encoder.setFragmentBytes(
         &holeRect,
         length: MemoryLayout<SIMD4<Float>>.stride,
@@ -386,6 +475,46 @@ final class MacOSNativeCompositorView: NSView {
         &layoutFlags,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 3
+      )
+      encoder.setFragmentBytes(
+        &sourcePresentFlags,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 4
+      )
+      encoder.setFragmentBytes(
+        &sourceOrder,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 5
+      )
+      encoder.setFragmentBytes(
+        &sourceDisplayOffsetX,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 6
+      )
+      encoder.setFragmentBytes(
+        &sourceDisplayOffsetY,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 7
+      )
+      encoder.setFragmentBytes(
+        &sourceInvDisplaySizeX,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 8
+      )
+      encoder.setFragmentBytes(
+        &sourceInvDisplaySizeY,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 9
+      )
+      encoder.setFragmentBytes(
+        &sourceViewOffsetUvX,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 10
+      )
+      encoder.setFragmentBytes(
+        &sourceViewOffsetUvY,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 11
       )
       encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
       encoder.endEncoding()
@@ -464,6 +593,18 @@ final class MacOSNativeCompositorView: NSView {
     let sourceKey: UInt64
   }
 
+  private struct SourceCacheTextureSnapshot {
+    let textures: [Int: MTLTexture]
+    let presentFlags: SIMD4<Float>
+    let order: SIMD4<Float>
+    let displayOffsetX: SIMD4<Float>
+    let displayOffsetY: SIMD4<Float>
+    let invDisplaySizeX: SIMD4<Float>
+    let invDisplaySizeY: SIMD4<Float>
+    let viewOffsetUvX: SIMD4<Float>
+    let viewOffsetUvY: SIMD4<Float>
+  }
+
   private func currentVideoMetalTexture() -> VideoTextureSnapshot? {
     guard let videoTexture,
           let presentationSnapshot = videoTexture.presentationSnapshot() else {
@@ -503,6 +644,91 @@ final class MacOSNativeCompositorView: NSView {
       texture: texture,
       sourceKey: sourceKey,
       layoutRevision: presentationSnapshot.layoutRevision
+    )
+  }
+
+  private func currentSourceCacheMetalTextures() -> SourceCacheTextureSnapshot {
+    var textures: [Int: MTLTexture] = [:]
+    var presentFlags = SIMD4<Float>(0, 0, 0, 0)
+    var displayOffsetX = SIMD4<Float>(0, 0, 0, 0)
+    var displayOffsetY = SIMD4<Float>(0, 0, 0, 0)
+    var invDisplaySizeX = SIMD4<Float>(0, 0, 0, 0)
+    var invDisplaySizeY = SIMD4<Float>(0, 0, 0, 0)
+    var viewOffsetUvX = SIMD4<Float>(0, 0, 0, 0)
+    var viewOffsetUvY = SIMD4<Float>(0, 0, 0, 0)
+
+    for entry in sourceCacheTextures {
+      let slot = entry.sourceSlot
+      guard slot >= 0 && slot < 4 else { continue }
+      let pixelBuffer = entry.pixelBuffer
+      let width = CVPixelBufferGetWidth(pixelBuffer)
+      let height = CVPixelBufferGetHeight(pixelBuffer)
+      let metalPixelFormat: MTLPixelFormat =
+        CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_64RGBAHalf
+        ? .rgba16Float
+        : .bgra8Unorm
+      var cvTexture: CVMetalTexture?
+      let status = CVMetalTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault,
+        textureCache,
+        pixelBuffer,
+        nil,
+        metalPixelFormat,
+        width,
+        height,
+        0,
+        &cvTexture
+      )
+      guard status == kCVReturnSuccess, let cvTexture,
+            let texture = CVMetalTextureGetTexture(cvTexture) else {
+        continue
+      }
+      textures[slot] = texture
+      switch slot {
+      case 0:
+        presentFlags.x = 1
+        displayOffsetX.x = entry.displayOffsetX
+        displayOffsetY.x = entry.displayOffsetY
+        invDisplaySizeX.x = entry.invDisplaySizeX
+        invDisplaySizeY.x = entry.invDisplaySizeY
+        viewOffsetUvX.x = entry.viewOffsetUvX
+        viewOffsetUvY.x = entry.viewOffsetUvY
+      case 1:
+        presentFlags.y = 1
+        displayOffsetX.y = entry.displayOffsetX
+        displayOffsetY.y = entry.displayOffsetY
+        invDisplaySizeX.y = entry.invDisplaySizeX
+        invDisplaySizeY.y = entry.invDisplaySizeY
+        viewOffsetUvX.y = entry.viewOffsetUvX
+        viewOffsetUvY.y = entry.viewOffsetUvY
+      case 2:
+        presentFlags.z = 1
+        displayOffsetX.z = entry.displayOffsetX
+        displayOffsetY.z = entry.displayOffsetY
+        invDisplaySizeX.z = entry.invDisplaySizeX
+        invDisplaySizeY.z = entry.invDisplaySizeY
+        viewOffsetUvX.z = entry.viewOffsetUvX
+        viewOffsetUvY.z = entry.viewOffsetUvY
+      default:
+        presentFlags.w = 1
+        displayOffsetX.w = entry.displayOffsetX
+        displayOffsetY.w = entry.displayOffsetY
+        invDisplaySizeX.w = entry.invDisplaySizeX
+        invDisplaySizeY.w = entry.invDisplaySizeY
+        viewOffsetUvX.w = entry.viewOffsetUvX
+        viewOffsetUvY.w = entry.viewOffsetUvY
+      }
+    }
+    return SourceCacheTextureSnapshot(
+      textures: textures,
+      presentFlags: presentFlags,
+      order: sourceCacheOrder,
+      displayOffsetX: displayOffsetX,
+      displayOffsetY: displayOffsetY,
+      invDisplaySizeX: invDisplaySizeX,
+      invDisplaySizeY: invDisplaySizeY,
+      viewOffsetUvX: viewOffsetUvX,
+      viewOffsetUvY: viewOffsetUvY
     )
   }
 
@@ -843,14 +1069,111 @@ final class MacOSNativeCompositorView: NSView {
         return transformed;
       }
 
+      float valueAt(float4 values, int index) {
+        if (index == 0) return values.x;
+        if (index == 1) return values.y;
+        if (index == 2) return values.z;
+        return values.w;
+      }
+
+      float4 sampleSourceCacheTexture(
+        int slot,
+        float2 uv,
+        texture2d<float> source0,
+        texture2d<float> source1,
+        texture2d<float> source2,
+        texture2d<float> source3,
+        sampler s
+      ) {
+        if (slot == 0) return source0.sample(s, uv);
+        if (slot == 1) return source1.sample(s, uv);
+        if (slot == 2) return source2.sample(s, uv);
+        return source3.sample(s, uv);
+      }
+
+      float4 sampleSourceCacheVideo(
+        float2 videoUv,
+        constant float4& sampleTransform,
+        constant float4& layoutFlags,
+        constant float4& sourcePresentFlags,
+        constant float4& sourceOrder,
+        constant float4& sourceDisplayOffsetX,
+        constant float4& sourceDisplayOffsetY,
+        constant float4& sourceInvDisplaySizeX,
+        constant float4& sourceInvDisplaySizeY,
+        constant float4& sourceViewOffsetUvX,
+        constant float4& sourceViewOffsetUvY,
+        texture2d<float> source0,
+        texture2d<float> source1,
+        texture2d<float> source2,
+        texture2d<float> source3,
+        sampler s
+      ) {
+        int mode = int(round(layoutFlags.y));
+        int trackCount = max(1, int(round(layoutFlags.w)));
+        int displaySlot = 0;
+        float2 localUv = videoUv;
+        if (mode == 0 && trackCount > 1) {
+          float count = float(trackCount);
+          float scaledX = clamp(videoUv.x, 0.0, 0.999999) * count;
+          displaySlot = clamp(int(floor(scaledX)), 0, trackCount - 1);
+          localUv = float2(scaledX - float(displaySlot), videoUv.y);
+        } else if (mode == 1 && trackCount > 1) {
+          float split = clamp(layoutFlags.z, 0.0001, 0.9999);
+          displaySlot = videoUv.x < split ? 0 : 1;
+          localUv = videoUv;
+        }
+
+        int sourceSlot = clamp(int(round(valueAt(sourceOrder, displaySlot))), 0, 3);
+        if (valueAt(sourcePresentFlags, sourceSlot) < 0.5) {
+          return float4(0.0);
+        }
+
+        float2 transformed = localUv * sampleTransform.xy + sampleTransform.zw;
+        float2 displayOffset = float2(
+          valueAt(sourceDisplayOffsetX, sourceSlot),
+          valueAt(sourceDisplayOffsetY, sourceSlot));
+        float2 invDisplaySize = float2(
+          valueAt(sourceInvDisplaySizeX, sourceSlot),
+          valueAt(sourceInvDisplaySizeY, sourceSlot));
+        float2 viewOffsetUv = float2(
+          valueAt(sourceViewOffsetUvX, sourceSlot),
+          valueAt(sourceViewOffsetUvY, sourceSlot));
+        float2 sourceUv = (transformed - displayOffset) * invDisplaySize - viewOffsetUv;
+        if (sourceUv.x < 0.0 || sourceUv.x > 1.0 ||
+            sourceUv.y < 0.0 || sourceUv.y > 1.0) {
+          return float4(0.0);
+        }
+        return sampleSourceCacheTexture(
+          sourceSlot,
+          sourceUv,
+          source0,
+          source1,
+          source2,
+          source3,
+          s);
+      }
+
       fragment float4 fs_main(
         VertexOut in [[stage_in]],
         texture2d<float> videoTexture [[texture(0)]],
         texture2d<float> flutterTexture [[texture(1)]],
+        texture2d<float> sourceTexture0 [[texture(2)]],
+        texture2d<float> sourceTexture1 [[texture(3)]],
+        texture2d<float> sourceTexture2 [[texture(4)]],
+        texture2d<float> sourceTexture3 [[texture(5)]],
         constant float4& holeRect [[buffer(0)]],
         constant float4& colorFlags [[buffer(1)]],
         constant float4& sampleTransform [[buffer(2)]],
-        constant float4& layoutFlags [[buffer(3)]]
+        constant float4& layoutFlags [[buffer(3)]],
+        constant float4& sourcePresentFlags [[buffer(4)]],
+        constant float4& sourceOrder [[buffer(5)]],
+        constant float4& sourceDisplayOffsetX [[buffer(6)]],
+        constant float4& sourceDisplayOffsetY [[buffer(7)]],
+        constant float4& sourceInvDisplaySizeX [[buffer(8)]],
+        constant float4& sourceInvDisplaySizeY [[buffer(9)]],
+        constant float4& sourceViewOffsetUvX [[buffer(10)]],
+        constant float4& sourceViewOffsetUvY [[buffer(11)]]
       ) {
         constexpr sampler s(address::clamp_to_edge, filter::linear);
         float2 uv = clamp(in.uv, 0.0, 1.0);
@@ -866,9 +1189,28 @@ final class MacOSNativeCompositorView: NSView {
         float2 sampleUv = transformedVideoUv(videoUv, sampleTransform, layoutFlags);
         bool sampleInside = sampleUv.x >= 0.0 && sampleUv.x <= 1.0 &&
           sampleUv.y >= 0.0 && sampleUv.y <= 1.0;
-        float4 video = insideHole && sampleInside
-          ? videoTexture.sample(s, sampleUv)
-          : float4(0.0);
+        float4 video = float4(0.0);
+        if (insideHole) {
+          video = colorFlags.w > 0.5
+            ? sampleSourceCacheVideo(
+                videoUv,
+                sampleTransform,
+                layoutFlags,
+                sourcePresentFlags,
+                sourceOrder,
+                sourceDisplayOffsetX,
+                sourceDisplayOffsetY,
+                sourceInvDisplaySizeX,
+                sourceInvDisplaySizeY,
+                sourceViewOffsetUvX,
+                sourceViewOffsetUvY,
+                sourceTexture0,
+                sourceTexture1,
+                sourceTexture2,
+                sourceTexture3,
+                s)
+            : (sampleInside ? videoTexture.sample(s, sampleUv) : float4(0.0));
+        }
         float4 flutter = flutterTexture.sample(s, uv);
         float alpha = clamp(flutter.a, 0.0, 1.0);
         float3 videoRgb = colorFlags.y > 0.5

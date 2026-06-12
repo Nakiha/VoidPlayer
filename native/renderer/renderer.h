@@ -20,6 +20,7 @@
 namespace vr {
 
 class PlaybackController;
+class PresentationBackend;
 
 class Renderer {
 public:
@@ -120,6 +121,10 @@ public:
     void clear_headless_output();
 
     bool request_frame_refresh(const char* reason);
+    bool draw_current_frame_sources(PresentationBackend& backend,
+                                    PresentationSourceFrameTarget* targets,
+                                    size_t target_count,
+                                    std::string* error);
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
     bool capture_front_buffer_region(int x,
                                      int y,

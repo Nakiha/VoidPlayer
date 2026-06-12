@@ -116,7 +116,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | --- | --- | --- |
 | `.github/workflows/native.yml` | push / PR | native PR fast, macOS native fast, macOS runner build, macOS analysis smoke |
 | `.github/workflows/native.yml` | weekly or manual `full_matrix=true` | full Windows native config matrix |
-| `.github/workflows/native.yml` | manual `windows_ui_preservation=true` | GitHub-hosted Windows runner build + `python dev.py ui-test --build ui_tests/smoke/basic.csv`; skips analyzer tool bundling because the smoke does not cover analysis overlay. Native/analysis coverage stays in the same workflow's `Native test` job. |
+| `.github/workflows/native.yml` | manual `windows_ui_preservation=true` | GitHub-hosted Windows runner build + `python dev.py ui-test --build ui_tests/smoke/basic.csv`; skips analyzer tool bundling because the smoke does not cover analysis overlay, and enables `VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1` because hosted Windows exposes only an unusable software DXGI adapter. Native/analysis coverage stays in the same workflow's `Native test` job. |
 | `.github/workflows/macos-ui.yml` | weekly | `python3.12 dev.py gate macos-ui-smoke` |
 | `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
 | Local HDR EDR gate | manual on EDR-capable macOS display before merging HDR compositor changes | `python3.12 dev.py gate macos-hdr-edr-smoke` |

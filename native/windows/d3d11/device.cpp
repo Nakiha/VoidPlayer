@@ -1,9 +1,22 @@
 #include "device.h"
 #include <spdlog/spdlog.h>
+#include <cstdlib>
+#include <cstring>
 #include <dxgi1_2.h>
 #include <dxgidebug.h>
 
 namespace vr {
+namespace {
+
+bool env_flag_enabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value && value[0] != '\0' &&
+           std::strcmp(value, "0") != 0 &&
+           std::strcmp(value, "false") != 0 &&
+           std::strcmp(value, "FALSE") != 0;
+}
+
+} // namespace
 
 D3D11Device::D3D11Device() = default;
 
@@ -237,7 +250,19 @@ bool D3D11Device::initialize_headless(IDXGIAdapter* adapter, int width, int heig
                        create_device_flags, obtained_level)) {
         spdlog::error(
             "[D3D11] Failed to create headless device on Flutter DXGI adapter");
-        return false;
+        if (!env_flag_enabled("VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK")) {
+            return false;
+        }
+        spdlog::warn(
+            "[D3D11] VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1; "
+            "falling back to WARP for hosted CI headless smoke only");
+        device_.Reset();
+        context_.Reset();
+        if (!create_device(nullptr, D3D_DRIVER_TYPE_WARP,
+                           create_device_flags, obtained_level)) {
+            spdlog::error("[D3D11] Failed to create fallback WARP headless device");
+            return false;
+        }
     }
 
     initialized_ = true;

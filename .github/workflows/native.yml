@@ -222,6 +222,7 @@ jobs:
         shell: pwsh
         env:
           VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER: "1"
+          VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK: "1"
         run: python dev.py ui-test --build ui_tests/smoke/basic.csv
 
   macos-native-test:

@@ -45,6 +45,10 @@ final class MacOSNativeCompositorView: NSView {
   private var lastPresentedFlutterSourceKey: UInt64 = 0
   private var explicitHoleRect: SIMD4<Float>?
   private var lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
+  private var viewportTransformEnabled = false
+  private var viewportSampleTransform = SIMD4<Float>(1, 1, 0, 0)
+  private var viewportLayoutFlags = SIMD4<Float>(0, 0, 0.5, 1)
+  private var viewportTransformGeneration: UInt64 = 0
   private let compositeRate = MacOSRateWindow()
   private let inFlightSemaphore = DispatchSemaphore(value: 2)
 
@@ -173,6 +177,48 @@ final class MacOSNativeCompositorView: NSView {
     }
   }
 
+  func setViewportTransform(
+    enabled: Bool,
+    scaleX: Double,
+    scaleY: Double,
+    translateX: Double,
+    translateY: Double,
+    mode: Int,
+    splitPos: Double,
+    activeTrackCount: Int
+  ) {
+    let safeScaleX = Float(scaleX.isFinite && scaleX > 0 ? scaleX : 1.0)
+    let safeScaleY = Float(scaleY.isFinite && scaleY > 0 ? scaleY : 1.0)
+    let safeTranslateX = Float(translateX.isFinite ? translateX : 0.0)
+    let safeTranslateY = Float(translateY.isFinite ? translateY : 0.0)
+    let safeSplitValue = splitPos.isFinite ? min(1.0, max(0.0, splitPos)) : 0.5
+    let safeSplit = Float(safeSplitValue)
+    let safeTrackCount = Float(max(1, activeTrackCount))
+    compositorQueue.async { [weak self] in
+      guard let self else { return }
+      let nextTransform = enabled
+        ? SIMD4<Float>(safeScaleX, safeScaleY, safeTranslateX, safeTranslateY)
+        : SIMD4<Float>(1, 1, 0, 0)
+      let nextFlags = SIMD4<Float>(
+        enabled ? 1.0 : 0.0,
+        Float(mode),
+        safeSplit,
+        safeTrackCount
+      )
+      let changed =
+        viewportTransformEnabled != enabled ||
+        viewportSampleTransform != nextTransform ||
+        viewportLayoutFlags != nextFlags
+      viewportTransformEnabled = enabled
+      viewportSampleTransform = nextTransform
+      viewportLayoutFlags = nextFlags
+      if changed {
+        viewportTransformGeneration &+= 1
+        markCompositorDirty()
+      }
+    }
+  }
+
   func diagnostics() -> [String: Any] {
     if DispatchQueue.getSpecific(key: compositorQueueKey) == true {
       return diagnosticsOnCompositorQueue()
@@ -215,6 +261,14 @@ final class MacOSNativeCompositorView: NSView {
       "nativeCompositorFlutterSRGBToLinearEnabled": lastFlutterSRGBToLinearEnabled,
       "nativeCompositorSkippedInFlightFrames": skippedInFlightFrames,
       "nativeCompositorSkippedStaticFrames": skippedStaticFrames,
+      "nativeCompositorViewportTransformEnabled": viewportTransformEnabled,
+      "nativeCompositorViewportTransformGeneration": Int(viewportTransformGeneration),
+      "nativeCompositorViewportTransformScaleXX1000": Int(viewportSampleTransform.x * 1000.0),
+      "nativeCompositorViewportTransformScaleYX1000": Int(viewportSampleTransform.y * 1000.0),
+      "nativeCompositorViewportTransformTranslateXX1000":
+        Int(viewportSampleTransform.z * 1000.0),
+      "nativeCompositorViewportTransformTranslateYX1000":
+        Int(viewportSampleTransform.w * 1000.0),
     ]) { _, next in next }
     return result
   }
@@ -241,6 +295,8 @@ final class MacOSNativeCompositorView: NSView {
       let video = videoSnapshot.texture
       let flutter = flutterSnapshot.texture
       var holeRect = explicitHoleRect ?? lastHoleRect
+      var sampleTransform = viewportSampleTransform
+      var layoutFlags = viewportLayoutFlags
       var colorFlags = SIMD4<Float>(
         outputPixelFormat == .rgba16Float ? 1.0 : 0.0,
         shouldConvertSRGBToLinear(texture: video) ? 1.0 : 0.0,
@@ -278,6 +334,16 @@ final class MacOSNativeCompositorView: NSView {
         &colorFlags,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 1
+      )
+      encoder.setFragmentBytes(
+        &sampleTransform,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 2
+      )
+      encoder.setFragmentBytes(
+        &layoutFlags,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 3
       )
       encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
       encoder.endEncoding()
@@ -680,12 +746,57 @@ final class MacOSNativeCompositorView: NSView {
         return srgbToLinear(straightSRGB) * alpha;
       }
 
+      float2 transformedVideoUv(
+        float2 uv,
+        constant float4& sampleTransform,
+        constant float4& layoutFlags
+      ) {
+        if (layoutFlags.x < 0.5) {
+          return uv;
+        }
+        int mode = int(round(layoutFlags.y));
+        int trackCount = max(1, int(round(layoutFlags.w)));
+        if (mode == 0 && trackCount > 1) {
+          float count = float(trackCount);
+          float slot = floor(clamp(uv.x, 0.0, 0.999999) * count);
+          float slotWidth = 1.0 / count;
+          float slotOrigin = slot * slotWidth;
+          float2 localUv = float2((uv.x - slotOrigin) / slotWidth, uv.y);
+          float2 transformed = localUv * sampleTransform.xy + sampleTransform.zw;
+          if (transformed.x < 0.0 || transformed.x > 1.0 ||
+              transformed.y < 0.0 || transformed.y > 1.0) {
+            return float2(-1.0, -1.0);
+          }
+          return float2(slotOrigin + transformed.x * slotWidth, transformed.y);
+        }
+        if (mode == 1 && trackCount > 1) {
+          float split = clamp(layoutFlags.z, 0.0001, 0.9999);
+          bool leftSlot = uv.x < split;
+          float slotMin = leftSlot ? 0.0 : split;
+          float slotMax = leftSlot ? split : 1.0;
+          float2 transformed = uv * sampleTransform.xy + sampleTransform.zw;
+          if (transformed.x < slotMin || transformed.x > slotMax ||
+              transformed.y < 0.0 || transformed.y > 1.0) {
+            return float2(-1.0, -1.0);
+          }
+          return transformed;
+        }
+        float2 transformed = uv * sampleTransform.xy + sampleTransform.zw;
+        if (transformed.x < 0.0 || transformed.x > 1.0 ||
+            transformed.y < 0.0 || transformed.y > 1.0) {
+          return float2(-1.0, -1.0);
+        }
+        return transformed;
+      }
+
       fragment float4 fs_main(
         VertexOut in [[stage_in]],
         texture2d<float> videoTexture [[texture(0)]],
         texture2d<float> flutterTexture [[texture(1)]],
         constant float4& holeRect [[buffer(0)]],
-        constant float4& colorFlags [[buffer(1)]]
+        constant float4& colorFlags [[buffer(1)]],
+        constant float4& sampleTransform [[buffer(2)]],
+        constant float4& layoutFlags [[buffer(3)]]
       ) {
         constexpr sampler s(address::clamp_to_edge, filter::linear);
         float2 uv = clamp(in.uv, 0.0, 1.0);
@@ -698,7 +809,12 @@ final class MacOSNativeCompositorView: NSView {
               (uv.x - holeRect.x) / max(0.0001, holeRect.z - holeRect.x),
               (uv.y - holeRect.y) / max(0.0001, holeRect.w - holeRect.y))
           : float2(0.0, 0.0);
-        float4 video = insideHole ? videoTexture.sample(s, videoUv) : float4(0.0);
+        float2 sampleUv = transformedVideoUv(videoUv, sampleTransform, layoutFlags);
+        bool sampleInside = sampleUv.x >= 0.0 && sampleUv.x <= 1.0 &&
+          sampleUv.y >= 0.0 && sampleUv.y <= 1.0;
+        float4 video = insideHole && sampleInside
+          ? videoTexture.sample(s, sampleUv)
+          : float4(0.0);
         float4 flutter = flutterTexture.sample(s, uv);
         float alpha = clamp(flutter.a, 0.0, 1.0);
         float3 videoRgb = colorFlags.y > 0.5

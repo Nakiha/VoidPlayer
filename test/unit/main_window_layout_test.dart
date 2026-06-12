@@ -159,6 +159,90 @@ void main() {
     expect(stateStore.value.layout.zoomRatio, LayoutState.zoomMax);
   });
 
+  test(
+    'paused native compositor pan defers renderer layout until commit',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setNativeCompositorActive(true)
+        ..setPlaying(false)
+        ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 1600;
+      coordinator.viewportHeight = 900;
+
+      coordinator.onPan(const Offset(160, -90));
+      await pumpEventQueue();
+
+      expect(controller.appliedLayouts, isEmpty);
+      expect(controller.transforms, hasLength(1));
+      expect(controller.transforms.single.enabled, isTrue);
+      expect(controller.transforms.single.translateX, closeTo(-0.2, 1e-9));
+      expect(controller.transforms.single.translateY, closeTo(0.1, 1e-9));
+      expect(stateStore.value.layout.viewOffsetX, 160);
+      expect(stateStore.value.layout.viewOffsetY, -90);
+
+      coordinator.onPointerButton(false, false);
+      await coordinator.flushPendingLayout();
+
+      expect(controller.appliedLayouts, hasLength(1));
+      expect(controller.appliedLayouts.single.viewOffsetX, 160);
+      expect(controller.appliedLayouts.single.viewOffsetY, -90);
+      expect(controller.transforms, hasLength(2));
+      expect(controller.transforms.last.enabled, isFalse);
+    },
+  );
+
+  test(
+    'paused native compositor split pan uses full viewport transform',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setNativeCompositorActive(true)
+        ..setPlaying(false)
+        ..setLayout(
+          const LayoutState(
+            mode: LayoutMode.splitScreen,
+            order: [1, 2, -1, -1],
+          ),
+        );
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 1600;
+      coordinator.viewportHeight = 900;
+
+      coordinator.onPan(const Offset(160, 0));
+      await pumpEventQueue();
+
+      expect(controller.appliedLayouts, isEmpty);
+      expect(controller.transforms, hasLength(1));
+      expect(controller.transforms.single.enabled, isTrue);
+      expect(controller.transforms.single.mode, LayoutMode.splitScreen);
+      expect(controller.transforms.single.translateX, closeTo(-0.1, 1e-9));
+    },
+  );
+
   test('layout mode changes keep normalized view center stable', () {
     final stateStore = MainWindowStateStore()
       ..setTextureId(1)
@@ -335,6 +419,7 @@ class _FakeNativePlayerController extends NativePlayerController {
   final List<String> calls = [];
   final List<Size> resizes = [];
   final List<LayoutState> appliedLayouts = [];
+  final List<_NativeCompositorTransformCall> transforms = [];
   LayoutState nativeLayout;
   Size currentSize = const Size(100, 100);
   int getLayoutCalls = 0;
@@ -361,9 +446,57 @@ class _FakeNativePlayerController extends NativePlayerController {
   }
 
   @override
+  Future<void> setNativeCompositorViewportTransform({
+    required bool enabled,
+    required double scaleX,
+    required double scaleY,
+    required double translateX,
+    required double translateY,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+  }) async {
+    calls.add('setNativeCompositorViewportTransform');
+    transforms.add(
+      _NativeCompositorTransformCall(
+        enabled: enabled,
+        scaleX: scaleX,
+        scaleY: scaleY,
+        translateX: translateX,
+        translateY: translateY,
+        mode: mode,
+        splitPos: splitPos,
+        activeTrackCount: activeTrackCount,
+      ),
+    );
+  }
+
+  @override
   Future<LayoutState> getLayout() async {
     calls.add('getLayout');
     getLayoutCalls++;
     return nativeLayout;
   }
+}
+
+class _NativeCompositorTransformCall {
+  final bool enabled;
+  final double scaleX;
+  final double scaleY;
+  final double translateX;
+  final double translateY;
+  final int mode;
+  final double splitPos;
+  final int activeTrackCount;
+
+  const _NativeCompositorTransformCall({
+    required this.enabled,
+    required this.scaleX,
+    required this.scaleY,
+    required this.translateX,
+    required this.translateY,
+    required this.mode,
+    required this.splitPos,
+    required this.activeTrackCount,
+  });
 }

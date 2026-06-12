@@ -34,6 +34,16 @@ abstract interface class NativePlayerApi {
     required int surfaceWidth,
     required int surfaceHeight,
   });
+  Future<void> setNativeCompositorViewportTransform({
+    required bool enabled,
+    required double scaleX,
+    required double scaleY,
+    required double translateX,
+    required double translateY,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+  });
   Future<void> setViewportBackgroundColor(int colorValue);
   Future<ViewportCapture> captureViewport({String? outputPath});
   Future<ViewportCapture> captureViewportRegion({
@@ -183,6 +193,32 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
         NativePlayerKeys.height: height,
         NativePlayerKeys.surfaceWidth: surfaceWidth,
         NativePlayerKeys.surfaceHeight: surfaceHeight,
+      },
+    );
+  }
+
+  @override
+  Future<void> setNativeCompositorViewportTransform({
+    required bool enabled,
+    required double scaleX,
+    required double scaleY,
+    required double translateX,
+    required double translateY,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+  }) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.setNativeCompositorViewportTransform,
+      {
+        NativePlayerKeys.enabled: enabled,
+        NativePlayerKeys.scaleX: scaleX,
+        NativePlayerKeys.scaleY: scaleY,
+        NativePlayerKeys.translateX: translateX,
+        NativePlayerKeys.translateY: translateY,
+        NativePlayerKeys.mode: mode,
+        NativePlayerKeys.splitPos: splitPos,
+        NativePlayerKeys.activeTrackCount: activeTrackCount,
       },
     );
   }

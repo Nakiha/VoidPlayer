@@ -242,6 +242,18 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }) async {}
 
   @override
+  Future<void> setNativeCompositorViewportTransform({
+    required bool enabled,
+    required double scaleX,
+    required double scaleY,
+    required double translateX,
+    required double translateY,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+  }) async {}
+
+  @override
   Future<void> setViewportBackgroundColor(int colorValue) async {}
 
   @override

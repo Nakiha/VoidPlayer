@@ -137,6 +137,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "setNativeCompositorViewportRect":
       setNativeCompositorViewportRect(arguments: call.arguments)
       result(nil)
+    case "setNativeCompositorViewportTransform":
+      setNativeCompositorViewportTransform(arguments: call.arguments)
+      result(nil)
     case "play":
       playback.play(
         player: nativePlayer,
@@ -303,6 +306,20 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       height: MacOSFlutterArguments.intArg(arguments, "height") ?? 0,
       surfaceWidth: MacOSFlutterArguments.intArg(arguments, "surfaceWidth") ?? 0,
       surfaceHeight: MacOSFlutterArguments.intArg(arguments, "surfaceHeight") ?? 0
+    )
+  }
+
+  private func setNativeCompositorViewportTransform(arguments: Any?) {
+    guard let nativeCompositor else { return }
+    nativeCompositor.setViewportTransform(
+      enabled: MacOSFlutterArguments.boolArg(arguments, "enabled") ?? false,
+      scaleX: MacOSFlutterArguments.doubleArg(arguments, "scaleX") ?? 1.0,
+      scaleY: MacOSFlutterArguments.doubleArg(arguments, "scaleY") ?? 1.0,
+      translateX: MacOSFlutterArguments.doubleArg(arguments, "translateX") ?? 0.0,
+      translateY: MacOSFlutterArguments.doubleArg(arguments, "translateY") ?? 0.0,
+      mode: MacOSFlutterArguments.intArg(arguments, "mode") ?? 0,
+      splitPos: MacOSFlutterArguments.doubleArg(arguments, "splitPos") ?? 0.5,
+      activeTrackCount: MacOSFlutterArguments.intArg(arguments, "activeTrackCount") ?? 1
     )
   }
 

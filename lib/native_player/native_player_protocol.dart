@@ -19,6 +19,8 @@ class NativePlayerMethods {
   static const resize = 'resize';
   static const setNativeCompositorViewportRect =
       'setNativeCompositorViewportRect';
+  static const setNativeCompositorViewportTransform =
+      'setNativeCompositorViewportTransform';
   static const setViewportBackgroundColor = 'setViewportBackgroundColor';
   static const captureViewport = 'captureViewport';
   static const captureViewportRegion = 'captureViewportRegion';
@@ -53,6 +55,11 @@ class NativePlayerKeys {
   static const maxSize = 'maxSize';
   static const surfaceWidth = 'surfaceWidth';
   static const surfaceHeight = 'surfaceHeight';
+  static const scaleX = 'scaleX';
+  static const scaleY = 'scaleY';
+  static const translateX = 'translateX';
+  static const translateY = 'translateY';
+  static const activeTrackCount = 'activeTrackCount';
   static const textureId = 'textureId';
   static const tracks = 'tracks';
   static const fileId = 'fileId';

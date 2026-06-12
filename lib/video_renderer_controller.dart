@@ -197,6 +197,29 @@ class NativePlayerController {
     );
   }
 
+  Future<void> setNativeCompositorViewportTransform({
+    required bool enabled,
+    required double scaleX,
+    required double scaleY,
+    required double translateX,
+    required double translateY,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+  }) {
+    _ensureAlive();
+    return _api.setNativeCompositorViewportTransform(
+      enabled: enabled,
+      scaleX: scaleX,
+      scaleY: scaleY,
+      translateX: translateX,
+      translateY: translateY,
+      mode: mode,
+      splitPos: splitPos,
+      activeTrackCount: activeTrackCount,
+    );
+  }
+
   Future<void> setViewportBackgroundColor(int colorValue) {
     if (_disposed) {
       _reportNoopCommand(

@@ -2020,6 +2020,34 @@ TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
     REQUIRE(audio_pause_count == 2);
 }
 
+TEST_CASE("TrackLifecycle backs add-track seek away from EOF",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineFactory factory;
+    auto pipeline = factory.create_opened_pipeline(
+        video_test_dir() + "/h264_9s_1920x1080.mp4",
+        false);
+    REQUIRE(pipeline);
+    REQUIRE(pipeline->track_buffer);
+    REQUIRE(pipeline->seek_controller);
+
+    pipeline->file_id = 43;
+    pipeline->offset_us = 250000;
+    const int64_t track_end_us =
+        track_pts_end_us_from_stats(pipeline->demux_thread->stats());
+    REQUIRE(track_end_us > 1000);
+
+    const auto result = prepare_add_track_seek_to_clock(
+        *pipeline, track_end_us + pipeline->offset_us, false, {});
+
+    REQUIRE(result.applied);
+    REQUIRE(result.seek_type == SeekType::Exact);
+    REQUIRE(result.target_pts_us == track_end_us - 1000);
+    const auto pending_seek = pipeline->seek_controller->take_pending();
+    REQUIRE(pending_seek);
+    REQUIRE(pending_seek->target_pts_us == track_end_us - 1000);
+    REQUIRE(pending_seek->type == SeekType::Exact);
+}
+
 TEST_CASE("TrackLifecycle commits new track pipeline slot",
           "[track_pipeline][track_lifecycle]") {
     TrackPipelineManager manager;

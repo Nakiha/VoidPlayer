@@ -257,6 +257,8 @@ void VPMacOSNativePlayer::on_frame_available(
           completed_frame_info->color_primaries;
       last_renderer_owned_frame_info.target_pixel_buffer_address =
           completed_frame_info->target_pixel_buffer_address;
+      last_renderer_owned_frame_info.layout_revision =
+          completed_frame_info->layout_revision;
       last_renderer_owned_layout_revision = completed_frame_info->layout_revision;
     }
     const auto now = std::chrono::steady_clock::now();

@@ -19,10 +19,17 @@ typealias MacOSTextureDiagnostics = (
   metalBufferExhaustionCount: Int
 )
 
+struct MacOSTexturePresentationSnapshot {
+  let pixelBuffer: Unmanaged<CVPixelBuffer>
+  let generation: Int
+  let layoutRevision: UInt64
+}
+
 protocol MacOSVideoTexture: FlutterTexture {
   func resize(width: Int, height: Int) -> Bool
   func dimensions() -> (width: Int, height: Int)
   func presentationGeneration() -> Int
+  func presentationSnapshot() -> MacOSTexturePresentationSnapshot?
   func captureMetrics() -> (
     width: Int,
     height: Int,
@@ -63,7 +70,9 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private let hashPrefix: String
   private var pixelBuffers: [CVPixelBuffer] = []
   private var pixelBufferStates: [NativePixelBufferState] = []
+  private var pixelBufferLayoutRevisions: [UInt64] = []
   private var resizeFallbackDisplayBuffer: CVPixelBuffer?
+  private var resizeFallbackLayoutRevision: UInt64 = 0
   private var displayBufferIndex = 0
   private var drawBufferIndex = 0
   private var lastCopiedBufferIndex: Int?
@@ -99,6 +108,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
 
     guard width != self.width || height != self.height else { return false }
     resizeFallbackDisplayBuffer = pixelBufferLocked(displayBufferIndex)
+    resizeFallbackLayoutRevision = layoutRevisionLocked(displayBufferIndex)
     self.width = width
     self.height = height
     presentationTarget.resize(width: width, height: height)
@@ -247,6 +257,9 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         lastPublishedNativeUploadCount,
         pending.publishToken.nativeUploadCount
       )
+      if let pendingBufferIndex {
+        setLayoutRevisionLocked(pending.info.layoutRevision, for: pendingBufferIndex)
+      }
       resizeFallbackDisplayBuffer = nil
       return .alreadyPublished
     }
@@ -261,6 +274,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     publishBufferLocked(
       publishBufferIndex,
       nativeUploadCount: pending.publishToken.nativeUploadCount,
+      layoutRevision: pending.info.layoutRevision,
       player: player
     )
     let publishEndNs = DispatchTime.now().uptimeNanoseconds
@@ -300,19 +314,30 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   }
 
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
+    presentationSnapshot()?.pixelBuffer
+  }
+
+  func presentationSnapshot() -> MacOSTexturePresentationSnapshot? {
     lock.lock()
     defer { lock.unlock() }
 
     let usingResizeFallback = resizeFallbackDisplayBuffer != nil
     guard let pixelBuffer = resizeFallbackDisplayBuffer
       ?? pixelBufferLocked(displayBufferIndex) else { return nil }
+    let layoutRevision = usingResizeFallback
+      ? resizeFallbackLayoutRevision
+      : layoutRevisionLocked(displayBufferIndex)
     if usingResizeFallback {
       lastCopiedBufferIndex = nil
     } else {
       lastCopiedBufferIndex = displayBufferIndex
       nativeTargetPlayer?.protectMetalPresentationTarget(pixelBuffer)
     }
-    return Unmanaged.passRetained(pixelBuffer)
+    return MacOSTexturePresentationSnapshot(
+      pixelBuffer: Unmanaged.passRetained(pixelBuffer),
+      generation: lastPublishedNativeUploadCount,
+      layoutRevision: layoutRevision
+    )
   }
 
   func dimensions() -> (width: Int, height: Int) {
@@ -457,6 +482,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     }
     if publishBufferIndex == displayBufferIndex {
       lastPublishedNativeUploadCount = max(lastPublishedNativeUploadCount, nativeUploadCount)
+      setLayoutRevisionLocked(frameInfo?.layoutRevision ?? 0, for: publishBufferIndex)
       resizeFallbackDisplayBuffer = nil
       return false
     }
@@ -474,6 +500,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     publishBufferLocked(
       publishBufferIndex,
       nativeUploadCount: nativeUploadCount,
+      layoutRevision: frameInfo?.layoutRevision ?? 0,
       player: player
     )
     return true
@@ -499,6 +526,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       guard let nextBuffer = makePixelBufferLocked(attributes: attributes) else {
         pixelBuffers = []
         pixelBufferStates = []
+        pixelBufferLayoutRevisions = []
         displayBufferIndex = 0
         drawBufferIndex = 0
         lastCopiedBufferIndex = nil
@@ -519,6 +547,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     displayBufferIndex = 0
     drawBufferIndex = nextBuffers.count > 1 ? 1 : 0
     pixelBufferStates = Array(repeating: .available, count: nextBuffers.count)
+    pixelBufferLayoutRevisions = Array(repeating: 0, count: nextBuffers.count)
     pixelBufferStates[displayBufferIndex] = .displayed
     lastCopiedBufferIndex = nil
     lastPublishedNativeUploadCount = 0
@@ -580,6 +609,16 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     return nil
   }
 
+  private func layoutRevisionLocked(_ index: Int) -> UInt64 {
+    guard pixelBufferLayoutRevisions.indices.contains(index) else { return 0 }
+    return pixelBufferLayoutRevisions[index]
+  }
+
+  private func setLayoutRevisionLocked(_ revision: UInt64, for index: Int) {
+    guard pixelBufferLayoutRevisions.indices.contains(index) else { return }
+    pixelBufferLayoutRevisions[index] = revision
+  }
+
   private func pixelBufferStateSummaryLocked() -> String {
     pixelBufferStates.map { state in
       switch state {
@@ -604,6 +643,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private func publishBufferLocked(
     _ index: Int,
     nativeUploadCount: Int,
+    layoutRevision: UInt64,
     player: MacOSNativePlayerSession
   ) {
     if pixelBufferStates.indices.contains(displayBufferIndex) {
@@ -614,6 +654,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       pixelBufferStates[displayBufferIndex] = .displayed
     }
     lastPublishedNativeUploadCount = max(lastPublishedNativeUploadCount, nativeUploadCount)
+    setLayoutRevisionLocked(layoutRevision, for: displayBufferIndex)
     pixelBufferMetalUploadCount += 1
     pixelBufferReuseCount += 1
     if let displayBuffer = pixelBufferLocked(displayBufferIndex) {

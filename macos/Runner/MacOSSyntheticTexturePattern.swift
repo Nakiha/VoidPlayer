@@ -28,12 +28,20 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
   }
 
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
+    presentationSnapshot()?.pixelBuffer
+  }
+
+  func presentationSnapshot() -> MacOSTexturePresentationSnapshot? {
     lock.lock()
     defer { lock.unlock() }
 
     guard let pixelBuffer else { return nil }
     reuseCount += 1
-    return Unmanaged.passRetained(pixelBuffer)
+    return MacOSTexturePresentationSnapshot(
+      pixelBuffer: Unmanaged.passRetained(pixelBuffer),
+      generation: rebuildCount,
+      layoutRevision: 0
+    )
   }
 
   func dimensions() -> (width: Int, height: Int) {

@@ -160,7 +160,7 @@ void main() {
   });
 
   test(
-    'paused native compositor pan defers renderer layout until commit',
+    'paused native compositor pan defers renderer layout to throttled commit',
     () async {
       final stateStore = MainWindowStateStore()
         ..setTextureId(1)
@@ -199,8 +199,7 @@ void main() {
       expect(controller.appliedLayouts, hasLength(1));
       expect(controller.appliedLayouts.single.viewOffsetX, 160);
       expect(controller.appliedLayouts.single.viewOffsetY, -90);
-      expect(controller.transforms, hasLength(2));
-      expect(controller.transforms.last.enabled, isFalse);
+      expect(controller.transforms, hasLength(1));
     },
   );
 

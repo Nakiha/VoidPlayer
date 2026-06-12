@@ -7,6 +7,7 @@ struct MacOSNativeFrameInfo {
   let ptsUs: Int
   let dtsUs: Int
   let targetPixelBufferAddress: UInt
+  let layoutRevision: UInt64
 }
 
 struct MacOSPendingNativeFrame {

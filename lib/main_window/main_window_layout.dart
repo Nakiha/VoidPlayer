@@ -14,7 +14,7 @@ import 'main_window_state.dart';
 
 class MainWindowLayoutCoordinator {
   static const Duration viewportResizeDebounce = Duration(milliseconds: 80);
-  static const Duration nativeCompositorTransformCommitDelay = Duration(
+  static const Duration nativeCompositorTransformFlushInterval = Duration(
     milliseconds: 120,
   );
   static const double timelineTrackRowLogicalHeight = 40.0;
@@ -34,7 +34,7 @@ class MainWindowLayoutCoordinator {
   Future<void>? _preemptResizeFuture;
   int? _queuedPreemptWidth;
   int? _queuedPreemptHeight;
-  Timer? _nativeCompositorTransformCommitTimer;
+  Timer? _nativeCompositorTransformFlushTimer;
   bool _nativeCompositorTransformActive = false;
   int _nativeCompositorTransformGeneration = 0;
   double _nativeCompositorSampleScaleX = 1.0;
@@ -69,7 +69,7 @@ class MainWindowLayoutCoordinator {
   void dispose() {
     _disposed = true;
     _resizeDebounceTimer?.cancel();
-    _nativeCompositorTransformCommitTimer?.cancel();
+    _nativeCompositorTransformFlushTimer?.cancel();
     _ticker?.dispose();
     _ticker = null;
   }
@@ -493,7 +493,7 @@ class MainWindowLayoutCoordinator {
     if (_disposed) return;
     _layoutDirty = true;
     if (deferNativeCompositorFlush) {
-      _scheduleNativeCompositorViewportTransformCommit();
+      _scheduleNativeCompositorViewportTransformFlush();
       return;
     }
     _startTicker();
@@ -665,26 +665,34 @@ class MainWindowLayoutCoordinator {
     );
   }
 
-  void _scheduleNativeCompositorViewportTransformCommit() {
+  void _scheduleNativeCompositorViewportTransformFlush() {
     if (!_nativeCompositorTransformActive) return;
-    _nativeCompositorTransformCommitTimer?.cancel();
-    _nativeCompositorTransformCommitTimer = Timer(
-      nativeCompositorTransformCommitDelay,
-      _finishNativeCompositorViewportTransformInteraction,
+    if (_nativeCompositorTransformFlushTimer != null) return;
+    _nativeCompositorTransformFlushTimer = Timer(
+      nativeCompositorTransformFlushInterval,
+      _flushNativeCompositorViewportTransformInteraction,
     );
   }
 
+  void _flushNativeCompositorViewportTransformInteraction() {
+    _nativeCompositorTransformFlushTimer?.cancel();
+    _nativeCompositorTransformFlushTimer = null;
+    if (_nativeCompositorTransformActive && _layoutDirty) {
+      _startTicker();
+    }
+  }
+
   void _finishNativeCompositorViewportTransformInteraction() {
-    _nativeCompositorTransformCommitTimer?.cancel();
-    _nativeCompositorTransformCommitTimer = null;
+    _nativeCompositorTransformFlushTimer?.cancel();
+    _nativeCompositorTransformFlushTimer = null;
     if (_nativeCompositorTransformActive && _layoutDirty) {
       _startTicker();
     }
   }
 
   void _cancelNativeCompositorViewportTransform() {
-    _nativeCompositorTransformCommitTimer?.cancel();
-    _nativeCompositorTransformCommitTimer = null;
+    _nativeCompositorTransformFlushTimer?.cancel();
+    _nativeCompositorTransformFlushTimer = null;
     if (!_nativeCompositorTransformActive) return;
     _nativeCompositorTransformActive = false;
     _nativeCompositorSampleScaleX = 1.0;
@@ -710,35 +718,69 @@ class MainWindowLayoutCoordinator {
   Future<void> _applyLayoutToNative(LayoutState nextLayout) async {
     final transformGeneration = _nativeCompositorTransformGeneration;
     final hadTransform = _nativeCompositorTransformActive;
+    final sentScaleX = _nativeCompositorSampleScaleX;
+    final sentScaleY = _nativeCompositorSampleScaleY;
+    final sentTranslateX = _nativeCompositorSampleTranslateX;
+    final sentTranslateY = _nativeCompositorSampleTranslateY;
     await controller.applyLayout(nextLayout);
-    if (hadTransform &&
-        !_disposed &&
-        transformGeneration == _nativeCompositorTransformGeneration) {
-      await _clearNativeCompositorViewportTransformAfterAuthoritativeLayout();
+    if (!hadTransform || _disposed || !_nativeCompositorTransformActive) {
+      return;
+    }
+    if (transformGeneration == _nativeCompositorTransformGeneration) {
+      _resetNativeCompositorViewportTransformAfterAuthoritativeLayout();
+    } else {
+      _rebaseNativeCompositorViewportTransformAfterAuthoritativeLayout(
+        sentScaleX: sentScaleX,
+        sentScaleY: sentScaleY,
+        sentTranslateX: sentTranslateX,
+        sentTranslateY: sentTranslateY,
+      );
     }
   }
 
-  Future<void>
-  _clearNativeCompositorViewportTransformAfterAuthoritativeLayout() async {
+  void _resetNativeCompositorViewportTransformAfterAuthoritativeLayout() {
     if (!_nativeCompositorTransformActive) return;
-    _nativeCompositorTransformCommitTimer?.cancel();
-    _nativeCompositorTransformCommitTimer = null;
+    _nativeCompositorTransformFlushTimer?.cancel();
+    _nativeCompositorTransformFlushTimer = null;
     _nativeCompositorTransformActive = false;
     _nativeCompositorSampleScaleX = 1.0;
     _nativeCompositorSampleScaleY = 1.0;
     _nativeCompositorSampleTranslateX = 0.0;
     _nativeCompositorSampleTranslateY = 0.0;
     _nativeCompositorTransformGeneration += 1;
-    await controller.setNativeCompositorViewportTransform(
-      enabled: false,
-      scaleX: 1.0,
-      scaleY: 1.0,
-      translateX: 0.0,
-      translateY: 0.0,
-      mode: layout().mode,
-      splitPos: layout().splitPos,
-      activeTrackCount: trackCount(),
-    );
+  }
+
+  void _rebaseNativeCompositorViewportTransformAfterAuthoritativeLayout({
+    required double sentScaleX,
+    required double sentScaleY,
+    required double sentTranslateX,
+    required double sentTranslateY,
+  }) {
+    if (!_nativeCompositorTransformActive) return;
+    if (sentScaleX <= 0 ||
+        sentScaleY <= 0 ||
+        !sentScaleX.isFinite ||
+        !sentScaleY.isFinite) {
+      _cancelNativeCompositorViewportTransform();
+      return;
+    }
+    _nativeCompositorSampleScaleX /= sentScaleX;
+    _nativeCompositorSampleScaleY /= sentScaleY;
+    _nativeCompositorSampleTranslateX =
+        (_nativeCompositorSampleTranslateX - sentTranslateX) / sentScaleX;
+    _nativeCompositorSampleTranslateY =
+        (_nativeCompositorSampleTranslateY - sentTranslateY) / sentScaleY;
+
+    final isIdentity =
+        (_nativeCompositorSampleScaleX - 1.0).abs() < 0.0001 &&
+        (_nativeCompositorSampleScaleY - 1.0).abs() < 0.0001 &&
+        _nativeCompositorSampleTranslateX.abs() < 0.0001 &&
+        _nativeCompositorSampleTranslateY.abs() < 0.0001;
+    if (isIdentity) {
+      _resetNativeCompositorViewportTransformAfterAuthoritativeLayout();
+      return;
+    }
+    _publishNativeCompositorViewportTransform();
   }
 
   List<DisplayTrackGeometry> _orderedTracksForFocus(

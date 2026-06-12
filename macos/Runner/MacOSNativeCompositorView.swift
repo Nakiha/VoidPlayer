@@ -49,6 +49,8 @@ final class MacOSNativeCompositorView: NSView {
   private var viewportSampleTransform = SIMD4<Float>(1, 1, 0, 0)
   private var viewportLayoutFlags = SIMD4<Float>(0, 0, 0.5, 1)
   private var viewportTransformGeneration: UInt64 = 0
+  private var viewportTransformBaseDisplayedLayoutRevision: UInt64 = 0
+  private var displayedLayoutRevision: UInt64 = 0
   private let compositeRate = MacOSRateWindow()
   private let inFlightSemaphore = DispatchSemaphore(value: 2)
 
@@ -209,15 +211,26 @@ final class MacOSNativeCompositorView: NSView {
         viewportTransformEnabled != enabled ||
         viewportSampleTransform != nextTransform ||
         viewportLayoutFlags != nextFlags
+      let shouldRebase =
+        enabled &&
+        (!viewportTransformEnabled ||
+         displayedLayoutRevision > viewportTransformBaseDisplayedLayoutRevision)
       viewportTransformEnabled = enabled
       viewportSampleTransform = nextTransform
       viewportLayoutFlags = nextFlags
-      if changed {
+      if shouldRebase {
+        viewportTransformBaseDisplayedLayoutRevision = displayedLayoutRevision
+      } else if !enabled {
+        viewportTransformBaseDisplayedLayoutRevision = displayedLayoutRevision
+      }
+      if changed || shouldRebase {
         viewportTransformGeneration &+= 1
         let message = String(
-          format: "VoidPlayer viewport trace swift event=compositor-transform enabled=%d generation=%llu scale=(%.4f,%.4f) translate=(%.4f,%.4f) mode=%d split=%.4f tracks=%d",
+          format: "VoidPlayer viewport trace swift event=compositor-transform enabled=%d generation=%llu displayedLayoutRevision=%llu baseDisplayedLayoutRevision=%llu scale=(%.4f,%.4f) translate=(%.4f,%.4f) mode=%d split=%.4f tracks=%d",
           enabled ? 1 : 0,
           viewportTransformGeneration,
+          displayedLayoutRevision,
+          viewportTransformBaseDisplayedLayoutRevision,
           nextTransform.x,
           nextTransform.y,
           nextTransform.z,
@@ -278,8 +291,15 @@ final class MacOSNativeCompositorView: NSView {
       "nativeCompositorFlutterSRGBToLinearEnabled": lastFlutterSRGBToLinearEnabled,
       "nativeCompositorSkippedInFlightFrames": skippedInFlightFrames,
       "nativeCompositorSkippedStaticFrames": skippedStaticFrames,
-      "nativeCompositorViewportTransformEnabled": viewportTransformEnabled,
+      "nativeCompositorViewportTransformEnabled": viewportTransformEffectiveEnabled(),
+      "nativeCompositorViewportTransformRequestedEnabled": viewportTransformEnabled,
       "nativeCompositorViewportTransformGeneration": Int(viewportTransformGeneration),
+      "nativeCompositorDisplayedLayoutRevision": Int(
+        min(displayedLayoutRevision, UInt64(Int.max))
+      ),
+      "nativeCompositorViewportTransformBaseDisplayedLayoutRevision": Int(
+        min(viewportTransformBaseDisplayedLayoutRevision, UInt64(Int.max))
+      ),
       "nativeCompositorViewportTransformScaleXX1000": Int(viewportSampleTransform.x * 1000.0),
       "nativeCompositorViewportTransformScaleYX1000": Int(viewportSampleTransform.y * 1000.0),
       "nativeCompositorViewportTransformTranslateXX1000":
@@ -311,9 +331,14 @@ final class MacOSNativeCompositorView: NSView {
       }
       let video = videoSnapshot.texture
       let flutter = flutterSnapshot.texture
+      displayedLayoutRevision = max(displayedLayoutRevision, videoSnapshot.layoutRevision)
       var holeRect = explicitHoleRect ?? lastHoleRect
       var sampleTransform = viewportSampleTransform
       var layoutFlags = viewportLayoutFlags
+      if !viewportTransformEffectiveEnabled() {
+        sampleTransform = SIMD4<Float>(1, 1, 0, 0)
+        layoutFlags.x = 0
+      }
       var colorFlags = SIMD4<Float>(
         outputPixelFormat == .rgba16Float ? 1.0 : 0.0,
         shouldConvertSRGBToLinear(texture: video) ? 1.0 : 0.0,
@@ -384,7 +409,7 @@ final class MacOSNativeCompositorView: NSView {
       compositorDirty = false
       if frameCount == 1 || frameCount % 120 == 0 {
         NSLog(
-          "VoidPlayer native compositor: composite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d",
+          "VoidPlayer native compositor: composite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d layoutRevision=%llu transformEffective=%d",
           frameCount,
           outputMode,
           video.width,
@@ -392,10 +417,17 @@ final class MacOSNativeCompositorView: NSView {
           flutter.width,
           flutter.height,
           Int(metalLayer.drawableSize.width),
-          Int(metalLayer.drawableSize.height)
+          Int(metalLayer.drawableSize.height),
+          displayedLayoutRevision,
+          viewportTransformEffectiveEnabled() ? 1 : 0
         )
       }
     }
+  }
+
+  private func viewportTransformEffectiveEnabled() -> Bool {
+    viewportTransformEnabled &&
+      displayedLayoutRevision <= viewportTransformBaseDisplayedLayoutRevision
   }
 
   private func markCompositorDirty() {
@@ -424,6 +456,7 @@ final class MacOSNativeCompositorView: NSView {
   private struct VideoTextureSnapshot {
     let texture: MTLTexture
     let sourceKey: UInt64
+    let layoutRevision: UInt64
   }
 
   private struct FlutterTextureSnapshot {
@@ -433,12 +466,12 @@ final class MacOSNativeCompositorView: NSView {
 
   private func currentVideoMetalTexture() -> VideoTextureSnapshot? {
     guard let videoTexture,
-          let retainedBuffer = videoTexture.copyPixelBuffer() else {
+          let presentationSnapshot = videoTexture.presentationSnapshot() else {
       lastVideoTextureAvailable = false
       return nil
     }
-    let pixelBuffer = retainedBuffer.takeRetainedValue()
-    let generation = videoTexture.presentationGeneration()
+    let pixelBuffer = presentationSnapshot.pixelBuffer.takeRetainedValue()
+    let generation = presentationSnapshot.generation
     let sourceKey = generation > 0
       ? UInt64(generation)
       : UInt64(UInt(bitPattern: Unmanaged.passUnretained(pixelBuffer).toOpaque()))
@@ -466,7 +499,11 @@ final class MacOSNativeCompositorView: NSView {
       lastVideoTextureAvailable = false
       return nil
     }
-    return VideoTextureSnapshot(texture: texture, sourceKey: sourceKey)
+    return VideoTextureSnapshot(
+      texture: texture,
+      sourceKey: sourceKey,
+      layoutRevision: presentationSnapshot.layoutRevision
+    )
   }
 
   private func maybeUpdateVideoEDRMetrics(pixelBuffer: CVPixelBuffer) {

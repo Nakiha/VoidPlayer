@@ -61,7 +61,7 @@ on:
       - "resources/video/**"
 
 concurrency:
-  group: native-${{ github.ref }}
+  group: native-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

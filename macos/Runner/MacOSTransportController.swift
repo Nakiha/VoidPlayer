@@ -16,6 +16,8 @@ struct MacOSTransportContext {
 }
 
 final class MacOSTransportController {
+  private var seekRefreshSerial = 0
+
   func setTrackOffset(arguments: Any?, player: MacOSNativePlayerSession?) {
     let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") ?? -1
     let offsetUs = MacOSFlutterArguments.intArg(arguments, "offsetUs") ?? 0
@@ -51,6 +53,8 @@ final class MacOSTransportController {
     resumeAfterSeek: Bool,
     context: MacOSTransportContext
   ) -> FlutterError? {
+    seekRefreshSerial &+= 1
+    let seekSerial = seekRefreshSerial
     context.playback.stopForBlockingCommand(player: context.player, pausePlayer: true)
     let settledPtsUs = max(0, min(context.activeDurationUs, targetPtsUs))
     context.presentationState.setCurrentPts(settledPtsUs)
@@ -66,6 +70,15 @@ final class MacOSTransportController {
       context.markFrameAvailable()
       context.emitSeekPreviewPresented(requestId, settledPtsUs)
     }
+    if case .pending = refreshResult,
+       !resumeAfterSeek {
+      schedulePausedSeekLateFrameDelivery(
+        targetPtsUs: settledPtsUs,
+        requestId: requestId,
+        seekSerial: seekSerial,
+        context: context
+      )
+    }
     if resumeAfterSeek {
       context.playback.resumeIfNeeded(
         true,
@@ -78,6 +91,72 @@ final class MacOSTransportController {
       )
     }
     return nil
+  }
+
+  private func schedulePausedSeekLateFrameDelivery(
+    targetPtsUs: Int,
+    requestId: Int?,
+    seekSerial: Int,
+    context: MacOSTransportContext
+  ) {
+    let pumpReady = context.playback.ensurePresentationPump(
+      player: context.player,
+      texture: context.texture,
+      maxTrackSlots: context.maxTrackSlots,
+      userData: context.userData,
+      presentationState: context.presentationState
+    )
+    MacOSProfilerLog.log(
+      "VoidPlayer macOS paused seek pending; late frame pumpReady=\(pumpReady) targetPtsUs=\(targetPtsUs)"
+    )
+    NSLog(
+      "VoidPlayer macOS paused seek pending: pumpReady=%@ targetPtsUs=%d requestId=%d",
+      pumpReady ? "true" : "false",
+      targetPtsUs,
+      requestId ?? -1
+    )
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(220)) { [weak self] in
+      guard let self,
+            self.seekRefreshSerial == seekSerial,
+            context.nativeBackendActive,
+            let player = context.player,
+            let texture = context.texture else {
+        return
+      }
+      let result = MacOSNativeFrameRefresh.publishLatestSeekFrameIfAvailable(
+        player: player,
+        texture: texture,
+        targetPtsUs: targetPtsUs,
+        maxTrackSlots: context.maxTrackSlots,
+        presentationState: context.presentationState,
+        framePump: context.playback.framePumpForRefresh
+      )
+      switch result {
+      case .published:
+        NSLog(
+          "VoidPlayer macOS paused seek late frame published: targetPtsUs=%d requestId=%d",
+          targetPtsUs,
+          requestId ?? -1
+        )
+        context.markFrameAvailable()
+        context.emitSeekPreviewPresented(requestId, targetPtsUs)
+      case .alreadyPresented:
+        NSLog(
+          "VoidPlayer macOS paused seek late frame already presented: targetPtsUs=%d requestId=%d",
+          targetPtsUs,
+          requestId ?? -1
+        )
+        context.emitSeekPreviewPresented(requestId, targetPtsUs)
+      case .stale, .unavailable:
+        NSLog(
+          "VoidPlayer macOS paused seek late frame unavailable: result=%@ targetPtsUs=%d requestId=%d",
+          "\(result)",
+          targetPtsUs,
+          requestId ?? -1
+        )
+        break
+      }
+    }
   }
 
   func stepAndRefresh(

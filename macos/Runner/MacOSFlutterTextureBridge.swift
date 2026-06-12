@@ -135,11 +135,13 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       rebuildPixelBuffersLocked()
     }
     guard presentationTarget.isAvailable() else {
+      logTargetStateLocked(reason: "backend-unavailable")
       lock.unlock()
       throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")
     }
     guard installTargetRingLocked(player: player, maxTrackSlots: maxTrackSlots, refresh: false)
     else {
+      logTargetStateLocked(reason: "install-ring-failed")
       lock.unlock()
       throw MacOSNativePlayerError.failed(
         "failed to install renderer-owned Metal presentation target ring"
@@ -251,6 +253,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     guard let publishBufferIndex = pendingBufferIndex,
           pixelBufferStates.indices.contains(publishBufferIndex),
           pixelBufferStates[publishBufferIndex] == .rendering else {
+      logTargetStateLocked(reason: "publish-state-mismatch")
       throw MacOSNativePlayerError.transientFrameUnavailable(
         "renderer-owned Metal presentation target changed before publish"
       )
@@ -646,6 +649,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     )
     if !installed {
       pixelBufferMetalUploadFailureCount += 1
+      logTargetStateLocked(reason: "native-install-ring-returned-false")
     }
     if refresh, installed {
       player.protectMetalPresentationTarget(protectedBuffer)
@@ -685,7 +689,35 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       return true
     }
     metalBufferExhaustionCount += 1
+    logTargetStateLocked(reason: "buffer-exhausted")
     return false
+  }
+
+  private func pixelBufferAddressLocked(_ index: Int) -> UInt {
+    guard let buffer = pixelBufferLocked(index) else { return 0 }
+    return UInt(bitPattern: Unmanaged.passUnretained(buffer).toOpaque())
+  }
+
+  private func logTargetStateLocked(reason: String) {
+    NSLog(
+      "VoidPlayer macOS renderer target state reason=%@ size=%dx%d format=%u display=%d draw=%d copied=%d states=%@ buffers=%@ published=%d ignored=%d failures=%d exhausted=%d metalValid=%@ metalError=%@",
+      reason,
+      width,
+      height,
+      pixelFormat,
+      displayBufferIndex,
+      drawBufferIndex,
+      lastCopiedBufferIndex ?? -1,
+      pixelBufferStateSummaryLocked(),
+      pixelBuffers.indices.map { String(format: "0x%llx", UInt64(pixelBufferAddressLocked($0))) }
+        .joined(separator: ","),
+      lastPublishedNativeUploadCount,
+      lastIgnoredNativeUploadCount,
+      pixelBufferMetalUploadFailureCount,
+      metalBufferExhaustionCount,
+      metalTextureValid ? "true" : "false",
+      metalTextureLastError
+    )
   }
 
   private func logUpdateProfiler(
@@ -701,7 +733,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     let slow = totalNs >= 12_000_000 || requestNs >= 10_000_000 || isError
     guard slow else { return }
     MacOSProfilerLog.log(String(
-      format: "VoidPlayer macOS texture update profiler result=%@ totalMs=%.2f installMs=%.2f requestMs=%.2f publishMs=%.2f timeoutMs=%d ptsUs=%d display=%d draw=%d",
+      format: "VoidPlayer macOS texture update profiler result=%@ totalMs=%.2f installMs=%.2f requestMs=%.2f publishMs=%.2f timeoutMs=%d ptsUs=%d display=%d draw=%d states=%@",
       result,
       Self.ms(totalNs),
       Self.ms(installNs),
@@ -710,7 +742,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       waitTimeoutMs,
       ptsUs,
       displayBufferIndex,
-      drawBufferIndex
+      drawBufferIndex,
+      pixelBufferStateSummaryLocked()
     ))
   }
 

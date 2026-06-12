@@ -272,7 +272,7 @@ void VPMacOSNativePlayer::on_frame_available(
       --manual_refresh_callback_suppression_count;
       suppress_external_callback = true;
     }
-    if (suppress_external_callback) {
+    if (suppress_external_callback && vp_macos::env_enabled("VOIDPLAYER_MACOS_PROFILER")) {
       spdlog::info(
           "[MacOSFrameRefresh] frame_available pts_us={} upload_count={} layout_revision={} "
           "target_buffer=0x{:x}",

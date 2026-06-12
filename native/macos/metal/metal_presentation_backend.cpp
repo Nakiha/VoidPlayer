@@ -22,6 +22,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -825,6 +826,42 @@ bool MetalPresentationBackend::try_begin_async_draw(const char* source) {
   return true;
 }
 
+std::string MetalPresentationBackend::target_ring_state_summary_locked() const {
+  std::ostringstream stream;
+  stream << "ring=" << (target_ring_enabled_ ? "on" : "off")
+         << " inFlight=" << in_flight_draws_
+         << " displayed=0x" << std::hex << displayed_target_address_
+         << " protected=0x" << protected_target_address_
+         << std::dec << " states=";
+  if (target_ring_.empty()) {
+    stream << "empty";
+    return stream.str();
+  }
+  for (const auto& slot : target_ring_) {
+    char state = '?';
+    switch (slot.state) {
+      case TargetState::Available:
+        state = 'a';
+        break;
+      case TargetState::InFlight:
+        state = 'i';
+        break;
+      case TargetState::Completed:
+        state = 'c';
+        break;
+      case TargetState::Displayed:
+        state = 'd';
+        break;
+      case TargetState::Protected:
+        state = 'p';
+        break;
+    }
+    stream << state << ":0x" << std::hex << pointer_bits(slot.pixel_buffer) << std::dec
+           << ",";
+  }
+  return stream.str();
+}
+
 void* MetalPresentationBackend::try_acquire_ring_draw_target(const char* source) {
   std::lock_guard<std::mutex> lock(async_mutex_);
   if (async_shutdown_) {
@@ -1229,8 +1266,24 @@ bool MetalPresentationBackend::draw_frame(
   };
   if (!available() || !target_pixel_buffer ||
       draw_target_width_ <= 0 || draw_target_height_ <= 0) {
+    const bool backend_available = available();
+    std::string ring_state;
+    {
+      std::lock_guard<std::mutex> lock(async_mutex_);
+      ring_state = target_ring_state_summary_locked();
+    }
     release_acquired_target();
     mark_draw_failure("renderer-owned Metal presentation target is unavailable");
+    spdlog::warn(
+        "[MetalTarget] unavailable source={} available={} target=0x{:x} size={}x{} "
+        "draw_target=0x{:x} {}",
+        hooks.draw_source ? hooks.draw_source : "",
+        backend_available,
+        pointer_bits(target_pixel_buffer),
+        draw_target_width_,
+        draw_target_height_,
+        pointer_bits(draw_target_pixel_buffer_),
+        ring_state);
     log_profiler("none", false, -1, 0, 0, 0, last_error_.c_str());
     return false;
   }
@@ -1961,6 +2014,18 @@ void MetalPresentationBackend::set_draw_target_ring(
       target_ring_.push_back(slot);
     }
     target_ring_enabled_ = target_ring_.size() >= 2;
+    if (macos_profiler_enabled()) {
+      spdlog::info(
+          "[MetalTarget] install_ring targets={} displayed=0x{:x} protected=0x{:x} "
+          "size={}x{} slots={} {}",
+          target_ring_.size(),
+          displayed_target_address_,
+          protected_target_address_,
+          draw_target_width_,
+          draw_target_height_,
+          draw_target_max_track_slots_,
+          target_ring_state_summary_locked());
+    }
   }
   if (source_cache_shape_changed) {
     invalidate_source_cache();
@@ -1979,6 +2044,7 @@ void MetalPresentationBackend::clear_draw_target() {
     displayed_target_address_ = 0;
     protected_target_address_ = 0;
   }
+  spdlog::info("[MetalTarget] clear_draw_target");
   last_draw_frame_info_available_ = false;
   last_draw_frame_info_ = {};
   last_draw_succeeded_ = false;

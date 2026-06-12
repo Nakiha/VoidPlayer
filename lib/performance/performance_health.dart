@@ -184,15 +184,19 @@ class PerformanceHealthSnapshot {
     );
 
     final inputOrPlaybackActive = playing || layoutIntentHz >= 10;
-    final renderLatencySlow =
+    final rendererSubmitSlow =
         inputOrPlaybackActive &&
-        (drawP95Us >= 11_000 || backendP95Us >= 10_000 || metalP95Us >= 11_000);
-    final renderLatencySevere =
+        (backendP95Us >= 10_000 || metalP95Us >= 11_000);
+    final rendererSubmitSevere =
         inputOrPlaybackActive &&
-        (drawP95Us >= 22_000 || backendP95Us >= 20_000 || metalP95Us >= 22_000);
+        (backendP95Us >= 20_000 || metalP95Us >= 22_000);
+    final gpuCompletionQueueSlow =
+        inputOrPlaybackActive && drawP95Us >= 11_000 && !rendererSubmitSlow;
+    final gpuCompletionQueueSevere =
+        inputOrPlaybackActive && drawP95Us >= 22_000 && !rendererSubmitSevere;
     final nativeHardPressure = metalBufferDelta > 0 || metalFailureDelta > 0;
-    final nativeSlow = renderLatencySlow || nativeHardPressure;
-    final nativeSevere = renderLatencySevere || nativeHardPressure;
+    final nativeSlow = rendererSubmitSlow || nativeHardPressure;
+    final nativeSevere = rendererSubmitSevere || nativeHardPressure;
     final displayTarget = displayRefreshHz >= 50
         ? displayRefreshHz
         : _fallbackDisplayTargetHz;
@@ -209,7 +213,10 @@ class PerformanceHealthSnapshot {
               layoutDrawHz: layoutDrawHz,
             ) <
             math.min(layoutIntentHz, displayTarget) * 0.70;
-    final externalPressure = !nativeSlow && (displayTickLow || layoutDrawLow);
+    final externalPressure =
+        !nativeSlow &&
+        (displayTickLow || layoutDrawLow || gpuCompletionQueueSlow);
+    final externalPressureSevere = gpuCompletionQueueSevere;
 
     final decodePressure = playing && _hasDecodePressure(diagnostics);
     final presentationTimelineAnomaly =
@@ -247,7 +254,9 @@ class PerformanceHealthSnapshot {
       kind = PerformanceHealthKind.playbackCadencePressure;
       reason = 'playback-cadence';
     } else if (externalPressure) {
-      level = PerformanceHealthLevel.warning;
+      level = externalPressureSevere
+          ? PerformanceHealthLevel.severe
+          : PerformanceHealthLevel.warning;
       kind = PerformanceHealthKind.externalDisplayPressure;
       reason = 'display-pressure';
     }
@@ -339,6 +348,10 @@ class PerformanceHealthSnapshot {
             ) <
             math.min(layoutIntentHz, displayTarget) * 0.70) {
       signals.add('layout-draw-low');
+    }
+    final nativeSubmitSlow = backendP95Us >= 10_000 || metalP95Us >= 11_000;
+    if (inputOrPlaybackActive && drawP95Us >= 11_000 && !nativeSubmitSlow) {
+      signals.add('gpu-completion-high');
     }
     final expectedFrameIntervalMs = presentedFrameExpectedIntervalUs > 0
         ? presentedFrameExpectedIntervalUs / 1000.0

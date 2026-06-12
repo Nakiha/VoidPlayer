@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <sstream>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
@@ -27,6 +28,14 @@ bool macos_profiler_enabled() {
 
 uint64_t pointer_address(const void* pointer) {
   return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pointer));
+}
+
+std::string target_address_summary(const std::vector<void*>& targets) {
+  std::ostringstream stream;
+  for (void* target : targets) {
+    stream << "0x" << std::hex << pointer_address(target) << std::dec << ",";
+  }
+  return stream.str();
 }
 
 }  // namespace
@@ -83,6 +92,15 @@ int set_metal_presentation_target(
     player->presentation_target_max_track_slots = clamped_track_slots;
     if (target_changed) {
       ++player->presentation_target_generation;
+      spdlog::info(
+          "[MacOSFrameRefresh] install_target generation={} target=0x{:x} "
+          "size={}x{} slots={} refresh={}",
+          player->presentation_target_generation,
+          pointer_address(pixel_buffer),
+          width,
+          height,
+          clamped_track_slots,
+          refresh_now);
       if (refresh_now) {
         player->last_renderer_owned_presentation_succeeded = false;
         player->last_renderer_owned_frame_info_available = false;
@@ -203,6 +221,16 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
     player->presentation_target_max_track_slots = clamped_track_slots;
     if (target_changed) {
       ++player->presentation_target_generation;
+      spdlog::info(
+          "[MacOSFrameRefresh] install_target_ring generation={} targets=[{}] "
+          "displayed=0x{:x} protected=0x{:x} size={}x{} slots={}",
+          player->presentation_target_generation,
+          target_address_summary(targets),
+          pointer_address(displayed_pixel_buffer),
+          pointer_address(protected_pixel_buffer),
+          width,
+          height,
+          clamped_track_slots);
       player->last_renderer_owned_presentation_succeeded = false;
       player->last_renderer_owned_frame_info_available = false;
       player->last_renderer_owned_frame_info = {};
@@ -335,6 +363,11 @@ void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player
     player->presentation_target_height = 0;
     player->presentation_target_max_track_slots = 1;
     ++player->presentation_target_generation;
+    spdlog::info(
+        "[MacOSFrameRefresh] clear_target generation={} upload={} failures={}",
+        player->presentation_target_generation,
+        player->renderer_owned_presentation_upload_count,
+        player->renderer_owned_presentation_draw_failure_count);
     player->record_presentation_failure_locked(
         "renderer-owned Metal presentation target was cleared", false);
   }
@@ -403,6 +436,7 @@ int request_renderer_owned_frame_refresh(
   bool refresh_submitted = false;
   bool refresh_deferred_by_backpressure = false;
   std::string last_refresh_backpressure_error;
+  std::string last_refresh_renderer_error;
   const bool suppress_frame_callback =
       (flags & VPMacOSNativeFrameRefreshSuppressFrameCallback) != 0;
   auto release_manual_refresh_callback_suppression_locked = [&]() {
@@ -478,6 +512,8 @@ int request_renderer_owned_frame_refresh(
           refresh_deferred_by_backpressure = true;
           last_refresh_backpressure_error = renderer_error;
           write_error(error, error_size, renderer_error);
+        } else if (!renderer_error.empty()) {
+          last_refresh_renderer_error = renderer_error;
         }
       }
       if (refresh_submitted) {
@@ -676,7 +712,8 @@ int request_renderer_owned_frame_refresh(
   spdlog::warn(
       "[MacOSFrameRefresh] timeout elapsed_ms={} timeout_ms={} attempts={} "
       "min_pts_us={} clock_us={} baseline_upload={} upload={} baseline_failure={} "
-      "failures={} deferred_by_backpressure={} last_backpressure_error={}",
+      "failures={} deferred_by_backpressure={} last_backpressure_error={} "
+      "last_renderer_error={}",
       elapsed_ms,
       bounded_timeout_ms,
       refresh_attempts,
@@ -687,7 +724,8 @@ int request_renderer_owned_frame_refresh(
       baseline_draw_failure_count,
       player->renderer_owned_presentation_draw_failure_count,
       refresh_deferred_by_backpressure,
-      last_refresh_backpressure_error);
+      last_refresh_backpressure_error,
+      last_refresh_renderer_error);
   if (refresh_deferred_by_backpressure &&
       !last_refresh_backpressure_error.empty()) {
     write_error(error, error_size, last_refresh_backpressure_error);

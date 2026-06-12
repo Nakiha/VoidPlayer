@@ -98,6 +98,7 @@ public:
   void finish_async_draw();
 
 private:
+  std::string target_ring_state_summary_locked() const;
   void set_last_error(std::string error);
   void mark_draw_failure(std::string error);
   void mark_draw_success(const VPMacOSNativeFrameInfo& frame_info);

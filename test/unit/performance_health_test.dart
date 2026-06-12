@@ -18,11 +18,33 @@ void main() {
       'displayRefreshHzEstimate': 120.0,
       'displayTickHz': 118.0,
       'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
     });
 
     expect(snapshot.level, PerformanceHealthLevel.warning);
     expect(snapshot.kind, PerformanceHealthKind.nativeRenderPressure);
     expect(snapshot.reason, 'native-render');
+  });
+
+  test('classifies queued GPU completion latency as display pressure', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 2,
+      'isPlaying': false,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 120.0,
+      'layoutIntentHz': 61.6,
+      'layoutDrawHz': 19.8,
+      'nativeCompositorCompositeHz': 103.3,
+      'nativeRendererDrawP95Us': 64200.0,
+      'nativeRendererDrawBackendP95Us': 6100.0,
+      'metalCommandCompletionP95Us': 6100.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.severe);
+    expect(snapshot.kind, PerformanceHealthKind.externalDisplayPressure);
+    expect(snapshot.reason, 'display-pressure');
+    expect(snapshot.diagnosticSummary, contains('gpu-completion-high'));
+    expect(snapshot.diagnosticSummary, isNot(contains('reason=native-render')));
   });
 
   test(
@@ -416,6 +438,7 @@ void main() {
       'trackCount': 1,
       'isPlaying': true,
       'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
     });
 
     expect(_shouldShow(policy, snapshot: pressure, now: now), isFalse);
@@ -460,6 +483,7 @@ void main() {
       'trackCount': 1,
       'isPlaying': true,
       'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
     });
 
     for (var i = 0; i < 3; i += 1) {
@@ -483,6 +507,7 @@ void main() {
       'trackCount': 1,
       'isPlaying': true,
       'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
     });
 
     for (var i = 0; i < 2; i += 1) {
@@ -523,6 +548,7 @@ void main() {
       'trackCount': 1,
       'isPlaying': true,
       'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
     });
 
     for (var i = 0; i < 4; i += 1) {

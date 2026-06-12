@@ -45,6 +45,7 @@ final class MacOSNativeCompositorView: NSView {
   private var lastPresentedFlutterSourceKey: UInt64 = 0
   private var explicitHoleRect: SIMD4<Float>?
   private var lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
+  private let compositeRate = MacOSRateWindow()
   private let inFlightSemaphore = DispatchSemaphore(value: 2)
 
   private static let metricsSampleIntervalNs: UInt64 = 1_000_000_000
@@ -187,6 +188,8 @@ final class MacOSNativeCompositorView: NSView {
       "nativeCompositorEnabled": true,
       "nativeCompositorSpikeEnabled": true,
       "nativeCompositorFrames": frameCount,
+      "nativeCompositorCompositeHz": compositeRate.rateHz(),
+      "nativeCompositorCompositeHzX1000": Int(compositeRate.rateHz() * 1000.0),
       "nativeCompositorVideoTextureAvailable": lastVideoTextureAvailable,
       "nativeCompositorFlutterTextureAvailable": lastFlutterTextureAvailable,
       "nativeCompositorLastCompositeSucceeded": lastCompositeSucceeded,
@@ -286,6 +289,7 @@ final class MacOSNativeCompositorView: NSView {
 
       setHiddenOnMain(false)
       frameCount += 1
+      compositeRate.record()
       lastVideoTextureAvailable = true
       lastFlutterTextureAvailable = true
       lastCompositeSucceeded = true

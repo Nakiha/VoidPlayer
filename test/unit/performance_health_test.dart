@@ -45,6 +45,25 @@ void main() {
     },
   );
 
+  test('uses native compositor composite rate for layout display pressure', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 120.0,
+      'layoutIntentHz': 120.0,
+      'layoutDrawHz': 55.0,
+      'nativeCompositorEnabled': true,
+      'nativeCompositorCompositeHz': 118.0,
+      'nativeRendererDrawP95Us': 3000.0,
+      'nativeRendererDrawBackendP95Us': 2500.0,
+      'metalCommandCompletionP95Us': 3000.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+    expect(snapshot.diagnosticSummary, contains('compositor=118.0Hz'));
+  });
+
   test('classifies decode buffer pressure from track diagnostics', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,

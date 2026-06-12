@@ -382,8 +382,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     presentation.resetLayout()
     lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
     MacOSPresentationConfiguration.resetForNoMedia()
-    ensureNativeCompositorMatchesCurrentConfiguration()
     nativeCompositor?.setVideoTexture(nil)
+    ensureNativeCompositorMatchesCurrentConfiguration()
   }
 
   private func destroyPlayerForWindowClose() {
@@ -442,10 +442,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private func ensureNativeCompositorMatchesCurrentConfiguration() {
     let configuration = MacOSPresentationConfiguration.current
-    guard configuration.nativeCompositorEnabled else {
+    guard configuration.nativeCompositorEnabled,
+          textureId != nil,
+          texture != nil else {
       nativeCompositor?.detach()
       nativeCompositor = nil
-      lastNativeCompositorFailure = "native compositor presentation mode is not enabled"
+      lastNativeCompositorFailure = configuration.nativeCompositorEnabled
+        ? ""
+        : "native compositor presentation mode is not enabled"
       emitNativeCompositorState()
       return
     }

@@ -28,6 +28,7 @@ class PerformanceHealthSnapshot {
   final double displayTickHz;
   final double layoutDrawHz;
   final double layoutIntentHz;
+  final double nativeCompositorCompositeHz;
   final double drawP95Us;
   final double backendP95Us;
   final double metalP95Us;
@@ -56,6 +57,7 @@ class PerformanceHealthSnapshot {
     required this.displayTickHz,
     required this.layoutDrawHz,
     required this.layoutIntentHz,
+    required this.nativeCompositorCompositeHz,
     required this.drawP95Us,
     required this.backendP95Us,
     required this.metalP95Us,
@@ -86,6 +88,7 @@ class PerformanceHealthSnapshot {
         displayTickHz: 0,
         layoutDrawHz: 0,
         layoutIntentHz: 0,
+        nativeCompositorCompositeHz: 0,
         drawP95Us: 0,
         backendP95Us: 0,
         metalP95Us: 0,
@@ -123,6 +126,12 @@ class PerformanceHealthSnapshot {
     final displayTickHz = _doubleValue(diagnostics['displayTickHz']);
     final layoutDrawHz = _doubleValue(diagnostics['layoutDrawHz']);
     final layoutIntentHz = _doubleValue(diagnostics['layoutIntentHz']);
+    final nativeCompositorEnabled = _boolValue(
+      diagnostics['nativeCompositorEnabled'],
+    );
+    final nativeCompositorCompositeHz = _doubleValue(
+      diagnostics['nativeCompositorCompositeHz'],
+    );
     final drawP95Us = _doubleValue(diagnostics['nativeRendererDrawP95Us']);
     final backendP95Us = _doubleValue(
       diagnostics['nativeRendererDrawBackendP95Us'],
@@ -194,7 +203,12 @@ class PerformanceHealthSnapshot {
     final layoutDrawLow =
         layoutIntentHz >= 30 &&
         layoutDrawHz > 0 &&
-        layoutDrawHz < math.min(layoutIntentHz, displayTarget) * 0.70;
+        _presentationDrawHz(
+              nativeCompositorEnabled: nativeCompositorEnabled,
+              nativeCompositorCompositeHz: nativeCompositorCompositeHz,
+              layoutDrawHz: layoutDrawHz,
+            ) <
+            math.min(layoutIntentHz, displayTarget) * 0.70;
     final externalPressure = !nativeSlow && (displayTickLow || layoutDrawLow);
 
     final decodePressure = playing && _hasDecodePressure(diagnostics);
@@ -246,6 +260,7 @@ class PerformanceHealthSnapshot {
       displayTickHz: displayTickHz,
       layoutDrawHz: layoutDrawHz,
       layoutIntentHz: layoutIntentHz,
+      nativeCompositorCompositeHz: nativeCompositorCompositeHz,
       drawP95Us: drawP95Us,
       backendP95Us: backendP95Us,
       metalP95Us: metalP95Us,
@@ -280,6 +295,8 @@ class PerformanceHealthSnapshot {
       'tracks=$trackCount',
       'display=${_hzText(displayTickHz)}/${_hzText(displayRefreshHz)}',
       'layout=intent ${_hzText(layoutIntentHz)} draw ${_hzText(layoutDrawHz)}',
+      if (nativeCompositorCompositeHz > 0)
+        'compositor=${_hzText(nativeCompositorCompositeHz)}',
       'drawP95=${_usText(drawP95Us)}',
       'backendP95=${_usText(backendP95Us)}',
       'metalP95=${_usText(metalP95Us)}',
@@ -315,7 +332,12 @@ class PerformanceHealthSnapshot {
     }
     if (layoutIntentHz >= 30 &&
         layoutDrawHz > 0 &&
-        layoutDrawHz < math.min(layoutIntentHz, displayTarget) * 0.70) {
+        _presentationDrawHz(
+              nativeCompositorEnabled: nativeCompositorCompositeHz > 0,
+              nativeCompositorCompositeHz: nativeCompositorCompositeHz,
+              layoutDrawHz: layoutDrawHz,
+            ) <
+            math.min(layoutIntentHz, displayTarget) * 0.70) {
       signals.add('layout-draw-low');
     }
     final expectedFrameIntervalMs = presentedFrameExpectedIntervalUs > 0
@@ -403,6 +425,7 @@ class PerformanceHealthSnapshot {
       displayTickHz == other.displayTickHz &&
       layoutDrawHz == other.layoutDrawHz &&
       layoutIntentHz == other.layoutIntentHz &&
+      nativeCompositorCompositeHz == other.nativeCompositorCompositeHz &&
       drawP95Us == other.drawP95Us &&
       backendP95Us == other.backendP95Us &&
       metalP95Us == other.metalP95Us &&
@@ -433,6 +456,7 @@ class PerformanceHealthSnapshot {
     displayTickHz.round(),
     layoutDrawHz.round(),
     layoutIntentHz.round(),
+    nativeCompositorCompositeHz.round(),
     drawP95Us.round(),
     backendP95Us.round(),
     metalP95Us.round(),
@@ -455,6 +479,17 @@ class PerformanceHealthSnapshot {
   ]);
 
   static const _fallbackDisplayTargetHz = 60.0;
+
+  static double _presentationDrawHz({
+    required bool nativeCompositorEnabled,
+    required double nativeCompositorCompositeHz,
+    required double layoutDrawHz,
+  }) {
+    if (nativeCompositorEnabled && nativeCompositorCompositeHz > 0) {
+      return nativeCompositorCompositeHz;
+    }
+    return layoutDrawHz;
+  }
 
   static bool _hasDecodePressure(Map<String, dynamic> diagnostics) {
     final tracks =

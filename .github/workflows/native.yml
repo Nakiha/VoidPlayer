@@ -305,6 +305,9 @@ jobs:
       - name: Bootstrap pinned Flutter toolchain
         run: PYTHON=python3.12 scripts/ci/bootstrap_flutter_toolchain.sh
 
+      - name: Bootstrap pinned macOS Flutter engine
+        run: scripts/ci/bootstrap_flutter_macos_engine.sh
+
       - name: Build macOS Flutter runner
         shell: bash
         run: python3.12 dev.py build --flutter --debug

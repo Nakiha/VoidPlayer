@@ -33,7 +33,22 @@ Use:
 ```bash
 python dev.py toolchain doctor
 python dev.py toolchain bootstrap-flutter
+scripts/ci/bootstrap_flutter_macos_engine.sh
 ```
+
+The fork release also carries the macOS local engine archives required by
+`flutter build macos --local-engine`. The asset names and SHA-256 values are
+locked in `toolchains/flutter.lock.json` under `macosLocalEngineArtifacts`.
+CI restores those archives before macOS runner/UI builds. To publish a new fork
+release, build the matching local engine outputs, run:
+
+```bash
+scripts/ci/package_flutter_macos_engine.sh debug
+scripts/ci/package_flutter_macos_engine.sh release
+```
+
+Upload the generated archives to the immutable `VoidPlayer-Flutter` release and
+update the lock with the printed hashes.
 
 `dev_config.local.json` may point at an existing fork checkout and local engine
 build, but it does not replace the lock:

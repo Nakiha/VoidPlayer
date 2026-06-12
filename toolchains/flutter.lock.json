@@ -11,6 +11,20 @@
   "forkBranch": "voidplayer/hdr-surface-export-3.44.1",
   "forkCommit": "04b75e628e3a7c7ffc66f14e50f760564ab2e9f2",
   "defaultInstallPath": ".toolchains/flutter",
+  "macosLocalEngineArtifacts": {
+    "debug": {
+      "engine": "host_debug_unopt_arm64",
+      "host": "host_debug_unopt_arm64",
+      "asset": "voidplayer-flutter-3.44.1-hdr.1-macos-host_debug_unopt_arm64.tar.gz",
+      "sha256": "3b6b47875937c63d0449c4078f0f322b0d5a783f20de233b85ec478a9fb31ee2"
+    },
+    "release": {
+      "engine": "host_release_arm64",
+      "host": "host_release_arm64",
+      "asset": "voidplayer-flutter-3.44.1-hdr.1-macos-host_release_arm64.tar.gz",
+      "sha256": "01af58040813f998aa800c12b53974d3d40920e9d8985e78e69d3cdd694897d5"
+    }
+  },
   "requiredPatchMarkers": [
     {
       "path": "engine/src/flutter/shell/platform/darwin/macos/framework/Headers/FlutterEngine.h",

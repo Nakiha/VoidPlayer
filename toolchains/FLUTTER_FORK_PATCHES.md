@@ -59,20 +59,29 @@ checkout matches `toolchains/flutter.lock.json`.
 
 1. Create a new baseline branch/tag in `Nakiha/VoidPlayer-Flutter`.
 2. Rebase or replay the VoidPlayer patch branch on that baseline.
-3. Build the required local engine artifacts.
+3. Build the required local engine artifacts:
+
+```bash
+scripts/ci/package_flutter_macos_engine.sh debug
+scripts/ci/package_flutter_macos_engine.sh release
+```
+
 4. Create a new immutable release tag, for example
    `voidplayer-flutter-3.44.1-hdr.2`.
-5. Update `toolchains/flutter.lock.json`.
-6. Run:
+5. Upload the generated `*-macos-host_*.tar.gz` files to that release.
+6. Update `toolchains/flutter.lock.json`, including asset names and SHA-256
+   values under `macosLocalEngineArtifacts`.
+7. Run:
 
 ```bash
 python dev.py toolchain bootstrap-flutter
+scripts/ci/bootstrap_flutter_macos_engine.sh
 python dev.py toolchain doctor
 python dev.py test --flutter-only
 python dev.py build --flutter --debug
 ```
 
-7. Re-run the macOS HDR compositor smoke scripts documented in
+8. Re-run the macOS HDR compositor smoke scripts documented in
    `native/docs/MACOS_HDR_EXPLORATION.md`.
 
 Do not move an existing `voidplayer-flutter-*-hdr.*` tag after VoidPlayer has

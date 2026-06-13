@@ -1369,9 +1369,17 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
         return frame;
     };
     const auto make_track =
-        [&](int64_t offset_us, std::optional<TextureFrame> queued_frame) {
+        [&](int64_t offset_us,
+            std::optional<TextureFrame> queued_frame,
+            bool queue_eof = true,
+            int64_t duration_us = 0) {
             auto track = std::make_unique<TrackPipeline>();
             track->offset_us = offset_us;
+            track->duration_us = duration_us;
+            track->packet_queue = std::make_unique<PacketQueue>();
+            if (queue_eof) {
+                track->packet_queue->signal_eof();
+            }
             track->track_buffer = std::make_shared<TrackBuffer>();
             if (queued_frame.has_value()) {
                 track->track_buffer->push_frame(*queued_frame);
@@ -1395,9 +1403,31 @@ TEST_CASE("TrackPresentPolicy computes empty-buffer EOF clamp facts",
     REQUIRE(clamp.all_active_buffers_empty);
     REQUIRE(clamp.max_end_pts_us == 2030);
 
-    manager[2] = make_track(0, make_frame(3000, 30));
+    manager[2] = make_track(0, make_frame(3000, 30), false);
     auto non_empty = compute_empty_buffer_eof_clamp(manager, last_decision);
     REQUIRE_FALSE(non_empty.all_active_buffers_empty);
+
+    TrackPipelineManager bounded_manager;
+    bounded_manager[0] =
+        make_track(250, make_frame(3000, 30), false, 9000);
+    auto bounded = compute_empty_buffer_eof_clamp(bounded_manager, PresentDecision());
+    REQUIRE(bounded.all_active_buffers_empty);
+    REQUIRE(bounded.max_end_pts_us == 9250);
+
+    TrackPipelineManager tail_manager;
+    tail_manager[0] = make_track(100, make_frame(3000, 30), true);
+    auto tail = compute_empty_buffer_eof_clamp(tail_manager, PresentDecision());
+    REQUIRE(tail.all_active_buffers_empty);
+    REQUIRE(tail.max_end_pts_us == 3130);
+
+    TrackPipelineManager eof_buffered_manager;
+    eof_buffered_manager[0] =
+        make_track(100, make_frame(3000, 30), true, 10000);
+    eof_buffered_manager[0]->track_buffer->push_frame(make_frame(4000, 30));
+    auto eof_buffered =
+        compute_empty_buffer_eof_clamp(eof_buffered_manager, PresentDecision());
+    REQUIRE(eof_buffered.all_active_buffers_empty);
+    REQUIRE(eof_buffered.max_end_pts_us == 10100);
 
     TrackPipelineManager missing_buffer_manager;
     missing_buffer_manager[0] = std::make_unique<TrackPipeline>();

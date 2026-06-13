@@ -56,7 +56,7 @@ public:
     // EOF signal (producer sets, consumer reads)
     void signal_eof();
     void clear_eof();
-    bool is_eof() const;
+    bool is_eof() const { return eof_.load(std::memory_order_acquire); }
 
     // State
     size_t size() const;

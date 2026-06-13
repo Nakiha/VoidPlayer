@@ -707,7 +707,10 @@ def _is_generate_media_row(row: list[str]) -> bool:
     return (
         len(row) >= 3
         and row[1].strip().upper()
-        in {"GENERATE_TEST_VIDEO", "GENERATE_TEST_VIDEO_WITH_AUDIO"}
+        in {
+            "GENERATE_TEST_VIDEO",
+            "GENERATE_TEST_VIDEO_WITH_AUDIO",
+        }
     )
 
 
@@ -731,7 +734,7 @@ def _generate_macos_test_video(row: list[str], output_path: str) -> None:
     with_audio = cmd == "GENERATE_TEST_VIDEO_WITH_AUDIO"
     if frames <= 0 or fps <= 0 or width <= 0 or height <= 0 or pts_offset_us < 0:
         raise ValueError(f"invalid GENERATE_TEST_VIDEO row: {row}")
-    if video_codec not in {"h264", "h26410", "vp9", "mpeg2", "hevc-hlg"}:
+    if video_codec not in {"h264", "h26410", "vp9", "mpeg2", "hevc", "hevc-hlg"}:
         raise ValueError(f"unsupported macOS generated UI video codec: {video_codec}")
 
     ffmpeg = shutil.which("ffmpeg")
@@ -804,7 +807,7 @@ def _generate_macos_test_video(row: list[str], output_path: str) -> None:
             "-q:v",
             "4",
         ])
-    elif video_codec == "hevc-hlg":
+    elif video_codec in {"hevc", "hevc-hlg"}:
         pixel_format = "yuv420p10le"
         ffmpeg_cmd.extend([
             "-c:v",
@@ -812,14 +815,21 @@ def _generate_macos_test_video(row: list[str], output_path: str) -> None:
             "-preset",
             "ultrafast",
             "-x265-params",
-            "log-level=error:hdr10=1:repeat-headers=1:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc",
-            "-color_primaries",
-            "bt2020",
-            "-colorspace",
-            "bt2020nc",
-            "-color_trc",
-            "arib-std-b67",
+            "log-level=error",
         ])
+        if video_codec == "hevc-hlg":
+            ffmpeg_cmd[-1] = (
+                "log-level=error:hdr10=1:repeat-headers=1:"
+                "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc"
+            )
+            ffmpeg_cmd.extend([
+                "-color_primaries",
+                "bt2020",
+                "-colorspace",
+                "bt2020nc",
+                "-color_trc",
+                "arib-std-b67",
+            ])
     else:
         ffmpeg_cmd.extend([
             "-c:v",

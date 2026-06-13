@@ -128,7 +128,7 @@ TEST_CASE("RenderSink: single track with future PTS does not present", "[render_
     REQUIRE(decision.should_present == false);
 }
 
-TEST_CASE("RenderSink: expired frame is advanced past", "[render_sink]") {
+TEST_CASE("RenderSink: expired frames advance to the stable tail frame", "[render_sink]") {
     MockTimeSource mt{0};
     Clock clock([&mt]() { return mt.t; });
     clock.play();
@@ -152,12 +152,39 @@ TEST_CASE("RenderSink: expired frame is advanced past", "[render_sink]") {
     RenderSink sink(clock);
     sink.set_track(0, track);
 
-    // Clock at 2000000, both frames are expired (frame1 ends at 1033000)
+    // Clock at 2000000, frame1 is expired by frame2's PTS. With no following
+    // PTS, frame2 is the stable tail frame and remains visible.
     mt.t = 2000000;
 
     PresentDecision decision = sink.evaluate();
-    // Both frames expired, no frames available to display
-    REQUIRE(decision.should_present == false);
+    REQUIRE(decision.should_present == true);
+    REQUIRE(decision.frames[0].has_value());
+    REQUIRE(decision.frames[0]->pts_us == 1033000);
+}
+
+TEST_CASE("RenderSink: sparse single frame remains visible after nominal duration",
+          "[render_sink]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    auto track = std::make_shared<TrackBuffer>(4, 2);
+
+    TextureFrame frame;
+    frame.pts_us = 0;
+    frame.duration_us = 1000000;
+    frame.texture_handle = reinterpret_cast<void*>(0x1);
+    track->push_frame(frame);
+
+    RenderSink sink(clock);
+    sink.set_track(0, track);
+
+    mt.t = 2000000;
+
+    PresentDecision decision = sink.evaluate();
+    REQUIRE(decision.should_present == true);
+    REQUIRE(decision.frames[0].has_value());
+    REQUIRE(decision.frames[0]->pts_us == 0);
 }
 
 TEST_CASE("RenderSink: next PTS defines display window when duration metadata is bogus",

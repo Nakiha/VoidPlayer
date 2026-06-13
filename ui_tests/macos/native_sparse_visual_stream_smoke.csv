@@ -1,0 +1,27 @@
+# Sparse visual streams (single-frame still clips, very low-fps clips) should
+# participate in the same preroll, seek, and viewport presentation contract as videos.
+@WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/native_sparse_visual_still.mp4, 1, 1, 512, 512, 0, hevc
+0.1, GENERATE_TEST_VIDEO, build/generated/macos/native_sparse_visual_video.mp4, 90, 30, 640, 360
+0.3, ADD_MEDIA, build/generated/macos/native_sparse_visual_still.mp4
+1.2, ASSERT_TRACK_COUNT, 1
+1.3, ASSERT_PRESENTED_FRAME_RANGE, 0, 0, 100000
+1.4, ADD_MEDIA, build/generated/macos/native_sparse_visual_video.mp4
+2.6, ASSERT_TRACK_COUNT, 2
+2.7, PLAY
+3.8, WAIT_PLAYING, 2000
+4.2, ASSERT_POSITION_RANGE, 300000, 1800000
+4.3, CLICK_TIMELINE_FRACTION, 0.55
+5.0, WAIT_PLAYING, 2000
+5.1, ASSERT_POSITION_RANGE, 1100000, 3000000
+5.2, ASSERT_PRESENTED_FRAME_RANGE, 0, 0, 100000
+5.3, PAUSE
+5.8, ASSERT_PAUSED
+5.9, CAPTURE_VIEWPORT, sparse_visual_before_pan
+6.0, SET_ZOOM, 2.0
+6.1, DRAG_VIEWPORT, 240, -100, 80, 4
+7.0, CAPTURE_VIEWPORT, sparse_visual_after_pan
+7.1, ASSERT_CAPTURE_NOT_BLACK, sparse_visual_after_pan, 0.01, 4.0
+7.2, ASSERT_CAPTURE_CHANGED, sparse_visual_before_pan, sparse_visual_after_pan
+7.4, QUIT, 0

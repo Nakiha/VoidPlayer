@@ -14,10 +14,61 @@ std::optional<int64_t> frame_end_pts_us(const TrackBuffer& track,
     if (next.has_value() && next->pts_us > frame.pts_us) {
         return next->pts_us;
     }
-    if (frame.duration_us > 0) {
-        return frame.pts_us + frame.duration_us;
-    }
+    // No following PTS means the current frame is the stable tail for now.
+    // Duration metadata alone is not reliable enough to blank the track.
     return std::nullopt;
+}
+
+int64_t track_pts_end_us_from_demux_stats(const DemuxStats& stats) {
+    if (stats.duration_us <= 0) {
+        return 0;
+    }
+    if (stats.start_time_us <= 0) {
+        return stats.duration_us;
+    }
+    if (stats.duration_us > stats.start_time_us &&
+        stats.duration_us - stats.start_time_us < stats.duration_us / 2) {
+        return stats.duration_us;
+    }
+    return stats.start_time_us + stats.duration_us;
+}
+
+std::optional<int64_t> track_declared_end_us(const TrackPipeline& track) {
+    int64_t end_us = 0;
+    if (track.demux_thread) {
+        end_us = track_pts_end_us_from_demux_stats(track.demux_thread->stats());
+    } else if (track.duration_us > 0) {
+        end_us = track.duration_us;
+    }
+    if (end_us <= 0) {
+        return std::nullopt;
+    }
+    return std::max<int64_t>(0, end_us + track.offset_us);
+}
+
+std::optional<int64_t> frame_projected_end_us(const TextureFrame& frame,
+                                              int64_t offset_us) {
+    const int64_t duration_us = std::max<int64_t>(frame.duration_us, 0);
+    return std::max<int64_t>(0, frame.pts_us + duration_us + offset_us);
+}
+
+std::optional<int64_t> buffered_tail_end_us(const TrackPipeline& track) {
+    if (!track.track_buffer) {
+        return std::nullopt;
+    }
+    std::optional<int64_t> end_us;
+    const size_t count = track.track_buffer->total_count();
+    for (size_t index = 0; index < count; ++index) {
+        const auto frame = track.track_buffer->peek(static_cast<int>(index));
+        if (!frame.has_value()) {
+            continue;
+        }
+        const auto frame_end_us = frame_projected_end_us(*frame, track.offset_us);
+        if (frame_end_us.has_value()) {
+            end_us = std::max(end_us.value_or(0), *frame_end_us);
+        }
+    }
+    return end_us;
 }
 
 }  // namespace
@@ -184,17 +235,23 @@ EmptyBufferEofClamp compute_empty_buffer_eof_clamp(
         if (!tracks[i]) {
             continue;
         }
-        if (tracks[i]->track_buffer &&
-            tracks[i]->track_buffer->peek(0).has_value()) {
+        auto end_us = track_declared_end_us(*tracks[i]);
+        const bool queue_eof =
+            !tracks[i]->packet_queue || tracks[i]->packet_queue->is_eof();
+        if (!queue_eof && !end_us.has_value()) {
             clamp.all_active_buffers_empty = false;
             break;
         }
-        if (present_decision_slot_matches_track(last_decision, tracks, i)) {
-            clamp.max_end_pts_us = std::max(
-                clamp.max_end_pts_us,
-                last_decision.frames[i]->pts_us +
-                    last_decision.frames[i]->duration_us +
-                    tracks[i]->offset_us);
+        if (!end_us.has_value() &&
+            present_decision_slot_matches_track(last_decision, tracks, i)) {
+            end_us = frame_projected_end_us(*last_decision.frames[i],
+                                            tracks[i]->offset_us);
+        }
+        if (!end_us.has_value()) {
+            end_us = buffered_tail_end_us(*tracks[i]);
+        }
+        if (end_us.has_value()) {
+            clamp.max_end_pts_us = std::max(clamp.max_end_pts_us, *end_us);
         }
     }
 

@@ -53,7 +53,62 @@ TEST_CASE("DecodeFrameReceiveLoop: publishes normal frames until receive stops",
     av_frame_free(&frame);
 }
 
-TEST_CASE("DecodeFrameReceiveLoop: collects exact seek frames after target window",
+TEST_CASE("DecodeFrameReceiveLoop: holds pre-target exact seek candidates until preview is ready",
+          "[decode_thread][decode_frame_receive_loop]") {
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+
+    int receive_calls = 0;
+    int dropped = 0;
+    int collected = 0;
+    int preview_checks = 0;
+    int previews_published = 0;
+    int64_t newest_pts_us = -1;
+
+    const auto result = receive_decode_frames_for_packet(
+        frame,
+        DecodeFrameReceiveLoopOptions{true, 1'000'000, false},
+        DecodeFrameReceiveLoopCallbacks{
+            []() { return false; },
+            [&](AVFrame* received_frame) {
+                ++receive_calls;
+                if (receive_calls == 1) {
+                    received_frame->pts = 700'000;
+                    newest_pts_us = received_frame->pts;
+                    return 0;
+                }
+                if (receive_calls == 2) {
+                    received_frame->pts = 1'000'000;
+                    newest_pts_us = received_frame->pts;
+                    return 0;
+                }
+                return AVERROR(EAGAIN);
+            },
+            {},
+            {},
+            [&]() { ++dropped; },
+            [&](AVFrame*) { ++collected; },
+            [&]() {
+                ++preview_checks;
+                return newest_pts_us >= 1'000'000;
+            },
+            [&]() { ++previews_published; },
+            {},
+            {},
+            {},
+            {},
+        });
+
+    REQUIRE(result.frames_produced == 2);
+    REQUIRE_FALSE(result.stop_with_error);
+    REQUIRE(dropped == 0);
+    REQUIRE(collected == 2);
+    REQUIRE(preview_checks == 2);
+    REQUIRE(previews_published == 1);
+    av_frame_free(&frame);
+}
+
+TEST_CASE("DecodeFrameReceiveLoop: keeps sparse exact seek held frames without early preview",
           "[decode_thread][decode_frame_receive_loop]") {
     AVFrame* frame = av_frame_alloc();
     REQUIRE(frame != nullptr);
@@ -72,11 +127,11 @@ TEST_CASE("DecodeFrameReceiveLoop: collects exact seek frames after target windo
             [&](AVFrame* received_frame) {
                 ++receive_calls;
                 if (receive_calls == 1) {
-                    received_frame->pts = 700'000;
+                    received_frame->pts = 0;
                     return 0;
                 }
                 if (receive_calls == 2) {
-                    received_frame->pts = 800'000;
+                    received_frame->pts = 700'000;
                     return 0;
                 }
                 return AVERROR(EAGAIN);
@@ -87,7 +142,7 @@ TEST_CASE("DecodeFrameReceiveLoop: collects exact seek frames after target windo
             [&](AVFrame*) { ++collected; },
             [&]() {
                 ++preview_checks;
-                return true;
+                return false;
             },
             [&]() { ++previews_published; },
             {},
@@ -96,12 +151,12 @@ TEST_CASE("DecodeFrameReceiveLoop: collects exact seek frames after target windo
             {},
         });
 
-    REQUIRE(result.frames_produced == 1);
+    REQUIRE(result.frames_produced == 2);
     REQUIRE_FALSE(result.stop_with_error);
-    REQUIRE(dropped == 1);
-    REQUIRE(collected == 1);
-    REQUIRE(preview_checks == 1);
-    REQUIRE(previews_published == 1);
+    REQUIRE(dropped == 0);
+    REQUIRE(collected == 2);
+    REQUIRE(preview_checks == 2);
+    REQUIRE(previews_published == 0);
     av_frame_free(&frame);
 }
 

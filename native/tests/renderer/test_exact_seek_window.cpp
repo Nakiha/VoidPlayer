@@ -4,11 +4,12 @@
 
 using namespace vr;
 
-TEST_CASE("ExactSeekWindow: lookbehind gate keeps bounded pre-target candidates",
+TEST_CASE("ExactSeekWindow: held pre-target candidates support sparse visual streams",
           "[decode_thread][exact_seek]") {
     constexpr int64_t target = 1000000;
 
-    REQUIRE_FALSE(should_collect_exact_seek_candidate(749999, target));
+    REQUIRE(should_collect_exact_seek_candidate(0, target));
+    REQUIRE(should_collect_exact_seek_candidate(749999, target));
     REQUIRE(should_collect_exact_seek_candidate(750000, target));
     REQUIRE(should_collect_exact_seek_candidate(999999, target));
     REQUIRE(should_collect_exact_seek_candidate(1000000, target));

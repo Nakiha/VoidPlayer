@@ -7,7 +7,17 @@ bool is_exact_seek_pre_target(int64_t pts_us, int64_t target_pts_us) {
 }
 
 bool should_collect_exact_seek_candidate(int64_t pts_us, int64_t target_pts_us) {
-    return target_pts_us >= 0 && pts_us >= target_pts_us - kExactSeekLookbehindUs;
+    if (target_pts_us < 0) {
+        return false;
+    }
+    // Keep every pre-target frame as a possible held-frame candidate. The
+    // candidate store collapses these to the latest pre-target frame, so sparse
+    // visual streams (still images, low-fps clips, and video tail seeks) can
+    // still publish a valid frame when EOF proves no post-target frame exists.
+    if (pts_us < target_pts_us) {
+        return true;
+    }
+    return pts_us >= target_pts_us - kExactSeekLookbehindUs;
 }
 
 bool is_exact_seek_preview_window_ready(int64_t target_pts_us,

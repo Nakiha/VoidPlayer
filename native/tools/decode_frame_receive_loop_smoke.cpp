@@ -62,6 +62,7 @@ int main() {
     int dropped = 0;
     int collected = 0;
     int previews_published = 0;
+    int64_t newest_pts_us = -1;
     const auto exact_seek_result = vr::receive_decode_frames_for_packet(
         frame,
         vr::DecodeFrameReceiveLoopOptions{true, 1'000'000, false},
@@ -71,10 +72,12 @@ int main() {
                 ++receive_calls;
                 if (receive_calls == 1) {
                     received_frame->pts = 700'000;
+                    newest_pts_us = received_frame->pts;
                     return 0;
                 }
                 if (receive_calls == 2) {
-                    received_frame->pts = 800'000;
+                    received_frame->pts = 1'000'000;
+                    newest_pts_us = received_frame->pts;
                     return 0;
                 }
                 return AVERROR(EAGAIN);
@@ -83,17 +86,17 @@ int main() {
             {},
             [&]() { ++dropped; },
             [&](AVFrame*) { ++collected; },
-            []() { return true; },
+            [&]() { return newest_pts_us >= 1'000'000; },
             [&]() { ++previews_published; },
             {},
             {},
             {},
             {},
         });
-    if (exact_seek_result.frames_produced != 1 ||
+    if (exact_seek_result.frames_produced != 2 ||
         exact_seek_result.stop_with_error ||
-        dropped != 1 ||
-        collected != 1 ||
+        dropped != 0 ||
+        collected != 2 ||
         previews_published != 1) {
         av_frame_free(&frame);
         return fail("decode frame receive loop did not handle exact seek window");

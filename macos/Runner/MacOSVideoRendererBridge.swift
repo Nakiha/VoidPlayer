@@ -505,6 +505,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func destroyPlayer() {
+    texture?.clearStableDisplaySnapshot()
     presentation.resetLayout()
     lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
     MacOSPresentationConfiguration.resetForNoMedia()

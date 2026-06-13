@@ -19,7 +19,10 @@ enum MacOSVideoRendererDiagnostics {
       rendererOwnedPixelBufferBytes: Int,
       rendererOwnedPixelBufferCount: Int,
       inFlightMetalBufferCount: Int,
-      metalBufferExhaustionCount: Int
+      metalBufferExhaustionCount: Int,
+      stableDisplayFallbackActive: Bool,
+      stableDisplayFallbackCount: Int,
+      stableDisplayFallbackPtsUs: Int
     )?,
     textureDimensions: (width: Int, height: Int)?,
     trackCount: Int,
@@ -220,6 +223,10 @@ enum MacOSVideoRendererDiagnostics {
       "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
       "textureInFlightMetalBufferCount": textureStats?.inFlightMetalBufferCount ?? 0,
       "textureMetalBufferExhaustionCount": textureStats?.metalBufferExhaustionCount ?? 0,
+      "nativeStableDisplayFallbackActive":
+        textureStats?.stableDisplayFallbackActive ?? false,
+      "nativeStableDisplayFallbackCount": textureStats?.stableDisplayFallbackCount ?? 0,
+      "nativeStableDisplayFallbackPtsUs": textureStats?.stableDisplayFallbackPtsUs ?? -1,
       "nativePresentationTargetInstalled": presentationTargetInstalled,
       "nativeRendererOwnedUploadCount": player?.rendererOwnedPresentationUploadCount() ?? 0,
       "nativeRendererOwnedUploadFailureCount": player?.rendererOwnedPresentationFailureCount() ?? 0,

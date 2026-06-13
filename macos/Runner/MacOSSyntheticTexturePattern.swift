@@ -113,9 +113,14 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
       rendererOwnedPixelBufferBytes: 0,
       rendererOwnedPixelBufferCount: 0,
       inFlightMetalBufferCount: 0,
-      metalBufferExhaustionCount: 0
+      metalBufferExhaustionCount: 0,
+      stableDisplayFallbackActive: false,
+      stableDisplayFallbackCount: 0,
+      stableDisplayFallbackPtsUs: -1
     )
   }
+
+  func clearStableDisplaySnapshot() {}
 
   private func rebuildPixelBuffer() {
     lock.lock()

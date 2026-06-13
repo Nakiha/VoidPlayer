@@ -10,11 +10,11 @@ truth.
 | Item | Value |
 | --- | --- |
 | Fork repo | `https://github.com/Nakiha/VoidPlayer-Flutter.git` |
-| Release ref | `voidplayer-flutter-3.44.1-hdr.1` |
+| Release ref | `voidplayer-flutter-3.44.1-hdr.2` |
 | Patch branch | `voidplayer/hdr-surface-export-3.44.1` |
 | Baseline branch | `voidplayer/flutter-3.44.1-baseline` |
 | Baseline tag | `3.44.1` |
-| Fork commit | `04b75e628e3a7c7ffc66f14e50f760564ab2e9f2` |
+| Fork commit | `69b3172a210b5c48553db20ae8b7790a45a2036c` |
 | Engine revision | `c416acfeb8126e097f758c664aaa3da929e27da0` |
 | Dart SDK | `3.12.1` |
 
@@ -29,7 +29,7 @@ The current fork exposes the macOS Flutter backing surface to the runner for
 the HDR compositor. The app uses this to composite native video under the
 Flutter UI in a native `CAMetalLayer`.
 
-Changed Flutter files in `04b75e628e3`:
+Changed Flutter files through `69b3172a210`:
 
 | File | Purpose |
 | --- | --- |
@@ -43,6 +43,13 @@ Changed Flutter files in `04b75e628e3`:
 | `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterDartProject.mm` | Adds VoidPlayer compositor configuration plumbing. |
 | `engine/src/flutter/shell/platform/embedder/embedder.cc` | Adds temporary HDR compositor diagnostics for Metal backing-store wrapping. |
 | `engine/src/flutter/shell/platform/embedder/embedder_external_view_embedder.cc` | Adds temporary HDR compositor diagnostics for external-view submit/target flow. |
+
+`voidplayer-flutter-3.44.1-hdr.2` also stabilizes the exported macOS front
+surface list: `FlutterSurfaceManager.frontSurfaces` now returns an immutable
+snapshot while mutations are locked, and `FlutterEngine` enumerates only that
+snapshot. This prevents the native compositor from crashing with "collection
+was mutated while being enumerated" when Flutter presents a new surface while
+VoidPlayer reads the current Flutter texture.
 
 ## Local Workflow
 

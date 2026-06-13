@@ -14,9 +14,9 @@ macOS Flutter surface texture to the runner.
 | Flutter baseline | `3.44.1` stable |
 | Toolchain lock | `toolchains/flutter.lock.json` |
 | Fork repo | `https://github.com/Nakiha/VoidPlayer-Flutter.git` |
-| Fork release ref | `voidplayer-flutter-3.44.1-hdr.1` |
+| Fork release ref | `voidplayer-flutter-3.44.1-hdr.2` |
 | Fork patch branch | `voidplayer/hdr-surface-export-3.44.1` |
-| Fork commit | `04b75e628e3a7c7ffc66f14e50f760564ab2e9f2` |
+| Fork commit | `69b3172a210b5c48553db20ae8b7790a45a2036c` |
 | Patch inventory | `toolchains/FLUTTER_FORK_PATCHES.md` |
 | App worktree | `/Users/zhuhongwei/Documents/yorune/VoidPlayer.worktrees/hdr-support-exploration` |
 
@@ -49,6 +49,12 @@ scripts/ci/package_flutter_macos_engine.sh release
 
 Upload the generated archives to the immutable `VoidPlayer-Flutter` release and
 update the lock with the printed hashes.
+
+`voidplayer-flutter-3.44.1-hdr.2` fixes the first native-compositor stability
+issue found in this path: Flutter's macOS front-surface list is now exported as
+a locked immutable snapshot, so the native compositor can read Flutter's current
+texture while Flutter presents the next surface without hitting a mutable-array
+enumeration exception.
 
 `dev_config.local.json` may point at an existing fork checkout and local engine
 build, but it does not replace the lock:

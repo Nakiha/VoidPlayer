@@ -10,26 +10,36 @@ void write_first_present_frame_info(const VPMacOSNativePresentDecisionInfo& deci
     return;
   }
   VPMacOSNativeFrameInfoInit(out);
+  int representative_slot = -1;
+  int64_t representative_pts_us = 0;
   for (int slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
-    if (decisionInfo.frames[slot].present) {
-      out->width = decisionInfo.frames[slot].width;
-      out->height = decisionInfo.frames[slot].height;
-      out->pts_us = decisionInfo.frames[slot].pts_us;
-      out->dts_us = decisionInfo.frames[slot].dts_us;
-      out->duration_us = decisionInfo.frames[slot].duration_us;
-      out->analysis_frame_index = decisionInfo.frames[slot].analysis_frame_index;
-      out->frame_identity_mode = decisionInfo.frames[slot].frame_identity_mode;
-      out->source_packet_index = decisionInfo.frames[slot].source_packet_index;
-      out->source_packet_size = decisionInfo.frames[slot].source_packet_size;
-      out->source_packet_pos = decisionInfo.frames[slot].source_packet_pos;
-      out->source_packet_pts = decisionInfo.frames[slot].source_packet_pts;
-      out->source_packet_dts = decisionInfo.frames[slot].source_packet_dts;
-      out->color_range = decisionInfo.color_range[slot];
-      out->color_matrix = decisionInfo.color_matrix[slot];
-      out->color_transfer = decisionInfo.color_transfer[slot];
-      out->color_primaries = decisionInfo.color_primaries[slot];
-      break;
+    if (!decisionInfo.frames[slot].present) {
+      continue;
     }
+    if (representative_slot < 0 ||
+        decisionInfo.frames[slot].pts_us > representative_pts_us) {
+      representative_slot = slot;
+      representative_pts_us = decisionInfo.frames[slot].pts_us;
+    }
+  }
+  if (representative_slot >= 0) {
+    const int slot = representative_slot;
+    out->width = decisionInfo.frames[slot].width;
+    out->height = decisionInfo.frames[slot].height;
+    out->pts_us = decisionInfo.frames[slot].pts_us;
+    out->dts_us = decisionInfo.frames[slot].dts_us;
+    out->duration_us = decisionInfo.frames[slot].duration_us;
+    out->analysis_frame_index = decisionInfo.frames[slot].analysis_frame_index;
+    out->frame_identity_mode = decisionInfo.frames[slot].frame_identity_mode;
+    out->source_packet_index = decisionInfo.frames[slot].source_packet_index;
+    out->source_packet_size = decisionInfo.frames[slot].source_packet_size;
+    out->source_packet_pos = decisionInfo.frames[slot].source_packet_pos;
+    out->source_packet_pts = decisionInfo.frames[slot].source_packet_pts;
+    out->source_packet_dts = decisionInfo.frames[slot].source_packet_dts;
+    out->color_range = decisionInfo.color_range[slot];
+    out->color_matrix = decisionInfo.color_matrix[slot];
+    out->color_transfer = decisionInfo.color_transfer[slot];
+    out->color_primaries = decisionInfo.color_primaries[slot];
   }
 }
 

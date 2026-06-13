@@ -681,7 +681,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private func activeDurationUs() -> Int {
     let durationUs = tracks.currentDurationUs
-    return durationUs > 0 ? durationUs : MacOSVideoTrackPayload.syntheticDurationUs
+    if durationUs > 0 {
+      return durationUs
+    }
+    return backendName == MacOSVideoTrackPayload.nativeFormatName
+      ? 0
+      : MacOSVideoTrackPayload.syntheticDurationUs
   }
 
   private func emitSeekPreviewPresented(requestId: Int?, targetPtsUs: Int) {

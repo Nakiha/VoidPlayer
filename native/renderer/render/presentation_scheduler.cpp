@@ -6,21 +6,24 @@
 namespace vr {
 namespace {
 
-bool first_presented_frame(const PresentDecision& decision,
-                           size_t& slot,
-                           int64_t& pts_us) {
+bool representative_presented_frame(const PresentDecision& decision,
+                                    size_t& slot,
+                                    int64_t& pts_us) {
     if (!decision.should_present) {
         return false;
     }
+    bool found = false;
     for (size_t i = 0; i < decision.frames.size(); ++i) {
         const auto& frame = decision.frames[i];
         if (frame.has_value()) {
-            slot = i;
-            pts_us = frame->pts_us;
-            return true;
+            if (!found || frame->pts_us > pts_us) {
+                slot = i;
+                pts_us = frame->pts_us;
+                found = true;
+            }
         }
     }
-    return false;
+    return found;
 }
 
 } // namespace
@@ -31,7 +34,7 @@ PresentationScheduler::PresentedSignature PresentationScheduler::signature_for(
     signature.should_present = decision.should_present;
     size_t slot = kMaxTracks;
     int64_t pts_us = kNoTimestampUs;
-    if (first_presented_frame(decision, slot, pts_us)) {
+    if (representative_presented_frame(decision, slot, pts_us)) {
         signature.reference_slot = slot;
         signature.pts_us = pts_us;
         signature.file_id = decision.file_ids[slot];
@@ -50,7 +53,7 @@ PresentationSchedulerTick PresentationScheduler::tick(RenderSink& render_sink) {
 
     int64_t pts_us = 0;
     size_t slot = kMaxTracks;
-    if (!first_presented_frame(result.decision, slot, pts_us)) {
+    if (!representative_presented_frame(result.decision, slot, pts_us)) {
         return result;
     }
 
@@ -75,7 +78,7 @@ bool PresentationScheduler::advance_to_clock(RenderSink& render_sink,
     const auto decision = render_sink.evaluate();
     int64_t pts_us = 0;
     size_t slot = kMaxTracks;
-    if (!first_presented_frame(decision, slot, pts_us)) {
+    if (!representative_presented_frame(decision, slot, pts_us)) {
         return false;
     }
     if (selected_pts_us) {

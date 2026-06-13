@@ -68,6 +68,17 @@ final class MacOSVideoTrackController {
     }
 
     if backendName == MacOSVideoTrackPayload.nativeFormatName {
+      if let reason = MacOSMediaInputGuard.unsupportedReason(path: path) {
+        return MacOSVideoTrackAddResult(
+          payload: FlutterError(
+            code: "UNSUPPORTED_MEDIA",
+            message: reason,
+            details: path
+          ),
+          refreshCurrentFrame: false,
+          markFrameAvailable: false
+        )
+      }
       do {
         guard let session = nativePlayer else {
           throw MacOSNativePlayerError.failed("macOS native player is unavailable")

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "test_utils.h"
 #include "renderer/sync/render_sink.h"
+#include "renderer/render/presentation_scheduler.h"
 #include "renderer/clock.h"
 #include "renderer/buffer/track_buffer.h"
 
@@ -71,6 +72,48 @@ TEST_CASE("RenderSink: present decisions carry track identity",
     decision = sink.evaluate();
     REQUIRE(decision.file_ids[0] == -1);
     REQUIRE(decision.track_generations[0] == 0);
+}
+
+TEST_CASE("PresentationScheduler: held still frame does not mask newer video track",
+          "[presentation_scheduler]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    auto still = std::make_shared<TrackBuffer>(4, 2);
+    TextureFrame still_frame;
+    still_frame.pts_us = 0;
+    still_frame.duration_us = 1000000;
+    still_frame.texture_handle = reinterpret_cast<void*>(0x1);
+    still->push_frame(still_frame);
+
+    auto video = std::make_shared<TrackBuffer>(4, 2);
+    TextureFrame first_video_frame;
+    first_video_frame.pts_us = 1000000;
+    first_video_frame.duration_us = 1000000;
+    first_video_frame.texture_handle = reinterpret_cast<void*>(0x2);
+    video->push_frame(first_video_frame);
+    TextureFrame second_video_frame = first_video_frame;
+    second_video_frame.pts_us = 2000000;
+    second_video_frame.texture_handle = reinterpret_cast<void*>(0x3);
+    video->push_frame(second_video_frame);
+
+    RenderSink sink(clock);
+    sink.set_track(0, still, 10, 1);
+    sink.set_track(1, video, 20, 1);
+
+    PresentationScheduler scheduler;
+    mt.t = 1000000;
+    auto tick = scheduler.tick(sink);
+    REQUIRE(tick.has_presentable_frame);
+    REQUIRE(tick.should_notify);
+    REQUIRE(tick.selected_pts_us == 1000000);
+
+    mt.t = 2000000;
+    tick = scheduler.tick(sink);
+    REQUIRE(tick.has_presentable_frame);
+    REQUIRE(tick.should_notify);
+    REQUIRE(tick.selected_pts_us == 2000000);
 }
 
 TEST_CASE("RenderSink: registered track is lifetime pinned by the sink",

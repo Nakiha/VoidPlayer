@@ -81,6 +81,14 @@ enum MacOSVideoRendererStartupFactory {
     useHardwareDecode: Bool,
     viewportBackgroundColor: UInt32?
   ) throws -> MacOSVideoRendererStartup {
+    if let unsupported = paths.compactMap({ path -> (path: String, reason: String)? in
+      guard let reason = MacOSMediaInputGuard.unsupportedReason(path: path) else {
+        return nil
+      }
+      return (path, reason)
+    }).first {
+      throw MacOSNativePlayerError.failed("\(unsupported.reason): \(unsupported.path)")
+    }
     let probedTracks = paths.compactMap { path in
       try? MacOSNativePlayerSession.probeTrack(path: path)
     }
@@ -115,7 +123,7 @@ enum MacOSVideoRendererStartupFactory {
     let trackWidth = session.width() > 0 ? session.width() : firstFrame.width
     let trackHeight = session.height() > 0 ? session.height() : firstFrame.height
     let sessionDurationUs = session.durationUs()
-    let trackDurationUs = sessionDurationUs > 0 ? sessionDurationUs : MacOSVideoTrackPayload.syntheticDurationUs
+    let trackDurationUs = max(0, sessionDurationUs)
     let firstMetadata = try session.trackMetadata(fileId: 0)
     var tracks = [
       MacOSVideoTrackPayload.nativeTrack(
@@ -125,7 +133,7 @@ enum MacOSVideoRendererStartupFactory {
           slot: firstMetadata.slot,
           width: firstMetadata.width > 0 ? firstMetadata.width : trackWidth,
           height: firstMetadata.height > 0 ? firstMetadata.height : trackHeight,
-          durationUs: firstMetadata.durationUs > 0 ? firstMetadata.durationUs : trackDurationUs,
+          durationUs: max(0, firstMetadata.durationUs),
           startTimeUs: firstMetadata.startTimeUs,
           bitRate: firstMetadata.bitRate,
           formatName: firstMetadata.formatName,

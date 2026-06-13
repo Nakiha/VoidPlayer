@@ -349,7 +349,15 @@ bool Renderer::Impl::draw_current_frame_sources(
         auto& target = targets[i];
         target.drawn = 0;
         target.frame_info = {};
-        const int slot = target.source_slot;
+        int slot = target.source_slot;
+        if (target.source_file_id >= 0) {
+            for (size_t index = 0; index < decision.file_ids.size(); ++index) {
+                if (decision.file_ids[index] == target.source_file_id) {
+                    slot = static_cast<int>(index);
+                    break;
+                }
+            }
+        }
         if (!target.output || slot < 0 ||
             slot >= static_cast<int>(decision.frames.size()) ||
             !decision.frames[static_cast<size_t>(slot)].has_value()) {

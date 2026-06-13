@@ -339,6 +339,25 @@ ScriptInstruction? _parseInstruction(
           maxDropSamples: args.length >= 6 ? int.parse(args[5]) : 0,
         ),
       );
+    case 'DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL':
+      if (args.length < 4) {
+        log.warning(
+          'DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL needs dx, dy, key, and value: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        DragViewportSampleNativeDiagnosticBool(
+          double.parse(args[0]),
+          double.parse(args[1]),
+          key: args[2],
+          value: args[3] == '1' || args[3].toLowerCase() == 'true',
+          steps: args.length >= 5 ? int.parse(args[4]) : 24,
+          stepMs: args.length >= 6 ? int.parse(args[5]) : 16,
+          minMatches: args.length >= 7 ? int.parse(args[6]) : 1,
+        ),
+      );
     case 'ASSERT_VIEWPORT_OVERLAY_LINE_STYLE':
       return ScriptAutomationAction(
         time,

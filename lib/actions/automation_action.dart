@@ -120,6 +120,26 @@ class DragViewportSampleOverlay extends AutomationAction {
   }) : super('DRAG_VIEWPORT_SAMPLE_OVERLAY');
 }
 
+class DragViewportSampleNativeDiagnosticBool extends AutomationAction {
+  final double dx;
+  final double dy;
+  final String key;
+  final bool value;
+  final int steps;
+  final int stepMs;
+  final int minMatches;
+
+  const DragViewportSampleNativeDiagnosticBool(
+    this.dx,
+    this.dy, {
+    required this.key,
+    required this.value,
+    this.steps = 24,
+    this.stepMs = 16,
+    this.minMatches = 1,
+  }) : super('DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL');
+}
+
 class AssertViewportOverlayLineStyle extends AutomationAction {
   final int minPairedCenters;
   final double minPairedRatio;

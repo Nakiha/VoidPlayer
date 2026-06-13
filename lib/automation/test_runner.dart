@@ -353,6 +353,44 @@ class TestRunner {
         if (!metric.stable) {
           throw AssertionError(metric.failureMessage);
         }
+      case DragViewportSampleNativeDiagnosticBool(
+        :final dx,
+        :final dy,
+        :final key,
+        :final value,
+        :final steps,
+        :final stepMs,
+        :final minMatches,
+      ):
+        log.info(
+          'TestRunner: DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL '
+          'dx=$dx dy=$dy key=$key value=$value steps=$steps '
+          'stepMs=$stepMs minMatches=$minMatches',
+        );
+        var samples = 0;
+        final matches = await testHarness.dragViewportAndSample(
+          Offset(dx, dy),
+          steps: steps,
+          stepDelay: Duration(milliseconds: stepMs),
+          sample: (label) async {
+            samples++;
+            final diagnostics = await controller.getDiagnostics();
+            final actual = diagnostics[key];
+            final matched = actual == value;
+            log.info(
+              'Test action: DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL '
+              'sample=$label key=$key actual=$actual expected=$value '
+              'matched=$matched',
+            );
+            return matched;
+          },
+        );
+        if (matches < minMatches) {
+          throw AssertionError(
+            'Expected native diagnostic $key=$value during drag at least '
+            '$minMatches time(s), got $matches/$samples samples',
+          );
+        }
       case AssertViewportOverlayLineStyle(
         :final minPairedCenters,
         :final minPairedRatio,

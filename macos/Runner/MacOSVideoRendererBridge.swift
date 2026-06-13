@@ -14,6 +14,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var nativeCompositor: MacOSNativeCompositorView?
   private var nativeCompositorSourceRing: MacOSNativeCompositorSourceRing?
   private var nativeCompositorSourceSignature = ""
+  private var viewportBackgroundColor: UInt32?
   private var lastNativeCompositorFailure = "not initialized"
   private let lifecycle: MacOSPlayerLifecycleController
   private let tracks = MacOSVideoTrackController()
@@ -104,8 +105,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       configureNativeLogging(arguments: call.arguments)
       result(nil)
     case "setViewportBackgroundColor":
-      if let color = MacOSFlutterArguments.intArg(call.arguments, "color") {
+      if let color = MacOSFlutterArguments.uint32Arg(call.arguments, "color") {
+        viewportBackgroundColor = color
         nativePlayer?.setBackgroundColor(color)
+        nativeCompositor?.setViewportBackgroundColor(color)
         if backendName == MacOSVideoTrackPayload.nativeFormatName {
           presentation.refreshCurrentFrame(context: presentationContext())
         }
@@ -400,6 +403,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       ?? MacOSNativeCompositorSourceRing(compositor: nativeCompositor)
     nativeCompositorSourceRing = ring
     nativeCompositorSourceSignature = signature
+    if !playback.currentIsPlaying(player: player) {
+      _ = presentation.refreshCurrentFrame(context: presentationContext())
+    }
     ring.subscribe(
       player: player,
       descriptors: descriptors,
@@ -478,6 +484,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func createPlayer(arguments: Any?) -> Any {
+    if let color = MacOSFlutterArguments.uint32Arg(arguments, "color") {
+      viewportBackgroundColor = color
+    }
     let result = lifecycle.create(
       arguments: arguments,
       playback: playback,
@@ -488,6 +497,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
     )
     ensureNativeCompositorMatchesCurrentConfiguration()
+    if let viewportBackgroundColor {
+      nativeCompositor?.setViewportBackgroundColor(viewportBackgroundColor)
+    }
     nativeCompositor?.setVideoTexture(texture)
     return result
   }
@@ -523,6 +535,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nativePlayer: nativePlayer,
       textureDimensions: texture?.dimensions()
     )
+    nativeCompositorSourceRing?.unsubscribe(reason: "track topology changed")
+    nativeCompositorSourceSignature = ""
     refreshPresentationPolicyForCurrentTracks()
     if addResult.refreshCurrentFrame {
       presentation.refreshCurrentFrame(context: presentationContext())
@@ -539,6 +553,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       backendName: backendName,
       nativePlayer: nativePlayer
     )
+    nativeCompositorSourceRing?.unsubscribe(reason: "track topology changed")
+    nativeCompositorSourceSignature = ""
     if removeResult.destroyPlayer {
       destroyPlayer()
     } else if removeResult.refreshCurrentFrame {
@@ -602,6 +618,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
     nativeCompositor = compositor
     nativeCompositorSourceRing = MacOSNativeCompositorSourceRing(compositor: compositor)
+    if let viewportBackgroundColor {
+      compositor.setViewportBackgroundColor(viewportBackgroundColor)
+    }
     compositor.attach(to: contentView)
     lastNativeCompositorFailure = ""
     nativeCompositor?.setVideoTexture(texture)

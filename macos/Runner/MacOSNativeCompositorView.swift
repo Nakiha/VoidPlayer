@@ -70,6 +70,7 @@ final class MacOSNativeCompositorView: NSView {
   private var sourceProjInvDisplaySizeY = SIMD4<Float>(0, 0, 0, 0)
   private var sourceProjViewOffsetUvX = SIMD4<Float>(0, 0, 0, 0)
   private var sourceProjViewOffsetUvY = SIMD4<Float>(0, 0, 0, 0)
+  private var viewportBackgroundColor = SIMD4<Float>(0, 0, 0, 1)
   private let compositeRate = MacOSRateWindow()
   private let inFlightSemaphore = DispatchSemaphore(value: 2)
 
@@ -193,6 +194,21 @@ final class MacOSNativeCompositorView: NSView {
       explicitHoleRect = rect
       lastHoleRect = rect
       if changed {
+        markCompositorDirty()
+      }
+    }
+  }
+
+  func setViewportBackgroundColor(_ color: UInt32) {
+    let a = Float((color >> 24) & 0xFF) / 255.0
+    let r = Float((color >> 16) & 0xFF) / 255.0
+    let g = Float((color >> 8) & 0xFF) / 255.0
+    let b = Float(color & 0xFF) / 255.0
+    let next = SIMD4<Float>(r, g, b, a)
+    compositorQueue.async { [weak self] in
+      guard let self else { return }
+      if viewportBackgroundColor != next {
+        viewportBackgroundColor = next
         markCompositorDirty()
       }
     }
@@ -400,6 +416,7 @@ final class MacOSNativeCompositorView: NSView {
       var sourceInvDisplaySizeY = sourceCache.invDisplaySizeY
       var sourceViewOffsetUvX = sourceCache.viewOffsetUvX
       var sourceViewOffsetUvY = sourceCache.viewOffsetUvY
+      var backgroundColor = viewportBackgroundColor
       guard inFlightSemaphore.wait(timeout: .now()) == .success else {
         skippedInFlightFrames += 1
         return
@@ -480,6 +497,11 @@ final class MacOSNativeCompositorView: NSView {
         &sourceViewOffsetUvY,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 10
+      )
+      encoder.setFragmentBytes(
+        &backgroundColor,
+        length: MemoryLayout<SIMD4<Float>>.stride,
+        index: 11
       )
       encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
       encoder.endEncoding()
@@ -956,6 +978,21 @@ final class MacOSNativeCompositorView: NSView {
         return srgbToLinear(straightSRGB) * alpha;
       }
 
+      float3 convertLinearBT709ToDisplayP3(float3 rgb) {
+        return float3(
+          0.8224619687 * rgb.r + 0.1775380313 * rgb.g,
+          0.0331941989 * rgb.r + 0.9668058011 * rgb.g,
+          0.0170826307 * rgb.r + 0.0723974407 * rgb.g + 0.9105199286 * rgb.b);
+      }
+
+      float4 mapSDRUIToOutput(float4 color, bool outputEDR) {
+        color = saturate(color);
+        if (!outputEDR) {
+          return color;
+        }
+        return float4(convertLinearBT709ToDisplayP3(srgbToLinear(color.rgb)), color.a);
+      }
+
       float valueAt(float4 values, int index) {
         if (index == 0) return values.x;
         if (index == 1) return values.y;
@@ -989,6 +1026,7 @@ final class MacOSNativeCompositorView: NSView {
         constant float4& sourceInvDisplaySizeY,
         constant float4& sourceViewOffsetUvX,
         constant float4& sourceViewOffsetUvY,
+        float4 backgroundColor,
         texture2d<float> source0,
         texture2d<float> source1,
         texture2d<float> source2,
@@ -1012,7 +1050,7 @@ final class MacOSNativeCompositorView: NSView {
 
         int sourceSlot = clamp(int(round(valueAt(sourceOrder, displaySlot))), 0, 3);
         if (valueAt(sourcePresentFlags, sourceSlot) < 0.5) {
-          return float4(0.0);
+          return backgroundColor;
         }
 
         // The per-slot projection params already encode the full layout
@@ -1031,7 +1069,7 @@ final class MacOSNativeCompositorView: NSView {
         float2 sourceUv = (transformed - displayOffset) * invDisplaySize - viewOffsetUv;
         if (sourceUv.x < 0.0 || sourceUv.x > 1.0 ||
             sourceUv.y < 0.0 || sourceUv.y > 1.0) {
-          return float4(0.0);
+          return backgroundColor;
         }
         return sampleSourceCacheTexture(
           sourceSlot,
@@ -1061,7 +1099,8 @@ final class MacOSNativeCompositorView: NSView {
         constant float4& sourceInvDisplaySizeX [[buffer(7)]],
         constant float4& sourceInvDisplaySizeY [[buffer(8)]],
         constant float4& sourceViewOffsetUvX [[buffer(9)]],
-        constant float4& sourceViewOffsetUvY [[buffer(10)]]
+        constant float4& sourceViewOffsetUvY [[buffer(10)]],
+        constant float4& backgroundColor [[buffer(11)]]
       ) {
         constexpr sampler s(address::clamp_to_edge, filter::linear);
         float2 uv = clamp(in.uv, 0.0, 1.0);
@@ -1076,6 +1115,7 @@ final class MacOSNativeCompositorView: NSView {
           : float2(0.0, 0.0);
         float4 video = float4(0.0);
         if (insideHole) {
+          float4 outputBackground = mapSDRUIToOutput(backgroundColor, colorFlags.x > 0.5);
           // When the source cache is active (colorFlags.w) the compositor owns
           // the full-layout projection from the source-resolution textures. Else
           // it falls back to the renderer-owned viewport target, which already
@@ -1092,6 +1132,7 @@ final class MacOSNativeCompositorView: NSView {
                 sourceInvDisplaySizeY,
                 sourceViewOffsetUvX,
                 sourceViewOffsetUvY,
+                outputBackground,
                 sourceTexture0,
                 sourceTexture1,
                 sourceTexture2,

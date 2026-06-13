@@ -44,6 +44,8 @@ extension MainWindowComposition on MainWindowController {
       playbackPreferences: playbackPreferences,
       mounted: mounted,
       timelineMetrics: timelineMetrics,
+      onPlaybackTransition: ({required playing}) =>
+          layoutCoordinator.onPlaybackStateChanged(playing: playing),
       onSeekSettled: (_) => analysisCoordinator.refreshOverlayForCurrentFrame(),
       onSeekPreviewPresented:
           ({required trackFileId, required ptsUs, required dtsUs}) =>

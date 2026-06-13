@@ -253,6 +253,9 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   Future<void> prepareNativeCompositorSourceCache({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
     required List<double> displayOffsetX,
     required List<double> displayOffsetY,
     required List<double> invDisplaySizeX,

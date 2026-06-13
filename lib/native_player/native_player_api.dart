@@ -47,6 +47,9 @@ abstract interface class NativePlayerApi {
   Future<void> prepareNativeCompositorSourceCache({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
     required List<double> displayOffsetX,
     required List<double> displayOffsetY,
     required List<double> invDisplaySizeX,
@@ -238,6 +241,9 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   Future<void> prepareNativeCompositorSourceCache({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
     required List<double> displayOffsetX,
     required List<double> displayOffsetY,
     required List<double> invDisplaySizeX,
@@ -250,6 +256,9 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
       {
         NativePlayerKeys.sourceSlots: sourceSlots,
         NativePlayerKeys.sourceOrder: sourceOrder,
+        NativePlayerKeys.mode: mode,
+        NativePlayerKeys.splitPos: splitPos,
+        NativePlayerKeys.activeTrackCount: activeTrackCount,
         NativePlayerKeys.displayOffsetX: displayOffsetX,
         NativePlayerKeys.displayOffsetY: displayOffsetY,
         NativePlayerKeys.invDisplaySizeX: invDisplaySizeX,

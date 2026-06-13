@@ -26,17 +26,12 @@ class MainWindowLayoutCoordinator {
   Timer? _resizeDebounceTimer;
   bool _layoutDirty = false;
   bool _resizeDirty = false;
-  bool _flushInProgress = false;
+  Future<void>? _activeFlush;
   bool _disposed = false;
   Future<void>? _preemptResizeFuture;
   int? _queuedPreemptWidth;
   int? _queuedPreemptHeight;
   bool _nativeCompositorTransformActive = false;
-  int _nativeCompositorTransformGeneration = 0;
-  double _nativeCompositorSampleScaleX = 1.0;
-  double _nativeCompositorSampleScaleY = 1.0;
-  double _nativeCompositorSampleTranslateX = 0.0;
-  double _nativeCompositorSampleTranslateY = 0.0;
 
   int viewportWidth = 0;
   int viewportHeight = 0;
@@ -124,17 +119,13 @@ class MainWindowLayoutCoordinator {
 
   void panByDelta(double dx, double dy) {
     if (_disposed) return;
-    final current = layout();
-    final nextOffsetX = current.viewOffsetX + dx;
-    final nextOffsetY = current.viewOffsetY + dy;
+    final nextOffsetX = layout().viewOffsetX + dx;
+    final nextOffsetY = layout().viewOffsetY + dy;
     _updateLayout(
       (layout) =>
           layout.copyWith(viewOffsetX: nextOffsetX, viewOffsetY: nextOffsetY),
     );
-    final transformed = _updateNativeCompositorPanTransform(
-      Offset(dx, dy),
-      baseLayout: current,
-    );
+    final transformed = _updateNativeCompositorPanTransform();
     markLayoutDirty(deferNativeCompositorFlush: transformed);
   }
 
@@ -163,8 +154,6 @@ class MainWindowLayoutCoordinator {
       );
       final transformed = _updateNativeCompositorZoomTransform(
         actualFactor: newZoom / currentLayout.zoomRatio,
-        physicalLocalPosition: localPos,
-        baseLayout: currentLayout,
       );
       markLayoutDirty(deferNativeCompositorFlush: transformed);
       return;
@@ -211,8 +200,6 @@ class MainWindowLayoutCoordinator {
     );
     final transformed = _updateNativeCompositorZoomTransform(
       actualFactor: actualFactor,
-      physicalLocalPosition: localPos,
-      baseLayout: currentLayout,
     );
     markLayoutDirty(deferNativeCompositorFlush: transformed);
   }
@@ -493,9 +480,27 @@ class MainWindowLayoutCoordinator {
     if (_disposed) return;
     _layoutDirty = true;
     if (deferNativeCompositorFlush) {
+      // The compositor already has the full current projection; native renderer
+      // catches up once at pointer-up or a playback transition.
       return;
     }
     _startTicker();
+  }
+
+  /// Flushes deferred interaction state around playback transitions
+  /// (play/pause/step). The deferred layout reaches native before playback
+  /// resumes, and the source projection retires after native has the same
+  /// authoritative layout.
+  Future<void> onPlaybackStateChanged({required bool playing}) async {
+    if (_disposed) return;
+    final active = _activeFlush;
+    if (active != null) {
+      await active;
+    }
+    if (_disposed || !mounted()) return;
+    if (!_layoutDirty && !_nativeCompositorTransformActive) return;
+    _layoutDirty = true;
+    await flushPendingLayout();
   }
 
   void _markResizeDirty() {
@@ -510,8 +515,21 @@ class MainWindowLayoutCoordinator {
     ticker.start();
   }
 
-  Future<void> flushPendingLayout() async {
-    if (_disposed || _flushInProgress) return;
+  Future<void> flushPendingLayout() {
+    final active = _activeFlush;
+    if (active != null) return active;
+    late final Future<void> flush;
+    flush = _flushPendingLayoutLoop().whenComplete(() {
+      if (identical(_activeFlush, flush)) {
+        _activeFlush = null;
+      }
+    });
+    _activeFlush = flush;
+    return flush;
+  }
+
+  Future<void> _flushPendingLayoutLoop() async {
+    if (_disposed) return;
     if (textureId() == null) {
       _resizeDirty = false;
       _layoutDirty = false;
@@ -519,7 +537,6 @@ class MainWindowLayoutCoordinator {
       return;
     }
 
-    _flushInProgress = true;
     try {
       while (!_disposed && mounted() && (_resizeDirty || _layoutDirty)) {
         if (_resizeDirty && viewportWidth > 0 && viewportHeight > 0) {
@@ -549,7 +566,6 @@ class MainWindowLayoutCoordinator {
         }
       }
     } finally {
-      _flushInProgress = false;
       if (!_disposed && mounted()) {
         if (_resizeDirty || _layoutDirty) {
           _startTicker();
@@ -566,7 +582,6 @@ class MainWindowLayoutCoordinator {
 
   bool get _canUseNativeCompositorViewportTransform {
     return _state.nativeCompositorActive &&
-        !_state.isPlaying &&
         textureId() != null &&
         viewportWidth > 0 &&
         viewportHeight > 0 &&
@@ -575,43 +590,24 @@ class MainWindowLayoutCoordinator {
             layout().mode == LayoutMode.splitScreen);
   }
 
-  void _ensureNativeCompositorViewportTransform({LayoutState? baseLayout}) {
+  void _ensureNativeCompositorViewportTransform() {
     if (_nativeCompositorTransformActive) return;
     _nativeCompositorTransformActive = true;
-    _nativeCompositorSampleScaleX = 1.0;
-    _nativeCompositorSampleScaleY = 1.0;
-    _nativeCompositorSampleTranslateX = 0.0;
-    _nativeCompositorSampleTranslateY = 0.0;
-    _prepareNativeCompositorSourceCache(baseLayout ?? layout());
+    // The first projection publish subscribes the source cache. Paused keeps a
+    // frozen bake; playing refreshes the ring from native frame callbacks.
   }
 
-  bool _updateNativeCompositorPanTransform(
-    Offset physicalDelta, {
-    LayoutState? baseLayout,
-  }) {
+  bool _updateNativeCompositorPanTransform() {
     if (!_canUseNativeCompositorViewportTransform) {
       _cancelNativeCompositorViewportTransform();
       return false;
     }
-    final activeTracks = layout().mode == LayoutMode.sideBySide
-        ? math.max(1, trackCount())
-        : 1;
-    final slotWidth = viewportWidth / activeTracks;
-    if (slotWidth <= 0 || viewportHeight <= 0) return false;
-    _ensureNativeCompositorViewportTransform(baseLayout: baseLayout);
-    _nativeCompositorSampleTranslateX -=
-        _nativeCompositorSampleScaleX * physicalDelta.dx / slotWidth;
-    _nativeCompositorSampleTranslateY -=
-        _nativeCompositorSampleScaleY * physicalDelta.dy / viewportHeight;
+    _ensureNativeCompositorViewportTransform();
     _publishNativeCompositorViewportTransform();
     return true;
   }
 
-  bool _updateNativeCompositorZoomTransform({
-    required double actualFactor,
-    required Offset physicalLocalPosition,
-    LayoutState? baseLayout,
-  }) {
+  bool _updateNativeCompositorZoomTransform({required double actualFactor}) {
     if (!_canUseNativeCompositorViewportTransform ||
         actualFactor <= 0 ||
         !actualFactor.isFinite ||
@@ -621,31 +617,7 @@ class MainWindowLayoutCoordinator {
       }
       return false;
     }
-    final activeTracks = layout().mode == LayoutMode.sideBySide
-        ? math.max(1, trackCount())
-        : 1;
-    final slotWidth = viewportWidth / activeTracks;
-    if (slotWidth <= 0 || viewportHeight <= 0) return false;
-    _ensureNativeCompositorViewportTransform(baseLayout: baseLayout);
-    final slotIndex = (physicalLocalPosition.dx / slotWidth).floor().clamp(
-      0,
-      activeTracks - 1,
-    );
-    final anchorX =
-        ((physicalLocalPosition.dx - slotIndex * slotWidth) / slotWidth)
-            .clamp(0.0, 1.0)
-            .toDouble();
-    final anchorY = (physicalLocalPosition.dy / viewportHeight)
-        .clamp(0.0, 1.0)
-        .toDouble();
-    final previousScaleX = _nativeCompositorSampleScaleX;
-    final previousScaleY = _nativeCompositorSampleScaleY;
-    _nativeCompositorSampleScaleX /= actualFactor;
-    _nativeCompositorSampleScaleY /= actualFactor;
-    _nativeCompositorSampleTranslateX +=
-        previousScaleX * anchorX * (1.0 - 1.0 / actualFactor);
-    _nativeCompositorSampleTranslateY +=
-        previousScaleY * anchorY * (1.0 - 1.0 / actualFactor);
+    _ensureNativeCompositorViewportTransform();
     _publishNativeCompositorViewportTransform();
     return true;
   }
@@ -702,6 +674,9 @@ class MainWindowLayoutCoordinator {
       controller.prepareNativeCompositorSourceCache(
         sourceSlots: sourceSlots,
         sourceOrder: sourceOrder,
+        mode: baseLayout.mode,
+        splitPos: baseLayout.splitPos,
+        activeTrackCount: trackCount(),
         displayOffsetX: displayOffsetX,
         displayOffsetY: displayOffsetY,
         invDisplaySizeX: invDisplaySizeX,
@@ -714,21 +689,7 @@ class MainWindowLayoutCoordinator {
 
   void _publishNativeCompositorViewportTransform() {
     if (!_nativeCompositorTransformActive || _disposed) return;
-    _nativeCompositorTransformGeneration += 1;
-    final current = layout();
-    fireAndLog(
-      'set native compositor viewport transform',
-      controller.setNativeCompositorViewportTransform(
-        enabled: true,
-        scaleX: _nativeCompositorSampleScaleX,
-        scaleY: _nativeCompositorSampleScaleY,
-        translateX: _nativeCompositorSampleTranslateX,
-        translateY: _nativeCompositorSampleTranslateY,
-        mode: current.mode,
-        splitPos: current.splitPos,
-        activeTrackCount: trackCount(),
-      ),
-    );
+    _prepareNativeCompositorSourceCache(layout());
   }
 
   void _finishNativeCompositorViewportTransformInteraction() {
@@ -740,24 +701,6 @@ class MainWindowLayoutCoordinator {
   void _cancelNativeCompositorViewportTransform() {
     if (!_nativeCompositorTransformActive) return;
     _nativeCompositorTransformActive = false;
-    _nativeCompositorSampleScaleX = 1.0;
-    _nativeCompositorSampleScaleY = 1.0;
-    _nativeCompositorSampleTranslateX = 0.0;
-    _nativeCompositorSampleTranslateY = 0.0;
-    _nativeCompositorTransformGeneration += 1;
-    fireAndLog(
-      'clear native compositor viewport transform',
-      controller.setNativeCompositorViewportTransform(
-        enabled: false,
-        scaleX: 1.0,
-        scaleY: 1.0,
-        translateX: 0.0,
-        translateY: 0.0,
-        mode: layout().mode,
-        splitPos: layout().splitPos,
-        activeTrackCount: trackCount(),
-      ),
-    );
     fireAndLog(
       'clear native compositor source cache',
       controller.clearNativeCompositorSourceCache(
@@ -767,75 +710,23 @@ class MainWindowLayoutCoordinator {
   }
 
   Future<void> _applyLayoutToNative(LayoutState nextLayout) async {
-    final transformGeneration = _nativeCompositorTransformGeneration;
     final hadTransform = _nativeCompositorTransformActive;
-    final sentScaleX = _nativeCompositorSampleScaleX;
-    final sentScaleY = _nativeCompositorSampleScaleY;
-    final sentTranslateX = _nativeCompositorSampleTranslateX;
-    final sentTranslateY = _nativeCompositorSampleTranslateY;
     await controller.applyLayout(nextLayout);
     if (!hadTransform || _disposed || !_nativeCompositorTransformActive) {
       return;
     }
-    if (transformGeneration == _nativeCompositorTransformGeneration) {
-      _resetNativeCompositorViewportTransformAfterAuthoritativeLayout();
-    } else {
-      _rebaseNativeCompositorViewportTransformAfterAuthoritativeLayout(
-        sentScaleX: sentScaleX,
-        sentScaleY: sentScaleY,
-        sentTranslateX: sentTranslateX,
-        sentTranslateY: sentTranslateY,
-      );
-    }
+    _resetNativeCompositorViewportTransformAfterAuthoritativeLayout();
   }
 
   void _resetNativeCompositorViewportTransformAfterAuthoritativeLayout() {
     if (!_nativeCompositorTransformActive) return;
     _nativeCompositorTransformActive = false;
-    _nativeCompositorSampleScaleX = 1.0;
-    _nativeCompositorSampleScaleY = 1.0;
-    _nativeCompositorSampleTranslateX = 0.0;
-    _nativeCompositorSampleTranslateY = 0.0;
-    _nativeCompositorTransformGeneration += 1;
     fireAndLog(
       'clear native compositor source cache',
       controller.clearNativeCompositorSourceCache(
         reason: 'authoritative layout applied',
       ),
     );
-  }
-
-  void _rebaseNativeCompositorViewportTransformAfterAuthoritativeLayout({
-    required double sentScaleX,
-    required double sentScaleY,
-    required double sentTranslateX,
-    required double sentTranslateY,
-  }) {
-    if (!_nativeCompositorTransformActive) return;
-    if (sentScaleX <= 0 ||
-        sentScaleY <= 0 ||
-        !sentScaleX.isFinite ||
-        !sentScaleY.isFinite) {
-      _cancelNativeCompositorViewportTransform();
-      return;
-    }
-    _nativeCompositorSampleScaleX /= sentScaleX;
-    _nativeCompositorSampleScaleY /= sentScaleY;
-    _nativeCompositorSampleTranslateX =
-        (_nativeCompositorSampleTranslateX - sentTranslateX) / sentScaleX;
-    _nativeCompositorSampleTranslateY =
-        (_nativeCompositorSampleTranslateY - sentTranslateY) / sentScaleY;
-
-    final isIdentity =
-        (_nativeCompositorSampleScaleX - 1.0).abs() < 0.0001 &&
-        (_nativeCompositorSampleScaleY - 1.0).abs() < 0.0001 &&
-        _nativeCompositorSampleTranslateX.abs() < 0.0001 &&
-        _nativeCompositorSampleTranslateY.abs() < 0.0001;
-    if (isIdentity) {
-      _resetNativeCompositorViewportTransformAfterAuthoritativeLayout();
-      return;
-    }
-    _publishNativeCompositorViewportTransform();
   }
 
   List<DisplayTrackGeometry> _orderedTracksForFocus(

@@ -11,12 +11,6 @@ struct MacOSNativeCompositorSourceTexture {
   let fileId: Int
   let width: Int
   let height: Int
-  let displayOffsetX: Float
-  let displayOffsetY: Float
-  let invDisplaySizeX: Float
-  let invDisplaySizeY: Float
-  let viewOffsetUvX: Float
-  let viewOffsetUvY: Float
 }
 
 final class MacOSNativeCompositorView: NSView {
@@ -59,16 +53,23 @@ final class MacOSNativeCompositorView: NSView {
   private var lastPresentedFlutterSourceKey: UInt64 = 0
   private var explicitHoleRect: SIMD4<Float>?
   private var lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
-  private var viewportTransformEnabled = false
-  private var viewportSampleTransform = SIMD4<Float>(1, 1, 0, 0)
-  private var viewportLayoutFlags = SIMD4<Float>(0, 0, 0.5, 1)
-  private var viewportTransformGeneration: UInt64 = 0
-  private var viewportTransformBaseDisplayedLayoutRevision: UInt64 = 0
   private var displayedLayoutRevision: UInt64 = 0
+  // Live source buffers come from the source ring; the projection that maps the
+  // viewport onto those source textures comes from Dart (the full current
+  // layout, recomputed per layout change). One projection path: no residual
+  // transform, no revision anchoring, no subscribe/unsubscribe handoff.
   private var sourceCacheTextures: [MacOSNativeCompositorSourceTexture] = []
-  private var sourceCacheOrder = SIMD4<Float>(0, 1, 2, 3)
   private var sourceCacheGeneration: UInt64 = 0
   private var sourceCacheLastError = ""
+  private var sourceProjectionSet = false
+  private var sourceLayoutFlags = SIMD4<Float>(0, 0, 0.5, 1)
+  private var sourceOrder = SIMD4<Float>(0, 1, 2, 3)
+  private var sourceProjDisplayOffsetX = SIMD4<Float>(0, 0, 0, 0)
+  private var sourceProjDisplayOffsetY = SIMD4<Float>(0, 0, 0, 0)
+  private var sourceProjInvDisplaySizeX = SIMD4<Float>(0, 0, 0, 0)
+  private var sourceProjInvDisplaySizeY = SIMD4<Float>(0, 0, 0, 0)
+  private var sourceProjViewOffsetUvX = SIMD4<Float>(0, 0, 0, 0)
+  private var sourceProjViewOffsetUvY = SIMD4<Float>(0, 0, 0, 0)
   private let compositeRate = MacOSRateWindow()
   private let inFlightSemaphore = DispatchSemaphore(value: 2)
 
@@ -197,118 +198,91 @@ final class MacOSNativeCompositorView: NSView {
     }
   }
 
-  func setViewportTransform(
-    enabled: Bool,
-    scaleX: Double,
-    scaleY: Double,
-    translateX: Double,
-    translateY: Double,
-    mode: Int,
-    splitPos: Double,
-    activeTrackCount: Int
+  /// Publishes the latest live source buffers (from the source ring). Projection
+  /// is set separately via `setSourceProjection`; buffers and projection update
+  /// independently (buffers per frame, projection per layout change).
+  func setSourceBuffers(
+    textures: [MacOSNativeCompositorSourceTexture],
+    error: String = ""
   ) {
-    let safeScaleX = Float(scaleX.isFinite && scaleX > 0 ? scaleX : 1.0)
-    let safeScaleY = Float(scaleY.isFinite && scaleY > 0 ? scaleY : 1.0)
-    let safeTranslateX = Float(translateX.isFinite ? translateX : 0.0)
-    let safeTranslateY = Float(translateY.isFinite ? translateY : 0.0)
-    let safeSplitValue = splitPos.isFinite ? min(1.0, max(0.0, splitPos)) : 0.5
-    let safeSplit = Float(safeSplitValue)
-    let safeTrackCount = Float(max(1, activeTrackCount))
     compositorQueue.async { [weak self] in
       guard let self else { return }
-      let nextTransform = enabled
-        ? SIMD4<Float>(safeScaleX, safeScaleY, safeTranslateX, safeTranslateY)
-        : SIMD4<Float>(1, 1, 0, 0)
-      let nextFlags = SIMD4<Float>(
-        enabled ? 1.0 : 0.0,
-        Float(mode),
-        safeSplit,
-        safeTrackCount
-      )
-      let changed =
-        viewportTransformEnabled != enabled ||
-        viewportSampleTransform != nextTransform ||
-        viewportLayoutFlags != nextFlags
-      let shouldRebase =
-        enabled &&
-        (!viewportTransformEnabled ||
-         displayedLayoutRevision > viewportTransformBaseDisplayedLayoutRevision)
-      viewportTransformEnabled = enabled
-      viewportSampleTransform = nextTransform
-      viewportLayoutFlags = nextFlags
-      if shouldRebase {
-        viewportTransformBaseDisplayedLayoutRevision = displayedLayoutRevision
-      } else if !enabled {
-        viewportTransformBaseDisplayedLayoutRevision = displayedLayoutRevision
-      }
-      if changed || shouldRebase {
-        viewportTransformGeneration &+= 1
-        let message = String(
-          format: "VoidPlayer viewport trace swift event=compositor-transform enabled=%d generation=%llu displayedLayoutRevision=%llu baseDisplayedLayoutRevision=%llu scale=(%.4f,%.4f) translate=(%.4f,%.4f) mode=%d split=%.4f tracks=%d",
-          enabled ? 1 : 0,
-          viewportTransformGeneration,
-          displayedLayoutRevision,
-          viewportTransformBaseDisplayedLayoutRevision,
-          nextTransform.x,
-          nextTransform.y,
-          nextTransform.z,
-          nextTransform.w,
-          mode,
-          safeSplit,
-          activeTrackCount
-        )
-        if enabled {
-          MacOSProfilerLog.trace(message)
-        } else {
-          MacOSProfilerLog.traceEvent(message)
-        }
-        markCompositorDirty()
-      }
+      sourceCacheTextures = textures
+      sourceCacheLastError = error
+      sourceCacheGeneration &+= 1
+      markCompositorDirty()
     }
   }
 
-  func setSourceCache(
-    textures: [MacOSNativeCompositorSourceTexture],
+  func clearSource(reason: String) {
+    compositorQueue.async { [weak self] in
+      guard let self else { return }
+      if sourceCacheTextures.isEmpty && !sourceProjectionSet {
+        return
+      }
+      sourceCacheTextures = []
+      sourceProjectionSet = false
+      sourceCacheLastError = reason
+      sourceCacheGeneration &+= 1
+      markCompositorDirty()
+      MacOSProfilerLog.traceEvent(String(
+        format: "VoidPlayer viewport trace swift event=source-clear generation=%llu reason=%@",
+        sourceCacheGeneration,
+        reason
+      ))
+    }
+  }
+
+  /// Updates the full-layout projection the compositor applies to the source
+  /// textures. Called by Dart on every layout change (pan/zoom/split/mode/resize)
+  /// with the current layout's per-slot projection params. This is the single
+  /// projection path — the source view always reflects the current layout.
+  func setSourceProjection(
+    mode: Int,
+    splitPos: Double,
+    activeTrackCount: Int,
     order: [Int],
-    error: String = ""
+    displayOffsetX: [Double],
+    displayOffsetY: [Double],
+    invDisplaySizeX: [Double],
+    invDisplaySizeY: [Double],
+    viewOffsetUvX: [Double],
+    viewOffsetUvY: [Double]
   ) {
-    let safeOrder = SIMD4<Float>(
+    let safeSplit = splitPos.isFinite ? Float(min(1.0, max(0.0, splitPos))) : 0.5
+    let flags = SIMD4<Float>(0, Float(mode), safeSplit, Float(max(1, activeTrackCount)))
+    let orderVec = SIMD4<Float>(
       Float(order.indices.contains(0) ? order[0] : 0),
       Float(order.indices.contains(1) ? order[1] : 1),
       Float(order.indices.contains(2) ? order[2] : 2),
       Float(order.indices.contains(3) ? order[3] : 3)
     )
-    compositorQueue.async { [weak self] in
-      guard let self else { return }
-      sourceCacheTextures = textures
-      sourceCacheOrder = safeOrder
-      sourceCacheLastError = error
-      sourceCacheGeneration &+= 1
-      markCompositorDirty()
-      MacOSProfilerLog.traceEvent(String(
-        format: "VoidPlayer viewport trace swift event=source-cache-set generation=%llu count=%d error=%@",
-        sourceCacheGeneration,
-        textures.count,
-        error
-      ))
+    func vec(_ values: [Double]) -> SIMD4<Float> {
+      SIMD4<Float>(
+        Float(values.indices.contains(0) ? values[0] : 0),
+        Float(values.indices.contains(1) ? values[1] : 0),
+        Float(values.indices.contains(2) ? values[2] : 0),
+        Float(values.indices.contains(3) ? values[3] : 0)
+      )
     }
-  }
-
-  func clearSourceCache(reason: String) {
+    let dox = vec(displayOffsetX)
+    let doy = vec(displayOffsetY)
+    let idsx = vec(invDisplaySizeX)
+    let idsy = vec(invDisplaySizeY)
+    let voux = vec(viewOffsetUvX)
+    let vouy = vec(viewOffsetUvY)
     compositorQueue.async { [weak self] in
       guard let self else { return }
-      if sourceCacheTextures.isEmpty && sourceCacheLastError.isEmpty {
-        return
-      }
-      sourceCacheTextures = []
-      sourceCacheLastError = reason
-      sourceCacheGeneration &+= 1
+      sourceLayoutFlags = flags
+      sourceOrder = orderVec
+      sourceProjDisplayOffsetX = dox
+      sourceProjDisplayOffsetY = doy
+      sourceProjInvDisplaySizeX = idsx
+      sourceProjInvDisplaySizeY = idsy
+      sourceProjViewOffsetUvX = voux
+      sourceProjViewOffsetUvY = vouy
+      sourceProjectionSet = true
       markCompositorDirty()
-      MacOSProfilerLog.traceEvent(String(
-        format: "VoidPlayer viewport trace swift event=source-cache-clear generation=%llu reason=%@",
-        sourceCacheGeneration,
-        reason
-      ))
     }
   }
 
@@ -354,23 +328,25 @@ final class MacOSNativeCompositorView: NSView {
       "nativeCompositorFlutterSRGBToLinearEnabled": lastFlutterSRGBToLinearEnabled,
       "nativeCompositorSkippedInFlightFrames": skippedInFlightFrames,
       "nativeCompositorSkippedStaticFrames": skippedStaticFrames,
-      "nativeCompositorViewportTransformEnabled": viewportTransformEffectiveEnabled(),
-      "nativeCompositorViewportTransformRequestedEnabled": viewportTransformEnabled,
-      "nativeCompositorViewportTransformGeneration": Int(viewportTransformGeneration),
+      "nativeCompositorViewportTransformEnabled":
+        sourceProjectionSet && !sourceCacheTextures.isEmpty,
+      "nativeCompositorViewportTransformRequestedEnabled": sourceProjectionSet,
+      "nativeCompositorViewportTransformGeneration": Int(
+        min(sourceCacheGeneration, UInt64(Int.max))
+      ),
       "nativeCompositorDisplayedLayoutRevision": Int(
         min(displayedLayoutRevision, UInt64(Int.max))
       ),
       "nativeCompositorViewportTransformBaseDisplayedLayoutRevision": Int(
-        min(viewportTransformBaseDisplayedLayoutRevision, UInt64(Int.max))
+        min(displayedLayoutRevision, UInt64(Int.max))
       ),
-      "nativeCompositorViewportTransformScaleXX1000": Int(viewportSampleTransform.x * 1000.0),
-      "nativeCompositorViewportTransformScaleYX1000": Int(viewportSampleTransform.y * 1000.0),
-      "nativeCompositorViewportTransformTranslateXX1000":
-        Int(viewportSampleTransform.z * 1000.0),
-      "nativeCompositorViewportTransformTranslateYX1000":
-        Int(viewportSampleTransform.w * 1000.0),
+      "nativeCompositorViewportTransformScaleXX1000": 1000,
+      "nativeCompositorViewportTransformScaleYX1000": 1000,
+      "nativeCompositorViewportTransformTranslateXX1000": 0,
+      "nativeCompositorViewportTransformTranslateYX1000": 0,
+      "nativeCompositorSourceProjectionEnabled": sourceProjectionSet,
       "nativeCompositorSourceCacheActive":
-        viewportTransformEffectiveEnabled() && !sourceCacheTextures.isEmpty,
+        sourceProjectionSet && !sourceCacheTextures.isEmpty,
       "nativeCompositorSourceCacheTextureCount": sourceCacheTextures.count,
       "nativeCompositorSourceCacheGeneration": Int(
         min(sourceCacheGeneration, UInt64(Int.max))
@@ -406,16 +382,10 @@ final class MacOSNativeCompositorView: NSView {
       let video = videoSnapshot.texture
       let flutter = flutterSnapshot.texture
       let sourceCache = currentSourceCacheMetalTextures()
-      let sourceCacheActive =
-        viewportTransformEffectiveEnabled() && !sourceCache.textures.isEmpty
       displayedLayoutRevision = max(displayedLayoutRevision, videoSnapshot.layoutRevision)
+      let sourceCacheActive = sourceProjectionSet && !sourceCache.textures.isEmpty
       var holeRect = explicitHoleRect ?? lastHoleRect
-      var sampleTransform = viewportSampleTransform
-      var layoutFlags = viewportLayoutFlags
-      if !viewportTransformEffectiveEnabled() {
-        sampleTransform = SIMD4<Float>(1, 1, 0, 0)
-        layoutFlags.x = 0
-      }
+      var layoutFlags = sourceLayoutFlags
       var colorFlags = SIMD4<Float>(
         outputPixelFormat == .rgba16Float ? 1.0 : 0.0,
         shouldConvertSRGBToLinear(texture: video) ? 1.0 : 0.0,
@@ -467,54 +437,49 @@ final class MacOSNativeCompositorView: NSView {
         index: 1
       )
       encoder.setFragmentBytes(
-        &sampleTransform,
+        &layoutFlags,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 2
       )
       encoder.setFragmentBytes(
-        &layoutFlags,
+        &sourcePresentFlags,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 3
       )
       encoder.setFragmentBytes(
-        &sourcePresentFlags,
+        &sourceOrder,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 4
       )
       encoder.setFragmentBytes(
-        &sourceOrder,
+        &sourceDisplayOffsetX,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 5
       )
       encoder.setFragmentBytes(
-        &sourceDisplayOffsetX,
+        &sourceDisplayOffsetY,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 6
       )
       encoder.setFragmentBytes(
-        &sourceDisplayOffsetY,
+        &sourceInvDisplaySizeX,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 7
       )
       encoder.setFragmentBytes(
-        &sourceInvDisplaySizeX,
+        &sourceInvDisplaySizeY,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 8
       )
       encoder.setFragmentBytes(
-        &sourceInvDisplaySizeY,
+        &sourceViewOffsetUvX,
         length: MemoryLayout<SIMD4<Float>>.stride,
         index: 9
       )
       encoder.setFragmentBytes(
-        &sourceViewOffsetUvX,
-        length: MemoryLayout<SIMD4<Float>>.stride,
-        index: 10
-      )
-      encoder.setFragmentBytes(
         &sourceViewOffsetUvY,
         length: MemoryLayout<SIMD4<Float>>.stride,
-        index: 11
+        index: 10
       )
       encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
       encoder.endEncoding()
@@ -538,7 +503,7 @@ final class MacOSNativeCompositorView: NSView {
       compositorDirty = false
       if frameCount == 1 || frameCount % 120 == 0 {
         NSLog(
-          "VoidPlayer native compositor: composite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d layoutRevision=%llu transformEffective=%d",
+          "VoidPlayer native compositor: composite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d layoutRevision=%llu sourceProjection=%d",
           frameCount,
           outputMode,
           video.width,
@@ -548,15 +513,10 @@ final class MacOSNativeCompositorView: NSView {
           Int(metalLayer.drawableSize.width),
           Int(metalLayer.drawableSize.height),
           displayedLayoutRevision,
-          viewportTransformEffectiveEnabled() ? 1 : 0
+          sourceCacheActive ? 1 : 0
         )
       }
     }
-  }
-
-  private func viewportTransformEffectiveEnabled() -> Bool {
-    viewportTransformEnabled &&
-      displayedLayoutRevision <= viewportTransformBaseDisplayedLayoutRevision
   }
 
   private func markCompositorDirty() {
@@ -650,12 +610,6 @@ final class MacOSNativeCompositorView: NSView {
   private func currentSourceCacheMetalTextures() -> SourceCacheTextureSnapshot {
     var textures: [Int: MTLTexture] = [:]
     var presentFlags = SIMD4<Float>(0, 0, 0, 0)
-    var displayOffsetX = SIMD4<Float>(0, 0, 0, 0)
-    var displayOffsetY = SIMD4<Float>(0, 0, 0, 0)
-    var invDisplaySizeX = SIMD4<Float>(0, 0, 0, 0)
-    var invDisplaySizeY = SIMD4<Float>(0, 0, 0, 0)
-    var viewOffsetUvX = SIMD4<Float>(0, 0, 0, 0)
-    var viewOffsetUvY = SIMD4<Float>(0, 0, 0, 0)
 
     for entry in sourceCacheTextures {
       let slot = entry.sourceSlot
@@ -687,48 +641,24 @@ final class MacOSNativeCompositorView: NSView {
       switch slot {
       case 0:
         presentFlags.x = 1
-        displayOffsetX.x = entry.displayOffsetX
-        displayOffsetY.x = entry.displayOffsetY
-        invDisplaySizeX.x = entry.invDisplaySizeX
-        invDisplaySizeY.x = entry.invDisplaySizeY
-        viewOffsetUvX.x = entry.viewOffsetUvX
-        viewOffsetUvY.x = entry.viewOffsetUvY
       case 1:
         presentFlags.y = 1
-        displayOffsetX.y = entry.displayOffsetX
-        displayOffsetY.y = entry.displayOffsetY
-        invDisplaySizeX.y = entry.invDisplaySizeX
-        invDisplaySizeY.y = entry.invDisplaySizeY
-        viewOffsetUvX.y = entry.viewOffsetUvX
-        viewOffsetUvY.y = entry.viewOffsetUvY
       case 2:
         presentFlags.z = 1
-        displayOffsetX.z = entry.displayOffsetX
-        displayOffsetY.z = entry.displayOffsetY
-        invDisplaySizeX.z = entry.invDisplaySizeX
-        invDisplaySizeY.z = entry.invDisplaySizeY
-        viewOffsetUvX.z = entry.viewOffsetUvX
-        viewOffsetUvY.z = entry.viewOffsetUvY
       default:
         presentFlags.w = 1
-        displayOffsetX.w = entry.displayOffsetX
-        displayOffsetY.w = entry.displayOffsetY
-        invDisplaySizeX.w = entry.invDisplaySizeX
-        invDisplaySizeY.w = entry.invDisplaySizeY
-        viewOffsetUvX.w = entry.viewOffsetUvX
-        viewOffsetUvY.w = entry.viewOffsetUvY
       }
     }
     return SourceCacheTextureSnapshot(
       textures: textures,
       presentFlags: presentFlags,
-      order: sourceCacheOrder,
-      displayOffsetX: displayOffsetX,
-      displayOffsetY: displayOffsetY,
-      invDisplaySizeX: invDisplaySizeX,
-      invDisplaySizeY: invDisplaySizeY,
-      viewOffsetUvX: viewOffsetUvX,
-      viewOffsetUvY: viewOffsetUvY
+      order: sourceOrder,
+      displayOffsetX: sourceProjDisplayOffsetX,
+      displayOffsetY: sourceProjDisplayOffsetY,
+      invDisplaySizeX: sourceProjInvDisplaySizeX,
+      invDisplaySizeY: sourceProjInvDisplaySizeY,
+      viewOffsetUvX: sourceProjViewOffsetUvX,
+      viewOffsetUvY: sourceProjViewOffsetUvY
     )
   }
 
@@ -1026,49 +956,6 @@ final class MacOSNativeCompositorView: NSView {
         return srgbToLinear(straightSRGB) * alpha;
       }
 
-      float2 transformedVideoUv(
-        float2 uv,
-        constant float4& sampleTransform,
-        constant float4& layoutFlags
-      ) {
-        if (layoutFlags.x < 0.5) {
-          return uv;
-        }
-        int mode = int(round(layoutFlags.y));
-        int trackCount = max(1, int(round(layoutFlags.w)));
-        if (mode == 0 && trackCount > 1) {
-          float count = float(trackCount);
-          float slot = floor(clamp(uv.x, 0.0, 0.999999) * count);
-          float slotWidth = 1.0 / count;
-          float slotOrigin = slot * slotWidth;
-          float2 localUv = float2((uv.x - slotOrigin) / slotWidth, uv.y);
-          float2 transformed = localUv * sampleTransform.xy + sampleTransform.zw;
-          if (transformed.x < 0.0 || transformed.x > 1.0 ||
-              transformed.y < 0.0 || transformed.y > 1.0) {
-            return float2(-1.0, -1.0);
-          }
-          return float2(slotOrigin + transformed.x * slotWidth, transformed.y);
-        }
-        if (mode == 1 && trackCount > 1) {
-          float split = clamp(layoutFlags.z, 0.0001, 0.9999);
-          bool leftSlot = uv.x < split;
-          float slotMin = leftSlot ? 0.0 : split;
-          float slotMax = leftSlot ? split : 1.0;
-          float2 transformed = uv * sampleTransform.xy + sampleTransform.zw;
-          if (transformed.x < slotMin || transformed.x > slotMax ||
-              transformed.y < 0.0 || transformed.y > 1.0) {
-            return float2(-1.0, -1.0);
-          }
-          return transformed;
-        }
-        float2 transformed = uv * sampleTransform.xy + sampleTransform.zw;
-        if (transformed.x < 0.0 || transformed.x > 1.0 ||
-            transformed.y < 0.0 || transformed.y > 1.0) {
-          return float2(-1.0, -1.0);
-        }
-        return transformed;
-      }
-
       float valueAt(float4 values, int index) {
         if (index == 0) return values.x;
         if (index == 1) return values.y;
@@ -1093,7 +980,6 @@ final class MacOSNativeCompositorView: NSView {
 
       float4 sampleSourceCacheVideo(
         float2 videoUv,
-        constant float4& sampleTransform,
         constant float4& layoutFlags,
         constant float4& sourcePresentFlags,
         constant float4& sourceOrder,
@@ -1129,7 +1015,10 @@ final class MacOSNativeCompositorView: NSView {
           return float4(0.0);
         }
 
-        float2 transformed = localUv * sampleTransform.xy + sampleTransform.zw;
+        // The per-slot projection params already encode the full layout
+        // (zoom/pan/offset) for the current frame, so no residual transform is
+        // layered on top: sample the source directly with the local UV.
+        float2 transformed = localUv;
         float2 displayOffset = float2(
           valueAt(sourceDisplayOffsetX, sourceSlot),
           valueAt(sourceDisplayOffsetY, sourceSlot));
@@ -1164,16 +1053,15 @@ final class MacOSNativeCompositorView: NSView {
         texture2d<float> sourceTexture3 [[texture(5)]],
         constant float4& holeRect [[buffer(0)]],
         constant float4& colorFlags [[buffer(1)]],
-        constant float4& sampleTransform [[buffer(2)]],
-        constant float4& layoutFlags [[buffer(3)]],
-        constant float4& sourcePresentFlags [[buffer(4)]],
-        constant float4& sourceOrder [[buffer(5)]],
-        constant float4& sourceDisplayOffsetX [[buffer(6)]],
-        constant float4& sourceDisplayOffsetY [[buffer(7)]],
-        constant float4& sourceInvDisplaySizeX [[buffer(8)]],
-        constant float4& sourceInvDisplaySizeY [[buffer(9)]],
-        constant float4& sourceViewOffsetUvX [[buffer(10)]],
-        constant float4& sourceViewOffsetUvY [[buffer(11)]]
+        constant float4& layoutFlags [[buffer(2)]],
+        constant float4& sourcePresentFlags [[buffer(3)]],
+        constant float4& sourceOrder [[buffer(4)]],
+        constant float4& sourceDisplayOffsetX [[buffer(5)]],
+        constant float4& sourceDisplayOffsetY [[buffer(6)]],
+        constant float4& sourceInvDisplaySizeX [[buffer(7)]],
+        constant float4& sourceInvDisplaySizeY [[buffer(8)]],
+        constant float4& sourceViewOffsetUvX [[buffer(9)]],
+        constant float4& sourceViewOffsetUvY [[buffer(10)]]
       ) {
         constexpr sampler s(address::clamp_to_edge, filter::linear);
         float2 uv = clamp(in.uv, 0.0, 1.0);
@@ -1186,15 +1074,15 @@ final class MacOSNativeCompositorView: NSView {
               (uv.x - holeRect.x) / max(0.0001, holeRect.z - holeRect.x),
               (uv.y - holeRect.y) / max(0.0001, holeRect.w - holeRect.y))
           : float2(0.0, 0.0);
-        float2 sampleUv = transformedVideoUv(videoUv, sampleTransform, layoutFlags);
-        bool sampleInside = sampleUv.x >= 0.0 && sampleUv.x <= 1.0 &&
-          sampleUv.y >= 0.0 && sampleUv.y <= 1.0;
         float4 video = float4(0.0);
         if (insideHole) {
+          // When the source cache is active (colorFlags.w) the compositor owns
+          // the full-layout projection from the source-resolution textures. Else
+          // it falls back to the renderer-owned viewport target, which already
+          // carries the full layout, so it is sampled directly.
           video = colorFlags.w > 0.5
             ? sampleSourceCacheVideo(
                 videoUv,
-                sampleTransform,
                 layoutFlags,
                 sourcePresentFlags,
                 sourceOrder,
@@ -1209,7 +1097,7 @@ final class MacOSNativeCompositorView: NSView {
                 sourceTexture2,
                 sourceTexture3,
                 s)
-            : (sampleInside ? videoTexture.sample(s, sampleUv) : float4(0.0));
+            : videoTexture.sample(s, videoUv);
         }
         float4 flutter = flutterTexture.sample(s, uv);
         float alpha = clamp(flutter.a, 0.0, 1.0);

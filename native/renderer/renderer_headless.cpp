@@ -325,9 +325,11 @@ bool Renderer::Impl::draw_current_frame_sources(
         if (!surface_state_.headless() || !presentation_.has_backend()) {
             return set_error(error, "renderer is not using a headless presentation backend");
         }
-        if (timeline_.playing()) {
-            return set_error(error, "source frame bake requires paused playback");
-        }
+        // Source-frame bake mirrors the last presented frame (via
+        // present_history_ below), which is valid whether paused or playing.
+        // The macOS compositor drives a per-frame bake during a live viewport
+        // interaction so playing-state pan reveals source pixels immediately,
+        // exactly like the paused path.
         std::lock_guard<std::mutex> lock(state_mutex_);
         const auto decision_result =
             track_controller_.paused_layout_decision(present_history_.snapshot());

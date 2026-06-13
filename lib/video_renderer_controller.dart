@@ -223,6 +223,9 @@ class NativePlayerController {
   Future<void> prepareNativeCompositorSourceCache({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
     required List<double> displayOffsetX,
     required List<double> displayOffsetY,
     required List<double> invDisplaySizeX,
@@ -234,6 +237,9 @@ class NativePlayerController {
     return _api.prepareNativeCompositorSourceCache(
       sourceSlots: sourceSlots,
       sourceOrder: sourceOrder,
+      mode: mode,
+      splitPos: splitPos,
+      activeTrackCount: activeTrackCount,
       displayOffsetX: displayOffsetX,
       displayOffsetY: displayOffsetY,
       invDisplaySizeX: invDisplaySizeX,

@@ -104,6 +104,36 @@ failed, or merged into a newer layout intent.
 only expose the most recent successful renderer-owned frame information. They
 are not the normal active refresh command.
 
+## Viewport Interaction Pipeline (Pan / Zoom)
+
+Interactive pan/zoom in native-compositor mode never waits on a renderer
+round-trip per input event. Dart updates the full current layout immediately,
+then pushes the complete source projection to the compositor. The compositor
+therefore has a single projection path: source-resolution RGB buffers plus the
+current layout projection. There is no residual transform, revision-anchored
+clear, or periodic flush loop.
+
+- **Source projection**: Dart computes per-slot projection values from the
+  current `LayoutState` and sends them through
+  `prepareNativeCompositorSourceCache`. Repeated calls with the same track
+  signature update only projection; they do not reallocate source buffers.
+- **Paused sub-mode**: the source ring bakes each track's current frame once
+  into renderer-converted RGB/EDR buffers. Since frames do not advance, that
+  snapshot remains valid for the whole interaction.
+- **Playing sub-mode**: the source ring stays subscribed during interaction
+  and re-bakes from frame callbacks, so newly revealed pixels are available
+  without renderer layout flushes.
+- **Commit**: pointer-up applies the authoritative layout to the renderer once,
+  then clears the source ring. The fallback renderer-owned viewport target now
+  carries the same full layout the compositor was already projecting.
+- **Playback transitions**: play/pause/step call
+  `MainWindowLayoutCoordinator.onPlaybackStateChanged`, which flushes any
+  deferred interaction layout before playback content changes.
+
+Structural layout changes (mode toggle, zoom set, split drag, resize, focus
+jumps) clear the source ring and flush immediately; they intentionally bypass
+the interaction path because their content change is discontinuous anyway.
+
 Frame callbacks and failure callbacks wake waiters after renderer/backend locks
 are released. Swift diagnostics must read
 `rendererOwnedPresentationState` rather than inferring health from renderer

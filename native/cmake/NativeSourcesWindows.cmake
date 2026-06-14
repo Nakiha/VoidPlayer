@@ -3,6 +3,7 @@ include_guard(GLOBAL)
 set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/windows/common/windows_crash_handler.cpp"
     "${VOID_NATIVE_DIR}/windows/player/native_player.cpp"
+    "${VOID_NATIVE_DIR}/windows/presentation/windows_display_resolver.cpp"
     "${VOID_NATIVE_DIR}/windows/d3d11/frame_capture_service.cpp"
     "${VOID_NATIVE_DIR}/windows/decode/d3d11_frame_snapshot.cpp"
     "${VOID_NATIVE_DIR}/windows/decode/d3d11va_provider.cpp"

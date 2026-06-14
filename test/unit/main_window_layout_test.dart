@@ -207,8 +207,9 @@ void main() {
         ),
       );
       expect(
-        controller.calls
-            .where((call) => call == 'prepareNativeCompositorSourceCache'),
+        controller.calls.where(
+          (call) => call == 'prepareNativeCompositorSourceCache',
+        ),
         hasLength(2),
       );
     },

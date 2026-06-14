@@ -374,9 +374,7 @@ void main() {
     expect(detail, isNot(contains('display-link 0/121Hz')));
   });
 
-  testWidgets('keeps layout sampling out of the health detail', (
-    tester,
-  ) async {
+  testWidgets('keeps layout sampling out of the health detail', (tester) async {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
       'displayRefreshHzEstimate': 120.0,

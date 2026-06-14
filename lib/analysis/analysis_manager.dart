@@ -297,6 +297,7 @@ class AnalysisManager extends ChangeNotifier
           .toList(growable: false),
     };
   }
+
   bool get isLoaded => _state == AnalysisState.loaded;
 
   @override
@@ -874,7 +875,10 @@ class AnalysisManager extends ChangeNotifier
         requests.values.any(_overlayRequestNeedsNativeReload);
     var loadedAny = false;
     if (needsReload) {
-      loadedAny = _reloadReadyOverlayTracksForIntent(serial, reason: 'activate');
+      loadedAny = _reloadReadyOverlayTracksForIntent(
+        serial,
+        reason: 'activate',
+      );
     }
     for (final request in requests.values) {
       _scheduleOverlayChunksForRequest(request, serial);

@@ -21,6 +21,7 @@ endif()
 
 set(VOID_D3D11_BACKEND_SOURCES
     "${VOID_NATIVE_DIR}/windows/d3d11/device.cpp"
+    "${VOID_NATIVE_DIR}/windows/d3d11/fp16_target.cpp"
     "${VOID_NATIVE_DIR}/windows/d3d11/frame_presenter.cpp"
     "${VOID_NATIVE_DIR}/windows/d3d11/headless_output.cpp"
     "${VOID_NATIVE_DIR}/windows/d3d11/render_backend.cpp"

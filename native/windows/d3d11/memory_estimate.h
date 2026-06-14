@@ -30,6 +30,8 @@ inline uint64_t estimate_dxgi_surface_bytes(UINT width,
         return pixels * 2;
     case DXGI_FORMAT_R16G16_UNORM:
         return pixels * 4;
+    case DXGI_FORMAT_R16G16B16A16_FLOAT:
+        return pixels * 8;
     case DXGI_FORMAT_B8G8R8A8_UNORM:
     case DXGI_FORMAT_R8G8B8A8_UNORM:
         return pixels * 4;

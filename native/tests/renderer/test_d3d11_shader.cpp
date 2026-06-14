@@ -115,6 +115,8 @@ TEST_CASE("Shader constants layout matches HLSL cbuffer", "[d3d11][shader]") {
     REQUIRE(offsetof(vr::ShaderConstants, background_color) == 224);
     REQUIRE(offsetof(vr::ShaderConstants, color_range) == 240);
     REQUIRE(offsetof(vr::ShaderConstants, color_primaries) == 288);
+    REQUIRE(offsetof(vr::ShaderConstants, output_target) == 304);
+    REQUIRE(offsetof(vr::ShaderConstants, sdr_white_scale) == 308);
 }
 
 TEST_CASE("Analysis overlay rect UV packing is stable at tiny and high resolutions",

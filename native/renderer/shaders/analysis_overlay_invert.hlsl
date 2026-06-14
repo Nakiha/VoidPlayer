@@ -22,5 +22,5 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
     if (mask < 0.5) {
         discard;
     }
-    return float4(1.0, 1.0, 1.0, 1.0);
+    return map_sdr_ui_to_output(float4(1.0, 1.0, 1.0, 1.0));
 }

@@ -1,6 +1,7 @@
 // Analysis overlay contrast assist pass.
 
 #include "common.hlsl"
+#include "color_pipeline.hlsl"
 
 Texture2D u_analysis_overlay_mask[4] : register(t24);
 
@@ -31,12 +32,12 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
             sample_overlay_mask(texcoord - float2(0.0, texel.y))));
 
     if (center >= 0.5) {
-        return float4(1.0, 1.0, 1.0, 0.45);
+        return map_sdr_ui_to_output(float4(1.0, 1.0, 1.0, 0.45));
     }
 
     if (halo < 0.5) {
         discard;
     }
 
-    return float4(0.0, 0.0, 0.0, 0.65);
+    return map_sdr_ui_to_output(float4(0.0, 0.0, 0.0, 0.65));
 }

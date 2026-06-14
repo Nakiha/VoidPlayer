@@ -32,6 +32,9 @@ struct VSOutput {
 #define COLOR_PRIMARIES_BT709 2
 #define COLOR_PRIMARIES_BT2020 3
 
+#define OUTPUT_TARGET_SDR_BT709 0
+#define OUTPUT_TARGET_WINDOWS_SCRGB 1
+
 // RGBA textures (legacy/direct texture path)
 Texture2D u_textures[4] : register(t0);
 SamplerState u_sampler : register(s0);
@@ -88,5 +91,8 @@ cbuffer Constants : register(b0) {
     int4 u_color_matrix;          // offset 256: VideoColorMatrix per track
     int4 u_color_transfer;        // offset 272: VideoColorTransfer per track
     int4 u_color_primaries;       // offset 288: VideoColorPrimaries per track
+    int u_output_target;          // offset 304: output target enum
+    float u_sdr_white_scale;      // offset 308: SDR white nits / 80
+    float2 _pad2;                 // offset 312-319
 };
-// Total: 304 bytes. Keep in sync with shader_constants.h.
+// Total: 320 bytes. Keep in sync with shader_constants.h.

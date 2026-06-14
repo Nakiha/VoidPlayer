@@ -58,6 +58,17 @@ if(WIN32 AND BUILD_TESTS)
     set_tests_properties(windows_d3d11_color_layout_parity_smoke PROPERTIES
         TIMEOUT 60
         LABELS "windows;backend;contract")
+
+    add_executable(windows_d3d11_fp16_scrgb_smoke
+        tools/windows_d3d11_fp16_scrgb_smoke.cpp)
+    void_apply_native_compile_options(windows_d3d11_fp16_scrgb_smoke)
+    target_link_libraries(windows_d3d11_fp16_scrgb_smoke PRIVATE
+        video_renderer_lib)
+    add_test(NAME windows_d3d11_fp16_scrgb_smoke
+        COMMAND windows_d3d11_fp16_scrgb_smoke)
+    set_tests_properties(windows_d3d11_fp16_scrgb_smoke PROPERTIES
+        TIMEOUT 60
+        LABELS "windows;backend;contract;canary;fp16")
 endif()
 
 if(WIN32 AND BUILD_ANALYSIS)

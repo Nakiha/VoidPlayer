@@ -39,6 +39,7 @@ struct RendererGpuMemoryStats {
     uint64_t exact_seek_snapshot_bytes = 0;
     uint64_t presenter_texture_bytes = 0;
     uint64_t headless_output_bytes = 0;
+    uint64_t fp16_target_bytes = 0;
     uint64_t analysis_overlay_bytes = 0;
     uint64_t cpu_frame_bytes = 0;
     uint64_t track_buffer_cpu_bytes = 0;

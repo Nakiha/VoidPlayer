@@ -3,6 +3,7 @@
 #include "renderer/render/presentation_backend.h"
 #include "renderer/renderer_api_types.h"
 #include "windows/d3d11/device.h"
+#include "windows/d3d11/fp16_target.h"
 #include "windows/d3d11/frame_presenter.h"
 #include "windows/d3d11/headless_output.h"
 #include "windows/d3d11/shader.h"
@@ -97,18 +98,50 @@ public:
                                      std::vector<uint8_t>& bgra,
                                      int& region_width,
                                      int& region_height) override;
+    bool capture_fp16_target(std::vector<uint16_t>& rgba_half,
+                             int& width,
+                             int& height) const;
     bool draw_frame(const RendererDrawSnapshot& snapshot,
                     const PresentationBackendDrawHooks& hooks) override;
 
 private:
+    struct PreparedDrawResources {
+        std::array<D3D11PreparedFrame, kMaxTracks> frames;
+        std::array<ID3D11ShaderResourceView*, kMaxTracks> rgba_srvs{};
+        std::array<ID3D11ShaderResourceView*, kMaxTracks> y_srvs{};
+        std::array<ID3D11ShaderResourceView*, kMaxTracks> uv_srvs{};
+        std::array<ID3D11ShaderResourceView*, kMaxTracks> u_srvs{};
+        std::array<ID3D11ShaderResourceView*, kMaxTracks> v_srvs{};
+    };
+
     bool initialize_device(const D3D11RenderBackendConfig& config);
     bool initialize_render_resources();
+    bool initialize_fp16_target(int width, int height);
+    void disable_fp16_target(const char* reason);
+    bool prepare_draw_resources(
+        const RendererDrawSnapshot& snapshot,
+        const PresentationBackendDrawHooks& hooks,
+        PreparedDrawResources& prepared);
+    bool draw_prepared_pass(
+        const RendererDrawSnapshot& snapshot,
+        const PresentationBackendDrawHooks& hooks,
+        const PreparedDrawResources& prepared,
+        ID3D11RenderTargetView* target_rtv,
+        ColorOutputTarget output_target,
+        bool draw_overlay);
 
     bool headless_ = false;
+    ColorOutputTarget requested_output_target_ =
+        ColorOutputTarget::kSDRToneMappedBT709;
+    double sdr_white_level_nits_ = 80.0;
+    uint64_t fp16_draw_count_ = 0;
+    uint64_t sdr_compatibility_draw_count_ = 0;
+    std::string fp16_fallback_reason_ = "none";
     std::unique_ptr<D3D11Device> device_;
     std::unique_ptr<TextureManager> texture_manager_;
     std::unique_ptr<D3D11FramePresenter> frame_presenter_;
     std::unique_ptr<D3D11HeadlessOutput> headless_output_;
+    std::unique_ptr<D3D11Fp16Target> fp16_target_;
     std::unique_ptr<ShaderManager> shader_manager_;
     std::unique_ptr<D3D11RenderResources> resources_;
 };

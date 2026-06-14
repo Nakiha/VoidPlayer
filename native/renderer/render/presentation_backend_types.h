@@ -95,6 +95,11 @@ struct PresentationBackendStats {
 struct PresentationBackendDiagnostics {
     std::string backend;
     std::string target_format;
+    std::string render_target_format;
+    std::string render_color_space;
+    std::string sdr_compatibility_pass;
+    std::string fallback_reason = "none";
+    std::string sdr_white_level_status = "nominal-default";
     std::string adapter_description;
     std::string driver_type;
     int32_t width = 0;
@@ -105,8 +110,16 @@ struct PresentationBackendDiagnostics {
     int32_t adapter_luid_high = 0;
     uint32_t adapter_luid_low = 0;
     int32_t feature_level = 0;
+    int32_t fp16_target_width = 0;
+    int32_t fp16_target_height = 0;
+    int32_t fp16_target_buffer_count = 0;
+    int64_t sdr_white_level_milli_nits = 80000;
+    int64_t sdr_white_scale_x1000 = 1000;
+    uint64_t fp16_draw_count = 0;
+    uint64_t sdr_compatibility_draw_count = 0;
     bool headless = false;
     bool warp = false;
+    bool fp16_target_active = false;
 };
 
 inline bool is_transient_presentation_backpressure_error(const std::string& error) {

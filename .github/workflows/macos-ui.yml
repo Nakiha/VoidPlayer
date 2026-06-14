@@ -103,6 +103,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/ci/bootstrap_flutter_macos_engine.sh
 
+      - name: Install media generation tools
+        run: brew install ffmpeg
+
       - name: Run macOS UI gate
         shell: bash
         run: python3.12 dev.py gate "${{ github.event_name == 'workflow_dispatch' && inputs.profile || github.event_name == 'schedule' && 'macos-ui-nightly' || 'macos-ui-smoke' }}"

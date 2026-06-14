@@ -1,4 +1,6 @@
 #include "video_renderer_plugin.h"
+
+#include "common/win_utf8.h"
 #include "analysis_ffi.h"
 #include "native_player_channel_names.h"
 
@@ -592,6 +594,28 @@ void VideoRendererPlugin::CreatePlayer(
             "Flutter DXGI adapter is unavailable; cannot create shared D3D11 texture");
         return;
     }
+
+    presentation_policy_ = vr::resolve_windows_presentation_policy(
+        vr::win_utf8::get_env_utf8(
+            L"VOIDPLAYER_WINDOWS_PRESENTATION_MODE"));
+    const auto locked_display = display_probe_tracker_.Update(
+        display_resolver_.Probe(window_handle_, dxgi_adapter_.Get()));
+    config.backend.output_target = presentation_policy_.output_target;
+    config.backend.sdr_white_level_nits =
+        static_cast<double>(
+            locked_display.probe.sdr_white_level_milli_nits) /
+        1000.0;
+    presentation_sdr_white_level_status_ =
+        locked_display.probe.sdr_white_level_status;
+    spdlog::info(
+        "[WindowsPresentation] request={} mode={} output_target={} "
+        "sdr_white_nits={:.3f} white_status={} fallback={}",
+        presentation_policy_.request,
+        presentation_policy_.mode,
+        presentation_policy_.fp16_scrgb_requested ? "fp16-scrgb" : "sdr",
+        config.backend.sdr_white_level_nits,
+        presentation_sdr_white_level_status_,
+        presentation_policy_.fallback_reason);
 
     for (const auto& p : paths_list) {
         std::string path;
@@ -1441,7 +1465,11 @@ void VideoRendererPlugin::GetDiagnostics(
             display.probe.matches_presentation_adapter);
     }
     auto diagnostics =
-        diagnostics_.BuildMethodChannelDiagnostics(player_, display);
+        diagnostics_.BuildMethodChannelDiagnostics(
+            player_,
+            display,
+            presentation_policy_,
+            presentation_sdr_white_level_status_);
     const auto event_diagnostics = event_bridge_.diagnostics();
     diagnostics[flutter::EncodableValue("nativeEventListenCount")] =
         enc_i64(event_diagnostics.listen_count);

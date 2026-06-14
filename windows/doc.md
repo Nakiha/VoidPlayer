@@ -13,6 +13,8 @@
 - 提供 `video_renderer` MethodChannel / Texture plugin 桥接
 - 提供 `video_renderer/events` EventChannel 和 native 诊断桥接
 - 按主窗口与 DXGI output 的最大交集探测当前显示器、color space 和亮度元数据
+- 解析 `VOIDPLAYER_WINDOWS_PRESENTATION_MODE=fp16-scrgb`，并在创建 player
+  时锁定当前 output 的 SDR white level
 - 将 native DX11 shared texture 暴露给 Flutter Texture widget
 - 引入 native C++ renderer 构建产物和 Windows 运行时依赖
 
@@ -43,6 +45,8 @@ windows/
 - `runner/` 可以处理 Win32 窗口、插件注册、MethodChannel 参数和 Texture bridge。
 - `runner/analysis_ffi.*` 可以做 Dart FFI 参数校验、cache path/publish、工具进程调度和 native analysis handle 管理；具体 VAC2/VACHUNK 格式仍归 `native/analysis`。
 - 复杂渲染/解码/同步逻辑不要写进 `runner/`，应放在 `native/`。
+- runner 只解析 Windows presentation 请求和 display capability；FP16
+  target、颜色映射和 fallback 实现在 `PresentationBackend` / D3D11 backend。
 - Flutter UI 行为不要写进 `runner/`，应放在 `lib/`。
 - FFmpeg Windows bundle 的文件位置可以在这里记录，但 FFmpeg/native 管线设计仍归 native 文档维护。
 

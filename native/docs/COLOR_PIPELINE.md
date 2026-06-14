@@ -7,9 +7,9 @@ selected platform presentation target.
 
 The historical production target is SDR BGRA/RGB for a Flutter texture. The
 macOS HDR exploration path adds a native compositor target that outputs extended
-linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows HDR is not active
-yet, but the shared metadata and strategy constants keep a place for a later
-D3D/scRGB or HDR10 swapchain target.
+linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows HDR presentation
+is not active, but an opt-in renderer-owned FP16/scRGB target now validates the
+linear BT.709 color path while Flutter continues to receive SDR BGRA.
 
 ## Shared Output Contract
 
@@ -31,7 +31,7 @@ Concrete presentation targets are platform-specific:
 
 | Platform | Backend target | Notes |
 | --- | --- | --- |
-| Windows | D3D11 BGRA shared texture / optional swap chain | Current path is SDR. Future HDR target should be modeled as scRGB/PQ/HDR10 without changing shared decode metadata. |
+| Windows | D3D11 BGRA shared texture plus optional renderer-owned RGBA16F scRGB target | Flutter publication remains SDR. The FP16 target is an internal opt-in, not HDR presentation. |
 | macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
 | macOS EDR | Native compositor `RGBA16Float` `CAMetalLayer` | Uses `extendedLinearDisplayP3` and composites native video with the exported Flutter texture. |
 
@@ -136,9 +136,19 @@ Windows samples shader inputs through D3D11 SRVs:
 - `shaders/multitrack.hlsl` includes `shaders/color_pipeline.hlsl` for range,
   matrix, primaries, transfer, tone mapping, and final BGRA output.
 
-The Windows headless backend currently publishes a BGRA shared texture to
-Flutter. That concrete DXGI target is a Windows backend detail, not the shared
-native color contract.
+The default pass tone-maps to the BGRA shared texture published to Flutter. In
+`fp16-scrgb` mode the same prepared source snapshot is first rendered to
+`R16G16B16A16_FLOAT`:
+
+- linear BT.709 primaries
+- `1.0 = 80 nits`
+- SDR/UI colors use sRGB decode and `SDRWhiteLevel / 80`
+- PQ uses absolute nits divided by 80
+- HLG uses the shared headroom/reference-white policy on the 80-nit scale
+- FP16 values are not clamped to the SDR range
+
+The BGRA compatibility pass rerenders from source rather than tone-mapping the
+mixed FP16 texture. This keeps existing SDR layout/color canaries stable.
 
 ## macOS Metal / CVPixelBuffer Path
 
@@ -222,6 +232,10 @@ Current Windows preservation evidence:
   reference. It covers BGRA channel order, NV12 and planar YUV420
   full/limited range, P010 high-bit samples, odd dimensions, padded strides,
   aspect-fit background bars, and split/order layout.
+- `windows_d3d11_fp16_scrgb_smoke` reads back RGBA16F and BGRA outputs from the
+  same draw. It covers SDR white scaling, PQ/HLG, P010, BT.2020 conversion,
+  values above `1.0`, odd/padded storage, background/split/order, overlay hook
+  participation, and source-rerender SDR compatibility.
 
 Current macOS release-readiness evidence:
 

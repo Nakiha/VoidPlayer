@@ -1,6 +1,7 @@
 """Named validation gate profiles for VoidPlayer development."""
 
 import argparse
+import os
 import sys
 
 from .paths import ROOT
@@ -45,6 +46,16 @@ MACOS_UI_NIGHTLY = [
 
 def _python_dev(*args: str) -> None:
     run([sys.executable, str(ROOT / "dev.py"), *args], cwd=str(ROOT))
+
+
+def _python_dev_with_env(environment: dict[str, str], *args: str) -> None:
+    child_environment = os.environ.copy()
+    child_environment.update(environment)
+    run(
+        [sys.executable, str(ROOT / "dev.py"), *args],
+        cwd=str(ROOT),
+        env=child_environment,
+    )
 
 
 def _is_macos() -> bool:
@@ -109,6 +120,11 @@ def _run_windows_preservation() -> None:
         "ui_tests/smoke/basic.csv",
         "ui_tests/smoke/native_seek_preview_event.csv",
     )
+    _python_dev_with_env(
+        {"VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "fp16-scrgb"},
+        "ui-test",
+        "ui_tests/smoke/native_seek_preview_event_fp16_scrgb.csv",
+    )
 
 
 def _run_windows_d3d11_color_layout_parity_smoke() -> None:
@@ -122,6 +138,22 @@ def _run_windows_d3d11_color_layout_parity_smoke() -> None:
             "--output-on-failure",
             "-R",
             "^windows_d3d11_color_layout_parity_smoke$",
+        ],
+        cwd=str(ROOT),
+    )
+
+
+def _run_windows_d3d11_fp16_scrgb_smoke() -> None:
+    run(
+        [
+            "ctest",
+            "--test-dir",
+            "build/native/standalone/windows-msvc",
+            "--build-config",
+            "Release",
+            "--output-on-failure",
+            "-R",
+            "^windows_d3d11_fp16_scrgb_smoke$",
         ],
         cwd=str(ROOT),
     )
@@ -166,6 +198,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
             _python_dev("test", "--native-only", "--github")
             _run_windows_display_tests()
             _run_windows_d3d11_color_layout_parity_smoke()
+            _run_windows_d3d11_fp16_scrgb_smoke()
             run([sys.executable, "scripts/dev/check_release_compliance.py"], cwd=str(ROOT))
         else:
             _python_dev("test", "--native-only")

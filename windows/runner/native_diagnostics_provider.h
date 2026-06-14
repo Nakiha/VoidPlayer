@@ -2,6 +2,7 @@
 
 #include "native_diagnostics_ffi.h"
 #include "windows/presentation/windows_display_resolver.h"
+#include "windows/presentation/windows_presentation_policy.h"
 
 #include <flutter/standard_method_codec.h>
 
@@ -32,7 +33,9 @@ public:
 
     flutter::EncodableMap BuildMethodChannelDiagnostics(
         const std::shared_ptr<vr::NativePlayer>& active_player,
-        const vr::WindowsDisplayProbeSnapshot& display) const;
+        const vr::WindowsDisplayProbeSnapshot& display,
+        const vr::WindowsPresentationPolicy& presentation_policy,
+        const std::string& presentation_sdr_white_level_status) const;
     void FillFfiDiagnostics(
         NakiVrDiagnostics& out,
         const std::shared_ptr<vr::NativePlayer>& active_player) const;

@@ -17,6 +17,7 @@
 #include "viewport_capture_service.h"
 #include "window_capture_service.h"
 #include "windows/presentation/windows_display_resolver.h"
+#include "windows/presentation/windows_presentation_policy.h"
 
 #include <cstdint>
 #include <memory>
@@ -138,5 +139,7 @@ private:
     WindowCaptureService window_capture_;
     vr::WindowsDisplayResolver display_resolver_;
     vr::WindowsDisplayProbeTracker display_probe_tracker_;
+    vr::WindowsPresentationPolicy presentation_policy_;
+    std::string presentation_sdr_white_level_status_ = "nominal-default";
     HWND window_handle_ = nullptr;
 };

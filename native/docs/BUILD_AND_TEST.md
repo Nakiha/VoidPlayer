@@ -115,9 +115,10 @@ python3.12 scripts/dev/check_release_compliance.py
 ```
 
 Windows `pr-fast` also executes the safe `[windows_display]` resolver tests and
-`windows_d3d11_color_layout_parity_smoke`. GitHub-hosted Windows explicitly
-allows the documented WARP fallback for the D3D11 backend contract canary;
-local desktop evidence should use the real hardware adapter.
+both `windows_d3d11_color_layout_parity_smoke` and
+`windows_d3d11_fp16_scrgb_smoke`. GitHub-hosted Windows explicitly allows the
+documented WARP fallback for D3D11 backend contract canaries; local desktop
+evidence should use the real hardware adapter.
 
 macOS CI 的 native fast gate uses the hosted-runner CTest profile：
 
@@ -189,18 +190,21 @@ python dev.py gate windows-preservation
 ```
 
 The native portion includes
-`windows_d3d11_color_layout_parity_smoke`, which renders synthetic BGRA, NV12,
-planar YUV420, P010, odd-stride, aspect-fit, and split snapshots through the
-real D3D11 backend and captures the BGRA output. Run it directly with:
+`windows_d3d11_color_layout_parity_smoke` plus
+`windows_d3d11_fp16_scrgb_smoke`. They capture the real D3D11 BGRA and RGBA16F
+outputs for SDR layout parity and FP16/scRGB transfer/white-level behavior.
+Run them directly with:
 
 ```powershell
 ctest --test-dir build/native/standalone/windows-msvc -C Release `
-  -R windows_d3d11_color_layout_parity_smoke --output-on-failure
+  -R "windows_d3d11_(color_layout_parity|fp16_scrgb)_smoke" --output-on-failure
 ```
 
 `windows-preservation` rebuilds the runner and serially runs
 `ui_tests/smoke/basic.csv` plus
-`ui_tests/smoke/native_seek_preview_event.csv`.
+`ui_tests/smoke/native_seek_preview_event.csv`, then launches the same build
+with `VOIDPLAYER_WINDOWS_PRESENTATION_MODE=fp16-scrgb` for
+`ui_tests/smoke/native_seek_preview_event_fp16_scrgb.csv`.
 
 Add targeted Windows UI scripts when touching seek, loop, viewport/layout, codec, track, analysis, or D3D11 shared texture/capture behavior.
 

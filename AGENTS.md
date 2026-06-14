@@ -55,7 +55,7 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 - native 渲染路径不引入 `libswscale` / `libyuv` 作为通用 fallback；新增像素格式支持时应做确定性转换，并验证软解/硬解颜色一致性。
 - Windows presentation 改动必须经过 `PresentationBackend` / D3D11 backend 边界，不在 shared scheduler 或 runner 中复制渲染策略。
 - Windows presentation fallback 必须显式、可诊断；改变 adapter、driver type、target format 或 presentation mode 时必须同步日志和 diagnostics。
-- 修改 shared presentation backend、Windows texture/format/color 路径时，必须运行确定性 D3D11 color/layout parity smoke 和 `windows-preservation`。
+- 修改 shared presentation backend、Windows texture/format/color 路径时，必须运行确定性 D3D11 color/layout parity 与 FP16/scRGB smoke，以及 `windows-preservation`。
 - 不要在一个轮次里堆无关改动。每轮完成后先测试，再单独提交。
 
 ## 验证矩阵

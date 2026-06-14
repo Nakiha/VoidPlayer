@@ -40,6 +40,10 @@ python dev.py test --native-only   # 全部 PASS
 
 测试文件位于 `native/tests/`，对应关系见 [构建与测试](BUILD_AND_TEST.md)。
 
+Windows presentation、shader output target 或颜色布局改动必须同时保持
+`windows_d3d11_color_layout_parity_smoke` 与
+`windows_d3d11_fp16_scrgb_smoke` 全绿，并运行 `windows-preservation`。
+
 ---
 
 ## 文档同步规则

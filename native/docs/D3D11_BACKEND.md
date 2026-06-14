@@ -47,6 +47,18 @@ Renderer 只负责在持有 device/texture mutex 后调用 `begin_frame_locked()
 
 `D3D11HeadlessOutput` 中带 `_locked` 后缀的 public 方法都要求调用方已经持有 `texture_mutex()`。当前锁顺序固定为 `device_mutex -> texture_mutex`。`Renderer::acquire_shared_texture()` 和 `Renderer::capture_front_buffer()` 是对外安全入口，会短暂持有 texture mutex。
 
+## FP16 scRGB 实验 target
+
+显式 `fp16-scrgb` opt-in 下，`D3D11Fp16Target` 创建单缓冲
+`DXGI_FORMAT_R16G16B16A16_FLOAT` texture/RTV/SRV。每帧的 SRV 准备只做一次，
+随后从同一 `RendererDrawSnapshot` 依次绘制 FP16 scRGB pass 和现有 BGRA
+compatibility pass。测试可通过 `capture_fp16_target()` 读回 RGBA16F；该纹理
+不注册给 Flutter。
+
+resize 会同时重建 FP16 target 和 BGRA ring。FP16 初始化、resize 或普通 draw
+失败只禁用实验 pass；device removed 仍遵循 renderer terminal contract。
+显存统计按 FP16 每像素 8 bytes 计入 `fp16TargetBytes`。
+
 ## 纹理路径
 
 `D3D11FramePresenter` 负责把 `TextureFrame` 准备成 shader 可采样资源，并持有每轨的 BGRA upload texture、NV12/P010 renderer-owned texture、Y/UV SRV 等缓存。Renderer 的 draw 阶段只消费准备好的 SRV 和 metadata。
@@ -84,6 +96,7 @@ HLSL shader 内嵌到构建产物，运行时编译并绑定：
 - NV12/P010 Y/UV 双平面采样
 - 单轨/双轨/四宫格布局
 - 宽高比和 letterbox
+- SDR/FP16 output target、scRGB white scale 和 overlay 颜色映射
 
 ## D3D11VA device 策略
 

@@ -30,6 +30,8 @@ flutter::EncodableMap make_gpu_breakdown_map(const vr::RendererGpuMemoryStats& s
         flutter::EncodableValue(static_cast<int64_t>(stats.presenter_texture_bytes));
     map[flutter::EncodableValue("headlessOutputBytes")] =
         flutter::EncodableValue(static_cast<int64_t>(stats.headless_output_bytes));
+    map[flutter::EncodableValue("fp16TargetBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.fp16_target_bytes));
     map[flutter::EncodableValue("analysisOverlayBytes")] =
         flutter::EncodableValue(static_cast<int64_t>(stats.analysis_overlay_bytes));
     map[flutter::EncodableValue("cpuFrameBytes")] =
@@ -231,7 +233,9 @@ uint64_t NativeDiagnosticsProvider::QueryDedicatedVideoMemoryUsage() const {
 
 flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
     const std::shared_ptr<vr::NativePlayer>& active_player,
-    const vr::WindowsDisplayProbeSnapshot& display) const {
+    const vr::WindowsDisplayProbeSnapshot& display,
+    const vr::WindowsPresentationPolicy& presentation_policy,
+    const std::string& presentation_sdr_white_level_status) const {
     flutter::EncodableMap map;
     const auto process_memory = QueryProcessMemoryUsage();
     const auto process_heap = QueryProcessHeapUsage();
@@ -295,6 +299,10 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
     map[flutter::EncodableValue("windowsDisplayMaxFullFrameLuminanceMilliNits")] =
         flutter::EncodableValue(
             probe.max_full_frame_luminance_milli_nits);
+    map[flutter::EncodableValue("windowsDisplaySDRWhiteLevelStatus")] =
+        flutter::EncodableValue(probe.sdr_white_level_status);
+    map[flutter::EncodableValue("windowsDisplaySDRWhiteLevelMilliNits")] =
+        flutter::EncodableValue(probe.sdr_white_level_milli_nits);
     map[flutter::EncodableValue("windowsDisplayProbeGeneration")] =
         flutter::EncodableValue(static_cast<int64_t>(display.generation));
     map[flutter::EncodableValue("windowsDisplayChangeCount")] =
@@ -313,16 +321,53 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
     const auto presentation =
         active_player->presentation_backend_diagnostics();
     map[flutter::EncodableValue("windowsPresentationRequest")] =
-        flutter::EncodableValue("sdr");
+        flutter::EncodableValue(presentation_policy.request);
     map[flutter::EncodableValue("windowsPresentationMode")] =
         flutter::EncodableValue(
-            presentation.headless ? "flutter-texture-sdr" : "swap-chain-sdr");
+            presentation.fp16_target_active
+                ? presentation_policy.mode
+                : (presentation.headless
+                       ? "flutter-texture-sdr"
+                       : "swap-chain-sdr"));
     map[flutter::EncodableValue("windowsPresentationReason")] =
-        flutter::EncodableValue("fixed-sdr-current-route");
+        flutter::EncodableValue(presentation_policy.reason);
     map[flutter::EncodableValue("windowsPresentationBackend")] =
         flutter::EncodableValue(presentation.backend);
     map[flutter::EncodableValue("windowsPresentationTargetFormat")] =
         flutter::EncodableValue(presentation.target_format);
+    map[flutter::EncodableValue("windowsPresentationRenderTargetFormat")] =
+        flutter::EncodableValue(presentation.render_target_format);
+    map[flutter::EncodableValue("windowsPresentationRenderColorSpace")] =
+        flutter::EncodableValue(presentation.render_color_space);
+    map[flutter::EncodableValue("windowsPresentationFP16TargetActive")] =
+        flutter::EncodableValue(presentation.fp16_target_active);
+    map[flutter::EncodableValue("windowsPresentationFP16TargetWidth")] =
+        flutter::EncodableValue(presentation.fp16_target_width);
+    map[flutter::EncodableValue("windowsPresentationFP16TargetHeight")] =
+        flutter::EncodableValue(presentation.fp16_target_height);
+    map[flutter::EncodableValue("windowsPresentationFP16TargetBufferCount")] =
+        flutter::EncodableValue(presentation.fp16_target_buffer_count);
+    map[flutter::EncodableValue("windowsPresentationSDRCompatibilityPass")] =
+        flutter::EncodableValue(presentation.sdr_compatibility_pass);
+    map[flutter::EncodableValue("windowsPresentationSDRWhiteLevelStatus")] =
+        flutter::EncodableValue(presentation_sdr_white_level_status);
+    map[flutter::EncodableValue("windowsPresentationSDRWhiteLevelMilliNits")] =
+        flutter::EncodableValue(presentation.sdr_white_level_milli_nits);
+    map[flutter::EncodableValue("windowsPresentationSDRWhiteScaleX1000")] =
+        flutter::EncodableValue(presentation.sdr_white_scale_x1000);
+    map[flutter::EncodableValue("windowsPresentationFP16DrawCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.fp16_draw_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationSDRCompatibilityDrawCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.sdr_compatibility_draw_count));
+    const std::string fallback_reason =
+        presentation.fallback_reason != "none"
+            ? presentation.fallback_reason
+            : presentation_policy.fallback_reason;
+    map[flutter::EncodableValue("windowsPresentationFallbackReason")] =
+        flutter::EncodableValue(fallback_reason);
     map[flutter::EncodableValue("windowsPresentationWidth")] =
         flutter::EncodableValue(presentation.width);
     map[flutter::EncodableValue("windowsPresentationHeight")] =

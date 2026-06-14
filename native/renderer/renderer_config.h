@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/logging.h"
+#include "renderer/color/color_strategy.h"
 #include "renderer/render/backend_type.h"
 
 #include <string>
@@ -21,6 +22,8 @@ struct RendererBackendInterop {
     void* output = nullptr;
     int max_track_slots = 0;
     const PresentationBackendProvider* provider = nullptr;
+    ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
+    double sdr_white_level_nits = 80.0;
 };
 
 struct RendererConfig {

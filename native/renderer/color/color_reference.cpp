@@ -190,6 +190,31 @@ ColorReferenceRgb map_to_edr(ColorReferenceRgb rgb,
                    0.0);
 }
 
+ColorReferenceRgb map_to_windows_scrgb(ColorReferenceRgb rgb,
+                                       int transfer,
+                                       int primaries,
+                                       double sdr_white_level_nits) {
+    if (transfer == VIDEO_COLOR_TRANSFER_PQ) {
+        return convert_linear_primaries_to_bt709(
+            scale(pq_to_linear_nits(rgb), 1.0 / 80.0),
+            primaries);
+    }
+    if (transfer == VIDEO_COLOR_TRANSFER_HLG) {
+        return convert_linear_primaries_to_bt709(
+            scale(
+                hlg_to_linear(rgb),
+                kHLGEDRHeadroomScale * kHDRReferenceWhiteNits / 80.0),
+            primaries);
+    }
+    const double white_scale =
+        std::isfinite(sdr_white_level_nits) && sdr_white_level_nits > 0.0
+            ? sdr_white_level_nits / 80.0
+            : 1.0;
+    return scale(
+        convert_linear_primaries_to_bt709(srgb_to_linear(rgb), primaries),
+        white_scale);
+}
+
 } // namespace
 
 double color_reference_unorm_to_float(uint32_t value, int bit_depth) {
@@ -245,6 +270,13 @@ ColorReferenceRgb color_reference_yuv_to_rgb_encoded(
 ColorReferenceRgb color_reference_map_to_output(
     const ColorReferenceRgb& rgb,
     const ColorReferenceConfig& config) {
+    if (config.output_target == ColorOutputTarget::kWindowsLinearScRGB) {
+        return map_to_windows_scrgb(
+            rgb,
+            config.transfer,
+            config.primaries,
+            config.sdr_white_level_nits);
+    }
     if (config.output_edr) {
         return map_to_edr(rgb, config.transfer, config.primaries);
     }
@@ -257,6 +289,15 @@ ColorReferenceRgb color_reference_sample_yuv(
     return color_reference_map_to_output(
         color_reference_yuv_to_rgb_encoded(sample, config),
         config);
+}
+
+ColorReferenceRgb color_reference_map_to_windows_scrgb(
+    const ColorReferenceRgb& rgb,
+    int transfer,
+    int primaries,
+    double sdr_white_level_nits) {
+    return map_to_windows_scrgb(
+        rgb, transfer, primaries, sdr_white_level_nits);
 }
 
 double color_reference_srgb_to_linear(double value) {

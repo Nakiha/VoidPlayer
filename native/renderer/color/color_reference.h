@@ -13,6 +13,11 @@ ColorReferenceRgb color_reference_yuv_to_rgb_encoded(
 ColorReferenceRgb color_reference_map_to_output(
     const ColorReferenceRgb& rgb,
     const ColorReferenceConfig& config);
+ColorReferenceRgb color_reference_map_to_windows_scrgb(
+    const ColorReferenceRgb& rgb,
+    int transfer,
+    int primaries,
+    double sdr_white_level_nits);
 ColorReferenceRgb color_reference_sample_yuv(
     const ColorReferenceYuv& sample,
     const ColorReferenceConfig& config);

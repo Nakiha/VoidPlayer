@@ -53,6 +53,7 @@ bool windows_display_color_space_is_hdr(DXGI_COLOR_SPACE_TYPE color_space);
 std::string windows_display_advanced_color_state(
     bool color_metadata_available,
     DXGI_COLOR_SPACE_TYPE color_space);
+int64_t windows_sdr_white_level_milli_nits(uint32_t raw_white_level);
 
 struct WindowsDisplayProbeResult {
     std::string status = "unprobed";
@@ -71,6 +72,8 @@ struct WindowsDisplayProbeResult {
     int64_t min_luminance_milli_nits = 0;
     int64_t max_luminance_milli_nits = 0;
     int64_t max_full_frame_luminance_milli_nits = 0;
+    int64_t sdr_white_level_milli_nits = 80000;
+    std::string sdr_white_level_status = "nominal-default";
     int32_t adapter_luid_high = 0;
     uint32_t adapter_luid_low = 0;
     bool output_resolved = false;

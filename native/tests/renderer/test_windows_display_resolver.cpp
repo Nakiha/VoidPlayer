@@ -132,6 +132,13 @@ TEST_CASE("Windows display color classification preserves unknown enum values",
     REQUIRE_FALSE(windows_display_color_space_is_hdr(unknown));
 }
 
+TEST_CASE("Windows SDR white level uses 80 nit per 1000 units",
+          "[windows_display]") {
+    REQUIRE(windows_sdr_white_level_milli_nits(0) == 0);
+    REQUIRE(windows_sdr_white_level_milli_nits(1000) == 80000);
+    REQUIRE(windows_sdr_white_level_milli_nits(2538) == 203040);
+}
+
 TEST_CASE("Windows display probe tracker starts at generation one",
           "[windows_display]") {
     WindowsDisplayProbeTracker tracker;

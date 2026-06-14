@@ -80,6 +80,60 @@ bool luid_equal(const LUID& lhs, const LUID& rhs) {
     return lhs.HighPart == rhs.HighPart && lhs.LowPart == rhs.LowPart;
 }
 
+bool query_sdr_white_level(
+    const wchar_t* gdi_device_name,
+    uint32_t& raw_white_level) {
+    raw_white_level = 0;
+    if (!gdi_device_name || gdi_device_name[0] == L'\0') {
+        return false;
+    }
+
+    UINT32 path_count = 0;
+    UINT32 mode_count = 0;
+    LONG status = GetDisplayConfigBufferSizes(
+        QDC_ONLY_ACTIVE_PATHS, &path_count, &mode_count);
+    if (status != ERROR_SUCCESS || path_count == 0) {
+        return false;
+    }
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths(path_count);
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes(mode_count);
+    status = QueryDisplayConfig(
+        QDC_ONLY_ACTIVE_PATHS,
+        &path_count,
+        paths.data(),
+        &mode_count,
+        modes.data(),
+        nullptr);
+    if (status != ERROR_SUCCESS) {
+        return false;
+    }
+    paths.resize(path_count);
+
+    for (const auto& path : paths) {
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME source = {};
+        source.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+        source.header.size = sizeof(source);
+        source.header.adapterId = path.sourceInfo.adapterId;
+        source.header.id = path.sourceInfo.id;
+        if (DisplayConfigGetDeviceInfo(&source.header) != ERROR_SUCCESS ||
+            _wcsicmp(source.viewGdiDeviceName, gdi_device_name) != 0) {
+            continue;
+        }
+
+        DISPLAYCONFIG_SDR_WHITE_LEVEL white = {};
+        white.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
+        white.header.size = sizeof(white);
+        white.header.adapterId = path.targetInfo.adapterId;
+        white.header.id = path.targetInfo.id;
+        if (DisplayConfigGetDeviceInfo(&white.header) == ERROR_SUCCESS &&
+            white.SDRWhiteLevel > 0) {
+            raw_white_level = white.SDRWhiteLevel;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool output_identity_changed(
     const WindowsDisplayProbeResult& previous,
     const WindowsDisplayProbeResult& current) {
@@ -105,7 +159,10 @@ bool color_state_changed(
            previous.max_luminance_milli_nits !=
                current.max_luminance_milli_nits ||
            previous.max_full_frame_luminance_milli_nits !=
-               current.max_full_frame_luminance_milli_nits;
+               current.max_full_frame_luminance_milli_nits ||
+           previous.sdr_white_level_status != current.sdr_white_level_status ||
+           previous.sdr_white_level_milli_nits !=
+               current.sdr_white_level_milli_nits;
 }
 
 bool output_geometry_changed(
@@ -278,6 +335,15 @@ std::string windows_display_advanced_color_state(
                : "sdr-or-advanced-color-unknown";
 }
 
+int64_t windows_sdr_white_level_milli_nits(uint32_t raw_white_level) {
+    constexpr uint64_t kMilliNitsPerRawUnit = 80;
+    const uint64_t scaled =
+        static_cast<uint64_t>(raw_white_level) * kMilliNitsPerRawUnit;
+    return scaled > static_cast<uint64_t>(std::numeric_limits<int64_t>::max())
+        ? std::numeric_limits<int64_t>::max()
+        : static_cast<int64_t>(scaled);
+}
+
 WindowsDisplayProbeResult WindowsDisplayResolver::Probe(
     HWND window,
     IDXGIAdapter* presentation_adapter) const {
@@ -424,6 +490,15 @@ WindowsDisplayProbeResult WindowsDisplayResolver::Probe(
         luminance_to_milli_nits(output_desc1.MaxLuminance);
     result.max_full_frame_luminance_milli_nits =
         luminance_to_milli_nits(output_desc1.MaxFullFrameLuminance);
+    if (result.hdr_active) {
+        uint32_t raw_white_level = 0;
+        if (query_sdr_white_level(
+                output_desc1.DeviceName, raw_white_level)) {
+            result.sdr_white_level_status = "queried";
+            result.sdr_white_level_milli_nits =
+                windows_sdr_white_level_milli_nits(raw_white_level);
+        }
+    }
     return result;
 }
 

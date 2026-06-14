@@ -1,5 +1,6 @@
 #pragma once
 
+#include "renderer/color/color_strategy.h"
 #include "renderer/decode/frame_identity_types.h"
 #include "renderer/render/backend_type.h"
 
@@ -18,6 +19,8 @@ struct PresentationBackendConfig {
     int height = 0;
     int max_track_slots = 0;
     bool headless = false;
+    ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
+    double sdr_white_level_nits = 80.0;
 };
 
 struct PresentationBackendFrameInfo {

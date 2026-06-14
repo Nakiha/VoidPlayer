@@ -339,73 +339,76 @@ final class MacOSNativeCompositorView: NSView {
 
   private func diagnosticsOnCompositorQueue() -> [String: Any] {
     var result = configuration.diagnostics
-    result.merge([
-      "nativeCompositorEnabled": true,
-      "nativeCompositorSpikeEnabled": true,
-      "nativeCompositorFrames": frameCount,
-      "nativeCompositorCompositeHz": compositeRate.rateHz(),
-      "nativeCompositorCompositeHzX1000": Int(compositeRate.rateHz() * 1000.0),
-      "nativeCompositorVideoTextureAvailable": lastVideoTextureAvailable,
-      "nativeCompositorFlutterTextureAvailable": lastFlutterTextureAvailable,
-      "nativeCompositorLastCompositeSucceeded": lastCompositeSucceeded,
-      "nativeCompositorLastFailure": lastFailure,
-      "nativeCompositorFlutterAlphaAverageX1000": lastFlutterAlphaAverageX1000,
-      "nativeCompositorFlutterTransparentRatioX1000": lastFlutterTransparentRatioX1000,
-      "nativeCompositorHoleLeftX1000": Int(lastHoleRect.x * 1000.0),
-      "nativeCompositorHoleTopX1000": Int(lastHoleRect.y * 1000.0),
-      "nativeCompositorHoleRightX1000": Int(lastHoleRect.z * 1000.0),
-      "nativeCompositorHoleBottomX1000": Int(lastHoleRect.w * 1000.0),
-      "nativeCompositorDrawableWidth": Int(metalLayer.drawableSize.width),
-      "nativeCompositorDrawableHeight": Int(metalLayer.drawableSize.height),
-      "nativeCompositorOutputMode": outputMode,
-      "nativeCompositorOutputPixelFormat": String(describing: outputPixelFormat),
-      "nativeCompositorEDREnabled": outputPixelFormat == .rgba16Float,
-      "nativeCompositorEDRWantsExtendedDynamicRangeContent":
-        metalLayer.wantsExtendedDynamicRangeContent,
-      "nativeCompositorVideoPixelFormat": lastVideoPixelFormat,
-      "nativeCompositorEDRVideoSampleCount": lastEDRVideoSampleCount,
-      "nativeCompositorEDRVideoMaxRGBX1000": lastEDRVideoMaxRGBX1000,
-      "nativeCompositorEDRVideoPixelsOver1X1000": lastEDRVideoPixelsOver1X1000,
-      "nativeCompositorVideoSRGBToLinearEnabled": lastVideoSRGBToLinearEnabled,
-      "nativeCompositorFlutterSRGBToLinearEnabled": lastFlutterSRGBToLinearEnabled,
-      "nativeCompositorSkippedInFlightFrames": skippedInFlightFrames,
-      "nativeCompositorSkippedStaticFrames": skippedStaticFrames,
-      "nativeCompositorViewportTransformEnabled": false,
-      "nativeCompositorViewportTransformRequestedEnabled": false,
-      "nativeCompositorViewportTransformGeneration": Int(
-        min(sourceCacheGeneration, UInt64(Int.max))
-      ),
-      "nativeCompositorDisplayedLayoutRevision": Int(
-        min(displayedLayoutRevision, UInt64(Int.max))
-      ),
-      "nativeCompositorViewportTransformBaseDisplayedLayoutRevision": Int(
-        min(displayedLayoutRevision, UInt64(Int.max))
-      ),
-      "nativeCompositorViewportTransformScaleXX1000": 1000,
-      "nativeCompositorViewportTransformScaleYX1000": 1000,
-      "nativeCompositorViewportTransformTranslateXX1000": 0,
-      "nativeCompositorViewportTransformTranslateYX1000": 0,
-      "nativeCompositorSourceProjectionEnabled": sourceProjectionSet,
-      "nativeCompositorSourceCacheActive":
-        sourceProjectionSet && !sourceCacheTextures.isEmpty,
-      "nativeCompositorSourceCacheTextureCount": sourceCacheTextures.count,
-      "nativeCompositorSourceCacheGeneration": Int(
-        min(sourceCacheGeneration, UInt64(Int.max))
-      ),
-      "nativeCompositorSourceCacheBytes": sourceCacheTextures.reduce(0) { total, entry in
-        total + CVPixelBufferGetBytesPerRow(entry.pixelBuffer) *
-          CVPixelBufferGetHeight(entry.pixelBuffer)
-      },
-      "nativeCompositorSourceCacheLastError": sourceCacheLastError,
-      "nativeCompositorOverlayGeneration": Int(
-        min(overlayPrimitives.generation, UInt64(Int.max))
-      ),
-      "nativeCompositorOverlayFillRectCount": overlayPrimitives.fillRects.count,
-      "nativeCompositorOverlayLineRectCount": overlayPrimitives.lineRects.count,
-      "nativeCompositorOverlayMotionLineCount": overlayPrimitives.motionLines.count,
-      "nativeCompositorSourceBakedOverlayDisabled":
-        overlayPrimitives.sourceBakedOverlayDisabled,
-    ]) { _, next in next }
+    let compositeHz = compositeRate.rateHz()
+    let sourceCacheBytes = sourceCacheTextures.reduce(0) { total, entry in
+      total + CVPixelBufferGetBytesPerRow(entry.pixelBuffer) *
+        CVPixelBufferGetHeight(entry.pixelBuffer)
+    }
+    result["nativeCompositorEnabled"] = true
+    result["nativeCompositorSpikeEnabled"] = true
+    result["nativeCompositorFrames"] = frameCount
+    result["nativeCompositorCompositeHz"] = compositeHz
+    result["nativeCompositorCompositeHzX1000"] = Int(compositeHz * 1000.0)
+    result["nativeCompositorVideoTextureAvailable"] = lastVideoTextureAvailable
+    result["nativeCompositorFlutterTextureAvailable"] = lastFlutterTextureAvailable
+    result["nativeCompositorLastCompositeSucceeded"] = lastCompositeSucceeded
+    result["nativeCompositorLastFailure"] = lastFailure
+    result["nativeCompositorFlutterAlphaAverageX1000"] = lastFlutterAlphaAverageX1000
+    result["nativeCompositorFlutterTransparentRatioX1000"] =
+      lastFlutterTransparentRatioX1000
+    result["nativeCompositorHoleLeftX1000"] = Int(lastHoleRect.x * 1000.0)
+    result["nativeCompositorHoleTopX1000"] = Int(lastHoleRect.y * 1000.0)
+    result["nativeCompositorHoleRightX1000"] = Int(lastHoleRect.z * 1000.0)
+    result["nativeCompositorHoleBottomX1000"] = Int(lastHoleRect.w * 1000.0)
+    result["nativeCompositorDrawableWidth"] = Int(metalLayer.drawableSize.width)
+    result["nativeCompositorDrawableHeight"] = Int(metalLayer.drawableSize.height)
+    result["nativeCompositorOutputMode"] = outputMode
+    result["nativeCompositorOutputPixelFormat"] = String(describing: outputPixelFormat)
+    result["nativeCompositorEDREnabled"] = outputPixelFormat == .rgba16Float
+    result["nativeCompositorEDRWantsExtendedDynamicRangeContent"] =
+      metalLayer.wantsExtendedDynamicRangeContent
+    result["nativeCompositorVideoPixelFormat"] = lastVideoPixelFormat
+    result["nativeCompositorEDRVideoSampleCount"] = lastEDRVideoSampleCount
+    result["nativeCompositorEDRVideoMaxRGBX1000"] = lastEDRVideoMaxRGBX1000
+    result["nativeCompositorEDRVideoPixelsOver1X1000"] =
+      lastEDRVideoPixelsOver1X1000
+    result["nativeCompositorVideoSRGBToLinearEnabled"] = lastVideoSRGBToLinearEnabled
+    result["nativeCompositorFlutterSRGBToLinearEnabled"] =
+      lastFlutterSRGBToLinearEnabled
+    result["nativeCompositorSkippedInFlightFrames"] = skippedInFlightFrames
+    result["nativeCompositorSkippedStaticFrames"] = skippedStaticFrames
+    result["nativeCompositorViewportTransformEnabled"] = false
+    result["nativeCompositorViewportTransformRequestedEnabled"] = false
+    result["nativeCompositorViewportTransformGeneration"] = Int(
+      min(sourceCacheGeneration, UInt64(Int.max))
+    )
+    result["nativeCompositorDisplayedLayoutRevision"] = Int(
+      min(displayedLayoutRevision, UInt64(Int.max))
+    )
+    result["nativeCompositorViewportTransformBaseDisplayedLayoutRevision"] = Int(
+      min(displayedLayoutRevision, UInt64(Int.max))
+    )
+    result["nativeCompositorViewportTransformScaleXX1000"] = 1000
+    result["nativeCompositorViewportTransformScaleYX1000"] = 1000
+    result["nativeCompositorViewportTransformTranslateXX1000"] = 0
+    result["nativeCompositorViewportTransformTranslateYX1000"] = 0
+    result["nativeCompositorSourceProjectionEnabled"] = sourceProjectionSet
+    result["nativeCompositorSourceCacheActive"] =
+      sourceProjectionSet && !sourceCacheTextures.isEmpty
+    result["nativeCompositorSourceCacheTextureCount"] = sourceCacheTextures.count
+    result["nativeCompositorSourceCacheGeneration"] = Int(
+      min(sourceCacheGeneration, UInt64(Int.max))
+    )
+    result["nativeCompositorSourceCacheBytes"] = sourceCacheBytes
+    result["nativeCompositorSourceCacheLastError"] = sourceCacheLastError
+    result["nativeCompositorOverlayGeneration"] = Int(
+      min(overlayPrimitives.generation, UInt64(Int.max))
+    )
+    result["nativeCompositorOverlayFillRectCount"] = overlayPrimitives.fillRects.count
+    result["nativeCompositorOverlayLineRectCount"] = overlayPrimitives.lineRects.count
+    result["nativeCompositorOverlayMotionLineCount"] = overlayPrimitives.motionLines.count
+    result["nativeCompositorSourceBakedOverlayDisabled"] =
+      overlayPrimitives.sourceBakedOverlayDisabled
     result["nativeCompositorOverlayTrackCount"] = Int(
       min(overlayPrimitives.overlayTrackCount, UInt64(Int.max))
     )

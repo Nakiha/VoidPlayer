@@ -214,6 +214,15 @@ hardware output for the same source.
 
 ## Parity Gates
 
+Current Windows preservation evidence:
+
+- `windows_d3d11_color_layout_parity_smoke` drives synthetic
+  `RendererDrawSnapshot` inputs through the real D3D11 presentation backend,
+  captures the renderer-owned BGRA output, and compares it with a CPU
+  reference. It covers BGRA channel order, NV12 and planar YUV420
+  full/limited range, P010 high-bit samples, odd dimensions, padded strides,
+  aspect-fit background bars, and split/order layout.
+
 Current macOS release-readiness evidence:
 
 - `macos_metal_color_layout_parity_smoke` drives synthetic

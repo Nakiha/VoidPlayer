@@ -79,6 +79,7 @@ public:
         RendererGpuMemoryStats& stats,
         std::array<uint64_t, kMaxTracks>& presenter_copy_texture_bytes_by_slot)
         const;
+    PresentationBackendDiagnostics diagnostics() const override;
 
     D3D11Device* device() const { return device_.get(); }
     TextureManager* texture_manager() const { return texture_manager_.get(); }

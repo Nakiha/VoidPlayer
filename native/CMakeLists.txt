@@ -48,6 +48,16 @@ endif()
 
 if(WIN32 AND BUILD_TESTS)
     add_subdirectory(tests)
+    add_executable(windows_d3d11_color_layout_parity_smoke
+        tools/windows_d3d11_color_layout_parity_smoke.cpp)
+    void_apply_native_compile_options(windows_d3d11_color_layout_parity_smoke)
+    target_link_libraries(windows_d3d11_color_layout_parity_smoke PRIVATE
+        video_renderer_lib)
+    add_test(NAME windows_d3d11_color_layout_parity_smoke
+        COMMAND windows_d3d11_color_layout_parity_smoke)
+    set_tests_properties(windows_d3d11_color_layout_parity_smoke PROPERTIES
+        TIMEOUT 60
+        LABELS "windows;backend;contract")
 endif()
 
 if(WIN32 AND BUILD_ANALYSIS)

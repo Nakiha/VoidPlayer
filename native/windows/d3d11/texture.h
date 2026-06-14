@@ -10,7 +10,7 @@ public:
     TextureManager(ID3D11Device* device, ID3D11DeviceContext* context);
     ~TextureManager() = default;
 
-    ID3D11Texture2D* create_rgba_texture(int width, int height);
+    ID3D11Texture2D* create_bgra_texture(int width, int height);
     ID3D11Texture2D* create_plane_texture(int width, int height, bool is_16bit = false);
     ID3D11Texture2D* create_nv12_texture(int width, int height);
     ID3D11Texture2D* create_p010_texture(int width, int height);

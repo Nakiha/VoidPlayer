@@ -152,6 +152,10 @@ PresentationBackendStats Renderer::presentation_backend_stats() const {
     return impl_->presentation_backend_stats();
 }
 
+PresentationBackendDiagnostics Renderer::presentation_backend_diagnostics() const {
+    return impl_->presentation_backend_diagnostics();
+}
+
 std::string Renderer::presentation_backend_last_error() const {
     return impl_->presentation_backend_last_error();
 }

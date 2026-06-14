@@ -11,6 +11,7 @@
 - 创建和管理原生 Win32 主窗口
 - 初始化 Flutter engine 和插件注册
 - 提供 `video_renderer` MethodChannel / Texture plugin 桥接
+- 提供 `video_renderer/events` EventChannel 和 native 诊断桥接
 - 将 native DX11 shared texture 暴露给 Flutter Texture widget
 - 引入 native C++ renderer 构建产物和 Windows 运行时依赖
 
@@ -50,6 +51,8 @@ windows/
 |------|------|
 | [../lib/doc.md](../lib/doc.md) | Flutter / Dart UI 层入口 |
 | [../native/docs/ARCHITECTURE.md](../native/docs/ARCHITECTURE.md) | Native C++ 渲染引擎入口 |
+| [../native/docs/WINDOWS_PRESENTATION_BACKEND.md](../native/docs/WINDOWS_PRESENTATION_BACKEND.md) | Windows 产品上屏合同、诊断和追赶路线 |
+| [../native/docs/D3D11_BACKEND.md](../native/docs/D3D11_BACKEND.md) | D3D11 device/texture/shader 实现细节 |
 | [../native/docs/NATIVE_EVENT_PIPELINE.md](../native/docs/NATIVE_EVENT_PIPELINE.md) | native -> Dart EventChannel 事件通知合同 |
 | [../native/docs/FFI_AND_BINDINGS.md](../native/docs/FFI_AND_BINDINGS.md) | Native FFI / Python 绑定说明 |
 | [../native/docs/MAINTENANCE.md](../native/docs/MAINTENANCE.md) | Native 层维护规范 |

@@ -40,23 +40,23 @@ draw back buffer -> swap front index -> Flutter opens shared handle -> Texture w
 设计目标：
 
 - 避免 renderer 覆盖 Flutter 正在读取的 buffer。
-- resize 时旧 buffers 会按 `kPendingBufferRetireDelay` 延迟保活，降低 Flutter texture callback 仍在读取旧 handle 时的黑闪风险。
+- Flutter texture lease release callback 驱动 buffer 重新可用。
 - `capture_front_buffer()` 可以把当前 front buffer 读回 BGRA，用于 UI 自动化截图/hash。
 
 Renderer 只负责在持有 device/texture mutex 后调用 `begin_frame_locked()`、绘制、`publish_frame_locked()`；shared handle、GPU fence、resize pending buffers 和 capture 逻辑都收敛在 `D3D11HeadlessOutput`。
 
-`D3D11HeadlessOutput` 中带 `_locked` 后缀的 public 方法都要求调用方已经持有 `texture_mutex()`。当前锁顺序固定为 `device_mutex -> texture_mutex`。`Renderer::acquire_shared_texture()` 和 `Renderer::capture_front_buffer()` 是对外安全入口，会短暂持有 texture mutex。延迟释放旧 buffers 只是 best-effort 保活，不是严格的 Flutter handle ack 协议。
+`D3D11HeadlessOutput` 中带 `_locked` 后缀的 public 方法都要求调用方已经持有 `texture_mutex()`。当前锁顺序固定为 `device_mutex -> texture_mutex`。`Renderer::acquire_shared_texture()` 和 `Renderer::capture_front_buffer()` 是对外安全入口，会短暂持有 texture mutex。
 
 ## 纹理路径
 
-`D3D11FramePresenter` 负责把 `TextureFrame` 准备成 shader 可采样资源，并持有每轨的 RGBA upload texture、NV12/P010 renderer-owned texture、Y/UV SRV 等缓存。Renderer 的 draw 阶段只消费准备好的 SRV 和 metadata。
+`D3D11FramePresenter` 负责把 `TextureFrame` 准备成 shader 可采样资源，并持有每轨的 BGRA upload texture、NV12/P010 renderer-owned texture、Y/UV SRV 等缓存。Renderer 的 draw 阶段只消费准备好的 SRV 和 metadata。
 
-### RGBA 上传路径
+### BGRA 上传路径
 
-当前主要保留给旧测试或直接 RGBA texture 输入：
+当前主要保留给 fallback package、旧测试或直接 BGRA texture 输入：
 
 ```
-RGBA CPU buffer -> UpdateSubresource -> RGBA texture -> shader sample
+BGRA CPU buffer -> UpdateSubresource -> B8G8R8A8_UNORM texture -> shader sample
 ```
 
 ### NV12/P010 硬解路径
@@ -80,7 +80,7 @@ D3D11VA texture array slice
 
 HLSL shader 内嵌到构建产物，运行时编译并绑定：
 
-- RGBA 纹理采样
+- BGRA 纹理采样
 - NV12/P010 Y/UV 双平面采样
 - 单轨/双轨/四宫格布局
 - 宽高比和 letterbox
@@ -98,3 +98,6 @@ D3D11 immediate context 必须串行化。decode provider 会设置 lock/unlock 
 ## Present
 
 窗口模式调用 `IDXGISwapChain::Present(sync_interval, 0)`；headless 模式不调用 SwapChain Present，而是绘制到 shared texture 并触发 Flutter texture callback。
+
+产品上屏模式、诊断合同和 HDR/DComp 后续阶段见
+[WINDOWS_PRESENTATION_BACKEND.md](WINDOWS_PRESENTATION_BACKEND.md)。

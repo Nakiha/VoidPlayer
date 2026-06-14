@@ -3,12 +3,14 @@
 #include "windows/player/native_player.h"
 
 #include <windows.h>
+#include <d3d11.h>
 #include <dxgi1_4.h>
 #include <psapi.h>
 #include <wrl/client.h>
 #include <chrono>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #pragma comment(lib, "dxgi.lib")
@@ -104,6 +106,19 @@ flutter::EncodableMap make_gpu_breakdown_map(const vr::RendererGpuMemoryStats& s
     }
     map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks);
     return map;
+}
+
+std::string feature_level_name(int feature_level) {
+    switch (static_cast<D3D_FEATURE_LEVEL>(feature_level)) {
+    case D3D_FEATURE_LEVEL_11_0:
+        return "11.0";
+    case D3D_FEATURE_LEVEL_10_1:
+        return "10.1";
+    case D3D_FEATURE_LEVEL_10_0:
+        return "10.0";
+    default:
+        return "unknown";
+    }
 }
 
 } // namespace
@@ -242,6 +257,45 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(active_player->d3d_device_lost());
     map[flutter::EncodableValue("d3dDeviceRemovedReason")] =
         flutter::EncodableValue(static_cast<int64_t>(active_player->d3d_device_removed_reason()));
+    const auto presentation =
+        active_player->presentation_backend_diagnostics();
+    map[flutter::EncodableValue("windowsPresentationRequest")] =
+        flutter::EncodableValue("sdr");
+    map[flutter::EncodableValue("windowsPresentationMode")] =
+        flutter::EncodableValue(
+            presentation.headless ? "flutter-texture-sdr" : "swap-chain-sdr");
+    map[flutter::EncodableValue("windowsPresentationReason")] =
+        flutter::EncodableValue("fixed-sdr-current-route");
+    map[flutter::EncodableValue("windowsPresentationBackend")] =
+        flutter::EncodableValue(presentation.backend);
+    map[flutter::EncodableValue("windowsPresentationTargetFormat")] =
+        flutter::EncodableValue(presentation.target_format);
+    map[flutter::EncodableValue("windowsPresentationWidth")] =
+        flutter::EncodableValue(presentation.width);
+    map[flutter::EncodableValue("windowsPresentationHeight")] =
+        flutter::EncodableValue(presentation.height);
+    map[flutter::EncodableValue("windowsPresentationBufferCount")] =
+        flutter::EncodableValue(presentation.buffer_count);
+    map[flutter::EncodableValue("windowsPresentationHeadless")] =
+        flutter::EncodableValue(presentation.headless);
+    map[flutter::EncodableValue("windowsPresentationCompositorActive")] =
+        flutter::EncodableValue(false);
+    map[flutter::EncodableValue("windowsD3DAdapterDescription")] =
+        flutter::EncodableValue(presentation.adapter_description);
+    map[flutter::EncodableValue("windowsD3DAdapterVendorId")] =
+        flutter::EncodableValue(presentation.adapter_vendor_id);
+    map[flutter::EncodableValue("windowsD3DAdapterDeviceId")] =
+        flutter::EncodableValue(presentation.adapter_device_id);
+    map[flutter::EncodableValue("windowsD3DAdapterLuid")] =
+        flutter::EncodableValue(
+            std::to_string(presentation.adapter_luid_high) + ":" +
+            std::to_string(presentation.adapter_luid_low));
+    map[flutter::EncodableValue("windowsD3DFeatureLevel")] =
+        flutter::EncodableValue(feature_level_name(presentation.feature_level));
+    map[flutter::EncodableValue("windowsD3DDriverType")] =
+        flutter::EncodableValue(presentation.driver_type);
+    map[flutter::EncodableValue("windowsD3DWarp")] =
+        flutter::EncodableValue(presentation.warp);
     map[flutter::EncodableValue("playbackTime")] =
         flutter::EncodableValue(static_cast<double>(active_player->current_pts_us()) / 1e6);
     map[flutter::EncodableValue("isPlaying")] =

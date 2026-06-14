@@ -114,6 +114,11 @@ Windows CI 还会跑 release compliance notice smoke：
 python3.12 scripts/dev/check_release_compliance.py
 ```
 
+Windows `pr-fast` also executes
+`windows_d3d11_color_layout_parity_smoke`. GitHub-hosted Windows explicitly
+allows the documented WARP fallback for this backend contract canary; local
+desktop evidence should use the real hardware adapter.
+
 macOS CI 的 native fast gate uses the hosted-runner CTest profile：
 
 ```bash
@@ -182,6 +187,20 @@ Windows host before closing macOS release readiness:
 ```powershell
 python dev.py gate windows-preservation
 ```
+
+The native portion includes
+`windows_d3d11_color_layout_parity_smoke`, which renders synthetic BGRA, NV12,
+planar YUV420, P010, odd-stride, aspect-fit, and split snapshots through the
+real D3D11 backend and captures the BGRA output. Run it directly with:
+
+```powershell
+ctest --test-dir build/native/standalone/windows-msvc -C Release `
+  -R windows_d3d11_color_layout_parity_smoke --output-on-failure
+```
+
+`windows-preservation` rebuilds the runner and serially runs
+`ui_tests/smoke/basic.csv` plus
+`ui_tests/smoke/native_seek_preview_event.csv`.
 
 Add targeted Windows UI scripts when touching seek, loop, viewport/layout, codec, track, analysis, or D3D11 shared texture/capture behavior.
 

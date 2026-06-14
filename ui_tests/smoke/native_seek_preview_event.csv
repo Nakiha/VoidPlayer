@@ -5,6 +5,13 @@
 0.3, ADD_MEDIA, build/generated/native_seek_preview_event_h264.mp4
 1.4, ASSERT_TRACK_COUNT, 1
 1.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeEventListenCount, 1
+1.51, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationRequest, sdr
+1.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, flutter-texture-sdr
+1.53, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationBackend, d3d11
+1.54, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationTargetFormat, B8G8R8A8_UNORM
+1.55, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsPresentationHeadless, true
+1.56, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsPresentationCompositorActive, false
+1.57, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationBufferCount, 3
 1.6, SEEK_TO, 1000000
 2.4, ASSERT_PRESENTED_FRAME_RANGE, 1, 800000, 1400000
 2.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeEventEmitCount, 1

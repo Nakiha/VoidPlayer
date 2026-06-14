@@ -48,6 +48,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | Test | Type | Gate | Requires | Covered risk |
 | --- | --- | --- | --- | --- |
 | `video_renderer_tests` | contract + integration | PR fast / Windows preservation | Windows FFmpeg | Shared renderer, D3D11, FFI command policy, decode/seek/layout unit coverage. |
+| `windows_d3d11_color_layout_parity_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; explicit WARP allowed only for hosted CI | Synthetic shared renderer snapshots through D3D11 capture; BGRA, NV12, planar YUV420, P010, odd stride, split/layout fit. |
 | `analysis_tests` | contract | Release candidate / analysis changes | analysis submodules/tools | VAC2/VACHUNK/cache and analysis FFI behavior. |
 | `test_ffi_c` | FFI canary | PR fast when FFI is built | Windows FFI target | C ABI load/call sanity. |
 | `voidplayer_cli_help` | CLI canary | Release candidate | analysis build | CLI starts and exposes help. |
@@ -82,6 +83,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | Script group | Canonical role | Gate |
 | --- | --- | --- |
 | `ui_tests/smoke/basic.csv` | Windows runner and basic playback smoke. | Windows preservation / release candidate |
+| `ui_tests/smoke/native_seek_preview_event.csv` | Windows EventChannel plus fixed SDR presentation diagnostics contract. | Windows preservation / release candidate |
 | `ui_tests/timeline/**` | Real pointer timeline/seek path. | Targeted Windows preservation; stress scripts nightly/release. |
 | `ui_tests/seek/**` | Direct seek/step/rapid seek regressions. | Targeted preservation; rapid/storm scripts nightly. |
 | `ui_tests/loop/**` | Loop range state and commit behavior. | Targeted preservation. |
@@ -120,7 +122,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | --- | --- | --- |
 | `.github/workflows/native.yml` | push / PR | native PR fast, macOS native fast, macOS runner build, macOS analysis smoke |
 | `.github/workflows/native.yml` | weekly or manual `full_matrix=true` | full Windows native config matrix |
-| `.github/workflows/native.yml` | manual `windows_ui_preservation=true` | GitHub-hosted Windows runner build + `python dev.py ui-test --build ui_tests/smoke/basic.csv`; skips analyzer tool bundling because the smoke does not cover analysis overlay, and enables `VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1` because hosted Windows exposes only an unusable software DXGI adapter. Native/analysis coverage stays in the same workflow's `Native test` job. |
+| `.github/workflows/native.yml` | manual `windows_ui_preservation=true` | GitHub-hosted Windows runner build + basic and native event/diagnostics UI smokes; skips analyzer tool bundling because the smokes do not cover analysis overlay, and enables `VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1` because hosted Windows exposes only an unusable software DXGI adapter. Native coverage and the D3D11 color/layout canary stay in the same workflow's `Windows PR fast gate` job. |
 | `.github/workflows/macos-ui.yml` | weekly | `python3.12 dev.py gate macos-ui-smoke` |
 | `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
 | Local HDR EDR gate | manual on EDR-capable macOS display before merging HDR compositor changes | `python3.12 dev.py gate macos-hdr-edr-smoke` |

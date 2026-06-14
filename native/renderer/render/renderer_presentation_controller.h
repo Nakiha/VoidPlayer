@@ -143,6 +143,7 @@ public:
 
     std::string backend_last_error() const;
     PresentationBackendStats backend_stats() const;
+    PresentationBackendDiagnostics backend_diagnostics() const;
     bool copy_last_frame_info(PresentationBackendFrameInfo* out) const;
     bool poll_device_removed(const char* operation) const;
     bool device_lost() const;

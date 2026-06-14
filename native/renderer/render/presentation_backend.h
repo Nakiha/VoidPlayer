@@ -70,6 +70,7 @@ public:
     virtual void release_headless_output(void*) {}
     virtual void clear_headless_output() {}
     virtual PresentationBackendStats presentation_stats() const { return {}; }
+    virtual PresentationBackendDiagnostics diagnostics() const { return {}; }
     virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }
     virtual bool capture_front_buffer(std::vector<uint8_t>&, int&, int&) { return false; }
     virtual bool capture_front_buffer_region(int,

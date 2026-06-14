@@ -21,25 +21,25 @@ extern "C" {
 
 using namespace vr::test;
 
-TEST_CASE("TextureManager creates RGBA texture 1920x1080", "[d3d11][texture]") {
+TEST_CASE("TextureManager creates BGRA texture 1920x1080", "[d3d11][texture]") {
     auto [dev, hwnd] = create_test_device();
     vr::TextureManager tm(dev->device(), dev->context());
 
-    ID3D11Texture2D* tex = tm.create_rgba_texture(1920, 1080);
+    ID3D11Texture2D* tex = tm.create_bgra_texture(1920, 1080);
     REQUIRE(tex != nullptr);
 
     tex->Release();
     cleanup_test_device(dev, hwnd);
 }
 
-TEST_CASE("TextureManager rejects invalid RGBA texture dimensions", "[d3d11][texture]") {
+TEST_CASE("TextureManager rejects invalid BGRA texture dimensions", "[d3d11][texture]") {
     auto [dev, hwnd] = create_test_device();
     vr::TextureManager tm(dev->device(), dev->context());
 
-    REQUIRE(tm.create_rgba_texture(0, 64) == nullptr);
-    REQUIRE(tm.create_rgba_texture(64, -1) == nullptr);
-    REQUIRE(tm.create_rgba_texture(vr::kMaxRendererDimension + 1, 64) == nullptr);
-    REQUIRE(tm.create_rgba_texture(64, vr::kMaxRendererDimension + 1) == nullptr);
+    REQUIRE(tm.create_bgra_texture(0, 64) == nullptr);
+    REQUIRE(tm.create_bgra_texture(64, -1) == nullptr);
+    REQUIRE(tm.create_bgra_texture(vr::kMaxRendererDimension + 1, 64) == nullptr);
+    REQUIRE(tm.create_bgra_texture(64, vr::kMaxRendererDimension + 1) == nullptr);
 
     cleanup_test_device(dev, hwnd);
 }
@@ -59,7 +59,7 @@ TEST_CASE("TextureManager upload data and verify first pixel", "[d3d11][texture]
     data[2] = 128;  // B
     data[3] = 255;  // A
 
-    ID3D11Texture2D* tex = tm.create_rgba_texture(WIDTH, HEIGHT);
+    ID3D11Texture2D* tex = tm.create_bgra_texture(WIDTH, HEIGHT);
     REQUIRE(tex != nullptr);
 
     bool uploaded = tm.upload_data(tex, data.data(), WIDTH, HEIGHT, STRIDE);
@@ -82,7 +82,7 @@ TEST_CASE("TextureManager rejects invalid upload geometry", "[d3d11][texture]") 
     const int width = 64;
     const int height = 64;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> tex;
-    tex.Attach(tm.create_rgba_texture(width, height));
+    tex.Attach(tm.create_bgra_texture(width, height));
     REQUIRE(tex != nullptr);
 
     std::vector<uint8_t> data(width * height * 4, 0);
@@ -97,7 +97,7 @@ TEST_CASE("TextureManager creates SRV", "[d3d11][texture]") {
     auto [dev, hwnd] = create_test_device();
     vr::TextureManager tm(dev->device(), dev->context());
 
-    ID3D11Texture2D* tex = tm.create_rgba_texture(1920, 1080);
+    ID3D11Texture2D* tex = tm.create_bgra_texture(1920, 1080);
     REQUIRE(tex != nullptr);
 
     ID3D11ShaderResourceView* srv = tm.create_srv(tex);
@@ -108,17 +108,17 @@ TEST_CASE("TextureManager creates SRV", "[d3d11][texture]") {
     cleanup_test_device(dev, hwnd);
 }
 
-TEST_CASE("TextureManager texture format is R8G8B8A8_UNORM", "[d3d11][texture]") {
+TEST_CASE("TextureManager texture format is B8G8R8A8_UNORM", "[d3d11][texture]") {
     auto [dev, hwnd] = create_test_device();
     vr::TextureManager tm(dev->device(), dev->context());
 
-    ID3D11Texture2D* tex = tm.create_rgba_texture(320, 240);
+    ID3D11Texture2D* tex = tm.create_bgra_texture(320, 240);
     REQUIRE(tex != nullptr);
 
     D3D11_TEXTURE2D_DESC desc = {};
     tex->GetDesc(&desc);
 
-    REQUIRE(desc.Format == DXGI_FORMAT_R8G8B8A8_UNORM);
+    REQUIRE(desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM);
     REQUIRE(desc.Width == 320);
     REQUIRE(desc.Height == 240);
     REQUIRE(desc.MipLevels == 1);
@@ -456,7 +456,7 @@ TEST_CASE("D3D11FramePresenter owns direct texture SRV", "[d3d11][frame_presente
     vr::D3D11FramePresenter presenter(&tm, dev->context());
 
     Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-    texture.Attach(tm.create_rgba_texture(32, 16));
+    texture.Attach(tm.create_bgra_texture(32, 16));
     REQUIRE(texture != nullptr);
 
     vr::TextureFrame frame;

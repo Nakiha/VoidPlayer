@@ -111,6 +111,22 @@ def _run_windows_preservation() -> None:
     )
 
 
+def _run_windows_d3d11_color_layout_parity_smoke() -> None:
+    run(
+        [
+            "ctest",
+            "--test-dir",
+            "build/native/standalone/windows-msvc",
+            "--build-config",
+            "Release",
+            "--output-on-failure",
+            "-R",
+            "^windows_d3d11_color_layout_parity_smoke$",
+        ],
+        cwd=str(ROOT),
+    )
+
+
 def _run_macos_release_readiness() -> None:
     _python_dev("package")
     run(
@@ -134,6 +150,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
             _run_macos_native_fast()
         elif _is_windows():
             _python_dev("test", "--native-only", "--github")
+            _run_windows_d3d11_color_layout_parity_smoke()
             run([sys.executable, "scripts/dev/check_release_compliance.py"], cwd=str(ROOT))
         else:
             _python_dev("test", "--native-only")

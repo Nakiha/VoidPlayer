@@ -223,6 +223,37 @@ void D3D11RenderBackend::snapshot_memory_stats(
     }
 }
 
+PresentationBackendDiagnostics D3D11RenderBackend::diagnostics() const {
+    PresentationBackendDiagnostics result;
+    result.backend = name();
+    result.headless = headless_;
+    if (device_) {
+        const auto device_diagnostics = device_->diagnostics();
+        result.adapter_description = device_diagnostics.adapter_description;
+        result.driver_type = device_diagnostics.driver_type;
+        result.adapter_vendor_id = device_diagnostics.adapter_vendor_id;
+        result.adapter_device_id = device_diagnostics.adapter_device_id;
+        result.adapter_luid_high = device_diagnostics.adapter_luid_high;
+        result.adapter_luid_low = device_diagnostics.adapter_luid_low;
+        result.feature_level = device_diagnostics.feature_level;
+        result.warp = device_diagnostics.warp;
+    }
+    if (headless_output_) {
+        const auto output = headless_output_->memory_stats();
+        result.target_format =
+            output.format == DXGI_FORMAT_B8G8R8A8_UNORM
+                ? "B8G8R8A8_UNORM"
+                : "unknown";
+        result.width = output.width;
+        result.height = output.height;
+        result.buffer_count = output.buffer_count;
+    } else {
+        result.target_format = "R8G8B8A8_UNORM";
+        result.buffer_count = 2;
+    }
+    return result;
+}
+
 bool D3D11RenderBackend::capture_front_buffer(std::vector<uint8_t>& bgra,
                                               int& width,
                                               int& height) {

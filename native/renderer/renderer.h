@@ -76,6 +76,7 @@ public:
     PresentationBackendMetrics presentation_backend_metrics() const;
     D3D11BackendMetrics d3d_backend_metrics() const;
     PresentationBackendStats presentation_backend_stats() const;
+    PresentationBackendDiagnostics presentation_backend_diagnostics() const;
     std::string presentation_backend_last_error() const;
     bool copy_last_presentation_frame_info(PresentationBackendFrameInfo* out) const;
     RendererGpuMemoryStats gpu_memory_stats() const;

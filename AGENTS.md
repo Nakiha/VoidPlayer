@@ -53,6 +53,9 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 - `python dev.py build --native` 不能替代 Flutter runner 重建；修改 `native/` C++ 后，必须执行 `flutter build windows --release` 或 `python dev.py ui-test --build ...`，否则上屏测试仍可能运行旧代码。
 - macOS 上屏相关修改必须重建 macOS runner 或使用 `python dev.py mac-ui-test --build ...`，否则可能仍在跑旧 `.app`。
 - native 渲染路径不引入 `libswscale` / `libyuv` 作为通用 fallback；新增像素格式支持时应做确定性转换，并验证软解/硬解颜色一致性。
+- Windows presentation 改动必须经过 `PresentationBackend` / D3D11 backend 边界，不在 shared scheduler 或 runner 中复制渲染策略。
+- Windows presentation fallback 必须显式、可诊断；改变 adapter、driver type、target format 或 presentation mode 时必须同步日志和 diagnostics。
+- 修改 shared presentation backend、Windows texture/format/color 路径时，必须运行确定性 D3D11 color/layout parity smoke 和 `windows-preservation`。
 - 不要在一个轮次里堆无关改动。每轮完成后先测试，再单独提交。
 
 ## 验证矩阵
@@ -64,7 +67,7 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 | native C++ 单元逻辑 | `python dev.py gate pr-fast` 或 `python dev.py test --native-only` |
 | native C++ 影响 Windows runner / Texture / 渲染上屏 | `python dev.py gate windows-preservation` 或等价 Windows build + UI smoke |
 | native C++ 影响 macOS runner / Texture / Metal 上屏 | `python dev.py gate macos-ui-smoke` 或相关 `python dev.py mac-ui-test --build ...` |
-| shared renderer / presentation backend 边界 | macOS 相关 smoke + 后续 Windows preservation gate |
+| shared renderer / presentation backend 边界 | 对应平台 backend parity smoke + macOS 相关 smoke + Windows preservation gate |
 | macOS package / signing / FFmpeg dylib / release docs | `python dev.py gate macos-release-readiness` |
 | Flutter UI / Action / 主窗口 coordinator / 播放控制 | 相关 `python dev.py ui-test --build ...`，不要只跑 `python dev.py test --flutter-only` |
 | 窗口、布局、pan/zoom、split | `ui_tests/viewport/` 中相关脚本，加 smoke |

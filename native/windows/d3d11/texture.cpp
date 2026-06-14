@@ -47,12 +47,12 @@ TextureManager::TextureManager(ID3D11Device* device, ID3D11DeviceContext* contex
     : device_(device), context_(context) {
 }
 
-ID3D11Texture2D* TextureManager::create_rgba_texture(int width, int height) {
+ID3D11Texture2D* TextureManager::create_bgra_texture(int width, int height) {
     if (!device_) {
         spdlog::error("Cannot create texture: device is null");
         return nullptr;
     }
-    if (!validate_texture_dimensions("Cannot create RGBA texture", width, height)) {
+    if (!validate_texture_dimensions("Cannot create BGRA texture", width, height)) {
         return nullptr;
     }
 
@@ -61,7 +61,7 @@ ID3D11Texture2D* TextureManager::create_rgba_texture(int width, int height) {
     desc.Height = static_cast<UINT>(height);
     desc.MipLevels = 1;
     desc.ArraySize = 1;
-    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.SampleDesc.Count = 1;
     desc.SampleDesc.Quality = 0;
     desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -72,12 +72,12 @@ ID3D11Texture2D* TextureManager::create_rgba_texture(int width, int height) {
     ID3D11Texture2D* texture = nullptr;
     HRESULT hr = device_->CreateTexture2D(&desc, nullptr, &texture);
     if (FAILED(hr)) {
-        spdlog::error("Failed to create RGBA texture ({}x{}): HRESULT {:#x}",
-                       width, height, static_cast<unsigned long>(hr));
+        spdlog::error("Failed to create BGRA texture ({}x{}): HRESULT {:#x}",
+                      width, height, static_cast<unsigned long>(hr));
         return nullptr;
     }
 
-    spdlog::debug("Created RGBA texture ({}x{})", width, height);
+    spdlog::debug("Created BGRA texture ({}x{})", width, height);
     return texture;
 }
 

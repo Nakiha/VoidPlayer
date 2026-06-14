@@ -89,6 +89,23 @@ struct PresentationBackendStats {
     uint64_t source_frame_cache_miss_count = 0;
 };
 
+struct PresentationBackendDiagnostics {
+    std::string backend;
+    std::string target_format;
+    std::string adapter_description;
+    std::string driver_type;
+    int32_t width = 0;
+    int32_t height = 0;
+    int32_t buffer_count = 0;
+    int32_t adapter_vendor_id = 0;
+    int32_t adapter_device_id = 0;
+    int32_t adapter_luid_high = 0;
+    uint32_t adapter_luid_low = 0;
+    int32_t feature_level = 0;
+    bool headless = false;
+    bool warp = false;
+};
+
 inline bool is_transient_presentation_backpressure_error(const std::string& error) {
     return error == "renderer-owned Metal async draw deferred by backpressure" ||
            error == "native Metal uploader shared resources are busy" ||

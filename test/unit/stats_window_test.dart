@@ -155,6 +155,8 @@ void main() {
               layoutDrawHz: 0,
               layoutIntentHz: 0,
               nativeCompositorCompositeHz: 0,
+              nativeCompositorSourceCacheHz: 0,
+              nativeCompositorSourceProjectionHz: 0,
               drawP95Us: 1800,
               backendP95Us: 0,
               metalP95Us: 1800,

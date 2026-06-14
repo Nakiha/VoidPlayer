@@ -23,6 +23,7 @@ class NativePlayerMethods {
       'setNativeCompositorViewportTransform';
   static const prepareNativeCompositorSourceCache =
       'prepareNativeCompositorSourceCache';
+  static const setNativeAnalysisOverlay = 'setNativeAnalysisOverlay';
   static const clearNativeCompositorSourceCache =
       'clearNativeCompositorSourceCache';
   static const setViewportBackgroundColor = 'setViewportBackgroundColor';

@@ -142,7 +142,7 @@ final class MacOSNativeCompositorSourceRing {
     self.order = order
 
     guard !descriptors.isEmpty else {
-      compositor?.setSourceBuffers(textures: [], error: "no source tracks")
+      compositor?.setSourceBuffers(textures: [], overlay: .empty, error: "no source tracks")
       return
     }
 
@@ -158,7 +158,7 @@ final class MacOSNativeCompositorSourceRing {
       perFrameBytes += d.width * d.height * bytesPerPixel
     }
     if perFrameBytes <= 0 {
-      compositor?.setSourceBuffers(textures: [], error: "no source cache targets")
+      compositor?.setSourceBuffers(textures: [], overlay: .empty, error: "no source cache targets")
       return
     }
     var chosenDepth = Self.ringDepth
@@ -168,6 +168,7 @@ final class MacOSNativeCompositorSourceRing {
     if perFrameBytes * chosenDepth > Self.ringBudgetBytes {
       compositor?.setSourceBuffers(
         textures: [],
+        overlay: .empty,
         error: "source cache memory cap exceeded"
       )
       return
@@ -202,6 +203,7 @@ final class MacOSNativeCompositorSourceRing {
       guard ok, !buffers.isEmpty else {
         compositor?.setSourceBuffers(
           textures: [],
+          overlay: .empty,
           error: "failed to allocate source cache pixel buffer"
         )
         return
@@ -226,7 +228,7 @@ final class MacOSNativeCompositorSourceRing {
     }
 
     guard !built.isEmpty else {
-      compositor?.setSourceBuffers(textures: [], error: "no source cache targets")
+      compositor?.setSourceBuffers(textures: [], overlay: .empty, error: "no source cache targets")
       return
     }
 
@@ -278,7 +280,7 @@ final class MacOSNativeCompositorSourceRing {
       // once we have a good frame to hold. Only surface the error before the very
       // first successful publish.
       if !hasPublished {
-        compositor?.setSourceBuffers(textures: [], error: result.error)
+        compositor?.setSourceBuffers(textures: [], overlay: .empty, error: result.error)
       }
       return
     }
@@ -299,6 +301,9 @@ final class MacOSNativeCompositorSourceRing {
       ))
     }
     hasPublished = true
-    compositor?.setSourceBuffers(textures: published)
+    compositor?.setSourceBuffers(
+      textures: published,
+      overlay: player.currentOverlayPrimitives()
+    )
   }
 }

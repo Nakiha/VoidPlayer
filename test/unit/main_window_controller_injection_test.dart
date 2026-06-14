@@ -50,6 +50,9 @@ class _FakeAnalysisGenerationService implements AnalysisGenerationService {
   int get overlayPresentationRevision => 0;
 
   @override
+  Map<String, Object?> nativeOverlayStatePayload() => const {};
+
+  @override
   AnalysisTrackGenerationStatus? statusForPath(String path) => null;
 
   @override

@@ -12,7 +12,7 @@ extern "C" {
 typedef struct VPMacOSNativePlayer VPMacOSNativePlayer;
 typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
 
-#define VP_MACOS_NATIVE_API_VERSION 3u
+#define VP_MACOS_NATIVE_API_VERSION 5u
 
 typedef enum VPMacOSNativeStatus {
   VPMacOSNativeStatusOk = 0,
@@ -63,6 +63,35 @@ typedef struct VPMacOSNativeSourceFrameBakeTarget {
   int32_t drawn;
   VPMacOSNativeFrameInfo frame_info;
 } VPMacOSNativeSourceFrameBakeTarget;
+
+typedef struct VPMacOSNativeOverlayPrimitiveSnapshot {
+  uint32_t struct_size;
+  uint32_t api_version;
+  uint64_t generation;
+  size_t fill_rect_count;
+  size_t line_rect_count;
+  size_t motion_line_count;
+  int32_t source_baked_overlay_disabled;
+  uint64_t overlay_track_count;
+  uint64_t matched_track_count;
+  uint64_t missing_track_slot_count;
+  uint64_t missing_presented_frame_count;
+  uint64_t missing_frame_index_count;
+  uint64_t invalid_video_size_count;
+  uint64_t overlay_frame_missing_count;
+  uint64_t heatmap_missing_feature_track_count;
+} VPMacOSNativeOverlayPrimitiveSnapshot;
+
+static inline void VPMacOSNativeOverlayPrimitiveSnapshotInit(
+    VPMacOSNativeOverlayPrimitiveSnapshot* out) {
+  if (!out) {
+    return;
+  }
+  memset(out, 0, sizeof(*out));
+  out->struct_size = (uint32_t)sizeof(VPMacOSNativeOverlayPrimitiveSnapshot);
+  out->api_version = VP_MACOS_NATIVE_API_VERSION;
+  out->source_baked_overlay_disabled = 1;
+}
 
 typedef struct VPMacOSNativeTrackInfo {
   int32_t file_id;

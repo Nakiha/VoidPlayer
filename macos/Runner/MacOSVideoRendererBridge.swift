@@ -148,6 +148,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "prepareNativeCompositorSourceCache":
       prepareNativeCompositorSourceCache(arguments: call.arguments)
       result(nil)
+    case "setNativeAnalysisOverlay":
+      setNativeAnalysisOverlay(arguments: call.arguments)
+      result(nil)
     case "clearNativeCompositorSourceCache":
       clearNativeCompositorSourceCache(arguments: call.arguments)
       result(nil)
@@ -336,7 +339,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     guard let player = nativePlayer else {
       nativeCompositorSourceRing?.unsubscribe(reason: "native player unavailable")
       nativeCompositorSourceSignature = ""
-      nativeCompositor.setSourceBuffers(textures: [], error: "native player unavailable")
+      nativeCompositor.setSourceBuffers(
+        textures: [],
+        overlay: .empty,
+        error: "native player unavailable"
+      )
       return
     }
     let sourceSlots = MacOSFlutterArguments.intListArg(arguments, "sourceSlots")
@@ -358,11 +365,16 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       viewOffsetUvX: viewOffsetUvX,
       viewOffsetUvY: viewOffsetUvY
     )
+    nativeCompositor.setOverlayPrimitives(player.currentOverlayPrimitives())
     let trackPayloads = tracks.tracks
     if trackPayloads.isEmpty || sourceSlots.isEmpty {
       nativeCompositorSourceRing?.unsubscribe(reason: "no source tracks")
       nativeCompositorSourceSignature = ""
-      nativeCompositor.setSourceBuffers(textures: [], error: "no source tracks")
+      nativeCompositor.setSourceBuffers(
+        textures: [],
+        overlay: .empty,
+        error: "no source tracks"
+      )
       return
     }
 
@@ -412,6 +424,72 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       order: sourceOrder,
       edrOutputEnabled: MacOSPresentationConfiguration.current.edrOutputEnabled
     )
+  }
+
+  private func setNativeAnalysisOverlay(arguments: Any?) {
+    VPMacOSNativeAnalysisOverlayClearTracks()
+    var trackCount = 0
+    var loadedTrackCount = 0
+    if let tracks = (arguments as? [String: Any])?["tracks"] as? [Any] {
+      for entry in tracks {
+        guard let map = entry as? [String: Any],
+              let fileId = MacOSFlutterArguments.intValue(map["fileId"]),
+              let analysisPath = map["analysisPath"] as? String,
+              !analysisPath.isEmpty else {
+          continue
+        }
+        analysisPath.withCString { pathPointer in
+          if VPMacOSNativeAnalysisOverlaySetTrack(Int32(fileId), pathPointer) != 0 {
+            loadedTrackCount += 1
+          }
+        }
+        trackCount += 1
+      }
+    } else if let tracks = (arguments as? [AnyHashable: Any])?["tracks"] as? [Any] {
+      for entry in tracks {
+        guard let map = entry as? [AnyHashable: Any],
+              let fileId = MacOSFlutterArguments.intValue(map["fileId"]),
+              let analysisPath = map["analysisPath"] as? String,
+              !analysisPath.isEmpty else {
+          continue
+        }
+        analysisPath.withCString { pathPointer in
+          if VPMacOSNativeAnalysisOverlaySetTrack(Int32(fileId), pathPointer) != 0 {
+            loadedTrackCount += 1
+          }
+        }
+        trackCount += 1
+      }
+    }
+    let showCuGrid = MacOSFlutterArguments.boolArg(arguments, "showCuGrid") == true
+    let showQpHeatmap = MacOSFlutterArguments.boolArg(arguments, "showQpHeatmap") == true
+    let showBitCost = MacOSFlutterArguments.boolArg(arguments, "showCuBitCostHeatmap") == true
+    VPMacOSNativeAnalysisOverlaySetState(
+      showCuGrid ? 1 : 0,
+      MacOSFlutterArguments.boolArg(arguments, "showPredMode") == true ? 1 : 0,
+      showQpHeatmap ? 1 : 0,
+      MacOSFlutterArguments.boolArg(arguments, "showPredLines") == true ? 1 : 0,
+      showBitCost ? 1 : 0,
+      Int32(MacOSFlutterArguments.intArg(arguments, "opacityPermille") ?? 550),
+      Int32(MacOSFlutterArguments.intArg(arguments, "mode") ?? 0),
+      Int32(MacOSFlutterArguments.intArg(arguments, "trackFileId") ?? -1)
+    )
+    String(
+      format:
+        "NativeAnalysisOverlaySync tracks=%d loaded=%d cu=%@ qp=%@ bitCost=%@ mode=%d opacity=%d",
+      trackCount,
+      loadedTrackCount,
+      showCuGrid ? "true" : "false",
+      showQpHeatmap ? "true" : "false",
+      showBitCost ? "true" : "false",
+      MacOSFlutterArguments.intArg(arguments, "mode") ?? 0,
+      MacOSFlutterArguments.intArg(arguments, "opacityPermille") ?? 550
+    ).withCString { pointer in
+      VPMacOSLogProfilerSummary(pointer)
+    }
+    if let player = nativePlayer {
+      nativeCompositor?.setOverlayPrimitives(player.currentOverlayPrimitives())
+    }
   }
 
   private func clearNativeCompositorSourceCache(arguments: Any?) {

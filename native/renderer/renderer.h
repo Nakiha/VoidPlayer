@@ -21,6 +21,7 @@ namespace vr {
 
 class PlaybackController;
 class PresentationBackend;
+struct AnalysisOverlayPrimitivePackage;
 
 class Renderer {
 public:
@@ -125,6 +126,8 @@ public:
                                     PresentationSourceFrameTarget* targets,
                                     size_t target_count,
                                     std::string* error);
+    std::shared_ptr<const AnalysisOverlayPrimitivePackage> current_overlay_primitives(
+        std::string* error);
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
     bool capture_front_buffer_region(int x,
                                      int y,

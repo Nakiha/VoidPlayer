@@ -348,7 +348,7 @@ void main() {
     expect(detail, isNot(contains('fps')));
   });
 
-  testWidgets('shows idle display sampling without reporting 0Hz', (
+  testWidgets('shows idle display-link sampling without reporting 0Hz', (
     tester,
   ) async {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
@@ -370,11 +370,11 @@ void main() {
       ),
     );
 
-    expect(detail, contains('display idle/121Hz'));
-    expect(detail, isNot(contains('display 0/121Hz')));
+    expect(detail, contains('display-link idle/121Hz'));
+    expect(detail, isNot(contains('display-link 0/121Hz')));
   });
 
-  testWidgets('keeps layout sampling inside the display summary', (
+  testWidgets('keeps layout sampling out of the health detail', (
     tester,
   ) async {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
@@ -398,8 +398,39 @@ void main() {
       ),
     );
 
-    expect(detail, contains('display 120/120Hz'));
+    expect(detail, contains('display-link 120/120Hz'));
     expect(detail, isNot(contains('layout')));
+  });
+
+  testWidgets('shows native compositor cadence before display-link cadence', (
+    tester,
+  ) async {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 0.0,
+      'nativeCompositorCompositeHz': 86.4,
+      'nativeCompositorSourceCacheHz': 29.7,
+      'nativeCompositorSourceProjectionHz': 119.1,
+    });
+    late String detail;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        home: Builder(
+          builder: (context) {
+            detail = snapshot.localizedDetail(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(detail, startsWith('compositor 86/120Hz'));
+    expect(detail, contains('source 30Hz'));
+    expect(detail, contains('projection 119Hz'));
+    expect(detail, contains('display-link idle/120Hz'));
   });
 
   testWidgets('display pressure feedback avoids environment-specific advice', (

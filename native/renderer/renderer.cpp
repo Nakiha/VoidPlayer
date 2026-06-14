@@ -285,6 +285,11 @@ bool Renderer::draw_current_frame_sources(PresentationBackend& backend,
     return impl_->draw_current_frame_sources(backend, targets, target_count, error);
 }
 
+std::shared_ptr<const AnalysisOverlayPrimitivePackage> Renderer::current_overlay_primitives(
+    std::string* error) {
+    return impl_->current_overlay_primitives(error);
+}
+
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
     return impl_->capture_front_buffer(bgra, width, height);
 }

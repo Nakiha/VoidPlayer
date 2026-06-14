@@ -33,6 +33,9 @@ class _CountingAnalysisGenerationService extends ChangeNotifier
   int get overlayPresentationRevision => _overlayPresentationRevision;
 
   @override
+  Map<String, Object?> nativeOverlayStatePayload() => const {};
+
+  @override
   AnalysisTrackGenerationStatus? statusForPath(String path) => null;
 
   @override

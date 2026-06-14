@@ -40,6 +40,17 @@ void VPMacOSConfigureLogging(const char* logs_dir,
                              const char* log_file_name,
                              const char* level);
 void VPMacOSLogProfilerSummary(const char* message);
+void VPMacOSNativeAnalysisOverlayClearTracks(void);
+int VPMacOSNativeAnalysisOverlaySetTrack(int32_t track_file_id,
+                                         const char* analysis_path);
+void VPMacOSNativeAnalysisOverlaySetState(int32_t show_cu_grid,
+                                          int32_t show_pred_mode,
+                                          int32_t show_qp_heatmap,
+                                          int32_t show_pred_lines,
+                                          int32_t show_cu_bit_cost_heatmap,
+                                          int32_t opacity_permille,
+                                          int32_t mode,
+                                          int32_t track_file_id);
 
 VPMacOSNativePlayer* VPMacOSNativePlayerCreate(void);
 void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player);
@@ -154,6 +165,17 @@ int VPMacOSNativePlayerBakeCurrentFrameSources(
     VPMacOSMetalPresentationBackend* backend,
     VPMacOSNativeSourceFrameBakeTarget* targets,
     size_t target_count,
+    char* error,
+    size_t error_size);
+int VPMacOSNativePlayerCopyCurrentOverlayPrimitives(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeOverlayPrimitiveSnapshot* snapshot,
+    VPMacOSNativeOverlayGpuRect* fill_rects,
+    size_t fill_rect_capacity,
+    VPMacOSNativeOverlayGpuRect* line_rects,
+    size_t line_rect_capacity,
+    VPMacOSNativeOverlayGpuRect* motion_lines,
+    size_t motion_line_capacity,
     char* error,
     size_t error_size);
 

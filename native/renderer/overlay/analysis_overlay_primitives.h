@@ -53,6 +53,12 @@ struct AnalysisOverlayTrackPrimitives {
 struct AnalysisOverlayPrimitivePackage {
     uint64_t cache_generation = 0;
     int heatmap_mode = 0;
+    uint64_t overlay_track_count = 0;
+    uint64_t matched_track_count = 0;
+    uint64_t missing_track_slot_count = 0;
+    uint64_t missing_presented_frame_count = 0;
+    uint64_t missing_frame_index_count = 0;
+    uint64_t invalid_video_size_count = 0;
     uint64_t heatmap_rect_count = 0;
     uint64_t heatmap_clamped_qp_count = 0;
     uint64_t heatmap_clamped_bit_cost_count = 0;

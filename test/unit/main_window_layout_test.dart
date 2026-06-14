@@ -160,7 +160,7 @@ void main() {
   });
 
   test(
-    'paused native compositor pan uses source cache until final layout',
+    'paused native compositor pan keeps source cache after final layout',
     () async {
       final stateStore = MainWindowStateStore()
         ..setTextureId(1)
@@ -200,9 +200,16 @@ void main() {
       expect(controller.transforms, isEmpty);
       expect(
         controller.calls,
-        contains(
-          'clearNativeCompositorSourceCache:authoritative layout applied',
+        isNot(
+          contains(
+            'clearNativeCompositorSourceCache:authoritative layout applied',
+          ),
         ),
+      );
+      expect(
+        controller.calls
+            .where((call) => call == 'prepareNativeCompositorSourceCache'),
+        hasLength(2),
       );
     },
   );
@@ -245,6 +252,37 @@ void main() {
   );
 
   test(
+    'native compositor overlay refresh republishes source cache without layout dirty',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setNativeCompositorActive(true)
+        ..setPlaying(false)
+        ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 1600;
+      coordinator.viewportHeight = 900;
+
+      coordinator.refreshNativeCompositorOverlay();
+      await pumpEventQueue();
+
+      expect(controller.appliedLayouts, isEmpty);
+      expect(controller.calls, ['prepareNativeCompositorSourceCache']);
+    },
+  );
+
+  test(
     'playing native compositor pan subscribes live source cache, defers commit',
     () async {
       final stateStore = MainWindowStateStore()
@@ -282,7 +320,8 @@ void main() {
       await pumpEventQueue();
       expect(controller.appliedLayouts, isEmpty);
 
-      // Pointer-up commits the authoritative layout once and retires the cache.
+      // Pointer-up commits the authoritative layout once and keeps the live
+      // source cache/projection active for the native compositor.
       coordinator.onPointerButton(false, false);
       await coordinator.flushPendingLayout();
       expect(controller.appliedLayouts, hasLength(1));
@@ -290,10 +329,13 @@ void main() {
       expect(controller.appliedLayouts.single.viewOffsetY, -90);
       expect(
         controller.calls,
-        contains(
-          'clearNativeCompositorSourceCache:authoritative layout applied',
+        isNot(
+          contains(
+            'clearNativeCompositorSourceCache:authoritative layout applied',
+          ),
         ),
       );
+      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
     },
   );
 
@@ -325,7 +367,7 @@ void main() {
       expect(controller.appliedLayouts, isEmpty);
 
       // Play transition: deferred layout must reach native before playback
-      // starts and source projection must retire after the authoritative layout.
+      // starts; the source projection remains live for compositor overlays.
       await coordinator.onPlaybackStateChanged(playing: true);
 
       expect(controller.appliedLayouts, hasLength(1));
@@ -333,10 +375,13 @@ void main() {
       expect(controller.appliedLayouts.single.viewOffsetY, -90);
       expect(
         controller.calls,
-        contains(
-          'clearNativeCompositorSourceCache:authoritative layout applied',
+        isNot(
+          contains(
+            'clearNativeCompositorSourceCache:authoritative layout applied',
+          ),
         ),
       );
+      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
 
       // A pan right after the transition starts a fresh interaction.
       stateStore.setPlaying(true);
@@ -618,6 +663,9 @@ class _FakeNativePlayerController extends NativePlayerController {
   }) async {
     calls.add('prepareNativeCompositorSourceCache');
   }
+
+  @override
+  Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
 
   @override
   Future<void> clearNativeCompositorSourceCache({

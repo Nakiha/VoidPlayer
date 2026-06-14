@@ -267,6 +267,9 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
+
+  @override
   Future<void> clearNativeCompositorSourceCache({
     required String reason,
   }) async {

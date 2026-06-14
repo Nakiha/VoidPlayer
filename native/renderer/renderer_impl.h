@@ -193,6 +193,8 @@ public:
                                     PresentationSourceFrameTarget* targets,
                                     size_t target_count,
                                     std::string* error);
+    std::shared_ptr<const AnalysisOverlayPrimitivePackage> current_overlay_primitives(
+        std::string* error);
 
     /// Capture the currently published headless frame as packed BGRA bytes.
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);

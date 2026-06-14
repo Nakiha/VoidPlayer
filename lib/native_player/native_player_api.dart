@@ -57,6 +57,7 @@ abstract interface class NativePlayerApi {
     required List<double> viewOffsetUvX,
     required List<double> viewOffsetUvY,
   });
+  Future<void> setNativeAnalysisOverlay(Map<String, Object?> state);
   Future<void> clearNativeCompositorSourceCache({required String reason});
   Future<void> setViewportBackgroundColor(int colorValue);
   Future<ViewportCapture> captureViewport({String? outputPath});
@@ -274,6 +275,14 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     return _channel.invokeMethod<void>(
       NativePlayerMethods.clearNativeCompositorSourceCache,
       {NativePlayerKeys.reason: reason},
+    );
+  }
+
+  @override
+  Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.setNativeAnalysisOverlay,
+      state,
     );
   }
 

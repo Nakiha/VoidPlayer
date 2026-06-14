@@ -2,6 +2,8 @@
 
 #include "macos/metal/metal_presentation_backend.h"
 #include "macos/player/native_player_state.h"
+#include "renderer/overlay/analysis_overlay_primitives.h"
+#include "renderer/overlay/analysis_overlay_renderer.h"
 
 #include <algorithm>
 #include <chrono>
@@ -29,6 +31,36 @@ bool macos_profiler_enabled() {
 
 uint64_t pointer_address(const void* pointer) {
   return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pointer));
+}
+
+uint32_t pack_overlay_bgra(vr::analysis::OverlayColor color) {
+  return static_cast<uint32_t>(color.b) |
+         (static_cast<uint32_t>(color.g) << 8) |
+         (static_cast<uint32_t>(color.r) << 16) |
+         (static_cast<uint32_t>(color.a) << 24);
+}
+
+uint32_t pack_overlay_track_payload(int slot, uint8_t line_alpha) {
+  return static_cast<uint32_t>(slot & 0xff) |
+         (static_cast<uint32_t>(line_alpha) << 8);
+}
+
+template <typename Primitive>
+VPMacOSNativeOverlayGpuRect pack_overlay_rect(
+    const Primitive& primitive,
+    int video_width,
+    int video_height,
+    int slot,
+    uint8_t line_alpha,
+    bool include_color) {
+  VPMacOSNativeOverlayGpuRect rect = {};
+  rect.rect_uv0 = vr::pack_overlay_uv16(
+      primitive.x0, video_width, primitive.y0, video_height);
+  rect.rect_uv1 = vr::pack_overlay_uv16(
+      primitive.x1, video_width, primitive.y1, video_height);
+  rect.color_bgra = include_color ? pack_overlay_bgra(primitive.color) : 0;
+  rect.track_idx = pack_overlay_track_payload(slot, line_alpha);
+  return rect;
 }
 
 std::string target_address_summary(const std::vector<void*>& targets) {
@@ -843,4 +875,117 @@ int VPMacOSNativePlayerBakeCurrentFrameSources(
   }
   write_error(error, error_size, "");
   return drawn_count > 0 ? drawn_count : -1;
+}
+
+int VPMacOSNativePlayerCopyCurrentOverlayPrimitives(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeOverlayPrimitiveSnapshot* snapshot,
+    VPMacOSNativeOverlayGpuRect* fill_rects,
+    size_t fill_rect_capacity,
+    VPMacOSNativeOverlayGpuRect* line_rects,
+    size_t line_rect_capacity,
+    VPMacOSNativeOverlayGpuRect* motion_lines,
+    size_t motion_line_capacity,
+    char* error,
+    size_t error_size) {
+  if (!player || !snapshot) {
+    write_error(error, error_size, "invalid overlay primitive copy arguments");
+    return -1;
+  }
+
+  VPMacOSNativeOverlayPrimitiveSnapshotInit(snapshot);
+  std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage> package;
+  std::string message;
+  {
+    std::lock_guard<std::mutex> lock(player->mutex);
+    if (!player->renderer_active_locked()) {
+      write_error(error, error_size, "renderer is not active");
+      return -1;
+    }
+    package = player->renderer->current_overlay_primitives(&message);
+  }
+  if (!message.empty()) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  if (package) {
+    snapshot->generation = package->cache_generation;
+    snapshot->overlay_track_count = package->overlay_track_count;
+    snapshot->matched_track_count = package->matched_track_count;
+    snapshot->missing_track_slot_count = package->missing_track_slot_count;
+    snapshot->missing_presented_frame_count =
+        package->missing_presented_frame_count;
+    snapshot->missing_frame_index_count = package->missing_frame_index_count;
+    snapshot->invalid_video_size_count = package->invalid_video_size_count;
+    snapshot->overlay_frame_missing_count = package->overlay_frame_missing_count;
+    snapshot->heatmap_missing_feature_track_count =
+        package->heatmap_missing_feature_track_count;
+  }
+  if (!package || package->empty()) {
+    write_error(error, error_size, "");
+    return 0;
+  }
+
+  for (const auto& track : package->tracks) {
+    snapshot->fill_rect_count += track.fill_rects.size();
+    snapshot->line_rect_count += track.outline_rects.size();
+    snapshot->motion_line_count += track.motion_lines.size();
+  }
+
+  const bool capacity_ok =
+      fill_rect_capacity >= snapshot->fill_rect_count &&
+      line_rect_capacity >= snapshot->line_rect_count &&
+      motion_line_capacity >= snapshot->motion_line_count;
+  if (!capacity_ok) {
+    write_error(error, error_size, "overlay primitive buffers are too small");
+    return -2;
+  }
+
+  size_t fill_index = 0;
+  size_t line_index = 0;
+  size_t motion_index = 0;
+  for (const auto& track : package->tracks) {
+    if (track.video_width <= 0 || track.video_height <= 0) {
+      continue;
+    }
+    for (const auto& primitive : track.fill_rects) {
+      if (fill_rects && fill_index < fill_rect_capacity) {
+        fill_rects[fill_index] = pack_overlay_rect(
+            primitive,
+            track.video_width,
+            track.video_height,
+            track.slot,
+            track.line_alpha,
+            true);
+      }
+      ++fill_index;
+    }
+    for (const auto& primitive : track.outline_rects) {
+      if (line_rects && line_index < line_rect_capacity) {
+        line_rects[line_index] = pack_overlay_rect(
+            primitive,
+            track.video_width,
+            track.video_height,
+            track.slot,
+            track.line_alpha,
+            false);
+      }
+      ++line_index;
+    }
+    for (const auto& primitive : track.motion_lines) {
+      if (motion_lines && motion_index < motion_line_capacity) {
+        motion_lines[motion_index] = pack_overlay_rect(
+            primitive,
+            track.video_width,
+            track.video_height,
+            track.slot,
+            track.line_alpha,
+            true);
+      }
+      ++motion_index;
+    }
+  }
+
+  write_error(error, error_size, "");
+  return 0;
 }

@@ -4,7 +4,12 @@
 #include "macos/player/native_player_state.h"
 #include "renderer/decode/frame_color_metadata.h"
 
+#if VOID_BUILD_ANALYSIS
+#include "analysis/analysis_manager.h"
+#endif
+
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <mutex>
 #include <new>
@@ -118,6 +123,62 @@ void VPMacOSLogProfilerSummary(const char* message) {
     return;
   }
   spdlog::info("[MacOSProfilerSummary] {}", message);
+}
+
+void VPMacOSNativeAnalysisOverlayClearTracks(void) {
+#if VOID_BUILD_ANALYSIS
+  vr::analysis::AnalysisManager::instance().clear_overlay_tracks();
+#endif
+}
+
+int VPMacOSNativeAnalysisOverlaySetTrack(int32_t track_file_id,
+                                         const char* analysis_path) {
+#if VOID_BUILD_ANALYSIS
+  if (track_file_id < 0 || !analysis_path || analysis_path[0] == '\0') {
+    return 0;
+  }
+  return vr::analysis::AnalysisManager::instance().set_overlay_track(
+             track_file_id,
+             analysis_path)
+      ? 1
+      : 0;
+#else
+  (void)track_file_id;
+  (void)analysis_path;
+  return 0;
+#endif
+}
+
+void VPMacOSNativeAnalysisOverlaySetState(int32_t show_cu_grid,
+                                          int32_t show_pred_mode,
+                                          int32_t show_qp_heatmap,
+                                          int32_t show_pred_lines,
+                                          int32_t show_cu_bit_cost_heatmap,
+                                          int32_t opacity_permille,
+                                          int32_t mode,
+                                          int32_t track_file_id) {
+#if VOID_BUILD_ANALYSIS
+  auto& overlay = vr::analysis::AnalysisManager::instance().overlay;
+  overlay.show_cu_grid.store(show_cu_grid != 0, std::memory_order_release);
+  overlay.show_pred_mode.store(show_pred_mode != 0, std::memory_order_release);
+  overlay.show_qp_heatmap.store(show_qp_heatmap != 0, std::memory_order_release);
+  overlay.show_pred_lines.store(show_pred_lines != 0, std::memory_order_release);
+  overlay.show_cu_bit_cost_heatmap.store(show_cu_bit_cost_heatmap != 0,
+                                         std::memory_order_release);
+  overlay.opacity_permille.store(std::clamp(opacity_permille, 0, 1000),
+                                 std::memory_order_release);
+  overlay.mode.store(std::max(0, mode), std::memory_order_release);
+  overlay.track_file_id.store(track_file_id, std::memory_order_release);
+#else
+  (void)show_cu_grid;
+  (void)show_pred_mode;
+  (void)show_qp_heatmap;
+  (void)show_pred_lines;
+  (void)show_cu_bit_cost_heatmap;
+  (void)opacity_permille;
+  (void)mode;
+  (void)track_file_id;
+#endif
 }
 
 int VPMacOSNativeProbeTrackInfo(const char* path,

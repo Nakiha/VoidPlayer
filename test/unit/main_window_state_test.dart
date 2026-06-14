@@ -472,6 +472,9 @@ class _PlaybackApi implements NativePlayerApi {
   }) async {}
 
   @override
+  Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
+
+  @override
   Future<void> clearNativeCompositorSourceCache({
     required String reason,
   }) async {}

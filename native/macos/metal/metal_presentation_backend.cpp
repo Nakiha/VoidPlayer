@@ -295,6 +295,11 @@ void log_overlay_composite_result(const char* path,
                result.gpu_error);
 }
 
+std::shared_ptr<const OverlayPrimitiveBuildResult> empty_metal_overlay_primitives() {
+  static const auto empty = std::make_shared<const OverlayPrimitiveBuildResult>();
+  return empty;
+}
+
 #if VOID_BUILD_ANALYSIS
 uint32_t pack_overlay_bgra(vr::analysis::OverlayColor color) {
   return static_cast<uint32_t>(color.b) |
@@ -323,11 +328,6 @@ std::vector<MetalOverlayPrimitiveCacheEntry>& metal_overlay_primitive_cache_entr
 uint64_t& metal_overlay_primitive_cache_clock() {
   static uint64_t clock = 0;
   return clock;
-}
-
-std::shared_ptr<const OverlayPrimitiveBuildResult> empty_metal_overlay_primitives() {
-  static const auto empty = std::make_shared<const OverlayPrimitiveBuildResult>();
-  return empty;
 }
 
 std::shared_ptr<const OverlayPrimitiveBuildResult> lookup_metal_overlay_primitives(
@@ -1314,8 +1314,10 @@ bool MetalPresentationBackend::draw_frame(
     ++video_source_update_count_;
     last_source_signature_ = source_signature;
   }
-  const auto overlay_primitives_ptr = build_overlay_primitives_for_metal(
-      snapshot, draw_target_width_, draw_target_height_);
+  const auto overlay_primitives_ptr = hooks.suppress_analysis_overlay
+      ? empty_metal_overlay_primitives()
+      : build_overlay_primitives_for_metal(
+            snapshot, draw_target_width_, draw_target_height_);
   const auto& overlay_primitives = *overlay_primitives_ptr;
   const bool overlay_expected = overlay_primitives_expected(overlay_primitives);
   const auto overlay_set = overlay_primitive_set(overlay_primitives);

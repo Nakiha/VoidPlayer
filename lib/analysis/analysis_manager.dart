@@ -144,6 +144,7 @@ abstract class AnalysisGenerationService {
   Set<int> get activeOverlayTrackFileIds;
   AnalysisOverlayConfig get overlayConfig;
   int get overlayPresentationRevision;
+  Map<String, Object?> nativeOverlayStatePayload();
   AnalysisTrackGenerationStatus? statusForPath(String path);
   bool supportsOverlayForHash(String hash);
   Future<String?> ensureGenerated(String videoPath);
@@ -268,6 +269,34 @@ class AnalysisManager extends ChangeNotifier
   AnalysisOverlayConfig get overlayConfig => _overlayConfig;
   @override
   int get overlayPresentationRevision => _overlayPresentationRevision;
+  @override
+  Map<String, Object?> nativeOverlayStatePayload() {
+    final visible = overlayPanelVisible;
+    final config = visible
+        ? _overlayConfig
+        : AnalysisOverlayConfig.disabled.copyWith(
+            opacity: _overlayConfig.opacity,
+            type: _overlayConfig.type,
+          );
+    return <String, Object?>{
+      'showCuGrid': visible && config.showCuGrid,
+      'showPredMode': visible && config.showPredMode,
+      'showQpHeatmap': visible && config.showQpHeatmap,
+      'showPredLines': visible && config.showPredLines,
+      'showCuBitCostHeatmap': visible && config.showCuBitCostHeatmap,
+      'opacityPermille': (config.opacity.clamp(0.0, 1.0) * 1000).round(),
+      'mode': config.type.index,
+      'trackFileId': -1,
+      'tracks': _readyOverlayTracksByFileId.entries
+          .map(
+            (entry) => <String, Object?>{
+              'fileId': entry.key,
+              'analysisPath': _cache.analysisPath(entry.value.hash),
+            },
+          )
+          .toList(growable: false),
+    };
+  }
   bool get isLoaded => _state == AnalysisState.loaded;
 
   @override
@@ -843,11 +872,15 @@ class AnalysisManager extends ChangeNotifier
     final needsReload =
         trackSetChanged ||
         requests.values.any(_overlayRequestNeedsNativeReload);
+    var loadedAny = false;
     if (needsReload) {
-      _reloadReadyOverlayTracksForIntent(serial, reason: 'activate');
+      loadedAny = _reloadReadyOverlayTracksForIntent(serial, reason: 'activate');
     }
     for (final request in requests.values) {
       _scheduleOverlayChunksForRequest(request, serial);
+    }
+    if (loadedAny) {
+      _overlayPresentationRevision++;
     }
     notifyListeners();
     return true;
@@ -858,6 +891,7 @@ class AnalysisManager extends ChangeNotifier
     _overlayConfig = config;
     if (overlayPanelVisible) {
       _applyOverlayConfig();
+      _overlayPresentationRevision++;
     }
     notifyListeners();
   }
@@ -869,6 +903,7 @@ class AnalysisManager extends ChangeNotifier
     _clearOverlayChunkScheduler();
     _clearOverlayState();
     _applyDisabledOverlayConfig();
+    _overlayPresentationRevision++;
     notifyListeners();
   }
 

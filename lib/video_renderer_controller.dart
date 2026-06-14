@@ -254,6 +254,12 @@ class NativePlayerController {
     return _api.clearNativeCompositorSourceCache(reason: reason);
   }
 
+  Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) {
+    if (_disposed) return Future.value();
+    if (!canAcceptCommands) return Future.value();
+    return _api.setNativeAnalysisOverlay(state);
+  }
+
   Future<void> setViewportBackgroundColor(int colorValue) {
     if (_disposed) {
       _reportNoopCommand(

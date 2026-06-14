@@ -489,8 +489,8 @@ class MainWindowLayoutCoordinator {
 
   /// Flushes deferred interaction state around playback transitions
   /// (play/pause/step). The deferred layout reaches native before playback
-  /// resumes, and the source projection retires after native has the same
-  /// authoritative layout.
+  /// resumes. The native compositor source projection is a full-layout path now,
+  /// so it stays live across authoritative layout flushes.
   Future<void> onPlaybackStateChanged({required bool playing}) async {
     if (_disposed) return;
     final active = _activeFlush;
@@ -498,7 +498,7 @@ class MainWindowLayoutCoordinator {
       await active;
     }
     if (_disposed || !mounted()) return;
-    if (!_layoutDirty && !_nativeCompositorTransformActive) return;
+    if (!_layoutDirty) return;
     _layoutDirty = true;
     await flushPendingLayout();
   }
@@ -595,6 +595,8 @@ class MainWindowLayoutCoordinator {
     _nativeCompositorTransformActive = true;
     // The first projection publish subscribes the source cache. Paused keeps a
     // frozen bake; playing refreshes the ring from native frame callbacks.
+    // This flag is now only an interaction marker; the compositor no longer has
+    // a residual transform layer that needs to be cleared at pointer-up.
   }
 
   bool _updateNativeCompositorPanTransform() {
@@ -687,6 +689,11 @@ class MainWindowLayoutCoordinator {
     );
   }
 
+  void refreshNativeCompositorOverlay() {
+    if (_disposed) return;
+    _prepareNativeCompositorSourceCache(layout());
+  }
+
   void _publishNativeCompositorViewportTransform() {
     if (!_nativeCompositorTransformActive || _disposed) return;
     _prepareNativeCompositorSourceCache(layout());
@@ -701,17 +708,12 @@ class MainWindowLayoutCoordinator {
   void _cancelNativeCompositorViewportTransform() {
     if (!_nativeCompositorTransformActive) return;
     _nativeCompositorTransformActive = false;
-    fireAndLog(
-      'clear native compositor source cache',
-      controller.clearNativeCompositorSourceCache(
-        reason: 'transform cancelled',
-      ),
-    );
   }
 
   Future<void> _applyLayoutToNative(LayoutState nextLayout) async {
     final hadTransform = _nativeCompositorTransformActive;
     await controller.applyLayout(nextLayout);
+    _prepareNativeCompositorSourceCache(nextLayout);
     if (!hadTransform || _disposed || !_nativeCompositorTransformActive) {
       return;
     }
@@ -721,12 +723,6 @@ class MainWindowLayoutCoordinator {
   void _resetNativeCompositorViewportTransformAfterAuthoritativeLayout() {
     if (!_nativeCompositorTransformActive) return;
     _nativeCompositorTransformActive = false;
-    fireAndLog(
-      'clear native compositor source cache',
-      controller.clearNativeCompositorSourceCache(
-        reason: 'authoritative layout applied',
-      ),
-    );
   }
 
   List<DisplayTrackGeometry> _orderedTracksForFocus(

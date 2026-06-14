@@ -1,5 +1,10 @@
 #include "renderer/renderer_internal.h"
+#include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/render/renderer_draw_snapshot_builder.h"
+
+#ifndef VOID_BUILD_ANALYSIS
+#define VOID_BUILD_ANALYSIS 0
+#endif
 
 namespace vr {
 namespace {
@@ -380,7 +385,9 @@ bool Renderer::Impl::draw_current_frame_sources(
             }
             continue;
         }
-        if (!backend.draw_frame(snapshot, PresentationBackendDrawHooks{})) {
+        PresentationBackendDrawHooks hooks;
+        hooks.suppress_analysis_overlay = true;
+        if (!backend.draw_frame(snapshot, hooks)) {
             last_error = backend.last_error();
             if (last_error.empty()) {
                 last_error = "source frame bake draw failed";
@@ -406,6 +413,35 @@ bool Renderer::Impl::draw_current_frame_sources(
         error->clear();
     }
     return true;
+}
+
+std::shared_ptr<const AnalysisOverlayPrimitivePackage>
+Renderer::Impl::current_overlay_primitives(std::string* error) {
+#if VOID_BUILD_ANALYSIS
+    RendererDrawSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        if (!presentation_.has_backend()) {
+            set_error(error, "renderer does not have a presentation backend");
+            return {};
+        }
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        snapshot = RendererDrawSnapshotBuilder::build(
+            track_controller_,
+            layout_state_,
+            surface_state_,
+            present_history_.snapshot());
+    }
+    if (error) {
+        error->clear();
+    }
+    return build_analysis_overlay_primitive_package(snapshot);
+#else
+    if (error) {
+        error->clear();
+    }
+    return {};
+#endif
 }
 
 } // namespace vr

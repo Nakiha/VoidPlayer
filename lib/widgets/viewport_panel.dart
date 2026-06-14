@@ -24,6 +24,15 @@ class ViewportPanel extends StatefulWidget {
   final void Function(double factor, Offset localPosition) onZoom;
   final void Function(bool panning, bool splitting) onPointerButton;
   final void Function(int width, int height, double devicePixelRatio)? onResize;
+  final void Function(
+    int left,
+    int top,
+    int width,
+    int height,
+    int surfaceWidth,
+    int surfaceHeight,
+  )?
+  onNativeCompositorViewportRect;
   final PointerButtonStateProvider pointerButtonStateProvider;
   final bool nativePlaybackAvailable;
   final ViewportInteractionPolicy interactionPolicy;
@@ -31,6 +40,7 @@ class ViewportPanel extends StatefulWidget {
   final List<QuickMark> quickMarks;
   final QuickMark? quickMarkDraft;
   final int? selectedQuickMarkId;
+  final bool nativeCompositorHole;
   final ValueChanged<Offset>? onQuickMarkStart;
   final ValueChanged<Offset>? onQuickMarkUpdate;
   final VoidCallback? onQuickMarkEnd;
@@ -51,6 +61,7 @@ class ViewportPanel extends StatefulWidget {
     required this.onZoom,
     required this.onPointerButton,
     this.onResize,
+    this.onNativeCompositorViewportRect,
     this.pointerButtonStateProvider = emptyPointerButtonStateProvider,
     this.nativePlaybackAvailable = true,
     this.interactionPolicy = defaultViewportInteractionPolicy,
@@ -58,6 +69,7 @@ class ViewportPanel extends StatefulWidget {
     this.quickMarks = const [],
     this.quickMarkDraft,
     this.selectedQuickMarkId,
+    this.nativeCompositorHole = false,
     this.onQuickMarkStart,
     this.onQuickMarkUpdate,
     this.onQuickMarkEnd,
@@ -92,6 +104,9 @@ class _ViewportPanelState extends State<ViewportPanel> {
   bool _panZoomScaling = false;
   Offset _lastMouseLocalPos = Offset.zero;
   Size _lastReportedLogicalSize = Size.zero;
+  Size _lastReportedCompositorLogicalSize = Size.zero;
+  Offset _lastReportedGlobalOffset = Offset.infinite;
+  Size _lastReportedSurfaceSize = Size.zero;
   double _lastReportedDevicePixelRatio = 0.0;
   double _lastPanZoomScale = 1.0;
 
@@ -583,6 +598,46 @@ class _ViewportPanelState extends State<ViewportPanel> {
         widget.onResize?.call(physicalWidth, physicalHeight, devicePixelRatio);
       });
     }
+    if (widget.nativeCompositorHole) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _maybeReportNativeCompositorViewportRect(context);
+      });
+    }
+  }
+
+  void _maybeReportNativeCompositorViewportRect(BuildContext context) {
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return;
+    final view = View.of(context);
+    final devicePixelRatio = view.devicePixelRatio;
+    if (devicePixelRatio <= 0) return;
+    final globalOffset = renderObject.localToGlobal(Offset.zero);
+    final logicalSize = renderObject.size;
+    final surfaceSize = view.physicalSize;
+    if (logicalSize.width <= 0 ||
+        logicalSize.height <= 0 ||
+        surfaceSize.width <= 0 ||
+        surfaceSize.height <= 0) {
+      return;
+    }
+    if (globalOffset == _lastReportedGlobalOffset &&
+        logicalSize == _lastReportedCompositorLogicalSize &&
+        surfaceSize == _lastReportedSurfaceSize &&
+        devicePixelRatio == _lastReportedDevicePixelRatio) {
+      return;
+    }
+    _lastReportedGlobalOffset = globalOffset;
+    _lastReportedCompositorLogicalSize = logicalSize;
+    _lastReportedSurfaceSize = surfaceSize;
+    widget.onNativeCompositorViewportRect?.call(
+      (globalOffset.dx * devicePixelRatio).round(),
+      (globalOffset.dy * devicePixelRatio).round(),
+      (logicalSize.width * devicePixelRatio).round(),
+      (logicalSize.height * devicePixelRatio).round(),
+      surfaceSize.width.round(),
+      surfaceSize.height.round(),
+    );
   }
 
   @override
@@ -706,6 +761,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           _updateSplitFromLocalX(context, e.localPosition.dx);
         },
         child: Listener(
+          behavior: HitTestBehavior.opaque,
           onPointerDown: (e) {
             if ((e.buttons & kPrimaryButton) != 0) {
               if (_isOnSplitHandle(context, e.localPosition)) {
@@ -826,7 +882,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              ExcludeSemantics(child: Texture(textureId: widget.textureId!)),
+              if (!widget.nativeCompositorHole)
+                ExcludeSemantics(child: Texture(textureId: widget.textureId!)),
               QuickMarkOverlay(
                 layout: widget.layout,
                 tracks: widget.trackGeometry,

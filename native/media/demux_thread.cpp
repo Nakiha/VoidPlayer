@@ -1,5 +1,7 @@
 #include "media/demux_thread.h"
 
+#include "renderer/decode/frame_color_metadata.h"
+
 #include "media/private_cdn_flv_demuxer.h"
 #include "media/source_packet_identity.h"
 #include <spdlog/spdlog.h>
@@ -146,6 +148,7 @@ bool DemuxThread::open() {
             stats_.time_base = stream->time_base;
             stats_.width = stream->codecpar->width;
             stats_.height = stream->codecpar->height;
+            stats_.color = color_info_from_av_codec_parameters(stream->codecpar);
             fill_codec_names(stats_, stream->codecpar->codec_id);
             if (stream->start_time != AV_NOPTS_VALUE) {
                 stats_.start_time_us = av_rescale_q(

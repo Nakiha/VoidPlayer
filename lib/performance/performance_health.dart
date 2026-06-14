@@ -28,6 +28,9 @@ class PerformanceHealthSnapshot {
   final double displayTickHz;
   final double layoutDrawHz;
   final double layoutIntentHz;
+  final double nativeCompositorCompositeHz;
+  final double nativeCompositorSourceCacheHz;
+  final double nativeCompositorSourceProjectionHz;
   final double drawP95Us;
   final double backendP95Us;
   final double metalP95Us;
@@ -56,6 +59,9 @@ class PerformanceHealthSnapshot {
     required this.displayTickHz,
     required this.layoutDrawHz,
     required this.layoutIntentHz,
+    required this.nativeCompositorCompositeHz,
+    required this.nativeCompositorSourceCacheHz,
+    required this.nativeCompositorSourceProjectionHz,
     required this.drawP95Us,
     required this.backendP95Us,
     required this.metalP95Us,
@@ -86,6 +92,9 @@ class PerformanceHealthSnapshot {
         displayTickHz: 0,
         layoutDrawHz: 0,
         layoutIntentHz: 0,
+        nativeCompositorCompositeHz: 0,
+        nativeCompositorSourceCacheHz: 0,
+        nativeCompositorSourceProjectionHz: 0,
         drawP95Us: 0,
         backendP95Us: 0,
         metalP95Us: 0,
@@ -123,6 +132,18 @@ class PerformanceHealthSnapshot {
     final displayTickHz = _doubleValue(diagnostics['displayTickHz']);
     final layoutDrawHz = _doubleValue(diagnostics['layoutDrawHz']);
     final layoutIntentHz = _doubleValue(diagnostics['layoutIntentHz']);
+    final nativeCompositorEnabled = _boolValue(
+      diagnostics['nativeCompositorEnabled'],
+    );
+    final nativeCompositorCompositeHz = _doubleValue(
+      diagnostics['nativeCompositorCompositeHz'],
+    );
+    final nativeCompositorSourceCacheHz = _doubleValue(
+      diagnostics['nativeCompositorSourceCacheHz'],
+    );
+    final nativeCompositorSourceProjectionHz = _doubleValue(
+      diagnostics['nativeCompositorSourceProjectionHz'],
+    );
     final drawP95Us = _doubleValue(diagnostics['nativeRendererDrawP95Us']);
     final backendP95Us = _doubleValue(
       diagnostics['nativeRendererDrawBackendP95Us'],
@@ -175,15 +196,19 @@ class PerformanceHealthSnapshot {
     );
 
     final inputOrPlaybackActive = playing || layoutIntentHz >= 10;
-    final renderLatencySlow =
+    final rendererSubmitSlow =
         inputOrPlaybackActive &&
-        (drawP95Us >= 11_000 || backendP95Us >= 10_000 || metalP95Us >= 11_000);
-    final renderLatencySevere =
+        (backendP95Us >= 10_000 || metalP95Us >= 11_000);
+    final rendererSubmitSevere =
         inputOrPlaybackActive &&
-        (drawP95Us >= 22_000 || backendP95Us >= 20_000 || metalP95Us >= 22_000);
+        (backendP95Us >= 20_000 || metalP95Us >= 22_000);
+    final gpuCompletionQueueSlow =
+        inputOrPlaybackActive && drawP95Us >= 11_000 && !rendererSubmitSlow;
+    final gpuCompletionQueueSevere =
+        inputOrPlaybackActive && drawP95Us >= 22_000 && !rendererSubmitSevere;
     final nativeHardPressure = metalBufferDelta > 0 || metalFailureDelta > 0;
-    final nativeSlow = renderLatencySlow || nativeHardPressure;
-    final nativeSevere = renderLatencySevere || nativeHardPressure;
+    final nativeSlow = rendererSubmitSlow || nativeHardPressure;
+    final nativeSevere = rendererSubmitSevere || nativeHardPressure;
     final displayTarget = displayRefreshHz >= 50
         ? displayRefreshHz
         : _fallbackDisplayTargetHz;
@@ -194,17 +219,16 @@ class PerformanceHealthSnapshot {
     final layoutDrawLow =
         layoutIntentHz >= 30 &&
         layoutDrawHz > 0 &&
-        layoutDrawHz < math.min(layoutIntentHz, displayTarget) * 0.70;
-    final expectedFrameIntervalMs = presentedFrameExpectedIntervalUs > 0
-        ? presentedFrameExpectedIntervalUs / 1000.0
-        : 1000.0 / displayTarget;
-    final hostIntervalHigh =
-        playing &&
-        hostIntervalP95Ms > 0 &&
-        hostIntervalP95Ms >
-            math.max(1000.0 / displayTarget, expectedFrameIntervalMs) * 1.8;
+        _presentationDrawHz(
+              nativeCompositorEnabled: nativeCompositorEnabled,
+              nativeCompositorCompositeHz: nativeCompositorCompositeHz,
+              layoutDrawHz: layoutDrawHz,
+            ) <
+            math.min(layoutIntentHz, displayTarget) * 0.70;
     final externalPressure =
-        !nativeSlow && (displayTickLow || layoutDrawLow || hostIntervalHigh);
+        !nativeSlow &&
+        (displayTickLow || layoutDrawLow || gpuCompletionQueueSlow);
+    final externalPressureSevere = gpuCompletionQueueSevere;
 
     final decodePressure = playing && _hasDecodePressure(diagnostics);
     final presentationTimelineAnomaly =
@@ -214,8 +238,7 @@ class PerformanceHealthSnapshot {
         ((cadence.hasEnoughSignal &&
                 cadence.ratio > 0 &&
                 cadence.ratio < 0.82) ||
-            presentationTimelineAnomaly ||
-            hostIntervalHigh);
+            presentationTimelineAnomaly);
     final cadenceSevere =
         playing &&
         ((cadence.hasEnoughSignal &&
@@ -243,7 +266,9 @@ class PerformanceHealthSnapshot {
       kind = PerformanceHealthKind.playbackCadencePressure;
       reason = 'playback-cadence';
     } else if (externalPressure) {
-      level = PerformanceHealthLevel.warning;
+      level = externalPressureSevere
+          ? PerformanceHealthLevel.severe
+          : PerformanceHealthLevel.warning;
       kind = PerformanceHealthKind.externalDisplayPressure;
       reason = 'display-pressure';
     }
@@ -256,6 +281,9 @@ class PerformanceHealthSnapshot {
       displayTickHz: displayTickHz,
       layoutDrawHz: layoutDrawHz,
       layoutIntentHz: layoutIntentHz,
+      nativeCompositorCompositeHz: nativeCompositorCompositeHz,
+      nativeCompositorSourceCacheHz: nativeCompositorSourceCacheHz,
+      nativeCompositorSourceProjectionHz: nativeCompositorSourceProjectionHz,
       drawP95Us: drawP95Us,
       backendP95Us: backendP95Us,
       metalP95Us: metalP95Us,
@@ -279,6 +307,81 @@ class PerformanceHealthSnapshot {
   }
 
   bool get isPressure => level != PerformanceHealthLevel.ok;
+
+  String get diagnosticSummary {
+    final externalSignals = _externalPressureSignals();
+    final parts = <String>[
+      'level=${level.name}',
+      'kind=${kind.name}',
+      if (reason.isNotEmpty) 'reason=$reason',
+      'playing=$playing',
+      'tracks=$trackCount',
+      'display=${_hzText(displayTickHz)}/${_hzText(displayRefreshHz)}',
+      'layout=intent ${_hzText(layoutIntentHz)} draw ${_hzText(layoutDrawHz)}',
+      if (nativeCompositorCompositeHz > 0)
+        'compositor=${_hzText(nativeCompositorCompositeHz)}',
+      if (nativeCompositorSourceCacheHz > 0)
+        'source=${_hzText(nativeCompositorSourceCacheHz)}',
+      if (nativeCompositorSourceProjectionHz > 0)
+        'projection=${_hzText(nativeCompositorSourceProjectionHz)}',
+      'drawP95=${_usText(drawP95Us)}',
+      'backendP95=${_usText(backendP95Us)}',
+      'metalP95=${_usText(metalP95Us)}',
+      if (hostIntervalP95Ms > 0)
+        'hostIntervalP95=${hostIntervalP95Ms.toStringAsFixed(2)}ms',
+      if (playbackCadenceRatio > 0)
+        'cadence=${playbackCadenceRatio.toStringAsFixed(3)} '
+            '${_hzText(presentedFrameRateHz)}/${_hzText(expectedFrameRateHz)}',
+      if (externalSignals.isNotEmpty)
+        'externalSignals=${externalSignals.join(",")}',
+      if (metalBufferExhaustionCount > 0 || metalBufferExhaustionDelta > 0)
+        'ring=$metalBufferExhaustionCount(+$metalBufferExhaustionDelta)',
+      if (metalFailureCount > 0 || metalFailureDelta > 0)
+        'metalFailures=$metalFailureCount(+$metalFailureDelta)',
+      if (largeGapCount > 0 || largeGapDelta > 0)
+        'ptsGaps=$largeGapCount(+$largeGapDelta)',
+      if (monotonicViolationCount > 0)
+        'ptsMonotonicViolations=$monotonicViolationCount',
+    ];
+    return parts.join(' ');
+  }
+
+  List<String> _externalPressureSignals() {
+    final inputOrPlaybackActive = playing || layoutIntentHz >= 10;
+    final displayTarget = displayRefreshHz >= 50
+        ? displayRefreshHz
+        : _fallbackDisplayTargetHz;
+    final signals = <String>[];
+    if (inputOrPlaybackActive &&
+        displayTickHz > 0 &&
+        displayTickHz < displayTarget * 0.72) {
+      signals.add('display-tick-low');
+    }
+    if (layoutIntentHz >= 30 &&
+        layoutDrawHz > 0 &&
+        _presentationDrawHz(
+              nativeCompositorEnabled: nativeCompositorCompositeHz > 0,
+              nativeCompositorCompositeHz: nativeCompositorCompositeHz,
+              layoutDrawHz: layoutDrawHz,
+            ) <
+            math.min(layoutIntentHz, displayTarget) * 0.70) {
+      signals.add('layout-draw-low');
+    }
+    final nativeSubmitSlow = backendP95Us >= 10_000 || metalP95Us >= 11_000;
+    if (inputOrPlaybackActive && drawP95Us >= 11_000 && !nativeSubmitSlow) {
+      signals.add('gpu-completion-high');
+    }
+    final expectedFrameIntervalMs = presentedFrameExpectedIntervalUs > 0
+        ? presentedFrameExpectedIntervalUs / 1000.0
+        : 1000.0 / displayTarget;
+    if (playing &&
+        hostIntervalP95Ms > 0 &&
+        hostIntervalP95Ms >
+            math.max(1000.0 / displayTarget, expectedFrameIntervalMs) * 1.8) {
+      signals.add('host-interval-high');
+    }
+    return signals;
+  }
 
   String localizedTitle(BuildContext context) {
     final zh = Localizations.localeOf(context).languageCode == 'zh';
@@ -319,6 +422,23 @@ class PerformanceHealthSnapshot {
 
   String localizedDetail(BuildContext context) {
     final parts = <String>[];
+    if (nativeCompositorCompositeHz > 0) {
+      final refreshText = displayRefreshHz > 0
+          ? displayRefreshHz.toStringAsFixed(0)
+          : '?';
+      parts.add(
+        'compositor ${nativeCompositorCompositeHz.toStringAsFixed(0)}/'
+        '${refreshText}Hz',
+      );
+    }
+    if (nativeCompositorSourceCacheHz > 0) {
+      parts.add('source ${nativeCompositorSourceCacheHz.toStringAsFixed(0)}Hz');
+    }
+    if (nativeCompositorSourceProjectionHz > 0) {
+      parts.add(
+        'projection ${nativeCompositorSourceProjectionHz.toStringAsFixed(0)}Hz',
+      );
+    }
     if (displayRefreshHz > 0 || displayTickHz > 0) {
       final tickText = displayTickHz > 0
           ? displayTickHz.toStringAsFixed(0)
@@ -326,7 +446,7 @@ class PerformanceHealthSnapshot {
       final refreshText = displayRefreshHz > 0
           ? displayRefreshHz.toStringAsFixed(0)
           : '?';
-      parts.add('display $tickText/${refreshText}Hz');
+      parts.add('display-link $tickText/${refreshText}Hz');
     }
     if (drawP95Us > 0) {
       parts.add('draw p95 ${_usText(drawP95Us)}');
@@ -353,6 +473,10 @@ class PerformanceHealthSnapshot {
       displayTickHz == other.displayTickHz &&
       layoutDrawHz == other.layoutDrawHz &&
       layoutIntentHz == other.layoutIntentHz &&
+      nativeCompositorCompositeHz == other.nativeCompositorCompositeHz &&
+      nativeCompositorSourceCacheHz == other.nativeCompositorSourceCacheHz &&
+      nativeCompositorSourceProjectionHz ==
+          other.nativeCompositorSourceProjectionHz &&
       drawP95Us == other.drawP95Us &&
       backendP95Us == other.backendP95Us &&
       metalP95Us == other.metalP95Us &&
@@ -383,6 +507,9 @@ class PerformanceHealthSnapshot {
     displayTickHz.round(),
     layoutDrawHz.round(),
     layoutIntentHz.round(),
+    nativeCompositorCompositeHz.round(),
+    nativeCompositorSourceCacheHz.round(),
+    nativeCompositorSourceProjectionHz.round(),
     drawP95Us.round(),
     backendP95Us.round(),
     metalP95Us.round(),
@@ -406,12 +533,24 @@ class PerformanceHealthSnapshot {
 
   static const _fallbackDisplayTargetHz = 60.0;
 
+  static double _presentationDrawHz({
+    required bool nativeCompositorEnabled,
+    required double nativeCompositorCompositeHz,
+    required double layoutDrawHz,
+  }) {
+    if (nativeCompositorEnabled && nativeCompositorCompositeHz > 0) {
+      return nativeCompositorCompositeHz;
+    }
+    return layoutDrawHz;
+  }
+
   static bool _hasDecodePressure(Map<String, dynamic> diagnostics) {
     final tracks =
         diagnostics['nativeTrackDiagnostics'] ?? diagnostics['tracks'];
     if (tracks is! List) return false;
     for (final track in tracks) {
       if (track is! Map) continue;
+      if (_trackAtOrPastEnd(track)) continue;
       final bufferState = _intValue(track['bufferState']);
       final bufferCount = _intValue(track['bufferCount']);
       final bufferCapacity = _intValue(track['bufferCapacity']);
@@ -419,6 +558,16 @@ class PerformanceHealthSnapshot {
       if (bufferCapacity > 0 && bufferCount <= 0) return true;
     }
     return false;
+  }
+
+  static bool _trackAtOrPastEnd(Map<dynamic, dynamic> track) {
+    final durationUs = _intValue(track['durationUs']);
+    if (durationUs <= 0) return false;
+    final currentPtsUs = _intValue(track['currentPtsUs'] ?? track['ptsUs']);
+    final offsetUs = _intValue(track['offsetUs']);
+    final endUs = offsetUs + durationUs;
+    const tailGraceUs = 100000;
+    return currentPtsUs >= endUs - tailGraceUs;
   }
 
   static _PlaybackCadenceSample _playbackCadence({
@@ -483,6 +632,11 @@ class PerformanceHealthSnapshot {
   static String _usText(double value) {
     if (value >= 1000) return '${(value / 1000.0).toStringAsFixed(1)}ms';
     return '${value.toStringAsFixed(0)}us';
+  }
+
+  static String _hzText(double value) {
+    if (value <= 0) return '0Hz';
+    return '${value.toStringAsFixed(1)}Hz';
   }
 }
 
@@ -585,6 +739,8 @@ class _PerformanceHealthFeedbackMonitorState
   Timer? _timer;
   Future<void>? _pollInFlight;
   PerformanceHealthSnapshot? _previous;
+  String? _lastPressureLogKey;
+  DateTime? _lastPressureLogAt;
   final PerformanceHealthFeedbackPolicy _feedbackPolicy =
       PerformanceHealthFeedbackPolicy();
 
@@ -659,6 +815,7 @@ class _PerformanceHealthFeedbackMonitorState
       alertPolicy: widget.alertPolicy,
       now: DateTime.now(),
     );
+    _logDiagnosticSample(snapshot, shouldShow: shouldShow);
     if (!shouldShow) return;
     final l = AppLocalizations.of(context);
     AppFeedbackScope.read(context).show(
@@ -671,6 +828,40 @@ class _PerformanceHealthFeedbackMonitorState
         onAction: widget.onOpenProfiler,
         duration: const Duration(seconds: 6),
       ),
+    );
+  }
+
+  void _logDiagnosticSample(
+    PerformanceHealthSnapshot snapshot, {
+    required bool shouldShow,
+  }) {
+    final now = DateTime.now();
+    if (!snapshot.isPressure) {
+      if (_lastPressureLogKey != null) {
+        log.info('performance health recovered: ${snapshot.diagnosticSummary}');
+      }
+      _lastPressureLogKey = null;
+      _lastPressureLogAt = null;
+      return;
+    }
+
+    final key =
+        '${snapshot.level.name}/${snapshot.kind.name}/'
+        '${snapshot.reason}';
+    final lastAt = _lastPressureLogAt;
+    final shouldThrottle =
+        !shouldShow &&
+        key == _lastPressureLogKey &&
+        lastAt != null &&
+        now.difference(lastAt) < const Duration(seconds: 5);
+    if (shouldThrottle) return;
+
+    _lastPressureLogKey = key;
+    _lastPressureLogAt = now;
+    final feedback = shouldShow ? ' feedback=show' : '';
+    log.info(
+      'performance health pressure sample$feedback: '
+      '${snapshot.diagnosticSummary}',
     );
   }
 }

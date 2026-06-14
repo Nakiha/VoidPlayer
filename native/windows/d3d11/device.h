@@ -19,6 +19,9 @@ public:
     /// Initialize without swap chain (headless/texture-sharing mode).
     /// Requires Flutter's DXGI adapter so shared texture handles stay on the
     /// same adapter/device family. Missing or unusable adapter is a hard error.
+    /// GitHub-hosted Windows UI smoke may explicitly set
+    /// VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1 to cover launch/media
+    /// wiring on machines that expose only an unusable software DXGI adapter.
     bool initialize_headless(IDXGIAdapter* adapter, int width, int height);
 
     void shutdown();

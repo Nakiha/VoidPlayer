@@ -1,0 +1,15 @@
+# macOS native smoke proving 4:2:2 H.264 does not enter the renderer-owned
+# VideoToolbox direct path. VideoToolbox can produce a 422 CVPixelBuffer for
+# this stream, but VoidPlayer only supports 420 NV12/P010 direct surfaces today,
+# so preferHardware must fall back to software decode.
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/native_h264_high422_fallback_smoke.csv
+@WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
+0.3, ADD_MEDIA, resources/video/h264_high422p_1s_320x180.mp4
+1.5, ASSERT_TRACK_COUNT, 1
+1.6, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-software
+1.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, false
+1.8, CAPTURE_VIEWPORT, h264_high422p_software_fallback
+1.9, ASSERT_CAPTURE_NOT_BLACK, h264_high422p_software_fallback, 0.5, 16.0
+2.0, QUIT, 0

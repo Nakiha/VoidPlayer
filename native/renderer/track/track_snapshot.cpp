@@ -28,6 +28,7 @@ std::vector<TrackInfo> snapshot_track_infos(const TrackPipelineManager& tracks) 
             info.format_name = stats.format_name;
             info.codec_name = stats.codec_name;
             info.codec_long_name = stats.codec_long_name;
+            info.color = stats.color;
         }
         if (decode) {
             info.decoder_name = decode->decoder_name();

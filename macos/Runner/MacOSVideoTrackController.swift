@@ -27,6 +27,10 @@ final class MacOSVideoTrackController {
     store.isEmpty
   }
 
+  var hasHDRTrack: Bool {
+    store.hasHDRTrack
+  }
+
   var currentDurationUs: Int {
     store.currentDurationUs
   }
@@ -49,6 +53,18 @@ final class MacOSVideoTrackController {
     nativePlayer: MacOSNativePlayerSession?,
     textureDimensions: (width: Int, height: Int)?
   ) -> MacOSVideoTrackAddResult {
+    guard store.count < MacOSVideoTrackPayload.maxTrackCount else {
+      return MacOSVideoTrackAddResult(
+        payload: FlutterError(
+          code: "TRACK_LIMIT_EXCEEDED",
+          message: "VoidPlayer supports at most \(MacOSVideoTrackPayload.maxTrackCount) tracks",
+          details: nil
+        ),
+        refreshCurrentFrame: false,
+        markFrameAvailable: false
+      )
+    }
+
     let fileId = store.nextFileId()
     let slot = store.count
     guard let path = MacOSFlutterArguments.stringArg(arguments, "path"), !path.isEmpty else {
@@ -64,6 +80,17 @@ final class MacOSVideoTrackController {
     }
 
     if backendName == MacOSVideoTrackPayload.nativeFormatName {
+      if let reason = MacOSMediaInputGuard.unsupportedReason(path: path) {
+        return MacOSVideoTrackAddResult(
+          payload: FlutterError(
+            code: "UNSUPPORTED_MEDIA",
+            message: reason,
+            details: path
+          ),
+          refreshCurrentFrame: false,
+          markFrameAvailable: false
+        )
+      }
       do {
         guard let session = nativePlayer else {
           throw MacOSNativePlayerError.failed("macOS native player is unavailable")

@@ -22,6 +22,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -294,6 +295,11 @@ void log_overlay_composite_result(const char* path,
                result.gpu_error);
 }
 
+std::shared_ptr<const OverlayPrimitiveBuildResult> empty_metal_overlay_primitives() {
+  static const auto empty = std::make_shared<const OverlayPrimitiveBuildResult>();
+  return empty;
+}
+
 #if VOID_BUILD_ANALYSIS
 uint32_t pack_overlay_bgra(vr::analysis::OverlayColor color) {
   return static_cast<uint32_t>(color.b) |
@@ -322,11 +328,6 @@ std::vector<MetalOverlayPrimitiveCacheEntry>& metal_overlay_primitive_cache_entr
 uint64_t& metal_overlay_primitive_cache_clock() {
   static uint64_t clock = 0;
   return clock;
-}
-
-std::shared_ptr<const OverlayPrimitiveBuildResult> empty_metal_overlay_primitives() {
-  static const auto empty = std::make_shared<const OverlayPrimitiveBuildResult>();
-  return empty;
 }
 
 std::shared_ptr<const OverlayPrimitiveBuildResult> lookup_metal_overlay_primitives(
@@ -682,6 +683,10 @@ bool MetalPresentationBackend::copy_last_frame_info(
   out->source_packet_pos = last_draw_frame_info_.source_packet_pos;
   out->source_packet_pts = last_draw_frame_info_.source_packet_pts;
   out->source_packet_dts = last_draw_frame_info_.source_packet_dts;
+  out->color_range = last_draw_frame_info_.color_range;
+  out->color_matrix = last_draw_frame_info_.color_matrix;
+  out->color_transfer = last_draw_frame_info_.color_transfer;
+  out->color_primaries = last_draw_frame_info_.color_primaries;
   out->target_pixel_buffer_address =
       last_draw_frame_info_.target_pixel_buffer_address;
   out->layout_revision = 0;
@@ -819,6 +824,42 @@ bool MetalPresentationBackend::try_begin_async_draw(const char* source) {
   }
   ++in_flight_draws_;
   return true;
+}
+
+std::string MetalPresentationBackend::target_ring_state_summary_locked() const {
+  std::ostringstream stream;
+  stream << "ring=" << (target_ring_enabled_ ? "on" : "off")
+         << " inFlight=" << in_flight_draws_
+         << " displayed=0x" << std::hex << displayed_target_address_
+         << " protected=0x" << protected_target_address_
+         << std::dec << " states=";
+  if (target_ring_.empty()) {
+    stream << "empty";
+    return stream.str();
+  }
+  for (const auto& slot : target_ring_) {
+    char state = '?';
+    switch (slot.state) {
+      case TargetState::Available:
+        state = 'a';
+        break;
+      case TargetState::InFlight:
+        state = 'i';
+        break;
+      case TargetState::Completed:
+        state = 'c';
+        break;
+      case TargetState::Displayed:
+        state = 'd';
+        break;
+      case TargetState::Protected:
+        state = 'p';
+        break;
+    }
+    stream << state << ":0x" << std::hex << pointer_bits(slot.pixel_buffer) << std::dec
+           << ",";
+  }
+  return stream.str();
 }
 
 void* MetalPresentationBackend::try_acquire_ring_draw_target(const char* source) {
@@ -1064,6 +1105,10 @@ void metal_async_upload_completed(void* user_data,
     backend_frame_info.source_packet_pos = frame_info.source_packet_pos;
     backend_frame_info.source_packet_pts = frame_info.source_packet_pts;
     backend_frame_info.source_packet_dts = frame_info.source_packet_dts;
+    backend_frame_info.color_range = frame_info.color_range;
+    backend_frame_info.color_matrix = frame_info.color_matrix;
+    backend_frame_info.color_transfer = frame_info.color_transfer;
+    backend_frame_info.color_primaries = frame_info.color_primaries;
     backend_frame_info.target_pixel_buffer_address =
         frame_info.target_pixel_buffer_address;
     backend_frame_info.layout_revision = 0;
@@ -1221,8 +1266,24 @@ bool MetalPresentationBackend::draw_frame(
   };
   if (!available() || !target_pixel_buffer ||
       draw_target_width_ <= 0 || draw_target_height_ <= 0) {
+    const bool backend_available = available();
+    std::string ring_state;
+    {
+      std::lock_guard<std::mutex> lock(async_mutex_);
+      ring_state = target_ring_state_summary_locked();
+    }
     release_acquired_target();
     mark_draw_failure("renderer-owned Metal presentation target is unavailable");
+    spdlog::warn(
+        "[MetalTarget] unavailable source={} available={} target=0x{:x} size={}x{} "
+        "draw_target=0x{:x} {}",
+        hooks.draw_source ? hooks.draw_source : "",
+        backend_available,
+        pointer_bits(target_pixel_buffer),
+        draw_target_width_,
+        draw_target_height_,
+        pointer_bits(draw_target_pixel_buffer_),
+        ring_state);
     log_profiler("none", false, -1, 0, 0, 0, last_error_.c_str());
     return false;
   }
@@ -1253,8 +1314,10 @@ bool MetalPresentationBackend::draw_frame(
     ++video_source_update_count_;
     last_source_signature_ = source_signature;
   }
-  const auto overlay_primitives_ptr = build_overlay_primitives_for_metal(
-      snapshot, draw_target_width_, draw_target_height_);
+  const auto overlay_primitives_ptr = hooks.suppress_analysis_overlay
+      ? empty_metal_overlay_primitives()
+      : build_overlay_primitives_for_metal(
+            snapshot, draw_target_width_, draw_target_height_);
   const auto& overlay_primitives = *overlay_primitives_ptr;
   const bool overlay_expected = overlay_primitives_expected(overlay_primitives);
   const auto overlay_set = overlay_primitive_set(overlay_primitives);
@@ -1953,6 +2016,18 @@ void MetalPresentationBackend::set_draw_target_ring(
       target_ring_.push_back(slot);
     }
     target_ring_enabled_ = target_ring_.size() >= 2;
+    if (macos_profiler_enabled()) {
+      spdlog::info(
+          "[MetalTarget] install_ring targets={} displayed=0x{:x} protected=0x{:x} "
+          "size={}x{} slots={} {}",
+          target_ring_.size(),
+          displayed_target_address_,
+          protected_target_address_,
+          draw_target_width_,
+          draw_target_height_,
+          draw_target_max_track_slots_,
+          target_ring_state_summary_locked());
+    }
   }
   if (source_cache_shape_changed) {
     invalidate_source_cache();
@@ -1971,6 +2046,7 @@ void MetalPresentationBackend::clear_draw_target() {
     displayed_target_address_ = 0;
     protected_target_address_ = 0;
   }
+  spdlog::info("[MetalTarget] clear_draw_target");
   last_draw_frame_info_available_ = false;
   last_draw_frame_info_ = {};
   last_draw_succeeded_ = false;

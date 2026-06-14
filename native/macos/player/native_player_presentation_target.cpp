@@ -1,6 +1,9 @@
 #include "native_player_bridge.h"
 
+#include "macos/metal/metal_presentation_backend.h"
 #include "macos/player/native_player_state.h"
+#include "renderer/overlay/analysis_overlay_primitives.h"
+#include "renderer/overlay/analysis_overlay_renderer.h"
 
 #include <algorithm>
 #include <chrono>
@@ -8,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <sstream>
 #include <spdlog/spdlog.h>
 #include <string>
 #include <vector>
@@ -27,6 +31,70 @@ bool macos_profiler_enabled() {
 
 uint64_t pointer_address(const void* pointer) {
   return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pointer));
+}
+
+uint32_t pack_overlay_bgra(vr::analysis::OverlayColor color) {
+  return static_cast<uint32_t>(color.b) |
+         (static_cast<uint32_t>(color.g) << 8) |
+         (static_cast<uint32_t>(color.r) << 16) |
+         (static_cast<uint32_t>(color.a) << 24);
+}
+
+uint32_t pack_overlay_track_payload(int slot, uint8_t line_alpha) {
+  return static_cast<uint32_t>(slot & 0xff) |
+         (static_cast<uint32_t>(line_alpha) << 8);
+}
+
+template <typename Primitive>
+VPMacOSNativeOverlayGpuRect pack_overlay_rect(
+    const Primitive& primitive,
+    int video_width,
+    int video_height,
+    int slot,
+    uint8_t line_alpha,
+    bool include_color) {
+  VPMacOSNativeOverlayGpuRect rect = {};
+  rect.rect_uv0 = vr::pack_overlay_uv16(
+      primitive.x0, video_width, primitive.y0, video_height);
+  rect.rect_uv1 = vr::pack_overlay_uv16(
+      primitive.x1, video_width, primitive.y1, video_height);
+  rect.color_bgra = include_color ? pack_overlay_bgra(primitive.color) : 0;
+  rect.track_idx = pack_overlay_track_payload(slot, line_alpha);
+  return rect;
+}
+
+std::string target_address_summary(const std::vector<void*>& targets) {
+  std::ostringstream stream;
+  for (void* target : targets) {
+    stream << "0x" << std::hex << pointer_address(target) << std::dec << ",";
+  }
+  return stream.str();
+}
+
+void copy_frame_info(const vr::PresentationBackendFrameInfo& source,
+                     VPMacOSNativeFrameInfo* out) {
+  if (!out) {
+    return;
+  }
+  VPMacOSNativeFrameInfoInit(out);
+  out->width = source.width;
+  out->height = source.height;
+  out->pts_us = source.pts_us;
+  out->dts_us = source.dts_us;
+  out->duration_us = source.duration_us;
+  out->analysis_frame_index = source.analysis_frame_index;
+  out->frame_identity_mode = source.frame_identity_mode;
+  out->source_packet_index = source.source_packet_index;
+  out->source_packet_size = source.source_packet_size;
+  out->source_packet_pos = source.source_packet_pos;
+  out->source_packet_pts = source.source_packet_pts;
+  out->source_packet_dts = source.source_packet_dts;
+  out->color_range = source.color_range;
+  out->color_matrix = source.color_matrix;
+  out->color_transfer = source.color_transfer;
+  out->color_primaries = source.color_primaries;
+  out->target_pixel_buffer_address = source.target_pixel_buffer_address;
+  out->layout_revision = source.layout_revision;
 }
 
 }  // namespace
@@ -83,6 +151,15 @@ int set_metal_presentation_target(
     player->presentation_target_max_track_slots = clamped_track_slots;
     if (target_changed) {
       ++player->presentation_target_generation;
+      spdlog::info(
+          "[MacOSFrameRefresh] install_target generation={} target=0x{:x} "
+          "size={}x{} slots={} refresh={}",
+          player->presentation_target_generation,
+          pointer_address(pixel_buffer),
+          width,
+          height,
+          clamped_track_slots,
+          refresh_now);
       if (refresh_now) {
         player->last_renderer_owned_presentation_succeeded = false;
         player->last_renderer_owned_frame_info_available = false;
@@ -203,6 +280,16 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
     player->presentation_target_max_track_slots = clamped_track_slots;
     if (target_changed) {
       ++player->presentation_target_generation;
+      spdlog::info(
+          "[MacOSFrameRefresh] install_target_ring generation={} targets=[{}] "
+          "displayed=0x{:x} protected=0x{:x} size={}x{} slots={}",
+          player->presentation_target_generation,
+          target_address_summary(targets),
+          pointer_address(displayed_pixel_buffer),
+          pointer_address(protected_pixel_buffer),
+          width,
+          height,
+          clamped_track_slots);
       player->last_renderer_owned_presentation_succeeded = false;
       player->last_renderer_owned_frame_info_available = false;
       player->last_renderer_owned_frame_info = {};
@@ -335,6 +422,11 @@ void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player
     player->presentation_target_height = 0;
     player->presentation_target_max_track_slots = 1;
     ++player->presentation_target_generation;
+    spdlog::info(
+        "[MacOSFrameRefresh] clear_target generation={} upload={} failures={}",
+        player->presentation_target_generation,
+        player->renderer_owned_presentation_upload_count,
+        player->renderer_owned_presentation_draw_failure_count);
     player->record_presentation_failure_locked(
         "renderer-owned Metal presentation target was cleared", false);
   }
@@ -403,6 +495,7 @@ int request_renderer_owned_frame_refresh(
   bool refresh_submitted = false;
   bool refresh_deferred_by_backpressure = false;
   std::string last_refresh_backpressure_error;
+  std::string last_refresh_renderer_error;
   const bool suppress_frame_callback =
       (flags & VPMacOSNativeFrameRefreshSuppressFrameCallback) != 0;
   auto release_manual_refresh_callback_suppression_locked = [&]() {
@@ -442,6 +535,17 @@ int request_renderer_owned_frame_refresh(
       ++player->manual_refresh_callback_suppression_count;
     }
   }
+  const bool log_manual_refresh = refresh_min_pts_us >= 0;
+  if (log_manual_refresh) {
+    spdlog::info(
+        "[MacOSFrameRefresh] begin min_pts_us={} timeout_ms={} baseline_upload={} "
+        "target_generation={} suppress_callback={}",
+        refresh_min_pts_us,
+        bounded_timeout_ms,
+        baseline_upload_count,
+        baseline_target_generation,
+        suppress_frame_callback);
+  }
 
   auto trigger_renderer_refresh = [&]() -> bool {
     std::string message;
@@ -467,6 +571,8 @@ int request_renderer_owned_frame_refresh(
           refresh_deferred_by_backpressure = true;
           last_refresh_backpressure_error = renderer_error;
           write_error(error, error_size, renderer_error);
+        } else if (!renderer_error.empty()) {
+          last_refresh_renderer_error = renderer_error;
         }
       }
       if (refresh_submitted) {
@@ -601,6 +707,20 @@ int request_renderer_owned_frame_refresh(
           out->pts_us,
           refresh_clock_us);
     }
+    if (log_manual_refresh) {
+      spdlog::info(
+          "[MacOSFrameRefresh] presented pts_us={} dts_us={} duration_us={} "
+          "clock_us={} min_pts_us={} elapsed_ms={} attempts={} upload={}->{}",
+          out->pts_us,
+          out->dts_us,
+          out->duration_us,
+          refresh_clock_us,
+          refresh_min_pts_us,
+          elapsed_ms,
+          refresh_attempts,
+          baseline_upload_count,
+          player->renderer_owned_presentation_upload_count);
+    }
     write_error(error, error_size, "");
     return 0;
   }
@@ -617,6 +737,16 @@ int request_renderer_owned_frame_refresh(
           player->renderer_owned_presentation_draw_failure_count,
           player->renderer_owned_presentation_last_error);
     }
+    spdlog::warn(
+        "[MacOSFrameRefresh] draw_failed elapsed_ms={} timeout_ms={} attempts={} "
+        "min_pts_us={} baseline_upload={} upload={} error={}",
+        elapsed_ms,
+        bounded_timeout_ms,
+        refresh_attempts,
+        refresh_min_pts_us,
+        baseline_upload_count,
+        player->renderer_owned_presentation_upload_count,
+        player->renderer_owned_presentation_last_error);
     write_error(error, error_size,
                 player->renderer_owned_presentation_last_error.empty()
                     ? "renderer-owned Metal frame refresh failed"
@@ -638,6 +768,23 @@ int request_renderer_owned_frame_refresh(
         player->renderer_owned_presentation_draw_failure_count,
         refresh_clock_us);
   }
+  spdlog::warn(
+      "[MacOSFrameRefresh] timeout elapsed_ms={} timeout_ms={} attempts={} "
+      "min_pts_us={} clock_us={} baseline_upload={} upload={} baseline_failure={} "
+      "failures={} deferred_by_backpressure={} last_backpressure_error={} "
+      "last_renderer_error={}",
+      elapsed_ms,
+      bounded_timeout_ms,
+      refresh_attempts,
+      refresh_min_pts_us,
+      refresh_clock_us,
+      baseline_upload_count,
+      player->renderer_owned_presentation_upload_count,
+      baseline_draw_failure_count,
+      player->renderer_owned_presentation_draw_failure_count,
+      refresh_deferred_by_backpressure,
+      last_refresh_backpressure_error,
+      last_refresh_renderer_error);
   if (refresh_deferred_by_backpressure &&
       !last_refresh_backpressure_error.empty()) {
     write_error(error, error_size, last_refresh_backpressure_error);
@@ -670,4 +817,175 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
     size_t error_size) {
   return request_renderer_owned_frame_refresh(player, timeout_ms, flags, out,
                                               error, error_size);
+}
+
+int VPMacOSNativePlayerBakeCurrentFrameSources(
+    VPMacOSNativePlayer* player,
+    VPMacOSMetalPresentationBackend* backend,
+    VPMacOSNativeSourceFrameBakeTarget* targets,
+    size_t target_count,
+    char* error,
+    size_t error_size) {
+  if (!player || !backend || !targets || target_count == 0) {
+    write_error(error, error_size, "invalid source frame bake arguments");
+    return -1;
+  }
+
+  std::vector<vr::PresentationSourceFrameTarget> renderer_targets;
+  renderer_targets.reserve(target_count);
+  for (size_t i = 0; i < target_count; ++i) {
+    VPMacOSNativeFrameInfoInit(&targets[i].frame_info);
+    targets[i].drawn = 0;
+    vr::PresentationSourceFrameTarget target;
+    target.output = targets[i].pixel_buffer;
+    target.source_slot = targets[i].source_slot;
+    target.source_file_id = targets[i].source_file_id;
+    target.width = targets[i].width;
+    target.height = targets[i].height;
+    renderer_targets.push_back(target);
+  }
+
+  std::string message;
+  bool ok = false;
+  {
+    std::lock_guard<std::mutex> lock(player->mutex);
+    if (!player->renderer_active_locked()) {
+      write_error(error, error_size, "renderer is not active");
+      return -1;
+    }
+    ok = player->renderer->draw_current_frame_sources(
+        backend->impl,
+        renderer_targets.data(),
+        renderer_targets.size(),
+        &message);
+  }
+  if (!ok) {
+    write_error(error, error_size, message.empty() ? "source frame bake failed" : message);
+    return -1;
+  }
+
+  int drawn_count = 0;
+  for (size_t i = 0; i < target_count; ++i) {
+    targets[i].source_file_id = renderer_targets[i].source_file_id;
+    targets[i].drawn = renderer_targets[i].drawn;
+    copy_frame_info(renderer_targets[i].frame_info, &targets[i].frame_info);
+    if (targets[i].drawn) {
+      ++drawn_count;
+    }
+  }
+  write_error(error, error_size, "");
+  return drawn_count > 0 ? drawn_count : -1;
+}
+
+int VPMacOSNativePlayerCopyCurrentOverlayPrimitives(
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeOverlayPrimitiveSnapshot* snapshot,
+    VPMacOSNativeOverlayGpuRect* fill_rects,
+    size_t fill_rect_capacity,
+    VPMacOSNativeOverlayGpuRect* line_rects,
+    size_t line_rect_capacity,
+    VPMacOSNativeOverlayGpuRect* motion_lines,
+    size_t motion_line_capacity,
+    char* error,
+    size_t error_size) {
+  if (!player || !snapshot) {
+    write_error(error, error_size, "invalid overlay primitive copy arguments");
+    return -1;
+  }
+
+  VPMacOSNativeOverlayPrimitiveSnapshotInit(snapshot);
+  std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage> package;
+  std::string message;
+  {
+    std::lock_guard<std::mutex> lock(player->mutex);
+    if (!player->renderer_active_locked()) {
+      write_error(error, error_size, "renderer is not active");
+      return -1;
+    }
+    package = player->renderer->current_overlay_primitives(&message);
+  }
+  if (!message.empty()) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  if (package) {
+    snapshot->generation = package->cache_generation;
+    snapshot->overlay_track_count = package->overlay_track_count;
+    snapshot->matched_track_count = package->matched_track_count;
+    snapshot->missing_track_slot_count = package->missing_track_slot_count;
+    snapshot->missing_presented_frame_count =
+        package->missing_presented_frame_count;
+    snapshot->missing_frame_index_count = package->missing_frame_index_count;
+    snapshot->invalid_video_size_count = package->invalid_video_size_count;
+    snapshot->overlay_frame_missing_count = package->overlay_frame_missing_count;
+    snapshot->heatmap_missing_feature_track_count =
+        package->heatmap_missing_feature_track_count;
+  }
+  if (!package || package->empty()) {
+    write_error(error, error_size, "");
+    return 0;
+  }
+
+  for (const auto& track : package->tracks) {
+    snapshot->fill_rect_count += track.fill_rects.size();
+    snapshot->line_rect_count += track.outline_rects.size();
+    snapshot->motion_line_count += track.motion_lines.size();
+  }
+
+  const bool capacity_ok =
+      fill_rect_capacity >= snapshot->fill_rect_count &&
+      line_rect_capacity >= snapshot->line_rect_count &&
+      motion_line_capacity >= snapshot->motion_line_count;
+  if (!capacity_ok) {
+    write_error(error, error_size, "overlay primitive buffers are too small");
+    return -2;
+  }
+
+  size_t fill_index = 0;
+  size_t line_index = 0;
+  size_t motion_index = 0;
+  for (const auto& track : package->tracks) {
+    if (track.video_width <= 0 || track.video_height <= 0) {
+      continue;
+    }
+    for (const auto& primitive : track.fill_rects) {
+      if (fill_rects && fill_index < fill_rect_capacity) {
+        fill_rects[fill_index] = pack_overlay_rect(
+            primitive,
+            track.video_width,
+            track.video_height,
+            track.slot,
+            track.line_alpha,
+            true);
+      }
+      ++fill_index;
+    }
+    for (const auto& primitive : track.outline_rects) {
+      if (line_rects && line_index < line_rect_capacity) {
+        line_rects[line_index] = pack_overlay_rect(
+            primitive,
+            track.video_width,
+            track.video_height,
+            track.slot,
+            track.line_alpha,
+            false);
+      }
+      ++line_index;
+    }
+    for (const auto& primitive : track.motion_lines) {
+      if (motion_lines && motion_index < motion_line_capacity) {
+        motion_lines[motion_index] = pack_overlay_rect(
+            primitive,
+            track.video_width,
+            track.video_height,
+            track.slot,
+            track.line_alpha,
+            true);
+      }
+      ++motion_index;
+    }
+  }
+
+  write_error(error, error_size, "");
+  return 0;
 }

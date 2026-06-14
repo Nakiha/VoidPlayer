@@ -34,6 +34,17 @@ target_link_libraries(software_frame_packer_smoke PRIVATE
 add_test(NAME software_frame_packer_smoke COMMAND software_frame_packer_smoke)
 void_label_test(software_frame_packer_smoke "contract;portable")
 
+add_executable(color_reference_smoke
+    "${VOID_NATIVE_DIR}/tools/color_reference_smoke.cpp"
+    "${VOID_NATIVE_DIR}/renderer/color/color_reference.cpp"
+)
+void_apply_native_compile_options(color_reference_smoke)
+target_include_directories(color_reference_smoke PRIVATE
+    "${VOID_NATIVE_DIR}"
+)
+add_test(NAME color_reference_smoke COMMAND color_reference_smoke)
+void_label_test(color_reference_smoke "hdr;color;contract;portable")
+
 add_executable(macos_presentation_adapter_smoke
     "${VOID_NATIVE_DIR}/tools/macos_presentation_adapter_smoke.cpp"
 )
@@ -106,6 +117,38 @@ target_link_libraries(macos_metal_color_layout_parity_smoke PRIVATE
 add_test(NAME macos_metal_color_layout_parity_smoke
     COMMAND macos_metal_color_layout_parity_smoke)
 void_label_test(macos_metal_color_layout_parity_smoke "macos;backend;contract")
+
+add_executable(macos_metal_color_reference_smoke
+    "${VOID_NATIVE_DIR}/tools/macos_metal_color_reference_smoke.cpp"
+    "${VOID_NATIVE_DIR}/renderer/color/color_reference.cpp"
+)
+void_apply_native_compile_options(macos_metal_color_reference_smoke)
+target_include_directories(macos_metal_color_reference_smoke PRIVATE
+    "${VOID_NATIVE_DIR}"
+)
+target_link_libraries(macos_metal_color_reference_smoke PRIVATE
+    void_macos_native_player
+)
+add_test(NAME macos_metal_color_reference_smoke
+    COMMAND macos_metal_color_reference_smoke)
+void_label_test(macos_metal_color_reference_smoke "macos;hdr;color;backend;contract")
+
+add_executable(macos_hdr_sdr_compositor_demo
+    "${VOID_NATIVE_DIR}/tools/macos_hdr_sdr_compositor_demo.mm"
+)
+void_apply_native_compile_options(macos_hdr_sdr_compositor_demo)
+target_compile_options(macos_hdr_sdr_compositor_demo PRIVATE
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
+)
+target_link_libraries(macos_hdr_sdr_compositor_demo PRIVATE
+    "-framework AppKit"
+    "-framework Metal"
+    "-framework MetalKit"
+    "-framework QuartzCore"
+)
+add_test(NAME macos_hdr_sdr_compositor_headless
+    COMMAND macos_hdr_sdr_compositor_demo --headless)
+void_label_test(macos_hdr_sdr_compositor_headless "macos;hdr;backend;canary")
 
 add_executable(macos_crash_handler_smoke
     "${VOID_NATIVE_DIR}/tools/macos_crash_handler_smoke.cpp"

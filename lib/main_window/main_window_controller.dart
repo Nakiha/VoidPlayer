@@ -236,6 +236,7 @@ class MainWindowController {
       session: _session,
       layout: _layout,
       textureId: _textureId,
+      nativeCompositorActive: _nativeCompositorActive,
       viewportState: _viewportState,
       tracks: trackManager.entries,
       markView: markView,
@@ -273,7 +274,15 @@ class MainWindowController {
 
   void _requestAnalysisOverlayRedraw() {
     if (!mounted()) return;
-    fireAndLog('redraw analysis overlay', player.applyLayout(_layout));
+    fireAndLog('refresh analysis overlay', _refreshAnalysisOverlay());
+  }
+
+  Future<void> _refreshAnalysisOverlay() async {
+    await player.setNativeAnalysisOverlay(
+      analysisGeneration.nativeOverlayStatePayload(),
+    );
+    layoutCoordinator.refreshNativeCompositorOverlay();
+    await player.applyLayout(_layout);
   }
 
   void _onTrackManagerChanged() {
@@ -293,6 +302,7 @@ class MainWindowController {
   MainWindowStateModel get _state => stateStore.value;
 
   int? get _textureId => _state.textureId;
+  bool get _nativeCompositorActive => _state.nativeCompositorActive;
   ViewportDisplayState get _viewportState => _state.viewportState;
   bool get _isPlaying => _state.isPlaying;
   int get _currentPtsUs => _state.currentPtsUs;

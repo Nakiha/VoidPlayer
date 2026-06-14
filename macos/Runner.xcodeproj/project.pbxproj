@@ -61,6 +61,11 @@
 		A12F013A2C08FF0100000001 /* MacOSViewportDisplayLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F013B2C08FF0100000001 /* MacOSViewportDisplayLink.swift */; };
 		A12F013C2C08FF0100000001 /* MacOSNativeMetalPresentationTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F013D2C08FF0100000001 /* MacOSNativeMetalPresentationTarget.swift */; };
 		A12F013E2C08FF0100000001 /* MacOSRendererProfilerSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F013F2C08FF0100000001 /* MacOSRendererProfilerSummary.swift */; };
+		A12F01402C08FF0100000001 /* MacOSNativeCompositorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01412C08FF0100000001 /* MacOSNativeCompositorView.swift */; };
+		A12F01502C08FF0100000001 /* MacOSNativeCompositorSourceRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01512C08FF0100000001 /* MacOSNativeCompositorSourceRing.swift */; };
+		A12F01542C08FF0100000001 /* MacOSNativeOverlayPrimitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01552C08FF0100000001 /* MacOSNativeOverlayPrimitives.swift */; };
+		A12F01522C08FF0100000001 /* MacOSMediaInputGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01532C08FF0100000001 /* MacOSMediaInputGuard.swift */; };
+		A12F01422C08FF0100000001 /* MacOSPresentationConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01432C08FF0100000001 /* MacOSPresentationConfiguration.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -147,6 +152,11 @@
 		A12F013B2C08FF0100000001 /* MacOSViewportDisplayLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSViewportDisplayLink.swift; sourceTree = "<group>"; };
 		A12F013D2C08FF0100000001 /* MacOSNativeMetalPresentationTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeMetalPresentationTarget.swift; sourceTree = "<group>"; };
 		A12F013F2C08FF0100000001 /* MacOSRendererProfilerSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSRendererProfilerSummary.swift; sourceTree = "<group>"; };
+		A12F01412C08FF0100000001 /* MacOSNativeCompositorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeCompositorView.swift; sourceTree = "<group>"; };
+		A12F01512C08FF0100000001 /* MacOSNativeCompositorSourceRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeCompositorSourceRing.swift; sourceTree = "<group>"; };
+		A12F01552C08FF0100000001 /* MacOSNativeOverlayPrimitives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeOverlayPrimitives.swift; sourceTree = "<group>"; };
+		A12F01532C08FF0100000001 /* MacOSMediaInputGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSMediaInputGuard.swift; sourceTree = "<group>"; };
+		A12F01432C08FF0100000001 /* MacOSPresentationConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSPresentationConfiguration.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -244,10 +254,15 @@
 				A12F01272C08FF0100000001 /* MacOSNativeLayoutBridge.swift */,
 				A12F01292C08FF0100000001 /* MacOSPlaybackController.swift */,
 				A12F012B2C08FF0100000001 /* MacOSVideoTrackController.swift */,
+				A12F01532C08FF0100000001 /* MacOSMediaInputGuard.swift */,
 				A12F012D2C08FF0100000001 /* MacOSTransportController.swift */,
 				A12F012F2C08FF0100000001 /* MacOSPlayerLifecycleController.swift */,
 				A12F01312C08FF0100000001 /* MacOSPresentationController.swift */,
+				A12F01432C08FF0100000001 /* MacOSPresentationConfiguration.swift */,
 				A12F013B2C08FF0100000001 /* MacOSViewportDisplayLink.swift */,
+				A12F01412C08FF0100000001 /* MacOSNativeCompositorView.swift */,
+				A12F01512C08FF0100000001 /* MacOSNativeCompositorSourceRing.swift */,
+				A12F01552C08FF0100000001 /* MacOSNativeOverlayPrimitives.swift */,
 				A12F01332C08FF0100000001 /* MacOSNativePlayerLayout.swift */,
 				A12F01352C08FF0100000001 /* MacOSNativePlayerPresentation.swift */,
 				A12F01372C08FF0100000001 /* MacOSNativePlayerTransport.swift */,
@@ -545,10 +560,15 @@
 				A12F01262C08FF0100000001 /* MacOSNativeLayoutBridge.swift in Sources */,
 				A12F01282C08FF0100000001 /* MacOSPlaybackController.swift in Sources */,
 				A12F012A2C08FF0100000001 /* MacOSVideoTrackController.swift in Sources */,
+				A12F01522C08FF0100000001 /* MacOSMediaInputGuard.swift in Sources */,
 				A12F012C2C08FF0100000001 /* MacOSTransportController.swift in Sources */,
 				A12F012E2C08FF0100000001 /* MacOSPlayerLifecycleController.swift in Sources */,
 				A12F01302C08FF0100000001 /* MacOSPresentationController.swift in Sources */,
+				A12F01422C08FF0100000001 /* MacOSPresentationConfiguration.swift in Sources */,
 				A12F013A2C08FF0100000001 /* MacOSViewportDisplayLink.swift in Sources */,
+				A12F01402C08FF0100000001 /* MacOSNativeCompositorView.swift in Sources */,
+				A12F01502C08FF0100000001 /* MacOSNativeCompositorSourceRing.swift in Sources */,
+				A12F01542C08FF0100000001 /* MacOSNativeOverlayPrimitives.swift in Sources */,
 				A12F01322C08FF0100000001 /* MacOSNativePlayerLayout.swift in Sources */,
 				A12F01342C08FF0100000001 /* MacOSNativePlayerPresentation.swift in Sources */,
 				A12F01362C08FF0100000001 /* MacOSNativePlayerTransport.swift in Sources */,

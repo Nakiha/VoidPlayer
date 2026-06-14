@@ -618,6 +618,15 @@ def ensure_ffmpeg_analyzer_tool() -> None:
         _copy_ffmpeg_analyzer_to_vendor_bin(analyzer)
         return
 
+    if _env_flag("VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER"):
+        if analyzer.exists():
+            return
+        print(
+            "WARNING: VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER=1; "
+            "continuing without bundled FFmpeg analyzer."
+        )
+        return
+
     _ensure_ffmpeg_analyzer_submodule()
 
     stamp = _ffmpeg_analyzer_stamp_path()

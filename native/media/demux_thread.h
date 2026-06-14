@@ -2,6 +2,7 @@
 #include "media/ffmpeg_lifetime.h"
 #include "media/packet_queue.h"
 #include "media/seek_controller.h"
+#include "renderer/frame/frame_storage.h"
 #include <thread>
 #include <atomic>
 #include <chrono>
@@ -61,6 +62,7 @@ struct DemuxStats {
     std::string format_name;
     std::string codec_name;
     std::string codec_long_name;
+    VideoColorInfo color;
     AVRational time_base = {0, 1};
     AVRational audio_time_base = {0, 1};
     int sar_num = 1;

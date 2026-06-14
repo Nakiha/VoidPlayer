@@ -119,6 +119,7 @@ struct MetalLayoutParams {
   float background_color_g;
   float background_color_b;
   float background_color_a;
+  uint32_t output_edr;
 };
 
 struct MetalOverlayLayerParams {
@@ -139,12 +140,14 @@ static_assert(VPMacOSNativeMaxTracks == 4,
               "Metal shader ABI flattens exactly four track slots");
 static_assert(std::is_standard_layout<MetalLayoutParams>::value,
               "MetalLayoutParams must stay standard-layout for shader ABI offsets");
-static_assert(sizeof(MetalLayoutParams) == 436,
+static_assert(sizeof(MetalLayoutParams) == 440,
               "MetalLayoutParams size must match the MSL LayoutParams mirror");
 static_assert(offsetof(MetalLayoutParams, overlay_present0) == 404,
               "MetalLayoutParams overlay field offset must match MSL LayoutParams");
 static_assert(offsetof(MetalLayoutParams, background_color_r) == 420,
               "MetalLayoutParams background color offset must match MSL LayoutParams");
+static_assert(offsetof(MetalLayoutParams, output_edr) == 436,
+              "MetalLayoutParams output field offset must match MSL LayoutParams");
 static_assert(sizeof(MetalOverlayLayerParams) == 16,
               "MetalOverlayLayerParams must match the MSL constant layout");
 static_assert(sizeof(MetalOverlayLinePassParams) == 16,

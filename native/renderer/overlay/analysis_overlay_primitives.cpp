@@ -104,11 +104,6 @@ uint64_t next_overlay_primitive_package_generation() {
     return generation.fetch_add(1, std::memory_order_relaxed);
 }
 
-std::shared_ptr<const AnalysisOverlayPrimitivePackage> empty_overlay_primitive_package() {
-    static const auto empty = std::make_shared<const AnalysisOverlayPrimitivePackage>();
-    return empty;
-}
-
 std::shared_ptr<const AnalysisOverlayPrimitivePackage> lookup_overlay_primitive_package(
     const OverlayPrimitivePackageCacheKey& key) {
     std::lock_guard<std::mutex> lock(overlay_primitive_cache_mutex());
@@ -257,6 +252,7 @@ std::shared_ptr<const AnalysisOverlayPrimitivePackage>
 build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot) {
 
     auto& manager = analysis::AnalysisManager::instance();
+    auto package = std::make_shared<AnalysisOverlayPrimitivePackage>();
     const auto& overlay = manager.overlay_state();
     const bool show_grid = overlay.show_cu_grid.load(std::memory_order_acquire);
     const bool show_qp = overlay.show_qp_heatmap.load(std::memory_order_acquire);
@@ -271,15 +267,16 @@ build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot) {
 
     if (!show_grid && !show_qp && !show_pred && !show_lines && !show_bit_cost &&
         mode != 0 && mode != 1 && mode != 2 && mode != 3 && mode != 4) {
-        return empty_overlay_primitive_package();
+        return package;
     }
 
     auto overlay_tracks = manager.overlay_track_snapshot();
     if (overlay_tracks.empty() && manager.is_loaded() && file_id >= 0) {
         overlay_tracks.emplace_back(file_id, manager.session_snapshot());
     }
+    package->overlay_track_count = overlay_tracks.size();
     if (overlay_tracks.empty()) {
-        return empty_overlay_primitive_package();
+        return package;
     }
 
     const bool qp_primary = show_qp || mode == 1 || mode == 3;
@@ -289,7 +286,8 @@ build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot) {
     const uint8_t fill_alpha = overlay_fill_alpha(opacity_permille, heatmap_primary);
     const uint8_t line_alpha =
         static_cast<uint8_t>(std::clamp(opacity_permille * 255 / 1000, 0, 255));
-    const bool needs_outlines = line_alpha > 0 && (show_grid || mode == 0 || pred_primary);
+    const bool needs_outlines =
+        line_alpha > 0 && (show_grid || mode == 0 || pred_primary || heatmap_primary);
 
     OverlayPrimitivePackageCacheKey cache_key;
     std::vector<OverlayPrimitiveBuildSource> sources;
@@ -300,9 +298,11 @@ build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot) {
         }
         const int slot = find_track_slot(snapshot, track_file_id);
         if (slot < 0 || slot >= static_cast<int>(snapshot.tracks.size())) {
+            ++package->missing_track_slot_count;
             continue;
         }
         if (!snapshot.decision.frames[slot].has_value()) {
+            ++package->missing_presented_frame_count;
             continue;
         }
         const auto& presented_frame = *snapshot.decision.frames[slot];
@@ -318,12 +318,17 @@ build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot) {
             presented_frame.frame_identity_mode == FrameIdentityMode::ExactAnalysisFrame) {
             frame_idx = presented_frame.analysis_frame_index;
         }
+        if (frame_idx < 0) {
+            frame_idx = track_analysis->current_frame_idx(presented_frame.pts_us);
+        }
         if (frame_idx < 0 || frame_idx >= track_analysis->frame_count()) {
+            ++package->missing_frame_index_count;
             continue;
         }
         const int video_w = static_cast<int>(track_analysis->video_width());
         const int video_h = static_cast<int>(track_analysis->video_height());
         if (video_w <= 0 || video_h <= 0) {
+            ++package->invalid_video_size_count;
             continue;
         }
 
@@ -343,17 +348,17 @@ build_analysis_overlay_primitive_package(const RendererDrawSnapshot& snapshot) {
         track_key.show_bit_cost = show_bit_cost;
         cache_key.tracks.push_back(track_key);
         sources.push_back(OverlayPrimitiveBuildSource{track_key, track_analysis});
+        ++package->matched_track_count;
     }
 
     if (sources.empty()) {
-        return empty_overlay_primitive_package();
+        return package;
     }
 
     if (const auto cached = lookup_overlay_primitive_package(cache_key)) {
         return cached;
     }
 
-    auto package = std::make_shared<AnalysisOverlayPrimitivePackage>();
     package->cache_generation = next_overlay_primitive_package_generation();
     package->heatmap_mode = bit_cost_primary
         ? kAnalysisOverlayHeatmapBitCost

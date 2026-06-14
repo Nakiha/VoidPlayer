@@ -28,12 +28,20 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
   }
 
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
+    presentationSnapshot()?.pixelBuffer
+  }
+
+  func presentationSnapshot() -> MacOSTexturePresentationSnapshot? {
     lock.lock()
     defer { lock.unlock() }
 
     guard let pixelBuffer else { return nil }
     reuseCount += 1
-    return Unmanaged.passRetained(pixelBuffer)
+    return MacOSTexturePresentationSnapshot(
+      pixelBuffer: Unmanaged.passRetained(pixelBuffer),
+      generation: rebuildCount,
+      layoutRevision: 0
+    )
   }
 
   func dimensions() -> (width: Int, height: Int) {
@@ -41,6 +49,13 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
     defer { lock.unlock() }
 
     return (width: width, height: height)
+  }
+
+  func presentationGeneration() -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+
+    return rebuildCount
   }
 
   func captureMetrics() -> (
@@ -98,9 +113,14 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
       rendererOwnedPixelBufferBytes: 0,
       rendererOwnedPixelBufferCount: 0,
       inFlightMetalBufferCount: 0,
-      metalBufferExhaustionCount: 0
+      metalBufferExhaustionCount: 0,
+      stableDisplayFallbackActive: false,
+      stableDisplayFallbackCount: 0,
+      stableDisplayFallbackPtsUs: -1
     )
   }
+
+  func clearStableDisplaySnapshot() {}
 
   private func rebuildPixelBuffer() {
     lock.lock()

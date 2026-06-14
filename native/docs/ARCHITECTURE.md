@@ -152,6 +152,7 @@ presentation backend 开始：
 | [D3D11 后端](D3D11_BACKEND.md) | Windows D3D11 device、shared texture、capture、device-loss behavior |
 | [macOS Readiness](MACOS_READINESS.md) | macOS readiness、runner 边界、remaining gates |
 | [macOS Presentation Backend](MACOS_PRESENTATION_BACKEND.md) | macOS renderer-owned Metal route, fallback adapter, refresh, and diagnostics contract |
+| [macOS HDR Exploration](MACOS_HDR_EXPLORATION.md) | macOS native compositor HDR/EDR path, Flutter fork pin, and validation evidence |
 
 ### Readiness / Release / Tooling
 

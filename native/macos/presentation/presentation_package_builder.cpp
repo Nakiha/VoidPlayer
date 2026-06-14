@@ -110,6 +110,10 @@ void fill_present_decision_info_from_snapshot(
     frame_out.source_packet_pos = frame.source_packet_pos;
     frame_out.source_packet_pts = frame.source_packet_pts;
     frame_out.source_packet_dts = frame.source_packet_dts;
+    frame_out.color_range = frame.color_range;
+    frame_out.color_matrix = frame.color_matrix;
+    frame_out.color_transfer = frame.color_transfer;
+    frame_out.color_primaries = frame.color_primaries;
   }
 }
 

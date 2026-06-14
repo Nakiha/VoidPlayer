@@ -12,9 +12,10 @@ std::optional<int64_t> frame_end_pts_us(const TrackBuffer& track,
     if (next.has_value() && next->pts_us > frame.pts_us) {
         return next->pts_us;
     }
-    if (frame.duration_us > 0) {
-        return frame.pts_us + frame.duration_us;
-    }
+    // Without a following presentation timestamp, the current frame is the
+    // best stable visual state for this track. This keeps sparse visual streams
+    // and EOF tail frames visible until a newer frame or an explicit clear
+    // arrives, instead of briefly replacing them with black.
     return std::nullopt;
 }
 

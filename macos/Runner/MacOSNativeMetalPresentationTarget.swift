@@ -81,6 +81,27 @@ final class MacOSNativeMetalPresentationTarget {
       : (valid: false, error: String(cString: error))
   }
 
+  func bakeCurrentFrameSources(
+    player: MacOSNativePlayerSession,
+    targets: UnsafeMutableBufferPointer<VPMacOSNativeSourceFrameBakeTarget>
+  ) -> (drawnCount: Int, error: String) {
+    guard let backend else {
+      return (drawnCount: -1, error: "native Metal source bake backend is null")
+    }
+    var error = [CChar](repeating: 0, count: 512)
+    let ret = VPMacOSNativePlayerBakeCurrentFrameSources(
+      player.handle,
+      backend,
+      targets.baseAddress,
+      targets.count,
+      &error,
+      error.count
+    )
+    return ret >= 0
+      ? (drawnCount: Int(ret), error: "")
+      : (drawnCount: Int(ret), error: String(cString: error))
+  }
+
   private func recreate(width: Int, height: Int) {
     if let backend {
       VPMacOSMetalPresentationBackendDestroy(backend)

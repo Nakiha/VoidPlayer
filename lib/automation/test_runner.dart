@@ -252,6 +252,43 @@ class TestRunner {
           ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
           '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
         );
+      case DebugFlutterSurfaceInfoAction():
+        final info = await controller.debugFlutterSurfaceInfo();
+        log.info(
+          'TestRunner: DEBUG_FLUTTER_SURFACE_INFO '
+          'texturePointer=${info['texturePointer']} '
+          'texturePixelFormat=${info['texturePixelFormat']} '
+          'textureSize=${info['textureWidth']}x${info['textureHeight']} '
+          'ioSurfaceId=${info['ioSurfaceId']} '
+          'wideGamut=${info['wideGamut']} '
+          'nativeTextureObjectAvailable=${info['nativeTextureObjectAvailable']} '
+          'nativeIOSurfaceObjectAvailable=${info['nativeIOSurfaceObjectAvailable']}',
+        );
+      case DebugNativeCompositorAction():
+        final info = await controller.debugNativeCompositor();
+        log.info(
+          'TestRunner: DEBUG_NATIVE_COMPOSITOR '
+          'enabled=${info['nativeCompositorEnabled']} '
+          'frames=${info['nativeCompositorFrames']} '
+          'succeeded=${info['nativeCompositorLastCompositeSucceeded']} '
+          'mode=${info['nativeCompositorOutputMode']} '
+          'pixelFormat=${info['nativeCompositorOutputPixelFormat']} '
+          'edr=${info['nativeCompositorEDREnabled']} '
+          'edrMaxRGBX1000=${info['nativeCompositorEDRVideoMaxRGBX1000']} '
+          'edrOver1X1000=${info['nativeCompositorEDRVideoPixelsOver1X1000']} '
+          'videoSRGBToLinear=${info['nativeCompositorVideoSRGBToLinearEnabled']} '
+          'flutterSRGBToLinear=${info['nativeCompositorFlutterSRGBToLinearEnabled']} '
+          'skippedInFlight=${info['nativeCompositorSkippedInFlightFrames']} '
+          'skippedStatic=${info['nativeCompositorSkippedStaticFrames']} '
+          'video=${info['nativeCompositorVideoTextureAvailable']} '
+          'flutter=${info['nativeCompositorFlutterTextureAvailable']} '
+          'flutterAlphaX1000=${info['nativeCompositorFlutterAlphaAverageX1000']} '
+          'flutterTransparentX1000=${info['nativeCompositorFlutterTransparentRatioX1000']} '
+          'hole=${info['nativeCompositorHoleLeftX1000']},${info['nativeCompositorHoleTopX1000']}-'
+          '${info['nativeCompositorHoleRightX1000']},${info['nativeCompositorHoleBottomX1000']} '
+          'drawable=${info['nativeCompositorDrawableWidth']}x${info['nativeCompositorDrawableHeight']} '
+          'failure=${info['nativeCompositorLastFailure']}',
+        );
       case WindowMaximize():
         log.info('TestRunner: WINDOW_MAXIMIZE');
         await runtime.maximizeWindow();
@@ -315,6 +352,44 @@ class TestRunner {
         log.info(metric.summary());
         if (!metric.stable) {
           throw AssertionError(metric.failureMessage);
+        }
+      case DragViewportSampleNativeDiagnosticBool(
+        :final dx,
+        :final dy,
+        :final key,
+        :final value,
+        :final steps,
+        :final stepMs,
+        :final minMatches,
+      ):
+        log.info(
+          'TestRunner: DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL '
+          'dx=$dx dy=$dy key=$key value=$value steps=$steps '
+          'stepMs=$stepMs minMatches=$minMatches',
+        );
+        var samples = 0;
+        final matches = await testHarness.dragViewportAndSample(
+          Offset(dx, dy),
+          steps: steps,
+          stepDelay: Duration(milliseconds: stepMs),
+          sample: (label) async {
+            samples++;
+            final diagnostics = await controller.getDiagnostics();
+            final actual = diagnostics[key];
+            final matched = actual == value;
+            log.info(
+              'Test action: DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL '
+              'sample=$label key=$key actual=$actual expected=$value '
+              'matched=$matched',
+            );
+            return matched;
+          },
+        );
+        if (matches < minMatches) {
+          throw AssertionError(
+            'Expected native diagnostic $key=$value during drag at least '
+            '$minMatches time(s), got $matches/$samples samples',
+          );
         }
       case AssertViewportOverlayLineStyle(
         :final minPairedCenters,

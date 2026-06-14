@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 struct MacOSVideoRendererStartup {
@@ -22,6 +23,11 @@ enum MacOSVideoRendererStartupFactory {
     let viewportBackgroundColor = MacOSFlutterArguments.uint32Arg(arguments, "color")
     guard let firstPath = paths.first, !firstPath.isEmpty else {
       throw MacOSNativePlayerError.failed("createPlayer requires at least one media path")
+    }
+    guard paths.count <= MacOSVideoTrackPayload.maxTrackCount else {
+      throw MacOSNativePlayerError.failed(
+        "createPlayer supports at most \(MacOSVideoTrackPayload.maxTrackCount) tracks"
+      )
     }
 
     if firstPath.hasPrefix("macos-synthetic://") {
@@ -81,6 +87,31 @@ enum MacOSVideoRendererStartupFactory {
     useHardwareDecode: Bool,
     viewportBackgroundColor: UInt32?
   ) throws -> MacOSVideoRendererStartup {
+    if let unsupported = paths.compactMap({ path -> (path: String, reason: String)? in
+      guard let reason = MacOSMediaInputGuard.unsupportedReason(path: path) else {
+        return nil
+      }
+      return (path, reason)
+    }).first {
+      throw MacOSNativePlayerError.failed("\(unsupported.reason): \(unsupported.path)")
+    }
+    let probedTracks = paths.compactMap { path in
+      try? MacOSNativePlayerSession.probeTrack(path: path)
+    }
+    let hasHDRTrack = probedTracks.contains { $0.isHDR }
+    let configuration = MacOSPresentationConfiguration.resolve(
+      hasHDRTrack: hasHDRTrack,
+      screen: NSScreen.main
+    )
+    MacOSPresentationConfiguration.updateCurrent(configuration)
+    NSLog(
+      "VoidPlayer macOS presentation policy: request=%@ mode=%@ reason=%@ hdrTrack=%@",
+      configuration.request,
+      configuration.mode.rawValue,
+      configuration.reason,
+      hasHDRTrack ? "true" : "false"
+    )
+
     guard let session = MacOSNativePlayerSession() else {
       throw MacOSNativePlayerError.failed("failed to allocate macOS native player")
     }
@@ -101,7 +132,7 @@ enum MacOSVideoRendererStartupFactory {
     let trackWidth = session.width() > 0 ? session.width() : firstFrame.width
     let trackHeight = session.height() > 0 ? session.height() : firstFrame.height
     let sessionDurationUs = session.durationUs()
-    let trackDurationUs = sessionDurationUs > 0 ? sessionDurationUs : MacOSVideoTrackPayload.syntheticDurationUs
+    let trackDurationUs = max(0, sessionDurationUs)
     let firstMetadata = try session.trackMetadata(fileId: 0)
     var tracks = [
       MacOSVideoTrackPayload.nativeTrack(
@@ -111,13 +142,17 @@ enum MacOSVideoRendererStartupFactory {
           slot: firstMetadata.slot,
           width: firstMetadata.width > 0 ? firstMetadata.width : trackWidth,
           height: firstMetadata.height > 0 ? firstMetadata.height : trackHeight,
-          durationUs: firstMetadata.durationUs > 0 ? firstMetadata.durationUs : trackDurationUs,
+          durationUs: max(0, firstMetadata.durationUs),
           startTimeUs: firstMetadata.startTimeUs,
           bitRate: firstMetadata.bitRate,
           formatName: firstMetadata.formatName,
           codecName: firstMetadata.codecName,
           codecLongName: firstMetadata.codecLongName,
-          decoderName: firstMetadata.decoderName
+          decoderName: firstMetadata.decoderName,
+          colorRange: firstMetadata.colorRange,
+          colorMatrix: firstMetadata.colorMatrix,
+          colorTransfer: firstMetadata.colorTransfer,
+          colorPrimaries: firstMetadata.colorPrimaries
         ),
         decoderName: session.decoderName()
       )

@@ -13,6 +13,9 @@ add_library(void_renderer_portable_driver OBJECT
     ${VOID_RENDERER_PORTABLE_OVERLAY_SOURCES}
 )
 void_apply_native_compile_options(void_renderer_portable_driver)
+target_compile_definitions(void_renderer_portable_driver PRIVATE
+    VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>
+)
 target_link_libraries(void_renderer_portable_driver PRIVATE
     void_media_ffmpeg
 )

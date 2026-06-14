@@ -41,6 +41,7 @@ void main() {
     ValueChanged<int>? onQuickMarkDeleted,
     ValueChanged<int>? onQuickMarkFocus,
     Size size = const Size(240, 160),
+    bool nativeCompositorHole = false,
   }) {
     return MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -67,6 +68,7 @@ void main() {
               trackGeometry: trackGeometry,
               quickMarks: quickMarks,
               selectedQuickMarkId: selectedQuickMarkId,
+              nativeCompositorHole: nativeCompositorHole,
               onQuickMarkSelect: onQuickMarkSelect,
               onQuickMarkChanged: onQuickMarkChanged,
               onQuickMarkDeleted: onQuickMarkDeleted,
@@ -237,6 +239,31 @@ void main() {
     await gesture.up();
 
     expect(starts, isEmpty);
+    expect(pans, [const Offset(20, -8) * devicePixelRatio]);
+  });
+
+  testWidgets('native compositor hole still receives viewport pan gestures', (
+    tester,
+  ) async {
+    final pans = <Offset>[];
+    final zooms = <({double factor, Offset position})>[];
+    await tester.pumpWidget(
+      buildPanel(pans: pans, zooms: zooms, nativeCompositorHole: true),
+    );
+    final devicePixelRatio = tester.view.devicePixelRatio;
+
+    expect(find.byType(Texture), findsNothing);
+
+    final center = tester.getCenter(find.byType(ViewportPanel));
+    final gesture = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryButton,
+    );
+    addTearDown(gesture.removePointer);
+    await gesture.down(center);
+    await gesture.moveBy(const Offset(20, -8));
+    await gesture.up();
+
     expect(pans, [const Offset(20, -8) * devicePixelRatio]);
   });
 

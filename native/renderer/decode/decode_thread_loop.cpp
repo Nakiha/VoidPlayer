@@ -66,6 +66,14 @@ bool DecodeThread::handle_buffering_eof(
         spdlog::info("[DecodeThread] EOF seen during Buffering, deferring codec flush "
                      "(buf={}, pq={})",
                      output_buffer_.total_count(), input_queue_.size());
+        if (should_complete_buffering_eof_preroll(output_buffer_.total_count())) {
+            spdlog::info("[DecodeThread] === Preroll complete (EOF hold): {} frames, state->Ready",
+                         output_buffer_.total_count());
+            output_buffer_.set_state(TrackState::Ready);
+            if (pause_after_preroll_.load(std::memory_order_acquire)) {
+                decode_paused_.store(true, std::memory_order_release);
+            }
+        }
     }
     return false;
 }

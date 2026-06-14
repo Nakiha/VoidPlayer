@@ -23,6 +23,14 @@ on:
         options:
           - "false"
           - "true"
+      windows_ui_preservation:
+        description: "Run the Windows runner UI preservation gate"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
   schedule:
     - cron: "17 20 * * 0"
   push:
@@ -31,6 +39,7 @@ on:
       - "dev.py"
       - "scripts/ci/**"
       - "scripts/dev/**"
+      - "toolchains/**"
       - "macos/**"
       - "native/**"
       - "third_party/ffmpeg/**"
@@ -43,6 +52,7 @@ on:
       - "dev.py"
       - "scripts/ci/**"
       - "scripts/dev/**"
+      - "toolchains/**"
       - "macos/**"
       - "native/**"
       - "third_party/ffmpeg/**"
@@ -51,7 +61,7 @@ on:
       - "resources/video/**"
 
 concurrency:
-  group: native-${{ github.ref }}
+  group: native-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -139,6 +149,81 @@ jobs:
       - name: Run native build
         shell: pwsh
         run: python dev.py test --native-only --github
+
+  windows-ui-preservation:
+    name: Windows UI preservation
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.windows_ui_preservation == 'true' }}
+    needs: ffmpeg-artifacts
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: false
+          fetch-depth: 0
+
+      - name: Initialize analysis submodules
+        shell: pwsh
+        run: |
+          git config --local --unset-all http.https://github.com/.extraheader 2>$null || $true
+          git config --global --unset-all http.https://github.com/.extraheader 2>$null || $true
+          git -c http.https://github.com/.extraheader= submodule sync -- native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
+          git -c http.https://github.com/.extraheader= submodule update --init --recursive --checkout native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-ffmpeg-artifacts
+          path: build/ci-ffmpeg
+
+      - name: Restore and verify Windows FFmpeg artifact
+        shell: pwsh
+        run: scripts/ci/restore_ffmpeg_windows.ps1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            base-devel
+            diffutils
+            make
+            nasm
+            pkgconf
+
+      - name: Install Python test/build dependencies
+        run: python -m pip install --upgrade pip pytest pybind11
+
+      - uses: actions/cache@v4
+        with:
+          path: .toolchains/flutter
+          key: voidplayer-flutter-${{ runner.os }}-${{ hashFiles('toolchains/flutter.lock.json') }}
+
+      - name: Bootstrap pinned Flutter toolchain
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:GITHUB_WORKSPACE ".toolchains/flutter"
+          $flutter = Join-Path $target "bin/flutter.bat"
+          $env:VOIDPLAYER_FLUTTER_TOOLCHAIN_PATH = $target
+          $env:VOIDPLAYER_FLUTTER_BIN = $flutter
+          "VOIDPLAYER_FLUTTER_TOOLCHAIN_PATH=$target" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "VOIDPLAYER_FLUTTER_BIN=$flutter" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          python dev.py toolchain bootstrap-flutter
+          python dev.py toolchain doctor
+
+      - name: Check release compliance notices
+        shell: pwsh
+        run: python scripts/dev/check_release_compliance.py
+
+      - name: Run Windows UI preservation smoke
+        shell: pwsh
+        env:
+          VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER: "1"
+          VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK: "1"
+        run: python dev.py ui-test --build ui_tests/smoke/basic.csv
 
   macos-native-test:
     name: macOS native test
@@ -295,11 +380,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - uses: subosito/flutter-action@v2
+      - uses: actions/cache@v4
         with:
-          channel: stable
-          flutter-version: "3.44.1"
-          cache: true
+          path: .toolchains/flutter
+          key: voidplayer-flutter-${{ runner.os }}-${{ hashFiles('toolchains/flutter.lock.json') }}
+
+      - name: Bootstrap pinned Flutter toolchain
+        run: PYTHON=python3.12 scripts/ci/bootstrap_flutter_toolchain.sh
+
+      - name: Bootstrap pinned macOS Flutter engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci/bootstrap_flutter_macos_engine.sh
 
       - name: Build macOS Flutter runner
         shell: bash

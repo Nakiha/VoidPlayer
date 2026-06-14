@@ -12,7 +12,7 @@ extern "C" {
 typedef struct VPMacOSNativePlayer VPMacOSNativePlayer;
 typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
 
-#define VP_MACOS_NATIVE_API_VERSION 1u
+#define VP_MACOS_NATIVE_API_VERSION 5u
 
 typedef enum VPMacOSNativeStatus {
   VPMacOSNativeStatusOk = 0,
@@ -37,7 +37,12 @@ typedef struct VPMacOSNativeFrameInfo {
   int64_t source_packet_pos;
   int64_t source_packet_pts;
   int64_t source_packet_dts;
+  int32_t color_range;
+  int32_t color_matrix;
+  int32_t color_transfer;
+  int32_t color_primaries;
   uint64_t target_pixel_buffer_address;
+  uint64_t layout_revision;
 } VPMacOSNativeFrameInfo;
 
 static inline void VPMacOSNativeFrameInfoInit(VPMacOSNativeFrameInfo* out) {
@@ -47,6 +52,45 @@ static inline void VPMacOSNativeFrameInfoInit(VPMacOSNativeFrameInfo* out) {
   memset(out, 0, sizeof(*out));
   out->struct_size = (uint32_t)sizeof(VPMacOSNativeFrameInfo);
   out->api_version = VP_MACOS_NATIVE_API_VERSION;
+}
+
+typedef struct VPMacOSNativeSourceFrameBakeTarget {
+  void* pixel_buffer;
+  int32_t source_slot;
+  int32_t source_file_id;
+  int32_t width;
+  int32_t height;
+  int32_t drawn;
+  VPMacOSNativeFrameInfo frame_info;
+} VPMacOSNativeSourceFrameBakeTarget;
+
+typedef struct VPMacOSNativeOverlayPrimitiveSnapshot {
+  uint32_t struct_size;
+  uint32_t api_version;
+  uint64_t generation;
+  size_t fill_rect_count;
+  size_t line_rect_count;
+  size_t motion_line_count;
+  int32_t source_baked_overlay_disabled;
+  uint64_t overlay_track_count;
+  uint64_t matched_track_count;
+  uint64_t missing_track_slot_count;
+  uint64_t missing_presented_frame_count;
+  uint64_t missing_frame_index_count;
+  uint64_t invalid_video_size_count;
+  uint64_t overlay_frame_missing_count;
+  uint64_t heatmap_missing_feature_track_count;
+} VPMacOSNativeOverlayPrimitiveSnapshot;
+
+static inline void VPMacOSNativeOverlayPrimitiveSnapshotInit(
+    VPMacOSNativeOverlayPrimitiveSnapshot* out) {
+  if (!out) {
+    return;
+  }
+  memset(out, 0, sizeof(*out));
+  out->struct_size = (uint32_t)sizeof(VPMacOSNativeOverlayPrimitiveSnapshot);
+  out->api_version = VP_MACOS_NATIVE_API_VERSION;
+  out->source_baked_overlay_disabled = 1;
 }
 
 typedef struct VPMacOSNativeTrackInfo {
@@ -61,6 +105,10 @@ typedef struct VPMacOSNativeTrackInfo {
   char codec_name[64];
   char codec_long_name[128];
   char decoder_name[128];
+  int32_t color_range;
+  int32_t color_matrix;
+  int32_t color_transfer;
+  int32_t color_primaries;
 } VPMacOSNativeTrackInfo;
 
 typedef struct VPMacOSCaptureMetrics {

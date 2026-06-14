@@ -146,9 +146,15 @@ if(DEFINED ENV{VOID_FFMPEG_ANALYZER} AND EXISTS "$ENV{VOID_FFMPEG_ANALYZER}")
   list(APPEND FFMPEG_ANALYSIS_GLOB "$ENV{VOID_FFMPEG_ANALYZER}")
 endif()
 if(NOT FFMPEG_ANALYSIS_GLOB)
-  message(FATAL_ERROR
-    "FFmpeg analysis tool missing. Build it with: "
-    "python dev.py build --native")
+  if(DEFINED ENV{VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER} AND NOT "$ENV{VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER}" STREQUAL "")
+    message(WARNING
+      "FFmpeg analysis tool missing; continuing because "
+      "VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER is set.")
+  else()
+    message(FATAL_ERROR
+      "FFmpeg analysis tool missing. Build it with: "
+      "python dev.py build --native")
+  endif()
 endif()
 foreach(FFMPEG_ANALYZER IN LISTS FFMPEG_ANALYSIS_GLOB)
   install(FILES "${FFMPEG_ANALYZER}"

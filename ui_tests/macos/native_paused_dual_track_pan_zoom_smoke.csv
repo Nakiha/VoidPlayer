@@ -23,6 +23,11 @@
 7.6, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, displayDeliveredTickCount, 1, 800
 7.61, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, viewportCompositeCount, 5, 1000
 7.62, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceFrameCacheHitCount, 1
-7.63, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
-7.64, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 1
+7.63, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorViewportTransformGeneration, 1
+7.64, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheGeneration, 1
+7.65, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorViewportTransformEnabled, false
+7.66, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorDisplayedLayoutRevision, 1
+7.67, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorViewportTransformBaseDisplayedLayoutRevision, 1
+7.68, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
+7.69, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 1
 7.8, QUIT, 0

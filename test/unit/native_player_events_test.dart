@@ -16,4 +16,25 @@ void main() {
     expect(event.type, NativePlayerEventType.unknown);
     expect(event.timestampUs, 456);
   });
+
+  test('native event parser reads native compositor state', () {
+    final event = NativePlayerEvent.fromMap(const {
+      'schemaVersion': 1,
+      'sequence': 8,
+      'type': 'nativeCompositorState',
+      'timestampUs': 456,
+      'nativeCompositorActive': true,
+      'nativeCompositorRequested': true,
+      'nativeCompositorEDREnabled': true,
+      'nativeCompositorMode': 'native-compositor-edr',
+      'nativeCompositorReason': 'auto-hdr-track',
+    });
+
+    expect(event.type, NativePlayerEventType.nativeCompositorState);
+    expect(event.nativeCompositorActive, isTrue);
+    expect(event.nativeCompositorRequested, isTrue);
+    expect(event.nativeCompositorEDREnabled, isTrue);
+    expect(event.nativeCompositorMode, 'native-compositor-edr');
+    expect(event.nativeCompositorReason, 'auto-hdr-track');
+  });
 }

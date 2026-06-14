@@ -2,6 +2,8 @@ import Cocoa
 import CoreVideo
 import Foundation
 
+typealias LayoutRefreshCompletion = (String) -> Void
+
 struct MacOSPresentationContext {
   let nativeBackendActive: Bool
   let player: MacOSNativePlayerSession?
@@ -20,11 +22,13 @@ final class MacOSPresentationController {
     label: "dev.nakiha.voidplayer.macos.layout-refresh",
     qos: .userInteractive
   )
+  private let layoutRefreshQueueKey = DispatchSpecificKey<Bool>()
   private lazy var displayLink = MacOSViewportDisplayLink { [weak self] in
     self?.processViewportDisplayTick()
   }
   private let layoutRevisionLock = NSLock()
   private var layoutRefreshRunning = false
+  private var layoutRefreshMainTickScheduled = false
   private var latestLayoutRefreshRequest: LayoutRefreshRequest?
   private var latestLayoutRevision: UInt64 = 0
   private var layoutIntentCount = 0
@@ -47,13 +51,22 @@ final class MacOSPresentationController {
   private let layoutApplyDuration = MacOSDurationWindow()
   private let layoutTotalDuration = MacOSDurationWindow()
 
+  init() {
+    layoutRefreshQueue.setSpecific(key: layoutRefreshQueueKey, value: true)
+  }
+
   func resetLayout() {
     cancelPendingLayoutRefreshes()
     layout = MacOSVideoTrackPayload.defaultLayout()
   }
 
-  func applyLayout(arguments: Any?, context: MacOSPresentationContext) {
+  func applyLayout(
+    arguments: Any?,
+    context: MacOSPresentationContext,
+    completion: LayoutRefreshCompletion? = nil
+  ) {
     guard let nextLayout = MacOSNativeLayoutBridge.layoutMap(arguments: arguments) else {
+      completion?("invalid")
       return
     }
     layoutIntentCount += 1
@@ -69,7 +82,8 @@ final class MacOSPresentationController {
     requestDisplayLinkedLayoutRefresh(
       context: context,
       layout: nextLayout,
-      revision: revision
+      revision: revision,
+      completion: completion
     )
   }
 
@@ -184,33 +198,46 @@ final class MacOSPresentationController {
 
   func cancelPendingLayoutRefreshes() {
     invalidateLayoutRevision()
+    latestLayoutRefreshRequest?.complete("cancelled")
     latestLayoutRefreshRequest = nil
+    layoutRefreshMainTickScheduled = false
     displayLinkIdleUntilNs = 0
     displayLink.stop()
     if layoutRefreshRunning {
-      layoutRefreshQueue.sync {}
+      waitForLayoutRefreshQueueDrain()
     }
     layoutRefreshRunning = false
+  }
+
+  private func waitForLayoutRefreshQueueDrain() {
+    if DispatchQueue.getSpecific(key: layoutRefreshQueueKey) == true {
+      return
+    }
+    layoutRefreshQueue.sync {}
   }
 
   private func requestDisplayLinkedLayoutRefresh(
     context: MacOSPresentationContext,
     layout: [String: Any],
-    revision: UInt64
+    revision: UInt64,
+    completion: LayoutRefreshCompletion?
   ) {
     guard context.nativeBackendActive,
           context.player != nil,
           context.nativeTexture != nil else {
       context.markFrameAvailable()
+      completion?("flutter-texture")
       return
     }
     if latestLayoutRefreshRequest != nil || layoutRefreshRunning {
       layoutRefreshSupersededCount += 1
     }
+    latestLayoutRefreshRequest?.complete("superseded")
     latestLayoutRefreshRequest = LayoutRefreshRequest(
       context: context,
       layout: layout,
-      revision: revision
+      revision: revision,
+      completion: completion
     )
     extendDisplayLinkIdleGrace()
     logLayoutTrace(
@@ -220,9 +247,11 @@ final class MacOSPresentationController {
       outcome: "latest"
     )
     displayLink.start()
+    scheduleMainLayoutRefreshTick()
   }
 
   private func processViewportDisplayTick() {
+    layoutRefreshMainTickScheduled = false
     guard let request = latestLayoutRefreshRequest else {
       layoutSkipCount += 1
       layoutSkipRate.record()
@@ -247,12 +276,20 @@ final class MacOSPresentationController {
       outcome: "start"
     )
     layoutRefreshQueue.async { [weak self, request] in
-      guard let self else { return }
+      guard let self else {
+        DispatchQueue.main.async {
+          request.complete("controller-gone")
+        }
+        return
+      }
       let startNs = DispatchTime.now().uptimeNanoseconds
       let outcome = self.performLayoutRefresh(request: request)
       let finishNs = DispatchTime.now().uptimeNanoseconds
       DispatchQueue.main.async { [weak self] in
-        guard let self else { return }
+        guard let self else {
+          request.complete("controller-gone")
+          return
+        }
         var finalOutcomeName = outcome.profilerName
         switch outcome {
         case .ready(let pending):
@@ -305,6 +342,13 @@ final class MacOSPresentationController {
           outcome: finalOutcomeName
         )
         self.layoutRefreshRunning = false
+        MacOSProfilerLog.traceEvent(String(
+          format: "VoidPlayer viewport trace swift event=layout-completion revision=%llu outcome=%@ transformSafeToClear=%d",
+          request.revision,
+          finalOutcomeName,
+          finalOutcomeName == "applied" ? 1 : 0
+        ))
+        request.complete(finalOutcomeName)
         let queueDelayNs = startNs >= request.requestNs ? startNs - request.requestNs : 0
         let applyNs = finishNs >= startNs ? finishNs - startNs : 0
         let totalNs = DispatchTime.now().uptimeNanoseconds - request.requestNs
@@ -325,6 +369,14 @@ final class MacOSPresentationController {
           self.displayLink.stop()
         }
       }
+    }
+  }
+
+  private func scheduleMainLayoutRefreshTick() {
+    guard !layoutRefreshMainTickScheduled else { return }
+    layoutRefreshMainTickScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      self?.processViewportDisplayTick()
     }
   }
 
@@ -469,11 +521,37 @@ final class MacOSPresentationController {
   }
 }
 
-private struct LayoutRefreshRequest {
+private final class LayoutRefreshRequest {
   let context: MacOSPresentationContext
   let layout: [String: Any]
   let revision: UInt64
   let requestNs = DispatchTime.now().uptimeNanoseconds
+  private let completion: LayoutRefreshCompletion?
+  private let completionLock = NSLock()
+  private var completed = false
+
+  init(
+    context: MacOSPresentationContext,
+    layout: [String: Any],
+    revision: UInt64,
+    completion: LayoutRefreshCompletion?
+  ) {
+    self.context = context
+    self.layout = layout
+    self.revision = revision
+    self.completion = completion
+  }
+
+  func complete(_ outcome: String) {
+    completionLock.lock()
+    if completed {
+      completionLock.unlock()
+      return
+    }
+    completed = true
+    completionLock.unlock()
+    completion?(outcome)
+  }
 }
 
 private enum LayoutRefreshOutcome {

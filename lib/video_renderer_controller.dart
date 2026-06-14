@@ -131,6 +131,16 @@ class NativePlayerController {
     return _api.pause();
   }
 
+  Future<Map<String, dynamic>> debugFlutterSurfaceInfo() {
+    _ensureAlive();
+    return _api.debugFlutterSurfaceInfo();
+  }
+
+  Future<Map<String, dynamic>> debugNativeCompositor() {
+    _ensureAlive();
+    return _api.debugNativeCompositor();
+  }
+
   Future<void> seek(int ptsUs, {int? requestId}) {
     if (!_hasPlayerForCommand(NativePlayerMethods.seek)) return Future.value();
     return _api.seek(ptsUs, requestId: requestId);
@@ -166,6 +176,88 @@ class NativePlayerController {
       return Future.value();
     }
     return _api.resize(width: width, height: height);
+  }
+
+  Future<void> setNativeCompositorViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  }) {
+    _ensureAlive();
+    return _api.setNativeCompositorViewportRect(
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      surfaceWidth: surfaceWidth,
+      surfaceHeight: surfaceHeight,
+    );
+  }
+
+  Future<void> setNativeCompositorViewportTransform({
+    required bool enabled,
+    required double scaleX,
+    required double scaleY,
+    required double translateX,
+    required double translateY,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+  }) {
+    _ensureAlive();
+    return _api.setNativeCompositorViewportTransform(
+      enabled: enabled,
+      scaleX: scaleX,
+      scaleY: scaleY,
+      translateX: translateX,
+      translateY: translateY,
+      mode: mode,
+      splitPos: splitPos,
+      activeTrackCount: activeTrackCount,
+    );
+  }
+
+  Future<void> prepareNativeCompositorSourceCache({
+    required List<int> sourceSlots,
+    required List<int> sourceOrder,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+    required List<double> displayOffsetX,
+    required List<double> displayOffsetY,
+    required List<double> invDisplaySizeX,
+    required List<double> invDisplaySizeY,
+    required List<double> viewOffsetUvX,
+    required List<double> viewOffsetUvY,
+  }) {
+    _ensureAlive();
+    return _api.prepareNativeCompositorSourceCache(
+      sourceSlots: sourceSlots,
+      sourceOrder: sourceOrder,
+      mode: mode,
+      splitPos: splitPos,
+      activeTrackCount: activeTrackCount,
+      displayOffsetX: displayOffsetX,
+      displayOffsetY: displayOffsetY,
+      invDisplaySizeX: invDisplaySizeX,
+      invDisplaySizeY: invDisplaySizeY,
+      viewOffsetUvX: viewOffsetUvX,
+      viewOffsetUvY: viewOffsetUvY,
+    );
+  }
+
+  Future<void> clearNativeCompositorSourceCache({required String reason}) {
+    if (_disposed) return Future.value();
+    return _api.clearNativeCompositorSourceCache(reason: reason);
+  }
+
+  Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) {
+    if (_disposed) return Future.value();
+    if (!canAcceptCommands) return Future.value();
+    return _api.setNativeAnalysisOverlay(state);
   }
 
   Future<void> setViewportBackgroundColor(int colorValue) {

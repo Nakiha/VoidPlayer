@@ -59,7 +59,7 @@ extension MacOSNativePlayerSession {
       state.target_installed != 0 &&
       state.backend_available != 0 &&
       state.last_draw_succeeded != 0
-    return [
+    var diagnostics: [String: Any] = [
       "rendererInitialized": state.renderer_initialized != 0,
       "targetInstalled": state.target_installed != 0,
       "backendAvailable": state.backend_available != 0,
@@ -99,6 +99,25 @@ extension MacOSNativePlayerSession {
         min(state.overlay_cpu_fallback_count, UInt64(Int64.max))
       ),
       "lastDrawError": lastError,
+    ]
+    diagnostics.merge(rendererOwnedLastFrameColorDiagnostics()) { _, next in next }
+    return diagnostics
+  }
+
+  func rendererOwnedLastFrameColorDiagnostics() -> [String: Any] {
+    var info = VPMacOSNativeFrameInfo()
+    guard VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(handle, &info) == 0 else {
+      return Self.emptyRendererOwnedLastFrameColorDiagnostics()
+    }
+    return [
+      "lastFrameColorRangeCode": Int(info.color_range),
+      "lastFrameColorRange": Self.colorRangeName(info.color_range),
+      "lastFrameColorMatrixCode": Int(info.color_matrix),
+      "lastFrameColorMatrix": Self.colorMatrixName(info.color_matrix),
+      "lastFrameColorTransferCode": Int(info.color_transfer),
+      "lastFrameColorTransfer": Self.colorTransferName(info.color_transfer),
+      "lastFrameColorPrimariesCode": Int(info.color_primaries),
+      "lastFrameColorPrimaries": Self.colorPrimariesName(info.color_primaries),
     ]
   }
 
@@ -385,6 +404,56 @@ extension MacOSNativePlayerSession {
     }
   }
 
+  private static func colorRangeName(_ value: Int32) -> String {
+    switch value {
+    case 1:
+      return "limited"
+    case 2:
+      return "full"
+    default:
+      return "unknown"
+    }
+  }
+
+  private static func colorMatrixName(_ value: Int32) -> String {
+    switch value {
+    case 1:
+      return "bt601"
+    case 2:
+      return "bt709"
+    case 3:
+      return "bt2020-ncl"
+    default:
+      return "unknown"
+    }
+  }
+
+  private static func colorTransferName(_ value: Int32) -> String {
+    switch value {
+    case 1:
+      return "sdr"
+    case 2:
+      return "pq"
+    case 3:
+      return "hlg"
+    default:
+      return "unknown"
+    }
+  }
+
+  private static func colorPrimariesName(_ value: Int32) -> String {
+    switch value {
+    case 1:
+      return "bt601"
+    case 2:
+      return "bt709"
+    case 3:
+      return "bt2020"
+    default:
+      return "unknown"
+    }
+  }
+
   private static func cString<T>(_ tuple: T) -> String {
     withUnsafeBytes(of: tuple) { rawBuffer -> String in
       guard let base = rawBuffer.bindMemory(to: CChar.self).baseAddress else {
@@ -410,6 +479,14 @@ extension MacOSNativePlayerSession {
       "targetHeight": 0,
       "uploadStorageKind": "unavailable",
       "lastSuccessfulFramePtsUs": 0,
+      "lastFrameColorRangeCode": 0,
+      "lastFrameColorRange": "unknown",
+      "lastFrameColorMatrixCode": 0,
+      "lastFrameColorMatrix": "unknown",
+      "lastFrameColorTransferCode": 0,
+      "lastFrameColorTransfer": "unknown",
+      "lastFrameColorPrimariesCode": 0,
+      "lastFrameColorPrimaries": "unknown",
       "overlayLastExpected": false,
       "overlayLastApplied": false,
       "overlayLastFillRectCount": 0,
@@ -421,6 +498,19 @@ extension MacOSNativePlayerSession {
       "overlayGpuFailureCount": 0,
       "overlayCpuFallbackCount": 0,
       "lastDrawError": "",
+    ]
+  }
+
+  private static func emptyRendererOwnedLastFrameColorDiagnostics() -> [String: Any] {
+    [
+      "lastFrameColorRangeCode": 0,
+      "lastFrameColorRange": "unknown",
+      "lastFrameColorMatrixCode": 0,
+      "lastFrameColorMatrix": "unknown",
+      "lastFrameColorTransferCode": 0,
+      "lastFrameColorTransfer": "unknown",
+      "lastFrameColorPrimariesCode": 0,
+      "lastFrameColorPrimaries": "unknown",
     ]
   }
 }

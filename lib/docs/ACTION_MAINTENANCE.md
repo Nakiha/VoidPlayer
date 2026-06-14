@@ -128,6 +128,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `STORE_VIEW_CENTER` | name | 记录归一化视图中心基线 |
 | `STORE_RESOURCE_USAGE` | name | 记录进程 RSS / 专用显存基线 |
 | `STORE_NATIVE_SEEK_COUNT` | name | 记录当前 native 插件 seek 日志计数 |
+| `DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL` | dx, dy, key, value, steps?, stepMs?, minMatches? | 拖动 viewport 期间采样 native 诊断布尔值，命中次数需达到 `minMatches` |
 | `CLICK_MEDIA_HEADER_REMOVE_BUTTON` | fileId | 点击指定 fileId 的 media header 移除按钮，覆盖真实按钮路径 |
 | `SET_MEDIA_SOURCE_ID` | slot, sourceId | 声明指定 slot 媒体的源 lineage（同源不同编码的 join key），写入 storage catalog |
 | `EXPORT_MARKS` | outputPath | 把裁决导出文档（媒体 lineage + 全部标注含裁决字段）写成 JSON 文件，供 agent 收集人的裁决 |

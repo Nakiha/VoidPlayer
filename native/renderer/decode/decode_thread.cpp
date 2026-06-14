@@ -77,6 +77,21 @@ bool renderer_owned_d3d11_supports_stream_format(AVPixelFormat format) {
     }
 }
 
+bool renderer_owned_metal_supports_stream_format(AVPixelFormat format) {
+    switch (format) {
+    case AV_PIX_FMT_NONE:
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_NV12:
+    case AV_PIX_FMT_NV21:
+    case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_P010LE:
+        return true;
+    default:
+        return false;
+    }
+}
+
 }  // namespace
 
 // get_format callback for hardware decode negotiation.
@@ -169,6 +184,22 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
         const char* name = av_get_pix_fmt_name(stream_format);
         spdlog::info("[DecodeThread] Hardware decode disabled for stream pixel format {} ({}) "
                      "because renderer-owned D3D11 path only supports NV12/P010-like 4:2:0 surfaces",
+                     static_cast<int>(stream_format), name ? name : "unknown");
+        hw_enabled_ = false;
+        const AVCodec* sw_codec = preferred_software_decoder();
+        if (sw_codec && sw_codec != codec_) {
+            spdlog::info("[DecodeThread] Switching decoder to {} for software fallback",
+                         sw_codec->name);
+            reset_codec_context(sw_codec);
+        }
+        return false;
+    }
+    if (backend == RenderBackendKind::Metal &&
+        mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice &&
+        !renderer_owned_metal_supports_stream_format(stream_format)) {
+        const char* name = av_get_pix_fmt_name(stream_format);
+        spdlog::info("[DecodeThread] Hardware decode disabled for stream pixel format {} ({}) "
+                     "because renderer-owned Metal path only supports NV12/P010-like 4:2:0 surfaces",
                      static_cast<int>(stream_format), name ? name : "unknown");
         hw_enabled_ = false;
         const AVCodec* sw_codec = preferred_software_decoder();

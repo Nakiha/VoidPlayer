@@ -34,6 +34,12 @@ class MainWindowPlaybackCoordinator {
   })?
   onSeekPreviewPresented;
 
+  /// Invoked around play/pause/step transitions so the layout coordinator can
+  /// flush deferred interaction state (compositor pan transform, pending
+  /// layout) before playback content changes. Awaited before play starts so
+  /// the first playing frame already carries the interacted layout.
+  final Future<void> Function({required bool playing})? onPlaybackTransition;
+
   Timer? _pollTimer;
   Timer? _loopBoundaryTimer;
   Timer? _seekSettledTimer;
@@ -55,6 +61,7 @@ class MainWindowPlaybackCoordinator {
     required this.timelineMetrics,
     this.onSeekSettled,
     this.onSeekPreviewPresented,
+    this.onPlaybackTransition,
   }) {
     _nativeEventSubscription = controller.events.listen(
       _handleNativePlayerEvent,
@@ -168,6 +175,8 @@ class MainWindowPlaybackCoordinator {
       await _seekToAsync(resolvedLoopStartUs);
       if (_disposed || !mounted()) return;
     }
+    await onPlaybackTransition?.call(playing: true);
+    if (_disposed || !mounted()) return;
     await controller.play();
     if (_disposed || !mounted()) return;
     setPlaying(true);
@@ -182,6 +191,7 @@ class MainWindowPlaybackCoordinator {
     if (_disposed || !mounted()) return;
     cancelLoopBoundaryTimer();
     setPlaying(false);
+    await onPlaybackTransition?.call(playing: false);
   }
 
   Future<void> stepForward() {
@@ -198,6 +208,8 @@ class MainWindowPlaybackCoordinator {
     _seekSerial++;
     _pollSerial++;
     cancelLoopBoundaryTimer();
+    await onPlaybackTransition?.call(playing: false);
+    if (_disposed || !mounted()) return;
     if (forward) {
       await controller.stepForward();
     } else {
@@ -312,6 +324,18 @@ class MainWindowPlaybackCoordinator {
 
   void _handleNativePlayerEvent(NativePlayerEvent event) {
     if (_disposed || !mounted()) return;
+    if (event.type == NativePlayerEventType.nativeCompositorState) {
+      stateStore.setNativeCompositorActive(event.nativeCompositorActive);
+      if (event.nativeCompositorRequested &&
+          !event.nativeCompositorActive &&
+          event.nativeCompositorFailure.isNotEmpty) {
+        log.warning(
+          'Native compositor unavailable; using Flutter texture fallback: '
+          '${event.nativeCompositorFailure}',
+        );
+      }
+      return;
+    }
     if (event.type != NativePlayerEventType.seekPreviewPresented) return;
     final requestId = event.requestId;
     if (requestId == null || requestId != _seekSerial) return;

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "test_utils.h"
 #include "renderer/sync/render_sink.h"
+#include "renderer/render/presentation_scheduler.h"
 #include "renderer/clock.h"
 #include "renderer/buffer/track_buffer.h"
 
@@ -73,6 +74,48 @@ TEST_CASE("RenderSink: present decisions carry track identity",
     REQUIRE(decision.track_generations[0] == 0);
 }
 
+TEST_CASE("PresentationScheduler: held still frame does not mask newer video track",
+          "[presentation_scheduler]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    auto still = std::make_shared<TrackBuffer>(4, 2);
+    TextureFrame still_frame;
+    still_frame.pts_us = 0;
+    still_frame.duration_us = 1000000;
+    still_frame.texture_handle = reinterpret_cast<void*>(0x1);
+    still->push_frame(still_frame);
+
+    auto video = std::make_shared<TrackBuffer>(4, 2);
+    TextureFrame first_video_frame;
+    first_video_frame.pts_us = 1000000;
+    first_video_frame.duration_us = 1000000;
+    first_video_frame.texture_handle = reinterpret_cast<void*>(0x2);
+    video->push_frame(first_video_frame);
+    TextureFrame second_video_frame = first_video_frame;
+    second_video_frame.pts_us = 2000000;
+    second_video_frame.texture_handle = reinterpret_cast<void*>(0x3);
+    video->push_frame(second_video_frame);
+
+    RenderSink sink(clock);
+    sink.set_track(0, still, 10, 1);
+    sink.set_track(1, video, 20, 1);
+
+    PresentationScheduler scheduler;
+    mt.t = 1000000;
+    auto tick = scheduler.tick(sink);
+    REQUIRE(tick.has_presentable_frame);
+    REQUIRE(tick.should_notify);
+    REQUIRE(tick.selected_pts_us == 1000000);
+
+    mt.t = 2000000;
+    tick = scheduler.tick(sink);
+    REQUIRE(tick.has_presentable_frame);
+    REQUIRE(tick.should_notify);
+    REQUIRE(tick.selected_pts_us == 2000000);
+}
+
 TEST_CASE("RenderSink: registered track is lifetime pinned by the sink",
           "[render_sink]") {
     MockTimeSource mt{0};
@@ -128,7 +171,7 @@ TEST_CASE("RenderSink: single track with future PTS does not present", "[render_
     REQUIRE(decision.should_present == false);
 }
 
-TEST_CASE("RenderSink: expired frame is advanced past", "[render_sink]") {
+TEST_CASE("RenderSink: expired frames advance to the stable tail frame", "[render_sink]") {
     MockTimeSource mt{0};
     Clock clock([&mt]() { return mt.t; });
     clock.play();
@@ -152,12 +195,39 @@ TEST_CASE("RenderSink: expired frame is advanced past", "[render_sink]") {
     RenderSink sink(clock);
     sink.set_track(0, track);
 
-    // Clock at 2000000, both frames are expired (frame1 ends at 1033000)
+    // Clock at 2000000, frame1 is expired by frame2's PTS. With no following
+    // PTS, frame2 is the stable tail frame and remains visible.
     mt.t = 2000000;
 
     PresentDecision decision = sink.evaluate();
-    // Both frames expired, no frames available to display
-    REQUIRE(decision.should_present == false);
+    REQUIRE(decision.should_present == true);
+    REQUIRE(decision.frames[0].has_value());
+    REQUIRE(decision.frames[0]->pts_us == 1033000);
+}
+
+TEST_CASE("RenderSink: sparse single frame remains visible after nominal duration",
+          "[render_sink]") {
+    MockTimeSource mt{0};
+    Clock clock([&mt]() { return mt.t; });
+    clock.play();
+
+    auto track = std::make_shared<TrackBuffer>(4, 2);
+
+    TextureFrame frame;
+    frame.pts_us = 0;
+    frame.duration_us = 1000000;
+    frame.texture_handle = reinterpret_cast<void*>(0x1);
+    track->push_frame(frame);
+
+    RenderSink sink(clock);
+    sink.set_track(0, track);
+
+    mt.t = 2000000;
+
+    PresentDecision decision = sink.evaluate();
+    REQUIRE(decision.should_present == true);
+    REQUIRE(decision.frames[0].has_value());
+    REQUIRE(decision.frames[0]->pts_us == 0);
 }
 
 TEST_CASE("RenderSink: next PTS defines display window when duration metadata is bogus",

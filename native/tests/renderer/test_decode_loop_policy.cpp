@@ -148,3 +148,10 @@ TEST_CASE("DecodeLoopPolicy: exact-seek preview publish and pacing gates stay ex
     REQUIRE_FALSE(should_pace_hardware_exact_seek_decode(true, false));
     REQUIRE(should_pace_hardware_exact_seek_decode(true, true));
 }
+
+TEST_CASE("DecodeLoopPolicy: buffering EOF can complete with a held visual frame",
+          "[decode_thread][decode_loop_policy]") {
+    REQUIRE_FALSE(should_complete_buffering_eof_preroll(0));
+    REQUIRE(should_complete_buffering_eof_preroll(1));
+    REQUIRE(should_complete_buffering_eof_preroll(4));
+}

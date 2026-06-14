@@ -29,6 +29,7 @@ void main() {
 0.3,ADD_SSH_MEDIA,user@example.com:/videos/clip.mp4
 0.7,ASSERT_PLAYING
 0.75,CAPTURE_VIEWPORT_REGION,roi,1,2,30,40,50,build/roi.png
+0.76,DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL,120,-60,nativeCompositorSourceCacheActive,true,18,8,2
 0.8,SET_DECODE_MODE,forceSoftware
 0.85,SET_AUDIBLE_TRACK,-1
 0.9,ASSERT_CAPTURE_SPLIT_DIFF,cap,1.5,2.5,12
@@ -36,6 +37,7 @@ void main() {
 1.1,ASSERT_NATIVE_AUDIO,true,48000,1,-1
 1.2,ASSERT_NATIVE_DIAGNOSTIC_STRING,presentationAdapter,cvpixelbuffer-bgra-copy
 1.3,ASSERT_NATIVE_DIAGNOSTIC_BOOL,metalTextureValid,true
+1.35,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,nativeCompositorEDRVideoMaxRGBX1000,1001
 1.4,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,textureWidth,320,1920
 1.45,ASSERT_TRACK_METADATA,0,QuickTime / MOV,VideoToolbox / h264
 1.5,CLOSE_MAIN_WINDOW
@@ -43,7 +45,7 @@ void main() {
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(17));
+    expect(instructions, hasLength(19));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
       200,
@@ -51,6 +53,7 @@ void main() {
       500,
       700,
       750,
+      760,
       800,
       850,
       900,
@@ -58,6 +61,7 @@ void main() {
       1100,
       1200,
       1300,
+      1350,
       1400,
       1450,
       1500,
@@ -124,6 +128,21 @@ void main() {
     );
     expect(
       instructions[6],
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<DragViewportSampleNativeDiagnosticBool>()
+            .having((a) => a.dx, 'dx', 120)
+            .having((a) => a.dy, 'dy', -60)
+            .having((a) => a.key, 'key', 'nativeCompositorSourceCacheActive')
+            .having((a) => a.value, 'value', isTrue)
+            .having((a) => a.steps, 'steps', 18)
+            .having((a) => a.stepMs, 'stepMs', 8)
+            .having((a) => a.minMatches, 'minMatches', 2),
+      ),
+    );
+    expect(
+      instructions[7],
       isA<ScriptSetDecodeMode>().having(
         (i) => i.mode.storageValue,
         'mode',
@@ -131,11 +150,11 @@ void main() {
       ),
     );
     expect(
-      instructions[7],
+      instructions[8],
       isA<ScriptSetAudibleTrack>().having((i) => i.fileId, 'fileId', isNull),
     );
     expect(
-      instructions[8],
+      instructions[9],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -143,7 +162,7 @@ void main() {
       ),
     );
     expect(
-      instructions[9],
+      instructions[10],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -151,7 +170,7 @@ void main() {
       ),
     );
     expect(
-      instructions[10],
+      instructions[11],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -163,7 +182,7 @@ void main() {
       ),
     );
     expect(
-      instructions[11],
+      instructions[12],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -173,7 +192,7 @@ void main() {
       ),
     );
     expect(
-      instructions[12],
+      instructions[13],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -183,7 +202,17 @@ void main() {
       ),
     );
     expect(
-      instructions[13],
+      instructions[14],
+      isA<ScriptAssert>().having(
+        (i) => i.assertion,
+        'assertion',
+        isA<AssertNativeDiagnosticIntAtLeast>()
+            .having((a) => a.key, 'key', 'nativeCompositorEDRVideoMaxRGBX1000')
+            .having((a) => a.minValue, 'minValue', 1001),
+      ),
+    );
+    expect(
+      instructions[15],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -194,7 +223,7 @@ void main() {
       ),
     );
     expect(
-      instructions[14],
+      instructions[16],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -204,9 +233,9 @@ void main() {
             .having((a) => a.decoderName, 'decoderName', 'VideoToolbox / h264'),
       ),
     );
-    expect(instructions[15], isA<ScriptCloseMainWindow>());
+    expect(instructions[17], isA<ScriptCloseMainWindow>());
     expect(
-      instructions[16],
+      instructions[18],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
     );
   });

@@ -18,6 +18,7 @@ class MainWindowViewModelFactory {
     required PlaybackSession session,
     required LayoutState layout,
     required int? textureId,
+    bool nativeCompositorActive = false,
     required ViewportDisplayState viewportState,
     required List<TrackEntry> tracks,
     required QuickMarkView markView,
@@ -55,6 +56,7 @@ class MainWindowViewModelFactory {
         viewMode: layout.mode,
         viewModeEnabled: textureId != null,
         textureId: textureId,
+        nativeCompositorActive: nativeCompositorActive,
         viewportState: viewportState,
         layout: layout,
         tracks: tracks

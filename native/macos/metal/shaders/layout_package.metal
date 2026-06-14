@@ -29,20 +29,20 @@
   track_idx = clamp(track_idx, 0, int(kMaxTracks) - 1);
   const uint track_slot = uint(track_idx);
   if (frame_present_at(params, track_slot) == 0) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
   const int source_width_int = source_width_at(params, track_slot);
   const int source_height_int = source_height_at(params, track_slot);
   if (source_width_int <= 0 || source_height_int <= 0) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
 
   bool out_of_bounds = false;
   const float2 source_uv = aspect_fit_uv(local_uv, params, track_slot, out_of_bounds);
   if (out_of_bounds) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
 
@@ -50,7 +50,7 @@
 	  const uint source_height = uint(source_height_int);
 	  const uint source_x = min(uint(source_uv.x * float(source_width)), source_width - 1);
 	  const uint source_y = min(uint(source_uv.y * float(source_height)), source_height - 1);
-	  float4 color = viewport_background_color(params);
+		  float4 color = viewport_background_output_color(params);
 	  if (yuv_format_at(params, track_slot) == kPresentFormatNV12 ||
 	      yuv_format_at(params, track_slot) == kPresentFormatP010 ||
 	      yuv_format_at(params, track_slot) == kPresentFormatYUV420P) {
@@ -93,4 +93,3 @@
                                overlay3));
   destination.write(color, gid);
 }
-

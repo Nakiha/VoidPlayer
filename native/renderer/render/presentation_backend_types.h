@@ -33,8 +33,22 @@ struct PresentationBackendFrameInfo {
     int64_t source_packet_pos = kUnknownSourcePacketPosition;
     int64_t source_packet_pts = kNoTimestampUs;
     int64_t source_packet_dts = kNoTimestampUs;
+    int32_t color_range = 0;
+    int32_t color_matrix = 0;
+    int32_t color_transfer = 0;
+    int32_t color_primaries = 0;
     uint64_t target_pixel_buffer_address = 0;
     uint64_t layout_revision = 0;
+};
+
+struct PresentationSourceFrameTarget {
+    void* output = nullptr;
+    int32_t source_slot = -1;
+    int32_t source_file_id = -1;
+    int32_t width = 0;
+    int32_t height = 0;
+    int32_t drawn = 0;
+    PresentationBackendFrameInfo frame_info;
 };
 
 struct PresentationBackendStats {

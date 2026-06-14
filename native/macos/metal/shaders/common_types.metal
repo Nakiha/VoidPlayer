@@ -129,6 +129,7 @@ struct LayoutParams {
   float background_color_g;
   float background_color_b;
   float background_color_a;
+  uint output_edr;
 };
 
 uint frame_present_at(constant LayoutParams& params, uint index) {

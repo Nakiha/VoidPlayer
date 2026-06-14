@@ -2,23 +2,28 @@
 
 VoidPlayer native has one shared color contract and multiple platform
 presentation backends. The shared contract is: decode metadata and frame storage
-must be normalized into shader inputs that produce equivalent SDR BGRA/RGB output
-on Windows D3D11 and macOS Metal.
+must be normalized into shader inputs that produce equivalent RGB output for the
+selected platform presentation target.
 
-Native does not currently provide HDR passthrough, Windows HDR metadata, ICC
-profiles, display-profile transforms, or per-monitor color management. PQ/HLG
-sources are tone-mapped to SDR before presentation. System compositors and the
-Flutter engine own the final display mapping after the native texture is
-published.
+The historical production target is SDR BGRA/RGB for a Flutter texture. The
+macOS HDR exploration path adds a native compositor target that outputs extended
+linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows HDR is not active
+yet, but the shared metadata and strategy constants keep a place for a later
+D3D/scRGB or HDR10 swapchain target.
 
 ## Shared Output Contract
 
-- Output is SDR BGRA/RGB-compatible content for a Flutter texture.
-- Shader output is SDR/sRGB code value, not a platform display-profile managed
-  signal.
+- The shared renderer carries range, matrix, transfer, and primaries as metadata
+  into platform presentation decisions.
+- SDR Flutter texture output remains SDR BGRA/RGB-compatible content.
+- macOS native-compositor EDR output is linear Display P3, normalized so
+  reference white is `1.0` and values above `1.0` represent EDR headroom.
 - SDR YUV sources produce nonlinear R'G'B' values.
-- HDR tone-map branches convert to linear BT.709, then explicitly encode to
-  sRGB-like SDR output.
+- HDR EDR branches decode transfer to linear light, normalize to the native
+  strategy reference white, convert primaries to the output working gamut, and
+  present float RGB.
+- HDR SDR fallback branches convert to linear BT.709, tone-map, then explicitly
+  encode to sRGB-like SDR output.
 - Software decode, hardware decode, hwdownload, and fallback package paths must
   converge on equivalent shader metadata and sample layout for the same source.
 
@@ -26,12 +31,35 @@ Concrete presentation targets are platform-specific:
 
 | Platform | Backend target | Notes |
 | --- | --- | --- |
-| Windows | D3D11 BGRA shared texture / optional swap chain | Uses DXGI formats and HLSL shaders. |
-| macOS | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
+| Windows | D3D11 BGRA shared texture / optional swap chain | Current path is SDR. Future HDR target should be modeled as scRGB/PQ/HDR10 without changing shared decode metadata. |
+| macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
+| macOS EDR | Native compositor `RGBA16Float` `CAMetalLayer` | Uses `extendedLinearDisplayP3` and composites native video with the exported Flutter texture. |
 
-True HDR output would require Flutter surface, platform swapchain/texture,
-metadata, tone mapping, and display-management changes beyond the current native
-renderer contract.
+The HDR branch is deliberately native-compositor based on macOS. Flutter's
+texture path remains an SDR integration surface unless the Flutter engine fork
+later exposes a display-managed HDR surface contract.
+
+## macOS HDR Strategy
+
+The macOS EDR strategy is centralized in
+`native/renderer/color/color_strategy.h` and mirrored by the Metal shaders:
+
+| Stage | Current policy |
+| --- | --- |
+| Decode metadata | Preserve FFmpeg/VideoToolbox range, matrix, transfer, and primaries. Unknown values fall back as documented below. |
+| YUV sampling | Expand limited/full range and apply BT.601, BT.709, or BT.2020 non-constant-luminance matrix. |
+| SDR transfer | Treat SDR RGB as sRGB-like and decode to linear for EDR composition. |
+| PQ transfer | Decode ST.2084 to absolute nits, then divide by `203.0` reference-white nits. |
+| HLG transfer | Decode HLG OETF to relative linear light, then scale by `4.0` for initial EDR headroom. |
+| EDR gamut | Convert BT.601, BT.709, and BT.2020 linear RGB to Display P3 linear RGB for macOS native-compositor output. |
+| SDR fallback | Convert BT.2020 linear RGB to BT.709, apply Reinhard tone mapping for HDR, and encode to sRGB-like output. |
+| Composition | Native video and Flutter SDR overlay are composed by the macOS native compositor after the viewport hole is applied. |
+
+This is not yet a subjective grading layer. It is the deterministic color
+correctness baseline that lets us compare CPU reference, Metal package upload,
+VideoToolbox `CVPixelBuffer` upload, and later Windows shader output. Creative
+or user-facing controls should be added after this baseline, for example as a
+separate tone curve, exposure, or saturation stage that is tested independently.
 
 ## Frame Format Policy
 
@@ -70,7 +98,10 @@ Soft/hard parity requirement:
 
 ## Color Metadata
 
-`FrameConverter` reads these fields from `AVFrame` and carries them into
+The macOS runner probes `AVCodecParameters` before creating the renderer-owned
+target so Auto presentation can decide whether a track needs EDR. `DemuxThread`
+also stores the same stream-level metadata in `TrackInfo`, while
+`FrameConverter` reads per-frame `AVFrame` metadata and carries it into
 presentation packages and renderer-owned frames:
 
 | Metadata | Supported values |
@@ -89,6 +120,10 @@ Defaults:
   uses BT.709; smaller content uses BT.601.
 - Unknown transfer defaults to SDR.
 - Unknown primaries are inferred from the matrix.
+
+Dolby Vision dynamic metadata / RPU is not consumed yet. Dolby Vision profile 8
+and similar files are displayed through their base HLG/PQ layer when FFmpeg
+reports that transfer metadata; full Dolby Vision grading remains future work.
 
 ## Windows HLSL / D3D11 Path
 
@@ -111,20 +146,48 @@ macOS uses the same metadata and layout contract through Metal:
 
 - VideoToolbox zero-copy frames keep their `CVPixelBuffer` storage when the
   codec and pixel format are supported by the renderer-owned Metal path.
+- VideoToolbox renderer-owned direct decode is gated to 4:2:0-like stream
+  formats before codec open; 4:2:2 / 4:4:4 streams fall back to software decode
+  until dedicated CVPixelBuffer/shader layouts exist.
 - Software/fallback frames use explicit YUV or BGRA present packages.
 - The Metal uploader validates target size, BGRA pixel-buffer compatibility,
   `CVMetalTextureCache` wrapping, storage kind, and package dimensions before
   draw.
-- The renderer-owned target is a Metal-compatible, IOSurface-backed BGRA
+- The SDR renderer-owned target is a Metal-compatible, IOSurface-backed BGRA
   `CVPixelBuffer` registered with Flutter by Swift.
+- The EDR native-compositor target is `RGBA16Float` and is interpreted by
+  `CAMetalLayer` as extended linear Display P3.
 - Swift does not apply color policy; it only owns texture lifecycle and frame
-  notification.
+  notification, except for selecting the native compositor layer color space.
 
-The macOS Metal shader path must stay equivalent to the Windows D3D11/HLSL path
-for range expansion, matrix selection, odd-dimension chroma packing, P010
-high-bit interpretation, and SDR tone mapping. Unsupported package kinds should
-fail visibly through presentation diagnostics rather than silently changing
-decode or playback policy.
+Local VideoToolbox probing on Apple Silicon showed that macOS can return more
+than NV12/P010-style 4:2:0 surfaces. The probe decoded synthetic H.264, HEVC,
+VP9, and ProRes streams with VideoToolbox and recorded the first decoded
+`CVPixelBuffer` format:
+
+| Source format | VideoToolbox format | Plane layout |
+| --- | --- | --- |
+| 8-bit 4:2:0 limited / full | `420v` / `420f` | Y full resolution, CbCr half width and half height. |
+| 10-bit 4:2:0 limited / full | `x420` / `xf20` | Y full resolution, CbCr half width and half height. |
+| 8-bit 4:2:2 limited / full | `422v` / `422f` | Y full resolution, CbCr half width and full height. |
+| 10-bit 4:2:2 limited / full | `x422` / `xf22` | Y full resolution, CbCr half width and full height. |
+| 8-bit 4:4:4 limited / full | `444v` / `444f` | Y full resolution, CbCr full width and full height. |
+| 10-bit 4:4:4 limited / full | `x444` / `xf44` | Y full resolution, CbCr full width and full height. |
+| ProRes 4444 | `y416` | Packed 16-bit RGBA/YUVA-like surface with no CoreVideo planes. |
+
+The current direct path only accepts the first two rows. Supporting the rest is
+incremental rather than a renderer rewrite, but it requires a real format table:
+`CVPixelBuffer` OSType -> chroma layout, bit depth, range expectation, plane
+wrapping, shader sampling, CPU reference, and parity tests. The safest expansion
+order is `422v/422f/x422/xf22` first, then `444v/444f/x444/xf44`, and packed
+formats such as `y416` last. Until then, 4:2:2 / 4:4:4 streams are deliberately
+kept on the software fallback path.
+
+The macOS Metal shader path must stay equivalent to the CPU reference for range
+expansion, matrix selection, odd-dimension chroma packing, P010 high-bit
+interpretation, EDR transfer/gamut mapping, and SDR tone mapping. Unsupported
+package kinds should fail visibly through presentation diagnostics rather than
+silently changing decode or playback policy.
 
 ## Shader Conversion
 
@@ -132,15 +195,16 @@ The shared shader contract covers:
 
 - limited/full range expansion
 - BT.601 / BT.709 / BT.2020_NCL YUV -> RGB
-- BT.2020 primaries to BT.709 conversion
-- PQ / HLG tone-map to SDR/sRGB code value
-- BGRA output for the platform texture target
+- BT.2020 primaries to Display P3 conversion for macOS EDR output
+- BT.2020 primaries to BT.709 conversion for SDR fallback output
+- PQ / HLG mapping to EDR float output or tone-map to SDR/sRGB code value
+- BGRA/RGBA output for the platform texture target
 
-BT.601 primaries currently preserve RGB code values without a separate gamut
-conversion. The ordinary SDR branch keeps a historical `1/255` slight downward
-adjustment to preserve old software decode rounding parity. It is about one
-8-bit code value and should not be interpreted as HDR or full/limited range
-correction.
+BT.601, BT.709, and BT.2020 primaries are converted into Display P3 for the
+macOS EDR branch. The ordinary SDR branch keeps a historical `1/255` slight
+downward adjustment to preserve old software decode rounding parity. It is
+about one 8-bit code value and should not be interpreted as HDR or full/limited
+range correction.
 
 The tone mapper is a stable preview mapping, not a full film-grade HDR pipeline.
 It does not read mastering display metadata or MaxCLL, does not adapt to target

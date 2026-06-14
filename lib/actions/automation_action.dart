@@ -58,6 +58,14 @@ class CaptureWindowAction extends AutomationAction {
     : super('CAPTURE_WINDOW');
 }
 
+class DebugFlutterSurfaceInfoAction extends AutomationAction {
+  const DebugFlutterSurfaceInfoAction() : super('DEBUG_FLUTTER_SURFACE_INFO');
+}
+
+class DebugNativeCompositorAction extends AutomationAction {
+  const DebugNativeCompositorAction() : super('DEBUG_NATIVE_COMPOSITOR');
+}
+
 class WindowMaximize extends AutomationAction {
   const WindowMaximize() : super('WINDOW_MAXIMIZE');
 }
@@ -110,6 +118,26 @@ class DragViewportSampleOverlay extends AutomationAction {
     this.minScoreRatio = 0.45,
     this.maxDropSamples = 0,
   }) : super('DRAG_VIEWPORT_SAMPLE_OVERLAY');
+}
+
+class DragViewportSampleNativeDiagnosticBool extends AutomationAction {
+  final double dx;
+  final double dy;
+  final String key;
+  final bool value;
+  final int steps;
+  final int stepMs;
+  final int minMatches;
+
+  const DragViewportSampleNativeDiagnosticBool(
+    this.dx,
+    this.dy, {
+    required this.key,
+    required this.value,
+    this.steps = 24,
+    this.stepMs = 16,
+    this.minMatches = 1,
+  }) : super('DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL');
 }
 
 class AssertViewportOverlayLineStyle extends AutomationAction {

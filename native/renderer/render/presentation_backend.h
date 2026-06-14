@@ -16,6 +16,7 @@ using PresentationBackendAsyncDrawCompleted =
 
 struct PresentationBackendDrawHooks {
     const char* draw_source = nullptr;
+    bool suppress_analysis_overlay = false;
     std::function<void(const char*)> wait_gpu_idle;
     std::function<void(uint64_t)> record_frame_copy_us;
     std::function<void(PresentationBackend&, const RendererDrawSnapshot&)> draw_overlay;

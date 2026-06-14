@@ -7,6 +7,7 @@ struct MacOSNativeFrameInfo {
   let ptsUs: Int
   let dtsUs: Int
   let targetPixelBufferAddress: UInt
+  let layoutRevision: UInt64
 }
 
 struct MacOSPendingNativeFrame {
@@ -31,6 +32,22 @@ struct MacOSNativeTrackMetadata {
   let codecName: String
   let codecLongName: String
   let decoderName: String
+  let colorRange: Int
+  let colorMatrix: Int
+  let colorTransfer: Int
+  let colorPrimaries: Int
+
+  var isHDR: Bool {
+    colorTransfer == MacOSNativeColorTransfer.pq ||
+      colorTransfer == MacOSNativeColorTransfer.hlg
+  }
+}
+
+enum MacOSNativeColorTransfer {
+  static let unknown = 0
+  static let sdr = 1
+  static let pq = 2
+  static let hlg = 3
 }
 
 enum MacOSNativePlayerError: Error, CustomStringConvertible {

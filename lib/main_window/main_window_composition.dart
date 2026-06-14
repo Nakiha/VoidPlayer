@@ -44,6 +44,8 @@ extension MainWindowComposition on MainWindowController {
       playbackPreferences: playbackPreferences,
       mounted: mounted,
       timelineMetrics: timelineMetrics,
+      onPlaybackTransition: ({required playing}) =>
+          layoutCoordinator.onPlaybackStateChanged(playing: playing),
       onSeekSettled: (_) => analysisCoordinator.refreshOverlayForCurrentFrame(),
       onSeekPreviewPresented:
           ({required trackFileId, required ptsUs, required dtsUs}) =>
@@ -81,6 +83,9 @@ extension MainWindowComposition on MainWindowController {
       appSettings: appSettings,
       mounted: mounted,
       onDuplicateMediaSkipped: onDuplicateMediaSkipped,
+      onMediaLoadRejected: onUserActionFailed == null
+          ? null
+          : (message) => onUserActionFailed!('Add media', message),
     );
     testHarness = MainWindowTestHarness(
       viewportKey: viewportKey,

@@ -1453,8 +1453,7 @@ class _SeverityCombo extends StatelessWidget {
         height: _QuickMarkSidebarState._toolButtonSize,
         value: value ?? _none,
         items: items,
-        labelFor: (item) =>
-            item == _none ? l.quickMarkJudgmentNone : 'S$item',
+        labelFor: (item) => item == _none ? l.quickMarkJudgmentNone : 'S$item',
         onChanged: (item) => onChanged(item == _none ? null : item),
         textStyle: theme.textTheme.bodySmall?.copyWith(
           color: value == null

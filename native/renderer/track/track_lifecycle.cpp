@@ -209,6 +209,24 @@ int64_t clamp_track_seek_target_us(const TrackPipeline& track,
     return std::min(track_target, track_end_us);
 }
 
+int64_t clamp_add_track_seek_target_us(const TrackPipeline& track,
+                                       int64_t target_pts_us) {
+    constexpr int64_t kEndSeekGuardUs = 1000;
+    const int64_t track_target =
+        std::max(target_pts_us - track.offset_us, int64_t(0));
+    if (!track.demux_thread) {
+        return track_target;
+    }
+
+    const int64_t track_end_us =
+        track_pts_end_us_from_stats(track.demux_thread->stats());
+    if (track_end_us <= 0 || track_target < track_end_us) {
+        return track_target;
+    }
+
+    return std::max<int64_t>(0, track_end_us - kEndSeekGuardUs);
+}
+
 TrackSeekTargetResolution resolve_track_seek_target(
     const TrackPipeline& track,
     int64_t global_target_pts_us) {
@@ -413,7 +431,7 @@ TrackAddSeekResult prepare_add_track_seek_to_clock(
         return result;
     }
 
-    result.target_pts_us = clamp_track_seek_target_us(track, current_pts_us);
+    result.target_pts_us = clamp_add_track_seek_target_us(track, current_pts_us);
     result.seek_type = was_playing ? SeekType::Keyframe : SeekType::Exact;
 
     if (track.decode_thread) {

@@ -13,6 +13,40 @@
 	  return mix(lo, hi, step(0.04045, x));
 	}
 
+	constant float kHDRReferenceWhiteNits = 203.0;
+	constant float kHLGEDRHeadroomScale = 4.0;
+
+	float3 convert_linear_bt2020_to_display_p3(float3 rgb) {
+	  return float3(
+	      1.3435782526 * rgb.r - 0.2821796705 * rgb.g - 0.0613985821 * rgb.b,
+	     -0.0652974528 * rgb.r + 1.0757879158 * rgb.g - 0.0104904631 * rgb.b,
+	      0.0028217873 * rgb.r - 0.0195984945 * rgb.g + 1.0167767073 * rgb.b);
+	}
+
+	float3 convert_linear_bt709_to_display_p3(float3 rgb) {
+	  return float3(
+	      0.8224619687 * rgb.r + 0.1775380313 * rgb.g,
+	      0.0331941989 * rgb.r + 0.9668058011 * rgb.g,
+	      0.0170826307 * rgb.r + 0.0723974407 * rgb.g + 0.9105199286 * rgb.b);
+	}
+
+	float3 convert_linear_bt601_to_display_p3(float3 rgb) {
+	  return float3(
+	      0.7758928495 * rgb.r + 0.2127372197 * rgb.g + 0.0113699286 * rgb.b,
+	      0.0483696384 * rgb.r + 0.9353998726 * rgb.g + 0.0162304897 * rgb.b,
+	      0.0158600140 * rgb.r + 0.0667994164 * rgb.g + 0.9173405701 * rgb.b);
+	}
+
+	float3 convert_linear_primaries_to_display_p3(float3 rgb, int primaries) {
+	  if (primaries == kColorPrimariesBT2020) {
+	    return convert_linear_bt2020_to_display_p3(rgb);
+	  }
+	  if (primaries == kColorPrimariesBT601) {
+	    return convert_linear_bt601_to_display_p3(rgb);
+	  }
+	  return convert_linear_bt709_to_display_p3(rgb);
+	}
+
 	float3 convert_linear_primaries_to_bt709(float3 rgb, int primaries) {
 	  if (primaries == kColorPrimariesBT2020) {
 	    return float3(
@@ -48,12 +82,12 @@
 
 	float3 tone_map_to_sdr(float3 rgb, int transfer, int primaries) {
 	  if (transfer == kColorTransferPQ) {
-	    float3 lin = pq_to_linear_nits(rgb) / 203.0;
+	    float3 lin = pq_to_linear_nits(rgb) / kHDRReferenceWhiteNits;
 	    lin = convert_linear_primaries_to_bt709(lin, primaries);
 	    return saturate(linear_to_srgb(lin / (1.0 + lin)));
 	  }
 	  if (transfer == kColorTransferHLG) {
-	    float3 lin = hlg_to_linear(rgb) * 4.0;
+	    float3 lin = hlg_to_linear(rgb) * kHLGEDRHeadroomScale;
 	    lin = convert_linear_primaries_to_bt709(lin, primaries);
 	    return saturate(linear_to_srgb(lin / (1.0 + lin)));
 	  }
@@ -62,6 +96,40 @@
 	    return saturate(linear_to_srgb(lin));
 	  }
 	  return saturate(rgb);
+	}
+
+	float3 map_to_edr(float3 rgb, int transfer, int primaries) {
+	  if (transfer == kColorTransferPQ) {
+	    float3 lin = pq_to_linear_nits(rgb) / kHDRReferenceWhiteNits;
+	    return max(convert_linear_primaries_to_display_p3(lin, primaries), 0.0);
+	  }
+	  if (transfer == kColorTransferHLG) {
+	    float3 lin = hlg_to_linear(rgb) * kHLGEDRHeadroomScale;
+	    return max(convert_linear_primaries_to_display_p3(lin, primaries), 0.0);
+	  }
+	  return max(convert_linear_primaries_to_display_p3(srgb_to_linear(rgb), primaries), 0.0);
+	}
+
+	float3 map_to_output(float3 rgb,
+	                     int transfer,
+	                     int primaries,
+	                     bool output_edr) {
+	  if (output_edr) {
+	    return map_to_edr(rgb, transfer, primaries);
+	  }
+	  return tone_map_to_sdr(rgb, transfer, primaries);
+	}
+
+	float4 map_sdr_ui_to_output(float4 color, bool output_edr) {
+	  color = saturate(color);
+	  if (!output_edr) {
+	    return color;
+	  }
+	  return float4(convert_linear_bt709_to_display_p3(srgb_to_linear(color.rgb)), color.a);
+	}
+
+	float4 viewport_background_output_color(constant LayoutParams& params) {
+	  return map_sdr_ui_to_output(viewport_background_color(params), params.output_edr != 0);
 	}
 
 	float yuv_sample_to_float(device const uchar* source, uint offset, bool is_p010) {
@@ -135,8 +203,9 @@
 	    rgb -= (1.0 / 255.0);
 	  }
 	  return float4(
-	      tone_map_to_sdr(rgb,
-	                      color_transfer_at(params, track_slot),
-	                      color_primaries_at(params, track_slot)),
+	      map_to_output(rgb,
+	                    color_transfer_at(params, track_slot),
+	                    color_primaries_at(params, track_slot),
+	                    params.output_edr != 0),
 	      1.0);
 	}

@@ -26,6 +26,39 @@ abstract interface class NativePlayerApi {
   });
   Future<void> setAudibleTrack(int? fileId);
   Future<void> resize({required int width, required int height});
+  Future<void> setNativeCompositorViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  });
+  Future<void> setNativeCompositorViewportTransform({
+    required bool enabled,
+    required double scaleX,
+    required double scaleY,
+    required double translateX,
+    required double translateY,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+  });
+  Future<void> prepareNativeCompositorSourceCache({
+    required List<int> sourceSlots,
+    required List<int> sourceOrder,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+    required List<double> displayOffsetX,
+    required List<double> displayOffsetY,
+    required List<double> invDisplaySizeX,
+    required List<double> invDisplaySizeY,
+    required List<double> viewOffsetUvX,
+    required List<double> viewOffsetUvY,
+  });
+  Future<void> setNativeAnalysisOverlay(Map<String, Object?> state);
+  Future<void> clearNativeCompositorSourceCache({required String reason});
   Future<void> setViewportBackgroundColor(int colorValue);
   Future<ViewportCapture> captureViewport({String? outputPath});
   Future<ViewportCapture> captureViewportRegion({
@@ -37,6 +70,8 @@ abstract interface class NativePlayerApi {
     String? outputPath,
   });
   Future<ViewportCapture> captureWindow({String? outputPath});
+  Future<Map<String, dynamic>> debugFlutterSurfaceInfo();
+  Future<Map<String, dynamic>> debugNativeCompositor();
   Future<void> stepForward();
   Future<void> stepBackward();
   Future<int> currentPts();
@@ -156,6 +191,102 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<void> setNativeCompositorViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  }) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.setNativeCompositorViewportRect,
+      {
+        NativePlayerKeys.left: left,
+        NativePlayerKeys.top: top,
+        NativePlayerKeys.width: width,
+        NativePlayerKeys.height: height,
+        NativePlayerKeys.surfaceWidth: surfaceWidth,
+        NativePlayerKeys.surfaceHeight: surfaceHeight,
+      },
+    );
+  }
+
+  @override
+  Future<void> setNativeCompositorViewportTransform({
+    required bool enabled,
+    required double scaleX,
+    required double scaleY,
+    required double translateX,
+    required double translateY,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+  }) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.setNativeCompositorViewportTransform,
+      {
+        NativePlayerKeys.enabled: enabled,
+        NativePlayerKeys.scaleX: scaleX,
+        NativePlayerKeys.scaleY: scaleY,
+        NativePlayerKeys.translateX: translateX,
+        NativePlayerKeys.translateY: translateY,
+        NativePlayerKeys.mode: mode,
+        NativePlayerKeys.splitPos: splitPos,
+        NativePlayerKeys.activeTrackCount: activeTrackCount,
+      },
+    );
+  }
+
+  @override
+  Future<void> prepareNativeCompositorSourceCache({
+    required List<int> sourceSlots,
+    required List<int> sourceOrder,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+    required List<double> displayOffsetX,
+    required List<double> displayOffsetY,
+    required List<double> invDisplaySizeX,
+    required List<double> invDisplaySizeY,
+    required List<double> viewOffsetUvX,
+    required List<double> viewOffsetUvY,
+  }) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.prepareNativeCompositorSourceCache,
+      {
+        NativePlayerKeys.sourceSlots: sourceSlots,
+        NativePlayerKeys.sourceOrder: sourceOrder,
+        NativePlayerKeys.mode: mode,
+        NativePlayerKeys.splitPos: splitPos,
+        NativePlayerKeys.activeTrackCount: activeTrackCount,
+        NativePlayerKeys.displayOffsetX: displayOffsetX,
+        NativePlayerKeys.displayOffsetY: displayOffsetY,
+        NativePlayerKeys.invDisplaySizeX: invDisplaySizeX,
+        NativePlayerKeys.invDisplaySizeY: invDisplaySizeY,
+        NativePlayerKeys.viewOffsetUvX: viewOffsetUvX,
+        NativePlayerKeys.viewOffsetUvY: viewOffsetUvY,
+      },
+    );
+  }
+
+  @override
+  Future<void> clearNativeCompositorSourceCache({required String reason}) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.clearNativeCompositorSourceCache,
+      {NativePlayerKeys.reason: reason},
+    );
+  }
+
+  @override
+  Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.setNativeAnalysisOverlay,
+      state,
+    );
+  }
+
+  @override
   Future<void> setViewportBackgroundColor(int colorValue) {
     return _channel.invokeMethod<void>(
       NativePlayerMethods.setViewportBackgroundColor,
@@ -221,6 +352,32 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     );
     return ViewportCapture.fromMap(
       NativePlayerPayloads.requireMap(map, NativePlayerMethods.captureWindow),
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> debugFlutterSurfaceInfo() async {
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      NativePlayerMethods.debugFlutterSurfaceInfo,
+    );
+    return Map<String, dynamic>.from(
+      NativePlayerPayloads.requireMap(
+        map,
+        NativePlayerMethods.debugFlutterSurfaceInfo,
+      ),
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> debugNativeCompositor() async {
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      NativePlayerMethods.debugNativeCompositor,
+    );
+    return Map<String, dynamic>.from(
+      NativePlayerPayloads.requireMap(
+        map,
+        NativePlayerMethods.debugNativeCompositor,
+      ),
     );
   }
 

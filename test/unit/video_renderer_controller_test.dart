@@ -220,6 +220,63 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<void> setNativeCompositorViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  }) async {
+    calls.add(
+      'setNativeCompositorViewportRect:$left,$top ${width}x$height surface=${surfaceWidth}x$surfaceHeight',
+    );
+  }
+
+  @override
+  Future<void> setNativeCompositorViewportTransform({
+    required bool enabled,
+    required double scaleX,
+    required double scaleY,
+    required double translateX,
+    required double translateY,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+  }) async {
+    calls.add(
+      'setNativeCompositorViewportTransform:$enabled scale=$scaleX,$scaleY translate=$translateX,$translateY mode=$mode tracks=$activeTrackCount',
+    );
+  }
+
+  @override
+  Future<void> prepareNativeCompositorSourceCache({
+    required List<int> sourceSlots,
+    required List<int> sourceOrder,
+    required int mode,
+    required double splitPos,
+    required int activeTrackCount,
+    required List<double> displayOffsetX,
+    required List<double> displayOffsetY,
+    required List<double> invDisplaySizeX,
+    required List<double> invDisplaySizeY,
+    required List<double> viewOffsetUvX,
+    required List<double> viewOffsetUvY,
+  }) async {
+    calls.add('prepareNativeCompositorSourceCache:${sourceSlots.join('|')}');
+  }
+
+  @override
+  Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
+
+  @override
+  Future<void> clearNativeCompositorSourceCache({
+    required String reason,
+  }) async {
+    calls.add('clearNativeCompositorSourceCache:$reason');
+  }
+
+  @override
   Future<void> setViewportBackgroundColor(int colorValue) async {
     calls.add('setViewportBackgroundColor:$colorValue');
   }
@@ -268,6 +325,18 @@ class _FakeNativePlayerApi implements NativePlayerApi {
       avgLuma: 1,
       nonBlackRatio: 1,
     );
+  }
+
+  @override
+  Future<Map<String, dynamic>> debugFlutterSurfaceInfo() async {
+    calls.add('debugFlutterSurfaceInfo');
+    return const {};
+  }
+
+  @override
+  Future<Map<String, dynamic>> debugNativeCompositor() async {
+    calls.add('debugNativeCompositor');
+    return const {};
   }
 
   @override

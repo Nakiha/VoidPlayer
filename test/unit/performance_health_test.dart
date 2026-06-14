@@ -18,11 +18,33 @@ void main() {
       'displayRefreshHzEstimate': 120.0,
       'displayTickHz': 118.0,
       'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
     });
 
     expect(snapshot.level, PerformanceHealthLevel.warning);
     expect(snapshot.kind, PerformanceHealthKind.nativeRenderPressure);
     expect(snapshot.reason, 'native-render');
+  });
+
+  test('classifies queued GPU completion latency as display pressure', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 2,
+      'isPlaying': false,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 120.0,
+      'layoutIntentHz': 61.6,
+      'layoutDrawHz': 19.8,
+      'nativeCompositorCompositeHz': 103.3,
+      'nativeRendererDrawP95Us': 64200.0,
+      'nativeRendererDrawBackendP95Us': 6100.0,
+      'metalCommandCompletionP95Us': 6100.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.severe);
+    expect(snapshot.kind, PerformanceHealthKind.externalDisplayPressure);
+    expect(snapshot.reason, 'display-pressure');
+    expect(snapshot.diagnosticSummary, contains('gpu-completion-high'));
+    expect(snapshot.diagnosticSummary, isNot(contains('reason=native-render')));
   });
 
   test(
@@ -45,6 +67,25 @@ void main() {
     },
   );
 
+  test('uses native compositor composite rate for layout display pressure', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 120.0,
+      'layoutIntentHz': 120.0,
+      'layoutDrawHz': 55.0,
+      'nativeCompositorEnabled': true,
+      'nativeCompositorCompositeHz': 118.0,
+      'nativeRendererDrawP95Us': 3000.0,
+      'nativeRendererDrawBackendP95Us': 2500.0,
+      'metalCommandCompletionP95Us': 3000.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+    expect(snapshot.diagnosticSummary, contains('compositor=118.0Hz'));
+  });
+
   test('classifies decode buffer pressure from track diagnostics', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
@@ -57,6 +98,51 @@ void main() {
     expect(snapshot.level, PerformanceHealthLevel.warning);
     expect(snapshot.kind, PerformanceHealthKind.decodePressure);
     expect(snapshot.reason, 'decode-buffer');
+  });
+
+  test('ignores empty decode buffers for tracks already past their end', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 2,
+      'isPlaying': true,
+      'nativeTrackDiagnostics': [
+        {
+          'bufferState': 0,
+          'bufferCount': 4,
+          'bufferCapacity': 4,
+          'durationUs': 9400000,
+          'currentPtsUs': 4014000,
+        },
+        {
+          'bufferState': 0,
+          'bufferCount': 0,
+          'bufferCapacity': 1,
+          'durationUs': 3000000,
+          'currentPtsUs': 4014000,
+        },
+      ],
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+  });
+
+  test('keeps empty decode buffers as pressure before track end', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'nativeTrackDiagnostics': [
+        {
+          'bufferState': 0,
+          'bufferCount': 0,
+          'bufferCapacity': 1,
+          'durationUs': 9400000,
+          'currentPtsUs': 4014000,
+        },
+      ],
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.warning);
+    expect(snapshot.kind, PerformanceHealthKind.decodePressure);
   });
 
   test(
@@ -99,6 +185,29 @@ void main() {
     expect(snapshot.level, PerformanceHealthLevel.ok);
     expect(snapshot.kind, PerformanceHealthKind.ok);
     expect(snapshot.playbackCadenceRatio, greaterThan(0.95));
+  });
+
+  test('keeps host interval spikes healthy when cadence is stable', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 118.0,
+      'layoutIntentHz': 58.5,
+      'layoutDrawHz': 76.7,
+      'presentedFrameHostIntervalP95Ms': 396.0,
+      'presentedFramePtsDistinctCount': 179,
+      'presentedFramePtsAdvanceUs': 6030000,
+      'presentedFrameExpectedIntervalUs': 33333,
+      'nativeRendererDrawP95Us': 2200.0,
+      'nativeRendererDrawBackendP95Us': 2100.0,
+      'metalCommandCompletionP95Us': 2000.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+    expect(snapshot.playbackCadenceRatio, greaterThan(0.95));
+    expect(snapshot.diagnosticSummary, contains('host-interval-high'));
   });
 
   test('keeps normal 30fps media healthy on a high refresh display', () {
@@ -239,7 +348,7 @@ void main() {
     expect(detail, isNot(contains('fps')));
   });
 
-  testWidgets('shows idle display sampling without reporting 0Hz', (
+  testWidgets('shows idle display-link sampling without reporting 0Hz', (
     tester,
   ) async {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
@@ -261,13 +370,11 @@ void main() {
       ),
     );
 
-    expect(detail, contains('display idle/121Hz'));
-    expect(detail, isNot(contains('display 0/121Hz')));
+    expect(detail, contains('display-link idle/121Hz'));
+    expect(detail, isNot(contains('display-link 0/121Hz')));
   });
 
-  testWidgets('keeps layout sampling inside the display summary', (
-    tester,
-  ) async {
+  testWidgets('keeps layout sampling out of the health detail', (tester) async {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
       'displayRefreshHzEstimate': 120.0,
@@ -289,8 +396,39 @@ void main() {
       ),
     );
 
-    expect(detail, contains('display 120/120Hz'));
+    expect(detail, contains('display-link 120/120Hz'));
     expect(detail, isNot(contains('layout')));
+  });
+
+  testWidgets('shows native compositor cadence before display-link cadence', (
+    tester,
+  ) async {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 0.0,
+      'nativeCompositorCompositeHz': 86.4,
+      'nativeCompositorSourceCacheHz': 29.7,
+      'nativeCompositorSourceProjectionHz': 119.1,
+    });
+    late String detail;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        home: Builder(
+          builder: (context) {
+            detail = snapshot.localizedDetail(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(detail, startsWith('compositor 86/120Hz'));
+    expect(detail, contains('source 30Hz'));
+    expect(detail, contains('projection 119Hz'));
+    expect(detail, contains('display-link idle/120Hz'));
   });
 
   testWidgets('display pressure feedback avoids environment-specific advice', (
@@ -329,6 +467,7 @@ void main() {
       'trackCount': 1,
       'isPlaying': true,
       'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
     });
 
     expect(_shouldShow(policy, snapshot: pressure, now: now), isFalse);
@@ -373,6 +512,7 @@ void main() {
       'trackCount': 1,
       'isPlaying': true,
       'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
     });
 
     for (var i = 0; i < 3; i += 1) {
@@ -396,6 +536,7 @@ void main() {
       'trackCount': 1,
       'isPlaying': true,
       'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
     });
 
     for (var i = 0; i < 2; i += 1) {
@@ -436,6 +577,7 @@ void main() {
       'trackCount': 1,
       'isPlaying': true,
       'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
     });
 
     for (var i = 0; i < 4; i += 1) {

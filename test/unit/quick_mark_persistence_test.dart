@@ -170,36 +170,39 @@ void main() {
     expect(loaded.single.text, 'offline');
   });
 
-  test('heals marks stored under fallback hash once content is readable', () async {
-    final missing = File(p.join(dir.path, 'media', 'missing.mp4'));
-    await repository.saveForMediaRefs(
-      [QuickMarkMediaRef(fileId: 1, path: missing.path)],
-      const [
-        QuickMark(
-          id: 4,
-          anchor: QuickMarkAnchor(fileId: 1, ptsUs: 5000, dtsUs: 5000),
-          sourceRect: Rect.zero,
-          text: 'fallback',
-        ),
-      ],
-    );
+  test(
+    'heals marks stored under fallback hash once content is readable',
+    () async {
+      final missing = File(p.join(dir.path, 'media', 'missing.mp4'));
+      await repository.saveForMediaRefs(
+        [QuickMarkMediaRef(fileId: 1, path: missing.path)],
+        const [
+          QuickMark(
+            id: 4,
+            anchor: QuickMarkAnchor(fileId: 1, ptsUs: 5000, dtsUs: 5000),
+            sourceRect: Rect.zero,
+            text: 'fallback',
+          ),
+        ],
+      );
 
-    await missing.create(recursive: true);
-    await missing.writeAsBytes([9, 9, 9, 9]);
+      await missing.create(recursive: true);
+      await missing.writeAsBytes([9, 9, 9, 9]);
 
-    final loaded = await repository.loadForMediaRefs([
-      QuickMarkMediaRef(fileId: 2, path: missing.path),
-    ]);
+      final loaded = await repository.loadForMediaRefs([
+        QuickMarkMediaRef(fileId: 2, path: missing.path),
+      ]);
 
-    expect(loaded, hasLength(1));
-    expect(loaded.single.text, 'fallback');
-    expect(loaded.single.fileId, 2);
+      expect(loaded, hasLength(1));
+      expect(loaded.single.text, 'fallback');
+      expect(loaded.single.fileId, 2);
 
-    final reloaded = await repository.loadForMediaRefs([
-      QuickMarkMediaRef(fileId: 3, path: missing.path),
-    ]);
-    expect(reloaded, hasLength(1), reason: 'healed rows must not duplicate');
-  });
+      final reloaded = await repository.loadForMediaRefs([
+        QuickMarkMediaRef(fileId: 3, path: missing.path),
+      ]);
+      expect(reloaded, hasLength(1), reason: 'healed rows must not duplicate');
+    },
+  );
 
   test('distributes marks to every ref sharing the same content', () async {
     final copy = File(p.join(dir.path, 'media', 'a_copy.mp4'));

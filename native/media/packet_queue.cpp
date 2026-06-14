@@ -156,8 +156,4 @@ void PacketQueue::clear_eof() {
     flushed_ = false;
 }
 
-bool PacketQueue::is_eof() const {
-    return eof_.load(std::memory_order_acquire);
-}
-
 } // namespace vr

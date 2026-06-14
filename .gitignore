@@ -33,6 +33,7 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/.toolchains/
 windows/flutter/generated_plugin_registrant.cc
 windows/flutter/generated_plugin_registrant.h
 windows/flutter/generated_plugins.cmake
@@ -72,6 +73,7 @@ compile_commands.json
 /macos/Runner.xcworkspace/xcuserdata
 /macos/Runner.xcworkspace/xcshareddata/swiftpm
 .cache
+/dev_config.local.json
 
 # Generated l10n files (source of truth is .arb)
 lib/l10n/app_localizations*.dart

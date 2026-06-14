@@ -1,0 +1,29 @@
+# EOF track removal should keep the last stable displayed frame when the
+# remaining short track cannot refresh at the long-session EOF clock.
+@WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
+0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.4, ASSERT_TRACK_COUNT, 1
+1.6, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+3.0, ASSERT_TRACK_COUNT, 2
+3.2, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+5.2, ASSERT_TRACK_COUNT, 3
+5.4, PLAY
+15.9, WAIT_PAUSED, 4000
+16.1, ASSERT_PAUSED
+16.2, ASSERT_POSITION_RANGE, 9700000, 10300000
+16.4, REMOVE_TRACK, 0
+17.3, ASSERT_TRACK_COUNT, 2
+17.4, CAPTURE_VIEWPORT, eof_after_remove_first_long
+17.5, ASSERT_CAPTURE_NOT_BLACK, eof_after_remove_first_long, 0.01, 4.0
+17.7, REMOVE_TRACK, 1
+18.8, ASSERT_TRACK_COUNT, 1
+18.9, CAPTURE_VIEWPORT, eof_after_remove_second_long
+19.0, ASSERT_CAPTURE_NOT_BLACK, eof_after_remove_second_long, 0.01, 4.0
+19.1, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeStableDisplayFallbackActive, true
+19.2, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeStableDisplayFallbackCount, 1
+19.3, SET_ZOOM, 2.0
+19.6, DRAG_VIEWPORT, 260, -120, 80, 4
+20.2, CAPTURE_VIEWPORT, eof_after_remove_second_long_pan
+20.3, ASSERT_CAPTURE_NOT_BLACK, eof_after_remove_second_long_pan, 0.01, 4.0
+20.5, QUIT, 0

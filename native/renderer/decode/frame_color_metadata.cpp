@@ -1,6 +1,7 @@
 #include "renderer/decode/frame_color_metadata.h"
 
 extern "C" {
+#include <libavcodec/codec_par.h>
 #include <libavutil/frame.h>
 #include <libavutil/pixfmt.h>
 }
@@ -70,6 +71,29 @@ VideoColorPrimaries map_color_primaries(AVColorPrimaries primaries) {
     }
 }
 
+void apply_color_defaults(VideoColorInfo& info, int width, int height) {
+    // FFmpeg often leaves screen recordings partially unspecified. Pick the
+    // same conservative defaults most players use for YUV video.
+    if (info.range == VIDEO_COLOR_RANGE_UNKNOWN) {
+        info.range = VIDEO_COLOR_RANGE_LIMITED;
+    }
+    if (info.matrix == VIDEO_COLOR_MATRIX_UNKNOWN) {
+        info.matrix = width >= 1280 || height > 576
+            ? VIDEO_COLOR_MATRIX_BT709
+            : VIDEO_COLOR_MATRIX_BT601;
+    }
+    if (info.transfer == VIDEO_COLOR_TRANSFER_UNKNOWN) {
+        info.transfer = VIDEO_COLOR_TRANSFER_SDR;
+    }
+    if (info.primaries == VIDEO_COLOR_PRIMARIES_UNKNOWN) {
+        info.primaries = info.matrix == VIDEO_COLOR_MATRIX_BT2020_NCL
+            ? VIDEO_COLOR_PRIMARIES_BT2020
+            : (info.matrix == VIDEO_COLOR_MATRIX_BT601
+                ? VIDEO_COLOR_PRIMARIES_BT601
+                : VIDEO_COLOR_PRIMARIES_BT709);
+    }
+}
+
 }  // namespace
 
 VideoColorInfo color_info_from_av_frame(const AVFrame* frame) {
@@ -92,24 +116,21 @@ VideoColorInfo color_info_from_av_frame(const AVFrame* frame) {
          format == AV_PIX_FMT_YUVJ444P)) {
         info.range = VIDEO_COLOR_RANGE_FULL;
     }
-    if (info.range == VIDEO_COLOR_RANGE_UNKNOWN) {
-        info.range = VIDEO_COLOR_RANGE_LIMITED;
+    apply_color_defaults(info, frame->width, frame->height);
+    return info;
+}
+
+VideoColorInfo color_info_from_av_codec_parameters(const AVCodecParameters* params) {
+    VideoColorInfo info;
+    if (!params) {
+        return info;
     }
-    if (info.matrix == VIDEO_COLOR_MATRIX_UNKNOWN) {
-        info.matrix = frame->width >= 1280 || frame->height > 576
-            ? VIDEO_COLOR_MATRIX_BT709
-            : VIDEO_COLOR_MATRIX_BT601;
-    }
-    if (info.transfer == VIDEO_COLOR_TRANSFER_UNKNOWN) {
-        info.transfer = VIDEO_COLOR_TRANSFER_SDR;
-    }
-    if (info.primaries == VIDEO_COLOR_PRIMARIES_UNKNOWN) {
-        info.primaries = info.matrix == VIDEO_COLOR_MATRIX_BT2020_NCL
-            ? VIDEO_COLOR_PRIMARIES_BT2020
-            : (info.matrix == VIDEO_COLOR_MATRIX_BT601
-                ? VIDEO_COLOR_PRIMARIES_BT601
-                : VIDEO_COLOR_PRIMARIES_BT709);
-    }
+
+    info.range = map_color_range(params->color_range);
+    info.matrix = map_color_matrix(params->color_space);
+    info.transfer = map_color_transfer(params->color_trc);
+    info.primaries = map_color_primaries(params->color_primaries);
+    apply_color_defaults(info, params->width, params->height);
     return info;
 }
 

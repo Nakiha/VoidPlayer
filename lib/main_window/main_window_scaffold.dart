@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../native_compositor_flags.dart';
 import '../performance/performance_health.dart';
 import '../platform/platform_capabilities.dart';
 import '../platform/pointer_button_state_provider.dart';
+import '../viewport/viewport_display_state.dart';
 import '../widgets/app_feedback_host.dart';
 import '../widgets/axtree_region.dart';
 import '../widgets/quick_mark_sidebar.dart';
@@ -38,7 +40,17 @@ class MainWindowScaffold extends StatelessWidget {
     final toolbarActions = actions.toolbar;
     final viewportActions = actions.viewport;
     final overlayActions = actions.overlays;
+    final nativeCompositor = NativeCompositorFlags.nativeCompositor;
+    final nativeCompositorViewportActive =
+        nativeCompositor &&
+        viewport.nativeCompositorActive &&
+        viewport.textureId != null &&
+        viewport.viewportState.status == ViewportDisplayStatus.active;
+    final shellBackgroundColor = Theme.of(context).scaffoldBackgroundColor;
     return Scaffold(
+      backgroundColor: nativeCompositorViewportActive
+          ? Colors.transparent
+          : null,
       body: Stack(
         children: [
           Column(
@@ -46,49 +58,54 @@ class MainWindowScaffold extends StatelessWidget {
               if (!overlays.fullScreen)
                 AxTreeRegion(
                   label: 'Main toolbar',
-                  child: AppToolBar(
-                    viewMode: viewport.viewMode,
-                    onViewModeChanged: toolbarActions.onViewModeChanged,
-                    onOpenFile: toolbarActions.onOpenFile,
-                    onOpenNetworkMedia: toolbarActions.onOpenNetworkMedia,
-                    onOpenSshRemoteMedia: toolbarActions.onOpenSshRemoteMedia,
-                    onMediaInfo: toolbarActions.onMediaInfo,
-                    onAnalysis: toolbarActions.onAnalysis,
-                    onProfiler: toolbarActions.onProfiler,
-                    onSettings: toolbarActions.onSettings,
-                    onMarksSidebarToggle: toolbarActions.onMarksSidebarToggle,
-                    tracks: media.tracks,
-                    analysisDataSource: media.analysisDataSource,
-                    viewModeEnabled:
-                        capabilities.canChangeViewMode &&
-                        viewport.viewModeEnabled,
-                    nativePlaybackAvailable: media.nativePlaybackAvailable,
-                    localFilePlaybackAvailable:
-                        media.localFilePlaybackAvailable,
-                    networkMediaAvailable: media.networkMediaAvailable,
-                    sshRemoteMediaAvailable: media.sshRemoteMediaAvailable,
-                    nativeFilePickerAvailable: media.nativeFilePickerAvailable,
-                    addMediaDisabledTooltip: firstCapabilityUserMessage([
-                      media.localFilePlaybackCapability,
-                      media.nativeFilePickerCapability,
-                      media.networkMediaPlaybackCapability,
-                      media.sshRemoteMediaPlaybackCapability,
-                    ]),
-                    analysisDisabledTooltip: firstCapabilityUserMessage([
-                      media.externalAnalysisWindowsCapability,
-                      media.analysisOverlaysCapability,
-                    ]),
-                    canAddTrack: capabilities.canAddTrack,
-                    canOpenLocalMedia: capabilities.canOpenLocalMedia,
-                    canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
-                    canOpenSshMedia: capabilities.canOpenSshMedia,
-                    canOpenMediaInfo: capabilities.canOpenMediaInfo,
-                    canOpenProfiler: capabilities.canOpenProfiler,
-                    canRunAnalysis: capabilities.canRunAnalysis,
-                    analysisEnabled: media.analysisEnabled,
-                    mediaInfoActive: overlays.mediaInfoVisible,
-                    profilerActive: overlays.profilerVisible,
-                    marksSidebarActive: overlays.marksSidebarVisible,
+                  child: _NativeCompositorOpaqueRegion(
+                    enabled: nativeCompositorViewportActive,
+                    color: shellBackgroundColor,
+                    child: AppToolBar(
+                      viewMode: viewport.viewMode,
+                      onViewModeChanged: toolbarActions.onViewModeChanged,
+                      onOpenFile: toolbarActions.onOpenFile,
+                      onOpenNetworkMedia: toolbarActions.onOpenNetworkMedia,
+                      onOpenSshRemoteMedia: toolbarActions.onOpenSshRemoteMedia,
+                      onMediaInfo: toolbarActions.onMediaInfo,
+                      onAnalysis: toolbarActions.onAnalysis,
+                      onProfiler: toolbarActions.onProfiler,
+                      onSettings: toolbarActions.onSettings,
+                      onMarksSidebarToggle: toolbarActions.onMarksSidebarToggle,
+                      tracks: media.tracks,
+                      analysisDataSource: media.analysisDataSource,
+                      viewModeEnabled:
+                          capabilities.canChangeViewMode &&
+                          viewport.viewModeEnabled,
+                      nativePlaybackAvailable: media.nativePlaybackAvailable,
+                      localFilePlaybackAvailable:
+                          media.localFilePlaybackAvailable,
+                      networkMediaAvailable: media.networkMediaAvailable,
+                      sshRemoteMediaAvailable: media.sshRemoteMediaAvailable,
+                      nativeFilePickerAvailable:
+                          media.nativeFilePickerAvailable,
+                      addMediaDisabledTooltip: firstCapabilityUserMessage([
+                        media.localFilePlaybackCapability,
+                        media.nativeFilePickerCapability,
+                        media.networkMediaPlaybackCapability,
+                        media.sshRemoteMediaPlaybackCapability,
+                      ]),
+                      analysisDisabledTooltip: firstCapabilityUserMessage([
+                        media.externalAnalysisWindowsCapability,
+                        media.analysisOverlaysCapability,
+                      ]),
+                      canAddTrack: capabilities.canAddTrack,
+                      canOpenLocalMedia: capabilities.canOpenLocalMedia,
+                      canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
+                      canOpenSshMedia: capabilities.canOpenSshMedia,
+                      canOpenMediaInfo: capabilities.canOpenMediaInfo,
+                      canOpenProfiler: capabilities.canOpenProfiler,
+                      canRunAnalysis: capabilities.canRunAnalysis,
+                      analysisEnabled: media.analysisEnabled,
+                      mediaInfoActive: overlays.mediaInfoVisible,
+                      profilerActive: overlays.profilerVisible,
+                      marksSidebarActive: overlays.marksSidebarVisible,
+                    ),
                   ),
                 ),
               Expanded(
@@ -112,6 +129,9 @@ class MainWindowScaffold extends StatelessWidget {
                                   onPointerButton:
                                       viewportActions.onPointerButton,
                                   onResize: viewportActions.onResize,
+                                  onNativeCompositorViewportRect:
+                                      viewportActions
+                                          .onNativeCompositorViewportRect,
                                   trackGeometry: viewport.tracks,
                                   quickMarks: viewport.quickMarks,
                                   quickMarkDraft: viewport.quickMarkDraft,
@@ -137,27 +157,37 @@ class MainWindowScaffold extends StatelessWidget {
                                       pointerButtonStateProvider,
                                   nativePlaybackAvailable:
                                       media.nativePlaybackAvailable,
+                                  nativeCompositorHole:
+                                      nativeCompositorViewportActive,
                                 ),
                               ),
                               if (!overlays.fullScreen &&
                                   media.tracks.isNotEmpty)
                                 AxTreeRegion(
                                   label: 'Playback timeline',
-                                  child: MediaTimelineSection(
-                                    model: model,
-                                    handles: handles,
-                                    actions: actions,
+                                  child: _NativeCompositorOpaqueRegion(
+                                    enabled: nativeCompositorViewportActive,
+                                    color: shellBackgroundColor,
+                                    child: MediaTimelineSection(
+                                      model: model,
+                                      handles: handles,
+                                      actions: actions,
+                                    ),
                                   ),
                                 ),
                             ],
                           ),
                         ),
                         if (overlays.marksSidebarVisible)
-                          QuickMarkSidebar(
-                            width: overlays.marksSidebarWidth,
-                            marks: model.marks,
-                            actions: actions.marks,
-                            onClose: overlayActions.onCloseMarksSidebar,
+                          _NativeCompositorOpaqueRegion(
+                            enabled: nativeCompositorViewportActive,
+                            color: shellBackgroundColor,
+                            child: QuickMarkSidebar(
+                              width: overlays.marksSidebarWidth,
+                              marks: model.marks,
+                              actions: actions.marks,
+                              onClose: overlayActions.onCloseMarksSidebar,
+                            ),
                           ),
                       ],
                     ),
@@ -258,5 +288,23 @@ class _MarksSidebarResizeHandle extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _NativeCompositorOpaqueRegion extends StatelessWidget {
+  final bool enabled;
+  final Color color;
+  final Widget child;
+
+  const _NativeCompositorOpaqueRegion({
+    required this.enabled,
+    required this.color,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return ColoredBox(color: color, child: child);
   }
 }

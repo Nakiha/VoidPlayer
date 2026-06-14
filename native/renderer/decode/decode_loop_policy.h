@@ -87,4 +87,6 @@ bool should_pace_hardware_exact_seek_decode(
     bool exact_seek_active,
     bool hardware_decode);
 
+bool should_complete_buffering_eof_preroll(size_t buffered_frames);
+
 } // namespace vr

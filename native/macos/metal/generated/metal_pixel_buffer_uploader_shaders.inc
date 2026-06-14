@@ -130,6 +130,7 @@ struct LayoutParams {
   float background_color_g;
   float background_color_b;
   float background_color_a;
+  uint output_edr;
 };
 
 uint frame_present_at(constant LayoutParams& params, uint index) {
@@ -337,6 +338,40 @@ float4 viewport_background_color(constant LayoutParams& params) {
 	  return mix(lo, hi, step(0.04045, x));
 	}
 
+	constant float kHDRReferenceWhiteNits = 203.0;
+	constant float kHLGEDRHeadroomScale = 4.0;
+
+	float3 convert_linear_bt2020_to_display_p3(float3 rgb) {
+	  return float3(
+	      1.3435782526 * rgb.r - 0.2821796705 * rgb.g - 0.0613985821 * rgb.b,
+	     -0.0652974528 * rgb.r + 1.0757879158 * rgb.g - 0.0104904631 * rgb.b,
+	      0.0028217873 * rgb.r - 0.0195984945 * rgb.g + 1.0167767073 * rgb.b);
+	}
+
+	float3 convert_linear_bt709_to_display_p3(float3 rgb) {
+	  return float3(
+	      0.8224619687 * rgb.r + 0.1775380313 * rgb.g,
+	      0.0331941989 * rgb.r + 0.9668058011 * rgb.g,
+	      0.0170826307 * rgb.r + 0.0723974407 * rgb.g + 0.9105199286 * rgb.b);
+	}
+
+	float3 convert_linear_bt601_to_display_p3(float3 rgb) {
+	  return float3(
+	      0.7758928495 * rgb.r + 0.2127372197 * rgb.g + 0.0113699286 * rgb.b,
+	      0.0483696384 * rgb.r + 0.9353998726 * rgb.g + 0.0162304897 * rgb.b,
+	      0.0158600140 * rgb.r + 0.0667994164 * rgb.g + 0.9173405701 * rgb.b);
+	}
+
+	float3 convert_linear_primaries_to_display_p3(float3 rgb, int primaries) {
+	  if (primaries == kColorPrimariesBT2020) {
+	    return convert_linear_bt2020_to_display_p3(rgb);
+	  }
+	  if (primaries == kColorPrimariesBT601) {
+	    return convert_linear_bt601_to_display_p3(rgb);
+	  }
+	  return convert_linear_bt709_to_display_p3(rgb);
+	}
+
 	float3 convert_linear_primaries_to_bt709(float3 rgb, int primaries) {
 	  if (primaries == kColorPrimariesBT2020) {
 	    return float3(
@@ -372,12 +407,12 @@ float4 viewport_background_color(constant LayoutParams& params) {
 
 	float3 tone_map_to_sdr(float3 rgb, int transfer, int primaries) {
 	  if (transfer == kColorTransferPQ) {
-	    float3 lin = pq_to_linear_nits(rgb) / 203.0;
+	    float3 lin = pq_to_linear_nits(rgb) / kHDRReferenceWhiteNits;
 	    lin = convert_linear_primaries_to_bt709(lin, primaries);
 	    return saturate(linear_to_srgb(lin / (1.0 + lin)));
 	  }
 	  if (transfer == kColorTransferHLG) {
-	    float3 lin = hlg_to_linear(rgb) * 4.0;
+	    float3 lin = hlg_to_linear(rgb) * kHLGEDRHeadroomScale;
 	    lin = convert_linear_primaries_to_bt709(lin, primaries);
 	    return saturate(linear_to_srgb(lin / (1.0 + lin)));
 	  }
@@ -386,6 +421,40 @@ float4 viewport_background_color(constant LayoutParams& params) {
 	    return saturate(linear_to_srgb(lin));
 	  }
 	  return saturate(rgb);
+	}
+
+	float3 map_to_edr(float3 rgb, int transfer, int primaries) {
+	  if (transfer == kColorTransferPQ) {
+	    float3 lin = pq_to_linear_nits(rgb) / kHDRReferenceWhiteNits;
+	    return max(convert_linear_primaries_to_display_p3(lin, primaries), 0.0);
+	  }
+	  if (transfer == kColorTransferHLG) {
+	    float3 lin = hlg_to_linear(rgb) * kHLGEDRHeadroomScale;
+	    return max(convert_linear_primaries_to_display_p3(lin, primaries), 0.0);
+	  }
+	  return max(convert_linear_primaries_to_display_p3(srgb_to_linear(rgb), primaries), 0.0);
+	}
+
+	float3 map_to_output(float3 rgb,
+	                     int transfer,
+	                     int primaries,
+	                     bool output_edr) {
+	  if (output_edr) {
+	    return map_to_edr(rgb, transfer, primaries);
+	  }
+	  return tone_map_to_sdr(rgb, transfer, primaries);
+	}
+
+	float4 map_sdr_ui_to_output(float4 color, bool output_edr) {
+	  color = saturate(color);
+	  if (!output_edr) {
+	    return color;
+	  }
+	  return float4(convert_linear_bt709_to_display_p3(srgb_to_linear(color.rgb)), color.a);
+	}
+
+	float4 viewport_background_output_color(constant LayoutParams& params) {
+	  return map_sdr_ui_to_output(viewport_background_color(params), params.output_edr != 0);
 	}
 
 	float yuv_sample_to_float(device const uchar* source, uint offset, bool is_p010) {
@@ -459,9 +528,10 @@ float4 viewport_background_color(constant LayoutParams& params) {
 	    rgb -= (1.0 / 255.0);
 	  }
 	  return float4(
-	      tone_map_to_sdr(rgb,
-	                      color_transfer_at(params, track_slot),
-	                      color_primaries_at(params, track_slot)),
+	      map_to_output(rgb,
+	                    color_transfer_at(params, track_slot),
+	                    color_primaries_at(params, track_slot),
+	                    params.output_edr != 0),
 	      1.0);
 	}
 
@@ -642,20 +712,20 @@ float4 overlay_sample_for_track(
   track_idx = clamp(track_idx, 0, int(kMaxTracks) - 1);
   const uint track_slot = uint(track_idx);
   if (frame_present_at(params, track_slot) == 0) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
   const int source_width_int = source_width_at(params, track_slot);
   const int source_height_int = source_height_at(params, track_slot);
   if (source_width_int <= 0 || source_height_int <= 0) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
 
   bool out_of_bounds = false;
   const float2 source_uv = aspect_fit_uv(local_uv, params, track_slot, out_of_bounds);
   if (out_of_bounds) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
 
@@ -663,7 +733,7 @@ float4 overlay_sample_for_track(
 	  const uint source_height = uint(source_height_int);
 	  const uint source_x = min(uint(source_uv.x * float(source_width)), source_width - 1);
 	  const uint source_y = min(uint(source_uv.y * float(source_height)), source_height - 1);
-	  float4 color = viewport_background_color(params);
+		  float4 color = viewport_background_output_color(params);
 	  if (yuv_format_at(params, track_slot) == kPresentFormatNV12 ||
 	      yuv_format_at(params, track_slot) == kPresentFormatP010 ||
 	      yuv_format_at(params, track_slot) == kPresentFormatYUV420P) {
@@ -706,7 +776,6 @@ float4 overlay_sample_for_track(
                                overlay3));
   destination.write(color, gid);
 }
-
 float4 sample_cv_yuv_track(texture2d<float, access::read> y_texture,
                            texture2d<float, access::read> uv_texture,
                            constant LayoutParams& params,
@@ -751,9 +820,10 @@ float4 sample_cv_yuv_track(texture2d<float, access::read> y_texture,
     rgb -= (1.0 / 255.0);
   }
   return float4(
-      tone_map_to_sdr(rgb,
-                      color_transfer_at(params, track_slot),
-                      color_primaries_at(params, track_slot)),
+      map_to_output(rgb,
+                    color_transfer_at(params, track_slot),
+                    color_primaries_at(params, track_slot),
+                    params.output_edr != 0),
       1.0);
 }
 
@@ -775,20 +845,20 @@ kernel void layout_cv_yuv_copy(
   const float2 texcoord = (float2(gid) + float2(0.5, 0.5)) / canvas_size;
   const uint track_slot = 0u;
   if (frame_present_at(params, track_slot) == 0) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
   const int source_width_int = source_width_at(params, track_slot);
   const int source_height_int = source_height_at(params, track_slot);
   if (source_width_int <= 0 || source_height_int <= 0) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
 
   bool out_of_bounds = false;
   const float2 source_uv_coord = aspect_fit_uv(texcoord, params, track_slot, out_of_bounds);
   if (out_of_bounds) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
 
@@ -851,20 +921,20 @@ kernel void layout_cv_yuv_set_copy(
   track_idx = clamp(track_idx, 0, int(kMaxTracks) - 1);
   const uint track_slot = uint(track_idx);
   if (frame_present_at(params, track_slot) == 0) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
   const int source_width_int = source_width_at(params, track_slot);
   const int source_height_int = source_height_at(params, track_slot);
   if (source_width_int <= 0 || source_height_int <= 0) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
 
   bool out_of_bounds = false;
   const float2 source_uv = aspect_fit_uv(local_uv, params, track_slot, out_of_bounds);
   if (out_of_bounds) {
-    destination.write(viewport_background_color(params), gid);
+    destination.write(viewport_background_output_color(params), gid);
     return;
   }
 
@@ -872,7 +942,7 @@ kernel void layout_cv_yuv_set_copy(
   const uint source_height = uint(source_height_int);
   const uint source_x = min(uint(source_uv.x * float(source_width)), source_width - 1);
   const uint source_y = min(uint(source_uv.y * float(source_height)), source_height - 1);
-  float4 color = viewport_background_color(params);
+  float4 color = viewport_background_output_color(params);
   if (track_slot == 0u) {
     color = sample_cv_yuv_track(
         source_y0, source_uv0, params, track_slot, source_x, source_y);
@@ -916,7 +986,6 @@ kernel void layout_cv_yuv_set_copy(
                                overlay3));
   destination.write(color, gid);
 }
-
 struct OverlayGpuRect {
   uint rect_uv0;
   uint rect_uv1;

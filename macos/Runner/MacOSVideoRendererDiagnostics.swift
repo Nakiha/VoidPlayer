@@ -19,7 +19,10 @@ enum MacOSVideoRendererDiagnostics {
       rendererOwnedPixelBufferBytes: Int,
       rendererOwnedPixelBufferCount: Int,
       inFlightMetalBufferCount: Int,
-      metalBufferExhaustionCount: Int
+      metalBufferExhaustionCount: Int,
+      stableDisplayFallbackActive: Bool,
+      stableDisplayFallbackCount: Int,
+      stableDisplayFallbackPtsUs: Int
     )?,
     textureDimensions: (width: Int, height: Int)?,
     trackCount: Int,
@@ -82,6 +85,22 @@ enum MacOSVideoRendererDiagnostics {
       "rendererOwnedUploadStorageKind": rendererOwnedState["uploadStorageKind"] ?? "unavailable",
       "rendererOwnedLastSuccessfulFramePtsUs":
         rendererOwnedState["lastSuccessfulFramePtsUs"] ?? 0,
+      "rendererOwnedLastFrameColorRangeCode":
+        rendererOwnedState["lastFrameColorRangeCode"] ?? 0,
+      "rendererOwnedLastFrameColorRange":
+        rendererOwnedState["lastFrameColorRange"] ?? "unknown",
+      "rendererOwnedLastFrameColorMatrixCode":
+        rendererOwnedState["lastFrameColorMatrixCode"] ?? 0,
+      "rendererOwnedLastFrameColorMatrix":
+        rendererOwnedState["lastFrameColorMatrix"] ?? "unknown",
+      "rendererOwnedLastFrameColorTransferCode":
+        rendererOwnedState["lastFrameColorTransferCode"] ?? 0,
+      "rendererOwnedLastFrameColorTransfer":
+        rendererOwnedState["lastFrameColorTransfer"] ?? "unknown",
+      "rendererOwnedLastFrameColorPrimariesCode":
+        rendererOwnedState["lastFrameColorPrimariesCode"] ?? 0,
+      "rendererOwnedLastFrameColorPrimaries":
+        rendererOwnedState["lastFrameColorPrimaries"] ?? "unknown",
       "rendererOwnedOverlayLastExpected":
         rendererOwnedState["overlayLastExpected"] ?? false,
       "rendererOwnedOverlayLastApplied":
@@ -204,6 +223,10 @@ enum MacOSVideoRendererDiagnostics {
       "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
       "textureInFlightMetalBufferCount": textureStats?.inFlightMetalBufferCount ?? 0,
       "textureMetalBufferExhaustionCount": textureStats?.metalBufferExhaustionCount ?? 0,
+      "nativeStableDisplayFallbackActive":
+        textureStats?.stableDisplayFallbackActive ?? false,
+      "nativeStableDisplayFallbackCount": textureStats?.stableDisplayFallbackCount ?? 0,
+      "nativeStableDisplayFallbackPtsUs": textureStats?.stableDisplayFallbackPtsUs ?? -1,
       "nativePresentationTargetInstalled": presentationTargetInstalled,
       "nativeRendererOwnedUploadCount": player?.rendererOwnedPresentationUploadCount() ?? 0,
       "nativeRendererOwnedUploadFailureCount": player?.rendererOwnedPresentationFailureCount() ?? 0,
@@ -332,6 +355,14 @@ enum MacOSVideoRendererDiagnostics {
       "targetHeight": 0,
       "uploadStorageKind": "unavailable",
       "lastSuccessfulFramePtsUs": 0,
+      "lastFrameColorRangeCode": 0,
+      "lastFrameColorRange": "unknown",
+      "lastFrameColorMatrixCode": 0,
+      "lastFrameColorMatrix": "unknown",
+      "lastFrameColorTransferCode": 0,
+      "lastFrameColorTransfer": "unknown",
+      "lastFrameColorPrimariesCode": 0,
+      "lastFrameColorPrimaries": "unknown",
       "overlayLastExpected": false,
       "overlayLastApplied": false,
       "overlayLastFillRectCount": 0,

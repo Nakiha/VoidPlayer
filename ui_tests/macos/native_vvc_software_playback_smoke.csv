@@ -25,6 +25,10 @@
 6.69, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
 6.692, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv
 6.693, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, yuv
+6.694, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorRange, limited
+6.6942, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorMatrix, bt709
+6.6944, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, sdr
+6.6946, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorPrimaries, bt709
 6.695, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
 6.696, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameHostIntervalSampleCount, 1
 6.697, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameExpectedIntervalUs, 1

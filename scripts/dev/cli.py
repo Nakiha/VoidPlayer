@@ -15,6 +15,11 @@ from .flutter_app import (
 )
 from .gate import cmd_gate
 from .package import cmd_package
+from .flutter_toolchain import (
+    bootstrap_flutter_toolchain,
+    print_flutter_toolchain_doctor,
+    print_flutter_toolchain_lock,
+)
 
 
 def _require_windows_command(command: str) -> None:
@@ -74,10 +79,13 @@ Examples:
   python dev.py test --native-only --github
   python dev.py gate pr-fast
   python dev.py gate macos-ui-smoke
+  python dev.py gate macos-hdr-edr-smoke
   python dev.py gate macos-release-readiness
   python dev.py package
   python dev.py package --installer
   python dev.py package --installer --macos-sign-identity "Developer ID Application: Team" --macos-notarize --macos-notary-profile PROFILE
+  python dev.py toolchain doctor
+  python dev.py toolchain bootstrap-flutter
   python dev.py ui-test ui_tests/smoke/basic.csv ui_tests/analysis/spawn_h265.csv
   python dev.py mac-ui-test ui_tests/macos/native_facade_smoke.csv
   python dev.py analysis-resize-stress
@@ -136,6 +144,7 @@ Examples:
             "macos-native-sanitizers",
             "macos-ui-smoke",
             "macos-ui-nightly",
+            "macos-hdr-edr-smoke",
             "macos-release-readiness",
             "windows-preservation",
             "release-candidate",
@@ -157,6 +166,13 @@ Examples:
                            help="Submit and staple the macOS DMG with xcrun notarytool")
     p_package.add_argument("--macos-notary-profile", type=str, default=None,
                            help="notarytool keychain profile; defaults to VOIDPLAYER_MACOS_NOTARY_PROFILE")
+
+    p_toolchain = sub.add_parser("toolchain", help="Manage pinned external toolchains")
+    p_toolchain.add_argument(
+        "action",
+        choices=["doctor", "bootstrap-flutter", "print-flutter-lock"],
+        help="Toolchain action to run",
+    )
 
     p_ui_test = sub.add_parser("ui-test", help="Launch the Windows app with CSV UI test scripts")
     p_ui_test.add_argument("scripts", nargs="+", help="Path(s) to CSV test script(s)")
@@ -305,6 +321,7 @@ def main() -> None:
         "test": cmd_test,
         "gate": cmd_gate,
         "package": cmd_package,
+        "toolchain": cmd_toolchain,
         "ui-test": cmd_ui_test,
         "mac-ui-test": cmd_mac_ui_test,
         "agent": _cmd_agent,
@@ -313,3 +330,17 @@ def main() -> None:
         "analysis-benchmark": cmd_analysis_benchmark,
         "analysis-overlay-benchmark": cmd_analysis_overlay_benchmark,
     }[args.command](args)
+
+
+def cmd_toolchain(args) -> None:
+    if args.action == "doctor":
+        print_flutter_toolchain_doctor()
+        return
+    if args.action == "bootstrap-flutter":
+        bootstrap_flutter_toolchain()
+        return
+    if args.action == "print-flutter-lock":
+        print_flutter_toolchain_lock()
+        return
+    print(f"ERROR: unknown toolchain action: {args.action}")
+    sys.exit(1)

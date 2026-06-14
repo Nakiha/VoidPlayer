@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "voidplayer-flutter",
+  "upstreamFlutter": "3.44.1",
+  "flutterVersion": "3.45.0-1.0.pre-39",
+  "dartSdkVersion": "3.12.1",
+  "frameworkRevision": "69b3172a210b5c48553db20ae8b7790a45a2036c",
+  "engineRevision": "c416acfeb8126e097f758c664aaa3da929e27da0",
+  "forkRemote": "https://github.com/Nakiha/VoidPlayer-Flutter.git",
+  "forkRef": "voidplayer-flutter-3.44.1-hdr.2",
+  "forkBranch": "voidplayer/hdr-surface-export-3.44.1",
+  "forkCommit": "69b3172a210b5c48553db20ae8b7790a45a2036c",
+  "defaultInstallPath": ".toolchains/flutter",
+  "macosLocalEngineArtifacts": {
+    "debug": {
+      "engine": "host_debug_unopt_arm64",
+      "host": "host_debug_unopt_arm64",
+      "asset": "voidplayer-flutter-3.44.1-hdr.2-macos-host_debug_unopt_arm64.tar.gz",
+      "sha256": "604c06ef07d481c969514c9d78df37625d622a3d947171105fa5502092c94f7e"
+    },
+    "release": {
+      "engine": "host_release_arm64",
+      "host": "host_release_arm64",
+      "asset": "voidplayer-flutter-3.44.1-hdr.2-macos-host_release_arm64.tar.gz",
+      "sha256": "761e4b016b8fbab665c81cd217ac22ca3d3ffe52c5e6dee90c6a0e139137a076"
+    }
+  },
+  "requiredPatchMarkers": [
+    {
+      "path": "engine/src/flutter/shell/platform/darwin/macos/framework/Headers/FlutterEngine.h",
+      "contains": "voidPlayerHDRCurrentFlutterSurfaceInfos"
+    },
+    {
+      "path": "engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterEngine.mm",
+      "contains": "VoidPlayerHDRSerializableSurfaceInfo"
+    }
+  ]
+}

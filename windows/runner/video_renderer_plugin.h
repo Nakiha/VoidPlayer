@@ -16,6 +16,7 @@
 #include "renderer_event_bridge.h"
 #include "viewport_capture_service.h"
 #include "window_capture_service.h"
+#include "windows/presentation/windows_display_resolver.h"
 
 #include <cstdint>
 #include <memory>
@@ -135,5 +136,7 @@ private:
     NativeLoggingBootstrap logging_bootstrap_;
     ViewportCaptureService viewport_capture_;
     WindowCaptureService window_capture_;
+    vr::WindowsDisplayResolver display_resolver_;
+    vr::WindowsDisplayProbeTracker display_probe_tracker_;
     HWND window_handle_ = nullptr;
 };

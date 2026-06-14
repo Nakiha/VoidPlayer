@@ -1,6 +1,7 @@
 #pragma once
 
 #include "native_diagnostics_ffi.h"
+#include "windows/presentation/windows_display_resolver.h"
 
 #include <flutter/standard_method_codec.h>
 
@@ -30,7 +31,8 @@ public:
     uint64_t QueryDedicatedVideoMemoryUsage() const;
 
     flutter::EncodableMap BuildMethodChannelDiagnostics(
-        const std::shared_ptr<vr::NativePlayer>& active_player) const;
+        const std::shared_ptr<vr::NativePlayer>& active_player,
+        const vr::WindowsDisplayProbeSnapshot& display) const;
     void FillFfiDiagnostics(
         NakiVrDiagnostics& out,
         const std::shared_ptr<vr::NativePlayer>& active_player) const;

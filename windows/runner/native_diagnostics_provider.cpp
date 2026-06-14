@@ -230,7 +230,8 @@ uint64_t NativeDiagnosticsProvider::QueryDedicatedVideoMemoryUsage() const {
 }
 
 flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
-    const std::shared_ptr<vr::NativePlayer>& active_player) const {
+    const std::shared_ptr<vr::NativePlayer>& active_player,
+    const vr::WindowsDisplayProbeSnapshot& display) const {
     flutter::EncodableMap map;
     const auto process_memory = QueryProcessMemoryUsage();
     const auto process_heap = QueryProcessHeapUsage();
@@ -248,6 +249,58 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(static_cast<int64_t>(process_heap.heap_count));
     map[flutter::EncodableValue("dedicatedGpuUsageBytes")] =
         flutter::EncodableValue(static_cast<int64_t>(QueryDedicatedVideoMemoryUsage()));
+    const auto& probe = display.probe;
+    map[flutter::EncodableValue("windowsDisplayProbeStatus")] =
+        flutter::EncodableValue(probe.status);
+    map[flutter::EncodableValue("windowsDisplayOutputResolved")] =
+        flutter::EncodableValue(probe.output_resolved);
+    map[flutter::EncodableValue("windowsDisplayColorMetadataAvailable")] =
+        flutter::EncodableValue(probe.color_metadata_available);
+    map[flutter::EncodableValue("windowsDisplaySelectionReason")] =
+        flutter::EncodableValue(probe.selection_reason);
+    map[flutter::EncodableValue("windowsDisplayDeviceName")] =
+        flutter::EncodableValue(probe.device_name);
+    map[flutter::EncodableValue("windowsDisplayAdapterDescription")] =
+        flutter::EncodableValue(probe.adapter_description);
+    map[flutter::EncodableValue("windowsDisplayAdapterLuid")] =
+        flutter::EncodableValue(
+            std::to_string(probe.adapter_luid_high) + ":" +
+            std::to_string(probe.adapter_luid_low));
+    map[flutter::EncodableValue("windowsDisplayMatchesPresentationAdapter")] =
+        flutter::EncodableValue(probe.matches_presentation_adapter);
+    map[flutter::EncodableValue("windowsDisplayDesktopLeft")] =
+        flutter::EncodableValue(probe.desktop_left);
+    map[flutter::EncodableValue("windowsDisplayDesktopTop")] =
+        flutter::EncodableValue(probe.desktop_top);
+    map[flutter::EncodableValue("windowsDisplayDesktopWidth")] =
+        flutter::EncodableValue(probe.desktop_width);
+    map[flutter::EncodableValue("windowsDisplayDesktopHeight")] =
+        flutter::EncodableValue(probe.desktop_height);
+    map[flutter::EncodableValue("windowsDisplayIntersectionArea")] =
+        flutter::EncodableValue(probe.intersection_area);
+    map[flutter::EncodableValue("windowsDisplayRotation")] =
+        flutter::EncodableValue(probe.rotation);
+    map[flutter::EncodableValue("windowsDisplayBitsPerColor")] =
+        flutter::EncodableValue(probe.bits_per_color);
+    map[flutter::EncodableValue("windowsDisplayColorSpace")] =
+        flutter::EncodableValue(probe.color_space);
+    map[flutter::EncodableValue("windowsDisplayAdvancedColorState")] =
+        flutter::EncodableValue(probe.advanced_color_state);
+    map[flutter::EncodableValue("windowsDisplayHDRActive")] =
+        flutter::EncodableValue(probe.hdr_active);
+    map[flutter::EncodableValue("windowsDisplayMinLuminanceMilliNits")] =
+        flutter::EncodableValue(probe.min_luminance_milli_nits);
+    map[flutter::EncodableValue("windowsDisplayMaxLuminanceMilliNits")] =
+        flutter::EncodableValue(probe.max_luminance_milli_nits);
+    map[flutter::EncodableValue("windowsDisplayMaxFullFrameLuminanceMilliNits")] =
+        flutter::EncodableValue(
+            probe.max_full_frame_luminance_milli_nits);
+    map[flutter::EncodableValue("windowsDisplayProbeGeneration")] =
+        flutter::EncodableValue(static_cast<int64_t>(display.generation));
+    map[flutter::EncodableValue("windowsDisplayChangeCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(display.change_count));
+    map[flutter::EncodableValue("windowsDisplayLastChangeReason")] =
+        flutter::EncodableValue(display.last_change_reason);
 
     if (!active_player) {
         return map;

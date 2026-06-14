@@ -127,6 +127,20 @@ def _run_windows_d3d11_color_layout_parity_smoke() -> None:
     )
 
 
+def _run_windows_display_tests() -> None:
+    run(
+        [
+            str(
+                ROOT
+                / "build/native/standalone/windows-msvc/Release"
+                / "video_renderer_tests.exe"
+            ),
+            "[windows_display]",
+        ],
+        cwd=str(ROOT),
+    )
+
+
 def _run_macos_release_readiness() -> None:
     _python_dev("package")
     run(
@@ -150,6 +164,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
             _run_macos_native_fast()
         elif _is_windows():
             _python_dev("test", "--native-only", "--github")
+            _run_windows_display_tests()
             _run_windows_d3d11_color_layout_parity_smoke()
             run([sys.executable, "scripts/dev/check_release_compliance.py"], cwd=str(ROOT))
         else:

@@ -48,6 +48,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | Test | Type | Gate | Requires | Covered risk |
 | --- | --- | --- | --- | --- |
 | `video_renderer_tests` | contract + integration | PR fast / Windows preservation | Windows FFmpeg | Shared renderer, D3D11, FFI command policy, decode/seek/layout unit coverage. |
+| `video_renderer_tests [windows_display]` | platform contract | Windows PR fast / Windows preservation | Windows SDK/DXGI | Active-output selection, negative-coordinate layouts, deterministic fallback, and HDR color-space classification. |
 | `windows_d3d11_color_layout_parity_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; explicit WARP allowed only for hosted CI | Synthetic shared renderer snapshots through D3D11 capture; BGRA, NV12, planar YUV420, P010, odd stride, split/layout fit. |
 | `analysis_tests` | contract | Release candidate / analysis changes | analysis submodules/tools | VAC2/VACHUNK/cache and analysis FFI behavior. |
 | `test_ffi_c` | FFI canary | PR fast when FFI is built | Windows FFI target | C ABI load/call sanity. |
@@ -83,7 +84,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | Script group | Canonical role | Gate |
 | --- | --- | --- |
 | `ui_tests/smoke/basic.csv` | Windows runner and basic playback smoke. | Windows preservation / release candidate |
-| `ui_tests/smoke/native_seek_preview_event.csv` | Windows EventChannel plus fixed SDR presentation diagnostics contract. | Windows preservation / release candidate |
+| `ui_tests/smoke/native_seek_preview_event.csv` | Windows EventChannel, fixed SDR presentation, and active DXGI output diagnostics contract. | Windows preservation / release candidate |
 | `ui_tests/timeline/**` | Real pointer timeline/seek path. | Targeted Windows preservation; stress scripts nightly/release. |
 | `ui_tests/seek/**` | Direct seek/step/rapid seek regressions. | Targeted preservation; rapid/storm scripts nightly. |
 | `ui_tests/loop/**` | Loop range state and commit behavior. | Targeted preservation. |

@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -83,6 +84,24 @@ public:
     WindowsDisplayProbeResult Probe(
         HWND window,
         IDXGIAdapter* presentation_adapter) const;
+};
+
+struct WindowsDisplayProbeSnapshot {
+    WindowsDisplayProbeResult probe;
+    uint64_t generation = 0;
+    uint64_t change_count = 0;
+    std::string last_change_reason = "unprobed";
+    bool changed = false;
+};
+
+class WindowsDisplayProbeTracker {
+public:
+    WindowsDisplayProbeSnapshot Update(
+        const WindowsDisplayProbeResult& probe);
+
+private:
+    mutable std::mutex mutex_;
+    WindowsDisplayProbeSnapshot current_;
 };
 
 } // namespace vr

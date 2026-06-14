@@ -114,10 +114,10 @@ Windows CI 还会跑 release compliance notice smoke：
 python3.12 scripts/dev/check_release_compliance.py
 ```
 
-Windows `pr-fast` also executes
+Windows `pr-fast` also executes the safe `[windows_display]` resolver tests and
 `windows_d3d11_color_layout_parity_smoke`. GitHub-hosted Windows explicitly
-allows the documented WARP fallback for this backend contract canary; local
-desktop evidence should use the real hardware adapter.
+allows the documented WARP fallback for the D3D11 backend contract canary;
+local desktop evidence should use the real hardware adapter.
 
 macOS CI 的 native fast gate uses the hosted-runner CTest profile：
 

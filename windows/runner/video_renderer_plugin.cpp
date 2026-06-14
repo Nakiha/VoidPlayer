@@ -1420,7 +1420,28 @@ void VideoRendererPlugin::GetDiagnostics(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    auto diagnostics = diagnostics_.BuildMethodChannelDiagnostics(player_);
+    const auto display = display_probe_tracker_.Update(
+        display_resolver_.Probe(window_handle_, dxgi_adapter_.Get()));
+    if (display.changed) {
+        spdlog::info(
+            "[WindowsDisplayProbe] generation={} changes={} reason={} "
+            "status={} output={} color_space={} hdr={} rect={}x{}+{},{} "
+            "matches_presentation_adapter={}",
+            display.generation,
+            display.change_count,
+            display.last_change_reason,
+            display.probe.status,
+            display.probe.device_name,
+            display.probe.color_space,
+            display.probe.hdr_active,
+            display.probe.desktop_width,
+            display.probe.desktop_height,
+            display.probe.desktop_left,
+            display.probe.desktop_top,
+            display.probe.matches_presentation_adapter);
+    }
+    auto diagnostics =
+        diagnostics_.BuildMethodChannelDiagnostics(player_, display);
     const auto event_diagnostics = event_bridge_.diagnostics();
     diagnostics[flutter::EncodableValue("nativeEventListenCount")] =
         enc_i64(event_diagnostics.listen_count);

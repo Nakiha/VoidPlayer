@@ -77,6 +77,18 @@ aspect fit/background bars, and split/order behavior against CPU expectations.
 | `windowsD3DDriverType` / `windowsD3DWarp` | Device creation route |
 | `d3dDeviceLost` / `d3dDeviceRemovedReason` | Existing compatibility fields |
 
+The runner also resolves the active DXGI output from the top-level window
+rectangle on every diagnostics query. It selects the attached output with the
+greatest intersection, then falls back to the nearest monitor or first attached
+output. `windowsDisplay*` fields report the selected output, adapter LUID,
+desktop geometry, rotation, bits per color, DXGI color space, luminance
+metadata, and probe generation/change reason.
+
+`windowsDisplayHDRActive=true` only means DXGI explicitly reported a PQ or HLG
+HDR color space. A normal SDR color space is reported as
+`sdr-or-advanced-color-unknown`, because `IDXGIOutput6::GetDesc1` cannot
+reliably distinguish Windows 11 SDR Advanced Color/WCG from ordinary SDR.
+
 A fallback that changes adapter, driver type, target format, or presentation
 mode must update these fields and emit a clear log reason.
 
@@ -92,13 +104,11 @@ and must expose the selected mode and reason.
 
 ## Catch-Up Roadmap
 
-1. Add an active-window DXGI output resolver and report Advanced Color state,
-   output color space, and display changes without changing rendering.
-2. Add an experimental FP16/scRGB target behind an explicit opt-in.
-3. Productize one native DirectComposition topology with clear Flutter overlay
+1. Add an experimental FP16/scRGB target behind an explicit opt-in.
+2. Productize one native DirectComposition topology with clear Flutter overlay
    ownership and fallback.
-4. Add Windows source projection/cache behavior at the backend boundary.
-5. Add HDR Auto policy only after output probing, FP16, compositor ownership,
+3. Add Windows source projection/cache behavior at the backend boundary.
+4. Add HDR Auto policy only after output probing, FP16, compositor ownership,
    diagnostics, and preservation gates are stable.
 
 This sequence is capability parity with macOS, not a mechanical Metal/Swift

@@ -80,6 +80,44 @@ bool luid_equal(const LUID& lhs, const LUID& rhs) {
     return lhs.HighPart == rhs.HighPart && lhs.LowPart == rhs.LowPart;
 }
 
+bool output_identity_changed(
+    const WindowsDisplayProbeResult& previous,
+    const WindowsDisplayProbeResult& current) {
+    return previous.output_resolved != current.output_resolved ||
+           previous.device_name != current.device_name ||
+           previous.adapter_luid_high != current.adapter_luid_high ||
+           previous.adapter_luid_low != current.adapter_luid_low ||
+           previous.matches_presentation_adapter !=
+               current.matches_presentation_adapter;
+}
+
+bool color_state_changed(
+    const WindowsDisplayProbeResult& previous,
+    const WindowsDisplayProbeResult& current) {
+    return previous.color_metadata_available !=
+               current.color_metadata_available ||
+           previous.bits_per_color != current.bits_per_color ||
+           previous.color_space != current.color_space ||
+           previous.advanced_color_state != current.advanced_color_state ||
+           previous.hdr_active != current.hdr_active ||
+           previous.min_luminance_milli_nits !=
+               current.min_luminance_milli_nits ||
+           previous.max_luminance_milli_nits !=
+               current.max_luminance_milli_nits ||
+           previous.max_full_frame_luminance_milli_nits !=
+               current.max_full_frame_luminance_milli_nits;
+}
+
+bool output_geometry_changed(
+    const WindowsDisplayProbeResult& previous,
+    const WindowsDisplayProbeResult& current) {
+    return previous.desktop_left != current.desktop_left ||
+           previous.desktop_top != current.desktop_top ||
+           previous.desktop_width != current.desktop_width ||
+           previous.desktop_height != current.desktop_height ||
+           previous.rotation != current.rotation;
+}
+
 } // namespace
 
 WindowsDisplaySelection select_windows_display_output(
@@ -387,6 +425,38 @@ WindowsDisplayProbeResult WindowsDisplayResolver::Probe(
     result.max_full_frame_luminance_milli_nits =
         luminance_to_milli_nits(output_desc1.MaxFullFrameLuminance);
     return result;
+}
+
+WindowsDisplayProbeSnapshot WindowsDisplayProbeTracker::Update(
+    const WindowsDisplayProbeResult& probe) {
+    std::lock_guard lock(mutex_);
+    if (current_.generation == 0) {
+        current_.probe = probe;
+        current_.generation = 1;
+        current_.last_change_reason = "initial-probe";
+        current_.changed = true;
+        return current_;
+    }
+
+    std::string change_reason;
+    if (current_.probe.status != probe.status) {
+        change_reason = "probe-status-changed";
+    } else if (output_identity_changed(current_.probe, probe)) {
+        change_reason = "output-changed";
+    } else if (color_state_changed(current_.probe, probe)) {
+        change_reason = "color-state-changed";
+    } else if (output_geometry_changed(current_.probe, probe)) {
+        change_reason = "output-geometry-changed";
+    }
+
+    current_.probe = probe;
+    current_.changed = !change_reason.empty();
+    if (current_.changed) {
+        ++current_.generation;
+        ++current_.change_count;
+        current_.last_change_reason = std::move(change_reason);
+    }
+    return current_;
 }
 
 } // namespace vr

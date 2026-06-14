@@ -12,6 +12,7 @@
 - 初始化 Flutter engine 和插件注册
 - 提供 `video_renderer` MethodChannel / Texture plugin 桥接
 - 提供 `video_renderer/events` EventChannel 和 native 诊断桥接
+- 按主窗口与 DXGI output 的最大交集探测当前显示器、color space 和亮度元数据
 - 将 native DX11 shared texture 暴露给 Flutter Texture widget
 - 引入 native C++ renderer 构建产物和 Windows 运行时依赖
 

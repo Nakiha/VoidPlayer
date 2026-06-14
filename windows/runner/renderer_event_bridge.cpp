@@ -106,6 +106,7 @@ void RendererEventBridge::SetSink(
     {
         std::lock_guard<std::mutex> lock(mutex_);
         sink_ = std::move(sink);
+        ++listen_count_;
     }
     Drain();
 }
@@ -121,6 +122,9 @@ void RendererEventBridge::Queue(const vr::RendererEvent& event) {
     auto payload = make_event_payload(event, sequence);
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (!sink_) {
+            ++drop_no_sink_count_;
+        }
         if (pending_events_.size() >= kMaxPendingRendererEvents) {
             pending_events_.pop_front();
             spdlog::warn("[RendererEventBridge] renderer event queue overflow, "
@@ -147,6 +151,16 @@ void RendererEventBridge::Drain() {
             pending_events_.pop_front();
             spdlog::debug("[RendererEventBridge] draining renderer event");
             sink_->Success(event);
+            ++emit_count_;
         }
     }
+}
+
+RendererEventBridge::Diagnostics RendererEventBridge::diagnostics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return {
+        listen_count_,
+        emit_count_,
+        drop_no_sink_count_,
+    };
 }

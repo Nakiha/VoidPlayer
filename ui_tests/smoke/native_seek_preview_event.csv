@@ -1,0 +1,12 @@
+# Native event bridge smoke. Locks seekPreviewPresented so Dart does not
+# fall back to the timer-based seek-settle path.
+@WINDOW, 960, 540
+0.0, GENERATE_TEST_VIDEO, build/generated/native_seek_preview_event_h264.mp4, 180, 30, 1280, 720
+0.3, ADD_MEDIA, build/generated/native_seek_preview_event_h264.mp4
+1.4, ASSERT_TRACK_COUNT, 1
+1.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeEventListenCount, 1
+1.6, SEEK_TO, 1000000
+2.4, ASSERT_PRESENTED_FRAME_RANGE, 1, 800000, 1400000
+2.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeEventEmitCount, 1
+2.6, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeEventDropNoSinkCount, 0, 0
+2.7, QUIT, 0

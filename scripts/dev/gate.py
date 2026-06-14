@@ -103,7 +103,12 @@ def _run_macos_hdr_edr_smoke() -> None:
 
 def _run_windows_preservation() -> None:
     _python_dev("test", "--native-only")
-    _python_dev("ui-test", "--build", "ui_tests/smoke/basic.csv")
+    _python_dev(
+        "ui-test",
+        "--build",
+        "ui_tests/smoke/basic.csv",
+        "ui_tests/smoke/native_seek_preview_event.csv",
+    )
 
 
 def _run_macos_release_readiness() -> None:

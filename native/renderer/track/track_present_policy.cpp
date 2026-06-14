@@ -8,14 +8,15 @@
 namespace vr {
 namespace {
 
-std::optional<int64_t> frame_end_pts_us(const TrackBuffer& track,
-                                        const TextureFrame& frame) {
+std::optional<int64_t> next_frame_deadline_pts_us(const TrackBuffer& track,
+                                                  const TextureFrame& frame) {
     const auto next = track.peek(1);
     if (next.has_value() && next->pts_us > frame.pts_us) {
         return next->pts_us;
     }
-    // No following PTS means the current frame is the stable tail for now.
-    // Duration metadata alone is not reliable enough to blank the track.
+    if (frame.duration_us > 0) {
+        return frame.pts_us + frame.duration_us;
+    }
     return std::nullopt;
 }
 
@@ -305,7 +306,7 @@ std::optional<int64_t> compute_next_frame_event_pts_us(
             current_pts_us - tracks[i]->offset_us;
 
         const std::optional<int64_t> frame_end =
-            frame_end_pts_us(*tracks[i]->track_buffer, *frame);
+            next_frame_deadline_pts_us(*tracks[i]->track_buffer, *frame);
         if (frame->pts_us <= effective_current_pts && !frame_end.has_value()) {
             continue;
         }

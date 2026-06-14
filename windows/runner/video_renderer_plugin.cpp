@@ -1,5 +1,6 @@
 #include "video_renderer_plugin.h"
 #include "analysis_ffi.h"
+#include "native_player_channel_names.h"
 
 #include "renderer/layout/layout_validation.h"
 #include "renderer/renderer_config_validation.h"
@@ -208,10 +209,10 @@ const NakiVrDiagnostics* naki_vr_get_diagnostics() {
 void VideoRendererPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows* registrar) {
     auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-        registrar->messenger(), "video_renderer",
+        registrar->messenger(), native_player_channels::kMethodChannel,
         &flutter::StandardMethodCodec::GetInstance());
     auto event_channel = std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
-        registrar->messenger(), "renderer/events",
+        registrar->messenger(), native_player_channels::kEventChannel,
         &flutter::StandardMethodCodec::GetInstance());
 
     auto* texture_registrar = registrar->texture_registrar();
@@ -1419,8 +1420,15 @@ void VideoRendererPlugin::GetDiagnostics(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    result->Success(flutter::EncodableValue(
-        diagnostics_.BuildMethodChannelDiagnostics(player_)));
+    auto diagnostics = diagnostics_.BuildMethodChannelDiagnostics(player_);
+    const auto event_diagnostics = event_bridge_.diagnostics();
+    diagnostics[flutter::EncodableValue("nativeEventListenCount")] =
+        enc_i64(event_diagnostics.listen_count);
+    diagnostics[flutter::EncodableValue("nativeEventEmitCount")] =
+        enc_i64(event_diagnostics.emit_count);
+    diagnostics[flutter::EncodableValue("nativeEventDropNoSinkCount")] =
+        enc_i64(event_diagnostics.drop_no_sink_count);
+    result->Success(flutter::EncodableValue(std::move(diagnostics)));
     } catch (const std::exception& e) {
         ReportMethodException(result.get(), "getDiagnostics", e);
     } catch (...) {

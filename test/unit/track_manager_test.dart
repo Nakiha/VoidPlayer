@@ -56,4 +56,26 @@ void main() {
     manager.swapTracks(0, 99);
     expect(orderOf(manager), [2, 0, 1]);
   });
+
+  test('addTrack caps display order at maxTracks', () {
+    final manager = TrackManager();
+
+    for (var i = 0; i < TrackManager.maxTracks + 2; i++) {
+      manager.addTrack(track(i));
+    }
+
+    expect(manager.count, TrackManager.maxTracks);
+    expect(orderOf(manager), [0, 1, 2, 3]);
+  });
+
+  test('setTracks asserts when native returns too many tracks', () {
+    final manager = TrackManager();
+
+    expect(
+      () => manager.setTracks([
+        for (var i = 0; i < TrackManager.maxTracks + 1; i++) track(i),
+      ]),
+      throwsAssertionError,
+    );
+  });
 }

@@ -42,7 +42,11 @@ class TrackManager with ChangeNotifier {
 
   /// Replace all tracks at once (after [createPlayer] or [getTracks]).
   void setTracks(List<TrackInfo> tracks) {
-    _entries = tracks.map((t) => TrackEntry(t)).toList();
+    assert(
+      tracks.length <= maxTracks,
+      'TrackManager supports at most $maxTracks tracks.',
+    );
+    _entries = tracks.take(maxTracks).map((t) => TrackEntry(t)).toList();
     notifyListeners();
   }
 

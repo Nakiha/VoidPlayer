@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 struct MacOSVideoRendererStartup {
@@ -22,6 +23,11 @@ enum MacOSVideoRendererStartupFactory {
     let viewportBackgroundColor = MacOSFlutterArguments.uint32Arg(arguments, "color")
     guard let firstPath = paths.first, !firstPath.isEmpty else {
       throw MacOSNativePlayerError.failed("createPlayer requires at least one media path")
+    }
+    guard paths.count <= MacOSVideoTrackPayload.maxTrackCount else {
+      throw MacOSNativePlayerError.failed(
+        "createPlayer supports at most \(MacOSVideoTrackPayload.maxTrackCount) tracks"
+      )
     }
 
     if firstPath.hasPrefix("macos-synthetic://") {
@@ -93,7 +99,10 @@ enum MacOSVideoRendererStartupFactory {
       try? MacOSNativePlayerSession.probeTrack(path: path)
     }
     let hasHDRTrack = probedTracks.contains { $0.isHDR }
-    let configuration = MacOSPresentationConfiguration.resolve(hasHDRTrack: hasHDRTrack)
+    let configuration = MacOSPresentationConfiguration.resolve(
+      hasHDRTrack: hasHDRTrack,
+      screen: NSScreen.main
+    )
     MacOSPresentationConfiguration.updateCurrent(configuration)
     NSLog(
       "VoidPlayer macOS presentation policy: request=%@ mode=%@ reason=%@ hdrTrack=%@",

@@ -477,6 +477,7 @@ final class MacOSNativeCompositorView: NSView {
         return
       }
       guard let flutterSnapshot = currentFlutterMetalTexture() else {
+        setHiddenOnMain(true)
         recordFailure("no Flutter texture")
         return
       }
@@ -1193,20 +1194,44 @@ final class MacOSNativeCompositorView: NSView {
       lastFlutterAlphaAverageX1000 = -1
       lastFlutterTransparentRatioX1000 = -1
       lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
+      recordFailure("Flutter surface missing IOSurface")
       return
     }
-    let ioSurface = rawSurface as! IOSurfaceRef
+    let surfaceObject = rawSurface as AnyObject
+    guard CFGetTypeID(surfaceObject) == IOSurfaceGetTypeID() else {
+      lastFlutterAlphaAverageX1000 = -1
+      lastFlutterTransparentRatioX1000 = -1
+      lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
+      recordFailure("Flutter surface IOSurface type mismatch")
+      return
+    }
+    let ioSurface = unsafeBitCast(surfaceObject, to: IOSurfaceRef.self)
     let pixelFormat = IOSurfaceGetPixelFormat(ioSurface)
     guard pixelFormat == kCVPixelFormatType_32BGRA else {
       lastFlutterAlphaAverageX1000 = -1
       lastFlutterTransparentRatioX1000 = -1
       lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
+      recordFailure("Flutter surface unsupported pixel format")
       return
     }
 
-    IOSurfaceLock(ioSurface, .readOnly, nil)
+    let lockResult = IOSurfaceLock(ioSurface, .readOnly, nil)
+    guard lockResult == kIOReturnSuccess else {
+      lastFlutterAlphaAverageX1000 = -1
+      lastFlutterTransparentRatioX1000 = -1
+      lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
+      recordFailure("Flutter surface IOSurfaceLock failed")
+      return
+    }
     defer { IOSurfaceUnlock(ioSurface, .readOnly, nil) }
     let baseAddress = IOSurfaceGetBaseAddress(ioSurface)
+    guard Int(bitPattern: baseAddress) != 0 else {
+      lastFlutterAlphaAverageX1000 = -1
+      lastFlutterTransparentRatioX1000 = -1
+      lastHoleRect = SIMD4<Float>(0, 0, 0, 0)
+      recordFailure("Flutter surface missing base address")
+      return
+    }
 
     let width = IOSurfaceGetWidth(ioSurface)
     let height = IOSurfaceGetHeight(ioSurface)

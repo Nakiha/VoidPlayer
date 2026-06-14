@@ -83,6 +83,9 @@ extension MainWindowComposition on MainWindowController {
       appSettings: appSettings,
       mounted: mounted,
       onDuplicateMediaSkipped: onDuplicateMediaSkipped,
+      onMediaLoadRejected: onUserActionFailed == null
+          ? null
+          : (message) => onUserActionFailed!('Add media', message),
     );
     testHarness = MainWindowTestHarness(
       viewportKey: viewportKey,

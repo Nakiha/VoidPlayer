@@ -22,6 +22,7 @@ final class MacOSPresentationController {
     label: "dev.nakiha.voidplayer.macos.layout-refresh",
     qos: .userInteractive
   )
+  private let layoutRefreshQueueKey = DispatchSpecificKey<Bool>()
   private lazy var displayLink = MacOSViewportDisplayLink { [weak self] in
     self?.processViewportDisplayTick()
   }
@@ -49,6 +50,10 @@ final class MacOSPresentationController {
   private let layoutQueueDuration = MacOSDurationWindow()
   private let layoutApplyDuration = MacOSDurationWindow()
   private let layoutTotalDuration = MacOSDurationWindow()
+
+  init() {
+    layoutRefreshQueue.setSpecific(key: layoutRefreshQueueKey, value: true)
+  }
 
   func resetLayout() {
     cancelPendingLayoutRefreshes()
@@ -199,9 +204,16 @@ final class MacOSPresentationController {
     displayLinkIdleUntilNs = 0
     displayLink.stop()
     if layoutRefreshRunning {
-      layoutRefreshQueue.sync {}
+      waitForLayoutRefreshQueueDrain()
     }
     layoutRefreshRunning = false
+  }
+
+  private func waitForLayoutRefreshQueueDrain() {
+    if DispatchQueue.getSpecific(key: layoutRefreshQueueKey) == true {
+      return
+    }
+    layoutRefreshQueue.sync {}
   }
 
   private func requestDisplayLinkedLayoutRefresh(

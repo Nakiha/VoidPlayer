@@ -28,17 +28,22 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private let coalescedFrameCallbackDelayMs = 8
   private var frameAvailableCount = 0
   private var profilerSummaryTimer: DispatchSourceTimer?
+  private var screenChangeObserver: NSObjectProtocol?
 
   init(engine: FlutterEngine, contentView: NSView) {
     self.flutterEngine = engine
     self.contentView = contentView
     self.lifecycle = MacOSPlayerLifecycleController(textureRegistry: engine)
     super.init()
+    installScreenChangeObserver()
     ensureNativeCompositorMatchesCurrentConfiguration()
   }
 
   deinit {
     profilerSummaryTimer?.cancel()
+    if let observer = screenChangeObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
   }
 
   private var texture: MacOSVideoTexture? {
@@ -59,6 +64,25 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private var nativePlayer: MacOSNativePlayerSession? {
     lifecycle.nativePlayer
+  }
+
+  private var presentationScreen: NSScreen? {
+    contentView?.window?.screen ?? NSScreen.main
+  }
+
+  private func installScreenChangeObserver() {
+    screenChangeObserver = NotificationCenter.default.addObserver(
+      forName: NSWindow.didChangeScreenNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] notification in
+      guard let self,
+            let window = self.contentView?.window,
+            notification.object as? NSWindow === window else {
+        return
+      }
+      self.refreshPresentationPolicyForCurrentTracks()
+    }
   }
 
   static func register(with engine: FlutterEngine, contentView: NSView) {
@@ -574,6 +598,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         self?.markFrameAvailable()
       }
     )
+    refreshPresentationPolicyForCurrentTracks()
     ensureNativeCompositorMatchesCurrentConfiguration()
     if let viewportBackgroundColor {
       nativeCompositor?.setViewportBackgroundColor(viewportBackgroundColor)
@@ -709,11 +734,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func refreshPresentationPolicyForCurrentTracks() {
     guard backendName == MacOSVideoTrackPayload.nativeFormatName else { return }
     let nextConfiguration = MacOSPresentationConfiguration.resolve(
-      hasHDRTrack: tracks.hasHDRTrack
+      hasHDRTrack: tracks.hasHDRTrack,
+      screen: presentationScreen
     )
     let previousConfiguration = MacOSPresentationConfiguration.current
     guard nextConfiguration.mode != previousConfiguration.mode ||
-            nextConfiguration.reason != previousConfiguration.reason else {
+            nextConfiguration.reason != previousConfiguration.reason ||
+            nextConfiguration.displayEDRHeadroomX1000 !=
+              previousConfiguration.displayEDRHeadroomX1000 else {
       return
     }
     MacOSPresentationConfiguration.updateCurrent(nextConfiguration)

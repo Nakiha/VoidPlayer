@@ -5,6 +5,17 @@ permissions:
   contents: read
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/macos-ui.yml"
+      - "dev.py"
+      - "lib/**"
+      - "macos/**"
+      - "native/**"
+      - "resources/video/h264_9s_1920x1080.mp4"
+      - "scripts/**"
+      - "toolchains/**"
+      - "ui_tests/macos/**"
   workflow_dispatch:
     inputs:
       profile:
@@ -24,7 +35,7 @@ concurrency:
 
 jobs:
   macos-ui:
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'macos-ui-smoke' }}
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.profile || github.event_name == 'schedule' && 'macos-ui-nightly' || 'macos-ui-smoke' }}
     runs-on: macos-14
     timeout-minutes: 60
     steps:
@@ -47,8 +58,8 @@ jobs:
         run: |
           git lfs install --local
           git lfs pull --include="resources/video/h264_9s_1920x1080.mp4"
-          if [[ "${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'macos-ui-smoke' }}" == "macos-ui-nightly" ]]; then
-            git lfs pull --include="resources/video/h266_10s_1920x1080.mp4,resources/video/mhw_hevc_fullrange_bt709_3s.mp4"
+          if [[ "${{ github.event_name == 'workflow_dispatch' && inputs.profile || github.event_name == 'schedule' && 'macos-ui-nightly' || 'macos-ui-smoke' }}" == "macos-ui-nightly" ]]; then
+            git lfs pull --include="resources/video/h266_10s_1920x1080.mp4,resources/video/mhw_hevc_fullrange_bt709_3s.mp4,resources/video/h264_high422p_1s_320x180.mp4,resources/video/ffv1_yuv422p_8bit.mkv,resources/video/ffv1_yuv444p_8bit.mkv,resources/video/ffv1_yuv422p10le.mkv,resources/video/ffv1_yuv444p10le.mkv"
           fi
 
       - name: Download FFmpeg build artifact
@@ -94,4 +105,4 @@ jobs:
 
       - name: Run macOS UI gate
         shell: bash
-        run: python3.12 dev.py gate "${{ github.event_name == 'workflow_dispatch' && inputs.profile || 'macos-ui-smoke' }}"
+        run: python3.12 dev.py gate "${{ github.event_name == 'workflow_dispatch' && inputs.profile || github.event_name == 'schedule' && 'macos-ui-nightly' || 'macos-ui-smoke' }}"

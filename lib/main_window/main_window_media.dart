@@ -45,6 +45,7 @@ class MainWindowMediaCoordinator {
   final AppSettingsRepository appSettings;
   final bool Function() mounted;
   final ValueChanged<int>? onDuplicateMediaSkipped;
+  final ValueChanged<String>? onMediaLoadRejected;
   final SshRemoteMediaService sshRemoteMedia;
   Future<void>? _loadInFlight;
   bool _disposed = false;
@@ -61,6 +62,7 @@ class MainWindowMediaCoordinator {
     required this.appSettings,
     required this.mounted,
     this.onDuplicateMediaSkipped,
+    this.onMediaLoadRejected,
     this.sshRemoteMedia = const SshRemoteMediaService(),
   });
 
@@ -131,6 +133,10 @@ class MainWindowMediaCoordinator {
     if (!_alive || uniquePaths.isEmpty) return;
 
     if (textureId() == null) {
+      if (uniquePaths.length > TrackManager.maxTracks) {
+        _rejectTrackLimit(requestedCount: uniquePaths.length);
+        return;
+      }
       setViewportState(const ViewportDisplayState.loading());
       try {
         final initialWidth = layoutCoordinator.viewportWidth > 0
@@ -181,6 +187,13 @@ class MainWindowMediaCoordinator {
         }
       }
     } else {
+      final availableSlots = TrackManager.maxTracks - trackManager.count;
+      if (uniquePaths.length > availableSlots) {
+        _rejectTrackLimit(
+          requestedCount: trackManager.count + uniquePaths.length,
+        );
+        return;
+      }
       for (final path in uniquePaths) {
         if (!_alive) return;
         try {
@@ -205,6 +218,17 @@ class MainWindowMediaCoordinator {
           log.severe("addTrack failed: $e");
         }
       }
+    }
+  }
+
+  void _rejectTrackLimit({required int requestedCount}) {
+    final message =
+        'VoidPlayer supports at most ${TrackManager.maxTracks} tracks. '
+        'Requested $requestedCount.';
+    log.warning(message);
+    onMediaLoadRejected?.call(message);
+    if (textureId() == null) {
+      setViewportState(ViewportDisplayState.error(message));
     }
   }
 

@@ -12,6 +12,7 @@ struct MacOSPresentationConfiguration {
   let mode: MacOSPresentationMode
   let request: String
   let reason: String
+  let displayEDRHeadroomX1000: Int
 
   var nativeCompositorEnabled: Bool {
     mode == .nativeCompositorSDR || mode == .nativeCompositorEDR
@@ -40,7 +41,7 @@ struct MacOSPresentationConfiguration {
       "macOSPresentationReason": reason,
       "macOSPresentationNativeCompositorEnabled": nativeCompositorEnabled,
       "macOSPresentationEDROutputEnabled": edrOutputEnabled,
-      "macOSDisplayEDRHeadroomX1000": Self.displayEDRHeadroomX1000(),
+      "macOSDisplayEDRHeadroomX1000": displayEDRHeadroomX1000,
     ]
   }
 
@@ -52,7 +53,8 @@ struct MacOSPresentationConfiguration {
   private static var resolvedCurrent = MacOSPresentationConfiguration(
     mode: .nativeCompositorSDR,
     request: environment.request,
-    reason: "auto-unresolved-sdr"
+    reason: "auto-unresolved-sdr",
+    displayEDRHeadroomX1000: 1000
   )
 
   static var current: MacOSPresentationConfiguration {
@@ -62,42 +64,49 @@ struct MacOSPresentationConfiguration {
   }
 
   static func resetForNoMedia() {
-    updateCurrent(resolve(hasHDRTrack: false))
+    updateCurrent(resolve(hasHDRTrack: false, screen: nil))
   }
 
-  static func resolve(hasHDRTrack: Bool) -> MacOSPresentationConfiguration {
+  static func resolve(hasHDRTrack: Bool, screen: NSScreen?) -> MacOSPresentationConfiguration {
     let environment = Self.environment
+    let headroomX1000 = displayEDRHeadroomX1000(screen: screen)
+    let supportsEDR = headroomX1000 > 1000
     switch environment.overrideMode {
     case .flutterTextureSDR:
       return MacOSPresentationConfiguration(
         mode: .flutterTextureSDR,
         request: environment.request,
-        reason: "forced-flutter-texture-sdr"
+        reason: "forced-flutter-texture-sdr",
+        displayEDRHeadroomX1000: headroomX1000
       )
     case .nativeCompositorSDR:
       return MacOSPresentationConfiguration(
         mode: .nativeCompositorSDR,
         request: environment.request,
-        reason: "forced-native-compositor-sdr"
+        reason: "forced-native-compositor-sdr",
+        displayEDRHeadroomX1000: headroomX1000
       )
     case .nativeCompositorEDR:
       return MacOSPresentationConfiguration(
-        mode: displaySupportsEDR ? .nativeCompositorEDR : .nativeCompositorSDR,
+        mode: supportsEDR ? .nativeCompositorEDR : .nativeCompositorSDR,
         request: environment.request,
-        reason: displaySupportsEDR ? "forced-native-compositor-edr" : "edr-display-unavailable"
+        reason: supportsEDR ? "forced-native-compositor-edr" : "edr-display-unavailable",
+        displayEDRHeadroomX1000: headroomX1000
       )
     case nil:
-      if hasHDRTrack && displaySupportsEDR {
+      if hasHDRTrack && supportsEDR {
         return MacOSPresentationConfiguration(
           mode: .nativeCompositorEDR,
           request: environment.request,
-          reason: "auto-hdr-track"
+          reason: "auto-hdr-track",
+          displayEDRHeadroomX1000: headroomX1000
         )
       }
       return MacOSPresentationConfiguration(
         mode: .nativeCompositorSDR,
         request: environment.request,
-        reason: hasHDRTrack ? "auto-hdr-display-unavailable" : "auto-sdr-only"
+        reason: hasHDRTrack ? "auto-hdr-display-unavailable" : "auto-sdr-only",
+        displayEDRHeadroomX1000: headroomX1000
       )
     }
   }
@@ -109,11 +118,11 @@ struct MacOSPresentationConfiguration {
   }
 
   static var displaySupportsEDR: Bool {
-    displayEDRHeadroomX1000() > 1000
+    displayEDRHeadroomX1000(screen: nil) > 1000
   }
 
-  private static func displayEDRHeadroomX1000() -> Int {
-    let screen = NSScreen.main
+  private static func displayEDRHeadroomX1000(screen: NSScreen?) -> Int {
+    let screen = screen ?? NSScreen.main
     if #available(macOS 10.15, *) {
       var headroom = screen?.maximumExtendedDynamicRangeColorComponentValue ?? 1.0
       if #available(macOS 14.0, *) {

@@ -1,6 +1,7 @@
 import Foundation
 
 enum MacOSVideoTrackPayload {
+  static let maxTrackCount = 4
   static let syntheticDurationUs = 10_000_000
   static let nativeFormatName = "macos-native-player"
   static let nativeCodecName = "ffmpeg"

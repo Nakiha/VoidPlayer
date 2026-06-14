@@ -53,6 +53,18 @@ final class MacOSVideoTrackController {
     nativePlayer: MacOSNativePlayerSession?,
     textureDimensions: (width: Int, height: Int)?
   ) -> MacOSVideoTrackAddResult {
+    guard store.count < MacOSVideoTrackPayload.maxTrackCount else {
+      return MacOSVideoTrackAddResult(
+        payload: FlutterError(
+          code: "TRACK_LIMIT_EXCEEDED",
+          message: "VoidPlayer supports at most \(MacOSVideoTrackPayload.maxTrackCount) tracks",
+          details: nil
+        ),
+        refreshCurrentFrame: false,
+        markFrameAvailable: false
+      )
+    }
+
     let fileId = store.nextFileId()
     let slot = store.count
     guard let path = MacOSFlutterArguments.stringArg(arguments, "path"), !path.isEmpty else {

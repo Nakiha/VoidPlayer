@@ -30,6 +30,8 @@ class NativePlayerEvent {
   final String nativeCompositorMode;
   final String nativeCompositorReason;
   final String nativeCompositorFailure;
+  final String nativeCompositorPhase;
+  final int nativeCompositorSerial;
 
   const NativePlayerEvent({
     required this.schemaVersion,
@@ -49,6 +51,8 @@ class NativePlayerEvent {
     this.nativeCompositorMode = '',
     this.nativeCompositorReason = '',
     this.nativeCompositorFailure = '',
+    this.nativeCompositorPhase = '',
+    this.nativeCompositorSerial = 0,
   });
 
   bool get hasPresentedFrame =>
@@ -84,6 +88,8 @@ class NativePlayerEvent {
       nativeCompositorMode: _asString(map['nativeCompositorMode']),
       nativeCompositorReason: _asString(map['nativeCompositorReason']),
       nativeCompositorFailure: _asString(map['nativeCompositorFailure']),
+      nativeCompositorPhase: _asString(map['nativeCompositorPhase']),
+      nativeCompositorSerial: _asInt(map['nativeCompositorSerial']) ?? 0,
     );
   }
 

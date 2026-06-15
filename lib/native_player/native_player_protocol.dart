@@ -19,6 +19,10 @@ class NativePlayerMethods {
   static const resize = 'resize';
   static const setNativeCompositorViewportRect =
       'setNativeCompositorViewportRect';
+  static const ackNativeCompositorFlutterState =
+      'ackNativeCompositorFlutterState';
+  static const debugForceNativeCompositorFallback =
+      'debugForceNativeCompositorFallback';
   static const setNativeCompositorViewportTransform =
       'setNativeCompositorViewportTransform';
   static const prepareNativeCompositorSourceCache =
@@ -125,6 +129,8 @@ class NativePlayerKeys {
   static const targetPtsUs = 'targetPtsUs';
   static const speed = 'speed';
   static const enabled = 'enabled';
+  static const serial = 'serial';
+  static const transparentViewport = 'transparentViewport';
   static const startUs = 'startUs';
   static const endUs = 'endUs';
   static const offsetUs = 'offsetUs';

@@ -34,6 +34,11 @@ abstract interface class NativePlayerApi {
     required int surfaceWidth,
     required int surfaceHeight,
   });
+  Future<void> ackNativeCompositorFlutterState({
+    required int serial,
+    required bool transparentViewport,
+  });
+  Future<void> debugForceNativeCompositorFallback({required String reason});
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,
@@ -209,6 +214,28 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
         NativePlayerKeys.surfaceWidth: surfaceWidth,
         NativePlayerKeys.surfaceHeight: surfaceHeight,
       },
+    );
+  }
+
+  @override
+  Future<void> ackNativeCompositorFlutterState({
+    required int serial,
+    required bool transparentViewport,
+  }) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.ackNativeCompositorFlutterState,
+      {
+        NativePlayerKeys.serial: serial,
+        NativePlayerKeys.transparentViewport: transparentViewport,
+      },
+    );
+  }
+
+  @override
+  Future<void> debugForceNativeCompositorFallback({required String reason}) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.debugForceNativeCompositorFallback,
+      {NativePlayerKeys.reason: reason},
     );
   }
 

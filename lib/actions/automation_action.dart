@@ -66,6 +66,14 @@ class DebugNativeCompositorAction extends AutomationAction {
   const DebugNativeCompositorAction() : super('DEBUG_NATIVE_COMPOSITOR');
 }
 
+class DebugForceNativeCompositorFallbackAction extends AutomationAction {
+  final String reason;
+
+  const DebugForceNativeCompositorFallbackAction({
+    this.reason = 'ui-test-forced-fallback',
+  }) : super('DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK');
+}
+
 class WindowMaximize extends AutomationAction {
   const WindowMaximize() : super('WINDOW_MAXIMIZE');
 }

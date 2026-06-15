@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 import '../app_log.dart';
 import '../marks/quick_mark.dart';
@@ -325,7 +326,40 @@ class MainWindowPlaybackCoordinator {
   void _handleNativePlayerEvent(NativePlayerEvent event) {
     if (_disposed || !mounted()) return;
     if (event.type == NativePlayerEventType.nativeCompositorState) {
+      log.info(
+        'Native compositor state: phase=${event.nativeCompositorPhase} '
+        'serial=${event.nativeCompositorSerial} '
+        'active=${event.nativeCompositorActive} '
+        'reason=${event.nativeCompositorReason}',
+      );
       stateStore.setNativeCompositorActive(event.nativeCompositorActive);
+      if (event.nativeCompositorSerial > 0 &&
+          (event.nativeCompositorPhase == 'preparing' ||
+              event.nativeCompositorPhase == 'fallback-restoring')) {
+        final transparent = event.nativeCompositorPhase == 'preparing';
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_disposed || !mounted()) return;
+          log.info(
+            'Native compositor Flutter-state ACK: '
+            'serial=${event.nativeCompositorSerial} '
+            'transparent=$transparent',
+          );
+          unawaited(
+            () async {
+              await controller.ackNativeCompositorFlutterState(
+                serial: event.nativeCompositorSerial,
+                transparentViewport: transparent,
+              );
+            }().catchError((Object error, StackTrace stack) {
+              log.warning(
+                'native compositor Flutter-state ACK failed',
+                error,
+                stack,
+              );
+            }),
+          );
+        });
+      }
       if (event.nativeCompositorRequested &&
           !event.nativeCompositorActive &&
           event.nativeCompositorFailure.isNotEmpty) {

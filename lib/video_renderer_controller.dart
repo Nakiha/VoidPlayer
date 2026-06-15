@@ -197,6 +197,24 @@ class NativePlayerController {
     );
   }
 
+  Future<void> ackNativeCompositorFlutterState({
+    required int serial,
+    required bool transparentViewport,
+  }) {
+    _ensureAlive();
+    return _api.ackNativeCompositorFlutterState(
+      serial: serial,
+      transparentViewport: transparentViewport,
+    );
+  }
+
+  Future<void> debugForceNativeCompositorFallback({
+    String reason = 'ui-test-forced-fallback',
+  }) {
+    _ensureAlive();
+    return _api.debugForceNativeCompositorFallback(reason: reason);
+  }
+
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,

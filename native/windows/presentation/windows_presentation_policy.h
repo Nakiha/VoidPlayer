@@ -13,6 +13,7 @@ struct WindowsPresentationPolicy {
     std::string fallback_reason = "none";
     ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
     bool fp16_scrgb_requested = false;
+    bool native_compositor_requested = false;
 };
 
 WindowsPresentationPolicy resolve_windows_presentation_policy(

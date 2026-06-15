@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../marks/quick_mark.dart';
+import '../native_compositor_flags.dart';
 import '../track_manager.dart';
 import '../utils/async_guard.dart';
 import '../video_renderer_controller.dart';
@@ -581,7 +582,8 @@ class MainWindowLayoutCoordinator {
   }
 
   bool get _canUseNativeCompositorViewportTransform {
-    return _state.nativeCompositorActive &&
+    return NativeCompositorFlags.sourceProjection &&
+        _state.nativeCompositorActive &&
         textureId() != null &&
         viewportWidth > 0 &&
         viewportHeight > 0 &&

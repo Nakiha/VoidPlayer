@@ -234,6 +234,21 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<void> ackNativeCompositorFlutterState({
+    required int serial,
+    required bool transparentViewport,
+  }) async {
+    calls.add('ackNativeCompositorFlutterState:$serial:$transparentViewport');
+  }
+
+  @override
+  Future<void> debugForceNativeCompositorFallback({
+    required String reason,
+  }) async {
+    calls.add('debugForceNativeCompositorFallback:$reason');
+  }
+
+  @override
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,

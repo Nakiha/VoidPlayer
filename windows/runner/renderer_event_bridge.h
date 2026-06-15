@@ -34,6 +34,12 @@ public:
     void SetSink(std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
     void ClearSink();
     void Queue(const vr::RendererEvent& event);
+    void QueueNativeCompositorState(bool active,
+                                    bool requested,
+                                    const std::string& phase,
+                                    int64_t serial,
+                                    const std::string& reason,
+                                    const std::string& failure);
     void Drain();
     Diagnostics diagnostics() const;
 

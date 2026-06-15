@@ -1,0 +1,59 @@
+# Windows locked-engine DComp smoke. The final Flutter frame is exported with
+# premultiplied alpha and composed over the shared FP16 video ring. The forced
+# failure at the end verifies the serial/ACK fallback restores Flutter Texture.
+@WINDOW, 960, 540
+0.0, GENERATE_TEST_VIDEO, build/generated/native_seek_preview_event_dcomp_h264.mp4, 240, 30, 1280, 720
+0.3, ADD_MEDIA, build/generated/native_seek_preview_event_dcomp_h264.mp4
+1.8, ASSERT_TRACK_COUNT, 1
+1.9, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeEventListenCount, 1
+1.905, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeEventEmitCount, 1
+1.91, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationRequest, native-compositor-scrgb
+1.92, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-scrgb
+1.93, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationTargetFormat, B8G8R8A8_UNORM
+1.94, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationRenderTargetFormat, R16G16B16A16_FLOAT
+1.95, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationRenderColorSpace, scRGB-linear-bt709
+1.96, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsPresentationFP16TargetActive, true
+1.97, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsPresentationFP16TargetBufferCount, 3, 3
+1.98, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationSDRCompatibilityPass, source-rerender
+1.99, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsPresentationCompositorActive, true
+2.00, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportAvailable, true
+2.01, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
+2.02, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsNativeCompositorStateSerial, 1
+2.03, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsNativeCompositorAckSerial, 1
+2.04, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportGeneration, 1
+2.05, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsVideoRingGeneration, 1
+2.06, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDCompSwapChainActive, true
+2.07, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsDCompSwapChainFormat, R16G16B16A16_FLOAT
+2.08, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsDCompColorSpace, RGB_FULL_G10_NONE_P709
+2.09, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompBufferCount, 3, 3
+2.10, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompCompositeCount, 1
+2.11, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompPresentCount, 1
+2.12, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompFailureCount, 0, 0
+2.13, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorFallbackReason, none
+2.3, SET_ZOOM, 1.5
+2.5, PAN, 24, -16
+2.7, CLICK_TIMELINE_FRACTION, 0.35
+3.6, ASSERT_PRESENTED_FRAME_RANGE, 1, 2400000, 3200000
+3.7, WINDOW_MAXIMIZE
+4.5, WINDOW_RESTORE
+5.2, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompResizeCount, 1
+5.21, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompDiagnosticCaptureCount, 1
+5.22, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterTransparentPixelsX1000, 1
+5.23, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompSwapChainWidth, 1
+5.24, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompSwapChainHeight, 1
+5.3, DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK, ui-test-forced-fallback
+6.8, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, inactive
+6.81, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsPresentationCompositorActive, false
+6.82, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDCompSwapChainActive, false
+6.83, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, flutter-texture-sdr
+6.84, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationFallbackReason, ui-test-forced-fallback
+6.85, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorFallbackReason, ui-test-forced-fallback
+6.86, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsNativeCompositorStateSerial, 2
+6.87, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsNativeCompositorAckSerial, 2
+6.9, CAPTURE_VIEWPORT, dcomp_fallback_restored
+7.0, ASSERT_CAPTURE_NOT_BLACK, dcomp_fallback_restored, 0.01, 4.0
+7.1, SEEK_TO, 1000000
+7.9, ASSERT_PRESENTED_FRAME_RANGE, 1, 800000, 1400000
+8.0, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeEventEmitCount, 1
+8.1, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeEventDropNoSinkCount, 0, 0
+8.2, QUIT, 0

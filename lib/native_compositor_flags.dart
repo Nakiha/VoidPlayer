@@ -4,6 +4,11 @@ class NativeCompositorFlags {
   const NativeCompositorFlags._();
 
   static bool get nativeCompositor {
+    if (Platform.isWindows) {
+      return Platform.environment['VOIDPLAYER_WINDOWS_PRESENTATION_MODE']
+              ?.toLowerCase() ==
+          'native-compositor-scrgb';
+    }
     if (!Platform.isMacOS) {
       return false;
     }
@@ -23,4 +28,6 @@ class NativeCompositorFlags {
         Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR'] == '1' ||
         Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE'] == '1';
   }
+
+  static bool get sourceProjection => Platform.isMacOS && nativeCompositor;
 }

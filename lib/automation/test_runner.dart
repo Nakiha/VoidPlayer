@@ -289,6 +289,11 @@ class TestRunner {
           'drawable=${info['nativeCompositorDrawableWidth']}x${info['nativeCompositorDrawableHeight']} '
           'failure=${info['nativeCompositorLastFailure']}',
         );
+      case DebugForceNativeCompositorFallbackAction(:final reason):
+        log.info(
+          'TestRunner: DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK reason=$reason',
+        );
+        await controller.debugForceNativeCompositorFallback(reason: reason);
       case WindowMaximize():
         log.info('TestRunner: WINDOW_MAXIMIZE');
         await runtime.maximizeWindow();

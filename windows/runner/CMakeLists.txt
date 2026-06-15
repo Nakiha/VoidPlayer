@@ -21,6 +21,7 @@ add_executable(${BINARY_NAME} WIN32
   "win32_window.cpp"
   "viewport_capture_service.cpp"
   "window_capture_service.cpp"
+  "windows_native_compositor.cpp"
   "video_renderer_plugin.cpp"
   "analysis_ffi.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
@@ -48,7 +49,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app flutter_wrapper_plugin)
-target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib" "dcomp.lib" "d3dcompiler.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # ==================== Native Video Renderer ====================

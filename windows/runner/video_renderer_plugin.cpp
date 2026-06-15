@@ -227,11 +227,16 @@ void VideoRendererPlugin::RegisterWithRegistrar(
     }
 
     HWND window_handle = nullptr;
+    void* flutter_view_handle = nullptr;
     if (view) {
         window_handle = view->GetNativeWindow();
+#if defined(FLUTTER_WINDOWS_SURFACE_EXPORT_API)
+        flutter_view_handle = view->GetHandle();
+#endif
     }
     auto plugin = std::make_unique<VideoRendererPlugin>(
-        registrar, texture_registrar, adapter, window_handle);
+        registrar, texture_registrar, adapter, window_handle,
+        flutter_view_handle);
 
     channel->SetMethodCallHandler(
         [plugin_ptr = plugin.get()](const auto& call, auto result) {
@@ -260,10 +265,12 @@ VideoRendererPlugin::VideoRendererPlugin(
     flutter::PluginRegistrarWindows*,
     flutter::TextureRegistrar* texture_registrar,
     IDXGIAdapter* dxgi_adapter,
-    HWND window_handle)
+    HWND window_handle,
+    void* flutter_view_handle)
     : texture_bridge_(texture_registrar),
       diagnostics_session_(std::make_shared<NativeDiagnosticsSession>()),
-      window_handle_(window_handle) {
+      window_handle_(window_handle),
+      flutter_view_handle_(flutter_view_handle) {
     RegisterMethodHandlers();
     GlobalNativeDiagnosticsSessionRegistry().Publish(diagnostics_session_);
 
@@ -288,6 +295,10 @@ VideoRendererPlugin::VideoRendererPlugin(
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
+    if (native_compositor_) {
+        native_compositor_->Stop();
+        native_compositor_.reset();
+    }
     event_bridge_.Shutdown();
     if (diagnostics_session_) {
         naki_analysis_clear_pts_callback_for_owner(diagnostics_session_.get());
@@ -381,6 +392,24 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
         "resize",
         [this](const MethodCall& call, MethodResultPtr result) {
             Resize(call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
+        "setNativeCompositorViewportRect",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            SetNativeCompositorViewportRect(
+                call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
+        "ackNativeCompositorFlutterState",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            AckNativeCompositorFlutterState(
+                call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
+        "debugForceNativeCompositorFallback",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            DebugForceNativeCompositorFallback(
+                call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
         "setViewportBackgroundColor",
@@ -601,6 +630,8 @@ void VideoRendererPlugin::CreatePlayer(
     const auto locked_display = display_probe_tracker_.Update(
         display_resolver_.Probe(window_handle_, dxgi_adapter_.Get()));
     config.backend.output_target = presentation_policy_.output_target;
+    config.backend.shared_fp16_output =
+        presentation_policy_.native_compositor_requested;
     config.backend.sdr_white_level_nits =
         static_cast<double>(
             locked_display.probe.sdr_white_level_milli_nits) /
@@ -652,6 +683,51 @@ void VideoRendererPlugin::CreatePlayer(
         QueueRendererEvent(event);
     });
 
+    if (presentation_policy_.native_compositor_requested) {
+        native_compositor_ = std::make_unique<WindowsNativeCompositor>();
+        const bool compositor_started = native_compositor_->Start(
+            window_handle_,
+            flutter_view_handle_,
+            player_,
+            dxgi_adapter_.Get(),
+            config.backend.sdr_white_level_nits,
+            [this](WindowsNativeCompositor::Phase phase,
+                   uint64_t serial,
+                   const std::string& reason) {
+                const bool hole_requested =
+                    phase == WindowsNativeCompositor::Phase::Preparing ||
+                    phase == WindowsNativeCompositor::Phase::Active;
+                const bool failed =
+                    phase == WindowsNativeCompositor::Phase::FallbackRestoring ||
+                    (phase == WindowsNativeCompositor::Phase::Inactive &&
+                     reason != "flutter-texture-restored" &&
+                     reason != "destroy-player" &&
+                     reason != "shutdown");
+                event_bridge_.QueueNativeCompositorState(
+                    hole_requested,
+                    true,
+                    phase == WindowsNativeCompositor::Phase::Preparing
+                        ? "preparing"
+                        : phase == WindowsNativeCompositor::Phase::Active
+                              ? "active"
+                              : phase == WindowsNativeCompositor::Phase::FallbackRestoring
+                                    ? "fallback-restoring"
+                                    : "inactive",
+                    static_cast<int64_t>(serial),
+                    reason,
+                    failed ? reason : "");
+            });
+        if (!compositor_started) {
+            const auto diagnostics = native_compositor_->diagnostics();
+            presentation_policy_.fallback_reason =
+                diagnostics.fallback_reason;
+            event_bridge_.QueueNativeCompositorState(
+                false, true, "inactive", 0,
+                "native-compositor-start-failed",
+                diagnostics.fallback_reason);
+        }
+    }
+
     spdlog::info(
         "[VideoRendererPlugin] Created player, texture_id={}, tracks={}, hw_decode={}",
         texture_bridge_.texture_id(),
@@ -685,6 +761,10 @@ void VideoRendererPlugin::DestroyPlayer(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
+    if (native_compositor_) {
+        native_compositor_->Stop("destroy-player");
+        native_compositor_.reset();
+    }
     if (player_) {
         diagnostics_session_->ClearPlayer();
         texture_bridge_.DetachFrameCallback();
@@ -1062,6 +1142,118 @@ void VideoRendererPlugin::Resize(
         ReportMethodException(result.get(), "resize", e);
     } catch (...) {
         ReportUnknownMethodException(result.get(), "resize");
+    }
+}
+
+void VideoRendererPlugin::SetNativeCompositorViewportRect(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        if (!arguments || !native_compositor_) {
+            result->Success();
+            return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (!args) {
+            result->Error("BAD_ARGS", "viewport rect must be a map");
+            return;
+        }
+        int left = 0;
+        int top = 0;
+        int width = 0;
+        int height = 0;
+        int surface_width = 0;
+        int surface_height = 0;
+        const auto read = [&](const char* key, int& value) {
+            auto it = args->find(flutter::EncodableValue(key));
+            return it != args->end() && read_int_arg(it->second, value);
+        };
+        if (!read("left", left) || !read("top", top) ||
+            !read("width", width) || !read("height", height) ||
+            !read("surfaceWidth", surface_width) ||
+            !read("surfaceHeight", surface_height) ||
+            surface_width <= 0 || surface_height <= 0) {
+            result->Error("BAD_ARGS", "invalid viewport rect");
+            return;
+        }
+        native_compositor_->SetViewportRect(
+            static_cast<double>(left) / surface_width,
+            static_cast<double>(top) / surface_height,
+            static_cast<double>(left + width) / surface_width,
+            static_cast<double>(top + height) / surface_height);
+        result->Success();
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "setNativeCompositorViewportRect", e);
+    }
+}
+
+void VideoRendererPlugin::AckNativeCompositorFlutterState(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        if (!arguments || !native_compositor_) {
+            result->Success();
+            return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (!args) {
+            result->Error("BAD_ARGS", "ACK must be a map");
+            return;
+        }
+        int64_t serial = 0;
+        bool transparent = false;
+        auto serial_it = args->find(flutter::EncodableValue("serial"));
+        auto transparent_it =
+            args->find(flutter::EncodableValue("transparentViewport"));
+        if (serial_it == args->end() ||
+            !read_int64_arg(serial_it->second, serial) ||
+            transparent_it == args->end() ||
+            !read_bool_arg(transparent_it->second, transparent)) {
+            result->Error("BAD_ARGS", "serial and transparentViewport required");
+            return;
+        }
+        native_compositor_->AcknowledgeFlutterState(
+            static_cast<uint64_t>(serial), transparent);
+        result->Success();
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "ackNativeCompositorFlutterState", e);
+    }
+}
+
+void VideoRendererPlugin::DebugForceNativeCompositorFallback(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        if (!native_compositor_) {
+            result->Error(
+                "NOT_ACTIVE", "Windows native compositor is not available");
+            return;
+        }
+        std::string reason = "ui-test-forced-fallback";
+        if (arguments) {
+            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+            if (!args) {
+                result->Error("BAD_ARGS", "fallback arguments must be a map");
+                return;
+            }
+            const auto it = args->find(flutter::EncodableValue("reason"));
+            if (it != args->end()) {
+                const auto* value = std::get_if<std::string>(&it->second);
+                if (!value || value->empty()) {
+                    result->Error(
+                        "BAD_ARGS", "reason must be a non-empty string");
+                    return;
+                }
+                reason = *value;
+            }
+        }
+        native_compositor_->ForceFallbackForTesting(reason);
+        result->Success();
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "debugForceNativeCompositorFallback", e);
     }
 }
 
@@ -1477,6 +1669,70 @@ void VideoRendererPlugin::GetDiagnostics(
         enc_i64(event_diagnostics.emit_count);
     diagnostics[flutter::EncodableValue("nativeEventDropNoSinkCount")] =
         enc_i64(event_diagnostics.drop_no_sink_count);
+    if (native_compositor_) {
+        native_compositor_->RequestDiagnosticCapture();
+        const auto compositor = native_compositor_->diagnostics();
+        diagnostics[flutter::EncodableValue("windowsNativeCompositorPhase")] =
+            flutter::EncodableValue(compositor.phase);
+        diagnostics[flutter::EncodableValue("windowsNativeCompositorStateSerial")] =
+            enc_i64(static_cast<int64_t>(compositor.state_serial));
+        diagnostics[flutter::EncodableValue("windowsNativeCompositorAckSerial")] =
+            enc_i64(static_cast<int64_t>(compositor.ack_serial));
+        diagnostics[flutter::EncodableValue("windowsFlutterExportGeneration")] =
+            enc_i64(static_cast<int64_t>(compositor.flutter_generation));
+        diagnostics[flutter::EncodableValue("windowsVideoRingGeneration")] =
+            enc_i64(static_cast<int64_t>(compositor.video_generation));
+        diagnostics[flutter::EncodableValue("windowsDCompCompositeCount")] =
+            enc_i64(static_cast<int64_t>(compositor.composite_count));
+        diagnostics[flutter::EncodableValue("windowsDCompPresentCount")] =
+            enc_i64(static_cast<int64_t>(compositor.present_count));
+        diagnostics[flutter::EncodableValue("windowsDCompDropCount")] =
+            enc_i64(static_cast<int64_t>(compositor.drop_count));
+        diagnostics[flutter::EncodableValue("windowsDCompFailureCount")] =
+            enc_i64(static_cast<int64_t>(compositor.failure_count));
+        diagnostics[flutter::EncodableValue("windowsDCompResizeCount")] =
+            enc_i64(static_cast<int64_t>(compositor.resize_count));
+        diagnostics[flutter::EncodableValue("windowsDCompDiagnosticCaptureCount")] =
+            enc_i64(static_cast<int64_t>(compositor.diagnostic_capture_count));
+        diagnostics[flutter::EncodableValue("windowsFlutterAlphaAverageX1000")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_alpha_average_x1000));
+        diagnostics[flutter::EncodableValue("windowsFlutterTransparentPixelsX1000")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_transparent_pixels_x1000));
+        diagnostics[flutter::EncodableValue("windowsDCompFinalMaxRGBX1000")] =
+            enc_i64(static_cast<int64_t>(compositor.final_max_rgb_x1000));
+        diagnostics[flutter::EncodableValue("windowsDCompFinalPixelsOver1")] =
+            enc_i64(static_cast<int64_t>(compositor.final_pixels_over_1));
+        diagnostics[flutter::EncodableValue("windowsDCompSwapChainWidth")] =
+            enc_i64(static_cast<int64_t>(compositor.swap_chain_width));
+        diagnostics[flutter::EncodableValue("windowsDCompSwapChainHeight")] =
+            enc_i64(static_cast<int64_t>(compositor.swap_chain_height));
+        diagnostics[flutter::EncodableValue("windowsFlutterExportAvailable")] =
+            flutter::EncodableValue(compositor.engine_export_available);
+        diagnostics[flutter::EncodableValue("windowsDCompSwapChainActive")] =
+            flutter::EncodableValue(compositor.swap_chain_active);
+        diagnostics[flutter::EncodableValue("windowsDCompSwapChainFormat")] =
+            flutter::EncodableValue("R16G16B16A16_FLOAT");
+        diagnostics[flutter::EncodableValue("windowsDCompColorSpace")] =
+            flutter::EncodableValue("RGB_FULL_G10_NONE_P709");
+        diagnostics[flutter::EncodableValue("windowsDCompBufferCount")] =
+            flutter::EncodableValue(3);
+        diagnostics[flutter::EncodableValue("windowsNativeCompositorFallbackReason")] =
+            flutter::EncodableValue(compositor.fallback_reason);
+        const bool compositor_active =
+            compositor.phase == "preparing" || compositor.phase == "active";
+        diagnostics[flutter::EncodableValue("windowsPresentationCompositorActive")] =
+            flutter::EncodableValue(compositor_active);
+        if (!compositor_active &&
+            compositor.fallback_reason != "none") {
+            diagnostics[flutter::EncodableValue("windowsPresentationMode")] =
+                flutter::EncodableValue("flutter-texture-sdr");
+            diagnostics[flutter::EncodableValue(
+                "windowsPresentationFallbackReason")] =
+                flutter::EncodableValue(compositor.fallback_reason);
+        }
+    }
     result->Success(flutter::EncodableValue(std::move(diagnostics)));
     } catch (const std::exception& e) {
         ReportMethodException(result.get(), "getDiagnostics", e);

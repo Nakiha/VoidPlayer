@@ -18,6 +18,7 @@
 #include "window_capture_service.h"
 #include "windows/presentation/windows_display_resolver.h"
 #include "windows/presentation/windows_presentation_policy.h"
+#include "windows_native_compositor.h"
 
 #include <cstdint>
 #include <memory>
@@ -34,7 +35,8 @@ public:
     VideoRendererPlugin(flutter::PluginRegistrarWindows* registrar,
                         flutter::TextureRegistrar* texture_registrar,
                         IDXGIAdapter* dxgi_adapter,
-                        HWND window_handle);
+                        HWND window_handle,
+                        void* flutter_view_handle);
     ~VideoRendererPlugin() override;
 
     VideoRendererPlugin(const VideoRendererPlugin&) = delete;
@@ -80,6 +82,15 @@ private:
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void SetViewportBackgroundColor(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void SetNativeCompositorViewportRect(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void AckNativeCompositorFlutterState(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void DebugForceNativeCompositorFallback(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void SetSpeed(
@@ -140,6 +151,8 @@ private:
     vr::WindowsDisplayResolver display_resolver_;
     vr::WindowsDisplayProbeTracker display_probe_tracker_;
     vr::WindowsPresentationPolicy presentation_policy_;
+    std::unique_ptr<WindowsNativeCompositor> native_compositor_;
+    void* flutter_view_handle_ = nullptr;
     std::string presentation_sdr_white_level_status_ = "nominal-default";
     HWND window_handle_ = nullptr;
 };

@@ -445,6 +445,19 @@ class _PlaybackApi implements NativePlayerApi {
   }) async {}
 
   @override
+  Future<void> ackNativeCompositorFlutterState({
+    required int serial,
+    required bool transparentViewport,
+  }) async {}
+
+  @override
+  Future<void> debugForceNativeCompositorFallback({
+    required String reason,
+  }) async {
+    calls.add('debugForceNativeCompositorFallback:$reason');
+  }
+
+  @override
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,

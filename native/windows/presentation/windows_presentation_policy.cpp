@@ -41,6 +41,16 @@ WindowsPresentationPolicy resolve_windows_presentation_policy(
         policy.fp16_scrgb_requested = true;
         return policy;
     }
+    if (request == "native-compositor-scrgb") {
+        WindowsPresentationPolicy policy;
+        policy.request = request;
+        policy.mode = "native-compositor-scrgb";
+        policy.reason = "forced-native-compositor-scrgb";
+        policy.output_target = ColorOutputTarget::kWindowsLinearScRGB;
+        policy.fp16_scrgb_requested = true;
+        policy.native_compositor_requested = true;
+        return policy;
+    }
 
     WindowsPresentationPolicy policy;
     policy.request = request;

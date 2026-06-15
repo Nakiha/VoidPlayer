@@ -448,6 +448,15 @@ ScriptInstruction? _parseInstruction(
     case 'DEBUG_NATIVE_COMPOSITOR':
     case 'DEBUG_NATIVE_COMPOSITOR_SPIKE':
       return ScriptAutomationAction(time, const DebugNativeCompositorAction());
+    case 'DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK':
+      return ScriptAutomationAction(
+        time,
+        DebugForceNativeCompositorFallbackAction(
+          reason: args.isEmpty || args[0].isEmpty
+              ? 'ui-test-forced-fallback'
+              : args[0],
+        ),
+      );
     case 'WINDOW_MAXIMIZE':
       return ScriptAutomationAction(time, const WindowMaximize());
     case 'WINDOW_RESTORE':

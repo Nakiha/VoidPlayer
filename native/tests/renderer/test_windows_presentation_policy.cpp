@@ -39,6 +39,18 @@ TEST_CASE("Windows presentation policy accepts only fp16-scrgb opt-in",
             "unsupported-presentation-request");
 }
 
+TEST_CASE("Windows presentation policy accepts native compositor scRGB opt-in",
+          "[windows_presentation][windows_dcomp]") {
+    const auto policy = vr::resolve_windows_presentation_policy(
+        " native-compositor-scrgb ");
+    REQUIRE(policy.request == "native-compositor-scrgb");
+    REQUIRE(policy.mode == "native-compositor-scrgb");
+    REQUIRE(policy.output_target == vr::ColorOutputTarget::kWindowsLinearScRGB);
+    REQUIRE(policy.fp16_scrgb_requested);
+    REQUIRE(policy.native_compositor_requested);
+    REQUIRE(policy.fallback_reason == "none");
+}
+
 TEST_CASE("Windows scRGB maps SDR reference white without clipping",
           "[windows_presentation][color]") {
     const vr::ColorReferenceRgb encoded{1.0, 0.5, 0.0};

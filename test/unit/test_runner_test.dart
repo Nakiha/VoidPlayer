@@ -94,6 +94,30 @@ void main() {
 
       expect(runtime.quitCodes, [1]);
     });
+
+    test('forced native compositor fallback reaches the native API', () async {
+      final api = _FakeNativePlayerApi();
+      final controller = NativePlayerController(api: api);
+      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
+
+      final runtime = _FakeRuntime();
+      final runner = TestRunner(
+        scriptPath: _writeScript('''
+0.0,DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK,contract-test
+0.1,QUIT,0
+'''),
+        automation: _bridge(controller),
+        runtime: runtime,
+      );
+
+      await runner.run();
+
+      expect(
+        api.calls,
+        contains('debugForceNativeCompositorFallback:contract-test'),
+      );
+      expect(runtime.quitCodes, [0]);
+    });
   });
 }
 
@@ -240,6 +264,19 @@ class _FakeNativePlayerApi implements NativePlayerApi {
     required int surfaceWidth,
     required int surfaceHeight,
   }) async {}
+
+  @override
+  Future<void> ackNativeCompositorFlutterState({
+    required int serial,
+    required bool transparentViewport,
+  }) async {}
+
+  @override
+  Future<void> debugForceNativeCompositorFallback({
+    required String reason,
+  }) async {
+    calls.add('debugForceNativeCompositorFallback:$reason');
+  }
 
   @override
   Future<void> setNativeCompositorViewportTransform({

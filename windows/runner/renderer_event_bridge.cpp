@@ -139,6 +139,55 @@ void RendererEventBridge::Queue(const vr::RendererEvent& event) {
     }
 }
 
+void RendererEventBridge::QueueNativeCompositorState(
+    bool active,
+    bool requested,
+    const std::string& phase,
+    int64_t serial,
+    const std::string& reason,
+    const std::string& failure) {
+    const int64_t sequence =
+        sequence_.fetch_add(1, std::memory_order_relaxed) + 1;
+    flutter::EncodableMap payload;
+    payload[flutter::EncodableValue("schemaVersion")] =
+        flutter::EncodableValue(1);
+    payload[flutter::EncodableValue("sequence")] =
+        flutter::EncodableValue(sequence);
+    payload[flutter::EncodableValue("timestampUs")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count()));
+    payload[flutter::EncodableValue("type")] =
+        flutter::EncodableValue("nativeCompositorState");
+    payload[flutter::EncodableValue("nativeCompositorActive")] =
+        flutter::EncodableValue(active);
+    payload[flutter::EncodableValue("nativeCompositorRequested")] =
+        flutter::EncodableValue(requested);
+    payload[flutter::EncodableValue("nativeCompositorEDREnabled")] =
+        flutter::EncodableValue(true);
+    payload[flutter::EncodableValue("nativeCompositorMode")] =
+        flutter::EncodableValue("native-compositor-scrgb");
+    payload[flutter::EncodableValue("nativeCompositorPhase")] =
+        flutter::EncodableValue(phase);
+    payload[flutter::EncodableValue("nativeCompositorSerial")] =
+        flutter::EncodableValue(serial);
+    payload[flutter::EncodableValue("nativeCompositorReason")] =
+        flutter::EncodableValue(reason);
+    payload[flutter::EncodableValue("nativeCompositorFailure")] =
+        flutter::EncodableValue(failure);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!sink_) ++drop_no_sink_count_;
+        if (pending_events_.size() >= kMaxPendingRendererEvents) {
+            pending_events_.pop_front();
+        }
+        pending_events_.emplace_back(std::move(payload));
+    }
+    if (event_hwnd_) {
+        PostMessage(event_hwnd_, kVideoRendererEventDrainMessage, 0, 0);
+    }
+}
+
 void RendererEventBridge::Drain() {
     for (;;) {
         flutter::EncodableValue event;

@@ -22,6 +22,7 @@ class MainWindowLayoutCoordinator {
   final MainWindowStateStore stateStore;
   final TrackManager trackManager;
   final bool Function() mounted;
+  final bool Function() sourceProjectionEnabled;
 
   Ticker? _ticker;
   Timer? _resizeDebounceTimer;
@@ -52,7 +53,10 @@ class MainWindowLayoutCoordinator {
     required this.stateStore,
     required this.trackManager,
     required this.mounted,
-  }) {
+    bool Function()? sourceProjectionEnabled,
+  }) : sourceProjectionEnabled =
+           sourceProjectionEnabled ??
+           (() => NativeCompositorFlags.sourceProjection) {
     _ticker = vsync.createTicker((_) {
       fireAndLog('flush pending layout', flushPendingLayout());
     });
@@ -582,7 +586,7 @@ class MainWindowLayoutCoordinator {
   }
 
   bool get _canUseNativeCompositorViewportTransform {
-    return NativeCompositorFlags.sourceProjection &&
+    return sourceProjectionEnabled() &&
         _state.nativeCompositorActive &&
         textureId() != null &&
         viewportWidth > 0 &&
@@ -693,6 +697,33 @@ class MainWindowLayoutCoordinator {
 
   void refreshNativeCompositorOverlay() {
     if (_disposed) return;
+    _prepareNativeCompositorSourceCache(layout());
+  }
+
+  void onNativeCompositorAvailabilityChanged({required bool active}) {
+    if (_disposed || active) return;
+    _cancelNativeCompositorViewportTransform();
+    fireAndLog(
+      'clear inactive native compositor source cache',
+      controller.clearNativeCompositorSourceCache(
+        reason: 'native compositor inactive',
+      ),
+    );
+  }
+
+  void onTrackSetChanged() {
+    if (_disposed) return;
+    if (trackCount() == 0) {
+      _cancelNativeCompositorViewportTransform();
+      if (_state.nativeCompositorActive ||
+          NativeCompositorFlags.sourceProjection) {
+        fireAndLog(
+          'clear zero-track native compositor source cache',
+          controller.clearNativeCompositorSourceCache(reason: 'zero tracks'),
+        );
+      }
+      return;
+    }
     _prepareNativeCompositorSourceCache(layout());
   }
 

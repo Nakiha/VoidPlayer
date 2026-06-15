@@ -135,6 +135,7 @@ def _run_windows_preservation() -> None:
         "ui-test",
         "--build",
         "ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv",
+        "ui_tests/smoke/native_source_projection_dcomp_scrgb.csv",
     )
     _python_dev_with_env(
         {"VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "sdr"},
@@ -197,6 +198,22 @@ def _run_windows_d3d11_dcomp_flutter_composite_smoke() -> None:
     )
 
 
+def _run_windows_d3d11_source_projection_smoke() -> None:
+    run(
+        [
+            "ctest",
+            "--test-dir",
+            "build/native/standalone/windows-msvc",
+            "--build-config",
+            "Release",
+            "--output-on-failure",
+            "-R",
+            "^windows_d3d11_source_projection_smoke$",
+        ],
+        cwd=str(ROOT),
+    )
+
+
 def _run_windows_display_tests() -> None:
     run(
         [
@@ -238,6 +255,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
             _run_windows_d3d11_color_layout_parity_smoke()
             _run_windows_d3d11_fp16_scrgb_smoke()
             _run_windows_d3d11_dcomp_flutter_composite_smoke()
+            _run_windows_d3d11_source_projection_smoke()
             run([sys.executable, "scripts/dev/check_release_compliance.py"], cwd=str(ROOT))
         else:
             _python_dev("test", "--native-only")

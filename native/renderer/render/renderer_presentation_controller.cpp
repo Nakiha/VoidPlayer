@@ -267,6 +267,8 @@ bool RendererPresentationController::draw_frame(
     hooks.draw_overlay = std::move(overlay_hooks.draw_overlay);
     hooks.composite_bgra_overlay =
         std::move(overlay_hooks.composite_bgra_overlay);
+    hooks.build_overlay_primitives =
+        std::move(overlay_hooks.build_overlay_primitives);
     hooks.async_draw_completed = std::move(async_completion);
     return backend_->draw_frame(snapshot, hooks);
 }
@@ -548,6 +550,45 @@ void RendererPresentationController::set_d3d_shared_fp16_frame_callback(
     auto* backend = d3d_backend();
     if (backend) {
         backend->set_shared_fp16_frame_callback(std::move(callback));
+    }
+}
+
+bool RendererPresentationController::configure_d3d_source_cache(
+    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    auto* backend = d3d_backend();
+    return backend && backend->configure_source_cache(descriptors);
+}
+
+void RendererPresentationController::clear_d3d_source_cache(
+    const char* reason) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (auto* backend = d3d_backend()) {
+        backend->clear_source_cache(reason);
+    }
+}
+
+bool RendererPresentationController::acquire_d3d_source_cache_bundle(
+    SharedSourceCacheBundleSnapshot& snapshot) const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    auto* backend = d3d_backend();
+    return backend && backend->acquire_source_cache_bundle(snapshot);
+}
+
+void RendererPresentationController::release_d3d_source_cache_bundle(
+    int buffer_index, uint64_t ring_generation) const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (auto* backend = d3d_backend()) {
+        backend->release_source_cache_bundle(
+            buffer_index, ring_generation);
+    }
+}
+
+void RendererPresentationController::set_d3d_source_cache_frame_callback(
+    std::function<void()> callback) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (auto* backend = d3d_backend()) {
+        backend->set_source_cache_frame_callback(std::move(callback));
     }
 }
 

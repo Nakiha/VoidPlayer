@@ -19,7 +19,20 @@ using Microsoft::WRL::ComPtr;
 struct CompositeConstants {
     float viewport[4];
     float sdr_white_scale;
-    float padding[3];
+    float source_projection_enabled;
+    float source_mode;
+    float source_split_pos;
+    float source_track_count;
+    float source_header_padding[3];
+    float source_present[4];
+    float source_order[4];
+    float source_display_offset_x[4];
+    float source_display_offset_y[4];
+    float source_inv_display_size_x[4];
+    float source_inv_display_size_y[4];
+    float source_view_offset_uv_x[4];
+    float source_view_offset_uv_y[4];
+    float background_color[4];
 };
 
 uint16_t float_to_half(float value) {
@@ -218,8 +231,10 @@ int main() {
     context->PSSetShaderResources(0, 2, srvs);
     ID3D11SamplerState* sampler_ptr = sampler.Get();
     context->PSSetSamplers(0, 1, &sampler_ptr);
-    CompositeConstants constant_values = {
-        {0.0f, 0.0f, 1.0f, 1.0f}, kSdrWhiteScale, {0.0f, 0.0f, 0.0f}};
+    CompositeConstants constant_values = {};
+    constant_values.viewport[2] = 1.0f;
+    constant_values.viewport[3] = 1.0f;
+    constant_values.sdr_white_scale = kSdrWhiteScale;
     context->UpdateSubresource(
         constants.Get(), 0, nullptr, &constant_values, 0, 0);
     ID3D11Buffer* constants_ptr = constants.Get();

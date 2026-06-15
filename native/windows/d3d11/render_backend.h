@@ -8,6 +8,7 @@
 #include "windows/d3d11/headless_output.h"
 #include "windows/d3d11/shader.h"
 #include "windows/d3d11/shared_fp16_ring.h"
+#include "windows/d3d11/shared_source_cache_ring.h"
 #include "windows/d3d11/texture.h"
 
 #include <array>
@@ -105,6 +106,15 @@ public:
     bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot);
     void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation);
     void set_shared_fp16_frame_callback(std::function<void()> callback);
+    bool configure_source_cache(
+        const std::vector<SourceCacheTrackDescriptor>& descriptors) override;
+    void clear_source_cache(const char* reason) override;
+    bool acquire_source_cache_bundle(
+        SharedSourceCacheBundleSnapshot& snapshot) override;
+    void release_source_cache_bundle(
+        int buffer_index, uint64_t ring_generation) override;
+    void set_source_cache_frame_callback(
+        std::function<void()> callback) override;
     bool draw_frame(const RendererDrawSnapshot& snapshot,
                     const PresentationBackendDrawHooks& hooks) override;
 
@@ -133,6 +143,10 @@ private:
         ID3D11RenderTargetView* target_rtv,
         ColorOutputTarget output_target,
         bool draw_overlay);
+    bool draw_source_cache_bundle(
+        const RendererDrawSnapshot& snapshot,
+        const PresentationBackendDrawHooks& hooks,
+        const PreparedDrawResources& prepared);
 
     bool headless_ = false;
     ColorOutputTarget requested_output_target_ =
@@ -147,6 +161,10 @@ private:
     std::unique_ptr<D3D11HeadlessOutput> headless_output_;
     std::unique_ptr<D3D11Fp16Target> fp16_target_;
     std::unique_ptr<D3D11SharedFp16Ring> shared_fp16_ring_;
+    std::unique_ptr<D3D11SharedSourceCacheRing> source_cache_ring_;
+    std::vector<SourceCacheTrackDescriptor> source_cache_descriptors_;
+    std::function<void()> source_cache_callback_;
+    std::string source_cache_draw_error_ = "none";
     std::unique_ptr<ShaderManager> shader_manager_;
     std::unique_ptr<D3D11RenderResources> resources_;
 };

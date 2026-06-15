@@ -400,6 +400,28 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
                 call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
+        "setNativeCompositorViewportTransform",
+        [](const MethodCall&, MethodResultPtr result) {
+            result->Success();
+        });
+    method_dispatcher_.Register(
+        "prepareNativeCompositorSourceCache",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            PrepareNativeCompositorSourceCache(
+                call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
+        "clearNativeCompositorSourceCache",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            ClearNativeCompositorSourceCache(
+                call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
+        "setNativeAnalysisOverlay",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            SetNativeAnalysisOverlay(call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
         "ackNativeCompositorFlutterState",
         [this](const MethodCall& call, MethodResultPtr result) {
             AckNativeCompositorFlutterState(
@@ -762,6 +784,10 @@ void VideoRendererPlugin::DestroyPlayer(
 
     try {
     if (native_compositor_) {
+        if (player_) {
+            player_->clear_source_cache("destroy-player");
+        }
+        native_compositor_source_signature_.clear();
         native_compositor_->Stop("destroy-player");
         native_compositor_.reset();
     }
@@ -887,6 +913,10 @@ void VideoRendererPlugin::RemoveTrack(
     }
 
     player_->remove_track(file_id);
+    if (player_->track_count() == 0) {
+        player_->clear_source_cache("all-tracks-removed");
+        native_compositor_source_signature_.clear();
+    }
     spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
     result->Success(flutter::EncodableValue(std::monostate{}));
     } catch (const std::bad_variant_access& e) {
@@ -1188,6 +1218,332 @@ void VideoRendererPlugin::SetNativeCompositorViewportRect(
     }
 }
 
+void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        if (!player_ || !native_compositor_) {
+            result->Success();
+            return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (!args) {
+            result->Error("BAD_ARGS", "source cache payload must be a map");
+            return;
+        }
+        const auto read_int_list = [&](const char* key,
+                                       std::vector<int>& out,
+                                       size_t expected = 0) {
+            const auto it = args->find(flutter::EncodableValue(key));
+            if (it == args->end() ||
+                !std::holds_alternative<flutter::EncodableList>(it->second)) {
+                return false;
+            }
+            const auto& list = std::get<flutter::EncodableList>(it->second);
+            if (expected != 0 && list.size() != expected) {
+                return false;
+            }
+            out.clear();
+            for (const auto& value : list) {
+                int parsed = 0;
+                if (!read_int_arg(value, parsed)) {
+                    return false;
+                }
+                out.push_back(parsed);
+            }
+            return true;
+        };
+        const auto read_double_list = [&](const char* key,
+                                          std::array<double, 4>& out) {
+            const auto it = args->find(flutter::EncodableValue(key));
+            if (it == args->end() ||
+                !std::holds_alternative<flutter::EncodableList>(it->second)) {
+                return false;
+            }
+            const auto& list = std::get<flutter::EncodableList>(it->second);
+            if (list.size() != out.size()) {
+                return false;
+            }
+            for (size_t i = 0; i < out.size(); ++i) {
+                if (!read_double_arg(list[i], out[i]) ||
+                    !std::isfinite(out[i])) {
+                    return false;
+                }
+            }
+            return true;
+        };
+        const auto read_required_int = [&](const char* key, int& out) {
+            const auto it = args->find(flutter::EncodableValue(key));
+            return it != args->end() && read_int_arg(it->second, out);
+        };
+        const auto read_required_double = [&](const char* key, double& out) {
+            const auto it = args->find(flutter::EncodableValue(key));
+            return it != args->end() && read_double_arg(it->second, out) &&
+                   std::isfinite(out);
+        };
+
+        std::vector<int> source_slots;
+        std::vector<int> source_order;
+        std::array<double, 4> display_offset_x{};
+        std::array<double, 4> display_offset_y{};
+        std::array<double, 4> inv_display_size_x{};
+        std::array<double, 4> inv_display_size_y{};
+        std::array<double, 4> view_offset_uv_x{};
+        std::array<double, 4> view_offset_uv_y{};
+        int mode = 0;
+        int active_track_count = 0;
+        double split_pos = 0.5;
+        if (!read_int_list("sourceSlots", source_slots) ||
+            source_slots.empty() || source_slots.size() > 4 ||
+            !read_int_list("sourceOrder", source_order, 4) ||
+            !read_required_int("mode", mode) ||
+            !read_required_double("splitPos", split_pos) ||
+            !read_required_int("activeTrackCount", active_track_count) ||
+            !read_double_list("displayOffsetX", display_offset_x) ||
+            !read_double_list("displayOffsetY", display_offset_y) ||
+            !read_double_list("invDisplaySizeX", inv_display_size_x) ||
+            !read_double_list("invDisplaySizeY", inv_display_size_y) ||
+            !read_double_list("viewOffsetUvX", view_offset_uv_x) ||
+            !read_double_list("viewOffsetUvY", view_offset_uv_y) ||
+            (mode != vr::LAYOUT_SIDE_BY_SIDE &&
+             mode != vr::LAYOUT_SPLIT_SCREEN) ||
+            split_pos < 0.0 || split_pos > 1.0 ||
+            active_track_count < 1 || active_track_count > 4) {
+            result->Error("BAD_ARGS", "invalid source cache projection payload");
+            return;
+        }
+
+        std::array<bool, 4> requested{};
+        for (const int slot : source_slots) {
+            if (slot < 0 || slot >= 4 || requested[slot]) {
+                result->Error("BAD_ARGS", "sourceSlots must be unique slots 0..3");
+                return;
+            }
+            requested[slot] = true;
+        }
+        for (int index = 0; index < active_track_count; ++index) {
+            const int slot = source_order[static_cast<size_t>(index)];
+            if (slot < 0 || slot >= 4 || !requested[slot]) {
+                result->Error("BAD_ARGS", "sourceOrder references an unavailable slot");
+                return;
+            }
+        }
+
+        std::vector<vr::SourceCacheTrackDescriptor> descriptors;
+        const auto infos = player_->track_infos();
+        for (const auto& info : infos) {
+            if (info.slot >= 0 && info.slot < 4 && requested[info.slot]) {
+                if (info.file_id < 0 || info.width <= 0 || info.height <= 0) {
+                    result->Error("BAD_ARGS", "source track dimensions are invalid");
+                    return;
+                }
+                descriptors.push_back(
+                    {info.slot, info.file_id, info.width, info.height});
+            }
+        }
+        if (descriptors.size() != source_slots.size()) {
+            result->Error("BAD_ARGS", "sourceSlots do not match native tracks");
+            return;
+        }
+        std::sort(
+            descriptors.begin(),
+            descriptors.end(),
+            [](const auto& left, const auto& right) {
+                return left.slot < right.slot;
+            });
+
+        WindowsNativeCompositor::SourceProjection projection;
+        projection.enabled = true;
+        projection.mode = mode;
+        projection.split_pos = static_cast<float>(split_pos);
+        projection.active_track_count = active_track_count;
+        for (size_t i = 0; i < 4; ++i) {
+            projection.source_order[i] = source_order[i];
+            projection.display_offset_x[i] =
+                static_cast<float>(display_offset_x[i]);
+            projection.display_offset_y[i] =
+                static_cast<float>(display_offset_y[i]);
+            projection.inv_display_size_x[i] =
+                static_cast<float>(inv_display_size_x[i]);
+            projection.inv_display_size_y[i] =
+                static_cast<float>(inv_display_size_y[i]);
+            projection.view_offset_uv_x[i] =
+                static_cast<float>(view_offset_uv_x[i]);
+            projection.view_offset_uv_y[i] =
+                static_cast<float>(view_offset_uv_y[i]);
+        }
+        native_compositor_->SetSourceProjection(projection);
+
+        std::string signature = "R16G16B16A16_FLOAT|";
+        for (const int slot : source_order) {
+            signature += std::to_string(slot) + ",";
+        }
+        for (const auto& descriptor : descriptors) {
+            signature += "|" + std::to_string(descriptor.slot) + ":" +
+                         std::to_string(descriptor.file_id) + ":" +
+                         std::to_string(descriptor.width) + "x" +
+                         std::to_string(descriptor.height);
+        }
+        if (signature != native_compositor_source_signature_) {
+            if (!player_->configure_source_cache(descriptors)) {
+                const std::string error =
+                    "source-cache-configuration-failed";
+                player_->clear_source_cache(error.c_str());
+                native_compositor_->ClearSourceProjection(error);
+                native_compositor_->SetSourceCacheError(error);
+                native_compositor_source_signature_.clear();
+                result->Success();
+                return;
+            }
+            native_compositor_source_signature_ = signature;
+            player_->set_source_cache_frame_callback(
+                [compositor = native_compositor_.get()]() {
+                    if (compositor) {
+                        compositor->NotifySourceCachePublished();
+                    }
+                });
+        }
+        if (!player_->is_playing()) {
+            const auto backend = player_->presentation_backend_diagnostics();
+            if (backend.source_cache_publish_count == 0) {
+                (void)player_->request_frame_refresh(
+                    "windows-source-cache-subscribe");
+            }
+        }
+        result->Success();
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "prepareNativeCompositorSourceCache", e);
+    }
+}
+
+void VideoRendererPlugin::ClearNativeCompositorSourceCache(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        std::string reason = "clear-requested";
+        if (const auto* args =
+                std::get_if<flutter::EncodableMap>(arguments)) {
+            const auto it = args->find(flutter::EncodableValue("reason"));
+            if (it != args->end()) {
+                (void)read_string_arg(it->second, reason);
+            }
+        }
+        if (player_) {
+            player_->clear_source_cache(reason.c_str());
+        }
+        if (native_compositor_) {
+            native_compositor_->ClearSourceProjection(reason);
+        }
+        native_compositor_source_signature_.clear();
+        result->Success();
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "clearNativeCompositorSourceCache", e);
+    }
+}
+
+void VideoRendererPlugin::SetNativeAnalysisOverlay(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        if (!arguments) {
+            result->Error("INVALID_ARGS", "Arguments required");
+            return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (!args) {
+            result->Error("INVALID_ARGS", "Arguments must be a map");
+            return;
+        }
+        const auto read_required_bool = [&](const char* key, int32_t& out) {
+            const auto it = args->find(flutter::EncodableValue(key));
+            bool value = false;
+            if (it == args->end() ||
+                !read_bool_arg(it->second, value)) {
+                return false;
+            }
+            out = value ? 1 : 0;
+            return true;
+        };
+        const auto read_required_int = [&](const char* key, int32_t& out) {
+            const auto it = args->find(flutter::EncodableValue(key));
+            int value = 0;
+            if (it == args->end() ||
+                !read_int_arg(it->second, value)) {
+                return false;
+            }
+            out = value;
+            return true;
+        };
+        NakiOverlayState state{};
+        if (!read_required_bool("showCuGrid", state.show_cu_grid) ||
+            !read_required_bool("showPredMode", state.show_pred_mode) ||
+            !read_required_bool(
+                "showQpHeatmap", state.show_qp_heatmap) ||
+            !read_required_bool("showPredLines", state.show_pred_lines) ||
+            !read_required_bool(
+                "showCuBitCostHeatmap",
+                state.show_cu_bit_cost_heatmap) ||
+            !read_required_int(
+                "opacityPermille", state.opacity_permille) ||
+            !read_required_int("mode", state.mode) ||
+            !read_required_int("trackFileId", state.track_file_id)) {
+            result->Error(
+                "BAD_ARGS", "Invalid native analysis overlay state");
+            return;
+        }
+        const auto tracks_it =
+            args->find(flutter::EncodableValue("tracks"));
+        const auto* tracks =
+            tracks_it == args->end()
+                ? nullptr
+                : std::get_if<flutter::EncodableList>(
+                      &tracks_it->second);
+        if (!tracks) {
+            result->Error("BAD_ARGS", "tracks must be a list");
+            return;
+        }
+        naki_analysis_clear_overlay_tracks();
+        for (const auto& value : *tracks) {
+            const auto* track =
+                std::get_if<flutter::EncodableMap>(&value);
+            if (!track) {
+                result->Error("BAD_ARGS", "track must be a map");
+                return;
+            }
+            const auto file_it =
+                track->find(flutter::EncodableValue("fileId"));
+            const auto path_it =
+                track->find(flutter::EncodableValue("analysisPath"));
+            int file_id = -1;
+            std::string analysis_path;
+            if (file_it == track->end() ||
+                !read_int_arg(file_it->second, file_id) ||
+                path_it == track->end() ||
+                !read_string_arg(path_it->second, analysis_path) ||
+                file_id < 0 || analysis_path.empty() ||
+                naki_analysis_set_overlay_track(
+                    file_id, analysis_path.c_str()) == 0) {
+                naki_analysis_clear_overlay_tracks();
+                result->Error(
+                    "BAD_ARGS",
+                    "Invalid native analysis overlay track");
+                return;
+            }
+        }
+        naki_analysis_set_overlay(&state);
+        if (player_) {
+            (void)player_->request_frame_refresh(
+                "windows-analysis-overlay-state");
+        }
+        result->Success();
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "setNativeAnalysisOverlay", e);
+    }
+}
+
 void VideoRendererPlugin::AckNativeCompositorFlutterState(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
@@ -1286,6 +1642,9 @@ void VideoRendererPlugin::SetViewportBackgroundColor(
     const float g = static_cast<float>((color >> 8) & 0xFF) / 255.0f;
     const float b = static_cast<float>(color & 0xFF) / 255.0f;
     player_->set_background_color(r, g, b, a);
+    if (native_compositor_) {
+        native_compositor_->SetViewportBackgroundColor(color);
+    }
     result->Success(flutter::EncodableValue(std::monostate{}));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "setViewportBackgroundColor", e);
@@ -1720,6 +2079,78 @@ void VideoRendererPlugin::GetDiagnostics(
             flutter::EncodableValue(3);
         diagnostics[flutter::EncodableValue("windowsNativeCompositorFallbackReason")] =
             flutter::EncodableValue(compositor.fallback_reason);
+        const auto backend =
+            player_ ? player_->presentation_backend_diagnostics()
+                    : vr::PresentationBackendDiagnostics{};
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorSourceProjectionEnabled")] =
+            flutter::EncodableValue(compositor.source_projection_enabled);
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorSourceCacheActive")] =
+            flutter::EncodableValue(compositor.source_cache_active);
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorSourceCacheTextureCount")] =
+            enc_i64(backend.source_cache_texture_count);
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorSourceCacheGeneration")] =
+            enc_i64(static_cast<int64_t>(backend.source_cache_generation));
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorSourceCacheBytes")] =
+            enc_i64(static_cast<int64_t>(backend.source_cache_bytes));
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorSourceCacheLastError")] =
+            flutter::EncodableValue(
+                compositor.source_cache_last_error != "none"
+                    ? compositor.source_cache_last_error
+                    : backend.source_cache_last_error);
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorSourceCacheHz")] =
+            flutter::EncodableValue(compositor.source_cache_hz);
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorSourceProjectionHz")] =
+            flutter::EncodableValue(compositor.source_projection_hz);
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorOverlayGeneration")] =
+            enc_i64(static_cast<int64_t>(compositor.overlay_generation));
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorOverlayFillRectCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.overlay_fill_rect_count));
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorOverlayLineRectCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.overlay_line_rect_count));
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorOverlayMotionLineCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.overlay_motion_line_count));
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorSourceBakedOverlayDisabled")] =
+            flutter::EncodableValue(true);
+        diagnostics[flutter::EncodableValue("windowsSourceCacheFormat")] =
+            flutter::EncodableValue(backend.source_cache_format);
+        diagnostics[flutter::EncodableValue("windowsSourceCacheRingDepth")] =
+            enc_i64(backend.source_cache_ring_depth);
+        diagnostics[flutter::EncodableValue(
+            "windowsSourceCacheFrozenSnapshot")] =
+            flutter::EncodableValue(
+                backend.source_cache_frozen_snapshot);
+        diagnostics[flutter::EncodableValue("windowsSourceCachePublishCount")] =
+            enc_i64(static_cast<int64_t>(
+                backend.source_cache_publish_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsSourceCacheBackpressureCount")] =
+            enc_i64(static_cast<int64_t>(
+                backend.source_cache_backpressure_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsSourceCacheConsumedGeneration")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.source_cache_consumed_generation));
+        diagnostics[flutter::EncodableValue(
+            "windowsSourceCacheFallbackCount")] =
+            enc_i64(static_cast<int64_t>(
+                backend.source_cache_fallback_count +
+                compositor.source_cache_fallback_count));
         const bool compositor_active =
             compositor.phase == "preparing" || compositor.phase == "active";
         diagnostics[flutter::EncodableValue("windowsPresentationCompositorActive")] =

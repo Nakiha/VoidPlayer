@@ -18,11 +18,16 @@ class PresentationMetricsStore;
 class D3D11Device;
 class D3D11RenderBackend;
 struct SharedFp16TextureSnapshot;
+struct SourceCacheTrackDescriptor;
+struct SharedSourceCacheBundleSnapshot;
+struct AnalysisOverlayPrimitivePackage;
 
 struct RendererPresentationOverlayHooks {
     std::function<void(PresentationBackend&, const RendererDrawSnapshot&)> draw_overlay;
     std::function<bool(const RendererDrawSnapshot&, uint8_t*, int, int, size_t)>
         composite_bgra_overlay;
+    std::function<std::shared_ptr<const AnalysisOverlayPrimitivePackage>(
+        const RendererDrawSnapshot&)> build_overlay_primitives;
 };
 
 struct RendererPresentationDrawRequest {
@@ -217,6 +222,14 @@ public:
     void release_d3d_shared_fp16_texture(int buffer_index,
                                          uint64_t ring_generation) const;
     void set_d3d_shared_fp16_frame_callback(std::function<void()> callback);
+    bool configure_d3d_source_cache(
+        const std::vector<SourceCacheTrackDescriptor>& descriptors);
+    void clear_d3d_source_cache(const char* reason);
+    bool acquire_d3d_source_cache_bundle(
+        SharedSourceCacheBundleSnapshot& snapshot) const;
+    void release_d3d_source_cache_bundle(
+        int buffer_index, uint64_t ring_generation) const;
+    void set_d3d_source_cache_frame_callback(std::function<void()> callback);
     D3D11RenderBackend* d3d_backend() const;
     D3D11Device* d3d_device() const;
 #endif

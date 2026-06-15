@@ -87,6 +87,15 @@ private:
     void SetNativeCompositorViewportRect(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void PrepareNativeCompositorSourceCache(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void ClearNativeCompositorSourceCache(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void SetNativeAnalysisOverlay(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void AckNativeCompositorFlutterState(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
@@ -152,6 +161,7 @@ private:
     vr::WindowsDisplayProbeTracker display_probe_tracker_;
     vr::WindowsPresentationPolicy presentation_policy_;
     std::unique_ptr<WindowsNativeCompositor> native_compositor_;
+    std::string native_compositor_source_signature_;
     void* flutter_view_handle_ = nullptr;
     std::string presentation_sdr_white_level_status_ = "nominal-default";
     HWND window_handle_ = nullptr;

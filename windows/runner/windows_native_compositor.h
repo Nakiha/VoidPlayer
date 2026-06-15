@@ -1,6 +1,8 @@
 #pragma once
 
 #include "windows/d3d11/shared_fp16_ring.h"
+#include "windows/d3d11/shared_source_cache_ring.h"
+#include "windows/presentation/windows_dcomp_composite.h"
 #include "windows/player/native_player.h"
 
 #include <d3d11.h>
@@ -11,6 +13,7 @@
 #include <wrl/client.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -31,6 +34,7 @@ public:
     struct Diagnostics {
         std::string phase = "inactive";
         std::string fallback_reason = "none";
+        std::string source_cache_last_error = "none";
         uint64_t state_serial = 0;
         uint64_t ack_serial = 0;
         uint64_t flutter_generation = 0;
@@ -45,13 +49,25 @@ public:
         uint64_t flutter_transparent_pixels_x1000 = 0;
         uint64_t final_max_rgb_x1000 = 0;
         uint64_t final_pixels_over_1 = 0;
+        uint64_t source_cache_consumed_generation = 0;
+        uint64_t source_cache_fallback_count = 0;
+        uint64_t source_projection_update_count = 0;
+        uint64_t overlay_generation = 0;
+        uint64_t overlay_fill_rect_count = 0;
+        uint64_t overlay_line_rect_count = 0;
+        uint64_t overlay_motion_line_count = 0;
+        double source_cache_hz = 0.0;
+        double source_projection_hz = 0.0;
         uint32_t swap_chain_width = 0;
         uint32_t swap_chain_height = 0;
         bool engine_export_available = false;
         bool swap_chain_active = false;
+        bool source_projection_enabled = false;
+        bool source_cache_active = false;
     };
 
     using StateCallback = std::function<void(Phase, uint64_t, const std::string&)>;
+    using SourceProjection = vr::WindowsSourceProjection;
 
     WindowsNativeCompositor();
     ~WindowsNativeCompositor();
@@ -64,6 +80,11 @@ public:
                StateCallback callback);
     void Stop(const char* reason = "shutdown");
     void SetViewportRect(double left, double top, double right, double bottom);
+    void SetViewportBackgroundColor(uint32_t argb);
+    void SetSourceProjection(const SourceProjection& projection);
+    void ClearSourceProjection(const std::string& reason);
+    void SetSourceCacheError(const std::string& error);
+    void NotifySourceCachePublished();
     void AcknowledgeFlutterState(uint64_t serial, bool transparent_viewport);
     void ForceFallbackForTesting(const std::string& reason);
     void RequestDiagnosticCapture();
@@ -110,6 +131,11 @@ private:
     bool CreatePipeline();
     bool CaptureDiagnostics(ID3D11Texture2D* back_buffer,
                             ID3D11Texture2D* flutter_texture);
+    bool DrawOverlay(
+        const std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage>& overlay,
+        const SourceProjection& projection,
+        const D3D11_TEXTURE2D_DESC& back_desc);
+    void ReleaseHeldInputs(const std::shared_ptr<vr::NativePlayer>& player);
     void ThreadMain();
     bool CompositeLatest();
     void SignalWork();
@@ -133,8 +159,37 @@ private:
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> back_buffer_rtv_;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel_shader_;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> video_pixel_shader_;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> flutter_pixel_shader_;
+    Microsoft::WRL::ComPtr<ID3D11BlendState> premultiplied_blend_state_;
+    Microsoft::WRL::ComPtr<ID3D11VertexShader> overlay_vertex_shader_;
+    Microsoft::WRL::ComPtr<ID3D11PixelShader> overlay_pixel_shader_;
+    Microsoft::WRL::ComPtr<ID3D11InputLayout> overlay_input_layout_;
+    Microsoft::WRL::ComPtr<ID3D11BlendState> overlay_blend_state_;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
     Microsoft::WRL::ComPtr<ID3D11Buffer> constants_;
+
+    bool held_video_valid_ = false;
+    vr::SharedFp16TextureSnapshot held_video_;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> held_video_texture_;
+    Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_video_mutex_;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_video_srv_;
+
+    bool held_flutter_valid_ = false;
+    FlutterSurface held_flutter_;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> held_flutter_texture_;
+    Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_flutter_mutex_;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_flutter_srv_;
+
+    bool held_source_valid_ = false;
+    vr::SharedSourceCacheBundleSnapshot held_source_;
+    std::array<Microsoft::WRL::ComPtr<ID3D11Texture2D>, 4>
+        held_source_textures_;
+    std::array<Microsoft::WRL::ComPtr<IDXGIKeyedMutex>, 4>
+        held_source_mutexes_;
+    std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4>
+        held_source_srvs_;
+    std::array<bool, 4> held_source_present_{};
 
     mutable std::mutex mutex_;
     std::condition_variable wake_;
@@ -148,5 +203,13 @@ private:
     uint64_t state_serial_ = 0;
     uint64_t ack_serial_ = 0;
     double viewport_[4] = {0.0, 0.0, 1.0, 1.0};
+    float viewport_background_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    SourceProjection source_projection_;
+    std::string source_cache_error_ = "none";
+    std::chrono::steady_clock::time_point rate_start_time_{};
+    uint64_t source_cache_publish_count_ = 0;
+    bool source_cache_base_lease_wait_logged_ = false;
+    bool source_cache_bundle_acquire_logged_ = false;
+    bool source_cache_consumed_logged_ = false;
     Diagnostics diagnostics_;
 };

@@ -52,6 +52,9 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `windows_d3d11_color_layout_parity_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; explicit WARP allowed only for hosted CI | Synthetic shared renderer snapshots through D3D11 capture; BGRA, NV12, planar YUV420, P010, odd stride, split/layout fit. |
 | `windows_d3d11_fp16_scrgb_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; explicit WARP allowed only for hosted CI | RGBA16F scRGB capture, SDR white scaling, PQ/HLG/P010/BT.2020, unclipped highlights, layout/overlay pass, and BGRA source-rerender compatibility. |
 | `video_renderer_tests [windows_dcomp]` | backend contract | PR fast / Windows preservation | D3D11 + keyed mutex | Native-compositor policy and shared FP16 ring lease/resize generations. |
+| `video_renderer_tests [windows_source_cache]` | backend contract | PR fast / Windows preservation | D3D11 + keyed mutex | Atomic bundle publication, lease retirement, backpressure, signature replacement, and 384 MiB depth policy. |
+| `video_renderer_tests [windows_source_projection]` | projection contract | PR fast / Windows preservation | none beyond Windows build | Four-track order, split, pan/zoom, negative/out-of-range UV, missing slots, and background fallback. |
+| `windows_d3d11_source_projection_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; WARP accepted for hosted contract coverage | Real DComp projection shader, four source textures, deterministic order, and unclipped FP16 scRGB highlights. |
 | `analysis_tests` | contract | Release candidate / analysis changes | analysis submodules/tools | VAC2/VACHUNK/cache and analysis FFI behavior. |
 | `test_ffi_c` | FFI canary | PR fast when FFI is built | Windows FFI target | C ABI load/call sanity. |
 | `voidplayer_cli_help` | CLI canary | Release candidate | analysis build | CLI starts and exposes help. |
@@ -89,6 +92,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `ui_tests/smoke/native_seek_preview_event.csv` | Windows EventChannel, fixed SDR presentation, and active DXGI output diagnostics contract. | Windows preservation / release candidate |
 | `ui_tests/smoke/native_seek_preview_event_fp16_scrgb.csv` | Windows FP16 opt-in diagnostics, resize, BGRA compatibility capture, seek, and EventChannel contract. | Windows preservation / targeted presentation changes |
 | `ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv` | Locked-engine Flutter export, DComp activation/ACK, seek, resize, viewport alpha, and fallback restoration. | Windows preservation / targeted presentation changes |
+| `ui_tests/smoke/native_source_projection_dcomp_scrgb.csv` | Paused/playing source cache, pan/zoom, split, analysis overlay projection, seek/resize, diagnostics, and fallback cleanup. | Windows preservation / targeted presentation changes |
 | `ui_tests/timeline/**` | Real pointer timeline/seek path. | Targeted Windows preservation; stress scripts nightly/release. |
 | `ui_tests/seek/**` | Direct seek/step/rapid seek regressions. | Targeted preservation; rapid/storm scripts nightly. |
 | `ui_tests/loop/**` | Loop range state and commit behavior. | Targeted preservation. |

@@ -27,6 +27,7 @@ set(VOID_D3D11_BACKEND_SOURCES
     "${VOID_NATIVE_DIR}/windows/d3d11/headless_output.cpp"
     "${VOID_NATIVE_DIR}/windows/d3d11/render_backend.cpp"
     "${VOID_NATIVE_DIR}/windows/d3d11/shared_fp16_ring.cpp"
+    "${VOID_NATIVE_DIR}/windows/d3d11/shared_source_cache_ring.cpp"
     "${VOID_NATIVE_DIR}/windows/d3d11/texture.cpp"
     "${VOID_NATIVE_DIR}/windows/d3d11/shader.cpp"
 )

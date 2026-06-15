@@ -80,8 +80,17 @@ NativePlayer / Renderer command surface
   through the Flutter texture descriptor callback.
 - In `native-compositor-scrgb`, the Windows platform thread owns the serial/ACK
   state machine only. A dedicated composition thread consumes immutable Flutter
-  BGRA and video FP16 leases, draws and presents the DComp swap chain, and
-  releases both leases after keyed-mutex synchronization.
+  BGRA and video FP16 leases, draws and presents the DComp swap chain, and keeps
+  the latest successfully synchronized inputs leased until a newer generation
+  replaces them or the compositor stops. This lets one input update re-composite
+  against stable video, Flutter, and source-cache inputs without reacquiring a
+  keyed-mutex frame that was already consumed.
+- Source-cache publication stays on the renderer D3D11 device mutex. One render
+  draw acquires every target in a bundle, renders all tracks, flushes, then
+  publishes one generation. The composition thread acquires that bundle as one
+  lease, never mixes generations, retains the latest successful bundle for
+  projection-only redraws, and treats keyed-mutex timeout as backpressure rather
+  than a compositor-wide failure.
 - macOS runner owns Cocoa, sandbox file access, platform channels, Flutter
   texture registration, `CVPixelBuffer` lifecycle, and frame notification.
 - macOS viewport pan/zoom submits only the latest layout intent. `CVDisplayLink`
@@ -186,6 +195,11 @@ cannot be destroyed until every consumer lease is returned. Flutter state ACKs
 are post-frame commits: activation publishes `active` after the transparent
 viewport ACK, while fallback teardown is queued to the composition thread after
 the restored-Texture ACK.
+
+Source-cache clear and signature replacement stop new acquisition immediately.
+Any generation already leased by DComp remains in the retired set until release.
+An unchanged-signature draw miss leaves the last complete bundle published;
+partial source updates are cancelled before publication.
 
 ## macOS Metal / CVPixelBuffer Completion
 

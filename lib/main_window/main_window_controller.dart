@@ -287,6 +287,7 @@ class MainWindowController {
 
   void _onTrackManagerChanged() {
     stateStore.setLayout(_layout.copyWith(order: trackManager.order));
+    layoutCoordinator.onTrackSetChanged();
     layoutCoordinator.markLayoutDirty();
     quickMarkCoordinator.reconcilePersistence();
     fireAndLog(

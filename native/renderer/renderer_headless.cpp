@@ -143,6 +143,59 @@ void Renderer::Impl::set_shared_fp16_frame_callback(
 #endif
 }
 
+bool Renderer::Impl::configure_source_cache(
+    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.configure_d3d_source_cache(descriptors);
+#else
+    (void)descriptors;
+    return false;
+#endif
+}
+
+void Renderer::Impl::clear_source_cache(const char* reason) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    presentation_.clear_d3d_source_cache(reason);
+#else
+    (void)reason;
+#endif
+}
+
+bool Renderer::Impl::acquire_source_cache_bundle(
+    SharedSourceCacheBundleSnapshot& snapshot) const {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.acquire_d3d_source_cache_bundle(snapshot);
+#else
+    (void)snapshot;
+    return false;
+#endif
+}
+
+void Renderer::Impl::release_source_cache_bundle(
+    int buffer_index, uint64_t ring_generation) const {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    presentation_.release_d3d_source_cache_bundle(
+        buffer_index, ring_generation);
+#else
+    (void)buffer_index;
+    (void)ring_generation;
+#endif
+}
+
+void Renderer::Impl::set_source_cache_frame_callback(
+    std::function<void()> cb) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    presentation_.set_d3d_source_cache_frame_callback(std::move(cb));
+#else
+    (void)cb;
+#endif
+}
+
 void Renderer::Impl::resize(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 #ifdef _WIN32

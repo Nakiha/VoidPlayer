@@ -40,6 +40,8 @@ class MainWindowPlaybackCoordinator {
   /// layout) before playback content changes. Awaited before play starts so
   /// the first playing frame already carries the interacted layout.
   final Future<void> Function({required bool playing})? onPlaybackTransition;
+  final void Function({required bool active})?
+  onNativeCompositorAvailabilityChanged;
 
   Timer? _pollTimer;
   Timer? _loopBoundaryTimer;
@@ -63,6 +65,7 @@ class MainWindowPlaybackCoordinator {
     this.onSeekSettled,
     this.onSeekPreviewPresented,
     this.onPlaybackTransition,
+    this.onNativeCompositorAvailabilityChanged,
   }) {
     _nativeEventSubscription = controller.events.listen(
       _handleNativePlayerEvent,
@@ -332,7 +335,13 @@ class MainWindowPlaybackCoordinator {
         'active=${event.nativeCompositorActive} '
         'reason=${event.nativeCompositorReason}',
       );
+      final wasActive = stateStore.value.nativeCompositorActive;
       stateStore.setNativeCompositorActive(event.nativeCompositorActive);
+      if (wasActive != event.nativeCompositorActive) {
+        onNativeCompositorAvailabilityChanged?.call(
+          active: event.nativeCompositorActive,
+        );
+      }
       if (event.nativeCompositorSerial > 0 &&
           (event.nativeCompositorPhase == 'preparing' ||
               event.nativeCompositorPhase == 'fallback-restoring')) {

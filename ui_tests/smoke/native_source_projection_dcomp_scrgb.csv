@@ -1,0 +1,48 @@
+# Windows source-resolution projection smoke. Two paused tracks establish an
+# atomic source bundle, pan/zoom and split update only compositor projection,
+# playback refreshes the ring, and forced fallback clears retained generations.
+@WINDOW, 1366, 768
+0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+1.8, ASSERT_TRACK_COUNT, 1
+2.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+4.0, ASSERT_TRACK_COUNT, 2
+4.1, ASSERT_PAUSED
+4.2, TOGGLE_ANALYSIS_OVERLAY, 0
+5.0, ASSERT_ANALYSIS_OVERLAY, true, cu, 0.55
+5.1, SET_ZOOM, 2.0
+5.2, DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL, 420, -160, nativeCompositorSourceCacheActive, true, 60, 4, 1
+5.6, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProjectionEnabled, true
+5.61, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, true
+5.62, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheTextureCount, 2
+5.63, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheGeneration, 1
+5.64, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheBytes, 1
+5.65, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorSourceCacheLastError, none
+5.66, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceBakedOverlayDisabled, true
+5.67, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsSourceCacheFormat, R16G16B16A16_FLOAT
+5.68, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsSourceCacheRingDepth, 1, 3
+5.69, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsSourceCacheFrozenSnapshot, false
+5.70, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceCachePublishCount, 1
+5.71, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceCacheConsumedGeneration, 1
+5.72, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorOverlayLineRectCount, 1
+5.8, SET_LAYOUT_MODE, 1
+5.9, SET_SPLIT_POS, 0.35
+6.2, DRAG_VIEWPORT, -260, 120, 30, 4
+6.5, PLAY
+6.8, ASSERT_PLAYING
+6.9, DRAG_VIEWPORT, 180, -80, 30, 4
+7.5, ASSERT_POSITION_RANGE, 200000, 2500000
+7.6, SEEK_TO, 1200000
+8.3, ASSERT_PRESENTED_FRAME_RANGE, 1, 900000, 1500000
+8.4, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceCachePublishCount, 2
+8.5, WINDOW_MAXIMIZE
+9.1, WINDOW_RESTORE
+9.8, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompResizeCount, 1
+9.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsSourceCacheBackpressureCount, 0, 100
+10.0, DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK, source-projection-ui-fallback
+11.4, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, inactive
+11.5, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, false
+11.6, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDCompSwapChainActive, false
+11.7, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, flutter-texture-sdr
+11.8, CAPTURE_VIEWPORT, source_projection_fallback_restored
+11.9, ASSERT_CAPTURE_NOT_BLACK, source_projection_fallback_restored, 0.01, 4.0
+12.0, QUIT, 0

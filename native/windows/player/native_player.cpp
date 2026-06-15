@@ -353,6 +353,62 @@ void NativePlayer::set_shared_fp16_frame_callback(
     }
 }
 
+bool NativePlayer::configure_source_cache(
+    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.configure_source_cache(descriptors);
+}
+
+void NativePlayer::clear_source_cache(const char* reason) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (renderer_ready_locked()) {
+        renderer_.clear_source_cache(reason);
+    }
+}
+
+bool NativePlayer::acquire_source_cache_bundle(
+    SharedSourceCacheBundleSnapshot& snapshot) const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.acquire_source_cache_bundle(snapshot);
+}
+
+void NativePlayer::release_source_cache_bundle(
+    int buffer_index, uint64_t ring_generation) const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (renderer_ready_locked()) {
+        renderer_.release_source_cache_bundle(
+            buffer_index, ring_generation);
+    }
+}
+
+void NativePlayer::set_source_cache_frame_callback(
+    std::function<void()> cb) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (renderer_ready_locked()) {
+        renderer_.set_source_cache_frame_callback(std::move(cb));
+    }
+}
+
+bool NativePlayer::request_frame_refresh(const char* reason) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.request_frame_refresh(reason);
+}
+
+std::shared_ptr<const AnalysisOverlayPrimitivePackage>
+NativePlayer::current_overlay_primitives(std::string* error) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (!renderer_ready_locked()) {
+        if (error) {
+            *error = "renderer is not active";
+        }
+        return {};
+    }
+    return renderer_.current_overlay_primitives(error);
+}
+
 void NativePlayer::resize(int width, int height) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {

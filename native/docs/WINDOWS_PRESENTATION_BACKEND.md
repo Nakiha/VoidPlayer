@@ -59,6 +59,21 @@ DirectComposition attached directly to the Flutter HWND. It does not use a key
 color, `WS_EX_LAYERED`, window capture, a child HWND sandwich, or a rectangular
 native hole.
 
+Once Dart publishes a valid projection signature, D3D11 also maintains an
+atomic source-resolution bundle with up to four FP16 scRGB textures. The render
+thread draws every active source from the same prepared frame snapshot, then
+publishes the complete bundle with its analysis primitive package. DComp
+applies pan, zoom, side-by-side order, split position, background, and overlay
+projection without waiting for a viewport-sized redraw. The viewport FP16 ring
+remains the startup, allocation-failure, and transient-miss fallback.
+
+The source cache budget is 384 MiB. A three-slot bundle ring is preferred; if
+that exceeds the budget, one frozen snapshot is allowed. A single bundle that
+still exceeds the budget is rejected without failing playback. Signature
+changes stop exposing the previous bundle, while leased old generations remain
+alive until release. A draw miss with an unchanged signature keeps the last
+complete bundle and never publishes partial track updates.
+
 The standalone native window path may use a double-buffered flip-discard swap
 chain. It is not the current Flutter product presentation route.
 
@@ -73,11 +88,17 @@ chain. It is not the current Flutter product presentation route.
   SRV, and test capture.
 - `D3D11SharedFp16Ring` owns the keyed-mutex FP16 video leases used only by
   `native-compositor-scrgb`.
+- `D3D11SharedSourceCacheRing` owns atomic source-texture bundles, generation
+  retirement, the 384 MiB depth policy, and overlay-package attachment.
 - `FlutterTextureBridge` owns Flutter texture registration and lease release.
 - The engine fork owns immutable Flutter surface leases. Old resize
   generations remain alive until their leases are released.
 - `WindowsNativeCompositor` owns an independent D3D11 device/context, DComp
-  target, FP16 swap chain, final shader, and composition thread.
+  target, FP16 swap chain, final shader, composition thread, and the latest
+  successfully synchronized video, Flutter, and source-cache input leases.
+  Held inputs are replaced only after a newer generation is acquired
+  successfully, then released during replacement, fallback completion, or
+  shutdown.
 - D3D11 immediate-context work is serialized by the presentation device mutex.
 - The lock order is `device_mutex -> texture_mutex`.
 - Host callbacks are invoked after presentation locks are released.
@@ -138,6 +159,8 @@ and unchanged BGRA compatibility output.
 | `windowsNativeCompositorStateSerial/AckSerial` | Flutter alpha-hole handshake serials |
 | `windowsFlutterExportGeneration/windowsVideoRingGeneration` | Latest consumed input generations |
 | `windowsDComp*` | Swap-chain facts and composite/present/drop/failure counters |
+| `nativeCompositorSource*` | Projection/cache activity, generation, bytes, rates, and overlay primitive counts |
+| `windowsSourceCache*` | Format, depth/frozen policy, publish/backpressure/consume/fallback counters |
 | `windowsD3DAdapter*` | Description, vendor/device IDs, and LUID |
 | `windowsD3DFeatureLevel` | Active D3D feature level |
 | `windowsD3DDriverType` / `windowsD3DWarp` | Device creation route |
@@ -170,9 +193,8 @@ the selected request, actual mode, and fallback reason.
 
 ## Catch-Up Roadmap
 
-1. Add Windows source projection/cache behavior at the backend boundary.
-2. Add HDR Auto policy only after output probing, FP16, compositor ownership,
-   diagnostics, and preservation gates are stable.
+1. Add Windows HDR Auto policy after output probing, FP16, compositor
+   ownership, source projection, diagnostics, and preservation gates are stable.
 
 This sequence is capability parity with macOS, not a mechanical Metal/Swift
 port.

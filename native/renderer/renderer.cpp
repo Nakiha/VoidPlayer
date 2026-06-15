@@ -242,6 +242,29 @@ void Renderer::set_shared_fp16_frame_callback(std::function<void()> cb) {
     impl_->set_shared_fp16_frame_callback(std::move(cb));
 }
 
+bool Renderer::configure_source_cache(
+    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    return impl_->configure_source_cache(descriptors);
+}
+
+void Renderer::clear_source_cache(const char* reason) {
+    impl_->clear_source_cache(reason);
+}
+
+bool Renderer::acquire_source_cache_bundle(
+    SharedSourceCacheBundleSnapshot& snapshot) const {
+    return impl_->acquire_source_cache_bundle(snapshot);
+}
+
+void Renderer::release_source_cache_bundle(
+    int buffer_index, uint64_t ring_generation) const {
+    impl_->release_source_cache_bundle(buffer_index, ring_generation);
+}
+
+void Renderer::set_source_cache_frame_callback(std::function<void()> cb) {
+    impl_->set_source_cache_frame_callback(std::move(cb));
+}
+
 void Renderer::resize(int width, int height) {
     impl_->resize(width, height);
 }

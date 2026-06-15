@@ -16,6 +16,44 @@
 #include <vector>
 
 namespace vr {
+namespace {
+
+RendererDrawSnapshot make_d3d_source_snapshot(
+    const RendererDrawSnapshot& snapshot,
+    size_t source_slot,
+    int width,
+    int height) {
+    RendererDrawSnapshot source;
+    source.decision.should_present = true;
+    source.decision.current_pts_us = snapshot.decision.current_pts_us;
+    source.decision.frames[0] = snapshot.decision.frames[source_slot];
+    source.decision.file_ids[0] = snapshot.decision.file_ids[source_slot];
+    source.decision.track_generations[0] =
+        snapshot.decision.track_generations[source_slot];
+    source.layout.mode = LAYOUT_SIDE_BY_SIDE;
+    source.layout.split_pos = 0.5f;
+    source.layout.zoom_ratio = 1.0f;
+    source.layout.pixel_size_mode = PIXEL_SIZE_FILL_VIEW;
+    source.layout.order[0] = 0;
+    source.layout.order[1] = -1;
+    source.layout.order[2] = -1;
+    source.layout.order[3] = -1;
+    source.track_geometry[0].active = true;
+    source.track_geometry[0].width = width;
+    source.track_geometry[0].height = height;
+    source.track_geometry[0].aspect =
+        height > 0 ? static_cast<float>(width) / height : 1.0f;
+    source.tracks[0] = snapshot.tracks[source_slot];
+    source.tracks[0].active = true;
+    source.tracks[0].video_width = width;
+    source.tracks[0].video_height = height;
+    source.tracks[0].video_aspect = source.track_geometry[0].aspect;
+    source.target_width = width;
+    source.target_height = height;
+    return source;
+}
+
+} // namespace
 
 D3D11RenderBackend::~D3D11RenderBackend() {
     shutdown();
@@ -252,6 +290,10 @@ void D3D11RenderBackend::snapshot_memory_stats(
         stats.fp16_target_bytes = shared_fp16_ring_->estimated_bytes();
         stats.total_estimated_bytes += stats.fp16_target_bytes;
     }
+    if (source_cache_ring_) {
+        const uint64_t source_bytes = source_cache_ring_->estimated_bytes();
+        stats.total_estimated_bytes += source_bytes;
+    }
 
     if (resources_) {
         const auto overlay_stats =
@@ -314,6 +356,25 @@ PresentationBackendDiagnostics D3D11RenderBackend::diagnostics() const {
         result.fp16_target_width = shared_fp16_ring_->width();
         result.fp16_target_height = shared_fp16_ring_->height();
         result.fp16_target_buffer_count = D3D11SharedFp16Ring::kBufferCount;
+    }
+    if (source_cache_ring_) {
+        result.source_cache_active = source_cache_ring_->texture_count() > 0;
+        result.source_cache_frozen_snapshot =
+            source_cache_ring_->frozen_snapshot();
+        result.source_cache_ring_depth = source_cache_ring_->ring_depth();
+        result.source_cache_texture_count =
+            static_cast<int32_t>(source_cache_ring_->texture_count());
+        result.source_cache_generation = source_cache_ring_->generation();
+        result.source_cache_bytes = source_cache_ring_->estimated_bytes();
+        result.source_cache_publish_count = source_cache_ring_->publish_count();
+        result.source_cache_backpressure_count =
+            source_cache_ring_->backpressure_count();
+        result.source_cache_fallback_count =
+            source_cache_ring_->fallback_count();
+        result.source_cache_last_error =
+            source_cache_draw_error_ != "none"
+                ? source_cache_draw_error_
+                : source_cache_ring_->last_error();
     }
     result.sdr_white_level_milli_nits = static_cast<int64_t>(
         std::llround(sdr_white_level_nits_ * 1000.0));
@@ -401,6 +462,63 @@ void D3D11RenderBackend::set_shared_fp16_frame_callback(
     std::function<void()> callback) {
     if (shared_fp16_ring_) {
         shared_fp16_ring_->set_frame_callback(std::move(callback));
+    }
+}
+
+bool D3D11RenderBackend::configure_source_cache(
+    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    if (!device_ || !device_->device() || !device_->context() ||
+        descriptors.empty()) {
+        return false;
+    }
+    if (!source_cache_ring_) {
+        auto ring = std::make_unique<D3D11SharedSourceCacheRing>();
+        if (!ring->initialize(
+                device_->device(),
+                device_->context(),
+                descriptors)) {
+            return false;
+        }
+        source_cache_ring_ = std::move(ring);
+    } else if (!source_cache_ring_->reconfigure(descriptors)) {
+        return false;
+    }
+    source_cache_ring_->set_frame_callback(source_cache_callback_);
+    source_cache_descriptors_ = descriptors;
+    source_cache_draw_error_ = "none";
+    return true;
+}
+
+void D3D11RenderBackend::clear_source_cache(const char* reason) {
+    if (source_cache_ring_) {
+        spdlog::info(
+            "[D3D11SourceCache] clear reason={}",
+            reason ? reason : "unspecified");
+        source_cache_ring_->clear();
+    }
+    source_cache_descriptors_.clear();
+    source_cache_draw_error_ =
+        reason ? reason : "source-cache-cleared";
+}
+
+bool D3D11RenderBackend::acquire_source_cache_bundle(
+    SharedSourceCacheBundleSnapshot& snapshot) {
+    return source_cache_ring_ &&
+           source_cache_ring_->acquire_latest(snapshot);
+}
+
+void D3D11RenderBackend::release_source_cache_bundle(
+    int buffer_index, uint64_t ring_generation) {
+    if (source_cache_ring_) {
+        source_cache_ring_->release(buffer_index, ring_generation);
+    }
+}
+
+void D3D11RenderBackend::set_source_cache_frame_callback(
+    std::function<void()> callback) {
+    source_cache_callback_ = std::move(callback);
+    if (source_cache_ring_) {
+        source_cache_ring_->set_frame_callback(source_cache_callback_);
     }
 }
 
@@ -625,6 +743,112 @@ bool D3D11RenderBackend::draw_prepared_pass(
         12, static_cast<UINT>(null_srvs.size()), null_srvs.data());
     ctx->PSSetShaderResources(
         16, static_cast<UINT>(null_srvs.size()), null_srvs.data());
+    return true;
+}
+
+bool D3D11RenderBackend::draw_source_cache_bundle(
+    const RendererDrawSnapshot& snapshot,
+    const PresentationBackendDrawHooks& hooks,
+    const PreparedDrawResources& prepared) {
+    if (!source_cache_ring_ || source_cache_descriptors_.empty()) {
+        return false;
+    }
+    const auto report_failure = [this](const std::string& error) {
+        if (source_cache_draw_error_ != error) {
+            source_cache_draw_error_ = error;
+            spdlog::warn("[D3D11SourceCache] {}", error);
+        }
+    };
+    std::array<ID3D11RenderTargetView*, 4> rtvs{};
+    size_t target_count = 0;
+    if (!source_cache_ring_->begin_bundle(rtvs, target_count)) {
+        return false;
+    }
+    if (target_count != source_cache_descriptors_.size()) {
+        report_failure("bundle-target-count-mismatch");
+        source_cache_ring_->cancel_bundle();
+        return false;
+    }
+
+    bool complete = true;
+    for (size_t target = 0; target < target_count; ++target) {
+        const auto& descriptor = source_cache_descriptors_[target];
+        const size_t source_slot = static_cast<size_t>(descriptor.slot);
+        if (source_slot >= kMaxTracks ||
+            !snapshot.decision.frames[source_slot].has_value() ||
+            !snapshot.tracks[source_slot].active ||
+            snapshot.decision.file_ids[source_slot] != descriptor.file_id ||
+            snapshot.tracks[source_slot].file_id != descriptor.file_id ||
+            snapshot.decision.frames[source_slot]->width != descriptor.width ||
+            snapshot.decision.frames[source_slot]->height != descriptor.height) {
+            const auto* frame =
+                source_slot < kMaxTracks &&
+                        snapshot.decision.frames[source_slot].has_value()
+                    ? &snapshot.decision.frames[source_slot].value()
+                    : nullptr;
+            report_failure(
+                "track-not-ready slot=" +
+                std::to_string(descriptor.slot) +
+                " file=" + std::to_string(descriptor.file_id) +
+                " decisionFile=" +
+                std::to_string(
+                    source_slot < kMaxTracks
+                        ? snapshot.decision.file_ids[source_slot]
+                        : -1) +
+                " active=" +
+                std::to_string(
+                    source_slot < kMaxTracks &&
+                    snapshot.tracks[source_slot].active) +
+                " frame=" +
+                (frame
+                    ? std::to_string(frame->width) + "x" +
+                          std::to_string(frame->height)
+                    : "missing") +
+                " expected=" + std::to_string(descriptor.width) + "x" +
+                std::to_string(descriptor.height));
+            complete = false;
+            break;
+        }
+        auto source_snapshot = make_d3d_source_snapshot(
+            snapshot,
+            source_slot,
+            descriptor.width,
+            descriptor.height);
+        PreparedDrawResources source_prepared;
+        source_prepared.frames[0] = prepared.frames[source_slot];
+        source_prepared.rgba_srvs[0] = prepared.rgba_srvs[source_slot];
+        source_prepared.y_srvs[0] = prepared.y_srvs[source_slot];
+        source_prepared.uv_srvs[0] = prepared.uv_srvs[source_slot];
+        source_prepared.u_srvs[0] = prepared.u_srvs[source_slot];
+        source_prepared.v_srvs[0] = prepared.v_srvs[source_slot];
+        if (!draw_prepared_pass(
+                source_snapshot,
+                hooks,
+                source_prepared,
+                rtvs[target],
+                ColorOutputTarget::kWindowsLinearScRGB,
+                false)) {
+            report_failure(
+                "source-pass-draw-failed slot=" +
+                std::to_string(descriptor.slot));
+            complete = false;
+            break;
+        }
+    }
+    if (!complete) {
+        source_cache_ring_->cancel_bundle();
+        return false;
+    }
+    device_->context()->Flush();
+    std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay;
+    if (hooks.build_overlay_primitives) {
+        overlay = hooks.build_overlay_primitives(snapshot);
+    }
+    if (!source_cache_ring_->publish_bundle(std::move(overlay))) {
+        report_failure("bundle-publish-failed");
+        return false;
+    }
+    source_cache_draw_error_ = "none";
     return true;
 }
 
@@ -854,6 +1078,8 @@ bool D3D11RenderBackend::draw_frame(const RendererDrawSnapshot& snapshot,
         return false;
     }
 
+    (void)draw_source_cache_bundle(snapshot, hooks, prepared);
+
     bool fp16_drawn = false;
     if (fp16_target_) {
         fp16_drawn = draw_prepared_pass(
@@ -904,6 +1130,7 @@ bool D3D11RenderBackend::draw_frame(const RendererDrawSnapshot& snapshot,
 }
 
 void D3D11RenderBackend::shutdown() {
+    clear_source_cache("backend-shutdown");
     if (shared_fp16_ring_) {
         shared_fp16_ring_->shutdown();
         shared_fp16_ring_.reset();
@@ -928,6 +1155,7 @@ void D3D11RenderBackend::shutdown() {
     fp16_draw_count_ = 0;
     sdr_compatibility_draw_count_ = 0;
     fp16_fallback_reason_ = "none";
+    source_cache_callback_ = {};
 }
 
 } // namespace vr

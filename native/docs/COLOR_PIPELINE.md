@@ -159,6 +159,15 @@ video. Transparent viewport pixels reveal video without color keys or a
 rectangular native hole. The final swap-chain capture must preserve video
 values above `1.0` and Flutter alpha-edge behavior.
 
+For source projection, each active track is rendered with identity layout into
+its source-sized `R16G16B16A16_FLOAT` texture from the same
+`PreparedDrawResources` snapshot. The source pass does not bake analysis
+overlays. DComp samples up to four source textures, applies the Dart/macOS
+projection contract, fills missing/out-of-range UVs with the linearized
+viewport background, draws projected fill/outline/motion primitives, then
+composites the Flutter surface. This preserves the order
+`source video -> analysis overlay -> Flutter UI`.
+
 ## macOS Metal / CVPixelBuffer Path
 
 macOS uses the same metadata and layout contract through Metal:
@@ -245,6 +254,11 @@ Current Windows preservation evidence:
   same draw. It covers SDR white scaling, PQ/HLG, P010, BT.2020 conversion,
   values above `1.0`, odd/padded storage, background/split/order, overlay hook
   participation, and source-rerender SDR compatibility.
+- `windows_d3d11_source_projection_smoke` executes the DComp projection shader
+  against four FP16 source textures, verifies deterministic source order, and
+  proves values above `1.0` survive projection. `[windows_source_cache]` and
+  `[windows_source_projection]` tests cover bundle leases/generations, the
+  384 MiB policy, split/pan/zoom, missing sources, and background fallback.
 
 Current macOS release-readiness evidence:
 

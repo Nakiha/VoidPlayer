@@ -1,6 +1,7 @@
 #include "windows_native_compositor.h"
 
 #include "windows/presentation/windows_dcomp_composite.h"
+#include "renderer/overlay/analysis_overlay_primitives.h"
 
 #include <d3dcompiler.h>
 #include <spdlog/spdlog.h>
@@ -20,8 +21,37 @@ constexpr int kExportCompositorOwned = 2;
 struct CompositeConstants {
     float viewport[4];
     float sdr_white_scale;
-    float padding[3];
+    float source_projection_enabled;
+    float source_mode;
+    float source_split_pos;
+    float source_track_count;
+    float source_header_padding[3];
+    float source_present[4];
+    float source_order[4];
+    float source_display_offset_x[4];
+    float source_display_offset_y[4];
+    float source_inv_display_size_x[4];
+    float source_inv_display_size_y[4];
+    float source_view_offset_uv_x[4];
+    float source_view_offset_uv_y[4];
+    float background_color[4];
 };
+
+struct OverlayVertex {
+    float x = 0.0f;
+    float y = 0.0f;
+    float r = 0.0f;
+    float g = 0.0f;
+    float b = 0.0f;
+    float a = 0.0f;
+};
+
+float srgb_to_linear(float value) {
+    value = std::clamp(value, 0.0f, 1.0f);
+    return value <= 0.04045f
+        ? value / 12.92f
+        : std::pow((value + 0.055f) / 1.055f, 2.4f);
+}
 
 } // namespace
 
@@ -64,12 +94,18 @@ bool WindowsNativeCompositor::Start(
         return false;
     }
     player->set_shared_fp16_frame_callback([this]() { SignalWork(); });
+    player->set_source_cache_frame_callback([this]() { SignalWork(); });
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stop_ = false;
         work_pending_ = true;
         terminal_inactive_ = false;
         fallback_finish_pending_ = false;
+        rate_start_time_ = std::chrono::steady_clock::now();
+        source_cache_publish_count_ = 0;
+        source_cache_base_lease_wait_logged_ = false;
+        source_cache_bundle_acquire_logged_ = false;
+        source_cache_consumed_logged_ = false;
     }
     thread_ = std::thread(&WindowsNativeCompositor::ThreadMain, this);
     return true;
@@ -89,7 +125,10 @@ void WindowsNativeCompositor::Stop(const char* reason) {
         thread_.join();
     }
     if (auto player = player_.lock()) {
+        ReleaseHeldInputs(player);
         player->set_shared_fp16_frame_callback({});
+        player->set_source_cache_frame_callback({});
+        player->clear_source_cache(reason ? reason : "compositor-stop");
     }
     if (engine_api_.available() && flutter_view_) {
         engine_api_.set_callback(flutter_view_, nullptr, nullptr);
@@ -105,6 +144,13 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     constants_.Reset();
     sampler_.Reset();
     pixel_shader_.Reset();
+    video_pixel_shader_.Reset();
+    flutter_pixel_shader_.Reset();
+    premultiplied_blend_state_.Reset();
+    overlay_blend_state_.Reset();
+    overlay_input_layout_.Reset();
+    overlay_pixel_shader_.Reset();
+    overlay_vertex_shader_.Reset();
     vertex_shader_.Reset();
     context_.Reset();
     device_.Reset();
@@ -117,6 +163,61 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     state_callback_ = {};
 }
 
+void WindowsNativeCompositor::ReleaseHeldInputs(
+    const std::shared_ptr<vr::NativePlayer>& player) {
+    if (held_source_valid_) {
+        for (size_t slot = 0; slot < held_source_mutexes_.size(); ++slot) {
+            if (held_source_present_[slot] && held_source_mutexes_[slot]) {
+                held_source_mutexes_[slot]->ReleaseSync(0);
+            }
+        }
+        if (player && held_source_.buffer_index >= 0) {
+            player->release_source_cache_bundle(
+                held_source_.buffer_index,
+                held_source_.ring_generation);
+        }
+    }
+    held_source_valid_ = false;
+    held_source_ = {};
+    held_source_present_.fill(false);
+    held_source_srvs_ = {};
+    held_source_mutexes_ = {};
+    held_source_textures_ = {};
+
+    if (held_flutter_valid_) {
+        if (held_flutter_mutex_) {
+            held_flutter_mutex_->ReleaseSync(
+                held_flutter_.producer_release_key);
+        }
+        if (engine_api_.available() && flutter_view_ &&
+            held_flutter_.lease_id != 0) {
+            engine_api_.release(flutter_view_, held_flutter_.lease_id);
+        }
+    }
+    held_flutter_valid_ = false;
+    held_flutter_ = {};
+    held_flutter_srv_.Reset();
+    held_flutter_mutex_.Reset();
+    held_flutter_texture_.Reset();
+
+    if (held_video_valid_) {
+        if (held_video_mutex_) {
+            held_video_mutex_->ReleaseSync(
+                held_video_.producer_release_key);
+        }
+        if (player && held_video_.buffer_index >= 0) {
+            player->release_shared_fp16_texture(
+                held_video_.buffer_index,
+                held_video_.ring_generation);
+        }
+    }
+    held_video_valid_ = false;
+    held_video_ = {};
+    held_video_srv_.Reset();
+    held_video_mutex_.Reset();
+    held_video_texture_.Reset();
+}
+
 void WindowsNativeCompositor::SetViewportRect(
     double left, double top, double right, double bottom) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -125,6 +226,67 @@ void WindowsNativeCompositor::SetViewportRect(
     viewport_[2] = std::clamp(right, viewport_[0], 1.0);
     viewport_[3] = std::clamp(bottom, viewport_[1], 1.0);
     work_pending_ = true;
+    wake_.notify_one();
+}
+
+void WindowsNativeCompositor::SetViewportBackgroundColor(uint32_t argb) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    viewport_background_[0] =
+        static_cast<float>((argb >> 16) & 0xffu) / 255.0f;
+    viewport_background_[1] =
+        static_cast<float>((argb >> 8) & 0xffu) / 255.0f;
+    viewport_background_[2] =
+        static_cast<float>(argb & 0xffu) / 255.0f;
+    viewport_background_[3] =
+        static_cast<float>((argb >> 24) & 0xffu) / 255.0f;
+    work_pending_ = true;
+    wake_.notify_one();
+}
+
+void WindowsNativeCompositor::SetSourceProjection(
+    const SourceProjection& projection) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    source_projection_ = projection;
+    diagnostics_.source_projection_enabled = projection.enabled;
+    ++diagnostics_.source_projection_update_count;
+    work_pending_ = true;
+    wake_.notify_one();
+}
+
+void WindowsNativeCompositor::ClearSourceProjection(
+    const std::string& reason) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    source_projection_ = {};
+    diagnostics_.source_projection_enabled = false;
+    diagnostics_.source_cache_active = false;
+    source_cache_error_ = reason.empty() ? "clear-requested" : reason;
+    diagnostics_.source_cache_last_error = source_cache_error_;
+    work_pending_ = true;
+    wake_.notify_one();
+}
+
+void WindowsNativeCompositor::SetSourceCacheError(
+    const std::string& error) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    source_cache_error_ = error.empty() ? "unknown" : error;
+    diagnostics_.source_cache_last_error = source_cache_error_;
+    ++diagnostics_.source_cache_fallback_count;
+    work_pending_ = true;
+    wake_.notify_one();
+}
+
+void WindowsNativeCompositor::NotifySourceCachePublished() {
+    bool first_publish = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ++source_cache_publish_count_;
+        first_publish = source_cache_publish_count_ == 1;
+        work_pending_ = true;
+    }
+    if (first_publish) {
+        spdlog::info(
+            "[WindowsNativeCompositor] first source-cache publish notified");
+    }
     wake_.notify_one();
 }
 
@@ -169,7 +331,19 @@ void WindowsNativeCompositor::ForceFallbackForTesting(
 WindowsNativeCompositor::Diagnostics
 WindowsNativeCompositor::diagnostics() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return diagnostics_;
+    Diagnostics result = diagnostics_;
+    const double elapsed_seconds =
+        std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - rate_start_time_).count();
+    if (elapsed_seconds > 0.0) {
+        result.source_cache_hz =
+            static_cast<double>(source_cache_publish_count_) /
+            elapsed_seconds;
+        result.source_projection_hz =
+            static_cast<double>(result.source_projection_update_count) /
+            elapsed_seconds;
+    }
+    return result;
 }
 
 void WindowsNativeCompositor::RequestDiagnosticCapture() {
@@ -308,6 +482,10 @@ bool WindowsNativeCompositor::CreatePipeline() {
     const size_t shader_size = std::strlen(shader);
     Microsoft::WRL::ComPtr<ID3DBlob> vs_blob;
     Microsoft::WRL::ComPtr<ID3DBlob> ps_blob;
+    Microsoft::WRL::ComPtr<ID3DBlob> video_ps_blob;
+    Microsoft::WRL::ComPtr<ID3DBlob> flutter_ps_blob;
+    Microsoft::WRL::ComPtr<ID3DBlob> overlay_vs_blob;
+    Microsoft::WRL::ComPtr<ID3DBlob> overlay_ps_blob;
     Microsoft::WRL::ComPtr<ID3DBlob> errors;
     HRESULT hr = D3DCompile(
         shader, shader_size, nullptr, nullptr, nullptr,
@@ -317,12 +495,62 @@ bool WindowsNativeCompositor::CreatePipeline() {
         shader, shader_size, nullptr, nullptr, nullptr,
         "PSMain", "ps_5_0", 0, 0, &ps_blob, &errors);
     if (FAILED(hr)) return false;
+    hr = D3DCompile(
+        shader, shader_size, nullptr, nullptr, nullptr,
+        "VSOverlay", "vs_5_0", 0, 0, &overlay_vs_blob, &errors);
+    if (FAILED(hr)) return false;
+    hr = D3DCompile(
+        shader, shader_size, nullptr, nullptr, nullptr,
+        "PSOverlay", "ps_5_0", 0, 0, &overlay_ps_blob, &errors);
+    if (FAILED(hr)) return false;
+    hr = D3DCompile(
+        shader, shader_size, nullptr, nullptr, nullptr,
+        "PSVideo", "ps_5_0", 0, 0, &video_ps_blob, &errors);
+    if (FAILED(hr)) return false;
+    hr = D3DCompile(
+        shader, shader_size, nullptr, nullptr, nullptr,
+        "PSFlutter", "ps_5_0", 0, 0, &flutter_ps_blob, &errors);
+    if (FAILED(hr)) return false;
     if (FAILED(device_->CreateVertexShader(
             vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(),
             nullptr, &vertex_shader_)) ||
         FAILED(device_->CreatePixelShader(
             ps_blob->GetBufferPointer(), ps_blob->GetBufferSize(),
-            nullptr, &pixel_shader_))) {
+            nullptr, &pixel_shader_)) ||
+        FAILED(device_->CreatePixelShader(
+            video_ps_blob->GetBufferPointer(),
+            video_ps_blob->GetBufferSize(),
+            nullptr,
+            &video_pixel_shader_)) ||
+        FAILED(device_->CreatePixelShader(
+            flutter_ps_blob->GetBufferPointer(),
+            flutter_ps_blob->GetBufferSize(),
+            nullptr,
+            &flutter_pixel_shader_)) ||
+        FAILED(device_->CreateVertexShader(
+            overlay_vs_blob->GetBufferPointer(),
+            overlay_vs_blob->GetBufferSize(),
+            nullptr,
+            &overlay_vertex_shader_)) ||
+        FAILED(device_->CreatePixelShader(
+            overlay_ps_blob->GetBufferPointer(),
+            overlay_ps_blob->GetBufferSize(),
+            nullptr,
+            &overlay_pixel_shader_))) {
+        return false;
+    }
+    const D3D11_INPUT_ELEMENT_DESC overlay_elements[] = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 8,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+    };
+    if (FAILED(device_->CreateInputLayout(
+            overlay_elements,
+            static_cast<UINT>(std::size(overlay_elements)),
+            overlay_vs_blob->GetBufferPointer(),
+            overlay_vs_blob->GetBufferSize(),
+            &overlay_input_layout_))) {
         return false;
     }
     D3D11_SAMPLER_DESC sampler_desc = {};
@@ -332,6 +560,25 @@ bool WindowsNativeCompositor::CreatePipeline() {
     sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
     sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
     if (FAILED(device_->CreateSamplerState(&sampler_desc, &sampler_))) return false;
+    D3D11_BLEND_DESC blend_desc = {};
+    blend_desc.RenderTarget[0].BlendEnable = TRUE;
+    blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+    blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+    blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+    blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    blend_desc.RenderTarget[0].DestBlendAlpha =
+        D3D11_BLEND_INV_SRC_ALPHA;
+    blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    blend_desc.RenderTarget[0].RenderTargetWriteMask =
+        D3D11_COLOR_WRITE_ENABLE_ALL;
+    if (FAILED(device_->CreateBlendState(
+            &blend_desc, &premultiplied_blend_state_))) {
+        return false;
+    }
+    if (FAILED(device_->CreateBlendState(
+            &blend_desc, &overlay_blend_state_))) {
+        return false;
+    }
     D3D11_BUFFER_DESC constants_desc = {};
     constants_desc.ByteWidth = sizeof(CompositeConstants);
     constants_desc.Usage = D3D11_USAGE_DEFAULT;
@@ -367,6 +614,9 @@ void WindowsNativeCompositor::ThreadMain() {
             work_pending_ = false;
         }
         if (finish_fallback) {
+            if (auto player = player_.lock()) {
+                ReleaseHeldInputs(player);
+            }
             engine_api_.set_mode(flutter_view_, kExportDisabled);
             if (dcomp_target_) dcomp_target_->SetRoot(nullptr);
             if (dcomp_device_) dcomp_device_->Commit();
@@ -405,73 +655,300 @@ bool WindowsNativeCompositor::CompositeLatest() {
     }
     auto player = player_.lock();
     if (!player) return false;
-    vr::SharedFp16TextureSnapshot video;
-    FlutterSurface flutter;
-    if (!player->acquire_shared_fp16_texture(video) ||
-        !engine_api_.acquire(flutter_view_, &flutter)) {
-        if (video.handle) {
+    Microsoft::WRL::ComPtr<ID3D11Device1> device1;
+    if (FAILED(device_.As(&device1)) || !device1) {
+        EnterFallback("dcomp-query-device1-failed");
+        return false;
+    }
+
+    SourceProjection source_projection;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        source_projection = source_projection_;
+    }
+
+    const auto release_held_video = [&]() {
+        if (!held_video_valid_) return;
+        if (held_video_mutex_) {
+            held_video_mutex_->ReleaseSync(
+                held_video_.producer_release_key);
+        }
+        player->release_shared_fp16_texture(
+            held_video_.buffer_index, held_video_.ring_generation);
+        held_video_valid_ = false;
+        held_video_ = {};
+        held_video_srv_.Reset();
+        held_video_mutex_.Reset();
+        held_video_texture_.Reset();
+    };
+    const auto release_held_flutter = [&]() {
+        if (!held_flutter_valid_) return;
+        if (held_flutter_mutex_) {
+            held_flutter_mutex_->ReleaseSync(
+                held_flutter_.producer_release_key);
+        }
+        engine_api_.release(flutter_view_, held_flutter_.lease_id);
+        held_flutter_valid_ = false;
+        held_flutter_ = {};
+        held_flutter_srv_.Reset();
+        held_flutter_mutex_.Reset();
+        held_flutter_texture_.Reset();
+    };
+    const auto release_held_source = [&]() {
+        if (!held_source_valid_) return;
+        for (size_t slot = 0; slot < held_source_mutexes_.size(); ++slot) {
+            if (held_source_present_[slot] && held_source_mutexes_[slot]) {
+                held_source_mutexes_[slot]->ReleaseSync(0);
+            }
+        }
+        player->release_source_cache_bundle(
+            held_source_.buffer_index, held_source_.ring_generation);
+        held_source_valid_ = false;
+        held_source_ = {};
+        held_source_present_.fill(false);
+        held_source_srvs_ = {};
+        held_source_mutexes_ = {};
+        held_source_textures_ = {};
+    };
+
+    vr::SharedFp16TextureSnapshot next_video;
+    if (player->acquire_shared_fp16_texture(next_video)) {
+        const bool unchanged =
+            held_video_valid_ &&
+            next_video.ring_generation == held_video_.ring_generation &&
+            next_video.frame_generation == held_video_.frame_generation;
+        if (unchanged) {
             player->release_shared_fp16_texture(
-                video.buffer_index, video.ring_generation);
+                next_video.buffer_index, next_video.ring_generation);
+        } else {
+            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+            Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+            bool acquired = false;
+            const HRESULT open_result = device1->OpenSharedResource1(
+                next_video.handle, IID_PPV_ARGS(&texture));
+            if (SUCCEEDED(open_result) &&
+                SUCCEEDED(texture.As(&keyed_mutex))) {
+                acquired =
+                    keyed_mutex->AcquireSync(
+                        next_video.consumer_acquire_key, 8) == S_OK;
+            }
+            if (acquired &&
+                SUCCEEDED(device_->CreateShaderResourceView(
+                    texture.Get(), nullptr, &srv))) {
+                release_held_video();
+                held_video_ = next_video;
+                held_video_texture_ = std::move(texture);
+                held_video_mutex_ = std::move(keyed_mutex);
+                held_video_srv_ = std::move(srv);
+                held_video_valid_ = true;
+            } else {
+                if (acquired) {
+                    keyed_mutex->ReleaseSync(
+                        next_video.producer_release_key);
+                }
+                player->release_shared_fp16_texture(
+                    next_video.buffer_index, next_video.ring_generation);
+            }
+        }
+    }
+
+    FlutterSurface next_flutter;
+    if (engine_api_.acquire(flutter_view_, &next_flutter)) {
+        const bool unchanged =
+            held_flutter_valid_ &&
+            next_flutter.ring_generation ==
+                held_flutter_.ring_generation &&
+            next_flutter.frame_generation ==
+                held_flutter_.frame_generation;
+        if (unchanged) {
+            engine_api_.release(flutter_view_, next_flutter.lease_id);
+        } else {
+            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+            Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+            bool acquired = false;
+            const HRESULT open_result = device1->OpenSharedResource1(
+                next_flutter.shared_texture_handle,
+                IID_PPV_ARGS(&texture));
+            if (SUCCEEDED(open_result) &&
+                SUCCEEDED(texture.As(&keyed_mutex))) {
+                acquired =
+                    keyed_mutex->AcquireSync(
+                        next_flutter.consumer_acquire_key, 8) == S_OK;
+            }
+            if (acquired &&
+                SUCCEEDED(device_->CreateShaderResourceView(
+                    texture.Get(), nullptr, &srv))) {
+                release_held_flutter();
+                held_flutter_ = next_flutter;
+                held_flutter_texture_ = std::move(texture);
+                held_flutter_mutex_ = std::move(keyed_mutex);
+                held_flutter_srv_ = std::move(srv);
+                held_flutter_valid_ = true;
+            } else {
+                if (acquired) {
+                    keyed_mutex->ReleaseSync(
+                        next_flutter.producer_release_key);
+                }
+                engine_api_.release(
+                    flutter_view_, next_flutter.lease_id);
+            }
+        }
+    }
+
+    if (!held_video_valid_ || !held_flutter_valid_) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (source_cache_publish_count_ > 0 &&
+            source_projection.enabled &&
+            !source_cache_base_lease_wait_logged_) {
+            source_cache_base_lease_wait_logged_ = true;
+            spdlog::info(
+                "[WindowsNativeCompositor] source cache waiting for "
+                "stable video/Flutter inputs");
         }
         return false;
     }
-    auto release_leases = [&]() {
-        engine_api_.release(flutter_view_, flutter.lease_id);
-        player->release_shared_fp16_texture(
-            video.buffer_index, video.ring_generation);
-    };
-    if (!EnsureSwapChainSize(flutter.width, flutter.height)) {
-        release_leases();
+    if (!EnsureSwapChainSize(
+            held_flutter_.width, held_flutter_.height)) {
         EnterFallback("dcomp-swap-chain-create-or-resize-failed");
         return false;
     }
 
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> video_texture;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> flutter_texture;
-    Microsoft::WRL::ComPtr<IDXGIKeyedMutex> video_mutex;
-    Microsoft::WRL::ComPtr<IDXGIKeyedMutex> flutter_mutex;
-    Microsoft::WRL::ComPtr<ID3D11Device1> device1;
-    bool video_acquired = false;
-    bool flutter_acquired = false;
-    const bool opened =
-        SUCCEEDED(device_.As(&device1)) &&
-        SUCCEEDED(device1->OpenSharedResource1(
-            video.handle, IID_PPV_ARGS(&video_texture))) &&
-        SUCCEEDED(device1->OpenSharedResource1(
-            flutter.shared_texture_handle, IID_PPV_ARGS(&flutter_texture))) &&
-        SUCCEEDED(video_texture.As(&video_mutex)) &&
-        SUCCEEDED(flutter_texture.As(&flutter_mutex));
-    if (opened) {
-        video_acquired =
-            video_mutex->AcquireSync(video.consumer_acquire_key, 8) == S_OK;
-        if (video_acquired) {
-            flutter_acquired =
-                flutter_mutex->AcquireSync(
-                    flutter.consumer_acquire_key, 8) == S_OK;
+    if (!source_projection.enabled) {
+        release_held_source();
+    } else {
+        vr::SharedSourceCacheBundleSnapshot next_source;
+        const bool acquired =
+            player->acquire_source_cache_bundle(next_source);
+        if (acquired) {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (!source_cache_bundle_acquire_logged_) {
+                    source_cache_bundle_acquire_logged_ = true;
+                    spdlog::info(
+                        "[WindowsNativeCompositor] first source cache bundle "
+                        "acquired generation={} textures={}",
+                        next_source.frame_generation,
+                        next_source.texture_count);
+                }
+            }
+            const bool unchanged =
+                held_source_valid_ &&
+                next_source.ring_generation ==
+                    held_source_.ring_generation &&
+                next_source.frame_generation ==
+                    held_source_.frame_generation;
+            if (unchanged) {
+                player->release_source_cache_bundle(
+                    next_source.buffer_index,
+                    next_source.ring_generation);
+            } else {
+                std::array<
+                    Microsoft::WRL::ComPtr<ID3D11Texture2D>, 4>
+                    textures;
+                std::array<
+                    Microsoft::WRL::ComPtr<IDXGIKeyedMutex>, 4>
+                    mutexes;
+                std::array<
+                    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4>
+                    srvs;
+                std::array<bool, 4> present{};
+                bool complete = next_source.texture_count > 0;
+                std::string error = "source-cache-invalid-texture-snapshot";
+                for (size_t i = 0;
+                     complete && i < next_source.texture_count;
+                     ++i) {
+                    const auto& source = next_source.textures[i];
+                    const int slot = source.source_slot;
+                    if (slot < 0 || slot >= 4 || !source.handle) {
+                        complete = false;
+                        break;
+                    }
+                    HRESULT result = device1->OpenSharedResource1(
+                        source.handle,
+                        IID_PPV_ARGS(&textures[slot]));
+                    if (FAILED(result)) {
+                        error =
+                            "source-cache-open-shared-resource-failed";
+                        complete = false;
+                        break;
+                    }
+                    result = textures[slot].As(&mutexes[slot]);
+                    if (FAILED(result)) {
+                        error = "source-cache-keyed-mutex-query-failed";
+                        complete = false;
+                        break;
+                    }
+                    result = mutexes[slot]->AcquireSync(
+                        source.consumer_acquire_key, 8);
+                    if (result != S_OK) {
+                        error = "source-cache-keyed-mutex-timeout";
+                        complete = false;
+                        break;
+                    }
+                    present[slot] = true;
+                    result = device_->CreateShaderResourceView(
+                        textures[slot].Get(), nullptr, &srvs[slot]);
+                    if (FAILED(result)) {
+                        error = "source-cache-srv-creation-failed";
+                        complete = false;
+                        break;
+                    }
+                }
+                if (complete) {
+                    release_held_source();
+                    held_source_ = std::move(next_source);
+                    held_source_textures_ = std::move(textures);
+                    held_source_mutexes_ = std::move(mutexes);
+                    held_source_srvs_ = std::move(srvs);
+                    held_source_present_ = present;
+                    held_source_valid_ = true;
+                } else {
+                    for (size_t slot = 0; slot < present.size(); ++slot) {
+                        if (present[slot] && mutexes[slot]) {
+                            mutexes[slot]->ReleaseSync(0);
+                        }
+                    }
+                    player->release_source_cache_bundle(
+                        next_source.buffer_index,
+                        next_source.ring_generation);
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    source_cache_error_ = error;
+                    diagnostics_.source_cache_last_error =
+                        source_cache_error_;
+                    ++diagnostics_.source_cache_fallback_count;
+                }
+            }
+        } else {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (source_cache_publish_count_ > 0 &&
+                !held_source_valid_ &&
+                source_cache_error_ !=
+                    "source-cache-bundle-acquire-failed") {
+                source_cache_error_ =
+                    "source-cache-bundle-acquire-failed";
+                diagnostics_.source_cache_last_error =
+                    source_cache_error_;
+                ++diagnostics_.source_cache_fallback_count;
+            }
         }
-    }
-    if (!video_acquired || !flutter_acquired) {
-        if (flutter_acquired) {
-            flutter_mutex->ReleaseSync(flutter.producer_release_key);
-        }
-        if (video_acquired) {
-            video_mutex->ReleaseSync(video.producer_release_key);
-        }
-        release_leases();
-        return false;
     }
 
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> video_srv;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> flutter_srv;
-    bool ok =
-        SUCCEEDED(device_->CreateShaderResourceView(
-            video_texture.Get(), nullptr, &video_srv)) &&
-        SUCCEEDED(device_->CreateShaderResourceView(
-            flutter_texture.Get(), nullptr, &flutter_srv));
+    const bool source_bundle_active =
+        source_projection.enabled && held_source_valid_;
+    bool ok = true;
     if (ok) {
         D3D11_TEXTURE2D_DESC back_desc = {};
         Microsoft::WRL::ComPtr<ID3D11Texture2D> back_buffer;
-        swap_chain_->GetBuffer(0, IID_PPV_ARGS(&back_buffer));
+        if (FAILED(swap_chain_->GetBuffer(
+                0, IID_PPV_ARGS(&back_buffer))) ||
+            !back_buffer) {
+            ok = false;
+        }
+        if (!ok) {
+            return false;
+        }
         back_buffer->GetDesc(&back_desc);
         D3D11_VIEWPORT viewport = {};
         viewport.Width = static_cast<float>(back_desc.Width);
@@ -485,17 +962,20 @@ bool WindowsNativeCompositor::CompositeLatest() {
         }
         ID3D11RenderTargetView* rtv = current_rtv.Get();
         if (!ok) {
-            flutter_mutex->ReleaseSync(flutter.producer_release_key);
-            video_mutex->ReleaseSync(video.producer_release_key);
-            release_leases();
             return false;
         }
         context_->OMSetRenderTargets(1, &rtv, nullptr);
         context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
         context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
-        context_->PSSetShader(pixel_shader_.Get(), nullptr, 0);
-        ID3D11ShaderResourceView* srvs[] = {video_srv.Get(), flutter_srv.Get()};
-        context_->PSSetShaderResources(0, 2, srvs);
+        ID3D11ShaderResourceView* srvs[] = {
+            held_video_srv_.Get(),
+            held_flutter_srv_.Get(),
+            held_source_srvs_[0].Get(),
+            held_source_srvs_[1].Get(),
+            held_source_srvs_[2].Get(),
+            held_source_srvs_[3].Get(),
+        };
+        context_->PSSetShaderResources(0, 6, srvs);
         ID3D11SamplerState* sampler = sampler_.Get();
         context_->PSSetSamplers(0, 1, &sampler);
         CompositeConstants values = {};
@@ -503,15 +983,56 @@ bool WindowsNativeCompositor::CompositeLatest() {
             std::lock_guard<std::mutex> lock(mutex_);
             for (int i = 0; i < 4; ++i) {
                 values.viewport[i] = static_cast<float>(viewport_[i]);
+                values.background_color[i] = viewport_background_[i];
             }
         }
         values.sdr_white_scale = static_cast<float>(sdr_white_scale_);
+        values.source_projection_enabled =
+            source_bundle_active ? 1.0f : 0.0f;
+        values.source_mode = static_cast<float>(source_projection.mode);
+        values.source_split_pos = source_projection.split_pos;
+        values.source_track_count =
+            static_cast<float>(source_projection.active_track_count);
+        for (size_t i = 0; i < 4; ++i) {
+            values.source_present[i] =
+                held_source_present_[i] ? 1.0f : 0.0f;
+            values.source_order[i] =
+                static_cast<float>(source_projection.source_order[i]);
+            values.source_display_offset_x[i] =
+                source_projection.display_offset_x[i];
+            values.source_display_offset_y[i] =
+                source_projection.display_offset_y[i];
+            values.source_inv_display_size_x[i] =
+                source_projection.inv_display_size_x[i];
+            values.source_inv_display_size_y[i] =
+                source_projection.inv_display_size_y[i];
+            values.source_view_offset_uv_x[i] =
+                source_projection.view_offset_uv_x[i];
+            values.source_view_offset_uv_y[i] =
+                source_projection.view_offset_uv_y[i];
+        }
         context_->UpdateSubresource(constants_.Get(), 0, nullptr, &values, 0, 0);
         ID3D11Buffer* constants = constants_.Get();
         context_->PSSetConstantBuffers(0, 1, &constants);
+        context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+        context_->PSSetShader(video_pixel_shader_.Get(), nullptr, 0);
         context_->Draw(4, 0);
-        std::array<ID3D11ShaderResourceView*, 2> null_srvs = {};
-        context_->PSSetShaderResources(0, 2, null_srvs.data());
+        if (source_bundle_active && held_source_.overlay) {
+            (void)DrawOverlay(
+                held_source_.overlay, source_projection, back_desc);
+            context_->IASetInputLayout(nullptr);
+            context_->IASetPrimitiveTopology(
+                D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+            context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
+        }
+        context_->OMSetBlendState(
+            premultiplied_blend_state_.Get(), nullptr, 0xffffffff);
+        context_->PSSetShader(flutter_pixel_shader_.Get(), nullptr, 0);
+        context_->Draw(4, 0);
+        context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+        std::array<ID3D11ShaderResourceView*, 6> null_srvs = {};
+        context_->PSSetShaderResources(
+            0, static_cast<UINT>(null_srvs.size()), null_srvs.data());
         context_->Flush();
         bool capture = false;
         {
@@ -520,7 +1041,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
             diagnostic_capture_pending_ = false;
         }
         if (capture && !CaptureDiagnostics(
-                           back_buffer.Get(), flutter_texture.Get())) {
+                           back_buffer.Get(),
+                           held_flutter_texture_.Get())) {
             std::lock_guard<std::mutex> lock(mutex_);
             diagnostic_capture_pending_ = true;
         }
@@ -530,9 +1052,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
             EnterFallback("dcomp-device-removed");
         }
     }
-    flutter_mutex->ReleaseSync(flutter.producer_release_key);
-    video_mutex->ReleaseSync(video.producer_release_key);
-    release_leases();
 
     if (!ok) {
         Phase phase;
@@ -547,8 +1066,26 @@ bool WindowsNativeCompositor::CompositeLatest() {
     }
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        diagnostics_.flutter_generation = flutter.frame_generation;
-        diagnostics_.video_generation = video.frame_generation;
+        diagnostics_.flutter_generation =
+            held_flutter_.frame_generation;
+        diagnostics_.video_generation =
+            held_video_.frame_generation;
+        diagnostics_.source_projection_enabled =
+            source_projection.enabled;
+        diagnostics_.source_cache_active = source_bundle_active;
+        if (source_bundle_active) {
+            diagnostics_.source_cache_consumed_generation =
+                held_source_.frame_generation;
+            source_cache_error_ = "none";
+            diagnostics_.source_cache_last_error = "none";
+            if (!source_cache_consumed_logged_) {
+                source_cache_consumed_logged_ = true;
+                spdlog::info(
+                    "[WindowsNativeCompositor] first source cache bundle "
+                    "consumed generation={}",
+                    held_source_.frame_generation);
+            }
+        }
         ++diagnostics_.composite_count;
         ++diagnostics_.present_count;
     }
@@ -561,6 +1098,256 @@ bool WindowsNativeCompositor::CompositeLatest() {
         engine_api_.set_mode(flutter_view_, kExportCompositorOwned);
         PublishState(Phase::Preparing, "first-dcomp-present");
     }
+    return true;
+}
+
+bool WindowsNativeCompositor::DrawOverlay(
+    const std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage>& overlay,
+    const SourceProjection& projection,
+    const D3D11_TEXTURE2D_DESC& back_desc) {
+    if (!overlay || overlay->empty() || back_desc.Width == 0 ||
+        back_desc.Height == 0) {
+        return true;
+    }
+    double viewport[4] = {};
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::copy(std::begin(viewport_), std::end(viewport_), viewport);
+    }
+    const float viewport_left =
+        static_cast<float>(viewport[0] * back_desc.Width);
+    const float viewport_top =
+        static_cast<float>(viewport[1] * back_desc.Height);
+    const float viewport_width =
+        static_cast<float>((viewport[2] - viewport[0]) * back_desc.Width);
+    const float viewport_height =
+        static_cast<float>((viewport[3] - viewport[1]) * back_desc.Height);
+    if (viewport_width <= 0.0f || viewport_height <= 0.0f) {
+        return true;
+    }
+
+    const int count = std::clamp(projection.active_track_count, 1, 4);
+    const auto display_slot_for = [&](int source_slot) {
+        for (int index = 0; index < count; ++index) {
+            if (projection.source_order[static_cast<size_t>(index)] ==
+                source_slot) {
+                return index;
+            }
+        }
+        return -1;
+    };
+    const auto project_uv = [&](int source_slot, float u, float v,
+                                float& x, float& y) {
+        const int display_slot = display_slot_for(source_slot);
+        if (display_slot < 0) {
+            return false;
+        }
+        const float inv_x = projection.inv_display_size_x[source_slot];
+        const float inv_y = projection.inv_display_size_y[source_slot];
+        if (std::abs(inv_x) < 0.00001f ||
+            std::abs(inv_y) < 0.00001f) {
+            return false;
+        }
+        float local_x =
+            projection.display_offset_x[source_slot] +
+            (u + projection.view_offset_uv_x[source_slot]) / inv_x;
+        const float local_y =
+            projection.display_offset_y[source_slot] +
+            (v + projection.view_offset_uv_y[source_slot]) / inv_y;
+        if (projection.mode == 0 && count > 1) {
+            local_x = (display_slot + local_x) / count;
+        }
+        x = viewport_left + local_x * viewport_width;
+        y = viewport_top + local_y * viewport_height;
+        return true;
+    };
+    const auto make_color = [&](vr::analysis::OverlayColor color) {
+        OverlayVertex vertex;
+        vertex.r = srgb_to_linear(
+            static_cast<float>(color.r) / 255.0f) *
+            static_cast<float>(sdr_white_scale_);
+        vertex.g = srgb_to_linear(
+            static_cast<float>(color.g) / 255.0f) *
+            static_cast<float>(sdr_white_scale_);
+        vertex.b = srgb_to_linear(
+            static_cast<float>(color.b) / 255.0f) *
+            static_cast<float>(sdr_white_scale_);
+        vertex.a = static_cast<float>(color.a) / 255.0f;
+        vertex.r *= vertex.a;
+        vertex.g *= vertex.a;
+        vertex.b *= vertex.a;
+        return vertex;
+    };
+    std::vector<OverlayVertex> vertices;
+    const auto append_quad = [&](float left, float top, float right,
+                                 float bottom, vr::analysis::OverlayColor color) {
+        left = std::clamp(left, viewport_left, viewport_left + viewport_width);
+        right = std::clamp(right, viewport_left, viewport_left + viewport_width);
+        top = std::clamp(top, viewport_top, viewport_top + viewport_height);
+        bottom = std::clamp(
+            bottom, viewport_top, viewport_top + viewport_height);
+        if (right <= left || bottom <= top || color.a == 0) {
+            return;
+        }
+        const auto base = make_color(color);
+        const auto vertex = [&](float px, float py) {
+            OverlayVertex out = base;
+            out.x = px / static_cast<float>(back_desc.Width) * 2.0f - 1.0f;
+            out.y = 1.0f -
+                    py / static_cast<float>(back_desc.Height) * 2.0f;
+            return out;
+        };
+        const auto p0 = vertex(left, top);
+        const auto p1 = vertex(right, top);
+        const auto p2 = vertex(left, bottom);
+        const auto p3 = vertex(right, bottom);
+        vertices.insert(
+            vertices.end(), {p0, p2, p1, p1, p2, p3});
+    };
+    const auto append_rect = [&](int source_slot,
+                                 int video_width,
+                                 int video_height,
+                                 const vr::AnalysisOverlayRectPrimitive& rect,
+                                 bool outline) {
+        if (video_width <= 0 || video_height <= 0) {
+            return;
+        }
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        float x1 = 0.0f;
+        float y1 = 0.0f;
+        if (!project_uv(
+                source_slot,
+                static_cast<float>(rect.x0) / video_width,
+                static_cast<float>(rect.y0) / video_height,
+                x0,
+                y0) ||
+            !project_uv(
+                source_slot,
+                static_cast<float>(rect.x1) / video_width,
+                static_cast<float>(rect.y1) / video_height,
+                x1,
+                y1)) {
+            return;
+        }
+        if (!outline) {
+            append_quad(x0, y0, x1, y1, rect.color);
+            return;
+        }
+        append_quad(x0, y0, x1, y0 + 1.0f, rect.color);
+        append_quad(x0, y1 - 1.0f, x1, y1, rect.color);
+        append_quad(x0, y0, x0 + 1.0f, y1, rect.color);
+        append_quad(x1 - 1.0f, y0, x1, y1, rect.color);
+    };
+    const auto append_line = [&](int source_slot,
+                                 int video_width,
+                                 int video_height,
+                                 const vr::AnalysisOverlayLinePrimitive& line) {
+        float x0 = 0.0f;
+        float y0 = 0.0f;
+        float x1 = 0.0f;
+        float y1 = 0.0f;
+        if (video_width <= 0 || video_height <= 0 ||
+            !project_uv(
+                source_slot,
+                static_cast<float>(line.x0) / video_width,
+                static_cast<float>(line.y0) / video_height,
+                x0,
+                y0) ||
+            !project_uv(
+                source_slot,
+                static_cast<float>(line.x1) / video_width,
+                static_cast<float>(line.y1) / video_height,
+                x1,
+                y1)) {
+            return;
+        }
+        const float dx = x1 - x0;
+        const float dy = y1 - y0;
+        const float length = std::max(std::sqrt(dx * dx + dy * dy), 0.0001f);
+        const float nx = -dy / length * 0.5f;
+        const float ny = dx / length * 0.5f;
+        const auto base = make_color(line.color);
+        const auto vertex = [&](float px, float py) {
+            OverlayVertex out = base;
+            out.x = px / static_cast<float>(back_desc.Width) * 2.0f - 1.0f;
+            out.y = 1.0f -
+                    py / static_cast<float>(back_desc.Height) * 2.0f;
+            return out;
+        };
+        const auto p0 = vertex(x0 + nx, y0 + ny);
+        const auto p1 = vertex(x0 - nx, y0 - ny);
+        const auto p2 = vertex(x1 + nx, y1 + ny);
+        const auto p3 = vertex(x1 - nx, y1 - ny);
+        vertices.insert(
+            vertices.end(), {p0, p1, p2, p2, p1, p3});
+    };
+
+    for (const auto& track : overlay->tracks) {
+        for (const auto& rect : track.fill_rects) {
+            append_rect(
+                track.slot,
+                track.video_width,
+                track.video_height,
+                rect,
+                false);
+        }
+        for (const auto& rect : track.outline_rects) {
+            append_rect(
+                track.slot,
+                track.video_width,
+                track.video_height,
+                rect,
+                true);
+        }
+        for (const auto& line : track.motion_lines) {
+            append_line(
+                track.slot,
+                track.video_width,
+                track.video_height,
+                line);
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        diagnostics_.overlay_generation = overlay->cache_generation;
+        diagnostics_.overlay_fill_rect_count = 0;
+        diagnostics_.overlay_line_rect_count = 0;
+        diagnostics_.overlay_motion_line_count = 0;
+        for (const auto& track : overlay->tracks) {
+            diagnostics_.overlay_fill_rect_count += track.fill_rects.size();
+            diagnostics_.overlay_line_rect_count += track.outline_rects.size();
+            diagnostics_.overlay_motion_line_count +=
+                track.motion_lines.size();
+        }
+    }
+    if (vertices.empty()) {
+        return true;
+    }
+
+    D3D11_BUFFER_DESC desc = {};
+    desc.ByteWidth = static_cast<UINT>(
+        vertices.size() * sizeof(OverlayVertex));
+    desc.Usage = D3D11_USAGE_IMMUTABLE;
+    desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    D3D11_SUBRESOURCE_DATA data = {};
+    data.pSysMem = vertices.data();
+    Microsoft::WRL::ComPtr<ID3D11Buffer> buffer;
+    if (FAILED(device_->CreateBuffer(&desc, &data, &buffer))) {
+        return false;
+    }
+    UINT stride = sizeof(OverlayVertex);
+    UINT offset = 0;
+    ID3D11Buffer* raw_buffer = buffer.Get();
+    context_->IASetVertexBuffers(0, 1, &raw_buffer, &stride, &offset);
+    context_->IASetInputLayout(overlay_input_layout_.Get());
+    context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    context_->VSSetShader(overlay_vertex_shader_.Get(), nullptr, 0);
+    context_->PSSetShader(overlay_pixel_shader_.Get(), nullptr, 0);
+    context_->OMSetBlendState(
+        overlay_blend_state_.Get(), nullptr, 0xffffffff);
+    context_->Draw(static_cast<UINT>(vertices.size()), 0);
+    context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
     return true;
 }
 
@@ -677,6 +1464,15 @@ void WindowsNativeCompositor::EnterFallback(const std::string& reason) {
         }
         ++diagnostics_.failure_count;
         diagnostics_.fallback_reason = reason;
+    }
+    if (auto player = player_.lock()) {
+        player->clear_source_cache(reason.c_str());
+    }
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        source_projection_ = {};
+        diagnostics_.source_projection_enabled = false;
+        diagnostics_.source_cache_active = false;
     }
     engine_api_.set_mode(flutter_view_, kExportMirror);
     PublishState(Phase::FallbackRestoring, reason);

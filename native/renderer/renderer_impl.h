@@ -59,6 +59,8 @@ class AudioCoordinator;
 class SeekCoordinator;
 class AnalysisOverlayRenderer;
 struct SharedFp16TextureSnapshot;
+struct SourceCacheTrackDescriptor;
+struct SharedSourceCacheBundleSnapshot;
 
 class Renderer::Impl {
 public:
@@ -167,6 +169,14 @@ public:
     bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
     void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
     void set_shared_fp16_frame_callback(std::function<void()> cb);
+    bool configure_source_cache(
+        const std::vector<SourceCacheTrackDescriptor>& descriptors);
+    void clear_source_cache(const char* reason);
+    bool acquire_source_cache_bundle(
+        SharedSourceCacheBundleSnapshot& snapshot) const;
+    void release_source_cache_bundle(
+        int buffer_index, uint64_t ring_generation) const;
+    void set_source_cache_frame_callback(std::function<void()> cb);
 
     /// Resize the offscreen shared texture (headless mode only).
     /// Stores pending dimensions; render loop applies at controlled rate.

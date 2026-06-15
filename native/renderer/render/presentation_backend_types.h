@@ -121,6 +121,17 @@ struct PresentationBackendDiagnostics {
     bool headless = false;
     bool warp = false;
     bool fp16_target_active = false;
+    bool source_cache_active = false;
+    bool source_cache_frozen_snapshot = false;
+    int32_t source_cache_ring_depth = 0;
+    int32_t source_cache_texture_count = 0;
+    uint64_t source_cache_generation = 0;
+    uint64_t source_cache_bytes = 0;
+    uint64_t source_cache_publish_count = 0;
+    uint64_t source_cache_backpressure_count = 0;
+    uint64_t source_cache_fallback_count = 0;
+    std::string source_cache_format = "R16G16B16A16_FLOAT";
+    std::string source_cache_last_error = "none";
 };
 
 inline bool is_transient_presentation_backpressure_error(const std::string& error) {

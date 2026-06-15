@@ -177,6 +177,7 @@ void main() {
         stateStore: stateStore,
         trackManager: trackManager,
         mounted: () => true,
+        sourceProjectionEnabled: () => true,
       );
       addTearDown(coordinator.dispose);
       coordinator.viewportWidth = 1600;
@@ -238,6 +239,7 @@ void main() {
         stateStore: stateStore,
         trackManager: trackManager,
         mounted: () => true,
+        sourceProjectionEnabled: () => true,
       );
       addTearDown(coordinator.dispose);
       coordinator.viewportWidth = 1600;
@@ -270,6 +272,7 @@ void main() {
         stateStore: stateStore,
         trackManager: trackManager,
         mounted: () => true,
+        sourceProjectionEnabled: () => true,
       );
       addTearDown(coordinator.dispose);
       coordinator.viewportWidth = 1600;
@@ -282,6 +285,60 @@ void main() {
       expect(controller.calls, ['prepareNativeCompositorSourceCache']);
     },
   );
+
+  test('inactive native compositor clears retained source cache', () async {
+    final stateStore = MainWindowStateStore()
+      ..setTextureId(1)
+      ..setNativeCompositorActive(true);
+    addTearDown(stateStore.dispose);
+    final trackManager = TrackManager()..setTracks([track(1)]);
+    addTearDown(trackManager.dispose);
+    final controller = _FakeNativePlayerController();
+    final coordinator = MainWindowLayoutCoordinator(
+      vsync: const TestVSync(),
+      controller: controller,
+      stateStore: stateStore,
+      trackManager: trackManager,
+      mounted: () => true,
+      sourceProjectionEnabled: () => true,
+    );
+    addTearDown(coordinator.dispose);
+
+    coordinator.onNativeCompositorAvailabilityChanged(active: false);
+    await pumpEventQueue();
+
+    expect(
+      controller.calls,
+      contains('clearNativeCompositorSourceCache:native compositor inactive'),
+    );
+  });
+
+  test('zero tracks clear retained native compositor source cache', () async {
+    final stateStore = MainWindowStateStore()
+      ..setTextureId(1)
+      ..setNativeCompositorActive(true);
+    addTearDown(stateStore.dispose);
+    final trackManager = TrackManager();
+    addTearDown(trackManager.dispose);
+    final controller = _FakeNativePlayerController();
+    final coordinator = MainWindowLayoutCoordinator(
+      vsync: const TestVSync(),
+      controller: controller,
+      stateStore: stateStore,
+      trackManager: trackManager,
+      mounted: () => true,
+      sourceProjectionEnabled: () => true,
+    );
+    addTearDown(coordinator.dispose);
+
+    coordinator.onTrackSetChanged();
+    await pumpEventQueue();
+
+    expect(
+      controller.calls,
+      contains('clearNativeCompositorSourceCache:zero tracks'),
+    );
+  });
 
   test(
     'playing native compositor pan subscribes live source cache, defers commit',
@@ -301,6 +358,7 @@ void main() {
         stateStore: stateStore,
         trackManager: trackManager,
         mounted: () => true,
+        sourceProjectionEnabled: () => true,
       );
       addTearDown(coordinator.dispose);
       coordinator.viewportWidth = 1600;
@@ -358,6 +416,7 @@ void main() {
         stateStore: stateStore,
         trackManager: trackManager,
         mounted: () => true,
+        sourceProjectionEnabled: () => true,
       );
       addTearDown(coordinator.dispose);
       coordinator.viewportWidth = 1600;

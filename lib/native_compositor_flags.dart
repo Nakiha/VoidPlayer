@@ -29,5 +29,6 @@ class NativeCompositorFlags {
         Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE'] == '1';
   }
 
-  static bool get sourceProjection => Platform.isMacOS && nativeCompositor;
+  static bool get sourceProjection =>
+      (Platform.isMacOS || Platform.isWindows) && nativeCompositor;
 }

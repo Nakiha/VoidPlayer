@@ -19,6 +19,8 @@
 - 将 native DX11 shared texture 暴露给 Flutter Texture widget
 - 在 compositor opt-in 下消费 Flutter engine 导出的完整 alpha surface，
   与共享 FP16 video ring 合成到同一 DComp swap chain
+- 通过既有 source-projection MethodChannel 校验 projection/signature，并让
+  DComp 对最多四轨 source-resolution FP16 bundle 实时执行 pan/zoom/split
 - 引入 native C++ renderer 构建产物和 Windows 运行时依赖
 
 它不负责：
@@ -51,6 +53,9 @@ windows/
 - 复杂渲染/解码/同步逻辑不要写进 `runner/`，应放在 `native/`。
 - runner 只解析 Windows presentation 请求和 display capability；FP16
   target、颜色映射和 fallback 实现在 `PresentationBackend` / D3D11 backend。
+- source cache 纹理创建、384 MiB budget、bundle generation/lease 和 source
+  pass 属于 D3D11 backend；runner 只校验 wire 参数、维护 signature，并在
+  composition thread 消费原子 bundle。
 - `native-compositor-scrgb` 必须使用锁定的 VoidPlayer Flutter local engine；
   普通 Flutter SDK 缺少 surface-export ABI，启动时只能诊断性回落。
 - 禁止 color-key、`WS_EX_LAYERED`、窗口截图、桌面捕获和 child HWND sandwich。

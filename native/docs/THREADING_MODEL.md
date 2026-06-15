@@ -196,6 +196,14 @@ are post-frame commits: activation publishes `active` after the transparent
 viewport ACK, while fallback teardown is queued to the composition thread after
 the restored-Texture ACK.
 
+The platform thread receives `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`, `WM_MOVE`,
+`WM_EXITSIZEMOVE`, and `WM_DPICHANGED`, coalesces them with a short timer, then
+runs the same display/presentation resolver used by diagnostics and track
+mutations. The composition thread builds a candidate SDR or scRGB swap chain,
+waits for video/source generations rendered with the new white level, Presents
+the candidate, and only then commits it to the DComp visual. Existing
+source/Flutter leases remain valid during this transition.
+
 Source-cache clear and signature replacement stop new acquisition immediately.
 Any generation already leased by DComp remains in the retired set until release.
 An unchanged-signature draw miss leaves the last complete bundle published;

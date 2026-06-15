@@ -319,6 +319,10 @@ bool Renderer::request_frame_refresh(const char* reason) {
     return impl_->request_frame_refresh(reason);
 }
 
+bool Renderer::update_presentation_sdr_white_level(double nits) {
+    return impl_->update_presentation_sdr_white_level(nits);
+}
+
 bool Renderer::draw_current_frame_sources(PresentationBackend& backend,
                                           PresentationSourceFrameTarget* targets,
                                           size_t target_count,

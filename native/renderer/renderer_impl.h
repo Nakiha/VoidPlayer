@@ -204,6 +204,7 @@ public:
     /// Request an immediate redraw of the currently presentable frame.
     /// Returns false when the renderer cannot issue a refresh command.
     bool request_frame_refresh(const char* reason);
+    bool update_presentation_sdr_white_level(double nits);
     bool draw_current_frame_sources(PresentationBackend& backend,
                                     PresentationSourceFrameTarget* targets,
                                     size_t target_count,

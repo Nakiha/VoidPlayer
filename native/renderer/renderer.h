@@ -137,6 +137,7 @@ public:
     void clear_headless_output();
 
     bool request_frame_refresh(const char* reason);
+    bool update_presentation_sdr_white_level(double nits);
     bool draw_current_frame_sources(PresentationBackend& backend,
                                     PresentationSourceFrameTarget* targets,
                                     size_t target_count,

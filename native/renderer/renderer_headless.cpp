@@ -154,6 +154,16 @@ bool Renderer::Impl::configure_source_cache(
 #endif
 }
 
+bool Renderer::Impl::update_presentation_sdr_white_level(double nits) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.update_sdr_white_level(nits);
+#else
+    (void)nits;
+    return false;
+#endif
+}
+
 void Renderer::Impl::clear_source_cache(const char* reason) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);

@@ -7,8 +7,9 @@ selected platform presentation target.
 
 The historical production target is SDR BGRA/RGB for a Flutter texture. The
 macOS HDR exploration path adds a native compositor target that outputs extended
-linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows keeps SDR BGRA as
-the default, while opt-in FP16/scRGB paths validate and present linear BT.709
+linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows Auto presents
+SDR media through a BGRA8 DComp target and promotes PQ/HLG sessions on a
+matching HDR output to an FP16/scRGB target using linear BT.709
 through a renderer-owned target or the locked-engine DirectComposition route.
 
 ## Shared Output Contract
@@ -31,7 +32,7 @@ Concrete presentation targets are platform-specific:
 
 | Platform | Backend target | Notes |
 | --- | --- | --- |
-| Windows | D3D11 BGRA shared texture, optional renderer-owned RGBA16F target, and locked-engine DComp scRGB compositor | Flutter Texture remains the default SDR output. The DComp opt-in combines shared FP16 video with the exported full Flutter alpha surface. |
+| Windows | D3D11 BGRA compatibility texture, shared RGBA16F video/source rings, and locked-engine DComp dual target | Auto selects BGRA8 SDR or FP16 scRGB; Flutter Texture SDR is the diagnosed compatibility fallback. |
 | macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
 | macOS EDR | Native compositor `RGBA16Float` `CAMetalLayer` | Uses `extendedLinearDisplayP3` and composites native video with the exported Flutter texture. |
 
@@ -136,8 +137,9 @@ Windows samples shader inputs through D3D11 SRVs:
 - `shaders/multitrack.hlsl` includes `shaders/color_pipeline.hlsl` for range,
   matrix, primaries, transfer, tone mapping, and final BGRA output.
 
-The default pass tone-maps to the BGRA shared texture published to Flutter. In
-`fp16-scrgb` mode the same prepared source snapshot is first rendered to
+The compatibility pass tone-maps to the BGRA shared texture used by Flutter or
+the native SDR compositor. In `fp16-scrgb` and native-compositor modes the same
+prepared source snapshot is first rendered to
 `R16G16B16A16_FLOAT`:
 
 - linear BT.709 primaries
@@ -150,14 +152,17 @@ The default pass tone-maps to the BGRA shared texture published to Flutter. In
 The BGRA compatibility pass rerenders from source rather than tone-mapping the
 mixed FP16 texture. This keeps existing SDR layout/color canaries stable.
 
-In `native-compositor-scrgb` mode, the renderer publishes the same linear
+In native-compositor mode, the renderer publishes the same linear
 BT.709 scRGB video contract through a triple shared FP16 ring. The final DComp
 shader samples the locked engine's full-window premultiplied BGRA Flutter
 surface, restores straight sRGB for transfer decoding, re-premultiplies in
 linear light, applies `SDRWhiteLevel / 80`, and composites it source-over the
 video. Transparent viewport pixels reveal video without color keys or a
 rectangular native hole. The final swap-chain capture must preserve video
-values above `1.0` and Flutter alpha-edge behavior.
+values above `1.0` and Flutter alpha-edge behavior. Auto SDR instead samples
+the source-rerendered BGRA compatibility texture into a BGRA8/G22 target.
+Auto HDR uses FP16/G10 scRGB only for PQ/HLG media on a matching HDR output.
+Windows does not submit HDR10 metadata.
 
 For source projection, each active track is rendered with identity layout into
 its source-sized `R16G16B16A16_FLOAT` texture from the same

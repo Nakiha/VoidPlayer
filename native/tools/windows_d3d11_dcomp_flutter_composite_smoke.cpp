@@ -19,13 +19,15 @@ using Microsoft::WRL::ComPtr;
 struct CompositeConstants {
     float viewport[4];
     float sdr_white_scale;
+    float output_mode;
     float source_projection_enabled;
     float source_mode;
     float source_split_pos;
     float source_track_count;
-    float source_header_padding[3];
+    float source_header_padding[2];
     float source_present[4];
     float source_order[4];
+    float source_transfer[4];
     float source_display_offset_x[4];
     float source_display_offset_y[4];
     float source_inv_display_size_x[4];
@@ -121,6 +123,13 @@ int main() {
         255, 255, 255, 255,
         32, 32, 32, 64,
     };
+    std::array<uint8_t, kWidth * 4u> sdr_video_bgra = {};
+    for (UINT x = 0; x < kWidth; ++x) {
+        sdr_video_bgra[x * 4u] = 64;
+        sdr_video_bgra[x * 4u + 1u] = 128;
+        sdr_video_bgra[x * 4u + 2u] = 192;
+        sdr_video_bgra[x * 4u + 3u] = 255;
+    }
 
     D3D11_TEXTURE2D_DESC video_desc = {};
     video_desc.Width = kWidth;
@@ -146,6 +155,13 @@ int main() {
     ComPtr<ID3D11Texture2D> flutter_texture;
     if (FAILED(device->CreateTexture2D(
             &flutter_desc, &flutter_data, &flutter_texture))) {
+        return 3;
+    }
+    D3D11_SUBRESOURCE_DATA sdr_video_data = {
+        sdr_video_bgra.data(), kWidth * 4u, 0};
+    ComPtr<ID3D11Texture2D> sdr_video_texture;
+    if (FAILED(device->CreateTexture2D(
+            &flutter_desc, &sdr_video_data, &sdr_video_texture))) {
         return 3;
     }
 
@@ -191,10 +207,13 @@ int main() {
 
     ComPtr<ID3D11ShaderResourceView> video_srv;
     ComPtr<ID3D11ShaderResourceView> flutter_srv;
+    ComPtr<ID3D11ShaderResourceView> sdr_video_srv;
     if (FAILED(device->CreateShaderResourceView(
             video_texture.Get(), nullptr, &video_srv)) ||
         FAILED(device->CreateShaderResourceView(
-            flutter_texture.Get(), nullptr, &flutter_srv))) {
+            flutter_texture.Get(), nullptr, &flutter_srv)) ||
+        FAILED(device->CreateShaderResourceView(
+            sdr_video_texture.Get(), nullptr, &sdr_video_srv))) {
         return 7;
     }
     D3D11_SAMPLER_DESC sampler_desc = {};
@@ -227,14 +246,24 @@ int main() {
     context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     context->VSSetShader(vertex_shader.Get(), nullptr, 0);
     context->PSSetShader(pixel_shader.Get(), nullptr, 0);
-    ID3D11ShaderResourceView* srvs[] = {video_srv.Get(), flutter_srv.Get()};
-    context->PSSetShaderResources(0, 2, srvs);
+    std::array<ID3D11ShaderResourceView*, 7> srvs = {
+        video_srv.Get(),
+        flutter_srv.Get(),
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        sdr_video_srv.Get(),
+    };
+    context->PSSetShaderResources(
+        0, static_cast<UINT>(srvs.size()), srvs.data());
     ID3D11SamplerState* sampler_ptr = sampler.Get();
     context->PSSetSamplers(0, 1, &sampler_ptr);
     CompositeConstants constant_values = {};
     constant_values.viewport[2] = 1.0f;
     constant_values.viewport[3] = 1.0f;
     constant_values.sdr_white_scale = kSdrWhiteScale;
+    constant_values.output_mode = 1.0f;
     context->UpdateSubresource(
         constants.Get(), 0, nullptr, &constant_values, 0, 0);
     ID3D11Buffer* constants_ptr = constants.Get();
@@ -289,9 +318,76 @@ int main() {
     if (!ok) {
         return 12;
     }
+
+    D3D11_TEXTURE2D_DESC sdr_output_desc = output_desc;
+    sdr_output_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    ComPtr<ID3D11Texture2D> sdr_output;
+    ComPtr<ID3D11RenderTargetView> sdr_output_rtv;
+    if (FAILED(device->CreateTexture2D(
+            &sdr_output_desc, nullptr, &sdr_output)) ||
+        FAILED(device->CreateRenderTargetView(
+            sdr_output.Get(), nullptr, &sdr_output_rtv))) {
+        return 13;
+    }
+    rtv = sdr_output_rtv.Get();
+    context->OMSetRenderTargets(1, &rtv, nullptr);
+    constant_values.output_mode = 0.0f;
+    context->UpdateSubresource(
+        constants.Get(), 0, nullptr, &constant_values, 0, 0);
+    context->Draw(4, 0);
+
+    D3D11_TEXTURE2D_DESC sdr_staging_desc = sdr_output_desc;
+    sdr_staging_desc.Usage = D3D11_USAGE_STAGING;
+    sdr_staging_desc.BindFlags = 0;
+    sdr_staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    ComPtr<ID3D11Texture2D> sdr_staging;
+    if (FAILED(device->CreateTexture2D(
+            &sdr_staging_desc, nullptr, &sdr_staging))) {
+        return 14;
+    }
+    context->CopyResource(sdr_staging.Get(), sdr_output.Get());
+    if (FAILED(context->Map(
+            sdr_staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
+        return 15;
+    }
+    const auto* sdr_values =
+        static_cast<const uint8_t*>(mapped.pData);
+    for (UINT x = 0; x < kWidth; ++x) {
+        const float alpha =
+            static_cast<float>(flutter_bgra[x * 4u + 3u]) / 255.0f;
+        for (UINT channel = 0; channel < 3; ++channel) {
+            const float expected =
+                static_cast<float>(flutter_bgra[x * 4u + channel]) +
+                static_cast<float>(sdr_video_bgra[x * 4u + channel]) *
+                    (1.0f - alpha);
+            const int actual =
+                sdr_values[x * 4u + channel];
+            if (std::abs(actual - static_cast<int>(std::lround(expected))) >
+                2) {
+                std::fprintf(
+                    stderr,
+                    "SDR target mismatch pixel=%u channel=%u actual=%d "
+                    "expected=%.2f\n",
+                    x, channel, actual, expected);
+                ok = false;
+            }
+        }
+        if (sdr_values[x * 4u + 3u] != 255) {
+            std::fprintf(
+                stderr,
+                "SDR target alpha mismatch pixel=%u actual=%u\n",
+                x, sdr_values[x * 4u + 3u]);
+            ok = false;
+        }
+    }
+    context->Unmap(sdr_staging.Get(), 0);
+    if (!ok) {
+        return 16;
+    }
     std::printf(
         "windows_d3d11_dcomp_flutter_composite_smoke passed; "
-        "transparent native video retained %.1fx scRGB highlight\n",
+        "FP16 retained %.1fx scRGB highlight and BGRA SDR matched "
+        "compatibility alpha composite\n",
         video_sample.r);
     return 0;
 }

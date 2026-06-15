@@ -21,6 +21,7 @@ struct SourceCacheTrackDescriptor {
     int file_id = -1;
     int width = 0;
     int height = 0;
+    int color_transfer = 0;
 };
 
 struct SharedSourceCacheTextureSnapshot {
@@ -29,6 +30,7 @@ struct SharedSourceCacheTextureSnapshot {
     int source_file_id = -1;
     int width = 0;
     int height = 0;
+    int color_transfer = 0;
     uint64_t consumer_acquire_key = 1;
     uint64_t producer_release_key = 0;
 };

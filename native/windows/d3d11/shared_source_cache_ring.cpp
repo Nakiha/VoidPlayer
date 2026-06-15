@@ -260,6 +260,7 @@ bool D3D11SharedSourceCacheRing::acquire_latest(
         out.source_file_id = texture.descriptor.file_id;
         out.width = texture.descriptor.width;
         out.height = texture.descriptor.height;
+        out.color_transfer = texture.descriptor.color_transfer;
     }
     return snapshot.buffer_index >= 0 && snapshot.texture_count > 0;
 }

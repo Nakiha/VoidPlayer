@@ -24,6 +24,11 @@
 
 class WindowsNativeCompositor {
 public:
+    enum class OutputTarget {
+        SDR,
+        ScRGB,
+    };
+
     enum class Phase {
         Inactive,
         Preparing,
@@ -35,8 +40,19 @@ public:
         std::string phase = "inactive";
         std::string fallback_reason = "none";
         std::string source_cache_last_error = "none";
+        std::string output_target = "sdr";
+        std::string desired_output_target = "sdr";
+        std::string transition_state = "stable";
+        std::string transition_reason = "initial";
+        std::string swap_chain_format = "B8G8R8A8_UNORM";
+        std::string color_space = "RGB_FULL_G22_NONE_P709";
         uint64_t state_serial = 0;
         uint64_t ack_serial = 0;
+        uint64_t transition_serial = 0;
+        uint64_t output_generation = 0;
+        uint64_t hdr_promotion_count = 0;
+        uint64_t hdr_demotion_count = 0;
+        uint64_t target_fallback_count = 0;
         uint64_t flutter_generation = 0;
         uint64_t video_generation = 0;
         uint64_t composite_count = 0;
@@ -62,6 +78,8 @@ public:
         uint32_t swap_chain_height = 0;
         bool engine_export_available = false;
         bool swap_chain_active = false;
+        bool color_space_supported = false;
+        bool sdr_tone_map_active = true;
         bool source_projection_enabled = false;
         bool source_cache_active = false;
     };
@@ -77,6 +95,7 @@ public:
                const std::shared_ptr<vr::NativePlayer>& player,
                IDXGIAdapter* adapter,
                double sdr_white_level_nits,
+               OutputTarget output_target,
                StateCallback callback);
     void Stop(const char* reason = "shutdown");
     void SetViewportRect(double left, double top, double right, double bottom);
@@ -85,12 +104,25 @@ public:
     void ClearSourceProjection(const std::string& reason);
     void SetSourceCacheError(const std::string& error);
     void NotifySourceCachePublished();
+    void RequestOutputTarget(OutputTarget target,
+                             double sdr_white_level_nits,
+                             uint64_t display_generation,
+                             const std::string& reason);
     void AcknowledgeFlutterState(uint64_t serial, bool transparent_viewport);
     void ForceFallbackForTesting(const std::string& reason);
     void RequestDiagnosticCapture();
     Diagnostics diagnostics() const;
 
 private:
+    struct SwapChainResources {
+        Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain;
+        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
+        OutputTarget target = OutputTarget::SDR;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        bool color_space_supported = false;
+    };
+
     struct FlutterSurface {
         size_t struct_size = sizeof(FlutterSurface);
         HANDLE shared_texture_handle = nullptr;
@@ -126,8 +158,12 @@ private:
         void* view, uint64_t generation, void* user_data);
     bool LoadEngineApi();
     bool InitializeDeviceAndComposition(IDXGIAdapter* adapter);
-    bool CreateSwapChain(uint32_t width, uint32_t height);
-    bool EnsureSwapChainSize(uint32_t width, uint32_t height);
+    bool CreateSwapChainCandidate(uint32_t width,
+                                  uint32_t height,
+                                  OutputTarget target,
+                                  SwapChainResources& resources);
+    bool EnsureSwapChain(uint32_t width, uint32_t height);
+    bool ActivatePendingSwapChain();
     bool CreatePipeline();
     bool CaptureDiagnostics(ID3D11Texture2D* back_buffer,
                             ID3D11Texture2D* flutter_texture);
@@ -142,21 +178,25 @@ private:
     void EnterFallback(const std::string& reason);
     void PublishState(Phase phase, const std::string& reason);
     static const char* PhaseName(Phase phase);
+    static const char* OutputTargetName(OutputTarget target);
+    static const char* OutputFormatName(OutputTarget target);
+    static const char* OutputColorSpaceName(OutputTarget target);
 
     HWND hwnd_ = nullptr;
     void* flutter_view_ = nullptr;
     std::weak_ptr<vr::NativePlayer> player_;
-    double sdr_white_scale_ = 1.0;
+    std::atomic<double> sdr_white_scale_{1.0};
+    uint64_t locked_display_generation_ = 0;
     EngineApi engine_api_;
     StateCallback state_callback_;
 
     Microsoft::WRL::ComPtr<ID3D11Device> device_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
-    Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain_;
+    SwapChainResources current_swap_chain_;
+    SwapChainResources pending_swap_chain_;
     Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device_;
     Microsoft::WRL::ComPtr<IDCompositionTarget> dcomp_target_;
     Microsoft::WRL::ComPtr<IDCompositionVisual> dcomp_visual_;
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> back_buffer_rtv_;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> video_pixel_shader_;
@@ -175,6 +215,11 @@ private:
     Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_video_mutex_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_video_srv_;
 
+    bool held_sdr_video_valid_ = false;
+    vr::SharedTextureSnapshot held_sdr_video_;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> held_sdr_video_texture_;
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_sdr_video_srv_;
+
     bool held_flutter_valid_ = false;
     FlutterSurface held_flutter_;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> held_flutter_texture_;
@@ -190,6 +235,7 @@ private:
     std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4>
         held_source_srvs_;
     std::array<bool, 4> held_source_present_{};
+    std::array<int, 4> held_source_transfer_{};
 
     mutable std::mutex mutex_;
     std::condition_variable wake_;
@@ -199,6 +245,9 @@ private:
     bool diagnostic_capture_pending_ = true;
     bool terminal_inactive_ = false;
     bool fallback_finish_pending_ = false;
+    OutputTarget desired_output_target_ = OutputTarget::SDR;
+    uint64_t transition_min_video_generation_ = 0;
+    uint64_t transition_min_source_generation_ = 0;
     Phase phase_ = Phase::Inactive;
     uint64_t state_serial_ = 0;
     uint64_t ack_serial_ = 0;

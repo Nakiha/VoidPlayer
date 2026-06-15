@@ -200,6 +200,11 @@ void RendererPresentationController::clear_headless_output() {
     }
 }
 
+bool RendererPresentationController::update_sdr_white_level(double nits) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex());
+    return backend_ && backend_->update_sdr_white_level(nits);
+}
+
 void RendererPresentationController::wait_gpu_idle(
     const char* label,
     PresentationMetricsStore& metrics) {

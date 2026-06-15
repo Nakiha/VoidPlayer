@@ -171,6 +171,7 @@ public:
     void protect_headless_output(void* pixel_buffer);
     void release_headless_output(void* pixel_buffer);
     void clear_headless_output();
+    bool update_sdr_white_level(double nits);
 
     // Caller must hold device_mutex() when coordinating with surrounding
     // presentation work.

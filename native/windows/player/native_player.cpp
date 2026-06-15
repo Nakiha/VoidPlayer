@@ -397,6 +397,12 @@ bool NativePlayer::request_frame_refresh(const char* reason) {
            renderer_.request_frame_refresh(reason);
 }
 
+bool NativePlayer::update_presentation_sdr_white_level(double nits) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.update_presentation_sdr_white_level(nits);
+}
+
 std::shared_ptr<const AnalysisOverlayPrimitivePackage>
 NativePlayer::current_overlay_primitives(std::string* error) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);

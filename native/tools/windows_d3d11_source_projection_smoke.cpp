@@ -17,13 +17,15 @@ using Microsoft::WRL::ComPtr;
 struct CompositeConstants {
     float viewport[4];
     float sdr_white_scale;
+    float output_mode;
     float source_projection_enabled;
     float source_mode;
     float source_split_pos;
     float source_track_count;
-    float source_header_padding[3];
+    float source_header_padding[2];
     float source_present[4];
     float source_order[4];
+    float source_transfer[4];
     float source_display_offset_x[4];
     float source_display_offset_y[4];
     float source_inv_display_size_x[4];
@@ -165,6 +167,7 @@ int main() {
     values.viewport[2] = 1.0f;
     values.viewport[3] = 1.0f;
     values.sdr_white_scale = 1.0f;
+    values.output_mode = 1.0f;
     values.source_projection_enabled = 1.0f;
     values.source_track_count = 4.0f;
     const std::array<float, 4> order = {2.0f, 0.0f, 3.0f, 1.0f};

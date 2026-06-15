@@ -76,6 +76,7 @@ public:
     void cleanup_renderer_managed_headless_pending_buffers() override;
     bool set_renderer_managed_headless_frame_callback(
         std::function<void()> callback) override;
+    bool update_sdr_white_level(double nits) override;
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot);
     void release_shared_texture(int buffer_index, uint64_t buffer_generation);
     void snapshot_memory_stats(

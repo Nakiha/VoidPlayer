@@ -142,6 +142,8 @@ void RendererEventBridge::Queue(const vr::RendererEvent& event) {
 void RendererEventBridge::QueueNativeCompositorState(
     bool active,
     bool requested,
+    bool edr_enabled,
+    const std::string& mode,
     const std::string& phase,
     int64_t serial,
     const std::string& reason,
@@ -164,9 +166,9 @@ void RendererEventBridge::QueueNativeCompositorState(
     payload[flutter::EncodableValue("nativeCompositorRequested")] =
         flutter::EncodableValue(requested);
     payload[flutter::EncodableValue("nativeCompositorEDREnabled")] =
-        flutter::EncodableValue(true);
+        flutter::EncodableValue(edr_enabled);
     payload[flutter::EncodableValue("nativeCompositorMode")] =
-        flutter::EncodableValue("native-compositor-scrgb");
+        flutter::EncodableValue(mode);
     payload[flutter::EncodableValue("nativeCompositorPhase")] =
         flutter::EncodableValue(phase);
     payload[flutter::EncodableValue("nativeCompositorSerial")] =

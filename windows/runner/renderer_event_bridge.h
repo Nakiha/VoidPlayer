@@ -36,6 +36,8 @@ public:
     void Queue(const vr::RendererEvent& event);
     void QueueNativeCompositorState(bool active,
                                     bool requested,
+                                    bool edr_enabled,
+                                    const std::string& mode,
                                     const std::string& phase,
                                     int64_t serial,
                                     const std::string& reason,

@@ -55,6 +55,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `video_renderer_tests [windows_source_cache]` | backend contract | PR fast / Windows preservation | D3D11 + keyed mutex | Atomic bundle publication, lease retirement, backpressure, signature replacement, and 384 MiB depth policy. |
 | `video_renderer_tests [windows_source_projection]` | projection contract | PR fast / Windows preservation | none beyond Windows build | Four-track order, split, pan/zoom, negative/out-of-range UV, missing slots, and background fallback. |
 | `windows_d3d11_source_projection_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; WARP accepted for hosted contract coverage | Real DComp projection shader, four source textures, deterministic order, and unclipped FP16 scRGB highlights. |
+| `windows_d3d11_dcomp_flutter_composite_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; WARP accepted for hosted contract coverage | Executes the final shader against FP16 scRGB and BGRA8 SDR targets, including Flutter premultiplied-alpha composition. |
 | `analysis_tests` | contract | Release candidate / analysis changes | analysis submodules/tools | VAC2/VACHUNK/cache and analysis FFI behavior. |
 | `test_ffi_c` | FFI canary | PR fast when FFI is built | Windows FFI target | C ABI load/call sanity. |
 | `voidplayer_cli_help` | CLI canary | Release candidate | analysis build | CLI starts and exposes help. |
@@ -93,6 +94,8 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `ui_tests/smoke/native_seek_preview_event_fp16_scrgb.csv` | Windows FP16 opt-in diagnostics, resize, BGRA compatibility capture, seek, and EventChannel contract. | Windows preservation / targeted presentation changes |
 | `ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv` | Locked-engine Flutter export, DComp activation/ACK, seek, resize, viewport alpha, and fallback restoration. | Windows preservation / targeted presentation changes |
 | `ui_tests/smoke/native_source_projection_dcomp_scrgb.csv` | Paused/playing source cache, pan/zoom, split, analysis overlay projection, seek/resize, diagnostics, and fallback cleanup. | Windows preservation / targeted presentation changes |
+| `ui_tests/smoke/native_compositor_auto_sdr.csv` | Default Windows Auto policy selects the BGRA8 SDR native compositor and locks nominal 80-nit white. | Windows preservation |
+| `ui_tests/smoke/windows_hdr_auto_runtime.csv` | Adds/removes an HLG track and verifies live SDR/scRGB promotion/demotion, white-level, generations, and playback continuity. | Local `windows-hdr-auto`; requires Windows HDR enabled |
 | `ui_tests/timeline/**` | Real pointer timeline/seek path. | Targeted Windows preservation; stress scripts nightly/release. |
 | `ui_tests/seek/**` | Direct seek/step/rapid seek regressions. | Targeted preservation; rapid/storm scripts nightly. |
 | `ui_tests/loop/**` | Loop range state and commit behavior. | Targeted preservation. |

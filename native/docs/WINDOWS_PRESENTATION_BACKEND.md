@@ -7,22 +7,31 @@ renderer ownership and color rules remain in
 
 ## Current Product And Experimental Routes
 
-The default Flutter Windows runner route remains:
+The default Windows product policy is now `auto` and requires the locked
+VoidPlayer Flutter engine:
 
 ```text
 shared RendererDrawSnapshot
   -> D3D11RenderBackend
-  -> triple-buffered DXGI_FORMAT_B8G8R8A8_UNORM shared textures
-  -> FlutterTextureBridge
-  -> Flutter Texture widget
+  -> shared FP16 video/source rings + BGRA compatibility ring
+  -> WindowsNativeCompositor
+  -> BGRA8 SDR or FP16 scRGB DComp swap chain
+  -> Flutter HWND
 ```
 
-The active mode is `flutter-texture-sdr`. The runner obtains Flutter's DXGI
-adapter and passes it into the native renderer so shared handles remain on the
-same adapter family. The backend does not silently create a different hardware
-device. Hosted CI may explicitly enable
+SDR-only sessions use `native-compositor-sdr`. A session containing an active
+PQ/HLG track promotes to `native-compositor-scrgb` only when the selected DXGI
+output explicitly reports HDR and its adapter LUID matches the presentation
+adapter. The runner obtains Flutter's DXGI adapter and passes it into the native
+renderer so shared handles remain on the same adapter family. Hosted CI may
+explicitly enable
 `VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1`; that is launch/contract
 coverage, not release evidence for a desktop GPU.
+
+The compatibility requests `sdr` and `flutter-texture-sdr` retain the original
+Flutter Texture route. `native-compositor-sdr` and
+`native-compositor-scrgb` remain explicit diagnostic modes; forced scRGB does
+not depend on the current Windows HDR toggle.
 
 An internal opt-in creates an additional renderer-owned FP16 target:
 
@@ -43,21 +52,29 @@ to Flutter and does not claim HDR presentation. Initialization, resize, or
 non-device-loss draw failure disables only the experimental pass and records a
 fallback reason; BGRA playback continues.
 
-The productization opt-in is:
+The forced HDR compositor diagnostic mode is:
 
 ```powershell
 $env:VOIDPLAYER_WINDOWS_PRESENTATION_MODE="native-compositor-scrgb"
 python dev.py launch
 ```
 
-This route requires the locked VoidPlayer Flutter local engine. ANGLE copies
+The Auto and forced native-compositor routes require the locked VoidPlayer
+Flutter local engine. ANGLE copies
 Flutter's final premultiplied-alpha frame into a three-slot shared BGRA ring.
 The renderer publishes a separate three-slot shared FP16 scRGB video ring.
 `WindowsNativeCompositor` consumes both rings on its composition thread and
-presents one full-window `R16G16B16A16_FLOAT` flip swap chain through
-DirectComposition attached directly to the Flutter HWND. It does not use a key
-color, `WS_EX_LAYERED`, window capture, a child HWND sandwich, or a rectangular
-native hole.
+presents one full-window flip swap chain through DirectComposition attached
+directly to the Flutter HWND. The SDR target is `B8G8R8A8_UNORM` with
+`RGB_FULL_G22_NONE_P709`; the HDR target is `R16G16B16A16_FLOAT` with
+`RGB_FULL_G10_NONE_P709`. It does not use a key color, `WS_EX_LAYERED`, window
+capture, a child HWND sandwich, or a rectangular native hole.
+
+Runtime track changes and debounced display/window notifications rerun the same
+resolver. Target changes build and render a candidate swap chain from retained
+video/source/Flutter inputs, Present it, then atomically replace the DComp
+visual content. HDR candidate failure falls back to native SDR; only failure of
+the SDR compositor restores Flutter Texture SDR.
 
 Once Dart publishes a valid projection signature, D3D11 also maintains an
 atomic source-resolution bundle with up to four FP16 scRGB textures. The render
@@ -94,7 +111,8 @@ chain. It is not the current Flutter product presentation route.
 - The engine fork owns immutable Flutter surface leases. Old resize
   generations remain alive until their leases are released.
 - `WindowsNativeCompositor` owns an independent D3D11 device/context, DComp
-  target, FP16 swap chain, final shader, composition thread, and the latest
+  target, candidate/current SDR or FP16 swap chains, final shader, composition
+  thread, and the latest
   successfully synchronized video, Flutter, and source-cache input leases.
   Held inputs are replaced only after a newer generation is acquired
   successfully, then released during replacement, fallback completion, or
@@ -109,8 +127,14 @@ shared scheduler.
 
 ## Format And Color Contract
 
-- The current presentation target is SDR `B8G8R8A8_UNORM`.
-- The optional render target is `R16G16B16A16_FLOAT`, linear BT.709 scRGB.
+- Auto SDR presents `B8G8R8A8_UNORM` in
+  `RGB_FULL_G22_NONE_P709`.
+- Auto HDR presents `R16G16B16A16_FLOAT`, linear BT.709 scRGB, in
+  `RGB_FULL_G10_NONE_P709`.
+- The renderer keeps FP16 video/source rings as the common compositor input.
+- SDR final composition samples the existing source-rerendered BGRA
+  compatibility texture, while source projection tone-maps each PQ/HLG source
+  before Flutter premultiplied sRGB source-over.
 - scRGB `1.0` represents 80 nits. SDR content, backgrounds, dividers, and
   overlays are linearized and scaled by `SDRWhiteLevel / 80`.
 - PQ is decoded to absolute nits then divided by 80. HLG keeps the shared
@@ -125,6 +149,8 @@ shared scheduler.
 - Limited/full range, BT.601/709/2020 matrix, transfer, and primaries metadata
   must remain deterministic across software and hardware paths.
 - There is no generic libswscale/libyuv fallback.
+- No HDR10 swap chain or `SetHDRMetaData` call is used; DWM maps scRGB to the
+  active Advanced Color output.
 
 `windows_d3d11_color_layout_parity_smoke` captures real D3D11 output and checks
 BGRA channel order, NV12, planar YUV420, P010, odd dimensions/padded stride,
@@ -140,9 +166,15 @@ and unchanged BGRA compatibility output.
 
 | Key | Current meaning |
 | --- | --- |
-| `windowsPresentationRequest` | `sdr`, `fp16-scrgb`, `native-compositor-scrgb`, or the rejected request |
+| `windowsPresentationRequest` | `auto`, `sdr`, `flutter-texture-sdr`, `native-compositor-sdr`, `native-compositor-scrgb`, `fp16-scrgb`, or the rejected request |
 | `windowsPresentationMode` | Actual SDR route or active FP16 experiment |
 | `windowsPresentationReason` | Selected policy reason |
+| `windowsPresentationAutoEnabled/HasHDRTrack/DesiredMode` | Auto resolver inputs and requested target |
+| `windowsPresentationTransition*` | Candidate target state, serial, and reason |
+| `windowsPresentationOutputGeneration` | Successfully committed output generation |
+| `windowsPresentationHDRPromotionCount/DemotionCount` | Runtime target transitions |
+| `windowsPresentationTargetFallbackCount` | HDR candidates that fell back to native SDR |
+| `windowsPresentationLockedDisplayGeneration/LockedSDRWhiteLevelMilliNits` | Inputs locked to the current target generation |
 | `windowsPresentationBackend` | `d3d11` |
 | `windowsPresentationTargetFormat` | `B8G8R8A8_UNORM` |
 | `windowsPresentationRenderTargetFormat/RenderColorSpace` | Actual internal render target and working color space |
@@ -158,7 +190,7 @@ and unchanged BGRA compatibility output.
 | `windowsNativeCompositorPhase` | `inactive`, `preparing`, `active`, or `fallback-restoring` |
 | `windowsNativeCompositorStateSerial/AckSerial` | Flutter alpha-hole handshake serials |
 | `windowsFlutterExportGeneration/windowsVideoRingGeneration` | Latest consumed input generations |
-| `windowsDComp*` | Swap-chain facts and composite/present/drop/failure counters |
+| `windowsDComp*` | Swap-chain format/color space/support, SDR tone-map state, and composite/present/drop/failure counters |
 | `nativeCompositorSource*` | Projection/cache activity, generation, bytes, rates, and overlay primitive counts |
 | `windowsSourceCache*` | Format, depth/frozen policy, publish/backpressure/consume/fallback counters |
 | `windowsD3DAdapter*` | Description, vendor/device IDs, and LUID |
@@ -187,14 +219,16 @@ Device-removed/reset/hung errors enter the renderer terminal device state and
 remain visible through the compatibility diagnostics. Recovery is not yet an
 in-place device rebuild.
 
-The product path must not silently downgrade presentation quality. Unknown
-presentation requests and FP16 failures preserve the fixed SDR route and expose
-the selected request, actual mode, and fallback reason.
+HDR target creation or Present failure first attempts the native SDR target.
+Unknown requests, missing engine export, or SDR compositor failure restore
+Flutter Texture SDR and expose the selected request, actual mode, transition,
+and fallback reason.
 
 ## Catch-Up Roadmap
 
-1. Add Windows HDR Auto policy after output probing, FP16, compositor
-   ownership, source projection, diagnostics, and preservation gates are stable.
+1. Add cross-adapter/output D3D device migration and display calibration.
+2. Evaluate runtime target rebuild across adapter boundaries without mixing
+   old white-level or source generations.
 
 This sequence is capability parity with macOS, not a mechanical Metal/Swift
 port.

@@ -227,6 +227,14 @@ bool D3D11RenderBackend::set_renderer_managed_headless_frame_callback(
     return true;
 }
 
+bool D3D11RenderBackend::update_sdr_white_level(double nits) {
+    if (!std::isfinite(nits) || nits <= 0.0) {
+        return false;
+    }
+    sdr_white_level_nits_ = nits;
+    return true;
+}
+
 bool D3D11RenderBackend::acquire_shared_texture(
     SharedTextureSnapshot& snapshot) {
     snapshot = {};

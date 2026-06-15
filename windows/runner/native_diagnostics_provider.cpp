@@ -331,6 +331,12 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
                        : "swap-chain-sdr"));
     map[flutter::EncodableValue("windowsPresentationReason")] =
         flutter::EncodableValue(presentation_policy.reason);
+    map[flutter::EncodableValue("windowsPresentationAutoEnabled")] =
+        flutter::EncodableValue(presentation_policy.auto_enabled);
+    map[flutter::EncodableValue("windowsPresentationHasHDRTrack")] =
+        flutter::EncodableValue(presentation_policy.has_hdr_track);
+    map[flutter::EncodableValue("windowsPresentationDesiredMode")] =
+        flutter::EncodableValue(presentation_policy.desired_mode);
     map[flutter::EncodableValue("windowsPresentationBackend")] =
         flutter::EncodableValue(presentation.backend);
     map[flutter::EncodableValue("windowsPresentationTargetFormat")] =

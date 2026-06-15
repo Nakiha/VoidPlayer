@@ -73,9 +73,14 @@ def _macos_local_engine_args(debug: bool) -> list[str]:
 
 
 def _windows_native_compositor_requested() -> bool:
-    return (
-        os.environ.get("VOIDPLAYER_WINDOWS_PRESENTATION_MODE", "").strip().lower()
-        == "native-compositor-scrgb"
+    mode = os.environ.get(
+        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE", ""
+    ).strip().lower()
+    return mode in (
+        "",
+        "auto",
+        "native-compositor-sdr",
+        "native-compositor-scrgb",
     )
 
 
@@ -113,7 +118,7 @@ def _windows_local_engine_args(debug: bool) -> list[str]:
         engine_path / "flutter_patched_sdk",
     )
     if not engine_path.exists() or any(not path.exists() for path in required):
-        print("ERROR: native-compositor-scrgb requires the locked Windows local engine.")
+        print("ERROR: Windows native compositor modes require the locked local engine.")
         print("Run scripts/ci/bootstrap_flutter_windows_engine.ps1 or set:")
         print("  VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH=<engine/src>")
         print("  VOIDPLAYER_FLUTTER_LOCAL_ENGINE[_RELEASE]=<output-name>")
@@ -133,7 +138,7 @@ def _windows_app_uses_native_engine(debug: bool) -> bool:
     try:
         return (
             _windows_engine_marker_path(debug).read_text(encoding="utf-8").strip()
-            == "native-compositor-scrgb"
+            in ("native-compositor", "native-compositor-scrgb")
         )
     except OSError:
         return False
@@ -155,7 +160,7 @@ def flutter_build(debug: bool) -> None:
     marker = _windows_engine_marker_path(debug)
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(
-        "native-compositor-scrgb\n"
+        "native-compositor\n"
         if _windows_native_compositor_requested()
         else "standard\n",
         encoding="utf-8",

@@ -82,6 +82,7 @@ public:
         int buffer_index, uint64_t ring_generation) const;
     void set_source_cache_frame_callback(std::function<void()> cb);
     bool request_frame_refresh(const char* reason);
+    bool update_presentation_sdr_white_level(double nits);
     std::shared_ptr<const AnalysisOverlayPrimitivePackage>
     current_overlay_primitives(std::string* error);
     void resize(int width, int height);

@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import shutil
 import sys
 
 from .paths import ROOT
@@ -118,8 +119,8 @@ def _run_windows_preservation() -> None:
         "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
         str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
     )
-    native_environment = {
-        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "native-compositor-scrgb",
+    local_engine_environment = {
+        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "auto",
         "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": local_engine_src,
         "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": os.environ.get(
             "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
@@ -131,9 +132,18 @@ def _run_windows_preservation() -> None:
         ),
     }
     _python_dev_with_env(
-        native_environment,
+        local_engine_environment,
         "ui-test",
         "--build",
+        "ui_tests/smoke/native_compositor_auto_sdr.csv",
+    )
+    _python_dev_with_env(
+        {
+            **local_engine_environment,
+            "VOIDPLAYER_WINDOWS_PRESENTATION_MODE":
+                "native-compositor-scrgb",
+        },
+        "ui-test",
         "ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv",
         "ui_tests/smoke/native_source_projection_dcomp_scrgb.csv",
     )
@@ -147,6 +157,93 @@ def _run_windows_preservation() -> None:
         {"VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "fp16-scrgb"},
         "ui-test",
         "ui_tests/smoke/native_seek_preview_event_fp16_scrgb.csv",
+    )
+
+
+def _generate_windows_hdr_auto_media() -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        print("ERROR: ffmpeg is required for the Windows HDR Auto gate.")
+        sys.exit(1)
+    output_dir = ROOT / "build" / "generated" / "windows"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    common = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=640x360:rate=30",
+        "-frames:v",
+        "120",
+        "-g",
+        "30",
+    ]
+    run(
+        [
+            *common,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            str(output_dir / "hdr_auto_sdr.mp4"),
+        ],
+        cwd=str(ROOT),
+    )
+    run(
+        [
+            *common,
+            "-c:v",
+            "libx265",
+            "-preset",
+            "ultrafast",
+            "-x265-params",
+            (
+                "log-level=error:hdr10=1:repeat-headers=1:"
+                "colorprim=bt2020:transfer=arib-std-b67:"
+                "colormatrix=bt2020nc"
+            ),
+            "-color_primaries",
+            "bt2020",
+            "-colorspace",
+            "bt2020nc",
+            "-color_trc",
+            "arib-std-b67",
+            "-pix_fmt",
+            "yuv420p10le",
+            str(output_dir / "hdr_auto_hlg.mp4"),
+        ],
+        cwd=str(ROOT),
+    )
+
+
+def _run_windows_hdr_auto() -> None:
+    _generate_windows_hdr_auto_media()
+    local_engine_src = os.environ.get(
+        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
+        str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
+    )
+    _python_dev_with_env(
+        {
+            "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "auto",
+            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": local_engine_src,
+            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": os.environ.get(
+                "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
+                "host_release",
+            ),
+            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE": os.environ.get(
+                "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
+                "host_release",
+            ),
+        },
+        "ui-test",
+        "--build",
+        "ui_tests/smoke/windows_hdr_auto_runtime.csv",
     )
 
 
@@ -301,6 +398,12 @@ def cmd_gate(args: argparse.Namespace) -> None:
         if not _is_windows():
             _unsupported(profile, "Windows")
         _run_windows_preservation()
+        return
+
+    if profile == "windows-hdr-auto":
+        if not _is_windows():
+            _unsupported(profile, "Windows with HDR enabled")
+        _run_windows_hdr_auto()
         return
 
     if profile == "macos-release-readiness":

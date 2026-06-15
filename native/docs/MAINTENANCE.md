@@ -50,6 +50,10 @@ Windows source cache/projection、bundle lease、projection shader 或 composito
 overlay 改动还必须运行 `[windows_source_cache]`、
 `[windows_source_projection]`、`windows_d3d11_source_projection_smoke` 和
 rebuilt source-projection UI smoke。
+Windows Auto policy、DXGI output refresh、SDR/scRGB swap-chain 切换或 white
+level 更新还必须运行默认 Auto SDR smoke、强制 scRGB smoke；具备 HDR 显示时
+再运行 `python dev.py gate windows-hdr-auto`。HDR target 失败必须先降级
+native SDR，不能直接跳过到 Flutter Texture。
 
 ---
 

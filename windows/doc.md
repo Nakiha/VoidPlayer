@@ -13,9 +13,12 @@
 - 提供 `video_renderer` MethodChannel / Texture plugin 桥接
 - 提供 `video_renderer/events` EventChannel 和 native 诊断桥接
 - 按主窗口与 DXGI output 的最大交集探测当前显示器、color space 和亮度元数据
-- 解析 `VOIDPLAYER_WINDOWS_PRESENTATION_MODE=fp16-scrgb` 或
-  `native-compositor-scrgb`，并在创建 player
-  时锁定当前 output 的 SDR white level
+- 默认解析 Windows Auto presentation：SDR-only 使用 BGRA8 native
+  compositor，PQ/HLG + 匹配 HDR output 使用 FP16 scRGB；保留
+  `sdr`、`fp16-scrgb`、`native-compositor-sdr` 和
+  `native-compositor-scrgb` 强制诊断模式
+- 监听 display/settings/move/DPI 变化并刷新 output、SDR white level 与
+  DComp target，不重建 player
 - 将 native DX11 shared texture 暴露给 Flutter Texture widget
 - 在 compositor opt-in 下消费 Flutter engine 导出的完整 alpha surface，
   与共享 FP16 video ring 合成到同一 DComp swap chain
@@ -56,7 +59,8 @@ windows/
 - source cache 纹理创建、384 MiB budget、bundle generation/lease 和 source
   pass 属于 D3D11 backend；runner 只校验 wire 参数、维护 signature，并在
   composition thread 消费原子 bundle。
-- `native-compositor-scrgb` 必须使用锁定的 VoidPlayer Flutter local engine；
+- 默认 Auto 与所有 native-compositor 模式必须使用锁定的 VoidPlayer
+  Flutter local engine；
   普通 Flutter SDK 缺少 surface-export ABI，启动时只能诊断性回落。
 - 禁止 color-key、`WS_EX_LAYERED`、窗口截图、桌面捕获和 child HWND sandwich。
 - 本地 engine 依次使用 `scripts/ci/build_flutter_windows_engine.ps1`、

@@ -13,16 +13,20 @@ Texture2D<float4> source_texture_0 : register(t2);
 Texture2D<float4> source_texture_1 : register(t3);
 Texture2D<float4> source_texture_2 : register(t4);
 Texture2D<float4> source_texture_3 : register(t5);
+Texture2D<float4> sdr_video_texture : register(t6);
 SamplerState linear_sampler : register(s0);
 cbuffer CompositeConstants : register(b0) {
   float4 viewport;
   float sdr_white_scale;
+  float output_mode;
   float source_projection_enabled;
   float source_mode;
   float source_split_pos;
   float source_track_count;
+  float source_header_padding;
   float4 source_present;
   float4 source_order;
+  float4 source_transfer;
   float4 source_display_offset_x;
   float4 source_display_offset_y;
   float4 source_inv_display_size_x;
@@ -59,6 +63,22 @@ float3 srgb_to_linear(float3 value) {
   float3 high = pow((value + 0.055) / 1.055, 2.4);
   return lerp(high, low, step(value, 0.04045));
 }
+float3 linear_to_srgb(float3 value) {
+  value = max(value, 0.0);
+  float3 low = value * 12.92;
+  float3 high = 1.055 * pow(value, 1.0 / 2.4) - 0.055;
+  return lerp(low, high, step(0.0031308, value));
+}
+float3 scrgb_to_sdr(float3 value, int transfer) {
+  float3 scrgb = max(value, 0.0);
+  if (transfer == 2 || transfer == 3) {
+    scrgb *= 80.0 / 203.0;
+    scrgb = scrgb / (1.0 + scrgb);
+  } else {
+    scrgb /= max(sdr_white_scale, 0.0001);
+  }
+  return saturate(linear_to_srgb(scrgb));
+}
 float value_at(float4 values, int index) {
   if (index == 0) return values.x;
   if (index == 1) return values.y;
@@ -72,6 +92,9 @@ float4 sample_source(int slot, float2 uv) {
   return source_texture_3.Sample(linear_sampler, uv);
 }
 float4 output_background() {
+  if (output_mode < 0.5) {
+    return saturate(background_color);
+  }
   return float4(
       srgb_to_linear(saturate(background_color.rgb)) * sdr_white_scale,
       background_color.a);
@@ -108,7 +131,12 @@ float4 source_projected_video(float2 video_uv) {
       source_uv.y < 0.0 || source_uv.y > 1.0) {
     return output_background();
   }
-  return sample_source(source_slot, source_uv);
+  float4 source = sample_source(source_slot, source_uv);
+  if (output_mode < 0.5) {
+    source.rgb = scrgb_to_sdr(
+        source.rgb, (int)round(value_at(source_transfer, source_slot)));
+  }
+  return source;
 }
 float4 PSVideo(VSOut input) : SV_TARGET {
   float4 video = float4(0.0, 0.0, 0.0, 1.0);
@@ -116,14 +144,21 @@ float4 PSVideo(VSOut input) : SV_TARGET {
       input.uv.x <= viewport.z && input.uv.y <= viewport.w) {
     float2 extent = max(viewport.zw - viewport.xy, float2(0.00001, 0.00001));
     float2 video_uv = (input.uv - viewport.xy) / extent;
-    video = source_projection_enabled > 0.5
-        ? source_projected_video(video_uv)
-        : video_texture.Sample(linear_sampler, video_uv);
+    if (source_projection_enabled > 0.5) {
+      video = source_projected_video(video_uv);
+    } else if (output_mode < 0.5) {
+      video = sdr_video_texture.Sample(linear_sampler, video_uv);
+    } else {
+      video = video_texture.Sample(linear_sampler, video_uv);
+    }
   }
   return video;
 }
 float4 PSFlutter(VSOut input) : SV_TARGET {
   float4 flutter = flutter_texture.Sample(linear_sampler, input.uv);
+  if (output_mode < 0.5) {
+    return flutter;
+  }
   float alpha = saturate(flutter.a);
   float3 straight_srgb = alpha > 0.00001 ? flutter.rgb / alpha : 0.0;
   float3 flutter_premul_linear =

@@ -204,8 +204,21 @@ ctest --test-dir build/native/standalone/windows-msvc -C Release `
 ```
 
 `windows-preservation` first rebuilds the runner with the locked Windows local
-engine and runs `native_seek_preview_event_dcomp_scrgb.csv`. The same runner
-then executes default SDR and `fp16-scrgb` smoke scripts without another build.
+engine and runs `native_compositor_auto_sdr.csv`. The same runner then executes
+forced scRGB DComp/source-projection, Flutter Texture SDR, and `fp16-scrgb`
+smokes without another build.
+
+On a desktop with Windows HDR enabled, run the hardware-only Auto transition
+gate:
+
+```powershell
+python dev.py gate windows-hdr-auto
+```
+
+It generates SDR and HLG fixtures and verifies live native SDR -> scRGB ->
+native SDR transitions. Toggling Windows HDR while the process remains open is
+still a manual check because the test protocol does not mutate system display
+settings.
 Install packaged local-engine outputs with:
 
 ```powershell

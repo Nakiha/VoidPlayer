@@ -21,13 +21,15 @@ constexpr int kExportCompositorOwned = 2;
 struct CompositeConstants {
     float viewport[4];
     float sdr_white_scale;
+    float output_mode;
     float source_projection_enabled;
     float source_mode;
     float source_split_pos;
     float source_track_count;
-    float source_header_padding[3];
+    float source_header_padding[2];
     float source_present[4];
     float source_order[4];
+    float source_transfer[4];
     float source_display_offset_x[4];
     float source_display_offset_y[4];
     float source_inv_display_size_x[4];
@@ -67,6 +69,7 @@ bool WindowsNativeCompositor::Start(
     const std::shared_ptr<vr::NativePlayer>& player,
     IDXGIAdapter* adapter,
     double sdr_white_level_nits,
+    OutputTarget output_target,
     StateCallback callback) {
     Stop();
     hwnd_ = hwnd;
@@ -77,7 +80,16 @@ bool WindowsNativeCompositor::Start(
         std::isfinite(sdr_white_level_nits) && sdr_white_level_nits > 0.0
             ? sdr_white_level_nits / 80.0
             : 1.0;
-    if (!hwnd_ || !flutter_view_ || !player || !LoadEngineApi()) {
+    desired_output_target_ = output_target;
+    const bool engine_api_available = LoadEngineApi();
+    if (!hwnd_ || !flutter_view_ || !player || !engine_api_available) {
+        spdlog::error(
+            "[WindowsNativeCompositor] surface export unavailable: "
+            "hwnd={} flutter_view={} player={} engine_api={}",
+            hwnd_ != nullptr,
+            flutter_view_ != nullptr,
+            static_cast<bool>(player),
+            engine_api_available);
         diagnostics_.fallback_reason = "flutter-surface-export-unavailable";
         return false;
     }
@@ -106,6 +118,9 @@ bool WindowsNativeCompositor::Start(
         source_cache_base_lease_wait_logged_ = false;
         source_cache_bundle_acquire_logged_ = false;
         source_cache_consumed_logged_ = false;
+        diagnostics_.desired_output_target =
+            OutputTargetName(output_target);
+        diagnostics_.transition_reason = "initial";
     }
     thread_ = std::thread(&WindowsNativeCompositor::ThreadMain, this);
     return true;
@@ -115,6 +130,11 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     const bool had_state =
         thread_.joinable() || flutter_view_ != nullptr ||
         static_cast<bool>(state_callback_);
+    if (had_state) {
+        spdlog::info(
+            "[WindowsNativeCompositor] stop begin reason={}",
+            reason ? reason : "shutdown");
+    }
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stop_ = true;
@@ -122,7 +142,11 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     }
     wake_.notify_all();
     if (thread_.joinable()) {
+        spdlog::info(
+            "[WindowsNativeCompositor] waiting for composition thread");
         thread_.join();
+        spdlog::info(
+            "[WindowsNativeCompositor] composition thread joined");
     }
     if (auto player = player_.lock()) {
         ReleaseHeldInputs(player);
@@ -136,8 +160,8 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     }
     if (dcomp_target_) dcomp_target_->SetRoot(nullptr);
     if (dcomp_device_) dcomp_device_->Commit();
-    back_buffer_rtv_.Reset();
-    swap_chain_.Reset();
+    pending_swap_chain_ = {};
+    current_swap_chain_ = {};
     dcomp_visual_.Reset();
     dcomp_target_.Reset();
     dcomp_device_.Reset();
@@ -180,6 +204,7 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
     held_source_valid_ = false;
     held_source_ = {};
     held_source_present_.fill(false);
+    held_source_transfer_.fill(0);
     held_source_srvs_ = {};
     held_source_mutexes_ = {};
     held_source_textures_ = {};
@@ -216,6 +241,22 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
     held_video_srv_.Reset();
     held_video_mutex_.Reset();
     held_video_texture_.Reset();
+
+    if (held_sdr_video_valid_) {
+        if (player && held_sdr_video_.buffer_index >= 0) {
+            player->release_shared_texture(
+                held_sdr_video_.buffer_index,
+                held_sdr_video_.buffer_generation);
+        }
+        if (held_sdr_video_.texture) {
+            static_cast<ID3D11Texture2D*>(
+                held_sdr_video_.texture)->Release();
+        }
+    }
+    held_sdr_video_valid_ = false;
+    held_sdr_video_ = {};
+    held_sdr_video_srv_.Reset();
+    held_sdr_video_texture_.Reset();
 }
 
 void WindowsNativeCompositor::SetViewportRect(
@@ -287,6 +328,44 @@ void WindowsNativeCompositor::NotifySourceCachePublished() {
         spdlog::info(
             "[WindowsNativeCompositor] first source-cache publish notified");
     }
+    wake_.notify_one();
+}
+
+void WindowsNativeCompositor::RequestOutputTarget(
+    OutputTarget target,
+    double sdr_white_level_nits,
+    uint64_t display_generation,
+    const std::string& reason) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const double next_scale =
+        std::isfinite(sdr_white_level_nits) &&
+                sdr_white_level_nits > 0.0
+            ? sdr_white_level_nits / 80.0
+            : 1.0;
+    const bool target_changed = target != desired_output_target_;
+    const bool white_changed =
+        std::abs(
+            next_scale -
+            sdr_white_scale_.load(std::memory_order_relaxed)) > 0.0001;
+    if (!target_changed && !white_changed &&
+        display_generation == locked_display_generation_) {
+        return;
+    }
+    desired_output_target_ = target;
+    sdr_white_scale_ = next_scale;
+    locked_display_generation_ = display_generation;
+    diagnostics_.desired_output_target = OutputTargetName(target);
+    diagnostics_.transition_state = "preparing";
+    diagnostics_.transition_reason =
+        reason.empty() ? "policy-refresh" : reason;
+    diagnostics_.transition_serial++;
+    transition_min_video_generation_ =
+        diagnostics_.video_generation + 1;
+    transition_min_source_generation_ =
+        source_projection_.enabled
+            ? diagnostics_.source_cache_consumed_generation + 1
+            : 0;
+    work_pending_ = true;
     wake_.notify_one();
 }
 
@@ -377,6 +456,13 @@ bool WindowsNativeCompositor::LoadEngineApi() {
 
 bool WindowsNativeCompositor::InitializeDeviceAndComposition(
     IDXGIAdapter* adapter) {
+    const auto log_failure = [](const char* stage, HRESULT result) {
+        spdlog::error(
+            "[WindowsNativeCompositor] {} failed hr=0x{:08x}",
+            stage,
+            static_cast<uint32_t>(result));
+        return false;
+    };
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
     D3D_FEATURE_LEVEL level = {};
     HRESULT hr = D3D11CreateDevice(
@@ -384,20 +470,25 @@ bool WindowsNativeCompositor::InitializeDeviceAndComposition(
         adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE,
         nullptr, flags, nullptr, 0, D3D11_SDK_VERSION,
         &device_, &level, &context_);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) return log_failure("D3D11CreateDevice", hr);
     Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
-    if (FAILED(device_.As(&dxgi_device))) return false;
+    hr = device_.As(&dxgi_device);
+    if (FAILED(hr)) return log_failure("Query IDXGIDevice", hr);
     hr = DCompositionCreateDevice(
         dxgi_device.Get(), IID_PPV_ARGS(&dcomp_device_));
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) return log_failure("DCompositionCreateDevice", hr);
     hr = dcomp_device_->CreateTargetForHwnd(hwnd_, TRUE, &dcomp_target_);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) return log_failure("CreateTargetForHwnd", hr);
     hr = dcomp_device_->CreateVisual(&dcomp_visual_);
-    return SUCCEEDED(hr);
+    return SUCCEEDED(hr) ||
+           log_failure("CreateVisual", hr);
 }
 
-bool WindowsNativeCompositor::CreateSwapChain(
-    uint32_t width, uint32_t height) {
+bool WindowsNativeCompositor::CreateSwapChainCandidate(
+    uint32_t width,
+    uint32_t height,
+    OutputTarget target,
+    SwapChainResources& resources) {
     width = std::max(width, 1u);
     height = std::max(height, 1u);
     Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
@@ -411,7 +502,9 @@ bool WindowsNativeCompositor::CreateSwapChain(
     DXGI_SWAP_CHAIN_DESC1 desc = {};
     desc.Width = width;
     desc.Height = height;
-    desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    desc.Format = target == OutputTarget::ScRGB
+        ? DXGI_FORMAT_R16G16B16A16_FLOAT
+        : DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.SampleDesc.Count = 1;
     desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     desc.BufferCount = 3;
@@ -421,63 +514,153 @@ bool WindowsNativeCompositor::CreateSwapChain(
     Microsoft::WRL::ComPtr<IDXGISwapChain1> chain;
     HRESULT hr = factory->CreateSwapChainForComposition(
         device_.Get(), &desc, nullptr, &chain);
-    if (FAILED(hr) || FAILED(chain.As(&swap_chain_))) return false;
-    swap_chain_->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709);
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> back_buffer;
-    if (FAILED(swap_chain_->GetBuffer(0, IID_PPV_ARGS(&back_buffer))) ||
-        FAILED(device_->CreateRenderTargetView(
-            back_buffer.Get(), nullptr, &back_buffer_rtv_))) {
+    Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain;
+    if (FAILED(hr) || FAILED(chain.As(&swap_chain))) return false;
+    const DXGI_COLOR_SPACE_TYPE color_space =
+        target == OutputTarget::ScRGB
+            ? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+            : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    UINT color_support = 0;
+    if (FAILED(swap_chain->CheckColorSpaceSupport(
+            color_space, &color_support)) ||
+        (color_support &
+         DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT) == 0 ||
+        FAILED(swap_chain->SetColorSpace1(color_space))) {
         return false;
     }
-    if (FAILED(dcomp_visual_->SetContent(swap_chain_.Get())) ||
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> back_buffer;
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
+    if (FAILED(swap_chain->GetBuffer(0, IID_PPV_ARGS(&back_buffer))) ||
+        FAILED(device_->CreateRenderTargetView(
+            back_buffer.Get(), nullptr, &rtv))) {
+        return false;
+    }
+    resources = {};
+    resources.swap_chain = std::move(swap_chain);
+    resources.rtv = std::move(rtv);
+    resources.target = target;
+    resources.width = width;
+    resources.height = height;
+    resources.color_space_supported = true;
+    return true;
+}
+
+bool WindowsNativeCompositor::EnsureSwapChain(
+    uint32_t width, uint32_t height) {
+    width = std::max(width, 1u);
+    height = std::max(height, 1u);
+    OutputTarget desired;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        desired = desired_output_target_;
+    }
+    const auto matches = [&](const SwapChainResources& resources) {
+        return resources.swap_chain &&
+               resources.width == width &&
+               resources.height == height &&
+               resources.target == desired;
+    };
+    if (pending_swap_chain_.swap_chain &&
+        !matches(pending_swap_chain_)) {
+        pending_swap_chain_ = {};
+    }
+    if (matches(pending_swap_chain_) || matches(current_swap_chain_)) {
+        return true;
+    }
+    SwapChainResources candidate;
+    if (CreateSwapChainCandidate(width, height, desired, candidate)) {
+        pending_swap_chain_ = std::move(candidate);
+        return true;
+    }
+    if (desired != OutputTarget::ScRGB ||
+        !CreateSwapChainCandidate(
+            width, height, OutputTarget::SDR, candidate)) {
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ++diagnostics_.target_fallback_count;
+        diagnostics_.transition_reason =
+            "hdr-target-unavailable-fallback-sdr";
+        desired_output_target_ = OutputTarget::SDR;
+    }
+    pending_swap_chain_ = std::move(candidate);
+    return true;
+}
+
+bool WindowsNativeCompositor::ActivatePendingSwapChain() {
+    if (!pending_swap_chain_.swap_chain) {
+        return true;
+    }
+    if (FAILED(dcomp_visual_->SetContent(
+            pending_swap_chain_.swap_chain.Get())) ||
         FAILED(dcomp_target_->SetRoot(dcomp_visual_.Get())) ||
         FAILED(dcomp_device_->Commit())) {
         return false;
     }
-    diagnostics_.swap_chain_active = true;
-    diagnostics_.swap_chain_width = width;
-    diagnostics_.swap_chain_height = height;
-    return true;
-}
-
-bool WindowsNativeCompositor::EnsureSwapChainSize(
-    uint32_t width, uint32_t height) {
-    width = std::max(width, 1u);
-    height = std::max(height, 1u);
-    if (!swap_chain_) {
-        return CreateSwapChain(width, height);
-    }
-    DXGI_SWAP_CHAIN_DESC1 desc = {};
-    if (FAILED(swap_chain_->GetDesc1(&desc))) {
-        return false;
-    }
-    if (desc.Width == width && desc.Height == height) {
-        return true;
-    }
-    context_->OMSetRenderTargets(0, nullptr, nullptr);
-    context_->ClearState();
-    context_->Flush();
-    back_buffer_rtv_.Reset();
-    HRESULT hr = swap_chain_->ResizeBuffers(
-        3, width, height, DXGI_FORMAT_R16G16B16A16_FLOAT, 0);
-    if (FAILED(hr)) {
-        return false;
-    }
-    swap_chain_->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709);
+    const bool had_output =
+        static_cast<bool>(current_swap_chain_.swap_chain);
+    const OutputTarget previous = current_swap_chain_.target;
+    const uint32_t previous_width = current_swap_chain_.width;
+    const uint32_t previous_height = current_swap_chain_.height;
+    current_swap_chain_ = std::move(pending_swap_chain_);
+    pending_swap_chain_ = {};
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        diagnostics_.swap_chain_width = width;
-        diagnostics_.swap_chain_height = height;
-        ++diagnostics_.resize_count;
-        diagnostic_capture_pending_ = true;
+        diagnostics_.swap_chain_active = true;
+        diagnostics_.swap_chain_width = current_swap_chain_.width;
+        diagnostics_.swap_chain_height = current_swap_chain_.height;
+        diagnostics_.output_target =
+            OutputTargetName(current_swap_chain_.target);
+        diagnostics_.swap_chain_format =
+            OutputFormatName(current_swap_chain_.target);
+        diagnostics_.color_space =
+            OutputColorSpaceName(current_swap_chain_.target);
+        diagnostics_.color_space_supported =
+            current_swap_chain_.color_space_supported;
+        diagnostics_.sdr_tone_map_active =
+            current_swap_chain_.target == OutputTarget::SDR;
+        diagnostics_.transition_state = "stable";
+        ++diagnostics_.output_generation;
+        if (had_output &&
+            (previous_width != current_swap_chain_.width ||
+             previous_height != current_swap_chain_.height)) {
+            ++diagnostics_.resize_count;
+        }
+        if (had_output && previous != current_swap_chain_.target) {
+            if (current_swap_chain_.target == OutputTarget::ScRGB) {
+                ++diagnostics_.hdr_promotion_count;
+            } else {
+                ++diagnostics_.hdr_demotion_count;
+            }
+        }
     }
-    spdlog::info(
-        "[WindowsNativeCompositor] resized swap chain to {}x{}",
-        width, height);
     return true;
 }
 
 bool WindowsNativeCompositor::CreatePipeline() {
+    const auto log_failure = [](const char* stage, HRESULT result) {
+        spdlog::error(
+            "[WindowsNativeCompositor] {} failed hr=0x{:08x}",
+            stage,
+            static_cast<uint32_t>(result));
+        return false;
+    };
+    const auto log_compile_failure =
+        [](const char* stage,
+           HRESULT result,
+           const Microsoft::WRL::ComPtr<ID3DBlob>& errors) {
+            const char* detail =
+                errors && errors->GetBufferPointer()
+                    ? static_cast<const char*>(errors->GetBufferPointer())
+                    : "no compiler diagnostics";
+            spdlog::error(
+                "[WindowsNativeCompositor] {} failed hr=0x{:08x}: {}",
+                stage,
+                static_cast<uint32_t>(result),
+                detail);
+            return false;
+        };
     const char* shader = vr::windows_dcomp_composite_hlsl();
     const size_t shader_size = std::strlen(shader);
     Microsoft::WRL::ComPtr<ID3DBlob> vs_blob;
@@ -490,55 +673,64 @@ bool WindowsNativeCompositor::CreatePipeline() {
     HRESULT hr = D3DCompile(
         shader, shader_size, nullptr, nullptr, nullptr,
         "VSMain", "vs_5_0", 0, 0, &vs_blob, &errors);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) return log_compile_failure("compile VSMain", hr, errors);
+    errors.Reset();
     hr = D3DCompile(
         shader, shader_size, nullptr, nullptr, nullptr,
         "PSMain", "ps_5_0", 0, 0, &ps_blob, &errors);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) return log_compile_failure("compile PSMain", hr, errors);
+    errors.Reset();
     hr = D3DCompile(
         shader, shader_size, nullptr, nullptr, nullptr,
         "VSOverlay", "vs_5_0", 0, 0, &overlay_vs_blob, &errors);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) return log_compile_failure("compile VSOverlay", hr, errors);
+    errors.Reset();
     hr = D3DCompile(
         shader, shader_size, nullptr, nullptr, nullptr,
         "PSOverlay", "ps_5_0", 0, 0, &overlay_ps_blob, &errors);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) return log_compile_failure("compile PSOverlay", hr, errors);
+    errors.Reset();
     hr = D3DCompile(
         shader, shader_size, nullptr, nullptr, nullptr,
         "PSVideo", "ps_5_0", 0, 0, &video_ps_blob, &errors);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) return log_compile_failure("compile PSVideo", hr, errors);
+    errors.Reset();
     hr = D3DCompile(
         shader, shader_size, nullptr, nullptr, nullptr,
         "PSFlutter", "ps_5_0", 0, 0, &flutter_ps_blob, &errors);
-    if (FAILED(hr)) return false;
-    if (FAILED(device_->CreateVertexShader(
+    if (FAILED(hr)) return log_compile_failure("compile PSFlutter", hr, errors);
+    hr = device_->CreateVertexShader(
             vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(),
-            nullptr, &vertex_shader_)) ||
-        FAILED(device_->CreatePixelShader(
+            nullptr, &vertex_shader_);
+    if (FAILED(hr)) return log_failure("CreateVertexShader", hr);
+    hr = device_->CreatePixelShader(
             ps_blob->GetBufferPointer(), ps_blob->GetBufferSize(),
-            nullptr, &pixel_shader_)) ||
-        FAILED(device_->CreatePixelShader(
+            nullptr, &pixel_shader_);
+    if (FAILED(hr)) return log_failure("CreatePixelShader PSMain", hr);
+    hr = device_->CreatePixelShader(
             video_ps_blob->GetBufferPointer(),
             video_ps_blob->GetBufferSize(),
             nullptr,
-            &video_pixel_shader_)) ||
-        FAILED(device_->CreatePixelShader(
+            &video_pixel_shader_);
+    if (FAILED(hr)) return log_failure("CreatePixelShader PSVideo", hr);
+    hr = device_->CreatePixelShader(
             flutter_ps_blob->GetBufferPointer(),
             flutter_ps_blob->GetBufferSize(),
             nullptr,
-            &flutter_pixel_shader_)) ||
-        FAILED(device_->CreateVertexShader(
+            &flutter_pixel_shader_);
+    if (FAILED(hr)) return log_failure("CreatePixelShader PSFlutter", hr);
+    hr = device_->CreateVertexShader(
             overlay_vs_blob->GetBufferPointer(),
             overlay_vs_blob->GetBufferSize(),
             nullptr,
-            &overlay_vertex_shader_)) ||
-        FAILED(device_->CreatePixelShader(
+            &overlay_vertex_shader_);
+    if (FAILED(hr)) return log_failure("CreateVertexShader VSOverlay", hr);
+    hr = device_->CreatePixelShader(
             overlay_ps_blob->GetBufferPointer(),
             overlay_ps_blob->GetBufferSize(),
             nullptr,
-            &overlay_pixel_shader_))) {
-        return false;
-    }
+            &overlay_pixel_shader_);
+    if (FAILED(hr)) return log_failure("CreatePixelShader PSOverlay", hr);
     const D3D11_INPUT_ELEMENT_DESC overlay_elements[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
          D3D11_INPUT_PER_VERTEX_DATA, 0},
@@ -603,7 +795,11 @@ void WindowsNativeCompositor::ThreadMain() {
                 wake_.wait(
                     lock, [this]() { return stop_ || work_pending_; });
             }
-            if (stop_) return;
+            if (stop_) {
+                spdlog::info(
+                    "[WindowsNativeCompositor] composition thread observed stop");
+                return;
+            }
             if (terminal_inactive_) return;
             finish_fallback = fallback_finish_pending_;
             fallback_finish_pending_ = false;
@@ -681,6 +877,20 @@ bool WindowsNativeCompositor::CompositeLatest() {
         held_video_mutex_.Reset();
         held_video_texture_.Reset();
     };
+    const auto release_held_sdr_video = [&]() {
+        if (!held_sdr_video_valid_) return;
+        player->release_shared_texture(
+            held_sdr_video_.buffer_index,
+            held_sdr_video_.buffer_generation);
+        if (held_sdr_video_.texture) {
+            static_cast<ID3D11Texture2D*>(
+                held_sdr_video_.texture)->Release();
+        }
+        held_sdr_video_valid_ = false;
+        held_sdr_video_ = {};
+        held_sdr_video_srv_.Reset();
+        held_sdr_video_texture_.Reset();
+    };
     const auto release_held_flutter = [&]() {
         if (!held_flutter_valid_) return;
         if (held_flutter_mutex_) {
@@ -709,6 +919,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
         held_source_srvs_ = {};
         held_source_mutexes_ = {};
         held_source_textures_ = {};
+        held_source_transfer_.fill(0);
     };
 
     vr::SharedFp16TextureSnapshot next_video;
@@ -749,6 +960,47 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 }
                 player->release_shared_fp16_texture(
                     next_video.buffer_index, next_video.ring_generation);
+            }
+        }
+    }
+
+    vr::SharedTextureSnapshot next_sdr_video;
+    if (player->acquire_shared_texture(next_sdr_video)) {
+        const bool unchanged =
+            held_sdr_video_valid_ &&
+            next_sdr_video.buffer_generation ==
+                held_sdr_video_.buffer_generation &&
+            next_sdr_video.buffer_index ==
+                held_sdr_video_.buffer_index;
+        if (unchanged) {
+            player->release_shared_texture(
+                next_sdr_video.buffer_index,
+                next_sdr_video.buffer_generation);
+            if (next_sdr_video.texture) {
+                static_cast<ID3D11Texture2D*>(
+                    next_sdr_video.texture)->Release();
+            }
+        } else {
+            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+            const HRESULT open_result = device_->OpenSharedResource(
+                next_sdr_video.handle, IID_PPV_ARGS(&texture));
+            if (SUCCEEDED(open_result) &&
+                SUCCEEDED(device_->CreateShaderResourceView(
+                    texture.Get(), nullptr, &srv))) {
+                release_held_sdr_video();
+                held_sdr_video_ = next_sdr_video;
+                held_sdr_video_texture_ = std::move(texture);
+                held_sdr_video_srv_ = std::move(srv);
+                held_sdr_video_valid_ = true;
+            } else {
+                player->release_shared_texture(
+                    next_sdr_video.buffer_index,
+                    next_sdr_video.buffer_generation);
+                if (next_sdr_video.texture) {
+                    static_cast<ID3D11Texture2D*>(
+                        next_sdr_video.texture)->Release();
+                }
             }
         }
     }
@@ -797,7 +1049,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
         }
     }
 
-    if (!held_video_valid_ || !held_flutter_valid_) {
+    if (!held_video_valid_ || !held_sdr_video_valid_ ||
+        !held_flutter_valid_) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (source_cache_publish_count_ > 0 &&
             source_projection.enabled &&
@@ -809,7 +1062,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
         }
         return false;
     }
-    if (!EnsureSwapChainSize(
+    if (!EnsureSwapChain(
             held_flutter_.width, held_flutter_.height)) {
         EnterFallback("dcomp-swap-chain-create-or-resize-failed");
         return false;
@@ -854,6 +1107,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4>
                     srvs;
                 std::array<bool, 4> present{};
+                std::array<int, 4> transfers{};
                 bool complete = next_source.texture_count > 0;
                 std::string error = "source-cache-invalid-texture-snapshot";
                 for (size_t i = 0;
@@ -888,6 +1142,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                         break;
                     }
                     present[slot] = true;
+                    transfers[slot] = source.color_transfer;
                     result = device_->CreateShaderResourceView(
                         textures[slot].Get(), nullptr, &srvs[slot]);
                     if (FAILED(result)) {
@@ -903,6 +1158,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     held_source_mutexes_ = std::move(mutexes);
                     held_source_srvs_ = std::move(srvs);
                     held_source_present_ = present;
+                    held_source_transfer_ = transfers;
                     held_source_valid_ = true;
                 } else {
                     for (size_t slot = 0; slot < present.size(); ++slot) {
@@ -937,11 +1193,30 @@ bool WindowsNativeCompositor::CompositeLatest() {
 
     const bool source_bundle_active =
         source_projection.enabled && held_source_valid_;
+    if (pending_swap_chain_.swap_chain) {
+        uint64_t min_video_generation = 0;
+        uint64_t min_source_generation = 0;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            min_video_generation = transition_min_video_generation_;
+            min_source_generation = transition_min_source_generation_;
+        }
+        if (held_video_.frame_generation < min_video_generation ||
+            (source_projection.enabled &&
+             held_source_.frame_generation < min_source_generation)) {
+            return false;
+        }
+    }
     bool ok = true;
     if (ok) {
         D3D11_TEXTURE2D_DESC back_desc = {};
         Microsoft::WRL::ComPtr<ID3D11Texture2D> back_buffer;
-        if (FAILED(swap_chain_->GetBuffer(
+        SwapChainResources* output =
+            pending_swap_chain_.swap_chain
+                ? &pending_swap_chain_
+                : &current_swap_chain_;
+        if (!output->swap_chain ||
+            FAILED(output->swap_chain->GetBuffer(
                 0, IID_PPV_ARGS(&back_buffer))) ||
             !back_buffer) {
             ok = false;
@@ -974,8 +1249,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
             held_source_srvs_[1].Get(),
             held_source_srvs_[2].Get(),
             held_source_srvs_[3].Get(),
+            held_sdr_video_srv_.Get(),
         };
-        context_->PSSetShaderResources(0, 6, srvs);
+        context_->PSSetShaderResources(0, 7, srvs);
         ID3D11SamplerState* sampler = sampler_.Get();
         context_->PSSetSamplers(0, 1, &sampler);
         CompositeConstants values = {};
@@ -986,7 +1262,10 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 values.background_color[i] = viewport_background_[i];
             }
         }
-        values.sdr_white_scale = static_cast<float>(sdr_white_scale_);
+        values.sdr_white_scale = static_cast<float>(
+            sdr_white_scale_.load(std::memory_order_relaxed));
+        values.output_mode =
+            output->target == OutputTarget::ScRGB ? 1.0f : 0.0f;
         values.source_projection_enabled =
             source_bundle_active ? 1.0f : 0.0f;
         values.source_mode = static_cast<float>(source_projection.mode);
@@ -998,6 +1277,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 held_source_present_[i] ? 1.0f : 0.0f;
             values.source_order[i] =
                 static_cast<float>(source_projection.source_order[i]);
+            values.source_transfer[i] =
+                static_cast<float>(held_source_transfer_[i]);
             values.source_display_offset_x[i] =
                 source_projection.display_offset_x[i];
             values.source_display_offset_y[i] =
@@ -1030,7 +1311,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
         context_->PSSetShader(flutter_pixel_shader_.Get(), nullptr, 0);
         context_->Draw(4, 0);
         context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
-        std::array<ID3D11ShaderResourceView*, 6> null_srvs = {};
+        std::array<ID3D11ShaderResourceView*, 7> null_srvs = {};
         context_->PSSetShaderResources(
             0, static_cast<UINT>(null_srvs.size()), null_srvs.data());
         context_->Flush();
@@ -1046,7 +1327,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
             std::lock_guard<std::mutex> lock(mutex_);
             diagnostic_capture_pending_ = true;
         }
-        const HRESULT present_result = swap_chain_->Present(1, 0);
+        const HRESULT present_result = output->swap_chain->Present(1, 0);
         ok = SUCCEEDED(present_result);
         if (!ok && device_->GetDeviceRemovedReason() != S_OK) {
             EnterFallback("dcomp-device-removed");
@@ -1062,6 +1343,11 @@ bool WindowsNativeCompositor::CompositeLatest() {
         if (phase != Phase::FallbackRestoring) {
             EnterFallback("dcomp-composite-or-present-failed");
         }
+        return false;
+    }
+    if (pending_swap_chain_.swap_chain &&
+        !ActivatePendingSwapChain()) {
+        EnterFallback("dcomp-swap-chain-activation-failed");
         return false;
     }
     {
@@ -1085,6 +1371,19 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     "consumed generation={}",
                     held_source_.frame_generation);
             }
+        }
+        const bool transition_inputs_ready =
+            held_video_.frame_generation >=
+                transition_min_video_generation_ &&
+            (!source_projection.enabled ||
+             (source_bundle_active &&
+              held_source_.frame_generation >=
+                  transition_min_source_generation_));
+        if (!pending_swap_chain_.swap_chain &&
+            diagnostics_.transition_state == "preparing" &&
+            transition_inputs_ready) {
+            diagnostics_.transition_state = "stable";
+            ++diagnostics_.output_generation;
         }
         ++diagnostics_.composite_count;
         ++diagnostics_.present_count;
@@ -1163,15 +1462,20 @@ bool WindowsNativeCompositor::DrawOverlay(
     };
     const auto make_color = [&](vr::analysis::OverlayColor color) {
         OverlayVertex vertex;
-        vertex.r = srgb_to_linear(
-            static_cast<float>(color.r) / 255.0f) *
-            static_cast<float>(sdr_white_scale_);
-        vertex.g = srgb_to_linear(
-            static_cast<float>(color.g) / 255.0f) *
-            static_cast<float>(sdr_white_scale_);
-        vertex.b = srgb_to_linear(
-            static_cast<float>(color.b) / 255.0f) *
-            static_cast<float>(sdr_white_scale_);
+        const bool scrgb =
+            back_desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT;
+        const auto channel = [&](uint8_t value) {
+            const float encoded = static_cast<float>(value) / 255.0f;
+            return scrgb
+                ? srgb_to_linear(encoded) *
+                      static_cast<float>(
+                          sdr_white_scale_.load(
+                              std::memory_order_relaxed))
+                : encoded;
+        };
+        vertex.r = channel(color.r);
+        vertex.g = channel(color.g);
+        vertex.b = channel(color.b);
         vertex.a = static_cast<float>(color.a) / 255.0f;
         vertex.r *= vertex.a;
         vertex.g *= vertex.a;
@@ -1413,13 +1717,24 @@ bool WindowsNativeCompositor::CaptureDiagnostics(
     const uint64_t final_pixels =
         static_cast<uint64_t>(final_desc.Width) * final_desc.Height;
     for (UINT y = 0; y < final_desc.Height; ++y) {
-        const auto* row = reinterpret_cast<const uint16_t*>(
+        const auto* bytes =
             static_cast<const uint8_t*>(final_map.pData) +
-            static_cast<size_t>(y) * final_map.RowPitch);
+            static_cast<size_t>(y) * final_map.RowPitch;
         for (UINT x = 0; x < final_desc.Width; ++x) {
-            const float r = vr::half_to_float(row[x * 4u]);
-            const float g = vr::half_to_float(row[x * 4u + 1u]);
-            const float b = vr::half_to_float(row[x * 4u + 2u]);
+            float r = 0.0f;
+            float g = 0.0f;
+            float b = 0.0f;
+            if (final_desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT) {
+                const auto* row =
+                    reinterpret_cast<const uint16_t*>(bytes);
+                r = vr::half_to_float(row[x * 4u]);
+                g = vr::half_to_float(row[x * 4u + 1u]);
+                b = vr::half_to_float(row[x * 4u + 2u]);
+            } else {
+                b = static_cast<float>(bytes[x * 4u]) / 255.0f;
+                g = static_cast<float>(bytes[x * 4u + 1u]) / 255.0f;
+                r = static_cast<float>(bytes[x * 4u + 2u]) / 255.0f;
+            }
             const float pixel_max = std::max({r, g, b});
             max_rgb = std::max(max_rgb, pixel_max);
             if (pixel_max > 1.0f) {
@@ -1511,4 +1826,25 @@ const char* WindowsNativeCompositor::PhaseName(Phase phase) {
     case Phase::FallbackRestoring: return "fallback-restoring";
     }
     return "inactive";
+}
+
+const char* WindowsNativeCompositor::OutputTargetName(
+    OutputTarget target) {
+    return target == OutputTarget::ScRGB
+        ? "scrgb"
+        : "sdr";
+}
+
+const char* WindowsNativeCompositor::OutputFormatName(
+    OutputTarget target) {
+    return target == OutputTarget::ScRGB
+        ? "R16G16B16A16_FLOAT"
+        : "B8G8R8A8_UNORM";
+}
+
+const char* WindowsNativeCompositor::OutputColorSpaceName(
+    OutputTarget target) {
+    return target == OutputTarget::ScRGB
+        ? "RGB_FULL_G10_NONE_P709"
+        : "RGB_FULL_G22_NONE_P709";
 }

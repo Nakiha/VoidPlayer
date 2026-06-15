@@ -5,9 +5,13 @@ class NativeCompositorFlags {
 
   static bool get nativeCompositor {
     if (Platform.isWindows) {
-      return Platform.environment['VOIDPLAYER_WINDOWS_PRESENTATION_MODE']
-              ?.toLowerCase() ==
-          'native-compositor-scrgb';
+      final mode = Platform.environment['VOIDPLAYER_WINDOWS_PRESENTATION_MODE']
+          ?.toLowerCase();
+      return mode == null ||
+          mode.isEmpty ||
+          mode == 'auto' ||
+          mode == 'native-compositor-sdr' ||
+          mode == 'native-compositor-scrgb';
     }
     if (!Platform.isMacOS) {
       return false;

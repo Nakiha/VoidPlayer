@@ -146,6 +146,7 @@ Examples:
             "macos-ui-nightly",
             "macos-hdr-edr-smoke",
             "macos-release-readiness",
+            "windows-hdr-auto",
             "windows-preservation",
             "release-candidate",
         ],

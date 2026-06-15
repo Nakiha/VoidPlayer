@@ -114,9 +114,31 @@ def _run_macos_hdr_edr_smoke() -> None:
 
 def _run_windows_preservation() -> None:
     _python_dev("test", "--native-only")
-    _python_dev(
+    local_engine_src = os.environ.get(
+        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
+        str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
+    )
+    native_environment = {
+        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "native-compositor-scrgb",
+        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": local_engine_src,
+        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": os.environ.get(
+            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
+            "host_release",
+        ),
+        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE": os.environ.get(
+            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
+            "host_release",
+        ),
+    }
+    _python_dev_with_env(
+        native_environment,
         "ui-test",
         "--build",
+        "ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv",
+    )
+    _python_dev_with_env(
+        {"VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "sdr"},
+        "ui-test",
         "ui_tests/smoke/basic.csv",
         "ui_tests/smoke/native_seek_preview_event.csv",
     )
@@ -154,6 +176,22 @@ def _run_windows_d3d11_fp16_scrgb_smoke() -> None:
             "--output-on-failure",
             "-R",
             "^windows_d3d11_fp16_scrgb_smoke$",
+        ],
+        cwd=str(ROOT),
+    )
+
+
+def _run_windows_d3d11_dcomp_flutter_composite_smoke() -> None:
+    run(
+        [
+            "ctest",
+            "--test-dir",
+            "build/native/standalone/windows-msvc",
+            "--build-config",
+            "Release",
+            "--output-on-failure",
+            "-R",
+            "^windows_d3d11_dcomp_flutter_composite_smoke$",
         ],
         cwd=str(ROOT),
     )
@@ -199,6 +237,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
             _run_windows_display_tests()
             _run_windows_d3d11_color_layout_parity_smoke()
             _run_windows_d3d11_fp16_scrgb_smoke()
+            _run_windows_d3d11_dcomp_flutter_composite_smoke()
             run([sys.executable, "scripts/dev/check_release_compliance.py"], cwd=str(ROOT))
         else:
             _python_dev("test", "--native-only")

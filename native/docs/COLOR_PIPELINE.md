@@ -7,9 +7,9 @@ selected platform presentation target.
 
 The historical production target is SDR BGRA/RGB for a Flutter texture. The
 macOS HDR exploration path adds a native compositor target that outputs extended
-linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows HDR presentation
-is not active, but an opt-in renderer-owned FP16/scRGB target now validates the
-linear BT.709 color path while Flutter continues to receive SDR BGRA.
+linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows keeps SDR BGRA as
+the default, while opt-in FP16/scRGB paths validate and present linear BT.709
+through a renderer-owned target or the locked-engine DirectComposition route.
 
 ## Shared Output Contract
 
@@ -31,7 +31,7 @@ Concrete presentation targets are platform-specific:
 
 | Platform | Backend target | Notes |
 | --- | --- | --- |
-| Windows | D3D11 BGRA shared texture plus optional renderer-owned RGBA16F scRGB target | Flutter publication remains SDR. The FP16 target is an internal opt-in, not HDR presentation. |
+| Windows | D3D11 BGRA shared texture, optional renderer-owned RGBA16F target, and locked-engine DComp scRGB compositor | Flutter Texture remains the default SDR output. The DComp opt-in combines shared FP16 video with the exported full Flutter alpha surface. |
 | macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
 | macOS EDR | Native compositor `RGBA16Float` `CAMetalLayer` | Uses `extendedLinearDisplayP3` and composites native video with the exported Flutter texture. |
 
@@ -149,6 +149,15 @@ The default pass tone-maps to the BGRA shared texture published to Flutter. In
 
 The BGRA compatibility pass rerenders from source rather than tone-mapping the
 mixed FP16 texture. This keeps existing SDR layout/color canaries stable.
+
+In `native-compositor-scrgb` mode, the renderer publishes the same linear
+BT.709 scRGB video contract through a triple shared FP16 ring. The final DComp
+shader samples the locked engine's full-window premultiplied BGRA Flutter
+surface, restores straight sRGB for transfer decoding, re-premultiplies in
+linear light, applies `SDRWhiteLevel / 80`, and composites it source-over the
+video. Transparent viewport pixels reveal video without color keys or a
+rectangular native hole. The final swap-chain capture must preserve video
+values above `1.0` and Flutter alpha-edge behavior.
 
 ## macOS Metal / CVPixelBuffer Path
 

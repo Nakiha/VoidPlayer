@@ -191,20 +191,27 @@ python dev.py gate windows-preservation
 
 The native portion includes
 `windows_d3d11_color_layout_parity_smoke` plus
-`windows_d3d11_fp16_scrgb_smoke`. They capture the real D3D11 BGRA and RGBA16F
-outputs for SDR layout parity and FP16/scRGB transfer/white-level behavior.
+`windows_d3d11_fp16_scrgb_smoke` and
+`windows_d3d11_dcomp_flutter_composite_smoke`. They capture the real D3D11 BGRA
+and RGBA16F outputs for SDR layout parity, FP16/scRGB transfer/white-level
+behavior, and full-frame Flutter premultiplied-alpha composition.
 Run them directly with:
 
 ```powershell
 ctest --test-dir build/native/standalone/windows-msvc -C Release `
-  -R "windows_d3d11_(color_layout_parity|fp16_scrgb)_smoke" --output-on-failure
+  -R "windows_d3d11_(color_layout_parity|fp16_scrgb|dcomp_flutter_composite)_smoke" `
+  --output-on-failure
 ```
 
-`windows-preservation` rebuilds the runner and serially runs
-`ui_tests/smoke/basic.csv` plus
-`ui_tests/smoke/native_seek_preview_event.csv`, then launches the same build
-with `VOIDPLAYER_WINDOWS_PRESENTATION_MODE=fp16-scrgb` for
-`ui_tests/smoke/native_seek_preview_event_fp16_scrgb.csv`.
+`windows-preservation` first rebuilds the runner with the locked Windows local
+engine and runs `native_seek_preview_event_dcomp_scrgb.csv`. The same runner
+then executes default SDR and `fp16-scrgb` smoke scripts without another build.
+Install packaged local-engine outputs with:
+
+```powershell
+scripts/ci/bootstrap_flutter_windows_engine.ps1 -Mode release `
+  -ArtifactDirectory build/flutter-engine-artifacts
+```
 
 Add targeted Windows UI scripts when touching seek, loop, viewport/layout, codec, track, analysis, or D3D11 shared texture/capture behavior.
 

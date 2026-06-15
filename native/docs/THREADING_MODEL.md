@@ -78,6 +78,10 @@ NativePlayer / Renderer command surface
 
 - Windows runner acquires the latest shared D3D11 texture handle and releases it
   through the Flutter texture descriptor callback.
+- In `native-compositor-scrgb`, the Windows platform thread owns the serial/ACK
+  state machine only. A dedicated composition thread consumes immutable Flutter
+  BGRA and video FP16 leases, draws and presents the DComp swap chain, and
+  releases both leases after keyed-mutex synchronization.
 - macOS runner owns Cocoa, sandbox file access, platform channels, Flutter
   texture registration, `CVPixelBuffer` lifecycle, and frame notification.
 - macOS viewport pan/zoom submits only the latest layout intent. `CVDisplayLink`
@@ -129,6 +133,7 @@ policies.
 | SeekController | mutex + atomics | Seek request/take |
 | Platform GPU device | backend device mutex | Backend draw/copy/flush/fence work and platform-specific decode sharing |
 | Platform texture publication | backend texture/target lock | Shared texture index, CVPixelBuffer target generation, capture/front-buffer state |
+| Windows native compositor | compositor mutex + condition variable | Phase/serial, latest diagnostics, viewport and wake state; no D3D call while held |
 | Callback queues | local copies outside locks | Flutter frame callback, seek callback, failure callback, audio callback |
 
 Renderer lock nesting remains:
@@ -172,6 +177,15 @@ Flutter callback. The callback runs outside both locks.
 Flutter consumers obtain an AddRef'ed shared texture snapshot through
 `acquire_shared_texture()`. They must not cache native texture pointers that were
 not leased through that API.
+
+The Windows DComp route uses independent devices for the renderer, Flutter
+exporter, and final compositor. Shared BGRA/FP16 slots cross those boundaries
+only through NT handles, keyed mutex keys, generation-stamped leases, and
+explicit release. Resize creates a new ring generation; an old generation
+cannot be destroyed until every consumer lease is returned. Flutter state ACKs
+are post-frame commits: activation publishes `active` after the transparent
+viewport ACK, while fallback teardown is queued to the composition thread after
+the restored-Texture ACK.
 
 ## macOS Metal / CVPixelBuffer Completion
 

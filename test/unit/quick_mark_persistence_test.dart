@@ -5,8 +5,8 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
-import 'package:void_player/analysis/file_hash.dart';
 import 'package:void_player/marks/quick_mark.dart';
+import 'package:void_player/marks/quick_mark_media_hash.dart';
 import 'package:void_player/marks/quick_mark_persistence.dart';
 
 void main() {
@@ -120,7 +120,7 @@ void main() {
     });
   });
 
-  test('uses content hash so marks survive path changes', () async {
+  test('uses quick mark media hash so marks survive path changes', () async {
     await repository.saveForMediaRefs(
       [QuickMarkMediaRef(fileId: 1, path: mediaA.path)],
       const [
@@ -144,6 +144,21 @@ void main() {
     expect(loaded, hasLength(1));
     expect(loaded.single.fileId, 99);
     expect(loaded.single.text, 'same bytes');
+  });
+
+  test('quick mark media hash ignores changes after first megabyte', () async {
+    final firstMegabyte = List<int>.filled(kQuickMarkMediaHashPrefixBytes, 7);
+    final original = File(p.join(dir.path, 'media', 'prefix_a.mp4'));
+    final changedTail = File(p.join(dir.path, 'media', 'prefix_b.mp4'));
+    await original.create(recursive: true);
+    await original.writeAsBytes([...firstMegabyte, 1, 2, 3, 4]);
+    await changedTail.create(recursive: true);
+    await changedTail.writeAsBytes([...firstMegabyte, 9, 8, 7, 6, 5]);
+
+    final originalHash = await computeQuickMarkMediaHash(original.path);
+    final changedTailHash = await computeQuickMarkMediaHash(changedTail.path);
+
+    expect(changedTailHash, originalHash);
   });
 
   test('uses stable media id fallback when media file is missing', () async {
@@ -267,7 +282,7 @@ void main() {
     final refs = [QuickMarkMediaRef(fileId: 1, path: mediaA.path)];
     // Establish the media row, then plant a raw v1 payload.
     await repository.saveForMediaRefs(refs, const []);
-    final hash = await computeFileSha256(mediaA.path);
+    final hash = await computeQuickMarkMediaHash(mediaA.path);
     final db = sqlite3.open(repository.databasePath);
     try {
       db.execute(
@@ -302,7 +317,7 @@ void main() {
   test('rejects out-of-range severity on read', () async {
     final refs = [QuickMarkMediaRef(fileId: 1, path: mediaA.path)];
     await repository.saveForMediaRefs(refs, const []);
-    final hash = await computeFileSha256(mediaA.path);
+    final hash = await computeQuickMarkMediaHash(mediaA.path);
     final db = sqlite3.open(repository.databasePath);
     try {
       db.execute(

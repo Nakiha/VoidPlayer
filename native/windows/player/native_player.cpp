@@ -329,6 +329,30 @@ void NativePlayer::release_shared_texture(int buffer_index,
     renderer_.release_shared_texture(buffer_index, buffer_generation);
 }
 
+bool NativePlayer::acquire_shared_fp16_texture(
+    SharedFp16TextureSnapshot& snapshot) const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.acquire_shared_fp16_texture(snapshot);
+}
+
+void NativePlayer::release_shared_fp16_texture(
+    int buffer_index, uint64_t ring_generation) const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (renderer_ready_locked()) {
+        renderer_.release_shared_fp16_texture(
+            buffer_index, ring_generation);
+    }
+}
+
+void NativePlayer::set_shared_fp16_frame_callback(
+    std::function<void()> cb) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (renderer_ready_locked()) {
+        renderer_.set_shared_fp16_frame_callback(std::move(cb));
+    }
+}
+
 void NativePlayer::resize(int width, int height) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {

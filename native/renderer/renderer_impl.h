@@ -58,6 +58,7 @@ class TextureManager;
 class AudioCoordinator;
 class SeekCoordinator;
 class AnalysisOverlayRenderer;
+struct SharedFp16TextureSnapshot;
 
 class Renderer::Impl {
 public:
@@ -163,6 +164,9 @@ public:
     /// The returned texture is AddRef'd and must be released by the caller.
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
     void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
+    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
+    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
+    void set_shared_fp16_frame_callback(std::function<void()> cb);
 
     /// Resize the offscreen shared texture (headless mode only).
     /// Stores pending dimensions; render loop applies at controlled rate.

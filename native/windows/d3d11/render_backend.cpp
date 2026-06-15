@@ -74,9 +74,18 @@ bool D3D11RenderBackend::initialize(const PresentationBackendConfig& config) {
     if (!initialize_render_resources()) {
         return false;
     }
-    if (requested_output_target_ == ColorOutputTarget::kWindowsLinearScRGB &&
-        !initialize_fp16_target(config.width, config.height)) {
-        disable_fp16_target("fp16-target-initialization-failed");
+    if (requested_output_target_ == ColorOutputTarget::kWindowsLinearScRGB) {
+        if (config.shared_fp16_output) {
+            shared_fp16_ring_ = std::make_unique<D3D11SharedFp16Ring>();
+            if (!shared_fp16_ring_->initialize(
+                    device_->device(), device_->context(),
+                    config.width, config.height)) {
+                shared_fp16_ring_.reset();
+                fp16_fallback_reason_ = "shared-fp16-ring-initialization-failed";
+            }
+        } else if (!initialize_fp16_target(config.width, config.height)) {
+            disable_fp16_target("fp16-target-initialization-failed");
+        }
     }
     return true;
 }
@@ -158,6 +167,10 @@ bool D3D11RenderBackend::resize_renderer_managed_headless_output(
     if (fp16_target_ && !fp16_target_->resize(width, height)) {
         disable_fp16_target("fp16-target-resize-failed");
     }
+    if (shared_fp16_ring_ && !shared_fp16_ring_->resize(width, height)) {
+        shared_fp16_ring_.reset();
+        fp16_fallback_reason_ = "shared-fp16-ring-resize-failed";
+    }
     return true;
 }
 
@@ -235,6 +248,10 @@ void D3D11RenderBackend::snapshot_memory_stats(
         stats.fp16_target_bytes = fp16_target_->estimated_bytes();
         stats.total_estimated_bytes += stats.fp16_target_bytes;
     }
+    if (shared_fp16_ring_) {
+        stats.fp16_target_bytes = shared_fp16_ring_->estimated_bytes();
+        stats.total_estimated_bytes += stats.fp16_target_bytes;
+    }
 
     if (resources_) {
         const auto overlay_stats =
@@ -276,21 +293,27 @@ PresentationBackendDiagnostics D3D11RenderBackend::diagnostics() const {
         result.target_format = "R8G8B8A8_UNORM";
         result.buffer_count = 2;
     }
-    result.render_target_format = fp16_target_
+    result.render_target_format = (fp16_target_ || shared_fp16_ring_)
         ? "R16G16B16A16_FLOAT"
         : result.target_format;
-    result.render_color_space = fp16_target_
+    result.render_color_space = (fp16_target_ || shared_fp16_ring_)
         ? "scRGB-linear-bt709"
         : "sdr-bt709";
-    result.sdr_compatibility_pass = fp16_target_
+    result.sdr_compatibility_pass = (fp16_target_ || shared_fp16_ring_)
         ? "source-rerender"
         : "none";
     result.fallback_reason = fp16_fallback_reason_;
-    result.fp16_target_active = fp16_target_ != nullptr;
+    result.fp16_target_active =
+        fp16_target_ != nullptr || shared_fp16_ring_ != nullptr;
     if (fp16_target_) {
         result.fp16_target_width = fp16_target_->width();
         result.fp16_target_height = fp16_target_->height();
         result.fp16_target_buffer_count = 1;
+    }
+    if (shared_fp16_ring_) {
+        result.fp16_target_width = shared_fp16_ring_->width();
+        result.fp16_target_height = shared_fp16_ring_->height();
+        result.fp16_target_buffer_count = D3D11SharedFp16Ring::kBufferCount;
     }
     result.sdr_white_level_milli_nits = static_cast<int64_t>(
         std::llround(sdr_white_level_nits_ * 1000.0));
@@ -360,6 +383,25 @@ bool D3D11RenderBackend::capture_fp16_target(
         return false;
     }
     return fp16_target_->capture_rgba16f(rgba_half, width, height);
+}
+
+bool D3D11RenderBackend::acquire_shared_fp16_texture(
+    SharedFp16TextureSnapshot& snapshot) {
+    return shared_fp16_ring_ && shared_fp16_ring_->acquire_latest(snapshot);
+}
+
+void D3D11RenderBackend::release_shared_fp16_texture(
+    int buffer_index, uint64_t ring_generation) {
+    if (shared_fp16_ring_) {
+        shared_fp16_ring_->release(buffer_index, ring_generation);
+    }
+}
+
+void D3D11RenderBackend::set_shared_fp16_frame_callback(
+    std::function<void()> callback) {
+    if (shared_fp16_ring_) {
+        shared_fp16_ring_->set_frame_callback(std::move(callback));
+    }
 }
 
 bool D3D11RenderBackend::initialize_fp16_target(int width, int height) {
@@ -827,6 +869,25 @@ bool D3D11RenderBackend::draw_frame(const RendererDrawSnapshot& snapshot,
             disable_fp16_target("fp16-draw-failed");
         }
     }
+    if (shared_fp16_ring_) {
+        auto* shared_rtv = shared_fp16_ring_->begin_frame();
+        if (shared_rtv) {
+            fp16_drawn = draw_prepared_pass(
+                snapshot, hooks, prepared, shared_rtv,
+                ColorOutputTarget::kWindowsLinearScRGB, true);
+            if (fp16_drawn) {
+                device_->context()->Flush();
+                if (!shared_fp16_ring_->publish_frame()) {
+                    fp16_drawn = false;
+                }
+            } else {
+                shared_fp16_ring_->cancel_frame();
+            }
+            if (fp16_drawn) {
+                ++fp16_draw_count_;
+            }
+        }
+    }
 
     const bool sdr_drawn = draw_prepared_pass(
         snapshot,
@@ -843,6 +904,10 @@ bool D3D11RenderBackend::draw_frame(const RendererDrawSnapshot& snapshot,
 }
 
 void D3D11RenderBackend::shutdown() {
+    if (shared_fp16_ring_) {
+        shared_fp16_ring_->shutdown();
+        shared_fp16_ring_.reset();
+    }
     if (fp16_target_) {
         fp16_target_->shutdown();
         fp16_target_.reset();

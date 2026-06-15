@@ -56,6 +56,8 @@ add_executable(video_renderer_tests
     renderer/test_d3d11_shader.cpp
     renderer/test_windows_display_resolver.cpp
     renderer/test_windows_presentation_policy.cpp
+    renderer/test_windows_dcomp_composite.cpp
+    renderer/test_shared_fp16_ring.cpp
     renderer/test_render_sink.cpp
     renderer/test_track_buffer_budget.cpp
     renderer/test_track_pipeline.cpp

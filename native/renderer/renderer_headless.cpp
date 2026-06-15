@@ -110,6 +110,39 @@ void Renderer::Impl::release_shared_texture(int buffer_index, uint64_t buffer_ge
 #endif
 }
 
+bool Renderer::Impl::acquire_shared_fp16_texture(
+    SharedFp16TextureSnapshot& snapshot) const {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.acquire_d3d_shared_fp16_texture(snapshot);
+#else
+    (void)snapshot;
+    return false;
+#endif
+}
+
+void Renderer::Impl::release_shared_fp16_texture(
+    int buffer_index, uint64_t ring_generation) const {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    presentation_.release_d3d_shared_fp16_texture(
+        buffer_index, ring_generation);
+#else
+    (void)buffer_index;
+    (void)ring_generation;
+#endif
+}
+
+void Renderer::Impl::set_shared_fp16_frame_callback(
+    std::function<void()> cb) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    presentation_.set_d3d_shared_fp16_frame_callback(std::move(cb));
+#else
+    (void)cb;
+#endif
+}
+
 void Renderer::Impl::resize(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
 #ifdef _WIN32

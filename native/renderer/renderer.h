@@ -22,6 +22,7 @@ namespace vr {
 class PlaybackController;
 class PresentationBackend;
 struct AnalysisOverlayPrimitivePackage;
+struct SharedFp16TextureSnapshot;
 
 class Renderer {
 public:
@@ -101,6 +102,9 @@ public:
 
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
     void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
+    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
+    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
+    void set_shared_fp16_frame_callback(std::function<void()> cb);
     void resize(int width, int height);
     bool update_headless_output(void* output,
                                 int width,

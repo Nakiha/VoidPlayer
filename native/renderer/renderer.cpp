@@ -228,6 +228,20 @@ void Renderer::release_shared_texture(int buffer_index, uint64_t buffer_generati
     impl_->release_shared_texture(buffer_index, buffer_generation);
 }
 
+bool Renderer::acquire_shared_fp16_texture(
+    SharedFp16TextureSnapshot& snapshot) const {
+    return impl_->acquire_shared_fp16_texture(snapshot);
+}
+
+void Renderer::release_shared_fp16_texture(
+    int buffer_index, uint64_t ring_generation) const {
+    impl_->release_shared_fp16_texture(buffer_index, ring_generation);
+}
+
+void Renderer::set_shared_fp16_frame_callback(std::function<void()> cb) {
+    impl_->set_shared_fp16_frame_callback(std::move(cb));
+}
+
 void Renderer::resize(int width, int height) {
     impl_->resize(width, height);
 }

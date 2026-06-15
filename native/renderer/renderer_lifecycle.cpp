@@ -49,6 +49,7 @@ bool Renderer::Impl::initialize(const RendererConfig& config) {
     backend_config.output_target = config.backend.output_target;
     backend_config.sdr_white_level_nits =
         config.backend.sdr_white_level_nits;
+    backend_config.shared_fp16_output = config.backend.shared_fp16_output;
     const auto* backend_provider = config.backend.provider
         ? config.backend.provider
         : default_presentation_backend_provider();

@@ -21,6 +21,7 @@ struct PresentationBackendConfig {
     bool headless = false;
     ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
     double sdr_white_level_nits = 80.0;
+    bool shared_fp16_output = false;
 };
 
 struct PresentationBackendFrameInfo {

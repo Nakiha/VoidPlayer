@@ -7,6 +7,7 @@
 #include "windows/d3d11/frame_presenter.h"
 #include "windows/d3d11/headless_output.h"
 #include "windows/d3d11/shader.h"
+#include "windows/d3d11/shared_fp16_ring.h"
 #include "windows/d3d11/texture.h"
 
 #include <array>
@@ -101,6 +102,9 @@ public:
     bool capture_fp16_target(std::vector<uint16_t>& rgba_half,
                              int& width,
                              int& height) const;
+    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot);
+    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation);
+    void set_shared_fp16_frame_callback(std::function<void()> callback);
     bool draw_frame(const RendererDrawSnapshot& snapshot,
                     const PresentationBackendDrawHooks& hooks) override;
 
@@ -142,6 +146,7 @@ private:
     std::unique_ptr<D3D11FramePresenter> frame_presenter_;
     std::unique_ptr<D3D11HeadlessOutput> headless_output_;
     std::unique_ptr<D3D11Fp16Target> fp16_target_;
+    std::unique_ptr<D3D11SharedFp16Ring> shared_fp16_ring_;
     std::unique_ptr<ShaderManager> shader_manager_;
     std::unique_ptr<D3D11RenderResources> resources_;
 };

@@ -17,6 +17,7 @@ namespace vr {
 class PresentationMetricsStore;
 class D3D11Device;
 class D3D11RenderBackend;
+struct SharedFp16TextureSnapshot;
 
 struct RendererPresentationOverlayHooks {
     std::function<void(PresentationBackend&, const RendererDrawSnapshot&)> draw_overlay;
@@ -212,6 +213,10 @@ public:
                                     PresentationMetricsStore& metrics) const;
     void release_d3d_shared_texture(int buffer_index,
                                     uint64_t buffer_generation) const;
+    bool acquire_d3d_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
+    void release_d3d_shared_fp16_texture(int buffer_index,
+                                         uint64_t ring_generation) const;
+    void set_d3d_shared_fp16_frame_callback(std::function<void()> callback);
     D3D11RenderBackend* d3d_backend() const;
     D3D11Device* d3d_device() const;
 #endif

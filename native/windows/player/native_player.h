@@ -10,6 +10,8 @@
 
 namespace vr {
 
+struct SharedFp16TextureSnapshot;
+
 /// Native player facade that owns playback control and the video renderer as
 /// peers. FFI can adopt this type without changing the renderer/video internals.
 class NativePlayer {
@@ -66,6 +68,9 @@ public:
     int texture_height() const;
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
     void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
+    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
+    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
+    void set_shared_fp16_frame_callback(std::function<void()> cb);
     void resize(int width, int height);
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
     bool capture_front_buffer_region(int x,

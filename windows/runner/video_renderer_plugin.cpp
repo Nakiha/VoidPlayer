@@ -12,6 +12,10 @@
 #include <wrl/client.h>
 #include <exception>
 #include <cmath>
+#include <functional>
+#include <mutex>
+#include <queue>
+#include <thread>
 #include <variant>
 #include <limits>
 #include <utility>
@@ -30,6 +34,7 @@ extern "C" {
 
 namespace {
 using PluginResult = flutter::MethodResult<flutter::EncodableValue>;
+constexpr UINT kPlatformTaskMessage = WM_APP + 0x564;
 
 void ReportMethodException(
     PluginResult* result,
@@ -83,6 +88,45 @@ flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
     map[flutter::EncodableValue("codecLongName")] = flutter::EncodableValue(info.codec_long_name);
     map[flutter::EncodableValue("decoderName")] = flutter::EncodableValue(info.decoder_name);
     return map;
+}
+
+}  // namespace
+
+struct PlatformTaskState {
+    explicit PlatformTaskState(HWND window) : window_handle(window) {}
+
+    HWND window_handle = nullptr;
+    std::mutex mutex;
+    std::queue<std::function<void()>> tasks;
+    bool alive = true;
+};
+
+namespace {
+
+HWND PlatformTaskTarget(HWND window_handle) {
+    if (!window_handle || !IsWindow(window_handle)) {
+        return nullptr;
+    }
+    HWND root = GetAncestor(window_handle, GA_ROOT);
+    return root ? root : window_handle;
+}
+
+void PostPlatformTaskToState(
+    const std::shared_ptr<PlatformTaskState>& state,
+    std::function<void()> task) {
+    if (!state) {
+        return;
+    }
+
+    HWND target = PlatformTaskTarget(state->window_handle);
+    {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        if (!state->alive || !target) {
+            return;
+        }
+        state->tasks.push(std::move(task));
+    }
+    PostMessage(target, kPlatformTaskMessage, 0, 0);
 }
 
 flutter::EncodableMap make_presented_frame_map(const vr::TrackPerfStats& stats) {
@@ -254,13 +298,22 @@ void VideoRendererPlugin::RegisterWithRegistrar(
 }
 
 VideoRendererPlugin::VideoRendererPlugin(
-    flutter::PluginRegistrarWindows*,
+    flutter::PluginRegistrarWindows* registrar,
     flutter::TextureRegistrar* texture_registrar,
     IDXGIAdapter* dxgi_adapter,
     HWND window_handle)
     : texture_bridge_(texture_registrar),
       diagnostics_session_(std::make_shared<NativeDiagnosticsSession>()),
+      registrar_(registrar),
+      platform_task_state_(std::make_shared<PlatformTaskState>(window_handle)),
       window_handle_(window_handle) {
+    if (registrar_) {
+        window_proc_delegate_id_ = registrar_->RegisterTopLevelWindowProcDelegate(
+            [this](HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
+                -> std::optional<LRESULT> {
+                return HandleTopLevelWindowProc(hwnd, message, wparam, lparam);
+            });
+    }
     RegisterMethodHandlers();
     GlobalNativeDiagnosticsSessionRegistry().Publish(diagnostics_session_);
 
@@ -285,6 +338,16 @@ VideoRendererPlugin::VideoRendererPlugin(
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
+    if (registrar_ && window_proc_delegate_id_ >= 0) {
+        registrar_->UnregisterTopLevelWindowProcDelegate(window_proc_delegate_id_);
+        window_proc_delegate_id_ = -1;
+    }
+    if (platform_task_state_) {
+        std::lock_guard<std::mutex> lock(platform_task_state_->mutex);
+        platform_task_state_->alive = false;
+        std::queue<std::function<void()>> empty;
+        platform_task_state_->tasks.swap(empty);
+    }
     event_bridge_.Shutdown();
     if (diagnostics_session_) {
         naki_analysis_clear_pts_callback_for_owner(diagnostics_session_.get());
@@ -299,6 +362,39 @@ VideoRendererPlugin::~VideoRendererPlugin() {
     texture_bridge_.Unregister();
     if (player_) {
         player_.reset();
+    }
+}
+
+std::optional<LRESULT> VideoRendererPlugin::HandleTopLevelWindowProc(
+    HWND, UINT message, WPARAM, LPARAM) {
+    if (message != kPlatformTaskMessage) {
+        return std::nullopt;
+    }
+    DrainPlatformTasks();
+    return 0;
+}
+
+void VideoRendererPlugin::PostPlatformTask(std::function<void()> task) {
+    PostPlatformTaskToState(platform_task_state_, std::move(task));
+}
+
+void VideoRendererPlugin::DrainPlatformTasks() {
+    auto state = platform_task_state_;
+    if (!state) {
+        return;
+    }
+
+    while (true) {
+        std::function<void()> task;
+        {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (!state->alive || state->tasks.empty()) {
+                return;
+            }
+            task = std::move(state->tasks.front());
+            state->tasks.pop();
+        }
+        task();
     }
 }
 
@@ -1433,28 +1529,63 @@ void VideoRendererPlugin::PickFiles(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
 
     try {
-    bool allow_multiple = true;
+        bool allow_multiple = true;
 
-    if (arguments) {
-        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
-        if (args) {
-            auto it = args->find(flutter::EncodableValue("allowMultiple"));
-            if (it != args->end()) {
-                if (!read_bool_arg(it->second, allow_multiple)) {
-                    result->Error("BAD_ARGS", "allowMultiple must be a boolean");
-                    return;
+        if (arguments) {
+            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+            if (args) {
+                auto it = args->find(flutter::EncodableValue("allowMultiple"));
+                if (it != args->end()) {
+                    if (!read_bool_arg(it->second, allow_multiple)) {
+                        result->Error("BAD_ARGS", "allowMultiple must be a boolean");
+                        return;
+                    }
                 }
             }
         }
-    }
 
-    flutter::EncodableList paths_list;
-    for (const auto& path : file_picker_.PickVideoFiles(allow_multiple)) {
-        paths_list.push_back(flutter::EncodableValue(path));
-    }
+        auto shared_result =
+            std::make_shared<std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>>(
+                std::move(result));
+        HWND owner_window = window_handle_;
+        auto platform_task_state = platform_task_state_;
+        std::thread([allow_multiple, owner_window, platform_task_state, shared_result]() {
+            std::vector<std::string> paths;
+            std::string error_message;
+            try {
+                FilePickerService picker;
+                paths = picker.PickVideoFiles(allow_multiple, owner_window);
+            } catch (const std::exception& e) {
+                error_message = e.what();
+            } catch (...) {
+                error_message = "Unknown native exception";
+            }
 
-    // Always return a list (empty = cancelled, non-empty = selected files)
-    result->Success(flutter::EncodableValue(paths_list));
+            PostPlatformTaskToState(
+                platform_task_state,
+                [paths = std::move(paths),
+                 error_message = std::move(error_message),
+                 shared_result]() mutable {
+                    auto& result_ref = *shared_result;
+                    if (!result_ref) {
+                        return;
+                    }
+                    if (!error_message.empty()) {
+                        ReportMethodException(
+                            result_ref.get(), "pickFiles", "NATIVE_EXCEPTION", error_message);
+                        result_ref.reset();
+                        return;
+                    }
+
+                    flutter::EncodableList paths_list;
+                    for (const auto& path : paths) {
+                        paths_list.push_back(flutter::EncodableValue(path));
+                    }
+                    // Always return a list (empty = cancelled, non-empty = selected files).
+                    result_ref->Success(flutter::EncodableValue(paths_list));
+                    result_ref.reset();
+                });
+        }).detach();
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "pickFiles", e);
     } catch (const std::exception& e) {

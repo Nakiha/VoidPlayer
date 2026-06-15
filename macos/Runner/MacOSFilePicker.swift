@@ -112,7 +112,7 @@ enum MacOSFilePicker {
     result(MacOSSecurityScopedFileAccess.shared.activateBookmarks(bookmarks))
   }
 
-  static func pickFiles(arguments: Any?, result: @escaping FlutterResult) {
+  static func pickFiles(arguments: Any?, parentWindow: NSWindow?, result: @escaping FlutterResult) {
     let allowsMultipleSelection = MacOSFlutterArguments.boolArg(arguments, "allowMultiple") ?? true
     DispatchQueue.main.async {
       let panel = NSOpenPanel()
@@ -121,7 +121,7 @@ enum MacOSFilePicker {
       panel.allowsMultipleSelection = allowsMultipleSelection
       panel.resolvesAliases = true
 
-      panel.begin { response in
+      let completion: (NSApplication.ModalResponse) -> Void = { response in
         if response == .OK {
           MacOSSecurityScopedFileAccess.shared.retainUserSelectedFiles(panel.urls)
           let entries = panel.urls.map { url -> [String: Any] in
@@ -133,8 +133,14 @@ enum MacOSFilePicker {
           }
           result(entries)
         } else {
-          result(nil)
+          result([])
         }
+      }
+
+      if let parentWindow {
+        panel.beginSheetModal(for: parentWindow, completionHandler: completion)
+      } else {
+        panel.begin(completionHandler: completion)
       }
     }
   }

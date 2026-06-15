@@ -498,18 +498,20 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       Int32(MacOSFlutterArguments.intArg(arguments, "mode") ?? 0),
       Int32(MacOSFlutterArguments.intArg(arguments, "trackFileId") ?? -1)
     )
-    String(
-      format:
-        "NativeAnalysisOverlaySync tracks=%d loaded=%d cu=%@ qp=%@ bitCost=%@ mode=%d opacity=%d",
-      trackCount,
-      loadedTrackCount,
-      showCuGrid ? "true" : "false",
-      showQpHeatmap ? "true" : "false",
-      showBitCost ? "true" : "false",
-      MacOSFlutterArguments.intArg(arguments, "mode") ?? 0,
-      MacOSFlutterArguments.intArg(arguments, "opacityPermille") ?? 550
-    ).withCString { pointer in
-      VPMacOSLogProfilerSummary(pointer)
+    if MacOSProfilerLog.enabled {
+      String(
+        format:
+          "NativeAnalysisOverlaySync tracks=%d loaded=%d cu=%@ qp=%@ bitCost=%@ mode=%d opacity=%d",
+        trackCount,
+        loadedTrackCount,
+        showCuGrid ? "true" : "false",
+        showQpHeatmap ? "true" : "false",
+        showBitCost ? "true" : "false",
+        MacOSFlutterArguments.intArg(arguments, "mode") ?? 0,
+        MacOSFlutterArguments.intArg(arguments, "opacityPermille") ?? 550
+      ).withCString { pointer in
+        VPMacOSLogProfilerSummary(pointer)
+      }
     }
     if let player = nativePlayer {
       nativeCompositor?.setOverlayPrimitives(player.currentOverlayPrimitives())

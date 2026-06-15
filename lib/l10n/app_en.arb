@@ -663,8 +663,29 @@
   "quickMarkDefectType": "Defect",
   "@quickMarkDefectType": { "description": "Tooltip for quick mark defect type selector" },
 
-  "quickMarkSeverity": "Severity",
-  "@quickMarkSeverity": { "description": "Tooltip for quick mark severity selector" },
+  "quickMarkDefectBanding": "Banding",
+  "@quickMarkDefectBanding": { "description": "Quick mark defect type option: banding" },
+
+  "quickMarkDefectBlocking": "Blocking",
+  "@quickMarkDefectBlocking": { "description": "Quick mark defect type option: blocking" },
+
+  "quickMarkDefectRinging": "Ringing",
+  "@quickMarkDefectRinging": { "description": "Quick mark defect type option: ringing" },
+
+  "quickMarkDefectMosquitoNoise": "Mosquito noise",
+  "@quickMarkDefectMosquitoNoise": { "description": "Quick mark defect type option: mosquito noise" },
+
+  "quickMarkDefectBlur": "Blur",
+  "@quickMarkDefectBlur": { "description": "Quick mark defect type option: blur" },
+
+  "quickMarkDefectFlicker": "Flicker",
+  "@quickMarkDefectFlicker": { "description": "Quick mark defect type option: flicker" },
+
+  "quickMarkDefectColorShift": "Color shift",
+  "@quickMarkDefectColorShift": { "description": "Quick mark defect type option: color shift" },
+
+  "quickMarkSeverity": "Degree",
+  "@quickMarkSeverity": { "description": "Tooltip for quick mark degree selector" },
 
   "quickMarkJudgmentNone": "None",
   "@quickMarkJudgmentNone": { "description": "Option clearing quick mark defect type or severity" },
@@ -767,9 +788,6 @@
 
   "quickMarkSidebarInspector": "Label properties",
   "@quickMarkSidebarInspector": { "description": "Quick mark sidebar inspector section title" },
-
-  "quickMarkSidebarJump": "Jump",
-  "@quickMarkSidebarJump": { "description": "Quick mark sidebar jump action label" },
 
   "quickMarkSidebarTrackLabel": "Track {index}",
   "@quickMarkSidebarTrackLabel": { "description": "Track label shown in the quick mark sidebar", "placeholders": { "index": { "type": "int" } } },

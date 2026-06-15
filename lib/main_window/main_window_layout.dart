@@ -293,6 +293,11 @@ class MainWindowLayoutCoordinator {
     viewportWidth = width;
     viewportHeight = height;
     await controller.resize(width, height);
+    if (_disposed || !mounted()) return;
+    final nextLayout = await controller.getLayout();
+    if (_disposed || !mounted()) return;
+    setLayout(nextLayout);
+    _prepareNativeCompositorSourceCache(nextLayout);
   }
 
   void toggleMarksSidebar() {
@@ -313,6 +318,11 @@ class MainWindowLayoutCoordinator {
         .clamp(kMinMarksSidebarWidth, kMaxMarksSidebarWidth)
         .toDouble();
     if (next == _state.marksSidebarWidth) return;
+    if (_state.marksSidebarVisible) {
+      requestPreemptViewportLogicalSizeDelta(
+        widthDelta: _state.marksSidebarWidth - next,
+      );
+    }
     stateStore.setMarksSidebarWidth(next);
   }
 
@@ -554,6 +564,7 @@ class MainWindowLayoutCoordinator {
           final nextLayout = await controller.getLayout();
           if (_disposed || !mounted()) return;
           setLayout(nextLayout);
+          _prepareNativeCompositorSourceCache(nextLayout);
         } else if (_resizeDirty) {
           _resizeDirty = false;
         }

@@ -445,6 +445,7 @@ final class MacOSNativeCompositorView: NSView {
   }
 
   private func logOverlayPrimitivesIfChanged(reason: String) {
+    guard MacOSProfilerLog.enabled else { return }
     let signature = "\(overlayPrimitives.generation):\(overlayPrimitives.fillRects.count):\(overlayPrimitives.lineRects.count):\(overlayPrimitives.motionLines.count):\(overlayPrimitives.sourceBakedOverlayDisabled):\(overlayPrimitives.overlayTrackCount):\(overlayPrimitives.matchedTrackCount):\(overlayPrimitives.missingTrackSlotCount):\(overlayPrimitives.missingPresentedFrameCount):\(overlayPrimitives.missingFrameIndexCount):\(overlayPrimitives.overlayFrameMissingCount)"
     guard signature != lastOverlayDiagnosticSignature else { return }
     lastOverlayDiagnosticSignature = signature
@@ -661,7 +662,7 @@ final class MacOSNativeCompositorView: NSView {
       lastPresentedVideoSourceKey = videoSnapshot.sourceKey
       lastPresentedFlutterSourceKey = flutterSnapshot.sourceKey
       compositorDirty = false
-      if frameCount == 1 || frameCount % 120 == 0 {
+      if MacOSProfilerLog.enabled && (frameCount == 1 || frameCount % 120 == 0) {
         let compositeSummary = String(
           format:
             "NativeCompositorComposite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d layoutRevision=%llu sourceProjection=%d sourceProjectionEnabled=%d hole=%.4f,%.4f,%.4f,%.4f source0Offset=%.4f,%.4f source0InvSize=%.4f,%.4f bg=%.3f,%.3f,%.3f,%.3f",
@@ -692,19 +693,6 @@ final class MacOSNativeCompositorView: NSView {
         compositeSummary.withCString { pointer in
           VPMacOSLogProfilerSummary(pointer)
         }
-        NSLog(
-          "VoidPlayer native compositor: composite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d layoutRevision=%llu sourceProjection=%d",
-          frameCount,
-          outputMode,
-          video.width,
-          video.height,
-          flutter.width,
-          flutter.height,
-          Int(metalLayer.drawableSize.width),
-          Int(metalLayer.drawableSize.height),
-          displayedLayoutRevision,
-          sourceCacheActive ? 1 : 0
-        )
       }
     }
   }

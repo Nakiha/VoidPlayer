@@ -17,6 +17,7 @@
 #include "viewport_capture_service.h"
 #include "window_capture_service.h"
 #include "windows/presentation/windows_display_resolver.h"
+#include "windows/presentation/windows_device_recovery.h"
 #include "windows/presentation/windows_presentation_policy.h"
 #include "windows_native_compositor.h"
 
@@ -103,6 +104,9 @@ private:
     void DebugForceNativeCompositorFallback(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void DebugSimulateWindowsDeviceLoss(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void SetSpeed(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
@@ -169,6 +173,7 @@ private:
     vr::WindowsPresentationPolicy presentation_policy_;
     std::unique_ptr<WindowsNativeCompositor> native_compositor_;
     std::string native_compositor_source_signature_;
+    vr::WindowsDeviceRecoveryDiagnostics device_recovery_;
     void* flutter_view_handle_ = nullptr;
     std::string presentation_sdr_white_level_status_ = "nominal-default";
     std::string presentation_request_;

@@ -15,6 +15,7 @@
 #include <wrl/client.h>
 #include <exception>
 #include <cmath>
+#include <chrono>
 #include <variant>
 #include <limits>
 #include <utility>
@@ -487,6 +488,12 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
         "debugForceNativeCompositorFallback",
         [this](const MethodCall& call, MethodResultPtr result) {
             DebugForceNativeCompositorFallback(
+                call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
+        "debugSimulateWindowsDeviceLoss",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            DebugSimulateWindowsDeviceLoss(
                 call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
@@ -1722,6 +1729,123 @@ void VideoRendererPlugin::DebugForceNativeCompositorFallback(
     }
 }
 
+void VideoRendererPlugin::DebugSimulateWindowsDeviceLoss(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        if (!arguments) {
+            result->Error("BAD_ARGS", "device-loss arguments required");
+            return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (!args) {
+            result->Error("BAD_ARGS", "device-loss arguments must be a map");
+            return;
+        }
+        const auto target_it =
+            args->find(flutter::EncodableValue("target"));
+        if (target_it == args->end()) {
+            result->Error("BAD_ARGS", "target is required");
+            return;
+        }
+        const auto* target_value =
+            std::get_if<std::string>(&target_it->second);
+        if (!target_value || target_value->empty()) {
+            result->Error("BAD_ARGS", "target must be a non-empty string");
+            return;
+        }
+        const std::string target = *target_value;
+        if (target != "presentation" && target != "compositor" &&
+            target != "transport" && target != "source-cache") {
+            result->Error("BAD_ARGS", "unknown device-loss target");
+            return;
+        }
+        std::string reason = "debug-simulated-device-loss";
+        const auto reason_it =
+            args->find(flutter::EncodableValue("reason"));
+        if (reason_it != args->end()) {
+            const auto* reason_value =
+                std::get_if<std::string>(&reason_it->second);
+            if (!reason_value || reason_value->empty()) {
+                result->Error("BAD_ARGS", "reason must be a non-empty string");
+                return;
+            }
+            reason = *reason_value;
+        }
+
+        const auto start = std::chrono::steady_clock::now();
+        const long removed_reason =
+            static_cast<long>(DXGI_ERROR_DEVICE_RESET);
+        device_recovery_.state =
+            vr::WindowsDeviceRecoveryState::DeviceLostDetected;
+        ++device_recovery_.generation;
+        ++device_recovery_.attempt_count;
+        device_recovery_.last_reason = reason + ":" + target;
+        device_recovery_.last_removed_reason =
+            vr::windows_hresult_hex(static_cast<HRESULT>(removed_reason));
+        device_recovery_.fallback_stage = "none";
+        device_recovery_.preserved_player = player_ != nullptr;
+        device_recovery_.preserved_track_count =
+            player_ ? static_cast<int>(player_->track_infos().size()) : 0;
+        device_recovery_.last_frame_held = true;
+
+        bool recovered = false;
+        if (target == "presentation" || target == "source-cache") {
+            if (!require_player(player_, result.get())) {
+                return;
+            }
+            device_recovery_.state =
+                vr::WindowsDeviceRecoveryState::RebuildingPresentation;
+            if (target == "source-cache") {
+                player_->clear_source_cache("debug-device-loss-source-cache");
+            }
+            recovered = player_->recover_presentation_device_loss(
+                reason.c_str(), removed_reason);
+            if (recovered) {
+                player_->request_frame_refresh("windows-device-recovery");
+            }
+        } else {
+            if (!native_compositor_) {
+                result->Error(
+                    "NOT_ACTIVE",
+                    "Windows native compositor is not available");
+                return;
+            }
+            device_recovery_.state =
+                vr::WindowsDeviceRecoveryState::RebuildingPresentation;
+            recovered =
+                native_compositor_->BeginDeviceRecovery(reason, removed_reason);
+            if (recovered && player_) {
+                player_->request_frame_refresh("windows-device-recovery");
+            }
+        }
+
+        device_recovery_.last_duration_ms =
+            static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - start)
+                    .count());
+        if (recovered) {
+            device_recovery_.state =
+                vr::WindowsDeviceRecoveryState::Recovered;
+            ++device_recovery_.success_count;
+        } else {
+            device_recovery_.state =
+                target == "presentation"
+                    ? vr::WindowsDeviceRecoveryState::FallbackNativeSdr
+                    : vr::WindowsDeviceRecoveryState::FallbackFlutterTextureSdr;
+            ++device_recovery_.failure_count;
+            device_recovery_.fallback_stage =
+                target == "presentation" ? "native-sdr"
+                                         : "flutter-texture-sdr";
+        }
+        result->Success();
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "debugSimulateWindowsDeviceLoss", e);
+    }
+}
+
 void VideoRendererPlugin::SetViewportBackgroundColor(
     const flutter::EncodableValue* arguments,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
@@ -2218,9 +2342,80 @@ void VideoRendererPlugin::GetDiagnostics(
         enc_i64(event_diagnostics.emit_count);
     diagnostics[flutter::EncodableValue("nativeEventDropNoSinkCount")] =
         enc_i64(event_diagnostics.drop_no_sink_count);
+    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryState")] =
+        flutter::EncodableValue(vr::windows_device_recovery_state_name(
+            device_recovery_.state));
+    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryGeneration")] =
+        enc_i64(static_cast<int64_t>(device_recovery_.generation));
+    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryAttemptCount")] =
+        enc_i64(static_cast<int64_t>(device_recovery_.attempt_count));
+    diagnostics[flutter::EncodableValue("windowsDeviceRecoverySuccessCount")] =
+        enc_i64(static_cast<int64_t>(device_recovery_.success_count));
+    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryFailureCount")] =
+        enc_i64(static_cast<int64_t>(device_recovery_.failure_count));
+    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryLastReason")] =
+        flutter::EncodableValue(device_recovery_.last_reason);
+    diagnostics[flutter::EncodableValue(
+        "windowsDeviceRecoveryLastRemovedReason")] =
+        flutter::EncodableValue(device_recovery_.last_removed_reason);
+    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryLastDurationMs")] =
+        enc_i64(static_cast<int64_t>(device_recovery_.last_duration_ms));
+    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryFallbackStage")] =
+        flutter::EncodableValue(device_recovery_.fallback_stage);
+    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryPreservedPlayer")] =
+        flutter::EncodableValue(device_recovery_.preserved_player);
+    diagnostics[flutter::EncodableValue(
+        "windowsDeviceRecoveryPreservedTrackCount")] =
+        enc_i64(device_recovery_.preserved_track_count);
+    diagnostics[flutter::EncodableValue("windowsDeviceRecoveryLastFrameHeld")] =
+        flutter::EncodableValue(device_recovery_.last_frame_held);
     if (native_compositor_) {
         native_compositor_->RequestDiagnosticCapture();
         const auto compositor = native_compositor_->diagnostics();
+        if (compositor.device_recovery_attempt_count > 0) {
+            diagnostics[flutter::EncodableValue("windowsDeviceRecoveryState")] =
+                flutter::EncodableValue(compositor.device_recovery_state);
+            diagnostics[flutter::EncodableValue(
+                "windowsDeviceRecoveryGeneration")] =
+                enc_i64(static_cast<int64_t>(
+                    compositor.device_recovery_generation));
+            diagnostics[flutter::EncodableValue(
+                "windowsDeviceRecoveryAttemptCount")] =
+                enc_i64(static_cast<int64_t>(
+                    compositor.device_recovery_attempt_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsDeviceRecoverySuccessCount")] =
+                enc_i64(static_cast<int64_t>(
+                    compositor.device_recovery_success_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsDeviceRecoveryFailureCount")] =
+                enc_i64(static_cast<int64_t>(
+                    compositor.device_recovery_failure_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsDeviceRecoveryLastReason")] =
+                flutter::EncodableValue(
+                    compositor.device_recovery_last_reason);
+            diagnostics[flutter::EncodableValue(
+                "windowsDeviceRecoveryLastRemovedReason")] =
+                flutter::EncodableValue(
+                    compositor.device_recovery_last_removed_reason);
+            diagnostics[flutter::EncodableValue(
+                "windowsDeviceRecoveryLastDurationMs")] =
+                enc_i64(static_cast<int64_t>(
+                    compositor.device_recovery_last_duration_ms));
+            diagnostics[flutter::EncodableValue(
+                "windowsDeviceRecoveryFallbackStage")] =
+                flutter::EncodableValue(
+                    compositor.device_recovery_fallback_stage);
+            diagnostics[flutter::EncodableValue(
+                "windowsDeviceRecoveryPreservedPlayer")] =
+                flutter::EncodableValue(
+                    compositor.device_recovery_preserved_player);
+            diagnostics[flutter::EncodableValue(
+                "windowsDeviceRecoveryLastFrameHeld")] =
+                flutter::EncodableValue(
+                    compositor.device_recovery_last_frame_held);
+        }
         diagnostics[flutter::EncodableValue("windowsNativeCompositorPhase")] =
             flutter::EncodableValue(compositor.phase);
         diagnostics[flutter::EncodableValue("windowsNativeCompositorStateSerial")] =

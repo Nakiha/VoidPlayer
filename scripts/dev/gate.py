@@ -136,6 +136,7 @@ def _run_windows_preservation() -> None:
         "ui-test",
         "--build",
         "ui_tests/smoke/native_compositor_auto_sdr.csv",
+        "ui_tests/smoke/native_compositor_device_recovery_sdr.csv",
     )
     _python_dev_with_env(
         {
@@ -146,6 +147,8 @@ def _run_windows_preservation() -> None:
         "ui-test",
         "ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv",
         "ui_tests/smoke/native_source_projection_dcomp_scrgb.csv",
+        "ui_tests/smoke/native_compositor_device_recovery_scrgb.csv",
+        "ui_tests/smoke/native_source_projection_device_recovery.csv",
     )
     _python_dev_with_env(
         {"VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "sdr"},
@@ -339,6 +342,20 @@ def _run_windows_cross_adapter_tests() -> None:
     )
 
 
+def _run_windows_device_recovery_tests() -> None:
+    run(
+        [
+            str(
+                ROOT
+                / "build/native/standalone/windows-msvc/Release"
+                / "video_renderer_tests.exe"
+            ),
+            "[windows_device_recovery]",
+        ],
+        cwd=str(ROOT),
+    )
+
+
 def _run_windows_cross_adapter_local() -> None:
     _run_windows_cross_adapter_tests()
     local_engine_src = os.environ.get(
@@ -389,6 +406,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
             _python_dev("test", "--native-only", "--github")
             _run_windows_display_tests()
             _run_windows_cross_adapter_tests()
+            _run_windows_device_recovery_tests()
             _run_windows_d3d11_color_layout_parity_smoke()
             _run_windows_d3d11_fp16_scrgb_smoke()
             _run_windows_d3d11_dcomp_flutter_composite_smoke()

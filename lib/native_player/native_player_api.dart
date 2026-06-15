@@ -39,6 +39,10 @@ abstract interface class NativePlayerApi {
     required bool transparentViewport,
   });
   Future<void> debugForceNativeCompositorFallback({required String reason});
+  Future<void> debugSimulateWindowsDeviceLoss({
+    required String target,
+    required String reason,
+  });
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,
@@ -236,6 +240,20 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     return _channel.invokeMethod<void>(
       NativePlayerMethods.debugForceNativeCompositorFallback,
       {NativePlayerKeys.reason: reason},
+    );
+  }
+
+  @override
+  Future<void> debugSimulateWindowsDeviceLoss({
+    required String target,
+    required String reason,
+  }) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.debugSimulateWindowsDeviceLoss,
+      {
+        NativePlayerKeys.target: target,
+        NativePlayerKeys.reason: reason,
+      },
     );
   }
 

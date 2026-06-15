@@ -480,6 +480,64 @@ void WindowsNativeCompositor::ForceFallbackForTesting(
     EnterFallback(reason.empty() ? "ui-test-forced-fallback" : reason);
 }
 
+bool WindowsNativeCompositor::BeginDeviceRecovery(
+    const std::string& reason,
+    long removed_reason) {
+    auto player = player_.lock();
+    if (!player) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        diagnostics_.device_recovery_state =
+            vr::windows_device_recovery_state_name(
+                vr::WindowsDeviceRecoveryState::FailedTerminal);
+        diagnostics_.device_recovery_preserved_player = false;
+        ++diagnostics_.device_recovery_failure_count;
+        diagnostics_.device_recovery_last_reason =
+            reason.empty() ? "device-loss" : reason;
+        diagnostics_.device_recovery_last_removed_reason =
+            vr::windows_hresult_hex(static_cast<HRESULT>(removed_reason));
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (terminal_inactive_) {
+        diagnostics_.device_recovery_state =
+            vr::windows_device_recovery_state_name(
+                vr::WindowsDeviceRecoveryState::FailedTerminal);
+        ++diagnostics_.device_recovery_failure_count;
+        diagnostics_.device_recovery_fallback_stage = "terminal-inactive";
+        return false;
+    }
+    ++diagnostics_.device_recovery_generation;
+    ++diagnostics_.device_recovery_attempt_count;
+    diagnostics_.device_recovery_state =
+        vr::windows_device_recovery_state_name(
+            vr::WindowsDeviceRecoveryState::RebuildingPresentation);
+    diagnostics_.device_recovery_last_reason =
+        reason.empty() ? "device-loss" : reason;
+    diagnostics_.device_recovery_last_removed_reason =
+        vr::windows_hresult_hex(static_cast<HRESULT>(removed_reason));
+    diagnostics_.device_recovery_fallback_stage = "none";
+    diagnostics_.device_recovery_preserved_player = true;
+    diagnostics_.device_recovery_last_frame_held =
+        diagnostics_.present_count > 0;
+    diagnostics_.transition_state = "rebuilding-presentation";
+    diagnostics_.transition_reason =
+        reason.empty() ? "device-loss" : reason;
+    transition_min_video_generation_ = diagnostics_.video_generation + 1;
+    transition_min_source_generation_ =
+        source_projection_.enabled
+            ? diagnostics_.source_cache_consumed_generation + 1
+            : 0;
+    pending_output_adapter_ = output_adapter_ ? output_adapter_ : producer_adapter_;
+    work_pending_ = true;
+    diagnostic_capture_pending_ = true;
+    spdlog::warn(
+        "[WindowsDeviceRecovery] compositor rebuild scheduled reason={} removed=0x{:08x}",
+        diagnostics_.device_recovery_last_reason,
+        static_cast<uint32_t>(removed_reason));
+    wake_.notify_one();
+    return true;
+}
+
 WindowsNativeCompositor::Diagnostics
 WindowsNativeCompositor::diagnostics() const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -1135,8 +1193,16 @@ bool WindowsNativeCompositor::CompositeLatest() {
             !CreatePipeline()) {
             std::lock_guard<std::mutex> lock(mutex_);
             ++diagnostics_.output_migration_failure_count;
+            ++diagnostics_.device_recovery_failure_count;
             diagnostics_.cross_adapter_last_error =
                 "output-adapter-reinitialize-failed";
+            diagnostics_.device_recovery_state =
+                vr::windows_device_recovery_state_name(
+                    vr::WindowsDeviceRecoveryState::FallbackFlutterTextureSdr);
+            diagnostics_.device_recovery_fallback_stage =
+                desired_output_target_ == OutputTarget::ScRGB
+                    ? "native-sdr"
+                    : "flutter-texture-sdr";
             pending_output_adapter_ = pending_output_adapter;
             return false;
         }
@@ -1166,6 +1232,14 @@ bool WindowsNativeCompositor::CompositeLatest() {
             diagnostics_.transport_shared_fence_supported =
                 transport_support_.shared_fence;
             diagnostics_.transition_state = "preparing";
+            if (diagnostics_.device_recovery_state ==
+                vr::windows_device_recovery_state_name(
+                    vr::WindowsDeviceRecoveryState::RebuildingPresentation)) {
+                diagnostics_.device_recovery_state =
+                    vr::windows_device_recovery_state_name(
+                        vr::WindowsDeviceRecoveryState::Recovered);
+                ++diagnostics_.device_recovery_success_count;
+            }
         }
     }
     Microsoft::WRL::ComPtr<ID3D11Device1> device1;
@@ -1717,8 +1791,14 @@ bool WindowsNativeCompositor::CompositeLatest() {
         }
         const HRESULT present_result = output->swap_chain->Present(1, 0);
         ok = SUCCEEDED(present_result);
-        if (!ok && device_->GetDeviceRemovedReason() != S_OK) {
-            EnterFallback("dcomp-device-removed");
+        if (!ok) {
+            const HRESULT removed_reason = device_->GetDeviceRemovedReason();
+            if (removed_reason != S_OK) {
+                BeginDeviceRecovery(
+                    "dcomp-device-removed",
+                    static_cast<long>(removed_reason));
+                return false;
+            }
         }
     }
 
@@ -1772,6 +1852,17 @@ bool WindowsNativeCompositor::CompositeLatest() {
             transition_inputs_ready) {
             diagnostics_.transition_state = "stable";
             ++diagnostics_.output_generation;
+            if (diagnostics_.device_recovery_state ==
+                    vr::windows_device_recovery_state_name(
+                        vr::WindowsDeviceRecoveryState::WaitingForFreshVideo) ||
+                diagnostics_.device_recovery_state ==
+                    vr::windows_device_recovery_state_name(
+                        vr::WindowsDeviceRecoveryState::ReactivatingCompositor)) {
+                diagnostics_.device_recovery_state =
+                    vr::windows_device_recovery_state_name(
+                        vr::WindowsDeviceRecoveryState::Recovered);
+                ++diagnostics_.device_recovery_success_count;
+            }
         }
         ++diagnostics_.composite_count;
         ++diagnostics_.present_count;

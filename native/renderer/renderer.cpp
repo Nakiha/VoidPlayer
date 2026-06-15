@@ -176,6 +176,12 @@ long Renderer::d3d_device_removed_reason() const {
     return impl_->d3d_device_removed_reason();
 }
 
+bool Renderer::recover_presentation_device_loss(
+    const char* reason,
+    long removed_reason) {
+    return impl_->recover_presentation_device_loss(reason, removed_reason);
+}
+
 RendererDeviceState Renderer::device_state() const {
     return impl_->device_state();
 }

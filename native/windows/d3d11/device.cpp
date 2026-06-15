@@ -1,4 +1,6 @@
 #include "device.h"
+#include "windows/presentation/windows_device_recovery.h"
+
 #include <spdlog/spdlog.h>
 #include <cstdlib>
 #include <cstring>
@@ -148,18 +150,21 @@ void D3D11Device::setup_info_queue() {
 }
 
 bool D3D11Device::record_device_error(const char* operation, HRESULT hr) {
-    const bool lost =
-        hr == DXGI_ERROR_DEVICE_REMOVED ||
-        hr == DXGI_ERROR_DEVICE_RESET ||
-        hr == DXGI_ERROR_DEVICE_HUNG;
+    bool lost = windows_hresult_is_device_loss(hr);
+    HRESULT queried_reason = device_ ? device_->GetDeviceRemovedReason() : hr;
+    if (!lost && device_) {
+        lost = windows_removed_reason_indicates_device_loss(queried_reason);
+    }
     if (!lost) {
         spdlog::error("[D3D11] {} failed: HRESULT {:#x}",
                       operation, static_cast<unsigned long>(hr));
         return false;
     }
 
-    HRESULT queried_reason = device_ ? device_->GetDeviceRemovedReason() : hr;
-    HRESULT reason = FAILED(queried_reason) ? queried_reason : hr;
+    HRESULT reason =
+        windows_removed_reason_indicates_device_loss(queried_reason)
+            ? queried_reason
+            : hr;
     device_lost_.store(true, std::memory_order_release);
     device_removed_reason_.store(reason, std::memory_order_release);
     spdlog::error("[D3D11] device lost during {}: hr={:#x}, reason={:#x}",
@@ -177,7 +182,7 @@ bool D3D11Device::poll_device_removed(const char* operation) {
         return false;
     }
     HRESULT reason = device_->GetDeviceRemovedReason();
-    if (FAILED(reason)) {
+    if (windows_removed_reason_indicates_device_loss(reason)) {
         return record_device_error(operation, reason);
     }
     return false;

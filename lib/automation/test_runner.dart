@@ -294,6 +294,18 @@ class TestRunner {
           'TestRunner: DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK reason=$reason',
         );
         await controller.debugForceNativeCompositorFallback(reason: reason);
+      case DebugSimulateWindowsDeviceLossAction(
+        :final target,
+        :final reason,
+      ):
+        log.info(
+          'TestRunner: DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS '
+          'target=$target reason=$reason',
+        );
+        await controller.debugSimulateWindowsDeviceLoss(
+          target: target,
+          reason: reason,
+        );
       case WindowMaximize():
         log.info('TestRunner: WINDOW_MAXIMIZE');
         await runtime.maximizeWindow();

@@ -58,6 +58,7 @@ public:
     AudioOutputStats audio_output_stats() const;
     bool d3d_device_lost() const;
     long d3d_device_removed_reason() const;
+    bool recover_presentation_device_loss(const char* reason, long removed_reason);
     void set_track_offset(int file_id, int64_t offset_us);
 
     void apply_layout(const LayoutState& state);

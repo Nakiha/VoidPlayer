@@ -86,6 +86,7 @@ public:
 
     bool d3d_device_lost() const;
     long d3d_device_removed_reason() const;
+    bool recover_presentation_device_loss(const char* reason, long removed_reason);
     RendererDeviceState device_state() const;
 
     void set_track_offset(int file_id, int64_t offset_us);

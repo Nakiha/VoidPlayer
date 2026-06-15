@@ -202,6 +202,15 @@ state ACKs are post-frame commits: activation publishes `active` after the
 transparent viewport ACK, while fallback teardown is queued to the composition
 thread after the restored-Texture ACK.
 
+Windows device-loss recovery uses the same lock order. Renderer-side D3D11
+rebuild work runs under the backend device mutex and does not destroy player,
+track, timeline, or layout state. Compositor-side recovery is scheduled through
+the compositor mutex/condition variable, then the composition thread releases
+held input leases, rebuilds D3D/DComp resources, and waits for fresh
+video/source generations before reporting `active` again. Old Flutter ACKs and
+old texture generations remain generation-checked and are discarded rather than
+mixed with new device resources.
+
 The platform thread receives `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`, `WM_MOVE`,
 `WM_EXITSIZEMOVE`, and `WM_DPICHANGED`, coalesces them with a short timer, then
 runs the same display/presentation resolver used by diagnostics and track

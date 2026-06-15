@@ -215,6 +215,17 @@ class NativePlayerController {
     return _api.debugForceNativeCompositorFallback(reason: reason);
   }
 
+  Future<void> debugSimulateWindowsDeviceLoss({
+    required String target,
+    String reason = 'debug-simulated-device-loss',
+  }) {
+    _ensureAlive();
+    return _api.debugSimulateWindowsDeviceLoss(
+      target: target,
+      reason: reason,
+    );
+  }
+
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,

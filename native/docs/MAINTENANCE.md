@@ -59,6 +59,11 @@ diagnostics 或 adapter fallback 改动还必须运行
 `video_renderer_tests [windows_cross_adapter]`；具备多 adapter / HDR output
 机器时补跑 `python dev.py gate windows-cross-adapter-local`。跨 adapter 只允许
 GPU-copy bridge 或明确诊断回落，不能引入 CPU readback 或私有 ICC/LUT 校色。
+Windows device-loss recovery、D3D11/DComp 原地重建、source-cache 清理或
+debug recovery 注入改动还必须运行
+`video_renderer_tests [windows_device_recovery]`，并在 `windows-preservation`
+中覆盖默认 SDR、强制 scRGB 和 source-projection recovery UI smoke。真实 TDR
+或 device reset 证据是本地补充，不替代 debug injection gate。
 
 ---
 

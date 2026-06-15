@@ -458,6 +458,14 @@ class _PlaybackApi implements NativePlayerApi {
   }
 
   @override
+  Future<void> debugSimulateWindowsDeviceLoss({
+    required String target,
+    required String reason,
+  }) async {
+    calls.add('debugSimulateWindowsDeviceLoss:$target:$reason');
+  }
+
+  @override
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,

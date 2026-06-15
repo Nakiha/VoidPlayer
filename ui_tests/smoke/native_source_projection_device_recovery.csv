@@ -1,0 +1,31 @@
+# Windows source projection keeps player/layout alive after simulated source
+# cache device loss, then republishes a fresh cache bundle for pan/zoom.
+@WINDOW, 1366, 768
+0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+1.8, ASSERT_TRACK_COUNT, 1
+2.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+4.0, ASSERT_TRACK_COUNT, 2
+4.1, ASSERT_PAUSED
+4.2, SET_ZOOM, 1.8
+4.4, DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL, 260, -120, nativeCompositorSourceCacheActive, true, 60, 4, 1
+4.9, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProjectionEnabled, true
+4.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, true
+4.92, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceCachePublishCount, 1
+5.0, DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS, source-cache, ui-test-source-cache-device-loss
+6.2, ASSERT_TRACK_COUNT, 2
+6.21, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDeviceRecoveryAttemptCount, 1
+6.22, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDeviceRecoverySuccessCount, 1
+6.23, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDeviceRecoveryPreservedPlayer, true
+6.24, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDeviceRecoveryPreservedTrackCount, 2, 2
+6.25, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsDeviceRecoveryState, recovered
+6.3, DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL, -180, 80, nativeCompositorSourceCacheActive, true, 60, 4, 1
+6.9, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceCachePublishCount, 1
+7.0, SET_LAYOUT_MODE, 1
+7.1, SET_SPLIT_POS, 0.4
+7.4, PLAY
+8.0, ASSERT_PLAYING
+8.1, SEEK_TO, 1200000
+8.9, ASSERT_PRESENTED_FRAME_RANGE, 1, 900000, 1500000
+9.0, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeEventEmitCount, 1
+9.1, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeEventDropNoSinkCount, 0, 0
+9.2, QUIT, 0

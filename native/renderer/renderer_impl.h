@@ -131,6 +131,7 @@ public:
 
     bool d3d_device_lost() const;
     long d3d_device_removed_reason() const;
+    bool recover_presentation_device_loss(const char* reason, long removed_reason);
     RendererDeviceState device_state() const;
 
     /// Set per-track sync offset in microseconds.
@@ -284,10 +285,11 @@ private:
     /// Caller must hold state_mutex_.
     bool settle_eof_locked(int64_t max_presented_end_us);
 
-    /// Enter the terminal device-lost state. Automatic recovery is not
-    /// implemented yet, so this stops rendering and leaves teardown to shutdown.
+    /// Enter the terminal device-lost state after recovery has failed.
     /// Caller must hold state_mutex_.
     void enter_terminal_device_lost_locked(const char* operation);
+    /// Caller must hold state_mutex_.
+    bool recover_or_enter_terminal_device_lost_locked(const char* operation);
     /// Caller must hold state_mutex_.
     void enter_terminal_render_loop_error_locked(const char* reason);
     int add_track_internal(const std::string& video_path,

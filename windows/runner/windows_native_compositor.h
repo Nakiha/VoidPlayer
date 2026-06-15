@@ -4,6 +4,7 @@
 #include "windows/d3d11/shared_source_cache_ring.h"
 #include "windows/d3d11/cross_adapter_transport.h"
 #include "windows/presentation/windows_dcomp_composite.h"
+#include "windows/presentation/windows_device_recovery.h"
 #include "windows/player/native_player.h"
 
 #include <d3d11.h>
@@ -54,9 +55,18 @@ public:
         std::string cross_adapter_transport_status = "not-required";
         std::string cross_adapter_sync_kind = "keyed-mutex";
         std::string cross_adapter_last_error = "none";
+        std::string device_recovery_state = "stable";
+        std::string device_recovery_last_reason = "none";
+        std::string device_recovery_last_removed_reason = "0x00000000";
+        std::string device_recovery_fallback_stage = "none";
         uint64_t state_serial = 0;
         uint64_t ack_serial = 0;
         uint64_t transition_serial = 0;
+        uint64_t device_recovery_generation = 0;
+        uint64_t device_recovery_attempt_count = 0;
+        uint64_t device_recovery_success_count = 0;
+        uint64_t device_recovery_failure_count = 0;
+        uint64_t device_recovery_last_duration_ms = 0;
         uint64_t output_generation = 0;
         uint64_t output_migration_count = 0;
         uint64_t output_migration_failure_count = 0;
@@ -102,6 +112,8 @@ public:
         bool sdr_tone_map_active = true;
         bool cross_adapter_required = false;
         bool cross_adapter_supported = false;
+        bool device_recovery_preserved_player = true;
+        bool device_recovery_last_frame_held = false;
         bool transport_bgra8_supported = false;
         bool transport_fp16_supported = false;
         bool transport_shared_fence_supported = false;
@@ -137,6 +149,7 @@ public:
                              const std::string& reason);
     void AcknowledgeFlutterState(uint64_t serial, bool transparent_viewport);
     void ForceFallbackForTesting(const std::string& reason);
+    bool BeginDeviceRecovery(const std::string& reason, long removed_reason);
     void RequestDiagnosticCapture();
     Diagnostics diagnostics() const;
 

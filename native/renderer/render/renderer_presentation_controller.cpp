@@ -597,6 +597,14 @@ void RendererPresentationController::set_d3d_source_cache_frame_callback(
     }
 }
 
+bool RendererPresentationController::recover_d3d_device_loss(
+    const char* reason,
+    long removed_reason) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    auto* backend = d3d_backend();
+    return backend && backend->recover_device_loss(reason, removed_reason);
+}
+
 D3D11RenderBackend* RendererPresentationController::d3d_backend() const {
     if (!backend_ || backend_->kind() != PresentationBackendKind::D3D11) {
         return nullptr;

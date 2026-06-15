@@ -92,7 +92,7 @@ void Renderer::Impl::render_loop() noexcept {
         render_sink_,
         RendererRenderLoopCommandHooks{
             [this](const char* operation) {
-                enter_terminal_device_lost_locked(operation);
+                recover_or_enter_terminal_device_lost_locked(operation);
             },
             [this](std::unique_lock<std::mutex>& state_lock) {
                 return apply_deferred_paused_hevc_seek_locked(state_lock);

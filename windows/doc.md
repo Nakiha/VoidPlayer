@@ -20,6 +20,11 @@
   `native-compositor-sdr` 和 `native-compositor-scrgb` 强制诊断模式
 - 监听 display/settings/move/DPI 变化并刷新 output、SDR white level 与
   DComp target，不重建 player
+- 在 D3D11/DComp/source-cache/transport device-loss 时通过 native
+  presentation recovery 原地重建资源，保持 player、track、timeline 和最后
+  成功帧；debug UI 自动化可用
+  `debugSimulateWindowsDeviceLoss` / `DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS`
+  注入合成的 removed/reset/hung 场景
 - 将 native DX11 shared texture 暴露给 Flutter Texture widget
 - 在 compositor opt-in 下消费 Flutter engine 导出的完整 alpha surface，
   与共享 FP16 video ring 合成到同一 DComp swap chain；跨 adapter 时只迁移
@@ -65,6 +70,10 @@ windows/
   只传递 producer/output adapter、刷新 display capability，并发布诊断。
   禁止用 CPU readback、窗口截图或私有 ICC/LUT 替代 GPU-copy bridge 和系统
   Advanced Color 校准。
+- device-loss recovery 属于 `PresentationBackend`、D3D11 backend 和
+  `WindowsNativeCompositor` 边界；runner 只暴露 debug 注入、ACK/serial 和
+  diagnostics。恢复失败按 native scRGB -> native SDR -> Flutter Texture SDR
+  的可诊断顺序降级，不销毁 player 或 track model。
 - 默认 Auto 与所有 native-compositor 模式必须使用锁定的 VoidPlayer
   Flutter local engine；
   普通 Flutter SDK 缺少 surface-export ABI，启动时只能诊断性回落。

@@ -248,6 +248,14 @@ long NativePlayer::d3d_device_removed_reason() const {
     return renderer_.d3d_device_removed_reason();
 }
 
+bool NativePlayer::recover_presentation_device_loss(
+    const char* reason,
+    long removed_reason) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.recover_presentation_device_loss(reason, removed_reason);
+}
+
 void NativePlayer::set_track_offset(int file_id, int64_t offset_us) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {

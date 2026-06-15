@@ -74,6 +74,16 @@ class DebugForceNativeCompositorFallbackAction extends AutomationAction {
   }) : super('DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK');
 }
 
+class DebugSimulateWindowsDeviceLossAction extends AutomationAction {
+  final String target;
+  final String reason;
+
+  const DebugSimulateWindowsDeviceLossAction({
+    required this.target,
+    this.reason = 'debug-simulated-device-loss',
+  }) : super('DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS');
+}
+
 class WindowMaximize extends AutomationAction {
   const WindowMaximize() : super('WINDOW_MAXIMIZE');
 }

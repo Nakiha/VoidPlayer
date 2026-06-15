@@ -90,6 +90,8 @@ std::unique_ptr<PresentationBackend> create_presentation_backend(
 
 bool D3D11RenderBackend::initialize(const PresentationBackendConfig& config) {
     shutdown();
+    last_config_ = config;
+    has_last_config_ = true;
     headless_ = config.headless;
     requested_output_target_ = config.output_target;
     sdr_white_level_nits_ =
@@ -120,6 +122,8 @@ bool D3D11RenderBackend::initialize(const PresentationBackendConfig& config) {
                     config.width, config.height)) {
                 shared_fp16_ring_.reset();
                 fp16_fallback_reason_ = "shared-fp16-ring-initialization-failed";
+            } else {
+                shared_fp16_ring_->set_frame_callback(shared_fp16_callback_);
             }
         } else if (!initialize_fp16_target(config.width, config.height)) {
             disable_fp16_target("fp16-target-initialization-failed");
@@ -468,9 +472,42 @@ void D3D11RenderBackend::release_shared_fp16_texture(
 
 void D3D11RenderBackend::set_shared_fp16_frame_callback(
     std::function<void()> callback) {
+    shared_fp16_callback_ = std::move(callback);
     if (shared_fp16_ring_) {
-        shared_fp16_ring_->set_frame_callback(std::move(callback));
+        shared_fp16_ring_->set_frame_callback(shared_fp16_callback_);
     }
+}
+
+bool D3D11RenderBackend::recover_device_loss(
+    const char* reason,
+    long removed_reason) {
+    if (!has_last_config_) {
+        spdlog::error(
+            "[WindowsDeviceRecovery] D3D11 backend has no saved config");
+        return false;
+    }
+    spdlog::warn(
+        "[WindowsDeviceRecovery] rebuilding D3D11 backend reason={} removed=0x{:08x}",
+        reason ? reason : "device-loss",
+        static_cast<uint32_t>(removed_reason));
+    const PresentationBackendConfig config = last_config_;
+    auto shared_callback = shared_fp16_callback_;
+    auto source_callback = source_cache_callback_;
+    shutdown();
+    shared_fp16_callback_ = shared_callback;
+    source_cache_callback_ = source_callback;
+    const bool ok = initialize(config);
+    shared_fp16_callback_ = shared_callback;
+    source_cache_callback_ = source_callback;
+    if (shared_fp16_ring_) {
+        shared_fp16_ring_->set_frame_callback(shared_fp16_callback_);
+    }
+    if (source_cache_ring_) {
+        source_cache_ring_->set_frame_callback(source_cache_callback_);
+    }
+    source_cache_draw_error_ = ok ? "source-cache-cleared-by-device-recovery"
+                                  : "device-recovery-failed";
+    return ok;
 }
 
 bool D3D11RenderBackend::configure_source_cache(

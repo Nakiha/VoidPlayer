@@ -231,6 +231,7 @@ public:
     void release_d3d_source_cache_bundle(
         int buffer_index, uint64_t ring_generation) const;
     void set_d3d_source_cache_frame_callback(std::function<void()> callback);
+    bool recover_d3d_device_loss(const char* reason, long removed_reason);
     D3D11RenderBackend* d3d_backend() const;
     D3D11Device* d3d_device() const;
 #endif

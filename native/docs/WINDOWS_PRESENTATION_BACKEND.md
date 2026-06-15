@@ -213,6 +213,7 @@ and unchanged BGRA compatibility output.
 | `windowsNativeCompositorStateSerial/AckSerial` | Flutter alpha-hole handshake serials |
 | `windowsFlutterExportGeneration/windowsVideoRingGeneration` | Latest consumed input generations |
 | `windowsDComp*` | Swap-chain format/color space/support, SDR tone-map state, and composite/present/drop/failure counters |
+| `windowsDeviceRecovery*` | In-place D3D11/DComp recovery state, generation, attempts, success/failure counters, preserved player/track evidence, last removed reason, fallback stage, and last-frame hold |
 | `windowsCrossAdapter*` | Transport mode/status, format support, sync kind, copy counters, consumed generations, and last error |
 | `nativeCompositorSource*` | Projection/cache activity, generation, bytes, rates, and overlay primitive counts |
 | `windowsSourceCache*` | Format, depth/frozen policy, publish/backpressure/consume/fallback counters |
@@ -239,9 +240,31 @@ mode must update these fields and emit a clear log reason.
 
 ## Device Loss And Fallback
 
-Device-removed/reset/hung errors enter the renderer terminal device state and
-remain visible through the compatibility diagnostics. Recovery is not yet an
-in-place device rebuild.
+D3D11 and DComp device-removed/reset/hung errors first enter the Windows
+presentation recovery state machine instead of destroying the player. The
+renderer marks the presentation device as lost, stops publishing old shared
+generations, releases BGRA/FP16/source-cache/shader/device resources, rebuilds
+the D3D11 backend from its saved presentation config, clears old source-cache
+generations, and requests a current-frame redraw. EOF and sparse-tail stable
+display semantics remain renderer-owned and do not change during recovery.
+
+`WindowsNativeCompositor` keeps the last successful DComp frame visible while
+the composition thread releases held video/Flutter/source leases, rebuilds the
+output D3D/DComp device and candidate SDR/scRGB swap chain, refreshes
+cross-adapter transport resources, reacquires a Flutter surface, and waits for
+fresh video/source generations before returning to `active`.
+
+Recovery states are diagnostic strings:
+`stable`, `device-lost-detected`, `holding-last-frame`,
+`rebuilding-presentation`, `waiting-for-fresh-video`,
+`reactivating-compositor`, `recovered`, `fallback-native-sdr`,
+`fallback-flutter-texture-sdr`, and `failed-terminal`.
+
+The debug automation hook
+`DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS,target,reason` drives the MethodChannel
+method `debugSimulateWindowsDeviceLoss`. Valid targets are `presentation`,
+`compositor`, `transport`, and `source-cache`. Synthetic injection is gate
+evidence; real TDR/device-reset validation is supplemental local evidence.
 
 HDR target creation or Present failure first attempts the native SDR target.
 Unknown requests, missing engine export, or SDR compositor failure restore
@@ -250,8 +273,7 @@ and fallback reason.
 
 ## Catch-Up Roadmap
 
-1. Harden Windows device-loss in-place recovery for compositor, source cache,
-   Flutter export, and transport resources.
+1. Build the Windows high-refresh interaction / overlay performance parity gate.
 2. Evaluate optional shared-fence transport once multi-adapter hardware evidence
    proves it improves copy latency over the event-query bridge.
 

@@ -60,6 +60,7 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 - 修改 Flutter surface export、共享 FP16 ring、DComp 激活/回落协议时，必须使用锁定 Windows local engine 跑 DComp native canary 和 rebuilt UI smoke；普通 Flutter SDK 的 fallback 不能作为通过证据。
 - 修改 Windows source cache/projection、bundle lease、DComp projection shader 或 native overlay 合成时，必须运行 `[windows_source_cache]`、`[windows_source_projection]`、`windows_d3d11_source_projection_smoke` 和 rebuilt source-projection UI smoke，并保持 viewport FP16 fallback 可诊断。
 - 修改 Windows Auto policy、display refresh、SDR/scRGB DComp target 或 SDR white-level 更新时，必须同时验证默认 Auto SDR 与强制 scRGB；HDR target 失败必须先降级 native SDR，不能直接恢复 Flutter Texture。具备 HDR 显示时补跑 `python dev.py gate windows-hdr-auto`。
+- 修改 Windows cross-adapter transport、output-device migration、display calibration diagnostics 或 adapter fallback 时，必须运行 `[windows_cross_adapter]` 定向测试；具备多 adapter / HDR output 机器时补跑 `python dev.py gate windows-cross-adapter-local`。跨 adapter 只能使用 GPU-copy bridge 或明确诊断回落，禁止 CPU readback、窗口截图或播放器私有 ICC/LUT 校色。
 - 不要在一个轮次里堆无关改动。每轮完成后先测试，再单独提交。
 
 ## 验证矩阵

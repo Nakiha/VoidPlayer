@@ -213,6 +213,31 @@ TEST_CASE("Windows display probe tracker records output color and geometry chang
     REQUIRE(snapshot.last_change_reason == "output-changed");
 }
 
+TEST_CASE("Windows display probe tracker records advanced color calibration changes",
+          "[windows_display]") {
+    WindowsDisplayProbeTracker tracker;
+    WindowsDisplayProbeResult probe;
+    probe.status = "ok";
+    probe.output_resolved = true;
+    probe.device_name = "DISPLAY1";
+    probe.color_metadata_available = true;
+    probe.advanced_color_api = "displayconfig-info2";
+    probe.advanced_color_mode = "sdr";
+    probe.calibration_mode = "legacy-srgb-assumed";
+    probe.calibration_source = "none";
+    tracker.Update(probe);
+
+    probe.advanced_color_active = true;
+    probe.advanced_color_mode = "wcg";
+    probe.calibration_mode = "advanced-color-system";
+    probe.calibration_source = "windows-color-system";
+    const auto snapshot = tracker.Update(probe);
+
+    REQUIRE(snapshot.changed);
+    REQUIRE(snapshot.generation == 2);
+    REQUIRE(snapshot.last_change_reason == "color-state-changed");
+}
+
 TEST_CASE("Windows display probe tracker records probe status changes",
           "[windows_display]") {
     WindowsDisplayProbeTracker tracker;

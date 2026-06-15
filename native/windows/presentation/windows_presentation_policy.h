@@ -22,6 +22,8 @@ struct WindowsPresentationPolicy {
     bool fp16_scrgb_requested = true;
     bool native_compositor_requested = true;
     bool hdr_output_requested = false;
+    bool cross_adapter_required = false;
+    bool cross_adapter_migration_requested = false;
 };
 
 WindowsPresentationPolicy resolve_windows_presentation_policy(

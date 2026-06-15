@@ -49,6 +49,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | --- | --- | --- | --- | --- |
 | `video_renderer_tests` | contract + integration | PR fast / Windows preservation | Windows FFmpeg | Shared renderer, D3D11, FFI command policy, decode/seek/layout unit coverage. |
 | `video_renderer_tests [windows_display]` | platform contract | Windows PR fast / Windows preservation | Windows SDK/DXGI | Active-output selection, negative-coordinate layouts, deterministic fallback, and HDR color-space classification. |
+| `video_renderer_tests [windows_cross_adapter]` | platform contract | Windows PR fast / Windows preservation | Windows SDK/D3D11 | LUID comparison, cross-adapter requirement decisions, and deterministic transport capability diagnostics without requiring a multi-GPU desktop. |
 | `windows_d3d11_color_layout_parity_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; explicit WARP allowed only for hosted CI | Synthetic shared renderer snapshots through D3D11 capture; BGRA, NV12, planar YUV420, P010, odd stride, split/layout fit. |
 | `windows_d3d11_fp16_scrgb_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; explicit WARP allowed only for hosted CI | RGBA16F scRGB capture, SDR white scaling, PQ/HLG/P010/BT.2020, unclipped highlights, layout/overlay pass, and BGRA source-rerender compatibility. |
 | `video_renderer_tests [windows_dcomp]` | backend contract | PR fast / Windows preservation | D3D11 + keyed mutex | Native-compositor policy and shared FP16 ring lease/resize generations. |
@@ -138,6 +139,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `.github/workflows/macos-ui.yml` | weekly | `python3.12 dev.py gate macos-ui-smoke` |
 | `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
 | Local HDR EDR gate | manual on EDR-capable macOS display before merging HDR compositor changes | `python3.12 dev.py gate macos-hdr-edr-smoke` |
+| Local Windows cross-adapter gate | manual on multi-adapter Windows desktop before merging output migration changes | `python dev.py gate windows-cross-adapter-local` |
 | Local macOS package gate | manual before release candidate | `python3.12 dev.py gate macos-release-readiness` |
 
 The local `release-candidate` gate and the GitHub full native config matrix are

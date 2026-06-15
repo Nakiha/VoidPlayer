@@ -262,6 +262,8 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(probe.color_metadata_available);
     map[flutter::EncodableValue("windowsDisplaySelectionReason")] =
         flutter::EncodableValue(probe.selection_reason);
+    map[flutter::EncodableValue("windowsDisplayOutputIdentity")] =
+        flutter::EncodableValue(probe.output_identity);
     map[flutter::EncodableValue("windowsDisplayDeviceName")] =
         flutter::EncodableValue(probe.device_name);
     map[flutter::EncodableValue("windowsDisplayAdapterDescription")] =
@@ -290,8 +292,31 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(probe.color_space);
     map[flutter::EncodableValue("windowsDisplayAdvancedColorState")] =
         flutter::EncodableValue(probe.advanced_color_state);
+    map[flutter::EncodableValue("windowsDisplayAdvancedColorApi")] =
+        flutter::EncodableValue(probe.advanced_color_api);
+    map[flutter::EncodableValue("windowsDisplayAdvancedColorMode")] =
+        flutter::EncodableValue(probe.advanced_color_mode);
+    map[flutter::EncodableValue("windowsDisplayCalibrationMode")] =
+        flutter::EncodableValue(probe.calibration_mode);
+    map[flutter::EncodableValue("windowsDisplayCalibrationSource")] =
+        flutter::EncodableValue(probe.calibration_source);
     map[flutter::EncodableValue("windowsDisplayHDRActive")] =
         flutter::EncodableValue(probe.hdr_active);
+    map[flutter::EncodableValue("windowsDisplayAdvancedColorSupported")] =
+        flutter::EncodableValue(probe.advanced_color_supported);
+    map[flutter::EncodableValue("windowsDisplayAdvancedColorActive")] =
+        flutter::EncodableValue(probe.advanced_color_active);
+    map[flutter::EncodableValue(
+        "windowsDisplayAdvancedColorLimitedByPolicy")] =
+        flutter::EncodableValue(probe.advanced_color_limited_by_policy);
+    map[flutter::EncodableValue("windowsDisplayHDRSupported")] =
+        flutter::EncodableValue(probe.high_dynamic_range_supported);
+    map[flutter::EncodableValue("windowsDisplayHDRUserEnabled")] =
+        flutter::EncodableValue(probe.high_dynamic_range_user_enabled);
+    map[flutter::EncodableValue("windowsDisplayWCGSupported")] =
+        flutter::EncodableValue(probe.wide_color_supported);
+    map[flutter::EncodableValue("windowsDisplayWCGUserEnabled")] =
+        flutter::EncodableValue(probe.wide_color_user_enabled);
     map[flutter::EncodableValue("windowsDisplayMinLuminanceMilliNits")] =
         flutter::EncodableValue(probe.min_luminance_milli_nits);
     map[flutter::EncodableValue("windowsDisplayMaxLuminanceMilliNits")] =
@@ -303,6 +328,22 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(probe.sdr_white_level_status);
     map[flutter::EncodableValue("windowsDisplaySDRWhiteLevelMilliNits")] =
         flutter::EncodableValue(probe.sdr_white_level_milli_nits);
+    map[flutter::EncodableValue("windowsDisplayRedPrimaryX")] =
+        flutter::EncodableValue(probe.red_primary_x);
+    map[flutter::EncodableValue("windowsDisplayRedPrimaryY")] =
+        flutter::EncodableValue(probe.red_primary_y);
+    map[flutter::EncodableValue("windowsDisplayGreenPrimaryX")] =
+        flutter::EncodableValue(probe.green_primary_x);
+    map[flutter::EncodableValue("windowsDisplayGreenPrimaryY")] =
+        flutter::EncodableValue(probe.green_primary_y);
+    map[flutter::EncodableValue("windowsDisplayBluePrimaryX")] =
+        flutter::EncodableValue(probe.blue_primary_x);
+    map[flutter::EncodableValue("windowsDisplayBluePrimaryY")] =
+        flutter::EncodableValue(probe.blue_primary_y);
+    map[flutter::EncodableValue("windowsDisplayWhitePointX")] =
+        flutter::EncodableValue(probe.white_point_x);
+    map[flutter::EncodableValue("windowsDisplayWhitePointY")] =
+        flutter::EncodableValue(probe.white_point_y);
     map[flutter::EncodableValue("windowsDisplayProbeGeneration")] =
         flutter::EncodableValue(static_cast<int64_t>(display.generation));
     map[flutter::EncodableValue("windowsDisplayChangeCount")] =
@@ -337,6 +378,8 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(presentation_policy.has_hdr_track);
     map[flutter::EncodableValue("windowsPresentationDesiredMode")] =
         flutter::EncodableValue(presentation_policy.desired_mode);
+    map[flutter::EncodableValue("windowsPresentationCrossAdapterRequired")] =
+        flutter::EncodableValue(presentation_policy.cross_adapter_required);
     map[flutter::EncodableValue("windowsPresentationBackend")] =
         flutter::EncodableValue(presentation.backend);
     map[flutter::EncodableValue("windowsPresentationTargetFormat")] =

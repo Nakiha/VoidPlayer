@@ -46,7 +46,12 @@ WindowsPresentationPolicy resolve_windows_presentation_policy(
             return policy;
         }
         if (!display.matches_presentation_adapter) {
-            policy.reason = "auto-hdr-adapter-mismatch";
+            policy.mode = "native-compositor-scrgb";
+            policy.desired_mode = policy.mode;
+            policy.reason = "auto-hdr-cross-adapter";
+            policy.hdr_output_requested = true;
+            policy.cross_adapter_required = true;
+            policy.cross_adapter_migration_requested = true;
             return policy;
         }
         policy.mode = "native-compositor-scrgb";
@@ -102,6 +107,10 @@ WindowsPresentationPolicy resolve_windows_presentation_policy(
         policy.fp16_scrgb_requested = true;
         policy.native_compositor_requested = true;
         policy.hdr_output_requested = true;
+        policy.cross_adapter_required =
+            display.output_resolved && !display.matches_presentation_adapter;
+        policy.cross_adapter_migration_requested =
+            policy.cross_adapter_required;
         return policy;
     }
 

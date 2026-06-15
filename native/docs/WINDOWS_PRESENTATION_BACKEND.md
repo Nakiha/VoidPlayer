@@ -20,10 +20,13 @@ shared RendererDrawSnapshot
 ```
 
 SDR-only sessions use `native-compositor-sdr`. A session containing an active
-PQ/HLG track promotes to `native-compositor-scrgb` only when the selected DXGI
-output explicitly reports HDR and its adapter LUID matches the presentation
-adapter. The runner obtains Flutter's DXGI adapter and passes it into the native
-renderer so shared handles remain on the same adapter family. Hosted CI may
+PQ/HLG track promotes to `native-compositor-scrgb` when the selected DXGI output
+explicitly reports HDR. Matching adapters stay on the producer device. Adapter
+mismatch requests an output-device migration; if cross-adapter BGRA transport is
+not available the policy falls back to native SDR, and if FP16 transport is not
+available the migrated output also stays SDR. The runner obtains Flutter's DXGI
+adapter and the resolved output adapter and passes both into the native
+compositor. Hosted CI may
 explicitly enable
 `VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1`; that is launch/contract
 coverage, not release evidence for a desktop GPU.
@@ -76,6 +79,15 @@ video/source/Flutter inputs, Present it, then atomically replace the DComp
 visual content. HDR candidate failure falls back to native SDR; only failure of
 the SDR compositor restores Flutter Texture SDR.
 
+If the active output belongs to a different adapter, the renderer and Flutter
+export remain on the producer adapter while `WindowsNativeCompositor` recreates
+its D3D/DComp device on the output adapter. `D3D11CrossAdapterTextureTransport`
+bridges immutable input leases through row-major shared NT-handle textures and
+GPU copies into output-local SRVs. The current synchronization path waits on a
+producer event query; shared-fence capability is diagnosed separately and is not
+required for the product fallback contract. The transport never reads pixels
+back to the CPU and does not change color transforms.
+
 Once Dart publishes a valid projection signature, D3D11 also maintains an
 atomic source-resolution bundle with up to four FP16 scRGB textures. The render
 thread draws every active source from the same prepared frame snapshot, then
@@ -107,6 +119,9 @@ chain. It is not the current Flutter product presentation route.
   `native-compositor-scrgb`.
 - `D3D11SharedSourceCacheRing` owns atomic source-texture bundles, generation
   retirement, the 384 MiB depth policy, and overlay-package attachment.
+- `D3D11CrossAdapterTextureTransport` owns row-major shared bridge textures,
+  producer-to-bridge and bridge-to-output GPU copies, capability reporting, and
+  copy/backpressure diagnostics for cross-adapter compositor inputs.
 - `FlutterTextureBridge` owns Flutter texture registration and lease release.
 - The engine fork owns immutable Flutter surface leases. Old resize
   generations remain alive until their leases are released.
@@ -151,6 +166,9 @@ shared scheduler.
 - There is no generic libswscale/libyuv fallback.
 - No HDR10 swap chain or `SetHDRMetaData` call is used; DWM maps scRGB to the
   active Advanced Color output.
+- Windows display calibration is system-managed through Advanced Color. The
+  player records the reported mode, primaries, white point, and SDR white level
+  but does not apply custom ICC/LUT correction or subjective display tuning.
 
 `windows_d3d11_color_layout_parity_smoke` captures real D3D11 output and checks
 BGRA channel order, NV12, planar YUV420, P010, odd dimensions/padded stride,
@@ -174,6 +192,10 @@ and unchanged BGRA compatibility output.
 | `windowsPresentationOutputGeneration` | Successfully committed output generation |
 | `windowsPresentationHDRPromotionCount/DemotionCount` | Runtime target transitions |
 | `windowsPresentationTargetFallbackCount` | HDR candidates that fell back to native SDR |
+| `windowsPresentationCrossAdapterRequired` | Current policy requires output-adapter migration |
+| `windowsPresentationProducerAdapterLuid/OutputAdapterLuid/PendingOutputAdapterLuid` | Producer, committed output, and pending output adapter identities |
+| `windowsPresentationCrossAdapterSupported/Active` | Cross-adapter transport availability and active route |
+| `windowsPresentationOutputMigrationCount/OutputMigrationFailureCount` | Runtime output-device migration evidence |
 | `windowsPresentationLockedDisplayGeneration/LockedSDRWhiteLevelMilliNits` | Inputs locked to the current target generation |
 | `windowsPresentationBackend` | `d3d11` |
 | `windowsPresentationTargetFormat` | `B8G8R8A8_UNORM` |
@@ -191,6 +213,7 @@ and unchanged BGRA compatibility output.
 | `windowsNativeCompositorStateSerial/AckSerial` | Flutter alpha-hole handshake serials |
 | `windowsFlutterExportGeneration/windowsVideoRingGeneration` | Latest consumed input generations |
 | `windowsDComp*` | Swap-chain format/color space/support, SDR tone-map state, and composite/present/drop/failure counters |
+| `windowsCrossAdapter*` | Transport mode/status, format support, sync kind, copy counters, consumed generations, and last error |
 | `nativeCompositorSource*` | Projection/cache activity, generation, bytes, rates, and overlay primitive counts |
 | `windowsSourceCache*` | Format, depth/frozen policy, publish/backpressure/consume/fallback counters |
 | `windowsD3DAdapter*` | Description, vendor/device IDs, and LUID |
@@ -203,7 +226,8 @@ rectangle on every diagnostics query. It selects the attached output with the
 greatest intersection, then falls back to the nearest monitor or first attached
 output. `windowsDisplay*` fields report the selected output, adapter LUID,
 desktop geometry, rotation, bits per color, DXGI color space, luminance
-metadata, current SDR white level, and probe generation/change reason.
+metadata, current SDR white level, Advanced Color API/mode, calibration source,
+reported primaries/white point, and probe generation/change reason.
 
 `windowsDisplayHDRActive=true` only means DXGI explicitly reported a PQ or HLG
 HDR color space. A normal SDR color space is reported as
@@ -226,9 +250,10 @@ and fallback reason.
 
 ## Catch-Up Roadmap
 
-1. Add cross-adapter/output D3D device migration and display calibration.
-2. Evaluate runtime target rebuild across adapter boundaries without mixing
-   old white-level or source generations.
+1. Harden Windows device-loss in-place recovery for compositor, source cache,
+   Flutter export, and transport resources.
+2. Evaluate optional shared-fence transport once multi-adapter hardware evidence
+   proves it improves copy latency over the event-query bridge.
 
 This sequence is capability parity with macOS, not a mechanical Metal/Swift
 port.

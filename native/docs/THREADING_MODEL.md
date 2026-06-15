@@ -187,22 +187,30 @@ Flutter consumers obtain an AddRef'ed shared texture snapshot through
 `acquire_shared_texture()`. They must not cache native texture pointers that were
 not leased through that API.
 
-The Windows DComp route uses independent devices for the renderer, Flutter
-exporter, and final compositor. Shared BGRA/FP16 slots cross those boundaries
-only through NT handles, keyed mutex keys, generation-stamped leases, and
-explicit release. Resize creates a new ring generation; an old generation
-cannot be destroyed until every consumer lease is returned. Flutter state ACKs
-are post-frame commits: activation publishes `active` after the transparent
-viewport ACK, while fallback teardown is queued to the composition thread after
-the restored-Texture ACK.
+The Windows DComp route uses independent producer/exporter devices and a
+runner-owned final compositor device. On a matching adapter, shared BGRA/FP16
+slots cross those boundaries only through NT handles, keyed mutex keys,
+generation-stamped leases, and explicit release. On an output-adapter mismatch,
+the producer renderer and Flutter exporter remain on their original adapter;
+the composition thread recreates only the final D3D/DComp device on the output
+adapter and bridges each immutable lease through row-major shared textures plus
+GPU copies into output-local SRVs. The current bridge waits for producer copies
+with a D3D11 event query; shared-fence capability is diagnosed separately and is
+not part of the lock contract. Resize creates a new ring generation; an old
+generation cannot be destroyed until every consumer lease is returned. Flutter
+state ACKs are post-frame commits: activation publishes `active` after the
+transparent viewport ACK, while fallback teardown is queued to the composition
+thread after the restored-Texture ACK.
 
 The platform thread receives `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`, `WM_MOVE`,
 `WM_EXITSIZEMOVE`, and `WM_DPICHANGED`, coalesces them with a short timer, then
 runs the same display/presentation resolver used by diagnostics and track
 mutations. The composition thread builds a candidate SDR or scRGB swap chain,
-waits for video/source generations rendered with the new white level, Presents
-the candidate, and only then commits it to the DComp visual. Existing
-source/Flutter leases remain valid during this transition.
+waits for video/source generations rendered with the new white level, migrates
+the output device when the resolved output adapter changes, Presents the
+candidate, and only then commits it to the DComp visual. Existing source/Flutter
+leases remain valid during this transition; cross-adapter transport failure
+falls back to producer-adapter native SDR before restoring Flutter Texture SDR.
 
 Source-cache clear and signature replacement stop new acquisition immediately.
 Any generation already leased by DComp remains in the retired set until release.

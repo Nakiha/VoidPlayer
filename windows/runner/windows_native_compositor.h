@@ -2,6 +2,7 @@
 
 #include "windows/d3d11/shared_fp16_ring.h"
 #include "windows/d3d11/shared_source_cache_ring.h"
+#include "windows/d3d11/cross_adapter_transport.h"
 #include "windows/presentation/windows_dcomp_composite.h"
 #include "windows/player/native_player.h"
 
@@ -46,13 +47,32 @@ public:
         std::string transition_reason = "initial";
         std::string swap_chain_format = "B8G8R8A8_UNORM";
         std::string color_space = "RGB_FULL_G22_NONE_P709";
+        std::string producer_adapter_luid = "0:0";
+        std::string output_adapter_luid = "0:0";
+        std::string pending_output_adapter_luid = "0:0";
+        std::string cross_adapter_transport_mode = "same-adapter";
+        std::string cross_adapter_transport_status = "not-required";
+        std::string cross_adapter_sync_kind = "keyed-mutex";
+        std::string cross_adapter_last_error = "none";
         uint64_t state_serial = 0;
         uint64_t ack_serial = 0;
         uint64_t transition_serial = 0;
         uint64_t output_generation = 0;
+        uint64_t output_migration_count = 0;
+        uint64_t output_migration_failure_count = 0;
         uint64_t hdr_promotion_count = 0;
         uint64_t hdr_demotion_count = 0;
         uint64_t target_fallback_count = 0;
+        uint64_t transport_generation = 0;
+        uint64_t transport_copy_count = 0;
+        uint64_t transport_copy_bytes = 0;
+        uint64_t transport_fence_wait_count = 0;
+        uint64_t transport_timeout_count = 0;
+        uint64_t transport_last_copy_us = 0;
+        uint64_t transport_total_copy_us = 0;
+        uint64_t flutter_transport_generation = 0;
+        uint64_t video_transport_generation = 0;
+        uint64_t source_transport_generation = 0;
         uint64_t flutter_generation = 0;
         uint64_t video_generation = 0;
         uint64_t composite_count = 0;
@@ -80,6 +100,11 @@ public:
         bool swap_chain_active = false;
         bool color_space_supported = false;
         bool sdr_tone_map_active = true;
+        bool cross_adapter_required = false;
+        bool cross_adapter_supported = false;
+        bool transport_bgra8_supported = false;
+        bool transport_fp16_supported = false;
+        bool transport_shared_fence_supported = false;
         bool source_projection_enabled = false;
         bool source_cache_active = false;
     };
@@ -93,7 +118,8 @@ public:
     bool Start(HWND hwnd,
                void* flutter_view,
                const std::shared_ptr<vr::NativePlayer>& player,
-               IDXGIAdapter* adapter,
+               IDXGIAdapter* producer_adapter,
+               IDXGIAdapter* output_adapter,
                double sdr_white_level_nits,
                OutputTarget output_target,
                StateCallback callback);
@@ -105,6 +131,7 @@ public:
     void SetSourceCacheError(const std::string& error);
     void NotifySourceCachePublished();
     void RequestOutputTarget(OutputTarget target,
+                             IDXGIAdapter* output_adapter,
                              double sdr_white_level_nits,
                              uint64_t display_generation,
                              const std::string& reason);
@@ -157,7 +184,8 @@ private:
     static void OnFlutterSurfacePublished(
         void* view, uint64_t generation, void* user_data);
     bool LoadEngineApi();
-    bool InitializeDeviceAndComposition(IDXGIAdapter* adapter);
+    bool InitializeDeviceAndComposition(IDXGIAdapter* producer_adapter,
+                                        IDXGIAdapter* output_adapter);
     bool CreateSwapChainCandidate(uint32_t width,
                                   uint32_t height,
                                   OutputTarget target,
@@ -177,6 +205,19 @@ private:
     void SignalWork();
     void EnterFallback(const std::string& reason);
     void PublishState(Phase phase, const std::string& reason);
+    bool EnsureProducerDevice(IDXGIAdapter* producer_adapter);
+    bool SetOutputAdapterLocked(IDXGIAdapter* output_adapter);
+    bool IsCrossAdapterActive() const;
+    bool OpenInputTexture(ID3D11Device1* device1,
+                          HANDLE handle,
+                          ID3D11Texture2D** texture) const;
+    bool TransportInput(ID3D11Texture2D* producer_texture,
+                        DXGI_FORMAT format,
+                        uint32_t width,
+                        uint32_t height,
+                        vr::D3D11CrossAdapterTextureTransport& transport,
+                        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv);
+    void UpdateTransportDiagnosticsLocked();
     static const char* PhaseName(Phase phase);
     static const char* OutputTargetName(OutputTarget target);
     static const char* OutputFormatName(OutputTarget target);
@@ -187,11 +228,23 @@ private:
     std::weak_ptr<vr::NativePlayer> player_;
     std::atomic<double> sdr_white_scale_{1.0};
     uint64_t locked_display_generation_ = 0;
+    int32_t producer_luid_high_ = 0;
+    uint32_t producer_luid_low_ = 0;
+    int32_t output_luid_high_ = 0;
+    uint32_t output_luid_low_ = 0;
+    int32_t pending_output_luid_high_ = 0;
+    uint32_t pending_output_luid_low_ = 0;
     EngineApi engine_api_;
     StateCallback state_callback_;
 
     Microsoft::WRL::ComPtr<ID3D11Device> device_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
+    Microsoft::WRL::ComPtr<ID3D11Device> producer_device_;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> producer_context_;
+    Microsoft::WRL::ComPtr<IDXGIAdapter> producer_adapter_;
+    Microsoft::WRL::ComPtr<IDXGIAdapter> output_adapter_;
+    Microsoft::WRL::ComPtr<IDXGIAdapter> pending_output_adapter_;
+    vr::WindowsCrossAdapterTransportSupport transport_support_;
     SwapChainResources current_swap_chain_;
     SwapChainResources pending_swap_chain_;
     Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device_;
@@ -214,17 +267,20 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Texture2D> held_video_texture_;
     Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_video_mutex_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_video_srv_;
+    vr::D3D11CrossAdapterTextureTransport video_transport_;
 
     bool held_sdr_video_valid_ = false;
     vr::SharedTextureSnapshot held_sdr_video_;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> held_sdr_video_texture_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_sdr_video_srv_;
+    vr::D3D11CrossAdapterTextureTransport sdr_video_transport_;
 
     bool held_flutter_valid_ = false;
     FlutterSurface held_flutter_;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> held_flutter_texture_;
     Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_flutter_mutex_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_flutter_srv_;
+    vr::D3D11CrossAdapterTextureTransport flutter_transport_;
 
     bool held_source_valid_ = false;
     vr::SharedSourceCacheBundleSnapshot held_source_;
@@ -236,6 +292,7 @@ private:
         held_source_srvs_;
     std::array<bool, 4> held_source_present_{};
     std::array<int, 4> held_source_transfer_{};
+    std::array<vr::D3D11CrossAdapterTextureTransport, 4> source_transports_;
 
     mutable std::mutex mutex_;
     std::condition_variable wake_;

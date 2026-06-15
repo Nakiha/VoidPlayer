@@ -79,8 +79,11 @@ TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
     display.matches_presentation_adapter = false;
     const auto mismatch =
         vr::resolve_windows_presentation_policy("auto", true, display);
-    REQUIRE(mismatch.mode == "native-compositor-sdr");
-    REQUIRE(mismatch.reason == "auto-hdr-adapter-mismatch");
+    REQUIRE(mismatch.mode == "native-compositor-scrgb");
+    REQUIRE(mismatch.reason == "auto-hdr-cross-adapter");
+    REQUIRE(mismatch.hdr_output_requested);
+    REQUIRE(mismatch.cross_adapter_required);
+    REQUIRE(mismatch.cross_adapter_migration_requested);
 
     display.output_resolved = false;
     const auto transient =
@@ -120,6 +123,20 @@ TEST_CASE("Windows presentation policy accepts native compositor scRGB opt-in",
     REQUIRE(policy.native_compositor_requested);
     REQUIRE(policy.hdr_output_requested);
     REQUIRE(policy.fallback_reason == "none");
+}
+
+TEST_CASE("Windows forced scRGB records cross adapter migration need",
+          "[windows_presentation][windows_dcomp]") {
+    vr::WindowsDisplayProbeResult display;
+    display.output_resolved = true;
+    display.matches_presentation_adapter = false;
+
+    const auto policy = vr::resolve_windows_presentation_policy(
+        "native-compositor-scrgb", true, display);
+
+    REQUIRE(policy.mode == "native-compositor-scrgb");
+    REQUIRE(policy.cross_adapter_required);
+    REQUIRE(policy.cross_adapter_migration_requested);
 }
 
 TEST_CASE("Windows presentation policy supports forced native SDR",

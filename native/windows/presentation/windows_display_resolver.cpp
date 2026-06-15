@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cwchar>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -18,6 +20,11 @@ struct EnumeratedOutput {
     ComPtr<IDXGIOutput> output;
     DXGI_ADAPTER_DESC1 adapter_desc = {};
 };
+
+std::string luid_string(const LUID& luid) {
+    return std::to_string(luid.HighPart) + ":" +
+           std::to_string(luid.LowPart);
+}
 
 uint64_t intersection_area(
     const WindowsDisplayRect& lhs,
@@ -134,11 +141,139 @@ bool query_sdr_white_level(
     return false;
 }
 
+std::string advanced_color_mode_name(int mode) {
+#ifdef DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2
+    switch (mode) {
+    case DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR:
+        return "sdr";
+    case DISPLAYCONFIG_ADVANCED_COLOR_MODE_WCG:
+        return "wcg";
+    case DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR:
+        return "hdr";
+    default:
+        break;
+    }
+#endif
+    return "unknown-" + std::to_string(mode);
+}
+
+bool query_advanced_color_info(
+    const wchar_t* gdi_device_name,
+    WindowsDisplayProbeResult& result) {
+    if (!gdi_device_name || gdi_device_name[0] == L'\0') {
+        return false;
+    }
+
+    UINT32 path_count = 0;
+    UINT32 mode_count = 0;
+    LONG status = GetDisplayConfigBufferSizes(
+        QDC_ONLY_ACTIVE_PATHS, &path_count, &mode_count);
+    if (status != ERROR_SUCCESS || path_count == 0) {
+        return false;
+    }
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths(path_count);
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes(mode_count);
+    status = QueryDisplayConfig(
+        QDC_ONLY_ACTIVE_PATHS,
+        &path_count,
+        paths.data(),
+        &mode_count,
+        modes.data(),
+        nullptr);
+    if (status != ERROR_SUCCESS) {
+        return false;
+    }
+    paths.resize(path_count);
+
+    for (const auto& path : paths) {
+        DISPLAYCONFIG_SOURCE_DEVICE_NAME source = {};
+        source.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+        source.header.size = sizeof(source);
+        source.header.adapterId = path.sourceInfo.adapterId;
+        source.header.id = path.sourceInfo.id;
+        if (DisplayConfigGetDeviceInfo(&source.header) != ERROR_SUCCESS ||
+            _wcsicmp(source.viewGdiDeviceName, gdi_device_name) != 0) {
+            continue;
+        }
+
+#ifdef DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2
+        DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 info2 = {};
+        info2.header.type =
+            DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2;
+        info2.header.size = sizeof(info2);
+        info2.header.adapterId = path.targetInfo.adapterId;
+        info2.header.id = path.targetInfo.id;
+        if (DisplayConfigGetDeviceInfo(&info2.header) == ERROR_SUCCESS) {
+            result.advanced_color_api = "displayconfig-info2";
+            result.advanced_color_supported =
+                info2.advancedColorSupported != 0;
+            result.advanced_color_active =
+                info2.advancedColorActive != 0;
+            result.advanced_color_limited_by_policy =
+                info2.advancedColorLimitedByPolicy != 0;
+            result.high_dynamic_range_supported =
+                info2.highDynamicRangeSupported != 0;
+            result.high_dynamic_range_user_enabled =
+                info2.highDynamicRangeUserEnabled != 0;
+            result.wide_color_supported = info2.wideColorSupported != 0;
+            result.wide_color_user_enabled =
+                info2.wideColorUserEnabled != 0;
+            result.bits_per_color = info2.bitsPerColorChannel > 0
+                ? info2.bitsPerColorChannel
+                : result.bits_per_color;
+            result.advanced_color_mode =
+                advanced_color_mode_name(info2.activeColorMode);
+            if (result.advanced_color_active) {
+                result.calibration_mode = "advanced-color-system";
+                result.calibration_source = "windows-color-system";
+            } else {
+                result.calibration_mode = "legacy-srgb-assumed";
+                result.calibration_source = "none";
+            }
+            return true;
+        }
+#endif
+
+        DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO info = {};
+        info.header.type =
+            DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO;
+        info.header.size = sizeof(info);
+        info.header.adapterId = path.targetInfo.adapterId;
+        info.header.id = path.targetInfo.id;
+        if (DisplayConfigGetDeviceInfo(&info.header) == ERROR_SUCCESS) {
+            result.advanced_color_api = "displayconfig-info1";
+            result.advanced_color_supported =
+                info.advancedColorSupported != 0;
+            result.advanced_color_active =
+                info.advancedColorEnabled != 0;
+            result.advanced_color_limited_by_policy =
+                info.advancedColorForceDisabled != 0;
+            result.wide_color_supported = info.wideColorEnforced != 0;
+            result.wide_color_user_enabled = info.wideColorEnforced != 0;
+            result.bits_per_color = info.bitsPerColorChannel > 0
+                ? info.bitsPerColorChannel
+                : result.bits_per_color;
+            result.advanced_color_mode =
+                result.advanced_color_active ? "advanced-color" : "sdr";
+            if (result.advanced_color_active) {
+                result.calibration_mode = "advanced-color-system";
+                result.calibration_source = "windows-color-system";
+            } else {
+                result.calibration_mode = "legacy-srgb-assumed";
+                result.calibration_source = "none";
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 bool output_identity_changed(
     const WindowsDisplayProbeResult& previous,
     const WindowsDisplayProbeResult& current) {
     return previous.output_resolved != current.output_resolved ||
            previous.device_name != current.device_name ||
+           previous.output_identity != current.output_identity ||
            previous.adapter_luid_high != current.adapter_luid_high ||
            previous.adapter_luid_low != current.adapter_luid_low ||
            previous.matches_presentation_adapter !=
@@ -162,7 +297,15 @@ bool color_state_changed(
                current.max_full_frame_luminance_milli_nits ||
            previous.sdr_white_level_status != current.sdr_white_level_status ||
            previous.sdr_white_level_milli_nits !=
-               current.sdr_white_level_milli_nits;
+               current.sdr_white_level_milli_nits ||
+           previous.advanced_color_api != current.advanced_color_api ||
+           previous.advanced_color_mode != current.advanced_color_mode ||
+           previous.calibration_mode != current.calibration_mode ||
+           previous.advanced_color_active != current.advanced_color_active ||
+           previous.high_dynamic_range_user_enabled !=
+               current.high_dynamic_range_user_enabled ||
+           previous.wide_color_user_enabled !=
+               current.wide_color_user_enabled;
 }
 
 bool output_geometry_changed(
@@ -445,6 +588,12 @@ WindowsDisplayProbeResult WindowsDisplayResolver::Probe(
         utf8_from_wide(selected.adapter_desc.Description);
     result.adapter_luid_high = selected.adapter_desc.AdapterLuid.HighPart;
     result.adapter_luid_low = selected.adapter_desc.AdapterLuid.LowPart;
+    result.adapter_index = selected.candidate.adapter_index;
+    result.output_index = selected.candidate.output_index;
+    result.output_identity =
+        luid_string(selected.adapter_desc.AdapterLuid) + "/" +
+        std::to_string(selected.candidate.output_index) + "/" +
+        std::to_string(selected.candidate.monitor_id);
     result.desktop_left = selected.candidate.desktop_rect.left;
     result.desktop_top = selected.candidate.desktop_rect.top;
     result.desktop_width =
@@ -490,6 +639,31 @@ WindowsDisplayProbeResult WindowsDisplayResolver::Probe(
         luminance_to_milli_nits(output_desc1.MaxLuminance);
     result.max_full_frame_luminance_milli_nits =
         luminance_to_milli_nits(output_desc1.MaxFullFrameLuminance);
+    result.red_primary_x =
+        static_cast<int64_t>(std::llround(output_desc1.RedPrimary[0] * 1000000.0f));
+    result.red_primary_y =
+        static_cast<int64_t>(std::llround(output_desc1.RedPrimary[1] * 1000000.0f));
+    result.green_primary_x =
+        static_cast<int64_t>(std::llround(output_desc1.GreenPrimary[0] * 1000000.0f));
+    result.green_primary_y =
+        static_cast<int64_t>(std::llround(output_desc1.GreenPrimary[1] * 1000000.0f));
+    result.blue_primary_x =
+        static_cast<int64_t>(std::llround(output_desc1.BluePrimary[0] * 1000000.0f));
+    result.blue_primary_y =
+        static_cast<int64_t>(std::llround(output_desc1.BluePrimary[1] * 1000000.0f));
+    result.white_point_x =
+        static_cast<int64_t>(std::llround(output_desc1.WhitePoint[0] * 1000000.0f));
+    result.white_point_y =
+        static_cast<int64_t>(std::llround(output_desc1.WhitePoint[1] * 1000000.0f));
+    if (!query_advanced_color_info(output_desc1.DeviceName, result)) {
+        result.advanced_color_api = "dxgi-output6";
+        result.advanced_color_mode = result.hdr_active ? "hdr" : "unknown";
+        result.calibration_mode =
+            result.hdr_active ? "advanced-color-system"
+                              : "legacy-srgb-assumed";
+        result.calibration_source =
+            result.hdr_active ? "dxgi-output6" : "none";
+    }
     if (result.hdr_active) {
         uint32_t raw_white_level = 0;
         if (query_sdr_white_level(
@@ -500,6 +674,42 @@ WindowsDisplayProbeResult WindowsDisplayResolver::Probe(
         }
     }
     return result;
+}
+
+bool WindowsDisplayResolver::OpenAdapterForProbe(
+    const WindowsDisplayProbeResult& probe,
+    IDXGIAdapter** adapter_out) const {
+    if (!adapter_out) {
+        return false;
+    }
+    *adapter_out = nullptr;
+    if (!probe.output_resolved) {
+        return false;
+    }
+
+    ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+        return false;
+    }
+    for (UINT adapter_index = 0;; ++adapter_index) {
+        ComPtr<IDXGIAdapter1> adapter;
+        const HRESULT hr = factory->EnumAdapters1(adapter_index, &adapter);
+        if (hr == DXGI_ERROR_NOT_FOUND) {
+            return false;
+        }
+        if (FAILED(hr) || !adapter) {
+            continue;
+        }
+        DXGI_ADAPTER_DESC1 desc = {};
+        if (FAILED(adapter->GetDesc1(&desc))) {
+            continue;
+        }
+        if (desc.AdapterLuid.HighPart == probe.adapter_luid_high &&
+            desc.AdapterLuid.LowPart == probe.adapter_luid_low) {
+            *adapter_out = adapter.Detach();
+            return true;
+        }
+    }
 }
 
 WindowsDisplayProbeSnapshot WindowsDisplayProbeTracker::Update(

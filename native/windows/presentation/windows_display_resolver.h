@@ -58,11 +58,16 @@ int64_t windows_sdr_white_level_milli_nits(uint32_t raw_white_level);
 struct WindowsDisplayProbeResult {
     std::string status = "unprobed";
     std::string selection_reason = "none";
+    std::string output_identity;
     std::string device_name;
     std::string adapter_description;
     std::string rotation = "unspecified";
     std::string color_space = "unavailable";
     std::string advanced_color_state = "unavailable";
+    std::string advanced_color_api = "unavailable";
+    std::string advanced_color_mode = "unavailable";
+    std::string calibration_mode = "unavailable";
+    std::string calibration_source = "unavailable";
     int64_t desktop_left = 0;
     int64_t desktop_top = 0;
     int64_t desktop_width = 0;
@@ -73,13 +78,30 @@ struct WindowsDisplayProbeResult {
     int64_t max_luminance_milli_nits = 0;
     int64_t max_full_frame_luminance_milli_nits = 0;
     int64_t sdr_white_level_milli_nits = 80000;
+    int64_t red_primary_x = 0;
+    int64_t red_primary_y = 0;
+    int64_t green_primary_x = 0;
+    int64_t green_primary_y = 0;
+    int64_t blue_primary_x = 0;
+    int64_t blue_primary_y = 0;
+    int64_t white_point_x = 0;
+    int64_t white_point_y = 0;
     std::string sdr_white_level_status = "nominal-default";
     int32_t adapter_luid_high = 0;
     uint32_t adapter_luid_low = 0;
+    uint32_t adapter_index = 0;
+    uint32_t output_index = 0;
     bool output_resolved = false;
     bool color_metadata_available = false;
     bool matches_presentation_adapter = false;
     bool hdr_active = false;
+    bool advanced_color_supported = false;
+    bool advanced_color_active = false;
+    bool advanced_color_limited_by_policy = false;
+    bool high_dynamic_range_supported = false;
+    bool high_dynamic_range_user_enabled = false;
+    bool wide_color_supported = false;
+    bool wide_color_user_enabled = false;
 };
 
 class WindowsDisplayResolver {
@@ -87,6 +109,9 @@ public:
     WindowsDisplayProbeResult Probe(
         HWND window,
         IDXGIAdapter* presentation_adapter) const;
+    bool OpenAdapterForProbe(
+        const WindowsDisplayProbeResult& probe,
+        IDXGIAdapter** adapter_out) const;
 };
 
 struct WindowsDisplayProbeSnapshot {

@@ -14,14 +14,16 @@
 - 提供 `video_renderer/events` EventChannel 和 native 诊断桥接
 - 按主窗口与 DXGI output 的最大交集探测当前显示器、color space 和亮度元数据
 - 默认解析 Windows Auto presentation：SDR-only 使用 BGRA8 native
-  compositor，PQ/HLG + 匹配 HDR output 使用 FP16 scRGB；保留
-  `sdr`、`fp16-scrgb`、`native-compositor-sdr` 和
-  `native-compositor-scrgb` 强制诊断模式
+  compositor，PQ/HLG + HDR output 使用 FP16 scRGB；output adapter 不匹配时
+  通过 native compositor 迁移输出设备并使用 cross-adapter GPU-copy bridge，
+  不能桥接时可诊断降级到 native SDR；保留 `sdr`、`fp16-scrgb`、
+  `native-compositor-sdr` 和 `native-compositor-scrgb` 强制诊断模式
 - 监听 display/settings/move/DPI 变化并刷新 output、SDR white level 与
   DComp target，不重建 player
 - 将 native DX11 shared texture 暴露给 Flutter Texture widget
 - 在 compositor opt-in 下消费 Flutter engine 导出的完整 alpha surface，
-  与共享 FP16 video ring 合成到同一 DComp swap chain
+  与共享 FP16 video ring 合成到同一 DComp swap chain；跨 adapter 时只迁移
+  final compositor/output device，不迁移 renderer/decoder producer device
 - 通过既有 source-projection MethodChannel 校验 projection/signature，并让
   DComp 对最多四轨 source-resolution FP16 bundle 实时执行 pan/zoom/split
 - 引入 native C++ renderer 构建产物和 Windows 运行时依赖
@@ -59,6 +61,10 @@ windows/
 - source cache 纹理创建、384 MiB budget、bundle generation/lease 和 source
   pass 属于 D3D11 backend；runner 只校验 wire 参数、维护 signature，并在
   composition thread 消费原子 bundle。
+- cross-adapter transport 属于 Windows D3D11/native compositor 边界；runner
+  只传递 producer/output adapter、刷新 display capability，并发布诊断。
+  禁止用 CPU readback、窗口截图或私有 ICC/LUT 替代 GPU-copy bridge 和系统
+  Advanced Color 校准。
 - 默认 Auto 与所有 native-compositor 模式必须使用锁定的 VoidPlayer
   Flutter local engine；
   普通 Flutter SDK 缺少 surface-export ABI，启动时只能诊断性回落。

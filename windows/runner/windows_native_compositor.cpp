@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <sstream>
 
 namespace {
 
@@ -55,6 +56,25 @@ float srgb_to_linear(float value) {
         : std::pow((value + 0.055f) / 1.055f, 2.4f);
 }
 
+bool adapter_luid(IDXGIAdapter* adapter, int32_t& high, uint32_t& low) {
+    high = 0;
+    low = 0;
+    if (!adapter) {
+        return false;
+    }
+    DXGI_ADAPTER_DESC desc = {};
+    if (FAILED(adapter->GetDesc(&desc))) {
+        return false;
+    }
+    high = desc.AdapterLuid.HighPart;
+    low = desc.AdapterLuid.LowPart;
+    return true;
+}
+
+std::string luid_string(int32_t high, uint32_t low) {
+    return std::to_string(high) + ":" + std::to_string(low);
+}
+
 } // namespace
 
 WindowsNativeCompositor::WindowsNativeCompositor() = default;
@@ -67,7 +87,8 @@ bool WindowsNativeCompositor::Start(
     HWND hwnd,
     void* flutter_view,
     const std::shared_ptr<vr::NativePlayer>& player,
-    IDXGIAdapter* adapter,
+    IDXGIAdapter* producer_adapter,
+    IDXGIAdapter* output_adapter,
     double sdr_white_level_nits,
     OutputTarget output_target,
     StateCallback callback) {
@@ -93,7 +114,10 @@ bool WindowsNativeCompositor::Start(
         diagnostics_.fallback_reason = "flutter-surface-export-unavailable";
         return false;
     }
-    if (!InitializeDeviceAndComposition(adapter) || !CreatePipeline()) {
+    if (!InitializeDeviceAndComposition(
+            producer_adapter,
+            output_adapter ? output_adapter : producer_adapter) ||
+        !CreatePipeline()) {
         diagnostics_.fallback_reason = "dcomp-initialization-failed";
         return false;
     }
@@ -121,6 +145,27 @@ bool WindowsNativeCompositor::Start(
         diagnostics_.desired_output_target =
             OutputTargetName(output_target);
         diagnostics_.transition_reason = "initial";
+        diagnostics_.producer_adapter_luid =
+            luid_string(producer_luid_high_, producer_luid_low_);
+        diagnostics_.output_adapter_luid =
+            luid_string(output_luid_high_, output_luid_low_);
+        diagnostics_.pending_output_adapter_luid =
+            diagnostics_.output_adapter_luid;
+        diagnostics_.cross_adapter_required = IsCrossAdapterActive();
+        diagnostics_.cross_adapter_transport_mode =
+            IsCrossAdapterActive() ? "row-major-gpu-copy" : "same-adapter";
+        diagnostics_.cross_adapter_transport_status =
+            IsCrossAdapterActive() ? transport_support_.status
+                                   : "not-required";
+        diagnostics_.cross_adapter_sync_kind =
+            IsCrossAdapterActive() ? transport_support_.sync_kind
+                                   : "keyed-mutex";
+        diagnostics_.cross_adapter_supported =
+            !IsCrossAdapterActive() || transport_support_.bgra8;
+        diagnostics_.transport_bgra8_supported = transport_support_.bgra8;
+        diagnostics_.transport_fp16_supported = transport_support_.rgba16f;
+        diagnostics_.transport_shared_fence_supported =
+            transport_support_.shared_fence;
     }
     thread_ = std::thread(&WindowsNativeCompositor::ThreadMain, this);
     return true;
@@ -178,6 +223,17 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     vertex_shader_.Reset();
     context_.Reset();
     device_.Reset();
+    producer_context_.Reset();
+    producer_device_.Reset();
+    producer_adapter_.Reset();
+    output_adapter_.Reset();
+    pending_output_adapter_.Reset();
+    video_transport_.reset();
+    sdr_video_transport_.reset();
+    flutter_transport_.reset();
+    for (auto& transport : source_transports_) {
+        transport.reset();
+    }
     flutter_view_ = nullptr;
     hwnd_ = nullptr;
     player_.reset();
@@ -333,23 +389,40 @@ void WindowsNativeCompositor::NotifySourceCachePublished() {
 
 void WindowsNativeCompositor::RequestOutputTarget(
     OutputTarget target,
+    IDXGIAdapter* output_adapter,
     double sdr_white_level_nits,
     uint64_t display_generation,
     const std::string& reason) {
     std::lock_guard<std::mutex> lock(mutex_);
+    int32_t next_output_high = output_luid_high_;
+    uint32_t next_output_low = output_luid_low_;
+    if (output_adapter) {
+        (void)adapter_luid(output_adapter, next_output_high, next_output_low);
+    }
     const double next_scale =
         std::isfinite(sdr_white_level_nits) &&
                 sdr_white_level_nits > 0.0
             ? sdr_white_level_nits / 80.0
             : 1.0;
     const bool target_changed = target != desired_output_target_;
+    const bool adapter_changed =
+        !vr::windows_luid_equal(
+            next_output_high, next_output_low,
+            output_luid_high_, output_luid_low_);
     const bool white_changed =
         std::abs(
             next_scale -
             sdr_white_scale_.load(std::memory_order_relaxed)) > 0.0001;
-    if (!target_changed && !white_changed &&
+    if (!target_changed && !white_changed && !adapter_changed &&
         display_generation == locked_display_generation_) {
         return;
+    }
+    if (adapter_changed && output_adapter) {
+        pending_output_adapter_ = output_adapter;
+        pending_output_luid_high_ = next_output_high;
+        pending_output_luid_low_ = next_output_low;
+        diagnostics_.pending_output_adapter_luid =
+            luid_string(pending_output_luid_high_, pending_output_luid_low_);
     }
     desired_output_target_ = target;
     sdr_white_scale_ = next_scale;
@@ -454,8 +527,49 @@ bool WindowsNativeCompositor::LoadEngineApi() {
     return engine_api_.available();
 }
 
+bool WindowsNativeCompositor::EnsureProducerDevice(IDXGIAdapter* producer_adapter) {
+    if (!producer_adapter) {
+        return false;
+    }
+    producer_adapter_ = producer_adapter;
+    (void)adapter_luid(
+        producer_adapter_.Get(), producer_luid_high_, producer_luid_low_);
+    if (producer_device_ && producer_context_) {
+        return true;
+    }
+    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+    D3D_FEATURE_LEVEL level = {};
+    HRESULT hr = D3D11CreateDevice(
+        producer_adapter_.Get(),
+        D3D_DRIVER_TYPE_UNKNOWN,
+        nullptr,
+        flags,
+        nullptr,
+        0,
+        D3D11_SDK_VERSION,
+        &producer_device_,
+        &level,
+        &producer_context_);
+    if (FAILED(hr)) {
+        spdlog::error(
+            "[WindowsNativeCompositor] producer D3D11CreateDevice failed hr=0x{:08x}",
+            static_cast<uint32_t>(hr));
+        producer_device_.Reset();
+        producer_context_.Reset();
+        return false;
+    }
+    return true;
+}
+
+bool WindowsNativeCompositor::IsCrossAdapterActive() const {
+    return vr::windows_cross_adapter_required(
+        producer_luid_high_, producer_luid_low_,
+        output_luid_high_, output_luid_low_);
+}
+
 bool WindowsNativeCompositor::InitializeDeviceAndComposition(
-    IDXGIAdapter* adapter) {
+    IDXGIAdapter* producer_adapter,
+    IDXGIAdapter* output_adapter) {
     const auto log_failure = [](const char* stage, HRESULT result) {
         spdlog::error(
             "[WindowsNativeCompositor] {} failed hr=0x{:08x}",
@@ -463,11 +577,43 @@ bool WindowsNativeCompositor::InitializeDeviceAndComposition(
             static_cast<uint32_t>(result));
         return false;
     };
+    if (!EnsureProducerDevice(producer_adapter)) {
+        return false;
+    }
+    output_adapter_ = output_adapter ? output_adapter : producer_adapter;
+    (void)adapter_luid(
+        output_adapter_.Get(), output_luid_high_, output_luid_low_);
+
+    pending_swap_chain_ = {};
+    current_swap_chain_ = {};
+    dcomp_visual_.Reset();
+    dcomp_target_.Reset();
+    dcomp_device_.Reset();
+    constants_.Reset();
+    sampler_.Reset();
+    pixel_shader_.Reset();
+    video_pixel_shader_.Reset();
+    flutter_pixel_shader_.Reset();
+    premultiplied_blend_state_.Reset();
+    overlay_blend_state_.Reset();
+    overlay_input_layout_.Reset();
+    overlay_pixel_shader_.Reset();
+    overlay_vertex_shader_.Reset();
+    vertex_shader_.Reset();
+    context_.Reset();
+    device_.Reset();
+    video_transport_.reset();
+    sdr_video_transport_.reset();
+    flutter_transport_.reset();
+    for (auto& transport : source_transports_) {
+        transport.reset();
+    }
+
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
     D3D_FEATURE_LEVEL level = {};
     HRESULT hr = D3D11CreateDevice(
-        adapter,
-        adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE,
+        output_adapter_.Get(),
+        output_adapter_ ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE,
         nullptr, flags, nullptr, 0, D3D11_SDK_VERSION,
         &device_, &level, &context_);
     if (FAILED(hr)) return log_failure("D3D11CreateDevice", hr);
@@ -480,8 +626,20 @@ bool WindowsNativeCompositor::InitializeDeviceAndComposition(
     hr = dcomp_device_->CreateTargetForHwnd(hwnd_, TRUE, &dcomp_target_);
     if (FAILED(hr)) return log_failure("CreateTargetForHwnd", hr);
     hr = dcomp_device_->CreateVisual(&dcomp_visual_);
-    return SUCCEEDED(hr) ||
-           log_failure("CreateVisual", hr);
+    if (FAILED(hr)) {
+        return log_failure("CreateVisual", hr);
+    }
+    transport_support_ = vr::probe_windows_cross_adapter_transport(
+        producer_device_.Get(), device_.Get());
+    if (IsCrossAdapterActive() && !transport_support_.bgra8) {
+        spdlog::warn(
+            "[WindowsNativeCompositor] cross-adapter BGRA transport unavailable; "
+            "staying on producer adapter status={}",
+            transport_support_.status);
+        return InitializeDeviceAndComposition(
+            producer_adapter_.Get(), producer_adapter_.Get());
+    }
+    return true;
 }
 
 bool WindowsNativeCompositor::CreateSwapChainCandidate(
@@ -545,6 +703,109 @@ bool WindowsNativeCompositor::CreateSwapChainCandidate(
     return true;
 }
 
+bool WindowsNativeCompositor::OpenInputTexture(
+    ID3D11Device1* device1,
+    HANDLE handle,
+    ID3D11Texture2D** texture) const {
+    if (!handle || !texture) {
+        return false;
+    }
+    *texture = nullptr;
+    if (IsCrossAdapterActive()) {
+        Microsoft::WRL::ComPtr<ID3D11Device1> producer1;
+        if (FAILED(producer_device_.As(&producer1)) || !producer1) {
+            return false;
+        }
+        return SUCCEEDED(
+            producer1->OpenSharedResource1(handle, IID_PPV_ARGS(texture)));
+    }
+    return device1 &&
+           SUCCEEDED(device1->OpenSharedResource1(
+               handle, IID_PPV_ARGS(texture)));
+}
+
+bool WindowsNativeCompositor::TransportInput(
+    ID3D11Texture2D* producer_texture,
+    DXGI_FORMAT format,
+    uint32_t width,
+    uint32_t height,
+    vr::D3D11CrossAdapterTextureTransport& transport,
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv) {
+    if (!IsCrossAdapterActive()) {
+        return false;
+    }
+    if (!producer_texture || !producer_device_ || !producer_context_ ||
+        !device_ || !context_) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        diagnostics_.cross_adapter_last_error = "transport-missing-device";
+        return false;
+    }
+    if (transport.format() != format ||
+        transport.width() != width ||
+        transport.height() != height) {
+        if (!transport.initialize(
+                producer_device_.Get(),
+                producer_context_.Get(),
+                device_.Get(),
+                context_.Get(),
+                format,
+                width,
+                height)) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            diagnostics_.cross_adapter_last_error = transport.last_error();
+            ++diagnostics_.output_migration_failure_count;
+            return false;
+        }
+    }
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> next_srv;
+    ID3D11ShaderResourceView* raw_srv = nullptr;
+    if (!transport.copy_to_output_srv(producer_texture, &raw_srv) ||
+        !raw_srv) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        diagnostics_.cross_adapter_last_error = transport.last_error();
+        ++diagnostics_.transport_timeout_count;
+        return false;
+    }
+    next_srv.Attach(raw_srv);
+    srv = std::move(next_srv);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        diagnostics_.cross_adapter_last_error = "none";
+        ++diagnostics_.transport_generation;
+        diagnostics_.transport_copy_count =
+            video_transport_.copy_count() +
+            sdr_video_transport_.copy_count() +
+            flutter_transport_.copy_count();
+        diagnostics_.transport_copy_bytes =
+            video_transport_.copy_count() * video_transport_.bytes_per_copy() +
+            sdr_video_transport_.copy_count() *
+                sdr_video_transport_.bytes_per_copy() +
+            flutter_transport_.copy_count() *
+                flutter_transport_.bytes_per_copy();
+        diagnostics_.transport_timeout_count =
+            video_transport_.timeout_count() +
+            sdr_video_transport_.timeout_count() +
+            flutter_transport_.timeout_count();
+        diagnostics_.transport_last_copy_us = transport.last_copy_us();
+        diagnostics_.transport_total_copy_us =
+            video_transport_.total_copy_us() +
+            sdr_video_transport_.total_copy_us() +
+            flutter_transport_.total_copy_us();
+        for (const auto& source_transport : source_transports_) {
+            diagnostics_.transport_copy_count +=
+                source_transport.copy_count();
+            diagnostics_.transport_copy_bytes +=
+                source_transport.copy_count() *
+                source_transport.bytes_per_copy();
+            diagnostics_.transport_timeout_count +=
+                source_transport.timeout_count();
+            diagnostics_.transport_total_copy_us +=
+                source_transport.total_copy_us();
+        }
+    }
+    return true;
+}
+
 bool WindowsNativeCompositor::EnsureSwapChain(
     uint32_t width, uint32_t height) {
     width = std::max(width, 1u);
@@ -553,6 +814,16 @@ bool WindowsNativeCompositor::EnsureSwapChain(
     {
         std::lock_guard<std::mutex> lock(mutex_);
         desired = desired_output_target_;
+        if (desired == OutputTarget::ScRGB &&
+            IsCrossAdapterActive() &&
+            !transport_support_.rgba16f) {
+            desired = OutputTarget::SDR;
+            desired_output_target_ = OutputTarget::SDR;
+            diagnostics_.desired_output_target = OutputTargetName(desired);
+            diagnostics_.transition_reason =
+                "cross-adapter-fp16-transport-unavailable-fallback-sdr";
+            ++diagnostics_.target_fallback_count;
+        }
     }
     const auto matches = [&](const SwapChainResources& resources) {
         return resources.swap_chain &&
@@ -851,6 +1122,52 @@ bool WindowsNativeCompositor::CompositeLatest() {
     }
     auto player = player_.lock();
     if (!player) return false;
+    Microsoft::WRL::ComPtr<IDXGIAdapter> pending_output_adapter;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pending_output_adapter = pending_output_adapter_;
+        pending_output_adapter_.Reset();
+    }
+    if (pending_output_adapter) {
+        ReleaseHeldInputs(player);
+        if (!InitializeDeviceAndComposition(
+                producer_adapter_.Get(), pending_output_adapter.Get()) ||
+            !CreatePipeline()) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            ++diagnostics_.output_migration_failure_count;
+            diagnostics_.cross_adapter_last_error =
+                "output-adapter-reinitialize-failed";
+            pending_output_adapter_ = pending_output_adapter;
+            return false;
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            ++diagnostics_.output_migration_count;
+            diagnostics_.output_adapter_luid =
+                luid_string(output_luid_high_, output_luid_low_);
+            diagnostics_.pending_output_adapter_luid =
+                diagnostics_.output_adapter_luid;
+            diagnostics_.cross_adapter_required = IsCrossAdapterActive();
+            diagnostics_.cross_adapter_supported =
+                !IsCrossAdapterActive() || transport_support_.bgra8;
+            diagnostics_.cross_adapter_transport_mode =
+                IsCrossAdapterActive() ? "row-major-gpu-copy"
+                                       : "same-adapter";
+            diagnostics_.cross_adapter_transport_status =
+                IsCrossAdapterActive() ? transport_support_.status
+                                       : "not-required";
+            diagnostics_.cross_adapter_sync_kind =
+                IsCrossAdapterActive() ? transport_support_.sync_kind
+                                       : "keyed-mutex";
+            diagnostics_.transport_bgra8_supported =
+                transport_support_.bgra8;
+            diagnostics_.transport_fp16_supported =
+                transport_support_.rgba16f;
+            diagnostics_.transport_shared_fence_supported =
+                transport_support_.shared_fence;
+            diagnostics_.transition_state = "preparing";
+        }
+    }
     Microsoft::WRL::ComPtr<ID3D11Device1> device1;
     if (FAILED(device_.As(&device1)) || !device1) {
         EnterFallback("dcomp-query-device1-failed");
@@ -936,23 +1253,41 @@ bool WindowsNativeCompositor::CompositeLatest() {
             Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
             bool acquired = false;
-            const HRESULT open_result = device1->OpenSharedResource1(
-                next_video.handle, IID_PPV_ARGS(&texture));
+            const HRESULT open_result = OpenInputTexture(
+                device1.Get(), next_video.handle, &texture)
+                ? S_OK
+                : E_FAIL;
             if (SUCCEEDED(open_result) &&
                 SUCCEEDED(texture.As(&keyed_mutex))) {
                 acquired =
                     keyed_mutex->AcquireSync(
                         next_video.consumer_acquire_key, 8) == S_OK;
             }
-            if (acquired &&
-                SUCCEEDED(device_->CreateShaderResourceView(
-                    texture.Get(), nullptr, &srv))) {
+            bool srv_ready = false;
+            if (acquired && IsCrossAdapterActive()) {
+                srv_ready = TransportInput(
+                    texture.Get(),
+                    DXGI_FORMAT_R16G16B16A16_FLOAT,
+                    static_cast<uint32_t>(next_video.width),
+                    static_cast<uint32_t>(next_video.height),
+                    video_transport_,
+                    srv);
+            } else if (acquired) {
+                srv_ready = SUCCEEDED(device_->CreateShaderResourceView(
+                    texture.Get(), nullptr, &srv));
+            }
+            if (srv_ready) {
                 release_held_video();
                 held_video_ = next_video;
                 held_video_texture_ = std::move(texture);
                 held_video_mutex_ = std::move(keyed_mutex);
                 held_video_srv_ = std::move(srv);
                 held_video_valid_ = true;
+                if (IsCrossAdapterActive()) {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    diagnostics_.video_transport_generation =
+                        diagnostics_.transport_generation;
+                }
             } else {
                 if (acquired) {
                     keyed_mutex->ReleaseSync(
@@ -983,11 +1318,27 @@ bool WindowsNativeCompositor::CompositeLatest() {
         } else {
             Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-            const HRESULT open_result = device_->OpenSharedResource(
-                next_sdr_video.handle, IID_PPV_ARGS(&texture));
-            if (SUCCEEDED(open_result) &&
-                SUCCEEDED(device_->CreateShaderResourceView(
-                    texture.Get(), nullptr, &srv))) {
+            const HRESULT open_result = IsCrossAdapterActive()
+                ? producer_device_->OpenSharedResource(
+                      next_sdr_video.handle, IID_PPV_ARGS(&texture))
+                : device_->OpenSharedResource(
+                      next_sdr_video.handle, IID_PPV_ARGS(&texture));
+            bool srv_ready = false;
+            if (SUCCEEDED(open_result) && IsCrossAdapterActive()) {
+                D3D11_TEXTURE2D_DESC desc = {};
+                texture->GetDesc(&desc);
+                srv_ready = TransportInput(
+                    texture.Get(),
+                    desc.Format,
+                    desc.Width,
+                    desc.Height,
+                    sdr_video_transport_,
+                    srv);
+            } else if (SUCCEEDED(open_result)) {
+                srv_ready = SUCCEEDED(device_->CreateShaderResourceView(
+                    texture.Get(), nullptr, &srv));
+            }
+            if (srv_ready) {
                 release_held_sdr_video();
                 held_sdr_video_ = next_sdr_video;
                 held_sdr_video_texture_ = std::move(texture);
@@ -1020,24 +1371,43 @@ bool WindowsNativeCompositor::CompositeLatest() {
             Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
             bool acquired = false;
-            const HRESULT open_result = device1->OpenSharedResource1(
+            const HRESULT open_result = OpenInputTexture(
+                device1.Get(),
                 next_flutter.shared_texture_handle,
-                IID_PPV_ARGS(&texture));
+                &texture)
+                ? S_OK
+                : E_FAIL;
             if (SUCCEEDED(open_result) &&
                 SUCCEEDED(texture.As(&keyed_mutex))) {
                 acquired =
                     keyed_mutex->AcquireSync(
                         next_flutter.consumer_acquire_key, 8) == S_OK;
             }
-            if (acquired &&
-                SUCCEEDED(device_->CreateShaderResourceView(
-                    texture.Get(), nullptr, &srv))) {
+            bool srv_ready = false;
+            if (acquired && IsCrossAdapterActive()) {
+                srv_ready = TransportInput(
+                    texture.Get(),
+                    DXGI_FORMAT_B8G8R8A8_UNORM,
+                    next_flutter.width,
+                    next_flutter.height,
+                    flutter_transport_,
+                    srv);
+            } else if (acquired) {
+                srv_ready = SUCCEEDED(device_->CreateShaderResourceView(
+                    texture.Get(), nullptr, &srv));
+            }
+            if (srv_ready) {
                 release_held_flutter();
                 held_flutter_ = next_flutter;
                 held_flutter_texture_ = std::move(texture);
                 held_flutter_mutex_ = std::move(keyed_mutex);
                 held_flutter_srv_ = std::move(srv);
                 held_flutter_valid_ = true;
+                if (IsCrossAdapterActive()) {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    diagnostics_.flutter_transport_generation =
+                        diagnostics_.transport_generation;
+                }
             } else {
                 if (acquired) {
                     keyed_mutex->ReleaseSync(
@@ -1119,9 +1489,10 @@ bool WindowsNativeCompositor::CompositeLatest() {
                         complete = false;
                         break;
                     }
-                    HRESULT result = device1->OpenSharedResource1(
-                        source.handle,
-                        IID_PPV_ARGS(&textures[slot]));
+                    HRESULT result = OpenInputTexture(
+                        device1.Get(), source.handle, &textures[slot])
+                        ? S_OK
+                        : E_FAIL;
                     if (FAILED(result)) {
                         error =
                             "source-cache-open-shared-resource-failed";
@@ -1143,9 +1514,21 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     }
                     present[slot] = true;
                     transfers[slot] = source.color_transfer;
-                    result = device_->CreateShaderResourceView(
-                        textures[slot].Get(), nullptr, &srvs[slot]);
-                    if (FAILED(result)) {
+                    bool srv_ready = false;
+                    if (IsCrossAdapterActive()) {
+                        srv_ready = TransportInput(
+                            textures[slot].Get(),
+                            DXGI_FORMAT_R16G16B16A16_FLOAT,
+                            static_cast<uint32_t>(source.width),
+                            static_cast<uint32_t>(source.height),
+                            source_transports_[slot],
+                            srvs[slot]);
+                    } else {
+                        result = device_->CreateShaderResourceView(
+                            textures[slot].Get(), nullptr, &srvs[slot]);
+                        srv_ready = SUCCEEDED(result);
+                    }
+                    if (!srv_ready) {
                         error = "source-cache-srv-creation-failed";
                         complete = false;
                         break;
@@ -1160,6 +1543,11 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     held_source_present_ = present;
                     held_source_transfer_ = transfers;
                     held_source_valid_ = true;
+                    if (IsCrossAdapterActive()) {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        diagnostics_.source_transport_generation =
+                            diagnostics_.transport_generation;
+                    }
                 } else {
                     for (size_t slot = 0; slot < present.size(); ++slot) {
                         if (present[slot] && mutexes[slot]) {

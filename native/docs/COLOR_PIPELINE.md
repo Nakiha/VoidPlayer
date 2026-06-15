@@ -8,9 +8,11 @@ selected platform presentation target.
 The historical production target is SDR BGRA/RGB for a Flutter texture. The
 macOS HDR exploration path adds a native compositor target that outputs extended
 linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows Auto presents
-SDR media through a BGRA8 DComp target and promotes PQ/HLG sessions on a
-matching HDR output to an FP16/scRGB target using linear BT.709
-through a renderer-owned target or the locked-engine DirectComposition route.
+SDR media through a BGRA8 DComp target and promotes PQ/HLG sessions on an HDR
+output to an FP16/scRGB target using linear BT.709 through the locked-engine
+DirectComposition route. If that HDR output lives on a different adapter, the
+renderer stays on the producer adapter and the compositor migrates only the
+output device through the diagnosed cross-adapter transport.
 
 ## Shared Output Contract
 
@@ -161,8 +163,12 @@ video. Transparent viewport pixels reveal video without color keys or a
 rectangular native hole. The final swap-chain capture must preserve video
 values above `1.0` and Flutter alpha-edge behavior. Auto SDR instead samples
 the source-rerendered BGRA compatibility texture into a BGRA8/G22 target.
-Auto HDR uses FP16/G10 scRGB only for PQ/HLG media on a matching HDR output.
-Windows does not submit HDR10 metadata.
+Auto HDR uses FP16/G10 scRGB for PQ/HLG media on a resolved HDR output. Matching
+adapters consume the producer leases directly; mismatched adapters bridge the
+same BGRA/scRGB inputs through row-major shared textures and GPU copies without
+changing the color math. Windows does not submit HDR10 metadata, custom ICC
+curves, or LUT corrections; Advanced Color and calibration remain
+system-managed.
 
 For source projection, each active track is rendered with identity layout into
 its source-sized `R16G16B16A16_FLOAT` texture from the same

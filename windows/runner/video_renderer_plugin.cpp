@@ -787,12 +787,18 @@ void VideoRendererPlugin::CreatePlayer(
     });
 
     if (presentation_policy_.native_compositor_requested) {
+        Microsoft::WRL::ComPtr<IDXGIAdapter> output_adapter;
+        if (!display_resolver_.OpenAdapterForProbe(
+                locked_display.probe, &output_adapter)) {
+            output_adapter = dxgi_adapter_;
+        }
         native_compositor_ = std::make_unique<WindowsNativeCompositor>();
         const bool compositor_started = native_compositor_->Start(
             window_handle_,
             flutter_view_handle_,
             player_,
             dxgi_adapter_.Get(),
+            output_adapter.Get(),
             resolved_white_nits,
             presentation_policy_.hdr_output_requested
                 ? WindowsNativeCompositor::OutputTarget::ScRGB
@@ -2155,10 +2161,16 @@ VideoRendererPlugin::RefreshPresentationPolicy(
     const bool display_changed =
         display.generation != presentation_locked_display_generation_;
     if (policy_changed || white_changed || display_changed) {
+        Microsoft::WRL::ComPtr<IDXGIAdapter> output_adapter;
+        if (!display_resolver_.OpenAdapterForProbe(
+                display.probe, &output_adapter)) {
+            output_adapter = dxgi_adapter_;
+        }
         native_compositor_->RequestOutputTarget(
             presentation_policy_.hdr_output_requested
                 ? WindowsNativeCompositor::OutputTarget::ScRGB
                 : WindowsNativeCompositor::OutputTarget::SDR,
+            output_adapter.Get(),
             white_nits,
             display.generation,
             presentation_policy_.reason);
@@ -2253,6 +2265,52 @@ void VideoRendererPlugin::GetDiagnostics(
             flutter::EncodableValue(compositor.swap_chain_format);
         diagnostics[flutter::EncodableValue("windowsDCompColorSpace")] =
             flutter::EncodableValue(compositor.color_space);
+        diagnostics[flutter::EncodableValue("windowsPresentationProducerAdapterLuid")] =
+            flutter::EncodableValue(compositor.producer_adapter_luid);
+        diagnostics[flutter::EncodableValue("windowsPresentationOutputAdapterLuid")] =
+            flutter::EncodableValue(compositor.output_adapter_luid);
+        diagnostics[flutter::EncodableValue("windowsPresentationPendingOutputAdapterLuid")] =
+            flutter::EncodableValue(compositor.pending_output_adapter_luid);
+        diagnostics[flutter::EncodableValue("windowsPresentationCrossAdapterSupported")] =
+            flutter::EncodableValue(compositor.cross_adapter_supported);
+        diagnostics[flutter::EncodableValue("windowsPresentationCrossAdapterActive")] =
+            flutter::EncodableValue(compositor.cross_adapter_required);
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportMode")] =
+            flutter::EncodableValue(compositor.cross_adapter_transport_mode);
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportStatus")] =
+            flutter::EncodableValue(compositor.cross_adapter_transport_status);
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterSyncKind")] =
+            flutter::EncodableValue(compositor.cross_adapter_sync_kind);
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterLastError")] =
+            flutter::EncodableValue(compositor.cross_adapter_last_error);
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterBGRA8Supported")] =
+            flutter::EncodableValue(compositor.transport_bgra8_supported);
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterFP16Supported")] =
+            flutter::EncodableValue(compositor.transport_fp16_supported);
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterSharedFenceSupported")] =
+            flutter::EncodableValue(compositor.transport_shared_fence_supported);
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportGeneration")] =
+            enc_i64(static_cast<int64_t>(compositor.transport_generation));
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportCopyCount")] =
+            enc_i64(static_cast<int64_t>(compositor.transport_copy_count));
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportCopyBytes")] =
+            enc_i64(static_cast<int64_t>(compositor.transport_copy_bytes));
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportTimeoutCount")] =
+            enc_i64(static_cast<int64_t>(compositor.transport_timeout_count));
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportLastCopyUs")] =
+            enc_i64(static_cast<int64_t>(compositor.transport_last_copy_us));
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterTransportTotalCopyUs")] =
+            enc_i64(static_cast<int64_t>(compositor.transport_total_copy_us));
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterFlutterConsumedGeneration")] =
+            enc_i64(static_cast<int64_t>(compositor.flutter_transport_generation));
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterVideoConsumedGeneration")] =
+            enc_i64(static_cast<int64_t>(compositor.video_transport_generation));
+        diagnostics[flutter::EncodableValue("windowsCrossAdapterSourceConsumedGeneration")] =
+            enc_i64(static_cast<int64_t>(compositor.source_transport_generation));
+        diagnostics[flutter::EncodableValue("windowsPresentationOutputMigrationCount")] =
+            enc_i64(static_cast<int64_t>(compositor.output_migration_count));
+        diagnostics[flutter::EncodableValue("windowsPresentationOutputMigrationFailureCount")] =
+            enc_i64(static_cast<int64_t>(compositor.output_migration_failure_count));
         diagnostics[flutter::EncodableValue("windowsDCompBufferCount")] =
             flutter::EncodableValue(3);
         diagnostics[flutter::EncodableValue(

@@ -325,6 +325,45 @@ def _run_windows_display_tests() -> None:
     )
 
 
+def _run_windows_cross_adapter_tests() -> None:
+    run(
+        [
+            str(
+                ROOT
+                / "build/native/standalone/windows-msvc/Release"
+                / "video_renderer_tests.exe"
+            ),
+            "[windows_cross_adapter]",
+        ],
+        cwd=str(ROOT),
+    )
+
+
+def _run_windows_cross_adapter_local() -> None:
+    _run_windows_cross_adapter_tests()
+    local_engine_src = os.environ.get(
+        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
+        str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
+    )
+    _python_dev_with_env(
+        {
+            "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "auto",
+            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": local_engine_src,
+            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": os.environ.get(
+                "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
+                "host_release",
+            ),
+            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE": os.environ.get(
+                "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
+                "host_release",
+            ),
+        },
+        "ui-test",
+        "--build",
+        "ui_tests/smoke/native_compositor_auto_sdr.csv",
+    )
+
+
 def _run_macos_release_readiness() -> None:
     _python_dev("package")
     run(
@@ -349,6 +388,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
         elif _is_windows():
             _python_dev("test", "--native-only", "--github")
             _run_windows_display_tests()
+            _run_windows_cross_adapter_tests()
             _run_windows_d3d11_color_layout_parity_smoke()
             _run_windows_d3d11_fp16_scrgb_smoke()
             _run_windows_d3d11_dcomp_flutter_composite_smoke()
@@ -404,6 +444,12 @@ def cmd_gate(args: argparse.Namespace) -> None:
         if not _is_windows():
             _unsupported(profile, "Windows with HDR enabled")
         _run_windows_hdr_auto()
+        return
+
+    if profile == "windows-cross-adapter-local":
+        if not _is_windows():
+            _unsupported(profile, "Windows with multiple GPU outputs")
+        _run_windows_cross_adapter_local()
         return
 
     if profile == "macos-release-readiness":

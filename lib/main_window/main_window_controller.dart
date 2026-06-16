@@ -6,6 +6,7 @@ import '../actions/action_registry.dart';
 import '../agent/agent_protocol_server.dart';
 import '../analysis/analysis_manager.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
+import '../app_log.dart';
 import '../automation/main_window_harness.dart';
 import '../automation/test_runner.dart';
 import '../automation/ui_automation_bridge.dart';

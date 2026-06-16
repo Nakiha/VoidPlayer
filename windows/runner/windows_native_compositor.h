@@ -401,6 +401,15 @@ private:
     std::chrono::steady_clock::time_point interaction_sample_started_{};
     uint64_t last_overlay_metrics_generation_ = 0;
     bool interaction_sample_active_ = false;
+    uint32_t last_logged_backbuffer_width_ = 0;
+    uint32_t last_logged_backbuffer_height_ = 0;
+    uint32_t last_logged_flutter_width_ = 0;
+    uint32_t last_logged_flutter_height_ = 0;
+    uint32_t last_logged_video_width_ = 0;
+    uint32_t last_logged_video_height_ = 0;
+    uint64_t last_logged_flutter_frame_generation_ = 0;
+    uint64_t flutter_generation_log_count_ = 0;
+    double last_logged_viewport_[4] = {-1.0, -1.0, -1.0, -1.0};
     Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_vertex_buffer_;
     UINT overlay_vertex_count_ = 0;
     vr::WindowsOverlayLayerCacheState overlay_layer_state_;

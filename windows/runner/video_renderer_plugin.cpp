@@ -1350,7 +1350,15 @@ void VideoRendererPlugin::Resize(
         result->Error("BAD_ARGS", validation.message);
         return;
     }
+    spdlog::info(
+        "[WindowsCompositorDebug] method resize viewport={}x{} "
+        "native_compositor={} player={}",
+        w, h, native_compositor_ ? "yes" : "no",
+        player_ ? "yes" : "no");
     player_->resize(w, h);
+    spdlog::info(
+        "[WindowsCompositorDebug] method resize complete viewport={}x{}",
+        w, h);
     result->Success(flutter::EncodableValue(std::monostate{}));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(result.get(), "resize", e);
@@ -1392,6 +1400,10 @@ void VideoRendererPlugin::SetNativeCompositorViewportRect(
             result->Error("BAD_ARGS", "invalid viewport rect");
             return;
         }
+        spdlog::info(
+            "[WindowsCompositorDebug] method viewportRect "
+            "physical=({},{} {}x{}) surface={}x{}",
+            left, top, width, height, surface_width, surface_height);
         native_compositor_->SetViewportRect(
             static_cast<double>(left) / surface_width,
             static_cast<double>(top) / surface_height,

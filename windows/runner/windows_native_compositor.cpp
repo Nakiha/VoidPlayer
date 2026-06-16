@@ -374,6 +374,21 @@ void WindowsNativeCompositor::SetViewportRect(
     viewport_[1] = std::clamp(top, 0.0, 1.0);
     viewport_[2] = std::clamp(right, viewport_[0], 1.0);
     viewport_[3] = std::clamp(bottom, viewport_[1], 1.0);
+    const bool changed =
+        viewport_[0] != last_logged_viewport_[0] ||
+        viewport_[1] != last_logged_viewport_[1] ||
+        viewport_[2] != last_logged_viewport_[2] ||
+        viewport_[3] != last_logged_viewport_[3];
+    if (changed) {
+        last_logged_viewport_[0] = viewport_[0];
+        last_logged_viewport_[1] = viewport_[1];
+        last_logged_viewport_[2] = viewport_[2];
+        last_logged_viewport_[3] = viewport_[3];
+        spdlog::info(
+            "[WindowsCompositorDebug] dcomp viewport rect normalized="
+            "({:.5f},{:.5f})-({:.5f},{:.5f})",
+            viewport_[0], viewport_[1], viewport_[2], viewport_[3]);
+    }
     work_pending_ = true;
     wake_.notify_one();
 }
@@ -1143,6 +1158,15 @@ bool WindowsNativeCompositor::ActivatePendingSwapChain() {
     const uint32_t previous_height = current_swap_chain_.height;
     current_swap_chain_ = std::move(pending_swap_chain_);
     pending_swap_chain_ = {};
+    spdlog::info(
+        "[WindowsCompositorDebug] dcomp activate swapchain target={} "
+        "size={}x{} previous={}x{} hadOutput={}",
+        OutputTargetName(current_swap_chain_.target),
+        current_swap_chain_.width,
+        current_swap_chain_.height,
+        previous_width,
+        previous_height,
+        had_output);
     {
         std::lock_guard<std::mutex> lock(mutex_);
         diagnostics_.swap_chain_active = true;
@@ -1688,6 +1712,24 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 held_flutter_mutex_ = std::move(keyed_mutex);
                 held_flutter_srv_ = std::move(srv);
                 held_flutter_valid_ = true;
+                ++flutter_generation_log_count_;
+                if (held_flutter_.frame_generation !=
+                        last_logged_flutter_frame_generation_ ||
+                    flutter_generation_log_count_ <= 8 ||
+                    flutter_generation_log_count_ % 60 == 0) {
+                    last_logged_flutter_frame_generation_ =
+                        held_flutter_.frame_generation;
+                    spdlog::info(
+                        "[WindowsCompositorDebug] dcomp acquired flutter "
+                        "surface generation={} ring={} slot={} size={}x{} "
+                        "lease={}",
+                        held_flutter_.frame_generation,
+                        held_flutter_.ring_generation,
+                        held_flutter_.slot,
+                        held_flutter_.width,
+                        held_flutter_.height,
+                        held_flutter_.lease_id);
+                }
                 if (IsCrossAdapterActive()) {
                     std::lock_guard<std::mutex> lock(mutex_);
                     diagnostics_.flutter_transport_generation =
@@ -1899,6 +1941,37 @@ bool WindowsNativeCompositor::CompositeLatest() {
             return false;
         }
         back_buffer->GetDesc(&back_desc);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            const auto video_width =
+                static_cast<uint32_t>(std::max(0, held_video_.width));
+            const auto video_height =
+                static_cast<uint32_t>(std::max(0, held_video_.height));
+            const bool size_changed =
+                back_desc.Width != last_logged_backbuffer_width_ ||
+                back_desc.Height != last_logged_backbuffer_height_ ||
+                held_flutter_.width != last_logged_flutter_width_ ||
+                held_flutter_.height != last_logged_flutter_height_ ||
+                video_width != last_logged_video_width_ ||
+                video_height != last_logged_video_height_;
+            if (size_changed) {
+                last_logged_backbuffer_width_ = back_desc.Width;
+                last_logged_backbuffer_height_ = back_desc.Height;
+                last_logged_flutter_width_ = held_flutter_.width;
+                last_logged_flutter_height_ = held_flutter_.height;
+                last_logged_video_width_ = video_width;
+                last_logged_video_height_ = video_height;
+                spdlog::info(
+                    "[WindowsCompositorDebug] dcomp composite dimensions "
+                    "swapchain={}x{} flutter={}x{} video={}x{} "
+                    "videoGen={} flutterGen={}",
+                    back_desc.Width, back_desc.Height,
+                    held_flutter_.width, held_flutter_.height,
+                    video_width, video_height,
+                    held_video_.frame_generation,
+                    held_flutter_.frame_generation);
+            }
+        }
         D3D11_VIEWPORT viewport = {};
         viewport.Width = static_cast<float>(back_desc.Width);
         viewport.Height = static_cast<float>(back_desc.Height);

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../app_log.dart';
 import '../marks/quick_mark.dart';
 import '../native_compositor_flags.dart';
 import '../track_manager.dart';
@@ -234,6 +235,14 @@ class MainWindowLayoutCoordinator {
     if (width == viewportWidth && height == viewportHeight) return;
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
+    log.info(
+      '[WindowsCompositorDebug] layout onViewportResize '
+      '${previousWidth}x$previousHeight -> ${width}x$height '
+      'dpr=${devicePixelRatio.toStringAsFixed(3)} '
+      'immediate=$immediate layoutDirty=$_layoutDirty '
+      'nativeActive=${_state.nativeCompositorActive} '
+      'tracks=${trackCount()}',
+    );
     if (!_layoutDirty && previousWidth > 0 && previousHeight > 0) {
       _rescaleViewOffsetForResize(previousWidth, previousHeight, width, height);
     }
@@ -283,6 +292,12 @@ class MainWindowLayoutCoordinator {
 
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
+    log.info(
+      '[WindowsCompositorDebug] layout preemptViewportResize '
+      '${previousWidth}x$previousHeight -> ${width}x$height '
+      'layoutDirty=$_layoutDirty activeFlush=${_activeFlush != null} '
+      'tracks=${trackCount()}',
+    );
     _resizeDebounceTimer?.cancel();
     _resizeDebounceTimer = null;
     _resizeDirty = false;
@@ -298,6 +313,10 @@ class MainWindowLayoutCoordinator {
     viewportWidth = width;
     viewportHeight = height;
     await controller.resize(width, height);
+    log.info(
+      '[WindowsCompositorDebug] layout preemptViewportResize native complete '
+      '${width}x$height',
+    );
   }
 
   void toggleMarksSidebar() {
@@ -351,6 +370,13 @@ class MainWindowLayoutCoordinator {
         .clamp(1, 1 << 30)
         .toInt();
     if (nextWidth == baseWidth && nextHeight == baseHeight) return;
+    log.info(
+      '[WindowsCompositorDebug] layout queuePreemptResize '
+      'base=${baseWidth}x$baseHeight '
+      'delta=(${widthDelta.toStringAsFixed(1)},'
+      '${heightDelta.toStringAsFixed(1)}) '
+      'dpr=${dpr.toStringAsFixed(3)} next=${nextWidth}x$nextHeight',
+    );
     _queuedPreemptWidth = nextWidth;
     _queuedPreemptHeight = nextHeight;
     if (_preemptResizeFuture == null) {
@@ -511,6 +537,11 @@ class MainWindowLayoutCoordinator {
   void _markResizeDirty() {
     if (_disposed) return;
     _resizeDirty = true;
+    log.info(
+      '[WindowsCompositorDebug] layout resizeDirty '
+      '${viewportWidth}x$viewportHeight '
+      'layoutDirty=$_layoutDirty activeFlush=${_activeFlush != null}',
+    );
     _startTicker();
   }
 
@@ -555,6 +586,10 @@ class MainWindowLayoutCoordinator {
             if (_disposed || !mounted()) return;
           }
           await controller.resize(width, height);
+          log.info(
+            '[WindowsCompositorDebug] layout flush native resize complete '
+            '${width}x$height layoutDirty=$_layoutDirty',
+          );
           if (_disposed || !mounted()) return;
           final nextLayout = await controller.getLayout();
           if (_disposed || !mounted()) return;

@@ -90,6 +90,7 @@ class MainWindowController {
   );
   Future<void>? _shutdownFuture;
   AgentProtocolServer? _agentServer;
+  bool _nativeCompositorFrameRequestQueued = false;
 
   late final MainWindowAnalysisCoordinator analysisCoordinator;
   late final MainWindowTestHarness testHarness;
@@ -229,6 +230,41 @@ class MainWindowController {
 
   void _onStateChanged() {
     quickMarkCoordinator.handleStateChanged();
+    _queueNativeCompositorFlutterFrameRequest(
+      reason: _nativeCompositorFrameRequestReason(),
+    );
+  }
+
+  String _nativeCompositorFrameRequestReason() {
+    final state = stateStore.value;
+    return 'state-changed '
+        'tracks=${trackManager.entries.length} '
+        'sidebar=${state.marksSidebarVisible} '
+        'mediaInfo=${state.mediaInfoVisible} '
+        'profiler=${state.profilerVisible} '
+        'settings=${state.settingsVisible} '
+        'fullscreen=${state.fullScreen} '
+        'viewport=${state.viewportState.status.name}';
+  }
+
+  void _queueNativeCompositorFlutterFrameRequest({required String reason}) {
+    if (_nativeCompositorFrameRequestQueued ||
+        !_nativeCompositorActive ||
+        !player.canAcceptCommands) {
+      return;
+    }
+    log.info('[WindowsCompositorDebug] queue Flutter export frame: $reason');
+    _nativeCompositorFrameRequestQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _nativeCompositorFrameRequestQueued = false;
+      if (!_nativeCompositorActive || !player.canAcceptCommands) {
+        return;
+      }
+      fireAndLog(
+        'request native compositor Flutter frame',
+        player.requestNativeCompositorFlutterFrame(reason: reason),
+      );
+    });
   }
 
   MainWindowViewModel get viewModel {

@@ -198,6 +198,7 @@ public:
     void Stop(const char* reason = "shutdown");
     void SetViewportRect(double left, double top, double right, double bottom);
     void SetViewportBackgroundColor(uint32_t argb);
+    bool RequestFlutterFrame(const std::string& reason);
     void SetSourceProjection(const SourceProjection& projection);
     void ClearSourceProjection(const std::string& reason);
     void SetSourceCacheError(const std::string& error);
@@ -409,6 +410,15 @@ private:
     uint32_t last_logged_video_height_ = 0;
     uint64_t last_logged_flutter_frame_generation_ = 0;
     uint64_t flutter_generation_log_count_ = 0;
+    uint64_t flutter_publish_callback_count_ = 0;
+    uint64_t last_flutter_publish_callback_generation_ = 0;
+    uint64_t flutter_frame_request_sequence_ = 0;
+    uint64_t pending_flutter_frame_request_sequence_ = 0;
+    uint64_t pending_flutter_frame_request_base_generation_ = 0;
+    std::string pending_flutter_frame_request_reason_;
+    std::chrono::steady_clock::time_point
+        pending_flutter_frame_request_time_{};
+    bool pending_flutter_frame_request_acquire_logged_ = false;
     double last_logged_viewport_[4] = {-1.0, -1.0, -1.0, -1.0};
     Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_vertex_buffer_;
     UINT overlay_vertex_count_ = 0;

@@ -19,6 +19,8 @@ class NativePlayerMethods {
   static const resize = 'resize';
   static const setNativeCompositorViewportRect =
       'setNativeCompositorViewportRect';
+  static const requestNativeCompositorFlutterFrame =
+      'requestNativeCompositorFlutterFrame';
   static const ackNativeCompositorFlutterState =
       'ackNativeCompositorFlutterState';
   static const debugFailNativeCompositor = 'debugFailNativeCompositor';

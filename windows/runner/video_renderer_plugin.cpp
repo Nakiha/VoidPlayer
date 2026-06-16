@@ -490,6 +490,12 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
                 call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
+        "requestNativeCompositorFlutterFrame",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            RequestNativeCompositorFlutterFrame(
+                call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
         "setNativeCompositorViewportTransform",
         [](const MethodCall&, MethodResultPtr result) {
             result->Success();
@@ -1744,6 +1750,30 @@ void VideoRendererPlugin::SetNativeAnalysisOverlay(
     } catch (const std::exception& e) {
         ReportMethodException(
             result.get(), "setNativeAnalysisOverlay", e);
+    }
+}
+
+void VideoRendererPlugin::RequestNativeCompositorFlutterFrame(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        std::string reason = "unspecified";
+        if (arguments) {
+            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+            if (args) {
+                auto it = args->find(flutter::EncodableValue("reason"));
+                if (it != args->end()) {
+                    (void)read_string_arg(it->second, reason);
+                }
+            }
+        }
+        if (native_compositor_) {
+            native_compositor_->RequestFlutterFrame(reason);
+        }
+        result->Success();
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "requestNativeCompositorFlutterFrame", e);
     }
 }
 

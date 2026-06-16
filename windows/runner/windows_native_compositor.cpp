@@ -407,6 +407,44 @@ void WindowsNativeCompositor::SetViewportBackgroundColor(uint32_t argb) {
     wake_.notify_one();
 }
 
+bool WindowsNativeCompositor::RequestFlutterFrame(const std::string& reason) {
+    Phase phase;
+    uint64_t request_sequence = 0;
+    uint64_t base_generation = 0;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        phase = phase_;
+        if (terminal_inactive_ || phase == Phase::Failed ||
+            phase == Phase::Inactive) {
+            return false;
+        }
+        request_sequence = ++flutter_frame_request_sequence_;
+        pending_flutter_frame_request_sequence_ = request_sequence;
+        pending_flutter_frame_request_base_generation_ =
+            diagnostics_.flutter_generation;
+        pending_flutter_frame_request_reason_ =
+            reason.empty() ? "unspecified" : reason;
+        pending_flutter_frame_request_time_ = std::chrono::steady_clock::now();
+        pending_flutter_frame_request_acquire_logged_ = false;
+        base_generation = pending_flutter_frame_request_base_generation_;
+    }
+    const int mode =
+        phase == Phase::Preparing ? kExportMirror : kExportCompositorOwned;
+    const bool ok = engine_api_.set_mode &&
+                    engine_api_.set_mode(flutter_view_, mode);
+    spdlog::info(
+        "[WindowsCompositorDebug] request flutter frame reason={} "
+        "phase={} mode={} seq={} baseGeneration={} ok={}",
+        reason.empty() ? "unspecified" : reason,
+        PhaseName(phase),
+        mode == kExportMirror ? "mirror" : "compositor-owned",
+        request_sequence,
+        base_generation,
+        ok);
+    if (ok) SignalWork();
+    return ok;
+}
+
 void WindowsNativeCompositor::SetSourceProjection(
     const SourceProjection& projection) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -737,9 +775,44 @@ void WindowsNativeCompositor::RequestDiagnosticCapture() {
 }
 
 void WindowsNativeCompositor::OnFlutterSurfacePublished(
-    void*, uint64_t, void* user_data) {
+    void*, uint64_t generation, void* user_data) {
     auto* compositor = static_cast<WindowsNativeCompositor*>(user_data);
-    if (compositor) compositor->SignalWork();
+    if (!compositor) return;
+    uint64_t request_sequence = 0;
+    uint64_t base_generation = 0;
+    std::string reason;
+    int64_t elapsed_ms = 0;
+    bool log_publish = false;
+    {
+        std::lock_guard<std::mutex> lock(compositor->mutex_);
+        ++compositor->flutter_publish_callback_count_;
+        compositor->last_flutter_publish_callback_generation_ = generation;
+        request_sequence =
+            compositor->pending_flutter_frame_request_sequence_;
+        base_generation =
+            compositor->pending_flutter_frame_request_base_generation_;
+        reason = compositor->pending_flutter_frame_request_reason_;
+        if (request_sequence > 0) {
+            elapsed_ms = static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() -
+                    compositor->pending_flutter_frame_request_time_)
+                    .count());
+            log_publish = true;
+        }
+    }
+    if (log_publish) {
+        spdlog::info(
+            "[WindowsCompositorDebug] flutter surface published after "
+            "request seq={} reason={} baseGeneration={} "
+            "publishedGeneration={} elapsedMs={}",
+            request_sequence,
+            reason.empty() ? "unspecified" : reason,
+            base_generation,
+            generation,
+            elapsed_ms);
+    }
+    compositor->SignalWork();
 }
 
 bool WindowsNativeCompositor::LoadEngineApi() {
@@ -1547,6 +1620,94 @@ bool WindowsNativeCompositor::CompositeLatest() {
         held_source_textures_ = {};
         held_source_transfer_.fill(0);
     };
+    const auto log_pending_flutter_request_acquire =
+        [&](const char* outcome, const FlutterSurface* surface) {
+            uint64_t request_sequence = 0;
+            uint64_t base_generation = 0;
+            std::string reason;
+            int64_t elapsed_ms = 0;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (pending_flutter_frame_request_sequence_ == 0 ||
+                    pending_flutter_frame_request_acquire_logged_) {
+                    return;
+                }
+                pending_flutter_frame_request_acquire_logged_ = true;
+                request_sequence = pending_flutter_frame_request_sequence_;
+                base_generation =
+                    pending_flutter_frame_request_base_generation_;
+                reason = pending_flutter_frame_request_reason_;
+                elapsed_ms = static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() -
+                        pending_flutter_frame_request_time_)
+                        .count());
+            }
+            if (surface) {
+                spdlog::info(
+                    "[WindowsCompositorDebug] flutter acquire after request "
+                    "seq={} reason={} outcome={} baseGeneration={} "
+                    "latestGeneration={} ring={} slot={} elapsedMs={}",
+                    request_sequence,
+                    reason.empty() ? "unspecified" : reason,
+                    outcome,
+                    base_generation,
+                    surface->frame_generation,
+                    surface->ring_generation,
+                    surface->slot,
+                    elapsed_ms);
+            } else {
+                spdlog::info(
+                    "[WindowsCompositorDebug] flutter acquire after request "
+                    "seq={} reason={} outcome={} baseGeneration={} "
+                    "elapsedMs={}",
+                    request_sequence,
+                    reason.empty() ? "unspecified" : reason,
+                    outcome,
+                    base_generation,
+                    elapsed_ms);
+            }
+        };
+    const auto complete_pending_flutter_request =
+        [&](const FlutterSurface& surface) {
+            uint64_t request_sequence = 0;
+            uint64_t base_generation = 0;
+            std::string reason;
+            int64_t elapsed_ms = 0;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (pending_flutter_frame_request_sequence_ == 0 ||
+                    surface.frame_generation <=
+                        pending_flutter_frame_request_base_generation_) {
+                    return;
+                }
+                request_sequence = pending_flutter_frame_request_sequence_;
+                base_generation =
+                    pending_flutter_frame_request_base_generation_;
+                reason = pending_flutter_frame_request_reason_;
+                elapsed_ms = static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() -
+                        pending_flutter_frame_request_time_)
+                        .count());
+                pending_flutter_frame_request_sequence_ = 0;
+                pending_flutter_frame_request_base_generation_ = 0;
+                pending_flutter_frame_request_reason_.clear();
+                pending_flutter_frame_request_time_ = {};
+                pending_flutter_frame_request_acquire_logged_ = false;
+            }
+            spdlog::info(
+                "[WindowsCompositorDebug] flutter request satisfied "
+                "seq={} reason={} baseGeneration={} acquiredGeneration={} "
+                "ring={} slot={} elapsedMs={}",
+                request_sequence,
+                reason.empty() ? "unspecified" : reason,
+                base_generation,
+                surface.frame_generation,
+                surface.ring_generation,
+                surface.slot,
+                elapsed_ms);
+        };
 
     vr::SharedFp16TextureSnapshot next_video;
     if (player->acquire_shared_fp16_texture(next_video)) {
@@ -1674,6 +1835,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
             next_flutter.frame_generation ==
                 held_flutter_.frame_generation;
         if (unchanged) {
+            log_pending_flutter_request_acquire(
+                "unchanged-latest-surface", &next_flutter);
             engine_api_.release(flutter_view_, next_flutter.lease_id);
         } else {
             Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
@@ -1712,6 +1875,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 held_flutter_mutex_ = std::move(keyed_mutex);
                 held_flutter_srv_ = std::move(srv);
                 held_flutter_valid_ = true;
+                complete_pending_flutter_request(held_flutter_);
                 ++flutter_generation_log_count_;
                 if (held_flutter_.frame_generation !=
                         last_logged_flutter_frame_generation_ ||
@@ -1736,6 +1900,10 @@ bool WindowsNativeCompositor::CompositeLatest() {
                         diagnostics_.transport_generation;
                 }
             } else {
+                log_pending_flutter_request_acquire(
+                    acquired ? "srv-create-failed" :
+                               "open-or-keyed-mutex-acquire-failed",
+                    &next_flutter);
                 if (acquired) {
                     keyed_mutex->ReleaseSync(
                         next_flutter.producer_release_key);
@@ -1744,6 +1912,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     flutter_view_, next_flutter.lease_id);
             }
         }
+    } else {
+        log_pending_flutter_request_acquire("acquire-latest-failed", nullptr);
     }
 
     if (!held_video_valid_ || !held_sdr_video_valid_ ||

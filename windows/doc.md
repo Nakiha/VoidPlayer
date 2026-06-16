@@ -93,6 +93,10 @@ windows/
 - 默认 Auto 与所有 native-compositor 模式必须使用锁定的 VoidPlayer
   Flutter local engine；
   普通 Flutter SDK 缺少 surface-export ABI，启动时必须 fail closed。
+- active native compositor 必须通过 locked engine 的 compositor-owned
+  surface export frame pump 接收 Flutter UI 更新；runner 不得在 active
+  状态切回 `mirror`、恢复普通 HWND present，或用 Flutter Texture 视频作为成功
+  fallback。缺少 frame-pump ABI 或 export generation 超时必须显式 fail closed。
 - 禁止 color-key、`WS_EX_LAYERED`、窗口截图、桌面捕获和 child HWND sandwich。
 - 本地 engine 依次使用 `scripts/ci/build_flutter_windows_engine.ps1`、
   `package_flutter_windows_engine.ps1` 和

@@ -8,12 +8,18 @@
 1.8, ASSERT_TRACK_COUNT, 1
 1.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-scrgb
 1.91, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
+1.92, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
+1.93, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportPublishCount, 1
 2.0, TOGGLE_MARKS_SIDEBAR
 2.6, CAPTURE_WINDOW, sidebar_open_window, build/native_compositor_sidebar_open_window.png
 2.7, ASSERT_CAPTURE_REGION_NOT_BLACK, sidebar_open_window, right, 0.01, 4.0
+2.71, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportRequestCount, 1
+2.72, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
 2.8, ADD_MEDIA, build/generated/native_compositor_sidebar_b.mp4
 4.0, ASSERT_TRACK_COUNT, 2
 4.2, CAPTURE_WINDOW, sidebar_dual_track_window, build/native_compositor_sidebar_dual_track_window.png
 4.3, ASSERT_CAPTURE_REGION_NOT_BLACK, sidebar_dual_track_window, right, 0.01, 4.0
 4.4, ASSERT_CAPTURE_REGION_NOT_BLACK, sidebar_dual_track_window, bottom, 0.01, 4.0
+4.45, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportRequestCount, 2
+4.46, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
 4.5, QUIT, 0

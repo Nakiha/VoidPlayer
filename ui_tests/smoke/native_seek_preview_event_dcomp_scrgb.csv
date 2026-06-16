@@ -18,10 +18,13 @@
 1.98, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationSDRCompatibilityPass, source-rerender
 1.99, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsPresentationCompositorActive, true
 2.00, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportAvailable, true
+2.005, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
 2.01, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
 2.02, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsNativeCompositorStateSerial, 1
 2.03, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsNativeCompositorAckSerial, 1
 2.04, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportGeneration, 1
+2.045, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportPublishCount, 1
+2.046, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
 2.05, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsVideoRingGeneration, 1
 2.06, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDCompSwapChainActive, true
 2.07, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsDCompSwapChainFormat, R16G16B16A16_FLOAT

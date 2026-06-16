@@ -255,7 +255,7 @@ class MainWindowController {
     }
     log.info('[WindowsCompositorDebug] queue Flutter export frame: $reason');
     _nativeCompositorFrameRequestQueued = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    scheduleMicrotask(() {
       _nativeCompositorFrameRequestQueued = false;
       if (!_nativeCompositorActive || !player.canAcceptCommands) {
         return;

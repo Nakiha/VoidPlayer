@@ -118,7 +118,10 @@ chain. It is not the current Flutter product presentation route.
   copy/backpressure diagnostics for cross-adapter compositor inputs.
 - `FlutterTextureBridge` owns Flutter texture registration and lease release.
 - The engine fork owns immutable Flutter surface leases. Old resize
-  generations remain alive until their leases are released.
+  generations remain alive until their leases are released. In active
+  compositor-owned mode it must keep publishing a full premultiplied-alpha
+  surface stream for normal Flutter UI frames; `mirror` is only a preparation
+  mode before DComp becomes active, not an active fallback.
 - `WindowsNativeCompositor` owns an independent D3D11 device/context, DComp
   target, candidate/current SDR or FP16 swap chains, final shader, composition
   thread, and the latest
@@ -207,6 +210,9 @@ and unchanged BGRA compatibility output.
 | `windowsNativeCompositorPhase` | `inactive`, `preparing`, `active`, or `failed` |
 | `windowsNativeCompositorStateSerial/AckSerial` | Flutter alpha-hole handshake serials |
 | `windowsFlutterExportGeneration/windowsVideoRingGeneration` | Latest consumed input generations |
+| `windowsFlutterExportFramePumpAvailable` | Locked engine exposes the explicit compositor-owned export request/state ABI |
+| `windowsFlutterExportPublishCount/windowsFlutterExportRequestCount` | Engine-owned export frame stream activity |
+| `windowsFlutterExportStaleTimeoutCount` | Native compositor failed closed because a requested Flutter generation never advanced |
 | `windowsDComp*` | Swap-chain format/color space/support, SDR tone-map state, and composite/present/drop/failure counters |
 | `windowsDeviceRecovery*` | In-place D3D11/DComp recovery state, generation, attempts, success/failure counters, preserved player/track evidence, last removed reason, fallback stage, and last-frame hold |
 | `windowsCrossAdapter*` | Transport mode/status, requested/active sync kind, shared-fence capability/open/signal/wait counters, event-query/shared-fence P95 waits, copy counters, consumed generations, fallback reason, and last error |

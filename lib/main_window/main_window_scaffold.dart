@@ -49,6 +49,19 @@ class MainWindowScaffold extends StatelessWidget {
         (Platform.isWindows || viewport.nativeCompositorActive) &&
         viewport.textureId != null &&
         viewport.viewportState.status == ViewportDisplayStatus.active;
+    if (overlays.settingsVisible ||
+        overlays.mediaInfoVisible ||
+        overlays.profilerVisible ||
+        overlays.marksSidebarVisible) {
+      log.info(
+        '[WindowsCompositorDebug] scaffold overlay build '
+        'nativeHole=$nativeCompositorViewportActive '
+        'settings=${overlays.settingsVisible} '
+        'mediaInfo=${overlays.mediaInfoVisible} '
+        'profiler=${overlays.profilerVisible} '
+        'sidebar=${overlays.marksSidebarVisible}',
+      );
+    }
     final shellBackgroundColor = Theme.of(context).scaffoldBackgroundColor;
     return Scaffold(
       backgroundColor: nativeCompositorViewportActive

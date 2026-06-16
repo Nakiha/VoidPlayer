@@ -146,6 +146,8 @@ def _run_windows_preservation() -> None:
         },
         "ui-test",
         "ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv",
+        "ui_tests/smoke/native_compositor_flutter_surface_pump_scrgb.csv",
+        "ui_tests/smoke/native_compositor_window_close_scrgb.csv",
         "ui_tests/smoke/native_source_projection_dcomp_scrgb.csv",
         "ui_tests/smoke/native_compositor_device_recovery_scrgb.csv",
         "ui_tests/smoke/native_source_projection_device_recovery.csv",

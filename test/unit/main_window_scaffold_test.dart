@@ -7,6 +7,7 @@ import 'package:void_player/analysis/analysis_cache.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
 import 'package:void_player/analysis/analysis_overlay.dart';
 import 'package:void_player/analysis/analysis_toolbar_data_source.dart';
+import 'package:void_player/app_log.dart';
 import 'package:void_player/feedback/app_feedback.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/main_window/main_window_overlays.dart';
@@ -28,6 +29,10 @@ import 'package:void_player/widgets/quick_mark_sidebar.dart';
 import 'package:void_player/widgets/viewport_panel.dart';
 
 void main() {
+  setUpAll(() async {
+    await initLogging(['--log-level=flutter=OFF']);
+  });
+
   testWidgets('settings overlay is layered above main content', (tester) async {
     final feedback = AppFeedbackController();
     addTearDown(feedback.dispose);

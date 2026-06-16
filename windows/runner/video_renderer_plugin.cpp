@@ -2611,6 +2611,74 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(static_cast<int64_t>(compositor.ack_serial));
         diagnostics[flutter::EncodableValue("windowsFlutterExportGeneration")] =
             enc_i64(static_cast<int64_t>(compositor.flutter_generation));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportStateGeneration")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_state_generation));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportRingGeneration")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_ring_generation));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportPublishCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_publish_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportRequestCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_request_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportRequestDispatchCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_request_dispatch_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportScheduleFrameCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_schedule_frame_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportVsyncCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_vsync_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportPresentCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_present_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportBeginCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_begin_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportBeginFailCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_begin_fail_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportMakeCurrentFailCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_make_current_fail_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportPublishFailCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_publish_fail_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportBackpressureCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_backpressure_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportPendingFramePumpFrames")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_pending_frame_pump_frames));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportStaleTimeoutCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_stale_timeout_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportLatestAvailable")] =
+            flutter::EncodableValue(
+                compositor.flutter_export_latest_available);
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportFramePumpAvailable")] =
+            flutter::EncodableValue(
+                compositor.engine_export_frame_pump_available);
         diagnostics[flutter::EncodableValue("windowsVideoRingGeneration")] =
             enc_i64(static_cast<int64_t>(compositor.video_generation));
         diagnostics[flutter::EncodableValue("windowsDCompCompositeCount")] =

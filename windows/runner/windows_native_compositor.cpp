@@ -20,6 +20,7 @@ namespace {
 constexpr int kExportDisabled = 0;
 constexpr int kExportMirror = 1;
 constexpr int kExportCompositorOwned = 2;
+constexpr auto kFlutterExportStaleTimeout = std::chrono::milliseconds(750);
 
 struct CompositeConstants {
     float viewport[4];
@@ -110,15 +111,21 @@ bool WindowsNativeCompositor::Start(
         vr::parse_windows_cross_adapter_sync_request(
             std::getenv("VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC"));
     const bool engine_api_available = LoadEngineApi();
-    if (!hwnd_ || !flutter_view_ || !player || !engine_api_available) {
+    const bool frame_pump_available = engine_api_.frame_pump_available();
+    if (!hwnd_ || !flutter_view_ || !player || !engine_api_available ||
+        !frame_pump_available) {
         spdlog::error(
             "[WindowsNativeCompositor] surface export unavailable: "
-            "hwnd={} flutter_view={} player={} engine_api={}",
+            "hwnd={} flutter_view={} player={} engine_api={} frame_pump={}",
             hwnd_ != nullptr,
             flutter_view_ != nullptr,
             static_cast<bool>(player),
-            engine_api_available);
-        diagnostics_.fallback_reason = "flutter-surface-export-unavailable";
+            engine_api_available,
+            frame_pump_available);
+        diagnostics_.fallback_reason =
+            frame_pump_available
+                ? "flutter-surface-export-unavailable"
+                : "flutter-surface-export-frame-pump-unavailable";
         return false;
     }
     if (!InitializeDeviceAndComposition(
@@ -130,6 +137,7 @@ bool WindowsNativeCompositor::Start(
     }
 
     diagnostics_.engine_export_available = true;
+    diagnostics_.engine_export_frame_pump_available = true;
     engine_api_.set_callback(
         flutter_view_, OnFlutterSurfacePublished, this);
     if (!engine_api_.set_mode(flutter_view_, kExportMirror)) {
@@ -428,19 +436,50 @@ bool WindowsNativeCompositor::RequestFlutterFrame(const std::string& reason) {
         pending_flutter_frame_request_acquire_logged_ = false;
         base_generation = pending_flutter_frame_request_base_generation_;
     }
-    const int mode =
-        phase == Phase::Preparing ? kExportMirror : kExportCompositorOwned;
-    const bool ok = engine_api_.set_mode &&
-                    engine_api_.set_mode(flutter_view_, mode);
+    const bool preparing = phase == Phase::Preparing;
+    const bool ok = preparing
+        ? (engine_api_.set_mode &&
+           engine_api_.set_mode(flutter_view_, kExportMirror))
+        : (engine_api_.request_frame &&
+           engine_api_.request_frame(flutter_view_));
     spdlog::info(
         "[WindowsCompositorDebug] request flutter frame reason={} "
-        "phase={} mode={} seq={} baseGeneration={} ok={}",
+        "phase={} action={} seq={} baseGeneration={} ok={}",
         reason.empty() ? "unspecified" : reason,
         PhaseName(phase),
-        mode == kExportMirror ? "mirror" : "compositor-owned",
+        preparing ? "mirror-bootstrap" : "request-compositor-owned-export",
         request_sequence,
         base_generation,
         ok);
+    if (ok && engine_api_.get_state && flutter_view_) {
+        FlutterSurfaceExportState export_state = {};
+        export_state.struct_size = sizeof(export_state);
+        if (engine_api_.get_state(flutter_view_, &export_state)) {
+            spdlog::info(
+                "[WindowsCompositorDebug] flutter export state after request "
+                "seq={} requestCount={} dispatchCount={} publishCount={} "
+                "scheduleCount={} vsyncCount={} presentCount={} pendingPump={} "
+                "beginCount={} beginFail={} makeCurrentFail={} "
+                "publishFail={} backpressure={} stateGeneration={} "
+                "ringGeneration={} latestAvailable={}",
+                request_sequence,
+                export_state.request_count,
+                export_state.request_dispatch_count,
+                export_state.publish_count,
+                export_state.schedule_frame_count,
+                export_state.vsync_count,
+                export_state.present_count,
+                export_state.pending_frame_pump_frames,
+                export_state.export_begin_count,
+                export_state.export_begin_fail_count,
+                export_state.export_make_current_fail_count,
+                export_state.export_publish_fail_count,
+                export_state.backpressure_count,
+                export_state.frame_generation,
+                export_state.ring_generation,
+                export_state.latest_available);
+        }
+    }
     if (ok) SignalWork();
     return ok;
 }
@@ -820,6 +859,10 @@ bool WindowsNativeCompositor::LoadEngineApi() {
     if (!module) return false;
     engine_api_.set_mode = reinterpret_cast<SetExportModeFn>(
         GetProcAddress(module, "FlutterDesktopViewSetSurfaceExportMode"));
+    engine_api_.request_frame = reinterpret_cast<RequestSurfaceExportFrameFn>(
+        GetProcAddress(module, "FlutterDesktopViewRequestSurfaceExportFrame"));
+    engine_api_.get_state = reinterpret_cast<GetSurfaceExportStateFn>(
+        GetProcAddress(module, "FlutterDesktopViewGetSurfaceExportState"));
     engine_api_.set_callback = reinterpret_cast<SetPublishedCallbackFn>(
         GetProcAddress(module, "FlutterDesktopViewSetSurfacePublishedCallback"));
     engine_api_.acquire = reinterpret_cast<AcquireFlutterSurfaceFn>(
@@ -1421,11 +1464,19 @@ void WindowsNativeCompositor::ThreadMain() {
         std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (true) {
         bool first_present_timed_out = false;
+        bool flutter_export_stale_timed_out = false;
         {
             std::unique_lock<std::mutex> lock(mutex_);
             if (diagnostics_.present_count == 0) {
                 wake_.wait_until(
                     lock, first_present_deadline,
+                    [this]() { return stop_ || work_pending_; });
+            } else if (pending_flutter_frame_request_sequence_ > 0) {
+                const auto export_deadline =
+                    pending_flutter_frame_request_time_ +
+                    kFlutterExportStaleTimeout;
+                wake_.wait_until(
+                    lock, export_deadline,
                     [this]() { return stop_ || work_pending_; });
             } else {
                 wake_.wait(
@@ -1441,6 +1492,12 @@ void WindowsNativeCompositor::ThreadMain() {
                 phase_ == Phase::Inactive &&
                 diagnostics_.present_count == 0 &&
                 std::chrono::steady_clock::now() >= first_present_deadline;
+            flutter_export_stale_timed_out =
+                !first_present_timed_out &&
+                pending_flutter_frame_request_sequence_ > 0 &&
+                std::chrono::steady_clock::now() >=
+                    pending_flutter_frame_request_time_ +
+                    kFlutterExportStaleTimeout;
             work_pending_ = false;
         }
         if (first_present_timed_out) {
@@ -1452,6 +1509,32 @@ void WindowsNativeCompositor::ThreadMain() {
             }
             PublishState(Phase::Failed, "first-dcomp-present-timeout");
             return;
+        }
+        if (flutter_export_stale_timed_out) {
+            uint64_t request_sequence = 0;
+            uint64_t base_generation = 0;
+            std::string reason;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                request_sequence = pending_flutter_frame_request_sequence_;
+                base_generation = pending_flutter_frame_request_base_generation_;
+                reason = pending_flutter_frame_request_reason_;
+                ++flutter_export_stale_timeout_count_;
+                diagnostics_.flutter_export_stale_timeout_count =
+                    flutter_export_stale_timeout_count_;
+                pending_flutter_frame_request_sequence_ = 0;
+                pending_flutter_frame_request_base_generation_ = 0;
+                pending_flutter_frame_request_reason_.clear();
+                pending_flutter_frame_request_time_ = {};
+                pending_flutter_frame_request_acquire_logged_ = false;
+            }
+            spdlog::warn(
+                "[WindowsCompositorDebug] flutter export observation timed "
+                "out without a newer surface seq={} reason={} "
+                "baseGeneration={}; keeping native compositor active",
+                request_sequence,
+                reason.empty() ? "unspecified" : reason,
+                base_generation);
         }
         if (!CompositeLatest()) {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -1468,6 +1551,44 @@ bool WindowsNativeCompositor::CompositeLatest() {
         std::lock_guard<std::mutex> lock(mutex_);
         if (terminal_inactive_) {
             return false;
+        }
+    }
+    if (engine_api_.get_state && flutter_view_) {
+        FlutterSurfaceExportState export_state = {};
+        export_state.struct_size = sizeof(export_state);
+        if (engine_api_.get_state(flutter_view_, &export_state)) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            diagnostics_.engine_export_frame_pump_available = true;
+            diagnostics_.flutter_export_ring_generation =
+                export_state.ring_generation;
+            diagnostics_.flutter_export_state_generation =
+                export_state.frame_generation;
+            diagnostics_.flutter_export_publish_count =
+                export_state.publish_count;
+            diagnostics_.flutter_export_request_count =
+                export_state.request_count;
+            diagnostics_.flutter_export_request_dispatch_count =
+                export_state.request_dispatch_count;
+            diagnostics_.flutter_export_schedule_frame_count =
+                export_state.schedule_frame_count;
+            diagnostics_.flutter_export_vsync_count =
+                export_state.vsync_count;
+            diagnostics_.flutter_export_present_count =
+                export_state.present_count;
+            diagnostics_.flutter_export_begin_count =
+                export_state.export_begin_count;
+            diagnostics_.flutter_export_begin_fail_count =
+                export_state.export_begin_fail_count;
+            diagnostics_.flutter_export_make_current_fail_count =
+                export_state.export_make_current_fail_count;
+            diagnostics_.flutter_export_publish_fail_count =
+                export_state.export_publish_fail_count;
+            diagnostics_.flutter_export_backpressure_count =
+                export_state.backpressure_count;
+            diagnostics_.flutter_export_pending_frame_pump_frames =
+                export_state.pending_frame_pump_frames;
+            diagnostics_.flutter_export_latest_available =
+                export_state.latest_available;
         }
     }
     auto player = player_.lock();
@@ -1708,7 +1829,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 surface.slot,
                 elapsed_ms);
         };
-
     vr::SharedFp16TextureSnapshot next_video;
     if (player->acquire_shared_fp16_texture(next_video)) {
         const bool unchanged =
@@ -1877,12 +1997,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 held_flutter_valid_ = true;
                 complete_pending_flutter_request(held_flutter_);
                 ++flutter_generation_log_count_;
-                if (held_flutter_.frame_generation !=
-                        last_logged_flutter_frame_generation_ ||
-                    flutter_generation_log_count_ <= 8 ||
+                if (flutter_generation_log_count_ <= 8 ||
                     flutter_generation_log_count_ % 60 == 0) {
-                    last_logged_flutter_frame_generation_ =
-                        held_flutter_.frame_generation;
                     spdlog::info(
                         "[WindowsCompositorDebug] dcomp acquired flutter "
                         "surface generation={} ring={} slot={} size={}x{} "

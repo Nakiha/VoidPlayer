@@ -34,9 +34,6 @@ TEST_CASE("Windows device recovery state names are stable",
                 WindowsDeviceRecoveryState::FallbackNativeSdr)) ==
             "fallback-native-sdr");
     REQUIRE(std::string(vr::windows_device_recovery_state_name(
-                WindowsDeviceRecoveryState::FallbackFlutterTextureSdr)) ==
-            "fallback-flutter-texture-sdr");
-    REQUIRE(std::string(vr::windows_device_recovery_state_name(
                 WindowsDeviceRecoveryState::FailedTerminal)) ==
             "failed-terminal");
 }

@@ -5,6 +5,8 @@
 #include "windows/d3d11/cross_adapter_transport.h"
 #include "windows/presentation/windows_dcomp_composite.h"
 #include "windows/presentation/windows_device_recovery.h"
+#include "windows/presentation/windows_high_refresh_metrics.h"
+#include "windows/presentation/windows_overlay_layer_state.h"
 #include "windows/player/native_player.h"
 
 #include <d3d11.h>
@@ -35,7 +37,7 @@ public:
         Inactive,
         Preparing,
         Active,
-        FallbackRestoring,
+        Failed,
     };
 
     struct Diagnostics {
@@ -54,6 +56,9 @@ public:
         std::string cross_adapter_transport_mode = "same-adapter";
         std::string cross_adapter_transport_status = "not-required";
         std::string cross_adapter_sync_kind = "keyed-mutex";
+        std::string cross_adapter_requested_sync_kind = "auto";
+        std::string cross_adapter_active_sync_kind = "keyed-mutex";
+        std::string cross_adapter_sync_fallback_reason = "none";
         std::string cross_adapter_last_error = "none";
         std::string device_recovery_state = "stable";
         std::string device_recovery_last_reason = "none";
@@ -80,6 +85,12 @@ public:
         uint64_t transport_timeout_count = 0;
         uint64_t transport_last_copy_us = 0;
         uint64_t transport_total_copy_us = 0;
+        uint64_t shared_fence_signal_count = 0;
+        uint64_t shared_fence_wait_count = 0;
+        uint64_t shared_fence_timeout_count = 0;
+        uint64_t shared_fence_last_wait_us = 0;
+        uint64_t shared_fence_p95_wait_us = 0;
+        uint64_t event_query_p95_wait_us = 0;
         uint64_t flutter_transport_generation = 0;
         uint64_t video_transport_generation = 0;
         uint64_t source_transport_generation = 0;
@@ -102,8 +113,50 @@ public:
         uint64_t overlay_fill_rect_count = 0;
         uint64_t overlay_line_rect_count = 0;
         uint64_t overlay_motion_line_count = 0;
+        int64_t high_refresh_display_hz = 60;
+        int64_t dcomp_present_interval_p95_us = 0;
+        int64_t dcomp_composite_p95_us = 0;
+        int64_t dcomp_acquire_wait_p95_us = 0;
+        int64_t interaction_input_to_present_p95_us = 0;
+        int64_t dcomp_drop_rate_x1000 = 0;
+        uint64_t source_projection_reuse_count = 0;
+        uint64_t viewport_redraw_during_projection_count = 0;
+        uint64_t overlay_layer_raster_count = 0;
+        uint64_t overlay_layer_upload_count = 0;
+        uint64_t overlay_layer_reuse_count = 0;
+        uint64_t overlay_layer_texture_count = 0;
+        uint64_t overlay_layer_bytes = 0;
+        uint64_t overlay_layer_generation = 0;
+        uint64_t overlay_layer_committed_generation = 0;
+        uint64_t overlay_layer_pending_generation = 0;
+        uint64_t overlay_layer_composite_count = 0;
+        uint64_t overlay_layer_miss_count = 0;
+        uint64_t overlay_layer_backpressure_count = 0;
+        int64_t overlay_composite_p95_us = 0;
+        int64_t overlay_raster_p95_us = 0;
+        int64_t overlay_upload_p95_us = 0;
+        int64_t hot_path_display_hz = 60;
+        int64_t hot_path_frame_budget_us = 16666;
+        int64_t hot_path_present_interval_p95_us = 0;
+        int64_t hot_path_composite_p95_us = 0;
+        int64_t hot_path_acquire_wait_p95_us = 0;
+        int64_t hot_path_input_to_present_p95_us = 0;
+        int64_t hot_path_drop_rate_x1000 = 0;
+        uint64_t hot_path_projection_only_update_count = 0;
+        uint64_t hot_path_viewport_redraw_during_projection_count = 0;
+        uint64_t hot_path_source_cache_reuse_count = 0;
+        uint64_t hot_path_overlay_reuse_count = 0;
+        uint64_t hot_path_overlay_raster_count = 0;
+        uint64_t hot_path_overlay_upload_count = 0;
         double source_cache_hz = 0.0;
         double source_projection_hz = 0.0;
+        std::string overlay_layer_mode = "inactive";
+        std::string overlay_layer_fallback_reason = "none";
+        std::string overlay_layer_last_error = "none";
+        std::string high_refresh_gate_last_result = "not-run";
+        std::string hot_path_mode = "inactive";
+        std::string hot_path_last_failure_reason = "none";
+        std::string hot_path_gate_result = "not-run";
         uint32_t swap_chain_width = 0;
         uint32_t swap_chain_height = 0;
         bool engine_export_available = false;
@@ -117,8 +170,15 @@ public:
         bool transport_bgra8_supported = false;
         bool transport_fp16_supported = false;
         bool transport_shared_fence_supported = false;
+        bool transport_shared_fence_producer_supported = false;
+        bool transport_shared_fence_output_supported = false;
+        bool transport_shared_fence_handle_created = false;
+        bool transport_shared_fence_open_succeeded = false;
         bool source_projection_enabled = false;
         bool source_cache_active = false;
+        bool high_refresh_gate_supported = false;
+        bool overlay_retained_layer_active = false;
+        bool hot_path_active = false;
     };
 
     using StateCallback = std::function<void(Phase, uint64_t, const std::string&)>;
@@ -148,9 +208,13 @@ public:
                              uint64_t display_generation,
                              const std::string& reason);
     void AcknowledgeFlutterState(uint64_t serial, bool transparent_viewport);
-    void ForceFallbackForTesting(const std::string& reason);
+    void ForceFailureForTesting(const std::string& reason);
     bool BeginDeviceRecovery(const std::string& reason, long removed_reason);
     void RequestDiagnosticCapture();
+    void SetHighRefreshDisplayHz(int64_t display_hz);
+    void ResetHighRefreshMetrics();
+    void BeginInteractionSample(const std::string& label);
+    void EndInteractionSample(const std::string& label);
     Diagnostics diagnostics() const;
 
 private:
@@ -212,11 +276,12 @@ private:
         const std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage>& overlay,
         const SourceProjection& projection,
         const D3D11_TEXTURE2D_DESC& back_desc);
+    void ResetOverlayLayer(const std::string& reason);
     void ReleaseHeldInputs(const std::shared_ptr<vr::NativePlayer>& player);
     void ThreadMain();
     bool CompositeLatest();
     void SignalWork();
-    void EnterFallback(const std::string& reason);
+    void EnterFailed(const std::string& reason);
     void PublishState(Phase phase, const std::string& reason);
     bool EnsureProducerDevice(IDXGIAdapter* producer_adapter);
     bool SetOutputAdapterLocked(IDXGIAdapter* output_adapter);
@@ -258,6 +323,8 @@ private:
     Microsoft::WRL::ComPtr<IDXGIAdapter> output_adapter_;
     Microsoft::WRL::ComPtr<IDXGIAdapter> pending_output_adapter_;
     vr::WindowsCrossAdapterTransportSupport transport_support_;
+    vr::WindowsCrossAdapterSyncRequest cross_adapter_sync_request_ =
+        vr::WindowsCrossAdapterSyncRequest::Auto;
     SwapChainResources current_swap_chain_;
     SwapChainResources pending_swap_chain_;
     Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device_;
@@ -314,7 +381,6 @@ private:
     bool work_pending_ = false;
     bool diagnostic_capture_pending_ = true;
     bool terminal_inactive_ = false;
-    bool fallback_finish_pending_ = false;
     OutputTarget desired_output_target_ = OutputTarget::SDR;
     uint64_t transition_min_video_generation_ = 0;
     uint64_t transition_min_source_generation_ = 0;
@@ -330,5 +396,14 @@ private:
     bool source_cache_base_lease_wait_logged_ = false;
     bool source_cache_bundle_acquire_logged_ = false;
     bool source_cache_consumed_logged_ = false;
+    vr::WindowsHighRefreshMetrics high_refresh_metrics_;
+    std::chrono::steady_clock::time_point last_present_time_{};
+    std::chrono::steady_clock::time_point interaction_sample_started_{};
+    uint64_t last_overlay_metrics_generation_ = 0;
+    bool interaction_sample_active_ = false;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_vertex_buffer_;
+    UINT overlay_vertex_count_ = 0;
+    vr::WindowsOverlayLayerCacheState overlay_layer_state_;
+    vr::WindowsOverlayLayerSignature overlay_layer_signature_;
     Diagnostics diagnostics_;
 };

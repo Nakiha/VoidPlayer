@@ -57,11 +57,13 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 - Windows presentation fallback 必须显式、可诊断；改变 adapter、driver type、target format 或 presentation mode 时必须同步日志和 diagnostics。
 - 修改 shared presentation backend、Windows texture/format/color 路径时，必须运行确定性 D3D11 color/layout parity 与 FP16/scRGB smoke，以及 `windows-preservation`。
 - Windows native compositor 只能合成锁定 Flutter engine 导出的完整 premultiplied-alpha surface；禁止 color-key、`WS_EX_LAYERED`、窗口/桌面捕获、矩形 hard hole 或 child HWND sandwich。
-- 修改 Flutter surface export、共享 FP16 ring、DComp 激活/回落协议时，必须使用锁定 Windows local engine 跑 DComp native canary 和 rebuilt UI smoke；普通 Flutter SDK 的 fallback 不能作为通过证据。
+- Windows 视频上屏禁止回退到 Flutter Texture SDR；SDR 只能表示 native DComp BGRA8 target。native compositor / Flutter export 不可用时必须 fail closed 或降级到 native SDR，不能伪装成正常 Texture 播放。
+- 修改 Flutter surface export、共享 FP16 ring、DComp 激活/失败协议时，必须使用锁定 Windows local engine 跑 DComp native canary 和 rebuilt UI smoke；普通 Flutter SDK 的 fallback 不能作为通过证据。
 - 修改 Windows source cache/projection、bundle lease、DComp projection shader 或 native overlay 合成时，必须运行 `[windows_source_cache]`、`[windows_source_projection]`、`windows_d3d11_source_projection_smoke` 和 rebuilt source-projection UI smoke，并保持 viewport FP16 fallback 可诊断。
-- 修改 Windows Auto policy、display refresh、SDR/scRGB DComp target 或 SDR white-level 更新时，必须同时验证默认 Auto SDR 与强制 scRGB；HDR target 失败必须先降级 native SDR，不能直接恢复 Flutter Texture。具备 HDR 显示时补跑 `python dev.py gate windows-hdr-auto`。
-- 修改 Windows cross-adapter transport、output-device migration、display calibration diagnostics 或 adapter fallback 时，必须运行 `[windows_cross_adapter]` 定向测试；具备多 adapter / HDR output 机器时补跑 `python dev.py gate windows-cross-adapter-local`。跨 adapter 只能使用 GPU-copy bridge 或明确诊断回落，禁止 CPU readback、窗口截图或播放器私有 ICC/LUT 校色。
-- 修改 Windows device-loss recovery、D3D11/DComp 原地重建、source-cache 清理或 debug recovery 注入时，必须运行 `[windows_device_recovery]`，并覆盖默认 SDR、强制 scRGB 和 source-projection recovery UI smoke；恢复失败必须保持可诊断 fallback，不能销毁 player/track model。
+- 修改 Windows Auto policy、display refresh、SDR/scRGB DComp target 或 SDR white-level 更新时，必须同时验证默认 Auto SDR 与强制 scRGB；HDR target 失败必须先降级 native SDR，native SDR 失败必须 fail closed。具备 HDR 显示时补跑 `python dev.py gate windows-hdr-auto`。
+- 修改 Windows cross-adapter transport、shared-fence sync、output-device migration、display calibration diagnostics 或 adapter fallback 时，必须运行 `[windows_cross_adapter]` 定向测试；具备多 adapter / HDR output 机器时补跑 `python dev.py gate windows-cross-adapter-local`。跨 adapter 只能使用 GPU-copy bridge 或明确诊断回落，禁止 CPU readback、窗口截图或播放器私有 ICC/LUT 校色；shared-fence 只能作为证据驱动 opt-in，不能无本地 A/B 证据改成默认。
+- 修改 Windows device-loss recovery、D3D11/DComp 原地重建、source-cache 清理或 debug recovery 注入时，必须运行 `[windows_device_recovery]`，并覆盖默认 SDR、强制 scRGB 和 source-projection recovery UI smoke；恢复失败必须保持可诊断 native fallback 或 fail closed，不能销毁 player/track model，不能回 Flutter Texture。
+- 修改 Windows high-refresh interaction、DComp present cadence、source projection pan/zoom/split/order、native overlay 合成或相关 diagnostics 时，必须运行 `[windows_high_refresh]`、`[windows_overlay_layer]`、`windows_d3d11_high_refresh_projection_overlay_smoke`、`windows_d3d11_retained_overlay_layer_smoke` 和 rebuilt high-refresh UI smoke；高刷机器补跑 `python dev.py gate windows-high-refresh-local` 并要求 hot-path gate pass，低刷机器至少证明不退回 viewport redraw 或 per-composite overlay rebuild 热路径。
 - 不要在一个轮次里堆无关改动。每轮完成后先测试，再单独提交。
 
 ## 验证矩阵

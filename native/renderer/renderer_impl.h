@@ -121,6 +121,7 @@ public:
 
     /// Get per-track performance stats snapshot (thread-safe).
     std::vector<TrackPerfStats> track_perf_stats() const;
+    RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
     PresentationBackendMetrics presentation_backend_metrics() const;
     D3D11BackendMetrics d3d_backend_metrics() const;
     PresentationBackendStats presentation_backend_stats() const;

@@ -379,6 +379,12 @@ PresentationBackendDiagnostics D3D11RenderBackend::diagnostics() const {
         result.source_cache_generation = source_cache_ring_->generation();
         result.source_cache_bytes = source_cache_ring_->estimated_bytes();
         result.source_cache_publish_count = source_cache_ring_->publish_count();
+        result.source_cache_presented_anchor_generation =
+            source_cache_presented_anchor_generation_;
+        result.source_cache_presented_anchor_frame_generation =
+            source_cache_presented_anchor_frame_generation_;
+        result.source_cache_presented_anchor_publish_count =
+            source_cache_presented_anchor_publish_count_;
         result.source_cache_backpressure_count =
             source_cache_ring_->backpressure_count();
         result.source_cache_fallback_count =
@@ -541,6 +547,8 @@ void D3D11RenderBackend::clear_source_cache(const char* reason) {
             reason ? reason : "unspecified");
         source_cache_ring_->clear();
     }
+    source_cache_presented_anchor_generation_ = 0;
+    source_cache_presented_anchor_frame_generation_ = 0;
     source_cache_descriptors_.clear();
     source_cache_draw_error_ =
         reason ? reason : "source-cache-cleared";
@@ -889,10 +897,16 @@ bool D3D11RenderBackend::draw_source_cache_bundle(
     if (hooks.build_overlay_primitives) {
         overlay = hooks.build_overlay_primitives(snapshot);
     }
-    if (!source_cache_ring_->publish_bundle(std::move(overlay))) {
+    SourceCachePublishInfo publish_info;
+    if (!source_cache_ring_->publish_bundle(std::move(overlay), &publish_info)) {
         report_failure("bundle-publish-failed");
         return false;
     }
+    source_cache_presented_anchor_generation_ =
+        publish_info.ring_generation;
+    source_cache_presented_anchor_frame_generation_ =
+        publish_info.frame_generation;
+    ++source_cache_presented_anchor_publish_count_;
     source_cache_draw_error_ = "none";
     return true;
 }
@@ -1200,6 +1214,9 @@ void D3D11RenderBackend::shutdown() {
     fp16_draw_count_ = 0;
     sdr_compatibility_draw_count_ = 0;
     fp16_fallback_reason_ = "none";
+    source_cache_presented_anchor_generation_ = 0;
+    source_cache_presented_anchor_frame_generation_ = 0;
+    source_cache_presented_anchor_publish_count_ = 0;
     source_cache_callback_ = {};
 }
 

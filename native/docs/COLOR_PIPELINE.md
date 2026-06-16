@@ -34,7 +34,7 @@ Concrete presentation targets are platform-specific:
 
 | Platform | Backend target | Notes |
 | --- | --- | --- |
-| Windows | D3D11 BGRA compatibility texture, shared RGBA16F video/source rings, and locked-engine DComp dual target | Auto selects BGRA8 SDR or FP16 scRGB; Flutter Texture SDR is the diagnosed compatibility fallback. |
+| Windows | D3D11 BGRA compatibility texture, shared RGBA16F video/source rings, and locked-engine DComp dual target | Auto selects BGRA8 SDR or FP16 scRGB native compositor targets; Flutter Texture SDR is not an allowed fallback. |
 | macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
 | macOS EDR | Native compositor `RGBA16Float` `CAMetalLayer` | Uses `extendedLinearDisplayP3` and composites native video with the exported Flutter texture. |
 
@@ -140,7 +140,7 @@ Windows samples shader inputs through D3D11 SRVs:
   matrix, primaries, transfer, tone mapping, and final BGRA output.
 
 The compatibility pass tone-maps to the BGRA shared texture used by Flutter or
-the native SDR compositor. In `fp16-scrgb` and native-compositor modes the same
+the native SDR compositor. In native-compositor modes the same
 prepared source snapshot is first rendered to
 `R16G16B16A16_FLOAT`:
 
@@ -175,8 +175,10 @@ its source-sized `R16G16B16A16_FLOAT` texture from the same
 `PreparedDrawResources` snapshot. The source pass does not bake analysis
 overlays. DComp samples up to four source textures, applies the Dart/macOS
 projection contract, fills missing/out-of-range UVs with the linearized
-viewport background, draws projected fill/outline/motion primitives, then
-composites the Flutter surface. This preserves the order
+viewport background, composites retained video-space overlay primitives, then
+composites the Flutter surface. Overlay colors are sRGB-decoded and scaled by
+the same SDR white contract on scRGB targets, while SDR targets keep the BGRA
+compatibility contract. This preserves the order
 `source video -> analysis overlay -> Flutter UI`.
 
 ## macOS Metal / CVPixelBuffer Path
@@ -270,6 +272,10 @@ Current Windows preservation evidence:
   proves values above `1.0` survive projection. `[windows_source_cache]` and
   `[windows_source_projection]` tests cover bundle leases/generations, the
   384 MiB policy, split/pan/zoom, missing sources, and background fallback.
+- `windows_d3d11_retained_overlay_layer_smoke` validates the Windows retained
+  overlay layer contract: dirty primitive packages rebuild once, projection
+  ticks reuse the GPU buffer, and high-refresh gates fail if overlay raster
+  occurs without reuse.
 
 Current macOS release-readiness evidence:
 

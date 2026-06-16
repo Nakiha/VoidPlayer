@@ -26,8 +26,6 @@ const char* windows_device_recovery_state_name(
         return "recovered";
     case WindowsDeviceRecoveryState::FallbackNativeSdr:
         return "fallback-native-sdr";
-    case WindowsDeviceRecoveryState::FallbackFlutterTextureSdr:
-        return "fallback-flutter-texture-sdr";
     case WindowsDeviceRecoveryState::FailedTerminal:
         return "failed-terminal";
     default:

@@ -60,29 +60,29 @@ WindowsPresentationPolicy resolve_windows_presentation_policy(
         policy.hdr_output_requested = true;
         return policy;
     }
-    if (request == "sdr" || request == "flutter-texture-sdr") {
+    if (request == "sdr") {
         WindowsPresentationPolicy policy;
         policy.request = request;
-        policy.mode = "flutter-texture-sdr";
+        policy.mode = "native-compositor-sdr";
         policy.desired_mode = policy.mode;
-        policy.reason = "forced-flutter-texture-sdr";
-        policy.output_target = ColorOutputTarget::kSDRToneMappedBT709;
+        policy.reason = "forced-native-compositor-sdr";
+        policy.auto_enabled = false;
+        policy.has_hdr_track = has_hdr_track;
+        return policy;
+    }
+    if (request == "flutter" || request == "flutter-texture-sdr" ||
+        request == "fp16-scrgb") {
+        WindowsPresentationPolicy policy;
+        policy.request = request;
+        policy.mode = "unsupported";
+        policy.desired_mode = "unsupported";
+        policy.reason = "unsupported-windows-presentation-mode";
+        policy.fallback_reason = "unsupported-windows-presentation-mode";
         policy.auto_enabled = false;
         policy.has_hdr_track = has_hdr_track;
         policy.fp16_scrgb_requested = false;
         policy.native_compositor_requested = false;
-        return policy;
-    }
-    if (request == "fp16-scrgb") {
-        WindowsPresentationPolicy policy;
-        policy.request = "fp16-scrgb";
-        policy.mode = "flutter-texture-sdr-fp16-scrgb";
-        policy.reason = "forced-fp16-scrgb";
-        policy.output_target = ColorOutputTarget::kWindowsLinearScRGB;
-        policy.auto_enabled = false;
-        policy.has_hdr_track = has_hdr_track;
-        policy.fp16_scrgb_requested = true;
-        policy.native_compositor_requested = false;
+        policy.supported = false;
         return policy;
     }
     if (request == "native-compositor-sdr") {
@@ -116,15 +116,15 @@ WindowsPresentationPolicy resolve_windows_presentation_policy(
 
     WindowsPresentationPolicy policy;
     policy.request = request;
-    policy.mode = "flutter-texture-sdr";
+    policy.mode = "unsupported";
     policy.desired_mode = policy.mode;
-    policy.reason = "unsupported-presentation-request";
-    policy.fallback_reason = "unsupported-presentation-request";
-    policy.output_target = ColorOutputTarget::kSDRToneMappedBT709;
+    policy.reason = "unsupported-windows-presentation-mode";
+    policy.fallback_reason = "unsupported-windows-presentation-mode";
     policy.auto_enabled = false;
     policy.has_hdr_track = has_hdr_track;
     policy.fp16_scrgb_requested = false;
     policy.native_compositor_requested = false;
+    policy.supported = false;
     return policy;
 }
 

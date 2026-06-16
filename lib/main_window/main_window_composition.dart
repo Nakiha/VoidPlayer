@@ -157,6 +157,7 @@ extension MainWindowComposition on MainWindowController {
           toggleAnalysisOverlayForSlot:
               analysisCoordinator.toggleOverlayForSlot,
           toggleAnalysisOverlayPanel: analysisCoordinator.toggleOverlayPanel,
+          toggleMarksSidebar: layoutCoordinator.toggleMarksSidebar,
           generateAnalysisCacheForSlot:
               analysisCoordinator.ensureGeneratedForSlot,
           setMediaSourceIdForSlot: quickMarkCoordinator.declareSourceIdForSlot,

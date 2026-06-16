@@ -147,6 +147,7 @@ Examples:
             "macos-hdr-edr-smoke",
             "macos-release-readiness",
             "windows-cross-adapter-local",
+            "windows-high-refresh-local",
             "windows-hdr-auto",
             "windows-preservation",
             "release-candidate",

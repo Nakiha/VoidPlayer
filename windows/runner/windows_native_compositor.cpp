@@ -10,8 +10,10 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <sstream>
+#include <vector>
 
 namespace {
 
@@ -41,8 +43,10 @@ struct CompositeConstants {
 };
 
 struct OverlayVertex {
-    float x = 0.0f;
-    float y = 0.0f;
+    float u = 0.0f;
+    float v = 0.0f;
+    float source_slot = 0.0f;
+    float padding = 0.0f;
     float r = 0.0f;
     float g = 0.0f;
     float b = 0.0f;
@@ -102,6 +106,9 @@ bool WindowsNativeCompositor::Start(
             ? sdr_white_level_nits / 80.0
             : 1.0;
     desired_output_target_ = output_target;
+    cross_adapter_sync_request_ =
+        vr::parse_windows_cross_adapter_sync_request(
+            std::getenv("VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC"));
     const bool engine_api_available = LoadEngineApi();
     if (!hwnd_ || !flutter_view_ || !player || !engine_api_available) {
         spdlog::error(
@@ -136,12 +143,16 @@ bool WindowsNativeCompositor::Start(
         stop_ = false;
         work_pending_ = true;
         terminal_inactive_ = false;
-        fallback_finish_pending_ = false;
         rate_start_time_ = std::chrono::steady_clock::now();
         source_cache_publish_count_ = 0;
         source_cache_base_lease_wait_logged_ = false;
         source_cache_bundle_acquire_logged_ = false;
         source_cache_consumed_logged_ = false;
+        high_refresh_metrics_.reset(diagnostics_.high_refresh_display_hz);
+        last_present_time_ = {};
+        interaction_sample_started_ = {};
+        last_overlay_metrics_generation_ = 0;
+        interaction_sample_active_ = false;
         diagnostics_.desired_output_target =
             OutputTargetName(output_target);
         diagnostics_.transition_reason = "initial";
@@ -158,14 +169,28 @@ bool WindowsNativeCompositor::Start(
             IsCrossAdapterActive() ? transport_support_.status
                                    : "not-required";
         diagnostics_.cross_adapter_sync_kind =
-            IsCrossAdapterActive() ? transport_support_.sync_kind
+            IsCrossAdapterActive() ? "event-query"
                                    : "keyed-mutex";
+        diagnostics_.cross_adapter_requested_sync_kind =
+            vr::windows_cross_adapter_sync_request_name(
+                cross_adapter_sync_request_);
+        diagnostics_.cross_adapter_active_sync_kind =
+            diagnostics_.cross_adapter_sync_kind;
+        diagnostics_.cross_adapter_sync_fallback_reason = "none";
         diagnostics_.cross_adapter_supported =
             !IsCrossAdapterActive() || transport_support_.bgra8;
         diagnostics_.transport_bgra8_supported = transport_support_.bgra8;
         diagnostics_.transport_fp16_supported = transport_support_.rgba16f;
         diagnostics_.transport_shared_fence_supported =
             transport_support_.shared_fence;
+        diagnostics_.transport_shared_fence_producer_supported =
+            transport_support_.shared_fence_producer;
+        diagnostics_.transport_shared_fence_output_supported =
+            transport_support_.shared_fence_output;
+        diagnostics_.transport_shared_fence_handle_created =
+            transport_support_.shared_fence_handle_created;
+        diagnostics_.transport_shared_fence_open_succeeded =
+            transport_support_.shared_fence_open_succeeded;
     }
     thread_ = std::thread(&WindowsNativeCompositor::ThreadMain, this);
     return true;
@@ -220,6 +245,7 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     overlay_input_layout_.Reset();
     overlay_pixel_shader_.Reset();
     overlay_vertex_shader_.Reset();
+    ResetOverlayLayer(reason ? reason : "shutdown");
     vertex_shader_.Reset();
     context_.Reset();
     device_.Reset();
@@ -264,6 +290,7 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
     held_source_srvs_ = {};
     held_source_mutexes_ = {};
     held_source_textures_ = {};
+    ResetOverlayLayer("source-cache-release");
 
     if (held_flutter_valid_) {
         if (held_flutter_mutex_) {
@@ -313,6 +340,31 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
     held_sdr_video_ = {};
     held_sdr_video_srv_.Reset();
     held_sdr_video_texture_.Reset();
+}
+
+void WindowsNativeCompositor::ResetOverlayLayer(const std::string& reason) {
+    overlay_vertex_buffer_.Reset();
+    overlay_vertex_count_ = 0;
+    overlay_layer_signature_ = {};
+    std::lock_guard<std::mutex> lock(mutex_);
+    overlay_layer_state_.reset(reason);
+    const auto overlay_state = overlay_layer_state_.snapshot();
+    diagnostics_.overlay_retained_layer_active = overlay_state.active;
+    diagnostics_.overlay_layer_mode = overlay_state.mode;
+    diagnostics_.overlay_layer_texture_count = overlay_state.texture_count;
+    diagnostics_.overlay_layer_bytes = overlay_state.bytes;
+    diagnostics_.overlay_layer_generation = overlay_state.generation;
+    diagnostics_.overlay_layer_committed_generation =
+        overlay_state.committed_generation;
+    diagnostics_.overlay_layer_pending_generation =
+        overlay_state.pending_generation;
+    diagnostics_.overlay_layer_composite_count = overlay_state.composite_count;
+    diagnostics_.overlay_layer_miss_count = overlay_state.miss_count;
+    diagnostics_.overlay_layer_backpressure_count =
+        overlay_state.backpressure_count;
+    diagnostics_.overlay_layer_fallback_reason =
+        overlay_state.fallback_reason;
+    diagnostics_.overlay_layer_last_error = overlay_state.last_error;
 }
 
 void WindowsNativeCompositor::SetViewportRect(
@@ -458,9 +510,6 @@ void WindowsNativeCompositor::AcknowledgeFlutterState(
         diagnostics_.ack_serial = serial;
         if (transparent_viewport && phase_ == Phase::Preparing) {
             activate = diagnostics_.flutter_generation > 0;
-        } else if (!transparent_viewport &&
-                   phase_ == Phase::FallbackRestoring) {
-            fallback_finish_pending_ = true;
         }
         spdlog::info(
             "[WindowsNativeCompositor] Flutter ACK serial={} phase={} "
@@ -475,9 +524,9 @@ void WindowsNativeCompositor::AcknowledgeFlutterState(
     }
 }
 
-void WindowsNativeCompositor::ForceFallbackForTesting(
+void WindowsNativeCompositor::ForceFailureForTesting(
     const std::string& reason) {
-    EnterFallback(reason.empty() ? "ui-test-forced-fallback" : reason);
+    EnterFailed(reason.empty() ? "ui-test-forced-failure" : reason);
 }
 
 bool WindowsNativeCompositor::BeginDeviceRecovery(
@@ -542,6 +591,79 @@ WindowsNativeCompositor::Diagnostics
 WindowsNativeCompositor::diagnostics() const {
     std::lock_guard<std::mutex> lock(mutex_);
     Diagnostics result = diagnostics_;
+    const auto high_refresh = high_refresh_metrics_.snapshot();
+    result.high_refresh_gate_supported = high_refresh.gate_supported;
+    result.high_refresh_display_hz = high_refresh.display_hz;
+    result.dcomp_present_interval_p95_us =
+        high_refresh.present_interval_p95_us;
+    result.dcomp_composite_p95_us = high_refresh.composite_p95_us;
+    result.dcomp_acquire_wait_p95_us = high_refresh.acquire_wait_p95_us;
+    result.interaction_input_to_present_p95_us =
+        high_refresh.interaction_input_to_present_p95_us;
+    result.dcomp_drop_rate_x1000 = high_refresh.drop_rate_x1000;
+    result.source_projection_reuse_count =
+        high_refresh.source_projection_reuse_count;
+    result.viewport_redraw_during_projection_count =
+        high_refresh.viewport_redraw_during_projection_count;
+    result.overlay_layer_raster_count =
+        high_refresh.overlay_layer_raster_count;
+    result.overlay_layer_upload_count =
+        high_refresh.overlay_layer_upload_count;
+    result.overlay_layer_reuse_count =
+        high_refresh.overlay_layer_reuse_count;
+    result.overlay_composite_p95_us = high_refresh.overlay_composite_p95_us;
+    result.overlay_raster_p95_us = high_refresh.overlay_raster_p95_us;
+    result.overlay_upload_p95_us = high_refresh.overlay_upload_p95_us;
+    const auto overlay_state = overlay_layer_state_.snapshot();
+    result.overlay_retained_layer_active = overlay_state.active;
+    result.overlay_layer_mode = overlay_state.mode;
+    result.overlay_layer_texture_count = overlay_state.texture_count;
+    result.overlay_layer_bytes = overlay_state.bytes;
+    result.overlay_layer_generation = overlay_state.generation;
+    result.overlay_layer_committed_generation =
+        overlay_state.committed_generation;
+    result.overlay_layer_pending_generation =
+        overlay_state.pending_generation;
+    result.overlay_layer_composite_count = overlay_state.composite_count;
+    result.overlay_layer_miss_count = overlay_state.miss_count;
+    result.overlay_layer_backpressure_count =
+        overlay_state.backpressure_count;
+    result.overlay_layer_fallback_reason = overlay_state.fallback_reason;
+    result.overlay_layer_last_error = overlay_state.last_error;
+    const bool hot_path_active =
+        phase_ == Phase::Active && result.source_projection_enabled;
+    const auto gate_result = vr::evaluate_windows_high_refresh_gate(
+        high_refresh, hot_path_active, overlay_state.active);
+    result.high_refresh_gate_last_result = gate_result;
+    result.hot_path_active = hot_path_active;
+    result.hot_path_mode =
+        hot_path_active ? "source-projection-dcomp" : "inactive";
+    result.hot_path_display_hz = high_refresh.display_hz;
+    result.hot_path_frame_budget_us =
+        high_refresh.display_hz > 0 ? 1000000 / high_refresh.display_hz
+                                    : 16666;
+    result.hot_path_present_interval_p95_us =
+        high_refresh.present_interval_p95_us;
+    result.hot_path_composite_p95_us = high_refresh.composite_p95_us;
+    result.hot_path_acquire_wait_p95_us = high_refresh.acquire_wait_p95_us;
+    result.hot_path_input_to_present_p95_us =
+        high_refresh.interaction_input_to_present_p95_us;
+    result.hot_path_drop_rate_x1000 = high_refresh.drop_rate_x1000;
+    result.hot_path_projection_only_update_count =
+        result.source_projection_update_count;
+    result.hot_path_viewport_redraw_during_projection_count =
+        high_refresh.viewport_redraw_during_projection_count;
+    result.hot_path_source_cache_reuse_count =
+        high_refresh.source_projection_reuse_count;
+    result.hot_path_overlay_reuse_count =
+        high_refresh.overlay_layer_reuse_count;
+    result.hot_path_overlay_raster_count =
+        high_refresh.overlay_layer_raster_count;
+    result.hot_path_overlay_upload_count =
+        high_refresh.overlay_layer_upload_count;
+    result.hot_path_gate_result = gate_result;
+    result.hot_path_last_failure_reason =
+        gate_result.rfind("fail-", 0) == 0 ? gate_result : "none";
     const double elapsed_seconds =
         std::chrono::duration<double>(
             std::chrono::steady_clock::now() - rate_start_time_).count();
@@ -554,6 +676,40 @@ WindowsNativeCompositor::diagnostics() const {
             elapsed_seconds;
     }
     return result;
+}
+
+void WindowsNativeCompositor::SetHighRefreshDisplayHz(int64_t display_hz) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    high_refresh_metrics_.set_display_hz(display_hz);
+    diagnostics_.high_refresh_display_hz = display_hz > 0 ? display_hz : 60;
+}
+
+void WindowsNativeCompositor::ResetHighRefreshMetrics() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    high_refresh_metrics_.reset(diagnostics_.high_refresh_display_hz);
+    last_present_time_ = {};
+    interaction_sample_started_ = {};
+    last_overlay_metrics_generation_ = 0;
+    interaction_sample_active_ = false;
+}
+
+void WindowsNativeCompositor::BeginInteractionSample(
+    const std::string& label) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    interaction_sample_started_ = std::chrono::steady_clock::now();
+    interaction_sample_active_ = true;
+    spdlog::info(
+        "[WindowsHighRefresh] begin interaction sample label={}",
+        label.empty() ? "unnamed" : label);
+}
+
+void WindowsNativeCompositor::EndInteractionSample(
+    const std::string& label) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    interaction_sample_active_ = false;
+    spdlog::info(
+        "[WindowsHighRefresh] end interaction sample label={}",
+        label.empty() ? "unnamed" : label);
 }
 
 void WindowsNativeCompositor::RequestDiagnosticCapture() {
@@ -657,6 +813,7 @@ bool WindowsNativeCompositor::InitializeDeviceAndComposition(
     overlay_input_layout_.Reset();
     overlay_pixel_shader_.Reset();
     overlay_vertex_shader_.Reset();
+    ResetOverlayLayer("device-rebuild");
     vertex_shader_.Reset();
     context_.Reset();
     device_.Reset();
@@ -808,9 +965,12 @@ bool WindowsNativeCompositor::TransportInput(
                 context_.Get(),
                 format,
                 width,
-                height)) {
+                height,
+                cross_adapter_sync_request_)) {
             std::lock_guard<std::mutex> lock(mutex_);
             diagnostics_.cross_adapter_last_error = transport.last_error();
+            diagnostics_.cross_adapter_sync_fallback_reason =
+                transport.sync_fallback_reason();
             ++diagnostics_.output_migration_failure_count;
             return false;
         }
@@ -849,6 +1009,43 @@ bool WindowsNativeCompositor::TransportInput(
             video_transport_.total_copy_us() +
             sdr_video_transport_.total_copy_us() +
             flutter_transport_.total_copy_us();
+        diagnostics_.shared_fence_signal_count =
+            video_transport_.shared_fence_signal_count() +
+            sdr_video_transport_.shared_fence_signal_count() +
+            flutter_transport_.shared_fence_signal_count();
+        diagnostics_.shared_fence_wait_count =
+            video_transport_.shared_fence_wait_count() +
+            sdr_video_transport_.shared_fence_wait_count() +
+            flutter_transport_.shared_fence_wait_count();
+        diagnostics_.shared_fence_timeout_count =
+            video_transport_.shared_fence_timeout_count() +
+            sdr_video_transport_.shared_fence_timeout_count() +
+            flutter_transport_.shared_fence_timeout_count();
+        diagnostics_.shared_fence_last_wait_us =
+            transport.shared_fence_last_wait_us();
+        diagnostics_.shared_fence_p95_wait_us =
+            std::max({
+                video_transport_.shared_fence_p95_wait_us(),
+                sdr_video_transport_.shared_fence_p95_wait_us(),
+                flutter_transport_.shared_fence_p95_wait_us()});
+        diagnostics_.event_query_p95_wait_us =
+            std::max({
+                video_transport_.event_query_p95_wait_us(),
+                sdr_video_transport_.event_query_p95_wait_us(),
+                flutter_transport_.event_query_p95_wait_us()});
+        diagnostics_.cross_adapter_requested_sync_kind =
+            transport.requested_sync_kind();
+        diagnostics_.cross_adapter_active_sync_kind =
+            transport.active_sync_kind();
+        diagnostics_.cross_adapter_sync_kind = transport.active_sync_kind();
+        diagnostics_.cross_adapter_sync_fallback_reason =
+            transport.sync_fallback_reason();
+        diagnostics_.transport_shared_fence_handle_created =
+            diagnostics_.transport_shared_fence_handle_created ||
+            transport.shared_fence_handle_created();
+        diagnostics_.transport_shared_fence_open_succeeded =
+            diagnostics_.transport_shared_fence_open_succeeded ||
+            transport.shared_fence_open_succeeded();
         for (const auto& source_transport : source_transports_) {
             diagnostics_.transport_copy_count +=
                 source_transport.copy_count();
@@ -859,6 +1056,18 @@ bool WindowsNativeCompositor::TransportInput(
                 source_transport.timeout_count();
             diagnostics_.transport_total_copy_us +=
                 source_transport.total_copy_us();
+            diagnostics_.shared_fence_signal_count +=
+                source_transport.shared_fence_signal_count();
+            diagnostics_.shared_fence_wait_count +=
+                source_transport.shared_fence_wait_count();
+            diagnostics_.shared_fence_timeout_count +=
+                source_transport.shared_fence_timeout_count();
+            diagnostics_.shared_fence_p95_wait_us = std::max(
+                diagnostics_.shared_fence_p95_wait_us,
+                source_transport.shared_fence_p95_wait_us());
+            diagnostics_.event_query_p95_wait_us = std::max(
+                diagnostics_.event_query_p95_wait_us,
+                source_transport.event_query_p95_wait_us());
         }
     }
     return true;
@@ -1061,9 +1270,11 @@ bool WindowsNativeCompositor::CreatePipeline() {
             &overlay_pixel_shader_);
     if (FAILED(hr)) return log_failure("CreatePixelShader PSOverlay", hr);
     const D3D11_INPUT_ELEMENT_DESC overlay_elements[] = {
-        {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
          D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 8,
+        {"TEXCOORD", 1, DXGI_FORMAT_R32_FLOAT, 0, 8,
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16,
          D3D11_INPUT_PER_VERTEX_DATA, 0},
     };
     if (FAILED(device_->CreateInputLayout(
@@ -1113,7 +1324,6 @@ void WindowsNativeCompositor::ThreadMain() {
         std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (true) {
         bool first_present_timed_out = false;
-        bool finish_fallback = false;
         {
             std::unique_lock<std::mutex> lock(mutex_);
             if (diagnostics_.present_count == 0) {
@@ -1130,28 +1340,11 @@ void WindowsNativeCompositor::ThreadMain() {
                 return;
             }
             if (terminal_inactive_) return;
-            finish_fallback = fallback_finish_pending_;
-            fallback_finish_pending_ = false;
             first_present_timed_out =
                 phase_ == Phase::Inactive &&
                 diagnostics_.present_count == 0 &&
                 std::chrono::steady_clock::now() >= first_present_deadline;
             work_pending_ = false;
-        }
-        if (finish_fallback) {
-            if (auto player = player_.lock()) {
-                ReleaseHeldInputs(player);
-            }
-            engine_api_.set_mode(flutter_view_, kExportDisabled);
-            if (dcomp_target_) dcomp_target_->SetRoot(nullptr);
-            if (dcomp_device_) dcomp_device_->Commit();
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                terminal_inactive_ = true;
-                diagnostics_.swap_chain_active = false;
-            }
-            PublishState(Phase::Inactive, "flutter-texture-restored");
-            return;
         }
         if (first_present_timed_out) {
             {
@@ -1160,18 +1353,20 @@ void WindowsNativeCompositor::ThreadMain() {
                 ++diagnostics_.failure_count;
                 diagnostics_.fallback_reason = "first-dcomp-present-timeout";
             }
-            engine_api_.set_mode(flutter_view_, kExportDisabled);
-            PublishState(Phase::Inactive, "first-dcomp-present-timeout");
+            PublishState(Phase::Failed, "first-dcomp-present-timeout");
             return;
         }
         if (!CompositeLatest()) {
             std::lock_guard<std::mutex> lock(mutex_);
             ++diagnostics_.drop_count;
+            high_refresh_metrics_.record_drop();
         }
     }
 }
 
 bool WindowsNativeCompositor::CompositeLatest() {
+    const auto composite_started = std::chrono::steady_clock::now();
+    auto acquire_finished = composite_started;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (terminal_inactive_) {
@@ -1198,11 +1393,13 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 "output-adapter-reinitialize-failed";
             diagnostics_.device_recovery_state =
                 vr::windows_device_recovery_state_name(
-                    vr::WindowsDeviceRecoveryState::FallbackFlutterTextureSdr);
+                    desired_output_target_ == OutputTarget::ScRGB
+                        ? vr::WindowsDeviceRecoveryState::FallbackNativeSdr
+                        : vr::WindowsDeviceRecoveryState::FailedTerminal);
             diagnostics_.device_recovery_fallback_stage =
                 desired_output_target_ == OutputTarget::ScRGB
                     ? "native-sdr"
-                    : "flutter-texture-sdr";
+                    : "native-compositor-failed";
             pending_output_adapter_ = pending_output_adapter;
             return false;
         }
@@ -1223,14 +1420,28 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 IsCrossAdapterActive() ? transport_support_.status
                                        : "not-required";
             diagnostics_.cross_adapter_sync_kind =
-                IsCrossAdapterActive() ? transport_support_.sync_kind
+                IsCrossAdapterActive() ? "event-query"
                                        : "keyed-mutex";
+            diagnostics_.cross_adapter_requested_sync_kind =
+                vr::windows_cross_adapter_sync_request_name(
+                    cross_adapter_sync_request_);
+            diagnostics_.cross_adapter_active_sync_kind =
+                diagnostics_.cross_adapter_sync_kind;
+            diagnostics_.cross_adapter_sync_fallback_reason = "none";
             diagnostics_.transport_bgra8_supported =
                 transport_support_.bgra8;
             diagnostics_.transport_fp16_supported =
                 transport_support_.rgba16f;
             diagnostics_.transport_shared_fence_supported =
                 transport_support_.shared_fence;
+            diagnostics_.transport_shared_fence_producer_supported =
+                transport_support_.shared_fence_producer;
+            diagnostics_.transport_shared_fence_output_supported =
+                transport_support_.shared_fence_output;
+            diagnostics_.transport_shared_fence_handle_created =
+                transport_support_.shared_fence_handle_created;
+            diagnostics_.transport_shared_fence_open_succeeded =
+                transport_support_.shared_fence_open_succeeded;
             diagnostics_.transition_state = "preparing";
             if (diagnostics_.device_recovery_state ==
                 vr::windows_device_recovery_state_name(
@@ -1244,7 +1455,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
     }
     Microsoft::WRL::ComPtr<ID3D11Device1> device1;
     if (FAILED(device_.As(&device1)) || !device1) {
-        EnterFallback("dcomp-query-device1-failed");
+        EnterFailed("dcomp-query-device1-failed");
         return false;
     }
 
@@ -1508,7 +1719,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
     }
     if (!EnsureSwapChain(
             held_flutter_.width, held_flutter_.height)) {
-        EnterFallback("dcomp-swap-chain-create-or-resize-failed");
+        EnterFailed("dcomp-swap-chain-create-or-resize-failed");
         return false;
     }
 
@@ -1655,6 +1866,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
 
     const bool source_bundle_active =
         source_projection.enabled && held_source_valid_;
+    acquire_finished = std::chrono::steady_clock::now();
     if (pending_swap_chain_.swap_chain) {
         uint64_t min_video_generation = 0;
         uint64_t min_source_generation = 0;
@@ -1808,18 +2020,50 @@ bool WindowsNativeCompositor::CompositeLatest() {
             std::lock_guard<std::mutex> lock(mutex_);
             phase = phase_;
         }
-        if (phase != Phase::FallbackRestoring) {
-            EnterFallback("dcomp-composite-or-present-failed");
+        if (phase != Phase::Failed) {
+            EnterFailed("dcomp-composite-or-present-failed");
         }
         return false;
     }
     if (pending_swap_chain_.swap_chain &&
         !ActivatePendingSwapChain()) {
-        EnterFallback("dcomp-swap-chain-activation-failed");
+        EnterFailed("dcomp-swap-chain-activation-failed");
         return false;
     }
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        const auto presented_at = std::chrono::steady_clock::now();
+        if (last_present_time_.time_since_epoch().count() > 0) {
+            high_refresh_metrics_.record_present_interval_us(
+                static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        presented_at - last_present_time_)
+                        .count()));
+        } else {
+            high_refresh_metrics_.record_present_interval_us(0);
+        }
+        last_present_time_ = presented_at;
+        high_refresh_metrics_.record_composite_us(
+            static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    presented_at - composite_started)
+                    .count()));
+        high_refresh_metrics_.record_acquire_wait_us(
+            static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    acquire_finished - composite_started)
+                    .count()));
+        if (interaction_sample_active_ &&
+            interaction_sample_started_.time_since_epoch().count() > 0) {
+            high_refresh_metrics_.record_interaction_input_to_present_us(
+                static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        presented_at - interaction_sample_started_)
+                        .count()));
+        }
+        if (source_bundle_active) {
+            high_refresh_metrics_.record_source_projection_reuse();
+        }
         diagnostics_.flutter_generation =
             held_flutter_.frame_generation;
         diagnostics_.video_generation =
@@ -1883,62 +2127,52 @@ bool WindowsNativeCompositor::DrawOverlay(
     const std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage>& overlay,
     const SourceProjection& projection,
     const D3D11_TEXTURE2D_DESC& back_desc) {
+    const auto overlay_started = std::chrono::steady_clock::now();
     if (!overlay || overlay->empty() || back_desc.Width == 0 ||
         back_desc.Height == 0) {
         return true;
     }
-    double viewport[4] = {};
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        std::copy(std::begin(viewport_), std::end(viewport_), viewport);
+    vr::WindowsOverlayLayerSignature signature;
+    signature.primitive_generation = overlay->cache_generation;
+    signature.target_class =
+        back_desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT ? 1u : 0u;
+    signature.sdr_white_scale_x1000 = static_cast<uint32_t>(
+        std::llround(
+            sdr_white_scale_.load(std::memory_order_relaxed) * 1000.0));
+    uint64_t track_signature = 1469598103934665603ull;
+    const auto mix = [&](uint64_t value) {
+        track_signature ^= value + 0x9e3779b97f4a7c15ull +
+                           (track_signature << 6) +
+                           (track_signature >> 2);
+    };
+    for (const auto& track : overlay->tracks) {
+        mix(static_cast<uint64_t>(track.slot + 17));
+        mix(static_cast<uint64_t>(track.track_file_id + 31));
+        mix(static_cast<uint64_t>(track.frame_index + 43));
+        mix(static_cast<uint64_t>(track.video_width));
+        mix(static_cast<uint64_t>(track.video_height));
+        mix(static_cast<uint64_t>(track.mode + 59));
+        mix(static_cast<uint64_t>(track.opacity_permille + 71));
+        mix(track.show_grid ? 1ull : 0ull);
+        mix(track.show_qp ? 1ull : 0ull);
+        mix(track.show_pred ? 1ull : 0ull);
+        mix(track.show_lines ? 1ull : 0ull);
+        mix(track.show_bit_cost ? 1ull : 0ull);
+        signature.source_width = std::max(
+            signature.source_width,
+            static_cast<uint32_t>(std::max(track.video_width, 0)));
+        signature.source_height = std::max(
+            signature.source_height,
+            static_cast<uint32_t>(std::max(track.video_height, 0)));
+        signature.fill_rect_count += static_cast<uint32_t>(
+            std::min<size_t>(track.fill_rects.size(), UINT32_MAX));
+        signature.outline_rect_count += static_cast<uint32_t>(
+            std::min<size_t>(track.outline_rects.size(), UINT32_MAX));
+        signature.motion_line_count += static_cast<uint32_t>(
+            std::min<size_t>(track.motion_lines.size(), UINT32_MAX));
     }
-    const float viewport_left =
-        static_cast<float>(viewport[0] * back_desc.Width);
-    const float viewport_top =
-        static_cast<float>(viewport[1] * back_desc.Height);
-    const float viewport_width =
-        static_cast<float>((viewport[2] - viewport[0]) * back_desc.Width);
-    const float viewport_height =
-        static_cast<float>((viewport[3] - viewport[1]) * back_desc.Height);
-    if (viewport_width <= 0.0f || viewport_height <= 0.0f) {
-        return true;
-    }
+    signature.track_signature = track_signature;
 
-    const int count = std::clamp(projection.active_track_count, 1, 4);
-    const auto display_slot_for = [&](int source_slot) {
-        for (int index = 0; index < count; ++index) {
-            if (projection.source_order[static_cast<size_t>(index)] ==
-                source_slot) {
-                return index;
-            }
-        }
-        return -1;
-    };
-    const auto project_uv = [&](int source_slot, float u, float v,
-                                float& x, float& y) {
-        const int display_slot = display_slot_for(source_slot);
-        if (display_slot < 0) {
-            return false;
-        }
-        const float inv_x = projection.inv_display_size_x[source_slot];
-        const float inv_y = projection.inv_display_size_y[source_slot];
-        if (std::abs(inv_x) < 0.00001f ||
-            std::abs(inv_y) < 0.00001f) {
-            return false;
-        }
-        float local_x =
-            projection.display_offset_x[source_slot] +
-            (u + projection.view_offset_uv_x[source_slot]) / inv_x;
-        const float local_y =
-            projection.display_offset_y[source_slot] +
-            (v + projection.view_offset_uv_y[source_slot]) / inv_y;
-        if (projection.mode == 0 && count > 1) {
-            local_x = (display_slot + local_x) / count;
-        }
-        x = viewport_left + local_x * viewport_width;
-        y = viewport_top + local_y * viewport_height;
-        return true;
-    };
     const auto make_color = [&](vr::analysis::OverlayColor color) {
         OverlayVertex vertex;
         const bool scrgb =
@@ -1961,135 +2195,195 @@ bool WindowsNativeCompositor::DrawOverlay(
         vertex.b *= vertex.a;
         return vertex;
     };
-    std::vector<OverlayVertex> vertices;
-    const auto append_quad = [&](float left, float top, float right,
-                                 float bottom, vr::analysis::OverlayColor color) {
-        left = std::clamp(left, viewport_left, viewport_left + viewport_width);
-        right = std::clamp(right, viewport_left, viewport_left + viewport_width);
-        top = std::clamp(top, viewport_top, viewport_top + viewport_height);
-        bottom = std::clamp(
-            bottom, viewport_top, viewport_top + viewport_height);
-        if (right <= left || bottom <= top || color.a == 0) {
-            return;
-        }
-        const auto base = make_color(color);
-        const auto vertex = [&](float px, float py) {
-            OverlayVertex out = base;
-            out.x = px / static_cast<float>(back_desc.Width) * 2.0f - 1.0f;
-            out.y = 1.0f -
-                    py / static_cast<float>(back_desc.Height) * 2.0f;
-            return out;
-        };
-        const auto p0 = vertex(left, top);
-        const auto p1 = vertex(right, top);
-        const auto p2 = vertex(left, bottom);
-        const auto p3 = vertex(right, bottom);
-        vertices.insert(
-            vertices.end(), {p0, p2, p1, p1, p2, p3});
-    };
-    const auto append_rect = [&](int source_slot,
-                                 int video_width,
-                                 int video_height,
-                                 const vr::AnalysisOverlayRectPrimitive& rect,
-                                 bool outline) {
-        if (video_width <= 0 || video_height <= 0) {
-            return;
-        }
-        float x0 = 0.0f;
-        float y0 = 0.0f;
-        float x1 = 0.0f;
-        float y1 = 0.0f;
-        if (!project_uv(
-                source_slot,
-                static_cast<float>(rect.x0) / video_width,
-                static_cast<float>(rect.y0) / video_height,
-                x0,
-                y0) ||
-            !project_uv(
-                source_slot,
-                static_cast<float>(rect.x1) / video_width,
-                static_cast<float>(rect.y1) / video_height,
-                x1,
-                y1)) {
-            return;
-        }
-        if (!outline) {
-            append_quad(x0, y0, x1, y1, rect.color);
-            return;
-        }
-        append_quad(x0, y0, x1, y0 + 1.0f, rect.color);
-        append_quad(x0, y1 - 1.0f, x1, y1, rect.color);
-        append_quad(x0, y0, x0 + 1.0f, y1, rect.color);
-        append_quad(x1 - 1.0f, y0, x1, y1, rect.color);
-    };
-    const auto append_line = [&](int source_slot,
-                                 int video_width,
-                                 int video_height,
-                                 const vr::AnalysisOverlayLinePrimitive& line) {
-        float x0 = 0.0f;
-        float y0 = 0.0f;
-        float x1 = 0.0f;
-        float y1 = 0.0f;
-        if (video_width <= 0 || video_height <= 0 ||
-            !project_uv(
-                source_slot,
-                static_cast<float>(line.x0) / video_width,
-                static_cast<float>(line.y0) / video_height,
-                x0,
-                y0) ||
-            !project_uv(
-                source_slot,
-                static_cast<float>(line.x1) / video_width,
-                static_cast<float>(line.y1) / video_height,
-                x1,
-                y1)) {
-            return;
-        }
-        const float dx = x1 - x0;
-        const float dy = y1 - y0;
-        const float length = std::max(std::sqrt(dx * dx + dy * dy), 0.0001f);
-        const float nx = -dy / length * 0.5f;
-        const float ny = dx / length * 0.5f;
-        const auto base = make_color(line.color);
-        const auto vertex = [&](float px, float py) {
-            OverlayVertex out = base;
-            out.x = px / static_cast<float>(back_desc.Width) * 2.0f - 1.0f;
-            out.y = 1.0f -
-                    py / static_cast<float>(back_desc.Height) * 2.0f;
-            return out;
-        };
-        const auto p0 = vertex(x0 + nx, y0 + ny);
-        const auto p1 = vertex(x0 - nx, y0 - ny);
-        const auto p2 = vertex(x1 + nx, y1 + ny);
-        const auto p3 = vertex(x1 - nx, y1 - ny);
-        vertices.insert(
-            vertices.end(), {p0, p1, p2, p2, p1, p3});
-    };
 
-    for (const auto& track : overlay->tracks) {
-        for (const auto& rect : track.fill_rects) {
-            append_rect(
-                track.slot,
-                track.video_width,
-                track.video_height,
-                rect,
-                false);
+    const bool retained_layer_reusable =
+        overlay_vertex_buffer_ &&
+        overlay_vertex_count_ > 0 &&
+        overlay_layer_signature_ == signature;
+    if (retained_layer_reusable) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            overlay_layer_state_.prepare(
+                signature,
+                static_cast<uint64_t>(overlay_vertex_count_) *
+                    sizeof(OverlayVertex));
+            high_refresh_metrics_.record_overlay_layer_reuse();
         }
-        for (const auto& rect : track.outline_rects) {
-            append_rect(
-                track.slot,
-                track.video_width,
-                track.video_height,
-                rect,
-                true);
+    } else {
+        const auto raster_started = std::chrono::steady_clock::now();
+        std::vector<OverlayVertex> vertices;
+        const auto append_quad = [&](int source_slot,
+                                     float left,
+                                     float top,
+                                     float right,
+                                     float bottom,
+                                     vr::analysis::OverlayColor color) {
+            left = std::clamp(left, 0.0f, 1.0f);
+            right = std::clamp(right, 0.0f, 1.0f);
+            top = std::clamp(top, 0.0f, 1.0f);
+            bottom = std::clamp(bottom, 0.0f, 1.0f);
+            if (right <= left || bottom <= top || color.a == 0 ||
+                source_slot < 0 || source_slot >= 4) {
+                return;
+            }
+            const auto base = make_color(color);
+            const auto vertex = [&](float u, float v) {
+                OverlayVertex out = base;
+                out.u = u;
+                out.v = v;
+                out.source_slot = static_cast<float>(source_slot);
+                return out;
+            };
+            const auto p0 = vertex(left, top);
+            const auto p1 = vertex(right, top);
+            const auto p2 = vertex(left, bottom);
+            const auto p3 = vertex(right, bottom);
+            vertices.insert(vertices.end(), {p0, p2, p1, p1, p2, p3});
+        };
+        const auto append_rect =
+            [&](int source_slot,
+                int video_width,
+                int video_height,
+                const vr::AnalysisOverlayRectPrimitive& rect,
+                bool outline) {
+                if (video_width <= 0 || video_height <= 0) {
+                    return;
+                }
+                const float x0 = static_cast<float>(rect.x0) / video_width;
+                const float y0 = static_cast<float>(rect.y0) / video_height;
+                const float x1 = static_cast<float>(rect.x1) / video_width;
+                const float y1 = static_cast<float>(rect.y1) / video_height;
+                if (!outline) {
+                    append_quad(source_slot, x0, y0, x1, y1, rect.color);
+                    return;
+                }
+                const float px = 1.0f / std::max(video_width, 1);
+                const float py = 1.0f / std::max(video_height, 1);
+                append_quad(source_slot, x0, y0, x1, y0 + py, rect.color);
+                append_quad(source_slot, x0, y1 - py, x1, y1, rect.color);
+                append_quad(source_slot, x0, y0, x0 + px, y1, rect.color);
+                append_quad(source_slot, x1 - px, y0, x1, y1, rect.color);
+            };
+        const auto append_line =
+            [&](int source_slot,
+                int video_width,
+                int video_height,
+                const vr::AnalysisOverlayLinePrimitive& line) {
+                if (video_width <= 0 || video_height <= 0 ||
+                    source_slot < 0 || source_slot >= 4 ||
+                    line.color.a == 0) {
+                    return;
+                }
+                const float x0 =
+                    static_cast<float>(line.x0) / video_width;
+                const float y0 =
+                    static_cast<float>(line.y0) / video_height;
+                const float x1 =
+                    static_cast<float>(line.x1) / video_width;
+                const float y1 =
+                    static_cast<float>(line.y1) / video_height;
+                const float dx = x1 - x0;
+                const float dy = y1 - y0;
+                const float length =
+                    std::max(std::sqrt(dx * dx + dy * dy), 0.0001f);
+                const float nx =
+                    -dy / length * (0.5f / std::max(video_width, 1));
+                const float ny =
+                    dx / length * (0.5f / std::max(video_height, 1));
+                const auto base = make_color(line.color);
+                const auto vertex = [&](float u, float v) {
+                    OverlayVertex out = base;
+                    out.u = u;
+                    out.v = v;
+                    out.source_slot = static_cast<float>(source_slot);
+                    return out;
+                };
+                const auto p0 = vertex(x0 + nx, y0 + ny);
+                const auto p1 = vertex(x0 - nx, y0 - ny);
+                const auto p2 = vertex(x1 + nx, y1 + ny);
+                const auto p3 = vertex(x1 - nx, y1 - ny);
+                vertices.insert(vertices.end(), {p0, p1, p2, p2, p1, p3});
+            };
+
+        for (const auto& track : overlay->tracks) {
+            for (const auto& rect : track.fill_rects) {
+                append_rect(
+                    track.slot,
+                    track.video_width,
+                    track.video_height,
+                    rect,
+                    false);
+            }
+            for (const auto& rect : track.outline_rects) {
+                append_rect(
+                    track.slot,
+                    track.video_width,
+                    track.video_height,
+                    rect,
+                    true);
+            }
+            for (const auto& line : track.motion_lines) {
+                append_line(
+                    track.slot,
+                    track.video_width,
+                    track.video_height,
+                    line);
+            }
         }
-        for (const auto& line : track.motion_lines) {
-            append_line(
-                track.slot,
-                track.video_width,
-                track.video_height,
-                line);
+        const auto raster_finished = std::chrono::steady_clock::now();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            high_refresh_metrics_.record_overlay_raster_us(
+                static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        raster_finished - raster_started)
+                        .count()));
         }
+        if (vertices.empty()) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            overlay_layer_state_.miss("overlay-layer-empty");
+            return true;
+        }
+
+        D3D11_BUFFER_DESC desc = {};
+        desc.ByteWidth = static_cast<UINT>(
+            vertices.size() * sizeof(OverlayVertex));
+        desc.Usage = D3D11_USAGE_IMMUTABLE;
+        desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        D3D11_SUBRESOURCE_DATA data = {};
+        data.pSysMem = vertices.data();
+        Microsoft::WRL::ComPtr<ID3D11Buffer> buffer;
+        const auto upload_started = std::chrono::steady_clock::now();
+        if (FAILED(device_->CreateBuffer(&desc, &data, &buffer))) {
+            overlay_vertex_buffer_.Reset();
+            overlay_vertex_count_ = 0;
+            overlay_layer_signature_ = {};
+            std::lock_guard<std::mutex> lock(mutex_);
+            overlay_layer_state_.fail("overlay-layer-buffer-create-failed");
+            return true;
+        }
+        const auto upload_finished = std::chrono::steady_clock::now();
+        overlay_vertex_buffer_ = std::move(buffer);
+        overlay_vertex_count_ = static_cast<UINT>(vertices.size());
+        overlay_layer_signature_ = signature;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            overlay_layer_state_.prepare(
+                signature,
+                static_cast<uint64_t>(desc.ByteWidth));
+            high_refresh_metrics_.record_overlay_layer_raster();
+            high_refresh_metrics_.record_overlay_layer_upload();
+            high_refresh_metrics_.record_overlay_upload_us(
+                static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        upload_finished - upload_started)
+                        .count()));
+        }
+    }
+    if (!overlay_vertex_buffer_ || overlay_vertex_count_ == 0) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        overlay_layer_state_.miss("overlay-layer-buffer-missing");
+        return true;
     }
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -2104,24 +2398,9 @@ bool WindowsNativeCompositor::DrawOverlay(
                 track.motion_lines.size();
         }
     }
-    if (vertices.empty()) {
-        return true;
-    }
-
-    D3D11_BUFFER_DESC desc = {};
-    desc.ByteWidth = static_cast<UINT>(
-        vertices.size() * sizeof(OverlayVertex));
-    desc.Usage = D3D11_USAGE_IMMUTABLE;
-    desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-    D3D11_SUBRESOURCE_DATA data = {};
-    data.pSysMem = vertices.data();
-    Microsoft::WRL::ComPtr<ID3D11Buffer> buffer;
-    if (FAILED(device_->CreateBuffer(&desc, &data, &buffer))) {
-        return false;
-    }
     UINT stride = sizeof(OverlayVertex);
     UINT offset = 0;
-    ID3D11Buffer* raw_buffer = buffer.Get();
+    ID3D11Buffer* raw_buffer = overlay_vertex_buffer_.Get();
     context_->IASetVertexBuffers(0, 1, &raw_buffer, &stride, &offset);
     context_->IASetInputLayout(overlay_input_layout_.Get());
     context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -2129,8 +2408,36 @@ bool WindowsNativeCompositor::DrawOverlay(
     context_->PSSetShader(overlay_pixel_shader_.Get(), nullptr, 0);
     context_->OMSetBlendState(
         overlay_blend_state_.Get(), nullptr, 0xffffffff);
-    context_->Draw(static_cast<UINT>(vertices.size()), 0);
+    context_->Draw(overlay_vertex_count_, 0);
     context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        overlay_layer_state_.composite();
+        const auto overlay_state = overlay_layer_state_.snapshot();
+        diagnostics_.overlay_retained_layer_active = overlay_state.active;
+        diagnostics_.overlay_layer_mode = overlay_state.mode;
+        diagnostics_.overlay_layer_texture_count =
+            overlay_state.texture_count;
+        diagnostics_.overlay_layer_bytes = overlay_state.bytes;
+        diagnostics_.overlay_layer_generation = overlay_state.generation;
+        diagnostics_.overlay_layer_committed_generation =
+            overlay_state.committed_generation;
+        diagnostics_.overlay_layer_pending_generation =
+            overlay_state.pending_generation;
+        diagnostics_.overlay_layer_composite_count =
+            overlay_state.composite_count;
+        diagnostics_.overlay_layer_miss_count = overlay_state.miss_count;
+        diagnostics_.overlay_layer_backpressure_count =
+            overlay_state.backpressure_count;
+        diagnostics_.overlay_layer_fallback_reason =
+            overlay_state.fallback_reason;
+        diagnostics_.overlay_layer_last_error = overlay_state.last_error;
+        high_refresh_metrics_.record_overlay_composite_us(
+            static_cast<int64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - overlay_started)
+                    .count()));
+    }
     return true;
 }
 
@@ -2250,14 +2557,17 @@ void WindowsNativeCompositor::SignalWork() {
     wake_.notify_one();
 }
 
-void WindowsNativeCompositor::EnterFallback(const std::string& reason) {
+void WindowsNativeCompositor::EnterFailed(const std::string& reason) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (phase_ == Phase::FallbackRestoring) {
+        if (phase_ == Phase::Failed) {
             return;
         }
         ++diagnostics_.failure_count;
         diagnostics_.fallback_reason = reason;
+        terminal_inactive_ = true;
+        diagnostics_.swap_chain_active =
+            diagnostics_.present_count > 0 && current_swap_chain_.swap_chain;
     }
     if (auto player = player_.lock()) {
         player->clear_source_cache(reason.c_str());
@@ -2268,8 +2578,7 @@ void WindowsNativeCompositor::EnterFallback(const std::string& reason) {
         diagnostics_.source_projection_enabled = false;
         diagnostics_.source_cache_active = false;
     }
-    engine_api_.set_mode(flutter_view_, kExportMirror);
-    PublishState(Phase::FallbackRestoring, reason);
+    PublishState(Phase::Failed, reason);
 }
 
 void WindowsNativeCompositor::PublishState(
@@ -2286,7 +2595,7 @@ void WindowsNativeCompositor::PublishState(
             serial = state_serial_;
         }
         diagnostics_.state_serial = serial;
-        if (phase == Phase::FallbackRestoring) {
+        if (phase == Phase::Failed) {
             diagnostics_.fallback_reason = reason;
         }
         callback = state_callback_;
@@ -2302,7 +2611,7 @@ const char* WindowsNativeCompositor::PhaseName(Phase phase) {
     case Phase::Inactive: return "inactive";
     case Phase::Preparing: return "preparing";
     case Phase::Active: return "active";
-    case Phase::FallbackRestoring: return "fallback-restoring";
+    case Phase::Failed: return "failed";
     }
     return "inactive";
 }

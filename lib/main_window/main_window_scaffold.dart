@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../native_compositor_flags.dart';
@@ -43,7 +45,7 @@ class MainWindowScaffold extends StatelessWidget {
     final nativeCompositor = NativeCompositorFlags.nativeCompositor;
     final nativeCompositorViewportActive =
         nativeCompositor &&
-        viewport.nativeCompositorActive &&
+        (Platform.isWindows || viewport.nativeCompositorActive) &&
         viewport.textureId != null &&
         viewport.viewportState.status == ViewportDisplayStatus.active;
     final shellBackgroundColor = Theme.of(context).scaffoldBackgroundColor;

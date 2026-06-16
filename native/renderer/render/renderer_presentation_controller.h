@@ -53,6 +53,9 @@ struct RendererPresentationDrawResult {
     bool drew = false;
     bool async_draw_submitted = false;
     bool device_lost = false;
+    bool source_cache_published = false;
+    uint64_t source_cache_ring_generation = 0;
+    uint64_t source_cache_frame_generation = 0;
     uint64_t backend_us = 0;
     RendererFrameCallback frame_callback;
     std::string failure_error;

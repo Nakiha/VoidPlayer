@@ -79,6 +79,7 @@ def _windows_native_compositor_requested() -> bool:
     return mode in (
         "",
         "auto",
+        "sdr",
         "native-compositor-sdr",
         "native-compositor-scrgb",
     )

@@ -128,6 +128,9 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `STORE_VIEW_CENTER` | name | 记录归一化视图中心基线 |
 | `STORE_RESOURCE_USAGE` | name | 记录进程 RSS / 专用显存基线 |
 | `STORE_NATIVE_SEEK_COUNT` | name | 记录当前 native 插件 seek 日志计数 |
+| `RESET_NATIVE_PERF_COUNTERS` | — | 清空 native compositor high-refresh 诊断采样窗口 |
+| `BEGIN_NATIVE_INTERACTION_SAMPLE` | label? | 开始 native high-refresh 交互采样窗口 |
+| `END_NATIVE_INTERACTION_SAMPLE` | label? | 结束 native high-refresh 交互采样窗口 |
 | `DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL` | dx, dy, key, value, steps?, stepMs?, minMatches? | 拖动 viewport 期间采样 native 诊断布尔值，命中次数需达到 `minMatches` |
 | `CLICK_MEDIA_HEADER_REMOVE_BUTTON` | fileId | 点击指定 fileId 的 media header 移除按钮，覆盖真实按钮路径 |
 | `SET_MEDIA_SOURCE_ID` | slot, sourceId | 声明指定 slot 媒体的源 lineage（同源不同编码的 join key），写入 storage catalog |
@@ -169,6 +172,15 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `ASSERT_RESOURCE_USAGE_BELOW` | maxRssMb, maxDedicatedGpuMb | 断言当前进程 RSS / 专用显存不超过阈值 |
 | `ASSERT_RESOURCE_USAGE_DELTA_BELOW` | baseline, maxRssDeltaMb, maxDedicatedGpuDeltaMb[, maxPrivateDeltaMb[, maxKnownGpuDeltaMb]] | 断言相对 `STORE_RESOURCE_USAGE` 基线的 RSS / 专用显存增量不超过阈值；可选第 4 项额外约束 private memory 增量，可选第 5 项约束 renderer 可归因 GPU 资源增量 |
 | `ASSERT_NATIVE_SEEK_COUNT_DELTA` | baseline, expectedDelta | 断言相对 `STORE_NATIVE_SEEK_COUNT` 基线的 native 插件 seek 次数增量 |
+
+## Wait 清单
+
+| Wait | 参数 | 说明 |
+|------|------|------|
+| `WAIT_PLAYING` | timeoutMs? | 轮询等待播放器进入播放状态 |
+| `WAIT_PAUSED` | timeoutMs? | 轮询等待播放器进入暂停状态 |
+| `WAIT_ANALYSIS_PROCESS_COUNT` | count, timeoutMs? | 轮询等待 analysis 进程数量达到指定值 |
+| `WAIT_PRESENTED_FRAME_RANGE` | fileId, minUs, maxUs, timeoutMs?, intervalMs? | 轮询等待指定文件当前已上屏帧 PTS 位于范围内；用于 seek/device-recovery 等异步发布路径 |
 
 ## 文件清单
 

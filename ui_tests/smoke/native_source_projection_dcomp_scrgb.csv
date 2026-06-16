@@ -1,6 +1,7 @@
 # Windows source-resolution projection smoke. Two paused tracks establish an
 # atomic source bundle, pan/zoom and split update only compositor projection,
-# playback refreshes the ring, and forced fallback clears retained generations.
+# playback refreshes the ring, and forced compositor failure clears retained
+# generations without restoring Flutter Texture video.
 @WINDOW, 1366, 768
 0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
 1.8, ASSERT_TRACK_COUNT, 1
@@ -24,6 +25,9 @@
 5.70, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceCachePublishCount, 1
 5.71, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceCacheConsumedGeneration, 1
 5.72, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorOverlayLineRectCount, 1
+5.73, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsOverlayRetainedLayerActive, true
+5.74, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsOverlayRetainedLayerMode, retained-primitive-buffer
+5.75, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsOverlayLayerFallbackReason, none
 5.8, SET_LAYOUT_MODE, 1
 5.9, SET_SPLIT_POS, 0.35
 6.2, DRAG_VIEWPORT, -260, 120, 30, 4
@@ -38,11 +42,16 @@
 9.1, WINDOW_RESTORE
 9.8, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompResizeCount, 1
 9.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsSourceCacheBackpressureCount, 0, 100
-10.0, DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK, source-projection-ui-fallback
-11.4, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, inactive
+9.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsHotPathActive, true
+9.92, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-dcomp
+9.93, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsHotPathSourceCacheReuseCount, 1
+9.94, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathViewportRedrawDuringProjectionCount, 0, 0
+10.0, DEBUG_FAIL_NATIVE_COMPOSITOR, source-projection-ui-failure
+11.4, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, failed
 11.5, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, false
-11.6, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDCompSwapChainActive, false
-11.7, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, flutter-texture-sdr
-11.8, CAPTURE_VIEWPORT, source_projection_fallback_restored
-11.9, ASSERT_CAPTURE_NOT_BLACK, source_projection_fallback_restored, 0.01, 4.0
+11.6, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDCompSwapChainActive, true
+11.7, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-failed
+11.8, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorFallbackReason, source-projection-ui-failure
+11.9, CAPTURE_VIEWPORT, source_projection_fail_closed
+11.95, ASSERT_CAPTURE_NOT_BLACK, source_projection_fail_closed, 0.01, 4.0
 12.0, QUIT, 0

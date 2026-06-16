@@ -31,29 +31,12 @@ explicitly enable
 `VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1`; that is launch/contract
 coverage, not release evidence for a desktop GPU.
 
-The compatibility requests `sdr` and `flutter-texture-sdr` retain the original
-Flutter Texture route. `native-compositor-sdr` and
-`native-compositor-scrgb` remain explicit diagnostic modes; forced scRGB does
-not depend on the current Windows HDR toggle.
-
-An internal opt-in creates an additional renderer-owned FP16 target:
-
-```powershell
-$env:VOIDPLAYER_WINDOWS_PRESENTATION_MODE="fp16-scrgb"
-python dev.py launch
-```
-
-```text
-same RendererDrawSnapshot
-  -> R16G16B16A16_FLOAT scRGB composition pass
-  -> source-rerender compatibility pass
-  -> existing triple-buffered B8G8R8A8_UNORM Flutter texture
-```
-
-The mode is `flutter-texture-sdr-fp16-scrgb`. The FP16 target is not published
-to Flutter and does not claim HDR presentation. Initialization, resize, or
-non-device-loss draw failure disables only the experimental pass and records a
-fallback reason; BGRA playback continues.
+The compatibility request `sdr` is now an alias for `native-compositor-sdr`.
+`native-compositor-sdr` and `native-compositor-scrgb` remain explicit
+diagnostic modes; forced scRGB does not depend on the current Windows HDR
+toggle. `flutter-texture-sdr`, `flutter`, `fp16-scrgb`, and unknown Windows
+presentation requests fail closed instead of creating a Flutter Texture video
+route.
 
 The forced HDR compositor diagnostic mode is:
 
@@ -76,25 +59,27 @@ capture, a child HWND sandwich, or a rectangular native hole.
 Runtime track changes and debounced display/window notifications rerun the same
 resolver. Target changes build and render a candidate swap chain from retained
 video/source/Flutter inputs, Present it, then atomically replace the DComp
-visual content. HDR candidate failure falls back to native SDR; only failure of
-the SDR compositor restores Flutter Texture SDR.
+visual content. HDR candidate failure falls back to native SDR; failure of the
+SDR compositor enters an explicit failed state and does not restore Flutter
+Texture SDR.
 
 If the active output belongs to a different adapter, the renderer and Flutter
 export remain on the producer adapter while `WindowsNativeCompositor` recreates
 its D3D/DComp device on the output adapter. `D3D11CrossAdapterTextureTransport`
 bridges immutable input leases through row-major shared NT-handle textures and
-GPU copies into output-local SRVs. The current synchronization path waits on a
-producer event query; shared-fence capability is diagnosed separately and is not
-required for the product fallback contract. The transport never reads pixels
-back to the CPU and does not change color transforms.
+GPU copies into output-local SRVs. The default synchronization path waits on a
+producer event query. `VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC=shared-fence`
+requests the optional shared-fence path for local evidence; initialization or
+capability failure falls back to event-query with diagnostics. The transport
+never reads pixels back to the CPU and does not change color transforms.
 
 Once Dart publishes a valid projection signature, D3D11 also maintains an
 atomic source-resolution bundle with up to four FP16 scRGB textures. The render
 thread draws every active source from the same prepared frame snapshot, then
 publishes the complete bundle with its analysis primitive package. DComp
-applies pan, zoom, side-by-side order, split position, background, and overlay
-projection without waiting for a viewport-sized redraw. The viewport FP16 ring
-remains the startup, allocation-failure, and transient-miss fallback.
+applies pan, zoom, side-by-side order, split position, background, and retained
+overlay projection without waiting for a viewport-sized redraw. The viewport
+FP16 ring remains the startup, allocation-failure, and transient-miss fallback.
 
 The source cache budget is 384 MiB. A three-slot bundle ring is preferred; if
 that exceeds the budget, one frozen snapshot is allowed. A single bundle that
@@ -102,6 +87,15 @@ still exceeds the budget is rejected without failing playback. Signature
 changes stop exposing the previous bundle, while leased old generations remain
 alive until release. A draw miss with an unchanged signature keeps the last
 complete bundle and never publishes partial track updates.
+
+Analysis overlay in source-projection mode is retained on the DComp compositor
+device. A dirty primitive package is packed once into a video-space GPU
+primitive buffer keyed by primitive generation, track/file/size/mode signature,
+output target class, and SDR white scale. Pan, zoom, split, and order changes
+only update projection constants; they do not rebuild or upload the overlay
+buffer. Rebuild failure drops only the overlay layer for that frame and reports
+a fallback reason. Device removal follows the normal presentation recovery
+contract and clears old overlay generations.
 
 The standalone native window path may use a double-buffered flip-discard swap
 chain. It is not the current Flutter product presentation route.
@@ -128,9 +122,10 @@ chain. It is not the current Flutter product presentation route.
 - `WindowsNativeCompositor` owns an independent D3D11 device/context, DComp
   target, candidate/current SDR or FP16 swap chains, final shader, composition
   thread, and the latest
-  successfully synchronized video, Flutter, and source-cache input leases.
+  successfully synchronized video, Flutter, source-cache input leases, and
+  retained overlay primitive buffers.
   Held inputs are replaced only after a newer generation is acquired
-  successfully, then released during replacement, fallback completion, or
+  successfully, then released during replacement, failed-state cleanup, or
   shutdown.
 - D3D11 immediate-context work is serialized by the presentation device mutex.
 - The lock order is `device_mutex -> texture_mutex`.
@@ -184,8 +179,8 @@ and unchanged BGRA compatibility output.
 
 | Key | Current meaning |
 | --- | --- |
-| `windowsPresentationRequest` | `auto`, `sdr`, `flutter-texture-sdr`, `native-compositor-sdr`, `native-compositor-scrgb`, `fp16-scrgb`, or the rejected request |
-| `windowsPresentationMode` | Actual SDR route or active FP16 experiment |
+| `windowsPresentationRequest` | `auto`, `sdr`, `native-compositor-sdr`, `native-compositor-scrgb`, or the rejected request |
+| `windowsPresentationMode` | `native-compositor-sdr`, `native-compositor-scrgb`, or `native-compositor-failed` |
 | `windowsPresentationReason` | Selected policy reason |
 | `windowsPresentationAutoEnabled/HasHDRTrack/DesiredMode` | Auto resolver inputs and requested target |
 | `windowsPresentationTransition*` | Candidate target state, serial, and reason |
@@ -205,16 +200,18 @@ and unchanged BGRA compatibility output.
 | `windowsPresentationSDRWhiteLevel*` | Player-creation locked white level/status/scale |
 | `windowsPresentationFP16DrawCount` | Successful experimental draws |
 | `windowsPresentationSDRCompatibilityDrawCount` | Matching BGRA compatibility redraws |
-| `windowsPresentationFallbackReason` | Unsupported request or FP16 runtime fallback |
+| `windowsPresentationFallbackReason` | Native target downgrade/failure reason; never a Flutter Texture restore reason |
 | `windowsPresentationWidth/Height` | Active target dimensions |
 | `windowsPresentationBufferCount` | Active output buffer count |
 | `windowsPresentationHeadless` | Whether the backend is using shared textures |
-| `windowsNativeCompositorPhase` | `inactive`, `preparing`, `active`, or `fallback-restoring` |
+| `windowsNativeCompositorPhase` | `inactive`, `preparing`, `active`, or `failed` |
 | `windowsNativeCompositorStateSerial/AckSerial` | Flutter alpha-hole handshake serials |
 | `windowsFlutterExportGeneration/windowsVideoRingGeneration` | Latest consumed input generations |
 | `windowsDComp*` | Swap-chain format/color space/support, SDR tone-map state, and composite/present/drop/failure counters |
 | `windowsDeviceRecovery*` | In-place D3D11/DComp recovery state, generation, attempts, success/failure counters, preserved player/track evidence, last removed reason, fallback stage, and last-frame hold |
-| `windowsCrossAdapter*` | Transport mode/status, format support, sync kind, copy counters, consumed generations, and last error |
+| `windowsCrossAdapter*` | Transport mode/status, requested/active sync kind, shared-fence capability/open/signal/wait counters, event-query/shared-fence P95 waits, copy counters, consumed generations, fallback reason, and last error |
+| `windowsOverlay*` | Retained overlay layer active state, mode, generation, bytes, raster/upload/reuse/composite/miss/backpressure counts, p95 costs, and fallback reason |
+| `windowsHotPath*` | Source-projection hot-path summary: active/mode, display Hz, frame budget, present/composite/acquire/input p95, drop rate, source/overlay reuse, viewport redraws, failure reason, and gate result |
 | `nativeCompositorSource*` | Projection/cache activity, generation, bytes, rates, and overlay primitive counts |
 | `windowsSourceCache*` | Format, depth/frozen policy, publish/backpressure/consume/fallback counters |
 | `windowsD3DAdapter*` | Description, vendor/device IDs, and LUID |
@@ -236,7 +233,8 @@ HDR color space. A normal SDR color space is reported as
 reliably distinguish Windows 11 SDR Advanced Color/WCG from ordinary SDR.
 
 A fallback that changes adapter, driver type, target format, or presentation
-mode must update these fields and emit a clear log reason.
+mode must update these fields and emit a clear log reason. Windows presentation
+must not report `flutter-texture-sdr`.
 
 ## Device Loss And Fallback
 
@@ -258,7 +256,7 @@ Recovery states are diagnostic strings:
 `stable`, `device-lost-detected`, `holding-last-frame`,
 `rebuilding-presentation`, `waiting-for-fresh-video`,
 `reactivating-compositor`, `recovered`, `fallback-native-sdr`,
-`fallback-flutter-texture-sdr`, and `failed-terminal`.
+and `failed-terminal`.
 
 The debug automation hook
 `DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS,target,reason` drives the MethodChannel
@@ -267,15 +265,54 @@ method `debugSimulateWindowsDeviceLoss`. Valid targets are `presentation`,
 evidence; real TDR/device-reset validation is supplemental local evidence.
 
 HDR target creation or Present failure first attempts the native SDR target.
-Unknown requests, missing engine export, or SDR compositor failure restore
-Flutter Texture SDR and expose the selected request, actual mode, transition,
-and fallback reason.
+Unknown requests, missing engine export, or SDR compositor failure fail closed
+and expose the selected request, actual mode, transition, and failure reason.
+
+## High Refresh Interaction Diagnostics
+
+Windows native compositor exposes high-refresh parity counters for the retained
+source-projection path. `RESET_NATIVE_PERF_COUNTERS`,
+`BEGIN_NATIVE_INTERACTION_SAMPLE,label`, and
+`END_NATIVE_INTERACTION_SAMPLE,label` let UI automation bracket pan/zoom/split
+or overlay interactions. Diagnostics include DComp present/composite P95,
+acquire-wait P95, input-to-present P95, drop rate, source projection reuse,
+viewport redraws during projection, and overlay raster/upload/reuse/composite
+cost. Displays below 100 Hz run as `functional-only-low-refresh` evidence;
+high-refresh local gates enforce timing thresholds.
+
+During source-cache projection, pan/zoom/split/order changes must update
+compositor projection state without forcing viewport-sized renderer redraws.
+Analysis overlay diagnostics require retained layer reuse to outpace dirty
+raster/upload on high-refresh displays. The old per-composite CPU vertex rebuild
+path is not a valid high-refresh overlay result.
+
+The hot-path gate reports concrete failure reasons:
+`fail-viewport-redraw`, `fail-source-cache-no-reuse`,
+`fail-overlay-no-reuse`, `fail-present-cadence`, `fail-input-latency`, and
+`fail-drop-rate`. `windowsHotPath*` fields are the preferred UI/manual summary;
+the older `windowsDComp*`, `windowsSource*`, and `windowsOverlay*` fields remain
+the detailed evidence source.
+
+## macOS Parity Mapping
+
+Windows does not copy Metal implementation details, but the product contract now
+maps to macOS by behavior:
+
+| Capability | Windows evidence | macOS evidence |
+| --- | --- | --- |
+| Flutter UI composition | Exported BGRA premultiplied surface + DComp final composite | Exported Flutter surface + native compositor |
+| Source-resolution interaction | `nativeCompositorSourceCacheActive`, `windowsHotPathSourceCacheReuseCount` | `sourceFrameCacheHitCount`, source projection diagnostics |
+| Presented-frame anchor | `nativeCompositorPresentedAnchorMode=source-cache-publish`, source-cache anchor generation fields | source projection publish frame anchor |
+| No viewport redraw on pan/zoom | `windowsHotPathViewportRedrawDuringProjectionCount == 0` | display-link viewport composite without renderer round-trip |
+| Retained overlay | `windowsOverlayRetainedLayerActive`, reuse/raster counters | retained Metal overlay layers |
+| Cadence/latency | `windowsHotPathPresentIntervalP95Us`, `windowsHotPathInputToPresentP95Us` | display-link cadence and renderer-owned presentation counters |
+| Fallback visibility | `windowsHotPathLastFailureReason`, presentation fallback fields | native compositor / renderer-owned fallback diagnostics |
 
 ## Catch-Up Roadmap
 
-1. Build the Windows high-refresh interaction / overlay performance parity gate.
-2. Evaluate optional shared-fence transport once multi-adapter hardware evidence
-   proves it improves copy latency over the event-query bridge.
+1. Harden Windows release evidence: real HDR, multi-adapter, and high-refresh
+   combinations must preserve native compositor state, source projection,
+   retained overlay reuse, and documented fallback diagnostics.
 
 This sequence is capability parity with macOS, not a mechanical Metal/Swift
 port.

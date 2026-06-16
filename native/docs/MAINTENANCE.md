@@ -54,16 +54,27 @@ Windows Auto policy、DXGI output refresh、SDR/scRGB swap-chain 切换或 white
 level 更新还必须运行默认 Auto SDR smoke、强制 scRGB smoke；具备 HDR 显示时
 再运行 `python dev.py gate windows-hdr-auto`。HDR target 失败必须先降级
 native SDR，不能直接跳过到 Flutter Texture。
-Windows cross-adapter transport、output-device migration、display calibration
+Windows cross-adapter transport、shared-fence sync、output-device migration、display calibration
 diagnostics 或 adapter fallback 改动还必须运行
 `video_renderer_tests [windows_cross_adapter]`；具备多 adapter / HDR output
 机器时补跑 `python dev.py gate windows-cross-adapter-local`。跨 adapter 只允许
 GPU-copy bridge 或明确诊断回落，不能引入 CPU readback 或私有 ICC/LUT 校色。
+shared-fence 只能在本地 A/B 证据证明不劣于 event-query 后再考虑默认启用。
 Windows device-loss recovery、D3D11/DComp 原地重建、source-cache 清理或
 debug recovery 注入改动还必须运行
 `video_renderer_tests [windows_device_recovery]`，并在 `windows-preservation`
 中覆盖默认 SDR、强制 scRGB 和 source-projection recovery UI smoke。真实 TDR
 或 device reset 证据是本地补充，不替代 debug injection gate。
+Windows high-refresh interaction、DComp present cadence、source projection
+pan/zoom/split/order 或 overlay compositor 热路径改动还必须运行
+`video_renderer_tests [windows_high_refresh]`、
+`video_renderer_tests [windows_overlay_layer]`、
+`windows_d3d11_high_refresh_projection_overlay_smoke` 和
+`windows_d3d11_retained_overlay_layer_smoke` 和
+`python dev.py gate windows-high-refresh-local`。低刷机器只提供功能证据；
+高刷机器必须检查 `windowsHotPathGateResult=pass`，并保留
+present/composite/input-to-present/drop-rate、source reuse、overlay reuse 和
+viewport redraw summary 证据。
 
 ---
 

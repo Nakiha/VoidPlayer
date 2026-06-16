@@ -95,7 +95,7 @@ void main() {
       expect(runtime.quitCodes, [1]);
     });
 
-    test('forced native compositor fallback reaches the native API', () async {
+    test('forced native compositor failure reaches the native API', () async {
       final api = _FakeNativePlayerApi();
       final controller = NativePlayerController(api: api);
       await controller.createPlayer(['a.mp4'], width: 320, height: 180);
@@ -103,7 +103,7 @@ void main() {
       final runtime = _FakeRuntime();
       final runner = TestRunner(
         scriptPath: _writeScript('''
-0.0,DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK,contract-test
+0.0,DEBUG_FAIL_NATIVE_COMPOSITOR,contract-test
 0.1,QUIT,0
 '''),
         automation: _bridge(controller),
@@ -112,10 +112,7 @@ void main() {
 
       await runner.run();
 
-      expect(
-        api.calls,
-        contains('debugForceNativeCompositorFallback:contract-test'),
-      );
+      expect(api.calls, contains('debugFailNativeCompositor:contract-test'));
       expect(runtime.quitCodes, [0]);
     });
 
@@ -141,6 +138,56 @@ void main() {
         contains('debugSimulateWindowsDeviceLoss:compositor:contract-test'),
       );
       expect(runtime.quitCodes, [0]);
+    });
+
+    test('wait presented frame range polls until frame enters range', () async {
+      final api = _FakeNativePlayerApi(
+        presentedFrames: [
+          const PresentedFrameTiming(ptsUs: 100000, dtsUs: 100000),
+          const PresentedFrameTiming(ptsUs: 1200000, dtsUs: 1200000),
+        ],
+      );
+      final controller = NativePlayerController(api: api);
+      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
+
+      final runtime = _FakeRuntime();
+      final runner = TestRunner(
+        scriptPath: _writeScript('''
+0.0,WAIT_PRESENTED_FRAME_RANGE,1,900000,1500000,1000,1
+0.1,QUIT,0
+'''),
+        automation: _bridge(controller),
+        runtime: runtime,
+      );
+
+      await runner.run();
+
+      expect(api.currentPresentedFrameCalls, 2);
+      expect(runtime.quitCodes, [0]);
+    });
+
+    test('wait presented frame range fails after timeout', () async {
+      final api = _FakeNativePlayerApi(
+        presentedFrames: [
+          const PresentedFrameTiming(ptsUs: 100000, dtsUs: 100000),
+        ],
+      );
+      final controller = NativePlayerController(api: api);
+      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
+
+      final runtime = _FakeRuntime();
+      final runner = TestRunner(
+        scriptPath: _writeScript('''
+0.0,WAIT_PRESENTED_FRAME_RANGE,1,900000,1500000,5,1
+0.1,QUIT,0
+'''),
+        automation: _bridge(controller),
+        runtime: runtime,
+      );
+
+      await runner.run();
+
+      expect(runtime.quitCodes, [1]);
     });
   });
 }
@@ -177,6 +224,7 @@ UiAutomationBridge _bridge(NativePlayerController controller) {
     effectiveDurationUs: () => 0,
     toggleAnalysisOverlayForSlot: (_) async {},
     toggleAnalysisOverlayPanel: () async {},
+    toggleMarksSidebar: () {},
     generateAnalysisCacheForSlot: (_) async => 'hash',
     setMediaSourceIdForSlot: (_, _) async {},
     exportMarksToFile: (_) async {},
@@ -231,8 +279,13 @@ class _FakeRuntime implements UiAutomationRuntime {
 class _FakeNativePlayerApi implements NativePlayerApi {
   final calls = <String>[];
   final Map<String, dynamic> diagnostics;
+  final List<PresentedFrameTiming?> presentedFrames;
+  int currentPresentedFrameCalls = 0;
 
-  _FakeNativePlayerApi({this.diagnostics = const {}});
+  _FakeNativePlayerApi({
+    this.diagnostics = const {},
+    this.presentedFrames = const [],
+  });
 
   @override
   Stream<NativePlayerEvent> get events => const Stream.empty();
@@ -296,10 +349,8 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }) async {}
 
   @override
-  Future<void> debugForceNativeCompositorFallback({
-    required String reason,
-  }) async {
-    calls.add('debugForceNativeCompositorFallback:$reason');
+  Future<void> debugFailNativeCompositor({required String reason}) async {
+    calls.add('debugFailNativeCompositor:$reason');
   }
 
   @override
@@ -308,6 +359,21 @@ class _FakeNativePlayerApi implements NativePlayerApi {
     required String reason,
   }) async {
     calls.add('debugSimulateWindowsDeviceLoss:$target:$reason');
+  }
+
+  @override
+  Future<void> resetNativePerfCounters() async {
+    calls.add('resetNativePerfCounters');
+  }
+
+  @override
+  Future<void> beginNativeInteractionSample({required String label}) async {
+    calls.add('beginNativeInteractionSample:$label');
+  }
+
+  @override
+  Future<void> endNativeInteractionSample({required String label}) async {
+    calls.add('endNativeInteractionSample:$label');
   }
 
   @override
@@ -405,7 +471,16 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   Future<int> currentPts() async => 0;
 
   @override
-  Future<PresentedFrameTiming?> currentPresentedFrame(int fileId) async => null;
+  Future<PresentedFrameTiming?> currentPresentedFrame(int fileId) async {
+    final index = currentPresentedFrameCalls++;
+    if (presentedFrames.isEmpty) {
+      return null;
+    }
+    if (index >= presentedFrames.length) {
+      return presentedFrames.last;
+    }
+    return presentedFrames[index];
+  }
 
   @override
   Future<int> duration() async => 0;

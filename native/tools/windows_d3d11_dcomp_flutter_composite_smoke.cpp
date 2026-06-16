@@ -62,6 +62,13 @@ bool approximately_equal(
     return std::abs(actual - expected) <= tolerance;
 }
 
+float srgb_to_linear(float value) {
+    value = std::clamp(value, 0.0f, 1.0f);
+    return value <= 0.04045f
+        ? value / 12.92f
+        : std::pow((value + 0.055f) / 1.055f, 2.4f);
+}
+
 bool validate_pixel(
     const char* name,
     const std::array<float, 4>& actual,
@@ -87,6 +94,9 @@ int main() {
     constexpr UINT kWidth = 4;
     constexpr UINT kHeight = 1;
     constexpr float kSdrWhiteScale = 203.0f / 80.0f;
+    constexpr float kBackgroundR = 24.0f / 255.0f;
+    constexpr float kBackgroundG = 32.0f / 255.0f;
+    constexpr float kBackgroundB = 40.0f / 255.0f;
 
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> context;
@@ -260,10 +270,15 @@ int main() {
     ID3D11SamplerState* sampler_ptr = sampler.Get();
     context->PSSetSamplers(0, 1, &sampler_ptr);
     CompositeConstants constant_values = {};
+    constant_values.viewport[0] = 0.25f;
     constant_values.viewport[2] = 1.0f;
     constant_values.viewport[3] = 1.0f;
     constant_values.sdr_white_scale = kSdrWhiteScale;
     constant_values.output_mode = 1.0f;
+    constant_values.background_color[0] = kBackgroundR;
+    constant_values.background_color[1] = kBackgroundG;
+    constant_values.background_color[2] = kBackgroundB;
+    constant_values.background_color[3] = 1.0f;
     context->UpdateSubresource(
         constants.Get(), 0, nullptr, &constant_values, 0, 0);
     ID3D11Buffer* constants_ptr = constants.Get();
@@ -296,7 +311,7 @@ int main() {
          64.0f / 255.0f},
     }};
     const char* names[] = {
-        "transparent viewport",
+        "transparent Flutter outside viewport",
         "premultiplied half-alpha edge",
         "opaque Flutter SDR white scale",
         "antialiased translucent edge",
@@ -308,10 +323,17 @@ int main() {
             vr::half_to_float(values[x * 4u + 2u]),
             vr::half_to_float(values[x * 4u + 3u]),
         };
+        const auto base = x == 0
+            ? vr::WindowsDcompCompositeSample{
+                  srgb_to_linear(kBackgroundR) * kSdrWhiteScale,
+                  srgb_to_linear(kBackgroundG) * kSdrWhiteScale,
+                  srgb_to_linear(kBackgroundB) * kSdrWhiteScale,
+                  1.0f}
+            : video_sample;
         ok &= validate_pixel(
             names[x], actual,
             vr::composite_windows_dcomp_pixel(
-                video_sample, flutter[x], kSdrWhiteScale));
+                base, flutter[x], kSdrWhiteScale));
     }
     context->Unmap(staging.Get(), 0);
 
@@ -356,10 +378,16 @@ int main() {
         const float alpha =
             static_cast<float>(flutter_bgra[x * 4u + 3u]) / 255.0f;
         for (UINT channel = 0; channel < 3; ++channel) {
+            const float base = x == 0
+                ? (channel == 0
+                      ? kBackgroundB * 255.0f
+                      : channel == 1
+                          ? kBackgroundG * 255.0f
+                          : kBackgroundR * 255.0f)
+                : static_cast<float>(sdr_video_bgra[x * 4u + channel]);
             const float expected =
                 static_cast<float>(flutter_bgra[x * 4u + channel]) +
-                static_cast<float>(sdr_video_bgra[x * 4u + channel]) *
-                    (1.0f - alpha);
+                base * (1.0f - alpha);
             const int actual =
                 sdr_values[x * 4u + channel];
             if (std::abs(actual - static_cast<int>(std::lround(expected))) >

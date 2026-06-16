@@ -109,6 +109,26 @@ class TestRunner {
           );
         }
 
+      case ScriptWaitPresentedFrameRange(
+        :final fileId,
+        :final minUs,
+        :final maxUs,
+        :final timeout,
+        :final interval,
+      ):
+        log.info(
+          'TestRunner ${instr.time}: WAIT_PRESENTED_FRAME_RANGE '
+          'fileId=$fileId range=[$minUs,$maxUs] '
+          'timeout=${timeout.inMilliseconds}ms',
+        );
+        await _executeWaitPresentedFrameRange(
+          fileId: fileId,
+          minUs: minUs,
+          maxUs: maxUs,
+          timeout: timeout,
+          interval: interval,
+        );
+
       case ScriptSetAnalysisTestScript(:final path):
         log.info('TestRunner ${instr.time}: SET_ANALYSIS_TEST_SCRIPT $path');
         automation.analysisTestScriptPath = path;
@@ -289,15 +309,10 @@ class TestRunner {
           'drawable=${info['nativeCompositorDrawableWidth']}x${info['nativeCompositorDrawableHeight']} '
           'failure=${info['nativeCompositorLastFailure']}',
         );
-      case DebugForceNativeCompositorFallbackAction(:final reason):
-        log.info(
-          'TestRunner: DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK reason=$reason',
-        );
-        await controller.debugForceNativeCompositorFallback(reason: reason);
-      case DebugSimulateWindowsDeviceLossAction(
-        :final target,
-        :final reason,
-      ):
+      case DebugFailNativeCompositorAction(:final reason):
+        log.info('TestRunner: DEBUG_FAIL_NATIVE_COMPOSITOR reason=$reason');
+        await controller.debugFailNativeCompositor(reason: reason);
+      case DebugSimulateWindowsDeviceLossAction(:final target, :final reason):
         log.info(
           'TestRunner: DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS '
           'target=$target reason=$reason',
@@ -306,6 +321,15 @@ class TestRunner {
           target: target,
           reason: reason,
         );
+      case ResetNativePerfCountersAction():
+        log.info('TestRunner: RESET_NATIVE_PERF_COUNTERS');
+        await controller.resetNativePerfCounters();
+      case BeginNativeInteractionSampleAction(:final label):
+        log.info('TestRunner: BEGIN_NATIVE_INTERACTION_SAMPLE $label');
+        await controller.beginNativeInteractionSample(label: label);
+      case EndNativeInteractionSampleAction(:final label):
+        log.info('TestRunner: END_NATIVE_INTERACTION_SAMPLE $label');
+        await controller.endNativeInteractionSample(label: label);
       case WindowMaximize():
         log.info('TestRunner: WINDOW_MAXIMIZE');
         await runtime.maximizeWindow();
@@ -468,6 +492,9 @@ class TestRunner {
       case ToggleAnalysisOverlayPanel():
         log.info('TestRunner: TOGGLE_ANALYSIS_OVERLAY_PANEL');
         await automation.toggleAnalysisOverlayPanel();
+      case ToggleMarksSidebar():
+        log.info('TestRunner: TOGGLE_MARKS_SIDEBAR');
+        automation.toggleMarksSidebar();
       case GenerateAnalysisCache(:final slotIndex):
         log.info('TestRunner: GENERATE_ANALYSIS_CACHE slot=$slotIndex');
         final hash = await automation.generateAnalysisCacheForSlot(slotIndex);
@@ -549,6 +576,29 @@ class TestRunner {
     }
     throw AssertionError(
       'WAIT_${state.name.toUpperCase()} timed out after ${timeout.inMilliseconds}ms',
+    );
+  }
+
+  Future<void> _executeWaitPresentedFrameRange({
+    required int fileId,
+    required int minUs,
+    required int maxUs,
+    required Duration timeout,
+    required Duration interval,
+  }) async {
+    final sw = Stopwatch()..start();
+    int? lastPtsUs;
+    while (sw.elapsed < timeout) {
+      final timing = await controller.currentPresentedFrame(fileId);
+      lastPtsUs = timing?.ptsUs;
+      if (lastPtsUs != null && lastPtsUs >= minUs && lastPtsUs <= maxUs) {
+        return;
+      }
+      await Future<void>.delayed(interval);
+    }
+    throw AssertionError(
+      'WAIT_PRESENTED_FRAME_RANGE timed out after ${timeout.inMilliseconds}ms: '
+      'expected fileId=$fileId in [$minUs, $maxUs] μs, got $lastPtsUs',
     );
   }
 }

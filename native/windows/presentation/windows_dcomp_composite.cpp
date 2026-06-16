@@ -36,7 +36,11 @@ cbuffer CompositeConstants : register(b0) {
   float4 background_color;
 };
 struct VSOut { float4 position : SV_POSITION; float2 uv : TEXCOORD0; };
-struct OverlayIn { float2 position : POSITION; float4 color : COLOR; };
+struct OverlayIn {
+  float2 source_uv : TEXCOORD0;
+  float source_slot : TEXCOORD1;
+  float4 color : COLOR;
+};
 struct OverlayOut { float4 position : SV_POSITION; float4 color : COLOR; };
 VSOut VSMain(uint id : SV_VertexID) {
   float2 positions[4] = {
@@ -52,9 +56,50 @@ VSOut VSMain(uint id : SV_VertexID) {
   output.uv = uvs[id];
   return output;
 }
+float value_at(float4 values, int index);
+int display_slot_for_source(int source_slot, int count);
 OverlayOut VSOverlay(OverlayIn input) {
   OverlayOut output;
-  output.position = float4(input.position, 0.0, 1.0);
+  int count = clamp((int)round(source_track_count), 1, 4);
+  int source_slot = clamp((int)round(input.source_slot), 0, 3);
+  int display_slot = display_slot_for_source(source_slot, count);
+  if (display_slot < 0 || value_at(source_present, source_slot) < 0.5) {
+    output.position = float4(-4.0, -4.0, 0.0, 1.0);
+    output.color = 0.0;
+    return output;
+  }
+  float2 display_offset = float2(
+      value_at(source_display_offset_x, source_slot),
+      value_at(source_display_offset_y, source_slot));
+  float2 inv_display_size = float2(
+      value_at(source_inv_display_size_x, source_slot),
+      value_at(source_inv_display_size_y, source_slot));
+  float2 view_offset = float2(
+      value_at(source_view_offset_uv_x, source_slot),
+      value_at(source_view_offset_uv_y, source_slot));
+  if (abs(inv_display_size.x) < 0.00001 ||
+      abs(inv_display_size.y) < 0.00001) {
+    output.position = float4(-4.0, -4.0, 0.0, 1.0);
+    output.color = 0.0;
+    return output;
+  }
+  float2 local_uv = display_offset +
+      (input.source_uv + view_offset) / inv_display_size;
+  if ((int)round(source_mode) == 0 && count > 1) {
+    local_uv.x = (display_slot + local_uv.x) / count;
+  } else if ((int)round(source_mode) == 1 && count > 1) {
+    float split = clamp(source_split_pos, 0.0001, 0.9999);
+    local_uv.x = display_slot == 0
+        ? local_uv.x * split
+        : split + local_uv.x * (1.0 - split);
+  }
+  float2 global_uv = viewport.xy + local_uv * max(
+      viewport.zw - viewport.xy, float2(0.00001, 0.00001));
+  output.position = float4(
+      global_uv.x * 2.0 - 1.0,
+      1.0 - global_uv.y * 2.0,
+      0.0,
+      1.0);
   output.color = input.color;
   return output;
 }
@@ -84,6 +129,15 @@ float value_at(float4 values, int index) {
   if (index == 1) return values.y;
   if (index == 2) return values.z;
   return values.w;
+}
+int display_slot_for_source(int source_slot, int count) {
+  [unroll]
+  for (int i = 0; i < 4; ++i) {
+    if (i < count && (int)round(value_at(source_order, i)) == source_slot) {
+      return i;
+    }
+  }
+  return -1;
 }
 float4 sample_source(int slot, float2 uv) {
   if (slot == 0) return source_texture_0.Sample(linear_sampler, uv);
@@ -139,7 +193,7 @@ float4 source_projected_video(float2 video_uv) {
   return source;
 }
 float4 PSVideo(VSOut input) : SV_TARGET {
-  float4 video = float4(0.0, 0.0, 0.0, 1.0);
+  float4 video = output_background();
   if (input.uv.x >= viewport.x && input.uv.y >= viewport.y &&
       input.uv.x <= viewport.z && input.uv.y <= viewport.w) {
     float2 extent = max(viewport.zw - viewport.xy, float2(0.00001, 0.00001));

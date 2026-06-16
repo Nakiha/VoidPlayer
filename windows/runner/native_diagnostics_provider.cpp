@@ -364,12 +364,7 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
     map[flutter::EncodableValue("windowsPresentationRequest")] =
         flutter::EncodableValue(presentation_policy.request);
     map[flutter::EncodableValue("windowsPresentationMode")] =
-        flutter::EncodableValue(
-            presentation.fp16_target_active
-                ? presentation_policy.mode
-                : (presentation.headless
-                       ? "flutter-texture-sdr"
-                       : "swap-chain-sdr"));
+        flutter::EncodableValue(presentation_policy.mode);
     map[flutter::EncodableValue("windowsPresentationReason")] =
         flutter::EncodableValue(presentation_policy.reason);
     map[flutter::EncodableValue("windowsPresentationAutoEnabled")] =

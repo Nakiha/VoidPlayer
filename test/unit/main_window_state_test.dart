@@ -451,10 +451,8 @@ class _PlaybackApi implements NativePlayerApi {
   }) async {}
 
   @override
-  Future<void> debugForceNativeCompositorFallback({
-    required String reason,
-  }) async {
-    calls.add('debugForceNativeCompositorFallback:$reason');
+  Future<void> debugFailNativeCompositor({required String reason}) async {
+    calls.add('debugFailNativeCompositor:$reason');
   }
 
   @override
@@ -463,6 +461,21 @@ class _PlaybackApi implements NativePlayerApi {
     required String reason,
   }) async {
     calls.add('debugSimulateWindowsDeviceLoss:$target:$reason');
+  }
+
+  @override
+  Future<void> resetNativePerfCounters() async {
+    calls.add('resetNativePerfCounters');
+  }
+
+  @override
+  Future<void> beginNativeInteractionSample({required String label}) async {
+    calls.add('beginNativeInteractionSample:$label');
+  }
+
+  @override
+  Future<void> endNativeInteractionSample({required String label}) async {
+    calls.add('endNativeInteractionSample:$label');
   }
 
   @override

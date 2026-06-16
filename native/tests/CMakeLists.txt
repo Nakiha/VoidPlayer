@@ -58,9 +58,12 @@ add_executable(video_renderer_tests
     renderer/test_windows_presentation_policy.cpp
     renderer/test_windows_dcomp_composite.cpp
     renderer/test_windows_device_recovery.cpp
+    renderer/test_windows_high_refresh_metrics.cpp
+    renderer/test_windows_overlay_layer_state.cpp
     renderer/test_cross_adapter_transport.cpp
     renderer/test_shared_fp16_ring.cpp
     renderer/test_shared_source_cache_ring.cpp
+    renderer/test_renderer_present_history.cpp
     renderer/test_render_sink.cpp
     renderer/test_track_buffer_budget.cpp
     renderer/test_track_pipeline.cpp

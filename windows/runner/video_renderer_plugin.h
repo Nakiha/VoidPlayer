@@ -32,7 +32,9 @@ const NakiVrDiagnostics* naki_vr_get_diagnostics();
 
 class VideoRendererPlugin : public flutter::Plugin {
 public:
-    static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar);
+    static void RegisterWithRegistrar(
+        flutter::PluginRegistrarWindows* registrar,
+        FlutterDesktopPluginRegistrarRef core_registrar);
 
     VideoRendererPlugin(flutter::PluginRegistrarWindows* registrar,
                         flutter::TextureRegistrar* texture_registrar,
@@ -101,10 +103,18 @@ private:
     void AckNativeCompositorFlutterState(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-    void DebugForceNativeCompositorFallback(
+    void DebugFailNativeCompositor(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void DebugSimulateWindowsDeviceLoss(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void ResetNativePerfCounters(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void BeginNativeInteractionSample(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void EndNativeInteractionSample(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void SetSpeed(

@@ -38,11 +38,14 @@ abstract interface class NativePlayerApi {
     required int serial,
     required bool transparentViewport,
   });
-  Future<void> debugForceNativeCompositorFallback({required String reason});
+  Future<void> debugFailNativeCompositor({required String reason});
   Future<void> debugSimulateWindowsDeviceLoss({
     required String target,
     required String reason,
   });
+  Future<void> resetNativePerfCounters();
+  Future<void> beginNativeInteractionSample({required String label});
+  Future<void> endNativeInteractionSample({required String label});
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,
@@ -236,9 +239,9 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> debugForceNativeCompositorFallback({required String reason}) {
+  Future<void> debugFailNativeCompositor({required String reason}) {
     return _channel.invokeMethod<void>(
-      NativePlayerMethods.debugForceNativeCompositorFallback,
+      NativePlayerMethods.debugFailNativeCompositor,
       {NativePlayerKeys.reason: reason},
     );
   }
@@ -250,10 +253,30 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }) {
     return _channel.invokeMethod<void>(
       NativePlayerMethods.debugSimulateWindowsDeviceLoss,
-      {
-        NativePlayerKeys.target: target,
-        NativePlayerKeys.reason: reason,
-      },
+      {NativePlayerKeys.target: target, NativePlayerKeys.reason: reason},
+    );
+  }
+
+  @override
+  Future<void> resetNativePerfCounters() {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.resetNativePerfCounters,
+    );
+  }
+
+  @override
+  Future<void> beginNativeInteractionSample({required String label}) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.beginNativeInteractionSample,
+      {NativePlayerKeys.label: label},
+    );
+  }
+
+  @override
+  Future<void> endNativeInteractionSample({required String label}) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.endNativeInteractionSample,
+      {NativePlayerKeys.label: label},
     );
   }
 

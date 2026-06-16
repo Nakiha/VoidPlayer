@@ -66,12 +66,12 @@ class DebugNativeCompositorAction extends AutomationAction {
   const DebugNativeCompositorAction() : super('DEBUG_NATIVE_COMPOSITOR');
 }
 
-class DebugForceNativeCompositorFallbackAction extends AutomationAction {
+class DebugFailNativeCompositorAction extends AutomationAction {
   final String reason;
 
-  const DebugForceNativeCompositorFallbackAction({
-    this.reason = 'ui-test-forced-fallback',
-  }) : super('DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK');
+  const DebugFailNativeCompositorAction({
+    this.reason = 'ui-test-forced-failure',
+  }) : super('DEBUG_FAIL_NATIVE_COMPOSITOR');
 }
 
 class DebugSimulateWindowsDeviceLossAction extends AutomationAction {
@@ -82,6 +82,24 @@ class DebugSimulateWindowsDeviceLossAction extends AutomationAction {
     required this.target,
     this.reason = 'debug-simulated-device-loss',
   }) : super('DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS');
+}
+
+class ResetNativePerfCountersAction extends AutomationAction {
+  const ResetNativePerfCountersAction() : super('RESET_NATIVE_PERF_COUNTERS');
+}
+
+class BeginNativeInteractionSampleAction extends AutomationAction {
+  final String label;
+
+  const BeginNativeInteractionSampleAction(this.label)
+    : super('BEGIN_NATIVE_INTERACTION_SAMPLE');
+}
+
+class EndNativeInteractionSampleAction extends AutomationAction {
+  final String label;
+
+  const EndNativeInteractionSampleAction(this.label)
+    : super('END_NATIVE_INTERACTION_SAMPLE');
 }
 
 class WindowMaximize extends AutomationAction {
@@ -225,6 +243,10 @@ class ToggleAnalysisOverlay extends AutomationAction {
 
 class ToggleAnalysisOverlayPanel extends AutomationAction {
   const ToggleAnalysisOverlayPanel() : super('TOGGLE_ANALYSIS_OVERLAY_PANEL');
+}
+
+class ToggleMarksSidebar extends AutomationAction {
+  const ToggleMarksSidebar() : super('TOGGLE_MARKS_SIDEBAR');
 }
 
 class GenerateAnalysisCache extends AutomationAction {

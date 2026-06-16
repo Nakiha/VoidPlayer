@@ -53,6 +53,7 @@ public:
     std::pair<int, int> track_dimensions(int slot) const;
     std::vector<TrackInfo> track_infos() const;
     std::vector<TrackPerfStats> track_perf_stats() const;
+    RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
     RendererGpuMemoryStats gpu_memory_stats() const;
     PresentationBackendDiagnostics presentation_backend_diagnostics() const;
     AudioOutputStats audio_output_stats() const;

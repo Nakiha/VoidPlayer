@@ -136,6 +136,13 @@ CPU raster 成本、当前 GUI/DX11 路径的 estimated rect upload 字节数，
 rect upload / color pass / GPU mask pass / invert pass / full overlay pass 的粒度耗时。
 如果 GPU mask pass 成为瓶颈，优化应保持 rect/mask 语义，不能退回会产生双重叠加闪烁的普通 alpha line 绘制。
 
+Windows native-compositor source-projection 路径还会在 DComp compositor
+device 上保留一份 video-space overlay primitive buffer。只有 primitive
+generation、track/file/尺寸、overlay mode 或输出 target class 变化时才重新
+打包和上传；pan/zoom/split/order 只更新 projection constants。高刷新门禁要求
+`windowsOverlayLayerReuseCount` 高于 dirty raster/upload 计数，并且
+`windowsViewportRedrawDuringProjectionCount == 0`。
+
 ### macOS Overlay Layer Policy
 
 macOS high-refresh viewport 不应把 overlay primitive rebuild/upload/raster 放在每次

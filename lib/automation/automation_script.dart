@@ -42,6 +42,23 @@ class ScriptWaitAnalysisProcessCount extends ScriptInstruction {
   const ScriptWaitAnalysisProcessCount(super.time, this.count, this.timeout);
 }
 
+class ScriptWaitPresentedFrameRange extends ScriptInstruction {
+  final int fileId;
+  final int minUs;
+  final int maxUs;
+  final Duration timeout;
+  final Duration interval;
+
+  const ScriptWaitPresentedFrameRange(
+    super.time, {
+    required this.fileId,
+    required this.minUs,
+    required this.maxUs,
+    required this.timeout,
+    required this.interval,
+  });
+}
+
 class ScriptSetAnalysisTestScript extends ScriptInstruction {
   final String path;
   const ScriptSetAnalysisTestScript(super.time, this.path);
@@ -448,12 +465,12 @@ ScriptInstruction? _parseInstruction(
     case 'DEBUG_NATIVE_COMPOSITOR':
     case 'DEBUG_NATIVE_COMPOSITOR_SPIKE':
       return ScriptAutomationAction(time, const DebugNativeCompositorAction());
-    case 'DEBUG_FORCE_NATIVE_COMPOSITOR_FALLBACK':
+    case 'DEBUG_FAIL_NATIVE_COMPOSITOR':
       return ScriptAutomationAction(
         time,
-        DebugForceNativeCompositorFallbackAction(
+        DebugFailNativeCompositorAction(
           reason: args.isEmpty || args[0].isEmpty
-              ? 'ui-test-forced-fallback'
+              ? 'ui-test-forced-failure'
               : args[0],
         ),
       );
@@ -471,6 +488,25 @@ ScriptInstruction? _parseInstruction(
           reason: args.length < 2 || args[1].isEmpty
               ? 'debug-simulated-device-loss'
               : args[1],
+        ),
+      );
+    case 'RESET_NATIVE_PERF_COUNTERS':
+      return ScriptAutomationAction(
+        time,
+        const ResetNativePerfCountersAction(),
+      );
+    case 'BEGIN_NATIVE_INTERACTION_SAMPLE':
+      return ScriptAutomationAction(
+        time,
+        BeginNativeInteractionSampleAction(
+          args.isEmpty || args[0].isEmpty ? 'interaction' : args[0],
+        ),
+      );
+    case 'END_NATIVE_INTERACTION_SAMPLE':
+      return ScriptAutomationAction(
+        time,
+        EndNativeInteractionSampleAction(
+          args.isEmpty || args[0].isEmpty ? 'interaction' : args[0],
         ),
       );
     case 'WINDOW_MAXIMIZE':
@@ -564,6 +600,8 @@ ScriptInstruction? _parseInstruction(
       );
     case 'TOGGLE_ANALYSIS_OVERLAY_PANEL':
       return ScriptAutomationAction(time, const ToggleAnalysisOverlayPanel());
+    case 'TOGGLE_MARKS_SIDEBAR':
+      return ScriptAutomationAction(time, const ToggleMarksSidebar());
     case 'GENERATE_ANALYSIS_CACHE':
       if (args.isEmpty) {
         log.warning('GENERATE_ANALYSIS_CACHE needs slot index: $rawLine');
@@ -673,6 +711,23 @@ ScriptInstruction? _parseInstruction(
         time,
         int.parse(args[0]),
         Duration(milliseconds: timeoutMs),
+      );
+    case 'WAIT_PRESENTED_FRAME_RANGE':
+      if (args.length < 3) {
+        log.warning(
+          'WAIT_PRESENTED_FRAME_RANGE needs fileId, minUs and maxUs: $rawLine',
+        );
+        return null;
+      }
+      final timeoutMs = args.length >= 4 ? int.parse(args[3]) : 3000;
+      final intervalMs = args.length >= 5 ? int.parse(args[4]) : 50;
+      return ScriptWaitPresentedFrameRange(
+        time,
+        fileId: int.parse(args[0]),
+        minUs: int.parse(args[1]),
+        maxUs: int.parse(args[2]),
+        timeout: Duration(milliseconds: timeoutMs),
+        interval: Duration(milliseconds: intervalMs),
       );
     case 'SET_ANALYSIS_TEST_SCRIPT':
       if (args.isEmpty) {

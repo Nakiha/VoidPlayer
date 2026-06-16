@@ -21,10 +21,12 @@ class NativePlayerMethods {
       'setNativeCompositorViewportRect';
   static const ackNativeCompositorFlutterState =
       'ackNativeCompositorFlutterState';
-  static const debugForceNativeCompositorFallback =
-      'debugForceNativeCompositorFallback';
+  static const debugFailNativeCompositor = 'debugFailNativeCompositor';
   static const debugSimulateWindowsDeviceLoss =
       'debugSimulateWindowsDeviceLoss';
+  static const resetNativePerfCounters = 'resetNativePerfCounters';
+  static const beginNativeInteractionSample = 'beginNativeInteractionSample';
+  static const endNativeInteractionSample = 'endNativeInteractionSample';
   static const setNativeCompositorViewportTransform =
       'setNativeCompositorViewportTransform';
   static const prepareNativeCompositorSourceCache =
@@ -81,6 +83,7 @@ class NativePlayerKeys {
   static const viewOffsetUvY = 'viewOffsetUvY';
   static const reason = 'reason';
   static const target = 'target';
+  static const label = 'label';
   static const textureId = 'textureId';
   static const tracks = 'tracks';
   static const fileId = 'fileId';

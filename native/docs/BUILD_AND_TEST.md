@@ -206,7 +206,7 @@ ctest --test-dir build/native/standalone/windows-msvc -C Release `
 
 `windows-preservation` first rebuilds the runner with the locked Windows local
 engine and runs `native_compositor_auto_sdr.csv`. The same runner then executes
-forced scRGB DComp/source-projection, Flutter Texture SDR, and `fp16-scrgb`
+forced scRGB DComp/source-projection, native SDR, and fail-closed compositor
 smokes without another build.
 
 On a desktop with Windows HDR enabled, run the hardware-only Auto transition

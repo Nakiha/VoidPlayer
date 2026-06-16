@@ -91,6 +91,10 @@ NativePlayer / Renderer command surface
   lease, never mixes generations, retains the latest successful bundle for
   projection-only redraws, and treats keyed-mutex timeout as backpressure rather
   than a compositor-wide failure.
+- Windows retained overlay layers are rebuilt on the composition thread only
+  when the overlay primitive signature changes. Pan, zoom, split, and order
+  updates reuse the committed video-space GPU buffer and update only projection
+  constants on the DComp hot path.
 - macOS runner owns Cocoa, sandbox file access, platform channels, Flutter
   texture registration, `CVPixelBuffer` lifecycle, and frame notification.
 - macOS viewport pan/zoom submits only the latest layout intent. `CVDisplayLink`
@@ -219,7 +223,8 @@ waits for video/source generations rendered with the new white level, migrates
 the output device when the resolved output adapter changes, Presents the
 candidate, and only then commits it to the DComp visual. Existing source/Flutter
 leases remain valid during this transition; cross-adapter transport failure
-falls back to producer-adapter native SDR before restoring Flutter Texture SDR.
+falls back to producer-adapter native SDR before entering an explicit failed
+state. It must not restore Flutter Texture SDR.
 
 Source-cache clear and signature replacement stop new acquisition immediately.
 Any generation already leased by DComp remains in the retired set until release.

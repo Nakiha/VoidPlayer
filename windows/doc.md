@@ -16,8 +16,9 @@
 - 默认解析 Windows Auto presentation：SDR-only 使用 BGRA8 native
   compositor，PQ/HLG + HDR output 使用 FP16 scRGB；output adapter 不匹配时
   通过 native compositor 迁移输出设备并使用 cross-adapter GPU-copy bridge，
-  不能桥接时可诊断降级到 native SDR；保留 `sdr`、`fp16-scrgb`、
-  `native-compositor-sdr` 和 `native-compositor-scrgb` 强制诊断模式
+  不能桥接时可诊断降级到 native SDR；保留 `sdr`、
+  `native-compositor-sdr` 和 `native-compositor-scrgb` 强制诊断模式，
+  禁止回到 Flutter Texture SDR 视频上屏
 - 监听 display/settings/move/DPI 变化并刷新 output、SDR white level 与
   DComp target，不重建 player
 - 在 D3D11/DComp/source-cache/transport device-loss 时通过 native
@@ -25,12 +26,22 @@
   成功帧；debug UI 自动化可用
   `debugSimulateWindowsDeviceLoss` / `DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS`
   注入合成的 removed/reset/hung 场景
-- 将 native DX11 shared texture 暴露给 Flutter Texture widget
+- 注册 native texture id 仅用于 controller/player lifecycle；Windows 视频
+  上屏不得使用 Flutter Texture fallback
 - 在 compositor opt-in 下消费 Flutter engine 导出的完整 alpha surface，
   与共享 FP16 video ring 合成到同一 DComp swap chain；跨 adapter 时只迁移
   final compositor/output device，不迁移 renderer/decoder producer device
 - 通过既有 source-projection MethodChannel 校验 projection/signature，并让
   DComp 对最多四轨 source-resolution FP16 bundle 实时执行 pan/zoom/split
+- 在 source-projection overlay active 时使用 DComp retained video-space
+  overlay primitive buffer；pan/zoom/split/order 只更新 projection constants，
+  不在每次 composite tick 重建 CPU vertices
+- 暴露 high-refresh interaction diagnostics，UI 自动化可用
+  `RESET_NATIVE_PERF_COUNTERS`、`BEGIN_NATIVE_INTERACTION_SAMPLE` 和
+  `END_NATIVE_INTERACTION_SAMPLE` 包住 pan/zoom/split/overlay 采样窗口
+- 暴露 `windowsHotPath*` 汇总诊断，作为 source-projection / retained
+  overlay 热路径的首选排查入口；低刷显示器给功能证据，高刷显示器必须让
+  hot-path gate 通过
 - 引入 native C++ renderer 构建产物和 Windows 运行时依赖
 
 它不负责：
@@ -66,17 +77,22 @@ windows/
 - source cache 纹理创建、384 MiB budget、bundle generation/lease 和 source
   pass 属于 D3D11 backend；runner 只校验 wire 参数、维护 signature，并在
   composition thread 消费原子 bundle。
+- source-projection 的 `currentPresentedFrame` anchor 由 renderer 在完整
+  source-cache bundle 发布成功后更新；runner 只透出
+  `nativeCompositorPresentedAnchor*` diagnostics，不从 compositor 消费状态反推帧。
 - cross-adapter transport 属于 Windows D3D11/native compositor 边界；runner
   只传递 producer/output adapter、刷新 display capability，并发布诊断。
   禁止用 CPU readback、窗口截图或私有 ICC/LUT 替代 GPU-copy bridge 和系统
-  Advanced Color 校准。
+  Advanced Color 校准。`VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC=shared-fence`
+  只用于本地多 adapter A/B 证据；默认仍是 event-query，shared-fence 失败必须
+  可诊断回落 event-query。
 - device-loss recovery 属于 `PresentationBackend`、D3D11 backend 和
   `WindowsNativeCompositor` 边界；runner 只暴露 debug 注入、ACK/serial 和
-  diagnostics。恢复失败按 native scRGB -> native SDR -> Flutter Texture SDR
-  的可诊断顺序降级，不销毁 player 或 track model。
+  diagnostics。恢复失败按 native scRGB -> native SDR -> fail closed
+  的可诊断顺序处理，不销毁 player 或 track model，不恢复 Flutter Texture 视频。
 - 默认 Auto 与所有 native-compositor 模式必须使用锁定的 VoidPlayer
   Flutter local engine；
-  普通 Flutter SDK 缺少 surface-export ABI，启动时只能诊断性回落。
+  普通 Flutter SDK 缺少 surface-export ABI，启动时必须 fail closed。
 - 禁止 color-key、`WS_EX_LAYERED`、窗口截图、桌面捕获和 child HWND sandwich。
 - 本地 engine 依次使用 `scripts/ci/build_flutter_windows_engine.ps1`、
   `package_flutter_windows_engine.ps1` 和

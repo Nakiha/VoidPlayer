@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
+#include <cmath>
 #include <thread>
 
 namespace vr {
@@ -104,7 +106,99 @@ bool can_create_format_transport(
     return ok;
 }
 
+struct SharedFenceProbe {
+    bool producer = false;
+    bool output = false;
+    bool handle_created = false;
+    bool open_succeeded = false;
+};
+
+SharedFenceProbe probe_shared_fence(ID3D11Device* producer,
+                                    ID3D11Device* output) {
+    SharedFenceProbe result;
+    if (!producer || !output) {
+        return result;
+    }
+    Microsoft::WRL::ComPtr<ID3D11Device5> producer5;
+    Microsoft::WRL::ComPtr<ID3D11Device5> output5;
+    result.producer =
+        SUCCEEDED(producer->QueryInterface(IID_PPV_ARGS(&producer5))) &&
+        producer5;
+    result.output =
+        SUCCEEDED(output->QueryInterface(IID_PPV_ARGS(&output5))) &&
+        output5;
+    if (!result.producer || !result.output) {
+        return result;
+    }
+    Microsoft::WRL::ComPtr<ID3D11Fence> fence;
+    HRESULT hr = producer5->CreateFence(
+        0, D3D11_FENCE_FLAG_SHARED, IID_PPV_ARGS(&fence));
+    if (FAILED(hr) || !fence) {
+        return result;
+    }
+    HANDLE handle = nullptr;
+    hr = fence->CreateSharedHandle(
+        nullptr,
+        DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE,
+        nullptr,
+        &handle);
+    result.handle_created = SUCCEEDED(hr) && handle;
+    if (!result.handle_created) {
+        return result;
+    }
+    Microsoft::WRL::ComPtr<ID3D11Fence> opened;
+    hr = output5->OpenSharedFence(handle, IID_PPV_ARGS(&opened));
+    result.open_succeeded = SUCCEEDED(hr) && opened;
+    CloseHandle(handle);
+    return result;
+}
+
+bool equals_ignore_case(const char* lhs, const char* rhs) {
+    if (!lhs || !rhs) {
+        return false;
+    }
+    while (*lhs && *rhs) {
+        const char a = static_cast<char>(std::tolower(
+            static_cast<unsigned char>(*lhs)));
+        const char b = static_cast<char>(std::tolower(
+            static_cast<unsigned char>(*rhs)));
+        if (a != b) {
+            return false;
+        }
+        ++lhs;
+        ++rhs;
+    }
+    return *lhs == '\0' && *rhs == '\0';
+}
+
 } // namespace
+
+const char* windows_cross_adapter_sync_request_name(
+    WindowsCrossAdapterSyncRequest request) {
+    switch (request) {
+    case WindowsCrossAdapterSyncRequest::Auto:
+        return "auto";
+    case WindowsCrossAdapterSyncRequest::EventQuery:
+        return "event-query";
+    case WindowsCrossAdapterSyncRequest::SharedFence:
+        return "shared-fence";
+    }
+    return "auto";
+}
+
+WindowsCrossAdapterSyncRequest parse_windows_cross_adapter_sync_request(
+    const char* value) {
+    if (!value || value[0] == '\0' || equals_ignore_case(value, "auto")) {
+        return WindowsCrossAdapterSyncRequest::Auto;
+    }
+    if (equals_ignore_case(value, "event-query")) {
+        return WindowsCrossAdapterSyncRequest::EventQuery;
+    }
+    if (equals_ignore_case(value, "shared-fence")) {
+        return WindowsCrossAdapterSyncRequest::SharedFence;
+    }
+    return WindowsCrossAdapterSyncRequest::Auto;
+}
 
 bool windows_luid_equal(int32_t high_a,
                         uint32_t low_a,
@@ -141,19 +235,20 @@ WindowsCrossAdapterTransportSupport probe_windows_cross_adapter_transport(
         return support;
     }
 
-    Microsoft::WRL::ComPtr<ID3D11Device5> producer5;
-    Microsoft::WRL::ComPtr<ID3D11Device5> output5;
+    const auto fence = probe_shared_fence(producer_device, output_device);
+    support.shared_fence_producer = fence.producer;
+    support.shared_fence_output = fence.output;
+    support.shared_fence_handle_created = fence.handle_created;
+    support.shared_fence_open_succeeded = fence.open_succeeded;
     support.shared_fence =
-        SUCCEEDED(producer_device->QueryInterface(IID_PPV_ARGS(&producer5))) &&
-        producer5 &&
-        SUCCEEDED(output_device->QueryInterface(IID_PPV_ARGS(&output5))) &&
-        output5;
+        fence.producer && fence.output && fence.handle_created &&
+        fence.open_succeeded;
     support.bgra8 = can_create_format_transport(
         producer_device, output_device, DXGI_FORMAT_B8G8R8A8_UNORM);
     support.rgba16f = can_create_format_transport(
         producer_device, output_device, DXGI_FORMAT_R16G16B16A16_FLOAT);
     support.sync_kind =
-        support.shared_fence ? "shared-fence-capable-event-query"
+        support.shared_fence ? "event-query-shared-fence-capable"
                              : "event-query";
     support.status =
         support.bgra8 ? "ok" : "row-major-open-failed";
@@ -167,8 +262,13 @@ bool D3D11CrossAdapterTextureTransport::initialize(
     ID3D11DeviceContext* output_context,
     DXGI_FORMAT format,
     uint32_t width,
-    uint32_t height) {
+    uint32_t height,
+    WindowsCrossAdapterSyncRequest sync_request) {
     reset();
+    requested_sync_kind_ =
+        windows_cross_adapter_sync_request_name(sync_request);
+    active_sync_kind_ = "event-query";
+    sync_fallback_reason_ = "none";
     if (!producer_device || !producer_context || !output_device ||
         !output_context || width == 0 || height == 0 ||
         bytes_per_pixel(format) == 0) {
@@ -223,13 +323,34 @@ bool D3D11CrossAdapterTextureTransport::initialize(
         return false;
     }
 
-    D3D11_QUERY_DESC query_desc = {};
-    query_desc.Query = D3D11_QUERY_EVENT;
-    if (FAILED(producer_device_->CreateQuery(
-            &query_desc, &producer_event_query_))) {
-        last_error_ = "producer-event-query-create-failed";
-        reset();
-        return false;
+    if (sync_request == WindowsCrossAdapterSyncRequest::SharedFence) {
+        if (initialize_shared_fence()) {
+            active_sync_kind_ = "shared-fence";
+            spdlog::info(
+                "[WindowsCrossAdapterTransport] using shared-fence sync "
+                "format={} size={}x{}",
+                static_cast<int>(format_), width_, height_);
+        } else {
+            sync_fallback_reason_ = last_error_;
+            active_sync_kind_ = "event-query";
+            spdlog::warn(
+                "[WindowsCrossAdapterTransport] shared-fence unavailable; "
+                "falling back to event-query reason={}",
+                sync_fallback_reason_);
+        }
+    } else if (sync_request == WindowsCrossAdapterSyncRequest::Auto) {
+        sync_fallback_reason_ = "auto-default-event-query";
+    }
+
+    if (active_sync_kind_ == "event-query") {
+        D3D11_QUERY_DESC query_desc = {};
+        query_desc.Query = D3D11_QUERY_EVENT;
+        if (FAILED(producer_device_->CreateQuery(
+                &query_desc, &producer_event_query_))) {
+            last_error_ = "producer-event-query-create-failed";
+            reset();
+            return false;
+        }
     }
 
     last_error_ = "none";
@@ -246,14 +367,25 @@ void D3D11CrossAdapterTextureTransport::reset() {
     output_device_.Reset();
     producer_context_.Reset();
     producer_device_.Reset();
+    producer_context4_.Reset();
+    output_context4_.Reset();
+    producer_fence_.Reset();
+    output_fence_.Reset();
     if (shared_handle_) {
         CloseHandle(shared_handle_);
         shared_handle_ = nullptr;
     }
+    if (shared_fence_handle_) {
+        CloseHandle(shared_fence_handle_);
+        shared_fence_handle_ = nullptr;
+    }
     format_ = DXGI_FORMAT_UNKNOWN;
     width_ = 0;
     height_ = 0;
+    fence_value_ = 0;
     bytes_per_copy_ = 0;
+    shared_fence_handle_created_ = false;
+    shared_fence_open_succeeded_ = false;
 }
 
 bool D3D11CrossAdapterTextureTransport::wait_for_producer_copy() {
@@ -261,11 +393,17 @@ bool D3D11CrossAdapterTextureTransport::wait_for_producer_copy() {
         last_error_ = "producer-query-unavailable";
         return false;
     }
+    const auto started = std::chrono::steady_clock::now();
     constexpr int kMaxPolls = 200;
     for (int poll = 0; poll < kMaxPolls; ++poll) {
         const HRESULT hr = producer_context_->GetData(
             producer_event_query_.Get(), nullptr, 0, 0);
         if (hr == S_OK) {
+            const auto elapsed =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - started);
+            record_event_query_wait(static_cast<uint64_t>(
+                std::max<int64_t>(0, elapsed.count())));
             return true;
         }
         if (hr != S_FALSE) {
@@ -277,6 +415,130 @@ bool D3D11CrossAdapterTextureTransport::wait_for_producer_copy() {
     ++timeout_count_;
     last_error_ = "producer-copy-timeout";
     return false;
+}
+
+bool D3D11CrossAdapterTextureTransport::initialize_shared_fence() {
+    shared_fence_producer_supported_ =
+        SUCCEEDED(producer_context_->QueryInterface(
+            IID_PPV_ARGS(&producer_context4_))) &&
+        producer_context4_;
+    shared_fence_output_supported_ =
+        SUCCEEDED(output_context_->QueryInterface(
+            IID_PPV_ARGS(&output_context4_))) &&
+        output_context4_;
+    Microsoft::WRL::ComPtr<ID3D11Device5> producer5;
+    Microsoft::WRL::ComPtr<ID3D11Device5> output5;
+    shared_fence_producer_supported_ =
+        shared_fence_producer_supported_ &&
+        SUCCEEDED(producer_device_->QueryInterface(IID_PPV_ARGS(&producer5))) &&
+        producer5;
+    shared_fence_output_supported_ =
+        shared_fence_output_supported_ &&
+        SUCCEEDED(output_device_->QueryInterface(IID_PPV_ARGS(&output5))) &&
+        output5;
+    if (!shared_fence_producer_supported_ ||
+        !shared_fence_output_supported_) {
+        last_error_ = "shared-fence-device5-or-context4-unavailable";
+        return false;
+    }
+    HRESULT hr = producer5->CreateFence(
+        0, D3D11_FENCE_FLAG_SHARED, IID_PPV_ARGS(&producer_fence_));
+    if (FAILED(hr) || !producer_fence_) {
+        last_error_ = "shared-fence-create-failed";
+        return false;
+    }
+    hr = producer_fence_->CreateSharedHandle(
+        nullptr,
+        DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE,
+        nullptr,
+        &shared_fence_handle_);
+    shared_fence_handle_created_ = SUCCEEDED(hr) && shared_fence_handle_;
+    if (!shared_fence_handle_created_) {
+        last_error_ = "shared-fence-handle-create-failed";
+        return false;
+    }
+    hr = output5->OpenSharedFence(
+        shared_fence_handle_, IID_PPV_ARGS(&output_fence_));
+    shared_fence_open_succeeded_ = SUCCEEDED(hr) && output_fence_;
+    if (!shared_fence_open_succeeded_) {
+        last_error_ = "shared-fence-open-failed";
+        return false;
+    }
+    return true;
+}
+
+bool D3D11CrossAdapterTextureTransport::signal_shared_fence() {
+    if (!producer_context4_ || !producer_fence_) {
+        last_error_ = "shared-fence-signal-unavailable";
+        return false;
+    }
+    ++fence_value_;
+    const HRESULT hr = producer_context4_->Signal(
+        producer_fence_.Get(), fence_value_);
+    if (FAILED(hr)) {
+        last_error_ = "shared-fence-signal-failed";
+        return false;
+    }
+    ++shared_fence_signal_count_;
+    return true;
+}
+
+bool D3D11CrossAdapterTextureTransport::wait_for_shared_fence() {
+    if (!output_context4_ || !output_fence_) {
+        last_error_ = "shared-fence-wait-unavailable";
+        return false;
+    }
+    const auto started = std::chrono::steady_clock::now();
+    const HRESULT hr = output_context4_->Wait(
+        output_fence_.Get(), fence_value_);
+    const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - started);
+    record_shared_fence_wait(static_cast<uint64_t>(
+        std::max<int64_t>(0, elapsed.count())));
+    if (FAILED(hr)) {
+        last_error_ = "shared-fence-wait-failed";
+        return false;
+    }
+    ++shared_fence_wait_count_;
+    return true;
+}
+
+uint64_t D3D11CrossAdapterTextureTransport::p95(
+    std::vector<uint64_t> values) {
+    if (values.empty()) {
+        return 0;
+    }
+    std::sort(values.begin(), values.end());
+    const size_t index = std::min(
+        values.size() - 1,
+        static_cast<size_t>(
+            std::ceil(static_cast<double>(values.size()) * 0.95) - 1.0));
+    return values[index];
+}
+
+void D3D11CrossAdapterTextureTransport::record_event_query_wait(
+    uint64_t wait_us) {
+    event_query_wait_samples_.push_back(wait_us);
+    if (event_query_wait_samples_.size() > 256) {
+        event_query_wait_samples_.erase(event_query_wait_samples_.begin());
+    }
+}
+
+void D3D11CrossAdapterTextureTransport::record_shared_fence_wait(
+    uint64_t wait_us) {
+    shared_fence_last_wait_us_ = wait_us;
+    shared_fence_wait_samples_.push_back(wait_us);
+    if (shared_fence_wait_samples_.size() > 256) {
+        shared_fence_wait_samples_.erase(shared_fence_wait_samples_.begin());
+    }
+}
+
+uint64_t D3D11CrossAdapterTextureTransport::shared_fence_p95_wait_us() const {
+    return p95(shared_fence_wait_samples_);
+}
+
+uint64_t D3D11CrossAdapterTextureTransport::event_query_p95_wait_us() const {
+    return p95(event_query_wait_samples_);
 }
 
 bool D3D11CrossAdapterTextureTransport::copy_to_output_srv(
@@ -300,10 +562,20 @@ bool D3D11CrossAdapterTextureTransport::copy_to_output_srv(
 
     const auto started = std::chrono::steady_clock::now();
     producer_context_->CopyResource(producer_bridge_.Get(), producer_texture);
-    producer_context_->End(producer_event_query_.Get());
-    producer_context_->Flush();
-    if (!wait_for_producer_copy()) {
-        return false;
+    if (active_sync_kind_ == "shared-fence") {
+        if (!signal_shared_fence()) {
+            return false;
+        }
+        producer_context_->Flush();
+        if (!wait_for_shared_fence()) {
+            return false;
+        }
+    } else {
+        producer_context_->End(producer_event_query_.Get());
+        producer_context_->Flush();
+        if (!wait_for_producer_copy()) {
+            return false;
+        }
     }
     output_context_->CopyResource(output_local_.Get(), output_bridge_.Get());
     output_context_->Flush();

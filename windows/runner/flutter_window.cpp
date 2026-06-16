@@ -60,11 +60,14 @@ bool FlutterWindow::OnCreate() {
   RunnerStartupTraceMark("generated plugins registered");
 
   // Register video renderer plugin (built into runner, not a pub package)
+  FlutterDesktopPluginRegistrarRef video_renderer_registrar =
+      flutter_controller_->engine()->GetRegistrarForPlugin(
+          "VideoRendererPlugin");
   VideoRendererPlugin::RegisterWithRegistrar(
       flutter::PluginRegistrarManager::GetInstance()
           ->GetRegistrar<flutter::PluginRegistrarWindows>(
-              flutter_controller_->engine()->GetRegistrarForPlugin(
-                  "VideoRendererPlugin")));
+              video_renderer_registrar),
+      video_renderer_registrar);
   RunnerStartupTraceMark("video renderer plugin registered");
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());

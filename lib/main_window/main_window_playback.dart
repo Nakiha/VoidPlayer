@@ -11,6 +11,7 @@ import '../startup_options.dart';
 import '../track_manager.dart';
 import '../utils/async_guard.dart';
 import '../video_renderer_controller.dart';
+import '../viewport/viewport_display_state.dart';
 import 'main_window_state.dart';
 import 'main_window_timeline_metrics.dart';
 
@@ -343,21 +344,19 @@ class MainWindowPlaybackCoordinator {
         );
       }
       if (event.nativeCompositorSerial > 0 &&
-          (event.nativeCompositorPhase == 'preparing' ||
-              event.nativeCompositorPhase == 'fallback-restoring')) {
-        final transparent = event.nativeCompositorPhase == 'preparing';
+          event.nativeCompositorPhase == 'preparing') {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_disposed || !mounted()) return;
           log.info(
             'Native compositor Flutter-state ACK: '
             'serial=${event.nativeCompositorSerial} '
-            'transparent=$transparent',
+            'transparent=true',
           );
           unawaited(
             () async {
               await controller.ackNativeCompositorFlutterState(
                 serial: event.nativeCompositorSerial,
-                transparentViewport: transparent,
+                transparentViewport: true,
               );
             }().catchError((Object error, StackTrace stack) {
               log.warning(
@@ -373,8 +372,14 @@ class MainWindowPlaybackCoordinator {
           !event.nativeCompositorActive &&
           event.nativeCompositorFailure.isNotEmpty) {
         log.warning(
-          'Native compositor unavailable; using Flutter texture fallback: '
+          'Native compositor unavailable; Flutter texture fallback is disabled: '
           '${event.nativeCompositorFailure}',
+        );
+        stateStore.setViewportState(
+          ViewportDisplayState.error(
+            'Windows native compositor failed: '
+            '${event.nativeCompositorFailure}',
+          ),
         );
       }
       return;

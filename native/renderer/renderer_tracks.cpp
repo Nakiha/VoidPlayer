@@ -341,4 +341,10 @@ std::vector<TrackPerfStats> Renderer::Impl::track_perf_stats() const {
         present_history_.snapshot(), std::chrono::steady_clock::now());
 }
 
+RendererPresentedAnchorDiagnostics
+Renderer::Impl::presented_anchor_diagnostics() const {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return present_history_.diagnostics();
+}
+
 } // namespace vr

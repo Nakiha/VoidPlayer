@@ -128,6 +128,9 @@ struct PresentationBackendDiagnostics {
     uint64_t source_cache_generation = 0;
     uint64_t source_cache_bytes = 0;
     uint64_t source_cache_publish_count = 0;
+    uint64_t source_cache_presented_anchor_generation = 0;
+    uint64_t source_cache_presented_anchor_frame_generation = 0;
+    uint64_t source_cache_presented_anchor_publish_count = 0;
     uint64_t source_cache_backpressure_count = 0;
     uint64_t source_cache_fallback_count = 0;
     std::string source_cache_format = "R16G16B16A16_FLOAT";

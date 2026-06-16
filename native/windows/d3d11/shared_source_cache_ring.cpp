@@ -172,7 +172,8 @@ bool D3D11SharedSourceCacheRing::begin_bundle(
 }
 
 bool D3D11SharedSourceCacheRing::publish_bundle(
-    std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay) {
+    std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay,
+    SourceCachePublishInfo* publish_info) {
     std::function<void()> callback;
     BundleSlot* bundle = nullptr;
     uint64_t ring_generation = 0;
@@ -199,6 +200,11 @@ bool D3D11SharedSourceCacheRing::publish_bundle(
         first_publish = publish_count_ == 1;
         callback = callback_;
         last_error_ = "none";
+        if (publish_info) {
+            publish_info->ring_generation = ring_generation;
+            publish_info->frame_generation = frame_generation;
+            publish_info->texture_count = texture_count;
+        }
         collect_retired_locked();
     }
     bool released = true;

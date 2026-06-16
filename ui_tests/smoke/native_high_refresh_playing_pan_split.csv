@@ -1,0 +1,32 @@
+# Windows high-refresh functional gate: playing pan and split/order changes
+# should keep DComp active and source projection reusable.
+@WINDOW, 1366, 768
+0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+1.8, ASSERT_TRACK_COUNT, 1
+2.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+4.0, ASSERT_TRACK_COUNT, 2
+4.1, SET_LAYOUT_MODE, 1
+4.2, SET_SPLIT_POS, 0.35
+4.3, PLAY
+4.8, ASSERT_PLAYING
+4.9, RESET_NATIVE_PERF_COUNTERS
+5.0, BEGIN_NATIVE_INTERACTION_SAMPLE, playing-pan-split
+5.1, DRAG_VIEWPORT, 260, -80, 90, 4
+5.7, SET_SPLIT_POS, 0.65
+5.8, DRAG_VIEWPORT, -220, 120, 90, 4
+6.4, END_NATIVE_INTERACTION_SAMPLE, playing-pan-split
+6.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
+6.51, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProjectionEnabled, true
+6.52, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompPresentCount, 1
+6.53, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompCompositeCount, 1
+6.54, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceProjectionReuseCount, 1
+6.55, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsViewportRedrawDuringProjectionCount, 0, 0
+6.56, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsInteractionInputToPresentP95Us, 0, 10000000
+6.57, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsHotPathActive, true
+6.58, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-dcomp
+6.59, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsHotPathSourceCacheReuseCount, 1
+6.595, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathViewportRedrawDuringProjectionCount, 0, 0
+6.596, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathInputToPresentP95Us, 0, 10000000
+6.6, SEEK_TO, 1200000
+7.2, ASSERT_PRESENTED_FRAME_RANGE, 1, 900000, 1500000
+7.3, QUIT, 0

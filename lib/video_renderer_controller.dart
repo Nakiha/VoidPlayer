@@ -208,11 +208,11 @@ class NativePlayerController {
     );
   }
 
-  Future<void> debugForceNativeCompositorFallback({
-    String reason = 'ui-test-forced-fallback',
+  Future<void> debugFailNativeCompositor({
+    String reason = 'ui-test-forced-failure',
   }) {
     _ensureAlive();
-    return _api.debugForceNativeCompositorFallback(reason: reason);
+    return _api.debugFailNativeCompositor(reason: reason);
   }
 
   Future<void> debugSimulateWindowsDeviceLoss({
@@ -220,10 +220,22 @@ class NativePlayerController {
     String reason = 'debug-simulated-device-loss',
   }) {
     _ensureAlive();
-    return _api.debugSimulateWindowsDeviceLoss(
-      target: target,
-      reason: reason,
-    );
+    return _api.debugSimulateWindowsDeviceLoss(target: target, reason: reason);
+  }
+
+  Future<void> resetNativePerfCounters() {
+    _ensureAlive();
+    return _api.resetNativePerfCounters();
+  }
+
+  Future<void> beginNativeInteractionSample({required String label}) {
+    _ensureAlive();
+    return _api.beginNativeInteractionSample(label: label);
+  }
+
+  Future<void> endNativeInteractionSample({required String label}) {
+    _ensureAlive();
+    return _api.endNativeInteractionSample(label: label);
   }
 
   Future<void> setNativeCompositorViewportTransform({

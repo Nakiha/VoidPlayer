@@ -18,9 +18,6 @@ class NativeCompositorFlags {
     }
     final mode = Platform.environment['VOIDPLAYER_MACOS_PRESENTATION_MODE']
         ?.toLowerCase();
-    if (mode == 'flutter-texture-sdr' || mode == 'flutter') {
-      return false;
-    }
     return mode == null ||
         mode == 'auto' ||
         mode == 'native-compositor-sdr' ||

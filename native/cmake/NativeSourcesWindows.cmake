@@ -6,6 +6,8 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/windows/presentation/windows_dcomp_composite.cpp"
     "${VOID_NATIVE_DIR}/windows/presentation/windows_device_recovery.cpp"
     "${VOID_NATIVE_DIR}/windows/presentation/windows_display_resolver.cpp"
+    "${VOID_NATIVE_DIR}/windows/presentation/windows_high_refresh_metrics.cpp"
+    "${VOID_NATIVE_DIR}/windows/presentation/windows_overlay_layer_state.cpp"
     "${VOID_NATIVE_DIR}/windows/presentation/windows_presentation_policy.cpp"
     "${VOID_NATIVE_DIR}/windows/d3d11/frame_capture_service.cpp"
     "${VOID_NATIVE_DIR}/windows/decode/d3d11_frame_snapshot.cpp"

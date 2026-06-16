@@ -19,6 +19,7 @@ class UiAutomationBridge {
   final int Function() effectiveDurationUs;
   final Future<void> Function(int slotIndex) toggleAnalysisOverlayForSlot;
   final Future<void> Function() toggleAnalysisOverlayPanel;
+  final void Function() toggleMarksSidebar;
   final Future<String?> Function(int slotIndex) generateAnalysisCacheForSlot;
   final Future<void> Function(int slotIndex, String sourceId)
   setMediaSourceIdForSlot;
@@ -39,6 +40,7 @@ class UiAutomationBridge {
     required this.effectiveDurationUs,
     required this.toggleAnalysisOverlayForSlot,
     required this.toggleAnalysisOverlayPanel,
+    required this.toggleMarksSidebar,
     required this.generateAnalysisCacheForSlot,
     required this.setMediaSourceIdForSlot,
     required this.exportMarksToFile,

@@ -53,6 +53,12 @@ struct SourceCacheRingPolicy {
     bool allowed = false;
 };
 
+struct SourceCachePublishInfo {
+    uint64_t ring_generation = 0;
+    uint64_t frame_generation = 0;
+    size_t texture_count = 0;
+};
+
 SourceCacheRingPolicy resolve_source_cache_ring_policy(
     const std::vector<SourceCacheTrackDescriptor>& descriptors,
     uint64_t budget_bytes);
@@ -77,7 +83,8 @@ public:
         std::array<ID3D11RenderTargetView*, 4>& rtvs,
         size_t& texture_count);
     bool publish_bundle(
-        std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay);
+        std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay,
+        SourceCachePublishInfo* publish_info = nullptr);
     void cancel_bundle();
 
     bool acquire_latest(SharedSourceCacheBundleSnapshot& snapshot);

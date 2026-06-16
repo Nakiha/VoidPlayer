@@ -16,7 +16,6 @@ enum class WindowsDeviceRecoveryState {
     ReactivatingCompositor,
     Recovered,
     FallbackNativeSdr,
-    FallbackFlutterTextureSdr,
     FailedTerminal,
 };
 

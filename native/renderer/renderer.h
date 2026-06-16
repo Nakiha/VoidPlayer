@@ -4,6 +4,7 @@
 #include "media/seek_controller.h"
 #include "renderer/layout/layout_state.h"
 #include "renderer/render/presentation_backend_types.h"
+#include "renderer/render/renderer_present_history.h"
 #include "renderer/render/renderer_device_state.h"
 #include "renderer/renderer_api_types.h"
 #include "renderer/renderer_config.h"
@@ -75,6 +76,7 @@ public:
     std::pair<int, int> track_dimensions(int slot) const;
     std::vector<TrackInfo> track_infos() const;
     std::vector<TrackPerfStats> track_perf_stats() const;
+    RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
 
     PresentationBackendMetrics presentation_backend_metrics() const;
     D3D11BackendMetrics d3d_backend_metrics() const;

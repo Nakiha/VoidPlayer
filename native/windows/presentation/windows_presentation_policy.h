@@ -24,6 +24,7 @@ struct WindowsPresentationPolicy {
     bool hdr_output_requested = false;
     bool cross_adapter_required = false;
     bool cross_adapter_migration_requested = false;
+    bool supported = true;
 };
 
 WindowsPresentationPolicy resolve_windows_presentation_policy(

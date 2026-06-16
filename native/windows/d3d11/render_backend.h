@@ -170,6 +170,9 @@ private:
     std::function<void()> shared_fp16_callback_;
     std::function<void()> source_cache_callback_;
     std::string source_cache_draw_error_ = "none";
+    uint64_t source_cache_presented_anchor_generation_ = 0;
+    uint64_t source_cache_presented_anchor_frame_generation_ = 0;
+    uint64_t source_cache_presented_anchor_publish_count_ = 0;
     std::unique_ptr<ShaderManager> shader_manager_;
     std::unique_ptr<D3D11RenderResources> resources_;
 };

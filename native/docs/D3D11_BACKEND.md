@@ -49,15 +49,16 @@ Renderer 只负责在持有 device/texture mutex 后调用 `begin_frame_locked()
 
 ## FP16 scRGB 实验 target
 
-显式 `fp16-scrgb` opt-in 下，`D3D11Fp16Target` 创建单缓冲
-`DXGI_FORMAT_R16G16B16A16_FLOAT` texture/RTV/SRV。每帧的 SRV 准备只做一次，
-随后从同一 `RendererDrawSnapshot` 依次绘制 FP16 scRGB pass 和现有 BGRA
-compatibility pass。测试可通过 `capture_fp16_target()` 读回 RGBA16F；该纹理
-不注册给 Flutter。
+`D3D11Fp16Target` 可创建单缓冲 `DXGI_FORMAT_R16G16B16A16_FLOAT`
+texture/RTV/SRV 供内部 canary 和 native compositor 输入验证使用。每帧的 SRV
+准备只做一次，随后从同一 `RendererDrawSnapshot` 绘制 FP16 scRGB pass。测试可
+通过 `capture_fp16_target()` 读回 RGBA16F；该纹理不注册给 Flutter，也不构成
+Windows UI presentation mode。
 
-resize 会同时重建 FP16 target 和 BGRA ring。FP16 初始化、resize 或普通 draw
-失败只禁用实验 pass；device removed 仍遵循 renderer terminal contract。
-显存统计按 FP16 每像素 8 bytes 计入 `fp16TargetBytes`。
+resize 会同时重建 FP16 target 和相关 shared resources。FP16 初始化、resize
+或普通 draw 失败必须进入可诊断 native compositor 降级/失败路径；device removed
+仍遵循 Windows presentation recovery contract。显存统计按 FP16 每像素 8 bytes
+计入 `fp16TargetBytes`。
 
 ## 纹理路径
 

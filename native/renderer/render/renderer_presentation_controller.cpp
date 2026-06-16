@@ -283,6 +283,9 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
     RendererPresentationDrawResult result;
     const auto backend_start = std::chrono::steady_clock::now();
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    const uint64_t source_cache_publish_count_before =
+        backend_ ? backend_->diagnostics().source_cache_presented_anchor_publish_count
+                 : 0;
     const bool async_backend =
         backend_ && backend_->completes_draw_asynchronously();
     auto async_completion =
@@ -348,6 +351,17 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
 
     if (!result.drew) {
         result.failure_error = backend_last_error();
+    }
+    if (backend_) {
+        const auto diagnostics = backend_->diagnostics();
+        if (diagnostics.source_cache_presented_anchor_publish_count >
+            source_cache_publish_count_before) {
+            result.source_cache_published = true;
+            result.source_cache_ring_generation =
+                diagnostics.source_cache_presented_anchor_generation;
+            result.source_cache_frame_generation =
+                diagnostics.source_cache_presented_anchor_frame_generation;
+        }
     }
     result.backend_us = presentation_elapsed_us_since(backend_start);
     return result;

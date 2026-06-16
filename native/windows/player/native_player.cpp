@@ -210,6 +210,15 @@ std::vector<TrackPerfStats> NativePlayer::track_perf_stats() const {
     return renderer_.track_perf_stats();
 }
 
+RendererPresentedAnchorDiagnostics
+NativePlayer::presented_anchor_diagnostics() const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (!renderer_ready_locked()) {
+        return {};
+    }
+    return renderer_.presented_anchor_diagnostics();
+}
+
 RendererGpuMemoryStats NativePlayer::gpu_memory_stats() const {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {

@@ -97,6 +97,34 @@ if(WIN32 AND BUILD_TESTS)
         windows_d3d11_source_projection_smoke PROPERTIES
         TIMEOUT 60
         LABELS "windows;backend;contract;canary;source-projection")
+
+    add_executable(windows_d3d11_high_refresh_projection_overlay_smoke
+        tools/windows_d3d11_high_refresh_projection_overlay_smoke.cpp)
+    void_apply_native_compile_options(
+        windows_d3d11_high_refresh_projection_overlay_smoke)
+    target_link_libraries(
+        windows_d3d11_high_refresh_projection_overlay_smoke PRIVATE
+        video_renderer_lib)
+    add_test(NAME windows_d3d11_high_refresh_projection_overlay_smoke
+        COMMAND windows_d3d11_high_refresh_projection_overlay_smoke)
+    set_tests_properties(
+        windows_d3d11_high_refresh_projection_overlay_smoke PROPERTIES
+        TIMEOUT 60
+        LABELS "windows;backend;contract;canary;high-refresh")
+
+    add_executable(windows_d3d11_retained_overlay_layer_smoke
+        tools/windows_d3d11_retained_overlay_layer_smoke.cpp)
+    void_apply_native_compile_options(
+        windows_d3d11_retained_overlay_layer_smoke)
+    target_link_libraries(
+        windows_d3d11_retained_overlay_layer_smoke PRIVATE
+        video_renderer_lib)
+    add_test(NAME windows_d3d11_retained_overlay_layer_smoke
+        COMMAND windows_d3d11_retained_overlay_layer_smoke)
+    set_tests_properties(
+        windows_d3d11_retained_overlay_layer_smoke PROPERTIES
+        TIMEOUT 60
+        LABELS "windows;backend;contract;canary;overlay")
 endif()
 
 if(WIN32 AND BUILD_ANALYSIS)

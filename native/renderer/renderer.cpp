@@ -140,6 +140,10 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
     return impl_->track_perf_stats();
 }
 
+RendererPresentedAnchorDiagnostics Renderer::presented_anchor_diagnostics() const {
+    return impl_->presented_anchor_diagnostics();
+}
+
 PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
     return impl_->presentation_backend_metrics();
 }

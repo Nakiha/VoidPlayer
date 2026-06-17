@@ -282,6 +282,8 @@ final class MacOSFrameCallbackProfiler {
   private var lastMainWaitNs: UInt64 = 0
   private var lastHandleStartNs: UInt64 = 0
   private var lastHandleNs: UInt64 = 0
+  private let mainWaitDurations = MacOSDurationWindow()
+  private let handleDurations = MacOSDurationWindow()
 
   func tryEnqueue(enqueueNs: UInt64) -> Bool {
     lock.lock()
@@ -307,6 +309,7 @@ final class MacOSFrameCallbackProfiler {
     mainWaitSampleCount += 1
     mainWaitTotalNs += waitNs
     mainWaitMaxNs = max(mainWaitMaxNs, waitNs)
+    mainWaitDurations.record(waitNs)
     lastHandleStartNs = startNs
   }
 
@@ -318,6 +321,7 @@ final class MacOSFrameCallbackProfiler {
     handleSampleCount += 1
     handleTotalNs += handleNs
     handleMaxNs = max(handleMaxNs, handleNs)
+    handleDurations.record(handleNs)
     processedCount += 1
     processedRate.record(nowNs: endNs)
     if dirty {
@@ -351,12 +355,14 @@ final class MacOSFrameCallbackProfiler {
         count: mainWaitSampleCount
       ),
       "macosFrameCallbackMainWaitMaxMs": nsToMs(mainWaitMaxNs),
+      "macosFrameCallbackMainWaitP95Ms": mainWaitDurations.p95Ms(),
       "macosFrameCallbackHandleLastMs": nsToMs(lastHandleNs),
       "macosFrameCallbackHandleAvgMs": averageMs(
         totalNs: handleTotalNs,
         count: handleSampleCount
       ),
       "macosFrameCallbackHandleMaxMs": nsToMs(handleMaxNs),
+      "macosFrameCallbackHandleP95Ms": handleDurations.p95Ms(),
     ]
   }
 

@@ -114,18 +114,19 @@ bool D3D11RenderBackend::initialize(const PresentationBackendConfig& config) {
     if (!initialize_render_resources()) {
         return false;
     }
-    if (requested_output_target_ == ColorOutputTarget::kWindowsLinearScRGB) {
-        if (config.shared_fp16_output) {
-            shared_fp16_ring_ = std::make_unique<D3D11SharedFp16Ring>();
-            if (!shared_fp16_ring_->initialize(
-                    device_->device(), device_->context(),
-                    config.width, config.height)) {
-                shared_fp16_ring_.reset();
-                fp16_fallback_reason_ = "shared-fp16-ring-initialization-failed";
-            } else {
-                shared_fp16_ring_->set_frame_callback(shared_fp16_callback_);
-            }
-        } else if (!initialize_fp16_target(config.width, config.height)) {
+    if (config.shared_fp16_output) {
+        shared_fp16_ring_ = std::make_unique<D3D11SharedFp16Ring>();
+        if (!shared_fp16_ring_->initialize(
+                device_->device(), device_->context(),
+                config.width, config.height)) {
+            shared_fp16_ring_.reset();
+            fp16_fallback_reason_ = "shared-fp16-ring-initialization-failed";
+        } else {
+            shared_fp16_ring_->set_frame_callback(shared_fp16_callback_);
+        }
+    } else if (requested_output_target_ ==
+               ColorOutputTarget::kWindowsLinearScRGB) {
+        if (!initialize_fp16_target(config.width, config.height)) {
             disable_fp16_target("fp16-target-initialization-failed");
         }
     }

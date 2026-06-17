@@ -16,7 +16,8 @@ TEST_CASE("Windows presentation policy defaults to native compositor Auto",
     REQUIRE(empty.mode == "native-compositor-sdr");
     REQUIRE(empty.reason == "auto-sdr-only");
     REQUIRE(empty.auto_enabled);
-    REQUIRE(empty.fp16_scrgb_requested);
+    REQUIRE(empty.output_target == vr::ColorOutputTarget::kSDRToneMappedBT709);
+    REQUIRE_FALSE(empty.fp16_scrgb_requested);
     REQUIRE(empty.native_compositor_requested);
 }
 
@@ -28,7 +29,9 @@ TEST_CASE("Windows presentation policy maps explicit SDR to native compositor",
     REQUIRE(explicit_sdr.mode == "native-compositor-sdr");
     REQUIRE(explicit_sdr.reason == "forced-native-compositor-sdr");
     REQUIRE_FALSE(explicit_sdr.auto_enabled);
-    REQUIRE(explicit_sdr.fp16_scrgb_requested);
+    REQUIRE(explicit_sdr.output_target ==
+            vr::ColorOutputTarget::kSDRToneMappedBT709);
+    REQUIRE_FALSE(explicit_sdr.fp16_scrgb_requested);
     REQUIRE(explicit_sdr.native_compositor_requested);
     REQUIRE(explicit_sdr.supported);
     REQUIRE(explicit_sdr.fallback_reason == "none");
@@ -80,6 +83,9 @@ TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
         vr::resolve_windows_presentation_policy("auto", true, display);
     REQUIRE(unavailable.mode == "native-compositor-sdr");
     REQUIRE(unavailable.reason == "auto-hdr-display-unavailable");
+    REQUIRE(unavailable.output_target ==
+            vr::ColorOutputTarget::kSDRToneMappedBT709);
+    REQUIRE_FALSE(unavailable.fp16_scrgb_requested);
     REQUIRE_FALSE(unavailable.hdr_output_requested);
 
     display.hdr_active = true;
@@ -88,6 +94,8 @@ TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
         vr::resolve_windows_presentation_policy("auto", true, display);
     REQUIRE(mismatch.mode == "native-compositor-scrgb");
     REQUIRE(mismatch.reason == "auto-hdr-cross-adapter");
+    REQUIRE(mismatch.output_target == vr::ColorOutputTarget::kWindowsLinearScRGB);
+    REQUIRE(mismatch.fp16_scrgb_requested);
     REQUIRE(mismatch.hdr_output_requested);
     REQUIRE(mismatch.cross_adapter_required);
     REQUIRE(mismatch.cross_adapter_migration_requested);
@@ -97,6 +105,9 @@ TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
         vr::resolve_windows_presentation_policy("auto", true, display);
     REQUIRE(transient.mode == "native-compositor-sdr");
     REQUIRE(transient.reason == "auto-hdr-display-unavailable");
+    REQUIRE(transient.output_target ==
+            vr::ColorOutputTarget::kSDRToneMappedBT709);
+    REQUIRE_FALSE(transient.fp16_scrgb_requested);
 
     display.output_resolved = true;
     display.color_metadata_available = false;
@@ -104,6 +115,9 @@ TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
         vr::resolve_windows_presentation_policy("auto", true, display);
     REQUIRE(no_metadata.mode == "native-compositor-sdr");
     REQUIRE(no_metadata.reason == "auto-hdr-display-unavailable");
+    REQUIRE(no_metadata.output_target ==
+            vr::ColorOutputTarget::kSDRToneMappedBT709);
+    REQUIRE_FALSE(no_metadata.fp16_scrgb_requested);
 }
 
 TEST_CASE("Windows HDR track detection ignores unknown transfer",
@@ -161,6 +175,8 @@ TEST_CASE("Windows presentation policy supports forced native SDR",
     REQUIRE(policy.reason == "forced-native-compositor-sdr");
     REQUIRE_FALSE(policy.auto_enabled);
     REQUIRE(policy.has_hdr_track);
+    REQUIRE(policy.output_target == vr::ColorOutputTarget::kSDRToneMappedBT709);
+    REQUIRE_FALSE(policy.fp16_scrgb_requested);
     REQUIRE(policy.native_compositor_requested);
     REQUIRE_FALSE(policy.hdr_output_requested);
 }

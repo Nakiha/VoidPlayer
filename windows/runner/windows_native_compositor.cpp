@@ -577,7 +577,7 @@ void WindowsNativeCompositor::RequestOutputTarget(
         reason.empty() ? "policy-refresh" : reason;
     diagnostics_.transition_serial++;
     transition_min_video_generation_ =
-        diagnostics_.video_generation + 1;
+        target == OutputTarget::ScRGB ? diagnostics_.video_generation + 1 : 0;
     transition_min_source_generation_ =
         source_projection_.enabled
             ? diagnostics_.source_cache_consumed_generation + 1
@@ -663,7 +663,10 @@ bool WindowsNativeCompositor::BeginDeviceRecovery(
     diagnostics_.transition_state = "rebuilding-presentation";
     diagnostics_.transition_reason =
         reason.empty() ? "device-loss" : reason;
-    transition_min_video_generation_ = diagnostics_.video_generation + 1;
+    transition_min_video_generation_ =
+        desired_output_target_ == OutputTarget::ScRGB
+            ? diagnostics_.video_generation + 1
+            : 0;
     transition_min_source_generation_ =
         source_projection_.enabled
             ? diagnostics_.source_cache_consumed_generation + 1
@@ -2032,8 +2035,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
         log_pending_flutter_request_acquire("acquire-latest-failed", nullptr);
     }
 
-    if (!held_video_valid_ || !held_sdr_video_valid_ ||
-        !held_flutter_valid_) {
+    if (!held_flutter_valid_) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (source_cache_publish_count_ > 0 &&
             source_projection.enabled &&
@@ -2048,6 +2050,25 @@ bool WindowsNativeCompositor::CompositeLatest() {
     if (!EnsureSwapChain(
             held_flutter_.width, held_flutter_.height)) {
         EnterFailed("dcomp-swap-chain-create-or-resize-failed");
+        return false;
+    }
+    const OutputTarget composite_target =
+        pending_swap_chain_.swap_chain
+            ? pending_swap_chain_.target
+            : current_swap_chain_.target;
+    const bool needs_fp16_video = composite_target == OutputTarget::ScRGB;
+    const bool needs_sdr_video = composite_target == OutputTarget::SDR;
+    if ((needs_fp16_video && !held_video_valid_) ||
+        (needs_sdr_video && !held_sdr_video_valid_)) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (source_cache_publish_count_ > 0 &&
+            source_projection.enabled &&
+            !source_cache_base_lease_wait_logged_) {
+            source_cache_base_lease_wait_logged_ = true;
+            spdlog::info(
+                "[WindowsNativeCompositor] source cache waiting for "
+                "stable video/Flutter inputs");
+        }
         return false;
     }
 
@@ -2203,7 +2224,11 @@ bool WindowsNativeCompositor::CompositeLatest() {
             min_video_generation = transition_min_video_generation_;
             min_source_generation = transition_min_source_generation_;
         }
-        if (held_video_.frame_generation < min_video_generation ||
+        const uint64_t held_video_generation =
+            composite_target == OutputTarget::ScRGB
+                ? held_video_.frame_generation
+                : held_sdr_video_.buffer_generation;
+        if (held_video_generation < min_video_generation ||
             (source_projection.enabled &&
              held_source_.frame_generation < min_source_generation)) {
             return false;
@@ -2229,10 +2254,16 @@ bool WindowsNativeCompositor::CompositeLatest() {
         back_buffer->GetDesc(&back_desc);
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            const auto video_width =
-                static_cast<uint32_t>(std::max(0, held_video_.width));
-            const auto video_height =
-                static_cast<uint32_t>(std::max(0, held_video_.height));
+            const auto video_width = static_cast<uint32_t>(std::max(
+                0,
+                composite_target == OutputTarget::ScRGB
+                    ? held_video_.width
+                    : held_sdr_video_.width));
+            const auto video_height = static_cast<uint32_t>(std::max(
+                0,
+                composite_target == OutputTarget::ScRGB
+                    ? held_video_.height
+                    : held_sdr_video_.height));
             const bool size_changed =
                 back_desc.Width != last_logged_backbuffer_width_ ||
                 back_desc.Height != last_logged_backbuffer_height_ ||
@@ -2254,7 +2285,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     back_desc.Width, back_desc.Height,
                     held_flutter_.width, held_flutter_.height,
                     video_width, video_height,
-                    held_video_.frame_generation,
+                    composite_target == OutputTarget::ScRGB
+                        ? held_video_.frame_generation
+                        : held_sdr_video_.buffer_generation,
                     held_flutter_.frame_generation);
             }
         }
@@ -2426,7 +2459,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
         diagnostics_.flutter_generation =
             held_flutter_.frame_generation;
         diagnostics_.video_generation =
-            held_video_.frame_generation;
+            composite_target == OutputTarget::ScRGB
+                ? held_video_.frame_generation
+                : held_sdr_video_.buffer_generation;
         diagnostics_.source_projection_enabled =
             source_projection.enabled;
         diagnostics_.source_cache_active = source_bundle_active;
@@ -2444,8 +2479,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
             }
         }
         const bool transition_inputs_ready =
-            held_video_.frame_generation >=
-                transition_min_video_generation_ &&
+            diagnostics_.video_generation >= transition_min_video_generation_ &&
             (!source_projection.enabled ||
              (source_bundle_active &&
               held_source_.frame_generation >=

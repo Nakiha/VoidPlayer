@@ -16,10 +16,10 @@ struct WindowsPresentationPolicy {
     std::string desired_mode = "native-compositor-sdr";
     std::string reason = "auto-sdr-only";
     std::string fallback_reason = "none";
-    ColorOutputTarget output_target = ColorOutputTarget::kWindowsLinearScRGB;
+    ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
     bool auto_enabled = true;
     bool has_hdr_track = false;
-    bool fp16_scrgb_requested = true;
+    bool fp16_scrgb_requested = false;
     bool native_compositor_requested = true;
     bool hdr_output_requested = false;
     bool cross_adapter_required = false;

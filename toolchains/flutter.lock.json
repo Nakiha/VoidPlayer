@@ -9,7 +9,7 @@
   "forkRemote": "https://github.com/Nakiha/VoidPlayer-Flutter.git",
   "forkRef": "codex/windows-surface-export",
   "forkBranch": "codex/windows-surface-export",
-  "forkCommit": "ba2c2796f0b0dcb304debde517b33ff7eedae6ce",
+  "forkCommit": "cad896c21e492160c4e789b1beb2d463e7bd8a50",
   "defaultInstallPath": ".toolchains/flutter",
   "macosLocalEngineArtifacts": {
     "debug": {
@@ -29,14 +29,14 @@
     "debug": {
       "engine": "host_debug_unopt",
       "host": "host_debug_unopt",
-      "asset": "voidplayer-flutter-ba2c2796f0b0-windows-host_debug_unopt.zip",
-      "sha256": "3cc20c73d5ce8c2c667e0d91e02825227401a6313712c2bc5bad3d4dd42597f6"
+      "asset": "voidplayer-flutter-cad896c21e49-windows-host_debug_unopt.zip",
+      "sha256": "f9196c49a08cf7d65d2369cd086c52523f818aeec0e293cd57d42cd3ecbcb587"
     },
     "release": {
       "engine": "host_release",
       "host": "host_release",
-      "asset": "voidplayer-flutter-ba2c2796f0b0-windows-host_release.zip",
-      "sha256": "b51f1af310e81566b1160fe297344e361b7d96276c1b79b6ad9689b6a217d725"
+      "asset": "voidplayer-flutter-cad896c21e49-windows-host_release.zip",
+      "sha256": "410ef6d12ffc0a5e50892889486cbdb1a6b0173842845be43a8163dc8438ae0d"
     }
   },
   "requiredPatchMarkers": [

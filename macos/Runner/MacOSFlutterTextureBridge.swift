@@ -101,6 +101,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private var retiredPixelBuffers: [CVPixelBuffer] = []
   private var pixelBufferStates: [NativePixelBufferState] = []
   private var pixelBufferLayoutRevisions: [UInt64] = []
+  private var pixelBufferGeneration = 0
   private var stableDisplaySnapshot: MacOSStableDisplaySnapshot?
   private var stableDisplayFallbackActive = false
   private var stableDisplayFallbackCount = 0
@@ -233,7 +234,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         info: info,
         publishToken: MacOSNativeFramePublishToken(
           pixelBufferAddress: completedAddress,
-          nativeUploadCount: player.rendererOwnedPresentationUploadCount()
+          nativeUploadCount: player.rendererOwnedPresentationUploadCount(),
+          pixelBufferGeneration: pixelBufferGeneration
         )
       )
     } catch {
@@ -267,6 +269,15 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     lock.lock()
     defer { lock.unlock() }
 
+    guard pending.publishToken.pixelBufferGeneration == pixelBufferGeneration else {
+      lastIgnoredNativeUploadCount = max(
+        lastIgnoredNativeUploadCount,
+        pending.publishToken.nativeUploadCount
+      )
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        "renderer-owned Metal presentation target generation changed before publish"
+      )
+    }
     let pendingBufferIndex = pixelBufferIndexLocked(
       address: pending.publishToken.pixelBufferAddress
     )
@@ -344,6 +355,13 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     lock.lock()
     defer { lock.unlock() }
 
+    guard pending.publishToken.pixelBufferGeneration == pixelBufferGeneration else {
+      lastIgnoredNativeUploadCount = max(
+        lastIgnoredNativeUploadCount,
+        pending.publishToken.nativeUploadCount
+      )
+      return
+    }
     guard let pendingBufferIndex = pixelBufferIndexLocked(
       address: pending.publishToken.pixelBufferAddress
     ) else {
@@ -703,6 +721,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       return
     }
     pixelBufferRebuildCount += 1
+    pixelBufferGeneration &+= 1
     pixelBufferAllocationCount += allocatedBufferCount
     pixelBufferRebuildReuseCount += reusedBufferCount
     pixelBufferRebuildLastAllocatedCount = allocatedBufferCount

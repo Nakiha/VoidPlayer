@@ -267,7 +267,7 @@ void main() {
     },
   );
 
-  test('uses counter deltas for ring pressure', () {
+  test('keeps isolated ring exhaustion healthy', () {
     final previous = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
       'metalBufferExhaustionCount': 4,
@@ -277,9 +277,25 @@ void main() {
       'metalBufferExhaustionCount': 5,
     }, previous: previous);
 
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+    expect(snapshot.metalBufferExhaustionDelta, 1);
+    expect(snapshot.diagnosticSummary, contains('ring=5(+1)'));
+  });
+
+  test('uses counter deltas for metal failure pressure', () {
+    final previous = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'metalCommandFailureCount': 4,
+    });
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'metalCommandFailureCount': 5,
+    }, previous: previous);
+
     expect(snapshot.level, PerformanceHealthLevel.severe);
     expect(snapshot.kind, PerformanceHealthKind.nativeRenderPressure);
-    expect(snapshot.metalBufferExhaustionDelta, 1);
+    expect(snapshot.metalFailureDelta, 1);
   });
 
   test('does not warn from static paused overlay redraw latency', () {

@@ -18,6 +18,7 @@ struct MacOSPendingNativeFrame {
 struct MacOSNativeFramePublishToken {
   let pixelBufferAddress: UInt
   let nativeUploadCount: Int
+  let pixelBufferGeneration: Int
 }
 
 struct MacOSNativeTrackMetadata {

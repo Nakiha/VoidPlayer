@@ -66,6 +66,10 @@ class DebugNativeCompositorAction extends AutomationAction {
   const DebugNativeCompositorAction() : super('DEBUG_NATIVE_COMPOSITOR');
 }
 
+class DebugNativeTimingAction extends AutomationAction {
+  const DebugNativeTimingAction() : super('DEBUG_NATIVE_TIMING');
+}
+
 class WindowMaximize extends AutomationAction {
   const WindowMaximize() : super('WINDOW_MAXIMIZE');
 }
@@ -245,6 +249,10 @@ class ClearAnalysisChunks extends AutomationAction {
 /// marks for the same media content.
 class ClearMarks extends AutomationAction {
   const ClearMarks() : super('CLEAR_MARKS');
+}
+
+class ToggleMarksSidebar extends AutomationAction {
+  const ToggleMarksSidebar() : super('TOGGLE_MARKS_SIDEBAR');
 }
 
 /// Injects an agent-authored quick mark on the current frame of a slot:

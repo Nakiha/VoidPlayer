@@ -1,0 +1,26 @@
+# Diagnostic probe for native compositor pacing during playback plus UI interaction.
+# Exercises playing drag and marks-sidebar resize without introducing a second render path.
+@WINDOW, 1366, 768
+0.0, SET_DECODE_MODE, preferHardware
+0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.6, ASSERT_TRACK_COUNT, 1
+1.8, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+3.8, ASSERT_TRACK_COUNT, 2
+3.9, CLEAR_MARKS
+4.0, ADD_QUICK_MARK, 0, 0.2, 0.2, 0.24, 0.24, playback, 2
+4.2, DEBUG_NATIVE_TIMING
+4.3, PLAY
+4.7, ASSERT_PLAYING
+4.8, DEBUG_NATIVE_TIMING
+5.0, TOGGLE_MARKS_SIDEBAR
+5.3, DEBUG_NATIVE_TIMING
+5.4, SET_ZOOM, 2.4
+5.5, DRAG_VIEWPORT, 360, -140, 120, 4
+6.3, DEBUG_NATIVE_TIMING
+6.5, TOGGLE_MARKS_SIDEBAR
+6.8, DEBUG_NATIVE_TIMING
+6.9, DRAG_VIEWPORT, -420, 180, 120, 4
+7.7, DEBUG_NATIVE_TIMING
+7.8, PAUSE
+8.0, DEBUG_NATIVE_TIMING
+8.1, QUIT, 0

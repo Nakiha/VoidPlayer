@@ -24,6 +24,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private let playback = MacOSPlaybackController()
   private let transport = MacOSTransportController()
   private let frameCallbackProfiler = MacOSFrameCallbackProfiler()
+  private let compositorLatencyProfiler = MacOSCompositorLatencyProfiler()
   private let frameAvailableRate = MacOSRateWindow()
   private let coalescedFrameCallbackDelayMs = 8
   private var frameAvailableCount = 0
@@ -162,6 +163,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       result(nil)
     case "resize":
       presentation.resize(arguments: call.arguments, context: presentationContext())
+      result(nil)
+    case "prewarmNativePresentationTargetSize":
+      prewarmNativePresentationTargetSize(arguments: call.arguments)
       result(nil)
     case "setNativeCompositorViewportRect":
       setNativeCompositorViewportRect(arguments: call.arguments)
@@ -346,23 +350,41 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private func setNativeCompositorViewportRect(arguments: Any?) {
     guard let nativeCompositor else { return }
+    let trace = compositorLatencyProfiler.receive(
+      route: "viewport-rect",
+      arguments: arguments
+    )
     nativeCompositor.setViewportRect(
       left: MacOSFlutterArguments.intArg(arguments, "left") ?? 0,
       top: MacOSFlutterArguments.intArg(arguments, "top") ?? 0,
       width: MacOSFlutterArguments.intArg(arguments, "width") ?? 0,
       height: MacOSFlutterArguments.intArg(arguments, "height") ?? 0,
       surfaceWidth: MacOSFlutterArguments.intArg(arguments, "surfaceWidth") ?? 0,
-      surfaceHeight: MacOSFlutterArguments.intArg(arguments, "surfaceHeight") ?? 0
+      surfaceHeight: MacOSFlutterArguments.intArg(arguments, "surfaceHeight") ?? 0,
+      trace: trace
+    )
+  }
+
+  private func prewarmNativePresentationTargetSize(arguments: Any?) {
+    guard let texture else { return }
+    texture.prewarmRendererTarget(
+      width: MacOSFlutterArguments.intArg(arguments, "width") ?? 0,
+      height: MacOSFlutterArguments.intArg(arguments, "height") ?? 0
     )
   }
 
   private func setNativeCompositorViewportTransform(arguments: Any?) {
+    _ = compositorLatencyProfiler.receive(route: "viewport-transform-noop", arguments: arguments)
     // Kept as a no-op compatibility endpoint while Dart/native converge on
     // full-layout source projection.
   }
 
   private func prepareNativeCompositorSourceCache(arguments: Any?) {
     guard let nativeCompositor else { return }
+    let trace = compositorLatencyProfiler.receive(
+      route: "source-projection",
+      arguments: arguments
+    )
     let sourceOrder = MacOSFlutterArguments.intListArg(arguments, "sourceOrder")
     guard let player = nativePlayer else {
       nativeCompositorSourceRing?.unsubscribe(reason: "native player unavailable")
@@ -391,7 +413,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       invDisplaySizeX: invDisplaySizeX,
       invDisplaySizeY: invDisplaySizeY,
       viewOffsetUvX: viewOffsetUvX,
-      viewOffsetUvY: viewOffsetUvY
+      viewOffsetUvY: viewOffsetUvY,
+      trace: trace
     )
     nativeCompositor.setOverlayPrimitives(player.currentOverlayPrimitives())
     let trackPayloads = tracks.tracks
@@ -523,6 +546,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func clearNativeCompositorSourceCache(arguments: Any?) {
+    _ = compositorLatencyProfiler.receive(route: "source-clear", arguments: arguments)
     nativeCompositorSourceSignature = ""
     nativeCompositorSourceRing?.unsubscribe(
       reason: MacOSFlutterArguments.stringArg(arguments, "reason") ?? "clear requested"
@@ -721,7 +745,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       emitNativeCompositorState()
       return
     }
-    guard let compositor = MacOSNativeCompositorView(engine: engine) else {
+    guard let compositor = MacOSNativeCompositorView(
+      engine: engine,
+      latencyProfiler: compositorLatencyProfiler
+    ) else {
       lastNativeCompositorFailure = "native compositor initialization failed"
       emitNativeCompositorState()
       return
@@ -981,6 +1008,26 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func logProfilerSummary() {
+    var compositorDiagnostics: [String: Any] = [:]
+    if let nativeCompositor {
+      compositorDiagnostics = nativeCompositor.diagnostics()
+    } else {
+      compositorDiagnostics = compositorLatencyProfiler.diagnosticMap()
+    }
+    let textureStats = texture?.diagnostics()
+    let textureDiagnostics: [String: Any] = [
+      "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
+      "pixelBufferAllocationCount": textureStats?.allocationCount ?? 0,
+      "pixelBufferRebuildReuseCount": textureStats?.rebuildReuseCount ?? 0,
+      "pixelBufferRebuildLastAllocatedCount": textureStats?.rebuildLastAllocatedCount ?? 0,
+      "pixelBufferRebuildLastReusedCount": textureStats?.rebuildLastReusedCount ?? 0,
+      "pixelBufferRebuildLastDurationMs": textureStats?.rebuildLastDurationMs ?? 0.0,
+      "retiredPixelBufferCount": textureStats?.retiredPixelBufferCount ?? 0,
+      "pixelBufferPrewarmRequestCount": textureStats?.prewarmRequestCount ?? 0,
+      "pixelBufferPrewarmHitCount": textureStats?.prewarmHitCount ?? 0,
+      "pixelBufferPrewarmReadyCount": textureStats?.prewarmReadyCount ?? 0,
+      "pixelBufferPrewarmDroppedCount": textureStats?.prewarmDroppedCount ?? 0,
+    ]
     MacOSRendererProfilerSummary.log(
       isPlaying: playback.isPlaying,
       trackCount: tracks.count,
@@ -988,7 +1035,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       callbacks: frameCallbackDiagnostics(),
       presentationFrames: presentationState.diagnosticMap(),
       perf: nativePlayer?.performanceStats() ?? [:],
-      scheduler: nativePlayer?.presentationSchedulerStats() ?? [:]
+      texture: textureDiagnostics,
+      scheduler: nativePlayer?.presentationSchedulerStats() ?? [:],
+      compositor: compositorDiagnostics
     )
   }
 

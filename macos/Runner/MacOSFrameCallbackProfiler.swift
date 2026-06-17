@@ -164,6 +164,105 @@ final class MacOSDurationWindow {
   }
 }
 
+struct MacOSCompositorLatencyTrace {
+  let route: String
+  let traceId: Int
+  let dartSentWallUs: Int64
+  let swiftReceivedWallUs: Int64
+  let swiftReceivedNs: UInt64
+}
+
+final class MacOSCompositorLatencyProfiler {
+  private let lock = NSLock()
+  private let dartToSwiftDuration = MacOSDurationWindow()
+  private let swiftQueueDuration = MacOSDurationWindow()
+  private let receiveToCompositeDuration = MacOSDurationWindow()
+  private let routeCounts = MacOSRateWindow()
+  private var receivedCount = 0
+  private var appliedCount = 0
+  private var compositedCount = 0
+  private var coalescedBeforeCompositeCount = 0
+  private var lastRoute = ""
+  private var lastTraceId = 0
+
+  func receive(route: String, arguments: Any?) -> MacOSCompositorLatencyTrace? {
+    let traceId = MacOSFlutterArguments.intArg(arguments, "traceId") ?? 0
+    guard traceId > 0 else { return nil }
+    let sentUs = Int64(MacOSFlutterArguments.intArg(arguments, "traceSentUs") ?? 0)
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    let nowWallUs = Self.wallClockUs()
+    lock.lock()
+    receivedCount += 1
+    routeCounts.record(nowNs: nowNs)
+    lastRoute = route
+    lastTraceId = traceId
+    if sentUs > 0, nowWallUs >= sentUs {
+      dartToSwiftDuration.record(UInt64(nowWallUs - sentUs) * 1_000)
+    }
+    lock.unlock()
+    return MacOSCompositorLatencyTrace(
+      route: route,
+      traceId: traceId,
+      dartSentWallUs: sentUs,
+      swiftReceivedWallUs: nowWallUs,
+      swiftReceivedNs: nowNs
+    )
+  }
+
+  func recordApplied(_ trace: MacOSCompositorLatencyTrace, applyNs: UInt64) {
+    lock.lock()
+    appliedCount += 1
+    if applyNs >= trace.swiftReceivedNs {
+      swiftQueueDuration.record(applyNs - trace.swiftReceivedNs)
+    }
+    lastRoute = trace.route
+    lastTraceId = trace.traceId
+    lock.unlock()
+  }
+
+  func recordCoalescedBeforeComposite() {
+    lock.lock()
+    coalescedBeforeCompositeCount += 1
+    lock.unlock()
+  }
+
+  func recordComposited(_ trace: MacOSCompositorLatencyTrace, compositeNs: UInt64) {
+    lock.lock()
+    compositedCount += 1
+    if compositeNs >= trace.swiftReceivedNs {
+      receiveToCompositeDuration.record(compositeNs - trace.swiftReceivedNs)
+    }
+    lastRoute = trace.route
+    lastTraceId = trace.traceId
+    lock.unlock()
+  }
+
+  func diagnosticMap() -> [String: Any] {
+    lock.lock()
+    defer { lock.unlock() }
+    return [
+      "nativeCompositorTraceReceivedCount": receivedCount,
+      "nativeCompositorTraceAppliedCount": appliedCount,
+      "nativeCompositorTraceCompositedCount": compositedCount,
+      "nativeCompositorTraceCoalescedBeforeCompositeCount": coalescedBeforeCompositeCount,
+      "nativeCompositorTraceHz": routeCounts.rateHz(),
+      "nativeCompositorTraceHzX1000": Int(routeCounts.rateHz() * 1000.0),
+      "nativeCompositorTraceLastRoute": lastRoute,
+      "nativeCompositorTraceLastId": lastTraceId,
+      "nativeCompositorDartToSwiftLastMs": dartToSwiftDuration.lastMs(),
+      "nativeCompositorDartToSwiftP95Ms": dartToSwiftDuration.p95Ms(),
+      "nativeCompositorSwiftQueueLastMs": swiftQueueDuration.lastMs(),
+      "nativeCompositorSwiftQueueP95Ms": swiftQueueDuration.p95Ms(),
+      "nativeCompositorReceiveToCompositeLastMs": receiveToCompositeDuration.lastMs(),
+      "nativeCompositorReceiveToCompositeP95Ms": receiveToCompositeDuration.p95Ms(),
+    ]
+  }
+
+  private static func wallClockUs() -> Int64 {
+    Int64(Date().timeIntervalSince1970 * 1_000_000.0)
+  }
+}
+
 final class MacOSFrameCallbackProfiler {
   private let lock = NSLock()
   private let queuedRate = MacOSRateWindow()

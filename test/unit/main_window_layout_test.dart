@@ -681,6 +681,12 @@ class _FakeNativePlayerController extends NativePlayerController {
   }
 
   @override
+  Future<void> prewarmNativePresentationTargetSize(
+    int width,
+    int height,
+  ) async {}
+
+  @override
   Future<void> applyLayout(LayoutState state) async {
     calls.add('applyLayout');
     appliedLayouts.add(state);

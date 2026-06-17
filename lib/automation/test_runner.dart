@@ -289,6 +289,61 @@ class TestRunner {
           'drawable=${info['nativeCompositorDrawableWidth']}x${info['nativeCompositorDrawableHeight']} '
           'failure=${info['nativeCompositorLastFailure']}',
         );
+      case DebugNativeTimingAction():
+        final info = await controller.getDiagnostics();
+        String value(String key) => '${info[key] ?? ''}';
+        log.info(
+          'TestRunner: DEBUG_NATIVE_TIMING '
+          'frameAvailable=${value('frameAvailableCount')}@${value('frameAvailableHz')}Hz '
+          'presentation=${value('nativeFramePresentationCount')}@${value('nativeFramePresentationFps')}Hz '
+          'rendererOwned=${value('nativeFrameRendererOwnedPresentCount')} '
+          'rendererOwnedRatioX1000=${value('nativeFrameRendererOwnedRatioX1000')} '
+          'ptsSamples=${value('presentedFramePtsSampleCount')} '
+          'ptsDistinct=${value('presentedFramePtsDistinctCount')} '
+          'ptsDuplicate=${value('presentedFramePtsDuplicateCount')} '
+          'ptsLargeGap=${value('presentedFramePtsLargeGapCount')} '
+          'hostAvgMs=${value('presentedFrameHostIntervalAvgMs')} '
+          'hostP95Ms=${value('presentedFrameHostIntervalP95Ms')} '
+          'hostMaxMs=${value('presentedFrameHostIntervalMaxMs')} '
+          'expectedIntervalUs=${value('presentedFrameExpectedIntervalUs')} '
+          'drop=${value('presentedFrameDropCount')} '
+          'errors=${value('presentedFrameErrorCount')} '
+          'compositorFrames=${value('nativeCompositorFrames')} '
+          'compositorHz=${value('nativeCompositorCompositeHz')} '
+          'sourceCacheHz=${value('nativeCompositorSourceCacheHz')} '
+          'sourceProjectionHz=${value('nativeCompositorSourceProjectionHz')} '
+          'traceHz=${value('nativeCompositorTraceHz')} '
+          'traceReceived=${value('nativeCompositorTraceReceivedCount')} '
+          'traceApplied=${value('nativeCompositorTraceAppliedCount')} '
+          'traceComposited=${value('nativeCompositorTraceCompositedCount')} '
+          'traceCoalesced=${value('nativeCompositorTraceCoalescedBeforeCompositeCount')} '
+          'traceLastRoute=${value('nativeCompositorTraceLastRoute')} '
+          'dartToSwiftP95Ms=${value('nativeCompositorDartToSwiftP95Ms')} '
+          'swiftQueueP95Ms=${value('nativeCompositorSwiftQueueP95Ms')} '
+          'receiveToCompositeP95Ms=${value('nativeCompositorReceiveToCompositeP95Ms')} '
+          'skippedInFlight=${value('nativeCompositorSkippedInFlightFrames')} '
+          'skippedStatic=${value('nativeCompositorSkippedStaticFrames')} '
+          'layoutIntent=${value('layoutIntentCount')} '
+          'layoutSubmit=${value('layoutSubmitCount')} '
+          'layoutDraw=${value('layoutDrawCount')} '
+          'layoutPublished=${value('layoutPublishedCount')} '
+          'displayTicks=${value('displayDeliveredTickCount')} '
+          'viewportComposite=${value('viewportCompositeCount')} '
+          'sourceHits=${value('sourceFrameCacheHitCount')} '
+          'targetRebuild=${value('pixelBufferRebuildCount')} '
+          'targetAlloc=${value('pixelBufferAllocationCount')} '
+          'targetRebuildReuse=${value('pixelBufferRebuildReuseCount')} '
+          'targetLastAlloc=${value('pixelBufferRebuildLastAllocatedCount')} '
+          'targetLastReuse=${value('pixelBufferRebuildLastReusedCount')} '
+          'targetLastMs=${value('pixelBufferRebuildLastDurationMs')} '
+          'retiredBuffers=${value('retiredPixelBufferCount')} '
+          'prewarm=${value('pixelBufferPrewarmRequestCount')}/'
+          '${value('pixelBufferPrewarmReadyCount')}/'
+          '${value('pixelBufferPrewarmHitCount')}/'
+          '${value('pixelBufferPrewarmDroppedCount')} '
+          'metalExhaustion=${value('textureMetalBufferExhaustionCount')} '
+          'inFlightMetal=${value('textureInFlightMetalBufferCount')}',
+        );
       case WindowMaximize():
         log.info('TestRunner: WINDOW_MAXIMIZE');
         await runtime.maximizeWindow();
@@ -465,6 +520,9 @@ class TestRunner {
       case ClearMarks():
         log.info('TestRunner: CLEAR_MARKS');
         automation.clearMarks();
+      case ToggleMarksSidebar():
+        log.info('TestRunner: TOGGLE_MARKS_SIDEBAR');
+        automation.toggleMarksSidebar();
       case AddQuickMark():
         log.info(
           'TestRunner: ADD_QUICK_MARK slot=${action.slotIndex} '

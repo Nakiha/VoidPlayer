@@ -448,6 +448,8 @@ ScriptInstruction? _parseInstruction(
     case 'DEBUG_NATIVE_COMPOSITOR':
     case 'DEBUG_NATIVE_COMPOSITOR_SPIKE':
       return ScriptAutomationAction(time, const DebugNativeCompositorAction());
+    case 'DEBUG_NATIVE_TIMING':
+      return ScriptAutomationAction(time, const DebugNativeTimingAction());
     case 'WINDOW_MAXIMIZE':
       return ScriptAutomationAction(time, const WindowMaximize());
     case 'WINDOW_RESTORE':
@@ -539,6 +541,8 @@ ScriptInstruction? _parseInstruction(
       );
     case 'TOGGLE_ANALYSIS_OVERLAY_PANEL':
       return ScriptAutomationAction(time, const ToggleAnalysisOverlayPanel());
+    case 'TOGGLE_MARKS_SIDEBAR':
+      return ScriptAutomationAction(time, const ToggleMarksSidebar());
     case 'GENERATE_ANALYSIS_CACHE':
       if (args.isEmpty) {
         log.warning('GENERATE_ANALYSIS_CACHE needs slot index: $rawLine');

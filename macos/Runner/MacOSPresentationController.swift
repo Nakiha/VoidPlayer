@@ -94,12 +94,6 @@ final class MacOSPresentationController {
     if let width, let height {
       let nextWidth = max(16, width)
       let nextHeight = max(16, height)
-      let currentDimensions = context.texture?.dimensions()
-      let willChange = currentDimensions?.width != nextWidth ||
-        currentDimensions?.height != nextHeight
-      if context.nativeBackendActive, willChange {
-        context.player?.clearMetalPresentationTarget()
-      }
       _ = context.texture?.resize(width: nextWidth, height: nextHeight) ?? false
       if context.nativeBackendActive {
         nativeRefreshAttempted = true

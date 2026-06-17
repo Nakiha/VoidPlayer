@@ -17,6 +17,8 @@ class NativePlayerMethods {
   static const setLoopRange = 'setLoopRange';
   static const setAudibleTrack = 'setAudibleTrack';
   static const resize = 'resize';
+  static const prewarmNativePresentationTargetSize =
+      'prewarmNativePresentationTargetSize';
   static const setNativeCompositorViewportRect =
       'setNativeCompositorViewportRect';
   static const setNativeCompositorViewportTransform =
@@ -67,6 +69,8 @@ class NativePlayerKeys {
   static const activeTrackCount = 'activeTrackCount';
   static const sourceSlots = 'sourceSlots';
   static const sourceOrder = 'sourceOrder';
+  static const traceId = 'traceId';
+  static const traceSentUs = 'traceSentUs';
   static const displayOffsetX = 'displayOffsetX';
   static const displayOffsetY = 'displayOffsetY';
   static const invDisplaySizeX = 'invDisplaySizeX';

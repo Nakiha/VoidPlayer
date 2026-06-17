@@ -13,11 +13,12 @@ Useful commands:
 ```bash
 python dev.py toolchain doctor
 python dev.py toolchain bootstrap-flutter
-scripts/ci/bootstrap_flutter_macos_engine.sh
 ```
 
-`dev_config.local.json` may still point to a local SDK checkout, but the checkout
-must match the locked revision and patch markers.
+`python dev.py toolchain bootstrap-flutter` installs the pinned Flutter checkout
+under `.toolchains/flutter` and, on macOS, downloads the locked debug/release
+local engine archives. `dev_config.local.json` may still point to a custom SDK
+checkout, but the checkout must match the locked revision and patch markers.
 
 The human-readable `flutterVersion` reported by Flutter can vary between an
 official checkout and a fork checkout. The hard lock is the framework revision,

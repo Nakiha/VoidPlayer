@@ -27,6 +27,8 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
     return true
   }
 
+  func prewarmRendererTarget(width: Int, height: Int) {}
+
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
     presentationSnapshot()?.pixelBuffer
   }
@@ -102,6 +104,17 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
     return (
       rebuildCount: rebuildCount,
       reuseCount: reuseCount,
+      allocationCount: 0,
+      rebuildReuseCount: 0,
+      rebuildLastAllocatedCount: 0,
+      rebuildLastReusedCount: 0,
+      rebuildLastDurationMs: 0.0,
+      retiredPixelBufferCount: 0,
+      retiredPixelBufferBytes: 0,
+      prewarmRequestCount: 0,
+      prewarmHitCount: 0,
+      prewarmReadyCount: 0,
+      prewarmDroppedCount: 0,
       metalUploadCount: 0,
       metalUploadFailureCount: 0,
       metalAvailable: false,

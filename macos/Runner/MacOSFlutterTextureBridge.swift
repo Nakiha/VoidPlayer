@@ -5,6 +5,17 @@ import FlutterMacOS
 typealias MacOSTextureDiagnostics = (
   rebuildCount: Int,
   reuseCount: Int,
+  allocationCount: Int,
+  rebuildReuseCount: Int,
+  rebuildLastAllocatedCount: Int,
+  rebuildLastReusedCount: Int,
+  rebuildLastDurationMs: Double,
+  retiredPixelBufferCount: Int,
+  retiredPixelBufferBytes: Int,
+  prewarmRequestCount: Int,
+  prewarmHitCount: Int,
+  prewarmReadyCount: Int,
+  prewarmDroppedCount: Int,
   metalUploadCount: Int,
   metalUploadFailureCount: Int,
   metalAvailable: Bool,
@@ -30,6 +41,7 @@ struct MacOSTexturePresentationSnapshot {
 
 protocol MacOSVideoTexture: FlutterTexture {
   func resize(width: Int, height: Int) -> Bool
+  func prewarmRendererTarget(width: Int, height: Int)
   func dimensions() -> (width: Int, height: Int)
   func presentationGeneration() -> Int
   func presentationSnapshot() -> MacOSTexturePresentationSnapshot?
@@ -76,14 +88,20 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private static let rendererOwnedPixelBufferCount = 4
 
   private let lock = NSLock()
+  private let prewarmQueue = DispatchQueue(
+    label: "dev.nakiha.voidplayer.macos.texture-prewarm",
+    qos: .userInitiated
+  )
   private(set) var width: Int
   private(set) var height: Int
   private var pixelFormat: OSType
   private let presentationTarget: MacOSNativeMetalPresentationTarget
   private let hashPrefix: String
   private var pixelBuffers: [CVPixelBuffer] = []
+  private var retiredPixelBuffers: [CVPixelBuffer] = []
   private var pixelBufferStates: [NativePixelBufferState] = []
   private var pixelBufferLayoutRevisions: [UInt64] = []
+  private var pixelBufferGeneration = 0
   private var stableDisplaySnapshot: MacOSStableDisplaySnapshot?
   private var stableDisplayFallbackActive = false
   private var stableDisplayFallbackCount = 0
@@ -95,6 +113,16 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private var metalBufferExhaustionCount = 0
   private var pixelBufferRebuildCount = 0
   private var pixelBufferReuseCount = 0
+  private var pixelBufferAllocationCount = 0
+  private var pixelBufferRebuildReuseCount = 0
+  private var pixelBufferRebuildLastAllocatedCount = 0
+  private var pixelBufferRebuildLastReusedCount = 0
+  private var pixelBufferRebuildLastDurationNs: UInt64 = 0
+  private var pixelBufferPrewarmRequestCount = 0
+  private var pixelBufferPrewarmHitCount = 0
+  private var pixelBufferPrewarmReadyCount = 0
+  private var pixelBufferPrewarmDroppedCount = 0
+  private var pixelBufferPrewarmKeys: Set<String> = []
   private var pixelBufferMetalUploadCount = 0
   private var pixelBufferMetalUploadFailureCount = 0
   private var metalTextureValid = false
@@ -206,7 +234,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         info: info,
         publishToken: MacOSNativeFramePublishToken(
           pixelBufferAddress: completedAddress,
-          nativeUploadCount: player.rendererOwnedPresentationUploadCount()
+          nativeUploadCount: player.rendererOwnedPresentationUploadCount(),
+          pixelBufferGeneration: pixelBufferGeneration
         )
       )
     } catch {
@@ -240,6 +269,15 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     lock.lock()
     defer { lock.unlock() }
 
+    guard pending.publishToken.pixelBufferGeneration == pixelBufferGeneration else {
+      lastIgnoredNativeUploadCount = max(
+        lastIgnoredNativeUploadCount,
+        pending.publishToken.nativeUploadCount
+      )
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        "renderer-owned Metal presentation target generation changed before publish"
+      )
+    }
     let pendingBufferIndex = pixelBufferIndexLocked(
       address: pending.publishToken.pixelBufferAddress
     )
@@ -285,7 +323,9 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     }
     guard let publishBufferIndex = pendingBufferIndex,
           pixelBufferStates.indices.contains(publishBufferIndex),
-          pixelBufferStates[publishBufferIndex] == .rendering else {
+          pixelBufferStates[publishBufferIndex] == .rendering ||
+          pixelBufferStates[publishBufferIndex] == .targetInstalled ||
+          pixelBufferStates[publishBufferIndex] == .available else {
       logTargetStateLocked(reason: "publish-state-mismatch")
       throw MacOSNativePlayerError.transientFrameUnavailable(
         "renderer-owned Metal presentation target changed before publish"
@@ -315,6 +355,13 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     lock.lock()
     defer { lock.unlock() }
 
+    guard pending.publishToken.pixelBufferGeneration == pixelBufferGeneration else {
+      lastIgnoredNativeUploadCount = max(
+        lastIgnoredNativeUploadCount,
+        pending.publishToken.nativeUploadCount
+      )
+      return
+    }
     guard let pendingBufferIndex = pixelBufferIndexLocked(
       address: pending.publishToken.pixelBufferAddress
     ) else {
@@ -398,7 +445,6 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     defer { lock.unlock() }
 
     guard pixelFormat != nextPixelFormat else { return false }
-    player?.clearMetalPresentationTarget()
     nativeTargetPlayer = nil
     preserveDisplayedBufferAsStableSnapshotLocked()
     pixelFormat = nextPixelFormat
@@ -468,6 +514,17 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     return (
       rebuildCount: pixelBufferRebuildCount,
       reuseCount: pixelBufferReuseCount,
+      allocationCount: pixelBufferAllocationCount,
+      rebuildReuseCount: pixelBufferRebuildReuseCount,
+      rebuildLastAllocatedCount: pixelBufferRebuildLastAllocatedCount,
+      rebuildLastReusedCount: pixelBufferRebuildLastReusedCount,
+      rebuildLastDurationMs: Double(pixelBufferRebuildLastDurationNs) / 1_000_000.0,
+      retiredPixelBufferCount: retiredPixelBuffers.count,
+      retiredPixelBufferBytes: retiredPixelBufferBytesLocked(),
+      prewarmRequestCount: pixelBufferPrewarmRequestCount,
+      prewarmHitCount: pixelBufferPrewarmHitCount,
+      prewarmReadyCount: pixelBufferPrewarmReadyCount,
+      prewarmDroppedCount: pixelBufferPrewarmDroppedCount,
       metalUploadCount: pixelBufferMetalUploadCount,
       metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
       metalAvailable: presentationTarget.isAvailable(),
@@ -517,6 +574,45 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     lastPublishedNativeUploadCount = 0
     lastIgnoredNativeUploadCount = 0
     lock.unlock()
+  }
+
+  func prewarmRendererTarget(width targetWidth: Int, height targetHeight: Int) {
+    let nextWidth = max(16, targetWidth)
+    let nextHeight = max(16, targetHeight)
+    lock.lock()
+    pixelBufferPrewarmRequestCount += 1
+    let format = pixelFormat
+    let key = "\(nextWidth)x\(nextHeight):\(format)"
+    if width == nextWidth && height == nextHeight {
+      pixelBufferPrewarmHitCount += 1
+      lock.unlock()
+      return
+    }
+    if reusablePixelBufferCountLocked(
+      width: nextWidth,
+      height: nextHeight,
+      pixelFormat: format
+    ) >= Self.rendererOwnedPixelBufferCount {
+      pixelBufferPrewarmHitCount += 1
+      lock.unlock()
+      return
+    }
+    if pixelBufferPrewarmKeys.contains(key) {
+      pixelBufferPrewarmHitCount += 1
+      lock.unlock()
+      return
+    }
+    pixelBufferPrewarmKeys.insert(key)
+    lock.unlock()
+
+    prewarmQueue.async { [weak self] in
+      self?.buildPrewarmedRendererTargets(
+        width: nextWidth,
+        height: nextHeight,
+        pixelFormat: format,
+        key: key
+      )
+    }
   }
 
   func publishRenderedTargetAndInstallNext(
@@ -586,6 +682,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   }
 
   private func rebuildPixelBuffersLocked() {
+    let rebuildStartNs = DispatchTime.now().uptimeNanoseconds
     let attributes = [
       kCVPixelBufferCGImageCompatibilityKey as String: true,
       kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
@@ -593,9 +690,16 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       kCVPixelBufferIOSurfacePropertiesKey as String: [:],
     ] as CFDictionary
 
-    var nextBuffers: [CVPixelBuffer] = []
-    for _ in 0..<Self.rendererOwnedPixelBufferCount {
-      guard let nextBuffer = makePixelBufferLocked(attributes: attributes) else {
+    var nextBuffers = takeReusablePixelBuffersLocked(count: Self.rendererOwnedPixelBufferCount)
+    let reusedBufferCount = nextBuffers.count
+    var allocatedBufferCount = 0
+    for _ in nextBuffers.count..<Self.rendererOwnedPixelBufferCount {
+      guard let nextBuffer = makePixelBuffer(
+        width: width,
+        height: height,
+        pixelFormat: pixelFormat,
+        attributes: attributes
+      ) else {
         pixelBuffers = []
         pixelBufferStates = []
         pixelBufferLayoutRevisions = []
@@ -607,7 +711,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         activateStableDisplayFallbackLocked()
         return
       }
-      clearPixelBufferLocked(nextBuffer)
+      allocatedBufferCount += 1
+      clearPixelBuffer(nextBuffer, width: width, height: height, pixelFormat: pixelFormat)
       nextBuffers.append(nextBuffer)
     }
     guard !nextBuffers.isEmpty else {
@@ -616,7 +721,14 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       return
     }
     pixelBufferRebuildCount += 1
+    pixelBufferGeneration &+= 1
+    pixelBufferAllocationCount += allocatedBufferCount
+    pixelBufferRebuildReuseCount += reusedBufferCount
+    pixelBufferRebuildLastAllocatedCount = allocatedBufferCount
+    pixelBufferRebuildLastReusedCount = reusedBufferCount
+    pixelBufferRebuildLastDurationNs = DispatchTime.now().uptimeNanoseconds - rebuildStartNs
 
+    retireCurrentPixelBuffersLocked()
     pixelBuffers = nextBuffers
     displayBufferIndex = 0
     drawBufferIndex = nextBuffers.count > 1 ? 1 : 0
@@ -631,7 +743,12 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     activateStableDisplayFallbackLocked()
   }
 
-  private func makePixelBufferLocked(attributes: CFDictionary) -> CVPixelBuffer? {
+  private func makePixelBuffer(
+    width: Int,
+    height: Int,
+    pixelFormat: OSType,
+    attributes: CFDictionary
+  ) -> CVPixelBuffer? {
     var nextBuffer: CVPixelBuffer?
     let status = CVPixelBufferCreate(
       kCFAllocatorDefault,
@@ -645,7 +762,12 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     return nextBuffer
   }
 
-  private func clearPixelBufferLocked(_ buffer: CVPixelBuffer) {
+  private func clearPixelBuffer(
+    _ buffer: CVPixelBuffer,
+    width: Int,
+    height: Int,
+    pixelFormat: OSType
+  ) {
     if pixelFormat == kCVPixelFormatType_32BGRA {
       MacOSSyntheticTexturePattern.clear(buffer: buffer, width: width, height: height)
       return
@@ -654,6 +776,58 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
     guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else { return }
     memset(baseAddress, 0, CVPixelBufferGetBytesPerRow(buffer) * CVPixelBufferGetHeight(buffer))
+  }
+
+  private func buildPrewarmedRendererTargets(
+    width targetWidth: Int,
+    height targetHeight: Int,
+    pixelFormat targetPixelFormat: OSType,
+    key: String
+  ) {
+    let attributes = [
+      kCVPixelBufferCGImageCompatibilityKey as String: true,
+      kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+      kCVPixelBufferMetalCompatibilityKey as String: true,
+      kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+    ] as CFDictionary
+    var buffers: [CVPixelBuffer] = []
+    buffers.reserveCapacity(Self.rendererOwnedPixelBufferCount)
+    for _ in 0..<Self.rendererOwnedPixelBufferCount {
+      guard let buffer = makePixelBuffer(
+        width: targetWidth,
+        height: targetHeight,
+        pixelFormat: targetPixelFormat,
+        attributes: attributes
+      ) else {
+        break
+      }
+      clearPixelBuffer(
+        buffer,
+        width: targetWidth,
+        height: targetHeight,
+        pixelFormat: targetPixelFormat
+      )
+      buffers.append(buffer)
+    }
+
+    lock.lock()
+    defer { lock.unlock() }
+    pixelBufferPrewarmKeys.remove(key)
+    guard buffers.count == Self.rendererOwnedPixelBufferCount else {
+      pixelBufferPrewarmDroppedCount += 1
+      return
+    }
+    if reusablePixelBufferCountLocked(
+      width: targetWidth,
+      height: targetHeight,
+      pixelFormat: targetPixelFormat
+    ) >= Self.rendererOwnedPixelBufferCount {
+      pixelBufferPrewarmHitCount += 1
+      return
+    }
+    appendRetiredPixelBuffersLocked(buffers)
+    pixelBufferAllocationCount += buffers.count
+    pixelBufferPrewarmReadyCount += buffers.count
   }
 
   private func validateMetalTextureLocked(buffer: CVPixelBuffer) {
@@ -754,6 +928,12 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
 
   private func rendererOwnedPixelBufferBytesLocked() -> Int {
     pixelBuffers.reduce(0) { total, buffer in
+      total + CVPixelBufferGetBytesPerRow(buffer) * CVPixelBufferGetHeight(buffer)
+    }
+  }
+
+  private func retiredPixelBufferBytesLocked() -> Int {
+    retiredPixelBuffers.reduce(0) { total, buffer in
       total + CVPixelBufferGetBytesPerRow(buffer) * CVPixelBufferGetHeight(buffer)
     }
   }
@@ -861,6 +1041,52 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private func pixelBufferAddressLocked(_ index: Int) -> UInt {
     guard let buffer = pixelBufferLocked(index) else { return 0 }
     return UInt(bitPattern: Unmanaged.passUnretained(buffer).toOpaque())
+  }
+
+  private func retireCurrentPixelBuffersLocked() {
+    guard !pixelBuffers.isEmpty else { return }
+    appendRetiredPixelBuffersLocked(pixelBuffers)
+  }
+
+  private func appendRetiredPixelBuffersLocked(_ buffers: [CVPixelBuffer]) {
+    guard !buffers.isEmpty else { return }
+    retiredPixelBuffers.append(contentsOf: buffers)
+    let maxRetiredBuffers = Self.rendererOwnedPixelBufferCount * 2
+    if retiredPixelBuffers.count > maxRetiredBuffers {
+      retiredPixelBuffers.removeFirst(retiredPixelBuffers.count - maxRetiredBuffers)
+    }
+  }
+
+  private func reusablePixelBufferCountLocked(
+    width targetWidth: Int,
+    height targetHeight: Int,
+    pixelFormat targetPixelFormat: OSType
+  ) -> Int {
+    retiredPixelBuffers.filter {
+      CVPixelBufferGetWidth($0) == targetWidth &&
+        CVPixelBufferGetHeight($0) == targetHeight &&
+        CVPixelBufferGetPixelFormatType($0) == targetPixelFormat
+    }.count
+  }
+
+  private func takeReusablePixelBuffersLocked(count: Int) -> [CVPixelBuffer] {
+    guard count > 0, !retiredPixelBuffers.isEmpty else { return [] }
+    var reusable: [CVPixelBuffer] = []
+    var remaining: [CVPixelBuffer] = []
+    reusable.reserveCapacity(count)
+    remaining.reserveCapacity(retiredPixelBuffers.count)
+    for buffer in retiredPixelBuffers {
+      if reusable.count < count,
+         CVPixelBufferGetWidth(buffer) == width,
+         CVPixelBufferGetHeight(buffer) == height,
+         CVPixelBufferGetPixelFormatType(buffer) == pixelFormat {
+        reusable.append(buffer)
+      } else {
+        remaining.append(buffer)
+      }
+    }
+    retiredPixelBuffers = remaining
+    return reusable
   }
 
   private func logTargetStateLocked(reason: String) {

@@ -130,7 +130,7 @@ void main() {
       coordinator.panByDelta(20, 30);
       await coordinator.preemptViewportResize(width: 200, height: 150);
 
-      expect(controller.calls, const ['applyLayout', 'resize']);
+      expect(controller.calls, const ['applyLayout', 'resize', 'getLayout']);
       expect(controller.resizes, const [Size(200, 150)]);
       expect(controller.appliedLayouts, hasLength(1));
       expect(controller.appliedLayouts.single.viewOffsetX, 20);
@@ -168,6 +168,71 @@ void main() {
     expect(controller.resizes, const [Size(340, 200)]);
     expect(coordinator.viewportWidth, 340);
     expect(coordinator.viewportHeight, 200);
+  });
+
+  test('native compositor preempt resize republishes source cache', () async {
+    final stateStore = MainWindowStateStore()
+      ..setTextureId(1)
+      ..setNativeCompositorActive(true)
+      ..setLayout(const LayoutState(order: [1, -1, -1, -1]));
+    addTearDown(stateStore.dispose);
+    final trackManager = TrackManager()..setTracks([track(1)]);
+    addTearDown(trackManager.dispose);
+    final controller = _FakeNativePlayerController();
+    final coordinator = MainWindowLayoutCoordinator(
+      vsync: const TestVSync(),
+      controller: controller,
+      stateStore: stateStore,
+      trackManager: trackManager,
+      mounted: () => true,
+    );
+    addTearDown(coordinator.dispose);
+    coordinator.viewportWidth = 2196;
+    coordinator.viewportHeight = 876;
+    controller.currentSize = const Size(2196, 876);
+
+    await coordinator.preemptViewportResize(width: 1516, height: 876);
+
+    expect(controller.resizes, const [Size(1516, 876)]);
+    expect(controller.calls, const [
+      'resize',
+      'getLayout',
+      'prepareNativeCompositorSourceCache',
+    ]);
+    expect(coordinator.viewportWidth, 1516);
+    expect(coordinator.viewportHeight, 876);
+  });
+
+  test('visible marks sidebar width changes preempt native resize', () async {
+    final stateStore = MainWindowStateStore()
+      ..setTextureId(1)
+      ..setMarksSidebarVisible(true)
+      ..setMarksSidebarWidth(340)
+      ..setLayout(const LayoutState());
+    addTearDown(stateStore.dispose);
+    final trackManager = TrackManager();
+    addTearDown(trackManager.dispose);
+    final controller = _FakeNativePlayerController();
+    final coordinator = MainWindowLayoutCoordinator(
+      vsync: const TestVSync(),
+      controller: controller,
+      stateStore: stateStore,
+      trackManager: trackManager,
+      mounted: () => true,
+    );
+    addTearDown(coordinator.dispose);
+    coordinator.viewportWidth = 1000;
+    coordinator.viewportHeight = 500;
+    coordinator.viewportDevicePixelRatio = 2;
+    controller.currentSize = const Size(1000, 500);
+
+    coordinator.setMarksSidebarWidth(400);
+    await pumpEventQueue();
+
+    expect(stateStore.value.marksSidebarWidth, 400);
+    expect(controller.resizes, const [Size(880, 500)]);
+    expect(coordinator.viewportWidth, 880);
+    expect(coordinator.viewportHeight, 500);
   });
 
   test('zoom combo changes are clamped through shared zoom path', () {
@@ -705,6 +770,12 @@ class _FakeNativePlayerController extends NativePlayerController {
     }
     currentSize = Size(width.toDouble(), height.toDouble());
   }
+
+  @override
+  Future<void> prewarmNativePresentationTargetSize(
+    int width,
+    int height,
+  ) async {}
 
   @override
   Future<void> applyLayout(LayoutState state) async {

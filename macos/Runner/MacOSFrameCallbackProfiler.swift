@@ -164,6 +164,105 @@ final class MacOSDurationWindow {
   }
 }
 
+struct MacOSCompositorLatencyTrace {
+  let route: String
+  let traceId: Int
+  let dartSentWallUs: Int64
+  let swiftReceivedWallUs: Int64
+  let swiftReceivedNs: UInt64
+}
+
+final class MacOSCompositorLatencyProfiler {
+  private let lock = NSLock()
+  private let dartToSwiftDuration = MacOSDurationWindow()
+  private let swiftQueueDuration = MacOSDurationWindow()
+  private let receiveToCompositeDuration = MacOSDurationWindow()
+  private let routeCounts = MacOSRateWindow()
+  private var receivedCount = 0
+  private var appliedCount = 0
+  private var compositedCount = 0
+  private var coalescedBeforeCompositeCount = 0
+  private var lastRoute = ""
+  private var lastTraceId = 0
+
+  func receive(route: String, arguments: Any?) -> MacOSCompositorLatencyTrace? {
+    let traceId = MacOSFlutterArguments.intArg(arguments, "traceId") ?? 0
+    guard traceId > 0 else { return nil }
+    let sentUs = Int64(MacOSFlutterArguments.intArg(arguments, "traceSentUs") ?? 0)
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    let nowWallUs = Self.wallClockUs()
+    lock.lock()
+    receivedCount += 1
+    routeCounts.record(nowNs: nowNs)
+    lastRoute = route
+    lastTraceId = traceId
+    if sentUs > 0, nowWallUs >= sentUs {
+      dartToSwiftDuration.record(UInt64(nowWallUs - sentUs) * 1_000)
+    }
+    lock.unlock()
+    return MacOSCompositorLatencyTrace(
+      route: route,
+      traceId: traceId,
+      dartSentWallUs: sentUs,
+      swiftReceivedWallUs: nowWallUs,
+      swiftReceivedNs: nowNs
+    )
+  }
+
+  func recordApplied(_ trace: MacOSCompositorLatencyTrace, applyNs: UInt64) {
+    lock.lock()
+    appliedCount += 1
+    if applyNs >= trace.swiftReceivedNs {
+      swiftQueueDuration.record(applyNs - trace.swiftReceivedNs)
+    }
+    lastRoute = trace.route
+    lastTraceId = trace.traceId
+    lock.unlock()
+  }
+
+  func recordCoalescedBeforeComposite() {
+    lock.lock()
+    coalescedBeforeCompositeCount += 1
+    lock.unlock()
+  }
+
+  func recordComposited(_ trace: MacOSCompositorLatencyTrace, compositeNs: UInt64) {
+    lock.lock()
+    compositedCount += 1
+    if compositeNs >= trace.swiftReceivedNs {
+      receiveToCompositeDuration.record(compositeNs - trace.swiftReceivedNs)
+    }
+    lastRoute = trace.route
+    lastTraceId = trace.traceId
+    lock.unlock()
+  }
+
+  func diagnosticMap() -> [String: Any] {
+    lock.lock()
+    defer { lock.unlock() }
+    return [
+      "nativeCompositorTraceReceivedCount": receivedCount,
+      "nativeCompositorTraceAppliedCount": appliedCount,
+      "nativeCompositorTraceCompositedCount": compositedCount,
+      "nativeCompositorTraceCoalescedBeforeCompositeCount": coalescedBeforeCompositeCount,
+      "nativeCompositorTraceHz": routeCounts.rateHz(),
+      "nativeCompositorTraceHzX1000": Int(routeCounts.rateHz() * 1000.0),
+      "nativeCompositorTraceLastRoute": lastRoute,
+      "nativeCompositorTraceLastId": lastTraceId,
+      "nativeCompositorDartToSwiftLastMs": dartToSwiftDuration.lastMs(),
+      "nativeCompositorDartToSwiftP95Ms": dartToSwiftDuration.p95Ms(),
+      "nativeCompositorSwiftQueueLastMs": swiftQueueDuration.lastMs(),
+      "nativeCompositorSwiftQueueP95Ms": swiftQueueDuration.p95Ms(),
+      "nativeCompositorReceiveToCompositeLastMs": receiveToCompositeDuration.lastMs(),
+      "nativeCompositorReceiveToCompositeP95Ms": receiveToCompositeDuration.p95Ms(),
+    ]
+  }
+
+  private static func wallClockUs() -> Int64 {
+    Int64(Date().timeIntervalSince1970 * 1_000_000.0)
+  }
+}
+
 final class MacOSFrameCallbackProfiler {
   private let lock = NSLock()
   private let queuedRate = MacOSRateWindow()
@@ -183,6 +282,15 @@ final class MacOSFrameCallbackProfiler {
   private var lastMainWaitNs: UInt64 = 0
   private var lastHandleStartNs: UInt64 = 0
   private var lastHandleNs: UInt64 = 0
+  private let mainWaitDurations = MacOSDurationWindow()
+  private let handleDurations = MacOSDurationWindow()
+  private let targetGenerationWarmupIntervals = MacOSDurationWindow(capacity: 16)
+  private var lastTargetGeneration: Int64 = 0
+  private var targetGenerationChangeCount = 0
+  private var targetGenerationWarmupRemaining = 0
+  private var targetGenerationWarmupSampleCount = 0
+  private var targetGenerationWarmupLastNs: UInt64 = 0
+  private let targetGenerationWarmupMaxIntervalNs: UInt64 = 250_000_000
 
   func tryEnqueue(enqueueNs: UInt64) -> Bool {
     lock.lock()
@@ -208,7 +316,33 @@ final class MacOSFrameCallbackProfiler {
     mainWaitSampleCount += 1
     mainWaitTotalNs += waitNs
     mainWaitMaxNs = max(mainWaitMaxNs, waitNs)
+    mainWaitDurations.record(waitNs)
     lastHandleStartNs = startNs
+  }
+
+  func recordTargetGeneration(_ generation: Int64, nowNs: UInt64) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard generation > 0 else { return }
+    if generation != lastTargetGeneration {
+      lastTargetGeneration = generation
+      targetGenerationChangeCount += 1
+      targetGenerationWarmupRemaining = 8
+      targetGenerationWarmupSampleCount = 0
+      targetGenerationWarmupLastNs = nowNs
+      targetGenerationWarmupIntervals.reset()
+      return
+    }
+    guard targetGenerationWarmupRemaining > 0 else { return }
+    if targetGenerationWarmupLastNs > 0, nowNs >= targetGenerationWarmupLastNs {
+      let intervalNs = nowNs - targetGenerationWarmupLastNs
+      if intervalNs <= targetGenerationWarmupMaxIntervalNs {
+        targetGenerationWarmupIntervals.record(intervalNs)
+        targetGenerationWarmupSampleCount += 1
+        targetGenerationWarmupRemaining -= 1
+      }
+    }
+    targetGenerationWarmupLastNs = nowNs
   }
 
   func finishProcessing(endNs: UInt64) -> UInt64? {
@@ -219,6 +353,7 @@ final class MacOSFrameCallbackProfiler {
     handleSampleCount += 1
     handleTotalNs += handleNs
     handleMaxNs = max(handleMaxNs, handleNs)
+    handleDurations.record(handleNs)
     processedCount += 1
     processedRate.record(nowNs: endNs)
     if dirty {
@@ -252,12 +387,20 @@ final class MacOSFrameCallbackProfiler {
         count: mainWaitSampleCount
       ),
       "macosFrameCallbackMainWaitMaxMs": nsToMs(mainWaitMaxNs),
+      "macosFrameCallbackMainWaitP95Ms": mainWaitDurations.p95Ms(),
       "macosFrameCallbackHandleLastMs": nsToMs(lastHandleNs),
       "macosFrameCallbackHandleAvgMs": averageMs(
         totalNs: handleTotalNs,
         count: handleSampleCount
       ),
       "macosFrameCallbackHandleMaxMs": nsToMs(handleMaxNs),
+      "macosFrameCallbackHandleP95Ms": handleDurations.p95Ms(),
+      "macosFrameCallbackTargetGeneration": lastTargetGeneration,
+      "macosFrameCallbackTargetGenerationChangeCount": targetGenerationChangeCount,
+      "macosFrameCallbackTargetWarmupRemaining": targetGenerationWarmupRemaining,
+      "macosFrameCallbackTargetWarmupSampleCount": targetGenerationWarmupSampleCount,
+      "macosFrameCallbackTargetWarmupLastMs": targetGenerationWarmupIntervals.lastMs(),
+      "macosFrameCallbackTargetWarmupP95Ms": targetGenerationWarmupIntervals.p95Ms(),
     ]
   }
 

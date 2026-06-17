@@ -30,6 +30,9 @@ void main() {
 0.7,ASSERT_PLAYING
 0.75,CAPTURE_VIEWPORT_REGION,roi,1,2,30,40,50,build/roi.png
 0.76,DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL,120,-60,nativeCompositorSourceCacheActive,true,18,8,2
+0.77,DEBUG_NATIVE_TIMING
+0.78,DEBUG_FLUTTER_TIMING
+0.79,CLICK_FLUTTER_POINT,250,365
 0.8,SET_DECODE_MODE,forceSoftware
 0.85,SET_AUDIBLE_TRACK,-1
 0.9,ASSERT_CAPTURE_SPLIT_DIFF,cap,1.5,2.5,12
@@ -45,7 +48,7 @@ void main() {
 
     final instructions = parseAutomationScript(file.path);
 
-    expect(instructions, hasLength(19));
+    expect(instructions, hasLength(22));
     expect(instructions.map((i) => i.time.inMilliseconds), [
       100,
       200,
@@ -54,6 +57,9 @@ void main() {
       700,
       750,
       760,
+      770,
+      780,
+      790,
       800,
       850,
       900,
@@ -143,6 +149,32 @@ void main() {
     );
     expect(
       instructions[7],
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<DebugNativeTimingAction>().having((a) => a.label, 'label', ''),
+      ),
+    );
+    expect(
+      instructions[8],
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<DebugFlutterTimingAction>(),
+      ),
+    );
+    expect(
+      instructions[9],
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<ClickFlutterPoint>()
+            .having((a) => a.x, 'x', 250)
+            .having((a) => a.y, 'y', 365),
+      ),
+    );
+    expect(
+      instructions[10],
       isA<ScriptSetDecodeMode>().having(
         (i) => i.mode.storageValue,
         'mode',
@@ -150,11 +182,11 @@ void main() {
       ),
     );
     expect(
-      instructions[8],
+      instructions[11],
       isA<ScriptSetAudibleTrack>().having((i) => i.fileId, 'fileId', isNull),
     );
     expect(
-      instructions[9],
+      instructions[12],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -162,7 +194,7 @@ void main() {
       ),
     );
     expect(
-      instructions[10],
+      instructions[13],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -170,7 +202,7 @@ void main() {
       ),
     );
     expect(
-      instructions[11],
+      instructions[14],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -182,7 +214,7 @@ void main() {
       ),
     );
     expect(
-      instructions[12],
+      instructions[15],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -192,7 +224,7 @@ void main() {
       ),
     );
     expect(
-      instructions[13],
+      instructions[16],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -202,7 +234,7 @@ void main() {
       ),
     );
     expect(
-      instructions[14],
+      instructions[17],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -212,7 +244,7 @@ void main() {
       ),
     );
     expect(
-      instructions[15],
+      instructions[18],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -223,7 +255,7 @@ void main() {
       ),
     );
     expect(
-      instructions[16],
+      instructions[19],
       isA<ScriptAssert>().having(
         (i) => i.assertion,
         'assertion',
@@ -233,10 +265,58 @@ void main() {
             .having((a) => a.decoderName, 'decoderName', 'VideoToolbox / h264'),
       ),
     );
-    expect(instructions[17], isA<ScriptCloseMainWindow>());
+    expect(instructions[20], isA<ScriptCloseMainWindow>());
     expect(
-      instructions[18],
+      instructions[21],
       isA<ScriptQuit>().having((i) => i.exitCode, 'exitCode', 0),
+    );
+  });
+
+  test('parses TOGGLE_MARKS_SIDEBAR', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_marks_sidebar_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('0.1,TOGGLE_MARKS_SIDEBAR\n');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1));
+    expect(
+      instructions.single,
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<ToggleMarksSidebar>(),
+      ),
+    );
+  });
+
+  test('parses DEBUG_NATIVE_TIMING label', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_native_timing_label_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('0.1,DEBUG_NATIVE_TIMING,sidebar-open-300ms\n');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1));
+    expect(
+      instructions.single,
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<DebugNativeTimingAction>().having(
+          (a) => a.label,
+          'label',
+          'sidebar-open-300ms',
+        ),
+      ),
     );
   });
 

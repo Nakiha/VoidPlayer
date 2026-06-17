@@ -330,6 +330,7 @@ bool Renderer::Impl::install_headless_output(void* output,
                 layout_tracks);
         }
         loop_driver_.force_preview_redraw();
+        loop_driver_.reset_presentation_scheduler();
     }
     return true;
 }
@@ -374,6 +375,7 @@ bool Renderer::Impl::install_headless_output_ring(const void* const* pixel_buffe
                 layout_tracks);
         }
         loop_driver_.force_preview_redraw();
+        loop_driver_.reset_presentation_scheduler();
     }
     return true;
 }

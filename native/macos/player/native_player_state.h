@@ -82,6 +82,14 @@ struct VPMacOSNativePlayer {
   uint64_t renderer_owned_presentation_draw_failure_count = 0;
   uint64_t renderer_owned_presentation_event_sequence = 0;
   uint64_t renderer_owned_presentation_consecutive_failures = 0;
+  std::vector<uint64_t> renderer_owned_presentation_upload_intervals_ns;
+  uint64_t renderer_owned_presentation_upload_interval_p95_ms = 0;
+  uint64_t renderer_owned_target_warmup_generation = 0;
+  uint64_t renderer_owned_target_warmup_remaining = 0;
+  uint64_t renderer_owned_target_warmup_sample_count = 0;
+  uint64_t renderer_owned_target_warmup_last_ms = 0;
+  uint64_t renderer_owned_target_warmup_p95_ms = 0;
+  std::vector<uint64_t> renderer_owned_target_warmup_intervals_ns;
   std::string renderer_owned_presentation_last_error;
   int64_t renderer_owned_refresh_min_pts_us = -1;
   std::chrono::steady_clock::time_point renderer_owned_presentation_first_upload_time{};

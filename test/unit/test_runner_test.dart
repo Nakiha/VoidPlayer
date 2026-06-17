@@ -333,6 +333,12 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   Future<void> resize({required int width, required int height}) async {}
 
   @override
+  Future<void> prewarmNativePresentationTargetSize({
+    required int width,
+    required int height,
+  }) async {}
+
+  @override
   Future<void> setNativeCompositorViewportRect({
     required int left,
     required int top,

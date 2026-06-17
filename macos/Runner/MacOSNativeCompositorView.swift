@@ -20,6 +20,7 @@ final class MacOSNativeCompositorView: NSView {
   private let flutterPipeline: MTLRenderPipelineState
   private let overlayPipeline: MTLRenderPipelineState
   private let configuration: MacOSPresentationConfiguration
+  private let latencyProfiler: MacOSCompositorLatencyProfiler
   private let outputPixelFormat: MTLPixelFormat
   private let outputMode: String
   private let textureCache: CVMetalTextureCache
@@ -79,6 +80,7 @@ final class MacOSNativeCompositorView: NSView {
   private let sourceCachePublishRate = MacOSRateWindow()
   private let sourceProjectionRate = MacOSRateWindow()
   private let inFlightSemaphore = DispatchSemaphore(value: 2)
+  private var pendingCompositeTrace: MacOSCompositorLatencyTrace?
 
   private static let metricsSampleIntervalNs: UInt64 = 1_000_000_000
   private static let displayLinkWarmGraceNs: UInt64 = 250_000_000
@@ -87,7 +89,7 @@ final class MacOSNativeCompositorView: NSView {
     MacOSPresentationConfiguration.current.nativeCompositorEnabled
   }
 
-  init?(engine: FlutterEngine) {
+  init?(engine: FlutterEngine, latencyProfiler: MacOSCompositorLatencyProfiler) {
     let configuration = MacOSPresentationConfiguration.current
     let outputPixelFormat = configuration.compositorPixelFormat
     guard let device = MTLCreateSystemDefaultDevice(),
@@ -111,6 +113,7 @@ final class MacOSNativeCompositorView: NSView {
     self.flutterPipeline = pipelines.flutter
     self.overlayPipeline = pipelines.overlay
     self.configuration = configuration
+    self.latencyProfiler = latencyProfiler
     self.outputPixelFormat = outputPixelFormat
     self.outputMode = configuration.compositorOutputMode
     self.textureCache = cache
@@ -182,12 +185,17 @@ final class MacOSNativeCompositorView: NSView {
     width: Int,
     height: Int,
     surfaceWidth: Int,
-    surfaceHeight: Int
+    surfaceHeight: Int,
+    trace: MacOSCompositorLatencyTrace? = nil
   ) {
     guard width > 0, height > 0, surfaceWidth > 0, surfaceHeight > 0 else {
       compositorQueue.async { [weak self] in
-        self?.explicitHoleRect = nil
-        self?.markCompositorDirty()
+        guard let self else { return }
+        explicitHoleRect = nil
+        if let trace {
+          recordPendingCompositeTrace(trace)
+        }
+        markCompositorDirty()
       }
       return
     }
@@ -201,6 +209,9 @@ final class MacOSNativeCompositorView: NSView {
       let changed = explicitHoleRect != rect
       explicitHoleRect = rect
       lastHoleRect = rect
+      if let trace {
+        recordPendingCompositeTrace(trace)
+      }
       if changed {
         markCompositorDirty()
       }
@@ -288,7 +299,8 @@ final class MacOSNativeCompositorView: NSView {
     invDisplaySizeX: [Double],
     invDisplaySizeY: [Double],
     viewOffsetUvX: [Double],
-    viewOffsetUvY: [Double]
+    viewOffsetUvY: [Double],
+    trace: MacOSCompositorLatencyTrace? = nil
   ) {
     let safeSplit = splitPos.isFinite ? Float(min(1.0, max(0.0, splitPos))) : 0.5
     let flags = SIMD4<Float>(0, Float(mode), safeSplit, Float(max(1, activeTrackCount)))
@@ -324,6 +336,9 @@ final class MacOSNativeCompositorView: NSView {
       sourceProjViewOffsetUvY = vouy
       sourceProjectionSet = true
       sourceProjectionRate.record()
+      if let trace {
+        recordPendingCompositeTrace(trace)
+      }
       markCompositorDirty()
     }
   }
@@ -441,10 +456,12 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorSourceProjectionHzX1000"] = Int(
       sourceProjectionRate.rateHz() * 1000.0
     )
+    result.merge(latencyProfiler.diagnosticMap()) { _, next in next }
     return result
   }
 
   private func logOverlayPrimitivesIfChanged(reason: String) {
+    guard MacOSProfilerLog.enabled else { return }
     let signature = "\(overlayPrimitives.generation):\(overlayPrimitives.fillRects.count):\(overlayPrimitives.lineRects.count):\(overlayPrimitives.motionLines.count):\(overlayPrimitives.sourceBakedOverlayDisabled):\(overlayPrimitives.overlayTrackCount):\(overlayPrimitives.matchedTrackCount):\(overlayPrimitives.missingTrackSlotCount):\(overlayPrimitives.missingPresentedFrameCount):\(overlayPrimitives.missingFrameIndexCount):\(overlayPrimitives.overlayFrameMissingCount)"
     guard signature != lastOverlayDiagnosticSignature else { return }
     lastOverlayDiagnosticSignature = signature
@@ -652,6 +669,10 @@ final class MacOSNativeCompositorView: NSView {
       setHiddenOnMain(false)
       frameCount += 1
       compositeRate.record()
+      if let trace = pendingCompositeTrace {
+        pendingCompositeTrace = nil
+        latencyProfiler.recordComposited(trace, compositeNs: nowNs)
+      }
       lastVideoTextureAvailable = true
       lastFlutterTextureAvailable = true
       lastCompositeSucceeded = true
@@ -661,7 +682,7 @@ final class MacOSNativeCompositorView: NSView {
       lastPresentedVideoSourceKey = videoSnapshot.sourceKey
       lastPresentedFlutterSourceKey = flutterSnapshot.sourceKey
       compositorDirty = false
-      if frameCount == 1 || frameCount % 120 == 0 {
+      if MacOSProfilerLog.enabled && (frameCount == 1 || frameCount % 120 == 0) {
         let compositeSummary = String(
           format:
             "NativeCompositorComposite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d layoutRevision=%llu sourceProjection=%d sourceProjectionEnabled=%d hole=%.4f,%.4f,%.4f,%.4f source0Offset=%.4f,%.4f source0InvSize=%.4f,%.4f bg=%.3f,%.3f,%.3f,%.3f",
@@ -692,19 +713,6 @@ final class MacOSNativeCompositorView: NSView {
         compositeSummary.withCString { pointer in
           VPMacOSLogProfilerSummary(pointer)
         }
-        NSLog(
-          "VoidPlayer native compositor: composite frame=%d mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d layoutRevision=%llu sourceProjection=%d",
-          frameCount,
-          outputMode,
-          video.width,
-          video.height,
-          flutter.width,
-          flutter.height,
-          Int(metalLayer.drawableSize.width),
-          Int(metalLayer.drawableSize.height),
-          displayedLayoutRevision,
-          sourceCacheActive ? 1 : 0
-        )
       }
     }
   }
@@ -712,6 +720,14 @@ final class MacOSNativeCompositorView: NSView {
   private func markCompositorDirty() {
     compositorDirty = true
     displayLinkWarmUntilNs = DispatchTime.now().uptimeNanoseconds + Self.displayLinkWarmGraceNs
+  }
+
+  private func recordPendingCompositeTrace(_ trace: MacOSCompositorLatencyTrace) {
+    if pendingCompositeTrace != nil {
+      latencyProfiler.recordCoalescedBeforeComposite()
+    }
+    latencyProfiler.recordApplied(trace, applyNs: DispatchTime.now().uptimeNanoseconds)
+    pendingCompositeTrace = trace
   }
 
   private func setHiddenOnMain(_ hidden: Bool) {

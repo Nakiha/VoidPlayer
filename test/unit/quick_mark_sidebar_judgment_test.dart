@@ -12,7 +12,11 @@ void main() {
     sourceRect: Rect.fromLTWH(0.1, 0.1, 0.2, 0.2),
   );
 
-  Widget host({required ValueChanged<QuickMark> onMarkChanged}) {
+  Widget host({
+    required ValueChanged<QuickMark> onMarkChanged,
+    QuickMark? hostedMark,
+  }) {
+    final markForHost = hostedMark ?? mark;
     return MaterialApp(
       locale: const Locale('en'),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -21,9 +25,9 @@ void main() {
         body: QuickMarkSidebar(
           width: 360,
           onClose: () {},
-          marks: const MainWindowMarksVm(
-            allMarks: [mark],
-            visibleMarks: [mark],
+          marks: MainWindowMarksVm(
+            allMarks: [markForHost],
+            visibleMarks: [markForHost],
             visibleMarkIds: {1},
             selectedMarkId: 1,
             tracksByFileId: {},
@@ -51,7 +55,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Defect'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(QuickMarkDefectTypes.banding).last);
+    await tester.tap(find.text('Banding').last);
     await tester.pumpAndSettle();
 
     expect(changes, hasLength(1));
@@ -66,7 +70,7 @@ void main() {
     await tester.pumpWidget(host(onMarkChanged: changes.add));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Severity'));
+    await tester.tap(find.byTooltip('Degree'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('S4').last);
     await tester.pumpAndSettle();
@@ -124,12 +128,27 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Severity'));
+    await tester.tap(find.byTooltip('Degree'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('None').last);
     await tester.pumpAndSettle();
 
     expect(changes, hasLength(1));
     expect(changes.single.severity, isNull);
+  });
+
+  testWidgets('mark row subtitle includes judgment fields', (tester) async {
+    await tester.pumpWidget(
+      host(
+        onMarkChanged: (_) {},
+        hostedMark: mark.copyWith(
+          defectType: QuickMarkDefectTypes.banding,
+          severity: 4,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rectangle · 10,10 20x20% · Banding · S4'), findsOne);
   });
 }

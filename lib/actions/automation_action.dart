@@ -102,6 +102,17 @@ class EndNativeInteractionSampleAction extends AutomationAction {
     : super('END_NATIVE_INTERACTION_SAMPLE');
 }
 
+class DebugNativeTimingAction extends AutomationAction {
+  final String label;
+
+  const DebugNativeTimingAction({this.label = ''})
+    : super('DEBUG_NATIVE_TIMING');
+}
+
+class DebugFlutterTimingAction extends AutomationAction {
+  const DebugFlutterTimingAction() : super('DEBUG_FLUTTER_TIMING');
+}
+
 class WindowMaximize extends AutomationAction {
   const WindowMaximize() : super('WINDOW_MAXIMIZE');
 }
@@ -126,6 +137,13 @@ class StoreNativeSeekCount extends AutomationAction {
   final String nameId;
 
   const StoreNativeSeekCount(this.nameId) : super('STORE_NATIVE_SEEK_COUNT');
+}
+
+class ClickFlutterPoint extends AutomationAction {
+  final double x;
+  final double y;
+
+  const ClickFlutterPoint(this.x, this.y) : super('CLICK_FLUTTER_POINT');
 }
 
 class DragViewport extends AutomationAction {
@@ -245,10 +263,6 @@ class ToggleAnalysisOverlayPanel extends AutomationAction {
   const ToggleAnalysisOverlayPanel() : super('TOGGLE_ANALYSIS_OVERLAY_PANEL');
 }
 
-class ToggleMarksSidebar extends AutomationAction {
-  const ToggleMarksSidebar() : super('TOGGLE_MARKS_SIDEBAR');
-}
-
 class GenerateAnalysisCache extends AutomationAction {
   final int slotIndex;
 
@@ -285,6 +299,10 @@ class ClearAnalysisChunks extends AutomationAction {
 /// marks for the same media content.
 class ClearMarks extends AutomationAction {
   const ClearMarks() : super('CLEAR_MARKS');
+}
+
+class ToggleMarksSidebar extends AutomationAction {
+  const ToggleMarksSidebar() : super('TOGGLE_MARKS_SIDEBAR');
 }
 
 /// Injects an agent-authored quick mark on the current frame of a slot:

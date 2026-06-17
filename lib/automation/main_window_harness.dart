@@ -128,6 +128,58 @@ class MainWindowTestHarness {
     );
   }
 
+  void clickFlutterPoint(Offset point) {
+    final context = fullFrameCaptureKey.currentContext;
+    if (context == null) {
+      throw StateError('Flutter frame capture root is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Flutter frame capture root has no render box');
+    }
+
+    final clamped = Offset(
+      point.dx.clamp(0.0, renderObject.size.width - 1).toDouble(),
+      point.dy.clamp(0.0, renderObject.size.height - 1).toDouble(),
+    );
+    final global = renderObject.localToGlobal(clamped);
+    final pointer = _pointerId++;
+    log.info(
+      'Test action: CLICK_FLUTTER_POINT '
+      'local=(${clamped.dx.toStringAsFixed(1)}, ${clamped.dy.toStringAsFixed(1)}) '
+      'global=(${global.dx.toStringAsFixed(1)}, ${global.dy.toStringAsFixed(1)})',
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerAddedEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerDownEvent(
+        pointer: pointer,
+        position: global,
+        buttons: kPrimaryButton,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerUpEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerRemovedEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
   void hoverControlsBarButtons({int steps = 24}) {
     final context = controlsBarKey.currentContext;
     if (context == null) {

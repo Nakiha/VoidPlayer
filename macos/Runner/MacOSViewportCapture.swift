@@ -217,25 +217,100 @@ enum MacOSViewportCapture {
     let outputHeight = max(1, Int((Double(cropHeight) * scale).rounded()))
     var output = [UInt8](repeating: 0, count: outputWidth * outputHeight * 4)
 
-    CVPixelBufferLockBaseAddress(buffer, .readOnly)
+    guard CVPixelBufferLockBaseAddress(buffer, .readOnly) == kCVReturnSuccess else {
+      return nil
+    }
     defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
     guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else { return nil }
     let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
-    let pixels = baseAddress.assumingMemoryBound(to: UInt8.self)
+    let pixelFormat = CVPixelBufferGetPixelFormatType(buffer)
 
-    for oy in 0..<outputHeight {
-      let sy = top + min(cropHeight - 1, oy * cropHeight / outputHeight)
-      for ox in 0..<outputWidth {
-        let sx = left + min(cropWidth - 1, ox * cropWidth / outputWidth)
-        let src = sy * bytesPerRow + sx * 4
-        let dst = (oy * outputWidth + ox) * 4
-        output[dst + 0] = pixels[src + 0]
-        output[dst + 1] = pixels[src + 1]
-        output[dst + 2] = pixels[src + 2]
-        output[dst + 3] = pixels[src + 3]
+    switch pixelFormat {
+    case kCVPixelFormatType_32BGRA:
+      guard bytesPerRow >= sourceWidth * 4 else { return nil }
+      let pixels = baseAddress.assumingMemoryBound(to: UInt8.self)
+      for oy in 0..<outputHeight {
+        let sy = top + min(cropHeight - 1, oy * cropHeight / outputHeight)
+        for ox in 0..<outputWidth {
+          let sx = left + min(cropWidth - 1, ox * cropWidth / outputWidth)
+          let src = sy * bytesPerRow + sx * 4
+          let dst = (oy * outputWidth + ox) * 4
+          output[dst + 0] = pixels[src + 0]
+          output[dst + 1] = pixels[src + 1]
+          output[dst + 2] = pixels[src + 2]
+          output[dst + 3] = pixels[src + 3]
+        }
       }
+    case kCVPixelFormatType_64RGBAHalf:
+      guard bytesPerRow >= sourceWidth * 8 else { return nil }
+      let words = baseAddress.assumingMemoryBound(to: UInt16.self)
+      let wordsPerRow = bytesPerRow / MemoryLayout<UInt16>.stride
+      for oy in 0..<outputHeight {
+        let sy = top + min(cropHeight - 1, oy * cropHeight / outputHeight)
+        for ox in 0..<outputWidth {
+          let sx = left + min(cropWidth - 1, ox * cropWidth / outputWidth)
+          let src = sy * wordsPerRow + sx * 4
+          let dst = (oy * outputWidth + ox) * 4
+          output[dst + 0] = linearColorByte(fromHalf: words[src + 2])
+          output[dst + 1] = linearColorByte(fromHalf: words[src + 1])
+          output[dst + 2] = linearColorByte(fromHalf: words[src + 0])
+          output[dst + 3] = alphaByte(fromHalf: words[src + 3])
+        }
+      }
+    default:
+      return nil
     }
     return (bgra: output, width: outputWidth, height: outputHeight)
+  }
+
+  private static func linearColorByte(fromHalf value: UInt16) -> UInt8 {
+    let linear = clampedFinite(floatFromHalf(value), lower: 0.0, upper: 1.0)
+    let encoded: Float
+    if linear <= 0.0031308 {
+      encoded = linear * 12.92
+    } else {
+      encoded = 1.055 * powf(linear, 1.0 / 2.4) - 0.055
+    }
+    return UInt8((clampedFinite(encoded, lower: 0.0, upper: 1.0) * 255.0).rounded())
+  }
+
+  private static func alphaByte(fromHalf value: UInt16) -> UInt8 {
+    UInt8((clampedFinite(floatFromHalf(value), lower: 0.0, upper: 1.0) * 255.0).rounded())
+  }
+
+  private static func clampedFinite(_ value: Float, lower: Float, upper: Float) -> Float {
+    guard value.isFinite else { return lower }
+    return min(upper, max(lower, value))
+  }
+
+  private static func floatFromHalf(_ value: UInt16) -> Float {
+    let sign = (UInt32(value & 0x8000)) << 16
+    let exponent = Int((value & 0x7C00) >> 10)
+    let mantissa = UInt32(value & 0x03FF)
+    let bits: UInt32
+    if exponent == 0 {
+      if mantissa == 0 {
+        bits = sign
+      } else {
+        var normalizedMantissa = mantissa
+        var normalizedExponent = -14
+        while (normalizedMantissa & 0x0400) == 0 {
+          normalizedMantissa <<= 1
+          normalizedExponent -= 1
+        }
+        normalizedMantissa &= 0x03FF
+        bits = sign |
+          (UInt32(normalizedExponent + 127) << 23) |
+          (normalizedMantissa << 13)
+      }
+    } else if exponent == 0x1F {
+      bits = sign | 0x7F800000 | (mantissa << 13)
+    } else {
+      bits = sign |
+        (UInt32(exponent - 15 + 127) << 23) |
+        (mantissa << 13)
+    }
+    return Float(bitPattern: bits)
   }
 
   private static func cgImage(bgra: [UInt8], width: Int, height: Int) -> CGImage? {

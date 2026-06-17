@@ -87,11 +87,15 @@ scripts/ci/package_flutter_macos_engine.sh release
 
 ```bash
 python dev.py toolchain bootstrap-flutter
-scripts/ci/bootstrap_flutter_macos_engine.sh
 python dev.py toolchain doctor
 python dev.py test --flutter-only
 python dev.py build --flutter --debug
 ```
+
+For normal development, `python dev.py toolchain bootstrap-flutter` wraps the
+Flutter checkout bootstrap and the locked macOS local-engine download. The
+standalone `scripts/ci/bootstrap_flutter_macos_engine.sh` remains available for
+CI and artifact debugging.
 
 8. Re-run the macOS HDR compositor smoke scripts documented in
    `native/docs/MACOS_HDR_EXPLORATION.md`.

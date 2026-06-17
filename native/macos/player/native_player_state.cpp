@@ -28,6 +28,9 @@ void write_error(char* error, size_t error_size, const std::string& message) {
 
 namespace {
 
+constexpr uint64_t kRendererOwnedIntervalSampleLimit = 256;
+constexpr uint64_t kTargetWarmupMaxIntervalNs = 250ull * 1000ull * 1000ull;
+
 bool env_enabled(const char* name) {
   const char* value = std::getenv(name);
   if (!value || value[0] == '\0') {
@@ -41,6 +44,27 @@ std::string lower_ascii(std::string value) {
     return static_cast<char>(std::tolower(c));
   });
   return value;
+}
+
+uint64_t percentile_95_ms(std::vector<uint64_t> samples_ns) {
+  if (samples_ns.empty()) {
+    return 0;
+  }
+  std::sort(samples_ns.begin(), samples_ns.end());
+  const size_t index = std::min(
+      samples_ns.size() - 1,
+      (samples_ns.size() * 95 + 99) / 100 - 1);
+  return samples_ns[index] / (1000ull * 1000ull);
+}
+
+void append_interval_sample(std::vector<uint64_t>& samples_ns,
+                            uint64_t interval_ns) {
+  samples_ns.push_back(interval_ns);
+  if (samples_ns.size() > kRendererOwnedIntervalSampleLimit) {
+    samples_ns.erase(samples_ns.begin(),
+                     samples_ns.begin() +
+                         (samples_ns.size() - kRendererOwnedIntervalSampleLimit));
+  }
 }
 
 }  // namespace
@@ -262,6 +286,30 @@ void VPMacOSNativePlayer::on_frame_available(
       last_renderer_owned_layout_revision = completed_frame_info->layout_revision;
     }
     const auto now = std::chrono::steady_clock::now();
+    if (renderer_owned_presentation_upload_count > 0 &&
+        renderer_owned_presentation_last_upload_time.time_since_epoch().count() != 0) {
+      const auto interval_ns = static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+              now - renderer_owned_presentation_last_upload_time)
+              .count());
+      vp_macos::append_interval_sample(
+          renderer_owned_presentation_upload_intervals_ns, interval_ns);
+      renderer_owned_presentation_upload_interval_p95_ms =
+          vp_macos::percentile_95_ms(
+              renderer_owned_presentation_upload_intervals_ns);
+      if (renderer_owned_target_warmup_remaining > 0 &&
+          interval_ns <= vp_macos::kTargetWarmupMaxIntervalNs) {
+        vp_macos::append_interval_sample(
+            renderer_owned_target_warmup_intervals_ns, interval_ns);
+        --renderer_owned_target_warmup_remaining;
+        ++renderer_owned_target_warmup_sample_count;
+        renderer_owned_target_warmup_last_ms =
+            interval_ns / (1000ull * 1000ull);
+        renderer_owned_target_warmup_p95_ms =
+            vp_macos::percentile_95_ms(
+                renderer_owned_target_warmup_intervals_ns);
+      }
+    }
     if (renderer_owned_presentation_upload_count == 0) {
       renderer_owned_presentation_first_upload_time = now;
     }

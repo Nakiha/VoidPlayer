@@ -149,7 +149,6 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
                   fontSizes: _fontSizes,
                   strokeWidths: _strokeWidths,
                   onChanged: widget.actions.onMarkChanged,
-                  onJump: () => widget.actions.onJumpToMark(selected.id),
                   onFocus: () => widget.actions.onFocusVisibleMark(selected.id),
                   onDelete: () => widget.actions.onMarkDeleted(selected.id),
                   colorLabel: (color) => _colorLabel(l, color),
@@ -444,6 +443,9 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
             mark.shape == QuickMarkShape.rectangle
                 ? l.quickMarkRectangle
                 : l.quickMarkArrow,
+            if (mark.defectType != null)
+              _quickMarkDefectTypeLabel(l, mark.defectType!),
+            if (mark.severity != null) 'S${mark.severity}',
           ].join(' ').toLowerCase();
           return haystack.contains(query);
         })
@@ -465,7 +467,12 @@ class _QuickMarkSidebarState extends State<QuickMarkSidebar> {
         '${(rect.left * 100).round()},${(rect.top * 100).round()} '
         '${(rect.width.abs() * 100).round()}x'
         '${(rect.height.abs() * 100).round()}%';
-    return '$shape · $geometry';
+    final judgments = [
+      if (mark.defectType != null)
+        _quickMarkDefectTypeLabel(l, mark.defectType!),
+      if (mark.severity != null) 'S${mark.severity}',
+    ];
+    return [shape, geometry, ...judgments].join(' · ');
   }
 
   String _trackLabel(int fileId) {
@@ -935,7 +942,6 @@ class _QuickMarkInspector extends StatefulWidget {
   final List<double> fontSizes;
   final List<double> strokeWidths;
   final ValueChanged<QuickMark> onChanged;
-  final VoidCallback onJump;
   final VoidCallback onFocus;
   final VoidCallback onDelete;
   final String Function(Color color) colorLabel;
@@ -947,7 +953,6 @@ class _QuickMarkInspector extends StatefulWidget {
     required this.fontSizes,
     required this.strokeWidths,
     required this.onChanged,
-    required this.onJump,
     required this.onFocus,
     required this.onDelete,
     required this.colorLabel,
@@ -1173,10 +1178,6 @@ class _QuickMarkInspectorState extends State<_QuickMarkInspector> {
                 const _PanelSeparator(),
                 const _PanelGap(),
                 _DeleteToolButton(onPressed: widget.onDelete),
-                const _PanelGap(),
-                const _PanelSeparator(),
-                const SizedBox(width: 6),
-                _JumpPillButton(onPressed: widget.onJump),
               ],
             ),
           ],
@@ -1294,41 +1295,6 @@ class _PanelSeparator extends StatelessWidget {
   }
 }
 
-class _JumpPillButton extends StatelessWidget {
-  final VoidCallback onPressed;
-
-  const _JumpPillButton({required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context)!;
-    final colorScheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: l.quickMarkSidebarJump,
-      child: SizedBox(
-        height: _QuickMarkSidebarState._toolButtonSize,
-        child: TextButton.icon(
-          onPressed: onPressed,
-          icon: const Icon(Icons.near_me_outlined, size: 16),
-          label: Text(l.quickMarkSidebarJump),
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            minimumSize: const Size(0, _QuickMarkSidebarState._toolButtonSize),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            foregroundColor: colorScheme.primary,
-            backgroundColor: colorScheme.primary.withValues(alpha: 0.12),
-            shape: const StadiumBorder(),
-            textStyle: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _FontSizeCombo extends StatelessWidget {
   final double value;
   final List<double> sizes;
@@ -1397,12 +1363,15 @@ class _DefectTypeCombo extends StatelessWidget {
     return Tooltip(
       message: l.quickMarkDefectType,
       child: AppMenuCombo<String>(
-        width: 86,
+        width: 92,
         height: _QuickMarkSidebarState._toolButtonSize,
         value: current,
         items: items,
-        labelFor: (item) => item == _none ? l.quickMarkJudgmentNone : item,
+        labelFor: (item) => _quickMarkDefectTypeLabel(l, item),
         onChanged: (item) => onChanged(item == _none ? null : item),
+        buttonLabel: value == null ? l.quickMarkDefectType : null,
+        buttonLeadingIcon: _quickMarkDefectTypeIcon(current),
+        iconFor: _quickMarkDefectTypeIcon,
         textStyle: theme.textTheme.bodySmall?.copyWith(
           color: value == null
               ? colorScheme.onSurfaceVariant
@@ -1410,7 +1379,7 @@ class _DefectTypeCombo extends StatelessWidget {
           fontWeight: FontWeight.w600,
         ),
         menuTextStyle: theme.textTheme.bodySmall,
-        maxMenuWidth: 150,
+        maxMenuWidth: 190,
         itemHeight: 30,
         buttonPadding: const EdgeInsets.only(left: 6, right: 2),
         itemPadding: const EdgeInsets.only(left: 10, right: 14),
@@ -1421,6 +1390,34 @@ class _DefectTypeCombo extends StatelessWidget {
       ),
     );
   }
+}
+
+String _quickMarkDefectTypeLabel(AppLocalizations l, String item) {
+  return switch (item) {
+    '' => l.quickMarkJudgmentNone,
+    QuickMarkDefectTypes.banding => l.quickMarkDefectBanding,
+    QuickMarkDefectTypes.blocking => l.quickMarkDefectBlocking,
+    QuickMarkDefectTypes.ringing => l.quickMarkDefectRinging,
+    QuickMarkDefectTypes.mosquitoNoise => l.quickMarkDefectMosquitoNoise,
+    QuickMarkDefectTypes.blur => l.quickMarkDefectBlur,
+    QuickMarkDefectTypes.flicker => l.quickMarkDefectFlicker,
+    QuickMarkDefectTypes.colorShift => l.quickMarkDefectColorShift,
+    _ => item,
+  };
+}
+
+IconData? _quickMarkDefectTypeIcon(String item) {
+  return switch (item) {
+    '' => Icons.label_outline,
+    QuickMarkDefectTypes.banding => Icons.gradient,
+    QuickMarkDefectTypes.blocking => Icons.grid_view,
+    QuickMarkDefectTypes.ringing => Icons.blur_circular,
+    QuickMarkDefectTypes.mosquitoNoise => Icons.grain,
+    QuickMarkDefectTypes.blur => Icons.blur_on,
+    QuickMarkDefectTypes.flicker => Icons.flash_on,
+    QuickMarkDefectTypes.colorShift => Icons.palette_outlined,
+    _ => Icons.label_outline,
+  };
 }
 
 class _SeverityCombo extends StatelessWidget {
@@ -1449,12 +1446,25 @@ class _SeverityCombo extends StatelessWidget {
     return Tooltip(
       message: l.quickMarkSeverity,
       child: AppMenuCombo<int>(
-        width: 52,
+        width: 84,
         height: _QuickMarkSidebarState._toolButtonSize,
         value: value ?? _none,
         items: items,
         labelFor: (item) => item == _none ? l.quickMarkJudgmentNone : 'S$item',
         onChanged: (item) => onChanged(item == _none ? null : item),
+        buttonLabel: value == null ? l.quickMarkSeverity : null,
+        buttonBuilder: (context, item, open) => _SeverityComboButton(
+          value: item == _none ? null : item,
+          label: value == null ? l.quickMarkSeverity : 'S$item',
+          open: open,
+          selected: value != null,
+        ),
+        itemBuilder: (context, item, label, selected) => _SeverityMenuOption(
+          value: item == _none ? null : item,
+          label: label,
+          selected: selected,
+        ),
+        showSelectedCheck: false,
         textStyle: theme.textTheme.bodySmall?.copyWith(
           color: value == null
               ? colorScheme.onSurfaceVariant
@@ -1472,6 +1482,149 @@ class _SeverityCombo extends StatelessWidget {
         iconSize: 16,
       ),
     );
+  }
+}
+
+class _SeverityComboButton extends StatelessWidget {
+  final int? value;
+  final String label;
+  final bool open;
+  final bool selected;
+
+  const _SeverityComboButton({
+    required this.value,
+    required this.label,
+    required this.open,
+    required this.selected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: selected ? colorScheme.onSurface : colorScheme.onSurfaceVariant,
+      fontWeight: FontWeight.w600,
+    );
+    final iconColor = selected
+        ? colorScheme.primary
+        : colorScheme.onSurfaceVariant;
+    return Row(
+      children: [
+        _SeverityIcon(value: value, color: iconColor),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            style: textStyle,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+        ),
+        AppMenuComboArrow(
+          open: open,
+          size: 16,
+          color: colorScheme.onSurfaceVariant,
+        ),
+      ],
+    );
+  }
+}
+
+class _SeverityMenuOption extends StatelessWidget {
+  final int? value;
+  final String label;
+  final bool selected;
+
+  const _SeverityMenuOption({
+    required this.value,
+    required this.label,
+    required this.selected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: selected ? colorScheme.primary : colorScheme.onSurface,
+      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+    );
+    return Row(
+      children: [
+        SizedBox(
+          width: 20,
+          child: _SeverityIcon(
+            value: value,
+            color: selected
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: textStyle,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SeverityIcon extends StatelessWidget {
+  final int? value;
+  final Color color;
+
+  const _SeverityIcon({required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(18, 16),
+      painter: _SeverityIconPainter(value: value, color: color),
+    );
+  }
+}
+
+class _SeverityIconPainter extends CustomPainter {
+  final int? value;
+  final Color color;
+
+  const _SeverityIconPainter({required this.value, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final level = value?.clamp(kQuickMarkSeverityMin, kQuickMarkSeverityMax);
+    final inactive = color.withValues(alpha: 0.24);
+    final activePaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final inactivePaint = Paint()
+      ..color = inactive
+      ..style = PaintingStyle.fill;
+    const barCount = kQuickMarkSeverityMax;
+    final gap = size.width * 0.08;
+    final barWidth = (size.width - gap * (barCount - 1)) / barCount;
+    for (var i = 0; i < barCount; i++) {
+      final heightFactor = 0.32 + i * 0.13;
+      final barHeight = size.height * heightFactor;
+      final left = i * (barWidth + gap);
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(left, size.height - barHeight, barWidth, barHeight),
+        Radius.circular(barWidth * 0.45),
+      );
+      canvas.drawRRect(
+        rect,
+        level != null && i < level ? activePaint : inactivePaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SeverityIconPainter oldDelegate) {
+    return oldDelegate.value != value || oldDelegate.color != color;
   }
 }
 

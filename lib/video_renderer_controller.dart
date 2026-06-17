@@ -178,6 +178,18 @@ class NativePlayerController {
     return _api.resize(width: width, height: height);
   }
 
+  Future<void> prewarmNativePresentationTargetSize(int width, int height) {
+    if (!_hasPlayerForCommand(
+      NativePlayerMethods.prewarmNativePresentationTargetSize,
+    )) {
+      return Future.value();
+    }
+    return _api.prewarmNativePresentationTargetSize(
+      width: width,
+      height: height,
+    );
+  }
+
   Future<void> setNativeCompositorViewportRect({
     required int left,
     required int top,

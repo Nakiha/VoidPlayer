@@ -33,6 +33,16 @@ uint64_t pointer_address(const void* pointer) {
   return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pointer));
 }
 
+void reset_target_warmup_locked(VPMacOSNativePlayer* player) {
+  player->renderer_owned_target_warmup_generation =
+      player->presentation_target_generation;
+  player->renderer_owned_target_warmup_remaining = 8;
+  player->renderer_owned_target_warmup_sample_count = 0;
+  player->renderer_owned_target_warmup_last_ms = 0;
+  player->renderer_owned_target_warmup_p95_ms = 0;
+  player->renderer_owned_target_warmup_intervals_ns.clear();
+}
+
 uint32_t pack_overlay_bgra(vr::analysis::OverlayColor color) {
   return static_cast<uint32_t>(color.b) |
          (static_cast<uint32_t>(color.g) << 8) |
@@ -151,6 +161,7 @@ int set_metal_presentation_target(
     player->presentation_target_max_track_slots = clamped_track_slots;
     if (target_changed) {
       ++player->presentation_target_generation;
+      reset_target_warmup_locked(player);
       spdlog::info(
           "[MacOSFrameRefresh] install_target generation={} target=0x{:x} "
           "size={}x{} slots={} refresh={}",
@@ -280,6 +291,7 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
     player->presentation_target_max_track_slots = clamped_track_slots;
     if (target_changed) {
       ++player->presentation_target_generation;
+      reset_target_warmup_locked(player);
       spdlog::info(
           "[MacOSFrameRefresh] install_target_ring generation={} targets=[{}] "
           "displayed=0x{:x} protected=0x{:x} size={}x{} slots={}",

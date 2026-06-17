@@ -8,8 +8,46 @@
 #include <wrl/client.h>
 #include <utility>
 
+namespace {
+
+class ScopedComApartment {
+public:
+    ScopedComApartment()
+        : hr_(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)),
+          initialized_(SUCCEEDED(hr_)) {}
+
+    ~ScopedComApartment() {
+        if (initialized_) {
+            CoUninitialize();
+        }
+    }
+
+    bool ok() const {
+        return initialized_;
+    }
+
+private:
+    HRESULT hr_;
+    bool initialized_;
+};
+
+HWND DialogOwner(HWND owner_window) {
+    if (!owner_window || !IsWindow(owner_window)) {
+        return nullptr;
+    }
+    HWND root = GetAncestor(owner_window, GA_ROOT);
+    return root ? root : owner_window;
+}
+
+}  // namespace
+
 std::vector<std::string> FilePickerService::PickVideoFiles(
-    bool allow_multiple) const {
+    bool allow_multiple, HWND owner_window) const {
+    ScopedComApartment com;
+    if (!com.ok()) {
+        return {};
+    }
+
     Microsoft::WRL::ComPtr<IFileOpenDialog> dialog;
     HRESULT hr = CoCreateInstance(
         CLSID_FileOpenDialog,
@@ -35,7 +73,7 @@ std::vector<std::string> FilePickerService::PickVideoFiles(
     dialog->SetFileTypes(2, filter_spec);
     dialog->SetFileTypeIndex(1);
 
-    hr = dialog->Show(GetActiveWindow());
+    hr = dialog->Show(DialogOwner(owner_window));
     if (FAILED(hr)) {
         return {};
     }

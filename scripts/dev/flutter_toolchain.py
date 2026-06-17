@@ -19,6 +19,14 @@ LOCK_PATH = ROOT / "toolchains" / "flutter.lock.json"
 
 
 @dataclass(frozen=True)
+class MacOSLocalEngineArtifact:
+    engine: str
+    host: str
+    asset: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class FlutterToolchainLock:
     name: str
     upstream_flutter: str
@@ -31,6 +39,7 @@ class FlutterToolchainLock:
     fork_branch: str
     fork_commit: str
     default_install_path: Path
+    macos_local_engine_artifacts: dict[str, MacOSLocalEngineArtifact]
     required_patch_markers: tuple[dict[str, str], ...]
 
 
@@ -60,6 +69,32 @@ def load_flutter_toolchain_lock() -> FlutterToolchainLock:
             raise RuntimeError(f"{LOCK_PATH}: marker path/contains must be strings")
         checked_markers.append({"path": path, "contains": contains})
 
+    raw_artifacts = raw.get("macosLocalEngineArtifacts", {})
+    if raw_artifacts is None:
+        raw_artifacts = {}
+    if not isinstance(raw_artifacts, dict):
+        raise RuntimeError(f"{LOCK_PATH}: macosLocalEngineArtifacts must be an object")
+    macos_artifacts: dict[str, MacOSLocalEngineArtifact] = {}
+    for mode, spec in raw_artifacts.items():
+        if not isinstance(mode, str) or not isinstance(spec, dict):
+            raise RuntimeError(
+                f"{LOCK_PATH}: macosLocalEngineArtifacts entries must be objects"
+            )
+        engine = spec.get("engine")
+        host = spec.get("host", engine)
+        asset = spec.get("asset")
+        sha256 = spec.get("sha256")
+        if not all(isinstance(value, str) and value for value in (engine, host, asset, sha256)):
+            raise RuntimeError(
+                f"{LOCK_PATH}: macosLocalEngineArtifacts.{mode} has invalid fields"
+            )
+        macos_artifacts[mode] = MacOSLocalEngineArtifact(
+            engine=engine,
+            host=host,
+            asset=asset,
+            sha256=sha256,
+        )
+
     return FlutterToolchainLock(
         name=require_string("name"),
         upstream_flutter=require_string("upstreamFlutter"),
@@ -72,6 +107,7 @@ def load_flutter_toolchain_lock() -> FlutterToolchainLock:
         fork_branch=require_string("forkBranch"),
         fork_commit=require_string("forkCommit"),
         default_install_path=ROOT / require_string("defaultInstallPath"),
+        macos_local_engine_artifacts=macos_artifacts,
         required_patch_markers=tuple(checked_markers),
     )
 
@@ -96,38 +132,120 @@ def local_engine_args() -> list[str]:
 
 
 def local_engine_args_for_mode(debug: bool) -> list[str]:
-    engine_src = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH")
+    lock = load_flutter_toolchain_lock()
+    artifact = _macos_local_engine_artifact_for_mode(lock, debug)
+    engine_src = str(_local_engine_src_path(lock))
     if debug:
-        engine = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
-        engine_host = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST")
+        engine = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE") or artifact.engine
+        engine_host = (
+            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST") or artifact.host
+        )
     else:
-        engine = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE")
-        engine_host = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE")
-        if not engine:
-            engine = _derive_release_engine_name(
-                os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
-            )
-        if not engine_host:
-            engine_host = _derive_release_engine_name(
+        engine = (
+            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE")
+            or artifact.engine
+            or _derive_release_engine_name(os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE"))
+        )
+        engine_host = (
+            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE")
+            or artifact.host
+            or _derive_release_engine_name(
                 os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST")
             )
+        )
     return _local_engine_args(engine_src, engine, engine_host)
 
 
 def local_engine_name_for_mode(debug: bool) -> str | None:
+    artifact = _macos_local_engine_artifact_for_mode(load_flutter_toolchain_lock(), debug)
     if debug:
-        return os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
+        return os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE") or artifact.engine
     return (
         os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE")
+        or artifact.engine
         or _derive_release_engine_name(os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE"))
     )
 
 
 def local_engine_output_path(engine_name: str | None) -> Path | None:
-    engine_src = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH")
-    if not engine_src or not engine_name:
+    if not engine_name:
         return None
-    return Path(engine_src) / "out" / engine_name
+    return _local_engine_src_path(load_flutter_toolchain_lock()) / "out" / engine_name
+
+
+def ensure_macos_local_engine_for_mode(debug: bool) -> None:
+    if sys.platform != "darwin":
+        return
+    engine_name = local_engine_name_for_mode(debug)
+    engine_path = local_engine_output_path(engine_name)
+    if engine_path is not None and engine_path.exists():
+        return
+    bootstrap_macos_local_engines(modes=("debug" if debug else "release",))
+    engine_path = local_engine_output_path(engine_name)
+    if engine_path is None or not engine_path.exists():
+        mode = "Debug" if debug else "Release"
+        print(f"ERROR: macOS {mode} Flutter local engine is missing: {engine_path}")
+        sys.exit(1)
+
+
+def bootstrap_macos_local_engines(
+    modes: tuple[str, ...] = ("debug", "release"),
+    flutter_bin_path: Path | None = None,
+) -> None:
+    if sys.platform != "darwin":
+        return
+    lock = load_flutter_toolchain_lock()
+    missing_modes = [
+        mode
+        for mode in modes
+        if not (
+            _local_engine_src_path(lock)
+            / "out"
+            / _macos_local_engine_artifact_for_mode(lock, mode == "debug").engine
+        ).exists()
+    ]
+    if not missing_modes:
+        return
+
+    script = ROOT / "scripts" / "ci" / "bootstrap_flutter_macos_engine.sh"
+    env = os.environ.copy()
+    env["VOIDPLAYER_FLUTTER_BIN"] = str(
+        flutter_bin_path
+        or Path(
+            env.get(
+                "VOIDPLAYER_FLUTTER_BIN",
+                str(lock.default_install_path / "bin" / _flutter_executable_name()),
+            )
+        )
+    )
+    env["VOIDPLAYER_FLUTTER_ENGINE_MODES"] = ",".join(missing_modes)
+    header("Bootstrap macOS Flutter local engine")
+    run([str(script)], cwd=str(ROOT), env=env)
+
+
+def _local_engine_src_path(lock: FlutterToolchainLock) -> Path:
+    override = os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH")
+    if override:
+        return Path(override)
+
+    flutter_bin_override = os.environ.get("VOIDPLAYER_FLUTTER_BIN")
+    if flutter_bin_override:
+        flutter_bin_path = Path(flutter_bin_override).expanduser()
+        if flutter_bin_path.name == _flutter_executable_name():
+            return flutter_bin_path.parent.parent / "engine" / "src"
+
+    return lock.default_install_path / "engine" / "src"
+
+
+def _macos_local_engine_artifact_for_mode(
+    lock: FlutterToolchainLock,
+    debug: bool,
+) -> MacOSLocalEngineArtifact:
+    mode = "debug" if debug else "release"
+    artifact = lock.macos_local_engine_artifacts.get(mode)
+    if artifact is None:
+        raise RuntimeError(f"{LOCK_PATH}: missing macOS local engine artifact for {mode}")
+    return artifact
 
 
 def _derive_release_engine_name(engine: str | None) -> str | None:
@@ -270,6 +388,14 @@ def print_flutter_toolchain_doctor() -> None:
     print(f"Engine revision: {result.version.get('engineRevision', '<unknown>')}")
     print(f"Dart SDK: {result.version.get('dartSdkVersion', '<unknown>')}")
     print(f"Flutter version: {result.version.get('flutterVersion', '<unknown>')}")
+    if sys.platform == "darwin":
+        print("\nmacOS local engines:")
+        for debug, label in ((True, "Debug"), (False, "Release")):
+            engine_name = local_engine_name_for_mode(debug)
+            engine_path = local_engine_output_path(engine_name)
+            status = "ready" if engine_path is not None and engine_path.exists() else "missing"
+            print(f"  {label}: {engine_name or '<unset>'} ({status})")
+            print(f"    {engine_path or '<not configured>'}")
     if result.ok:
         print("\nFlutter toolchain lock check passed.")
         return
@@ -322,9 +448,12 @@ def bootstrap_flutter_toolchain() -> None:
     env = os.environ.copy()
     env["VOIDPLAYER_FLUTTER_BIN"] = str(flutter)
     run([str(flutter), "--version"], cwd=str(ROOT), env=env)
+    bootstrap_macos_local_engines(
+        modes=("debug", "release"),
+        flutter_bin_path=flutter,
+    )
     print(f"\nFlutter toolchain ready: {target}")
-    print("Add this to dev_config.local.json if you want an explicit path:")
-    print(f'  "VOIDPLAYER_FLUTTER_BIN": "{flutter}"')
+    print(f"Flutter bin: {flutter}")
 
 
 def print_flutter_toolchain_lock() -> None:

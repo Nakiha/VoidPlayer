@@ -6,11 +6,11 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
-import '../analysis/file_hash.dart';
 import '../app_log.dart';
 import '../app_paths.dart';
 import '../storage/storage_catalog.dart';
 import 'quick_mark.dart';
+import 'quick_mark_media_hash.dart';
 
 class QuickMarkMediaRef {
   final int fileId;
@@ -173,7 +173,7 @@ class SqliteQuickMarkRepository implements QuickMarkRepository {
       db.execute('BEGIN IMMEDIATE');
       try {
         _upsertMediaRefs(db, refs);
-        // When several refs share one content hash, the first ref owns the
+        // When several refs share one quick mark hash, the first ref owns the
         // persisted set; otherwise the per-hash delete-and-reinsert below
         // would multiply the distributed copies on every round trip.
         final ownerByHash = <String, QuickMarkMediaRef>{};
@@ -254,7 +254,7 @@ class SqliteQuickMarkRepository implements QuickMarkRepository {
     StackTrace? failureStack;
     try {
       final file = File(ref.path);
-      if (await file.exists()) return computeFileSha256(ref.path);
+      if (await file.exists()) return computeQuickMarkMediaHash(ref.path);
     } catch (error, stack) {
       failure = error;
       failureStack = stack;

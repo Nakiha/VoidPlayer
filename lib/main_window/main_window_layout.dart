@@ -35,6 +35,7 @@ class MainWindowLayoutCoordinator {
   int? _queuedPreemptWidth;
   int? _queuedPreemptHeight;
   bool _nativeCompositorTransformActive = false;
+  String? _lastPrewarmedMarksSidebarTargetKey;
 
   int viewportWidth = 0;
   int viewportHeight = 0;
@@ -248,6 +249,7 @@ class MainWindowLayoutCoordinator {
     }
     viewportWidth = width;
     viewportHeight = height;
+    _prewarmNextMarksSidebarViewportTarget();
     _resizeDebounceTimer?.cancel();
     if (immediate || _state.nativeCompositorActive) {
       _resizeDebounceTimer = null;
@@ -317,6 +319,12 @@ class MainWindowLayoutCoordinator {
       '[WindowsCompositorDebug] layout preemptViewportResize native complete '
       '${width}x$height',
     );
+    if (_disposed || !mounted()) return;
+    final nextLayout = await controller.getLayout();
+    if (_disposed || !mounted()) return;
+    setLayout(nextLayout);
+    _prepareNativeCompositorSourceCache(nextLayout);
+    _prewarmNextMarksSidebarViewportTarget();
   }
 
   void toggleMarksSidebar() {
@@ -337,7 +345,40 @@ class MainWindowLayoutCoordinator {
         .clamp(kMinMarksSidebarWidth, kMaxMarksSidebarWidth)
         .toDouble();
     if (next == _state.marksSidebarWidth) return;
+    if (_state.marksSidebarVisible) {
+      requestPreemptViewportLogicalSizeDelta(
+        widthDelta: _state.marksSidebarWidth - next,
+      );
+    }
     stateStore.setMarksSidebarWidth(next);
+    _lastPrewarmedMarksSidebarTargetKey = null;
+    if (!_state.marksSidebarVisible) {
+      _prewarmNextMarksSidebarViewportTarget();
+    }
+  }
+
+  void _prewarmNextMarksSidebarViewportTarget() {
+    if (_disposed || textureId() == null) return;
+    if (viewportWidth <= 0 || viewportHeight <= 0) return;
+    final dpr = viewportDevicePixelRatio > 0 ? viewportDevicePixelRatio : 1.0;
+    final widthDelta = _state.marksSidebarVisible
+        ? _state.marksSidebarWidth
+        : -_state.marksSidebarWidth;
+    final targetWidth = (viewportWidth + widthDelta * dpr)
+        .round()
+        .clamp(1, 1 << 30)
+        .toInt();
+    final targetHeight = viewportHeight;
+    if (targetWidth == viewportWidth && targetHeight == viewportHeight) return;
+    final key =
+        '$targetWidth:$targetHeight:${_state.marksSidebarWidth}:'
+        '${_state.marksSidebarVisible}:$dpr';
+    if (_lastPrewarmedMarksSidebarTargetKey == key) return;
+    _lastPrewarmedMarksSidebarTargetKey = key;
+    fireAndLog(
+      'prewarm marks sidebar viewport target',
+      controller.prewarmNativePresentationTargetSize(targetWidth, targetHeight),
+    );
   }
 
   void setAnalysisOverlayControlsVisible(bool visible) {
@@ -594,6 +635,7 @@ class MainWindowLayoutCoordinator {
           final nextLayout = await controller.getLayout();
           if (_disposed || !mounted()) return;
           setLayout(nextLayout);
+          _prepareNativeCompositorSourceCache(nextLayout);
         } else if (_resizeDirty) {
           _resizeDirty = false;
         }

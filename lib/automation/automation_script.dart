@@ -509,6 +509,13 @@ ScriptInstruction? _parseInstruction(
           args.isEmpty || args[0].isEmpty ? 'interaction' : args[0],
         ),
       );
+    case 'DEBUG_NATIVE_TIMING':
+      return ScriptAutomationAction(
+        time,
+        DebugNativeTimingAction(label: args.isNotEmpty ? args[0] : ''),
+      );
+    case 'DEBUG_FLUTTER_TIMING':
+      return ScriptAutomationAction(time, const DebugFlutterTimingAction());
     case 'WINDOW_MAXIMIZE':
       return ScriptAutomationAction(time, const WindowMaximize());
     case 'WINDOW_RESTORE':
@@ -531,6 +538,16 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAutomationAction(time, StoreNativeSeekCount(args[0]));
+    case 'CLICK_FLUTTER_POINT':
+    case 'TAP_FLUTTER_POINT':
+      if (args.length < 2) {
+        log.warning('CLICK_FLUTTER_POINT needs x and y arguments: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        ClickFlutterPoint(double.parse(args[0]), double.parse(args[1])),
+      );
     case 'HOVER_CONTROLS_BAR_BUTTONS':
       return ScriptAutomationAction(
         time,

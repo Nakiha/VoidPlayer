@@ -22,6 +22,7 @@
 #include "windows_native_compositor.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <wrl/client.h>
@@ -29,6 +30,8 @@
 /// Returns pointer to a static NakiVrDiagnostics (valid until next call).
 extern "C" __declspec(dllexport)
 const NakiVrDiagnostics* naki_vr_get_diagnostics();
+
+struct PlatformTaskState;
 
 class VideoRendererPlugin : public flutter::Plugin {
 public:
@@ -51,6 +54,10 @@ private:
     void HandleMethodCall(
         const flutter::MethodCall<flutter::EncodableValue>& method_call,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    std::optional<LRESULT> HandleTopLevelWindowProc(
+        HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
+    void PostPlatformTask(std::function<void()> task);
+    void DrainPlatformTasks();
 
     void InitLogging(
         const flutter::EncodableValue* arguments,
@@ -163,8 +170,6 @@ private:
     void SetEventSink(std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
     void ClearEventSink();
     void QueueRendererEvent(const vr::RendererEvent& event);
-    std::optional<LRESULT> HandleTopLevelWindowProc(
-        HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
     void ScheduleDisplayPolicyRefresh();
     vr::WindowsDisplayProbeSnapshot RefreshPresentationPolicy(
         const char* trigger,
@@ -181,6 +186,10 @@ private:
     NativeLoggingBootstrap logging_bootstrap_;
     ViewportCaptureService viewport_capture_;
     WindowCaptureService window_capture_;
+    flutter::PluginRegistrarWindows* registrar_ = nullptr;
+    int window_proc_delegate_id_ = -1;
+    std::shared_ptr<PlatformTaskState> platform_task_state_;
+    HWND window_handle_ = nullptr;
     vr::WindowsDisplayResolver display_resolver_;
     vr::WindowsDisplayProbeTracker display_probe_tracker_;
     vr::WindowsPresentationPolicy presentation_policy_;
@@ -192,7 +201,4 @@ private:
     std::string presentation_request_;
     uint64_t presentation_locked_display_generation_ = 0;
     int64_t presentation_locked_sdr_white_level_milli_nits_ = 80000;
-    flutter::PluginRegistrarWindows* registrar_ = nullptr;
-    int window_proc_delegate_id_ = -1;
-    HWND window_handle_ = nullptr;
 };

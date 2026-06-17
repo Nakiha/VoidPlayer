@@ -6,11 +6,11 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
-import '../analysis/file_hash.dart';
 import '../app_log.dart';
 import '../app_paths.dart';
 import '../marks/quick_mark.dart';
 import '../marks/quick_mark_export.dart';
+import '../marks/quick_mark_media_hash.dart';
 import '../marks/quick_mark_persistence.dart';
 import '../marks/quick_mark_store.dart';
 import '../marks/quick_mark_thumbnail.dart';
@@ -389,7 +389,7 @@ class MainWindowQuickMarkCoordinator {
     StackTrace? failureStack;
     try {
       final file = File(path);
-      if (await file.exists()) return computeFileSha256(path);
+      if (await file.exists()) return computeQuickMarkMediaHash(path);
     } catch (error, stack) {
       failure = error;
       failureStack = stack;

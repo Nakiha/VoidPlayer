@@ -69,7 +69,19 @@ extension MacOSNativePlayerSession {
       "drawFailureCount": Int64(min(state.draw_failure_count, UInt64(Int64.max))),
       "uploadCount": Int64(min(state.upload_count, UInt64(Int64.max))),
       "uploadFailureCount": Int64(min(state.upload_failure_count, UInt64(Int64.max))),
+      "uploadIntervalP95Ms": Int64(min(state.upload_interval_p95_ms, UInt64(Int64.max))),
       "targetGeneration": Int64(min(state.target_generation, UInt64(Int64.max))),
+      "targetWarmupGeneration": Int64(
+        min(state.target_warmup_generation, UInt64(Int64.max))
+      ),
+      "targetWarmupRemaining": Int64(
+        min(state.target_warmup_remaining, UInt64(Int64.max))
+      ),
+      "targetWarmupSampleCount": Int64(
+        min(state.target_warmup_sample_count, UInt64(Int64.max))
+      ),
+      "targetWarmupLastMs": Int64(min(state.target_warmup_last_ms, UInt64(Int64.max))),
+      "targetWarmupP95Ms": Int64(min(state.target_warmup_p95_ms, UInt64(Int64.max))),
       "targetWidth": Int(state.target_width),
       "targetHeight": Int(state.target_height),
       "uploadStorageKind": Self.presentPackageStorageName(state.upload_storage_kind),
@@ -474,7 +486,13 @@ extension MacOSNativePlayerSession {
       "drawFailureCount": 0,
       "uploadCount": 0,
       "uploadFailureCount": 0,
+      "uploadIntervalP95Ms": 0,
       "targetGeneration": 0,
+      "targetWarmupGeneration": 0,
+      "targetWarmupRemaining": 0,
+      "targetWarmupSampleCount": 0,
+      "targetWarmupLastMs": 0,
+      "targetWarmupP95Ms": 0,
       "targetWidth": 0,
       "targetHeight": 0,
       "uploadStorageKind": "unavailable",

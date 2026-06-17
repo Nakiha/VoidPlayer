@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .flutter_toolchain import (
     flutter_cmd,
+    ensure_macos_local_engine_for_mode,
     local_engine_args_for_mode,
     local_engine_name_for_mode,
     local_engine_output_path,
@@ -51,6 +52,7 @@ def _flutter_cmd(*args: str, local_engine: bool = False) -> list[str]:
 
 
 def _macos_local_engine_args(debug: bool) -> list[str]:
+    ensure_macos_local_engine_for_mode(debug)
     args = local_engine_args_for_mode(debug)
     engine_name = local_engine_name_for_mode(debug)
     engine_path = local_engine_output_path(engine_name)

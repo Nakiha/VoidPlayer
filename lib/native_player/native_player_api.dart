@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 
+import '../app_log.dart';
 import 'native_player_events.dart';
 import 'native_player_protocol.dart';
 
@@ -26,6 +27,10 @@ abstract interface class NativePlayerApi {
   });
   Future<void> setAudibleTrack(int? fileId);
   Future<void> resize({required int width, required int height});
+  Future<void> prewarmNativePresentationTargetSize({
+    required int width,
+    required int height,
+  });
   Future<void> setNativeCompositorViewportRect({
     required int left,
     required int top,
@@ -109,6 +114,7 @@ abstract interface class NativePlayerApi {
 class MethodChannelNativePlayerApi implements NativePlayerApi {
   final MethodChannel _channel;
   final NativePlayerEventStream _eventStream;
+  static int _nextCompositorTraceId = 1;
 
   const MethodChannelNativePlayerApi([
     this._channel = const MethodChannel(NativePlayerChannel.name),
@@ -117,6 +123,31 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
 
   @override
   Stream<NativePlayerEvent> get events => _eventStream.events;
+
+  static Map<String, dynamic> _withCompositorTrace(Map<String, dynamic> args) {
+    args[NativePlayerKeys.traceId] = _nextCompositorTraceId++;
+    args[NativePlayerKeys.traceSentUs] = DateTime.now().microsecondsSinceEpoch;
+    return args;
+  }
+
+  Future<void> _invokeTimedVoid(
+    String method, [
+    Map<String, dynamic>? args,
+  ]) async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      await _channel.invokeMethod<void>(method, args);
+    } finally {
+      stopwatch.stop();
+      final elapsedUs = stopwatch.elapsedMicroseconds;
+      if (elapsedUs >= 4000) {
+        logFine(
+          'NativePlayer MethodChannel profiler method=$method '
+          'elapsedMs=${(elapsedUs / 1000.0).toStringAsFixed(2)}',
+        );
+      }
+    }
+  }
 
   @override
   Future<CreatePlayerResult> createPlayer({
@@ -204,6 +235,17 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<void> prewarmNativePresentationTargetSize({
+    required int width,
+    required int height,
+  }) {
+    return _invokeTimedVoid(
+      NativePlayerMethods.prewarmNativePresentationTargetSize,
+      {NativePlayerKeys.width: width, NativePlayerKeys.height: height},
+    );
+  }
+
+  @override
   Future<void> setNativeCompositorViewportRect({
     required int left,
     required int top,
@@ -212,16 +254,16 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     required int surfaceWidth,
     required int surfaceHeight,
   }) {
-    return _channel.invokeMethod<void>(
+    return _invokeTimedVoid(
       NativePlayerMethods.setNativeCompositorViewportRect,
-      {
+      _withCompositorTrace({
         NativePlayerKeys.left: left,
         NativePlayerKeys.top: top,
         NativePlayerKeys.width: width,
         NativePlayerKeys.height: height,
         NativePlayerKeys.surfaceWidth: surfaceWidth,
         NativePlayerKeys.surfaceHeight: surfaceHeight,
-      },
+      }),
     );
   }
 
@@ -300,9 +342,9 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     required double splitPos,
     required int activeTrackCount,
   }) {
-    return _channel.invokeMethod<void>(
+    return _invokeTimedVoid(
       NativePlayerMethods.setNativeCompositorViewportTransform,
-      {
+      _withCompositorTrace({
         NativePlayerKeys.enabled: enabled,
         NativePlayerKeys.scaleX: scaleX,
         NativePlayerKeys.scaleY: scaleY,
@@ -311,7 +353,7 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
         NativePlayerKeys.mode: mode,
         NativePlayerKeys.splitPos: splitPos,
         NativePlayerKeys.activeTrackCount: activeTrackCount,
-      },
+      }),
     );
   }
 
@@ -329,9 +371,9 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     required List<double> viewOffsetUvX,
     required List<double> viewOffsetUvY,
   }) {
-    return _channel.invokeMethod<void>(
+    return _invokeTimedVoid(
       NativePlayerMethods.prepareNativeCompositorSourceCache,
-      {
+      _withCompositorTrace({
         NativePlayerKeys.sourceSlots: sourceSlots,
         NativePlayerKeys.sourceOrder: sourceOrder,
         NativePlayerKeys.mode: mode,
@@ -343,15 +385,15 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
         NativePlayerKeys.invDisplaySizeY: invDisplaySizeY,
         NativePlayerKeys.viewOffsetUvX: viewOffsetUvX,
         NativePlayerKeys.viewOffsetUvY: viewOffsetUvY,
-      },
+      }),
     );
   }
 
   @override
   Future<void> clearNativeCompositorSourceCache({required String reason}) {
-    return _channel.invokeMethod<void>(
+    return _invokeTimedVoid(
       NativePlayerMethods.clearNativeCompositorSourceCache,
-      {NativePlayerKeys.reason: reason},
+      _withCompositorTrace({NativePlayerKeys.reason: reason}),
     );
   }
 

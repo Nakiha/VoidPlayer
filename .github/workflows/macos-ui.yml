@@ -4,6 +4,9 @@ permissions:
   actions: read
   contents: read
 
+# Hosted macOS UI smoke uses software decode for baseline runner coverage;
+# hardware/EDR-specific presentation smokes stay in targeted local/nightly gates.
+
 on:
   pull_request:
     paths:

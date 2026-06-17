@@ -67,7 +67,10 @@ class DebugNativeCompositorAction extends AutomationAction {
 }
 
 class DebugNativeTimingAction extends AutomationAction {
-  const DebugNativeTimingAction() : super('DEBUG_NATIVE_TIMING');
+  final String label;
+
+  const DebugNativeTimingAction({this.label = ''})
+    : super('DEBUG_NATIVE_TIMING');
 }
 
 class DebugFlutterTimingAction extends AutomationAction {

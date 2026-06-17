@@ -98,11 +98,6 @@ final class MacOSPresentationController {
       if context.nativeBackendActive {
         nativeRefreshAttempted = true
         let refreshed = refreshCurrentFrame(context: context)
-        context.playback.reinstallPresentationTargetIfPlaying(
-          player: context.player,
-          texture: context.nativeTexture,
-          maxTrackSlots: context.maxTrackSlots
-        )
         if !refreshed {
           return
         }

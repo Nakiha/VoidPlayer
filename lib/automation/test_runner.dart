@@ -297,12 +297,15 @@ class TestRunner {
       case DebugNativeTimingAction():
         final info = await controller.getDiagnostics();
         String value(String key) => '${info[key] ?? ''}';
+        final label = action.label.isEmpty ? '' : 'stage=${action.label} ';
         log.info(
           'TestRunner: DEBUG_NATIVE_TIMING '
+          '$label'
           'frameAvailable=${value('frameAvailableCount')}@${value('frameAvailableHz')}Hz '
           'callbackQueued=${value('macosFrameCallbackQueuedCount')}@${value('macosFrameCallbackQueuedHz')}Hz '
           'callbackProcessed=${value('macosFrameCallbackProcessedCount')}@${value('macosFrameCallbackProcessedHz')}Hz '
           'callbackCoalesced=${value('macosFrameCallbackCoalescedCount')}@${value('macosFrameCallbackCoalescedHz')}Hz '
+          'callbackInline=${value('macosFrameCallbackInlineDirtyDrainCount')} '
           'callbackWaitP95Ms=${value('macosFrameCallbackMainWaitP95Ms')} '
           'callbackHandleP95Ms=${value('macosFrameCallbackHandleP95Ms')} '
           'targetGen=${value('macosFrameCallbackTargetGeneration')} '

@@ -28,6 +28,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private let frameAvailableRate = MacOSRateWindow()
   private let coalescedFrameCallbackDelayMs = 8
   private var frameAvailableCount = 0
+  private var inlineDirtyFrameCallbackDrainCount = 0
   private var flutterTextureFrameAvailableSkippedWhilePlayingCount = 0
   private var compositorVideoTextureRefreshCount = 0
   private var compositorVideoTextureRefreshSkippedWhilePlayingCount = 0
@@ -831,6 +832,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     diagnostics["frameAvailableCount"] = frameAvailableCount
     diagnostics["frameAvailableHz"] = frameAvailableHz
     diagnostics["frameAvailableHzX1000"] = Int(frameAvailableHz * 1000.0)
+    diagnostics["macosFrameCallbackInlineDirtyDrainCount"] =
+      inlineDirtyFrameCallbackDrainCount
     diagnostics["flutterTextureFrameAvailableSkippedWhilePlayingCount"] =
       flutterTextureFrameAvailableSkippedWhilePlayingCount
     diagnostics["compositorVideoTextureRefreshCount"] = compositorVideoTextureRefreshCount
@@ -917,7 +920,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         enqueueNs: enqueueNs,
         callbackGeneration: callbackGeneration,
         callbackContext: callbackContext,
-        sourceRingRefreshRequested: sourceRingRefreshRequested
+        sourceRingRefreshRequested: sourceRingRefreshRequested,
+        immediateDepth: 0
       )
     }
     if cachedPlaying {
@@ -937,7 +941,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     enqueueNs: UInt64,
     callbackGeneration: UInt64,
     callbackContext: MacOSNativeFrameCallbackContext?,
-    sourceRingRefreshRequested: Bool
+    sourceRingRefreshRequested: Bool,
+    immediateDepth: Int
   ) {
     guard callbackContext?.isCurrent(callbackGeneration) == true else {
       _ = frameCallbackProfiler.finishProcessing(
@@ -991,10 +996,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           enqueueNs: nextEnqueueNs,
           callbackGeneration: callbackGeneration,
           callbackContext: callbackContext,
-          sourceRingRefreshRequested: sourceRingRefreshRequested
+          sourceRingRefreshRequested: sourceRingRefreshRequested,
+          immediateDepth: immediateDepth + 1
         )
       }
-      if nativePlaying {
+      if nativePlaying && immediateDepth == 0 {
+        inlineDirtyFrameCallbackDrainCount += 1
+        processDirtyCallback()
+      } else if nativePlaying {
         DispatchQueue.main.async {
           processDirtyCallback()
         }

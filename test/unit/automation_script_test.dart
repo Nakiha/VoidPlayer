@@ -152,7 +152,7 @@ void main() {
       isA<ScriptAutomationAction>().having(
         (i) => i.action,
         'action',
-        isA<DebugNativeTimingAction>(),
+        isA<DebugNativeTimingAction>().having((a) => a.label, 'label', ''),
       ),
     );
     expect(
@@ -290,6 +290,32 @@ void main() {
         (i) => i.action,
         'action',
         isA<ToggleMarksSidebar>(),
+      ),
+    );
+  });
+
+  test('parses DEBUG_NATIVE_TIMING label', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_native_timing_label_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('0.1,DEBUG_NATIVE_TIMING,sidebar-open-300ms\n');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1));
+    expect(
+      instructions.single,
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<DebugNativeTimingAction>().having(
+          (a) => a.label,
+          'label',
+          'sidebar-open-300ms',
+        ),
       ),
     );
   });

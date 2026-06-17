@@ -449,7 +449,10 @@ ScriptInstruction? _parseInstruction(
     case 'DEBUG_NATIVE_COMPOSITOR_SPIKE':
       return ScriptAutomationAction(time, const DebugNativeCompositorAction());
     case 'DEBUG_NATIVE_TIMING':
-      return ScriptAutomationAction(time, const DebugNativeTimingAction());
+      return ScriptAutomationAction(
+        time,
+        DebugNativeTimingAction(label: args.isNotEmpty ? args[0] : ''),
+      );
     case 'DEBUG_FLUTTER_TIMING':
       return ScriptAutomationAction(time, const DebugFlutterTimingAction());
     case 'WINDOW_MAXIMIZE':

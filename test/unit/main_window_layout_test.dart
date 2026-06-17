@@ -79,35 +79,32 @@ void main() {
     },
   );
 
-  test(
-    'native compositor viewport resize flushes without debounce',
-    () async {
-      final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
-        ..setNativeCompositorActive(true)
-        ..setLayout(const LayoutState());
-      addTearDown(stateStore.dispose);
-      final trackManager = TrackManager();
-      addTearDown(trackManager.dispose);
-      final controller = _FakeNativePlayerController();
-      final coordinator = MainWindowLayoutCoordinator(
-        vsync: const TestVSync(),
-        controller: controller,
-        stateStore: stateStore,
-        trackManager: trackManager,
-        mounted: () => true,
-      );
-      addTearDown(coordinator.dispose);
-      coordinator.viewportWidth = 100;
-      coordinator.viewportHeight = 100;
+  test('native compositor viewport resize flushes without debounce', () async {
+    final stateStore = MainWindowStateStore()
+      ..setTextureId(1)
+      ..setNativeCompositorActive(true)
+      ..setLayout(const LayoutState());
+    addTearDown(stateStore.dispose);
+    final trackManager = TrackManager();
+    addTearDown(trackManager.dispose);
+    final controller = _FakeNativePlayerController();
+    final coordinator = MainWindowLayoutCoordinator(
+      vsync: const TestVSync(),
+      controller: controller,
+      stateStore: stateStore,
+      trackManager: trackManager,
+      mounted: () => true,
+    );
+    addTearDown(coordinator.dispose);
+    coordinator.viewportWidth = 100;
+    coordinator.viewportHeight = 100;
 
-      coordinator.onViewportResize(240, 180, 1.5);
-      await coordinator.flushPendingLayout();
+    coordinator.onViewportResize(240, 180, 1.5);
+    await coordinator.flushPendingLayout();
 
-      expect(controller.calls, const ['resize', 'getLayout']);
-      expect(controller.resizes, const [Size(240, 180)]);
-    },
-  );
+    expect(controller.calls, const ['resize', 'getLayout']);
+    expect(controller.resizes, const [Size(240, 180)]);
+  });
 
   test(
     'preempt viewport resize lets native resize rescale applied pending layout',

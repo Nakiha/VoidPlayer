@@ -1000,7 +1000,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           immediateDepth: immediateDepth + 1
         )
       }
-      if nativePlaying && immediateDepth == 0 {
+      if nativePlaying && immediateDepth < 2 {
         inlineDirtyFrameCallbackDrainCount += 1
         processDirtyCallback()
       } else if nativePlaying {

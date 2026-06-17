@@ -13,6 +13,8 @@ import 'package:void_player/preferences/playback_preferences.dart';
 import 'package:void_player/video_renderer_controller.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUpAll(() async {
     await initLogging(['--log-level=flutter=OFF']);
   });
@@ -222,6 +224,7 @@ UiAutomationBridge _bridge(NativePlayerController controller) {
       resolvedLoopEndUs: () => 0,
     ),
     effectiveDurationUs: () => 0,
+    timelinePtsUs: () => 0,
     toggleAnalysisOverlayForSlot: (_) async {},
     toggleAnalysisOverlayPanel: () async {},
     toggleMarksSidebar: () {},

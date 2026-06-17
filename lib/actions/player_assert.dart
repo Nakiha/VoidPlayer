@@ -25,6 +25,12 @@ class AssertPositionRange extends PlayerAssert {
   const AssertPositionRange(this.minUs, this.maxUs);
 }
 
+class AssertTimelinePositionRange extends PlayerAssert {
+  final int minUs;
+  final int maxUs;
+  const AssertTimelinePositionRange(this.minUs, this.maxUs);
+}
+
 class AssertTrackCount extends PlayerAssert {
   final int count;
   const AssertTrackCount(this.count);

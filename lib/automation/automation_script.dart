@@ -817,6 +817,17 @@ ScriptInstruction? _parseInstruction(
         time,
         AssertPositionRange(int.parse(args[0]), int.parse(args[1])),
       );
+    case 'ASSERT_TIMELINE_POSITION_RANGE':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_TIMELINE_POSITION_RANGE needs minUs and maxUs: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertTimelinePositionRange(int.parse(args[0]), int.parse(args[1])),
+      );
     case 'ASSERT_TRACK_COUNT':
       if (args.isEmpty) {
         log.warning('ASSERT_TRACK_COUNT missing count argument: $rawLine');

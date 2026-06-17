@@ -43,6 +43,7 @@ class TestRunner {
     state: _state,
     analysisProcesses: automation.analysisProcesses,
     effectiveDurationUs: automation.effectiveDurationUs,
+    timelinePtsUs: automation.timelinePtsUs,
     quickMarkCount: automation.quickMarkCount,
   );
 

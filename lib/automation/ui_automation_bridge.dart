@@ -17,6 +17,7 @@ class UiAutomationBridge {
   final AnalysisProcessHost analysisProcesses;
   final MainWindowTestHarness testHarness;
   final int Function() effectiveDurationUs;
+  final int Function() timelinePtsUs;
   final Future<void> Function(int slotIndex) toggleAnalysisOverlayForSlot;
   final Future<void> Function() toggleAnalysisOverlayPanel;
   final void Function() toggleMarksSidebar;
@@ -38,6 +39,7 @@ class UiAutomationBridge {
     required this.analysisProcesses,
     required this.testHarness,
     required this.effectiveDurationUs,
+    required this.timelinePtsUs,
     required this.toggleAnalysisOverlayForSlot,
     required this.toggleAnalysisOverlayPanel,
     required this.toggleMarksSidebar,

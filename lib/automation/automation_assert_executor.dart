@@ -22,6 +22,7 @@ class AutomationAssertExecutor {
   final AutomationRunState state;
   final AnalysisProcessHost analysisProcesses;
   final int Function() effectiveDurationUs;
+  final int Function() timelinePtsUs;
   final int Function() quickMarkCount;
 
   const AutomationAssertExecutor({
@@ -29,6 +30,7 @@ class AutomationAssertExecutor {
     required this.state,
     required this.analysisProcesses,
     required this.effectiveDurationUs,
+    required this.timelinePtsUs,
     required this.quickMarkCount,
   });
 
@@ -56,6 +58,13 @@ class AutomationAssertExecutor {
         if (actual < minUs || actual > maxUs) {
           throw AssertionError(
             'Expected position in [$minUs, $maxUs] μs, got $actual μs',
+          );
+        }
+      case AssertTimelinePositionRange(:final minUs, :final maxUs):
+        final actual = timelinePtsUs();
+        if (actual < minUs || actual > maxUs) {
+          throw AssertionError(
+            'Expected timeline position in [$minUs, $maxUs] μs, got $actual μs',
           );
         }
       case AssertTrackCount(:final count):

@@ -48,7 +48,7 @@ class MainWindowPlaybackCoordinator {
   Timer? _loopBoundaryTimer;
   Timer? _seekSettledTimer;
   Ticker? _playbackClockTicker;
-  int _playbackClockElapsedUs = 0;
+  int? _playbackClockTickerBaseUs;
   _PlaybackClockAnchor? _playbackClockAnchor;
   StreamSubscription<NativePlayerEvent>? _nativeEventSubscription;
   bool _disposed = false;
@@ -132,13 +132,11 @@ class MainWindowPlaybackCoordinator {
     timelineHoverNotifier.value = next;
   }
 
-  int get _clockElapsedUsForNewAnchor =>
-      (_playbackClockTicker?.isActive ?? false) ? _playbackClockElapsedUs : 0;
-
   void dispose() {
     _disposed = true;
     _pollSerial++;
     _loopRangeSyncSerial++;
+    _playbackClockTickerBaseUs = null;
     _playbackClockTicker?.dispose();
     _playbackClockTicker = null;
     _loopBoundaryTimer?.cancel();
@@ -189,14 +187,14 @@ class MainWindowPlaybackCoordinator {
     await controller.play();
     if (_disposed || !mounted()) return;
     setPlaying(true);
-    _playbackClockAnchor = _PlaybackClockAnchor(
-      ptsUs: currentPtsUs(),
-      durationUs: timelineMetrics.effectiveDurationUs,
-      playing: true,
-      speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
-      localElapsedUs: _clockElapsedUsForNewAnchor,
+    _setPlaybackClockAnchor(
+      _PlaybackClockAnchor(
+        ptsUs: currentPtsUs(),
+        durationUs: timelineMetrics.effectiveDurationUs,
+        playing: true,
+        speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
+      ),
     );
-    _syncPlaybackClockTicker();
     scheduleLoopBoundaryTimer();
   }
 
@@ -208,14 +206,14 @@ class MainWindowPlaybackCoordinator {
     if (_disposed || !mounted()) return;
     cancelLoopBoundaryTimer();
     setPlaying(false);
-    _playbackClockAnchor = _PlaybackClockAnchor(
-      ptsUs: currentPtsUs(),
-      durationUs: timelineMetrics.effectiveDurationUs,
-      playing: false,
-      speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
-      localElapsedUs: _clockElapsedUsForNewAnchor,
+    _setPlaybackClockAnchor(
+      _PlaybackClockAnchor(
+        ptsUs: currentPtsUs(),
+        durationUs: timelineMetrics.effectiveDurationUs,
+        playing: false,
+        speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
+      ),
     );
-    _syncPlaybackClockTicker();
     await onPlaybackTransition?.call(playing: false);
   }
 
@@ -267,14 +265,14 @@ class MainWindowPlaybackCoordinator {
     }
 
     setPolledPlaybackState(steppedPtsUs, durationUs(), false);
-    _playbackClockAnchor = _PlaybackClockAnchor(
-      ptsUs: steppedPtsUs,
-      durationUs: durationUs(),
-      playing: false,
-      speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
-      localElapsedUs: _clockElapsedUsForNewAnchor,
+    _setPlaybackClockAnchor(
+      _PlaybackClockAnchor(
+        ptsUs: steppedPtsUs,
+        durationUs: durationUs(),
+        playing: false,
+        speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
+      ),
     );
-    _syncPlaybackClockTicker();
   }
 
   void setSpeed(double speed) {
@@ -283,14 +281,14 @@ class MainWindowPlaybackCoordinator {
     setPlaybackSpeed(clamped);
     final anchor = _playbackClockAnchor;
     if (anchor != null) {
-      _playbackClockAnchor = _PlaybackClockAnchor(
-        ptsUs: currentPtsUs(),
-        durationUs: anchor.durationUs,
-        playing: anchor.playing,
-        speed: clamped,
-        localElapsedUs: _clockElapsedUsForNewAnchor,
+      _setPlaybackClockAnchor(
+        _PlaybackClockAnchor(
+          ptsUs: currentPtsUs(),
+          durationUs: anchor.durationUs,
+          playing: anchor.playing,
+          speed: clamped,
+        ),
       );
-      _syncPlaybackClockTicker();
     }
     fireAndLog('set playback speed', controller.setSpeed(clamped));
     scheduleLoopBoundaryTimer();
@@ -315,34 +313,34 @@ class MainWindowPlaybackCoordinator {
     final targetPtsUs = _clampSeekTargetUs(ptsUs);
     final seekSerial = ++_seekSerial;
     _pollSerial++;
-    setSeekPreview(targetPtsUs);
-    _playbackClockAnchor = _PlaybackClockAnchor(
-      ptsUs: targetPtsUs,
-      durationUs: timelineMetrics.effectiveDurationUs,
-      playing: false,
-      speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
-      localElapsedUs: _clockElapsedUsForNewAnchor,
-    );
-    _syncPlaybackClockTicker();
-    final behavior = playbackPreferences.seekAfterJumpBehavior;
     final wasPlaying = isPlaying();
+    final behavior = playbackPreferences.seekAfterJumpBehavior;
     final shouldResume =
         behavior == SeekAfterJumpBehavior.keepPreviousState &&
         (wasPlaying || _resumeAfterSeek);
+    setSeekPreview(targetPtsUs);
+    _setPlaybackClockAnchor(
+      _PlaybackClockAnchor(
+        ptsUs: targetPtsUs,
+        durationUs: timelineMetrics.effectiveDurationUs,
+        playing: false,
+        speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
+      ),
+    );
     if (wasPlaying) {
       _resumeAfterSeek = behavior == SeekAfterJumpBehavior.keepPreviousState;
       cancelLoopBoundaryTimer();
       await controller.pause();
       if (_disposed || !mounted()) return;
       setPlaying(false);
-      _playbackClockAnchor = _PlaybackClockAnchor(
-        ptsUs: targetPtsUs,
-        durationUs: timelineMetrics.effectiveDurationUs,
-        playing: false,
-        speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
-        localElapsedUs: _clockElapsedUsForNewAnchor,
+      _setPlaybackClockAnchor(
+        _PlaybackClockAnchor(
+          ptsUs: targetPtsUs,
+          durationUs: timelineMetrics.effectiveDurationUs,
+          playing: false,
+          speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
+        ),
       );
-      _syncPlaybackClockTicker();
     }
     await controller.seek(targetPtsUs, requestId: seekSerial);
     if (_disposed || !mounted()) return;
@@ -356,14 +354,14 @@ class MainWindowPlaybackCoordinator {
       await controller.play();
       if (_disposed || !mounted() || seekSerial != _seekSerial) return;
       setPlaying(true);
-      _playbackClockAnchor = _PlaybackClockAnchor(
-        ptsUs: targetPtsUs,
-        durationUs: timelineMetrics.effectiveDurationUs,
-        playing: true,
-        speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
-        localElapsedUs: _clockElapsedUsForNewAnchor,
+      _setPlaybackClockAnchor(
+        _PlaybackClockAnchor(
+          ptsUs: targetPtsUs,
+          durationUs: timelineMetrics.effectiveDurationUs,
+          playing: true,
+          speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
+        ),
       );
-      _syncPlaybackClockTicker();
     }
     scheduleLoopBoundaryTimer(fromPtsUs: targetPtsUs);
   }
@@ -479,8 +477,8 @@ class MainWindowPlaybackCoordinator {
     final eventDurationUs = event.durationUs;
     if (eventPtsUs == null || eventDurationUs == null) return;
 
-    var pts = eventPtsUs;
     final seekUs = pendingSeekUs();
+    var pts = eventPtsUs;
     if (seekUs != null) {
       final seekAge = pendingSeekAt() == null
           ? Duration.zero
@@ -525,14 +523,14 @@ class MainWindowPlaybackCoordinator {
     }
 
     if (fromNativeEvent) {
-      _playbackClockAnchor = _PlaybackClockAnchor(
-        ptsUs: clampedPts,
-        durationUs: durationUs,
-        playing: playing,
-        speed: speed <= 0 ? 1.0 : speed,
-        localElapsedUs: _clockElapsedUsForNewAnchor,
+      _setPlaybackClockAnchor(
+        _PlaybackClockAnchor(
+          ptsUs: clampedPts,
+          durationUs: durationUs,
+          playing: playing,
+          speed: speed <= 0 ? 1.0 : speed,
+        ),
       );
-      _syncPlaybackClockTicker();
     }
 
     setPolledPlaybackState(clampedPts, durationUs, playing);
@@ -545,10 +543,17 @@ class MainWindowPlaybackCoordinator {
     }
   }
 
+  void _setPlaybackClockAnchor(_PlaybackClockAnchor anchor) {
+    _playbackClockAnchor = anchor;
+    _playbackClockTickerBaseUs = null;
+    _syncPlaybackClockTicker();
+  }
+
   void _syncPlaybackClockTicker() {
     final shouldTick = !_disposed && (_playbackClockAnchor?.playing ?? false);
     if (!shouldTick) {
       _playbackClockTicker?.stop();
+      _playbackClockTickerBaseUs = null;
       return;
     }
     final ticker = _playbackClockTicker ??= Ticker(_onPlaybackClockTick);
@@ -562,10 +567,12 @@ class MainWindowPlaybackCoordinator {
     final anchor = _playbackClockAnchor;
     if (anchor == null || !anchor.playing) {
       _playbackClockTicker?.stop();
+      _playbackClockTickerBaseUs = null;
       return;
     }
-    _playbackClockElapsedUs = elapsed.inMicroseconds;
-    final elapsedUs = _playbackClockElapsedUs - anchor.localElapsedUs;
+    final tickerElapsedUs = elapsed.inMicroseconds;
+    final baseUs = _playbackClockTickerBaseUs ??= tickerElapsedUs;
+    final elapsedUs = tickerElapsedUs - baseUs;
     final nextPts = anchor.ptsUs + (elapsedUs * anchor.speed).round();
     _applyPlaybackClockState(
       ptsUs: nextPts,
@@ -722,14 +729,14 @@ class MainWindowPlaybackCoordinator {
         return;
       }
 
-      _playbackClockAnchor = _PlaybackClockAnchor(
-        ptsUs: pts,
-        durationUs: dur,
-        playing: playing,
-        speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
-        localElapsedUs: _clockElapsedUsForNewAnchor,
+      _setPlaybackClockAnchor(
+        _PlaybackClockAnchor(
+          ptsUs: pts,
+          durationUs: dur,
+          playing: playing,
+          speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
+        ),
       );
-      _syncPlaybackClockTicker();
       setPolledPlaybackState(
         pts,
         dur,
@@ -1005,13 +1012,11 @@ class _PlaybackClockAnchor {
   final int durationUs;
   final bool playing;
   final double speed;
-  final int localElapsedUs;
 
   const _PlaybackClockAnchor({
     required this.ptsUs,
     required this.durationUs,
     required this.playing,
     required this.speed,
-    required this.localElapsedUs,
   });
 }

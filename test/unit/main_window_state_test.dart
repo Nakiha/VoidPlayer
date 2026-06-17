@@ -219,6 +219,38 @@ void main() {
       expect(fixture.store.value.isPlaying, isFalse);
     });
 
+    testWidgets('resume does not reuse stale ticker elapsed', (tester) async {
+      final fixture = _PlaybackFixture();
+      addTearDown(fixture.dispose);
+
+      fixture.api.emitPlaybackClock(
+        ptsUs: 1000000,
+        durationUs: 5000000,
+        isPlaying: true,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      await fixture.coordinator.pause();
+      final pausedPtsUs = fixture.store.value.currentPtsUs;
+      await tester.pump(const Duration(seconds: 2));
+
+      expect(fixture.store.value.currentPtsUs, pausedPtsUs);
+      await fixture.coordinator.play();
+      expect(fixture.store.value.currentPtsUs, pausedPtsUs);
+
+      await tester.pump(const Duration(milliseconds: 16));
+
+      expect(
+        fixture.store.value.currentPtsUs,
+        greaterThanOrEqualTo(pausedPtsUs),
+      );
+      expect(fixture.store.value.currentPtsUs, lessThan(pausedPtsUs + 100000));
+
+      await fixture.coordinator.pause();
+      await tester.pump();
+    });
+
     test('wraps forward step to loop start after crossing loop end', () async {
       final fixture = _PlaybackFixture(stepForwardPtsUs: 1600000);
       addTearDown(fixture.dispose);

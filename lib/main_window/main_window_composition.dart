@@ -154,6 +154,7 @@ extension MainWindowComposition on MainWindowController {
           analysisProcesses: analysisProcesses,
           testHarness: testHarness,
           effectiveDurationUs: () => timelineMetrics.effectiveDurationUs,
+          timelinePtsUs: () => stateStore.value.currentPtsUs,
           toggleAnalysisOverlayForSlot:
               analysisCoordinator.toggleOverlayForSlot,
           toggleAnalysisOverlayPanel: analysisCoordinator.toggleOverlayPanel,

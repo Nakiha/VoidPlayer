@@ -91,6 +91,17 @@ enum MacOSVideoRendererDiagnostics {
         rendererOwnedState["consecutiveDrawFailures"] ?? 0,
       "rendererOwnedDrawFailureCount": rendererOwnedState["drawFailureCount"] ?? 0,
       "rendererOwnedTargetGeneration": rendererOwnedState["targetGeneration"] ?? 0,
+      "rendererOwnedUploadIntervalP95Ms": rendererOwnedState["uploadIntervalP95Ms"] ?? 0,
+      "rendererOwnedTargetWarmupGeneration":
+        rendererOwnedState["targetWarmupGeneration"] ?? 0,
+      "rendererOwnedTargetWarmupRemaining":
+        rendererOwnedState["targetWarmupRemaining"] ?? 0,
+      "rendererOwnedTargetWarmupSampleCount":
+        rendererOwnedState["targetWarmupSampleCount"] ?? 0,
+      "rendererOwnedTargetWarmupLastMs":
+        rendererOwnedState["targetWarmupLastMs"] ?? 0,
+      "rendererOwnedTargetWarmupP95Ms":
+        rendererOwnedState["targetWarmupP95Ms"] ?? 0,
       "rendererOwnedTargetWidth": rendererOwnedState["targetWidth"] ?? 0,
       "rendererOwnedTargetHeight": rendererOwnedState["targetHeight"] ?? 0,
       "rendererOwnedUploadStorageKind": rendererOwnedState["uploadStorageKind"] ?? "unavailable",
@@ -373,6 +384,12 @@ enum MacOSVideoRendererDiagnostics {
       "consecutiveDrawFailures": 0,
       "drawFailureCount": 0,
       "targetGeneration": 0,
+      "uploadIntervalP95Ms": 0,
+      "targetWarmupGeneration": 0,
+      "targetWarmupRemaining": 0,
+      "targetWarmupSampleCount": 0,
+      "targetWarmupLastMs": 0,
+      "targetWarmupP95Ms": 0,
       "targetWidth": 0,
       "targetHeight": 0,
       "uploadStorageKind": "unavailable",

@@ -109,6 +109,16 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
         player->renderer_owned_presentation_draw_failure_count;
     out->upload_count = player->renderer_owned_presentation_upload_count;
     out->upload_failure_count = player->renderer_owned_presentation_failure_count;
+    out->upload_interval_p95_ms =
+        player->renderer_owned_presentation_upload_interval_p95_ms;
+    out->target_warmup_generation =
+        player->renderer_owned_target_warmup_generation;
+    out->target_warmup_remaining =
+        player->renderer_owned_target_warmup_remaining;
+    out->target_warmup_sample_count =
+        player->renderer_owned_target_warmup_sample_count;
+    out->target_warmup_last_ms = player->renderer_owned_target_warmup_last_ms;
+    out->target_warmup_p95_ms = player->renderer_owned_target_warmup_p95_ms;
     out->last_successful_frame_pts_us =
         player->last_renderer_owned_frame_info_available
             ? player->last_renderer_owned_frame_info.pts_us
@@ -238,6 +248,15 @@ void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer*
   player->renderer_owned_presentation_failure_count = 0;
   player->renderer_owned_presentation_draw_failure_count = 0;
   player->renderer_owned_presentation_consecutive_failures = 0;
+  player->renderer_owned_presentation_upload_intervals_ns.clear();
+  player->renderer_owned_presentation_upload_interval_p95_ms = 0;
+  player->renderer_owned_target_warmup_generation =
+      player->presentation_target_generation;
+  player->renderer_owned_target_warmup_remaining = 0;
+  player->renderer_owned_target_warmup_sample_count = 0;
+  player->renderer_owned_target_warmup_last_ms = 0;
+  player->renderer_owned_target_warmup_p95_ms = 0;
+  player->renderer_owned_target_warmup_intervals_ns.clear();
   player->renderer_owned_presentation_last_error.clear();
   player->renderer_owned_presentation_first_upload_time = {};
   player->renderer_owned_presentation_last_upload_time = {};

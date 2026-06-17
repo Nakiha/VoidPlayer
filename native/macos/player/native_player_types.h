@@ -158,7 +158,13 @@ typedef struct VPMacOSNativeRendererOwnedPresentationState {
   uint64_t draw_failure_count;
   uint64_t upload_count;
   uint64_t upload_failure_count;
+  uint64_t upload_interval_p95_ms;
   uint64_t target_generation;
+  uint64_t target_warmup_generation;
+  uint64_t target_warmup_remaining;
+  uint64_t target_warmup_sample_count;
+  uint64_t target_warmup_last_ms;
+  uint64_t target_warmup_p95_ms;
   int32_t target_width;
   int32_t target_height;
   int32_t upload_storage_kind;

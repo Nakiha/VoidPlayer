@@ -3,6 +3,7 @@
 #include <flutter/encodable_value.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 
 namespace {
@@ -48,6 +49,10 @@ flutter::EncodableValue make_event_payload(const vr::RendererEvent& event,
         payload[flutter::EncodableValue("type")] =
             flutter::EncodableValue("trackError");
         break;
+    case vr::RendererEvent::Type::PlaybackClock:
+        payload[flutter::EncodableValue("type")] =
+            flutter::EncodableValue("playbackClock");
+        break;
     }
     payload[flutter::EncodableValue("requestId")] = flutter::EncodableValue(event.request_id);
     payload[flutter::EncodableValue("trackFileId")] =
@@ -56,8 +61,28 @@ flutter::EncodableValue make_event_payload(const vr::RendererEvent& event,
     payload[flutter::EncodableValue("dtsUs")] = flutter::EncodableValue(event.dts_us);
     payload[flutter::EncodableValue("targetPtsUs")] =
         flutter::EncodableValue(event.target_pts_us);
+    payload[flutter::EncodableValue("durationUs")] =
+        flutter::EncodableValue(event.duration_us);
+    payload[flutter::EncodableValue("isPlaying")] =
+        flutter::EncodableValue(event.playing);
+    payload[flutter::EncodableValue("playbackSpeed")] =
+        flutter::EncodableValue(event.playback_speed);
     payload[flutter::EncodableValue("errorCode")] = flutter::EncodableValue(event.error_code);
     return flutter::EncodableValue(std::move(payload));
+}
+
+bool payload_is_type(const flutter::EncodableValue& payload,
+                     const char* type) {
+    const auto* map = std::get_if<flutter::EncodableMap>(&payload);
+    if (!map) {
+        return false;
+    }
+    const auto it = map->find(flutter::EncodableValue("type"));
+    if (it == map->end()) {
+        return false;
+    }
+    const auto* value = std::get_if<std::string>(&it->second);
+    return value && *value == type;
 }
 
 } // namespace
@@ -124,6 +149,16 @@ void RendererEventBridge::Queue(const vr::RendererEvent& event) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!sink_) {
             ++drop_no_sink_count_;
+        }
+        if (event.type == vr::RendererEvent::Type::PlaybackClock) {
+            pending_events_.erase(
+                std::remove_if(
+                    pending_events_.begin(),
+                    pending_events_.end(),
+                    [](const flutter::EncodableValue& pending) {
+                        return payload_is_type(pending, "playbackClock");
+                    }),
+                pending_events_.end());
         }
         if (pending_events_.size() >= kMaxPendingRendererEvents) {
             pending_events_.pop_front();

@@ -7,6 +7,8 @@ final class MacOSNativeEventState {
   private var emitCount = 0
   private var dropNoSinkCount = 0
   private var sequence = 0
+  private var lastPlaybackClockEmitNs: UInt64 = 0
+  private let playbackClockIntervalNs: UInt64 = 33_000_000
 
   func onListen(_ events: @escaping FlutterEventSink) {
     eventSink = events
@@ -73,6 +75,41 @@ final class MacOSNativeEventState {
       "nativeCompositorMode": mode,
       "nativeCompositorReason": reason,
       "nativeCompositorFailure": failure,
+    ]
+    DispatchQueue.main.async {
+      eventSink(payload)
+    }
+  }
+
+  func emitPlaybackClock(
+    currentPtsUs: Int,
+    durationUs: Int,
+    isPlaying: Bool,
+    playbackSpeed: Double,
+    force: Bool = false
+  ) {
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    if !force,
+       lastPlaybackClockEmitNs != 0,
+       nowNs - lastPlaybackClockEmitNs < playbackClockIntervalNs {
+      return
+    }
+    lastPlaybackClockEmitNs = nowNs
+    guard let eventSink else {
+      dropNoSinkCount += 1
+      return
+    }
+    sequence += 1
+    emitCount += 1
+    let payload: [String: Any] = [
+      "schemaVersion": 1,
+      "sequence": sequence,
+      "type": "playbackClock",
+      "timestampUs": Int(nowNs / 1_000),
+      "ptsUs": currentPtsUs,
+      "durationUs": durationUs,
+      "isPlaying": isPlaying,
+      "playbackSpeed": playbackSpeed,
     ]
     DispatchQueue.main.async {
       eventSink(payload)

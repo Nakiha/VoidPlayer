@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -188,6 +189,36 @@ void main() {
   });
 
   group('MainWindowPlaybackCoordinator loop range step', () {
+    testWidgets('advances timeline from playback clock events', (tester) async {
+      final fixture = _PlaybackFixture();
+      addTearDown(fixture.dispose);
+
+      fixture.api.emitPlaybackClock(
+        ptsUs: 100000,
+        durationUs: 2000000,
+        isPlaying: true,
+      );
+      await tester.pump();
+
+      expect(fixture.store.value.currentPtsUs, greaterThanOrEqualTo(100000));
+      expect(fixture.store.value.isPlaying, isTrue);
+
+      await tester.pump(const Duration(milliseconds: 60));
+      final advancedPts = fixture.store.value.currentPtsUs;
+      expect(advancedPts, greaterThan(130000));
+
+      fixture.api.emitPlaybackClock(
+        ptsUs: advancedPts,
+        durationUs: 2000000,
+        isPlaying: false,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+
+      expect(fixture.store.value.currentPtsUs, advancedPts);
+      expect(fixture.store.value.isPlaying, isFalse);
+    });
+
     test('wraps forward step to loop start after crossing loop end', () async {
       final fixture = _PlaybackFixture(stepForwardPtsUs: 1600000);
       addTearDown(fixture.dispose);
@@ -320,6 +351,7 @@ class _PlaybackFixture {
 
   void dispose() {
     coordinator.dispose();
+    api.dispose();
     store.dispose();
     tracks.dispose();
   }
@@ -357,6 +389,8 @@ class _PlaybackPrefs implements PlaybackPreferences {
 
 class _PlaybackApi implements NativePlayerApi {
   final List<String> calls = [];
+  final StreamController<NativePlayerEvent> _events =
+      StreamController<NativePlayerEvent>.broadcast(sync: true);
   final int? stepForwardPtsUs;
   final int? stepBackwardPtsUs;
   int ptsUs = 1000000;
@@ -365,7 +399,32 @@ class _PlaybackApi implements NativePlayerApi {
   _PlaybackApi({this.stepForwardPtsUs, this.stepBackwardPtsUs});
 
   @override
-  Stream<NativePlayerEvent> get events => const Stream.empty();
+  Stream<NativePlayerEvent> get events => _events.stream;
+
+  void emitPlaybackClock({
+    required int ptsUs,
+    required int durationUs,
+    required bool isPlaying,
+    double playbackSpeed = 1.0,
+  }) {
+    _events.add(
+      NativePlayerEvent(
+        schemaVersion: 1,
+        sequence: 1,
+        rawType: 'playbackClock',
+        type: NativePlayerEventType.playbackClock,
+        timestampUs: 0,
+        ptsUs: ptsUs,
+        durationUs: durationUs,
+        isPlaying: isPlaying,
+        playbackSpeed: playbackSpeed,
+      ),
+    );
+  }
+
+  void dispose() {
+    unawaited(_events.close());
+  }
 
   @override
   Future<CreatePlayerResult> createPlayer({

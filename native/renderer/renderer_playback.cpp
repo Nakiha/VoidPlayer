@@ -3,39 +3,48 @@
 namespace vr {
 
 void Renderer::Impl::play() {
-    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    const auto plan = plan_renderer_play_command(initialized_, timeline_.playing());
-    if (!plan.execute) return;
-    if (plan.reset_seek && timeline_.seek()) {
-        timeline_.seek()->reset();
-    }
+    {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        const auto plan = plan_renderer_play_command(initialized_, timeline_.playing());
+        if (!plan.execute) return;
+        if (plan.reset_seek && timeline_.seek()) {
+            timeline_.seek()->reset();
+        }
 
-    apply_playback_decode_state_locked(plan.playback_active);
-    if (plan.play_clock) {
-        timeline_.playback().play();
+        apply_playback_decode_state_locked(plan.playback_active);
+        if (plan.play_clock) {
+            timeline_.playback().play();
+        }
+        timeline_.set_playing(plan.playing);
     }
-    timeline_.set_playing(plan.playing);
+    emit_playback_clock_event(true);
 }
 
 void Renderer::Impl::pause() {
-    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    const auto plan = plan_renderer_pause_command();
-    apply_playback_decode_state_locked(plan.playback_active);
-    if (plan.pause_clock) {
-        timeline_.playback().pause();
+    {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        const auto plan = plan_renderer_pause_command();
+        apply_playback_decode_state_locked(plan.playback_active);
+        if (plan.pause_clock) {
+            timeline_.playback().pause();
+        }
+        timeline_.set_playing(plan.playing);
     }
-    timeline_.set_playing(plan.playing);
+    emit_playback_clock_event(true);
 }
 
 void Renderer::Impl::seek(int64_t target_pts_us, SeekType type, int64_t request_id) {
-    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    std::unique_lock<std::mutex> lock(state_mutex_);
-    if (request_id >= 0) {
-        timeline_.begin_pending_seek_preview_event(request_id, target_pts_us);
+    {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        std::unique_lock<std::mutex> lock(state_mutex_);
+        if (request_id >= 0) {
+            timeline_.begin_pending_seek_preview_event(request_id, target_pts_us);
+        }
+        SeekCommandProcessor::seek(*this, lock, target_pts_us, type);
     }
-    SeekCommandProcessor::seek(*this, lock, target_pts_us, type);
+    emit_playback_clock_event(true);
 }
 
 void Renderer::Impl::set_loop_range(bool enabled, int64_t start_us, int64_t end_us) {
@@ -325,8 +334,11 @@ void Renderer::Impl::set_speed(double speed) {
         return;
     }
 
-    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    timeline_.playback().set_speed(speed);
+    {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        timeline_.playback().set_speed(speed);
+    }
+    emit_playback_clock_event(true);
 }
 
 bool Renderer::Impl::is_playing() const {

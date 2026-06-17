@@ -9,6 +9,7 @@ enum NativePlayerEventType {
   seekPreviewPresented,
   trackError,
   nativeCompositorState,
+  playbackClock,
   unknown,
 }
 
@@ -23,6 +24,9 @@ class NativePlayerEvent {
   final int? ptsUs;
   final int? dtsUs;
   final int? targetPtsUs;
+  final int? durationUs;
+  final bool isPlaying;
+  final double playbackSpeed;
   final int? errorCode;
   final bool nativeCompositorActive;
   final bool nativeCompositorRequested;
@@ -44,6 +48,9 @@ class NativePlayerEvent {
     this.ptsUs,
     this.dtsUs,
     this.targetPtsUs,
+    this.durationUs,
+    this.isPlaying = false,
+    this.playbackSpeed = 1.0,
     this.errorCode,
     this.nativeCompositorActive = false,
     this.nativeCompositorRequested = false,
@@ -73,6 +80,7 @@ class NativePlayerEvent {
         'seekPreviewPresented' => NativePlayerEventType.seekPreviewPresented,
         'trackError' => NativePlayerEventType.trackError,
         'nativeCompositorState' => NativePlayerEventType.nativeCompositorState,
+        'playbackClock' => NativePlayerEventType.playbackClock,
         _ => NativePlayerEventType.unknown,
       },
       timestampUs: _asInt(map['timestampUs']) ?? 0,
@@ -81,6 +89,9 @@ class NativePlayerEvent {
       ptsUs: _asInt(map['ptsUs']),
       dtsUs: _asInt(map['dtsUs']),
       targetPtsUs: _asInt(map['targetPtsUs']),
+      durationUs: _asInt(map['durationUs']),
+      isPlaying: _asBool(map['isPlaying']),
+      playbackSpeed: _asDouble(map['playbackSpeed']) ?? 1.0,
       errorCode: _asInt(map['errorCode']),
       nativeCompositorActive: _asBool(map['nativeCompositorActive']),
       nativeCompositorRequested: _asBool(map['nativeCompositorRequested']),
@@ -103,6 +114,12 @@ class NativePlayerEvent {
     if (value is bool) return value;
     if (value is num) return value != 0;
     return false;
+  }
+
+  static double? _asDouble(Object? value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    return null;
   }
 
   static String _asString(Object? value) {

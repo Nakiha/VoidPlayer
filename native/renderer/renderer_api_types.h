@@ -16,6 +16,7 @@ struct RendererEvent {
     enum class Type {
         SeekPreviewPresented,
         TrackError,
+        PlaybackClock,
     };
 
     Type type = Type::SeekPreviewPresented;
@@ -24,6 +25,9 @@ struct RendererEvent {
     int64_t pts_us = -1;
     int64_t dts_us = kNoTimestampUs;
     int64_t target_pts_us = -1;
+    int64_t duration_us = 0;
+    double playback_speed = 1.0;
+    bool playing = false;
     int error_code = 0;
 };
 

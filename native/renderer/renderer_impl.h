@@ -253,6 +253,7 @@ private:
     bool has_hevc_hw_track_locked() const;
     void emit_event(const RendererEvent& event);
     void emit_seek_preview_presented_events(const PresentDecision& decision);
+    void emit_playback_clock_event(bool force);
     void clear_event_callback();
     void apply_layout_locked(const LayoutState& state, uint64_t revision);
     bool consume_pending_layout_locked();
@@ -318,6 +319,7 @@ private:
     mutable std::mutex state_mutex_;
     RendererEventBus event_bus_;
     RendererPresentHistory present_history_;
+    std::chrono::steady_clock::time_point last_playback_clock_event_time_{};
 
 };
 

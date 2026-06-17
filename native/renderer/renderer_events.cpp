@@ -2,6 +2,12 @@
 
 namespace vr {
 
+namespace {
+
+constexpr auto kPlaybackClockEventInterval = std::chrono::milliseconds(33);
+
+} // namespace
+
 void Renderer::Impl::emit_event(const RendererEvent& event) {
     event_bus_.emit(event, shutting_down_);
 }
@@ -46,6 +52,28 @@ void Renderer::Impl::emit_seek_preview_presented_events(const PresentDecision& d
         event.target_pts_us = track_event.target_pts_us;
         emit_event(event);
     }
+}
+
+void Renderer::Impl::emit_playback_clock_event(bool force) {
+    RendererEvent event;
+    event.type = RendererEvent::Type::PlaybackClock;
+
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        const auto now = std::chrono::steady_clock::now();
+        if (!force &&
+            last_playback_clock_event_time_.time_since_epoch().count() != 0 &&
+            now - last_playback_clock_event_time_ < kPlaybackClockEventInterval) {
+            return;
+        }
+        last_playback_clock_event_time_ = now;
+        event.pts_us = timeline_.playback().clock().current_pts_us();
+        event.duration_us = track_controller_.effective_duration_us();
+        event.playing = timeline_.playing();
+        event.playback_speed = timeline_.playback().clock().speed();
+    }
+
+    emit_event(event);
 }
 
 } // namespace vr

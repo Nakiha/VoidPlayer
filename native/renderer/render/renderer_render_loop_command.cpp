@@ -41,10 +41,14 @@ void RendererRenderLoopCommandProcessor::run_body(
             if (lifecycle_lock.owns_lock()) {
                 std::unique_lock<std::mutex> lock(state_mutex_);
                 if (context.hooks.apply_deferred_paused_hevc_seek_locked(lock)) {
+                    lock.unlock();
+                    context.hooks.emit_playback_clock_event(true);
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
                 if (context.hooks.apply_loop_range_locked(lock)) {
+                    lock.unlock();
+                    context.hooks.emit_playback_clock_event(true);
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue;
                 }
@@ -218,6 +222,7 @@ void RendererRenderLoopCommandProcessor::run_body(
         {
             auto now = std::chrono::steady_clock::now();
             int64_t pts = timeline_.playback().clock().current_pts_us();
+            context.hooks.emit_playback_clock_event(false);
             const auto diagnostic =
                 loop_driver_.take_diagnostic_decision(now, pts);
             if (diagnostic.should_emit) {
@@ -295,20 +300,27 @@ void RendererRenderLoopCommandProcessor::run_body(
         // Frame-driven clock: when buffer is empty, clamp clock to the end of
         // the last presented frame so PTS does not run ahead.
         {
-            std::lock_guard<std::mutex> lock(state_mutex_);
-            const auto eof_clamp =
-                track_controller_.empty_buffer_eof_clamp(
-                    present_history_.snapshot());
-            if (eof_clamp.all_active_buffers_empty &&
-                eof_clamp.max_end_pts_us > 0) {
-                int64_t current = timeline_.playback().clock().current_pts_us();
-                if (current > eof_clamp.max_end_pts_us) {
-                    timeline_.playback().clock().seek(eof_clamp.max_end_pts_us);
+            bool settled_eof = false;
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                const auto eof_clamp =
+                    track_controller_.empty_buffer_eof_clamp(
+                        present_history_.snapshot());
+                if (eof_clamp.all_active_buffers_empty &&
+                    eof_clamp.max_end_pts_us > 0) {
+                    int64_t current = timeline_.playback().clock().current_pts_us();
+                    if (current > eof_clamp.max_end_pts_us) {
+                        timeline_.playback().clock().seek(eof_clamp.max_end_pts_us);
+                    }
+                    if (context.hooks.settle_eof_locked(eof_clamp.max_end_pts_us)) {
+                        settled_eof = true;
+                    }
                 }
-                if (context.hooks.settle_eof_locked(eof_clamp.max_end_pts_us)) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    continue;
-                }
+            }
+            if (settled_eof) {
+                context.hooks.emit_playback_clock_event(true);
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
             }
         }
 

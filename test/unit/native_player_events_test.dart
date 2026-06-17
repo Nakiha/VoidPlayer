@@ -37,4 +37,23 @@ void main() {
     expect(event.nativeCompositorMode, 'native-compositor-edr');
     expect(event.nativeCompositorReason, 'auto-hdr-track');
   });
+
+  test('native event parser reads playback clock state', () {
+    final event = NativePlayerEvent.fromMap(const {
+      'schemaVersion': 1,
+      'sequence': 9,
+      'type': 'playbackClock',
+      'timestampUs': 456,
+      'ptsUs': 123000,
+      'durationUs': 2000000,
+      'isPlaying': true,
+      'playbackSpeed': 1.5,
+    });
+
+    expect(event.type, NativePlayerEventType.playbackClock);
+    expect(event.ptsUs, 123000);
+    expect(event.durationUs, 2000000);
+    expect(event.isPlaying, isTrue);
+    expect(event.playbackSpeed, 1.5);
+  });
 }

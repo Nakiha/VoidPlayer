@@ -32,6 +32,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var flutterTextureFrameAvailableSkippedWhilePlayingCount = 0
   private var compositorVideoTextureRefreshCount = 0
   private var compositorVideoTextureRefreshSkippedWhilePlayingCount = 0
+  private var playbackSpeed = 1.0
   private var profilerSummaryTimer: DispatchSourceTimer?
   private var screenChangeObserver: NSObjectProtocol?
 
@@ -153,7 +154,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       transport.setAudibleTrack(arguments: call.arguments, player: nativePlayer)
       result(nil)
     case "setSpeed":
+      let requestedSpeed = MacOSFlutterArguments.doubleArg(call.arguments, "speed") ?? playbackSpeed
+      playbackSpeed = max(0.01, requestedSpeed)
       transport.setSpeed(arguments: call.arguments, player: nativePlayer)
+      emitPlaybackClock(force: true)
       result(nil)
     case "createPlayer":
       result(createPlayer(arguments: call.arguments))
@@ -195,9 +199,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         userData: Unmanaged.passUnretained(self).toOpaque(),
         presentationState: presentationState
       )
+      emitPlaybackClock(force: true)
       result(nil)
     case "pause":
       playback.pause(player: nativePlayer)
+      emitPlaybackClock(force: true)
       result(nil)
     case "seek":
       let targetPtsUs = MacOSFlutterArguments.intArg(call.arguments, "ptsUs") ?? 0
@@ -213,6 +219,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         result(error)
         return
       }
+      emitPlaybackClock(force: true)
       result(nil)
     case "stepForward":
       presentation.cancelPendingLayoutRefreshes()
@@ -220,6 +227,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         result(error)
         return
       }
+      emitPlaybackClock(force: true)
       result(nil)
     case "stepBackward":
       presentation.cancelPendingLayoutRefreshes()
@@ -227,6 +235,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         result(error)
         return
       }
+      emitPlaybackClock(force: true)
       result(nil)
     case "currentPts":
       result(transport.currentPts(player: nativePlayer, presentationState: presentationState))
@@ -626,6 +635,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     if let color = MacOSFlutterArguments.uint32Arg(arguments, "color") {
       viewportBackgroundColor = color
     }
+    playbackSpeed = 1.0
     let result = lifecycle.create(
       arguments: arguments,
       playback: playback,
@@ -641,16 +651,28 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nativeCompositor?.setViewportBackgroundColor(viewportBackgroundColor)
     }
     nativeCompositor?.setVideoTexture(texture)
+    emitPlaybackClock(force: true)
     return result
   }
 
   private func destroyPlayer() {
+    playbackSpeed = 1.0
     texture?.clearStableDisplaySnapshot()
     presentation.resetLayout()
     lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
     MacOSPresentationConfiguration.resetForNoMedia()
     nativeCompositor?.setVideoTexture(nil)
     ensureNativeCompositorMatchesCurrentConfiguration()
+  }
+
+  private func emitPlaybackClock(force: Bool = false) {
+    nativeEvents.emitPlaybackClock(
+      currentPtsUs: transport.currentPts(player: nativePlayer, presentationState: presentationState),
+      durationUs: tracks.isEmpty ? 0 : tracks.currentDurationUs,
+      isPlaying: playback.currentIsPlaying(player: nativePlayer),
+      playbackSpeed: playbackSpeed,
+      force: force
+    )
   }
 
   private func destroyPlayerForWindowClose() {
@@ -952,6 +974,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
     let startNs = DispatchTime.now().uptimeNanoseconds
     let nativePlaying = playback.syncPlayingState(player: nativePlayer)
+    if nativePlaying {
+      emitPlaybackClock()
+    }
     frameCallbackProfiler.recordMainStart(enqueueNs: enqueueNs, startNs: startNs)
     if let generation = currentRendererOwnedTargetGeneration() {
       frameCallbackProfiler.recordTargetGeneration(generation, nowNs: startNs)

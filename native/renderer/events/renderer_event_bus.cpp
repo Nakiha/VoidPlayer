@@ -48,6 +48,12 @@ void RendererEventBus::emit(const RendererEvent& event,
         spdlog::error("[Renderer] emit trackError file_id={} error_code={:#x}",
                       event.track_file_id,
                       static_cast<unsigned>(event.error_code));
+    } else if (event.type == RendererEvent::Type::PlaybackClock) {
+        spdlog::debug("[Renderer] emit playbackClock pts={:.3f}s duration={:.3f}s playing={} speed={:.3f}",
+                      event.pts_us / 1e6,
+                      event.duration_us / 1e6,
+                      event.playing,
+                      event.playback_speed);
     }
     callback(event);
 }

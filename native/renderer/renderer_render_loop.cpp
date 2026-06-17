@@ -118,6 +118,9 @@ void Renderer::Impl::render_loop() noexcept {
             [this](const PresentDecision& decision) {
                 emit_seek_preview_presented_events(decision);
             },
+            [this](bool force) {
+                emit_playback_clock_event(force);
+            },
             [this](int64_t end_pts_us) {
                 return settle_eof_locked(end_pts_us);
             },

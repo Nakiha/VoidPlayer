@@ -34,6 +34,7 @@ struct RendererRenderLoopCommandHooks {
     std::function<void()> mark_paused_hevc_seek_preview_drawn_locked;
     std::function<void(const PresentDecision& decision)>
         emit_seek_preview_presented_events;
+    std::function<void(bool force)> emit_playback_clock_event;
     // Requires state_mutex held.
     std::function<bool(int64_t end_pts_us)> settle_eof_locked;
 };

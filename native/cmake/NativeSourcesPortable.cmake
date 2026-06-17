@@ -4,6 +4,7 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/common/logging.cpp"
     "${VOID_NATIVE_DIR}/playback/playback_controller.cpp"
     "${VOID_NATIVE_DIR}/renderer/clock.cpp"
+    "${VOID_NATIVE_DIR}/renderer/color/color_reference.cpp"
     "${VOID_NATIVE_DIR}/renderer/buffer/bidi_ring_buffer.cpp"
     "${VOID_NATIVE_DIR}/renderer/buffer/track_buffer.cpp"
     "${VOID_NATIVE_DIR}/renderer/decode/decoded_frame_sink.cpp"

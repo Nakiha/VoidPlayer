@@ -50,5 +50,5 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
     if (color.a <= 0.0) {
         discard;
     }
-    return color;
+    return map_sdr_ui_to_output(color);
 }

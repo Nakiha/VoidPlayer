@@ -106,6 +106,7 @@ void RendererEventBridge::SetSink(
     {
         std::lock_guard<std::mutex> lock(mutex_);
         sink_ = std::move(sink);
+        ++listen_count_;
     }
     Drain();
 }
@@ -121,6 +122,9 @@ void RendererEventBridge::Queue(const vr::RendererEvent& event) {
     auto payload = make_event_payload(event, sequence);
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (!sink_) {
+            ++drop_no_sink_count_;
+        }
         if (pending_events_.size() >= kMaxPendingRendererEvents) {
             pending_events_.pop_front();
             spdlog::warn("[RendererEventBridge] renderer event queue overflow, "
@@ -130,6 +134,57 @@ void RendererEventBridge::Queue(const vr::RendererEvent& event) {
     }
     spdlog::debug("[RendererEventBridge] queued renderer event request_id={} file_id={}",
                   event.request_id, event.track_file_id);
+    if (event_hwnd_) {
+        PostMessage(event_hwnd_, kVideoRendererEventDrainMessage, 0, 0);
+    }
+}
+
+void RendererEventBridge::QueueNativeCompositorState(
+    bool active,
+    bool requested,
+    bool edr_enabled,
+    const std::string& mode,
+    const std::string& phase,
+    int64_t serial,
+    const std::string& reason,
+    const std::string& failure) {
+    const int64_t sequence =
+        sequence_.fetch_add(1, std::memory_order_relaxed) + 1;
+    flutter::EncodableMap payload;
+    payload[flutter::EncodableValue("schemaVersion")] =
+        flutter::EncodableValue(1);
+    payload[flutter::EncodableValue("sequence")] =
+        flutter::EncodableValue(sequence);
+    payload[flutter::EncodableValue("timestampUs")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count()));
+    payload[flutter::EncodableValue("type")] =
+        flutter::EncodableValue("nativeCompositorState");
+    payload[flutter::EncodableValue("nativeCompositorActive")] =
+        flutter::EncodableValue(active);
+    payload[flutter::EncodableValue("nativeCompositorRequested")] =
+        flutter::EncodableValue(requested);
+    payload[flutter::EncodableValue("nativeCompositorEDREnabled")] =
+        flutter::EncodableValue(edr_enabled);
+    payload[flutter::EncodableValue("nativeCompositorMode")] =
+        flutter::EncodableValue(mode);
+    payload[flutter::EncodableValue("nativeCompositorPhase")] =
+        flutter::EncodableValue(phase);
+    payload[flutter::EncodableValue("nativeCompositorSerial")] =
+        flutter::EncodableValue(serial);
+    payload[flutter::EncodableValue("nativeCompositorReason")] =
+        flutter::EncodableValue(reason);
+    payload[flutter::EncodableValue("nativeCompositorFailure")] =
+        flutter::EncodableValue(failure);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!sink_) ++drop_no_sink_count_;
+        if (pending_events_.size() >= kMaxPendingRendererEvents) {
+            pending_events_.pop_front();
+        }
+        pending_events_.emplace_back(std::move(payload));
+    }
     if (event_hwnd_) {
         PostMessage(event_hwnd_, kVideoRendererEventDrainMessage, 0, 0);
     }
@@ -147,6 +202,16 @@ void RendererEventBridge::Drain() {
             pending_events_.pop_front();
             spdlog::debug("[RendererEventBridge] draining renderer event");
             sink_->Success(event);
+            ++emit_count_;
         }
     }
+}
+
+RendererEventBridge::Diagnostics RendererEventBridge::diagnostics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return {
+        listen_count_,
+        emit_count_,
+        drop_no_sink_count_,
+    };
 }

@@ -20,6 +20,7 @@ namespace {
 struct RendererPresentCompletionContext {
     std::mutex* state_mutex = nullptr;
     RendererLayoutState* layout = nullptr;
+    RendererPresentHistory* history = nullptr;
     PresentationMetricsStore* metrics = nullptr;
     RendererLoopDriver* loop = nullptr;
     std::atomic<bool>* shutting_down = nullptr;
@@ -38,7 +39,10 @@ void finish_presented_draw(
     bool drew,
     const char* frame_failure_error,
     uint64_t backend_us,
-    const PresentationBackendFrameInfo* completed_frame_info) {
+    const PresentationBackendFrameInfo* completed_frame_info,
+    bool source_cache_published = false,
+    uint64_t source_cache_ring_generation = 0,
+    uint64_t source_cache_frame_generation = 0) {
     if (context.shutting_down->load(std::memory_order_acquire)) {
         return;
     }
@@ -57,6 +61,12 @@ void finish_presented_draw(
         }
         if (layout_commit.marked_presented) {
             context.metrics->note_layout_presented();
+        }
+        if (source_cache_published && context.history) {
+            context.history->set_source_cache_published(
+                snapshot.decision,
+                source_cache_ring_generation,
+                source_cache_frame_generation);
         }
         context.loop->mark_preview_presented(!stale_layout_after_draw);
     } else {
@@ -121,6 +131,7 @@ RendererPresentCompletionContext completion_context(
     return RendererPresentCompletionContext{
         &context.state_mutex,
         &context.layout,
+        &context.history,
         &context.metrics,
         &context.loop,
         &context.shutting_down,
@@ -181,7 +192,10 @@ RendererPresentationSubmitDispatchHooks dispatch_hooks(
                 completion.draw.drew,
                 completion.draw.failure_error.c_str(),
                 completion.draw.backend_us,
-                nullptr);
+                nullptr,
+                completion.draw.source_cache_published,
+                completion.draw.source_cache_ring_generation,
+                completion.draw.source_cache_frame_generation);
         },
     };
 }

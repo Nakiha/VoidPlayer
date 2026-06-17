@@ -158,6 +158,16 @@ class _CloseHandler with WindowListener {
       log.warning('[Startup] window state save failed', error, stack);
     }
     try {
+      await windowManager.hide();
+      log.info('[Startup] main window hidden before shutdown');
+    } catch (error, stack) {
+      log.warning(
+        '[Startup] main window hide before shutdown failed',
+        error,
+        stack,
+      );
+    }
+    try {
       await MainWindowShutdownRegistry.closeGracefully();
     } catch (error, stack) {
       log.severe('[Startup] main window shutdown failed', error, stack);

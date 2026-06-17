@@ -242,6 +242,49 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<void> requestNativeCompositorFlutterFrame({
+    required String reason,
+  }) async {
+    calls.add('requestNativeCompositorFlutterFrame:$reason');
+  }
+
+  @override
+  Future<void> ackNativeCompositorFlutterState({
+    required int serial,
+    required bool transparentViewport,
+  }) async {
+    calls.add('ackNativeCompositorFlutterState:$serial:$transparentViewport');
+  }
+
+  @override
+  Future<void> debugFailNativeCompositor({required String reason}) async {
+    calls.add('debugFailNativeCompositor:$reason');
+  }
+
+  @override
+  Future<void> debugSimulateWindowsDeviceLoss({
+    required String target,
+    required String reason,
+  }) async {
+    calls.add('debugSimulateWindowsDeviceLoss:$target:$reason');
+  }
+
+  @override
+  Future<void> resetNativePerfCounters() async {
+    calls.add('resetNativePerfCounters');
+  }
+
+  @override
+  Future<void> beginNativeInteractionSample({required String label}) async {
+    calls.add('beginNativeInteractionSample:$label');
+  }
+
+  @override
+  Future<void> endNativeInteractionSample({required String label}) async {
+    calls.add('endNativeInteractionSample:$label');
+  }
+
+  @override
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,

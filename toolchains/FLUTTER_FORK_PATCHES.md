@@ -43,6 +43,11 @@ Changed Flutter files through `69b3172a210`:
 | `engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterDartProject.mm` | Adds VoidPlayer compositor configuration plumbing. |
 | `engine/src/flutter/shell/platform/embedder/embedder.cc` | Adds temporary HDR compositor diagnostics for Metal backing-store wrapping. |
 | `engine/src/flutter/shell/platform/embedder/embedder_external_view_embedder.cc` | Adds temporary HDR compositor diagnostics for external-view submit/target flow. |
+| `engine/src/flutter/shell/platform/windows/public/flutter_windows.h` | Adds the Windows surface-export C ABI, including compositor-owned frame request and state diagnostics. |
+| `engine/src/flutter/shell/platform/windows/flutter_windows.cc` | Exposes Windows surface-export mode, request, state, acquire, and release entrypoints. |
+| `engine/src/flutter/shell/platform/windows/flutter_windows_view.h` / `.cc` | Keeps compositor-owned export frames schedulable without switching to mirror or HWND present. |
+| `engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.h` / `.cc` | Implements the shared D3D11 export ring and request/publish/backpressure diagnostics. |
+| `engine/src/flutter/shell/platform/windows/compositor_opengl_unittests.cc` / `flutter_windows_view_unittests.cc` | Covers export generation/state and compositor-owned request scheduling. |
 
 `voidplayer-flutter-3.44.1-hdr.2` also stabilizes the exported macOS front
 surface list: `FlutterSurfaceManager.frontSurfaces` now returns an immutable

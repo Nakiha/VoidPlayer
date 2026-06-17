@@ -58,6 +58,9 @@ class TextureManager;
 class AudioCoordinator;
 class SeekCoordinator;
 class AnalysisOverlayRenderer;
+struct SharedFp16TextureSnapshot;
+struct SourceCacheTrackDescriptor;
+struct SharedSourceCacheBundleSnapshot;
 
 class Renderer::Impl {
 public:
@@ -118,15 +121,18 @@ public:
 
     /// Get per-track performance stats snapshot (thread-safe).
     std::vector<TrackPerfStats> track_perf_stats() const;
+    RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
     PresentationBackendMetrics presentation_backend_metrics() const;
     D3D11BackendMetrics d3d_backend_metrics() const;
     PresentationBackendStats presentation_backend_stats() const;
+    PresentationBackendDiagnostics presentation_backend_diagnostics() const;
     std::string presentation_backend_last_error() const;
     bool copy_last_presentation_frame_info(PresentationBackendFrameInfo* out) const;
     RendererGpuMemoryStats gpu_memory_stats() const;
 
     bool d3d_device_lost() const;
     long d3d_device_removed_reason() const;
+    bool recover_presentation_device_loss(const char* reason, long removed_reason);
     RendererDeviceState device_state() const;
 
     /// Set per-track sync offset in microseconds.
@@ -162,6 +168,17 @@ public:
     /// The returned texture is AddRef'd and must be released by the caller.
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
     void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
+    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
+    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
+    void set_shared_fp16_frame_callback(std::function<void()> cb);
+    bool configure_source_cache(
+        const std::vector<SourceCacheTrackDescriptor>& descriptors);
+    void clear_source_cache(const char* reason);
+    bool acquire_source_cache_bundle(
+        SharedSourceCacheBundleSnapshot& snapshot) const;
+    void release_source_cache_bundle(
+        int buffer_index, uint64_t ring_generation) const;
+    void set_source_cache_frame_callback(std::function<void()> cb);
 
     /// Resize the offscreen shared texture (headless mode only).
     /// Stores pending dimensions; render loop applies at controlled rate.
@@ -189,6 +206,7 @@ public:
     /// Request an immediate redraw of the currently presentable frame.
     /// Returns false when the renderer cannot issue a refresh command.
     bool request_frame_refresh(const char* reason);
+    bool update_presentation_sdr_white_level(double nits);
     bool draw_current_frame_sources(PresentationBackend& backend,
                                     PresentationSourceFrameTarget* targets,
                                     size_t target_count,
@@ -268,10 +286,11 @@ private:
     /// Caller must hold state_mutex_.
     bool settle_eof_locked(int64_t max_presented_end_us);
 
-    /// Enter the terminal device-lost state. Automatic recovery is not
-    /// implemented yet, so this stops rendering and leaves teardown to shutdown.
+    /// Enter the terminal device-lost state after recovery has failed.
     /// Caller must hold state_mutex_.
     void enter_terminal_device_lost_locked(const char* operation);
+    /// Caller must hold state_mutex_.
+    bool recover_or_enter_terminal_device_lost_locked(const char* operation);
     /// Caller must hold state_mutex_.
     void enter_terminal_render_loop_error_locked(const char* reason);
     int add_track_internal(const std::string& video_path,

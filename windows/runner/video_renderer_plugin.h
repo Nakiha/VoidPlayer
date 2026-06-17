@@ -16,6 +16,10 @@
 #include "renderer_event_bridge.h"
 #include "viewport_capture_service.h"
 #include "window_capture_service.h"
+#include "windows/presentation/windows_display_resolver.h"
+#include "windows/presentation/windows_device_recovery.h"
+#include "windows/presentation/windows_presentation_policy.h"
+#include "windows_native_compositor.h"
 
 #include <cstdint>
 #include <functional>
@@ -31,12 +35,15 @@ struct PlatformTaskState;
 
 class VideoRendererPlugin : public flutter::Plugin {
 public:
-    static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar);
+    static void RegisterWithRegistrar(
+        flutter::PluginRegistrarWindows* registrar,
+        FlutterDesktopPluginRegistrarRef core_registrar);
 
     VideoRendererPlugin(flutter::PluginRegistrarWindows* registrar,
                         flutter::TextureRegistrar* texture_registrar,
                         IDXGIAdapter* dxgi_adapter,
-                        HWND window_handle);
+                        HWND window_handle,
+                        void* flutter_view_handle);
     ~VideoRendererPlugin() override;
 
     VideoRendererPlugin(const VideoRendererPlugin&) = delete;
@@ -88,6 +95,38 @@ private:
     void SetViewportBackgroundColor(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void SetNativeCompositorViewportRect(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void RequestNativeCompositorFlutterFrame(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void PrepareNativeCompositorSourceCache(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void ClearNativeCompositorSourceCache(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void SetNativeAnalysisOverlay(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void AckNativeCompositorFlutterState(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void DebugFailNativeCompositor(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void DebugSimulateWindowsDeviceLoss(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void ResetNativePerfCounters(
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void BeginNativeInteractionSample(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void EndNativeInteractionSample(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void SetSpeed(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
@@ -131,6 +170,10 @@ private:
     void SetEventSink(std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
     void ClearEventSink();
     void QueueRendererEvent(const vr::RendererEvent& event);
+    void ScheduleDisplayPolicyRefresh();
+    vr::WindowsDisplayProbeSnapshot RefreshPresentationPolicy(
+        const char* trigger,
+        bool allow_transient_hold = true);
 
     std::shared_ptr<vr::NativePlayer> player_;
     FlutterTextureBridge texture_bridge_;
@@ -147,4 +190,15 @@ private:
     int window_proc_delegate_id_ = -1;
     std::shared_ptr<PlatformTaskState> platform_task_state_;
     HWND window_handle_ = nullptr;
+    vr::WindowsDisplayResolver display_resolver_;
+    vr::WindowsDisplayProbeTracker display_probe_tracker_;
+    vr::WindowsPresentationPolicy presentation_policy_;
+    std::unique_ptr<WindowsNativeCompositor> native_compositor_;
+    std::string native_compositor_source_signature_;
+    vr::WindowsDeviceRecoveryDiagnostics device_recovery_;
+    void* flutter_view_handle_ = nullptr;
+    std::string presentation_sdr_white_level_status_ = "nominal-default";
+    std::string presentation_request_;
+    uint64_t presentation_locked_display_generation_ = 0;
+    int64_t presentation_locked_sdr_white_level_milli_nits_ = 80000;
 };

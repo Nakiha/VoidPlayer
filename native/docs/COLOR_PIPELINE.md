@@ -7,9 +7,12 @@ selected platform presentation target.
 
 The historical production target is SDR BGRA/RGB for a Flutter texture. The
 macOS HDR exploration path adds a native compositor target that outputs extended
-linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows HDR is not active
-yet, but the shared metadata and strategy constants keep a place for a later
-D3D/scRGB or HDR10 swapchain target.
+linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows Auto presents
+SDR media through a BGRA8 DComp target and promotes PQ/HLG sessions on an HDR
+output to an FP16/scRGB target using linear BT.709 through the locked-engine
+DirectComposition route. If that HDR output lives on a different adapter, the
+renderer stays on the producer adapter and the compositor migrates only the
+output device through the diagnosed cross-adapter transport.
 
 ## Shared Output Contract
 
@@ -31,7 +34,7 @@ Concrete presentation targets are platform-specific:
 
 | Platform | Backend target | Notes |
 | --- | --- | --- |
-| Windows | D3D11 BGRA shared texture / optional swap chain | Current path is SDR. Future HDR target should be modeled as scRGB/PQ/HDR10 without changing shared decode metadata. |
+| Windows | D3D11 BGRA compatibility texture, shared RGBA16F video/source rings, and locked-engine DComp dual target | Auto selects BGRA8 SDR or FP16 scRGB native compositor targets; Flutter Texture SDR is not an allowed fallback. |
 | macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
 | macOS EDR | Native compositor `RGBA16Float` `CAMetalLayer` | Uses `extendedLinearDisplayP3` and composites native video with the exported Flutter texture. |
 
@@ -136,9 +139,47 @@ Windows samples shader inputs through D3D11 SRVs:
 - `shaders/multitrack.hlsl` includes `shaders/color_pipeline.hlsl` for range,
   matrix, primaries, transfer, tone mapping, and final BGRA output.
 
-The Windows headless backend currently publishes a BGRA shared texture to
-Flutter. That concrete DXGI target is a Windows backend detail, not the shared
-native color contract.
+The compatibility pass tone-maps to the BGRA shared texture used by Flutter or
+the native SDR compositor. In native-compositor modes the same
+prepared source snapshot is first rendered to
+`R16G16B16A16_FLOAT`:
+
+- linear BT.709 primaries
+- `1.0 = 80 nits`
+- SDR/UI colors use sRGB decode and `SDRWhiteLevel / 80`
+- PQ uses absolute nits divided by 80
+- HLG uses the shared headroom/reference-white policy on the 80-nit scale
+- FP16 values are not clamped to the SDR range
+
+The BGRA compatibility pass rerenders from source rather than tone-mapping the
+mixed FP16 texture. This keeps existing SDR layout/color canaries stable.
+
+In native-compositor mode, the renderer publishes the same linear
+BT.709 scRGB video contract through a triple shared FP16 ring. The final DComp
+shader samples the locked engine's full-window premultiplied BGRA Flutter
+surface, restores straight sRGB for transfer decoding, re-premultiplies in
+linear light, applies `SDRWhiteLevel / 80`, and composites it source-over the
+video. Transparent viewport pixels reveal video without color keys or a
+rectangular native hole. The final swap-chain capture must preserve video
+values above `1.0` and Flutter alpha-edge behavior. Auto SDR instead samples
+the source-rerendered BGRA compatibility texture into a BGRA8/G22 target.
+Auto HDR uses FP16/G10 scRGB for PQ/HLG media on a resolved HDR output. Matching
+adapters consume the producer leases directly; mismatched adapters bridge the
+same BGRA/scRGB inputs through row-major shared textures and GPU copies without
+changing the color math. Windows does not submit HDR10 metadata, custom ICC
+curves, or LUT corrections; Advanced Color and calibration remain
+system-managed.
+
+For source projection, each active track is rendered with identity layout into
+its source-sized `R16G16B16A16_FLOAT` texture from the same
+`PreparedDrawResources` snapshot. The source pass does not bake analysis
+overlays. DComp samples up to four source textures, applies the Dart/macOS
+projection contract, fills missing/out-of-range UVs with the linearized
+viewport background, composites retained video-space overlay primitives, then
+composites the Flutter surface. Overlay colors are sRGB-decoded and scaled by
+the same SDR white contract on scRGB targets, while SDR targets keep the BGRA
+compatibility contract. This preserves the order
+`source video -> analysis overlay -> Flutter UI`.
 
 ## macOS Metal / CVPixelBuffer Path
 
@@ -213,6 +254,28 @@ Changing curves requires golden or capture tests that compare software and
 hardware output for the same source.
 
 ## Parity Gates
+
+Current Windows preservation evidence:
+
+- `windows_d3d11_color_layout_parity_smoke` drives synthetic
+  `RendererDrawSnapshot` inputs through the real D3D11 presentation backend,
+  captures the renderer-owned BGRA output, and compares it with a CPU
+  reference. It covers BGRA channel order, NV12 and planar YUV420
+  full/limited range, P010 high-bit samples, odd dimensions, padded strides,
+  aspect-fit background bars, and split/order layout.
+- `windows_d3d11_fp16_scrgb_smoke` reads back RGBA16F and BGRA outputs from the
+  same draw. It covers SDR white scaling, PQ/HLG, P010, BT.2020 conversion,
+  values above `1.0`, odd/padded storage, background/split/order, overlay hook
+  participation, and source-rerender SDR compatibility.
+- `windows_d3d11_source_projection_smoke` executes the DComp projection shader
+  against four FP16 source textures, verifies deterministic source order, and
+  proves values above `1.0` survive projection. `[windows_source_cache]` and
+  `[windows_source_projection]` tests cover bundle leases/generations, the
+  384 MiB policy, split/pan/zoom, missing sources, and background fallback.
+- `windows_d3d11_retained_overlay_layer_smoke` validates the Windows retained
+  overlay layer contract: dirty primitive packages rebuild once, projection
+  ticks reuse the GPU buffer, and high-refresh gates fail if overlay raster
+  occurs without reuse.
 
 Current macOS release-readiness evidence:
 

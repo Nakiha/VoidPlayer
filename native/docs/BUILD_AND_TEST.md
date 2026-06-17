@@ -114,6 +114,13 @@ Windows CI 还会跑 release compliance notice smoke：
 python3.12 scripts/dev/check_release_compliance.py
 ```
 
+Windows `pr-fast` also executes the safe `[windows_display]` resolver tests,
+`[windows_cross_adapter]` capability tests, and
+both `windows_d3d11_color_layout_parity_smoke` and
+`windows_d3d11_fp16_scrgb_smoke`. GitHub-hosted Windows explicitly allows the
+documented WARP fallback for D3D11 backend contract canaries; local desktop
+evidence should use the real hardware adapter.
+
 macOS CI 的 native fast gate uses the hosted-runner CTest profile：
 
 ```bash
@@ -181,6 +188,56 @@ Windows host before closing macOS release readiness:
 
 ```powershell
 python dev.py gate windows-preservation
+```
+
+The native portion includes
+`windows_d3d11_color_layout_parity_smoke` plus
+`windows_d3d11_fp16_scrgb_smoke` and
+`windows_d3d11_dcomp_flutter_composite_smoke`. They capture the real D3D11 BGRA
+and RGBA16F outputs for SDR layout parity, FP16/scRGB transfer/white-level
+behavior, and full-frame Flutter premultiplied-alpha composition.
+Run them directly with:
+
+```powershell
+ctest --test-dir build/native/standalone/windows-msvc -C Release `
+  -R "windows_d3d11_(color_layout_parity|fp16_scrgb|dcomp_flutter_composite)_smoke" `
+  --output-on-failure
+```
+
+`windows-preservation` first rebuilds the runner with the locked Windows local
+engine and runs `native_compositor_auto_sdr.csv`. The same runner then executes
+forced scRGB DComp/source-projection, native SDR, and fail-closed compositor
+smokes without another build.
+
+On a desktop with Windows HDR enabled, run the hardware-only Auto transition
+gate:
+
+```powershell
+python dev.py gate windows-hdr-auto
+```
+
+It generates SDR and HLG fixtures and verifies live native SDR -> scRGB ->
+native SDR transitions. Toggling Windows HDR while the process remains open is
+still a manual check because the test protocol does not mutate system display
+settings.
+
+On a multi-adapter desktop, run the cross-adapter local gate before merging
+output migration or display calibration changes:
+
+```powershell
+python dev.py gate windows-cross-adapter-local
+```
+
+It runs the safe cross-adapter native tests and an Auto SDR local-engine UI
+smoke. The gate records transport diagnostics and same-adapter fallback on
+single-GPU machines; multi-GPU/HDR evidence must still be reviewed from
+diagnostics/logs because CI cannot synthesize a real output-adapter mismatch.
+
+Install packaged local-engine outputs with:
+
+```powershell
+scripts/ci/bootstrap_flutter_windows_engine.ps1 -Mode release `
+  -ArtifactDirectory build/flutter-engine-artifacts
 ```
 
 Add targeted Windows UI scripts when touching seek, loop, viewport/layout, codec, track, analysis, or D3D11 shared texture/capture behavior.

@@ -46,6 +46,10 @@ extension MainWindowComposition on MainWindowController {
       timelineMetrics: timelineMetrics,
       onPlaybackTransition: ({required playing}) =>
           layoutCoordinator.onPlaybackStateChanged(playing: playing),
+      onNativeCompositorAvailabilityChanged: ({required active}) =>
+          layoutCoordinator.onNativeCompositorAvailabilityChanged(
+            active: active,
+          ),
       onSeekSettled: (_) => analysisCoordinator.refreshOverlayForCurrentFrame(),
       onSeekPreviewPresented:
           ({required trackFileId, required ptsUs, required dtsUs}) =>

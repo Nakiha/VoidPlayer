@@ -140,6 +140,10 @@ std::vector<TrackPerfStats> Renderer::track_perf_stats() const {
     return impl_->track_perf_stats();
 }
 
+RendererPresentedAnchorDiagnostics Renderer::presented_anchor_diagnostics() const {
+    return impl_->presented_anchor_diagnostics();
+}
+
 PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
     return impl_->presentation_backend_metrics();
 }
@@ -150,6 +154,10 @@ D3D11BackendMetrics Renderer::d3d_backend_metrics() const {
 
 PresentationBackendStats Renderer::presentation_backend_stats() const {
     return impl_->presentation_backend_stats();
+}
+
+PresentationBackendDiagnostics Renderer::presentation_backend_diagnostics() const {
+    return impl_->presentation_backend_diagnostics();
 }
 
 std::string Renderer::presentation_backend_last_error() const {
@@ -170,6 +178,12 @@ bool Renderer::d3d_device_lost() const {
 
 long Renderer::d3d_device_removed_reason() const {
     return impl_->d3d_device_removed_reason();
+}
+
+bool Renderer::recover_presentation_device_loss(
+    const char* reason,
+    long removed_reason) {
+    return impl_->recover_presentation_device_loss(reason, removed_reason);
 }
 
 RendererDeviceState Renderer::device_state() const {
@@ -224,6 +238,43 @@ void Renderer::release_shared_texture(int buffer_index, uint64_t buffer_generati
     impl_->release_shared_texture(buffer_index, buffer_generation);
 }
 
+bool Renderer::acquire_shared_fp16_texture(
+    SharedFp16TextureSnapshot& snapshot) const {
+    return impl_->acquire_shared_fp16_texture(snapshot);
+}
+
+void Renderer::release_shared_fp16_texture(
+    int buffer_index, uint64_t ring_generation) const {
+    impl_->release_shared_fp16_texture(buffer_index, ring_generation);
+}
+
+void Renderer::set_shared_fp16_frame_callback(std::function<void()> cb) {
+    impl_->set_shared_fp16_frame_callback(std::move(cb));
+}
+
+bool Renderer::configure_source_cache(
+    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    return impl_->configure_source_cache(descriptors);
+}
+
+void Renderer::clear_source_cache(const char* reason) {
+    impl_->clear_source_cache(reason);
+}
+
+bool Renderer::acquire_source_cache_bundle(
+    SharedSourceCacheBundleSnapshot& snapshot) const {
+    return impl_->acquire_source_cache_bundle(snapshot);
+}
+
+void Renderer::release_source_cache_bundle(
+    int buffer_index, uint64_t ring_generation) const {
+    impl_->release_source_cache_bundle(buffer_index, ring_generation);
+}
+
+void Renderer::set_source_cache_frame_callback(std::function<void()> cb) {
+    impl_->set_source_cache_frame_callback(std::move(cb));
+}
+
 void Renderer::resize(int width, int height) {
     impl_->resize(width, height);
 }
@@ -276,6 +327,10 @@ void Renderer::clear_headless_output() {
 
 bool Renderer::request_frame_refresh(const char* reason) {
     return impl_->request_frame_refresh(reason);
+}
+
+bool Renderer::update_presentation_sdr_white_level(double nits) {
+    return impl_->update_presentation_sdr_white_level(nits);
 }
 
 bool Renderer::draw_current_frame_sources(PresentationBackend& backend,

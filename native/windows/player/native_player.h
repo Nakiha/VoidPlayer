@@ -10,6 +10,10 @@
 
 namespace vr {
 
+struct SharedFp16TextureSnapshot;
+struct SourceCacheTrackDescriptor;
+struct SharedSourceCacheBundleSnapshot;
+
 /// Native player facade that owns playback control and the video renderer as
 /// peers. FFI can adopt this type without changing the renderer/video internals.
 class NativePlayer {
@@ -49,10 +53,13 @@ public:
     std::pair<int, int> track_dimensions(int slot) const;
     std::vector<TrackInfo> track_infos() const;
     std::vector<TrackPerfStats> track_perf_stats() const;
+    RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
     RendererGpuMemoryStats gpu_memory_stats() const;
+    PresentationBackendDiagnostics presentation_backend_diagnostics() const;
     AudioOutputStats audio_output_stats() const;
     bool d3d_device_lost() const;
     long d3d_device_removed_reason() const;
+    bool recover_presentation_device_loss(const char* reason, long removed_reason);
     void set_track_offset(int file_id, int64_t offset_us);
 
     void apply_layout(const LayoutState& state);
@@ -65,6 +72,21 @@ public:
     int texture_height() const;
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
     void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
+    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
+    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
+    void set_shared_fp16_frame_callback(std::function<void()> cb);
+    bool configure_source_cache(
+        const std::vector<SourceCacheTrackDescriptor>& descriptors);
+    void clear_source_cache(const char* reason);
+    bool acquire_source_cache_bundle(
+        SharedSourceCacheBundleSnapshot& snapshot) const;
+    void release_source_cache_bundle(
+        int buffer_index, uint64_t ring_generation) const;
+    void set_source_cache_frame_callback(std::function<void()> cb);
+    bool request_frame_refresh(const char* reason);
+    bool update_presentation_sdr_white_level(double nits);
+    std::shared_ptr<const AnalysisOverlayPrimitivePackage>
+    current_overlay_primitives(std::string* error);
     void resize(int width, int height);
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
     bool capture_front_buffer_region(int x,

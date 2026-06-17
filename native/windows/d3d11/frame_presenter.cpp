@@ -247,7 +247,7 @@ bool D3D11FramePresenter::prepare_software_frame(size_t slot,
 
     if (need_new_tex) {
         resources.sw_srv.Reset();
-        resources.sw_texture.Attach(texture_manager_->create_rgba_texture(w, h));
+        resources.sw_texture.Attach(texture_manager_->create_bgra_texture(w, h));
         if (resources.sw_texture) {
             resources.sw_srv.Attach(texture_manager_->create_srv(resources.sw_texture.Get()));
         }

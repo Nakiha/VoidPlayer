@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
+import '../app_log.dart';
 import '../native_compositor_flags.dart';
 import '../performance/performance_health.dart';
 import '../platform/platform_capabilities.dart';
@@ -43,203 +46,232 @@ class MainWindowScaffold extends StatelessWidget {
     final nativeCompositor = NativeCompositorFlags.nativeCompositor;
     final nativeCompositorViewportActive =
         nativeCompositor &&
-        viewport.nativeCompositorActive &&
+        (Platform.isWindows || viewport.nativeCompositorActive) &&
         viewport.textureId != null &&
         viewport.viewportState.status == ViewportDisplayStatus.active;
+    if (overlays.settingsVisible ||
+        overlays.mediaInfoVisible ||
+        overlays.profilerVisible ||
+        overlays.marksSidebarVisible) {
+      log.info(
+        '[WindowsCompositorDebug] scaffold overlay build '
+        'nativeHole=$nativeCompositorViewportActive '
+        'settings=${overlays.settingsVisible} '
+        'mediaInfo=${overlays.mediaInfoVisible} '
+        'profiler=${overlays.profilerVisible} '
+        'sidebar=${overlays.marksSidebarVisible}',
+      );
+    }
     final shellBackgroundColor = Theme.of(context).scaffoldBackgroundColor;
     return Scaffold(
       backgroundColor: nativeCompositorViewportActive
           ? Colors.transparent
           : null,
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              if (!overlays.fullScreen)
-                AxTreeRegion(
-                  label: 'Main toolbar',
-                  child: _NativeCompositorOpaqueRegion(
-                    enabled: nativeCompositorViewportActive,
-                    color: shellBackgroundColor,
-                    child: AppToolBar(
-                      viewMode: viewport.viewMode,
-                      onViewModeChanged: toolbarActions.onViewModeChanged,
-                      onOpenFile: toolbarActions.onOpenFile,
-                      onOpenNetworkMedia: toolbarActions.onOpenNetworkMedia,
-                      onOpenSshRemoteMedia: toolbarActions.onOpenSshRemoteMedia,
-                      onMediaInfo: toolbarActions.onMediaInfo,
-                      onAnalysis: toolbarActions.onAnalysis,
-                      onProfiler: toolbarActions.onProfiler,
-                      onSettings: toolbarActions.onSettings,
-                      onMarksSidebarToggle: toolbarActions.onMarksSidebarToggle,
-                      tracks: media.tracks,
-                      analysisDataSource: media.analysisDataSource,
-                      viewModeEnabled:
-                          capabilities.canChangeViewMode &&
-                          viewport.viewModeEnabled,
-                      nativePlaybackAvailable: media.nativePlaybackAvailable,
-                      localFilePlaybackAvailable:
-                          media.localFilePlaybackAvailable,
-                      networkMediaAvailable: media.networkMediaAvailable,
-                      sshRemoteMediaAvailable: media.sshRemoteMediaAvailable,
-                      nativeFilePickerAvailable:
-                          media.nativeFilePickerAvailable,
-                      addMediaDisabledTooltip: firstCapabilityUserMessage([
-                        media.localFilePlaybackCapability,
-                        media.nativeFilePickerCapability,
-                        media.networkMediaPlaybackCapability,
-                        media.sshRemoteMediaPlaybackCapability,
-                      ]),
-                      analysisDisabledTooltip: firstCapabilityUserMessage([
-                        media.externalAnalysisWindowsCapability,
-                        media.analysisOverlaysCapability,
-                      ]),
-                      canAddTrack: capabilities.canAddTrack,
-                      canOpenLocalMedia: capabilities.canOpenLocalMedia,
-                      canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
-                      canOpenSshMedia: capabilities.canOpenSshMedia,
-                      canOpenMediaInfo: capabilities.canOpenMediaInfo,
-                      canOpenProfiler: capabilities.canOpenProfiler,
-                      canRunAnalysis: capabilities.canRunAnalysis,
-                      analysisEnabled: media.analysisEnabled,
-                      mediaInfoActive: overlays.mediaInfoVisible,
-                      profilerActive: overlays.profilerVisible,
-                      marksSidebarActive: overlays.marksSidebarVisible,
+      body: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (event) {
+          log.info(
+            '[WindowsCompositorDebug] root pointerDown '
+            'global=${event.position} local=${event.localPosition} '
+            'buttons=${event.buttons} tracks=${media.tracks.length} '
+            'nativeHole=$nativeCompositorViewportActive '
+            'marksSidebar=${overlays.marksSidebarVisible} '
+            'settings=${overlays.settingsVisible} '
+            'dragging=${overlays.dragging}',
+          );
+        },
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                if (!overlays.fullScreen)
+                  AxTreeRegion(
+                    label: 'Main toolbar',
+                    child: _NativeCompositorOpaqueRegion(
+                      enabled: nativeCompositorViewportActive,
+                      color: shellBackgroundColor,
+                      child: AppToolBar(
+                        viewMode: viewport.viewMode,
+                        onViewModeChanged: toolbarActions.onViewModeChanged,
+                        onOpenFile: toolbarActions.onOpenFile,
+                        onOpenNetworkMedia: toolbarActions.onOpenNetworkMedia,
+                        onOpenSshRemoteMedia:
+                            toolbarActions.onOpenSshRemoteMedia,
+                        onMediaInfo: toolbarActions.onMediaInfo,
+                        onAnalysis: toolbarActions.onAnalysis,
+                        onProfiler: toolbarActions.onProfiler,
+                        onSettings: toolbarActions.onSettings,
+                        onMarksSidebarToggle:
+                            toolbarActions.onMarksSidebarToggle,
+                        tracks: media.tracks,
+                        analysisDataSource: media.analysisDataSource,
+                        viewModeEnabled:
+                            capabilities.canChangeViewMode &&
+                            viewport.viewModeEnabled,
+                        nativePlaybackAvailable: media.nativePlaybackAvailable,
+                        localFilePlaybackAvailable:
+                            media.localFilePlaybackAvailable,
+                        networkMediaAvailable: media.networkMediaAvailable,
+                        sshRemoteMediaAvailable: media.sshRemoteMediaAvailable,
+                        nativeFilePickerAvailable:
+                            media.nativeFilePickerAvailable,
+                        addMediaDisabledTooltip: firstCapabilityUserMessage([
+                          media.localFilePlaybackCapability,
+                          media.nativeFilePickerCapability,
+                          media.networkMediaPlaybackCapability,
+                          media.sshRemoteMediaPlaybackCapability,
+                        ]),
+                        analysisDisabledTooltip: firstCapabilityUserMessage([
+                          media.externalAnalysisWindowsCapability,
+                          media.analysisOverlaysCapability,
+                        ]),
+                        canAddTrack: capabilities.canAddTrack,
+                        canOpenLocalMedia: capabilities.canOpenLocalMedia,
+                        canOpenNetworkMedia: capabilities.canOpenNetworkMedia,
+                        canOpenSshMedia: capabilities.canOpenSshMedia,
+                        canOpenMediaInfo: capabilities.canOpenMediaInfo,
+                        canOpenProfiler: capabilities.canOpenProfiler,
+                        canRunAnalysis: capabilities.canRunAnalysis,
+                        analysisEnabled: media.analysisEnabled,
+                        mediaInfoActive: overlays.mediaInfoVisible,
+                        profilerActive: overlays.profilerVisible,
+                        marksSidebarActive: overlays.marksSidebarVisible,
+                      ),
                     ),
                   ),
-                ),
-              Expanded(
-                child: Stack(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              Expanded(
-                                child: ViewportPanel(
-                                  key: handles.viewportKey,
-                                  textureId: viewport.textureId,
-                                  viewportState: viewport.viewportState,
-                                  errorText: viewport.viewportState.errorText,
-                                  layout: viewport.layout,
-                                  onPan: viewportActions.onPan,
-                                  onSplit: viewportActions.onSplit,
-                                  onZoom: viewportActions.onZoom,
-                                  onPointerButton:
-                                      viewportActions.onPointerButton,
-                                  onResize: viewportActions.onResize,
-                                  onNativeCompositorViewportRect:
-                                      viewportActions
-                                          .onNativeCompositorViewportRect,
-                                  trackGeometry: viewport.tracks,
-                                  quickMarks: viewport.quickMarks,
-                                  quickMarkDraft: viewport.quickMarkDraft,
-                                  selectedQuickMarkId:
-                                      viewport.selectedQuickMarkId,
-                                  onQuickMarkStart:
-                                      viewportActions.onQuickMarkStart,
-                                  onQuickMarkUpdate:
-                                      viewportActions.onQuickMarkUpdate,
-                                  onQuickMarkEnd:
-                                      viewportActions.onQuickMarkEnd,
-                                  onQuickMarkCancel:
-                                      viewportActions.onQuickMarkCancel,
-                                  onQuickMarkSelect:
-                                      viewportActions.onQuickMarkSelect,
-                                  onQuickMarkChanged:
-                                      viewportActions.onQuickMarkChanged,
-                                  onQuickMarkDeleted:
-                                      viewportActions.onQuickMarkDeleted,
-                                  onQuickMarkFocus:
-                                      viewportActions.onQuickMarkFocus,
-                                  pointerButtonStateProvider:
-                                      pointerButtonStateProvider,
-                                  nativePlaybackAvailable:
-                                      media.nativePlaybackAvailable,
-                                  nativeCompositorHole:
-                                      nativeCompositorViewportActive,
-                                ),
-                              ),
-                              if (!overlays.fullScreen &&
-                                  media.tracks.isNotEmpty)
-                                AxTreeRegion(
-                                  label: 'Playback timeline',
-                                  child: _NativeCompositorOpaqueRegion(
-                                    enabled: nativeCompositorViewportActive,
-                                    color: shellBackgroundColor,
-                                    child: MediaTimelineSection(
-                                      model: model,
-                                      handles: handles,
-                                      actions: actions,
-                                    ),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: ViewportPanel(
+                                    key: handles.viewportKey,
+                                    textureId: viewport.textureId,
+                                    viewportState: viewport.viewportState,
+                                    errorText: viewport.viewportState.errorText,
+                                    layout: viewport.layout,
+                                    onPan: viewportActions.onPan,
+                                    onSplit: viewportActions.onSplit,
+                                    onZoom: viewportActions.onZoom,
+                                    onPointerButton:
+                                        viewportActions.onPointerButton,
+                                    onResize: viewportActions.onResize,
+                                    onNativeCompositorViewportRect:
+                                        viewportActions
+                                            .onNativeCompositorViewportRect,
+                                    trackGeometry: viewport.tracks,
+                                    quickMarks: viewport.quickMarks,
+                                    quickMarkDraft: viewport.quickMarkDraft,
+                                    selectedQuickMarkId:
+                                        viewport.selectedQuickMarkId,
+                                    onQuickMarkStart:
+                                        viewportActions.onQuickMarkStart,
+                                    onQuickMarkUpdate:
+                                        viewportActions.onQuickMarkUpdate,
+                                    onQuickMarkEnd:
+                                        viewportActions.onQuickMarkEnd,
+                                    onQuickMarkCancel:
+                                        viewportActions.onQuickMarkCancel,
+                                    onQuickMarkSelect:
+                                        viewportActions.onQuickMarkSelect,
+                                    onQuickMarkChanged:
+                                        viewportActions.onQuickMarkChanged,
+                                    onQuickMarkDeleted:
+                                        viewportActions.onQuickMarkDeleted,
+                                    onQuickMarkFocus:
+                                        viewportActions.onQuickMarkFocus,
+                                    pointerButtonStateProvider:
+                                        pointerButtonStateProvider,
+                                    nativePlaybackAvailable:
+                                        media.nativePlaybackAvailable,
+                                    nativeCompositorHole:
+                                        nativeCompositorViewportActive,
                                   ),
                                 ),
-                            ],
-                          ),
-                        ),
-                        if (overlays.marksSidebarVisible)
-                          _NativeCompositorOpaqueRegion(
-                            enabled: nativeCompositorViewportActive,
-                            color: shellBackgroundColor,
-                            child: QuickMarkSidebar(
-                              width: overlays.marksSidebarWidth,
-                              marks: model.marks,
-                              actions: actions.marks,
-                              onClose: overlayActions.onCloseMarksSidebar,
+                                if (!overlays.fullScreen &&
+                                    media.tracks.isNotEmpty)
+                                  AxTreeRegion(
+                                    label: 'Playback timeline',
+                                    child: _NativeCompositorOpaqueRegion(
+                                      enabled: nativeCompositorViewportActive,
+                                      color: shellBackgroundColor,
+                                      child: MediaTimelineSection(
+                                        model: model,
+                                        handles: handles,
+                                        actions: actions,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
-                      ],
-                    ),
-                    if (overlays.marksSidebarVisible)
-                      _MarksSidebarResizeHandle(
-                        width: overlays.marksSidebarWidth,
-                        onWidthChanged:
-                            overlayActions.onMarksSidebarWidthChanged,
+                          if (overlays.marksSidebarVisible)
+                            _NativeCompositorOpaqueRegion(
+                              enabled: nativeCompositorViewportActive,
+                              color: shellBackgroundColor,
+                              child: QuickMarkSidebar(
+                                width: overlays.marksSidebarWidth,
+                                marks: model.marks,
+                                actions: actions.marks,
+                                onClose: overlayActions.onCloseMarksSidebar,
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
+                      if (overlays.marksSidebarVisible)
+                        _MarksSidebarResizeHandle(
+                          width: overlays.marksSidebarWidth,
+                          onWidthChanged:
+                              overlayActions.onMarksSidebarWidthChanged,
+                        ),
+                    ],
+                  ),
                 ),
+              ],
+            ),
+            if (overlays.fullScreen)
+              FullScreenPointerCapture(
+                onActivity: overlayActions.onFullScreenPointerActivity,
               ),
-            ],
-          ),
-          if (overlays.fullScreen)
-            FullScreenPointerCapture(
-              onActivity: overlayActions.onFullScreenPointerActivity,
+            if (overlays.fullScreen && media.tracks.isNotEmpty)
+              FullScreenControlsOverlay(
+                model: model,
+                handles: handles,
+                actions: actions,
+              ),
+            if (overlays.dragging) const DragDropLayer(),
+            FloatingSidePanelsSlot(
+              mediaInfoVisible: overlays.mediaInfoVisible,
+              profilerVisible: overlays.profilerVisible,
+              tracks: media.tracks,
+              onCloseMediaInfo: overlayActions.onCloseMediaInfo,
+              onCloseProfiler: overlayActions.onCloseProfiler,
             ),
-          if (overlays.fullScreen && media.tracks.isNotEmpty)
-            FullScreenControlsOverlay(
-              model: model,
-              handles: handles,
-              actions: actions,
+            SettingsOverlaySlot(
+              visible: overlays.settingsVisible,
+              onClose: overlayActions.onCloseSettings,
+              onViewportPixelSizeModeChanged:
+                  overlayActions.onViewportPixelSizeModeChanged,
+              onPerformanceAlertPolicyChanged:
+                  overlayActions.onPerformanceAlertPolicyChanged,
             ),
-          if (overlays.dragging) const DragDropLayer(),
-          FloatingSidePanelsSlot(
-            mediaInfoVisible: overlays.mediaInfoVisible,
-            profilerVisible: overlays.profilerVisible,
-            tracks: media.tracks,
-            onCloseMediaInfo: overlayActions.onCloseMediaInfo,
-            onCloseProfiler: overlayActions.onCloseProfiler,
-          ),
-          SettingsOverlaySlot(
-            visible: overlays.settingsVisible,
-            onClose: overlayActions.onCloseSettings,
-            onViewportPixelSizeModeChanged:
-                overlayActions.onViewportPixelSizeModeChanged,
-            onPerformanceAlertPolicyChanged:
-                overlayActions.onPerformanceAlertPolicyChanged,
-          ),
-          PerformanceHealthFeedbackMonitor(
-            enabled:
-                media.nativePlaybackAvailable &&
-                media.tracks.isNotEmpty &&
-                media.performanceAlertPolicy.enabled,
-            trackCount: media.tracks.length,
-            profilerVisible: overlays.profilerVisible,
-            alertPolicy: media.performanceAlertPolicy,
-            onOpenProfiler: toolbarActions.onProfiler,
-          ),
-          const AppFeedbackHost(),
-        ],
+            PerformanceHealthFeedbackMonitor(
+              enabled:
+                  media.nativePlaybackAvailable &&
+                  media.tracks.isNotEmpty &&
+                  media.performanceAlertPolicy.enabled,
+              trackCount: media.tracks.length,
+              profilerVisible: overlays.profilerVisible,
+              alertPolicy: media.performanceAlertPolicy,
+              onOpenProfiler: toolbarActions.onProfiler,
+            ),
+            const AppFeedbackHost(),
+          ],
+        ),
       ),
     );
   }

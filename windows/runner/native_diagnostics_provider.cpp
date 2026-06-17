@@ -3,12 +3,14 @@
 #include "windows/player/native_player.h"
 
 #include <windows.h>
+#include <d3d11.h>
 #include <dxgi1_4.h>
 #include <psapi.h>
 #include <wrl/client.h>
 #include <chrono>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #pragma comment(lib, "dxgi.lib")
@@ -28,6 +30,8 @@ flutter::EncodableMap make_gpu_breakdown_map(const vr::RendererGpuMemoryStats& s
         flutter::EncodableValue(static_cast<int64_t>(stats.presenter_texture_bytes));
     map[flutter::EncodableValue("headlessOutputBytes")] =
         flutter::EncodableValue(static_cast<int64_t>(stats.headless_output_bytes));
+    map[flutter::EncodableValue("fp16TargetBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(stats.fp16_target_bytes));
     map[flutter::EncodableValue("analysisOverlayBytes")] =
         flutter::EncodableValue(static_cast<int64_t>(stats.analysis_overlay_bytes));
     map[flutter::EncodableValue("cpuFrameBytes")] =
@@ -104,6 +108,19 @@ flutter::EncodableMap make_gpu_breakdown_map(const vr::RendererGpuMemoryStats& s
     }
     map[flutter::EncodableValue("tracks")] = flutter::EncodableValue(tracks);
     return map;
+}
+
+std::string feature_level_name(int feature_level) {
+    switch (static_cast<D3D_FEATURE_LEVEL>(feature_level)) {
+    case D3D_FEATURE_LEVEL_11_0:
+        return "11.0";
+    case D3D_FEATURE_LEVEL_10_1:
+        return "10.1";
+    case D3D_FEATURE_LEVEL_10_0:
+        return "10.0";
+    default:
+        return "unknown";
+    }
 }
 
 } // namespace
@@ -215,7 +232,10 @@ uint64_t NativeDiagnosticsProvider::QueryDedicatedVideoMemoryUsage() const {
 }
 
 flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
-    const std::shared_ptr<vr::NativePlayer>& active_player) const {
+    const std::shared_ptr<vr::NativePlayer>& active_player,
+    const vr::WindowsDisplayProbeSnapshot& display,
+    const vr::WindowsPresentationPolicy& presentation_policy,
+    const std::string& presentation_sdr_white_level_status) const {
     flutter::EncodableMap map;
     const auto process_memory = QueryProcessMemoryUsage();
     const auto process_heap = QueryProcessHeapUsage();
@@ -233,6 +253,103 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(static_cast<int64_t>(process_heap.heap_count));
     map[flutter::EncodableValue("dedicatedGpuUsageBytes")] =
         flutter::EncodableValue(static_cast<int64_t>(QueryDedicatedVideoMemoryUsage()));
+    const auto& probe = display.probe;
+    map[flutter::EncodableValue("windowsDisplayProbeStatus")] =
+        flutter::EncodableValue(probe.status);
+    map[flutter::EncodableValue("windowsDisplayOutputResolved")] =
+        flutter::EncodableValue(probe.output_resolved);
+    map[flutter::EncodableValue("windowsDisplayColorMetadataAvailable")] =
+        flutter::EncodableValue(probe.color_metadata_available);
+    map[flutter::EncodableValue("windowsDisplaySelectionReason")] =
+        flutter::EncodableValue(probe.selection_reason);
+    map[flutter::EncodableValue("windowsDisplayOutputIdentity")] =
+        flutter::EncodableValue(probe.output_identity);
+    map[flutter::EncodableValue("windowsDisplayDeviceName")] =
+        flutter::EncodableValue(probe.device_name);
+    map[flutter::EncodableValue("windowsDisplayAdapterDescription")] =
+        flutter::EncodableValue(probe.adapter_description);
+    map[flutter::EncodableValue("windowsDisplayAdapterLuid")] =
+        flutter::EncodableValue(
+            std::to_string(probe.adapter_luid_high) + ":" +
+            std::to_string(probe.adapter_luid_low));
+    map[flutter::EncodableValue("windowsDisplayMatchesPresentationAdapter")] =
+        flutter::EncodableValue(probe.matches_presentation_adapter);
+    map[flutter::EncodableValue("windowsDisplayDesktopLeft")] =
+        flutter::EncodableValue(probe.desktop_left);
+    map[flutter::EncodableValue("windowsDisplayDesktopTop")] =
+        flutter::EncodableValue(probe.desktop_top);
+    map[flutter::EncodableValue("windowsDisplayDesktopWidth")] =
+        flutter::EncodableValue(probe.desktop_width);
+    map[flutter::EncodableValue("windowsDisplayDesktopHeight")] =
+        flutter::EncodableValue(probe.desktop_height);
+    map[flutter::EncodableValue("windowsDisplayIntersectionArea")] =
+        flutter::EncodableValue(probe.intersection_area);
+    map[flutter::EncodableValue("windowsDisplayRotation")] =
+        flutter::EncodableValue(probe.rotation);
+    map[flutter::EncodableValue("windowsDisplayBitsPerColor")] =
+        flutter::EncodableValue(probe.bits_per_color);
+    map[flutter::EncodableValue("windowsDisplayColorSpace")] =
+        flutter::EncodableValue(probe.color_space);
+    map[flutter::EncodableValue("windowsDisplayAdvancedColorState")] =
+        flutter::EncodableValue(probe.advanced_color_state);
+    map[flutter::EncodableValue("windowsDisplayAdvancedColorApi")] =
+        flutter::EncodableValue(probe.advanced_color_api);
+    map[flutter::EncodableValue("windowsDisplayAdvancedColorMode")] =
+        flutter::EncodableValue(probe.advanced_color_mode);
+    map[flutter::EncodableValue("windowsDisplayCalibrationMode")] =
+        flutter::EncodableValue(probe.calibration_mode);
+    map[flutter::EncodableValue("windowsDisplayCalibrationSource")] =
+        flutter::EncodableValue(probe.calibration_source);
+    map[flutter::EncodableValue("windowsDisplayHDRActive")] =
+        flutter::EncodableValue(probe.hdr_active);
+    map[flutter::EncodableValue("windowsDisplayAdvancedColorSupported")] =
+        flutter::EncodableValue(probe.advanced_color_supported);
+    map[flutter::EncodableValue("windowsDisplayAdvancedColorActive")] =
+        flutter::EncodableValue(probe.advanced_color_active);
+    map[flutter::EncodableValue(
+        "windowsDisplayAdvancedColorLimitedByPolicy")] =
+        flutter::EncodableValue(probe.advanced_color_limited_by_policy);
+    map[flutter::EncodableValue("windowsDisplayHDRSupported")] =
+        flutter::EncodableValue(probe.high_dynamic_range_supported);
+    map[flutter::EncodableValue("windowsDisplayHDRUserEnabled")] =
+        flutter::EncodableValue(probe.high_dynamic_range_user_enabled);
+    map[flutter::EncodableValue("windowsDisplayWCGSupported")] =
+        flutter::EncodableValue(probe.wide_color_supported);
+    map[flutter::EncodableValue("windowsDisplayWCGUserEnabled")] =
+        flutter::EncodableValue(probe.wide_color_user_enabled);
+    map[flutter::EncodableValue("windowsDisplayMinLuminanceMilliNits")] =
+        flutter::EncodableValue(probe.min_luminance_milli_nits);
+    map[flutter::EncodableValue("windowsDisplayMaxLuminanceMilliNits")] =
+        flutter::EncodableValue(probe.max_luminance_milli_nits);
+    map[flutter::EncodableValue("windowsDisplayMaxFullFrameLuminanceMilliNits")] =
+        flutter::EncodableValue(
+            probe.max_full_frame_luminance_milli_nits);
+    map[flutter::EncodableValue("windowsDisplaySDRWhiteLevelStatus")] =
+        flutter::EncodableValue(probe.sdr_white_level_status);
+    map[flutter::EncodableValue("windowsDisplaySDRWhiteLevelMilliNits")] =
+        flutter::EncodableValue(probe.sdr_white_level_milli_nits);
+    map[flutter::EncodableValue("windowsDisplayRedPrimaryX")] =
+        flutter::EncodableValue(probe.red_primary_x);
+    map[flutter::EncodableValue("windowsDisplayRedPrimaryY")] =
+        flutter::EncodableValue(probe.red_primary_y);
+    map[flutter::EncodableValue("windowsDisplayGreenPrimaryX")] =
+        flutter::EncodableValue(probe.green_primary_x);
+    map[flutter::EncodableValue("windowsDisplayGreenPrimaryY")] =
+        flutter::EncodableValue(probe.green_primary_y);
+    map[flutter::EncodableValue("windowsDisplayBluePrimaryX")] =
+        flutter::EncodableValue(probe.blue_primary_x);
+    map[flutter::EncodableValue("windowsDisplayBluePrimaryY")] =
+        flutter::EncodableValue(probe.blue_primary_y);
+    map[flutter::EncodableValue("windowsDisplayWhitePointX")] =
+        flutter::EncodableValue(probe.white_point_x);
+    map[flutter::EncodableValue("windowsDisplayWhitePointY")] =
+        flutter::EncodableValue(probe.white_point_y);
+    map[flutter::EncodableValue("windowsDisplayProbeGeneration")] =
+        flutter::EncodableValue(static_cast<int64_t>(display.generation));
+    map[flutter::EncodableValue("windowsDisplayChangeCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(display.change_count));
+    map[flutter::EncodableValue("windowsDisplayLastChangeReason")] =
+        flutter::EncodableValue(display.last_change_reason);
 
     if (!active_player) {
         return map;
@@ -242,6 +359,85 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(active_player->d3d_device_lost());
     map[flutter::EncodableValue("d3dDeviceRemovedReason")] =
         flutter::EncodableValue(static_cast<int64_t>(active_player->d3d_device_removed_reason()));
+    const auto presentation =
+        active_player->presentation_backend_diagnostics();
+    map[flutter::EncodableValue("windowsPresentationRequest")] =
+        flutter::EncodableValue(presentation_policy.request);
+    map[flutter::EncodableValue("windowsPresentationMode")] =
+        flutter::EncodableValue(presentation_policy.mode);
+    map[flutter::EncodableValue("windowsPresentationReason")] =
+        flutter::EncodableValue(presentation_policy.reason);
+    map[flutter::EncodableValue("windowsPresentationAutoEnabled")] =
+        flutter::EncodableValue(presentation_policy.auto_enabled);
+    map[flutter::EncodableValue("windowsPresentationHasHDRTrack")] =
+        flutter::EncodableValue(presentation_policy.has_hdr_track);
+    map[flutter::EncodableValue("windowsPresentationDesiredMode")] =
+        flutter::EncodableValue(presentation_policy.desired_mode);
+    map[flutter::EncodableValue("windowsPresentationCrossAdapterRequired")] =
+        flutter::EncodableValue(presentation_policy.cross_adapter_required);
+    map[flutter::EncodableValue("windowsPresentationBackend")] =
+        flutter::EncodableValue(presentation.backend);
+    map[flutter::EncodableValue("windowsPresentationTargetFormat")] =
+        flutter::EncodableValue(presentation.target_format);
+    map[flutter::EncodableValue("windowsPresentationRenderTargetFormat")] =
+        flutter::EncodableValue(presentation.render_target_format);
+    map[flutter::EncodableValue("windowsPresentationRenderColorSpace")] =
+        flutter::EncodableValue(presentation.render_color_space);
+    map[flutter::EncodableValue("windowsPresentationFP16TargetActive")] =
+        flutter::EncodableValue(presentation.fp16_target_active);
+    map[flutter::EncodableValue("windowsPresentationFP16TargetWidth")] =
+        flutter::EncodableValue(presentation.fp16_target_width);
+    map[flutter::EncodableValue("windowsPresentationFP16TargetHeight")] =
+        flutter::EncodableValue(presentation.fp16_target_height);
+    map[flutter::EncodableValue("windowsPresentationFP16TargetBufferCount")] =
+        flutter::EncodableValue(presentation.fp16_target_buffer_count);
+    map[flutter::EncodableValue("windowsPresentationSDRCompatibilityPass")] =
+        flutter::EncodableValue(presentation.sdr_compatibility_pass);
+    map[flutter::EncodableValue("windowsPresentationSDRWhiteLevelStatus")] =
+        flutter::EncodableValue(presentation_sdr_white_level_status);
+    map[flutter::EncodableValue("windowsPresentationSDRWhiteLevelMilliNits")] =
+        flutter::EncodableValue(presentation.sdr_white_level_milli_nits);
+    map[flutter::EncodableValue("windowsPresentationSDRWhiteScaleX1000")] =
+        flutter::EncodableValue(presentation.sdr_white_scale_x1000);
+    map[flutter::EncodableValue("windowsPresentationFP16DrawCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.fp16_draw_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationSDRCompatibilityDrawCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.sdr_compatibility_draw_count));
+    const std::string fallback_reason =
+        presentation.fallback_reason != "none"
+            ? presentation.fallback_reason
+            : presentation_policy.fallback_reason;
+    map[flutter::EncodableValue("windowsPresentationFallbackReason")] =
+        flutter::EncodableValue(fallback_reason);
+    map[flutter::EncodableValue("windowsPresentationWidth")] =
+        flutter::EncodableValue(presentation.width);
+    map[flutter::EncodableValue("windowsPresentationHeight")] =
+        flutter::EncodableValue(presentation.height);
+    map[flutter::EncodableValue("windowsPresentationBufferCount")] =
+        flutter::EncodableValue(presentation.buffer_count);
+    map[flutter::EncodableValue("windowsPresentationHeadless")] =
+        flutter::EncodableValue(presentation.headless);
+    map[flutter::EncodableValue("windowsPresentationCompositorActive")] =
+        flutter::EncodableValue(false);
+    map[flutter::EncodableValue("windowsD3DAdapterDescription")] =
+        flutter::EncodableValue(presentation.adapter_description);
+    map[flutter::EncodableValue("windowsD3DAdapterVendorId")] =
+        flutter::EncodableValue(presentation.adapter_vendor_id);
+    map[flutter::EncodableValue("windowsD3DAdapterDeviceId")] =
+        flutter::EncodableValue(presentation.adapter_device_id);
+    map[flutter::EncodableValue("windowsD3DAdapterLuid")] =
+        flutter::EncodableValue(
+            std::to_string(presentation.adapter_luid_high) + ":" +
+            std::to_string(presentation.adapter_luid_low));
+    map[flutter::EncodableValue("windowsD3DFeatureLevel")] =
+        flutter::EncodableValue(feature_level_name(presentation.feature_level));
+    map[flutter::EncodableValue("windowsD3DDriverType")] =
+        flutter::EncodableValue(presentation.driver_type);
+    map[flutter::EncodableValue("windowsD3DWarp")] =
+        flutter::EncodableValue(presentation.warp);
     map[flutter::EncodableValue("playbackTime")] =
         flutter::EncodableValue(static_cast<double>(active_player->current_pts_us()) / 1e6);
     map[flutter::EncodableValue("isPlaying")] =

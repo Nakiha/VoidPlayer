@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 import '../app_log.dart';
 import '../marks/quick_mark.dart';
@@ -10,6 +11,7 @@ import '../startup_options.dart';
 import '../track_manager.dart';
 import '../utils/async_guard.dart';
 import '../video_renderer_controller.dart';
+import '../viewport/viewport_display_state.dart';
 import 'main_window_state.dart';
 import 'main_window_timeline_metrics.dart';
 
@@ -39,6 +41,8 @@ class MainWindowPlaybackCoordinator {
   /// layout) before playback content changes. Awaited before play starts so
   /// the first playing frame already carries the interacted layout.
   final Future<void> Function({required bool playing})? onPlaybackTransition;
+  final void Function({required bool active})?
+  onNativeCompositorAvailabilityChanged;
 
   Timer? _pollTimer;
   Timer? _loopBoundaryTimer;
@@ -62,6 +66,7 @@ class MainWindowPlaybackCoordinator {
     this.onSeekSettled,
     this.onSeekPreviewPresented,
     this.onPlaybackTransition,
+    this.onNativeCompositorAvailabilityChanged,
   }) {
     _nativeEventSubscription = controller.events.listen(
       _handleNativePlayerEvent,
@@ -325,13 +330,56 @@ class MainWindowPlaybackCoordinator {
   void _handleNativePlayerEvent(NativePlayerEvent event) {
     if (_disposed || !mounted()) return;
     if (event.type == NativePlayerEventType.nativeCompositorState) {
+      log.info(
+        'Native compositor state: phase=${event.nativeCompositorPhase} '
+        'serial=${event.nativeCompositorSerial} '
+        'active=${event.nativeCompositorActive} '
+        'reason=${event.nativeCompositorReason}',
+      );
+      final wasActive = stateStore.value.nativeCompositorActive;
       stateStore.setNativeCompositorActive(event.nativeCompositorActive);
+      if (wasActive != event.nativeCompositorActive) {
+        onNativeCompositorAvailabilityChanged?.call(
+          active: event.nativeCompositorActive,
+        );
+      }
+      if (event.nativeCompositorSerial > 0 &&
+          event.nativeCompositorPhase == 'preparing') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_disposed || !mounted()) return;
+          log.info(
+            'Native compositor Flutter-state ACK: '
+            'serial=${event.nativeCompositorSerial} '
+            'transparent=true',
+          );
+          unawaited(
+            () async {
+              await controller.ackNativeCompositorFlutterState(
+                serial: event.nativeCompositorSerial,
+                transparentViewport: true,
+              );
+            }().catchError((Object error, StackTrace stack) {
+              log.warning(
+                'native compositor Flutter-state ACK failed',
+                error,
+                stack,
+              );
+            }),
+          );
+        });
+      }
       if (event.nativeCompositorRequested &&
           !event.nativeCompositorActive &&
           event.nativeCompositorFailure.isNotEmpty) {
         log.warning(
-          'Native compositor unavailable; using Flutter texture fallback: '
+          'Native compositor unavailable; Flutter texture fallback is disabled: '
           '${event.nativeCompositorFailure}',
+        );
+        stateStore.setViewportState(
+          ViewportDisplayState.error(
+            'Windows native compositor failed: '
+            '${event.nativeCompositorFailure}',
+          ),
         );
       }
       return;

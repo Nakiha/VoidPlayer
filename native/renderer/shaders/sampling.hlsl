@@ -64,6 +64,12 @@ float4 sample_track(int track_idx, float2 uv) {
     else if (track_idx == 1) color = u_textures[1].Sample(u_sampler, uv);
     else if (track_idx == 2) color = u_textures[2].Sample(u_sampler, uv);
     else                     color = u_textures[3].Sample(u_sampler, uv);
+    if (u_output_target == OUTPUT_TARGET_WINDOWS_SCRGB) {
+        color.rgb = map_to_windows_scrgb(
+            color.rgb,
+            u_color_transfer[track_idx],
+            u_color_primaries[track_idx]);
+    }
     return color;
 }
 

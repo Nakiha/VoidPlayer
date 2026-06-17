@@ -3,9 +3,12 @@
 #include "renderer/render/presentation_backend.h"
 #include "renderer/renderer_api_types.h"
 #include "windows/d3d11/device.h"
+#include "windows/d3d11/fp16_target.h"
 #include "windows/d3d11/frame_presenter.h"
 #include "windows/d3d11/headless_output.h"
 #include "windows/d3d11/shader.h"
+#include "windows/d3d11/shared_fp16_ring.h"
+#include "windows/d3d11/shared_source_cache_ring.h"
 #include "windows/d3d11/texture.h"
 
 #include <array>
@@ -73,12 +76,14 @@ public:
     void cleanup_renderer_managed_headless_pending_buffers() override;
     bool set_renderer_managed_headless_frame_callback(
         std::function<void()> callback) override;
+    bool update_sdr_white_level(double nits) override;
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot);
     void release_shared_texture(int buffer_index, uint64_t buffer_generation);
     void snapshot_memory_stats(
         RendererGpuMemoryStats& stats,
         std::array<uint64_t, kMaxTracks>& presenter_copy_texture_bytes_by_slot)
         const;
+    PresentationBackendDiagnostics diagnostics() const override;
 
     D3D11Device* device() const { return device_.get(); }
     TextureManager* texture_manager() const { return texture_manager_.get(); }
@@ -96,18 +101,78 @@ public:
                                      std::vector<uint8_t>& bgra,
                                      int& region_width,
                                      int& region_height) override;
+    bool capture_fp16_target(std::vector<uint16_t>& rgba_half,
+                             int& width,
+                             int& height) const;
+    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot);
+    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation);
+    void set_shared_fp16_frame_callback(std::function<void()> callback);
+    bool recover_device_loss(const char* reason, long removed_reason);
+    bool configure_source_cache(
+        const std::vector<SourceCacheTrackDescriptor>& descriptors) override;
+    void clear_source_cache(const char* reason) override;
+    bool acquire_source_cache_bundle(
+        SharedSourceCacheBundleSnapshot& snapshot) override;
+    void release_source_cache_bundle(
+        int buffer_index, uint64_t ring_generation) override;
+    void set_source_cache_frame_callback(
+        std::function<void()> callback) override;
     bool draw_frame(const RendererDrawSnapshot& snapshot,
                     const PresentationBackendDrawHooks& hooks) override;
 
 private:
+    struct PreparedDrawResources {
+        std::array<D3D11PreparedFrame, kMaxTracks> frames;
+        std::array<ID3D11ShaderResourceView*, kMaxTracks> rgba_srvs{};
+        std::array<ID3D11ShaderResourceView*, kMaxTracks> y_srvs{};
+        std::array<ID3D11ShaderResourceView*, kMaxTracks> uv_srvs{};
+        std::array<ID3D11ShaderResourceView*, kMaxTracks> u_srvs{};
+        std::array<ID3D11ShaderResourceView*, kMaxTracks> v_srvs{};
+    };
+
     bool initialize_device(const D3D11RenderBackendConfig& config);
     bool initialize_render_resources();
+    bool initialize_fp16_target(int width, int height);
+    void disable_fp16_target(const char* reason);
+    bool prepare_draw_resources(
+        const RendererDrawSnapshot& snapshot,
+        const PresentationBackendDrawHooks& hooks,
+        PreparedDrawResources& prepared);
+    bool draw_prepared_pass(
+        const RendererDrawSnapshot& snapshot,
+        const PresentationBackendDrawHooks& hooks,
+        const PreparedDrawResources& prepared,
+        ID3D11RenderTargetView* target_rtv,
+        ColorOutputTarget output_target,
+        bool draw_overlay);
+    bool draw_source_cache_bundle(
+        const RendererDrawSnapshot& snapshot,
+        const PresentationBackendDrawHooks& hooks,
+        const PreparedDrawResources& prepared);
 
     bool headless_ = false;
+    ColorOutputTarget requested_output_target_ =
+        ColorOutputTarget::kSDRToneMappedBT709;
+    double sdr_white_level_nits_ = 80.0;
+    uint64_t fp16_draw_count_ = 0;
+    uint64_t sdr_compatibility_draw_count_ = 0;
+    std::string fp16_fallback_reason_ = "none";
     std::unique_ptr<D3D11Device> device_;
     std::unique_ptr<TextureManager> texture_manager_;
     std::unique_ptr<D3D11FramePresenter> frame_presenter_;
     std::unique_ptr<D3D11HeadlessOutput> headless_output_;
+    std::unique_ptr<D3D11Fp16Target> fp16_target_;
+    std::unique_ptr<D3D11SharedFp16Ring> shared_fp16_ring_;
+    std::unique_ptr<D3D11SharedSourceCacheRing> source_cache_ring_;
+    std::vector<SourceCacheTrackDescriptor> source_cache_descriptors_;
+    PresentationBackendConfig last_config_;
+    bool has_last_config_ = false;
+    std::function<void()> shared_fp16_callback_;
+    std::function<void()> source_cache_callback_;
+    std::string source_cache_draw_error_ = "none";
+    uint64_t source_cache_presented_anchor_generation_ = 0;
+    uint64_t source_cache_presented_anchor_frame_generation_ = 0;
+    uint64_t source_cache_presented_anchor_publish_count_ = 0;
     std::unique_ptr<ShaderManager> shader_manager_;
     std::unique_ptr<D3D11RenderResources> resources_;
 };

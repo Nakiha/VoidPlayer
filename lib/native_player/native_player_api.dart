@@ -39,6 +39,19 @@ abstract interface class NativePlayerApi {
     required int surfaceWidth,
     required int surfaceHeight,
   });
+  Future<void> requestNativeCompositorFlutterFrame({required String reason});
+  Future<void> ackNativeCompositorFlutterState({
+    required int serial,
+    required bool transparentViewport,
+  });
+  Future<void> debugFailNativeCompositor({required String reason});
+  Future<void> debugSimulateWindowsDeviceLoss({
+    required String target,
+    required String reason,
+  });
+  Future<void> resetNativePerfCounters();
+  Future<void> beginNativeInteractionSample({required String label});
+  Future<void> endNativeInteractionSample({required String label});
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,
@@ -251,6 +264,70 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
         NativePlayerKeys.surfaceWidth: surfaceWidth,
         NativePlayerKeys.surfaceHeight: surfaceHeight,
       }),
+    );
+  }
+
+  @override
+  Future<void> requestNativeCompositorFlutterFrame({required String reason}) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.requestNativeCompositorFlutterFrame,
+      {NativePlayerKeys.reason: reason},
+    );
+  }
+
+  @override
+  Future<void> ackNativeCompositorFlutterState({
+    required int serial,
+    required bool transparentViewport,
+  }) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.ackNativeCompositorFlutterState,
+      {
+        NativePlayerKeys.serial: serial,
+        NativePlayerKeys.transparentViewport: transparentViewport,
+      },
+    );
+  }
+
+  @override
+  Future<void> debugFailNativeCompositor({required String reason}) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.debugFailNativeCompositor,
+      {NativePlayerKeys.reason: reason},
+    );
+  }
+
+  @override
+  Future<void> debugSimulateWindowsDeviceLoss({
+    required String target,
+    required String reason,
+  }) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.debugSimulateWindowsDeviceLoss,
+      {NativePlayerKeys.target: target, NativePlayerKeys.reason: reason},
+    );
+  }
+
+  @override
+  Future<void> resetNativePerfCounters() {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.resetNativePerfCounters,
+    );
+  }
+
+  @override
+  Future<void> beginNativeInteractionSample({required String label}) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.beginNativeInteractionSample,
+      {NativePlayerKeys.label: label},
+    );
+  }
+
+  @override
+  Future<void> endNativeInteractionSample({required String label}) {
+    return _channel.invokeMethod<void>(
+      NativePlayerMethods.endNativeInteractionSample,
+      {NativePlayerKeys.label: label},
     );
   }
 

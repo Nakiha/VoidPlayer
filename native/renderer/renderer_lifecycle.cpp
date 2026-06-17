@@ -46,6 +46,10 @@ bool Renderer::Impl::initialize(const RendererConfig& config) {
     backend_config.height = surface_state_.height();
     backend_config.max_track_slots = config.backend.max_track_slots;
     backend_config.headless = surface_state_.headless();
+    backend_config.output_target = config.backend.output_target;
+    backend_config.sdr_white_level_nits =
+        config.backend.sdr_white_level_nits;
+    backend_config.shared_fp16_output = config.backend.shared_fp16_output;
     const auto* backend_provider = config.backend.provider
         ? config.backend.provider
         : default_presentation_backend_provider();

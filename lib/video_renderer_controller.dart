@@ -209,6 +209,56 @@ class NativePlayerController {
     );
   }
 
+  Future<void> requestNativeCompositorFlutterFrame({required String reason}) {
+    if (!_hasPlayerForCommand(
+      NativePlayerMethods.requestNativeCompositorFlutterFrame,
+    )) {
+      return Future.value();
+    }
+    return _api.requestNativeCompositorFlutterFrame(reason: reason);
+  }
+
+  Future<void> ackNativeCompositorFlutterState({
+    required int serial,
+    required bool transparentViewport,
+  }) {
+    _ensureAlive();
+    return _api.ackNativeCompositorFlutterState(
+      serial: serial,
+      transparentViewport: transparentViewport,
+    );
+  }
+
+  Future<void> debugFailNativeCompositor({
+    String reason = 'ui-test-forced-failure',
+  }) {
+    _ensureAlive();
+    return _api.debugFailNativeCompositor(reason: reason);
+  }
+
+  Future<void> debugSimulateWindowsDeviceLoss({
+    required String target,
+    String reason = 'debug-simulated-device-loss',
+  }) {
+    _ensureAlive();
+    return _api.debugSimulateWindowsDeviceLoss(target: target, reason: reason);
+  }
+
+  Future<void> resetNativePerfCounters() {
+    _ensureAlive();
+    return _api.resetNativePerfCounters();
+  }
+
+  Future<void> beginNativeInteractionSample({required String label}) {
+    _ensureAlive();
+    return _api.beginNativeInteractionSample(label: label);
+  }
+
+  Future<void> endNativeInteractionSample({required String label}) {
+    _ensureAlive();
+    return _api.endNativeInteractionSample(label: label);
+  }
+
   Future<void> setNativeCompositorViewportTransform({
     required bool enabled,
     required double scaleX,

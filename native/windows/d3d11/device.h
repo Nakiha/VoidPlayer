@@ -5,8 +5,20 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace vr {
+
+struct D3D11DeviceDiagnostics {
+    std::string adapter_description;
+    std::string driver_type;
+    int adapter_vendor_id = 0;
+    int adapter_device_id = 0;
+    int adapter_luid_high = 0;
+    uint32_t adapter_luid_low = 0;
+    int feature_level = 0;
+    bool warp = false;
+};
 
 class D3D11Device {
 public:
@@ -37,6 +49,7 @@ public:
     }
     bool record_device_error(const char* operation, HRESULT hr);
     bool poll_device_removed(const char* operation);
+    D3D11DeviceDiagnostics diagnostics() const;
 
     bool resize(int width, int height);
     bool present(int sync_interval = 1);
@@ -56,6 +69,7 @@ private:
     bool headless_ = false;
     std::atomic<bool> device_lost_{false};
     std::atomic<HRESULT> device_removed_reason_{S_OK};
+    D3D11DeviceDiagnostics diagnostics_;
 };
 
 } // namespace vr

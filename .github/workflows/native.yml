@@ -146,9 +146,11 @@ jobs:
         shell: pwsh
         run: python scripts/dev/check_release_compliance.py
 
-      - name: Run native build
+      - name: Run Windows PR fast gate
         shell: pwsh
-        run: python dev.py test --native-only --github
+        env:
+          VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK: "1"
+        run: python dev.py gate pr-fast
 
   windows-ui-preservation:
     name: Windows UI preservation
@@ -223,7 +225,10 @@ jobs:
         env:
           VOIDPLAYER_ALLOW_MISSING_FFMPEG_ANALYZER: "1"
           VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK: "1"
-        run: python dev.py ui-test --build ui_tests/smoke/basic.csv
+        run: >-
+          python dev.py ui-test --build
+          ui_tests/smoke/basic.csv
+          ui_tests/smoke/native_seek_preview_event.csv
 
   macos-native-test:
     name: macOS native test
@@ -386,6 +391,8 @@ jobs:
           key: voidplayer-flutter-${{ runner.os }}-${{ hashFiles('toolchains/flutter.lock.json') }}
 
       - name: Bootstrap pinned Flutter toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: PYTHON=python3.12 scripts/ci/bootstrap_flutter_toolchain.sh
 
       - name: Bootstrap pinned macOS Flutter engine

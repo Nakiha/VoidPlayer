@@ -135,6 +135,10 @@ void RendererRenderLoopCommandProcessor::run_body(
                     auto present_context = context.hooks.present_command_context();
                     RendererPresentCommandProcessor::present_frame(
                         present_context, cached.decision);
+                    {
+                        std::lock_guard<std::mutex> lock(state_mutex_);
+                        present_history_.set(cached.decision);
+                    }
                     drawn = true;
                     spdlog::debug("[Renderer] Paused frame (cached): pts={:.3f}s",
                                   cached.first_pts_us.has_value()

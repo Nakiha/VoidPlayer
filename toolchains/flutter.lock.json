@@ -2,15 +2,16 @@
   "schemaVersion": 1,
   "name": "voidplayer-flutter",
   "upstreamFlutter": "3.44.1",
-  "flutterVersion": "3.45.0-1.0.pre-39",
+  "flutterVersion": "3.44.2-0.0.pre-6",
   "dartSdkVersion": "3.12.1",
-  "frameworkRevision": "69b3172a210b5c48553db20ae8b7790a45a2036c",
+  "frameworkRevision": "cad896c21e492160c4e789b1beb2d463e7bd8a50",
   "engineRevision": "c416acfeb8126e097f758c664aaa3da929e27da0",
   "forkRemote": "https://github.com/Nakiha/VoidPlayer-Flutter.git",
-  "forkRef": "voidplayer-flutter-3.44.1-hdr.2",
-  "forkBranch": "voidplayer/hdr-surface-export-3.44.1",
-  "forkCommit": "69b3172a210b5c48553db20ae8b7790a45a2036c",
+  "forkRef": "codex/windows-surface-export",
+  "forkBranch": "codex/windows-surface-export",
+  "forkCommit": "cad896c21e492160c4e789b1beb2d463e7bd8a50",
   "defaultInstallPath": ".toolchains/flutter",
+  "macosLocalEngineReleaseTag": "voidplayer-flutter-3.44.1-hdr.2",
   "macosLocalEngineArtifacts": {
     "debug": {
       "engine": "host_debug_unopt_arm64",
@@ -25,6 +26,20 @@
       "sha256": "761e4b016b8fbab665c81cd217ac22ca3d3ffe52c5e6dee90c6a0e139137a076"
     }
   },
+  "windowsLocalEngineArtifacts": {
+    "debug": {
+      "engine": "host_debug_unopt",
+      "host": "host_debug_unopt",
+      "asset": "voidplayer-flutter-cad896c21e49-windows-host_debug_unopt.zip",
+      "sha256": "f9196c49a08cf7d65d2369cd086c52523f818aeec0e293cd57d42cd3ecbcb587"
+    },
+    "release": {
+      "engine": "host_release",
+      "host": "host_release",
+      "asset": "voidplayer-flutter-cad896c21e49-windows-host_release.zip",
+      "sha256": "410ef6d12ffc0a5e50892889486cbdb1a6b0173842845be43a8163dc8438ae0d"
+    }
+  },
   "requiredPatchMarkers": [
     {
       "path": "engine/src/flutter/shell/platform/darwin/macos/framework/Headers/FlutterEngine.h",
@@ -33,6 +48,14 @@
     {
       "path": "engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterEngine.mm",
       "contains": "VoidPlayerHDRSerializableSurfaceInfo"
+    },
+    {
+      "path": "engine/src/flutter/shell/platform/windows/public/flutter_windows.h",
+      "contains": "FLUTTER_WINDOWS_SURFACE_EXPORT_API"
+    },
+    {
+      "path": "engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.cc",
+      "contains": "D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX"
     }
   ]
 }

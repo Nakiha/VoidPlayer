@@ -6,6 +6,7 @@ import '../actions/action_registry.dart';
 import '../agent/agent_protocol_server.dart';
 import '../analysis/analysis_manager.dart';
 import '../analysis/analysis_toolbar_data_source.dart';
+import '../app_log.dart';
 import '../automation/main_window_harness.dart';
 import '../automation/test_runner.dart';
 import '../automation/ui_automation_bridge.dart';
@@ -89,6 +90,7 @@ class MainWindowController {
   );
   Future<void>? _shutdownFuture;
   AgentProtocolServer? _agentServer;
+  bool _nativeCompositorFrameRequestQueued = false;
 
   late final MainWindowAnalysisCoordinator analysisCoordinator;
   late final MainWindowTestHarness testHarness;
@@ -228,6 +230,41 @@ class MainWindowController {
 
   void _onStateChanged() {
     quickMarkCoordinator.handleStateChanged();
+    _queueNativeCompositorFlutterFrameRequest(
+      reason: _nativeCompositorFrameRequestReason(),
+    );
+  }
+
+  String _nativeCompositorFrameRequestReason() {
+    final state = stateStore.value;
+    return 'state-changed '
+        'tracks=${trackManager.entries.length} '
+        'sidebar=${state.marksSidebarVisible} '
+        'mediaInfo=${state.mediaInfoVisible} '
+        'profiler=${state.profilerVisible} '
+        'settings=${state.settingsVisible} '
+        'fullscreen=${state.fullScreen} '
+        'viewport=${state.viewportState.status.name}';
+  }
+
+  void _queueNativeCompositorFlutterFrameRequest({required String reason}) {
+    if (_nativeCompositorFrameRequestQueued ||
+        !_nativeCompositorActive ||
+        !player.canAcceptCommands) {
+      return;
+    }
+    log.info('[WindowsCompositorDebug] queue Flutter export frame: $reason');
+    _nativeCompositorFrameRequestQueued = true;
+    scheduleMicrotask(() {
+      _nativeCompositorFrameRequestQueued = false;
+      if (!_nativeCompositorActive || !player.canAcceptCommands) {
+        return;
+      }
+      fireAndLog(
+        'request native compositor Flutter frame',
+        player.requestNativeCompositorFlutterFrame(reason: reason),
+      );
+    });
   }
 
   MainWindowViewModel get viewModel {
@@ -287,6 +324,7 @@ class MainWindowController {
 
   void _onTrackManagerChanged() {
     stateStore.setLayout(_layout.copyWith(order: trackManager.order));
+    layoutCoordinator.onTrackSetChanged();
     layoutCoordinator.markLayoutDirty();
     quickMarkCoordinator.reconcilePersistence();
     fireAndLog(

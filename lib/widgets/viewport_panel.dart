@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../app_log.dart';
 import '../l10n/app_localizations.dart';
 import '../marks/quick_mark.dart';
 import '../platform/pointer_button_state_provider.dart';
@@ -593,6 +594,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
       _lastReportedDevicePixelRatio = devicePixelRatio;
       final physicalWidth = (logicalWidth * devicePixelRatio).round();
       final physicalHeight = (logicalHeight * devicePixelRatio).round();
+      log.info(
+        '[WindowsCompositorDebug] viewport resize report '
+        'logical=${logicalWidth.toStringAsFixed(1)}x'
+        '${logicalHeight.toStringAsFixed(1)} '
+        'physical=${physicalWidth}x$physicalHeight '
+        'dpr=${devicePixelRatio.toStringAsFixed(3)} '
+        'nativeHole=${widget.nativeCompositorHole} '
+        'texture=${widget.textureId}',
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         widget.onResize?.call(physicalWidth, physicalHeight, devicePixelRatio);
@@ -630,13 +640,29 @@ class _ViewportPanelState extends State<ViewportPanel> {
     _lastReportedGlobalOffset = globalOffset;
     _lastReportedCompositorLogicalSize = logicalSize;
     _lastReportedSurfaceSize = surfaceSize;
+    final left = (globalOffset.dx * devicePixelRatio).round();
+    final top = (globalOffset.dy * devicePixelRatio).round();
+    final width = (logicalSize.width * devicePixelRatio).round();
+    final height = (logicalSize.height * devicePixelRatio).round();
+    final surfaceWidth = surfaceSize.width.round();
+    final surfaceHeight = surfaceSize.height.round();
+    log.info(
+      '[WindowsCompositorDebug] native compositor viewport rect '
+      'physical=($left,$top ${width}x$height) '
+      'surface=${surfaceWidth}x$surfaceHeight '
+      'logicalOffset=(${globalOffset.dx.toStringAsFixed(1)},'
+      '${globalOffset.dy.toStringAsFixed(1)}) '
+      'logicalSize=${logicalSize.width.toStringAsFixed(1)}x'
+      '${logicalSize.height.toStringAsFixed(1)} '
+      'dpr=${devicePixelRatio.toStringAsFixed(3)}',
+    );
     widget.onNativeCompositorViewportRect?.call(
-      (globalOffset.dx * devicePixelRatio).round(),
-      (globalOffset.dy * devicePixelRatio).round(),
-      (logicalSize.width * devicePixelRatio).round(),
-      (logicalSize.height * devicePixelRatio).round(),
-      surfaceSize.width.round(),
-      surfaceSize.height.round(),
+      left,
+      top,
+      width,
+      height,
+      surfaceWidth,
+      surfaceHeight,
     );
   }
 
@@ -763,6 +789,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
         child: Listener(
           behavior: HitTestBehavior.opaque,
           onPointerDown: (e) {
+            log.info(
+              '[WindowsCompositorDebug] viewport pointerDown '
+              'kind=${e.kind.name} buttons=${e.buttons} '
+              'local=(${e.localPosition.dx.toStringAsFixed(1)},'
+              '${e.localPosition.dy.toStringAsFixed(1)}) '
+              'nativeHole=${widget.nativeCompositorHole} '
+              'state=${widget.viewportState.status.name} '
+              'texture=${widget.textureId}',
+            );
             if ((e.buttons & kPrimaryButton) != 0) {
               if (_isOnSplitHandle(context, e.localPosition)) {
                 _startSplitHandleDrag(context, e.localPosition.dx);
@@ -786,6 +821,14 @@ class _ViewportPanelState extends State<ViewportPanel> {
             _updateSplitFromLocalX(context, e.localPosition.dx);
           },
           onPointerUp: (e) {
+            log.info(
+              '[WindowsCompositorDebug] viewport pointerUp '
+              'kind=${e.kind.name} buttons=${e.buttons} '
+              'local=(${e.localPosition.dx.toStringAsFixed(1)},'
+              '${e.localPosition.dy.toStringAsFixed(1)}) '
+              'panning=$_panning splitting=$_splitting '
+              'quickMark=$_quickMarkDragging splitHandle=$_splitHandleDragging',
+            );
             if (_quickMarkDragging &&
                 !widget.interactionPolicy.isPrimaryButtonDown(e.buttons)) {
               _endQuickMarkDrag();
@@ -802,6 +845,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
             );
           },
           onPointerCancel: (_) {
+            log.info(
+              '[WindowsCompositorDebug] viewport pointerCancel '
+              'panning=$_panning splitting=$_splitting '
+              'quickMark=$_quickMarkDragging splitHandle=$_splitHandleDragging',
+            );
             if (_quickMarkDragging) {
               _cancelQuickMarkDrag();
               return;

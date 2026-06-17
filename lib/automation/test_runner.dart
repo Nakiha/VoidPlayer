@@ -114,6 +114,26 @@ class TestRunner {
           );
         }
 
+      case ScriptWaitPresentedFrameRange(
+        :final fileId,
+        :final minUs,
+        :final maxUs,
+        :final timeout,
+        :final interval,
+      ):
+        log.info(
+          'TestRunner ${instr.time}: WAIT_PRESENTED_FRAME_RANGE '
+          'fileId=$fileId range=[$minUs,$maxUs] '
+          'timeout=${timeout.inMilliseconds}ms',
+        );
+        await _executeWaitPresentedFrameRange(
+          fileId: fileId,
+          minUs: minUs,
+          maxUs: maxUs,
+          timeout: timeout,
+          interval: interval,
+        );
+
       case ScriptSetAnalysisTestScript(:final path):
         log.info('TestRunner ${instr.time}: SET_ANALYSIS_TEST_SCRIPT $path');
         automation.analysisTestScriptPath = path;
@@ -294,6 +314,27 @@ class TestRunner {
           'drawable=${info['nativeCompositorDrawableWidth']}x${info['nativeCompositorDrawableHeight']} '
           'failure=${info['nativeCompositorLastFailure']}',
         );
+      case DebugFailNativeCompositorAction(:final reason):
+        log.info('TestRunner: DEBUG_FAIL_NATIVE_COMPOSITOR reason=$reason');
+        await controller.debugFailNativeCompositor(reason: reason);
+      case DebugSimulateWindowsDeviceLossAction(:final target, :final reason):
+        log.info(
+          'TestRunner: DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS '
+          'target=$target reason=$reason',
+        );
+        await controller.debugSimulateWindowsDeviceLoss(
+          target: target,
+          reason: reason,
+        );
+      case ResetNativePerfCountersAction():
+        log.info('TestRunner: RESET_NATIVE_PERF_COUNTERS');
+        await controller.resetNativePerfCounters();
+      case BeginNativeInteractionSampleAction(:final label):
+        log.info('TestRunner: BEGIN_NATIVE_INTERACTION_SAMPLE $label');
+        await controller.beginNativeInteractionSample(label: label);
+      case EndNativeInteractionSampleAction(:final label):
+        log.info('TestRunner: END_NATIVE_INTERACTION_SAMPLE $label');
+        await controller.endNativeInteractionSample(label: label);
       case DebugNativeTimingAction():
         final info = await controller.getDiagnostics();
         String value(String key) => '${info[key] ?? ''}';
@@ -643,6 +684,29 @@ class TestRunner {
       'WAIT_${state.name.toUpperCase()} timed out after ${timeout.inMilliseconds}ms',
     );
   }
+
+  Future<void> _executeWaitPresentedFrameRange({
+    required int fileId,
+    required int minUs,
+    required int maxUs,
+    required Duration timeout,
+    required Duration interval,
+  }) async {
+    final sw = Stopwatch()..start();
+    int? lastPtsUs;
+    while (sw.elapsed < timeout) {
+      final timing = await controller.currentPresentedFrame(fileId);
+      lastPtsUs = timing?.ptsUs;
+      if (lastPtsUs != null && lastPtsUs >= minUs && lastPtsUs <= maxUs) {
+        return;
+      }
+      await Future<void>.delayed(interval);
+    }
+    throw AssertionError(
+      'WAIT_PRESENTED_FRAME_RANGE timed out after ${timeout.inMilliseconds}ms: '
+      'expected fileId=$fileId in [$minUs, $maxUs] μs, got $lastPtsUs',
+    );
+  }
 }
 
 class _FlutterFrameTimingProbe {
@@ -653,10 +717,17 @@ class _FlutterFrameTimingProbe {
 
   _FlutterFrameTimingProbe._();
 
-  void ensureInstalled() {
-    if (_installed) return;
-    SchedulerBinding.instance.addTimingsCallback(_onTimings);
+  bool ensureInstalled() {
+    if (_installed) return true;
+    SchedulerBinding? binding;
+    try {
+      binding = SchedulerBinding.instance;
+    } catch (_) {
+      return false;
+    }
+    binding.addTimingsCallback(_onTimings);
     _installed = true;
+    return true;
   }
 
   void reset() {
@@ -664,7 +735,9 @@ class _FlutterFrameTimingProbe {
   }
 
   Future<_FlutterFrameTimingSummary> collectAndReset() async {
-    ensureInstalled();
+    if (!ensureInstalled()) {
+      return _FlutterFrameTimingSummary.fromTimings(const <FrameTiming>[]);
+    }
     SchedulerBinding.instance.scheduleFrame();
     await SchedulerBinding.instance.endOfFrame;
     await Future<void>.delayed(const Duration(milliseconds: 1));

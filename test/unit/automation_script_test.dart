@@ -344,6 +344,31 @@ void main() {
     expect(action.sourceId, 'clip01_v2');
   });
 
+  test('parses WAIT_PRESENTED_FRAME_RANGE with timeout and interval', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_presented_frame_wait_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('''
+0.1,WAIT_PRESENTED_FRAME_RANGE,1,900000,1500000,3000,25
+''');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1));
+    expect(
+      instructions.single,
+      isA<ScriptWaitPresentedFrameRange>()
+          .having((i) => i.fileId, 'fileId', 1)
+          .having((i) => i.minUs, 'minUs', 900000)
+          .having((i) => i.maxUs, 'maxUs', 1500000)
+          .having((i) => i.timeout.inMilliseconds, 'timeoutMs', 3000)
+          .having((i) => i.interval.inMilliseconds, 'intervalMs', 25),
+    );
+  });
+
   test('parses EXPORT_MARKS with output path', () {
     final file = File(
       '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_export_marks_script_test.csv',
@@ -397,5 +422,23 @@ void main() {
     final assertion = (instructions[2] as ScriptAssert).assertion;
     expect(assertion, isA<AssertMarkCount>());
     expect((assertion as AssertMarkCount).count, 2);
+  });
+
+  test('parses TOGGLE_MARKS_SIDEBAR', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_marks_sidebar_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('0.1,TOGGLE_MARKS_SIDEBAR\n');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(1));
+    expect(
+      (instructions.single as ScriptAutomationAction).action,
+      isA<ToggleMarksSidebar>(),
+    );
   });
 }

@@ -48,6 +48,20 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | Test | Type | Gate | Requires | Covered risk |
 | --- | --- | --- | --- | --- |
 | `video_renderer_tests` | contract + integration | PR fast / Windows preservation | Windows FFmpeg | Shared renderer, D3D11, FFI command policy, decode/seek/layout unit coverage. |
+| `video_renderer_tests [windows_display]` | platform contract | Windows PR fast / Windows preservation | Windows SDK/DXGI | Active-output selection, negative-coordinate layouts, deterministic fallback, and HDR color-space classification. |
+| `video_renderer_tests [windows_cross_adapter]` | platform contract | Windows PR fast / Windows preservation | Windows SDK/D3D11 | LUID comparison, cross-adapter requirement decisions, event-query/shared-fence sync policy, safe fallback, and deterministic transport capability diagnostics without requiring a multi-GPU desktop. |
+| `video_renderer_tests [windows_device_recovery]` | platform contract | Windows PR fast / Windows preservation | Windows SDK/DXGI | Device-loss state names, narrow DXGI removed/reset/hung classification, removed-reason handling, and preserved-player diagnostics contract. |
+| `video_renderer_tests [windows_high_refresh]` | platform contract | Windows PR fast / Windows preservation | none beyond Windows build | High-refresh metric histograms, low-refresh functional-only classification, concrete hot-path failure reasons, drop-rate math, source-cache reuse, and source-projection redraw failure classification. |
+| `video_renderer_tests [windows_overlay_layer]` | platform contract | Windows PR fast / Windows preservation | none beyond Windows build | Retained overlay signature, dirty rebuild, reuse, generation commit, fallback, and reset behavior. |
+| `windows_d3d11_color_layout_parity_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; explicit WARP allowed only for hosted CI | Synthetic shared renderer snapshots through D3D11 capture; BGRA, NV12, planar YUV420, P010, odd stride, split/layout fit. |
+| `windows_d3d11_fp16_scrgb_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; explicit WARP allowed only for hosted CI | RGBA16F scRGB capture, SDR white scaling, PQ/HLG/P010/BT.2020, unclipped highlights, layout/overlay pass, and BGRA source-rerender compatibility. |
+| `video_renderer_tests [windows_dcomp]` | backend contract | PR fast / Windows preservation | D3D11 + keyed mutex | Native-compositor policy and shared FP16 ring lease/resize generations. |
+| `video_renderer_tests [windows_source_cache]` | backend contract | PR fast / Windows preservation | D3D11 + keyed mutex | Atomic bundle publication, lease retirement, backpressure, signature replacement, and 384 MiB depth policy. |
+| `video_renderer_tests [windows_source_projection]` | projection contract | PR fast / Windows preservation | none beyond Windows build | Four-track order, split, pan/zoom, negative/out-of-range UV, missing slots, and background fallback. |
+| `windows_d3d11_source_projection_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; WARP accepted for hosted contract coverage | Real DComp projection shader, four source textures, deterministic order, and unclipped FP16 scRGB highlights. |
+| `windows_d3d11_dcomp_flutter_composite_smoke` | backend contract | PR fast / Windows preservation | D3D11 hardware adapter; WARP accepted for hosted contract coverage | Executes the final shader against FP16 scRGB and BGRA8 SDR targets, including Flutter premultiplied-alpha composition. |
+| `windows_d3d11_high_refresh_projection_overlay_smoke` | backend contract | PR fast / Windows preservation | none beyond Windows build | High-refresh projection/overlay gate canary, including pass/fail threshold classification and stale viewport redraw detection. |
+| `windows_d3d11_retained_overlay_layer_smoke` | backend contract | PR fast / Windows preservation | none beyond Windows build | Retained overlay canary: dirty primitive packages rebuild once, projection ticks reuse the GPU buffer, and high-refresh gates reject raster-without-reuse. |
 | `analysis_tests` | contract | Release candidate / analysis changes | analysis submodules/tools | VAC2/VACHUNK/cache and analysis FFI behavior. |
 | `test_ffi_c` | FFI canary | PR fast when FFI is built | Windows FFI target | C ABI load/call sanity. |
 | `voidplayer_cli_help` | CLI canary | Release candidate | analysis build | CLI starts and exposes help. |
@@ -82,6 +96,19 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | Script group | Canonical role | Gate |
 | --- | --- | --- |
 | `ui_tests/smoke/basic.csv` | Windows runner and basic playback smoke. | Windows preservation / release candidate |
+| `ui_tests/smoke/native_seek_preview_event.csv` | Windows EventChannel, fixed SDR presentation, and active DXGI output diagnostics contract. | Windows preservation / release candidate |
+| `ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv` | Locked-engine Flutter export, DComp activation/ACK, seek, resize, viewport alpha, and fail-closed compositor failure. | Windows preservation / targeted presentation changes |
+| `ui_tests/smoke/native_compositor_flutter_surface_pump_scrgb.csv` | Locked-engine compositor-owned Flutter surface pump for settings, media-info, toolbar hover, export publish/request diagnostics, and stale-generation fail-closed coverage. | Windows preservation / targeted presentation changes |
+| `ui_tests/smoke/native_compositor_window_close_scrgb.csv` | Windows native compositor close path through `WindowManager.close`, ensuring the main window hides before native/DComp teardown so no transparent viewport/black-frame flash is shown. | Windows preservation / targeted presentation changes |
+| `ui_tests/smoke/native_source_projection_dcomp_scrgb.csv` | Paused/playing source cache, pan/zoom, split, analysis overlay projection, seek/resize, diagnostics, and fail-closed cleanup. | Windows preservation / targeted presentation changes |
+| `ui_tests/smoke/native_compositor_auto_sdr.csv` | Default Windows Auto policy selects the BGRA8 SDR native compositor and locks nominal 80-nit white. | Windows preservation |
+| `ui_tests/smoke/native_compositor_device_recovery_sdr.csv` | Debug-injected presentation device-loss recovery in default Auto/SDR mode; verifies player/track preservation, counters, active compositor, seek, and EventChannel health. | Windows preservation / targeted device recovery changes |
+| `ui_tests/smoke/native_compositor_device_recovery_scrgb.csv` | Debug-injected DComp/compositor device-loss recovery in forced scRGB mode; verifies FP16 target returns active and pan/seek survive. | Windows preservation / targeted device recovery changes |
+| `ui_tests/smoke/native_source_projection_device_recovery.csv` | Debug-injected source-cache device-loss recovery while source projection is active; verifies cache republish, pan/zoom, split, playing-state seek presented anchor, and EventChannel health. | Windows preservation / targeted device recovery changes |
+| `ui_tests/smoke/native_high_refresh_paused_pan_zoom.csv` | Forced scRGB paused dual-track pan/zoom; verifies source-projection hot path, source reuse, and zero viewport redraws. | Windows preservation / `windows-high-refresh-local` |
+| `ui_tests/smoke/native_high_refresh_playing_pan_split.csv` | Forced scRGB playing pan/split/order; verifies DComp remains active, source reuse grows, and seek still works. | Windows preservation / `windows-high-refresh-local` |
+| `ui_tests/smoke/native_high_refresh_overlay_pan_zoom.csv` | Forced scRGB source-projection overlay interaction; verifies retained overlay layer active, reuse/composite counters, no viewport redraw during projection, and visible output. | Windows preservation / `windows-high-refresh-local` |
+| `ui_tests/smoke/windows_hdr_auto_runtime.csv` | Adds/removes an HLG track and verifies live SDR/scRGB promotion/demotion, white-level, generations, and playback continuity. | Local `windows-hdr-auto`; requires Windows HDR enabled |
 | `ui_tests/timeline/**` | Real pointer timeline/seek path. | Targeted Windows preservation; stress scripts nightly/release. |
 | `ui_tests/seek/**` | Direct seek/step/rapid seek regressions. | Targeted preservation; rapid/storm scripts nightly. |
 | `ui_tests/loop/**` | Loop range state and commit behavior. | Targeted preservation. |
@@ -120,10 +147,11 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | --- | --- | --- |
 | `.github/workflows/native.yml` | push / PR | native PR fast, macOS native fast, macOS runner build, macOS analysis smoke |
 | `.github/workflows/native.yml` | weekly or manual `full_matrix=true` | full Windows native config matrix |
-| `.github/workflows/native.yml` | manual `windows_ui_preservation=true` | GitHub-hosted Windows runner build + `python dev.py ui-test --build ui_tests/smoke/basic.csv`; skips analyzer tool bundling because the smoke does not cover analysis overlay, and enables `VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1` because hosted Windows exposes only an unusable software DXGI adapter. Native/analysis coverage stays in the same workflow's `Native test` job. |
+| `.github/workflows/native.yml` | manual `windows_ui_preservation=true` | GitHub-hosted Windows runner build + basic and native event/diagnostics UI smokes; skips analyzer tool bundling because the smokes do not cover analysis overlay, and enables `VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1` because hosted Windows exposes only an unusable software DXGI adapter. Native coverage and the D3D11 color/layout canary stay in the same workflow's `Windows PR fast gate` job. |
 | `.github/workflows/macos-ui.yml` | weekly | `python3.12 dev.py gate macos-ui-smoke` |
 | `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
 | Local HDR EDR gate | manual on EDR-capable macOS display before merging HDR compositor changes | `python3.12 dev.py gate macos-hdr-edr-smoke` |
+| Local Windows cross-adapter gate | manual on multi-adapter Windows desktop before merging output migration or shared-fence sync changes; runs event-query and shared-fence A/B evidence | `python dev.py gate windows-cross-adapter-local` |
 | Local macOS package gate | manual before release candidate | `python3.12 dev.py gate macos-release-readiness` |
 
 The local `release-candidate` gate and the GitHub full native config matrix are

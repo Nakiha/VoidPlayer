@@ -25,7 +25,7 @@ if "all" in modes:
 
 lock = json.loads(Path("toolchains/flutter.lock.json").read_text(encoding="utf-8"))
 repo = lock["forkRemote"].removeprefix("https://github.com/").removesuffix(".git")
-ref = lock["forkRef"]
+release_tag = lock.get("macosLocalEngineReleaseTag") or lock["forkRef"]
 artifacts = lock.get("macosLocalEngineArtifacts", {})
 
 for mode in ("debug", "release"):
@@ -39,7 +39,7 @@ for mode in ("debug", "release"):
             [
                 mode,
                 repo,
-                ref,
+                release_tag,
                 spec["asset"],
                 spec["sha256"],
                 spec["engine"],

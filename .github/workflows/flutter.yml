@@ -58,6 +58,8 @@ jobs:
           key: voidplayer-flutter-${{ runner.os }}-${{ hashFiles('toolchains/flutter.lock.json') }}
 
       - name: Bootstrap pinned Flutter toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: PYTHON=python3.12 scripts/ci/bootstrap_flutter_toolchain.sh
 
       - name: Install dependencies

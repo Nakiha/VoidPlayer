@@ -38,7 +38,7 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
     float2 tex_uv = calc_aspect_fit_uv(local_uv, track_idx, out_of_bounds);
 
     float4 color = out_of_bounds
-        ? u_background_color
+        ? map_sdr_ui_to_output(u_background_color)
         : sample_track(track_idx, tex_uv);
 
     if (u_mode == MODE_SPLIT_SCREEN && u_canvas_width > 0.0) {
@@ -52,7 +52,9 @@ float4 PSMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_T
             float alpha = (dist <= core_width)
                 ? 1.0
                 : 1.0 - ((dist - core_width) / edge_width);
-            float3 divider_color = 1.0 - color.rgb;
+            float3 divider_color =
+                map_sdr_ui_to_output(float4(1.0, 1.0, 1.0, 1.0)).rgb -
+                color.rgb;
             color.rgb = divider_color * alpha + color.rgb * (1.0 - alpha);
             color.a = 1.0;
         }

@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/app_log.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/marks/quick_mark.dart';
 import 'package:void_player/platform/pointer_button_state_provider.dart';
@@ -23,6 +24,10 @@ class _FakePointerButtonStateProvider implements PointerButtonStateProvider {
 }
 
 void main() {
+  setUpAll(() async {
+    await initLogging(['--log-level=flutter=OFF']);
+  });
+
   Widget buildPanel({
     required List<Offset> pans,
     required List<({double factor, Offset position})> zooms,

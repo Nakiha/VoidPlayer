@@ -25,6 +25,11 @@ PresentationBackendStats Renderer::Impl::presentation_backend_stats() const {
     return presentation_.backend_stats();
 }
 
+PresentationBackendDiagnostics
+Renderer::Impl::presentation_backend_diagnostics() const {
+    return presentation_.backend_diagnostics();
+}
+
 bool Renderer::Impl::copy_last_presentation_frame_info(
     PresentationBackendFrameInfo* out) const {
     return presentation_.copy_last_frame_info(out);

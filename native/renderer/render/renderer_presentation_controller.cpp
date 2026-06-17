@@ -104,6 +104,12 @@ PresentationBackendStats RendererPresentationController::backend_stats() const {
     return backend_ ? backend_->presentation_stats() : PresentationBackendStats{};
 }
 
+PresentationBackendDiagnostics
+RendererPresentationController::backend_diagnostics() const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ ? backend_->diagnostics() : PresentationBackendDiagnostics{};
+}
+
 bool RendererPresentationController::copy_last_frame_info(
     PresentationBackendFrameInfo* out) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
@@ -194,6 +200,11 @@ void RendererPresentationController::clear_headless_output() {
     }
 }
 
+bool RendererPresentationController::update_sdr_white_level(double nits) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex());
+    return backend_ && backend_->update_sdr_white_level(nits);
+}
+
 void RendererPresentationController::wait_gpu_idle(
     const char* label,
     PresentationMetricsStore& metrics) {
@@ -261,6 +272,8 @@ bool RendererPresentationController::draw_frame(
     hooks.draw_overlay = std::move(overlay_hooks.draw_overlay);
     hooks.composite_bgra_overlay =
         std::move(overlay_hooks.composite_bgra_overlay);
+    hooks.build_overlay_primitives =
+        std::move(overlay_hooks.build_overlay_primitives);
     hooks.async_draw_completed = std::move(async_completion);
     return backend_->draw_frame(snapshot, hooks);
 }
@@ -270,6 +283,9 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
     RendererPresentationDrawResult result;
     const auto backend_start = std::chrono::steady_clock::now();
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    const uint64_t source_cache_publish_count_before =
+        backend_ ? backend_->diagnostics().source_cache_presented_anchor_publish_count
+                 : 0;
     const bool async_backend =
         backend_ && backend_->completes_draw_asynchronously();
     auto async_completion =
@@ -335,6 +351,17 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
 
     if (!result.drew) {
         result.failure_error = backend_last_error();
+    }
+    if (backend_) {
+        const auto diagnostics = backend_->diagnostics();
+        if (diagnostics.source_cache_presented_anchor_publish_count >
+            source_cache_publish_count_before) {
+            result.source_cache_published = true;
+            result.source_cache_ring_generation =
+                diagnostics.source_cache_presented_anchor_generation;
+            result.source_cache_frame_generation =
+                diagnostics.source_cache_presented_anchor_frame_generation;
+        }
     }
     result.backend_us = presentation_elapsed_us_since(backend_start);
     return result;
@@ -517,6 +544,79 @@ void RendererPresentationController::release_d3d_shared_texture(
     if (auto* backend = d3d_backend()) {
         backend->release_shared_texture(buffer_index, buffer_generation);
     }
+}
+
+bool RendererPresentationController::acquire_d3d_shared_fp16_texture(
+    SharedFp16TextureSnapshot& snapshot) const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    auto* backend = d3d_backend();
+    return backend && backend->acquire_shared_fp16_texture(snapshot);
+}
+
+void RendererPresentationController::release_d3d_shared_fp16_texture(
+    int buffer_index, uint64_t ring_generation) const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    auto* backend = d3d_backend();
+    if (backend) {
+        backend->release_shared_fp16_texture(
+            buffer_index, ring_generation);
+    }
+}
+
+void RendererPresentationController::set_d3d_shared_fp16_frame_callback(
+    std::function<void()> callback) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    auto* backend = d3d_backend();
+    if (backend) {
+        backend->set_shared_fp16_frame_callback(std::move(callback));
+    }
+}
+
+bool RendererPresentationController::configure_d3d_source_cache(
+    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    auto* backend = d3d_backend();
+    return backend && backend->configure_source_cache(descriptors);
+}
+
+void RendererPresentationController::clear_d3d_source_cache(
+    const char* reason) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (auto* backend = d3d_backend()) {
+        backend->clear_source_cache(reason);
+    }
+}
+
+bool RendererPresentationController::acquire_d3d_source_cache_bundle(
+    SharedSourceCacheBundleSnapshot& snapshot) const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    auto* backend = d3d_backend();
+    return backend && backend->acquire_source_cache_bundle(snapshot);
+}
+
+void RendererPresentationController::release_d3d_source_cache_bundle(
+    int buffer_index, uint64_t ring_generation) const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (auto* backend = d3d_backend()) {
+        backend->release_source_cache_bundle(
+            buffer_index, ring_generation);
+    }
+}
+
+void RendererPresentationController::set_d3d_source_cache_frame_callback(
+    std::function<void()> callback) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (auto* backend = d3d_backend()) {
+        backend->set_source_cache_frame_callback(std::move(callback));
+    }
+}
+
+bool RendererPresentationController::recover_d3d_device_loss(
+    const char* reason,
+    long removed_reason) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    auto* backend = d3d_backend();
+    return backend && backend->recover_device_loss(reason, removed_reason);
 }
 
 D3D11RenderBackend* RendererPresentationController::d3d_backend() const {

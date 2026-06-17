@@ -53,6 +53,17 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 - `python dev.py build --native` 不能替代 Flutter runner 重建；修改 `native/` C++ 后，必须执行 `flutter build windows --release` 或 `python dev.py ui-test --build ...`，否则上屏测试仍可能运行旧代码。
 - macOS 上屏相关修改必须重建 macOS runner 或使用 `python dev.py mac-ui-test --build ...`，否则可能仍在跑旧 `.app`。
 - native 渲染路径不引入 `libswscale` / `libyuv` 作为通用 fallback；新增像素格式支持时应做确定性转换，并验证软解/硬解颜色一致性。
+- Windows presentation 改动必须经过 `PresentationBackend` / D3D11 backend 边界，不在 shared scheduler 或 runner 中复制渲染策略。
+- Windows presentation fallback 必须显式、可诊断；改变 adapter、driver type、target format 或 presentation mode 时必须同步日志和 diagnostics。
+- 修改 shared presentation backend、Windows texture/format/color 路径时，必须运行确定性 D3D11 color/layout parity 与 FP16/scRGB smoke，以及 `windows-preservation`。
+- Windows native compositor 只能合成锁定 Flutter engine 导出的完整 premultiplied-alpha surface；禁止 color-key、`WS_EX_LAYERED`、窗口/桌面捕获、矩形 hard hole 或 child HWND sandwich。
+- Windows 视频上屏禁止回退到 Flutter Texture SDR；SDR 只能表示 native DComp BGRA8 target。native compositor / Flutter export 不可用时必须 fail closed 或降级到 native SDR，不能伪装成正常 Texture 播放。
+- 修改 Flutter surface export、共享 FP16 ring、DComp 激活/失败协议时，必须使用锁定 Windows local engine 跑 DComp native canary 和 rebuilt UI smoke；普通 Flutter SDK 的 fallback 不能作为通过证据。
+- 修改 Windows source cache/projection、bundle lease、DComp projection shader 或 native overlay 合成时，必须运行 `[windows_source_cache]`、`[windows_source_projection]`、`windows_d3d11_source_projection_smoke` 和 rebuilt source-projection UI smoke，并保持 viewport FP16 fallback 可诊断。
+- 修改 Windows Auto policy、display refresh、SDR/scRGB DComp target 或 SDR white-level 更新时，必须同时验证默认 Auto SDR 与强制 scRGB；HDR target 失败必须先降级 native SDR，native SDR 失败必须 fail closed。具备 HDR 显示时补跑 `python dev.py gate windows-hdr-auto`。
+- 修改 Windows cross-adapter transport、shared-fence sync、output-device migration、display calibration diagnostics 或 adapter fallback 时，必须运行 `[windows_cross_adapter]` 定向测试；具备多 adapter / HDR output 机器时补跑 `python dev.py gate windows-cross-adapter-local`。跨 adapter 只能使用 GPU-copy bridge 或明确诊断回落，禁止 CPU readback、窗口截图或播放器私有 ICC/LUT 校色；shared-fence 只能作为证据驱动 opt-in，不能无本地 A/B 证据改成默认。
+- 修改 Windows device-loss recovery、D3D11/DComp 原地重建、source-cache 清理或 debug recovery 注入时，必须运行 `[windows_device_recovery]`，并覆盖默认 SDR、强制 scRGB 和 source-projection recovery UI smoke；恢复失败必须保持可诊断 native fallback 或 fail closed，不能销毁 player/track model，不能回 Flutter Texture。
+- 修改 Windows high-refresh interaction、DComp present cadence、source projection pan/zoom/split/order、native overlay 合成或相关 diagnostics 时，必须运行 `[windows_high_refresh]`、`[windows_overlay_layer]`、`windows_d3d11_high_refresh_projection_overlay_smoke`、`windows_d3d11_retained_overlay_layer_smoke` 和 rebuilt high-refresh UI smoke；高刷机器补跑 `python dev.py gate windows-high-refresh-local` 并要求 hot-path gate pass，低刷机器至少证明不退回 viewport redraw 或 per-composite overlay rebuild 热路径。
 - 不要在一个轮次里堆无关改动。每轮完成后先测试，再单独提交。
 
 ## 验证矩阵
@@ -64,7 +75,7 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 | native C++ 单元逻辑 | `python dev.py gate pr-fast` 或 `python dev.py test --native-only` |
 | native C++ 影响 Windows runner / Texture / 渲染上屏 | `python dev.py gate windows-preservation` 或等价 Windows build + UI smoke |
 | native C++ 影响 macOS runner / Texture / Metal 上屏 | `python dev.py gate macos-ui-smoke` 或相关 `python dev.py mac-ui-test --build ...` |
-| shared renderer / presentation backend 边界 | macOS 相关 smoke + 后续 Windows preservation gate |
+| shared renderer / presentation backend 边界 | 对应平台 backend parity smoke + macOS 相关 smoke + Windows preservation gate |
 | macOS package / signing / FFmpeg dylib / release docs | `python dev.py gate macos-release-readiness` |
 | Flutter UI / Action / 主窗口 coordinator / 播放控制 | 相关 `python dev.py ui-test --build ...`，不要只跑 `python dev.py test --flutter-only` |
 | 窗口、布局、pan/zoom、split | `ui_tests/viewport/` 中相关脚本，加 smoke |

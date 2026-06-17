@@ -1544,6 +1544,19 @@ TEST_CASE("TrackPresentPolicy computes next frame event PTS",
     next_event = compute_next_frame_event_pts_us(bogus_duration_manager, 1000);
     REQUIRE(next_event.has_value());
     REQUIRE(*next_event == 34333);
+
+    TrackPipelineManager single_frame_manager;
+    single_frame_manager[0] = make_track(make_frame(80, 30));
+    next_event = compute_next_frame_event_pts_us(single_frame_manager, 80);
+    REQUIRE(next_event.has_value());
+    REQUIRE(*next_event == 110);
+
+    TrackPipelineManager no_duration_manager;
+    no_duration_manager[0] = make_track(make_frame(80, 0));
+    no_duration_manager[1] = make_track(make_frame(90, -10));
+    REQUIRE_FALSE(compute_next_frame_event_pts_us(
+        no_duration_manager,
+        100).has_value());
 }
 
 TEST_CASE("TrackStepPolicy builds step-forward decisions",

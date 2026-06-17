@@ -4,7 +4,7 @@
 
 namespace vr {
 
-constexpr size_t kShaderConstantsSize = 304;
+constexpr size_t kShaderConstantsSize = 320;
 
 struct ShaderConstants {
     int mode;              // offset 0
@@ -33,6 +33,9 @@ struct ShaderConstants {
     int color_matrix[4];           // offset 256
     int color_transfer[4];         // offset 272
     int color_primaries[4];        // offset 288
+    int output_target;              // offset 304
+    float sdr_white_scale;          // offset 308
+    float _pad2[2];                 // offset 312
 };
 
 static_assert(sizeof(ShaderConstants) == kShaderConstantsSize,
@@ -49,5 +52,7 @@ static_assert(offsetof(ShaderConstants, display_offset_x) == 128);
 static_assert(offsetof(ShaderConstants, background_color) == 224);
 static_assert(offsetof(ShaderConstants, color_range) == 240);
 static_assert(offsetof(ShaderConstants, color_primaries) == 288);
+static_assert(offsetof(ShaderConstants, output_target) == 304);
+static_assert(offsetof(ShaderConstants, sdr_white_scale) == 308);
 
 } // namespace vr

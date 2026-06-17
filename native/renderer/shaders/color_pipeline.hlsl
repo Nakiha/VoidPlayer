@@ -65,6 +65,37 @@ float3 tone_map_to_sdr(float3 rgb, int transfer, int primaries) {
     return saturate(rgb);
 }
 
+float3 map_to_windows_scrgb(float3 rgb, int transfer, int primaries) {
+    if (transfer == COLOR_TRANSFER_PQ) {
+        return convert_linear_primaries_to_bt709(
+            pq_to_linear_nits(rgb) / 80.0,
+            primaries);
+    }
+    if (transfer == COLOR_TRANSFER_HLG) {
+        return convert_linear_primaries_to_bt709(
+            hlg_to_linear(rgb) * (4.0 * 203.0 / 80.0),
+            primaries);
+    }
+    return convert_linear_primaries_to_bt709(
+        srgb_to_linear(rgb),
+        primaries) * u_sdr_white_scale;
+}
+
+float3 map_to_output(float3 rgb, int transfer, int primaries) {
+    if (u_output_target == OUTPUT_TARGET_WINDOWS_SCRGB) {
+        return map_to_windows_scrgb(rgb, transfer, primaries);
+    }
+    return tone_map_to_sdr(rgb, transfer, primaries);
+}
+
+float4 map_sdr_ui_to_output(float4 color) {
+    color = saturate(color);
+    if (u_output_target == OUTPUT_TARGET_WINDOWS_SCRGB) {
+        return float4(srgb_to_linear(color.rgb) * u_sdr_white_scale, color.a);
+    }
+    return color;
+}
+
 float3 yuv_to_rgb(float y, float2 uv, int range, int color_matrix, int transfer, int primaries) {
     float y_full = y;
     float2 cbcr = (uv * 255.0 - 128.0) / 255.0;
@@ -100,5 +131,5 @@ float3 yuv_to_rgb(float y, float2 uv, int range, int color_matrix, int transfer,
         rgb -= (1.0 / 255.0);
     }
 
-    return tone_map_to_sdr(rgb, transfer, primaries);
+    return map_to_output(rgb, transfer, primaries);
 }

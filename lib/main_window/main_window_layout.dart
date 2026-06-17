@@ -4,7 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../app_log.dart';
 import '../marks/quick_mark.dart';
+import '../native_compositor_flags.dart';
 import '../track_manager.dart';
 import '../utils/async_guard.dart';
 import '../video_renderer_controller.dart';
@@ -21,6 +23,7 @@ class MainWindowLayoutCoordinator {
   final MainWindowStateStore stateStore;
   final TrackManager trackManager;
   final bool Function() mounted;
+  final bool Function() sourceProjectionEnabled;
 
   Ticker? _ticker;
   Timer? _resizeDebounceTimer;
@@ -52,7 +55,10 @@ class MainWindowLayoutCoordinator {
     required this.stateStore,
     required this.trackManager,
     required this.mounted,
-  }) {
+    bool Function()? sourceProjectionEnabled,
+  }) : sourceProjectionEnabled =
+           sourceProjectionEnabled ??
+           (() => NativeCompositorFlags.sourceProjection) {
     _ticker = vsync.createTicker((_) {
       fireAndLog('flush pending layout', flushPendingLayout());
     });
@@ -230,6 +236,14 @@ class MainWindowLayoutCoordinator {
     if (width == viewportWidth && height == viewportHeight) return;
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
+    log.info(
+      '[WindowsCompositorDebug] layout onViewportResize '
+      '${previousWidth}x$previousHeight -> ${width}x$height '
+      'dpr=${devicePixelRatio.toStringAsFixed(3)} '
+      'immediate=$immediate layoutDirty=$_layoutDirty '
+      'nativeActive=${_state.nativeCompositorActive} '
+      'tracks=${trackCount()}',
+    );
     if (!_layoutDirty && previousWidth > 0 && previousHeight > 0) {
       _rescaleViewOffsetForResize(previousWidth, previousHeight, width, height);
     }
@@ -237,7 +251,7 @@ class MainWindowLayoutCoordinator {
     viewportHeight = height;
     _prewarmNextMarksSidebarViewportTarget();
     _resizeDebounceTimer?.cancel();
-    if (immediate) {
+    if (immediate || _state.nativeCompositorActive) {
       _resizeDebounceTimer = null;
       _markResizeDirty();
       return;
@@ -280,6 +294,12 @@ class MainWindowLayoutCoordinator {
 
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
+    log.info(
+      '[WindowsCompositorDebug] layout preemptViewportResize '
+      '${previousWidth}x$previousHeight -> ${width}x$height '
+      'layoutDirty=$_layoutDirty activeFlush=${_activeFlush != null} '
+      'tracks=${trackCount()}',
+    );
     _resizeDebounceTimer?.cancel();
     _resizeDebounceTimer = null;
     _resizeDirty = false;
@@ -295,6 +315,10 @@ class MainWindowLayoutCoordinator {
     viewportWidth = width;
     viewportHeight = height;
     await controller.resize(width, height);
+    log.info(
+      '[WindowsCompositorDebug] layout preemptViewportResize native complete '
+      '${width}x$height',
+    );
     if (_disposed || !mounted()) return;
     final nextLayout = await controller.getLayout();
     if (_disposed || !mounted()) return;
@@ -387,6 +411,13 @@ class MainWindowLayoutCoordinator {
         .clamp(1, 1 << 30)
         .toInt();
     if (nextWidth == baseWidth && nextHeight == baseHeight) return;
+    log.info(
+      '[WindowsCompositorDebug] layout queuePreemptResize '
+      'base=${baseWidth}x$baseHeight '
+      'delta=(${widthDelta.toStringAsFixed(1)},'
+      '${heightDelta.toStringAsFixed(1)}) '
+      'dpr=${dpr.toStringAsFixed(3)} next=${nextWidth}x$nextHeight',
+    );
     _queuedPreemptWidth = nextWidth;
     _queuedPreemptHeight = nextHeight;
     if (_preemptResizeFuture == null) {
@@ -547,6 +578,11 @@ class MainWindowLayoutCoordinator {
   void _markResizeDirty() {
     if (_disposed) return;
     _resizeDirty = true;
+    log.info(
+      '[WindowsCompositorDebug] layout resizeDirty '
+      '${viewportWidth}x$viewportHeight '
+      'layoutDirty=$_layoutDirty activeFlush=${_activeFlush != null}',
+    );
     _startTicker();
   }
 
@@ -591,6 +627,10 @@ class MainWindowLayoutCoordinator {
             if (_disposed || !mounted()) return;
           }
           await controller.resize(width, height);
+          log.info(
+            '[WindowsCompositorDebug] layout flush native resize complete '
+            '${width}x$height layoutDirty=$_layoutDirty',
+          );
           if (_disposed || !mounted()) return;
           final nextLayout = await controller.getLayout();
           if (_disposed || !mounted()) return;
@@ -623,7 +663,8 @@ class MainWindowLayoutCoordinator {
   }
 
   bool get _canUseNativeCompositorViewportTransform {
-    return _state.nativeCompositorActive &&
+    return sourceProjectionEnabled() &&
+        _state.nativeCompositorActive &&
         textureId() != null &&
         viewportWidth > 0 &&
         viewportHeight > 0 &&
@@ -733,6 +774,33 @@ class MainWindowLayoutCoordinator {
 
   void refreshNativeCompositorOverlay() {
     if (_disposed) return;
+    _prepareNativeCompositorSourceCache(layout());
+  }
+
+  void onNativeCompositorAvailabilityChanged({required bool active}) {
+    if (_disposed || active) return;
+    _cancelNativeCompositorViewportTransform();
+    fireAndLog(
+      'clear inactive native compositor source cache',
+      controller.clearNativeCompositorSourceCache(
+        reason: 'native compositor inactive',
+      ),
+    );
+  }
+
+  void onTrackSetChanged() {
+    if (_disposed) return;
+    if (trackCount() == 0) {
+      _cancelNativeCompositorViewportTransform();
+      if (_state.nativeCompositorActive ||
+          NativeCompositorFlags.sourceProjection) {
+        fireAndLog(
+          'clear zero-track native compositor source cache',
+          controller.clearNativeCompositorSourceCache(reason: 'zero tracks'),
+        );
+      }
+      return;
+    }
     _prepareNativeCompositorSourceCache(layout());
   }
 

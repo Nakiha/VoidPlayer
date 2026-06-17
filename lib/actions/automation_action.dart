@@ -66,6 +66,42 @@ class DebugNativeCompositorAction extends AutomationAction {
   const DebugNativeCompositorAction() : super('DEBUG_NATIVE_COMPOSITOR');
 }
 
+class DebugFailNativeCompositorAction extends AutomationAction {
+  final String reason;
+
+  const DebugFailNativeCompositorAction({
+    this.reason = 'ui-test-forced-failure',
+  }) : super('DEBUG_FAIL_NATIVE_COMPOSITOR');
+}
+
+class DebugSimulateWindowsDeviceLossAction extends AutomationAction {
+  final String target;
+  final String reason;
+
+  const DebugSimulateWindowsDeviceLossAction({
+    required this.target,
+    this.reason = 'debug-simulated-device-loss',
+  }) : super('DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS');
+}
+
+class ResetNativePerfCountersAction extends AutomationAction {
+  const ResetNativePerfCountersAction() : super('RESET_NATIVE_PERF_COUNTERS');
+}
+
+class BeginNativeInteractionSampleAction extends AutomationAction {
+  final String label;
+
+  const BeginNativeInteractionSampleAction(this.label)
+    : super('BEGIN_NATIVE_INTERACTION_SAMPLE');
+}
+
+class EndNativeInteractionSampleAction extends AutomationAction {
+  final String label;
+
+  const EndNativeInteractionSampleAction(this.label)
+    : super('END_NATIVE_INTERACTION_SAMPLE');
+}
+
 class DebugNativeTimingAction extends AutomationAction {
   final String label;
 

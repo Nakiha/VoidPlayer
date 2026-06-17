@@ -16,6 +16,11 @@ TEST_CASE("D3D11Device initialization", "[d3d11][device]") {
     REQUIRE(dev.device_lost() == false);
     REQUIRE(dev.device_removed_reason() == S_OK);
     REQUIRE(dev.poll_device_removed("test") == false);
+    const auto diagnostics = dev.diagnostics();
+    REQUIRE_FALSE(diagnostics.adapter_description.empty());
+    REQUIRE_FALSE(diagnostics.driver_type.empty());
+    REQUIRE(diagnostics.feature_level == D3D_FEATURE_LEVEL_11_0);
+    REQUIRE(diagnostics.adapter_vendor_id != 0);
 
     destroy_window(hwnd);
 }
@@ -71,6 +76,7 @@ TEST_CASE("D3D11Device shutdown clears all pointers", "[d3d11][device]") {
     REQUIRE(dev.context() == nullptr);
     REQUIRE(dev.swap_chain() == nullptr);
     REQUIRE(dev.feature_level() == static_cast<D3D_FEATURE_LEVEL>(0));
+    REQUIRE(dev.diagnostics().adapter_description.empty());
 
     destroy_window(hwnd);
 }

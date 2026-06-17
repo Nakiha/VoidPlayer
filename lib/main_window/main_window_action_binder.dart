@@ -20,16 +20,32 @@ extension MainWindowViewActionBinding on MainWindowController {
       ),
       toolbar: MainWindowToolbarActions(
         onViewModeChanged: (mode) {
+          log.info(
+            '[WindowsCompositorDebug] toolbar viewMode click mode=$mode '
+            'canChange=${_capabilities.canChangeViewMode}',
+          );
           if (!_capabilities.canChangeViewMode) return;
           layoutCoordinator.setLayoutMode(mode);
         },
         onOpenFile: () {
+          log.info(
+            '[WindowsCompositorDebug] toolbar openFile click '
+            'canOpen=${_capabilities.canOpenLocalMedia} '
+            'canAdd=${_capabilities.canAddTrack} '
+            'tracks=${trackManager.count}',
+          );
           if (!_capabilities.canOpenLocalMedia || !_capabilities.canAddTrack) {
             return Future<void>.value();
           }
           return _runUserAction('open file', mediaCoordinator.openFile);
         },
         onOpenNetworkMedia: (url) {
+          log.info(
+            '[WindowsCompositorDebug] toolbar openNetwork click '
+            'canOpen=${_capabilities.canOpenNetworkMedia} '
+            'canAdd=${_capabilities.canAddTrack} '
+            'tracks=${trackManager.count}',
+          );
           if (!_capabilities.canOpenNetworkMedia ||
               !_capabilities.canAddTrack) {
             return Future<void>.value();
@@ -49,10 +65,20 @@ extension MainWindowViewActionBinding on MainWindowController {
           );
         },
         onMediaInfo: () {
+          log.info(
+            '[WindowsCompositorDebug] toolbar mediaInfo click '
+            'canOpen=${_capabilities.canOpenMediaInfo} '
+            'tracks=${trackManager.count} visible=$_mediaInfoVisible',
+          );
           if (!_capabilities.canOpenMediaInfo || trackManager.isEmpty) return;
           stateStore.setMediaInfoVisible(!_mediaInfoVisible);
         },
         onAnalysis: () {
+          log.info(
+            '[WindowsCompositorDebug] toolbar analysis click '
+            'canRun=${_capabilities.canRunAnalysis} '
+            'tracks=${trackManager.count}',
+          );
           if (!_capabilities.canRunAnalysis) return Future<void>.value();
           return _runUserAction(
             'run analysis',
@@ -69,11 +95,29 @@ extension MainWindowViewActionBinding on MainWindowController {
           return Future<void>.value();
         },
         onProfiler: () {
+          log.info(
+            '[WindowsCompositorDebug] toolbar profiler click '
+            'canOpen=${_capabilities.canOpenProfiler} '
+            'visible=$_profilerVisible',
+          );
           if (!_capabilities.canOpenProfiler) return;
           stateStore.setProfilerVisible(!_profilerVisible);
         },
-        onSettings: () => stateStore.setSettingsVisible(!_settingsVisible),
-        onMarksSidebarToggle: layoutCoordinator.toggleMarksSidebar,
+        onSettings: () {
+          log.info(
+            '[WindowsCompositorDebug] toolbar settings click '
+            'visible=$_settingsVisible',
+          );
+          stateStore.setSettingsVisible(!_settingsVisible);
+        },
+        onMarksSidebarToggle: () {
+          log.info(
+            '[WindowsCompositorDebug] toolbar marksSidebar click '
+            'visible=$_marksSidebarVisible '
+            'width=${_state.marksSidebarWidth}',
+          );
+          layoutCoordinator.toggleMarksSidebar();
+        },
       ),
       viewport: MainWindowViewportActions(
         onPan: (delta) {

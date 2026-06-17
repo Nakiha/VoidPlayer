@@ -4,6 +4,9 @@ permissions:
   actions: read
   contents: read
 
+# Hosted macOS UI smoke uses software decode for baseline runner coverage;
+# hardware/EDR-specific presentation smokes stay in targeted local/nightly gates.
+
 on:
   pull_request:
     paths:
@@ -96,6 +99,8 @@ jobs:
           key: voidplayer-flutter-${{ runner.os }}-${{ hashFiles('toolchains/flutter.lock.json') }}
 
       - name: Bootstrap pinned Flutter toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: PYTHON=python3.12 scripts/ci/bootstrap_flutter_toolchain.sh
 
       - name: Bootstrap pinned macOS Flutter engine

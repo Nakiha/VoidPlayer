@@ -1,9 +1,12 @@
 #include "device.h"
+#include "windows/presentation/windows_device_recovery.h"
+
 #include <spdlog/spdlog.h>
 #include <cstdlib>
 #include <cstring>
 #include <dxgi1_2.h>
 #include <dxgidebug.h>
+#include <string>
 
 namespace vr {
 namespace {
@@ -14,6 +17,40 @@ bool env_flag_enabled(const char* name) {
            std::strcmp(value, "0") != 0 &&
            std::strcmp(value, "false") != 0 &&
            std::strcmp(value, "FALSE") != 0;
+}
+
+std::string utf8_from_wide(const wchar_t* value) {
+    if (!value || value[0] == L'\0') {
+        return {};
+    }
+    const int size = WideCharToMultiByte(
+        CP_UTF8, 0, value, -1, nullptr, 0, nullptr, nullptr);
+    if (size <= 1) {
+        return {};
+    }
+    std::string result(static_cast<size_t>(size), '\0');
+    WideCharToMultiByte(
+        CP_UTF8, 0, value, -1, result.data(), size, nullptr, nullptr);
+    result.pop_back();
+    return result;
+}
+
+const char* driver_type_name(D3D_DRIVER_TYPE driver_type) {
+    switch (driver_type) {
+    case D3D_DRIVER_TYPE_HARDWARE:
+        return "hardware";
+    case D3D_DRIVER_TYPE_REFERENCE:
+        return "reference";
+    case D3D_DRIVER_TYPE_NULL:
+        return "null";
+    case D3D_DRIVER_TYPE_SOFTWARE:
+        return "software";
+    case D3D_DRIVER_TYPE_WARP:
+        return "warp";
+    case D3D_DRIVER_TYPE_UNKNOWN:
+    default:
+        return "unknown";
+    }
 }
 
 } // namespace
@@ -50,6 +87,26 @@ bool D3D11Device::create_device(IDXGIAdapter* adapter, D3D_DRIVER_TYPE driver_ty
     device_lost_.store(false, std::memory_order_release);
     device_removed_reason_.store(S_OK, std::memory_order_release);
     feature_level_ = out_level;
+    diagnostics_ = {};
+    diagnostics_.driver_type = driver_type_name(driver_type);
+    diagnostics_.feature_level = static_cast<int>(out_level);
+
+    Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
+    Microsoft::WRL::ComPtr<IDXGIAdapter> dxgi_adapter;
+    if (SUCCEEDED(device_.As(&dxgi_device)) &&
+        SUCCEEDED(dxgi_device->GetParent(IID_PPV_ARGS(&dxgi_adapter)))) {
+        DXGI_ADAPTER_DESC desc = {};
+        if (SUCCEEDED(dxgi_adapter->GetDesc(&desc))) {
+            diagnostics_.adapter_description = utf8_from_wide(desc.Description);
+            diagnostics_.adapter_vendor_id = static_cast<int>(desc.VendorId);
+            diagnostics_.adapter_device_id = static_cast<int>(desc.DeviceId);
+            diagnostics_.adapter_luid_high = desc.AdapterLuid.HighPart;
+            diagnostics_.adapter_luid_low = desc.AdapterLuid.LowPart;
+            diagnostics_.warp =
+                driver_type == D3D_DRIVER_TYPE_WARP ||
+                desc.VendorId == 0x1414;
+        }
+    }
 
     // Enable D3D11 multi-thread protection so the device context can be
     // safely used from the render thread AND the hardware decode threads
@@ -93,18 +150,21 @@ void D3D11Device::setup_info_queue() {
 }
 
 bool D3D11Device::record_device_error(const char* operation, HRESULT hr) {
-    const bool lost =
-        hr == DXGI_ERROR_DEVICE_REMOVED ||
-        hr == DXGI_ERROR_DEVICE_RESET ||
-        hr == DXGI_ERROR_DEVICE_HUNG;
+    bool lost = windows_hresult_is_device_loss(hr);
+    HRESULT queried_reason = device_ ? device_->GetDeviceRemovedReason() : hr;
+    if (!lost && device_) {
+        lost = windows_removed_reason_indicates_device_loss(queried_reason);
+    }
     if (!lost) {
         spdlog::error("[D3D11] {} failed: HRESULT {:#x}",
                       operation, static_cast<unsigned long>(hr));
         return false;
     }
 
-    HRESULT queried_reason = device_ ? device_->GetDeviceRemovedReason() : hr;
-    HRESULT reason = FAILED(queried_reason) ? queried_reason : hr;
+    HRESULT reason =
+        windows_removed_reason_indicates_device_loss(queried_reason)
+            ? queried_reason
+            : hr;
     device_lost_.store(true, std::memory_order_release);
     device_removed_reason_.store(reason, std::memory_order_release);
     spdlog::error("[D3D11] device lost during {}: hr={:#x}, reason={:#x}",
@@ -122,7 +182,7 @@ bool D3D11Device::poll_device_removed(const char* operation) {
         return false;
     }
     HRESULT reason = device_->GetDeviceRemovedReason();
-    if (FAILED(reason)) {
+    if (windows_removed_reason_indicates_device_loss(reason)) {
         return record_device_error(operation, reason);
     }
     return false;
@@ -292,7 +352,12 @@ void D3D11Device::shutdown() {
     feature_level_ = static_cast<D3D_FEATURE_LEVEL>(0);
     device_lost_.store(false, std::memory_order_release);
     device_removed_reason_.store(S_OK, std::memory_order_release);
+    diagnostics_ = {};
     spdlog::info("D3D11 device shut down");
+}
+
+D3D11DeviceDiagnostics D3D11Device::diagnostics() const {
+    return diagnostics_;
 }
 
 bool D3D11Device::resize(int width, int height) {

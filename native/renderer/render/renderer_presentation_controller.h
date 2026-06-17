@@ -17,11 +17,17 @@ namespace vr {
 class PresentationMetricsStore;
 class D3D11Device;
 class D3D11RenderBackend;
+struct SharedFp16TextureSnapshot;
+struct SourceCacheTrackDescriptor;
+struct SharedSourceCacheBundleSnapshot;
+struct AnalysisOverlayPrimitivePackage;
 
 struct RendererPresentationOverlayHooks {
     std::function<void(PresentationBackend&, const RendererDrawSnapshot&)> draw_overlay;
     std::function<bool(const RendererDrawSnapshot&, uint8_t*, int, int, size_t)>
         composite_bgra_overlay;
+    std::function<std::shared_ptr<const AnalysisOverlayPrimitivePackage>(
+        const RendererDrawSnapshot&)> build_overlay_primitives;
 };
 
 struct RendererPresentationDrawRequest {
@@ -47,6 +53,9 @@ struct RendererPresentationDrawResult {
     bool drew = false;
     bool async_draw_submitted = false;
     bool device_lost = false;
+    bool source_cache_published = false;
+    uint64_t source_cache_ring_generation = 0;
+    uint64_t source_cache_frame_generation = 0;
     uint64_t backend_us = 0;
     RendererFrameCallback frame_callback;
     std::string failure_error;
@@ -143,6 +152,7 @@ public:
 
     std::string backend_last_error() const;
     PresentationBackendStats backend_stats() const;
+    PresentationBackendDiagnostics backend_diagnostics() const;
     bool copy_last_frame_info(PresentationBackendFrameInfo* out) const;
     bool poll_device_removed(const char* operation) const;
     bool device_lost() const;
@@ -164,6 +174,7 @@ public:
     void protect_headless_output(void* pixel_buffer);
     void release_headless_output(void* pixel_buffer);
     void clear_headless_output();
+    bool update_sdr_white_level(double nits);
 
     // Caller must hold device_mutex() when coordinating with surrounding
     // presentation work.
@@ -211,6 +222,19 @@ public:
                                     PresentationMetricsStore& metrics) const;
     void release_d3d_shared_texture(int buffer_index,
                                     uint64_t buffer_generation) const;
+    bool acquire_d3d_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
+    void release_d3d_shared_fp16_texture(int buffer_index,
+                                         uint64_t ring_generation) const;
+    void set_d3d_shared_fp16_frame_callback(std::function<void()> callback);
+    bool configure_d3d_source_cache(
+        const std::vector<SourceCacheTrackDescriptor>& descriptors);
+    void clear_d3d_source_cache(const char* reason);
+    bool acquire_d3d_source_cache_bundle(
+        SharedSourceCacheBundleSnapshot& snapshot) const;
+    void release_d3d_source_cache_bundle(
+        int buffer_index, uint64_t ring_generation) const;
+    void set_d3d_source_cache_frame_callback(std::function<void()> callback);
+    bool recover_d3d_device_loss(const char* reason, long removed_reason);
     D3D11RenderBackend* d3d_backend() const;
     D3D11Device* d3d_device() const;
 #endif

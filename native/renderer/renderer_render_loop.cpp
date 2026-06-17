@@ -1,4 +1,5 @@
 #include "renderer/renderer_internal.h"
+#include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/render/renderer_draw_snapshot_builder.h"
 
 #ifdef _WIN32
@@ -91,7 +92,7 @@ void Renderer::Impl::render_loop() noexcept {
         render_sink_,
         RendererRenderLoopCommandHooks{
             [this](const char* operation) {
-                enter_terminal_device_lost_locked(operation);
+                recover_or_enter_terminal_device_lost_locked(operation);
             },
             [this](std::unique_lock<std::mutex>& state_lock) {
                 return apply_deferred_paused_hevc_seek_locked(state_lock);
@@ -184,6 +185,17 @@ RendererPresentationOverlayHooks Renderer::Impl::presentation_overlay_hooks() {
                 target_height,
                 target_stride_bytes);
         };
+#if VOID_BUILD_ANALYSIS
+    hooks.build_overlay_primitives =
+        [](const RendererDrawSnapshot& draw_snapshot) {
+            return build_analysis_overlay_primitive_package(draw_snapshot);
+        };
+#else
+    hooks.build_overlay_primitives =
+        [](const RendererDrawSnapshot&) {
+            return std::shared_ptr<const AnalysisOverlayPrimitivePackage>{};
+        };
+#endif
     return hooks;
 }
 

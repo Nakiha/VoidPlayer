@@ -114,5 +114,5 @@ VSRectOutput VSMain(uint vertex_id : SV_VertexID, uint instance_id : SV_Instance
 }
 
 float4 PSMain(VSRectOutput input) : SV_TARGET {
-    return input.color;
+    return map_sdr_ui_to_output(input.color);
 }

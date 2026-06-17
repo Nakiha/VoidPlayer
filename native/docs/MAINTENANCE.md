@@ -40,6 +40,44 @@ python dev.py test --native-only   # 全部 PASS
 
 测试文件位于 `native/tests/`，对应关系见 [构建与测试](BUILD_AND_TEST.md)。
 
+Windows presentation、shader output target 或颜色布局改动必须同时保持
+`windows_d3d11_color_layout_parity_smoke` 与
+`windows_d3d11_fp16_scrgb_smoke` 全绿，并运行 `windows-preservation`。
+DirectComposition、Flutter surface export 或共享 FP16 ring 改动还必须运行
+`video_renderer_tests [windows_dcomp]`，并使用锁定 Windows local engine
+执行 native-compositor UI smoke；surface export/frame-pump 改动还必须覆盖
+`native_compositor_flutter_surface_pump_scrgb.csv`。普通 Flutter SDK 的 fallback
+不算上屏证据。
+Windows source cache/projection、bundle lease、projection shader 或 compositor
+overlay 改动还必须运行 `[windows_source_cache]`、
+`[windows_source_projection]`、`windows_d3d11_source_projection_smoke` 和
+rebuilt source-projection UI smoke。
+Windows Auto policy、DXGI output refresh、SDR/scRGB swap-chain 切换或 white
+level 更新还必须运行默认 Auto SDR smoke、强制 scRGB smoke；具备 HDR 显示时
+再运行 `python dev.py gate windows-hdr-auto`。HDR target 失败必须先降级
+native SDR，不能直接跳过到 Flutter Texture。
+Windows cross-adapter transport、shared-fence sync、output-device migration、display calibration
+diagnostics 或 adapter fallback 改动还必须运行
+`video_renderer_tests [windows_cross_adapter]`；具备多 adapter / HDR output
+机器时补跑 `python dev.py gate windows-cross-adapter-local`。跨 adapter 只允许
+GPU-copy bridge 或明确诊断回落，不能引入 CPU readback 或私有 ICC/LUT 校色。
+shared-fence 只能在本地 A/B 证据证明不劣于 event-query 后再考虑默认启用。
+Windows device-loss recovery、D3D11/DComp 原地重建、source-cache 清理或
+debug recovery 注入改动还必须运行
+`video_renderer_tests [windows_device_recovery]`，并在 `windows-preservation`
+中覆盖默认 SDR、强制 scRGB 和 source-projection recovery UI smoke。真实 TDR
+或 device reset 证据是本地补充，不替代 debug injection gate。
+Windows high-refresh interaction、DComp present cadence、source projection
+pan/zoom/split/order 或 overlay compositor 热路径改动还必须运行
+`video_renderer_tests [windows_high_refresh]`、
+`video_renderer_tests [windows_overlay_layer]`、
+`windows_d3d11_high_refresh_projection_overlay_smoke` 和
+`windows_d3d11_retained_overlay_layer_smoke` 和
+`python dev.py gate windows-high-refresh-local`。低刷机器只提供功能证据；
+高刷机器必须检查 `windowsHotPathGateResult=pass`，并保留
+present/composite/input-to-present/drop-rate、source reuse、overlay reuse 和
+viewport redraw summary 证据。
+
 ---
 
 ## 文档同步规则
@@ -59,7 +97,7 @@ python dev.py test --native-only   # 全部 PASS
 | 解码路径变更（软解/硬解） | [DECODE_PIPELINE.md](DECODE_PIPELINE.md) |
 | 像素格式 / 色彩转换 / HDR-SDR 边界变更 | [COLOR_PIPELINE.md](COLOR_PIPELINE.md) |
 | Seek 逻辑变更 | [SEEK_STRATEGY.md](SEEK_STRATEGY.md) |
-| D3D11 / 着色器变更 | [D3D11_BACKEND.md](D3D11_BACKEND.md) |
+| D3D11 / 着色器变更 | [D3D11_BACKEND.md](D3D11_BACKEND.md)、[WINDOWS_PRESENTATION_BACKEND.md](WINDOWS_PRESENTATION_BACKEND.md) |
 | FFI 函数签名变更 | [FFI_AND_BINDINGS.md](FFI_AND_BINDINGS.md) |
 | 新增测试/基准/Demo | [BUILD_AND_TEST.md](BUILD_AND_TEST.md) |
 
@@ -94,6 +132,7 @@ python dev.py test --native-only   # 全部 PASS
 | [COLOR_PIPELINE.md](COLOR_PIPELINE.md) | 色彩管线 | 像素格式或色彩转换变更时 |
 | [SEEK_STRATEGY.md](SEEK_STRATEGY.md) | Seek 策略 | seek 逻辑变更时 |
 | [D3D11_BACKEND.md](D3D11_BACKEND.md) | D3D11 后端 | GPU 相关变更时 |
+| [WINDOWS_PRESENTATION_BACKEND.md](WINDOWS_PRESENTATION_BACKEND.md) | Windows 产品上屏、诊断与 fallback 合同 | Windows presentation route 变更时 |
 | [FFI_AND_BINDINGS.md](FFI_AND_BINDINGS.md) | FFI 绑定 | API 签名变更时 |
 | [BUILD_AND_TEST.md](BUILD_AND_TEST.md) | 构建测试 | 构建/测试变更时 |
 | [TEST_MATRIX.md](TEST_MATRIX.md) | 测试 ownership / gate 映射 | 新增、删除或重分类测试时 |

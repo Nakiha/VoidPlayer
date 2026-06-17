@@ -9,6 +9,54 @@ import 'package:void_player/native_player/native_player_events.dart';
 import 'package:void_player/performance/performance_health.dart';
 import 'package:void_player/windows/stats_window.dart';
 
+PerformanceHealthSnapshot _health({
+  PerformanceHealthLevel level = PerformanceHealthLevel.ok,
+  PerformanceHealthKind kind = PerformanceHealthKind.ok,
+  double displayRefreshHz = 120,
+  double displayTickHz = 120,
+  double nativeCompositorCompositeHz = 0,
+  double nativeCompositorSourceCacheHz = 0,
+  double nativeCompositorSourceProjectionHz = 0,
+  double drawP95Us = 1800,
+  double metalP95Us = 1800,
+  int metalBufferExhaustionCount = 0,
+  int largeGapCount = 0,
+  bool playing = false,
+  int trackCount = 1,
+}) {
+  return PerformanceHealthSnapshot(
+    level: level,
+    kind: kind,
+    reason: '',
+    displayRefreshHz: displayRefreshHz,
+    displayTickHz: displayTickHz,
+    layoutDrawHz: 0,
+    layoutIntentHz: 0,
+    nativeCompositorCompositeHz: nativeCompositorCompositeHz,
+    nativeCompositorSourceCacheHz: nativeCompositorSourceCacheHz,
+    nativeCompositorSourceProjectionHz: nativeCompositorSourceProjectionHz,
+    drawP95Us: drawP95Us,
+    backendP95Us: 0,
+    metalP95Us: metalP95Us,
+    hostIntervalP95Ms: 0,
+    playbackCadenceRatio: 0,
+    presentedFrameRateHz: 0,
+    expectedFrameRateHz: 0,
+    metalBufferExhaustionCount: metalBufferExhaustionCount,
+    metalBufferExhaustionDelta: 0,
+    metalFailureCount: 0,
+    metalFailureDelta: 0,
+    largeGapCount: largeGapCount,
+    largeGapDelta: 0,
+    monotonicViolationCount: 0,
+    presentedFramePtsDistinctCount: 0,
+    presentedFramePtsAdvanceUs: 0,
+    presentedFrameExpectedIntervalUs: 0,
+    playing: playing,
+    trackCount: trackCount,
+  );
+}
+
 void main() {
   test('native diagnostics stats source maps macOS per-track stats', () async {
     final source = NativeDiagnosticsStatsDataSource(
@@ -143,47 +191,90 @@ void main() {
           GlobalCupertinoLocalizations.delegate,
         ],
         supportedLocales: AppLocalizations.supportedLocales,
-        home: const SizedBox(
+        home: SizedBox(
           width: 560,
-          child: StatsHealthSummarySection(
-            health: PerformanceHealthSnapshot(
-              level: PerformanceHealthLevel.ok,
-              kind: PerformanceHealthKind.ok,
-              reason: '',
-              displayRefreshHz: 120,
-              displayTickHz: 120,
-              layoutDrawHz: 0,
-              layoutIntentHz: 0,
-              nativeCompositorCompositeHz: 0,
-              nativeCompositorSourceCacheHz: 0,
-              nativeCompositorSourceProjectionHz: 0,
-              drawP95Us: 1800,
-              backendP95Us: 0,
-              metalP95Us: 1800,
-              hostIntervalP95Ms: 0,
-              playbackCadenceRatio: 0,
-              presentedFrameRateHz: 0,
-              expectedFrameRateHz: 0,
-              metalBufferExhaustionCount: 0,
-              metalBufferExhaustionDelta: 0,
-              metalFailureCount: 0,
-              metalFailureDelta: 0,
-              largeGapCount: 0,
-              largeGapDelta: 0,
-              monotonicViolationCount: 0,
-              presentedFramePtsDistinctCount: 0,
-              presentedFramePtsAdvanceUs: 0,
-              presentedFrameExpectedIntervalUs: 0,
-              playing: false,
-              trackCount: 1,
-            ),
-          ),
+          child: StatsHealthSummarySection(health: _health(trackCount: 1)),
         ),
       ),
     );
 
     expect(find.text('1 条轨道'), findsOneWidget);
     expect(find.text('1 tracks'), findsNothing);
+  });
+
+  testWidgets('health summary localizes metric labels', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: SizedBox(
+          width: 560,
+          child: StatsHealthSummarySection(
+            health: _health(
+              nativeCompositorCompositeHz: 108,
+              drawP95Us: 2100,
+              metalP95Us: 2000,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('合成 108/120Hz'), findsOneWidget);
+    expect(find.textContaining('显示 120/120Hz'), findsOneWidget);
+    expect(find.textContaining('绘制 p95 2.1ms'), findsOneWidget);
+    expect(find.textContaining('compositor'), findsNothing);
+    expect(find.textContaining('display-link'), findsNothing);
+  });
+
+  testWidgets('health summary keeps a stable height across metric counts', (
+    tester,
+  ) async {
+    Widget build(PerformanceHealthSnapshot health) {
+      return MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: SizedBox(
+          width: 560,
+          child: StatsHealthSummarySection(health: health),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(build(_health(drawP95Us: 0, metalP95Us: 0)));
+    final compactHeight = tester
+        .getSize(find.byType(StatsHealthSummarySection))
+        .height;
+
+    await tester.pumpWidget(
+      build(
+        _health(
+          nativeCompositorCompositeHz: 108,
+          nativeCompositorSourceCacheHz: 60,
+          nativeCompositorSourceProjectionHz: 120,
+          metalBufferExhaustionCount: 92,
+          playing: true,
+          largeGapCount: 2,
+        ),
+      ),
+    );
+    final detailedHeight = tester
+        .getSize(find.byType(StatsHealthSummarySection))
+        .height;
+
+    expect(detailedHeight, compactHeight);
   });
 }
 

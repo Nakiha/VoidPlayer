@@ -3,8 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/l10n/app_localizations.dart';
 import 'package:void_player/main_window/main_window_overlays.dart';
 import 'package:void_player/native_player/native_player_protocol.dart';
+import 'package:void_player/performance/performance_health.dart';
 import 'package:void_player/platform/path_launcher.dart';
 import 'package:void_player/track_manager.dart';
+import 'package:void_player/windows/stats_window.dart';
 
 void _setViewportSize(WidgetTester tester, Size size) {
   tester.view.physicalSize = size;
@@ -59,6 +61,46 @@ class _FakePathLauncher implements PathLauncher {
 
   @override
   Future<void> openFolder(String path) async {}
+}
+
+class _FakeStatsDataSource implements StatsDataSource {
+  final StatsSnapshot snapshot;
+
+  const _FakeStatsDataSource(this.snapshot);
+
+  @override
+  Future<StatsSnapshot?> load({
+    PerformanceHealthSnapshot? previousHealth,
+  }) async => snapshot;
+}
+
+StatsSnapshot _statsSnapshotWithTracks(int count) {
+  return StatsSnapshot(
+    health: PerformanceHealthSnapshot.ok(trackCount: count),
+    memory: const StatsMemorySummary(
+      workingSetBytes: 842 * 1024 * 1024,
+      privateBytes: 814 * 1024 * 1024,
+      dedicatedGpuBytes: 29 * 1024 * 1024,
+      cpuFrameBytes: 17 * 1024 * 1024,
+      packetQueueBytes: 8 * 1024 * 1024,
+    ),
+    tracks: List.generate(
+      count,
+      (index) => StatsTrackRow(
+        fileId: 1001 + index,
+        fps: 59.94 - index,
+        avgDecodeMs: 1.2 + index,
+        maxDecodeMs: 4.0 + index,
+        bufferCount: 4,
+        bufferCapacity: 4,
+        bufferState: 0,
+        cpuFrameMemoryBytes: index * 1024 * 1024,
+        packetQueueMemoryBytes: (index + 1) * 1024 * 1024,
+        currentPtsUs: 1_000_000 + index,
+        currentDtsUs: 1_000_000 + index,
+      ),
+    ),
+  );
 }
 
 void main() {
@@ -162,6 +204,75 @@ void main() {
     final tableWidth = tester.getSize(find.byType(DataTable)).width;
     expect(mediaInfoWidth, greaterThan(700));
     expect(tableWidth, closeTo(mediaInfoWidth, 1));
+  });
+
+  testWidgets(
+    'performance monitor table uses available height for four tracks',
+    (tester) async {
+      _setViewportSize(tester, const Size(1366, 768));
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: Scaffold(
+            body: Stack(
+              children: [
+                FloatingSidePanelsSlot(
+                  mediaInfoVisible: false,
+                  profilerVisible: true,
+                  tracks: _twoTracks,
+                  statsDataSource: _FakeStatsDataSource(
+                    _statsSnapshotWithTracks(4),
+                  ),
+                  onCloseMediaInfo: () {},
+                  onCloseProfiler: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 190));
+
+      final statsRect = tester.getRect(find.byType(StatsPage));
+      final fourthTrackRect = tester.getRect(find.text('1004'));
+      expect(statsRect.height, greaterThan(320));
+      expect(fourthTrackRect.bottom, lessThanOrEqualTo(statsRect.bottom));
+    },
+  );
+
+  testWidgets('performance monitor stays compact for one track', (
+    tester,
+  ) async {
+    _setViewportSize(tester, const Size(1366, 768));
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: Stack(
+            children: [
+              FloatingSidePanelsSlot(
+                mediaInfoVisible: false,
+                profilerVisible: true,
+                tracks: _twoTracks,
+                statsDataSource: _FakeStatsDataSource(
+                  _statsSnapshotWithTracks(1),
+                ),
+                onCloseMediaInfo: () {},
+                onCloseProfiler: () {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 190));
+
+    final statsRect = tester.getRect(find.byType(StatsPage));
+    expect(statsRect.height, lessThan(340));
   });
 
   testWidgets('media info locate button delegates to path launcher', (

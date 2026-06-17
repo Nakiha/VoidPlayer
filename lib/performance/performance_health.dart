@@ -389,6 +389,20 @@ class PerformanceHealthSnapshot {
   }
 
   String localizedTitle(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    if (l != null) {
+      return switch (kind) {
+        PerformanceHealthKind.ok => l.performanceHealthOk,
+        PerformanceHealthKind.nativeRenderPressure =>
+          l.performanceHealthNativeRenderPressure,
+        PerformanceHealthKind.externalDisplayPressure =>
+          l.performanceHealthExternalDisplayPressure,
+        PerformanceHealthKind.decodePressure =>
+          l.performanceHealthDecodePressure,
+        PerformanceHealthKind.playbackCadencePressure =>
+          l.performanceHealthPlaybackCadencePressure,
+      };
+    }
     final zh = Localizations.localeOf(context).languageCode == 'zh';
     return switch (kind) {
       PerformanceHealthKind.ok => zh ? '播放健康' : 'Playback health',
@@ -400,6 +414,84 @@ class PerformanceHealthSnapshot {
       PerformanceHealthKind.playbackCadencePressure =>
         zh ? '播放帧率不足' : 'Playback cadence',
     };
+  }
+
+  List<PerformanceHealthDetailMetric> localizedDetailMetrics(
+    AppLocalizations l,
+  ) {
+    final metrics = <PerformanceHealthDetailMetric>[];
+    if (nativeCompositorCompositeHz > 0) {
+      final refreshText = displayRefreshHz > 0
+          ? displayRefreshHz.toStringAsFixed(0)
+          : '?';
+      metrics.add(
+        PerformanceHealthDetailMetric(
+          l.performanceMetricCompositor,
+          '${nativeCompositorCompositeHz.toStringAsFixed(0)}/'
+          '${refreshText}Hz',
+        ),
+      );
+    }
+    if (nativeCompositorSourceCacheHz > 0) {
+      metrics.add(
+        PerformanceHealthDetailMetric(
+          l.performanceMetricSource,
+          '${nativeCompositorSourceCacheHz.toStringAsFixed(0)}Hz',
+        ),
+      );
+    }
+    if (nativeCompositorSourceProjectionHz > 0) {
+      metrics.add(
+        PerformanceHealthDetailMetric(
+          l.performanceMetricProjection,
+          '${nativeCompositorSourceProjectionHz.toStringAsFixed(0)}Hz',
+        ),
+      );
+    }
+    if (displayRefreshHz > 0 || displayTickHz > 0) {
+      final tickText = displayTickHz > 0
+          ? displayTickHz.toStringAsFixed(0)
+          : l.performanceMetricIdle;
+      final refreshText = displayRefreshHz > 0
+          ? displayRefreshHz.toStringAsFixed(0)
+          : '?';
+      metrics.add(
+        PerformanceHealthDetailMetric(
+          l.performanceMetricDisplayLink,
+          '$tickText/${refreshText}Hz',
+        ),
+      );
+    }
+    if (drawP95Us > 0) {
+      metrics.add(
+        PerformanceHealthDetailMetric(
+          l.performanceMetricDrawP95,
+          _usText(drawP95Us),
+        ),
+      );
+    }
+    if (metalP95Us > 0) {
+      metrics.add(
+        PerformanceHealthDetailMetric(
+          l.performanceMetricMetalP95,
+          _usText(metalP95Us),
+        ),
+      );
+    }
+    if (metalBufferExhaustionCount > 0) {
+      metrics.add(
+        PerformanceHealthDetailMetric(
+          l.performanceMetricRing,
+          '$metalBufferExhaustionCount',
+        ),
+      );
+    }
+    if (playing && largeGapCount > 0) {
+      metrics.add(
+        PerformanceHealthDetailMetric(l.performanceMetricGap, '$largeGapCount'),
+      );
+    }
+    return metrics;
   }
 
   String localizedFeedback(BuildContext context) {
@@ -643,6 +735,13 @@ class PerformanceHealthSnapshot {
     if (value <= 0) return '0Hz';
     return '${value.toStringAsFixed(1)}Hz';
   }
+}
+
+class PerformanceHealthDetailMetric {
+  final String label;
+  final String value;
+
+  const PerformanceHealthDetailMetric(this.label, this.value);
 }
 
 class _PlaybackCadenceSample {

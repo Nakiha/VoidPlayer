@@ -211,6 +211,8 @@ class StatsPage extends StatefulWidget {
 }
 
 class _StatsPageState extends State<StatsPage> {
+  final ScrollController _verticalController = ScrollController();
+  final ScrollController _horizontalController = ScrollController();
   List<StatsTrackRow> _tracks = [];
   StatsMemorySummary _memory = const StatsMemorySummary();
   PerformanceHealthSnapshot _health = PerformanceHealthSnapshot.ok();
@@ -232,6 +234,8 @@ class _StatsPageState extends State<StatsPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    _verticalController.dispose();
+    _horizontalController.dispose();
     super.dispose();
   }
 
@@ -309,58 +313,241 @@ class _StatsPageState extends State<StatsPage> {
             ),
           )
         else
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              horizontalMargin: 12,
-              columnSpacing: 30,
-              headingRowHeight: 34,
-              dataRowMinHeight: 38,
-              dataRowMaxHeight: 38,
-              headingTextStyle: theme.textTheme.labelSmall,
-              dataTextStyle: theme.textTheme.bodySmall,
-              columns: [
-                DataColumn(label: Text(l.track)),
-                DataColumn(label: Text(l.fps)),
-                DataColumn(label: Text(l.bufferQueue)),
-                DataColumn(label: Text(l.frameMemory)),
-                DataColumn(label: Text(l.packetQueue)),
-                DataColumn(label: Text(l.decodeAvg)),
-                DataColumn(label: Text(l.decodeMax)),
-                DataColumn(label: Text(l.ptsUs)),
-                DataColumn(label: Text(l.dtsUs)),
-                DataColumn(label: Text(l.status)),
-              ],
-              rows: _tracks
-                  .map(
-                    (t) => DataRow(
-                      cells: [
-                        DataCell(Text('${t.fileId}')),
-                        DataCell(Text(t.fps.toStringAsFixed(1))),
-                        DataCell(Text('${t.bufferCount}/${t.bufferCapacity}')),
-                        DataCell(Text(_bytesText(t.cpuFrameMemoryBytes))),
-                        DataCell(Text(_bytesText(t.packetQueueMemoryBytes))),
-                        DataCell(Text('${t.avgDecodeMs.toStringAsFixed(1)}ms')),
-                        DataCell(Text('${t.maxDecodeMs.toStringAsFixed(1)}ms')),
-                        DataCell(Text(_timestampText(l, t.currentPtsUs))),
-                        DataCell(Text(_timestampText(l, t.currentDtsUs))),
-                        DataCell(
-                          Text(
-                            t.bufferState == 1 ? l.bottleneck : l.ok,
-                            style: TextStyle(
-                              color: t.bufferState == 1
-                                  ? Colors.orange
-                                  : Colors.green,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                  .toList(),
+          SizedBox(
+            height: _StatsTrackTable.heightForTrackCount(_tracks.length),
+            child: _StatsTrackTable(
+              tracks: _tracks,
+              verticalController: _verticalController,
+              horizontalController: _horizontalController,
             ),
           ),
       ],
+    );
+  }
+}
+
+class _StatsTrackTable extends StatelessWidget {
+  final List<StatsTrackRow> tracks;
+  final ScrollController verticalController;
+  final ScrollController horizontalController;
+  static const _headingHeight = 34.0;
+  static const _rowHeight = 38.0;
+  static const _dividerHeight = 1.0;
+  static const _bottomScrollbarPadding = 6.0;
+  static const _maxVisibleRows = 6;
+  static const _trackWidth = 44.0;
+  static const _fpsWidth = 54.0;
+  static const _bufferWidth = 72.0;
+  static const _memoryWidth = 76.0;
+  static const _decodeWidth = 84.0;
+  static const _timestampWidth = 96.0;
+  static const _statusWidth = 56.0;
+
+  const _StatsTrackTable({
+    required this.tracks,
+    required this.verticalController,
+    required this.horizontalController,
+  });
+
+  static double heightForTrackCount(int count) {
+    final visibleRows = count.clamp(1, _maxVisibleRows);
+    return _headingHeight +
+        visibleRows * _rowHeight +
+        (visibleRows + 1) * _dividerHeight +
+        _bottomScrollbarPadding;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l = AppLocalizations.of(context)!;
+    final headingStyle = theme.textTheme.labelSmall;
+    final bodyStyle = theme.textTheme.bodySmall;
+    return Scrollbar(
+      controller: verticalController,
+      thumbVisibility: true,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            controller: verticalController,
+            child: Scrollbar(
+              controller: horizontalController,
+              thumbVisibility: true,
+              thickness: 6,
+              scrollbarOrientation: ScrollbarOrientation.bottom,
+              child: SingleChildScrollView(
+                controller: horizontalController,
+                scrollDirection: Axis.horizontal,
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    bottom: _bottomScrollbarPadding,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _StatsTrackTableRow(
+                          height: _headingHeight,
+                          style: headingStyle,
+                          cells: [
+                            _StatsTrackCell(l.track, _trackWidth),
+                            _StatsTrackCell(l.fps, _fpsWidth),
+                            _StatsTrackCell(l.bufferQueue, _bufferWidth),
+                            _StatsTrackCell(l.frameMemory, _memoryWidth),
+                            _StatsTrackCell(l.packetQueue, _memoryWidth),
+                            _StatsTrackCell(l.decodeAvg, _decodeWidth),
+                            _StatsTrackCell(l.decodeMax, _decodeWidth),
+                            _StatsTrackCell(l.ptsUs, _timestampWidth),
+                            _StatsTrackCell(l.dtsUs, _timestampWidth),
+                            _StatsTrackCell(l.status, _statusWidth),
+                          ],
+                        ),
+                        Divider(
+                          height: 1,
+                          color: theme.colorScheme.outlineVariant,
+                        ),
+                        for (final t in tracks) ...[
+                          _StatsTrackTableRow(
+                            height: _rowHeight,
+                            style: bodyStyle,
+                            cells: [
+                              _StatsTrackCell('${t.fileId}', _trackWidth),
+                              _StatsTrackCell(
+                                t.fps.toStringAsFixed(1),
+                                _fpsWidth,
+                                numeric: true,
+                              ),
+                              _StatsTrackCell(
+                                '${t.bufferCount}/${t.bufferCapacity}',
+                                _bufferWidth,
+                                numeric: true,
+                              ),
+                              _StatsTrackCell(
+                                _bytesText(t.cpuFrameMemoryBytes),
+                                _memoryWidth,
+                                numeric: true,
+                              ),
+                              _StatsTrackCell(
+                                _bytesText(t.packetQueueMemoryBytes),
+                                _memoryWidth,
+                                numeric: true,
+                              ),
+                              _StatsTrackCell(
+                                '${t.avgDecodeMs.toStringAsFixed(1)}ms',
+                                _decodeWidth,
+                                numeric: true,
+                              ),
+                              _StatsTrackCell(
+                                '${t.maxDecodeMs.toStringAsFixed(1)}ms',
+                                _decodeWidth,
+                                numeric: true,
+                              ),
+                              _StatsTrackCell(
+                                _timestampText(l, t.currentPtsUs),
+                                _timestampWidth,
+                                numeric: true,
+                              ),
+                              _StatsTrackCell(
+                                _timestampText(l, t.currentDtsUs),
+                                _timestampWidth,
+                                numeric: true,
+                              ),
+                              _StatsTrackCell(
+                                t.bufferState == 1 ? l.bottleneck : l.ok,
+                                _statusWidth,
+                                style: TextStyle(
+                                  color: t.bufferState == 1
+                                      ? Colors.orange
+                                      : Colors.green,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Divider(
+                            height: 1,
+                            color: theme.colorScheme.outlineVariant,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _StatsTrackCell {
+  final String text;
+  final double width;
+  final bool numeric;
+  final TextStyle? style;
+
+  const _StatsTrackCell(
+    this.text,
+    this.width, {
+    this.numeric = false,
+    this.style,
+  });
+}
+
+class _StatsTrackTableRow extends StatelessWidget {
+  final double height;
+  final TextStyle? style;
+  final List<_StatsTrackCell> cells;
+  static const _horizontalMargin = 12.0;
+  static const _columnSpacing = 16.0;
+
+  const _StatsTrackTableRow({
+    required this.height,
+    required this.style,
+    required this.cells,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: Row(
+        children: [
+          const SizedBox(width: _horizontalMargin),
+          for (int i = 0; i < cells.length; i++) ...[
+            _StatsTrackTableText(cell: cells[i], defaultStyle: style),
+            if (i != cells.length - 1) const SizedBox(width: _columnSpacing),
+          ],
+          const SizedBox(width: _horizontalMargin),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatsTrackTableText extends StatelessWidget {
+  final _StatsTrackCell cell;
+  final TextStyle? defaultStyle;
+
+  const _StatsTrackTableText({required this.cell, required this.defaultStyle});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = cell.numeric
+        ? (cell.style ?? defaultStyle ?? const TextStyle()).copyWith(
+            fontFeatures: const [FontFeature.tabularFigures()],
+          )
+        : cell.style ?? defaultStyle;
+    return SizedBox(
+      width: cell.width,
+      child: Text(
+        cell.text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      ),
     );
   }
 }
@@ -388,6 +575,7 @@ class StatsHealthSummarySection extends StatelessWidget {
     final l = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final metrics = health.localizedDetailMetrics(l);
     final accent = switch (health.level) {
       PerformanceHealthLevel.ok => Colors.green,
       PerformanceHealthLevel.warning => Colors.orange,
@@ -433,20 +621,85 @@ class StatsHealthSummarySection extends StatelessWidget {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    health.localizedDetail(context),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    height: 24,
+                    child: metrics.isEmpty
+                        ? Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              l.ok,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          )
+                        : _HealthMetricStrip(metrics: metrics),
                   ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HealthMetricStrip extends StatelessWidget {
+  final List<PerformanceHealthDetailMetric> metrics;
+
+  const _HealthMetricStrip({required this.metrics});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const ClampingScrollPhysics(),
+      child: Row(
+        children: [
+          for (int i = 0; i < metrics.length; i++) ...[
+            _HealthMetricPill(metric: metrics[i]),
+            if (i != metrics.length - 1) const SizedBox(width: 6),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HealthMetricPill extends StatelessWidget {
+  final PerformanceHealthDetailMetric metric;
+
+  const _HealthMetricPill({required this.metric});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final textStyle = theme.textTheme.labelSmall?.copyWith(
+      color: colorScheme.onSurfaceVariant,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.36),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7),
+        child: Center(
+          child: Text(
+            '${metric.label} ${metric.value}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textStyle,
+          ),
         ),
       ),
     );

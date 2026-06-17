@@ -108,6 +108,7 @@ class FloatingSidePanelsSlot extends StatelessWidget {
   final bool mediaInfoVisible;
   final bool profilerVisible;
   final List<TrackEntry> tracks;
+  final StatsDataSource? statsDataSource;
   final VoidCallback onCloseMediaInfo;
   final VoidCallback onCloseProfiler;
 
@@ -116,6 +117,7 @@ class FloatingSidePanelsSlot extends StatelessWidget {
     required this.mediaInfoVisible,
     required this.profilerVisible,
     required this.tracks,
+    this.statsDataSource,
     required this.onCloseMediaInfo,
     required this.onCloseProfiler,
   });
@@ -147,6 +149,7 @@ class FloatingSidePanelsSlot extends StatelessWidget {
                       availableWidth: availableWidth,
                       availableHeight: availableHeight,
                       tracks: tracks,
+                      statsDataSource: statsDataSource,
                       onCloseMediaInfo: onCloseMediaInfo,
                       onCloseProfiler: onCloseProfiler,
                     ),
@@ -167,6 +170,7 @@ class _FloatingSidePanelStack extends StatelessWidget {
   final double availableWidth;
   final double availableHeight;
   final List<TrackEntry> tracks;
+  final StatsDataSource? statsDataSource;
   final VoidCallback onCloseMediaInfo;
   final VoidCallback onCloseProfiler;
 
@@ -176,6 +180,7 @@ class _FloatingSidePanelStack extends StatelessWidget {
     required this.availableWidth,
     required this.availableHeight,
     required this.tracks,
+    required this.statsDataSource,
     required this.onCloseMediaInfo,
     required this.onCloseProfiler,
   });
@@ -190,6 +195,7 @@ class _FloatingSidePanelStack extends StatelessWidget {
       560.0,
       math.max(360.0, mediaPanelWidth),
     );
+    final profilerMaxHeight = math.min(520.0, math.max(0.0, availableHeight));
     final stackWidth = mediaInfoVisible ? mediaPanelWidth : profilerPanelWidth;
     return SizedBox(
       width: stackWidth + _sidePanelShadowPadding,
@@ -224,16 +230,16 @@ class _FloatingSidePanelStack extends StatelessWidget {
               _AnimatedFloatingPanelSlot(
                 visible: profilerVisible,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(
+                  constraints: BoxConstraints(
                     minWidth: 360,
                     maxWidth: 560,
-                    maxHeight: 320,
+                    maxHeight: profilerMaxHeight,
                   ),
                   child: _FloatingPanelFrame(
                     icon: Icons.speed,
                     title: AppLocalizations.of(context)!.performanceMonitor,
                     onClose: onCloseProfiler,
-                    child: const Flexible(child: StatsPage()),
+                    child: StatsPage(dataSource: statsDataSource),
                   ),
                 ),
               ),

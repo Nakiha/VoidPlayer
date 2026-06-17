@@ -135,6 +135,48 @@
     }
   },
 
+  "performanceHealthOk": "Playback health",
+  "@performanceHealthOk": { "description": "Performance monitor health title: playback is healthy" },
+
+  "performanceHealthNativeRenderPressure": "Native render pressure",
+  "@performanceHealthNativeRenderPressure": { "description": "Performance monitor health title: native renderer is under pressure" },
+
+  "performanceHealthExternalDisplayPressure": "Display/GPU pressure",
+  "@performanceHealthExternalDisplayPressure": { "description": "Performance monitor health title: display or GPU is under pressure" },
+
+  "performanceHealthDecodePressure": "Decode pressure",
+  "@performanceHealthDecodePressure": { "description": "Performance monitor health title: decoder buffers are under pressure" },
+
+  "performanceHealthPlaybackCadencePressure": "Playback cadence",
+  "@performanceHealthPlaybackCadencePressure": { "description": "Performance monitor health title: presented playback cadence is low" },
+
+  "performanceMetricCompositor": "Compositor",
+  "@performanceMetricCompositor": { "description": "Performance monitor metric label: native compositor frame rate" },
+
+  "performanceMetricSource": "Source",
+  "@performanceMetricSource": { "description": "Performance monitor metric label: native source cache refresh rate" },
+
+  "performanceMetricProjection": "Projection",
+  "@performanceMetricProjection": { "description": "Performance monitor metric label: native source projection refresh rate" },
+
+  "performanceMetricDisplayLink": "Display",
+  "@performanceMetricDisplayLink": { "description": "Performance monitor metric label: display-link tick rate" },
+
+  "performanceMetricIdle": "idle",
+  "@performanceMetricIdle": { "description": "Performance monitor metric value: display-link sampling is idle" },
+
+  "performanceMetricDrawP95": "Draw p95",
+  "@performanceMetricDrawP95": { "description": "Performance monitor metric label: native draw p95 latency" },
+
+  "performanceMetricMetalP95": "Metal p95",
+  "@performanceMetricMetalP95": { "description": "Performance monitor metric label: Metal command completion p95 latency" },
+
+  "performanceMetricRing": "Ring",
+  "@performanceMetricRing": { "description": "Performance monitor metric label: Metal target ring churn count" },
+
+  "performanceMetricGap": "Gap",
+  "@performanceMetricGap": { "description": "Performance monitor metric label: presented frame timeline gap count" },
+
   "waitingDiagnostics": "Waiting for diagnostics data...",
   "@waitingDiagnostics": { "description": "Stats empty state" },
 

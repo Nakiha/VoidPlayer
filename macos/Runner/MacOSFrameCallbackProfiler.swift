@@ -284,6 +284,13 @@ final class MacOSFrameCallbackProfiler {
   private var lastHandleNs: UInt64 = 0
   private let mainWaitDurations = MacOSDurationWindow()
   private let handleDurations = MacOSDurationWindow()
+  private let targetGenerationWarmupIntervals = MacOSDurationWindow(capacity: 16)
+  private var lastTargetGeneration: Int64 = 0
+  private var targetGenerationChangeCount = 0
+  private var targetGenerationWarmupRemaining = 0
+  private var targetGenerationWarmupSampleCount = 0
+  private var targetGenerationWarmupLastNs: UInt64 = 0
+  private let targetGenerationWarmupMaxIntervalNs: UInt64 = 250_000_000
 
   func tryEnqueue(enqueueNs: UInt64) -> Bool {
     lock.lock()
@@ -311,6 +318,31 @@ final class MacOSFrameCallbackProfiler {
     mainWaitMaxNs = max(mainWaitMaxNs, waitNs)
     mainWaitDurations.record(waitNs)
     lastHandleStartNs = startNs
+  }
+
+  func recordTargetGeneration(_ generation: Int64, nowNs: UInt64) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard generation > 0 else { return }
+    if generation != lastTargetGeneration {
+      lastTargetGeneration = generation
+      targetGenerationChangeCount += 1
+      targetGenerationWarmupRemaining = 8
+      targetGenerationWarmupSampleCount = 0
+      targetGenerationWarmupLastNs = nowNs
+      targetGenerationWarmupIntervals.reset()
+      return
+    }
+    guard targetGenerationWarmupRemaining > 0 else { return }
+    if targetGenerationWarmupLastNs > 0, nowNs >= targetGenerationWarmupLastNs {
+      let intervalNs = nowNs - targetGenerationWarmupLastNs
+      if intervalNs <= targetGenerationWarmupMaxIntervalNs {
+        targetGenerationWarmupIntervals.record(intervalNs)
+        targetGenerationWarmupSampleCount += 1
+        targetGenerationWarmupRemaining -= 1
+      }
+    }
+    targetGenerationWarmupLastNs = nowNs
   }
 
   func finishProcessing(endNs: UInt64) -> UInt64? {
@@ -363,6 +395,12 @@ final class MacOSFrameCallbackProfiler {
       ),
       "macosFrameCallbackHandleMaxMs": nsToMs(handleMaxNs),
       "macosFrameCallbackHandleP95Ms": handleDurations.p95Ms(),
+      "macosFrameCallbackTargetGeneration": lastTargetGeneration,
+      "macosFrameCallbackTargetGenerationChangeCount": targetGenerationChangeCount,
+      "macosFrameCallbackTargetWarmupRemaining": targetGenerationWarmupRemaining,
+      "macosFrameCallbackTargetWarmupSampleCount": targetGenerationWarmupSampleCount,
+      "macosFrameCallbackTargetWarmupLastMs": targetGenerationWarmupIntervals.lastMs(),
+      "macosFrameCallbackTargetWarmupP95Ms": targetGenerationWarmupIntervals.p95Ms(),
     ]
   }
 

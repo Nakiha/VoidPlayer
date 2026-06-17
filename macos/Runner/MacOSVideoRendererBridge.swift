@@ -948,6 +948,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let startNs = DispatchTime.now().uptimeNanoseconds
     let nativePlaying = playback.syncPlayingState(player: nativePlayer)
     frameCallbackProfiler.recordMainStart(enqueueNs: enqueueNs, startNs: startNs)
+    if let generation = currentRendererOwnedTargetGeneration() {
+      frameCallbackProfiler.recordTargetGeneration(generation, nowNs: startNs)
+    }
     let suppressLayoutPublication =
       backendName == MacOSVideoTrackPayload.nativeFormatName &&
       presentation.shouldSuppressNativeCallbackPublicationDuringLayout()
@@ -1013,6 +1016,23 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
     sourceRing.requestRefresh(player: player)
     return true
+  }
+
+  private func currentRendererOwnedTargetGeneration() -> Int64? {
+    guard let generation =
+      nativePlayer?.rendererOwnedPresentationState()["targetGeneration"] else {
+      return nil
+    }
+    switch generation {
+    case let value as Int64:
+      return value
+    case let value as Int:
+      return Int64(value)
+    case let value as UInt64:
+      return Int64(min(value, UInt64(Int64.max)))
+    default:
+      return nil
+    }
   }
 
   private func logFrameCallbackProfiler(

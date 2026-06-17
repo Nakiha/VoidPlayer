@@ -178,6 +178,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "setNativeCompositorViewportRect":
       setNativeCompositorViewportRect(arguments: call.arguments)
       result(nil)
+    case "requestNativeCompositorFlutterFrame":
+      result(nil)
+    case "ackNativeCompositorFlutterState":
+      result(nil)
     case "setNativeCompositorViewportTransform":
       setNativeCompositorViewportTransform(arguments: call.arguments)
       result(nil)

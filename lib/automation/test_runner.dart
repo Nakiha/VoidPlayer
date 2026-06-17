@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:flutter/scheduler.dart';
 import 'package:path/path.dart' as p;
 
 import '../actions/automation_action.dart';
@@ -23,6 +24,8 @@ class TestRunner {
   final UiAutomationBridge automation;
   final UiAutomationRuntime runtime;
   final AutomationRunState _state = AutomationRunState();
+  final _FlutterFrameTimingProbe _flutterTimingProbe =
+      _FlutterFrameTimingProbe.instance;
   bool _terminalInstructionSeen = false;
 
   TestRunner({
@@ -56,6 +59,8 @@ class TestRunner {
       'TestRunner: running ${instructions.length} instructions from $scriptPath',
     );
 
+    _flutterTimingProbe.ensureInstalled();
+    _flutterTimingProbe.reset();
     final sw = Stopwatch()..start();
 
     for (final instr in instructions) {
@@ -344,6 +349,23 @@ class TestRunner {
           'metalExhaustion=${value('textureMetalBufferExhaustionCount')} '
           'inFlightMetal=${value('textureInFlightMetalBufferCount')}',
         );
+      case DebugFlutterTimingAction():
+        final summary = await _flutterTimingProbe.collectAndReset();
+        log.info(
+          'TestRunner: DEBUG_FLUTTER_TIMING '
+          'frames=${summary.frameCount} '
+          'buildAvgMs=${summary.buildAvgMs} '
+          'buildP95Ms=${summary.buildP95Ms} '
+          'buildMaxMs=${summary.buildMaxMs} '
+          'rasterAvgMs=${summary.rasterAvgMs} '
+          'rasterP95Ms=${summary.rasterP95Ms} '
+          'rasterMaxMs=${summary.rasterMaxMs} '
+          'totalAvgMs=${summary.totalAvgMs} '
+          'totalP95Ms=${summary.totalP95Ms} '
+          'totalMaxMs=${summary.totalMaxMs} '
+          'over16ms=${summary.over16Ms} '
+          'over33ms=${summary.over33Ms}',
+        );
       case WindowMaximize():
         log.info('TestRunner: WINDOW_MAXIMIZE');
         await runtime.maximizeWindow();
@@ -375,6 +397,12 @@ class TestRunner {
         final count = _probe.currentNativeSeekCount();
         _state.nativeSeekCountBaselines[nameId] = count;
         log.info('TestRunner: STORE_NATIVE_SEEK_COUNT $nameId count=$count');
+      case ClickFlutterPoint(:final x, :final y):
+        log.info(
+          'TestRunner: CLICK_FLUTTER_POINT '
+          'x=${x.toStringAsFixed(1)} y=${y.toStringAsFixed(1)}',
+        );
+        testHarness.clickFlutterPoint(Offset(x, y));
       case DragViewport(:final dx, :final dy, :final steps, :final stepMs):
         log.info(
           'TestRunner: DRAG_VIEWPORT dx=$dx dy=$dy steps=$steps stepMs=$stepMs',
@@ -592,6 +620,134 @@ class TestRunner {
       'WAIT_${state.name.toUpperCase()} timed out after ${timeout.inMilliseconds}ms',
     );
   }
+}
+
+class _FlutterFrameTimingProbe {
+  static final _FlutterFrameTimingProbe instance = _FlutterFrameTimingProbe._();
+
+  final List<FrameTiming> _timings = <FrameTiming>[];
+  bool _installed = false;
+
+  _FlutterFrameTimingProbe._();
+
+  void ensureInstalled() {
+    if (_installed) return;
+    SchedulerBinding.instance.addTimingsCallback(_onTimings);
+    _installed = true;
+  }
+
+  void reset() {
+    _timings.clear();
+  }
+
+  Future<_FlutterFrameTimingSummary> collectAndReset() async {
+    ensureInstalled();
+    SchedulerBinding.instance.scheduleFrame();
+    await SchedulerBinding.instance.endOfFrame;
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    final snapshot = List<FrameTiming>.of(_timings);
+    _timings.clear();
+    return _FlutterFrameTimingSummary.fromTimings(snapshot);
+  }
+
+  void _onTimings(List<FrameTiming> timings) {
+    _timings.addAll(timings);
+  }
+}
+
+class _FlutterFrameTimingSummary {
+  final int frameCount;
+  final String buildAvgMs;
+  final String buildP95Ms;
+  final String buildMaxMs;
+  final String rasterAvgMs;
+  final String rasterP95Ms;
+  final String rasterMaxMs;
+  final String totalAvgMs;
+  final String totalP95Ms;
+  final String totalMaxMs;
+  final int over16Ms;
+  final int over33Ms;
+
+  const _FlutterFrameTimingSummary({
+    required this.frameCount,
+    required this.buildAvgMs,
+    required this.buildP95Ms,
+    required this.buildMaxMs,
+    required this.rasterAvgMs,
+    required this.rasterP95Ms,
+    required this.rasterMaxMs,
+    required this.totalAvgMs,
+    required this.totalP95Ms,
+    required this.totalMaxMs,
+    required this.over16Ms,
+    required this.over33Ms,
+  });
+
+  factory _FlutterFrameTimingSummary.fromTimings(List<FrameTiming> timings) {
+    if (timings.isEmpty) {
+      return const _FlutterFrameTimingSummary(
+        frameCount: 0,
+        buildAvgMs: '0.000',
+        buildP95Ms: '0.000',
+        buildMaxMs: '0.000',
+        rasterAvgMs: '0.000',
+        rasterP95Ms: '0.000',
+        rasterMaxMs: '0.000',
+        totalAvgMs: '0.000',
+        totalP95Ms: '0.000',
+        totalMaxMs: '0.000',
+        over16Ms: 0,
+        over33Ms: 0,
+      );
+    }
+
+    final build = timings
+        .map((timing) => timing.buildDuration.inMicroseconds)
+        .toList(growable: false);
+    final raster = timings
+        .map((timing) => timing.rasterDuration.inMicroseconds)
+        .toList(growable: false);
+    final total = timings
+        .map((timing) => timing.totalSpan.inMicroseconds)
+        .toList(growable: false);
+    return _FlutterFrameTimingSummary(
+      frameCount: timings.length,
+      buildAvgMs: _formatMs(_averageUs(build)),
+      buildP95Ms: _formatMs(_percentileUs(build, 0.95)),
+      buildMaxMs: _formatMs(_maxUs(build)),
+      rasterAvgMs: _formatMs(_averageUs(raster)),
+      rasterP95Ms: _formatMs(_percentileUs(raster, 0.95)),
+      rasterMaxMs: _formatMs(_maxUs(raster)),
+      totalAvgMs: _formatMs(_averageUs(total)),
+      totalP95Ms: _formatMs(_percentileUs(total, 0.95)),
+      totalMaxMs: _formatMs(_maxUs(total)),
+      over16Ms: total.where((us) => us > 16000).length,
+      over33Ms: total.where((us) => us > 33000).length,
+    );
+  }
+
+  static double _averageUs(List<int> values) {
+    if (values.isEmpty) return 0;
+    return values.reduce((a, b) => a + b) / values.length;
+  }
+
+  static int _maxUs(List<int> values) {
+    if (values.isEmpty) return 0;
+    return values.reduce((a, b) => a > b ? a : b);
+  }
+
+  static int _percentileUs(List<int> values, double percentile) {
+    if (values.isEmpty) return 0;
+    final sorted = List<int>.of(values)..sort();
+    final index = ((sorted.length - 1) * percentile).ceil().clamp(
+      0,
+      sorted.length - 1,
+    );
+    return sorted[index];
+  }
+
+  static String _formatMs(num us) => (us / 1000.0).toStringAsFixed(3);
 }
 
 class _ViewportOverlayLineStyleMetric {

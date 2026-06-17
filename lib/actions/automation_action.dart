@@ -70,6 +70,10 @@ class DebugNativeTimingAction extends AutomationAction {
   const DebugNativeTimingAction() : super('DEBUG_NATIVE_TIMING');
 }
 
+class DebugFlutterTimingAction extends AutomationAction {
+  const DebugFlutterTimingAction() : super('DEBUG_FLUTTER_TIMING');
+}
+
 class WindowMaximize extends AutomationAction {
   const WindowMaximize() : super('WINDOW_MAXIMIZE');
 }
@@ -94,6 +98,13 @@ class StoreNativeSeekCount extends AutomationAction {
   final String nameId;
 
   const StoreNativeSeekCount(this.nameId) : super('STORE_NATIVE_SEEK_COUNT');
+}
+
+class ClickFlutterPoint extends AutomationAction {
+  final double x;
+  final double y;
+
+  const ClickFlutterPoint(this.x, this.y) : super('CLICK_FLUTTER_POINT');
 }
 
 class DragViewport extends AutomationAction {

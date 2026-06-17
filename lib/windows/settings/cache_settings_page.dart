@@ -618,13 +618,10 @@ class _StorageFilesTab extends StatelessWidget {
         limitFocusNode != null &&
         limitLabel != null &&
         onLimitSubmitted != null;
-    return ScrollbarTheme(
-      data: ScrollbarThemeData(
-        thickness: WidgetStateProperty.all(_cacheListScrollbarThickness),
-      ),
-      child: Scrollbar(
-        thumbVisibility: true,
-        child: CustomScrollView(
+    return _CacheTabScrollbar(
+      builder: (controller) {
+        return CustomScrollView(
+          controller: controller,
           slivers: [
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
@@ -692,8 +689,8 @@ class _StorageFilesTab extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -729,13 +726,10 @@ class _AnalysisCacheTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context)!;
     final snapshot = this.snapshot;
-    return ScrollbarTheme(
-      data: ScrollbarThemeData(
-        thickness: WidgetStateProperty.all(_cacheListScrollbarThickness),
-      ),
-      child: Scrollbar(
-        thumbVisibility: true,
-        child: CustomScrollView(
+    return _CacheTabScrollbar(
+      builder: (controller) {
+        return CustomScrollView(
+          controller: controller,
           slivers: [
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(
@@ -800,7 +794,40 @@ class _AnalysisCacheTab extends StatelessWidget {
               ),
             ),
           ],
-        ),
+        );
+      },
+    );
+  }
+}
+
+class _CacheTabScrollbar extends StatefulWidget {
+  final Widget Function(ScrollController controller) builder;
+
+  const _CacheTabScrollbar({required this.builder});
+
+  @override
+  State<_CacheTabScrollbar> createState() => _CacheTabScrollbarState();
+}
+
+class _CacheTabScrollbarState extends State<_CacheTabScrollbar> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScrollbarTheme(
+      data: ScrollbarThemeData(
+        thickness: WidgetStateProperty.all(_cacheListScrollbarThickness),
+      ),
+      child: Scrollbar(
+        controller: _controller,
+        thumbVisibility: true,
+        child: widget.builder(_controller),
       ),
     );
   }

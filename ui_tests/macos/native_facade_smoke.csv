@@ -31,6 +31,6 @@
 3.486, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureHeight, 180, 1080
 3.5, CAPTURE_VIEWPORT, native_facade_first_frame
 3.6, ASSERT_CAPTURE_NOT_BLACK, native_facade_first_frame, 0.01, 4.0
-3.75, ASSERT_TRACK_METADATA, 0, QuickTime / MOV, decode_thread_software
+3.75, ASSERT_TRACK_METADATA, 0, QuickTime / MOV, h264
 3.8, ASSERT_PRESENTED_FRAME_RANGE, 0, 0, 100000
 3.9, QUIT, 0

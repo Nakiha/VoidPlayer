@@ -249,7 +249,7 @@ class MainWindowLayoutCoordinator {
     viewportWidth = width;
     viewportHeight = height;
     _resizeDebounceTimer?.cancel();
-    if (immediate) {
+    if (immediate || _state.nativeCompositorActive) {
       _resizeDebounceTimer = null;
       _markResizeDirty();
       return;

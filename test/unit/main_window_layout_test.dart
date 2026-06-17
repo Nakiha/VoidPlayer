@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/app_log.dart';
 import 'package:void_player/main_window/main_window_layout.dart';
 import 'package:void_player/main_window/main_window_state.dart';
 import 'package:void_player/marks/quick_mark.dart';
@@ -9,6 +10,10 @@ import 'package:void_player/viewport/display_geometry.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await initLogging(['--log-level=flutter=OFF']);
+  });
 
   TrackInfo track(int fileId) => TrackInfo(
     fileId: fileId,
@@ -71,6 +76,36 @@ void main() {
       expect(controller.appliedLayouts.single.viewOffsetY, 30);
       expect(stateStore.value.layout.viewOffsetX, 40);
       expect(stateStore.value.layout.viewOffsetY, 45);
+    },
+  );
+
+  test(
+    'native compositor viewport resize flushes without debounce',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setNativeCompositorActive(true)
+        ..setLayout(const LayoutState());
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager();
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 100;
+      coordinator.viewportHeight = 100;
+
+      coordinator.onViewportResize(240, 180, 1.5);
+      await coordinator.flushPendingLayout();
+
+      expect(controller.calls, const ['resize', 'getLayout']);
+      expect(controller.resizes, const [Size(240, 180)]);
     },
   );
 

@@ -11,6 +11,7 @@
   "forkBranch": "codex/windows-surface-export",
   "forkCommit": "cad896c21e492160c4e789b1beb2d463e7bd8a50",
   "defaultInstallPath": ".toolchains/flutter",
+  "macosLocalEngineReleaseTag": "voidplayer-flutter-3.44.1-hdr.2",
   "macosLocalEngineArtifacts": {
     "debug": {
       "engine": "host_debug_unopt_arm64",

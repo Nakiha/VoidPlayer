@@ -25,7 +25,7 @@ engine revision, Dart SDK version, clean git checkout, and patch markers.
 
 macOS Flutter runner builds also require the local engine archives listed in
 `flutter.lock.json` under `macosLocalEngineArtifacts`. Publish those archives as
-assets on the locked `VoidPlayer-Flutter` release. Use
+assets on the `macosLocalEngineReleaseTag` `VoidPlayer-Flutter` release. Use
 `scripts/ci/package_flutter_macos_engine.sh debug` and `release` from a machine
 with the matching local engine `out/` directories, then copy the printed SHA-256
 values into the lock before pushing VoidPlayer changes.

@@ -70,6 +70,15 @@ final class MacOSNativeCompositorSourceRing {
   private var pending = false
   private var hasPublished = false
   private var depth = MacOSNativeCompositorSourceRing.ringDepth
+  private let refreshRequestRate = MacOSRateWindow()
+  private let bakeRate = MacOSRateWindow()
+  private let publishRate = MacOSRateWindow()
+  private let bakeDuration = MacOSDurationWindow()
+  private var refreshRequestCount = 0
+  private var refreshCoalescedCount = 0
+  private var bakeCount = 0
+  private var publishCount = 0
+  private var publishMissCount = 0
 
   init(compositor: MacOSNativeCompositorView) {
     self.compositor = compositor
@@ -100,11 +109,14 @@ final class MacOSNativeCompositorSourceRing {
   func requestRefresh(player: MacOSNativePlayerSession) {
     ringQueue.async { [weak self] in
       guard let self, self.live, !self.rings.isEmpty else { return }
+      self.refreshRequestCount += 1
+      self.refreshRequestRate.record()
       // Frozen-snapshot fallback (depth == 1) never refreshes: the source is too
       // large for a live ring, so it intentionally behaves like the old paused
       // one-shot.
       if self.depth <= 1 { return }
       if self.baking {
+        self.refreshCoalescedCount += 1
         self.pending = true
         return
       }
@@ -126,6 +138,26 @@ final class MacOSNativeCompositorSourceRing {
       self.order = []
       self.bakeTarget = nil
       self.compositor?.clearSource(reason: reason)
+    }
+  }
+
+  func diagnostics() -> [String: Any] {
+    ringQueue.sync {
+      [
+        "sourceRingLive": live,
+        "sourceRingDepth": depth,
+        "sourceRingTrackCount": rings.count,
+        "sourceRingRefreshRequestCount": refreshRequestCount,
+        "sourceRingRefreshRequestHz": refreshRequestRate.rateHz(),
+        "sourceRingRefreshCoalescedCount": refreshCoalescedCount,
+        "sourceRingBakeCount": bakeCount,
+        "sourceRingBakeHz": bakeRate.rateHz(),
+        "sourceRingBakeP95Ms": bakeDuration.p95Ms(),
+        "sourceRingBakeLastMs": bakeDuration.lastMs(),
+        "sourceRingPublishCount": publishCount,
+        "sourceRingPublishHz": publishRate.rateHz(),
+        "sourceRingPublishMissCount": publishMissCount,
+      ]
     }
   }
 
@@ -249,6 +281,7 @@ final class MacOSNativeCompositorSourceRing {
   /// is fully written before it is published.
   private func bakeAndPublishOnQueue(player: MacOSNativePlayerSession) {
     guard live, let bakeTarget, !rings.isEmpty else { return }
+    let startNs = DispatchTime.now().uptimeNanoseconds
 
     // Advance each ring to the next write buffer (away from the published one).
     for i in rings.indices {
@@ -275,7 +308,12 @@ final class MacOSNativeCompositorSourceRing {
     let result = targets.withUnsafeMutableBufferPointer { buffer in
       bakeTarget.bakeCurrentFrameSources(player: player, targets: buffer)
     }
+    let finishNs = DispatchTime.now().uptimeNanoseconds
+    bakeCount += 1
+    bakeRate.record(nowNs: finishNs)
+    bakeDuration.record(finishNs >= startNs ? finishNs - startNs : 0)
     guard result.drawnCount > 0 else {
+      publishMissCount += 1
       // A transient bake miss (e.g. between seeks) should not blank the viewport
       // once we have a good frame to hold. Only surface the error before the very
       // first successful publish.
@@ -301,6 +339,8 @@ final class MacOSNativeCompositorSourceRing {
       ))
     }
     hasPublished = true
+    publishCount += 1
+    publishRate.record()
     compositor?.setSourceBuffers(
       textures: published,
       overlay: player.currentOverlayPrimitives()

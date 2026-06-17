@@ -28,6 +28,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private let frameAvailableRate = MacOSRateWindow()
   private let coalescedFrameCallbackDelayMs = 8
   private var frameAvailableCount = 0
+  private var compositorVideoTextureRefreshCount = 0
+  private var compositorVideoTextureRefreshSkippedWhilePlayingCount = 0
   private var profilerSummaryTimer: DispatchSourceTimer?
   private var screenChangeObserver: NSObjectProtocol?
 
@@ -272,6 +274,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       diagnostics.merge(MacOSPresentationConfiguration.current.diagnostics) { _, next in next }
       if let nativeCompositor {
         diagnostics.merge(nativeCompositor.diagnostics()) { _, next in next }
+      }
+      if let nativeCompositorSourceRing {
+        diagnostics.merge(nativeCompositorSourceRing.diagnostics()) { _, next in next }
       }
       result(diagnostics)
     case "debugFlutterSurfaceInfo":
@@ -701,7 +706,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     frameAvailableCount += 1
     frameAvailableRate.record()
     lifecycle.markFrameAvailable()
-    nativeCompositor?.setVideoTexture(texture)
+    if playback.isPlaying {
+      compositorVideoTextureRefreshSkippedWhilePlayingCount += 1
+    } else {
+      compositorVideoTextureRefreshCount += 1
+      nativeCompositor?.setVideoTexture(texture)
+    }
     // Keep the live source ring mirroring the just-presented frame so a
     // playing-state pan reveals slid-to pixels immediately. No-op unless an
     // interaction has subscribed; coalesced on the ring's own queue.
@@ -815,6 +825,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     diagnostics["frameAvailableCount"] = frameAvailableCount
     diagnostics["frameAvailableHz"] = frameAvailableHz
     diagnostics["frameAvailableHzX1000"] = Int(frameAvailableHz * 1000.0)
+    diagnostics["compositorVideoTextureRefreshCount"] = compositorVideoTextureRefreshCount
+    diagnostics["compositorVideoTextureRefreshSkippedWhilePlayingCount"] =
+      compositorVideoTextureRefreshSkippedWhilePlayingCount
     return diagnostics
   }
 

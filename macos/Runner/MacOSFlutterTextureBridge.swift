@@ -312,7 +312,9 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     }
     guard let publishBufferIndex = pendingBufferIndex,
           pixelBufferStates.indices.contains(publishBufferIndex),
-          pixelBufferStates[publishBufferIndex] == .rendering else {
+          pixelBufferStates[publishBufferIndex] == .rendering ||
+          pixelBufferStates[publishBufferIndex] == .targetInstalled ||
+          pixelBufferStates[publishBufferIndex] == .available else {
       logTargetStateLocked(reason: "publish-state-mismatch")
       throw MacOSNativePlayerError.transientFrameUnavailable(
         "renderer-owned Metal presentation target changed before publish"

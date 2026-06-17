@@ -1,25 +1,25 @@
 @WINDOW, 960, 540
 0.0, SET_DECODE_MODE, forceSoftware
 0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
-1.3, ASSERT_TRACK_COUNT, 1
-1.4, ADD_MEDIA, resources/video/ci_h264_smoke.mp4
-2.4, ASSERT_TRACK_COUNT, 2
-2.45, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackDiagnosticCount, 2
-2.46, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, secondaryTrackSlot, 1, 1
-2.5, SET_LAYOUT_MODE, 1
-2.8, ASSERT_LAYOUT_MODE, 1
-2.9, SET_SPLIT_POS, 0.0
-3.2, ASSERT_SPLIT_POS, 0.0, 0.0001
-3.3, CAPTURE_VIEWPORT, split_zero_secondary_full
-9.0, ASSERT_CAPTURE_NOT_BLACK, split_zero_secondary_full, 0.01, 1.0
-9.1, SET_SPLIT_POS, 1.0
-9.6, ASSERT_SPLIT_POS, 1.0, 0.0001
-9.8, CAPTURE_VIEWPORT, split_one_primary_full
-15.5, ASSERT_CAPTURE_NOT_BLACK, split_one_primary_full
-15.6, ASSERT_CAPTURE_CHANGED, split_zero_secondary_full, split_one_primary_full
-15.7, SET_SPLIT_POS, 0.5
-16.2, ASSERT_SPLIT_POS, 0.5, 0.0001
-16.4, CAPTURE_VIEWPORT, split_middle
-22.0, ASSERT_CAPTURE_NOT_BLACK, split_middle
-22.1, ASSERT_CAPTURE_CHANGED, split_one_primary_full, split_middle
-22.2, QUIT, 0
+3.0, ASSERT_TRACK_COUNT, 1
+3.1, ADD_MEDIA, resources/video/ci_h264_smoke.mp4
+4.1, ASSERT_TRACK_COUNT, 2
+4.15, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackDiagnosticCount, 2
+4.16, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, secondaryTrackSlot, 1, 1
+4.2, SET_LAYOUT_MODE, 1
+4.5, ASSERT_LAYOUT_MODE, 1
+4.6, SET_SPLIT_POS, 0.0
+4.9, ASSERT_SPLIT_POS, 0.0, 0.0001
+5.0, CAPTURE_VIEWPORT, split_zero_secondary_full
+10.7, ASSERT_CAPTURE_NOT_BLACK, split_zero_secondary_full, 0.01, 1.0
+10.8, SET_SPLIT_POS, 1.0
+11.3, ASSERT_SPLIT_POS, 1.0, 0.0001
+11.5, CAPTURE_VIEWPORT, split_one_primary_full
+17.2, ASSERT_CAPTURE_NOT_BLACK, split_one_primary_full
+17.3, ASSERT_CAPTURE_CHANGED, split_zero_secondary_full, split_one_primary_full
+17.4, SET_SPLIT_POS, 0.5
+17.9, ASSERT_SPLIT_POS, 0.5, 0.0001
+18.1, CAPTURE_VIEWPORT, split_middle
+23.7, ASSERT_CAPTURE_NOT_BLACK, split_middle
+23.8, ASSERT_CAPTURE_CHANGED, split_one_primary_full, split_middle
+23.9, QUIT, 0

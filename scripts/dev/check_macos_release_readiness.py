@@ -174,7 +174,7 @@ def _otool_libraries(binary: Path) -> list[str]:
 def _check_macos_linkage(stage_app: Path) -> None:
     executable = stage_app / "Contents" / "MacOS" / "VoidPlayer"
     frameworks = stage_app / "Contents" / "Frameworks"
-    ffmpeg_lib_dir = ROOT / "third_party" / "ffmpeg" / "lib"
+    ffmpeg_lib_dir = ROOT / ".toolchains" / "ffmpeg" / "macos-arm64" / "lib"
     ffmpeg_dylibs = ffmpeg_runtime_dylibs(ffmpeg_lib_dir)
     ffmpeg_symlinks = ffmpeg_runtime_symlinks(ffmpeg_lib_dir)
     required_loads = {f"@rpath/{name}" for name in ffmpeg_dylibs}
@@ -209,7 +209,7 @@ def _check_macos_linkage(stage_app: Path) -> None:
 
 
 def _check_no_developer_paths(binary: Path, loads: set[str] | list[str]) -> None:
-    forbidden = (str(ROOT), "/third_party/ffmpeg/", "/native/build", "/build/macos/")
+    forbidden = (str(ROOT), "/.toolchains/ffmpeg/", "/native/build", "/build/macos/")
     for library in loads:
         if any(marker in library for marker in forbidden):
             raise RuntimeError(f"{binary.name} has developer-machine linkage path: {library}")

@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-FFMPEG_LIB_DIR="${PROJECT_DIR}/../third_party/ffmpeg/lib"
-FFMPEG_ROOT="${PROJECT_DIR}/../third_party/ffmpeg"
+FFMPEG_ROOT="${PROJECT_DIR}/../.toolchains/ffmpeg/macos-arm64"
+FFMPEG_LIB_DIR="${FFMPEG_ROOT}/lib"
 FRAMEWORKS_DIR="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}"
 NOTICE_DIR="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ThirdParty/ffmpeg"
 

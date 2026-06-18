@@ -65,28 +65,14 @@ jobs:
             git lfs pull --include="resources/video/h266_10s_1920x1080.mp4,resources/video/mhw_hevc_fullrange_bt709_3s.mp4,resources/video/h264_high422p_1s_320x180.mp4,resources/video/ffv1_yuv422p_8bit.mkv,resources/video/ffv1_yuv444p_8bit.mkv,resources/video/ffv1_yuv422p10le.mkv,resources/video/ffv1_yuv444p10le.mkv"
           fi
 
-      - name: Download FFmpeg build artifact
-        id: ffmpeg
+      - name: Download locked FFmpeg artifact
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          run_id=""
-          for attempt in 1 2 3; do
-            run_id="$(gh run list -R Nakiha/VoidPlayer-FFmpeg-Build --workflow "Build FFmpeg" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')" && test -n "$run_id" && break
-            sleep $((attempt * 10))
-          done
-          test -n "$run_id"
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          rm -rf build/ci-ffmpeg
-          mkdir -p build/ci-ffmpeg
-          gh run download "$run_id" -R Nakiha/VoidPlayer-FFmpeg-Build --name voidplayer-ffmpeg-macos-arm64-n8.1 --dir build/ci-ffmpeg
+        run: scripts/ci/download_ffmpeg_artifacts.sh build/ci-ffmpeg macos-arm64
 
       - name: Restore and verify macOS FFmpeg artifact
         shell: bash
-        env:
-          VOIDPLAYER_FFMPEG_BUILD_RUN_ID: ${{ steps.ffmpeg.outputs.run_id }}
         run: bash scripts/ci/restore_ffmpeg_macos.sh
 
       - uses: actions/setup-python@v5

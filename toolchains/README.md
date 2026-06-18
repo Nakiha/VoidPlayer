@@ -8,6 +8,11 @@ the active SDK against this lock before building or testing.
 
 `FLUTTER_FORK_PATCHES.md` records the fork patch inventory and upgrade flow.
 
+`ffmpeg.lock.json` pins the runtime/dev FFmpeg artifacts restored from
+`Nakiha/VoidPlayer-FFmpeg-Build`. Restore scripts hydrate those artifacts under
+`.toolchains/ffmpeg/`; the hydrated SDKs are local build inputs and are not
+committed to this repository.
+
 Useful commands:
 
 ```bash

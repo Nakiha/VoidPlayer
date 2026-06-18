@@ -77,7 +77,9 @@ Future<void> generateTestVideo({
 }
 
 String _resolveFfmpegExecutable() {
-  final bundled = File('windows/libs/ffmpeg/bin/ffmpeg.exe').absolute;
+  final bundled = File(
+    '.toolchains/ffmpeg/windows-x64/bin/ffmpeg.exe',
+  ).absolute;
   if (bundled.existsSync()) return bundled.path;
   return 'ffmpeg';
 }

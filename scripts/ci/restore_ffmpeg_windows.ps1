@@ -1,10 +1,14 @@
 param(
-    [string]$ArtifactDir = "build/ci-ffmpeg"
+    [string]$ArtifactDir = "build/ci-ffmpeg",
+    [string]$InstallDir = ""
 )
 
 $ErrorActionPreference = "Stop"
 
-$artifactName = "voidplayer-ffmpeg-windows-x64-n8.1"
+$artifactName = (python scripts/ci/ffmpeg_lock.py artifact-name windows-x64).Trim()
+if (-not $InstallDir) {
+    $InstallDir = (python scripts/ci/ffmpeg_lock.py install-path windows-x64).Trim()
+}
 $unpackDir = Join-Path $ArtifactDir "unpacked"
 $zip = Get-ChildItem $ArtifactDir -Recurse -Filter "$artifactName.zip" | Select-Object -First 1
 
@@ -12,13 +16,14 @@ if (-not $zip) {
     throw "Windows FFmpeg artifact zip not found under $ArtifactDir"
 }
 
+python scripts/ci/ffmpeg_lock.py verify windows-x64 $zip.FullName
 Remove-Item -Recurse -Force $unpackDir -ErrorAction SilentlyContinue
 Expand-Archive -Force $zip.FullName $unpackDir
-Remove-Item -Recurse -Force "windows/libs/ffmpeg" -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force "windows/libs/ffmpeg" | Out-Null
-Move-Item (Join-Path $unpackDir "*") "windows/libs/ffmpeg/"
+Remove-Item -Recurse -Force $InstallDir -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force $InstallDir | Out-Null
+Move-Item (Join-Path $unpackDir "*") "$InstallDir/"
 
-$dll = "windows/libs/ffmpeg/bin/avcodec-62.dll"
+$dll = Join-Path $InstallDir "bin/avcodec-62.dll"
 if (-not (Test-Path $dll)) {
     throw "Windows FFmpeg DLL is missing: $dll"
 }

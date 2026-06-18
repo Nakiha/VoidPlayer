@@ -7,42 +7,29 @@ import sys
 
 from .paths import ROOT
 from .process import header, run
+from .repo_hygiene import cmd_repo_hygiene
 
 
-MACOS_UI_SMOKE = [
-    "ui_tests/macos/native_facade_smoke.csv",
-    "ui_tests/macos/native_seek_frame_smoke.csv",
-    "ui_tests/macos/native_layout_split_smoke.csv",
-    "ui_tests/macos/native_controls_smoke.csv",
-    "ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv",
-]
+PROFILE_DIR = ROOT / "ui_tests" / "profiles"
 
-MACOS_HDR_EDR_SMOKE = [
-    "ui_tests/macos/native_compositor_auto_hlg_policy_smoke.csv",
-    "ui_tests/macos/native_compositor_add_hlg_promotes_edr_smoke.csv",
-]
 
-MACOS_UI_NIGHTLY = [
-    *MACOS_UI_SMOKE,
-    "ui_tests/macos/native_audio_play_seek_smoke.csv",
-    "ui_tests/macos/native_audio_destroy_recreate_smoke.csv",
-    "ui_tests/macos/native_4k60_playback_smoke.csv",
-    "ui_tests/macos/native_vvc_software_playback_smoke.csv",
-    "ui_tests/macos/native_p010_presentation_smoke.csv",
-    "ui_tests/macos/native_callback_stress_smoke.csv",
-    "ui_tests/macos/native_user_window_close_smoke.csv",
-    "ui_tests/macos/native_quit_while_playing_smoke.csv",
-    "ui_tests/macos/native_loop_range_smoke.csv",
-    "ui_tests/macos/native_eof_settle_smoke.csv",
-    "ui_tests/macos/native_add_short_after_eof_smoke.csv",
-    "ui_tests/macos/native_h264_high422_fallback_smoke.csv",
-    "ui_tests/macos/native_odd_yuv_format_smoke.csv",
-    "ui_tests/macos/native_playing_seek_keeps_state_smoke.csv",
-    "ui_tests/macos/native_playing_step_pauses_smoke.csv",
-    "ui_tests/macos/native_seek_preview_event_smoke.csv",
-    "ui_tests/macos/analysis_gated_smoke.csv",
-    "ui_tests/macos/analysis_av1_overlay_unsupported_smoke.csv",
-]
+def _load_ui_profile(name: str, seen: set[str] | None = None) -> list[str]:
+    if seen is None:
+        seen = set()
+    if name in seen:
+        raise RuntimeError(f"recursive UI test profile include: {name}")
+    seen.add(name)
+    path = PROFILE_DIR / f"{name}.txt"
+    scripts: list[str] = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("@"):
+            scripts.extend(_load_ui_profile(line[1:], seen))
+        else:
+            scripts.append(line)
+    return scripts
 
 
 def _python_dev(*args: str) -> None:
@@ -102,15 +89,15 @@ def _run_macos_native_sanitizers() -> None:
 
 
 def _run_macos_ui_smoke() -> None:
-    _python_dev("mac-ui-test", "--build", *MACOS_UI_SMOKE)
+    _python_dev("mac-ui-test", "--build", *_load_ui_profile("macos-ui-smoke"))
 
 
 def _run_macos_ui_nightly() -> None:
-    _python_dev("mac-ui-test", "--build", *MACOS_UI_NIGHTLY)
+    _python_dev("mac-ui-test", "--build", *_load_ui_profile("macos-ui-nightly"))
 
 
 def _run_macos_hdr_edr_smoke() -> None:
-    _python_dev("mac-ui-test", "--build", *MACOS_HDR_EDR_SMOKE)
+    _python_dev("mac-ui-test", "--build", *_load_ui_profile("macos-hdr-edr-smoke"))
 
 
 def _run_windows_preservation() -> None:
@@ -135,8 +122,7 @@ def _run_windows_preservation() -> None:
         local_engine_environment,
         "ui-test",
         "--build",
-        "ui_tests/smoke/native_compositor_auto_sdr.csv",
-        "ui_tests/smoke/native_compositor_device_recovery_sdr.csv",
+        *_load_ui_profile("windows-preservation-auto"),
     )
     _python_dev_with_env(
         {
@@ -145,15 +131,7 @@ def _run_windows_preservation() -> None:
                 "native-compositor-scrgb",
         },
         "ui-test",
-        "ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv",
-        "ui_tests/smoke/native_compositor_flutter_surface_pump_scrgb.csv",
-        "ui_tests/smoke/native_compositor_window_close_scrgb.csv",
-        "ui_tests/smoke/native_source_projection_dcomp_scrgb.csv",
-        "ui_tests/smoke/native_compositor_device_recovery_scrgb.csv",
-        "ui_tests/smoke/native_source_projection_device_recovery.csv",
-        "ui_tests/smoke/native_high_refresh_paused_pan_zoom.csv",
-        "ui_tests/smoke/native_high_refresh_playing_pan_split.csv",
-        "ui_tests/smoke/native_high_refresh_overlay_pan_zoom.csv",
+        *_load_ui_profile("windows-preservation-scrgb"),
     )
     _python_dev_with_env(
         {
@@ -161,8 +139,7 @@ def _run_windows_preservation() -> None:
             "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "sdr",
         },
         "ui-test",
-        "ui_tests/smoke/basic.csv",
-        "ui_tests/smoke/native_seek_preview_event.csv",
+        *_load_ui_profile("windows-preservation-sdr"),
     )
 
 
@@ -481,9 +458,7 @@ def _run_windows_high_refresh_local() -> None:
         local_engine_environment,
         "ui-test",
         "--build",
-        "ui_tests/smoke/native_high_refresh_paused_pan_zoom.csv",
-        "ui_tests/smoke/native_high_refresh_playing_pan_split.csv",
-        "ui_tests/smoke/native_high_refresh_overlay_pan_zoom.csv",
+        *_load_ui_profile("windows-high-refresh-local"),
     )
 
 
@@ -506,6 +481,7 @@ def cmd_gate(args: argparse.Namespace) -> None:
     header(f"Gate profile: {profile}")
 
     if profile == "pr-fast":
+        cmd_repo_hygiene(argparse.Namespace())
         if _is_macos():
             _run_macos_native_fast()
         elif _is_windows():
@@ -524,6 +500,10 @@ def cmd_gate(args: argparse.Namespace) -> None:
             run([sys.executable, "scripts/dev/check_release_compliance.py"], cwd=str(ROOT))
         else:
             _python_dev("test", "--native-only")
+        return
+
+    if profile == "repo-hygiene":
+        cmd_repo_hygiene(argparse.Namespace())
         return
 
     if profile == "macos-native-fast":

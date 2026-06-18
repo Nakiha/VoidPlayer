@@ -1,0 +1,2 @@
+ui_tests/smoke/basic.csv
+ui_tests/smoke/native_seek_preview_event.csv

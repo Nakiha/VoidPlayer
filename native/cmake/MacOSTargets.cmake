@@ -49,15 +49,6 @@ target_compile_options(void_macos_native_player PRIVATE
 )
 
 if(BUILD_ANALYSIS)
-    add_executable(VoidPlayerCli
-        "${VOID_NATIVE_DIR}/tools/void_player_cli.cpp"
-        "${VOID_NATIVE_DIR}/tools/analysis_overlay_gpu_benchmark_stub.cpp"
-    )
-    void_apply_native_compile_options(VoidPlayerCli)
-    target_include_directories(VoidPlayerCli PRIVATE
-        "${VOID_NATIVE_DIR}"
-    )
-    target_link_libraries(VoidPlayerCli PRIVATE
-        analysis_lib
-    )
+    include("${CMAKE_CURRENT_LIST_DIR}/AnalysisCliTarget.cmake")
+    void_add_analysis_cli(VoidPlayerCli)
 endif()

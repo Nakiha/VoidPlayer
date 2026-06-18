@@ -58,14 +58,14 @@ def check_source_tree() -> None:
                   ["FFmpeg runtime/dev package", "GPL v3 package"],
                   "native third-party manifest")
 
-    windows_ffmpeg_root = ROOT / "windows" / "libs" / "ffmpeg"
+    windows_ffmpeg_root = ROOT / ".toolchains" / "ffmpeg" / "windows-x64"
     _require_windows_ffmpeg_readme(windows_ffmpeg_root / "README.txt")
     if not _has_ffmpeg_license(windows_ffmpeg_root):
         raise RuntimeError(
             "missing FFmpeg LICENSE, LICENSE.txt, or LICENSES/FFmpeg-LICENSE.md "
             f"in {windows_ffmpeg_root}")
 
-    macos_ffmpeg_root = ROOT / "third_party" / "ffmpeg"
+    macos_ffmpeg_root = ROOT / ".toolchains" / "ffmpeg" / "macos-arm64"
     _require_text(macos_ffmpeg_root / "README.txt",
                   ["FFmpeg", "Target: macos-arm64", "VideoToolbox"],
                   "macOS FFmpeg package README")

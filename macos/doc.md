@@ -5,7 +5,7 @@ VoidPlayer. It is the platform host for the shared native renderer, not a
 separate playback implementation.
 
 The current app minimum is macOS 14.0 because the vendored FFmpeg dylibs in
-`../third_party/ffmpeg/lib` are built with `LC_BUILD_VERSION minos 14.0`. The
+`../.toolchains/ffmpeg/macos-arm64/lib` are built with `LC_BUILD_VERSION minos 14.0`. The
 Xcode runner passes the same deployment target into the native CMake build used
 by the app bundle.
 

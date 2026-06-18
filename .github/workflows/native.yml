@@ -42,9 +42,7 @@ on:
       - "toolchains/**"
       - "macos/**"
       - "native/**"
-      - "third_party/ffmpeg/**"
       - "THIRD_PARTY_NOTICES.md"
-      - "windows/libs/ffmpeg/**"
       - "resources/video/**"
   pull_request:
     paths:
@@ -55,9 +53,7 @@ on:
       - "toolchains/**"
       - "macos/**"
       - "native/**"
-      - "third_party/ffmpeg/**"
       - "THIRD_PARTY_NOTICES.md"
-      - "windows/libs/ffmpeg/**"
       - "resources/video/**"
 
 concurrency:
@@ -68,27 +64,17 @@ jobs:
   ffmpeg-artifacts:
     name: FFmpeg artifacts
     runs-on: ubuntu-latest
-    outputs:
-      build_run_id: ${{ steps.restore.outputs.run_id }}
     steps:
-      - name: Download FFmpeg build artifacts
-        id: restore
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          submodules: false
+
+      - name: Download locked FFmpeg artifacts
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          run_id=""
-          for attempt in 1 2 3; do
-            run_id="$(gh run list -R Nakiha/VoidPlayer-FFmpeg-Build --workflow "Build FFmpeg" --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')" && test -n "$run_id" && break
-            sleep $((attempt * 10))
-          done
-          test -n "$run_id"
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          rm -rf build/ci-ffmpeg
-          mkdir -p build/ci-ffmpeg
-          gh run download "$run_id" -R Nakiha/VoidPlayer-FFmpeg-Build --name voidplayer-ffmpeg-windows-x64-n8.1 --dir build/ci-ffmpeg
-          gh run download "$run_id" -R Nakiha/VoidPlayer-FFmpeg-Build --name voidplayer-ffmpeg-macos-arm64-n8.1 --dir build/ci-ffmpeg
+        run: scripts/ci/download_ffmpeg_artifacts.sh build/ci-ffmpeg
 
       - uses: actions/upload-artifact@v4
         with:
@@ -248,8 +234,6 @@ jobs:
 
       - name: Restore and verify macOS FFmpeg artifact
         shell: bash
-        env:
-          VOIDPLAYER_FFMPEG_BUILD_RUN_ID: ${{ needs.ffmpeg-artifacts.outputs.build_run_id }}
         run: bash scripts/ci/restore_ffmpeg_macos.sh
 
       - uses: actions/setup-python@v5
@@ -279,8 +263,6 @@ jobs:
 
       - name: Restore and verify macOS FFmpeg artifact
         shell: bash
-        env:
-          VOIDPLAYER_FFMPEG_BUILD_RUN_ID: ${{ needs.ffmpeg-artifacts.outputs.build_run_id }}
         run: bash scripts/ci/restore_ffmpeg_macos.sh
 
       - uses: actions/setup-python@v5
@@ -317,8 +299,6 @@ jobs:
 
       - name: Restore and verify macOS FFmpeg artifact
         shell: bash
-        env:
-          VOIDPLAYER_FFMPEG_BUILD_RUN_ID: ${{ needs.ffmpeg-artifacts.outputs.build_run_id }}
         run: bash scripts/ci/restore_ffmpeg_macos.sh
 
       - uses: actions/setup-python@v5
@@ -377,8 +357,6 @@ jobs:
 
       - name: Restore and verify macOS FFmpeg artifact
         shell: bash
-        env:
-          VOIDPLAYER_FFMPEG_BUILD_RUN_ID: ${{ needs.ffmpeg-artifacts.outputs.build_run_id }}
         run: bash scripts/ci/restore_ffmpeg_macos.sh
 
       - uses: actions/setup-python@v5

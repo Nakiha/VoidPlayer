@@ -9,9 +9,9 @@ if(NOT DEFINED VOID_FFMPEG_REQUIRED)
 endif()
 
 if(WIN32)
-    set(_VOID_DEFAULT_FFMPEG_ROOT "${VOID_NATIVE_DIR}/../windows/libs/ffmpeg")
+    set(_VOID_DEFAULT_FFMPEG_ROOT "${VOID_NATIVE_DIR}/../.toolchains/ffmpeg/windows-x64")
 else()
-    set(_VOID_DEFAULT_FFMPEG_ROOT "${VOID_NATIVE_DIR}/../third_party/ffmpeg")
+    set(_VOID_DEFAULT_FFMPEG_ROOT "${VOID_NATIVE_DIR}/../.toolchains/ffmpeg/macos-arm64")
 endif()
 
 set(FFMPEG_ROOT "${_VOID_DEFAULT_FFMPEG_ROOT}" CACHE PATH "FFmpeg root directory")

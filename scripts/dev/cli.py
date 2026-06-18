@@ -146,6 +146,7 @@ Examples:
             "macos-ui-nightly",
             "macos-hdr-edr-smoke",
             "macos-release-readiness",
+            "repo-hygiene",
             "windows-cross-adapter-local",
             "windows-high-refresh-local",
             "windows-hdr-auto",

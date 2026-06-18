@@ -26,6 +26,7 @@ endif()
 include(cmake/Dependencies.cmake)
 include(cmake/FFmpeg.cmake)
 include(cmake/NativeSources.cmake)
+include(cmake/AnalysisCliTarget.cmake)
 include(cmake/TestAssets.cmake)
 include(cmake/RuntimeArtifacts.cmake)
 
@@ -128,18 +129,7 @@ if(WIN32 AND BUILD_TESTS)
 endif()
 
 if(WIN32 AND BUILD_ANALYSIS)
-    add_executable(VoidPlayerCli
-        tools/void_player_cli.cpp
-        tools/analysis_overlay_gpu_benchmark.cpp)
-    void_apply_native_compile_options(VoidPlayerCli)
-    target_include_directories(VoidPlayerCli PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}"
-        "${CMAKE_BINARY_DIR}/renderer")
-    target_link_libraries(VoidPlayerCli PRIVATE
-        analysis_lib
-        d3d11
-        dxgi
-        d3dcompiler)
+    void_add_analysis_cli(VoidPlayerCli)
     if(BUILD_TESTS)
         add_executable(analysis_cli_smoke_tests
             tests/analysis/test_analysis_cli.cpp

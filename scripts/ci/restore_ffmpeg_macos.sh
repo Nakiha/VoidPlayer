@@ -2,8 +2,8 @@
 set -euo pipefail
 
 artifact_dir="${1:-build/ci-ffmpeg}"
-run_id="${VOIDPLAYER_FFMPEG_BUILD_RUN_ID:-}"
-artifact_name="voidplayer-ffmpeg-macos-arm64-n8.1"
+install_dir="${VOIDPLAYER_FFMPEG_INSTALL_DIR:-$(python3 scripts/ci/ffmpeg_lock.py install-path macos-arm64)}"
+artifact_name="$(python3 scripts/ci/ffmpeg_lock.py artifact-name macos-arm64)"
 zip_path="$(find "$artifact_dir" -name "${artifact_name}.zip" -print -quit)"
 
 if [[ -z "$zip_path" ]]; then
@@ -11,25 +11,16 @@ if [[ -z "$zip_path" ]]; then
   exit 1
 fi
 
+python3 scripts/ci/ffmpeg_lock.py verify macos-arm64 "$zip_path"
 rm -rf "$artifact_dir/unpacked"
 unzip -q "$zip_path" -d "$artifact_dir/unpacked"
-rm -rf third_party/ffmpeg
-mkdir -p third_party
-mv "$artifact_dir/unpacked/$artifact_name" third_party/ffmpeg
+rm -rf "$install_dir"
+mkdir -p "$(dirname "$install_dir")"
+mv "$artifact_dir/unpacked/$artifact_name" "$install_dir"
 
-{
-  echo "# VoidPlayer FFmpeg Package"
-  echo
-  echo "Restored in CI from the latest successful VoidPlayer FFmpeg build."
-  echo
-  echo "- Repository: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build"
-  if [[ -n "$run_id" ]]; then
-    echo "- GitHub Actions run: https://github.com/Nakiha/VoidPlayer-FFmpeg-Build/actions/runs/$run_id"
-  fi
-  echo "- Artifact: $artifact_name"
-} > third_party/ffmpeg/VOIDPLAYER_BUILD.md
+python3 scripts/ci/ffmpeg_lock.py build-notes macos-arm64 > "$install_dir/VOIDPLAYER_BUILD.md"
 
-dylib="$(find third_party/ffmpeg/lib -maxdepth 1 -type f -name 'libavcodec.*.dylib' | sort | tail -n 1)"
+dylib="$(find "$install_dir/lib" -maxdepth 1 -type f -name 'libavcodec.*.dylib' | sort | tail -n 1)"
 if [[ ! -s "$dylib" ]]; then
   echo "macOS FFmpeg dylib is missing or empty: $dylib" >&2
   exit 1

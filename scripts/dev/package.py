@@ -388,7 +388,7 @@ def _assert_ffmpeg_deps_use_rpath(binary: Path, loads: list[str]) -> None:
 
 
 def _assert_no_developer_paths(binary: Path, loads: list[str]) -> None:
-    forbidden = (str(ROOT), "/third_party/ffmpeg/", "/native/build", "/build/macos/")
+    forbidden = (str(ROOT), "/.toolchains/ffmpeg/", "/native/build", "/build/macos/")
     for library in loads:
         if any(marker in library for marker in forbidden):
             print(f"\nERROR: {binary.name} has developer-machine linkage path: {library}")

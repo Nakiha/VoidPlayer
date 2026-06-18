@@ -171,17 +171,28 @@ project moves toward release readiness.
 Current guardrails:
 
 - `python dev.py gate flutter-fork-protection`
+- `python dev.py gate macos-platform-protection`
 - `python dev.py gate windows-fork-protection`
 - `python dev.py gate repo-hygiene`
 
+Completed platform-protection work:
+
+- Flutter fork lock, local-engine artifacts, patch markers, and workflow
+  bootstrap paths are checked by `flutter-fork-protection`.
+- Windows DComp/source-projection/high-refresh/overlay native tests, D3D11
+  canaries, and preservation UI profiles are checked by
+  `windows-fork-protection`.
+- macOS FlutterTexture, CVPixelBuffer/IOSurface, renderer-owned Metal
+  presentation, VideoToolbox fallback, native Metal canaries, and macOS UI
+  profiles are checked by `macos-platform-protection`.
+
 Next candidates:
 
-- Add macOS presentation/backend protection checks for FlutterTexture,
-  CVPixelBuffer/IOSurface, Metal presentation, VideoToolbox fallback, and
-  macOS UI smoke profiles.
 - Add a release evidence ledger that records commit, Flutter fork lock, FFmpeg
   lock, CI runs, local-engine gates, and known manual hardware gaps for each
   release candidate.
+- Pause broad file moves until release evidence exposes a concrete maintenance
+  problem.
 
 ## Non-Goals For Now
 

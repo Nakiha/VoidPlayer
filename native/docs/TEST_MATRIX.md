@@ -8,6 +8,7 @@ and UI tests into gates and records cleanup decisions that changed the active se
 | Gate | Purpose | Typical command |
 | --- | --- | --- |
 | PR fast | Stable, high-signal checks for shared native logic and platform backend canaries. | `python3.12 dev.py gate pr-fast` |
+| Platform protection | Cheap static guardrails for pinned Flutter fork, macOS presentation, and Windows compositor protection lines. | `python3.12 dev.py gate repo-hygiene` or targeted `*-protection` gates |
 | Windows preservation | Windows runner/D3D11 preservation after shared renderer/backend changes. | `python dev.py gate windows-preservation` |
 | macOS stabilization | macOS native playback and renderer-owned Metal confidence. | `python3.12 dev.py gate macos-ui-smoke` |
 | macOS HDR EDR | Local HLG/PQ Auto promotion evidence on an EDR-capable display. | `python3.12 dev.py gate macos-hdr-edr-smoke` |

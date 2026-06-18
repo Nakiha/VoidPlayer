@@ -65,7 +65,7 @@ jobs:
     name: FFmpeg artifacts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: false
           submodules: false
@@ -76,7 +76,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/ci/download_ffmpeg_artifacts.sh build/ci-ffmpeg
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
@@ -87,7 +87,7 @@ jobs:
     needs: ffmpeg-artifacts
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: false
           submodules: false
@@ -97,7 +97,7 @@ jobs:
         shell: pwsh
         run: python scripts/ci/init_analysis_submodules.py
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
@@ -106,7 +106,7 @@ jobs:
         shell: pwsh
         run: scripts/ci/restore_ffmpeg_windows.ps1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -140,7 +140,7 @@ jobs:
     needs: ffmpeg-artifacts
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: true
           submodules: false
@@ -150,7 +150,7 @@ jobs:
         shell: pwsh
         run: python scripts/ci/init_analysis_submodules.py
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
@@ -159,7 +159,7 @@ jobs:
         shell: pwsh
         run: scripts/ci/restore_ffmpeg_windows.ps1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -177,7 +177,7 @@ jobs:
       - name: Install Python test/build dependencies
         run: python -m pip install --upgrade pip pytest pybind11
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: .toolchains/flutter
           key: voidplayer-flutter-${{ runner.os }}-${{ hashFiles('toolchains/flutter.lock.json') }}
@@ -205,13 +205,13 @@ jobs:
     needs: ffmpeg-artifacts
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: false
           submodules: false
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
@@ -220,7 +220,7 @@ jobs:
         shell: bash
         run: bash scripts/ci/restore_ffmpeg_macos.sh
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -234,13 +234,13 @@ jobs:
     needs: ffmpeg-artifacts
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: false
           submodules: false
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
@@ -249,7 +249,7 @@ jobs:
         shell: bash
         run: bash scripts/ci/restore_ffmpeg_macos.sh
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -262,7 +262,7 @@ jobs:
     needs: ffmpeg-artifacts
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: false
           submodules: false
@@ -272,7 +272,7 @@ jobs:
         shell: bash
         run: python3 scripts/ci/init_analysis_submodules.py
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
@@ -281,7 +281,7 @@ jobs:
         shell: bash
         run: bash scripts/ci/restore_ffmpeg_macos.sh
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -316,7 +316,7 @@ jobs:
     needs: ffmpeg-artifacts
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: false
           submodules: false
@@ -326,7 +326,7 @@ jobs:
         shell: bash
         run: python3 scripts/ci/init_analysis_submodules.py
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg
@@ -335,11 +335,11 @@ jobs:
         shell: bash
         run: bash scripts/ci/restore_ffmpeg_macos.sh
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: .toolchains/flutter
           key: voidplayer-flutter-${{ runner.os }}-${{ hashFiles('toolchains/flutter.lock.json') }}
@@ -404,7 +404,7 @@ jobs:
             build_analysis: "OFF"
             config: "Release"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           lfs: false
           submodules: false
@@ -415,7 +415,7 @@ jobs:
         shell: pwsh
         run: python scripts/ci/init_analysis_submodules.py
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ci-ffmpeg-artifacts
           path: build/ci-ffmpeg

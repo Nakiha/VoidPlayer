@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 
+from .check_windows_fork_protection import check_windows_fork_protection
 from .paths import ROOT
 from .process import header, run
 from .repo_hygiene import cmd_repo_hygiene
@@ -504,6 +505,16 @@ def cmd_gate(args: argparse.Namespace) -> None:
 
     if profile == "repo-hygiene":
         cmd_repo_hygiene(argparse.Namespace())
+        return
+
+    if profile == "windows-fork-protection":
+        errors = check_windows_fork_protection()
+        if errors:
+            print("Windows fork protection check failed:")
+            for error in errors:
+                print(f"  - {error}")
+            sys.exit(1)
+        print("Windows fork protection check passed.")
         return
 
     if profile == "macos-native-fast":

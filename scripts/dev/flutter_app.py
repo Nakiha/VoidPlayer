@@ -284,7 +284,7 @@ def flutter_unit_test() -> None:
     run(_flutter_cmd("analyze"), cwd=str(ROOT))
 
     header("Test Flutter unit")
-    run(_flutter_cmd("test", "test/unit"), cwd=str(ROOT))
+    run(_flutter_cmd("test", "test"), cwd=str(ROOT))
 
 
 def _is_macos_launch_source(path: Path) -> bool:

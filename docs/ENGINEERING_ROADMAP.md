@@ -122,7 +122,7 @@ python dev.py build --native
 
 ## Phase 4: Test Layout Cleanup
 
-Status: deferred until the next low-risk test-only change.
+Status: done.
 
 Only after CI and toolchain behavior are stable, make test layout easier to
 review.
@@ -133,12 +133,16 @@ review.
 - Update CI from `flutter test test/unit` to `flutter test test` in the same
   change.
 
-Entry criteria:
+Completed test-layout work:
 
-- Native and macOS UI workflows are green on `main` after Phases 0-3.
-- The change is test-only: no production Dart, runner, native renderer, or
-  packaging behavior changes in the same commit.
-- The move plan is mechanical and keeps test names and coverage unchanged.
+- Flutter tests moved out of `test/unit/` into source-domain directories under
+  `test/`.
+- Windows native renderer tests moved out of the catch-all
+  `native/tests/renderer/` directory into domain directories such as
+  `native/tests/audio/`, `native/tests/decode/`, `native/tests/ffi/`, and
+  `native/tests/windows/`.
+- CI and `dev.py` now run `flutter test test`.
+- Test names and behavior are unchanged.
 
 Validation:
 

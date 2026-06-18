@@ -8,61 +8,61 @@ add_executable(video_renderer_tests
     ../renderer/exports/ffi_process_globals.cpp
     ../renderer/exports/ffi_player_registry.cpp
     ../../windows/runner/native_player_registry.cpp
-    renderer/test_utils.cpp
-    renderer/test_clock.cpp
-    renderer/test_logging.cpp
-    renderer/test_ffi_marshalling.cpp
-    renderer/test_ffi_player_commands.cpp
-    renderer/test_ffi_player_lifecycle.cpp
-    renderer/test_ffi_process_globals.cpp
-    renderer/test_native_diagnostics_session.cpp
-    renderer/test_windows_crash_handler.cpp
-    renderer/test_win_utf8.cpp
-    renderer/test_native_player.cpp
+    support/test_utils.cpp
+    common/test_clock.cpp
+    common/test_logging.cpp
+    ffi/test_ffi_marshalling.cpp
+    ffi/test_ffi_player_commands.cpp
+    ffi/test_ffi_player_lifecycle.cpp
+    ffi/test_ffi_process_globals.cpp
+    windows/test_native_diagnostics_session.cpp
+    windows/test_windows_crash_handler.cpp
+    windows/test_win_utf8.cpp
+    windows/test_native_player.cpp
     renderer/test_renderer_playback_command_policy.cpp
     renderer/test_renderer_seek_log_policy.cpp
-    renderer/test_device_loss_policy.cpp
+    windows/test_device_loss_policy.cpp
     renderer/test_renderer_lifecycle.cpp
     renderer/test_renderer_config_validation.cpp
     renderer/test_renderer_stress.cpp
-    renderer/test_packet_queue.cpp
-    renderer/test_audio_mixer.cpp
-    renderer/test_audio_track_registry.cpp
-    renderer/test_pcm_buffer.cpp
+    media/test_packet_queue.cpp
+    audio/test_audio_mixer.cpp
+    audio/test_audio_track_registry.cpp
+    audio/test_pcm_buffer.cpp
     renderer/test_seek_coordinator.cpp
     renderer/test_bidi_ring_buffer.cpp
     renderer/test_track_buffer.cpp
-    renderer/test_demux_thread.cpp
-    renderer/test_av_frame_lifetime.cpp
-    renderer/test_codec_loop.cpp
-    renderer/test_decode_drain_policy.cpp
-    renderer/test_decode_exact_seek_reorder.cpp
-    renderer/test_decode_frame_drainer.cpp
-    renderer/test_decode_frame_receive_loop.cpp
-    renderer/test_decode_packet_sender.cpp
-    renderer/test_decode_preroll_policy.cpp
-    renderer/test_decode_seek_epoch.cpp
-    renderer/test_decoded_frame_publisher.cpp
-    renderer/test_decode_loop_policy.cpp
-    renderer/test_exact_seek_candidate_store.cpp
-    renderer/test_exact_seek_frame_publisher.cpp
-    renderer/test_exact_seek_publish_policy.cpp
-    renderer/test_exact_seek_window.cpp
-    renderer/test_frame_timestamp_rescaler.cpp
-    renderer/test_frame_converter.cpp
-    renderer/test_decode_thread.cpp
-    renderer/test_d3d11_device.cpp
-    renderer/test_d3d11_texture.cpp
-    renderer/test_d3d11_shader.cpp
-    renderer/test_windows_display_resolver.cpp
-    renderer/test_windows_presentation_policy.cpp
-    renderer/test_windows_dcomp_composite.cpp
-    renderer/test_windows_device_recovery.cpp
-    renderer/test_windows_high_refresh_metrics.cpp
-    renderer/test_windows_overlay_layer_state.cpp
-    renderer/test_cross_adapter_transport.cpp
-    renderer/test_shared_fp16_ring.cpp
-    renderer/test_shared_source_cache_ring.cpp
+    media/test_demux_thread.cpp
+    decode/test_av_frame_lifetime.cpp
+    decode/test_codec_loop.cpp
+    decode/test_decode_drain_policy.cpp
+    decode/test_decode_exact_seek_reorder.cpp
+    decode/test_decode_frame_drainer.cpp
+    decode/test_decode_frame_receive_loop.cpp
+    decode/test_decode_packet_sender.cpp
+    decode/test_decode_preroll_policy.cpp
+    decode/test_decode_seek_epoch.cpp
+    decode/test_decoded_frame_publisher.cpp
+    decode/test_decode_loop_policy.cpp
+    decode/test_exact_seek_candidate_store.cpp
+    decode/test_exact_seek_frame_publisher.cpp
+    decode/test_exact_seek_publish_policy.cpp
+    decode/test_exact_seek_window.cpp
+    decode/test_frame_timestamp_rescaler.cpp
+    decode/test_frame_converter.cpp
+    decode/test_decode_thread.cpp
+    windows/test_d3d11_device.cpp
+    windows/test_d3d11_texture.cpp
+    windows/test_d3d11_shader.cpp
+    windows/test_windows_display_resolver.cpp
+    windows/test_windows_presentation_policy.cpp
+    windows/test_windows_dcomp_composite.cpp
+    windows/test_windows_device_recovery.cpp
+    windows/test_windows_high_refresh_metrics.cpp
+    windows/test_windows_overlay_layer_state.cpp
+    windows/test_cross_adapter_transport.cpp
+    windows/test_shared_fp16_ring.cpp
+    windows/test_shared_source_cache_ring.cpp
     renderer/test_renderer_present_history.cpp
     renderer/test_render_sink.cpp
     renderer/test_track_buffer_budget.cpp
@@ -86,6 +86,7 @@ target_link_libraries(video_renderer_tests PRIVATE
 
 target_include_directories(video_renderer_tests PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/renderer"
+    "${CMAKE_CURRENT_SOURCE_DIR}/support"
 )
 
 target_compile_definitions(video_renderer_tests PRIVATE

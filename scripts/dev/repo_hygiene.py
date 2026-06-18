@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .check_windows_fork_protection import check_windows_fork_protection
 from .paths import ROOT
 
 
@@ -27,6 +28,14 @@ REQUIRED_PATHS = [
     "toolchains/ffmpeg.lock.json",
     ".toolchains/ffmpeg",
 ]
+
+DEPRECATED_GITHUB_ACTIONS = {
+    "actions/checkout@v4": "actions/checkout@v6",
+    "actions/setup-python@v5": "actions/setup-python@v6",
+    "actions/cache@v4": "actions/cache@v5",
+    "actions/upload-artifact@v4": "actions/upload-artifact@v7",
+    "actions/download-artifact@v4": "actions/download-artifact@v8",
+}
 
 
 def _git_ls_files(*paths: str) -> list[str]:
@@ -105,12 +114,24 @@ def _check_required_paths(errors: list[str]) -> None:
             errors.append(f"required path is missing: {rel}")
 
 
+def _check_github_actions_versions(errors: list[str]) -> None:
+    workflow_dir = ROOT / ".github" / "workflows"
+    for path in sorted(workflow_dir.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        for deprecated, replacement in DEPRECATED_GITHUB_ACTIONS.items():
+            if deprecated in text:
+                rel = path.relative_to(ROOT)
+                errors.append(f"{rel} uses {deprecated}; use {replacement}")
+
+
 def cmd_repo_hygiene(args: argparse.Namespace) -> None:
     errors: list[str] = []
     _check_required_paths(errors)
     _check_tracked_generated(errors)
     _check_runtime_ffmpeg_tracking(errors)
     _check_markdown_links(errors)
+    _check_github_actions_versions(errors)
+    errors.extend(check_windows_fork_protection())
     if errors:
         print("Repository hygiene check failed:")
         for error in errors:

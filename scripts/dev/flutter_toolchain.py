@@ -16,6 +16,7 @@ from .process import header, run
 
 
 LOCK_PATH = ROOT / "toolchains" / "flutter.lock.json"
+FFMPEG_LOCK_PATH = ROOT / "toolchains" / "ffmpeg.lock.json"
 
 
 @dataclass(frozen=True)
@@ -398,12 +399,57 @@ def print_flutter_toolchain_doctor() -> None:
             print(f"    {engine_path or '<not configured>'}")
     if result.ok:
         print("\nFlutter toolchain lock check passed.")
+    else:
+        print("\nFlutter toolchain lock check failed:")
+        for line in result.lines:
+            print(f"  - {line}")
+
+    _print_ffmpeg_toolchain_doctor()
+
+    if result.ok:
+        return
+    sys.exit(1)
+
+
+def _print_ffmpeg_toolchain_doctor() -> None:
+    header("VoidPlayer FFmpeg Toolchain")
+    try:
+        lock = json.loads(FFMPEG_LOCK_PATH.read_text(encoding="utf-8"))
+    except OSError as exc:
+        print(f"Lock: {FFMPEG_LOCK_PATH}")
+        print(f"FFmpeg lock check failed: {exc}")
         return
 
-    print("\nFlutter toolchain lock check failed:")
-    for line in result.lines:
-        print(f"  - {line}")
-    sys.exit(1)
+    print(f"Lock: {FFMPEG_LOCK_PATH}")
+    print(f"Repository: {lock.get('repository', '<unknown>')}")
+    print(f"Workflow run: {lock.get('workflowRunId', '<unknown>')}")
+    print(f"Source commit: {lock.get('sourceCommit', '<unknown>')}")
+    print(f"FFmpeg version: {lock.get('ffmpegVersion', '<unknown>')}")
+
+    default_install = ROOT / lock.get("defaultInstallPath", ".toolchains/ffmpeg")
+    artifacts = lock.get("artifacts", {})
+    print("\nHydrated packages:")
+    for platform in ("windows-x64", "macos-arm64"):
+        artifact = artifacts.get(platform, {})
+        root = default_install / platform
+        header_path = root / "include" / "libavcodec" / "avcodec.h"
+        manifest_path = root / "voidplayer-ffmpeg-manifest.json"
+        status = (
+            "ready"
+            if header_path.is_file() and manifest_path.is_file()
+            else "missing"
+        )
+        print(f"  {platform}: {artifact.get('name', '<unknown>')} ({status})")
+        print(f"    {root}")
+
+    print("\nRestore:")
+    print("  scripts/ci/download_ffmpeg_artifacts.sh build/ci-ffmpeg")
+    if sys.platform == "win32":
+        print("  scripts/ci/restore_ffmpeg_windows.ps1")
+    elif sys.platform == "darwin":
+        print("  bash scripts/ci/restore_ffmpeg_macos.sh")
+    else:
+        print("  bash scripts/ci/restore_ffmpeg_macos.sh")
 
 
 def bootstrap_flutter_toolchain() -> None:

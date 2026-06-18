@@ -13,6 +13,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+WINDOWS_FFMPEG_ROOT = ROOT / ".toolchains" / "ffmpeg" / "windows-x64"
+MACOS_FFMPEG_ROOT = ROOT / ".toolchains" / "ffmpeg" / "macos-arm64"
 
 
 def _require_file(path: Path, label: str) -> None:
@@ -58,22 +60,35 @@ def check_source_tree() -> None:
                   ["FFmpeg runtime/dev package", "GPL v3 package"],
                   "native third-party manifest")
 
-    windows_ffmpeg_root = ROOT / ".toolchains" / "ffmpeg" / "windows-x64"
-    _require_windows_ffmpeg_readme(windows_ffmpeg_root / "README.txt")
-    if not _has_ffmpeg_license(windows_ffmpeg_root):
-        raise RuntimeError(
-            "missing FFmpeg LICENSE, LICENSE.txt, or LICENSES/FFmpeg-LICENSE.md "
-            f"in {windows_ffmpeg_root}")
+    _check_platform_ffmpeg_packages()
 
-    macos_ffmpeg_root = ROOT / ".toolchains" / "ffmpeg" / "macos-arm64"
-    _require_text(macos_ffmpeg_root / "README.txt",
-                  ["FFmpeg", "Target: macos-arm64", "VideoToolbox"],
-                  "macOS FFmpeg package README")
-    _require_file(macos_ffmpeg_root / "voidplayer-ffmpeg-manifest.json",
-                  "macOS FFmpeg package manifest")
-    if not (macos_ffmpeg_root / "LICENSES" / "FFmpeg-LICENSE.md").is_file():
+
+def _check_platform_ffmpeg_packages() -> None:
+    checked = False
+    if sys.platform == "win32" or WINDOWS_FFMPEG_ROOT.exists():
+        checked = True
+        _require_windows_ffmpeg_readme(WINDOWS_FFMPEG_ROOT / "README.txt")
+        if not _has_ffmpeg_license(WINDOWS_FFMPEG_ROOT):
+            raise RuntimeError(
+                "missing FFmpeg LICENSE, LICENSE.txt, or LICENSES/FFmpeg-LICENSE.md "
+                f"in {WINDOWS_FFMPEG_ROOT}")
+
+    if sys.platform == "darwin" or MACOS_FFMPEG_ROOT.exists():
+        checked = True
+        _require_text(MACOS_FFMPEG_ROOT / "README.txt",
+                      ["FFmpeg", "Target: macos-arm64", "VideoToolbox"],
+                      "macOS FFmpeg package README")
+        _require_file(MACOS_FFMPEG_ROOT / "voidplayer-ffmpeg-manifest.json",
+                      "macOS FFmpeg package manifest")
+        if not (MACOS_FFMPEG_ROOT / "LICENSES" / "FFmpeg-LICENSE.md").is_file():
+            raise RuntimeError(
+                f"missing FFmpeg-LICENSE.md in {MACOS_FFMPEG_ROOT / 'LICENSES'}")
+
+    if not checked:
         raise RuntimeError(
-            f"missing FFmpeg-LICENSE.md in {macos_ffmpeg_root / 'LICENSES'}")
+            "no hydrated FFmpeg package found under .toolchains/ffmpeg; "
+            "run scripts/ci/download_ffmpeg_artifacts.sh followed by the "
+            "platform restore script")
 
 
 def check_stage(stage_dir: Path) -> None:

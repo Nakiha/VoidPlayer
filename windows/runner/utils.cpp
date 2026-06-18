@@ -3,6 +3,7 @@
 #include <flutter_windows.h>
 #include <io.h>
 #include <stdio.h>
+#include <shellapi.h>
 #include <windows.h>
 #include <processthreadsapi.h>
 #include <spdlog/spdlog.h>

@@ -4,17 +4,10 @@ project(void_player LANGUAGES CXX)
 
 # ==================== Native Video Renderer Dependencies ====================
 
-include(FetchContent)
-
-# spdlog (header-only, required by video renderer)
-FetchContent_Declare(
-    spdlog
-    GIT_REPOSITORY https://github.com/gabime/spdlog.git
-    GIT_TAG v1.15.2
-    GIT_SHALLOW TRUE
-)
-set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(spdlog)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_ANALYSIS_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_PYTHON OFF CACHE BOOL "" FORCE)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/Dependencies.cmake")
 
 set(VOID_FFMPEG_REQUIRED OFF)
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/FFmpeg.cmake")

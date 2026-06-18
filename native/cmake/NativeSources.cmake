@@ -12,6 +12,14 @@ include("${CMAKE_CURRENT_LIST_DIR}/NativeSourcesMacOS.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/NativeSourcesShaders.cmake")
 
 function(void_apply_native_compile_options target_name)
+    target_compile_features(${target_name} PUBLIC cxx_std_17)
+    if(WIN32)
+        target_compile_definitions(${target_name} PRIVATE
+            _CRT_SECURE_NO_WARNINGS
+            NOMINMAX
+            WIN32_LEAN_AND_MEAN
+        )
+    endif()
     if(MSVC)
         target_compile_options(${target_name} PRIVATE /utf-8 /W4 /WX /permissive- /EHsc)
     else()

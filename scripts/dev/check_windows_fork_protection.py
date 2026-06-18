@@ -87,7 +87,7 @@ def check_windows_fork_protection() -> list[str]:
             continue
         if tag not in path.read_text(encoding="utf-8"):
             errors.append(f"{rel} is missing Catch2 tag {tag}")
-        cmake_rel = str(Path(rel).relative_to("native/tests"))
+        cmake_rel = Path(rel).relative_to("native/tests").as_posix()
         if cmake_rel not in test_cmake:
             errors.append(f"native/tests/CMakeLists.txt does not include {cmake_rel}")
 

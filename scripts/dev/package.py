@@ -16,6 +16,7 @@ from .macos_ffmpeg import ffmpeg_runtime_dylibs, ffmpeg_runtime_symlinks
 from .paths import (
     MACOS_PACKAGE_DIR,
     MACOS_PACKAGE_STAGE_DIR,
+    MACOS_FFMPEG_ROOT,
     MACOS_INSTALLER_DIR,
     MACOS_RELEASE_DOCS_DIR,
     ROOT,
@@ -255,7 +256,7 @@ def _copy_compliance_docs(stage_dir: Path) -> None:
 
 
 def _copy_macos_ffmpeg_compliance(stage_dir: Path) -> None:
-    ffmpeg_root = ROOT / "third_party" / "ffmpeg"
+    ffmpeg_root = MACOS_FFMPEG_ROOT
     files = [
         (ffmpeg_root / "README.txt", stage_dir / "README.txt"),
         (ffmpeg_root / "VOIDPLAYER_BUILD.md", stage_dir / "VOIDPLAYER_BUILD.md"),
@@ -324,7 +325,7 @@ def _verify_macos_linkage(stage_app: Path) -> None:
     header("Verify macOS app linkage")
     executable = stage_app / "Contents" / "MacOS" / "VoidPlayer"
     frameworks = stage_app / "Contents" / "Frameworks"
-    ffmpeg_lib_dir = ROOT / "third_party" / "ffmpeg" / "lib"
+    ffmpeg_lib_dir = MACOS_FFMPEG_ROOT / "lib"
     ffmpeg_dylibs = ffmpeg_runtime_dylibs(ffmpeg_lib_dir)
     ffmpeg_symlinks = ffmpeg_runtime_symlinks(ffmpeg_lib_dir)
     required_loads = {f"@rpath/{name}" for name in ffmpeg_dylibs}

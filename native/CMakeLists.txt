@@ -29,6 +29,7 @@ include(cmake/NativeSources.cmake)
 include(cmake/AnalysisCliTarget.cmake)
 include(cmake/TestAssets.cmake)
 include(cmake/RuntimeArtifacts.cmake)
+include(cmake/WindowsSmokeTargets.cmake)
 
 option(BUILD_FFI "Build C FFI shared library" ON)
 option(VOID_ENABLE_WARNINGS_AS_ERRORS "Treat native compiler warnings as errors" OFF)
@@ -49,83 +50,30 @@ endif()
 
 if(WIN32 AND BUILD_TESTS)
     add_subdirectory(tests)
-    add_executable(windows_d3d11_color_layout_parity_smoke
-        tools/windows_d3d11_color_layout_parity_smoke.cpp)
-    void_apply_native_compile_options(windows_d3d11_color_layout_parity_smoke)
-    target_link_libraries(windows_d3d11_color_layout_parity_smoke PRIVATE
-        video_renderer_lib)
-    add_test(NAME windows_d3d11_color_layout_parity_smoke
-        COMMAND windows_d3d11_color_layout_parity_smoke)
-    set_tests_properties(windows_d3d11_color_layout_parity_smoke PROPERTIES
-        TIMEOUT 60
-        LABELS "windows;backend;contract")
-
-    add_executable(windows_d3d11_fp16_scrgb_smoke
-        tools/windows_d3d11_fp16_scrgb_smoke.cpp)
-    void_apply_native_compile_options(windows_d3d11_fp16_scrgb_smoke)
-    target_link_libraries(windows_d3d11_fp16_scrgb_smoke PRIVATE
-        video_renderer_lib)
-    add_test(NAME windows_d3d11_fp16_scrgb_smoke
-        COMMAND windows_d3d11_fp16_scrgb_smoke)
-    set_tests_properties(windows_d3d11_fp16_scrgb_smoke PROPERTIES
-        TIMEOUT 60
-        LABELS "windows;backend;contract;canary;fp16")
-
-    add_executable(windows_d3d11_dcomp_flutter_composite_smoke
-        tools/windows_d3d11_dcomp_flutter_composite_smoke.cpp)
-    void_apply_native_compile_options(
-        windows_d3d11_dcomp_flutter_composite_smoke)
-    target_link_libraries(
-        windows_d3d11_dcomp_flutter_composite_smoke PRIVATE
-        video_renderer_lib)
-    add_test(NAME windows_d3d11_dcomp_flutter_composite_smoke
-        COMMAND windows_d3d11_dcomp_flutter_composite_smoke)
-    set_tests_properties(
-        windows_d3d11_dcomp_flutter_composite_smoke PROPERTIES
-        TIMEOUT 60
-        LABELS "windows;backend;contract;canary;dcomp")
-
-    add_executable(windows_d3d11_source_projection_smoke
-        tools/windows_d3d11_source_projection_smoke.cpp)
-    void_apply_native_compile_options(
-        windows_d3d11_source_projection_smoke)
-    target_link_libraries(
-        windows_d3d11_source_projection_smoke PRIVATE
-        video_renderer_lib)
-    add_test(NAME windows_d3d11_source_projection_smoke
-        COMMAND windows_d3d11_source_projection_smoke)
-    set_tests_properties(
-        windows_d3d11_source_projection_smoke PROPERTIES
-        TIMEOUT 60
-        LABELS "windows;backend;contract;canary;source-projection")
-
-    add_executable(windows_d3d11_high_refresh_projection_overlay_smoke
-        tools/windows_d3d11_high_refresh_projection_overlay_smoke.cpp)
-    void_apply_native_compile_options(
-        windows_d3d11_high_refresh_projection_overlay_smoke)
-    target_link_libraries(
-        windows_d3d11_high_refresh_projection_overlay_smoke PRIVATE
-        video_renderer_lib)
-    add_test(NAME windows_d3d11_high_refresh_projection_overlay_smoke
-        COMMAND windows_d3d11_high_refresh_projection_overlay_smoke)
-    set_tests_properties(
-        windows_d3d11_high_refresh_projection_overlay_smoke PROPERTIES
-        TIMEOUT 60
-        LABELS "windows;backend;contract;canary;high-refresh")
-
-    add_executable(windows_d3d11_retained_overlay_layer_smoke
-        tools/windows_d3d11_retained_overlay_layer_smoke.cpp)
-    void_apply_native_compile_options(
-        windows_d3d11_retained_overlay_layer_smoke)
-    target_link_libraries(
-        windows_d3d11_retained_overlay_layer_smoke PRIVATE
-        video_renderer_lib)
-    add_test(NAME windows_d3d11_retained_overlay_layer_smoke
-        COMMAND windows_d3d11_retained_overlay_layer_smoke)
-    set_tests_properties(
-        windows_d3d11_retained_overlay_layer_smoke PROPERTIES
-        TIMEOUT 60
-        LABELS "windows;backend;contract;canary;overlay")
+    void_add_windows_backend_smoke(
+        windows_d3d11_color_layout_parity_smoke
+        tools/windows_d3d11_color_layout_parity_smoke.cpp
+        "windows;backend;contract")
+    void_add_windows_backend_smoke(
+        windows_d3d11_fp16_scrgb_smoke
+        tools/windows_d3d11_fp16_scrgb_smoke.cpp
+        "windows;backend;contract;canary;fp16")
+    void_add_windows_backend_smoke(
+        windows_d3d11_dcomp_flutter_composite_smoke
+        tools/windows_d3d11_dcomp_flutter_composite_smoke.cpp
+        "windows;backend;contract;canary;dcomp")
+    void_add_windows_backend_smoke(
+        windows_d3d11_source_projection_smoke
+        tools/windows_d3d11_source_projection_smoke.cpp
+        "windows;backend;contract;canary;source-projection")
+    void_add_windows_backend_smoke(
+        windows_d3d11_high_refresh_projection_overlay_smoke
+        tools/windows_d3d11_high_refresh_projection_overlay_smoke.cpp
+        "windows;backend;contract;canary;high-refresh")
+    void_add_windows_backend_smoke(
+        windows_d3d11_retained_overlay_layer_smoke
+        tools/windows_d3d11_retained_overlay_layer_smoke.cpp
+        "windows;backend;contract;canary;overlay")
 endif()
 
 if(WIN32 AND BUILD_ANALYSIS)

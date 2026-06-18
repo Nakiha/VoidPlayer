@@ -15,12 +15,22 @@ without starting broad source-layout churn.
 
 ## Phase 0: Stabilize Current Foundation
 
-Status: in progress.
+Status: done.
 
 - Watch CI fallout from the FFmpeg lock and `VoidPlayerCli` target convergence.
 - Fix restore, package, and runner-build issues before starting more cleanup.
 - Confirm Windows runner builds `VoidPlayerCli` through the shared CMake helper.
 - Confirm macOS package/readiness gates hydrate FFmpeg from `.toolchains/ffmpeg`.
+
+Completed foundation work:
+
+- `toolchains/ffmpeg.lock.json` is the source of truth for pinned FFmpeg
+  artifacts.
+- Native, Windows runner, macOS runner, and macOS packaging paths resolve
+  FFmpeg from `.toolchains/ffmpeg`.
+- `VoidPlayerCli` is created through `void_add_analysis_cli`.
+- Release compliance checks are platform-aware and no longer require both
+  platform packages in every CI job.
 
 Validation:
 
@@ -36,7 +46,7 @@ are available.
 
 ## Phase 1: Toolchain Doctor
 
-Status: in progress.
+Status: done.
 
 Add one visible command that tells contributors whether the pinned toolchains
 are usable.
@@ -56,6 +66,8 @@ python dev.py gate repo-hygiene
 
 ## Phase 2: CI Bootstrap Reuse
 
+Status: done.
+
 Remove duplicated workflow bootstrap logic while keeping workflow names and
 gate entry points stable.
 
@@ -64,6 +76,16 @@ gate entry points stable.
   action.
 - Prefer shared scripts over large inline YAML blocks.
 - Keep workflow diffs boring and auditable.
+
+Completed bootstrap work:
+
+- FFmpeg artifact download and verification goes through
+  `scripts/ci/download_ffmpeg_artifacts.sh`.
+- Analysis vendor submodule setup goes through
+  `scripts/ci/init_analysis_submodules.py`.
+- Windows Flutter bootstrap goes through
+  `scripts/ci/bootstrap_flutter_toolchain.ps1`; macOS/Linux bootstrap uses
+  `scripts/ci/bootstrap_flutter_toolchain.sh`.
 
 Validation:
 
@@ -74,6 +96,8 @@ python dev.py gate repo-hygiene
 
 ## Phase 3: CMake Source-List Modules
 
+Status: done.
+
 Reduce target drift without moving source files.
 
 - Split long source lists into module-owned CMake files.
@@ -81,6 +105,13 @@ Reduce target drift without moving source files.
 - Make Windows runner, native standalone, and macOS runner include the same
   shared target helpers wherever behavior should match.
 - Avoid source directory moves in this phase.
+
+Completed CMake work:
+
+- Native source lists live in `native/cmake/NativeSources*.cmake`.
+- Shared target helpers cover `VoidPlayerCli`, Flutter native runner
+  integration, and Windows backend smoke targets.
+- Source files stayed in place.
 
 Validation:
 
@@ -91,6 +122,8 @@ python dev.py build --native
 
 ## Phase 4: Test Layout Cleanup
 
+Status: deferred until the next low-risk test-only change.
+
 Only after CI and toolchain behavior are stable, make test layout easier to
 review.
 
@@ -99,6 +132,13 @@ review.
 - Keep test names and behavior unchanged during the first move.
 - Update CI from `flutter test test/unit` to `flutter test test` in the same
   change.
+
+Entry criteria:
+
+- Native and macOS UI workflows are green on `main` after Phases 0-3.
+- The change is test-only: no production Dart, runner, native renderer, or
+  packaging behavior changes in the same commit.
+- The move plan is mechanical and keeps test names and coverage unchanged.
 
 Validation:
 

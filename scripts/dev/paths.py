@@ -18,6 +18,9 @@ NATIVE_RUNNER_BUILD_ROOT = NATIVE_BUILD_ROOT / "runner"
 NATIVE_ANALYSIS_BUILD_ROOT = NATIVE_BUILD_ROOT / "analysis"
 
 FFMPEG_ANALYZER_DIR = ROOT / "native" / "analysis" / "vendor" / "ffmpeg"
+FFMPEG_TOOLCHAIN_ROOT = ROOT / ".toolchains" / "ffmpeg"
+WINDOWS_FFMPEG_ROOT = FFMPEG_TOOLCHAIN_ROOT / "windows-x64"
+MACOS_FFMPEG_ROOT = FFMPEG_TOOLCHAIN_ROOT / "macos-arm64"
 
 
 def default_native_build_dir() -> Path:

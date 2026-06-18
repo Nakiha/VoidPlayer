@@ -28,20 +28,14 @@ def default_ffmpeg_candidates(script_dir: Path, platform_name: str) -> list[Path
     if platform_name == "windows":
         return [
             toolchain_root / "windows-x64",
-            script_dir.parent / "windows" / "libs" / "ffmpeg",
-            script_dir.parent / "third_party" / "ffmpeg",
         ]
     if platform_name == "macos":
         return [
             toolchain_root / "macos-arm64",
-            script_dir.parent / "third_party" / "ffmpeg",
-            script_dir.parent / "windows" / "libs" / "ffmpeg",
         ]
     return [
         toolchain_root / "macos-arm64",
         toolchain_root / "windows-x64",
-        script_dir.parent / "third_party" / "ffmpeg",
-        script_dir.parent / "windows" / "libs" / "ffmpeg",
     ]
 
 

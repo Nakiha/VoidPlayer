@@ -95,11 +95,7 @@ jobs:
 
       - name: Initialize analysis submodules
         shell: pwsh
-        run: |
-          git config --local --unset-all http.https://github.com/.extraheader 2>$null || $true
-          git config --global --unset-all http.https://github.com/.extraheader 2>$null || $true
-          git -c http.https://github.com/.extraheader= submodule sync -- native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
-          git -c http.https://github.com/.extraheader= submodule update --init --recursive --checkout native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
+        run: python scripts/ci/init_analysis_submodules.py
 
       - uses: actions/download-artifact@v4
         with:
@@ -152,11 +148,7 @@ jobs:
 
       - name: Initialize analysis submodules
         shell: pwsh
-        run: |
-          git config --local --unset-all http.https://github.com/.extraheader 2>$null || $true
-          git config --global --unset-all http.https://github.com/.extraheader 2>$null || $true
-          git -c http.https://github.com/.extraheader= submodule sync -- native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
-          git -c http.https://github.com/.extraheader= submodule update --init --recursive --checkout native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
+        run: python scripts/ci/init_analysis_submodules.py
 
       - uses: actions/download-artifact@v4
         with:
@@ -192,15 +184,7 @@ jobs:
 
       - name: Bootstrap pinned Flutter toolchain
         shell: pwsh
-        run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE ".toolchains/flutter"
-          $flutter = Join-Path $target "bin/flutter.bat"
-          $env:VOIDPLAYER_FLUTTER_TOOLCHAIN_PATH = $target
-          $env:VOIDPLAYER_FLUTTER_BIN = $flutter
-          "VOIDPLAYER_FLUTTER_TOOLCHAIN_PATH=$target" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "VOIDPLAYER_FLUTTER_BIN=$flutter" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          python dev.py toolchain bootstrap-flutter
-          python dev.py toolchain doctor
+        run: scripts/ci/bootstrap_flutter_toolchain.ps1
 
       - name: Check release compliance notices
         shell: pwsh
@@ -286,11 +270,7 @@ jobs:
 
       - name: Initialize analysis submodules
         shell: bash
-        run: |
-          git config --local --unset-all http.https://github.com/.extraheader || true
-          git config --global --unset-all http.https://github.com/.extraheader || true
-          git -c http.https://github.com/.extraheader= submodule sync -- native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
-          git -c http.https://github.com/.extraheader= submodule update --init --recursive --checkout native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
+        run: python3 scripts/ci/init_analysis_submodules.py
 
       - uses: actions/download-artifact@v4
         with:
@@ -344,11 +324,7 @@ jobs:
 
       - name: Initialize analysis submodules
         shell: bash
-        run: |
-          git config --local --unset-all http.https://github.com/.extraheader || true
-          git config --global --unset-all http.https://github.com/.extraheader || true
-          git -c http.https://github.com/.extraheader= submodule sync -- native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
-          git -c http.https://github.com/.extraheader= submodule update --init --recursive --checkout native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
+        run: python3 scripts/ci/init_analysis_submodules.py
 
       - uses: actions/download-artifact@v4
         with:
@@ -437,11 +413,7 @@ jobs:
       - name: Initialize analysis submodules
         if: ${{ matrix.build_analysis == 'ON' }}
         shell: pwsh
-        run: |
-          git config --local --unset-all http.https://github.com/.extraheader 2>$null || $true
-          git config --global --unset-all http.https://github.com/.extraheader 2>$null || $true
-          git -c http.https://github.com/.extraheader= submodule sync -- native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
-          git -c http.https://github.com/.extraheader= submodule update --init --recursive --checkout native/analysis/vendor/ffmpeg native/analysis/vendor/zstd
+        run: python scripts/ci/init_analysis_submodules.py
 
       - uses: actions/download-artifact@v4
         with:

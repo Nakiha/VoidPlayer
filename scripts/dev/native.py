@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .paths import (
     FFMPEG_ANALYZER_DIR,
+    MACOS_FFMPEG_ROOT,
     MACOS_NATIVE_ANALYSIS_BUILD_DIR,
     MACOS_NATIVE_MAKE_BUILD_DIR,
     NATIVE_BUILD_PY,
@@ -58,6 +59,7 @@ def build_macos_analysis_cli() -> None:
         "-DBUILD_TESTS=ON",
         "-DBUILD_FFI=OFF",
         "-DBUILD_PYTHON=OFF",
+        f"-DFFMPEG_ROOT={MACOS_FFMPEG_ROOT}",
         *(
             ["-DVOID_USE_LOCAL_DEPS=ON"]
             if _env_flag("VOID_USE_LOCAL_DEPS")
@@ -721,6 +723,7 @@ def native_build_macos(debug: bool, test: bool = True, github: bool = False) -> 
         "-DBUILD_ANALYSIS=OFF",
         f"-DBUILD_TESTS={'ON' if test else 'OFF'}",
         "-DBUILD_PYTHON=OFF",
+        f"-DFFMPEG_ROOT={MACOS_FFMPEG_ROOT}",
         *(
             ["-DVOID_USE_LOCAL_DEPS=ON"]
             if _env_flag("VOID_USE_LOCAL_DEPS")

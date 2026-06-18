@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .check_flutter_fork_protection import check_flutter_fork_protection
 from .check_windows_fork_protection import check_windows_fork_protection
 from .paths import ROOT
 
@@ -131,6 +132,7 @@ def cmd_repo_hygiene(args: argparse.Namespace) -> None:
     _check_runtime_ffmpeg_tracking(errors)
     _check_markdown_links(errors)
     _check_github_actions_versions(errors)
+    errors.extend(check_flutter_fork_protection())
     errors.extend(check_windows_fork_protection())
     if errors:
         print("Repository hygiene check failed:")

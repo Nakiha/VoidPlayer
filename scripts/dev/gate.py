@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 
+from .check_flutter_fork_protection import check_flutter_fork_protection
 from .check_windows_fork_protection import check_windows_fork_protection
 from .paths import ROOT
 from .process import header, run
@@ -515,6 +516,16 @@ def cmd_gate(args: argparse.Namespace) -> None:
                 print(f"  - {error}")
             sys.exit(1)
         print("Windows fork protection check passed.")
+        return
+
+    if profile == "flutter-fork-protection":
+        errors = check_flutter_fork_protection()
+        if errors:
+            print("Flutter fork protection check failed:")
+            for error in errors:
+                print(f"  - {error}")
+            sys.exit(1)
+        print("Flutter fork protection check passed.")
         return
 
     if profile == "macos-native-fast":

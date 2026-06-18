@@ -10,11 +10,13 @@ truth.
 | Item | Value |
 | --- | --- |
 | Fork repo | `https://github.com/Nakiha/VoidPlayer-Flutter.git` |
-| Release ref | `voidplayer-flutter-3.44.1-hdr.2` |
-| Patch branch | `voidplayer/hdr-surface-export-3.44.1` |
+| Fork ref | `codex/windows-surface-export` |
+| Patch branch | `codex/windows-surface-export` |
+| macOS local engine release tag | `voidplayer-flutter-3.44.1-hdr.2` |
 | Baseline branch | `voidplayer/flutter-3.44.1-baseline` |
 | Baseline tag | `3.44.1` |
-| Fork commit | `69b3172a210b5c48553db20ae8b7790a45a2036c` |
+| Fork commit | `cad896c21e492160c4e789b1beb2d463e7bd8a50` |
+| Framework revision | `cad896c21e492160c4e789b1beb2d463e7bd8a50` |
 | Engine revision | `c416acfeb8126e097f758c664aaa3da929e27da0` |
 | Dart SDK | `3.12.1` |
 
@@ -29,7 +31,7 @@ The current fork exposes the macOS Flutter backing surface to the runner for
 the HDR compositor. The app uses this to composite native video under the
 Flutter UI in a native `CAMetalLayer`.
 
-Changed Flutter files through `69b3172a210`:
+Changed Flutter files through `cad896c21e49`:
 
 | File | Purpose |
 | --- | --- |
@@ -49,12 +51,16 @@ Changed Flutter files through `69b3172a210`:
 | `engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.h` / `.cc` | Implements the shared D3D11 export ring and request/publish/backpressure diagnostics. |
 | `engine/src/flutter/shell/platform/windows/compositor_opengl_unittests.cc` / `flutter_windows_view_unittests.cc` | Covers export generation/state and compositor-owned request scheduling. |
 
-`voidplayer-flutter-3.44.1-hdr.2` also stabilizes the exported macOS front
-surface list: `FlutterSurfaceManager.frontSurfaces` now returns an immutable
-snapshot while mutations are locked, and `FlutterEngine` enumerates only that
-snapshot. This prevents the native compositor from crashing with "collection
-was mutated while being enumerated" when Flutter presents a new surface while
-VoidPlayer reads the current Flutter texture.
+The current lock also carries the Windows surface-export patch line. Windows
+runner builds use this to access the Flutter surface through the native
+compositor contract instead of falling back to a Flutter Texture path.
+
+`voidplayer-flutter-3.44.1-hdr.2` stabilizes the exported macOS front surface
+list: `FlutterSurfaceManager.frontSurfaces` returns an immutable snapshot while
+mutations are locked, and `FlutterEngine` enumerates only that snapshot. This
+prevents the native compositor from crashing with "collection was mutated while
+being enumerated" when Flutter presents a new surface while VoidPlayer reads
+the current Flutter texture.
 
 ## Local Workflow
 
@@ -82,10 +88,16 @@ scripts/ci/package_flutter_macos_engine.sh release
    `voidplayer-flutter-3.44.1-hdr.2`.
 5. Upload the generated `*-macos-host_*.tar.gz` files to that release.
 6. Update `toolchains/flutter.lock.json`, including asset names and SHA-256
-   values under `macosLocalEngineArtifacts`.
-7. Run:
+   values under `macosLocalEngineArtifacts`. If the Windows engine artifacts
+   change, update `windowsLocalEngineArtifacts` in the same lock change.
+7. Keep this patch inventory in sync with the lock:
+   `forkRef`, `forkBranch`, `forkCommit`, `frameworkRevision`,
+   `engineRevision`, `dartSdkVersion`, and `macosLocalEngineReleaseTag` must
+   all match `toolchains/flutter.lock.json`.
+8. Run:
 
 ```bash
+python dev.py gate flutter-fork-protection
 python dev.py toolchain bootstrap-flutter
 python dev.py toolchain doctor
 python dev.py test --flutter-only
@@ -97,8 +109,12 @@ Flutter checkout bootstrap and the locked macOS local-engine download. The
 standalone `scripts/ci/bootstrap_flutter_macos_engine.sh` remains available for
 CI and artifact debugging.
 
-8. Re-run the macOS HDR compositor smoke scripts documented in
+9. Re-run the macOS HDR compositor smoke scripts documented in
    `native/docs/MACOS_HDR_EXPLORATION.md`.
+10. For Windows surface-export changes, run `python dev.py gate
+    windows-preservation` with the locked Windows local engine. Hosted CI can
+    validate PR-fast native contracts, but ordinary Flutter SDK fallback is not
+    release evidence for compositor-surface changes.
 
 Do not move an existing `voidplayer-flutter-*-hdr.*` tag after VoidPlayer has
 pointed at it. Publish a new tag instead.

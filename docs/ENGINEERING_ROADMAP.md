@@ -151,6 +151,38 @@ python dev.py test
 python dev.py gate pr-fast
 ```
 
+## Phase 5: Release Stabilization And Fork Guardrails
+
+Status: in progress.
+
+Keep the macOS and Windows Flutter fork integrations auditable while the
+project moves toward release readiness.
+
+- Protect `toolchains/flutter.lock.json` as the source of truth for the fork
+  checkout, local-engine artifacts, and required patch markers.
+- Keep `toolchains/FLUTTER_FORK_PATCHES.md` synchronized with the lock whenever
+  the fork ref, commit, engine revision, Dart SDK, or local-engine release tag
+  changes.
+- Make fork drift visible through a cheap static gate before a developer reaches
+  a platform build failure.
+- Treat ordinary Flutter SDK fallback as non-evidence for compositor-surface
+  changes.
+
+Current guardrails:
+
+- `python dev.py gate flutter-fork-protection`
+- `python dev.py gate windows-fork-protection`
+- `python dev.py gate repo-hygiene`
+
+Next candidates:
+
+- Add macOS presentation/backend protection checks for FlutterTexture,
+  CVPixelBuffer/IOSurface, Metal presentation, VideoToolbox fallback, and
+  macOS UI smoke profiles.
+- Add a release evidence ledger that records commit, Flutter fork lock, FFmpeg
+  lock, CI runs, local-engine gates, and known manual hardware gaps for each
+  release candidate.
+
 ## Non-Goals For Now
 
 - Do not reorganize `lib/main_window/` into a new architecture.

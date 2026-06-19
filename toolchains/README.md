@@ -21,9 +21,10 @@ python dev.py toolchain bootstrap-flutter
 ```
 
 `python dev.py toolchain bootstrap-flutter` installs the pinned Flutter checkout
-under `.toolchains/flutter` and, on macOS, downloads the locked debug/release
-local engine archives. `dev_config.local.json` may still point to a custom SDK
-checkout, but the checkout must match the locked revision and patch markers.
+under `.toolchains/flutter` and downloads the locked debug/release local engine
+archives for platforms that need them. `dev_config.local.json` may still point
+to a custom SDK checkout, but the checkout must match the locked revision and
+patch markers.
 
 The human-readable `flutterVersion` reported by Flutter can vary between an
 official checkout and a fork checkout. The hard lock is the framework revision,
@@ -35,3 +36,10 @@ assets on the `macosLocalEngineReleaseTag` `VoidPlayer-Flutter` release. Use
 `scripts/ci/package_flutter_macos_engine.sh debug` and `release` from a machine
 with the matching local engine `out/` directories, then copy the printed SHA-256
 values into the lock before pushing VoidPlayer changes.
+
+Windows Flutter runner builds require the local engine archives listed under
+`windowsLocalEngineArtifacts`. Publish those zip files as assets on the
+`windowsEngineReleaseTag` `VoidPlayer-Flutter` release. Use
+`scripts/ci/package_flutter_windows_engine.ps1 -Mode debug` and `release` from a
+machine with matching `host_debug_unopt` and `host_release` engine outputs, then
+copy the printed SHA-256 values into the lock.

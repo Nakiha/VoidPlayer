@@ -13,6 +13,7 @@ truth.
 | Fork ref | `codex/windows-surface-export` |
 | Patch branch | `codex/windows-surface-export` |
 | macOS local engine release tag | `voidplayer-flutter-3.44.1-hdr.2` |
+| Windows local engine release tag | `voidplayer-flutter-cad896c21e49-windows.1` |
 | Baseline branch | `voidplayer/flutter-3.44.1-baseline` |
 | Baseline tag | `3.44.1` |
 | Fork commit | `cad896c21e492160c4e789b1beb2d463e7bd8a50` |
@@ -82,18 +83,23 @@ checkout matches `toolchains/flutter.lock.json`.
 ```bash
 scripts/ci/package_flutter_macos_engine.sh debug
 scripts/ci/package_flutter_macos_engine.sh release
+scripts/ci/package_flutter_windows_engine.ps1 -Mode debug
+scripts/ci/package_flutter_windows_engine.ps1 -Mode release
 ```
 
 4. Create a new immutable release tag, for example
-   `voidplayer-flutter-3.44.1-hdr.2`.
-5. Upload the generated `*-macos-host_*.tar.gz` files to that release.
+   `voidplayer-flutter-3.44.1-hdr.2` for macOS or
+   `voidplayer-flutter-cad896c21e49-windows.1` for Windows.
+5. Upload the generated `*-macos-host_*.tar.gz` or
+   `*-windows-host_*.zip` files to that release.
 6. Update `toolchains/flutter.lock.json`, including asset names and SHA-256
-   values under `macosLocalEngineArtifacts`. If the Windows engine artifacts
-   change, update `windowsLocalEngineArtifacts` in the same lock change.
+   values under `macosLocalEngineArtifacts` or
+   `windowsLocalEngineArtifacts`. If the Windows engine artifacts change,
+   update `windowsEngineReleaseTag` in the same lock change.
 7. Keep this patch inventory in sync with the lock:
    `forkRef`, `forkBranch`, `forkCommit`, `frameworkRevision`,
-   `engineRevision`, `dartSdkVersion`, and `macosLocalEngineReleaseTag` must
-   all match `toolchains/flutter.lock.json`.
+   `engineRevision`, `dartSdkVersion`, `macosLocalEngineReleaseTag`, and
+   `windowsEngineReleaseTag` must all match `toolchains/flutter.lock.json`.
 8. Run:
 
 ```bash
@@ -105,9 +111,9 @@ python dev.py build --flutter --debug
 ```
 
 For normal development, `python dev.py toolchain bootstrap-flutter` wraps the
-Flutter checkout bootstrap and the locked macOS local-engine download. The
-standalone `scripts/ci/bootstrap_flutter_macos_engine.sh` remains available for
-CI and artifact debugging.
+Flutter checkout bootstrap and locked local-engine downloads. The standalone
+macOS and Windows bootstrap scripts remain available for CI and artifact
+debugging.
 
 9. Re-run the macOS HDR compositor smoke scripts documented in
    `native/docs/MACOS_HDR_EXPLORATION.md`.

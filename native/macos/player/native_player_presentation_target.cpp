@@ -663,10 +663,13 @@ int request_renderer_owned_frame_refresh(
       }
       const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
           deadline - now);
-      const auto wait_slice =
-          std::min<std::chrono::milliseconds>(remaining,
-                                              std::chrono::milliseconds(20));
-      player->presentation_condition.wait_for(callback_lock, wait_slice, completed);
+      const auto wait_slice = std::min<std::chrono::milliseconds>(
+          std::max<std::chrono::milliseconds>(remaining,
+                                              std::chrono::milliseconds(1)),
+          std::chrono::milliseconds(20));
+      const auto wait_deadline = std::min(deadline, now + wait_slice);
+      player->presentation_condition.wait_until(callback_lock, wait_deadline,
+                                                completed);
       if (completed()) {
         break;
       }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -249,11 +250,12 @@ class MainWindowController {
 
   void _queueNativeCompositorFlutterFrameRequest({required String reason}) {
     if (_nativeCompositorFrameRequestQueued ||
+        !Platform.isWindows ||
         !_nativeCompositorActive ||
         !player.canAcceptCommands) {
       return;
     }
-    log.info('[WindowsCompositorDebug] queue Flutter export frame: $reason');
+    log.fine('[WindowsCompositorDebug] queue Flutter export frame: $reason');
     _nativeCompositorFrameRequestQueued = true;
     scheduleMicrotask(() {
       _nativeCompositorFrameRequestQueued = false;

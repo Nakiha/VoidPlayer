@@ -653,6 +653,7 @@ class MainWindowPlaybackCoordinator {
     _loopBoundaryTimer = null;
     if (_disposed) return;
     if (!loopRangeEnabled() ||
+        nativeLoopRangeSynced() ||
         !isPlaying() ||
         resolvedLoopEndUs <= resolvedLoopStartUs) {
       return;
@@ -714,6 +715,7 @@ class MainWindowPlaybackCoordinator {
 
       if (loopRangeEnabled() &&
           playing &&
+          !nativeLoopRangeSynced() &&
           pendingSeekUs() == null &&
           resolvedLoopEndUs > resolvedLoopStartUs &&
           pts >= resolvedLoopEndUs) {

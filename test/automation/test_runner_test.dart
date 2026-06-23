@@ -359,6 +359,13 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<void> boostNativeCompositorFlutterInteraction({
+    required String reason,
+  }) async {
+    calls.add('boostNativeCompositorFlutterInteraction:$reason');
+  }
+
+  @override
   Future<void> ackNativeCompositorFlutterState({
     required int serial,
     required bool transparentViewport,

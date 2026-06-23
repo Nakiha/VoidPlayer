@@ -17,6 +17,9 @@ import 'main_window_state.dart';
 class MainWindowLayoutCoordinator {
   static const Duration viewportResizeDebounce = Duration(milliseconds: 80);
   static const double timelineTrackRowLogicalHeight = 40.0;
+  static const Duration _debugInteractionSampleInterval = Duration(
+    milliseconds: 250,
+  );
 
   final TickerProvider vsync;
   final NativePlayerController controller;
@@ -24,6 +27,7 @@ class MainWindowLayoutCoordinator {
   final TrackManager trackManager;
   final bool Function() mounted;
   final bool Function() sourceProjectionEnabled;
+  final void Function(int width, int height)? onNativeResizeCommitted;
 
   Ticker? _ticker;
   Timer? _resizeDebounceTimer;
@@ -36,6 +40,12 @@ class MainWindowLayoutCoordinator {
   int? _queuedPreemptHeight;
   bool _nativeCompositorTransformActive = false;
   String? _lastPrewarmedMarksSidebarTargetKey;
+  DateTime? _lastDebugInteractionSampleAt;
+  int _debugPanUpdates = 0;
+  int _debugZoomUpdates = 0;
+  int _debugSplitUpdates = 0;
+  int _debugDeferredLayoutUpdates = 0;
+  int _debugProjectionPublishes = 0;
 
   int viewportWidth = 0;
   int viewportHeight = 0;
@@ -49,12 +59,54 @@ class MainWindowLayoutCoordinator {
   int trackCount() => trackManager.count;
   List<TrackEntry> tracks() => trackManager.entries;
 
+  void _logDebugInteractionSample(
+    String event, {
+    Offset? delta,
+    double? zoomFactor,
+    double? splitPos,
+    required bool transformed,
+    required bool deferred,
+  }) {
+    final now = DateTime.now();
+    final last = _lastDebugInteractionSampleAt;
+    if (last != null &&
+        now.difference(last) < _debugInteractionSampleInterval) {
+      return;
+    }
+    _lastDebugInteractionSampleAt = now;
+    final current = layout();
+    log.fine(
+      '[WindowsCompositorDebug] viewport layout sample '
+      'event=$event pan=$_debugPanUpdates zoom=$_debugZoomUpdates '
+      'split=$_debugSplitUpdates deferred=$_debugDeferredLayoutUpdates '
+      'projection=$_debugProjectionPublishes transformed=$transformed '
+      'deferredThis=$deferred nativeActive=${_state.nativeCompositorActive} '
+      'sourceProjection=${sourceProjectionEnabled()} '
+      'nativeTransform=$_nativeCompositorTransformActive '
+      'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty '
+      'activeFlush=${_activeFlush != null} viewport=${viewportWidth}x$viewportHeight '
+      'tracks=${trackCount()} mode=${current.mode} '
+      'zoomRatio=${current.zoomRatio.toStringAsFixed(3)} '
+      'offset=(${current.viewOffsetX.toStringAsFixed(1)},'
+      '${current.viewOffsetY.toStringAsFixed(1)}) '
+      'delta=${_debugOffset(delta)} '
+      'zoomFactor=${zoomFactor?.toStringAsFixed(4) ?? ""} '
+      'splitPos=${splitPos?.toStringAsFixed(4) ?? ""}',
+    );
+  }
+
+  String _debugOffset(Offset? value) {
+    if (value == null) return '';
+    return '(${value.dx.toStringAsFixed(1)},${value.dy.toStringAsFixed(1)})';
+  }
+
   MainWindowLayoutCoordinator({
     required this.vsync,
     required this.controller,
     required this.stateStore,
     required this.trackManager,
     required this.mounted,
+    this.onNativeResizeCommitted,
     bool Function()? sourceProjectionEnabled,
   }) : sourceProjectionEnabled =
            sourceProjectionEnabled ??
@@ -119,13 +171,23 @@ class MainWindowLayoutCoordinator {
 
   void setSplitPos(double pos) {
     if (_disposed) return;
-    _cancelNativeCompositorViewportTransform();
-    _updateLayout((layout) => layout.copyWith(splitPos: pos.clamp(0.0, 1.0)));
-    markLayoutDirty();
+    final nextPos = pos.clamp(0.0, 1.0).toDouble();
+    if (layout().splitPos == nextPos) return;
+    _debugSplitUpdates++;
+    _updateLayout((layout) => layout.copyWith(splitPos: nextPos));
+    final transformed = _updateNativeCompositorPanTransform();
+    markLayoutDirty(deferNativeCompositorFlush: transformed);
+    _logDebugInteractionSample(
+      'split',
+      splitPos: nextPos,
+      transformed: transformed,
+      deferred: transformed,
+    );
   }
 
   void panByDelta(double dx, double dy) {
     if (_disposed) return;
+    _debugPanUpdates++;
     final nextOffsetX = layout().viewOffsetX + dx;
     final nextOffsetY = layout().viewOffsetY + dy;
     _updateLayout(
@@ -134,6 +196,12 @@ class MainWindowLayoutCoordinator {
     );
     final transformed = _updateNativeCompositorPanTransform();
     markLayoutDirty(deferNativeCompositorFlush: transformed);
+    _logDebugInteractionSample(
+      'pan',
+      delta: Offset(dx, dy),
+      transformed: transformed,
+      deferred: transformed,
+    );
   }
 
   void onPan(Offset delta) {
@@ -147,6 +215,7 @@ class MainWindowLayoutCoordinator {
   void onZoom(double factor, Offset localPos) {
     if (_disposed) return;
     if (factor <= 0 || !factor.isFinite || factor == 1.0) return;
+    _debugZoomUpdates++;
     final currentLayout = layout();
     final newZoom = (currentLayout.zoomRatio * factor).clamp(
       LayoutState.zoomMin,
@@ -163,6 +232,12 @@ class MainWindowLayoutCoordinator {
         actualFactor: newZoom / currentLayout.zoomRatio,
       );
       markLayoutDirty(deferNativeCompositorFlush: transformed);
+      _logDebugInteractionSample(
+        'zoom-min',
+        zoomFactor: newZoom / currentLayout.zoomRatio,
+        transformed: transformed,
+        deferred: transformed,
+      );
       return;
     }
 
@@ -171,6 +246,12 @@ class MainWindowLayoutCoordinator {
     if (viewportWidth <= 0 || viewportHeight <= 0) {
       _updateLayout((layout) => layout.copyWith(zoomRatio: newZoom));
       markLayoutDirty();
+      _logDebugInteractionSample(
+        'zoom-no-viewport',
+        zoomFactor: actualFactor,
+        transformed: false,
+        deferred: false,
+      );
       return;
     }
 
@@ -209,6 +290,12 @@ class MainWindowLayoutCoordinator {
       actualFactor: actualFactor,
     );
     markLayoutDirty(deferNativeCompositorFlush: transformed);
+    _logDebugInteractionSample(
+      'zoom',
+      zoomFactor: actualFactor,
+      transformed: transformed,
+      deferred: transformed,
+    );
   }
 
   void onPointerButton(bool panning, bool splitting) {
@@ -236,7 +323,7 @@ class MainWindowLayoutCoordinator {
     if (width == viewportWidth && height == viewportHeight) return;
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
-    log.info(
+    log.fine(
       '[WindowsCompositorDebug] layout onViewportResize '
       '${previousWidth}x$previousHeight -> ${width}x$height '
       'dpr=${devicePixelRatio.toStringAsFixed(3)} '
@@ -294,7 +381,7 @@ class MainWindowLayoutCoordinator {
 
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
-    log.info(
+    log.fine(
       '[WindowsCompositorDebug] layout preemptViewportResize '
       '${previousWidth}x$previousHeight -> ${width}x$height '
       'layoutDirty=$_layoutDirty activeFlush=${_activeFlush != null} '
@@ -315,10 +402,11 @@ class MainWindowLayoutCoordinator {
     viewportWidth = width;
     viewportHeight = height;
     await controller.resize(width, height);
-    log.info(
+    log.fine(
       '[WindowsCompositorDebug] layout preemptViewportResize native complete '
       '${width}x$height',
     );
+    onNativeResizeCommitted?.call(width, height);
     if (_disposed || !mounted()) return;
     final nextLayout = await controller.getLayout();
     if (_disposed || !mounted()) return;
@@ -411,7 +499,7 @@ class MainWindowLayoutCoordinator {
         .clamp(1, 1 << 30)
         .toInt();
     if (nextWidth == baseWidth && nextHeight == baseHeight) return;
-    log.info(
+    log.fine(
       '[WindowsCompositorDebug] layout queuePreemptResize '
       'base=${baseWidth}x$baseHeight '
       'delta=(${widthDelta.toStringAsFixed(1)},'
@@ -552,6 +640,7 @@ class MainWindowLayoutCoordinator {
     if (_disposed) return;
     _layoutDirty = true;
     if (deferNativeCompositorFlush) {
+      _debugDeferredLayoutUpdates++;
       // The compositor already has the full current projection; native renderer
       // catches up once at pointer-up or a playback transition.
       return;
@@ -578,7 +667,7 @@ class MainWindowLayoutCoordinator {
   void _markResizeDirty() {
     if (_disposed) return;
     _resizeDirty = true;
-    log.info(
+    log.fine(
       '[WindowsCompositorDebug] layout resizeDirty '
       '${viewportWidth}x$viewportHeight '
       'layoutDirty=$_layoutDirty activeFlush=${_activeFlush != null}',
@@ -627,10 +716,11 @@ class MainWindowLayoutCoordinator {
             if (_disposed || !mounted()) return;
           }
           await controller.resize(width, height);
-          log.info(
+          log.fine(
             '[WindowsCompositorDebug] layout flush native resize complete '
             '${width}x$height layoutDirty=$_layoutDirty',
           );
+          onNativeResizeCommitted?.call(width, height);
           if (_disposed || !mounted()) return;
           final nextLayout = await controller.getLayout();
           if (_disposed || !mounted()) return;
@@ -806,6 +896,7 @@ class MainWindowLayoutCoordinator {
 
   void _publishNativeCompositorViewportTransform() {
     if (!_nativeCompositorTransformActive || _disposed) return;
+    _debugProjectionPublishes++;
     _prepareNativeCompositorSourceCache(layout());
   }
 

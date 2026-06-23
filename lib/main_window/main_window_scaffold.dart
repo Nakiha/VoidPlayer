@@ -53,7 +53,7 @@ class MainWindowScaffold extends StatelessWidget {
         overlays.mediaInfoVisible ||
         overlays.profilerVisible ||
         overlays.marksSidebarVisible) {
-      log.info(
+      log.fine(
         '[WindowsCompositorDebug] scaffold overlay build '
         'nativeHole=$nativeCompositorViewportActive '
         'settings=${overlays.settingsVisible} '
@@ -70,7 +70,7 @@ class MainWindowScaffold extends StatelessWidget {
       body: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerDown: (event) {
-          log.info(
+          log.fine(
             '[WindowsCompositorDebug] root pointerDown '
             'global=${event.position} local=${event.localPosition} '
             'buttons=${event.buttons} tracks=${media.tracks.length} '
@@ -172,6 +172,8 @@ class MainWindowScaffold extends StatelessWidget {
                                         viewportActions.onQuickMarkStart,
                                     onQuickMarkUpdate:
                                         viewportActions.onQuickMarkUpdate,
+                                    onQuickMarkInteraction:
+                                        viewportActions.onQuickMarkInteraction,
                                     onQuickMarkEnd:
                                         viewportActions.onQuickMarkEnd,
                                     onQuickMarkCancel:

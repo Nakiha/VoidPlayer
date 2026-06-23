@@ -218,6 +218,17 @@ class NativePlayerController {
     return _api.requestNativeCompositorFlutterFrame(reason: reason);
   }
 
+  Future<void> boostNativeCompositorFlutterInteraction({
+    required String reason,
+  }) {
+    if (!_hasPlayerForCommand(
+      NativePlayerMethods.boostNativeCompositorFlutterInteraction,
+    )) {
+      return Future.value();
+    }
+    return _api.boostNativeCompositorFlutterInteraction(reason: reason);
+  }
+
   Future<void> ackNativeCompositorFlutterState({
     required int serial,
     required bool transparentViewport,

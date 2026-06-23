@@ -374,6 +374,58 @@ class TestRunner {
           'compositorHz=${value('nativeCompositorCompositeHz')} '
           'sourceCacheHz=${value('nativeCompositorSourceCacheHz')} '
           'sourceProjectionHz=${value('nativeCompositorSourceProjectionHz')} '
+          'windowsPhase=${value('windowsNativeCompositorPhase')} '
+          'windowsMode=${value('windowsHotPathMode')} '
+          'windowsHotPath=${value('windowsHotPathActive')} '
+          'windowsDisplayHz=${value('windowsHotPathDisplayHz')} '
+          'windowsBudgetUs=${value('windowsHotPathFrameBudgetUs')} '
+          'windowsPresentP95Us=${value('windowsHotPathPresentIntervalP95Us')} '
+          'windowsCompositeP95Us=${value('windowsHotPathCompositeP95Us')} '
+          'windowsDrawP95Us=${value('windowsHotPathDrawP95Us')} '
+          'windowsPresentBlockP95Us=${value('windowsHotPathPresentBlockP95Us')} '
+          'windowsAcquireWaitP95Us=${value('windowsHotPathAcquireWaitP95Us')} '
+          'windowsInputToPresentP95Us=${value('windowsHotPathInputToPresentP95Us')} '
+          'windowsDropRateX1000=${value('windowsHotPathDropRateX1000')} '
+          'windowsProjectionUpdates=${value('windowsHotPathProjectionOnlyUpdateCount')} '
+          'windowsProjectionRedraws=${value('windowsHotPathViewportRedrawDuringProjectionCount')} '
+          'windowsSourceReuse=${value('windowsHotPathSourceCacheReuseCount')} '
+          'windowsOverlayReuse=${value('windowsHotPathOverlayReuseCount')} '
+          'windowsOverlayRaster=${value('windowsHotPathOverlayRasterCount')} '
+          'windowsOverlayUpload=${value('windowsHotPathOverlayUploadCount')} '
+          'windowsRetainedActive=${value('windowsRetainedGraphActive')} '
+          'windowsRetainedMode=${value('windowsRetainedGraphMode')} '
+          'windowsRetainedFallback=${value('windowsRetainedGraphFallbackReason')} '
+          'windowsRetainedCommit=${value('windowsRetainedGraphCommitCount')} '
+          'windowsRetainedProjectionCommit=${value('windowsRetainedGraphProjectionCommitCount')} '
+          'windowsRetainedSourceBake=${value('windowsRetainedGraphSourceBakeCount')} '
+          'windowsRetainedFlutterBake=${value('windowsRetainedGraphFlutterBakeCount')} '
+          'windowsRetainedSkipPresent=${value('windowsRetainedGraphProjectionSkipPresentCount')} '
+          'windowsRetainedDeferredContent=${value('windowsRetainedGraphDeferredContentCount')} '
+          'windowsRetainedCommitDefer=${value('windowsRetainedGraphCommitDeferCount')} '
+          'windowsRetainedFlutterBakeP95Us=${value('windowsRetainedGraphFlutterBakeP95Us')} '
+          'windowsRetainedSourceBakeP95Us=${value('windowsRetainedGraphSourceBakeP95Us')} '
+          'windowsRetainedApplyP95Us=${value('windowsRetainedGraphApplyP95Us')} '
+          'windowsRetainedCommitP95Us=${value('windowsRetainedGraphCommitP95Us')} '
+          'windowsDCompPresent=${value('windowsDCompPresentCount')} '
+          'windowsDCompComposite=${value('windowsDCompCompositeCount')} '
+          'windowsDCompDrop=${value('windowsDCompDropCount')} '
+          'windowsDCompPresentP95Us=${value('windowsDCompPresentIntervalP95Us')} '
+          'windowsDCompCompositeP95Us=${value('windowsDCompCompositeP95Us')} '
+          'windowsDCompDrawP95Us=${value('windowsDCompDrawP95Us')} '
+          'windowsDCompPresentBlockP95Us=${value('windowsDCompPresentBlockP95Us')} '
+          'windowsDCompAcquireWaitP95Us=${value('windowsDCompAcquireWaitP95Us')} '
+          'windowsExportPublish=${value('windowsFlutterExportPublishCount')} '
+          'windowsExportRequest=${value('windowsFlutterExportRequestCount')} '
+          'windowsExportDispatch=${value('windowsFlutterExportRequestDispatchCount')} '
+          'windowsExportVsync=${value('windowsFlutterExportVsyncCount')} '
+          'windowsExportPresent=${value('windowsFlutterExportPresentCount')} '
+          'windowsExportFlush=${value('windowsFlutterExportFlushCount')} '
+          'windowsExportFinish=${value('windowsFlutterExportFinishCount')} '
+          'windowsExportBackpressure=${value('windowsFlutterExportBackpressureCount')} '
+          'windowsExportPending=${value('windowsFlutterExportPendingFramePumpFrames')} '
+          'windowsExportStale=${value('windowsFlutterExportStaleTimeoutCount')} '
+          'windowsExportUnrequestedSignal=${value('windowsFlutterExportUnrequestedSignalCount')} '
+          'windowsExportUnrequestedThrottle=${value('windowsFlutterExportUnrequestedThrottleCount')} '
           'sourceRingBake=${value('sourceRingBakeCount')}@${value('sourceRingBakeHz')}Hz '
           'sourceRingBakeP95Ms=${value('sourceRingBakeP95Ms')} '
           'sourceRingBakeLastMs=${value('sourceRingBakeLastMs')} '
@@ -431,6 +483,37 @@ class TestRunner {
           'over16ms=${summary.over16Ms} '
           'over33ms=${summary.over33Ms}',
         );
+      case AssertFlutterTimingAction(
+        :final minFrames,
+        :final maxTotalP95Ms,
+        :final maxOver33Ms,
+        :final maxOver16Ms,
+      ):
+        final summary = await _flutterTimingProbe.collectAndReset();
+        log.info(
+          'TestRunner: ASSERT_FLUTTER_TIMING '
+          'frames=${summary.frameCount} '
+          'minFrames=$minFrames '
+          'totalP95Ms=${summary.totalP95Ms} '
+          'maxTotalP95Ms=$maxTotalP95Ms '
+          'over16ms=${summary.over16Ms} '
+          'maxOver16Ms=$maxOver16Ms '
+          'over33ms=${summary.over33Ms} '
+          'maxOver33Ms=$maxOver33Ms',
+        );
+        final maxTotalP95Us = maxTotalP95Ms * 1000;
+        if (summary.frameCount < minFrames ||
+            summary.totalP95Us > maxTotalP95Us ||
+            summary.over33Ms > maxOver33Ms ||
+            summary.over16Ms > maxOver16Ms) {
+          throw AssertionError(
+            'Flutter timing outside limits: '
+            'frames=${summary.frameCount} minFrames=$minFrames '
+            'totalP95Ms=${summary.totalP95Ms} maxTotalP95Ms=$maxTotalP95Ms '
+            'over16ms=${summary.over16Ms} maxOver16Ms=$maxOver16Ms '
+            'over33ms=${summary.over33Ms} maxOver33Ms=$maxOver33Ms',
+          );
+        }
       case WindowMaximize():
         log.info('TestRunner: WINDOW_MAXIMIZE');
         await runtime.maximizeWindow();
@@ -468,6 +551,9 @@ class TestRunner {
           'x=${x.toStringAsFixed(1)} y=${y.toStringAsFixed(1)}',
         );
         testHarness.clickFlutterPoint(Offset(x, y));
+      case ClickControlsPlayButton():
+        log.info('TestRunner: CLICK_CONTROLS_PLAY_BUTTON');
+        testHarness.clickControlsPlayButton();
       case DragViewport(:final dx, :final dy, :final steps, :final stepMs):
         log.info(
           'TestRunner: DRAG_VIEWPORT dx=$dx dy=$dy steps=$steps stepMs=$stepMs',
@@ -476,6 +562,55 @@ class TestRunner {
           Offset(dx, dy),
           steps: steps,
           stepDelay: Duration(milliseconds: stepMs),
+        );
+      case DragViewportNative(
+        :final dx,
+        :final dy,
+        :final steps,
+        :final stepMs,
+        :final button,
+      ):
+        log.info(
+          'TestRunner: DRAG_VIEWPORT_NATIVE dx=$dx dy=$dy steps=$steps '
+          'stepMs=$stepMs button=$button',
+        );
+        await testHarness.dragViewportNative(
+          Offset(dx, dy),
+          steps: steps,
+          stepDelay: Duration(milliseconds: stepMs),
+          button: button,
+        );
+      case DragSplitHandleNative(
+        :final targetFraction,
+        :final steps,
+        :final stepMs,
+      ):
+        log.info(
+          'TestRunner: DRAG_SPLIT_HANDLE_NATIVE target=$targetFraction '
+          'steps=$steps stepMs=$stepMs',
+        );
+        await testHarness.dragSplitHandleNative(
+          targetFraction,
+          steps: steps,
+          stepDelay: Duration(milliseconds: stepMs),
+        );
+      case WheelViewportNative(
+        :final delta,
+        :final steps,
+        :final stepMs,
+        :final xFraction,
+        :final yFraction,
+      ):
+        log.info(
+          'TestRunner: WHEEL_VIEWPORT_NATIVE delta=$delta steps=$steps '
+          'stepMs=$stepMs at=($xFraction,$yFraction)',
+        );
+        await testHarness.wheelViewportNative(
+          delta: delta,
+          steps: steps,
+          stepDelay: Duration(milliseconds: stepMs),
+          xFraction: xFraction,
+          yFraction: yFraction,
         );
       case DragViewportSampleOverlay(
         :final dx,
@@ -573,6 +708,9 @@ class TestRunner {
       case HoverControlsBarButtonsNative(:final steps):
         log.info('TestRunner: HOVER_CONTROLS_BAR_BUTTONS_NATIVE steps=$steps');
         await testHarness.hoverControlsBarButtonsNative(steps: steps);
+      case HoverTimeline(:final steps, :final stepMs):
+        log.info('TestRunner: HOVER_TIMELINE steps=$steps stepMs=$stepMs');
+        await testHarness.hoverTimeline(steps: steps, stepMs: stepMs);
       case ClickMediaHeaderOverlayButtonNative():
         log.info('TestRunner: CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE');
         await testHarness.clickAnalysisOverlayButtonNative();
@@ -763,6 +901,7 @@ class _FlutterFrameTimingSummary {
   final String totalAvgMs;
   final String totalP95Ms;
   final String totalMaxMs;
+  final int totalP95Us;
   final int over16Ms;
   final int over33Ms;
 
@@ -777,6 +916,7 @@ class _FlutterFrameTimingSummary {
     required this.totalAvgMs,
     required this.totalP95Ms,
     required this.totalMaxMs,
+    required this.totalP95Us,
     required this.over16Ms,
     required this.over33Ms,
   });
@@ -794,6 +934,7 @@ class _FlutterFrameTimingSummary {
         totalAvgMs: '0.000',
         totalP95Ms: '0.000',
         totalMaxMs: '0.000',
+        totalP95Us: 0,
         over16Ms: 0,
         over33Ms: 0,
       );
@@ -808,6 +949,7 @@ class _FlutterFrameTimingSummary {
     final total = timings
         .map((timing) => timing.totalSpan.inMicroseconds)
         .toList(growable: false);
+    final totalP95Us = _percentileUs(total, 0.95);
     return _FlutterFrameTimingSummary(
       frameCount: timings.length,
       buildAvgMs: _formatMs(_averageUs(build)),
@@ -817,8 +959,9 @@ class _FlutterFrameTimingSummary {
       rasterP95Ms: _formatMs(_percentileUs(raster, 0.95)),
       rasterMaxMs: _formatMs(_maxUs(raster)),
       totalAvgMs: _formatMs(_averageUs(total)),
-      totalP95Ms: _formatMs(_percentileUs(total, 0.95)),
+      totalP95Ms: _formatMs(totalP95Us),
       totalMaxMs: _formatMs(_maxUs(total)),
+      totalP95Us: totalP95Us,
       over16Ms: total.where((us) => us > 16000).length,
       over33Ms: total.where((us) => us > 33000).length,
     );

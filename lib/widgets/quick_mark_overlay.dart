@@ -183,6 +183,7 @@ class QuickMarkOverlay extends StatefulWidget {
   final double devicePixelRatio;
   final ValueChanged<int?>? onSelectedMarkChanged;
   final ValueChanged<QuickMark>? onMarkChanged;
+  final VoidCallback? onInteraction;
   final ValueChanged<int>? onMarkDeleted;
   final ValueChanged<int>? onMarkFocus;
 
@@ -196,6 +197,7 @@ class QuickMarkOverlay extends StatefulWidget {
     required this.devicePixelRatio,
     this.onSelectedMarkChanged,
     this.onMarkChanged,
+    this.onInteraction,
     this.onMarkDeleted,
     this.onMarkFocus,
   });
@@ -357,6 +359,10 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
     return _markById(selectedId);
   }
 
+  void _notifyInteraction() {
+    widget.onInteraction?.call();
+  }
+
   QuickMark? _markById(int id) {
     for (final mark in widget.marks) {
       if (mark.id == id) return mark;
@@ -365,6 +371,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
   }
 
   void _startEditingText(QuickMark mark) {
+    _notifyInteraction();
     widget.onSelectedMarkChanged?.call(mark.id);
     if (_editingTextMarkId != mark.id) {
       _textController.text = mark.text;
@@ -385,6 +392,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
     if (commit) {
       final mark = _markById(editingId);
       if (mark != null && mark.text != _textController.text) {
+        _notifyInteraction();
         widget.onMarkChanged?.call(mark.copyWith(text: _textController.text));
       }
     }
@@ -591,7 +599,10 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onTap: () => widget.onSelectedMarkChanged?.call(mark.id),
+          onTap: () {
+            _notifyInteraction();
+            widget.onSelectedMarkChanged?.call(mark.id);
+          },
           child: const SizedBox.expand(),
         ),
       ),
@@ -936,6 +947,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
               _CommitTextEditIntent: CallbackAction<_CommitTextEditIntent>(
                 onInvoke: (_) {
                   _stopEditingText(commit: true);
+                  _notifyInteraction();
                   widget.onSelectedMarkChanged?.call(null);
                   return null;
                 },
@@ -955,6 +967,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
                 final current = _markById(mark.id);
                 if (current == null || current.text == value) return;
                 setState(() {});
+                _notifyInteraction();
                 widget.onMarkChanged?.call(current.copyWith(text: value));
               },
               onTapOutside: (_) => _textFocusNode.unfocus(),
@@ -1048,9 +1061,12 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
             colorScheme,
             const Size.square(_panelButtonSize),
           ),
-          onPressed: () => widget.onMarkChanged?.call(
-            mark.copyWith(syncAcrossTracks: !mark.syncAcrossTracks),
-          ),
+          onPressed: () {
+            _notifyInteraction();
+            widget.onMarkChanged?.call(
+              mark.copyWith(syncAcrossTracks: !mark.syncAcrossTracks),
+            );
+          },
           icon: const Icon(Icons.sync),
         ),
       ),
@@ -1079,7 +1095,10 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
             colorScheme,
             const Size.square(_panelButtonSize),
           ),
-          onPressed: () => widget.onMarkFocus?.call(mark.id),
+          onPressed: () {
+            _notifyInteraction();
+            widget.onMarkFocus?.call(mark.id);
+          },
           icon: const Icon(Icons.center_focus_strong),
         ),
       ),
@@ -1139,8 +1158,10 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
             colorScheme,
             const Size.square(_panelButtonSize),
           ),
-          onPressed: () =>
-              widget.onMarkChanged?.call(mark.copyWith(textBold: !selected)),
+          onPressed: () {
+            _notifyInteraction();
+            widget.onMarkChanged?.call(mark.copyWith(textBold: !selected));
+          },
           icon: const Icon(Icons.format_bold),
         ),
       ),
@@ -1159,8 +1180,10 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
         value: mark.textFontSize,
         items: _fontSizes,
         labelFor: (size) => size.round().toString(),
-        onChanged: (size) =>
-            widget.onMarkChanged?.call(mark.copyWith(textFontSize: size)),
+        onChanged: (size) {
+          _notifyInteraction();
+          widget.onMarkChanged?.call(mark.copyWith(textFontSize: size));
+        },
         textStyle: theme.textTheme.bodySmall?.copyWith(
           color: colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.w600,
@@ -1182,7 +1205,10 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
     return _QuickMarkDeleteButton(
       onPressed: widget.onMarkDeleted == null
           ? null
-          : () => widget.onMarkDeleted?.call(mark.id),
+          : () {
+              _notifyInteraction();
+              widget.onMarkDeleted?.call(mark.id);
+            },
     );
   }
 
@@ -1211,8 +1237,10 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
             colorScheme,
             const Size.square(_panelButtonSize),
           ),
-          onPressed: () =>
-              widget.onMarkChanged?.call(mark.copyWith(shape: shape)),
+          onPressed: () {
+            _notifyInteraction();
+            widget.onMarkChanged?.call(mark.copyWith(shape: shape));
+          },
           icon: Icon(icon),
         ),
       ),
@@ -1230,8 +1258,10 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
         value: mark.color,
         items: _colors,
         labelFor: (color) => _colorLabel(l, color),
-        onChanged: (color) =>
-            widget.onMarkChanged?.call(mark.copyWith(color: color)),
+        onChanged: (color) {
+          _notifyInteraction();
+          widget.onMarkChanged?.call(mark.copyWith(color: color));
+        },
         minMenuWidth: 136,
         maxMenuWidth: 180,
         itemHeight: 30,
@@ -1279,8 +1309,10 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
         value: mark.strokeWidth,
         items: _strokeWidths,
         labelFor: (width) => l.quickMarkStrokeWidth(width.round()),
-        onChanged: (width) =>
-            widget.onMarkChanged?.call(mark.copyWith(strokeWidth: width)),
+        onChanged: (width) {
+          _notifyInteraction();
+          widget.onMarkChanged?.call(mark.copyWith(strokeWidth: width));
+        },
         minMenuWidth: 132,
         maxMenuWidth: 160,
         itemHeight: 30,
@@ -1356,6 +1388,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
     );
     if (sourceUv == null) return;
     final next = _markForHandleDrag(start, handle, sourceUv);
+    _notifyInteraction();
     widget.onMarkChanged?.call(next);
   }
 
@@ -1366,6 +1399,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
     _MarkHandle handle,
     Offset globalPosition,
   ) {
+    _notifyInteraction();
     _resizeStartMark = mark;
   }
 
@@ -1406,6 +1440,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
       sourceStart: sourceStart,
       sourceEnd: sourceEnd,
     );
+    _notifyInteraction();
     widget.onMarkChanged?.call(next);
   }
 
@@ -1416,6 +1451,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
     _ArrowEndpoint endpoint,
     Offset globalPosition,
   ) {
+    _notifyInteraction();
     _resizeStartMark = mark;
     _activeArrowEndpoint = endpoint;
   }
@@ -1519,6 +1555,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
     QuickMark mark,
     Offset globalPosition,
   ) {
+    _notifyInteraction();
     widget.onSelectedMarkChanged?.call(mark.id);
     _moveStartMark = mark;
     _moveStartSourceUv = _sourceUvFromGlobalPosition(
@@ -1561,6 +1598,7 @@ class _QuickMarkOverlayState extends State<QuickMarkOverlay> {
       sourceStart: mark.effectiveSourceStart + delta,
       sourceEnd: mark.effectiveSourceEnd + delta,
     );
+    _notifyInteraction();
     widget.onMarkChanged?.call(next);
   }
 

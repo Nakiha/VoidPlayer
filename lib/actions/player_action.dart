@@ -262,8 +262,12 @@ class DragLoopHandle extends PlayerAction {
 class DragSplitHandle extends PlayerAction {
   final double targetFraction;
   final int steps;
-  const DragSplitHandle(this.targetFraction, {this.steps = 12})
-    : super('DRAG_SPLIT_HANDLE');
+  final int stepMs;
+  const DragSplitHandle(
+    this.targetFraction, {
+    this.steps = 12,
+    this.stepMs = 16,
+  }) : super('DRAG_SPLIT_HANDLE');
 }
 
 /// Pan the viewport by a delta.

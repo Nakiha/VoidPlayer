@@ -25,6 +25,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 class WindowsNativeCompositor {
 public:
@@ -107,9 +108,13 @@ public:
         uint64_t flutter_export_begin_fail_count = 0;
         uint64_t flutter_export_make_current_fail_count = 0;
         uint64_t flutter_export_publish_fail_count = 0;
+        uint64_t flutter_export_flush_count = 0;
+        uint64_t flutter_export_finish_count = 0;
         uint64_t flutter_export_backpressure_count = 0;
         uint64_t flutter_export_pending_frame_pump_frames = 0;
         uint64_t flutter_export_stale_timeout_count = 0;
+        uint64_t flutter_export_unsolicited_signal_count = 0;
+        uint64_t flutter_export_unsolicited_throttle_count = 0;
         uint64_t video_generation = 0;
         uint64_t composite_count = 0;
         uint64_t present_count = 0;
@@ -131,6 +136,8 @@ public:
         int64_t high_refresh_display_hz = 60;
         int64_t dcomp_present_interval_p95_us = 0;
         int64_t dcomp_composite_p95_us = 0;
+        int64_t dcomp_draw_p95_us = 0;
+        int64_t dcomp_present_block_p95_us = 0;
         int64_t dcomp_acquire_wait_p95_us = 0;
         int64_t interaction_input_to_present_p95_us = 0;
         int64_t dcomp_drop_rate_x1000 = 0;
@@ -154,6 +161,8 @@ public:
         int64_t hot_path_frame_budget_us = 16666;
         int64_t hot_path_present_interval_p95_us = 0;
         int64_t hot_path_composite_p95_us = 0;
+        int64_t hot_path_draw_p95_us = 0;
+        int64_t hot_path_present_block_p95_us = 0;
         int64_t hot_path_acquire_wait_p95_us = 0;
         int64_t hot_path_input_to_present_p95_us = 0;
         int64_t hot_path_drop_rate_x1000 = 0;
@@ -172,6 +181,8 @@ public:
         std::string hot_path_mode = "inactive";
         std::string hot_path_last_failure_reason = "none";
         std::string hot_path_gate_result = "not-run";
+        std::string retained_graph_mode = "inactive";
+        std::string retained_graph_fallback_reason = "none";
         uint32_t swap_chain_width = 0;
         uint32_t swap_chain_height = 0;
         bool engine_export_available = false;
@@ -196,6 +207,18 @@ public:
         bool high_refresh_gate_supported = false;
         bool overlay_retained_layer_active = false;
         bool hot_path_active = false;
+        bool retained_graph_active = false;
+        uint64_t retained_graph_commit_count = 0;
+        uint64_t retained_graph_projection_commit_count = 0;
+        uint64_t retained_graph_source_bake_count = 0;
+        uint64_t retained_graph_flutter_bake_count = 0;
+        uint64_t retained_graph_projection_skip_present_count = 0;
+        uint64_t retained_graph_deferred_content_count = 0;
+        uint64_t retained_graph_commit_defer_count = 0;
+        int64_t retained_graph_flutter_bake_p95_us = 0;
+        int64_t retained_graph_source_bake_p95_us = 0;
+        int64_t retained_graph_apply_p95_us = 0;
+        int64_t retained_graph_commit_p95_us = 0;
     };
 
     using StateCallback = std::function<void(Phase, uint64_t, const std::string&)>;
@@ -216,6 +239,7 @@ public:
     void SetViewportRect(double left, double top, double right, double bottom);
     void SetViewportBackgroundColor(uint32_t argb);
     bool RequestFlutterFrame(const std::string& reason);
+    void BoostFlutterInteraction(const std::string& reason);
     void SetSourceProjection(const SourceProjection& projection);
     void ClearSourceProjection(const std::string& reason);
     void SetSourceCacheError(const std::string& error);
@@ -275,6 +299,8 @@ private:
         uint64_t export_begin_fail_count = 0;
         uint64_t export_make_current_fail_count = 0;
         uint64_t export_publish_fail_count = 0;
+        uint64_t export_flush_count = 0;
+        uint64_t export_finish_count = 0;
         uint64_t backpressure_count = 0;
         uint64_t pending_frame_pump_frames = 0;
         uint32_t width = 0;
@@ -282,6 +308,36 @@ private:
         uint32_t latest_slot = 0;
         bool latest_available = false;
         bool shutdown = false;
+        uint64_t last_request_time_us = 0;
+        uint64_t last_request_dispatch_time_us = 0;
+        uint64_t last_schedule_frame_time_us = 0;
+        uint64_t last_vsync_time_us = 0;
+        uint64_t last_present_time_us = 0;
+        uint64_t last_begin_time_us = 0;
+        uint64_t last_begin_fail_time_us = 0;
+        uint64_t last_backpressure_time_us = 0;
+        uint64_t last_publish_time_us = 0;
+        uint64_t last_export_sync_time_us = 0;
+        uint64_t last_acquire_time_us = 0;
+        uint64_t last_release_time_us = 0;
+        uint32_t active_lease_count = 0;
+        uint32_t writing_slot_count = 0;
+        uint32_t leased_slot_count = 0;
+        uint32_t retired_ring_count = 0;
+        uint32_t latest_slot_lease_count = 0;
+        uint64_t acquire_count = 0;
+        uint64_t release_count = 0;
+    };
+
+    struct RetainedSurfaceLayer {
+        Microsoft::WRL::ComPtr<IDCompositionSurface> surface;
+        Microsoft::WRL::ComPtr<IDCompositionVisual> visual;
+        Microsoft::WRL::ComPtr<IDCompositionRectangleClip> clip;
+        DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint64_t generation = 0;
+        bool ready = false;
     };
 
     using SetExportModeFn = bool (*)(void*, int);
@@ -327,6 +383,34 @@ private:
         const SourceProjection& projection,
         const D3D11_TEXTURE2D_DESC& back_desc);
     void ResetOverlayLayer(const std::string& reason);
+    void ResetRetainedGraph(const std::string& reason);
+    bool CanUseRetainedGraph(const SourceProjection& projection,
+                             OutputTarget target) const;
+    bool EnsureRetainedGraph(uint32_t width,
+                             uint32_t height,
+                             OutputTarget target);
+    bool BakeRetainedSourceSurface(size_t slot,
+                                   ID3D11ShaderResourceView* source_srv,
+                                   uint32_t width,
+                                   uint32_t height,
+                                   OutputTarget target,
+                                   int color_transfer,
+                                   uint64_t generation,
+                                   const std::shared_ptr<
+                                       const vr::AnalysisOverlayPrimitivePackage>&
+                                       overlay);
+    bool BakeRetainedFlutterSurface(const FlutterSurface& surface,
+                                    OutputTarget target,
+                                    ID3D11ShaderResourceView* flutter_srv);
+    bool ApplyRetainedProjection(uint32_t width,
+                                 uint32_t height,
+                                 OutputTarget target,
+                                 const SourceProjection& projection);
+    bool ShouldDeferRetainedGraphCommitLocked(
+        std::chrono::steady_clock::time_point now);
+    void RecordInteractionCommitLatencyLocked(
+        std::chrono::steady_clock::time_point committed_at);
+    bool CommitRetainedGraph(const char* reason);
     void ReleaseHeldInputs(const std::shared_ptr<vr::NativePlayer>& player);
     void ThreadMain();
     bool CompositeLatest();
@@ -380,6 +464,12 @@ private:
     Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device_;
     Microsoft::WRL::ComPtr<IDCompositionTarget> dcomp_target_;
     Microsoft::WRL::ComPtr<IDCompositionVisual> dcomp_visual_;
+    Microsoft::WRL::ComPtr<IDCompositionVisual> retained_root_visual_;
+    Microsoft::WRL::ComPtr<IDCompositionVisual> retained_background_visual_;
+    Microsoft::WRL::ComPtr<IDCompositionVisual> retained_source_root_visual_;
+    RetainedSurfaceLayer retained_background_;
+    RetainedSurfaceLayer retained_flutter_;
+    std::array<RetainedSurfaceLayer, 4> retained_sources_;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> video_pixel_shader_;
@@ -441,6 +531,47 @@ private:
     float viewport_background_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     SourceProjection source_projection_;
     std::string source_cache_error_ = "none";
+    bool retained_projection_dirty_ = false;
+    bool retained_source_content_dirty_ = false;
+    bool retained_flutter_content_dirty_ = false;
+    bool retained_graph_active_ = false;
+    OutputTarget retained_graph_target_ = OutputTarget::SDR;
+    uint64_t retained_graph_commit_count_ = 0;
+    uint64_t retained_graph_projection_commit_count_ = 0;
+    uint64_t retained_graph_source_bake_count_ = 0;
+    uint64_t retained_graph_flutter_bake_count_ = 0;
+    uint64_t retained_graph_projection_skip_present_count_ = 0;
+    uint64_t retained_graph_deferred_content_count_ = 0;
+    uint64_t retained_graph_commit_defer_count_ = 0;
+    std::string retained_graph_fallback_reason_ = "none";
+    std::vector<int64_t> retained_graph_flutter_bake_us_;
+    std::vector<int64_t> retained_graph_source_bake_us_;
+    std::vector<int64_t> retained_graph_apply_us_;
+    std::vector<int64_t> retained_graph_commit_us_;
+    std::chrono::steady_clock::time_point
+        retained_deferred_content_deadline_{};
+    std::chrono::steady_clock::time_point
+        retained_graph_commit_deadline_{};
+    std::chrono::steady_clock::time_point
+        last_retained_graph_commit_time_{};
+    std::chrono::steady_clock::time_point
+        last_retained_projection_update_{};
+    std::chrono::steady_clock::time_point
+        last_source_projection_debug_log_{};
+    std::chrono::steady_clock::time_point
+        last_flutter_export_pacing_log_{};
+    uint64_t last_flutter_export_pacing_request_count_ = 0;
+    uint64_t last_flutter_export_pacing_request_dispatch_count_ = 0;
+    uint64_t last_flutter_export_pacing_schedule_frame_count_ = 0;
+    uint64_t last_flutter_export_pacing_vsync_count_ = 0;
+    uint64_t last_flutter_export_pacing_publish_count_ = 0;
+    uint64_t last_flutter_export_pacing_present_count_ = 0;
+    uint64_t last_flutter_export_pacing_acquire_count_ = 0;
+    uint64_t last_flutter_export_pacing_release_count_ = 0;
+    uint64_t last_flutter_export_pacing_begin_count_ = 0;
+    uint64_t last_flutter_export_pacing_backpressure_count_ = 0;
+    uint64_t last_flutter_export_pacing_retained_commit_count_ = 0;
+    uint64_t last_flutter_export_pacing_retained_projection_count_ = 0;
     std::chrono::steady_clock::time_point rate_start_time_{};
     uint64_t source_cache_publish_count_ = 0;
     bool source_cache_base_lease_wait_logged_ = false;
@@ -460,12 +591,18 @@ private:
     uint64_t flutter_generation_log_count_ = 0;
     uint64_t flutter_publish_callback_count_ = 0;
     uint64_t last_flutter_publish_callback_generation_ = 0;
+    uint64_t flutter_export_unsolicited_signal_count_ = 0;
+    uint64_t flutter_export_unsolicited_throttle_count_ = 0;
+    std::chrono::steady_clock::time_point
+        last_unsolicited_flutter_export_signal_{};
     uint64_t flutter_frame_request_sequence_ = 0;
     uint64_t pending_flutter_frame_request_sequence_ = 0;
     uint64_t pending_flutter_frame_request_base_generation_ = 0;
     std::string pending_flutter_frame_request_reason_;
     std::chrono::steady_clock::time_point
         pending_flutter_frame_request_time_{};
+    std::chrono::steady_clock::time_point
+        last_explicit_flutter_frame_request_time_{};
     bool pending_flutter_frame_request_acquire_logged_ = false;
     uint64_t flutter_export_stale_timeout_count_ = 0;
     double last_logged_viewport_[4] = {-1.0, -1.0, -1.0, -1.0};

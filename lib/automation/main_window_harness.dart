@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
@@ -85,7 +87,13 @@ class MainWindowTestHarness {
     if (context == null) {
       throw StateError('Flutter frame capture root is not mounted');
     }
-    await WidgetsBinding.instance.endOfFrame;
+    WidgetsBinding.instance.scheduleFrame();
+    await WidgetsBinding.instance.endOfFrame.timeout(
+      const Duration(seconds: 2),
+      onTimeout: () => throw TimeoutException(
+        'Timed out waiting for a Flutter frame capture boundary',
+      ),
+    );
     if (!context.mounted) {
       throw StateError('Flutter frame capture root was unmounted');
     }
@@ -180,6 +188,64 @@ class MainWindowTestHarness {
     );
   }
 
+  void clickControlsPlayButton() {
+    final context = controlsBarKey.currentContext;
+    if (context == null) {
+      throw StateError('Controls bar is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Controls bar has no render box');
+    }
+
+    final startWidth = timelineStartWidth()
+        .clamp(0.0, renderObject.size.width)
+        .toDouble();
+    final playXMax = (startWidth - 1)
+        .clamp(1.0, renderObject.size.width)
+        .toDouble();
+    final local = Offset(
+      164.0.clamp(1.0, playXMax).toDouble(),
+      renderObject.size.height / 2,
+    );
+    final global = renderObject.localToGlobal(local);
+    final pointer = _pointerId++;
+    log.info(
+      'Test action: CLICK_CONTROLS_PLAY_BUTTON '
+      'local=(${local.dx.toStringAsFixed(1)}, ${local.dy.toStringAsFixed(1)}) '
+      'global=(${global.dx.toStringAsFixed(1)}, ${global.dy.toStringAsFixed(1)})',
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerAddedEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerDownEvent(
+        pointer: pointer,
+        position: global,
+        buttons: kPrimaryButton,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerUpEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerRemovedEvent(
+        pointer: pointer,
+        position: global,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
   void hoverControlsBarButtons({int steps = 24}) {
     final context = controlsBarKey.currentContext;
     if (context == null) {
@@ -235,6 +301,57 @@ class MainWindowTestHarness {
         ),
       );
       previousGlobal = global;
+    }
+    final exitGlobal = renderObject.localToGlobal(
+      Offset(renderObject.size.width - 1, renderObject.size.height + 24),
+    );
+    GestureBinding.instance.handlePointerEvent(
+      PointerHoverEvent(
+        pointer: _pointerId,
+        position: exitGlobal,
+        delta: exitGlobal - previousGlobal,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+  }
+
+  Future<void> hoverTimeline({int steps = 48, int stepMs = 8}) async {
+    final context = timelineSliderKey.currentContext;
+    if (context == null) {
+      throw StateError('Timeline slider is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Timeline slider has no render box');
+    }
+
+    final count = steps <= 0 ? 1 : steps;
+    final y = renderObject.size.height / 2;
+    final left = math.min(6.0, renderObject.size.width / 2);
+    final right = math.max(left, renderObject.size.width - 6.0);
+    var previousGlobal = renderObject.localToGlobal(Offset(left, y));
+    log.info(
+      'Test action: HOVER_TIMELINE steps=$count stepMs=$stepMs '
+      'width=${renderObject.size.width.toStringAsFixed(1)} '
+      'y=${y.toStringAsFixed(1)}',
+    );
+
+    for (var i = 0; i <= count; i++) {
+      final t = i / count;
+      final local = Offset(left + (right - left) * t, y);
+      final global = renderObject.localToGlobal(local);
+      GestureBinding.instance.handlePointerEvent(
+        PointerHoverEvent(
+          pointer: _pointerId,
+          position: global,
+          delta: global - previousGlobal,
+          kind: PointerDeviceKind.mouse,
+        ),
+      );
+      previousGlobal = global;
+      if (stepMs > 0) {
+        await Future<void>.delayed(Duration(milliseconds: stepMs));
+      }
     }
     final exitGlobal = renderObject.localToGlobal(
       Offset(renderObject.size.width - 1, renderObject.size.height + 24),
@@ -562,6 +679,89 @@ class MainWindowTestHarness {
     await Future<void>.delayed(const Duration(milliseconds: 80));
   }
 
+  Offset _nativeScreenPoint({
+    required RenderBox renderObject,
+    required Offset local,
+    required Offset windowPosition,
+    required double scale,
+  }) {
+    final appGlobal = renderObject.localToGlobal(local);
+    return Offset(
+      ((windowPosition.dx + appGlobal.dx) * scale).roundToDouble(),
+      ((windowPosition.dy + appGlobal.dy) * scale).roundToDouble(),
+    );
+  }
+
+  Future<void> _nativeDragAt({
+    required RenderBox renderObject,
+    required Offset startLocal,
+    required Offset endLocal,
+    required Offset windowPosition,
+    required double scale,
+    required String label,
+    required int steps,
+    required Duration stepDelay,
+    required String button,
+  }) async {
+    final count = steps <= 0 ? 1 : steps;
+    final normalizedButton = button.toLowerCase();
+    final useSecondary =
+        normalizedButton == 'secondary' ||
+        normalizedButton == 'right' ||
+        normalizedButton == '2';
+    final startScreen = _nativeScreenPoint(
+      renderObject: renderObject,
+      local: startLocal,
+      windowPosition: windowPosition,
+      scale: scale,
+    );
+    final endScreen = _nativeScreenPoint(
+      renderObject: renderObject,
+      local: endLocal,
+      windowPosition: windowPosition,
+      scale: scale,
+    );
+    log.info(
+      'Test action: NATIVE_DRAG $label '
+      'button=${useSecondary ? "secondary" : "primary"} '
+      'steps=$count stepMs=${stepDelay.inMilliseconds} '
+      'local=(${startLocal.dx.toStringAsFixed(1)}, '
+      '${startLocal.dy.toStringAsFixed(1)})'
+      '->(${endLocal.dx.toStringAsFixed(1)}, '
+      '${endLocal.dy.toStringAsFixed(1)}) '
+      'screen=(${startScreen.dx.toStringAsFixed(0)}, '
+      '${startScreen.dy.toStringAsFixed(0)})'
+      '->(${endScreen.dx.toStringAsFixed(0)}, '
+      '${endScreen.dy.toStringAsFixed(0)}) '
+      'window=(${windowPosition.dx.toStringAsFixed(1)}, '
+      '${windowPosition.dy.toStringAsFixed(1)}) scale=${scale.toStringAsFixed(2)}',
+    );
+
+    nativeSetCursorPos(startScreen.dx.round(), startScreen.dy.round());
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    if (useSecondary) {
+      nativeMouseRightDown();
+    } else {
+      nativeMouseLeftDown();
+    }
+    await Future<void>.delayed(stepDelay);
+    for (var i = 1; i <= count; i++) {
+      final t = i / count;
+      final next = Offset(
+        startScreen.dx + (endScreen.dx - startScreen.dx) * t,
+        startScreen.dy + (endScreen.dy - startScreen.dy) * t,
+      );
+      nativeSetCursorPos(next.dx.round(), next.dy.round());
+      await Future<void>.delayed(stepDelay);
+    }
+    if (useSecondary) {
+      nativeMouseRightUp();
+    } else {
+      nativeMouseLeftUp();
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+  }
+
   Future<void> _moveNativeMouseAcrossPoints({
     required RenderBox renderObject,
     required List<Offset> points,
@@ -592,7 +792,11 @@ class MainWindowTestHarness {
     await Future<void>.delayed(const Duration(milliseconds: 80));
   }
 
-  void dragSplitHandle(double targetFraction, {int steps = 12}) {
+  Future<void> dragSplitHandle(
+    double targetFraction, {
+    int steps = 12,
+    int stepMs = 16,
+  }) async {
     final context = viewportKey.currentContext;
     if (context == null) {
       throw StateError('Viewport is not mounted');
@@ -612,13 +816,15 @@ class MainWindowTestHarness {
       Offset(renderObject.size.width * clampedTarget, y),
     );
     final count = steps <= 0 ? 1 : steps;
+    final stepDelay = Duration(milliseconds: stepMs);
     final pointer = _pointerId++;
     var previous = start;
 
     log.info(
       'Test action: DRAG_SPLIT_HANDLE '
       '${startFraction.toStringAsFixed(4)}->${clampedTarget.toStringAsFixed(4)} '
-      'steps=$count global=(${start.dx.toStringAsFixed(1)}, ${start.dy.toStringAsFixed(1)})'
+      'steps=$count stepMs=${stepDelay.inMilliseconds} '
+      'global=(${start.dx.toStringAsFixed(1)}, ${start.dy.toStringAsFixed(1)})'
       '->(${end.dx.toStringAsFixed(1)}, ${end.dy.toStringAsFixed(1)})',
     );
 
@@ -627,8 +833,10 @@ class MainWindowTestHarness {
         pointer: pointer,
         position: start,
         buttons: kPrimaryButton,
+        kind: PointerDeviceKind.mouse,
       ),
     );
+    await Future<void>.delayed(stepDelay);
     for (var i = 1; i <= count; i++) {
       final t = i / count;
       final next = Offset(
@@ -641,12 +849,53 @@ class MainWindowTestHarness {
           position: next,
           delta: next - previous,
           buttons: kPrimaryButton,
+          kind: PointerDeviceKind.mouse,
         ),
       );
       previous = next;
+      await Future<void>.delayed(stepDelay);
     }
     GestureBinding.instance.handlePointerEvent(
-      PointerUpEvent(pointer: pointer, position: end),
+      PointerUpEvent(
+        pointer: pointer,
+        position: end,
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    await Future<void>.delayed(stepDelay);
+  }
+
+  Future<void> dragSplitHandleNative(
+    double targetFraction, {
+    int steps = 12,
+    Duration stepDelay = const Duration(milliseconds: 16),
+  }) async {
+    final context = viewportKey.currentContext;
+    if (context == null) {
+      throw StateError('Viewport is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Viewport has no render box');
+    }
+
+    final startFraction = splitPosition().clamp(0.0, 1.0).toDouble();
+    final clampedTarget = targetFraction.clamp(0.0, 1.0).toDouble();
+    final y = renderObject.size.height / 2;
+    final start = Offset(renderObject.size.width * startFraction, y);
+    final end = Offset(renderObject.size.width * clampedTarget, y);
+    final devicePixelRatio = View.of(context).devicePixelRatio;
+    final windowPosition = await wm.windowManager.getPosition();
+    await _nativeDragAt(
+      renderObject: renderObject,
+      startLocal: start,
+      endLocal: end,
+      windowPosition: windowPosition,
+      scale: devicePixelRatio,
+      label: 'split-handle',
+      steps: steps,
+      stepDelay: stepDelay,
+      button: 'primary',
     );
   }
 
@@ -715,6 +964,92 @@ class MainWindowTestHarness {
       ),
     );
     await Future<void>.delayed(stepDelay);
+  }
+
+  Future<void> dragViewportNative(
+    Offset delta, {
+    int steps = 24,
+    Duration stepDelay = const Duration(milliseconds: 16),
+    String button = 'secondary',
+  }) async {
+    final context = viewportKey.currentContext;
+    if (context == null) {
+      throw StateError('Viewport is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Viewport has no render box');
+    }
+
+    final start = Offset(
+      renderObject.size.width / 2,
+      renderObject.size.height / 2,
+    );
+    final end = start + delta;
+    final devicePixelRatio = View.of(context).devicePixelRatio;
+    final windowPosition = await wm.windowManager.getPosition();
+    await _nativeDragAt(
+      renderObject: renderObject,
+      startLocal: start,
+      endLocal: end,
+      windowPosition: windowPosition,
+      scale: devicePixelRatio,
+      label: 'viewport',
+      steps: steps,
+      stepDelay: stepDelay,
+      button: button,
+    );
+  }
+
+  Future<void> wheelViewportNative({
+    required int delta,
+    int steps = 1,
+    Duration stepDelay = const Duration(milliseconds: 16),
+    double xFraction = 0.5,
+    double yFraction = 0.5,
+  }) async {
+    final context = viewportKey.currentContext;
+    if (context == null) {
+      throw StateError('Viewport is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Viewport has no render box');
+    }
+
+    final count = steps <= 0 ? 1 : steps;
+    final clampedX = xFraction.clamp(0.0, 1.0).toDouble();
+    final clampedY = yFraction.clamp(0.0, 1.0).toDouble();
+    final local = Offset(
+      renderObject.size.width * clampedX,
+      renderObject.size.height * clampedY,
+    );
+    final devicePixelRatio = View.of(context).devicePixelRatio;
+    final windowPosition = await wm.windowManager.getPosition();
+    final screen = _nativeScreenPoint(
+      renderObject: renderObject,
+      local: local,
+      windowPosition: windowPosition,
+      scale: devicePixelRatio,
+    );
+    log.info(
+      'Test action: WHEEL_VIEWPORT_NATIVE delta=$delta steps=$count '
+      'stepMs=${stepDelay.inMilliseconds} '
+      'local=(${local.dx.toStringAsFixed(1)}, '
+      '${local.dy.toStringAsFixed(1)}) '
+      'screen=(${screen.dx.toStringAsFixed(0)}, '
+      '${screen.dy.toStringAsFixed(0)}) '
+      'window=(${windowPosition.dx.toStringAsFixed(1)}, '
+      '${windowPosition.dy.toStringAsFixed(1)}) '
+      'scale=${devicePixelRatio.toStringAsFixed(2)}',
+    );
+    nativeSetCursorPos(screen.dx.round(), screen.dy.round());
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    for (var i = 0; i < count; i++) {
+      nativeMouseWheel(delta);
+      await Future<void>.delayed(stepDelay);
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 120));
   }
 
   Future<ViewportOverlayDragSampleMetric> dragViewportAndSampleOverlay(

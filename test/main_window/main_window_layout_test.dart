@@ -352,6 +352,53 @@ void main() {
   );
 
   test(
+    'native compositor split drag uses projection and defers full layout',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setNativeCompositorActive(true)
+        ..setPlaying(false)
+        ..setLayout(
+          const LayoutState(
+            mode: LayoutMode.splitScreen,
+            splitPos: 0.5,
+            order: [1, 2, -1, -1],
+          ),
+        );
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+        sourceProjectionEnabled: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 1600;
+      coordinator.viewportHeight = 900;
+
+      coordinator.onSplit(0.62);
+      await pumpEventQueue();
+
+      expect(stateStore.value.layout.splitPos, 0.62);
+      expect(controller.appliedLayouts, isEmpty);
+      expect(controller.transforms, isEmpty);
+      expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
+
+      coordinator.onPointerButton(false, false);
+      await coordinator.flushPendingLayout();
+
+      expect(controller.appliedLayouts, hasLength(1));
+      expect(controller.appliedLayouts.single.splitPos, 0.62);
+      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
+    },
+  );
+
+  test(
     'native compositor overlay refresh republishes source cache without layout dirty',
     () async {
       final stateStore = MainWindowStateStore()

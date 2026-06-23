@@ -1,0 +1,42 @@
+# Windows DComp pacing benchmark probe for forced scRGB.
+# Mirrors the SDR probe and requires retained source projection to skip
+# final swap-chain Present on projection-only interactions.
+@WINDOW, 1366, 768
+0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+1.8, ASSERT_TRACK_COUNT, 1
+2.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+4.0, ASSERT_TRACK_COUNT, 2
+4.1, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-scrgb
+4.11, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsDCompSwapChainFormat, R16G16B16A16_FLOAT
+4.12, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
+4.2, SET_LAYOUT_MODE, 1
+4.3, SET_SPLIT_POS, 0.35
+4.4, SET_ZOOM, 2.0
+4.5, DEBUG_NATIVE_TIMING, pre-play
+4.6, DEBUG_FLUTTER_TIMING
+4.7, RESET_NATIVE_PERF_COUNTERS
+4.8, BEGIN_NATIVE_INTERACTION_SAMPLE, dcomp-scrgb-playing-pan
+4.9, PLAY
+5.3, ASSERT_PLAYING
+5.4, DEBUG_NATIVE_TIMING, playing-warm
+5.5, DRAG_VIEWPORT, 320, -120, 120, 4
+6.3, SET_SPLIT_POS, 0.65
+6.5, HOVER_CONTROLS_BAR_BUTTONS_NATIVE, 32
+6.9, DRAG_VIEWPORT, -280, 140, 120, 4
+7.7, END_NATIVE_INTERACTION_SAMPLE, dcomp-scrgb-playing-pan
+7.8, DEBUG_NATIVE_TIMING, interaction-final
+7.9, DEBUG_FLUTTER_TIMING
+8.0, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsHotPathActive, true
+8.01, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-dcomp
+8.02, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsHotPathSourceCacheReuseCount, 1
+8.03, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathViewportRedrawDuringProjectionCount, 0, 0
+8.04, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
+8.05, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportBackpressureCount, 0, 20
+8.06, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsRetainedGraphActive, true
+8.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphCommitCount, 1
+8.08, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphSourceBakeCount, 1
+8.09, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphProjectionSkipPresentCount, 1
+8.095, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompPresentBlockP95Us, 0, 0
+8.1, PAUSE
+8.4, DEBUG_NATIVE_TIMING, paused
+8.5, QUIT, 0

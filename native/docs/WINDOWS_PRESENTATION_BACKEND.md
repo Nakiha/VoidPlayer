@@ -81,6 +81,16 @@ applies pan, zoom, side-by-side order, split position, background, and retained
 overlay projection without waiting for a viewport-sized redraw. The viewport
 FP16 ring remains the startup, allocation-failure, and transient-miss fallback.
 
+On same-adapter SDR and scRGB targets, `WindowsNativeCompositor` can switch the
+active DComp root to a retained visual graph after the first normal compositor
+present and transparent Flutter ACK. Source-cache and Flutter-export content
+updates are baked into retained `IDCompositionSurface` layers (`BGRA8` for SDR,
+`R16G16B16A16_FLOAT` for scRGB). Pure projection changes then update only the
+source visual transform/clip and commit the DComp tree, so pan/zoom/split/order
+interactions do not call final swap-chain `Present` and should report
+`windowsDCompPresentBlockP95Us == 0`. Cross-adapter output keeps using the
+full-composite path until there is separate local transport evidence.
+
 The source cache budget is 384 MiB. A three-slot bundle ring is preferred; if
 that exceeds the budget, one frozen snapshot is allowed. A single bundle that
 still exceeds the budget is rejected without failing playback. Signature
@@ -210,7 +220,7 @@ and unchanged BGRA compatibility output.
 | `windowsNativeCompositorPhase` | `inactive`, `preparing`, `active`, or `failed` |
 | `windowsNativeCompositorStateSerial/AckSerial` | Flutter alpha-hole handshake serials |
 | `windowsFlutterExportGeneration/windowsVideoRingGeneration` | Latest consumed input generations |
-| `windowsFlutterExportFramePumpAvailable` | Locked engine exposes the explicit compositor-owned export request/state ABI |
+| `windowsFlutterExportFramePumpAvailable` | Locked engine exposes the compositor-owned surface export request/state ABI |
 | `windowsFlutterExportPublishCount/windowsFlutterExportRequestCount` | Engine-owned export frame stream activity |
 | `windowsFlutterExportStaleTimeoutCount` | Native compositor failed closed because a requested Flutter generation never advanced |
 | `windowsDComp*` | Swap-chain format/color space/support, SDR tone-map state, and composite/present/drop/failure counters |
@@ -218,6 +228,7 @@ and unchanged BGRA compatibility output.
 | `windowsCrossAdapter*` | Transport mode/status, requested/active sync kind, shared-fence capability/open/signal/wait counters, event-query/shared-fence P95 waits, copy counters, consumed generations, fallback reason, and last error |
 | `windowsOverlay*` | Retained overlay layer active state, mode, generation, bytes, raster/upload/reuse/composite/miss/backpressure counts, p95 costs, and fallback reason |
 | `windowsHotPath*` | Source-projection hot-path summary: active/mode, display Hz, frame budget, present/composite/acquire/input p95, drop rate, source/overlay reuse, viewport redraws, failure reason, and gate result |
+| `windowsRetainedGraph*` | DComp retained source/Flutter graph state, fallback reason, commit counts, source/Flutter bake counts, and projection-only commits that skipped final swap-chain Present |
 | `nativeCompositorSource*` | Projection/cache activity, generation, bytes, rates, and overlay primitive counts |
 | `windowsSourceCache*` | Format, depth/frozen policy, publish/backpressure/consume/fallback counters |
 | `windowsD3DAdapter*` | Description, vendor/device IDs, and LUID |

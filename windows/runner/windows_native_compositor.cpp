@@ -2627,12 +2627,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     1000000 / display_hz,
                     kMinRetainedDeferredContentDelayUs,
                     kMaxRetainedDeferredContentDelayUs));
-            if (retained_deferred_content_deadline_
-                    .time_since_epoch()
-                    .count() == 0) {
-                retained_deferred_content_deadline_ =
-                    committed_at + defer_delay;
-            }
+            retained_deferred_content_deadline_ =
+                committed_at + defer_delay;
             ++retained_graph_deferred_content_count_;
         } else {
             retained_deferred_content_deadline_ = {};

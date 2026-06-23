@@ -10,14 +10,14 @@ truth.
 | Item | Value |
 | --- | --- |
 | Fork repo | `https://github.com/Nakiha/VoidPlayer-Flutter.git` |
-| Fork ref | `codex/windows-surface-export` |
-| Patch branch | `codex/windows-surface-export` |
+| Fork ref | `codex/windows-surface-export-pacing` |
+| Patch branch | `codex/windows-surface-export-pacing` |
 | macOS local engine release tag | `voidplayer-flutter-3.44.1-hdr.2` |
-| Windows local engine release tag | `voidplayer-flutter-cad896c21e49-windows.1` |
+| Windows local engine release tag | `voidplayer-flutter-8c154ed18d70-windows.1` |
 | Baseline branch | `voidplayer/flutter-3.44.1-baseline` |
 | Baseline tag | `3.44.1` |
-| Fork commit | `cad896c21e492160c4e789b1beb2d463e7bd8a50` |
-| Framework revision | `cad896c21e492160c4e789b1beb2d463e7bd8a50` |
+| Fork commit | `8c154ed18d70b49375b88b743f796253156b8ddf` |
+| Framework revision | `8c154ed18d70b49375b88b743f796253156b8ddf` |
 | Engine revision | `c416acfeb8126e097f758c664aaa3da929e27da0` |
 | Dart SDK | `3.12.1` |
 
@@ -32,7 +32,7 @@ The current fork exposes the macOS Flutter backing surface to the runner for
 the HDR compositor. The app uses this to composite native video under the
 Flutter UI in a native `CAMetalLayer`.
 
-Changed Flutter files through `cad896c21e49`:
+Changed Flutter files through `8c154ed18d70`:
 
 | File | Purpose |
 | --- | --- |
@@ -50,6 +50,7 @@ Changed Flutter files through `cad896c21e49`:
 | `engine/src/flutter/shell/platform/windows/flutter_windows.cc` | Exposes Windows surface-export mode, request, state, acquire, and release entrypoints. |
 | `engine/src/flutter/shell/platform/windows/flutter_windows_view.h` / `.cc` | Keeps compositor-owned export frames schedulable without switching to mirror or HWND present. |
 | `engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.h` / `.cc` | Implements the shared D3D11 export ring and request/publish/backpressure diagnostics. |
+| `engine/src/flutter/shell/platform/windows/compositor_opengl.cc` | Restores the bounded compositor-owned frame pump after successful surface exports so DComp-visible Flutter UI keeps publishing during native compositor interaction bursts. |
 | `engine/src/flutter/shell/platform/windows/compositor_opengl_unittests.cc` / `flutter_windows_view_unittests.cc` | Covers export generation/state and compositor-owned request scheduling. |
 
 The current lock also carries the Windows surface-export patch line. Windows

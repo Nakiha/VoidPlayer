@@ -1071,18 +1071,7 @@ void WindowsNativeCompositor::OnFlutterSurfacePublished(
             signal_work = true;
             compositor->retained_flutter_content_dirty_ = true;
         } else {
-            const bool flutter_content_already_dirty =
-                compositor->retained_flutter_content_dirty_;
-            const bool deferred_content_wake_pending =
-                compositor->retained_deferred_content_deadline_
-                    .time_since_epoch()
-                    .count() != 0;
             compositor->retained_flutter_content_dirty_ = true;
-            if (flutter_content_already_dirty ||
-                deferred_content_wake_pending) {
-                ++compositor->flutter_export_unsolicited_throttle_count_;
-                return;
-            }
             const int64_t display_hz = std::max<int64_t>(
                 1, compositor->diagnostics_.high_refresh_display_hz);
             const int64_t signal_interval_us = std::clamp<int64_t>(

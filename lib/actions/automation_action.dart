@@ -164,6 +164,11 @@ class ClickControlsPlayButton extends AutomationAction {
   const ClickControlsPlayButton() : super('CLICK_CONTROLS_PLAY_BUTTON');
 }
 
+class ClickToolbarMediaInfoNative extends AutomationAction {
+  const ClickToolbarMediaInfoNative()
+    : super('CLICK_TOOLBAR_MEDIA_INFO_NATIVE');
+}
+
 class DragViewport extends AutomationAction {
   final double dx;
   final double dy;

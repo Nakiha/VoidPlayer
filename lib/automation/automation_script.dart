@@ -610,6 +610,8 @@ ScriptInstruction? _parseInstruction(
       );
     case 'CLICK_CONTROLS_PLAY_BUTTON':
       return ScriptAutomationAction(time, const ClickControlsPlayButton());
+    case 'CLICK_TOOLBAR_MEDIA_INFO_NATIVE':
+      return ScriptAutomationAction(time, const ClickToolbarMediaInfoNative());
     case 'HOVER_CONTROLS_BAR_BUTTONS':
       return ScriptAutomationAction(
         time,

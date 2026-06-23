@@ -554,6 +554,9 @@ class TestRunner {
       case ClickControlsPlayButton():
         log.info('TestRunner: CLICK_CONTROLS_PLAY_BUTTON');
         testHarness.clickControlsPlayButton();
+      case ClickToolbarMediaInfoNative():
+        log.info('TestRunner: CLICK_TOOLBAR_MEDIA_INFO_NATIVE');
+        await testHarness.clickToolbarMediaInfoNative();
       case DragViewport(:final dx, :final dy, :final steps, :final stepMs):
         log.info(
           'TestRunner: DRAG_VIEWPORT dx=$dx dy=$dy steps=$steps stepMs=$stepMs',

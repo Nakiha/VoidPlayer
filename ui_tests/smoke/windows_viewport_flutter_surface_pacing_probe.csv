@@ -1,0 +1,31 @@
+# Windows retained Flutter-surface pacing probe.
+# The failure this guards is not Flutter FrameTiming; it is the Windows
+# retained DComp graph repeatedly committing source projection while deferring
+# fresh Flutter surface content, making annotations appear lower-FPS than the
+# native texture during viewport interactions.
+@WINDOW, 1880, 1400
+0.0, GENERATE_TEST_VIDEO, build/generated/windows_viewport_flutter_surface_pacing.mp4, 240, 30, 1280, 720
+0.3, ADD_MEDIA, build/generated/windows_viewport_flutter_surface_pacing.mp4
+1.8, ASSERT_TRACK_COUNT, 1
+1.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
+1.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
+2.0, CLEAR_MARKS
+2.1, ADD_QUICK_MARK, 0, 0.24, 0.43, 0.35, 0.035, overlay, 2
+2.3, ASSERT_MARK_COUNT, 1
+2.4, SET_LAYOUT_MODE, 1
+2.8, RESET_NATIVE_PERF_COUNTERS
+2.9, DEBUG_FLUTTER_TIMING
+3.0, WHEEL_VIEWPORT_NATIVE, 36, 160, 2, 0.55, 0.48
+3.8, DRAG_VIEWPORT_NATIVE, 760, 260, 220, 3, secondary
+4.7, DRAG_VIEWPORT_NATIVE, -620, -220, 220, 3, secondary
+5.6, DRAG_SPLIT_HANDLE_NATIVE, 0.08, 160, 3
+6.3, DRAG_SPLIT_HANDLE_NATIVE, 0.86, 160, 3
+7.0, DRAG_SPLIT_HANDLE_NATIVE, 0.30, 160, 3
+7.7, DRAG_SPLIT_HANDLE_NATIVE, 0.72, 160, 3
+8.5, DEBUG_NATIVE_TIMING, viewport-flutter-surface
+8.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphProjectionCommitCount, 220
+8.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphFlutterBakeCount, 1
+8.8, ASSERT_FLUTTER_TIMING, 120, 24, 0, 12
+8.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
+9.0, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportBackpressureCount, 0, 20
+9.2, QUIT, 0

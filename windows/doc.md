@@ -33,6 +33,10 @@
   final compositor/output device，不迁移 renderer/decoder producer device
 - 通过既有 source-projection MethodChannel 校验 projection/signature，并让
   DComp 对最多四轨 source-resolution FP16 bundle 实时执行 pan/zoom/split
+- 在 same-adapter SDR/scRGB 下维护 DComp retained graph：source/Flutter
+  内容更新时烘焙到 retained surface，pan/zoom/split/order 只更新 visual
+  transform/clip 并 commit DComp tree，避免投影交互进入 final swap-chain
+  Present/flip queue
 - 在 source-projection overlay active 时使用 DComp retained video-space
   overlay primitive buffer；pan/zoom/split/order 只更新 projection constants，
   不在每次 composite tick 重建 CPU vertices
@@ -94,9 +98,10 @@ windows/
   Flutter local engine；
   普通 Flutter SDK 缺少 surface-export ABI，启动时必须 fail closed。
 - active native compositor 必须通过 locked engine 的 compositor-owned
-  surface export frame pump 接收 Flutter UI 更新；runner 不得在 active
+  surface export stream 接收 Flutter UI 更新；runner 不得在 active
   状态切回 `mirror`、恢复普通 HWND present，或用 Flutter Texture 视频作为成功
-  fallback。缺少 frame-pump ABI 或 export generation 超时必须显式 fail closed。
+  fallback。缺少 surface-export ABI 或 requested export generation 超时必须显式
+  fail closed。
 - 禁止 color-key、`WS_EX_LAYERED`、窗口截图、桌面捕获和 child HWND sandwich。
 - 本地 engine 依次使用 `scripts/ci/build_flutter_windows_engine.ps1`、
   `package_flutter_windows_engine.ps1` 和

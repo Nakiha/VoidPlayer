@@ -38,6 +38,7 @@ void main() {
     ValueChanged<Offset>? onQuickMarkUpdate,
     VoidCallback? onQuickMarkEnd,
     VoidCallback? onQuickMarkCancel,
+    VoidCallback? onQuickMarkInteraction,
     List<DisplayTrackGeometry> trackGeometry = const [],
     List<QuickMark> quickMarks = const [],
     int? selectedQuickMarkId,
@@ -68,6 +69,7 @@ void main() {
               onPointerButton: onPointerButton ?? (_, _) {},
               onQuickMarkStart: onQuickMarkStart,
               onQuickMarkUpdate: onQuickMarkUpdate,
+              onQuickMarkInteraction: onQuickMarkInteraction,
               onQuickMarkEnd: onQuickMarkEnd,
               onQuickMarkCancel: onQuickMarkCancel,
               trackGeometry: trackGeometry,
@@ -827,6 +829,7 @@ void main() {
     final pans = <Offset>[];
     final zooms = <({double factor, Offset position})>[];
     final changes = <QuickMark>[];
+    var interactions = 0;
     const mark = QuickMark(
       id: 11,
       anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
@@ -842,6 +845,7 @@ void main() {
         quickMarks: const [mark],
         selectedQuickMarkId: 11,
         onQuickMarkChanged: changes.add,
+        onQuickMarkInteraction: () => interactions += 1,
       ),
     );
 
@@ -852,6 +856,7 @@ void main() {
     await gesture.up();
 
     expect(changes, isNotEmpty);
+    expect(interactions, greaterThan(0));
     final rect = changes.last.sourceRect;
     expect(rect.left, moreOrLessEquals(0.25));
     expect(rect.top, moreOrLessEquals(0.25));
@@ -865,6 +870,7 @@ void main() {
     final pans = <Offset>[];
     final zooms = <({double factor, Offset position})>[];
     final changes = <QuickMark>[];
+    var interactions = 0;
     const mark = QuickMark(
       id: 11,
       anchor: QuickMarkAnchor(fileId: 7, ptsUs: 0, dtsUs: 0),
@@ -882,6 +888,7 @@ void main() {
         quickMarks: const [mark],
         selectedQuickMarkId: 11,
         onQuickMarkChanged: changes.add,
+        onQuickMarkInteraction: () => interactions += 1,
       ),
     );
 
@@ -892,6 +899,7 @@ void main() {
     await gesture.up();
 
     expect(changes, isNotEmpty);
+    expect(interactions, greaterThan(0));
     final moved = changes.last;
     expect(moved.sourceRect.left, moreOrLessEquals(0.35));
     expect(moved.sourceRect.top, moreOrLessEquals(0.35));

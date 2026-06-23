@@ -23,6 +23,8 @@ TEST_CASE("Windows high refresh metrics pass within high refresh budget",
     for (int i = 0; i < 20; ++i) {
         metrics.record_present_interval_us(6800);
         metrics.record_composite_us(1200);
+        metrics.record_draw_us(350);
+        metrics.record_present_block_us(850);
         metrics.record_interaction_input_to_present_us(12000);
         metrics.record_overlay_composite_us(700);
         metrics.record_source_projection_reuse();
@@ -34,6 +36,8 @@ TEST_CASE("Windows high refresh metrics pass within high refresh budget",
     REQUIRE(snapshot.gate_last_result == "pass");
     REQUIRE(snapshot.present_interval_p95_us == 6800);
     REQUIRE(snapshot.composite_p95_us == 1200);
+    REQUIRE(snapshot.draw_p95_us == 350);
+    REQUIRE(snapshot.present_block_p95_us == 850);
     REQUIRE(snapshot.interaction_input_to_present_p95_us == 12000);
     REQUIRE(snapshot.source_projection_reuse_count == 20);
     REQUIRE(snapshot.overlay_layer_reuse_count == 20);

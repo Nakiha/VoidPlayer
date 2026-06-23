@@ -1,0 +1,17 @@
+# Windows Flutter timeline hover pacing probe.
+# Covers pointer-hover tooltip + marker overlay updates while native DComp is active.
+@WINDOW, 1280, 720
+0.0, GENERATE_TEST_VIDEO, build/generated/windows_timeline_hover_pacing.mp4, 180, 30, 1280, 720
+0.3, ADD_MEDIA, build/generated/windows_timeline_hover_pacing.mp4
+1.8, ASSERT_TRACK_COUNT, 1
+1.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
+1.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
+2.0, DEBUG_FLUTTER_TIMING
+2.1, RESET_NATIVE_PERF_COUNTERS
+2.2, HOVER_TIMELINE, 80, 8
+3.05, ASSERT_FLUTTER_TIMING, 16, 24, 0, 4
+3.1, DEBUG_NATIVE_TIMING, timeline-hover
+3.2, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportPresentCount, 16
+3.3, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
+3.4, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportBackpressureCount, 0, 20
+3.6, QUIT, 0

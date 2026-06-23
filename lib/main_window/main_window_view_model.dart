@@ -270,6 +270,7 @@ class MainWindowViewportActions {
   onNativeCompositorViewportRect;
   final ValueChanged<Offset> onQuickMarkStart;
   final ValueChanged<Offset> onQuickMarkUpdate;
+  final VoidCallback onQuickMarkInteraction;
   final VoidCallback onQuickMarkEnd;
   final VoidCallback onQuickMarkCancel;
   final ValueChanged<int?> onQuickMarkSelect;
@@ -286,6 +287,7 @@ class MainWindowViewportActions {
     required this.onNativeCompositorViewportRect,
     required this.onQuickMarkStart,
     required this.onQuickMarkUpdate,
+    required this.onQuickMarkInteraction,
     required this.onQuickMarkEnd,
     required this.onQuickMarkCancel,
     required this.onQuickMarkSelect,

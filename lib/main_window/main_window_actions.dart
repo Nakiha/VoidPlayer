@@ -133,7 +133,8 @@ class MainWindowActionBinder {
   })
   setLoopRange;
   final void Function(String handle, int targetUs, {int steps}) dragLoopHandle;
-  final void Function(double targetFraction, {int steps}) dragSplitHandle;
+  final FutureOr<void> Function(double targetFraction, {int steps, int stepMs})
+  dragSplitHandle;
 
   final void Function() toggleLayoutMode;
   final void Function(int mode) setLayoutMode;
@@ -274,7 +275,11 @@ class MainWindowActionBinder {
     });
     _bind(const DragSplitHandle(0.5), (action) {
       final a = action as DragSplitHandle;
-      dragSplitHandle(a.targetFraction, steps: a.steps);
+      return dragSplitHandle(
+        a.targetFraction,
+        steps: a.steps,
+        stepMs: a.stepMs,
+      );
     });
 
     _bind(const ToggleLayoutMode(), (_) {

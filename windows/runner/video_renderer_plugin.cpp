@@ -560,6 +560,12 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
             Resize(call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
+        "prewarmNativePresentationTargetSize",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            PrewarmNativePresentationTargetSize(
+                call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
         "setNativeCompositorViewportRect",
         [this](const MethodCall& call, MethodResultPtr result) {
             SetNativeCompositorViewportRect(
@@ -569,6 +575,12 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
         "requestNativeCompositorFlutterFrame",
         [this](const MethodCall& call, MethodResultPtr result) {
             RequestNativeCompositorFlutterFrame(
+                call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
+        "boostNativeCompositorFlutterInteraction",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            BoostNativeCompositorFlutterInteraction(
                 call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
@@ -1432,13 +1444,13 @@ void VideoRendererPlugin::Resize(
         result->Error("BAD_ARGS", validation.message);
         return;
     }
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCompositorDebug] method resize viewport={}x{} "
         "native_compositor={} player={}",
         w, h, native_compositor_ ? "yes" : "no",
         player_ ? "yes" : "no");
     player_->resize(w, h);
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCompositorDebug] method resize complete viewport={}x{}",
         w, h);
     result->Success(flutter::EncodableValue(std::monostate{}));
@@ -1448,6 +1460,54 @@ void VideoRendererPlugin::Resize(
         ReportMethodException(result.get(), "resize", e);
     } catch (...) {
         ReportUnknownMethodException(result.get(), "resize");
+    }
+}
+
+void VideoRendererPlugin::PrewarmNativePresentationTargetSize(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        if (!arguments || !player_) {
+            result->Success();
+            return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (!args) {
+            result->Error("INVALID_ARGS", "Arguments must be a map");
+            return;
+        }
+        int w = 0;
+        int h = 0;
+        auto it = args->find(flutter::EncodableValue("width"));
+        if (it != args->end() && !read_int_arg(it->second, w)) {
+            result->Error("BAD_ARGS", "width must be an integer");
+            return;
+        }
+        it = args->find(flutter::EncodableValue("height"));
+        if (it != args->end() && !read_int_arg(it->second, h)) {
+            result->Error("BAD_ARGS", "height must be an integer");
+            return;
+        }
+        if (auto validation = vr::validate_renderer_dimensions(w, h, "prewarm viewport size");
+            !validation.ok) {
+            result->Error("BAD_ARGS", validation.message);
+            return;
+        }
+        spdlog::debug(
+            "[WindowsCompositorDebug] prewarm native target hint {}x{} "
+            "native_compositor={} player={}",
+            w, h, native_compositor_ ? "yes" : "no",
+            player_ ? "yes" : "no");
+        result->Success(flutter::EncodableValue(std::monostate{}));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(
+            result.get(), "prewarmNativePresentationTargetSize", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "prewarmNativePresentationTargetSize", e);
+    } catch (...) {
+        ReportUnknownMethodException(
+            result.get(), "prewarmNativePresentationTargetSize");
     }
 }
 
@@ -1482,7 +1542,7 @@ void VideoRendererPlugin::SetNativeCompositorViewportRect(
             result->Error("BAD_ARGS", "invalid viewport rect");
             return;
         }
-        spdlog::info(
+        spdlog::debug(
             "[WindowsCompositorDebug] method viewportRect "
             "physical=({},{} {}x{}) surface={}x{}",
             left, top, width, height, surface_width, surface_height);
@@ -1850,6 +1910,30 @@ void VideoRendererPlugin::RequestNativeCompositorFlutterFrame(
     } catch (const std::exception& e) {
         ReportMethodException(
             result.get(), "requestNativeCompositorFlutterFrame", e);
+    }
+}
+
+void VideoRendererPlugin::BoostNativeCompositorFlutterInteraction(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        std::string reason = "interaction";
+        if (arguments) {
+            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+            if (args) {
+                auto it = args->find(flutter::EncodableValue("reason"));
+                if (it != args->end()) {
+                    (void)read_string_arg(it->second, reason);
+                }
+            }
+        }
+        if (native_compositor_) {
+            native_compositor_->BoostFlutterInteraction(reason);
+        }
+        result->Success();
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "boostNativeCompositorFlutterInteraction", e);
     }
 }
 
@@ -2736,6 +2820,14 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(static_cast<int64_t>(
                 compositor.flutter_export_publish_fail_count));
         diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportFlushCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_flush_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportFinishCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_finish_count));
+        diagnostics[flutter::EncodableValue(
             "windowsFlutterExportBackpressureCount")] =
             enc_i64(static_cast<int64_t>(
                 compositor.flutter_export_backpressure_count));
@@ -2747,6 +2839,14 @@ void VideoRendererPlugin::GetDiagnostics(
             "windowsFlutterExportStaleTimeoutCount")] =
             enc_i64(static_cast<int64_t>(
                 compositor.flutter_export_stale_timeout_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportUnrequestedSignalCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_unsolicited_signal_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportUnrequestedThrottleCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_unsolicited_throttle_count));
         diagnostics[flutter::EncodableValue(
             "windowsFlutterExportLatestAvailable")] =
             flutter::EncodableValue(
@@ -2773,6 +2873,10 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(compositor.dcomp_present_interval_p95_us);
         diagnostics[flutter::EncodableValue("windowsDCompCompositeP95Us")] =
             enc_i64(compositor.dcomp_composite_p95_us);
+        diagnostics[flutter::EncodableValue("windowsDCompDrawP95Us")] =
+            enc_i64(compositor.dcomp_draw_p95_us);
+        diagnostics[flutter::EncodableValue("windowsDCompPresentBlockP95Us")] =
+            enc_i64(compositor.dcomp_present_block_p95_us);
         diagnostics[flutter::EncodableValue("windowsDCompAcquireWaitP95Us")] =
             enc_i64(compositor.dcomp_acquire_wait_p95_us);
         diagnostics[flutter::EncodableValue(
@@ -2856,6 +2960,10 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(compositor.hot_path_present_interval_p95_us);
         diagnostics[flutter::EncodableValue("windowsHotPathCompositeP95Us")] =
             enc_i64(compositor.hot_path_composite_p95_us);
+        diagnostics[flutter::EncodableValue("windowsHotPathDrawP95Us")] =
+            enc_i64(compositor.hot_path_draw_p95_us);
+        diagnostics[flutter::EncodableValue("windowsHotPathPresentBlockP95Us")] =
+            enc_i64(compositor.hot_path_present_block_p95_us);
         diagnostics[flutter::EncodableValue(
             "windowsHotPathAcquireWaitP95Us")] =
             enc_i64(compositor.hot_path_acquire_wait_p95_us);
@@ -2893,6 +3001,54 @@ void VideoRendererPlugin::GetDiagnostics(
             flutter::EncodableValue(compositor.hot_path_last_failure_reason);
         diagnostics[flutter::EncodableValue("windowsHotPathGateResult")] =
             flutter::EncodableValue(compositor.hot_path_gate_result);
+        diagnostics[flutter::EncodableValue("windowsRetainedGraphActive")] =
+            flutter::EncodableValue(compositor.retained_graph_active);
+        diagnostics[flutter::EncodableValue("windowsRetainedGraphMode")] =
+            flutter::EncodableValue(compositor.retained_graph_mode);
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphFallbackReason")] =
+            flutter::EncodableValue(
+                compositor.retained_graph_fallback_reason);
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphCommitCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_commit_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphProjectionCommitCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_projection_commit_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphSourceBakeCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_source_bake_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphFlutterBakeCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_flutter_bake_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphProjectionSkipPresentCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_projection_skip_present_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphDeferredContentCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_deferred_content_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphCommitDeferCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_commit_defer_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphFlutterBakeP95Us")] =
+            enc_i64(compositor.retained_graph_flutter_bake_p95_us);
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphSourceBakeP95Us")] =
+            enc_i64(compositor.retained_graph_source_bake_p95_us);
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphApplyP95Us")] =
+            enc_i64(compositor.retained_graph_apply_p95_us);
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphCommitP95Us")] =
+            enc_i64(compositor.retained_graph_commit_p95_us);
         diagnostics[flutter::EncodableValue("windowsDCompResizeCount")] =
             enc_i64(static_cast<int64_t>(compositor.resize_count));
         diagnostics[flutter::EncodableValue("windowsDCompDiagnosticCaptureCount")] =

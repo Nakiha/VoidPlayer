@@ -4,6 +4,7 @@
 #include <d3dcompiler.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdio>
@@ -60,10 +61,21 @@ bool approximately_equal(float actual, float expected) {
     return std::abs(actual - expected) <= 0.03f;
 }
 
+float srgb_to_linear(float value) {
+    value = std::clamp(value, 0.0f, 1.0f);
+    return value <= 0.04045f
+        ? value / 12.92f
+        : std::pow((value + 0.055f) / 1.055f, 2.4f);
+}
+
 } // namespace
 
 int main() {
     constexpr UINT width = 4;
+    constexpr float kSdrWhiteScale = 203.0f / 80.0f;
+    constexpr float kBackgroundR = 24.0f / 255.0f;
+    constexpr float kBackgroundG = 32.0f / 255.0f;
+    constexpr float kBackgroundB = 40.0f / 255.0f;
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> context;
     D3D_FEATURE_LEVEL level = {};
@@ -128,13 +140,21 @@ int main() {
     const char* shader = vr::windows_dcomp_composite_hlsl();
     ComPtr<ID3DBlob> vs_blob;
     ComPtr<ID3DBlob> ps_blob;
+    ComPtr<ID3DBlob> overlay_vs_blob;
+    ComPtr<ID3DBlob> overlay_ps_blob;
     ComPtr<ID3DBlob> errors;
     if (FAILED(D3DCompile(
             shader, std::strlen(shader), nullptr, nullptr, nullptr,
             "VSMain", "vs_5_0", 0, 0, &vs_blob, &errors)) ||
         FAILED(D3DCompile(
             shader, std::strlen(shader), nullptr, nullptr, nullptr,
-            "PSVideo", "ps_5_0", 0, 0, &ps_blob, &errors))) {
+            "PSVideo", "ps_5_0", 0, 0, &ps_blob, &errors)) ||
+        FAILED(D3DCompile(
+            shader, std::strlen(shader), nullptr, nullptr, nullptr,
+            "VSOverlay", "vs_5_0", 0, 0, &overlay_vs_blob, &errors)) ||
+        FAILED(D3DCompile(
+            shader, std::strlen(shader), nullptr, nullptr, nullptr,
+            "PSOverlay", "ps_5_0", 0, 0, &overlay_ps_blob, &errors))) {
         return 4;
     }
     ComPtr<ID3D11VertexShader> vs;
@@ -226,8 +246,70 @@ int main() {
     }
     context->Unmap(staging.Get(), 0);
     if (!ok) return 10;
+
+    values.sdr_white_scale = kSdrWhiteScale;
+    values.source_mode = 1.0f;
+    values.source_split_pos = 0.5f;
+    values.source_track_count = 4.0f;
+    values.source_order[0] = 0.0f;
+    values.source_order[1] = 1.0f;
+    values.source_order[2] = 2.0f;
+    values.source_order[3] = 3.0f;
+    values.background_color[0] = kBackgroundR;
+    values.background_color[1] = kBackgroundG;
+    values.background_color[2] = kBackgroundB;
+    values.background_color[3] = 1.0f;
+    for (size_t i = 0; i < 4; ++i) {
+        values.source_present[i] = 1.0f;
+    }
+    context->UpdateSubresource(
+        constants.Get(), 0, nullptr, &values, 0, 0);
+    context->Draw(4, 0);
+    context->CopyResource(staging.Get(), output.Get());
+    if (FAILED(context->Map(
+            staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return 11;
+    pixels = static_cast<const uint16_t*>(mapped.pData);
+    const std::array<int, 4> split_expected_slots = {0, 0, 1, 1};
+    for (UINT x = 0; x < width; ++x) {
+        const auto& expected = colors[split_expected_slots[x]];
+        for (size_t channel = 0; channel < 3; ++channel) {
+            ok = approximately_equal(
+                vr::half_to_float(pixels[x * 4u + channel]),
+                expected[channel]) && ok;
+        }
+    }
+    context->Unmap(staging.Get(), 0);
+    if (!ok) return 12;
+
+    values.source_present[0] = 0.0f;
+    values.source_present[1] = 0.0f;
+    values.source_present[2] = 1.0f;
+    values.source_present[3] = 1.0f;
+    context->UpdateSubresource(
+        constants.Get(), 0, nullptr, &values, 0, 0);
+    context->Draw(4, 0);
+    context->CopyResource(staging.Get(), output.Get());
+    if (FAILED(context->Map(
+            staging.Get(), 0, D3D11_MAP_READ, 0, &mapped))) return 13;
+    pixels = static_cast<const uint16_t*>(mapped.pData);
+    const std::array<float, 3> expected_background = {
+        srgb_to_linear(kBackgroundR) * kSdrWhiteScale,
+        srgb_to_linear(kBackgroundG) * kSdrWhiteScale,
+        srgb_to_linear(kBackgroundB) * kSdrWhiteScale,
+    };
+    for (UINT x = 0; x < width; ++x) {
+        for (size_t channel = 0; channel < 3; ++channel) {
+            ok = approximately_equal(
+                vr::half_to_float(pixels[x * 4u + channel]),
+                expected_background[channel]) && ok;
+        }
+    }
+    context->Unmap(staging.Get(), 0);
+    if (!ok) return 14;
+
     std::printf(
         "windows_d3d11_source_projection_smoke passed; "
-        "four-track order and >1.0 scRGB retained\n");
+        "four-track order, split comparison pair, and SDR background "
+        "scRGB mapping retained\n");
     return 0;
 }

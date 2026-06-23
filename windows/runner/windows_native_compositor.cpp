@@ -174,6 +174,8 @@ void WindowsNativeCompositor::ResetRetainedGraph(const std::string& reason) {
     retained_background_visual_.Reset();
     retained_root_visual_.Reset();
     retained_graph_active_ = false;
+    retained_graph_width_ = 0;
+    retained_graph_height_ = 0;
     retained_projection_dirty_ = false;
     retained_source_content_dirty_ = false;
     retained_flutter_content_dirty_ = false;
@@ -1891,6 +1893,16 @@ bool WindowsNativeCompositor::ApplyRetainedProjection(
     const SourceProjection& projection) {
     if (!EnsureRetainedGraph(width, height, target)) {
         return false;
+    }
+    if (retained_graph_width_ != width || retained_graph_height_ != height) {
+        const bool had_retained_size =
+            retained_graph_width_ != 0 && retained_graph_height_ != 0;
+        retained_graph_width_ = width;
+        retained_graph_height_ = height;
+        if (had_retained_size) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            ++diagnostics_.resize_count;
+        }
     }
     std::array<bool, 4> source_present{};
     for (size_t i = 0; i < retained_sources_.size(); ++i) {

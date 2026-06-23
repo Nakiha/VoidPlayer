@@ -107,6 +107,37 @@ TEST_CASE("Windows source projection applies split pan zoom and background",
     REQUIRE_FALSE(absent.present);
 }
 
+TEST_CASE("Windows source projection split ignores tracks after comparison pair",
+          "[windows_dcomp][windows_source_projection]") {
+    vr::WindowsSourceProjection projection;
+    projection.enabled = true;
+    projection.mode = 1;
+    projection.split_pos = 0.35f;
+    projection.active_track_count = 4;
+    projection.source_order = {0, 1, 2, 3};
+    projection.inv_display_size_x = {1.0f, 1.0f, 1.0f, 1.0f};
+    projection.inv_display_size_y = {1.0f, 1.0f, 1.0f, 1.0f};
+
+    const std::array<bool, 4> present = {true, true, true, true};
+    const auto left =
+        vr::project_windows_source_sample(0.10f, 0.25f, projection, present);
+    const auto right =
+        vr::project_windows_source_sample(0.90f, 0.25f, projection, present);
+    REQUIRE(left.present);
+    REQUIRE(left.source_slot == 0);
+    REQUIRE(right.present);
+    REQUIRE(right.source_slot == 1);
+
+    const std::array<bool, 4> only_extra_present = {
+        false, false, true, true};
+    const auto absent_left = vr::project_windows_source_sample(
+        0.10f, 0.25f, projection, only_extra_present);
+    const auto absent_right = vr::project_windows_source_sample(
+        0.90f, 0.25f, projection, only_extra_present);
+    REQUIRE_FALSE(absent_left.present);
+    REQUIRE_FALSE(absent_right.present);
+}
+
 TEST_CASE("Windows retained source visuals invert pan zoom projection",
           "[windows_dcomp][windows_source_projection]") {
     vr::WindowsSourceProjection projection;
@@ -157,12 +188,41 @@ TEST_CASE("Windows retained source visuals keep split clips per slot",
 
     REQUIRE(rects[1].present);
     REQUIRE(rects[1].left == Catch::Approx(0.0f));
-    REQUIRE(rects[1].right == Catch::Approx(400.0f));
+    REQUIRE(rects[1].right == Catch::Approx(1000.0f));
     REQUIRE(rects[1].clip_left == Catch::Approx(0.0f));
     REQUIRE(rects[1].clip_right == Catch::Approx(400.0f));
     REQUIRE(rects[3].present);
-    REQUIRE(rects[3].left == Catch::Approx(400.0f));
-    REQUIRE(rects[3].right == Catch::Approx(700.0f));
+    REQUIRE(rects[3].left == Catch::Approx(0.0f));
+    REQUIRE(rects[3].right == Catch::Approx(500.0f));
     REQUIRE(rects[3].clip_left == Catch::Approx(400.0f));
     REQUIRE(rects[3].clip_right == Catch::Approx(1000.0f));
+}
+
+TEST_CASE("Windows retained source visuals split keeps only comparison pair",
+          "[windows_dcomp][windows_source_projection]") {
+    vr::WindowsSourceProjection projection;
+    projection.enabled = true;
+    projection.mode = 1;
+    projection.split_pos = 0.35f;
+    projection.active_track_count = 4;
+    projection.source_order = {0, 1, 2, 3};
+    projection.inv_display_size_x = {1.0f, 1.0f, 1.0f, 1.0f};
+    projection.inv_display_size_y = {1.0f, 1.0f, 1.0f, 1.0f};
+    const std::array<bool, 4> present = {true, true, true, true};
+
+    const auto rects = vr::project_windows_retained_source_visuals(
+        100.0f, 50.0f, 1100.0f, 650.0f, projection, present);
+
+    REQUIRE(rects[0].present);
+    REQUIRE(rects[0].left == Catch::Approx(100.0f));
+    REQUIRE(rects[0].right == Catch::Approx(1100.0f));
+    REQUIRE(rects[0].clip_left == Catch::Approx(100.0f));
+    REQUIRE(rects[0].clip_right == Catch::Approx(450.0f));
+    REQUIRE(rects[1].present);
+    REQUIRE(rects[1].left == Catch::Approx(100.0f));
+    REQUIRE(rects[1].right == Catch::Approx(1100.0f));
+    REQUIRE(rects[1].clip_left == Catch::Approx(450.0f));
+    REQUIRE(rects[1].clip_right == Catch::Approx(1100.0f));
+    REQUIRE_FALSE(rects[2].present);
+    REQUIRE_FALSE(rects[3].present);
 }

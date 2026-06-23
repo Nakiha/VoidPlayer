@@ -537,6 +537,8 @@ private:
     bool retained_flutter_content_dirty_ = false;
     bool retained_graph_active_ = false;
     OutputTarget retained_graph_target_ = OutputTarget::SDR;
+    uint32_t retained_graph_width_ = 0;
+    uint32_t retained_graph_height_ = 0;
     uint64_t retained_graph_commit_count_ = 0;
     uint64_t retained_graph_projection_commit_count_ = 0;
     uint64_t retained_graph_source_bake_count_ = 0;

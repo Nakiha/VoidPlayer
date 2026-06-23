@@ -118,6 +118,22 @@ int64_t retained_graph_p95(std::vector<int64_t> samples) {
     return samples[std::min(index, samples.size() - 1)];
 }
 
+int64_t retained_graph_commit_interval_us(int64_t display_hz,
+                                          bool projection_only) {
+    display_hz = std::max<int64_t>(1, display_hz);
+    const int64_t full_frame_us = std::clamp<int64_t>(
+        1000000 / display_hz,
+        kMinRetainedGraphCommitIntervalUs,
+        kMaxRetainedGraphCommitIntervalUs);
+    if (!projection_only) {
+        return full_frame_us;
+    }
+    return std::clamp<int64_t>(
+        full_frame_us / 2,
+        kMinRetainedGraphCommitIntervalUs,
+        kMaxRetainedGraphCommitIntervalUs);
+}
+
 uint64_t steady_micros() {
     return static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -1956,18 +1972,16 @@ bool WindowsNativeCompositor::ApplyRetainedProjection(
 }
 
 bool WindowsNativeCompositor::ShouldDeferRetainedGraphCommitLocked(
-    std::chrono::steady_clock::time_point now) {
+    std::chrono::steady_clock::time_point now,
+    bool projection_only) {
     if (last_retained_graph_commit_time_.time_since_epoch().count() == 0) {
         retained_graph_commit_deadline_ = {};
         return false;
     }
-    const int64_t display_hz =
-        std::max<int64_t>(1, diagnostics_.high_refresh_display_hz);
     const auto min_interval = std::chrono::microseconds(
-        std::clamp<int64_t>(
-            1000000 / display_hz,
-            kMinRetainedGraphCommitIntervalUs,
-            kMaxRetainedGraphCommitIntervalUs));
+        retained_graph_commit_interval_us(
+            diagnostics_.high_refresh_display_hz,
+            projection_only));
     const auto deadline = last_retained_graph_commit_time_ + min_interval;
     if (now >= deadline) {
         retained_graph_commit_deadline_ = {};
@@ -2571,7 +2585,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
             CanUseRetainedGraph(source_projection, current_swap_chain_.target);
         if (retained_projection_only) {
             retained_commit_deferred =
-                ShouldDeferRetainedGraphCommitLocked(now);
+                ShouldDeferRetainedGraphCommitLocked(now, true);
         }
     }
     if (retained_commit_deferred) {
@@ -3231,7 +3245,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
         if (!retained_content_deferred && retained_graph_supported &&
             retained_graph_active_) {
             retained_content_commit_deferred =
-                ShouldDeferRetainedGraphCommitLocked(now);
+                ShouldDeferRetainedGraphCommitLocked(now, false);
         }
         if (retained_content_deferred) {
             const int64_t display_hz = std::max<int64_t>(

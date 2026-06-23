@@ -407,7 +407,8 @@ private:
                                  OutputTarget target,
                                  const SourceProjection& projection);
     bool ShouldDeferRetainedGraphCommitLocked(
-        std::chrono::steady_clock::time_point now);
+        std::chrono::steady_clock::time_point now,
+        bool projection_only);
     void RecordInteractionCommitLatencyLocked(
         std::chrono::steady_clock::time_point committed_at);
     bool CommitRetainedGraph(const char* reason);

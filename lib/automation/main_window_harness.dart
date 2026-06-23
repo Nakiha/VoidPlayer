@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:window_manager/window_manager.dart' as wm;
 
 import '../app_log.dart';
+import '../l10n/app_localizations.dart';
 import '../native_player/native_player_protocol.dart';
 import '../widgets/analysis_overlay_controls.dart';
 import '../widgets/media_header.dart';
@@ -656,6 +657,55 @@ class MainWindowTestHarness {
     await Future<void>.delayed(const Duration(milliseconds: 120));
   }
 
+  Future<void> clickToolbarMediaInfoNative() async {
+    final root = WidgetsBinding.instance.rootElement;
+    if (root == null) {
+      throw StateError('Flutter root element is not mounted');
+    }
+    final localizationContext = controlsBarKey.currentContext ?? root;
+    final l = AppLocalizations.of(localizationContext)!;
+    final context = _findTooltipContext(l.mediaInfo);
+    if (context == null) {
+      throw StateError('Toolbar media info button is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Toolbar media info button has no render box');
+    }
+
+    final windowPosition = await wm.windowManager.getPosition();
+    final local = Offset(
+      renderObject.size.width / 2,
+      renderObject.size.height / 2,
+    );
+    await _nativeClickAt(
+      renderObject: renderObject,
+      local: local,
+      windowPosition: windowPosition,
+      scale: 1,
+      label: 'toolbar-media-info',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+  }
+
+  BuildContext? _findTooltipContext(String message) {
+    final root = WidgetsBinding.instance.rootElement;
+    if (root == null) return null;
+    Element? found;
+    void visit(Element element) {
+      if (found != null) return;
+      final widget = element.widget;
+      if (widget is Tooltip && widget.message == message) {
+        found = element;
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    visit(root);
+    return found;
+  }
+
   Future<void> _nativeClickAt({
     required RenderBox renderObject,
     required Offset local,
@@ -667,7 +717,7 @@ class MainWindowTestHarness {
     final x = ((windowPosition.dx + appGlobal.dx) * scale).round();
     final y = ((windowPosition.dy + appGlobal.dy) * scale).round();
     log.info(
-      'Test action: CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE $label '
+      'Test action: NATIVE_CLICK $label '
       'screen=($x, $y) window=(${windowPosition.dx.toStringAsFixed(1)}, '
       '${windowPosition.dy.toStringAsFixed(1)}) scale=${scale.toStringAsFixed(2)}',
     );

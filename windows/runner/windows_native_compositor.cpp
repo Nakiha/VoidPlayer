@@ -2551,13 +2551,15 @@ bool WindowsNativeCompositor::CompositeLatest() {
     bool retained_projection_deferred_content = false;
     bool retained_projection_deferred_content_expired = false;
     bool retained_commit_deferred = false;
+    bool retained_projection_follow_up_content = false;
     {
         const auto now = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(mutex_);
         source_projection = source_projection_;
+        const bool retained_flutter_dirty = retained_flutter_content_dirty_;
         retained_projection_deferred_content =
             retained_source_content_dirty_ ||
-            retained_flutter_content_dirty_;
+            retained_flutter_dirty;
         retained_projection_deferred_content_expired =
             retained_projection_deferred_content &&
             retained_deferred_content_deadline_
@@ -2567,11 +2569,12 @@ bool WindowsNativeCompositor::CompositeLatest() {
         retained_projection_only =
             retained_graph_active_ &&
             retained_projection_dirty_ &&
-            (!retained_projection_deferred_content ||
-             !retained_projection_deferred_content_expired) &&
             phase_ == Phase::Active &&
             current_swap_chain_.swap_chain &&
             CanUseRetainedGraph(source_projection, current_swap_chain_.target);
+        retained_projection_follow_up_content =
+            retained_projection_only &&
+            retained_projection_deferred_content_expired;
         if (retained_projection_only) {
             retained_commit_deferred =
                 ShouldDeferRetainedGraphCommitLocked(now, true);
@@ -2609,15 +2612,24 @@ bool WindowsNativeCompositor::CompositeLatest() {
         std::lock_guard<std::mutex> lock(mutex_);
         retained_projection_dirty_ = false;
         if (retained_projection_deferred_content) {
+            const bool deferred_deadline_active =
+                retained_deferred_content_deadline_
+                    .time_since_epoch()
+                    .count() != 0;
             const int64_t display_hz = std::max<int64_t>(
                 1, diagnostics_.high_refresh_display_hz);
-            const auto defer_delay = std::chrono::microseconds(
-                std::clamp<int64_t>(
-                    1000000 / display_hz,
-                    kMinRetainedDeferredContentDelayUs,
-                    kMaxRetainedDeferredContentDelayUs));
-            retained_deferred_content_deadline_ =
-                committed_at + defer_delay;
+            if (!deferred_deadline_active) {
+                // Do not refresh this while dense pan/zoom projection commits
+                // continue; otherwise Flutter overlays can trail until input
+                // pauses even though their exported surfaces are available.
+                const auto defer_delay = std::chrono::microseconds(
+                    std::clamp<int64_t>(
+                        1000000 / display_hz,
+                        kMinRetainedDeferredContentDelayUs,
+                        kMaxRetainedDeferredContentDelayUs));
+                retained_deferred_content_deadline_ =
+                    committed_at + defer_delay;
+            }
             ++retained_graph_deferred_content_count_;
         } else {
             retained_deferred_content_deadline_ = {};
@@ -2658,7 +2670,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
             retained_graph_projection_skip_present_count_;
         diagnostics_.retained_graph_deferred_content_count =
             retained_graph_deferred_content_count_;
-        return true;
+        if (!retained_projection_follow_up_content) {
+            return true;
+        }
     }
 
     const auto release_held_video = [&]() {
@@ -3205,9 +3219,10 @@ bool WindowsNativeCompositor::CompositeLatest() {
     {
         const auto now = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(mutex_);
+        const bool flutter_content_dirty = retained_flutter_content_dirty_;
         const bool content_dirty =
             retained_source_content_dirty_ ||
-            retained_flutter_content_dirty_;
+            flutter_content_dirty;
         const bool deferred_deadline_active =
             retained_deferred_content_deadline_
                     .time_since_epoch()
@@ -3223,6 +3238,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
             retained_graph_supported &&
             retained_graph_active_ &&
             content_dirty &&
+            !flutter_content_dirty &&
             !retained_projection_dirty_ &&
             projection_recent &&
             pending_flutter_frame_request_sequence_ == 0 &&
@@ -3230,17 +3246,18 @@ bool WindowsNativeCompositor::CompositeLatest() {
         if (!retained_content_deferred && retained_graph_supported &&
             retained_graph_active_) {
             retained_content_commit_deferred =
+                !retained_projection_follow_up_content &&
                 ShouldDeferRetainedGraphCommitLocked(now, false);
         }
         if (retained_content_deferred) {
             const int64_t display_hz = std::max<int64_t>(
                 1, diagnostics_.high_refresh_display_hz);
-            const auto defer_delay = std::chrono::microseconds(
-                std::clamp<int64_t>(
-                    1000000 / display_hz,
-                    kMinRetainedDeferredContentDelayUs,
-                    kMaxRetainedDeferredContentDelayUs));
             if (!deferred_deadline_active) {
+                const auto defer_delay = std::chrono::microseconds(
+                    std::clamp<int64_t>(
+                        1000000 / display_hz,
+                        kMinRetainedDeferredContentDelayUs,
+                        kMaxRetainedDeferredContentDelayUs));
                 retained_deferred_content_deadline_ = now + defer_delay;
             }
             ++retained_graph_deferred_content_count_;

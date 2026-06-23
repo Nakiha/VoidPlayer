@@ -32,6 +32,9 @@
 6.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportPublishCount, 18
 6.7, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
 6.8, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportBackpressureCount, 0, 20
-6.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportMakeCurrentFailCount, 0, 0
-7.0, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportPublishFailCount, 0, 0
+6.85, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationPrewarmRequestCount, 1
+6.9, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationPrewarmReadyCount, 1
+6.95, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationPrewarmConsumedCount, 1
+7.0, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportMakeCurrentFailCount, 0, 0
+7.05, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportPublishFailCount, 0, 0
 7.1, QUIT, 0

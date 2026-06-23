@@ -49,6 +49,7 @@ public:
         return {};
     }
     virtual bool resize_renderer_managed_headless_output(int, int) { return false; }
+    virtual bool prewarm_renderer_managed_headless_output(int, int) { return false; }
     virtual void cleanup_renderer_managed_headless_pending_buffers() {}
     virtual bool set_renderer_managed_headless_frame_callback(std::function<void()>) {
         return false;

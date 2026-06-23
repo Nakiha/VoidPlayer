@@ -217,6 +217,23 @@ bool D3D11RenderBackend::resize_renderer_managed_headless_output(
     return true;
 }
 
+bool D3D11RenderBackend::prewarm_renderer_managed_headless_output(
+    int width,
+    int height) {
+    if (!headless_output_) {
+        return false;
+    }
+    bool ok = true;
+    {
+        std::lock_guard<std::mutex> tex_lock(headless_output_->texture_mutex());
+        ok = headless_output_->prewarm_locked(width, height) && ok;
+    }
+    if (shared_fp16_ring_) {
+        ok = shared_fp16_ring_->prewarm(width, height) && ok;
+    }
+    return ok;
+}
+
 void D3D11RenderBackend::cleanup_renderer_managed_headless_pending_buffers() {
     if (headless_output_) {
         headless_output_->cleanup_expired_pending_buffers();
@@ -344,6 +361,11 @@ PresentationBackendDiagnostics D3D11RenderBackend::diagnostics() const {
         result.width = output.width;
         result.height = output.height;
         result.buffer_count = output.buffer_count;
+        result.prewarm_request_count += output.prewarm_request_count;
+        result.prewarm_ready_count += output.prewarm_ready_count;
+        result.prewarm_hit_count += output.prewarm_hit_count;
+        result.prewarm_dropped_count += output.prewarm_dropped_count;
+        result.prewarm_consumed_count += output.prewarm_consumed_count;
     } else {
         result.target_format = "R8G8B8A8_UNORM";
         result.buffer_count = 2;
@@ -369,6 +391,12 @@ PresentationBackendDiagnostics D3D11RenderBackend::diagnostics() const {
         result.fp16_target_width = shared_fp16_ring_->width();
         result.fp16_target_height = shared_fp16_ring_->height();
         result.fp16_target_buffer_count = D3D11SharedFp16Ring::kBufferCount;
+        const auto prewarm = shared_fp16_ring_->prewarm_stats();
+        result.prewarm_request_count += prewarm.request_count;
+        result.prewarm_ready_count += prewarm.ready_count;
+        result.prewarm_hit_count += prewarm.hit_count;
+        result.prewarm_dropped_count += prewarm.dropped_count;
+        result.prewarm_consumed_count += prewarm.consumed_count;
     }
     if (source_cache_ring_) {
         result.source_cache_active = source_cache_ring_->texture_count() > 0;

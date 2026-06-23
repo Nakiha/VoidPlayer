@@ -53,6 +53,7 @@ void D3D11HeadlessOutput::shutdown() {
         buffers_.handles[i] = {};
         buffers_.in_flight_count[i] = 0;
     }
+    clear_prewarmed_locked();
     buffers_.front.store(0);
     ++buffers_.generation;
     gpu_fence_.Reset();
@@ -166,12 +167,59 @@ void D3D11HeadlessOutput::wait_gpu_idle(const char* label) {
     }
 }
 
-bool D3D11HeadlessOutput::resize_locked(int width, int height) {
+bool D3D11HeadlessOutput::prewarm_locked(int width, int height) {
+    ++prewarm_request_count_;
+    if (current_size_locked(width, height) ||
+        prewarmed_size_locked(width, height)) {
+        ++prewarm_hit_count_;
+        return true;
+    }
+
     Microsoft::WRL::ComPtr<ID3D11Texture2D> new_textures[kBufferCount];
     Microsoft::WRL::ComPtr<ID3D11RenderTargetView> new_rtvs[kBufferCount];
     HANDLE new_handles[kBufferCount] = {};
     if (!create_shared_buffers(width, height, new_textures, new_rtvs, new_handles)) {
+        ++prewarm_dropped_count_;
         return false;
+    }
+
+    if (prewarmed_.ready) {
+        ++prewarm_dropped_count_;
+    }
+    clear_prewarmed_locked();
+    for (int i = 0; i < kBufferCount; ++i) {
+        prewarmed_.textures[i] = std::move(new_textures[i]);
+        prewarmed_.rtvs[i] = std::move(new_rtvs[i]);
+        prewarmed_.handles[i] = new_handles[i];
+    }
+    prewarmed_.width = width;
+    prewarmed_.height = height;
+    prewarmed_.ready = true;
+    prewarm_ready_count_ += kBufferCount;
+    spdlog::info("[D3D11HeadlessOutput] prewarmed {}x{} buffers={}",
+                 width, height, kBufferCount);
+    return true;
+}
+
+bool D3D11HeadlessOutput::resize_locked(int width, int height) {
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> new_textures[kBufferCount];
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> new_rtvs[kBufferCount];
+    HANDLE new_handles[kBufferCount] = {};
+    bool consumed_prewarm = false;
+    if (prewarmed_size_locked(width, height)) {
+        for (int i = 0; i < kBufferCount; ++i) {
+            new_textures[i] = std::move(prewarmed_.textures[i]);
+            new_rtvs[i] = std::move(prewarmed_.rtvs[i]);
+            new_handles[i] = prewarmed_.handles[i];
+            prewarmed_.handles[i] = {};
+        }
+        clear_prewarmed_locked();
+        consumed_prewarm = true;
+        ++prewarm_consumed_count_;
+    } else {
+        if (!create_shared_buffers(width, height, new_textures, new_rtvs, new_handles)) {
+            return false;
+        }
     }
 
     for (int i = 0; i < kBufferCount; ++i) {
@@ -184,8 +232,8 @@ bool D3D11HeadlessOutput::resize_locked(int width, int height) {
     ++buffers_.generation;
     current_back_ = pick_free_buffer_locked();
 
-    spdlog::info("[D3D11HeadlessOutput] resize complete: {}x{}, handles=[{}, {}, {}]",
-                 width, height,
+    spdlog::info("[D3D11HeadlessOutput] resize complete: {}x{} prewarmed={}, handles=[{}, {}, {}]",
+                 width, height, consumed_prewarm ? "yes" : "no",
                  reinterpret_cast<uintptr_t>(buffers_.handles[0]),
                  reinterpret_cast<uintptr_t>(buffers_.handles[1]),
                  reinterpret_cast<uintptr_t>(buffers_.handles[2]));
@@ -392,6 +440,19 @@ D3D11HeadlessOutputMemoryStats D3D11HeadlessOutput::memory_stats() const {
             stats.format = static_cast<int>(desc.Format);
         }
     }
+    for (int i = 0; i < kBufferCount; ++i) {
+        if (!prewarmed_.textures[i]) {
+            continue;
+        }
+        D3D11_TEXTURE2D_DESC desc = {};
+        prewarmed_.textures[i]->GetDesc(&desc);
+        stats.estimated_bytes += estimate_d3d11_texture_bytes(desc);
+    }
+    stats.prewarm_request_count = prewarm_request_count_;
+    stats.prewarm_ready_count = prewarm_ready_count_;
+    stats.prewarm_hit_count = prewarm_hit_count_;
+    stats.prewarm_dropped_count = prewarm_dropped_count_;
+    stats.prewarm_consumed_count = prewarm_consumed_count_;
     return stats;
 }
 
@@ -459,6 +520,33 @@ int D3D11HeadlessOutput::pick_free_buffer_locked() const {
         }
     }
     return -1;
+}
+
+bool D3D11HeadlessOutput::current_size_locked(int width, int height) const {
+    const auto texture = buffers_.textures[0];
+    if (!texture) {
+        return false;
+    }
+    D3D11_TEXTURE2D_DESC desc = {};
+    texture->GetDesc(&desc);
+    return static_cast<int>(desc.Width) == width &&
+           static_cast<int>(desc.Height) == height;
+}
+
+bool D3D11HeadlessOutput::prewarmed_size_locked(int width, int height) const {
+    return prewarmed_.ready && prewarmed_.width == width &&
+           prewarmed_.height == height && prewarmed_.textures[0];
+}
+
+void D3D11HeadlessOutput::clear_prewarmed_locked() {
+    for (int i = 0; i < kBufferCount; ++i) {
+        prewarmed_.textures[i].Reset();
+        prewarmed_.rtvs[i].Reset();
+        prewarmed_.handles[i] = {};
+    }
+    prewarmed_.width = 0;
+    prewarmed_.height = 0;
+    prewarmed_.ready = false;
 }
 
 } // namespace vr

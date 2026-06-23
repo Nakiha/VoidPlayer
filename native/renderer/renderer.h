@@ -118,6 +118,7 @@ public:
     void release_source_cache_bundle(
         int buffer_index, uint64_t ring_generation) const;
     void set_source_cache_frame_callback(std::function<void()> cb);
+    bool prewarm_presentation_target(int width, int height);
     void resize(int width, int height);
     bool update_headless_output(void* output,
                                 int width,

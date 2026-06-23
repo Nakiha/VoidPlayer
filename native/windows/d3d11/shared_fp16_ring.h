@@ -24,6 +24,14 @@ struct SharedFp16TextureSnapshot {
     uint64_t producer_release_key = 0;
 };
 
+struct D3D11SharedFp16RingPrewarmStats {
+    uint64_t request_count = 0;
+    uint64_t ready_count = 0;
+    uint64_t hit_count = 0;
+    uint64_t dropped_count = 0;
+    uint64_t consumed_count = 0;
+};
+
 class D3D11SharedFp16Ring {
 public:
     static constexpr int kBufferCount = 3;
@@ -31,6 +39,7 @@ public:
     bool initialize(ID3D11Device* device, ID3D11DeviceContext* context,
                     int width, int height);
     void shutdown();
+    bool prewarm(int width, int height);
     bool resize(int width, int height);
 
     ID3D11RenderTargetView* begin_frame();
@@ -44,6 +53,7 @@ public:
     uint64_t estimated_bytes() const;
     uint64_t publish_count() const;
     uint64_t backpressure_count() const;
+    D3D11SharedFp16RingPrewarmStats prewarm_stats() const;
     int width() const;
     int height() const;
 
@@ -73,6 +83,7 @@ private:
     ID3D11DeviceContext* context_ = nullptr;
     mutable std::mutex mutex_;
     std::shared_ptr<Generation> active_;
+    std::shared_ptr<Generation> prewarmed_;
     std::vector<std::shared_ptr<Generation>> retired_;
     std::shared_ptr<Generation> latest_generation_;
     Slot* latest_ = nullptr;
@@ -82,6 +93,11 @@ private:
     uint64_t next_frame_generation_ = 1;
     uint64_t publish_count_ = 0;
     uint64_t backpressure_count_ = 0;
+    uint64_t prewarm_request_count_ = 0;
+    uint64_t prewarm_ready_count_ = 0;
+    uint64_t prewarm_hit_count_ = 0;
+    uint64_t prewarm_dropped_count_ = 0;
+    uint64_t prewarm_consumed_count_ = 0;
     std::function<void()> callback_;
 };
 

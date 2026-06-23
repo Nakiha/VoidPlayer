@@ -69,6 +69,33 @@ TEST_CASE("shared FP16 ring preserves leases and resize generations",
             static_cast<uint64_t>(7 * 5 * 8 * 3));
 }
 
+TEST_CASE("shared FP16 ring consumes matching prewarmed generation",
+          "[windows_dcomp][windows_presentation]") {
+    Microsoft::WRL::ComPtr<ID3D11Device> device;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+    D3D_FEATURE_LEVEL level = {};
+    REQUIRE(SUCCEEDED(D3D11CreateDevice(
+        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
+        &device, &level, &context)));
+
+    vr::D3D11SharedFp16Ring ring;
+    REQUIRE(ring.initialize(device.Get(), context.Get(), 5, 3));
+    REQUIRE(ring.prewarm(9, 7));
+    auto stats = ring.prewarm_stats();
+    REQUIRE(stats.request_count == 1);
+    REQUIRE(stats.ready_count == vr::D3D11SharedFp16Ring::kBufferCount);
+    REQUIRE(stats.hit_count == 0);
+    REQUIRE(stats.consumed_count == 0);
+
+    REQUIRE(ring.resize(9, 7));
+    stats = ring.prewarm_stats();
+    REQUIRE(stats.consumed_count == 1);
+    REQUIRE(stats.dropped_count == 0);
+    REQUIRE(ring.width() == 9);
+    REQUIRE(ring.height() == 7);
+}
+
 TEST_CASE("shared FP16 ring reports backpressure without reusing leases",
           "[windows_dcomp][windows_presentation]") {
     Microsoft::WRL::ComPtr<ID3D11Device> device;

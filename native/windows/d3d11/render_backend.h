@@ -73,6 +73,7 @@ public:
     std::function<void()> publish_renderer_managed_headless_frame(
         const char* label) override;
     bool resize_renderer_managed_headless_output(int width, int height) override;
+    bool prewarm_renderer_managed_headless_output(int width, int height) override;
     void cleanup_renderer_managed_headless_pending_buffers() override;
     bool set_renderer_managed_headless_frame_callback(
         std::function<void()> callback) override;

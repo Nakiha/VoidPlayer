@@ -275,6 +275,10 @@ void Renderer::set_source_cache_frame_callback(std::function<void()> cb) {
     impl_->set_source_cache_frame_callback(std::move(cb));
 }
 
+bool Renderer::prewarm_presentation_target(int width, int height) {
+    return impl_->prewarm_presentation_target(width, height);
+}
+
 void Renderer::resize(int width, int height) {
     impl_->resize(width, height);
 }

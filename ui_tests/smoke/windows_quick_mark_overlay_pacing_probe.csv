@@ -25,4 +25,5 @@
 4.8, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
 4.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportBackpressureCount, 0, 20
 5.0, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathInputToPresentP95Us, 0, 2500
+5.05, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphDeferredContentCount, 0, 200
 5.2, QUIT, 0

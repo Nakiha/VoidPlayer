@@ -41,7 +41,12 @@ struct OverlayIn {
   float source_slot : TEXCOORD1;
   float4 color : COLOR;
 };
-struct OverlayOut { float4 position : SV_POSITION; float4 color : COLOR; };
+struct OverlayOut {
+  float4 position : SV_POSITION;
+  float2 global_uv : TEXCOORD0;
+  float4 clip_uv : TEXCOORD1;
+  float4 color : COLOR;
+};
 VSOut VSMain(uint id : SV_VertexID) {
   float2 positions[4] = {
     float2(-1.0, -1.0), float2(-1.0, 1.0),
@@ -57,14 +62,19 @@ VSOut VSMain(uint id : SV_VertexID) {
   return output;
 }
 float value_at(float4 values, int index);
+int display_count_for_mode(int mode, int count);
 int display_slot_for_source(int source_slot, int count);
 OverlayOut VSOverlay(OverlayIn input) {
   OverlayOut output;
+  int mode = (int)round(source_mode);
   int count = clamp((int)round(source_track_count), 1, 4);
+  int display_count = display_count_for_mode(mode, count);
   int source_slot = clamp((int)round(input.source_slot), 0, 3);
-  int display_slot = display_slot_for_source(source_slot, count);
+  int display_slot = display_slot_for_source(source_slot, display_count);
   if (display_slot < 0 || value_at(source_present, source_slot) < 0.5) {
     output.position = float4(-4.0, -4.0, 0.0, 1.0);
+    output.global_uv = 0.0;
+    output.clip_uv = 0.0;
     output.color = 0.0;
     return output;
   }
@@ -80,26 +90,39 @@ OverlayOut VSOverlay(OverlayIn input) {
   if (abs(inv_display_size.x) < 0.00001 ||
       abs(inv_display_size.y) < 0.00001) {
     output.position = float4(-4.0, -4.0, 0.0, 1.0);
+    output.global_uv = 0.0;
+    output.clip_uv = 0.0;
     output.color = 0.0;
     return output;
   }
   float2 local_uv = display_offset +
       (input.source_uv + view_offset) / inv_display_size;
-  if ((int)round(source_mode) == 0 && count > 1) {
-    local_uv.x = (display_slot + local_uv.x) / count;
-  } else if ((int)round(source_mode) == 1 && count > 1) {
+  float2 extent = max(viewport.zw - viewport.xy, float2(0.00001, 0.00001));
+  float2 clip_min = viewport.xy;
+  float2 clip_max = viewport.zw;
+  if (mode == 0 && display_count > 1) {
+    float slot_left = (float)display_slot / (float)display_count;
+    float slot_right = (float)(display_slot + 1) / (float)display_count;
+    local_uv.x = slot_left + local_uv.x / (float)display_count;
+    clip_min.x = viewport.x + slot_left * extent.x;
+    clip_max.x = viewport.x + slot_right * extent.x;
+  } else if (mode == 1 && display_count > 1) {
     float split = clamp(source_split_pos, 0.0001, 0.9999);
-    local_uv.x = display_slot == 0
-        ? local_uv.x * split
-        : split + local_uv.x * (1.0 - split);
+    float split_x = viewport.x + split * extent.x;
+    if (display_slot == 0) {
+      clip_max.x = split_x;
+    } else {
+      clip_min.x = split_x;
+    }
   }
-  float2 global_uv = viewport.xy + local_uv * max(
-      viewport.zw - viewport.xy, float2(0.00001, 0.00001));
+  float2 global_uv = viewport.xy + local_uv * extent;
   output.position = float4(
       global_uv.x * 2.0 - 1.0,
       1.0 - global_uv.y * 2.0,
       0.0,
       1.0);
+  output.global_uv = global_uv;
+  output.clip_uv = float4(clip_min, clip_max);
   output.color = input.color;
   return output;
 }
@@ -139,6 +162,9 @@ int display_slot_for_source(int source_slot, int count) {
   }
   return -1;
 }
+int display_count_for_mode(int mode, int count) {
+  return mode == 1 && count > 1 ? 2 : count;
+}
 float4 sample_source(int slot, float2 uv) {
   if (slot == 0) return source_texture_0.Sample(linear_sampler, uv);
   if (slot == 1) return source_texture_1.Sample(linear_sampler, uv);
@@ -154,14 +180,16 @@ float4 output_background() {
       background_color.a);
 }
 float4 source_projected_video(float2 video_uv) {
+  int mode = (int)round(source_mode);
   int count = clamp((int)round(source_track_count), 1, 4);
+  int display_count = display_count_for_mode(mode, count);
   int display_slot = 0;
   float2 local_uv = video_uv;
-  if ((int)round(source_mode) == 0 && count > 1) {
-    float scaled_x = clamp(video_uv.x, 0.0, 0.999999) * count;
-    display_slot = clamp((int)floor(scaled_x), 0, count - 1);
+  if (mode == 0 && display_count > 1) {
+    float scaled_x = clamp(video_uv.x, 0.0, 0.999999) * display_count;
+    display_slot = clamp((int)floor(scaled_x), 0, display_count - 1);
     local_uv.x = scaled_x - display_slot;
-  } else if ((int)round(source_mode) == 1 && count > 1) {
+  } else if (mode == 1 && display_count > 1) {
     display_slot = video_uv.x < clamp(source_split_pos, 0.0001, 0.9999)
         ? 0 : 1;
   }
@@ -227,6 +255,12 @@ float4 PSMain(VSOut input) : SV_TARGET {
       flutter.a + video.a * (1.0 - flutter.a));
 }
 float4 PSOverlay(OverlayOut input) : SV_TARGET {
+  if (input.global_uv.x < input.clip_uv.x ||
+      input.global_uv.y < input.clip_uv.y ||
+      input.global_uv.x > input.clip_uv.z ||
+      input.global_uv.y > input.clip_uv.w) {
+    discard;
+  }
   return input.color;
 }
 )";
@@ -236,6 +270,10 @@ float srgb_to_linear(float value) {
     return value <= 0.04045f
         ? value / 12.92f
         : std::pow((value + 0.055f) / 1.055f, 2.4f);
+}
+
+int display_count_for_mode(int mode, int count) {
+    return mode == 1 && count > 1 ? 2 : count;
 }
 
 } // namespace
@@ -297,15 +335,16 @@ WindowsSourceProjectionSample project_windows_source_sample(
         return result;
     }
     const int count = std::clamp(projection.active_track_count, 1, 4);
+    const int display_count = display_count_for_mode(projection.mode, count);
     int display_slot = 0;
     float local_u = video_u;
-    if (projection.mode == 0 && count > 1) {
+    if (projection.mode == 0 && display_count > 1) {
         const float scaled =
-            std::clamp(video_u, 0.0f, 0.999999f) * count;
+            std::clamp(video_u, 0.0f, 0.999999f) * display_count;
         display_slot = std::clamp(
-            static_cast<int>(std::floor(scaled)), 0, count - 1);
+            static_cast<int>(std::floor(scaled)), 0, display_count - 1);
         local_u = scaled - display_slot;
-    } else if (projection.mode == 1 && count > 1) {
+    } else if (projection.mode == 1 && display_count > 1) {
         display_slot =
             video_u < std::clamp(projection.split_pos, 0.0001f, 0.9999f)
                 ? 0
@@ -354,7 +393,8 @@ project_windows_retained_source_visuals(
         return result;
     }
     const int count = std::clamp(projection.active_track_count, 1, 4);
-    for (int display_slot = 0; display_slot < count; ++display_slot) {
+    const int display_count = display_count_for_mode(projection.mode, count);
+    for (int display_slot = 0; display_slot < display_count; ++display_slot) {
         const int source_slot = std::clamp(
             projection.source_order[static_cast<size_t>(display_slot)], 0, 3);
         if (!source_present[static_cast<size_t>(source_slot)]) {
@@ -366,25 +406,31 @@ project_windows_retained_source_visuals(
             std::fabs(inv_y) < 0.00001f) {
             continue;
         }
-        float slot_left = viewport_left;
-        float slot_right = viewport_right;
-        if (projection.mode == 0 && count > 1) {
-            const float slot_width = viewport_width / count;
-            slot_left = viewport_left + slot_width * display_slot;
-            slot_right = slot_left + slot_width;
-        } else if (projection.mode == 1 && count > 1) {
+        float projected_left = viewport_left;
+        float projected_right = viewport_right;
+        float clip_left = viewport_left;
+        float clip_right = viewport_right;
+        if (projection.mode == 0 && display_count > 1) {
+            const float slot_width = viewport_width / display_count;
+            projected_left = viewport_left + slot_width * display_slot;
+            projected_right = projected_left + slot_width;
+            clip_left = projected_left;
+            clip_right = projected_right;
+        } else if (projection.mode == 1 && display_count > 1) {
             const float split = std::clamp(
                 projection.split_pos, 0.0001f, 0.9999f);
+            const float split_x = viewport_left + viewport_width * split;
             if (display_slot == 0) {
-                slot_left = viewport_left;
-                slot_right = viewport_left + viewport_width * split;
+                clip_left = viewport_left;
+                clip_right = split_x;
             } else {
-                slot_left = viewport_left + viewport_width * split;
-                slot_right = viewport_right;
+                clip_left = split_x;
+                clip_right = viewport_right;
             }
         }
-        const float slot_width = std::max(0.0f, slot_right - slot_left);
-        if (slot_width <= 0.0f) {
+        const float projected_width =
+            std::max(0.0f, projected_right - projected_left);
+        if (projected_width <= 0.0f) {
             continue;
         }
         const float display_size_x = 1.0f / inv_x;
@@ -398,13 +444,13 @@ project_windows_retained_source_visuals(
         auto& rect = result[static_cast<size_t>(source_slot)];
         rect.present = true;
         rect.source_slot = source_slot;
-        rect.left = slot_left + local_left * slot_width;
+        rect.left = projected_left + local_left * projected_width;
         rect.top = viewport_top + local_top * viewport_height;
-        rect.right = rect.left + display_size_x * slot_width;
+        rect.right = rect.left + display_size_x * projected_width;
         rect.bottom = rect.top + display_size_y * viewport_height;
-        rect.clip_left = slot_left;
+        rect.clip_left = clip_left;
         rect.clip_top = viewport_top;
-        rect.clip_right = slot_right;
+        rect.clip_right = clip_right;
         rect.clip_bottom = viewport_bottom;
     }
     return result;

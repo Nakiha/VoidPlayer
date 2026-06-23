@@ -35,6 +35,7 @@
 6.85, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationPrewarmRequestCount, 1
 6.9, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationPrewarmReadyCount, 1
 6.95, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationPrewarmConsumedCount, 1
+6.98, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportScheduleFrameCount, 12
 7.0, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportMakeCurrentFailCount, 0, 0
 7.05, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportPublishFailCount, 0, 0
 7.1, QUIT, 0

@@ -30,14 +30,53 @@ void D3D11SharedFp16Ring::shutdown() {
     writing_ = nullptr;
     latest_ = nullptr;
     active_.reset();
+    prewarmed_.reset();
     latest_generation_.reset();
     retired_.clear();
     device_ = nullptr;
     context_ = nullptr;
 }
 
-bool D3D11SharedFp16Ring::resize(int width, int height) {
+bool D3D11SharedFp16Ring::prewarm(int width, int height) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ++prewarm_request_count_;
+        if ((active_ && active_->width == width && active_->height == height) ||
+            (prewarmed_ && prewarmed_->width == width &&
+             prewarmed_->height == height)) {
+            ++prewarm_hit_count_;
+            return true;
+        }
+    }
+
     auto replacement = create_generation(width, height);
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!replacement) {
+        ++prewarm_dropped_count_;
+        return false;
+    }
+    if (prewarmed_) {
+        ++prewarm_dropped_count_;
+    }
+    prewarmed_ = std::move(replacement);
+    prewarm_ready_count_ += kBufferCount;
+    collect_retired_locked();
+    return true;
+}
+
+bool D3D11SharedFp16Ring::resize(int width, int height) {
+    std::shared_ptr<Generation> replacement;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (prewarmed_ && prewarmed_->width == width &&
+            prewarmed_->height == height) {
+            replacement = std::move(prewarmed_);
+            ++prewarm_consumed_count_;
+        }
+    }
+    if (!replacement) {
+        replacement = create_generation(width, height);
+    }
     if (!replacement) {
         return false;
     }
@@ -179,6 +218,7 @@ uint64_t D3D11SharedFp16Ring::estimated_bytes() const {
         }
     };
     add_generation(active_);
+    add_generation(prewarmed_);
     for (const auto& generation : retired_) add_generation(generation);
     return bytes;
 }
@@ -191,6 +231,17 @@ uint64_t D3D11SharedFp16Ring::publish_count() const {
 uint64_t D3D11SharedFp16Ring::backpressure_count() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return backpressure_count_;
+}
+
+D3D11SharedFp16RingPrewarmStats D3D11SharedFp16Ring::prewarm_stats() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return D3D11SharedFp16RingPrewarmStats{
+        prewarm_request_count_,
+        prewarm_ready_count_,
+        prewarm_hit_count_,
+        prewarm_dropped_count_,
+        prewarm_consumed_count_,
+    };
 }
 
 int D3D11SharedFp16Ring::width() const {
@@ -209,7 +260,10 @@ D3D11SharedFp16Ring::create_generation(int width, int height) {
         return nullptr;
     }
     auto generation = std::make_shared<Generation>();
-    generation->id = next_ring_generation_++;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        generation->id = next_ring_generation_++;
+    }
     generation->width = width;
     generation->height = height;
     for (auto& slot_ptr : generation->slots) {

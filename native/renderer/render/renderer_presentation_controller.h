@@ -216,6 +216,7 @@ public:
     bool resize_renderer_managed_headless_output(int width,
                                                  int height,
                                                  PresentationMetricsStore& metrics);
+    bool prewarm_renderer_managed_headless_output(int width, int height);
     void cleanup_renderer_managed_headless_pending_buffers();
     bool set_renderer_managed_headless_frame_callback(
         RendererFrameCallback callback);

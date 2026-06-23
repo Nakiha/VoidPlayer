@@ -14,6 +14,11 @@ namespace vr {
 struct D3D11HeadlessOutputMemoryStats {
     uint64_t estimated_bytes = 0;
     uint64_t texture_bytes = 0;
+    uint64_t prewarm_request_count = 0;
+    uint64_t prewarm_ready_count = 0;
+    uint64_t prewarm_hit_count = 0;
+    uint64_t prewarm_dropped_count = 0;
+    uint64_t prewarm_consumed_count = 0;
     int width = 0;
     int height = 0;
     int format = 0;
@@ -59,6 +64,7 @@ public:
     std::function<void()> publish_frame_locked();
     void wait_gpu_idle(const char* label);
 
+    bool prewarm_locked(int width, int height);
     bool resize_locked(int width, int height);
     void cleanup_expired_pending_buffers();
     bool snapshot_front_buffer_locked(D3D11HeadlessOutputFrontBufferSnapshot& snapshot) const;
@@ -90,21 +96,39 @@ private:
         uint64_t generation = 1;
     };
 
+    struct PrewarmedBuffers {
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[kBufferCount];
+        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[kBufferCount];
+        HANDLE handles[kBufferCount] = {};
+        int width = 0;
+        int height = 0;
+        bool ready = false;
+    };
+
     bool create_shared_buffers(int width,
                                int height,
                                Microsoft::WRL::ComPtr<ID3D11Texture2D> textures[],
                                Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtvs[],
                                HANDLE handles[]);
     int pick_free_buffer_locked() const;
+    bool current_size_locked(int width, int height) const;
+    bool prewarmed_size_locked(int width, int height) const;
+    void clear_prewarmed_locked();
 
     ID3D11Device* device_ = nullptr;
     ID3D11DeviceContext* context_ = nullptr;
     SharedBuffers buffers_;
+    PrewarmedBuffers prewarmed_;
     Microsoft::WRL::ComPtr<ID3D11Query> gpu_fence_;
     mutable std::mutex texture_mutex_;
     std::function<void()> frame_callback_;
     int current_back_ = -1;
     bool fail_shared_handle_for_test_ = false;
+    uint64_t prewarm_request_count_ = 0;
+    uint64_t prewarm_ready_count_ = 0;
+    uint64_t prewarm_hit_count_ = 0;
+    uint64_t prewarm_dropped_count_ = 0;
+    uint64_t prewarm_consumed_count_ = 0;
 };
 
 } // namespace vr

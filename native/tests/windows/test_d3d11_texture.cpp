@@ -529,6 +529,39 @@ TEST_CASE("D3D11HeadlessOutput publishes and resizes buffers", "[d3d11][headless
     cleanup_test_device(dev, hwnd);
 }
 
+TEST_CASE("D3D11HeadlessOutput consumes matching prewarmed buffers",
+          "[d3d11][headless_output]") {
+    auto [dev, hwnd] = create_test_device();
+    vr::D3D11HeadlessOutput output;
+    REQUIRE(output.initialize(dev->device(), dev->context(), 320, 240));
+
+    D3D11_TEXTURE2D_DESC desc = {};
+    {
+        std::lock_guard<std::mutex> lock(output.texture_mutex());
+        REQUIRE(output.prewarm_locked(640, 360));
+    }
+    auto stats = output.memory_stats();
+    REQUIRE(stats.prewarm_request_count == 1);
+    REQUIRE(stats.prewarm_ready_count == vr::D3D11HeadlessOutput::kBufferCount);
+    REQUIRE(stats.prewarm_hit_count == 0);
+    REQUIRE(stats.prewarm_consumed_count == 0);
+
+    {
+        std::lock_guard<std::mutex> lock(output.texture_mutex());
+        REQUIRE(output.resize_locked(640, 360));
+        REQUIRE(output.shared_texture_locked() != nullptr);
+        output.shared_texture_locked()->GetDesc(&desc);
+    }
+    stats = output.memory_stats();
+    REQUIRE(stats.prewarm_consumed_count == 1);
+    REQUIRE(stats.prewarm_dropped_count == 0);
+    REQUIRE(desc.Width == 640);
+    REQUIRE(desc.Height == 360);
+
+    output.shutdown();
+    cleanup_test_device(dev, hwnd);
+}
+
 TEST_CASE("D3D11HeadlessOutput captures pinned front-buffer snapshots",
           "[d3d11][headless_output]") {
     auto [dev, hwnd] = create_test_device();

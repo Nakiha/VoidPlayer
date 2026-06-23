@@ -87,6 +87,7 @@ public:
     bool update_presentation_sdr_white_level(double nits);
     std::shared_ptr<const AnalysisOverlayPrimitivePackage>
     current_overlay_primitives(std::string* error);
+    bool prewarm_presentation_target(int width, int height);
     void resize(int width, int height);
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
     bool capture_front_buffer_region(int x,

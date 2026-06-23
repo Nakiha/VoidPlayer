@@ -553,6 +553,14 @@ bool RendererPresentationController::resize_renderer_managed_headless_output(
     return true;
 }
 
+bool RendererPresentationController::prewarm_renderer_managed_headless_output(
+    int width,
+    int height) {
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    return backend_ &&
+           backend_->prewarm_renderer_managed_headless_output(width, height);
+}
+
 void RendererPresentationController::cleanup_renderer_managed_headless_pending_buffers() {
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     if (backend_) {

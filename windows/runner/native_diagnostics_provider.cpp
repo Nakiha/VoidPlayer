@@ -420,6 +420,33 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(presentation.buffer_count);
     map[flutter::EncodableValue("windowsPresentationHeadless")] =
         flutter::EncodableValue(presentation.headless);
+    map[flutter::EncodableValue("windowsPresentationPrewarmRequestCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_request_count));
+    map[flutter::EncodableValue("windowsPresentationPrewarmReadyCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_ready_count));
+    map[flutter::EncodableValue("windowsPresentationPrewarmHitCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_hit_count));
+    map[flutter::EncodableValue("windowsPresentationPrewarmDroppedCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_dropped_count));
+    map[flutter::EncodableValue("windowsPresentationPrewarmConsumedCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_consumed_count));
+    map[flutter::EncodableValue("pixelBufferPrewarmRequestCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_request_count));
+    map[flutter::EncodableValue("pixelBufferPrewarmReadyCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_ready_count));
+    map[flutter::EncodableValue("pixelBufferPrewarmHitCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_hit_count));
+    map[flutter::EncodableValue("pixelBufferPrewarmDroppedCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_dropped_count));
     map[flutter::EncodableValue("windowsPresentationCompositorActive")] =
         flutter::EncodableValue(false);
     map[flutter::EncodableValue("windowsD3DAdapterDescription")] =

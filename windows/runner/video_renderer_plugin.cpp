@@ -1498,6 +1498,11 @@ void VideoRendererPlugin::PrewarmNativePresentationTargetSize(
             "native_compositor={} player={}",
             w, h, native_compositor_ ? "yes" : "no",
             player_ ? "yes" : "no");
+        if (!player_->prewarm_presentation_target(w, h)) {
+            spdlog::debug(
+                "[WindowsCompositorDebug] prewarm native target skipped {}x{}",
+                w, h);
+        }
         result->Success(flutter::EncodableValue(std::monostate{}));
     } catch (const std::bad_variant_access& e) {
         ReportMethodException(
@@ -3204,6 +3209,29 @@ void VideoRendererPlugin::GetDiagnostics(
         diagnostics[flutter::EncodableValue(
             "nativeCompositorSourceCacheActive")] =
             flutter::EncodableValue(compositor.source_cache_active);
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationPrewarmRequestCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_request_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationPrewarmReadyCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_ready_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationPrewarmHitCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_hit_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationPrewarmDroppedCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_dropped_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationPrewarmConsumedCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_consumed_count));
+        diagnostics[flutter::EncodableValue("pixelBufferPrewarmRequestCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_request_count));
+        diagnostics[flutter::EncodableValue("pixelBufferPrewarmReadyCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_ready_count));
+        diagnostics[flutter::EncodableValue("pixelBufferPrewarmHitCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_hit_count));
+        diagnostics[flutter::EncodableValue("pixelBufferPrewarmDroppedCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_dropped_count));
         diagnostics[flutter::EncodableValue(
             "nativeCompositorSourceCacheTextureCount")] =
             enc_i64(backend.source_cache_texture_count);

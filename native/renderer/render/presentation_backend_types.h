@@ -133,6 +133,11 @@ struct PresentationBackendDiagnostics {
     uint64_t source_cache_presented_anchor_publish_count = 0;
     uint64_t source_cache_backpressure_count = 0;
     uint64_t source_cache_fallback_count = 0;
+    uint64_t prewarm_request_count = 0;
+    uint64_t prewarm_ready_count = 0;
+    uint64_t prewarm_hit_count = 0;
+    uint64_t prewarm_dropped_count = 0;
+    uint64_t prewarm_consumed_count = 0;
     std::string source_cache_format = "R16G16B16A16_FLOAT";
     std::string source_cache_last_error = "none";
 };

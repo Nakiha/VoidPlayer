@@ -432,6 +432,12 @@ NativePlayer::current_overlay_primitives(std::string* error) {
     return renderer_.current_overlay_primitives(error);
 }
 
+bool NativePlayer::prewarm_presentation_target(int width, int height) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.prewarm_presentation_target(width, height);
+}
+
 void NativePlayer::resize(int width, int height) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (!renderer_ready_locked()) {

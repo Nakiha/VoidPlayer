@@ -730,17 +730,16 @@ int main() {
     return fail("WgpuMetal backend did not opt into async completion semantics");
   }
   auto wgpu_mismatch_target = make_bgra_pixel_buffer(kWidth - 1, kHeight);
-  if (!wgpu_mismatch_target.buffer ||
-      !wgpu_backend->update_headless_output(wgpu_mismatch_target.buffer,
-                                            kWidth,
-                                            kHeight,
-                                            3)) {
+  if (!wgpu_mismatch_target.buffer) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend could not install mismatched target smoke");
+    return fail("WgpuMetal backend could not create mismatched target smoke");
   }
-  if (wgpu_backend->draw_frame(snapshot, vr::PresentationBackendDrawHooks{})) {
+  if (wgpu_backend->update_headless_output(wgpu_mismatch_target.buffer,
+                                           kWidth,
+                                           kHeight,
+                                           3)) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend accepted mismatched target dimensions");
+    return fail("WgpuMetal backend installed mismatched target dimensions");
   }
   if (std::string(wgpu_backend->last_error()).find("dimensions do not match") ==
       std::string::npos) {
@@ -749,22 +748,27 @@ int main() {
   }
   auto wgpu_wrong_format_target =
       make_nv12_pixel_buffer(kWidth, kHeight, 96, 128, 128);
-  if (!wgpu_wrong_format_target.buffer ||
-      !wgpu_backend->update_headless_output(wgpu_wrong_format_target.buffer,
-                                            kWidth,
-                                            kHeight,
-                                            3)) {
+  if (!wgpu_wrong_format_target.buffer) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend could not install wrong-format target smoke");
+    return fail("WgpuMetal backend could not create wrong-format target smoke");
   }
-  if (wgpu_backend->draw_frame(snapshot, vr::PresentationBackendDrawHooks{})) {
+  if (wgpu_backend->update_headless_output(wgpu_wrong_format_target.buffer,
+                                           kWidth,
+                                           kHeight,
+                                           3)) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend accepted unsupported target format");
+    return fail("WgpuMetal backend installed unsupported target format");
   }
   if (std::string(wgpu_backend->last_error()).find("format is unsupported") ==
       std::string::npos) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend wrong-format target failure was not diagnostic");
+  }
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                snapshot,
+                                vr::PresentationBackendDrawHooks{})) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend invalid target install did not preserve old target");
   }
   auto wgpu_edr_target = make_rgba_half_pixel_buffer(kWidth, kHeight);
   if (!wgpu_edr_target.buffer ||
@@ -794,6 +798,20 @@ int main() {
   if (wgpu_backend->presentation_stats().last_draw_succeeded == 0) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend RGBA16Float EDR draw did not report success");
+  }
+  std::vector<uint8_t> edr_capture;
+  int edr_capture_width = 0;
+  int edr_capture_height = 0;
+  if (wgpu_backend->capture_front_buffer(edr_capture,
+                                         edr_capture_width,
+                                         edr_capture_height)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend RGBA16Float EDR capture returned BGRA bytes");
+  }
+  if (std::string(wgpu_backend->last_error()).find("capture only supports BGRA8") ==
+      std::string::npos) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend RGBA16Float EDR capture failure was not diagnostic");
   }
   if (!wgpu_backend->update_headless_output(pixel_buffer, kWidth, kHeight, 3)) {
     CVPixelBufferRelease(pixel_buffer);
@@ -1087,6 +1105,71 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend target ring diagnostics did not report buffer count");
   }
+  const void* duplicate_ring_targets[] = {
+      ring_displayed.buffer,
+      ring_displayed.buffer,
+      ring_available.buffer,
+  };
+  if (wgpu_backend->update_headless_output_ring(duplicate_ring_targets,
+                                                3,
+                                                ring_displayed.buffer,
+                                                ring_protected.buffer,
+                                                kWidth,
+                                                kHeight,
+                                                3)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend accepted duplicate target ring entries");
+  }
+  if (std::string(wgpu_backend->last_error()).find("duplicate") ==
+      std::string::npos ||
+      wgpu_backend->diagnostics().buffer_count != 3) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend duplicate ring failure was not transactional");
+  }
+  const void* null_ring_targets[] = {
+      ring_displayed.buffer,
+      nullptr,
+      ring_available.buffer,
+  };
+  if (wgpu_backend->update_headless_output_ring(null_ring_targets,
+                                                3,
+                                                ring_displayed.buffer,
+                                                ring_protected.buffer,
+                                                kWidth,
+                                                kHeight,
+                                                3)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend accepted null target ring entries");
+  }
+  if (std::string(wgpu_backend->last_error()).find("null pixel buffers") ==
+          std::string::npos ||
+      wgpu_backend->diagnostics().buffer_count != 3) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend null ring failure was not transactional");
+  }
+  auto ring_mixed_format = make_rgba_half_pixel_buffer(kWidth, kHeight);
+  const void* mixed_ring_targets[] = {
+      ring_displayed.buffer,
+      ring_mixed_format.buffer,
+      ring_available.buffer,
+  };
+  if (!ring_mixed_format.buffer ||
+      wgpu_backend->update_headless_output_ring(mixed_ring_targets,
+                                                3,
+                                                ring_displayed.buffer,
+                                                ring_protected.buffer,
+                                                kWidth,
+                                                kHeight,
+                                                3)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend accepted mixed target ring formats");
+  }
+  if (std::string(wgpu_backend->last_error()).find("mixed target formats") ==
+          std::string::npos ||
+      wgpu_backend->diagnostics().buffer_count != 3) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend mixed ring failure was not transactional");
+  }
   int ring_completion_count = 0;
   uint64_t ring_completion_target = 0;
   vr::PresentationBackendDrawHooks ring_hooks;
@@ -1167,14 +1250,11 @@ int main() {
   large_config.height = kLargeTargetHeight;
   auto large_target =
       make_bgra_pixel_buffer(kLargeTargetWidth, kLargeTargetHeight);
+  large_config.output = large_target.buffer;
   vr::RendererDrawSnapshot large_snapshot = snapshot;
   large_snapshot.target_width = kLargeTargetWidth;
   large_snapshot.target_height = kLargeTargetHeight;
-  if (!large_target.buffer || !wgpu_backend->initialize(large_config) ||
-      !wgpu_backend->update_headless_output(large_target.buffer,
-                                            kLargeTargetWidth,
-                                            kLargeTargetHeight,
-                                            3)) {
+  if (!large_target.buffer || !wgpu_backend->initialize(large_config)) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend could not initialize >2048 target smoke");
   }

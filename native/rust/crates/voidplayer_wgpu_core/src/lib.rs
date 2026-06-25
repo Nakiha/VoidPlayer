@@ -7,7 +7,7 @@ pub mod overlay;
 
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{MTLResource, MTLTexture, MTLTextureType};
+use objc2_metal::{MTLPixelFormat, MTLResource, MTLTexture, MTLTextureType};
 use overlay::OverlayRect;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
@@ -491,7 +491,7 @@ pub static WGSL_COMPOSITE_SHADER: &str = include_str!("../shaders/composite.wgsl
 pub struct WgpuMetalRenderer {
     _instance: wgpu::Instance,
     adapter_info: wgpu::AdapterInfo,
-    required_features: wgpu::Features,
+    adapter_features: wgpu::Features,
     device: wgpu::Device,
     queue: wgpu::Queue,
     sampler: wgpu::Sampler,
@@ -541,7 +541,7 @@ impl WgpuMetalRenderer {
     }
 
     pub fn supports_texture_format_16bit_norm(&self) -> bool {
-        self.required_features
+        self.adapter_features
             .contains(wgpu::Features::TEXTURE_FORMAT_16BIT_NORM)
     }
 
@@ -574,6 +574,12 @@ impl WgpuMetalRenderer {
         if metal_texture.is_null() || width == 0 || height == 0 {
             return Err("wgpu-metal texture import arguments are invalid");
         }
+        if texture_format_requires_16bit_norm(format) && !self.supports_texture_format_16bit_norm()
+        {
+            return Err(
+                "wgpu-metal P010 texture import requires 16-bit normalized texture support",
+            );
+        }
         let profile_start = Instant::now();
         let key = ImportedTextureKey {
             metal_texture: metal_texture as usize,
@@ -586,7 +592,7 @@ impl WgpuMetalRenderer {
         if let Some(entry) = self
             .imported_textures
             .iter_mut()
-            .find(|entry| entry.key == key)
+            .find(|entry| entry.key == key && entry.texture_class == texture_class)
         {
             entry.last_used = self.import_clock;
             match texture_class {
@@ -627,16 +633,28 @@ impl WgpuMetalRenderer {
         }
         self.imported_textures.push(CachedImportedTexture {
             key,
+            texture_class,
             texture: texture.clone(),
             view: view.clone(),
             last_used: self.import_clock,
         });
-        const MAX_IMPORTED_TEXTURES: usize = 256;
-        if self.imported_textures.len() > MAX_IMPORTED_TEXTURES {
+        const MAX_DESTINATION_IMPORTED_TEXTURES: usize = 6;
+        const MAX_SOURCE_IMPORTED_TEXTURES: usize = 16;
+        let class_limit = match texture_class {
+            ImportedTextureClass::Destination => MAX_DESTINATION_IMPORTED_TEXTURES,
+            ImportedTextureClass::Source => MAX_SOURCE_IMPORTED_TEXTURES,
+        };
+        let class_count = self
+            .imported_textures
+            .iter()
+            .filter(|entry| entry.texture_class == texture_class)
+            .count();
+        if class_count > class_limit {
             if let Some((evict_index, _)) = self
                 .imported_textures
                 .iter()
                 .enumerate()
+                .filter(|(_, entry)| entry.texture_class == texture_class)
                 .min_by_key(|(_, entry)| entry.last_used)
             {
                 self.imported_textures.swap_remove(evict_index);
@@ -777,6 +795,7 @@ struct ImportedTextureKey {
 
 struct CachedImportedTexture {
     key: ImportedTextureKey,
+    texture_class: ImportedTextureClass,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     last_used: u64,
@@ -897,10 +916,9 @@ impl WgpuMetalRenderer {
             .request_adapter(&wgpu::RequestAdapterOptions::default())
             .await
             .map_err(|_| "wgpu-metal failed to create Metal adapter")?;
-        let required_features = wgpu::Features::TEXTURE_FORMAT_16BIT_NORM;
-        if !adapter.features().contains(required_features) {
-            return Err("wgpu-metal Metal adapter lacks 16-bit normalized texture support");
-        }
+        let adapter_features = adapter.features();
+        let enabled_optional_features =
+            adapter_features & wgpu::Features::TEXTURE_FORMAT_16BIT_NORM;
         let adapter_limits = adapter.limits();
         let mut required_limits = wgpu::Limits::downlevel_defaults();
         required_limits.max_texture_dimension_2d = adapter_limits.max_texture_dimension_2d;
@@ -908,7 +926,7 @@ impl WgpuMetalRenderer {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("voidplayer-wgpu-metal"),
-                required_features,
+                required_features: enabled_optional_features,
                 required_limits,
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::default(),
@@ -1106,7 +1124,7 @@ impl WgpuMetalRenderer {
         Ok(Self {
             _instance: instance,
             adapter_info,
-            required_features,
+            adapter_features: enabled_optional_features,
             device,
             queue,
             sampler,
@@ -1177,6 +1195,27 @@ fn texture_format_key(format: wgpu::TextureFormat) -> Result<u8, &'static str> {
     }
 }
 
+fn texture_format_requires_16bit_norm(format: wgpu::TextureFormat) -> bool {
+    matches!(
+        format,
+        wgpu::TextureFormat::R16Unorm | wgpu::TextureFormat::Rg16Unorm
+    )
+}
+
+fn metal_pixel_format_for_wgpu(
+    format: wgpu::TextureFormat,
+) -> Result<MTLPixelFormat, &'static str> {
+    match format {
+        wgpu::TextureFormat::Bgra8Unorm => Ok(MTLPixelFormat::BGRA8Unorm),
+        wgpu::TextureFormat::Rgba16Float => Ok(MTLPixelFormat::RGBA16Float),
+        wgpu::TextureFormat::R8Unorm => Ok(MTLPixelFormat::R8Unorm),
+        wgpu::TextureFormat::Rg8Unorm => Ok(MTLPixelFormat::RG8Unorm),
+        wgpu::TextureFormat::R16Unorm => Ok(MTLPixelFormat::R16Unorm),
+        wgpu::TextureFormat::Rg16Unorm => Ok(MTLPixelFormat::RG16Unorm),
+        _ => Err("wgpu-metal texture import format is unsupported"),
+    }
+}
+
 fn import_metal_texture_2d_raw(
     device: &wgpu::Device,
     metal_texture: *mut core::ffi::c_void,
@@ -1202,6 +1241,15 @@ fn import_metal_texture_2d_raw(
     let texture_device_ptr: *const core::ffi::c_void = Retained::as_ptr(&texture_device).cast();
     if texture_device_ptr != expected_device {
         return Err("wgpu-metal MTLTexture device does not match wgpu Metal device");
+    }
+    if raw_texture.textureType() != MTLTextureType::Type2D
+        || raw_texture.pixelFormat() != metal_pixel_format_for_wgpu(format)?
+        || raw_texture.width() != width as usize
+        || raw_texture.height() != height as usize
+        || raw_texture.mipmapLevelCount() != 1
+        || raw_texture.sampleCount() != 1
+    {
+        return Err("wgpu-metal MTLTexture descriptor does not match import request");
     }
     let size = wgpu::Extent3d {
         width,
@@ -2049,6 +2097,9 @@ fn upload_cpu_yuv_package_textures(
         }
         let format = package.decision.yuv_format[slot];
         let high_bit = format == YUV_FORMAT_P010;
+        if high_bit && !renderer.supports_texture_format_16bit_norm() {
+            return Err("wgpu-metal P010 package requires 16-bit normalized texture support");
+        }
         let bytes_per_sample = if high_bit { 2usize } else { 1usize };
         let coded_width = package.decision.coded_width[slot];
         let coded_height = package.decision.coded_height[slot];
@@ -3003,7 +3054,7 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
             key: bind_group_key,
             bind_group: bind_group.clone(),
         });
-        const MAX_CV_BIND_GROUPS: usize = 128;
+        const MAX_CV_BIND_GROUPS: usize = 8;
         if renderer.cv_bind_groups.len() > MAX_CV_BIND_GROUPS {
             renderer.cv_bind_groups.remove(0);
         }

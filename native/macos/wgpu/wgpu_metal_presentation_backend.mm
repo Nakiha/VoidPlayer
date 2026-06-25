@@ -61,6 +61,45 @@ bool metal_texture_matches_device(id<MTLTexture> texture, void* metal_device) {
   return [texture device] == (__bridge id<MTLDevice>)metal_device;
 }
 
+bool validate_target_texture_device(void* texture_cache,
+                                    void* pixel_buffer,
+                                    MTLPixelFormat metal_pixel_format,
+                                    int32_t width,
+                                    int32_t height,
+                                    void* metal_device,
+                                    std::string& error) {
+  if (!texture_cache || !pixel_buffer || !metal_device || width <= 0 || height <= 0) {
+    error = "wgpu-metal target texture validation arguments are invalid";
+    return false;
+  }
+  CVMetalTextureRef texture_ref = nullptr;
+  const CVReturn status = CVMetalTextureCacheCreateTextureFromImage(
+      kCFAllocatorDefault,
+      static_cast<CVMetalTextureCacheRef>(texture_cache),
+      static_cast<CVPixelBufferRef>(pixel_buffer),
+      nullptr,
+      metal_pixel_format,
+      width,
+      height,
+      0,
+      &texture_ref);
+  if (status != kCVReturnSuccess || !texture_ref) {
+    if (texture_ref) {
+      CFRelease(texture_ref);
+    }
+    error = "wgpu-metal failed to validate target CVPixelBuffer texture";
+    return false;
+  }
+  id<MTLTexture> texture = CVMetalTextureGetTexture(texture_ref);
+  const bool matches = metal_texture_matches_device(texture, metal_device);
+  CFRelease(texture_ref);
+  if (!matches) {
+    error = "wgpu-metal target texture device does not match wgpu Metal device";
+    return false;
+  }
+  return true;
+}
+
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
   return static_cast<uint64_t>(
       std::chrono::duration_cast<std::chrono::microseconds>(
@@ -299,6 +338,8 @@ wgpu_overlay_primitive_cache_entries() {
   return entries;
 }
 
+thread_local bool g_in_wgpu_async_completion_callback = false;
+
 uint64_t& wgpu_overlay_primitive_cache_clock() {
   static uint64_t clock = 0;
   return clock;
@@ -455,7 +496,9 @@ void wgpu_async_draw_completed(void* user_data, int32_t result) {
   if (!backend) {
     return;
   }
+  g_in_wgpu_async_completion_callback = true;
   backend->complete_async_draw(std::move(pending), result == 0);
+  g_in_wgpu_async_completion_callback = false;
   std::lock_guard<std::mutex> lock(state->mutex);
   if (state->active_callbacks > 0) {
     --state->active_callbacks;
@@ -542,9 +585,11 @@ void WgpuMetalPresentationBackend::shutdown() {
     std::unique_lock<std::mutex> lock(async_state_->mutex);
     async_state_->shutdown = true;
     async_state_->backend = nullptr;
-    async_state_->cv.wait(lock, [&] {
-      return async_state_->active_callbacks == 0;
-    });
+    if (!g_in_wgpu_async_completion_callback) {
+      async_state_->cv.wait(lock, [&] {
+        return async_state_->active_callbacks == 0;
+      });
+    }
   }
   if (wgpu_renderer_) {
     VPWgpuMetalRendererDestroy(wgpu_renderer_);
@@ -558,6 +603,7 @@ void WgpuMetalPresentationBackend::shutdown() {
     target_ring_.clear();
     target_ring_enabled_ = false;
     in_flight_draws_ = 0;
+    ++target_ring_generation_;
     displayed_target_address_ = 0;
     protected_target_address_ = 0;
   }
@@ -753,7 +799,7 @@ void* WgpuMetalPresentationBackend::cached_source_texture_ref(
       plane,
       source_texture_cache_clock_,
   });
-  constexpr size_t kMaxSourceTextureCacheEntries = 128;
+  constexpr size_t kMaxSourceTextureCacheEntries = 12;
   if (source_texture_cache_.size() > kMaxSourceTextureCacheEntries) {
     const auto evict = std::min_element(
         source_texture_cache_.begin(),
@@ -780,36 +826,43 @@ bool WgpuMetalPresentationBackend::update_headless_output(void* output,
     clear_headless_output();
     return false;
   }
+  WgpuOutputTargetDescriptor descriptor;
+  std::string target_error;
+  if (!resolve_output_target_descriptor(output,
+                                        width,
+                                        height,
+                                        descriptor,
+                                        target_error) ||
+      !validate_target_texture_device(texture_cache_,
+                                      output,
+                                      descriptor.metal_pixel_format,
+                                      width,
+                                      height,
+                                      metal_device_,
+                                      target_error)) {
+    set_last_error(target_error.empty()
+                       ? "wgpu-metal presentation target is invalid"
+                       : target_error);
+    return false;
+  }
   std::lock_guard<std::mutex> lock(mutex_);
   release_target_texture_cache_locked();
   target_ring_.clear();
   target_ring_enabled_ = false;
-  in_flight_draws_ = 0;
   displayed_target_address_ = 0;
   protected_target_address_ = 0;
-  WgpuOutputTargetDescriptor descriptor;
-  std::string target_error;
-  if (resolve_output_target_descriptor(output,
-                                       width,
-                                       height,
-                                       descriptor,
-                                       target_error)) {
-    draw_target_output_format_ = descriptor.ffi_output_format;
-    draw_target_output_color_mode_ = descriptor.ffi_output_color_mode;
-    draw_target_render_format_ = descriptor.render_target_format;
-    draw_target_color_space_ = descriptor.render_color_space;
-  } else {
-    draw_target_output_format_ = 0;
-    draw_target_output_color_mode_ = 0;
-    draw_target_render_format_ = "unsupported";
-    draw_target_color_space_ = "unsupported";
-  }
+  ++target_ring_generation_;
+  draw_target_output_format_ = descriptor.ffi_output_format;
+  draw_target_output_color_mode_ = descriptor.ffi_output_color_mode;
+  draw_target_render_format_ = descriptor.render_target_format;
+  draw_target_color_space_ = descriptor.render_color_space;
   draw_target_pixel_buffer_ = output;
   width_ = width;
   height_ = height;
   draw_target_width_ = width;
   draw_target_height_ = height;
   draw_target_max_track_slots_ = std::max(1, max_track_slots);
+  last_error_.clear();
   return metal_device_ && texture_cache_;
 }
 
@@ -825,62 +878,93 @@ bool WgpuMetalPresentationBackend::update_headless_output_ring(
     clear_headless_output();
     return false;
   }
-  std::lock_guard<std::mutex> lock(mutex_);
-  release_target_texture_cache_locked();
-  target_ring_.clear();
-  in_flight_draws_ = 0;
-  target_ring_.reserve(pixel_buffer_count);
-  displayed_target_address_ = pointer_bits(displayed_pixel_buffer);
-  protected_target_address_ = pointer_bits(protected_pixel_buffer);
+  const uint64_t displayed_address = pointer_bits(displayed_pixel_buffer);
+  const uint64_t protected_address = pointer_bits(protected_pixel_buffer);
   WgpuOutputTargetDescriptor ring_descriptor;
   std::string ring_target_error;
   bool ring_descriptor_available = false;
+  std::vector<TargetSlot> next_ring;
+  next_ring.reserve(pixel_buffer_count);
+  std::vector<uint64_t> seen_addresses;
+  seen_addresses.reserve(pixel_buffer_count);
   for (size_t i = 0; i < pixel_buffer_count; ++i) {
-    if (pixel_buffers[i]) {
-      void* pixel_buffer = const_cast<void*>(pixel_buffers[i]);
-      if (!ring_descriptor_available) {
-        ring_descriptor_available = resolve_output_target_descriptor(
-            pixel_buffer,
-            width,
-            height,
-            ring_descriptor,
-            ring_target_error);
-      }
-      const uint64_t address = pointer_bits(pixel_buffer);
-      TargetSlot slot;
-      slot.pixel_buffer = pixel_buffer;
-      if (address == displayed_target_address_) {
-        slot.state = TargetState::Displayed;
-      } else if (address == protected_target_address_) {
-        slot.state = TargetState::Protected;
-      } else {
-        slot.state = TargetState::Available;
-      }
-      target_ring_.push_back(slot);
+    if (!pixel_buffers[i]) {
+      set_last_error("wgpu-metal target ring contains null pixel buffers");
+      return false;
     }
+    void* pixel_buffer = const_cast<void*>(pixel_buffers[i]);
+    const uint64_t address = pointer_bits(pixel_buffer);
+    if (std::find(seen_addresses.begin(), seen_addresses.end(), address) !=
+        seen_addresses.end()) {
+      set_last_error("wgpu-metal target ring contains duplicate pixel buffers");
+      return false;
+    }
+    seen_addresses.push_back(address);
+    WgpuOutputTargetDescriptor descriptor;
+    if (!resolve_output_target_descriptor(pixel_buffer,
+                                          width,
+                                          height,
+                                          descriptor,
+                                          ring_target_error) ||
+        !validate_target_texture_device(texture_cache_,
+                                        pixel_buffer,
+                                        descriptor.metal_pixel_format,
+                                        width,
+                                        height,
+                                        metal_device_,
+                                        ring_target_error)) {
+      set_last_error(ring_target_error.empty()
+                         ? "wgpu-metal target ring descriptor is invalid"
+                         : ring_target_error);
+      return false;
+    }
+    if (!ring_descriptor_available) {
+      ring_descriptor = descriptor;
+      ring_descriptor_available = true;
+    } else if (descriptor.metal_pixel_format != ring_descriptor.metal_pixel_format ||
+               descriptor.ffi_output_format != ring_descriptor.ffi_output_format ||
+               descriptor.ffi_output_color_mode !=
+                   ring_descriptor.ffi_output_color_mode) {
+      set_last_error("wgpu-metal target ring contains mixed target formats");
+      return false;
+    }
+    TargetSlot slot;
+    slot.pixel_buffer = pixel_buffer;
+    if (address == displayed_address) {
+      slot.state = TargetState::Displayed;
+    } else if (address == protected_address) {
+      slot.state = TargetState::Protected;
+    } else {
+      slot.state = TargetState::Available;
+    }
+    next_ring.push_back(slot);
   }
-  if (target_ring_.empty()) {
+  if (next_ring.empty() || !ring_descriptor_available) {
+    set_last_error("wgpu-metal target ring is empty");
     return false;
   }
+  std::lock_guard<std::mutex> lock(mutex_);
+  release_target_texture_cache_locked();
+  ++target_ring_generation_;
+  for (auto& slot : next_ring) {
+    slot.slot_id = ++next_target_slot_id_;
+  }
+  target_ring_ = std::move(next_ring);
+  displayed_target_address_ = displayed_address;
+  protected_target_address_ = protected_address;
   target_ring_enabled_ = target_ring_.size() >= 2;
   draw_target_pixel_buffer_ = target_ring_enabled_ ? nullptr
                                                    : target_ring_.front().pixel_buffer;
-  if (ring_descriptor_available) {
-    draw_target_output_format_ = ring_descriptor.ffi_output_format;
-    draw_target_output_color_mode_ = ring_descriptor.ffi_output_color_mode;
-    draw_target_render_format_ = ring_descriptor.render_target_format;
-    draw_target_color_space_ = ring_descriptor.render_color_space;
-  } else {
-    draw_target_output_format_ = 0;
-    draw_target_output_color_mode_ = 0;
-    draw_target_render_format_ = "unsupported";
-    draw_target_color_space_ = "unsupported";
-  }
+  draw_target_output_format_ = ring_descriptor.ffi_output_format;
+  draw_target_output_color_mode_ = ring_descriptor.ffi_output_color_mode;
+  draw_target_render_format_ = ring_descriptor.render_target_format;
+  draw_target_color_space_ = ring_descriptor.render_color_space;
   width_ = width;
   height_ = height;
   draw_target_width_ = width;
   draw_target_height_ = height;
   draw_target_max_track_slots_ = std::max(1, max_track_slots);
+  last_error_.clear();
   return metal_device_ && texture_cache_;
 }
 
@@ -895,6 +979,9 @@ void WgpuMetalPresentationBackend::mark_headless_output_displayed(void* pixel_bu
   displayed_target_address_ = pointer_bits(pixel_buffer);
   for (auto& slot : target_ring_) {
     const uint64_t address = pointer_bits(slot.pixel_buffer);
+    if (slot.state == TargetState::InFlight) {
+      continue;
+    }
     if (address == displayed_target_address_) {
       slot.state = TargetState::Displayed;
     } else if (address == protected_target_address_) {
@@ -914,6 +1001,9 @@ void WgpuMetalPresentationBackend::protect_headless_output(void* pixel_buffer) {
   protected_target_address_ = pointer_bits(pixel_buffer);
   for (auto& slot : target_ring_) {
     const uint64_t address = pointer_bits(slot.pixel_buffer);
+    if (slot.state == TargetState::InFlight) {
+      continue;
+    }
     if (address == displayed_target_address_) {
       slot.state = TargetState::Displayed;
     } else if (pixel_buffer && address == protected_target_address_) {
@@ -937,6 +1027,9 @@ void WgpuMetalPresentationBackend::release_headless_output(void* pixel_buffer) {
     if (pointer_bits(slot.pixel_buffer) != released) {
       continue;
     }
+    if (slot.state == TargetState::InFlight) {
+      return;
+    }
     if (released == displayed_target_address_) {
       slot.state = TargetState::Displayed;
     } else if (released == protected_target_address_) {
@@ -955,6 +1048,7 @@ void WgpuMetalPresentationBackend::clear_headless_output() {
   target_ring_.clear();
   target_ring_enabled_ = false;
   in_flight_draws_ = 0;
+  ++target_ring_generation_;
   displayed_target_address_ = 0;
   protected_target_address_ = 0;
   draw_target_width_ = 0;
@@ -1075,6 +1169,14 @@ bool WgpuMetalPresentationBackend::capture_front_buffer(std::vector<uint8_t>& bg
   }
   const int pixel_width = static_cast<int>(CVPixelBufferGetWidth(pixel_buffer));
   const int pixel_height = static_cast<int>(CVPixelBufferGetHeight(pixel_buffer));
+  if (CVPixelBufferGetPixelFormatType(pixel_buffer) != kCVPixelFormatType_32BGRA) {
+    CVPixelBufferUnlockBaseAddress(pixel_buffer, kCVPixelBufferLock_ReadOnly);
+    set_last_error("wgpu-metal capture only supports BGRA8 SDR targets");
+    bgra.clear();
+    width = 0;
+    height = 0;
+    return false;
+  }
   const int stride = static_cast<int>(CVPixelBufferGetBytesPerRow(pixel_buffer));
   const auto* source =
       static_cast<const uint8_t*>(CVPixelBufferGetBaseAddress(pixel_buffer));
@@ -1126,6 +1228,11 @@ bool WgpuMetalPresentationBackend::capture_front_buffer_region(
   }
   const int pixel_width = static_cast<int>(CVPixelBufferGetWidth(pixel_buffer));
   const int pixel_height = static_cast<int>(CVPixelBufferGetHeight(pixel_buffer));
+  if (CVPixelBufferGetPixelFormatType(pixel_buffer) != kCVPixelFormatType_32BGRA) {
+    CVPixelBufferUnlockBaseAddress(pixel_buffer, kCVPixelBufferLock_ReadOnly);
+    set_last_error("wgpu-metal capture only supports BGRA8 SDR targets");
+    return false;
+  }
   const int stride = static_cast<int>(CVPixelBufferGetBytesPerRow(pixel_buffer));
   const auto* source =
       static_cast<const uint8_t*>(CVPixelBufferGetBaseAddress(pixel_buffer));
@@ -1173,12 +1280,14 @@ bool WgpuMetalPresentationBackend::draw_frame(
     mark_draw_failure("wgpu-metal Rust FFI is not linked");
     return false;
   }
+  TargetAcquireResult target_lease;
   void* target = nullptr;
   bool target_acquired = false;
   std::string acquire_error;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    target = acquire_draw_target_locked(hooks.draw_source);
+    target_lease = acquire_draw_target_locked(hooks.draw_source);
+    target = target_lease.pixel_buffer;
     target_acquired = target != nullptr;
     acquire_error = last_error_;
   }
@@ -1187,7 +1296,10 @@ bool WgpuMetalPresentationBackend::draw_frame(
     if (!target_acquired || acquired_target_address == 0) {
       return;
     }
-    complete_draw_target(acquired_target_address, success);
+    complete_draw_target(acquired_target_address,
+                         target_lease.ring_generation,
+                         target_lease.slot_id,
+                         success);
     target_acquired = false;
   };
   auto fail_after_target_acquire = [&](std::string error) {
@@ -1252,6 +1364,8 @@ bool WgpuMetalPresentationBackend::draw_frame(
     pending->draw_start = draw_start;
     pending->render_call_start = draw_start;
     pending->target_pixel_buffer_address = acquired_target_address;
+    pending->target_ring_generation = target_lease.ring_generation;
+    pending->target_slot_id = target_lease.slot_id;
     pending->package_copy_us = package_copy_us;
     pending->package_storage = package_storage;
     pending->source_generation = source_generation;
@@ -1665,8 +1779,10 @@ bool WgpuMetalPresentationBackend::target_installed_locked() const {
   return !target_ring_.empty();
 }
 
-void* WgpuMetalPresentationBackend::acquire_draw_target_locked(
+WgpuMetalPresentationBackend::TargetAcquireResult
+WgpuMetalPresentationBackend::acquire_draw_target_locked(
     const char* draw_source) {
+  TargetAcquireResult result;
   const auto record_backpressure = [&](const char* reason,
                                        uint64_t limit,
                                        size_t target_count) {
@@ -1688,7 +1804,7 @@ void* WgpuMetalPresentationBackend::acquire_draw_target_locked(
   };
   if (!target_ring_enabled_) {
     if (!draw_target_pixel_buffer_) {
-      return nullptr;
+      return result;
     }
     const uint64_t limit =
         vp_macos::kMetalPresentConcurrencyPolicy.max_single_target_in_flight;
@@ -1697,10 +1813,12 @@ void* WgpuMetalPresentationBackend::acquire_draw_target_locked(
           "renderer-owned wgpu-metal async draw deferred by backpressure",
           limit,
           draw_target_pixel_buffer_ ? 1u : 0u);
-      return nullptr;
+      return result;
     }
     ++in_flight_draws_;
-    return draw_target_pixel_buffer_;
+    result.pixel_buffer = draw_target_pixel_buffer_;
+    result.ring_generation = target_ring_generation_;
+    return result;
   }
   const uint64_t limit =
       vp_macos::kMetalPresentConcurrencyPolicy.max_ring_in_flight;
@@ -1709,7 +1827,7 @@ void* WgpuMetalPresentationBackend::acquire_draw_target_locked(
         "renderer-owned wgpu-metal async draw deferred by backpressure",
         limit,
         target_ring_.size());
-    return nullptr;
+    return result;
   }
   for (auto& slot : target_ring_) {
     if (slot.state != TargetState::Available || !slot.pixel_buffer) {
@@ -1717,19 +1835,30 @@ void* WgpuMetalPresentationBackend::acquire_draw_target_locked(
     }
     slot.state = TargetState::InFlight;
     ++in_flight_draws_;
-    return slot.pixel_buffer;
+    result.pixel_buffer = slot.pixel_buffer;
+    result.ring_generation = target_ring_generation_;
+    result.slot_id = slot.slot_id;
+    return result;
   }
   record_backpressure("renderer-owned wgpu-metal presentation target ring is busy",
                       limit,
                       target_ring_.size());
-  return nullptr;
+  return result;
 }
 
 void WgpuMetalPresentationBackend::complete_draw_target(
     uint64_t target_pixel_buffer_address,
+    uint64_t target_ring_generation,
+    uint64_t target_slot_id,
     bool success) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (target_pixel_buffer_address == 0) {
+    return;
+  }
+  if (target_ring_generation != target_ring_generation_) {
+    if (in_flight_draws_ > 0) {
+      --in_flight_draws_;
+    }
     return;
   }
   if (!target_ring_enabled_) {
@@ -1740,7 +1869,8 @@ void WgpuMetalPresentationBackend::complete_draw_target(
     return;
   }
   for (auto& slot : target_ring_) {
-    if (pointer_bits(slot.pixel_buffer) != target_pixel_buffer_address) {
+    if (pointer_bits(slot.pixel_buffer) != target_pixel_buffer_address ||
+        slot.slot_id != target_slot_id) {
       continue;
     }
     if (slot.state == TargetState::InFlight) {
@@ -1928,7 +2058,10 @@ void WgpuMetalPresentationBackend::complete_async_draw(
     mark_draw_failure("wgpu-metal async GPU completion failed");
   }
   if (pending->target_acquired) {
-    complete_draw_target(pending->target_pixel_buffer_address, success);
+    complete_draw_target(pending->target_pixel_buffer_address,
+                         pending->target_ring_generation,
+                         pending->target_slot_id,
+                         success);
     pending->target_acquired = false;
   }
   if (pending->hooks.record_frame_copy_us) {

@@ -76,11 +76,17 @@ private:
   };
   struct TargetSlot {
     void* pixel_buffer = nullptr;
+    uint64_t slot_id = 0;
     void* cached_texture_ref = nullptr;
     int32_t cached_width = 0;
     int32_t cached_height = 0;
     uint64_t cached_pixel_format = 0;
     TargetState state = TargetState::Available;
+  };
+  struct TargetAcquireResult {
+    void* pixel_buffer = nullptr;
+    uint64_t ring_generation = 0;
+    uint64_t slot_id = 0;
   };
   struct SourceTextureCacheEntry {
     void* pixel_buffer = nullptr;
@@ -111,6 +117,8 @@ private:
     std::chrono::steady_clock::time_point draw_start;
     std::chrono::steady_clock::time_point render_call_start;
     uint64_t target_pixel_buffer_address = 0;
+    uint64_t target_ring_generation = 0;
+    uint64_t target_slot_id = 0;
     uint64_t package_copy_us = 0;
     int32_t package_storage = 0;
     uint64_t source_generation = 0;
@@ -135,7 +143,7 @@ private:
                          uint64_t source_generation,
                          bool source_upload = true);
   bool target_installed_locked() const;
-  void* acquire_draw_target_locked(const char* draw_source);
+  TargetAcquireResult acquire_draw_target_locked(const char* draw_source);
   void release_target_texture_cache_locked();
   void release_target_texture_cache_for_slot(TargetSlot& slot);
   void release_source_texture_cache_locked();
@@ -150,7 +158,10 @@ private:
                                   int32_t height,
                                   size_t plane,
                                   std::string& error);
-  void complete_draw_target(uint64_t target_pixel_buffer_address, bool success);
+  void complete_draw_target(uint64_t target_pixel_buffer_address,
+                            uint64_t target_ring_generation,
+                            uint64_t target_slot_id,
+                            bool success);
   void* capture_target_locked() const;
   void* current_draw_target_locked() const;
   SourceMetricsResult record_source_metrics(
@@ -188,6 +199,8 @@ private:
   bool target_ring_enabled_ = false;
   uint64_t displayed_target_address_ = 0;
   uint64_t protected_target_address_ = 0;
+  uint64_t target_ring_generation_ = 0;
+  uint64_t next_target_slot_id_ = 0;
   std::string wgpu_adapter_description_ = "unknown";
   std::string wgpu_driver_type_ = "unknown";
   std::string wgpu_backend_name_ = "unknown";

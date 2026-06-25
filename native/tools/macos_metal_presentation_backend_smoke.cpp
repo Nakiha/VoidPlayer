@@ -1077,6 +1077,55 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend BGRA source-size sampling read atlas padding");
   }
+  constexpr int kLargeSourceWidth = 3840;
+  constexpr int kLargeSourceHeight = 2160;
+  auto large_bgra = std::make_shared<std::vector<uint8_t>>(
+      static_cast<size_t>(kLargeSourceWidth) *
+          static_cast<size_t>(kLargeSourceHeight) * 4u,
+      0);
+  for (size_t offset = 0; offset < large_bgra->size(); offset += 4) {
+    (*large_bgra)[offset + 0] = 37;
+    (*large_bgra)[offset + 1] = 91;
+    (*large_bgra)[offset + 2] = 173;
+    (*large_bgra)[offset + 3] = 255;
+  }
+  vr::TextureFrame large_source_frame = frame;
+  large_source_frame.width = kLargeSourceWidth;
+  large_source_frame.height = kLargeSourceHeight;
+  large_source_frame.storage =
+      vr::CpuRgbaFrameStorage{large_bgra, kLargeSourceWidth * 4};
+  vr::RendererDrawSnapshot large_source_snapshot = snapshot;
+  large_source_snapshot.decision.frames[0] = large_source_frame;
+  large_source_snapshot.tracks[0].video_width = kLargeSourceWidth;
+  large_source_snapshot.tracks[0].video_height = kLargeSourceHeight;
+  large_source_snapshot.track_geometry[0] =
+      {true, kLargeSourceWidth, kLargeSourceHeight, 16.0f / 9.0f};
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                large_source_snapshot,
+                                vr::PresentationBackendDrawHooks{})) {
+    std::cerr << "WgpuMetal backend rejected large-source BGRA snapshot: "
+              << wgpu_backend->last_error() << "\n";
+    CVPixelBufferRelease(pixel_buffer);
+    return 1;
+  }
+  wgpu_capture.clear();
+  if (!wgpu_backend->capture_front_buffer(wgpu_capture,
+                                          wgpu_capture_width,
+                                          wgpu_capture_height) ||
+      wgpu_capture_width != kWidth || wgpu_capture_height != kHeight ||
+      wgpu_capture.size() < static_cast<size_t>(kWidth * kHeight * 4)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend large-source BGRA capture failed");
+  }
+  const size_t center_pixel =
+      (static_cast<size_t>(kHeight / 2) * kWidth + static_cast<size_t>(kWidth / 2)) * 4u;
+  if (wgpu_capture[center_pixel + 0] != 37 ||
+      wgpu_capture[center_pixel + 1] != 91 ||
+      wgpu_capture[center_pixel + 2] != 173 ||
+      wgpu_capture[center_pixel + 3] != 255) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend large-source BGRA downsample failed");
+  }
   auto ring_displayed = make_bgra_pixel_buffer(kWidth, kHeight);
   auto ring_protected = make_bgra_pixel_buffer(kWidth, kHeight);
   auto ring_available = make_bgra_pixel_buffer(kWidth, kHeight);

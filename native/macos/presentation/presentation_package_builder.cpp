@@ -375,4 +375,69 @@ bool copy_snapshot_bgra_package(const vr::RendererDrawSnapshot& snapshot,
   return true;
 }
 
+bool copy_snapshot_bgra_source_package(
+    const vr::RendererDrawSnapshot& snapshot,
+    uint8_t* dst,
+    size_t dst_size,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativePresentFramePackageInfo* out,
+    std::string& error) {
+  if (!dst || !out || width <= 0 || height <= 0) {
+    error = "invalid snapshot BGRA source package destination";
+    return false;
+  }
+  fill_present_decision_info_from_snapshot(snapshot, width, height, &out->decision);
+  if (!present_decision_info_is_complete(out->decision, error)) {
+    return false;
+  }
+  size_t cursor = 0;
+  for (size_t slot = 0; slot < vr::kMaxTracks; ++slot) {
+    if (!snapshot.decision.frames[slot].has_value()) {
+      continue;
+    }
+    const auto& frame = *snapshot.decision.frames[slot];
+    if (frame.width <= 0 || frame.height <= 0 ||
+        frame.width > std::numeric_limits<int32_t>::max() / 4) {
+      error = "snapshot contains invalid BGRA frame dimensions";
+      return false;
+    }
+    const size_t source_row_bytes = static_cast<size_t>(frame.width) * 4u;
+    if (static_cast<size_t>(frame.height) >
+            std::numeric_limits<size_t>::max() / source_row_bytes ||
+        source_row_bytes >
+            static_cast<size_t>(std::numeric_limits<int32_t>::max()) ||
+        cursor > dst_size) {
+      error = "snapshot BGRA source package destination is too small";
+      return false;
+    }
+    const size_t source_bytes =
+        source_row_bytes * static_cast<size_t>(frame.height);
+    if (source_bytes > dst_size - cursor) {
+      error = "snapshot BGRA source package destination is too small";
+      return false;
+    }
+    VPMacOSNativeFrameInfo frame_info = {};
+    const auto status = copy_texture_frame_to_bgra_destination_checked(
+        frame,
+        dst + cursor,
+        source_bytes,
+        frame.width,
+        frame.height,
+        static_cast<int32_t>(source_row_bytes),
+        &frame_info);
+    if (status != PresentationAdapterStatus::Ok) {
+      error = presentation_adapter_status_message(status);
+      return false;
+    }
+    out->decision.y_offset[slot] = static_cast<int32_t>(cursor);
+    out->decision.y_stride[slot] = static_cast<int32_t>(source_row_bytes);
+    out->decision.coded_width[slot] = frame.width;
+    out->decision.coded_height[slot] = frame.height;
+    cursor += source_bytes;
+  }
+  out->used_bytes = cursor;
+  return true;
+}
+
 }  // namespace vp_macos

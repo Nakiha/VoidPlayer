@@ -180,6 +180,28 @@ SnapshotStorageMix snapshot_storage_mix(const vr::RendererDrawSnapshot& snapshot
   return mix;
 }
 
+size_t snapshot_bgra_fallback_package_bytes(
+    const vr::RendererDrawSnapshot& snapshot) {
+  size_t total = 0;
+  for (const auto& frame : snapshot.decision.frames) {
+    if (!frame.has_value() ||
+        !vr::frame_storage_has_cpu_pixels(frame->storage_kind()) ||
+        frame->width <= 0 || frame->height <= 0 ||
+        frame->width > std::numeric_limits<int32_t>::max() / 4) {
+      continue;
+    }
+    const size_t row_bytes = static_cast<size_t>(frame->width) * 4u;
+    if (static_cast<size_t>(frame->height) >
+            std::numeric_limits<size_t>::max() / row_bytes ||
+        total > std::numeric_limits<size_t>::max() -
+                    row_bytes * static_cast<size_t>(frame->height)) {
+      return 0;
+    }
+    total += row_bytes * static_cast<size_t>(frame->height);
+  }
+  return total;
+}
+
 uint32_t pack_overlay_bgra(vr::analysis::OverlayColor color) {
   return static_cast<uint32_t>(color.b) |
          (static_cast<uint32_t>(color.g) << 8) |
@@ -1599,14 +1621,18 @@ bool WgpuMetalPresentationBackend::draw_frame(
 
   const auto package_layout = vr::describe_presentation_package_layout(
       draw_target_width_, draw_target_height_, track_slots);
-  if (package_layout.max_bytes == 0 ||
+  const size_t bgra_fallback_package_bytes =
+      snapshot_bgra_fallback_package_bytes(snapshot);
+  const size_t required_package_bytes =
+      std::max(package_layout.max_bytes, bgra_fallback_package_bytes);
+  if (required_package_bytes == 0 ||
       package_layout.bgra_row_bytes >
           static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
     return fail_after_target_acquire(
         "wgpu-metal presentation package layout is invalid");
   }
-  if (staging_buffer_.size() < package_layout.max_bytes) {
-    staging_buffer_.assign(package_layout.max_bytes, 0);
+  if (staging_buffer_.size() < required_package_bytes) {
+    staging_buffer_.assign(required_package_bytes, 0);
     ++staging_allocation_count_;
     staging_max_bytes_ = std::max(staging_max_bytes_, staging_buffer_.size());
   } else {
@@ -1632,15 +1658,13 @@ bool WgpuMetalPresentationBackend::draw_frame(
         snapshot, draw_target_width_, draw_target_height_, &package.decision);
     package.stride_bytes = static_cast<int32_t>(package_layout.bgra_row_bytes);
     package.track_stride_bytes = package_layout.bgra_track_stride_bytes;
-    if (!copy_snapshot_bgra_package(snapshot,
-                                    staging_buffer_.data(),
-                                    staging_buffer_.size(),
-                                    draw_target_width_,
-                                    draw_target_height_,
-                                    package.stride_bytes,
-                                    package.track_stride_bytes,
-                                    &package,
-                                    error)) {
+    if (!copy_snapshot_bgra_source_package(snapshot,
+                                           staging_buffer_.data(),
+                                           staging_buffer_.size(),
+                                           draw_target_width_,
+                                           draw_target_height_,
+                                           &package,
+                                           error)) {
       return fail_after_target_acquire(error);
     }
     package.storage = VPMacOSNativePresentPackageStorageBGRA;

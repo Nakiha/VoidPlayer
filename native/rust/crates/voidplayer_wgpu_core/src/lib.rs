@@ -1304,7 +1304,8 @@ fn render_package_to_metal_destination(
     renderer.params_scratch.clear();
     let mut cpu_yuv_texture_sources = None;
     if package.storage == STORAGE_BGRA {
-        bgra_atlas_for_wgsl(source, package, &mut renderer.source_bgra_scratch)?;
+        let (bgra_atlas_width, bgra_atlas_height) =
+            bgra_atlas_for_wgsl(source, package, &mut renderer.source_bgra_scratch)?;
         package_params(
             package,
             STORAGE_BGRA,
@@ -1322,8 +1323,8 @@ fn render_package_to_metal_destination(
             &renderer.queue,
             &mut renderer.source_texture,
             &mut renderer.resource_generation,
-            output.width,
-            output.height,
+            bgra_atlas_width,
+            bgra_atlas_height,
             &renderer.source_bgra_scratch,
         )?;
     } else {
@@ -1663,16 +1664,31 @@ fn bgra_atlas_for_wgsl(
     source: &[u8],
     package: &PresentFramePackageInfo,
     atlas: &mut Vec<u8>,
-) -> Result<(), &'static str> {
-    if package.stride_bytes < package.width * 4 || package.track_stride_bytes == 0 {
-        return Err("wgpu-metal BGRA package layout is invalid");
-    }
+) -> Result<(u32, u32), &'static str> {
     if package.used_bytes > source.len() {
         return Err("wgpu-metal BGRA package data is undersized");
     }
-    let row_bytes = package.width as usize * 4;
+    let mut atlas_width = 1u32;
+    let mut atlas_height = 1u32;
+    for slot in 0..MAX_TRACKS {
+        if package.decision.frames[slot].present == 0 {
+            continue;
+        }
+        let source_width = package.decision.source_width[slot];
+        let source_height = package.decision.source_height[slot];
+        let source_stride = package.decision.y_stride[slot];
+        if source_width <= 0 || source_height <= 0 || source_stride < source_width.saturating_mul(4)
+        {
+            return Err("wgpu-metal BGRA source package metadata is invalid");
+        }
+        atlas_width = atlas_width.max(source_width as u32);
+        atlas_height = atlas_height.max(source_height as u32);
+    }
+    let row_bytes = (atlas_width as usize)
+        .checked_mul(4)
+        .ok_or("wgpu-metal BGRA atlas row overflow")?;
     let track_bytes = row_bytes
-        .checked_mul(package.height as usize)
+        .checked_mul(atlas_height as usize)
         .ok_or("wgpu-metal BGRA atlas track overflow")?;
     let atlas_len = track_bytes
         .checked_mul(MAX_TRACKS)
@@ -1680,20 +1696,27 @@ fn bgra_atlas_for_wgsl(
     atlas.clear();
     atlas.resize(atlas_len, 0);
     for slot in 0..MAX_TRACKS {
-        let src_track = package
-            .track_stride_bytes
-            .checked_mul(slot)
-            .ok_or("wgpu-metal BGRA track offset overflow")?;
-        if src_track >= package.used_bytes {
+        if package.decision.frames[slot].present == 0 {
             continue;
         }
+        let source_width = package.decision.source_width[slot] as usize;
+        let source_height = package.decision.source_height[slot] as usize;
+        let source_stride = package.decision.y_stride[slot] as usize;
+        let src_offset = package.decision.y_offset[slot];
+        if src_offset < 0 {
+            return Err("wgpu-metal BGRA source offset is invalid");
+        }
+        let src_track = src_offset as usize;
+        let source_row_bytes = source_width
+            .checked_mul(4)
+            .ok_or("wgpu-metal BGRA source row overflow")?;
         let dst_track = track_bytes
             .checked_mul(slot)
             .ok_or("wgpu-metal BGRA atlas offset overflow")?;
-        for y in 0..package.height as usize {
+        for y in 0..source_height {
             let src_row = src_track
                 .checked_add(
-                    y.checked_mul(package.stride_bytes as usize)
+                    y.checked_mul(source_stride)
                         .ok_or("wgpu-metal BGRA row offset overflow")?,
                 )
                 .ok_or("wgpu-metal BGRA row offset overflow")?;
@@ -1703,14 +1726,16 @@ fn bgra_atlas_for_wgsl(
                         .ok_or("wgpu-metal BGRA atlas row overflow")?,
                 )
                 .ok_or("wgpu-metal BGRA atlas row overflow")?;
-            if src_row + row_bytes > package.used_bytes || src_row + row_bytes > source.len() {
+            if src_row + source_row_bytes > package.used_bytes
+                || src_row + source_row_bytes > source.len()
+            {
                 return Err("wgpu-metal BGRA source row is out of bounds");
             }
-            atlas[dst_row..dst_row + row_bytes]
-                .copy_from_slice(&source[src_row..src_row + row_bytes]);
+            atlas[dst_row..dst_row + source_row_bytes]
+                .copy_from_slice(&source[src_row..src_row + source_row_bytes]);
         }
     }
-    Ok(())
+    Ok((atlas_width, atlas_height))
 }
 
 fn package_storage_bytes(source: &[u8], bytes: &mut Vec<u8>) {

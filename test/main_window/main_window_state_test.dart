@@ -281,6 +281,62 @@ void main() {
     }
   });
 
+  testWidgets(
+    'playback clock does not commit quick marks during pending seek',
+    (tester) async {
+      final fixture = _PlaybackFixture();
+      try {
+        await fixture.controller.createPlayer(
+          ['clip.mp4'],
+          width: 1920,
+          height: 1080,
+        );
+        fixture.store.setTextureId(1);
+        fixture.store.setQuickMarks(const [
+          QuickMark(
+            id: 1,
+            anchor: QuickMarkAnchor(
+              fileId: 1,
+              ptsUs: 1500000,
+              dtsUs: 1400000,
+              sourcePacketIndex: 8,
+              sourcePacketSize: 1024,
+            ),
+            sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+          ),
+        ]);
+
+        fixture.coordinator.seekTo(1500000);
+        fixture.api.emitPlaybackClock(
+          ptsUs: 1500000,
+          durationUs: fixture.metrics.effectiveDurationUs,
+          isPlaying: false,
+        );
+        await tester.pump();
+
+        expect(fixture.store.value.currentPtsUs, 1500000);
+        expect(fixture.store.value.pendingSeekUs, 1500000);
+        expect(fixture.store.value.presentedFrameAnchors, isEmpty);
+        expect(
+          QuickMarkStore(marks: fixture.store.value.quickMarks)
+              .view(
+                context: QuickMarkFrameContext(
+                  currentPtsUs: fixture.store.value.currentPtsUs,
+                  presentedFrameAnchors:
+                      fixture.store.value.presentedFrameAnchors,
+                  allowTimeFallback: fixture.store.value.pendingSeekUs == null,
+                ),
+                selectedMarkId: 1,
+              )
+              .visibleMarkIds,
+          isEmpty,
+        );
+      } finally {
+        fixture.dispose();
+      }
+    },
+  );
+
   testWidgets('playback clock refreshes quick mark frame anchors', (
     tester,
   ) async {

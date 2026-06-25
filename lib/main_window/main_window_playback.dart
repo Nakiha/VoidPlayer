@@ -538,7 +538,9 @@ class MainWindowPlaybackCoordinator {
           : DateTime.now().difference(pendingSeekAt()!);
       const seekSettleToleranceUs = 50000;
       final settled = (pts - seekUs).abs() <= seekSettleToleranceUs;
-      if (settled) {
+      if (_needsPresentedFrameAnchors) {
+        pts = seekUs;
+      } else if (settled) {
         setPendingSeek(null, null);
       } else if (seekAge < const Duration(milliseconds: 1500)) {
         pts = seekUs;
@@ -586,7 +588,8 @@ class MainWindowPlaybackCoordinator {
       );
     }
 
-    final presentedFrameAnchors = _needsPresentedFrameAnchors
+    final presentedFrameAnchors =
+        _needsPresentedFrameAnchors && pendingSeekUs() == null
         ? _fallbackPresentedFrameAnchors(
             clampedPts,
             durationUs: _playbackClockFallbackAnchorDurationUs,

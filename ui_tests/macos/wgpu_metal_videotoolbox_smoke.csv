@@ -1,6 +1,6 @@
 # macOS wgpu-metal canary: explicit VideoToolbox CVPixelBuffer source import.
 # Run with:
-#   VOIDPLAYER_MACOS_PRESENTATION_MODE=wgpu-metal VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX=1 python dev.py mac-ui-test --build ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv
+#   VOIDPLAYER_MACOS_PRESENTATION_MODE=wgpu-metal python dev.py mac-ui-test --build ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv
 @WINDOW, 960, 540
 0.0, SET_DECODE_MODE, preferHardware
 0.0, GENERATE_TEST_VIDEO, build/generated/macos/wgpu_metal_videotoolbox_h264.mp4, 180, 30, 1920, 1080

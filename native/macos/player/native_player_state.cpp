@@ -81,10 +81,6 @@ bool videotoolbox_hwdownload_forced_by_env() {
   return env_enabled("VOIDPLAYER_FORCE_VIDEOTOOLBOX_HWDOWNLOAD");
 }
 
-bool wgpu_metal_videotoolbox_enabled_by_env() {
-  return env_enabled("VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX");
-}
-
 bool wgpu_metal_requested_by_env() {
   const char* mode = std::getenv("VOIDPLAYER_MACOS_PRESENTATION_MODE");
   if (!mode) {
@@ -216,7 +212,6 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   config.headless = true;
   const bool use_wgpu_metal = vp_macos::wgpu_metal_requested_by_env();
   config.use_hardware_decode =
-      (!use_wgpu_metal || vp_macos::wgpu_metal_videotoolbox_enabled_by_env()) &&
       use_hardware_decode &&
       !vp_macos::videotoolbox_disabled_by_env();
   config.initial_file_id = 0;

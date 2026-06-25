@@ -1847,9 +1847,8 @@ fn upload_cpu_yuv_package_textures(
             continue;
         }
         let format = package.decision.yuv_format[slot];
-        if format == YUV_FORMAT_P010 {
-            return Ok(None);
-        }
+        let high_bit = format == YUV_FORMAT_P010;
+        let bytes_per_sample = if high_bit { 2usize } else { 1usize };
         let coded_width = package.decision.coded_width[slot];
         let coded_height = package.decision.coded_height[slot];
         let y_stride = package.decision.y_stride[slot];
@@ -1865,7 +1864,9 @@ fn upload_cpu_yuv_package_textures(
             source,
             package.decision.y_offset[slot],
             y_stride,
-            coded_width as usize,
+            (coded_width as usize)
+                .checked_mul(bytes_per_sample)
+                .ok_or("wgpu-metal CPU YUV package metadata overflow")?,
             coded_height,
         )?;
         ensure_cpu_yuv_texture(
@@ -1873,7 +1874,11 @@ fn upload_cpu_yuv_package_textures(
             &mut renderer.cpu_yuv_y_textures[slot],
             coded_width,
             coded_height,
-            wgpu::TextureFormat::R8Unorm,
+            if high_bit {
+                wgpu::TextureFormat::R16Unorm
+            } else {
+                wgpu::TextureFormat::R8Unorm
+            },
             "voidplayer-wgpu-cpu-yuv-y",
         );
         upload_cpu_yuv_plane(
@@ -1892,7 +1897,11 @@ fn upload_cpu_yuv_package_textures(
             &mut renderer.cpu_yuv_uv_textures[slot],
             chroma_width,
             chroma_height,
-            wgpu::TextureFormat::Rg8Unorm,
+            if high_bit {
+                wgpu::TextureFormat::Rg16Unorm
+            } else {
+                wgpu::TextureFormat::Rg8Unorm
+            },
             "voidplayer-wgpu-cpu-yuv-uv",
         );
         if format == YUV_FORMAT_YUV420P {
@@ -1940,11 +1949,15 @@ fn upload_cpu_yuv_package_textures(
                 chroma_height,
             );
         } else {
+            let uv_row_bytes = (chroma_width as usize)
+                .checked_mul(bytes_per_sample)
+                .and_then(|bytes| bytes.checked_mul(2))
+                .ok_or("wgpu-metal CPU YUV package metadata overflow")?;
             let uv_plane = source_range(
                 source,
                 package.decision.uv_offset[slot],
                 uv_stride,
-                chroma_width as usize * 2,
+                uv_row_bytes,
                 chroma_height,
             )?;
             upload_cpu_yuv_plane(

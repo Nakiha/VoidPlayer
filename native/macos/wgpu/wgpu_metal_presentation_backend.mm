@@ -17,6 +17,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <memory>
+#include <mutex>
 #include <vector>
 
 namespace vp_macos {
@@ -155,6 +157,21 @@ bool overlay_primitives_expected(const WgpuOverlayPrimitiveBuildResult& overlay)
          !overlay.motion_lines.empty();
 }
 
+struct WgpuOverlayPrimitiveCacheKey {
+  const void* package = nullptr;
+  uint64_t generation = 0;
+
+  bool operator==(const WgpuOverlayPrimitiveCacheKey& other) const {
+    return package == other.package && generation == other.generation;
+  }
+};
+
+struct WgpuOverlayPrimitiveCacheEntry {
+  WgpuOverlayPrimitiveCacheKey key;
+  std::shared_ptr<const WgpuOverlayPrimitiveBuildResult> result;
+  uint64_t last_used = 0;
+};
+
 struct WgpuOutputTargetDescriptor {
   MTLPixelFormat metal_pixel_format = MTLPixelFormatInvalid;
   int32_t ffi_output_format = 0;
@@ -261,6 +278,70 @@ uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
   return hash;
 }
 
+constexpr size_t kWgpuOverlayPrimitiveCacheLimit = 24;
+
+std::mutex& wgpu_overlay_primitive_cache_mutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+std::vector<WgpuOverlayPrimitiveCacheEntry>&
+wgpu_overlay_primitive_cache_entries() {
+  static std::vector<WgpuOverlayPrimitiveCacheEntry> entries;
+  return entries;
+}
+
+uint64_t& wgpu_overlay_primitive_cache_clock() {
+  static uint64_t clock = 0;
+  return clock;
+}
+
+std::shared_ptr<const WgpuOverlayPrimitiveBuildResult>
+lookup_wgpu_overlay_primitives(WgpuOverlayPrimitiveCacheKey key) {
+  std::lock_guard<std::mutex> lock(wgpu_overlay_primitive_cache_mutex());
+  auto& clock = wgpu_overlay_primitive_cache_clock();
+  const uint64_t use_token = ++clock;
+  for (auto& entry : wgpu_overlay_primitive_cache_entries()) {
+    if (entry.key == key) {
+      entry.last_used = use_token;
+      return entry.result;
+    }
+  }
+  return nullptr;
+}
+
+void store_wgpu_overlay_primitives(
+    WgpuOverlayPrimitiveCacheKey key,
+    std::shared_ptr<const WgpuOverlayPrimitiveBuildResult> result) {
+  if (!result) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(wgpu_overlay_primitive_cache_mutex());
+  auto& clock = wgpu_overlay_primitive_cache_clock();
+  auto& entries = wgpu_overlay_primitive_cache_entries();
+  const uint64_t use_token = ++clock;
+  for (auto& entry : entries) {
+    if (entry.key == key) {
+      entry.result = std::move(result);
+      entry.last_used = use_token;
+      return;
+    }
+  }
+  if (entries.size() >= kWgpuOverlayPrimitiveCacheLimit) {
+    const auto oldest = std::min_element(
+        entries.begin(),
+        entries.end(),
+        [](const auto& lhs, const auto& rhs) {
+          return lhs.last_used < rhs.last_used;
+        });
+    if (oldest != entries.end()) {
+      entries.erase(oldest);
+    }
+  }
+  entries.push_back(
+      WgpuOverlayPrimitiveCacheEntry{key, std::move(result), use_token});
+}
+
 WgpuOverlayPrimitiveBuildResult build_overlay_primitives_for_wgpu(
     const vr::RendererDrawSnapshot& snapshot,
     const vr::PresentationBackendDrawHooks& hooks) {
@@ -272,7 +353,16 @@ WgpuOverlayPrimitiveBuildResult build_overlay_primitives_for_wgpu(
   if (!package || package->empty()) {
     return result;
   }
-  result.generation = package->cache_generation;
+  const WgpuOverlayPrimitiveCacheKey cache_key{
+      package.get(),
+      package->cache_generation,
+  };
+  if (const auto cached = lookup_wgpu_overlay_primitives(cache_key)) {
+    return *cached;
+  }
+
+  auto cached_result = std::make_shared<WgpuOverlayPrimitiveBuildResult>();
+  cached_result->generation = package->cache_generation;
   for (const auto& track : package->tracks) {
     if (track.video_width <= 0 || track.video_height <= 0) {
       continue;
@@ -285,7 +375,7 @@ WgpuOverlayPrimitiveBuildResult build_overlay_primitives_for_wgpu(
           primitive.x1, track.video_width, primitive.y1, track.video_height);
       rect.color_bgra = pack_overlay_bgra(primitive.color);
       rect.track_idx = pack_overlay_track_payload(track.slot, track.line_alpha);
-      result.fill_rects.push_back(rect);
+      cached_result->fill_rects.push_back(rect);
     }
     for (const auto& primitive : track.outline_rects) {
       VPMacOSNativeOverlayGpuRect rect = {};
@@ -294,7 +384,7 @@ WgpuOverlayPrimitiveBuildResult build_overlay_primitives_for_wgpu(
       rect.rect_uv1 = vr::pack_overlay_uv16(
           primitive.x1, track.video_width, primitive.y1, track.video_height);
       rect.track_idx = pack_overlay_track_payload(track.slot, track.line_alpha);
-      result.line_rects.push_back(rect);
+      cached_result->line_rects.push_back(rect);
     }
     for (const auto& line : track.motion_lines) {
       VPMacOSNativeOverlayGpuRect rect = {};
@@ -304,10 +394,11 @@ WgpuOverlayPrimitiveBuildResult build_overlay_primitives_for_wgpu(
           line.x1, track.video_width, line.y1, track.video_height);
       rect.color_bgra = pack_overlay_bgra(line.color);
       rect.track_idx = pack_overlay_track_payload(track.slot, track.line_alpha);
-      result.motion_lines.push_back(rect);
+      cached_result->motion_lines.push_back(rect);
     }
   }
-  return result;
+  store_wgpu_overlay_primitives(cache_key, cached_result);
+  return *cached_result;
 }
 
 }  // namespace
@@ -1062,6 +1153,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
     pending->hooks = hooks;
     pending->frame_info = frame_info;
     pending->draw_start = draw_start;
+    pending->render_call_start = draw_start;
     pending->target_pixel_buffer_address = acquired_target_address;
     pending->package_copy_us = package_copy_us;
     pending->package_storage = package_storage;
@@ -1125,6 +1217,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
         make_async_pending(frame_info, 0, retained_source_storage, false);
     pending->destination_texture_ref = destination_ref;
     destination_ref = nullptr;
+    pending->render_call_start = std::chrono::steady_clock::now();
     AsyncDrawPending* pending_raw = pending.release();
     VPWgpuMetalAsyncCompletion completion = {};
     completion.callback = wgpu_async_draw_completed;
@@ -1241,6 +1334,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
             const_cast<void*>(CFRetain(source_uv_refs[slot].get()));
       }
     }
+    pending->render_call_start = std::chrono::steady_clock::now();
     AsyncDrawPending* pending_raw = pending.release();
     VPWgpuMetalAsyncCompletion completion = {};
     completion.callback = wgpu_async_draw_completed;
@@ -1353,6 +1447,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
   auto pending = make_async_pending(frame_info, package_copy_us, package.storage, true);
   pending->destination_texture_ref = destination_ref;
   destination_ref = nullptr;
+  pending->render_call_start = std::chrono::steady_clock::now();
   AsyncDrawPending* pending_raw = pending.release();
   VPWgpuMetalAsyncCompletion completion = {};
   completion.callback = wgpu_async_draw_completed;
@@ -1558,19 +1653,23 @@ void WgpuMetalPresentationBackend::complete_async_draw(
     return;
   }
   const uint64_t total_us = elapsed_us_since(pending->draw_start);
-  const uint64_t gpu_wait_us =
-      total_us > pending->package_copy_us ? total_us - pending->package_copy_us : total_us;
+  const uint64_t pre_render_us = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          pending->render_call_start - pending->draw_start)
+          .count());
+  const uint64_t gpu_wait_us = elapsed_us_since(pending->render_call_start);
   record_wgpu_command_result(gpu_wait_us, success);
   record_present_package_timing(pending->package_copy_us, gpu_wait_us, total_us);
   if (wgpu_profiler_enabled() && wgpu_renderer_) {
     VPWgpuMetalProfilerSnapshot profiler = {};
     if (VPWgpuMetalRendererGetProfilerSnapshot(wgpu_renderer_, &profiler) == 0) {
       spdlog::info(
-          "[WgpuMetalProfile] total_us={} gpu_wait_us={} success={} "
+          "[WgpuMetalProfile] total_us={} pre_render_us={} gpu_wait_us={} success={} "
           "dst_import={}/{} src_import={}/{} cache={} evict={} "
           "bind_groups(final={},overlay={}) overlay_layer(rebuild={},reuse={}) "
           "buffer_writes(package={},params={},overlay={}) submits={}",
           total_us,
+          pre_render_us,
           gpu_wait_us,
           success,
           profiler.destination_import_count,

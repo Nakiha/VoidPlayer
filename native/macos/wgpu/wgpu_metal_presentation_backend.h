@@ -97,6 +97,7 @@ private:
     vr::PresentationBackendDrawHooks hooks;
     vr::PresentationBackendFrameInfo frame_info{};
     std::chrono::steady_clock::time_point draw_start;
+    std::chrono::steady_clock::time_point render_call_start;
     uint64_t target_pixel_buffer_address = 0;
     uint64_t package_copy_us = 0;
     int32_t package_storage = 0;

@@ -18,7 +18,6 @@ namespace vp_macos {
 void write_error(char* error, size_t error_size, const std::string& message);
 bool videotoolbox_disabled_by_env();
 bool videotoolbox_hwdownload_forced_by_env();
-bool wgpu_metal_videotoolbox_enabled_by_env();
 bool wgpu_metal_requested_by_env();
 bool probe_videotoolbox_h264();
 bool decoder_name_is_videotoolbox(const std::string& decoder_name);

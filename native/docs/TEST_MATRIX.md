@@ -143,9 +143,9 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `ui_tests/macos/native_callback_stress_smoke.csv` | Callback lifecycle stress. | Nightly/headed. |
 | `ui_tests/macos/native_quit_while_playing_smoke.csv` / `native_user_window_close_smoke.csv` | Teardown and crash-report regression. | Nightly/headed or targeted runner changes. |
 | `ui_tests/macos/wgpu_metal_default_software_smoke.csv` | Experimental wgpu-metal software/package presentation canary; asserts backend selection, software fallback, YUV upload, and non-black capture. | Local `macos-wgpu-metal-smoke`. |
-| `ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv` | Experimental wgpu-metal VideoToolbox CVPixelBuffer source import canary. | Local `macos-wgpu-metal-smoke`; sets `VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX=1`. |
+| `ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv` | Experimental wgpu-metal VideoToolbox CVPixelBuffer source import canary. | Local `macos-wgpu-metal-smoke`; uses normal `preferHardware` decode preference. |
 | `ui_tests/macos/wgpu_metal_source_projection_overlay_smoke.csv` | Experimental wgpu-metal retained source-projection and overlay composite canary through split/pan/zoom. | Local `macos-wgpu-metal-smoke`. |
-| `ui_tests/macos/wgpu_metal_4k60_videotoolbox_smoke.csv` | Experimental wgpu-metal 4K60 VideoToolbox/cadence pressure canary. | Local `macos-wgpu-metal-smoke`; sets `VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX=1`. |
+| `ui_tests/macos/wgpu_metal_4k60_videotoolbox_smoke.csv` | Experimental wgpu-metal 4K60 VideoToolbox/cadence pressure canary. | Local `macos-wgpu-metal-smoke`; uses normal `preferHardware` decode preference. |
 | `ui_tests/macos/wgpu_metal_hlg_edr_smoke.csv` | Experimental wgpu-metal HLG/BT.2020 EDR canary with RGBA16F target and renderer-owned color diagnostics. | Local `macos-wgpu-metal-edr-smoke`; requires an EDR-capable display. |
 | `ui_tests/local/**` | Developer-specific absolute-path regressions. | Manual/local only; never CI. |
 

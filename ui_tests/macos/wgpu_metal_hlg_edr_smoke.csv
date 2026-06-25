@@ -1,6 +1,6 @@
 # macOS wgpu-metal headed HLG/EDR compositor canary.
 # Run with:
-#   VOIDPLAYER_MACOS_PRESENTATION_MODE=wgpu-metal VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX=1 python dev.py mac-ui-test --build ui_tests/macos/wgpu_metal_hlg_edr_smoke.csv
+#   VOIDPLAYER_MACOS_PRESENTATION_MODE=wgpu-metal python dev.py mac-ui-test --build ui_tests/macos/wgpu_metal_hlg_edr_smoke.csv
 @WINDOW, 960, 540
 0.0, SET_DECODE_MODE, preferHardware
 0.0, GENERATE_TEST_VIDEO, build/generated/macos/wgpu_metal_hlg_edr.mp4, 90, 30, 640, 360, 0, hevc-hlg

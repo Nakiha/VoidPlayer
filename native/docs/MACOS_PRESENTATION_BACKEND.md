@@ -93,9 +93,10 @@ canary slice; stronger EDR capture/parity evidence and headed HDR display gates
 remain follow-up work before wgpu-metal can replace Metal by default. The local
 wgpu gate entry points are `python dev.py gate macos-wgpu-metal-smoke` and, on
 an EDR-capable display, `python dev.py gate macos-wgpu-metal-edr-smoke`.
-The macOS player canary still forces software/package input by default;
-`VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX=1` explicitly opts wgpu-metal into
-VideoToolbox source import for headed canary smoke tests. Analysis overlay
+The macOS player wgpu-metal canary now honors the normal decode preference:
+`preferHardware` uses VideoToolbox source import when available, while
+`forceSoftware` and `VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1` keep the software/package
+fallback path available for parity smoke tests. Analysis overlay
 fill/outline/motion primitives are passed as plain rect buffers and baked into a
 Rust-retained per-track overlay texture-array layer keyed by the overlay package
 `cache_generation`; the final composite pass samples that retained layer instead

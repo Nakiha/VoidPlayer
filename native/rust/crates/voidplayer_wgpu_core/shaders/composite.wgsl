@@ -690,15 +690,22 @@ fn sample_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
 }
 
 fn cv_yuv_to_rgb(track: i32, y_norm: f32, uv_norm: vec2<f32>) -> vec4<f32> {
+  let format = vec4_get_i(params.yuv_format, track);
+  let high_bit = format == 2;
   let range = vec4_get_i(params.color_range, track);
   let matrix = vec4_get_i(params.color_matrix, track);
-  var y = y_norm;
-  var cb = uv_norm.x - 0.5;
-  var cr = uv_norm.y - 0.5;
+  let scale = select(1.0, 4.0, high_bit);
+  let max_code = select(255.0, 1023.0, high_bit);
+  let y_code = y_norm * max_code;
+  let u_code = uv_norm.x * max_code;
+  let v_code = uv_norm.y * max_code;
+  var y = y_code / max_code;
+  var cb = u_code / max_code - 0.5;
+  var cr = v_code / max_code - 0.5;
   if (range != 2) {
-    y = clamp((y_norm * 255.0 - 16.0) / 219.0, 0.0, 1.0);
-    cb = (uv_norm.x * 255.0 - 128.0) / 224.0;
-    cr = (uv_norm.y * 255.0 - 128.0) / 224.0;
+    y = clamp((y_code - 16.0 * scale) / (219.0 * scale), 0.0, 1.0);
+    cb = (u_code - 128.0 * scale) / (224.0 * scale);
+    cr = (v_code - 128.0 * scale) / (224.0 * scale);
   }
   return vec4<f32>(clamp(matrix_rgb(y, cb, cr, matrix), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "macos/wgpu/wgpu_ffi_bridge.h"
 #include "renderer/render/presentation_backend.h"
 
 #include <CoreFoundation/CoreFoundation.h>
@@ -117,6 +118,8 @@ private:
     bool overlay_expected = false;
     uint64_t overlay_fill_rect_count = 0;
     uint64_t overlay_line_rect_count = 0;
+    bool has_profiler_snapshot = false;
+    VPWgpuMetalProfilerSnapshot profiler_snapshot{};
     void* destination_texture_ref = nullptr;
     std::array<void*, 4> source_y_texture_refs{};
     std::array<void*, 4> source_uv_texture_refs{};

@@ -11,8 +11,9 @@ use objc2_metal::{MTLTexture, MTLTextureType};
 use overlay::OverlayRect;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
+use std::time::Instant;
 
-pub const ABI_VERSION: i32 = 7;
+pub const ABI_VERSION: i32 = 8;
 const MAX_TRACKS: usize = 4;
 const STORAGE_NONE: i32 = 0;
 const STORAGE_YUV: i32 = 1;
@@ -24,6 +25,10 @@ const OUTPUT_FORMAT_BGRA8_UNORM: i32 = 1;
 const OUTPUT_FORMAT_RGBA16_FLOAT: i32 = 2;
 const OUTPUT_COLOR_MODE_SDR: i32 = 1;
 const OUTPUT_COLOR_MODE_EDR: i32 = 2;
+
+fn profile_elapsed_us(start: Instant) -> u64 {
+    start.elapsed().as_micros().min(u128::from(u64::MAX)) as u64
+}
 
 #[repr(C)]
 pub struct WgpuMetalRenderRequest {
@@ -103,6 +108,13 @@ pub struct WgpuMetalProfilerSnapshot {
     pub params_buffer_write_count: u64,
     pub overlay_buffer_write_count: u64,
     pub submit_count: u64,
+    pub last_import_us: u64,
+    pub last_prepare_us: u64,
+    pub last_overlay_encode_us: u64,
+    pub last_bind_group_us: u64,
+    pub last_pass_encode_us: u64,
+    pub last_submit_us: u64,
+    pub last_cpu_render_us: u64,
 }
 
 pub type WgpuMetalAsyncCompletionCallback = extern "C" fn(*mut core::ffi::c_void, i32);
@@ -112,6 +124,7 @@ pub type WgpuMetalAsyncCompletionCallback = extern "C" fn(*mut core::ffi::c_void
 pub struct WgpuMetalAsyncCompletion {
     pub callback: Option<WgpuMetalAsyncCompletionCallback>,
     pub user_data: *mut core::ffi::c_void,
+    pub profiler_snapshot: *mut WgpuMetalProfilerSnapshot,
 }
 
 struct CompletionJob {
@@ -255,7 +268,16 @@ pub fn render_metal_package_with_renderer_async(
     request: &WgpuMetalRenderRequest,
     completion: WgpuMetalAsyncCompletion,
 ) -> Result<(), &'static str> {
-    let submission = submit_metal_package_with_renderer(renderer, request)?;
+    renderer.begin_profile_frame();
+    let profile_start = Instant::now();
+    let submission = match submit_metal_package_with_renderer(renderer, request) {
+        Ok(submission) => submission,
+        Err(error) => {
+            renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
+            return Err(error);
+        }
+    };
+    renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
     renderer.submit_completion(submission, completion)
 }
 
@@ -332,7 +354,16 @@ pub fn render_metal_cv_pixel_buffer_frame_set_with_renderer_async(
     request: &WgpuMetalCVPixelBufferRenderRequest,
     completion: WgpuMetalAsyncCompletion,
 ) -> Result<(), &'static str> {
-    let submission = submit_metal_cv_pixel_buffer_frame_set_with_renderer(renderer, request)?;
+    renderer.begin_profile_frame();
+    let profile_start = Instant::now();
+    let submission = match submit_metal_cv_pixel_buffer_frame_set_with_renderer(renderer, request) {
+        Ok(submission) => submission,
+        Err(error) => {
+            renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
+            return Err(error);
+        }
+    };
+    renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
     renderer.submit_completion(submission, completion)
 }
 
@@ -391,7 +422,16 @@ pub fn composite_metal_retained_source_with_renderer_async(
     request: &WgpuMetalRetainedCompositeRequest,
     completion: WgpuMetalAsyncCompletion,
 ) -> Result<(), &'static str> {
-    let submission = submit_metal_retained_source_with_renderer(renderer, request)?;
+    renderer.begin_profile_frame();
+    let profile_start = Instant::now();
+    let submission = match submit_metal_retained_source_with_renderer(renderer, request) {
+        Ok(submission) => submission,
+        Err(error) => {
+            renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
+            return Err(error);
+        }
+    };
+    renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
     renderer.submit_completion(submission, completion)
 }
 
@@ -511,6 +551,16 @@ impl WgpuMetalRenderer {
         snapshot
     }
 
+    fn begin_profile_frame(&mut self) {
+        self.profiler.last_import_us = 0;
+        self.profiler.last_prepare_us = 0;
+        self.profiler.last_overlay_encode_us = 0;
+        self.profiler.last_bind_group_us = 0;
+        self.profiler.last_pass_encode_us = 0;
+        self.profiler.last_submit_us = 0;
+        self.profiler.last_cpu_render_us = 0;
+    }
+
     fn import_metal_texture_2d_cached(
         &mut self,
         metal_texture: *mut core::ffi::c_void,
@@ -524,6 +574,7 @@ impl WgpuMetalRenderer {
         if metal_texture.is_null() || width == 0 || height == 0 {
             return Err("wgpu-metal texture import arguments are invalid");
         }
+        let profile_start = Instant::now();
         let key = ImportedTextureKey {
             metal_texture: metal_texture as usize,
             format: texture_format_key(format)?,
@@ -546,10 +597,11 @@ impl WgpuMetalRenderer {
                     self.profiler.source_import_reuse_count += 1;
                 }
             }
+            self.profiler.last_import_us += profile_elapsed_us(profile_start);
             return Ok((entry.texture.clone(), entry.view.clone()));
         }
 
-        let texture = import_metal_texture_2d_raw(
+        let texture = match import_metal_texture_2d_raw(
             &self.device,
             metal_texture,
             format,
@@ -557,7 +609,13 @@ impl WgpuMetalRenderer {
             height,
             usage,
             label,
-        )?;
+        ) {
+            Ok(texture) => texture,
+            Err(error) => {
+                self.profiler.last_import_us += profile_elapsed_us(profile_start);
+                return Err(error);
+            }
+        };
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         match texture_class {
             ImportedTextureClass::Destination => {
@@ -573,7 +631,7 @@ impl WgpuMetalRenderer {
             view: view.clone(),
             last_used: self.import_clock,
         });
-        const MAX_IMPORTED_TEXTURES: usize = 96;
+        const MAX_IMPORTED_TEXTURES: usize = 256;
         if self.imported_textures.len() > MAX_IMPORTED_TEXTURES {
             if let Some((evict_index, _)) = self
                 .imported_textures
@@ -585,17 +643,23 @@ impl WgpuMetalRenderer {
                 self.profiler.imported_texture_cache_eviction_count += 1;
             }
         }
+        self.profiler.last_import_us += profile_elapsed_us(profile_start);
         Ok((texture, view))
     }
 
     fn submit_completion(
-        &self,
+        &mut self,
         submission: wgpu::SubmissionIndex,
         completion: WgpuMetalAsyncCompletion,
     ) -> Result<(), &'static str> {
         let callback = completion
             .callback
             .ok_or("wgpu-metal async completion callback is null")?;
+        if !completion.profiler_snapshot.is_null() {
+            unsafe {
+                *completion.profiler_snapshot = self.profiler_snapshot();
+            }
+        }
         let job = CompletionJob {
             submission,
             callback,
@@ -1168,6 +1232,7 @@ fn render_package_to_metal_destination(
         ImportedTextureClass::Destination,
     )?;
 
+    let prepare_start = Instant::now();
     renderer.params_scratch.clear();
     let mut cpu_yuv_texture_sources = None;
     if package.storage == STORAGE_BGRA {
@@ -1229,6 +1294,7 @@ fn render_package_to_metal_destination(
         overlay_motion_lines,
         &mut renderer.overlay_rects_scratch,
     );
+    renderer.profiler.last_prepare_us += profile_elapsed_us(prepare_start);
 
     let submission =
         if let Some((y_textures, uv_textures, source_generation)) = cpu_yuv_texture_sources {
@@ -1359,6 +1425,7 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
         );
     }
 
+    let prepare_start = Instant::now();
     let package = PresentFramePackageInfo {
         storage: STORAGE_CV_PIXEL_BUFFER,
         width: output.width as i32,
@@ -1389,6 +1456,7 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
         &mut renderer.overlay_rects_scratch,
     );
     renderer.retained_source_generation = source_generation.max(1);
+    renderer.profiler.last_prepare_us += profile_elapsed_us(prepare_start);
     let submission = render_cv_pixel_buffer_frame_set_with_wgsl(
         renderer,
         &destination_view,
@@ -1427,6 +1495,7 @@ fn render_retained_source_to_metal_destination(
         "voidplayer-imported-retained-composite-destination",
         ImportedTextureClass::Destination,
     )?;
+    let prepare_start = Instant::now();
     let package = PresentFramePackageInfo {
         storage: renderer.retained_storage,
         width: output.width as i32,
@@ -1454,6 +1523,7 @@ fn render_retained_source_to_metal_destination(
         overlay_motion_lines,
         &mut renderer.overlay_rects_scratch,
     );
+    renderer.profiler.last_prepare_us += profile_elapsed_us(prepare_start);
     match renderer.retained_storage {
         STORAGE_BGRA => {
             if renderer.source_texture.is_none() {
@@ -2196,6 +2266,7 @@ fn encode_overlay_layer_texture(
     overlay_generation: u64,
     encoder: &mut wgpu::CommandEncoder,
 ) -> Result<(), &'static str> {
+    let profile_start = Instant::now();
     let fill_count = renderer
         .params_scratch
         .get((23 * 16)..(23 * 16 + 4))
@@ -2234,6 +2305,7 @@ fn encode_overlay_layer_texture(
         && (overlay_generation != 0 || (fill_count == 0 && line_count == 0 && motion_count == 0))
     {
         renderer.profiler.overlay_layer_reuse_count += 1;
+        renderer.profiler.last_overlay_encode_us += profile_elapsed_us(profile_start);
         return Ok(());
     }
     let recreate = renderer
@@ -2487,6 +2559,7 @@ fn encode_overlay_layer_texture(
         cache.line_count = line_count;
         cache.motion_count = motion_count;
     }
+    renderer.profiler.last_overlay_encode_us += profile_elapsed_us(profile_start);
     Ok(())
 }
 
@@ -2659,6 +2732,7 @@ fn render_bgra_atlas_with_wgsl(
         source_generation,
         overlay_layer_generation,
     };
+    let bind_group_start = Instant::now();
     let bind_group = if let Some(cache) = renderer.generic_bind_group.as_ref() {
         if cache.key == bind_group_key {
             cache.bind_group.clone()
@@ -2710,7 +2784,9 @@ fn render_bgra_atlas_with_wgsl(
         renderer.profiler.final_bind_group_create_count += 1;
         bind_group
     };
+    renderer.profiler.last_bind_group_us += profile_elapsed_us(bind_group_start);
     let pipeline = composite_pipeline_for_output(renderer, output_format)?;
+    let pass_start = Instant::now();
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("voidplayer-wgpu-composite-pass"),
@@ -2733,7 +2809,10 @@ fn render_bgra_atlas_with_wgsl(
         pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
         pass.draw(0..3, 0..1);
     }
+    renderer.profiler.last_pass_encode_us += profile_elapsed_us(pass_start);
+    let submit_start = Instant::now();
     let submission = renderer.queue.submit(std::iter::once(encoder.finish()));
+    renderer.profiler.last_submit_us += profile_elapsed_us(submit_start);
     renderer.profiler.submit_count += 1;
     Ok(submission)
 }
@@ -2828,6 +2907,7 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
         overlay_layer_generation,
         source_generation: renderer.retained_source_generation,
     };
+    let bind_group_start = Instant::now();
     let bind_group = if let Some(cache) = renderer
         .cv_bind_groups
         .iter()
@@ -2910,7 +2990,9 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
         renderer.profiler.final_bind_group_create_count += 1;
         bind_group
     };
+    renderer.profiler.last_bind_group_us += profile_elapsed_us(bind_group_start);
     let pipeline = composite_pipeline_for_output(renderer, output_format)?;
+    let pass_start = Instant::now();
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("voidplayer-wgpu-cvpixelbuffer-composite-pass"),
@@ -2933,7 +3015,10 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
         pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
         pass.draw(0..3, 0..1);
     }
+    renderer.profiler.last_pass_encode_us += profile_elapsed_us(pass_start);
+    let submit_start = Instant::now();
     let submission = renderer.queue.submit(std::iter::once(encoder.finish()));
+    renderer.profiler.last_submit_us += profile_elapsed_us(submit_start);
     renderer.profiler.submit_count += 1;
     Ok(submission)
 }

@@ -13,7 +13,7 @@ extern "C" {
 typedef struct VPWgpuMetalRenderer VPWgpuMetalRenderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 7,
+  VP_WGPU_FFI_ABI_VERSION = 8,
 };
 
 enum {
@@ -51,6 +51,13 @@ typedef struct VPWgpuMetalProfilerSnapshot {
   uint64_t params_buffer_write_count;
   uint64_t overlay_buffer_write_count;
   uint64_t submit_count;
+  uint64_t last_import_us;
+  uint64_t last_prepare_us;
+  uint64_t last_overlay_encode_us;
+  uint64_t last_bind_group_us;
+  uint64_t last_pass_encode_us;
+  uint64_t last_submit_us;
+  uint64_t last_cpu_render_us;
 } VPWgpuMetalProfilerSnapshot;
 
 typedef struct VPWgpuMetalRenderRequest {
@@ -117,6 +124,7 @@ typedef void (*VPWgpuMetalAsyncCompletionCallback)(void* user_data,
 typedef struct VPWgpuMetalAsyncCompletion {
   VPWgpuMetalAsyncCompletionCallback callback;
   void* user_data;
+  VPWgpuMetalProfilerSnapshot* profiler_snapshot;
 } VPWgpuMetalAsyncCompletion;
 
 int VPWgpuFfiVersion(void);

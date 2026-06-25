@@ -1305,6 +1305,8 @@ bool WgpuMetalPresentationBackend::draw_frame(
     VPWgpuMetalAsyncCompletion completion = {};
     completion.callback = wgpu_async_draw_completed;
     completion.user_data = pending_raw;
+    completion.profiler_snapshot = &pending_raw->profiler_snapshot;
+    pending_raw->has_profiler_snapshot = true;
     const int ret = VPWgpuMetalRendererCompositeRetainedSourceAsync(
         wgpu_renderer_, &request, completion);
     if (ret != 0) {
@@ -1427,6 +1429,8 @@ bool WgpuMetalPresentationBackend::draw_frame(
     VPWgpuMetalAsyncCompletion completion = {};
     completion.callback = wgpu_async_draw_completed;
     completion.user_data = pending_raw;
+    completion.profiler_snapshot = &pending_raw->profiler_snapshot;
+    pending_raw->has_profiler_snapshot = true;
     const int ret = VPWgpuMetalRendererRenderCVPixelBufferFrameSetAsync(
         wgpu_renderer_, &request, completion);
     if (ret != 0) {
@@ -1540,6 +1544,8 @@ bool WgpuMetalPresentationBackend::draw_frame(
   VPWgpuMetalAsyncCompletion completion = {};
   completion.callback = wgpu_async_draw_completed;
   completion.user_data = pending_raw;
+  completion.profiler_snapshot = &pending_raw->profiler_snapshot;
+  pending_raw->has_profiler_snapshot = true;
   const int ret =
       VPWgpuMetalRendererRenderPackageAsync(wgpu_renderer_, &request, completion);
   if (ret != 0) {
@@ -1748,33 +1754,40 @@ void WgpuMetalPresentationBackend::complete_async_draw(
   const uint64_t gpu_wait_us = elapsed_us_since(pending->render_call_start);
   record_wgpu_command_result(gpu_wait_us, success);
   record_present_package_timing(pending->package_copy_us, gpu_wait_us, total_us);
-  if (wgpu_profiler_enabled() && wgpu_renderer_) {
-    VPWgpuMetalProfilerSnapshot profiler = {};
-    if (VPWgpuMetalRendererGetProfilerSnapshot(wgpu_renderer_, &profiler) == 0) {
-      spdlog::info(
-          "[WgpuMetalProfile] total_us={} pre_render_us={} gpu_wait_us={} success={} "
-          "dst_import={}/{} src_import={}/{} cache={} evict={} "
-          "bind_groups(final={},overlay={}) overlay_layer(rebuild={},reuse={}) "
-          "buffer_writes(package={},params={},overlay={}) submits={}",
-          total_us,
-          pre_render_us,
-          gpu_wait_us,
-          success,
-          profiler.destination_import_count,
-          profiler.destination_import_reuse_count,
-          profiler.source_import_count,
-          profiler.source_import_reuse_count,
-          profiler.imported_texture_cache_size,
-          profiler.imported_texture_cache_eviction_count,
-          profiler.final_bind_group_create_count,
-          profiler.overlay_bind_group_create_count,
-          profiler.overlay_layer_rebuild_count,
-          profiler.overlay_layer_reuse_count,
-          profiler.package_buffer_write_count,
-          profiler.params_buffer_write_count,
-          profiler.overlay_buffer_write_count,
-          profiler.submit_count);
-    }
+  if (wgpu_profiler_enabled() && pending->has_profiler_snapshot) {
+    const VPWgpuMetalProfilerSnapshot& profiler = pending->profiler_snapshot;
+    spdlog::info(
+        "[WgpuMetalProfile] total_us={} pre_render_us={} gpu_wait_us={} success={} "
+        "dst_import={}/{} src_import={}/{} cache={} evict={} "
+        "bind_groups(final={},overlay={}) overlay_layer(rebuild={},reuse={}) "
+        "buffer_writes(package={},params={},overlay={}) submits={} "
+        "phase(import={},prepare={},overlay={},bind={},pass={},submit={},cpu={},completion={})",
+        total_us,
+        pre_render_us,
+        gpu_wait_us,
+        success,
+        profiler.destination_import_count,
+        profiler.destination_import_reuse_count,
+        profiler.source_import_count,
+        profiler.source_import_reuse_count,
+        profiler.imported_texture_cache_size,
+        profiler.imported_texture_cache_eviction_count,
+        profiler.final_bind_group_create_count,
+        profiler.overlay_bind_group_create_count,
+        profiler.overlay_layer_rebuild_count,
+        profiler.overlay_layer_reuse_count,
+        profiler.package_buffer_write_count,
+        profiler.params_buffer_write_count,
+        profiler.overlay_buffer_write_count,
+        profiler.submit_count,
+        profiler.last_import_us,
+        profiler.last_prepare_us,
+        profiler.last_overlay_encode_us,
+        profiler.last_bind_group_us,
+        profiler.last_pass_encode_us,
+        profiler.last_submit_us,
+        profiler.last_cpu_render_us,
+        gpu_wait_us);
   }
   {
     std::lock_guard<std::mutex> lock(mutex_);

@@ -43,6 +43,13 @@ pub struct VPWgpuMetalProfilerSnapshot {
     params_buffer_write_count: u64,
     overlay_buffer_write_count: u64,
     submit_count: u64,
+    last_import_us: u64,
+    last_prepare_us: u64,
+    last_overlay_encode_us: u64,
+    last_bind_group_us: u64,
+    last_pass_encode_us: u64,
+    last_submit_us: u64,
+    last_cpu_render_us: u64,
 }
 
 impl From<WgpuMetalProfilerSnapshot> for VPWgpuMetalProfilerSnapshot {
@@ -62,6 +69,13 @@ impl From<WgpuMetalProfilerSnapshot> for VPWgpuMetalProfilerSnapshot {
             params_buffer_write_count: value.params_buffer_write_count,
             overlay_buffer_write_count: value.overlay_buffer_write_count,
             submit_count: value.submit_count,
+            last_import_us: value.last_import_us,
+            last_prepare_us: value.last_prepare_us,
+            last_overlay_encode_us: value.last_overlay_encode_us,
+            last_bind_group_us: value.last_bind_group_us,
+            last_pass_encode_us: value.last_pass_encode_us,
+            last_submit_us: value.last_submit_us,
+            last_cpu_render_us: value.last_cpu_render_us,
         }
     }
 }

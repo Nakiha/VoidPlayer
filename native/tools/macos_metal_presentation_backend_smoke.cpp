@@ -1067,23 +1067,6 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend target ring draw did not avoid displayed/protected buffers");
   }
-  if (wgpu_backend->draw_frame(snapshot, vr::PresentationBackendDrawHooks{})) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend target ring reused completed buffer before release");
-  }
-  const std::string ring_busy_error = wgpu_backend->last_error();
-  if (ring_busy_error.find("wgpu-metal presentation target ring is busy") ==
-      std::string::npos) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend target ring busy failure was not diagnostic");
-  }
-  const auto wgpu_busy_stats = wgpu_backend->presentation_stats();
-  if (wgpu_busy_stats.target_installed != 1 ||
-      wgpu_busy_stats.metal_buffer_exhaustion_count == 0) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend target ring busy state lost diagnostics");
-  }
-  wgpu_backend->release_headless_output(ring_available.buffer);
   ring_completion_count = 0;
   ring_completion_target = 0;
   if (!draw_wgpu_frame_and_wait(*wgpu_backend, snapshot, ring_hooks) ||
@@ -1092,7 +1075,7 @@ int main() {
           static_cast<uint64_t>(
               reinterpret_cast<uintptr_t>(ring_available.buffer))) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend target ring did not reuse released completed buffer");
+    return fail("WgpuMetal backend target ring did not recycle stale completed buffer");
   }
   wgpu_backend->mark_headless_output_displayed(ring_available.buffer);
   ring_completion_count = 0;

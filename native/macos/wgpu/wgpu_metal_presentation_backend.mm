@@ -1657,6 +1657,31 @@ void* WgpuMetalPresentationBackend::acquire_draw_target_locked(
     ++in_flight_draws_;
     return slot.pixel_buffer;
   }
+  // wgpu owns a latest-frame presentation policy: stale completed targets may
+  // be dropped, while displayed/protected/in-flight targets remain preserved.
+  if (in_flight_draws_ == 0) {
+    for (auto& slot : target_ring_) {
+      if (slot.state != TargetState::Completed || !slot.pixel_buffer) {
+        continue;
+      }
+      slot.state = TargetState::InFlight;
+      ++in_flight_draws_;
+      ++target_ring_completed_recycle_count_;
+      if (wgpu_profiler_enabled() &&
+          (target_ring_completed_recycle_count_ <= 8 ||
+           (target_ring_completed_recycle_count_ % 60) == 0)) {
+        spdlog::info(
+            "[WgpuMetalProfile] target_recycle_completed source={} "
+            "in_flight={} limit={} targets={} count={}",
+            draw_source ? draw_source : "",
+            in_flight_draws_,
+            limit,
+            target_ring_.size(),
+            target_ring_completed_recycle_count_);
+      }
+      return slot.pixel_buffer;
+    }
+  }
   record_backpressure("renderer-owned wgpu-metal presentation target ring is busy",
                       limit,
                       target_ring_.size());

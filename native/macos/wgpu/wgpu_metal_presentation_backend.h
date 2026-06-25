@@ -211,6 +211,7 @@ private:
   uint64_t staging_allocation_count_ = 0;
   uint64_t staging_reuse_count_ = 0;
   uint64_t target_ring_backpressure_count_ = 0;
+  uint64_t target_ring_completed_recycle_count_ = 0;
   uint64_t in_flight_draws_ = 0;
   size_t staging_max_bytes_ = 0;
   int32_t last_present_package_storage_ = 0;

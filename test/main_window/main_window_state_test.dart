@@ -219,6 +219,68 @@ void main() {
     }
   });
 
+  testWidgets('seek presented event rejects stale full-duration timing', (
+    tester,
+  ) async {
+    final fixture = _PlaybackFixture();
+    try {
+      await fixture.controller.createPlayer(
+        ['clip.mp4'],
+        width: 1920,
+        height: 1080,
+      );
+      fixture.store.setTextureId(1);
+      fixture.store.setQuickMarks(const [
+        QuickMark(
+          id: 1,
+          anchor: QuickMarkAnchor(
+            fileId: 1,
+            ptsUs: 1500000,
+            dtsUs: 1400000,
+            sourcePacketIndex: 8,
+            sourcePacketSize: 1024,
+          ),
+          sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+        ),
+      ]);
+
+      fixture.coordinator.seekTo(1500000);
+      fixture.api.presentedFrameTiming = const PresentedFrameTiming(
+        ptsUs: 0,
+        dtsUs: 0,
+        durationUs: 2000000,
+      );
+      fixture.api.emitSeekPreviewPresented(
+        requestId: 1,
+        trackFileId: 1,
+        ptsUs: 1500000,
+        dtsUs: 1400000,
+      );
+      await tester.pump();
+
+      final anchor = fixture.store.value.presentedFrameAnchors[1];
+      expect(fixture.store.value.pendingSeekUs, isNull);
+      expect(anchor?.ptsUs, 1500000);
+      expect(anchor?.dtsUs, 1400000);
+      expect(anchor?.durationUs, 33334);
+      expect(
+        QuickMarkStore(marks: fixture.store.value.quickMarks)
+            .view(
+              context: QuickMarkFrameContext(
+                currentPtsUs: fixture.store.value.currentPtsUs,
+                presentedFrameAnchors:
+                    fixture.store.value.presentedFrameAnchors,
+              ),
+              selectedMarkId: 1,
+            )
+            .visibleMarkIds,
+        const {1},
+      );
+    } finally {
+      fixture.dispose();
+    }
+  });
+
   testWidgets('playback clock refreshes quick mark frame anchors', (
     tester,
   ) async {

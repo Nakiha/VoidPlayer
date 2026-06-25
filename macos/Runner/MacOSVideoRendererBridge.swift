@@ -671,7 +671,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       "fileId": fileId,
       "ptsUs": track["currentPtsUs"] as? Int64 ?? -1,
       "dtsUs": track["currentDtsUs"] as? Int64 ?? Int64.min,
-      "durationUs": track["durationUs"] as? Int64 ?? 0,
+      "durationUs": 0,
       "analysisFrameIndex": track["analysisFrameIndex"] as? Int ?? -1,
       "frameIdentityMode": track["frameIdentityMode"] as? Int ?? 0,
       "sourcePacketIndex": track["sourcePacketIndex"] as? Int ?? -1,

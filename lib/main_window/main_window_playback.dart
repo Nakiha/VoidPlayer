@@ -24,6 +24,8 @@ String _quickMarkAnchorTrace(QuickMarkAnchor anchor) =>
     'spp=${anchor.sourcePacketPos}';
 
 const int _playbackClockFallbackAnchorDurationUs = 33334;
+const int _presentedFrameAnchorToleranceUs = 50000;
+const int _maxPresentedFrameDurationUs = 250000;
 
 class MainWindowPlaybackCoordinator {
   static const double trackDragHandleWidth = 28.0;
@@ -472,11 +474,15 @@ class MainWindowPlaybackCoordinator {
       if (_disposed || !mounted() || requestId != _seekSerial) return;
       presentedFrameAnchors = {
         for (final entry in trackManager.entries)
-          entry.info.fileId: QuickMarkAnchor.fromPresentedFrame(
+          entry.info.fileId: _quickMarkAnchorFromPresentedFrame(
             fileId: entry.info.fileId,
             timing: timings[entry.info.fileId],
             fallbackPtsUs: ptsUs,
-          ),
+            fallbackDtsUs: dtsUs,
+            fallbackDurationUs: _playbackClockFallbackAnchorDurationUs,
+            expectedPtsUs: ptsUs,
+            requireExpectedPtsMatch: true,
+          )!,
       };
     }
     final seekUs = pendingSeekUs();
@@ -733,8 +739,11 @@ class MainWindowPlaybackCoordinator {
       var pts = snapshot.currentPtsUs;
       final dur = snapshot.durationUs;
       final playing = snapshot.isPlaying;
-      var presentedFrameAnchors = _anchorsFromSnapshot(snapshot);
       final seekUs = pendingSeekUs();
+      var presentedFrameAnchors = _anchorsFromSnapshot(
+        snapshot,
+        allowFallbackAnchors: seekUs == null,
+      );
       if (seekUs != null) {
         final seekAge = pendingSeekAt() == null
             ? Duration.zero
@@ -843,17 +852,24 @@ class MainWindowPlaybackCoordinator {
   bool get _needsPresentedFrameAnchors =>
       _state.quickMarks.isNotEmpty || _state.quickMarkDraft != null;
 
-  Map<int, QuickMarkAnchor>? _anchorsFromSnapshot(PlaybackSnapshot snapshot) {
+  Map<int, QuickMarkAnchor>? _anchorsFromSnapshot(
+    PlaybackSnapshot snapshot, {
+    bool allowFallbackAnchors = true,
+  }) {
     if (!_needsPresentedFrameAnchors) return null;
     if (trackManager.isEmpty) return const {};
-    final anchors = {
-      for (final entry in trackManager.entries)
-        entry.info.fileId: QuickMarkAnchor.fromPresentedFrame(
-          fileId: entry.info.fileId,
-          timing: snapshot.presentedFrames[entry.info.fileId],
-          fallbackPtsUs: snapshot.currentPtsUs,
-        ),
-    };
+    final anchors = <int, QuickMarkAnchor>{};
+    for (final entry in trackManager.entries) {
+      final anchor = _quickMarkAnchorFromPresentedFrame(
+        fileId: entry.info.fileId,
+        timing: snapshot.presentedFrames[entry.info.fileId],
+        fallbackPtsUs: snapshot.currentPtsUs,
+        allowFallbackAnchor: allowFallbackAnchors,
+      );
+      if (anchor != null) {
+        anchors[entry.info.fileId] = anchor;
+      }
+    }
     _traceQuickMarkAnchors(snapshot: snapshot, anchors: anchors);
     return anchors;
   }
@@ -912,6 +928,66 @@ class MainWindowPlaybackCoordinator {
           durationUs: durationUs,
         ),
     };
+  }
+
+  QuickMarkAnchor? _quickMarkAnchorFromPresentedFrame({
+    required int fileId,
+    required PresentedFrameTiming? timing,
+    required int fallbackPtsUs,
+    int? fallbackDtsUs,
+    int fallbackDurationUs = 0,
+    int? expectedPtsUs,
+    bool requireExpectedPtsMatch = false,
+    bool allowFallbackAnchor = true,
+  }) {
+    QuickMarkAnchor? fallback() => allowFallbackAnchor
+        ? QuickMarkAnchor(
+            fileId: fileId,
+            ptsUs: fallbackPtsUs,
+            dtsUs: fallbackDtsUs ?? fallbackPtsUs,
+            durationUs: fallbackDurationUs,
+          )
+        : null;
+
+    if (timing == null || !timing.isValid) {
+      return fallback();
+    }
+
+    final timingPtsUs = timing.ptsUs;
+    final expectedUs = expectedPtsUs ?? fallbackPtsUs;
+    final hasExpectedPts = expectedUs >= 0 && timingPtsUs >= 0;
+    final matchesExpected =
+        !hasExpectedPts ||
+        (timingPtsUs - expectedUs).abs() <= _presentedFrameAnchorToleranceUs;
+    if (requireExpectedPtsMatch && !matchesExpected) {
+      return fallback();
+    }
+    if (!timing.hasStableSourceIdentity && !matchesExpected) {
+      return fallback();
+    }
+
+    final ptsUs = timingPtsUs >= 0 ? timingPtsUs : fallbackPtsUs;
+    final dtsUs = timing.dtsUs == PresentedFrameTiming.noTimestampUs
+        ? ptsUs
+        : timing.dtsUs;
+    final durationUs =
+        timing.durationUs > 0 &&
+            timing.durationUs <= _maxPresentedFrameDurationUs
+        ? timing.durationUs
+        : fallbackDurationUs;
+    return QuickMarkAnchor(
+      fileId: fileId,
+      ptsUs: ptsUs,
+      dtsUs: dtsUs,
+      durationUs: durationUs,
+      analysisFrameIndex: timing.analysisFrameIndex,
+      frameIdentityMode: timing.frameIdentityMode,
+      sourcePacketIndex: timing.sourcePacketIndex,
+      sourcePacketSize: timing.sourcePacketSize,
+      sourcePacketPos: timing.sourcePacketPos,
+      sourcePacketPtsUs: timing.sourcePacketPtsUs,
+      sourcePacketDtsUs: timing.sourcePacketDtsUs,
+    );
   }
 
   void _traceQuickMarkAnchors({

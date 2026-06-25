@@ -188,6 +188,65 @@ void main() {
     }
   });
 
+  testWidgets('playback clock refreshes quick mark frame anchors', (
+    tester,
+  ) async {
+    final fixture = _PlaybackFixture();
+    try {
+      fixture.store.setTextureId(1);
+      fixture.store.setQuickMarks(const [
+        QuickMark(
+          id: 1,
+          anchor: QuickMarkAnchor(
+            fileId: 1,
+            ptsUs: 1000000,
+            dtsUs: 900000,
+            sourcePacketIndex: 8,
+            sourcePacketSize: 1024,
+            sourcePacketPos: 4096,
+          ),
+          sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+        ),
+      ]);
+      fixture.store.setPolledPlaybackState(
+        1000000,
+        fixture.metrics.effectiveDurationUs,
+        false,
+        presentedFrameAnchors: const {
+          1: QuickMarkAnchor(fileId: 1, ptsUs: 1000000, dtsUs: 1000000),
+        },
+      );
+
+      fixture.api.emitPlaybackClock(
+        ptsUs: 1050000,
+        durationUs: fixture.metrics.effectiveDurationUs,
+        isPlaying: true,
+      );
+      await tester.pump();
+
+      expect(fixture.store.value.currentPtsUs, greaterThanOrEqualTo(1050000));
+      expect(
+        fixture.store.value.presentedFrameAnchors[1]?.ptsUs,
+        greaterThanOrEqualTo(1050000),
+      );
+      expect(
+        QuickMarkStore(marks: fixture.store.value.quickMarks)
+            .view(
+              context: QuickMarkFrameContext(
+                currentPtsUs: fixture.store.value.currentPtsUs,
+                presentedFrameAnchors:
+                    fixture.store.value.presentedFrameAnchors,
+              ),
+              selectedMarkId: 1,
+            )
+            .visibleMarkIds,
+        isEmpty,
+      );
+    } finally {
+      fixture.dispose();
+    }
+  });
+
   group('MainWindowPlaybackCoordinator loop range step', () {
     testWidgets('advances timeline from playback clock events', (tester) async {
       final fixture = _PlaybackFixture();

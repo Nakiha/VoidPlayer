@@ -23,6 +23,8 @@ String _quickMarkAnchorTrace(QuickMarkAnchor anchor) =>
     'spi=${anchor.sourcePacketIndex},sps=${anchor.sourcePacketSize},'
     'spp=${anchor.sourcePacketPos}';
 
+const int _playbackClockFallbackAnchorDurationUs = 33334;
+
 class MainWindowPlaybackCoordinator {
   static const double trackDragHandleWidth = 28.0;
   static const double trackDividerWidth = 1.0;
@@ -541,7 +543,18 @@ class MainWindowPlaybackCoordinator {
       );
     }
 
-    setPolledPlaybackState(clampedPts, durationUs, playing);
+    final presentedFrameAnchors = _needsPresentedFrameAnchors
+        ? _fallbackPresentedFrameAnchors(
+            clampedPts,
+            durationUs: _playbackClockFallbackAnchorDurationUs,
+          )
+        : null;
+    setPolledPlaybackState(
+      clampedPts,
+      durationUs,
+      playing,
+      presentedFrameAnchors: presentedFrameAnchors,
+    );
     if (fromNativeEvent) {
       if (playing) {
         scheduleLoopBoundaryTimer(fromPtsUs: clampedPts);
@@ -857,7 +870,10 @@ class MainWindowPlaybackCoordinator {
     return true;
   }
 
-  Map<int, QuickMarkAnchor> _fallbackPresentedFrameAnchors(int ptsUs) {
+  Map<int, QuickMarkAnchor> _fallbackPresentedFrameAnchors(
+    int ptsUs, {
+    int durationUs = 0,
+  }) {
     if (trackManager.isEmpty) return const {};
     return {
       for (final entry in trackManager.entries)
@@ -865,6 +881,7 @@ class MainWindowPlaybackCoordinator {
           fileId: entry.info.fileId,
           ptsUs: ptsUs,
           dtsUs: ptsUs,
+          durationUs: durationUs,
         ),
     };
   }

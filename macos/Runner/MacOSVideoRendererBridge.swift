@@ -583,20 +583,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     guard textureId != nil else { return nil }
     let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") ?? -1
     if fileId >= 0, let player = nativePlayer {
-      for track in player.trackDiagnostics() {
+      let tracks = player.trackDiagnostics()
+      if tracks.count == 1,
+         (tracks[0]["fileId"] as? Int) == fileId,
+         let frame = player.lastRendererOwnedFrameInfo() {
+        return frame.presentedFrameMap(fileId: fileId)
+      }
+      for track in tracks {
         if (track["fileId"] as? Int) == fileId {
-          let frame: [String: Any] = [
-            "ptsUs": track["currentPtsUs"] as? Int64 ?? -1,
-            "dtsUs": track["currentDtsUs"] as? Int64 ?? Int64.min,
-            "analysisFrameIndex": track["analysisFrameIndex"] as? Int ?? -1,
-            "frameIdentityMode": track["frameIdentityMode"] as? Int ?? 0,
-            "sourcePacketIndex": track["sourcePacketIndex"] as? Int ?? -1,
-            "sourcePacketSize": track["sourcePacketSize"] as? Int ?? 0,
-            "sourcePacketPos": track["sourcePacketPos"] as? Int64 ?? -1,
-            "sourcePacketPtsUs": track["sourcePacketPtsUs"] as? Int64 ?? Int64.min,
-            "sourcePacketDtsUs": track["sourcePacketDtsUs"] as? Int64 ?? Int64.min,
-          ]
-          return frame
+          return presentedFrameMap(fromTrackDiagnostic: track, fileId: fileId)
         }
       }
     }
@@ -619,21 +614,35 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private func currentPresentedFrames() -> [[String: Any]] {
     guard textureId != nil, let player = nativePlayer else { return [] }
-    return player.trackDiagnostics().compactMap { track in
-      guard let fileId = track["fileId"] as? Int else { return nil }
-      return [
-        "fileId": fileId,
-        "ptsUs": track["currentPtsUs"] as? Int64 ?? -1,
-        "dtsUs": track["currentDtsUs"] as? Int64 ?? Int64.min,
-        "analysisFrameIndex": track["analysisFrameIndex"] as? Int ?? -1,
-        "frameIdentityMode": track["frameIdentityMode"] as? Int ?? 0,
-        "sourcePacketIndex": track["sourcePacketIndex"] as? Int ?? -1,
-        "sourcePacketSize": track["sourcePacketSize"] as? Int ?? 0,
-        "sourcePacketPos": track["sourcePacketPos"] as? Int64 ?? -1,
-        "sourcePacketPtsUs": track["sourcePacketPtsUs"] as? Int64 ?? Int64.min,
-        "sourcePacketDtsUs": track["sourcePacketDtsUs"] as? Int64 ?? Int64.min,
-      ]
+    let tracks = player.trackDiagnostics()
+    if tracks.count == 1,
+       let fileId = tracks[0]["fileId"] as? Int,
+       let frame = player.lastRendererOwnedFrameInfo() {
+      return [frame.presentedFrameMap(fileId: fileId)]
     }
+    return tracks.compactMap { track in
+      guard let fileId = track["fileId"] as? Int else { return nil }
+      return presentedFrameMap(fromTrackDiagnostic: track, fileId: fileId)
+    }
+  }
+
+  private func presentedFrameMap(
+    fromTrackDiagnostic track: [String: Any],
+    fileId: Int
+  ) -> [String: Any] {
+    [
+      "fileId": fileId,
+      "ptsUs": track["currentPtsUs"] as? Int64 ?? -1,
+      "dtsUs": track["currentDtsUs"] as? Int64 ?? Int64.min,
+      "durationUs": track["durationUs"] as? Int64 ?? 0,
+      "analysisFrameIndex": track["analysisFrameIndex"] as? Int ?? -1,
+      "frameIdentityMode": track["frameIdentityMode"] as? Int ?? 0,
+      "sourcePacketIndex": track["sourcePacketIndex"] as? Int ?? -1,
+      "sourcePacketSize": track["sourcePacketSize"] as? Int ?? 0,
+      "sourcePacketPos": track["sourcePacketPos"] as? Int64 ?? -1,
+      "sourcePacketPtsUs": track["sourcePacketPtsUs"] as? Int64 ?? Int64.min,
+      "sourcePacketDtsUs": track["sourcePacketDtsUs"] as? Int64 ?? Int64.min,
+    ]
   }
 
   private func createPlayer(arguments: Any?) -> Any {

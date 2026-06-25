@@ -113,15 +113,7 @@ extension MacOSNativePlayerSession {
     guard VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(handle, &info) == 0 else {
       return nil
     }
-    return MacOSNativeFrameInfo(
-      width: Int(info.width),
-      height: Int(info.height),
-      durationUs: Int(info.duration_us),
-      ptsUs: Int(info.pts_us),
-      dtsUs: Int(info.dts_us),
-      targetPixelBufferAddress: UInt(info.target_pixel_buffer_address),
-      layoutRevision: UInt64(info.layout_revision)
-    )
+    return MacOSNativeFrameInfo(native: info)
   }
 
   func copyLastRendererOwnedFrameInfo() throws -> MacOSNativeFrameInfo {
@@ -144,15 +136,7 @@ extension MacOSNativePlayerSession {
     guard info.width > 0, info.height > 0 else {
       throw MacOSNativePlayerError.invalidPayload
     }
-    return MacOSNativeFrameInfo(
-      width: Int(info.width),
-      height: Int(info.height),
-      durationUs: Int(info.duration_us),
-      ptsUs: Int(info.pts_us),
-      dtsUs: Int(info.dts_us),
-      targetPixelBufferAddress: UInt(info.target_pixel_buffer_address),
-      layoutRevision: UInt64(info.layout_revision)
-    )
+    return MacOSNativeFrameInfo(native: info)
   }
 
   func requestRendererOwnedFrameRefresh(
@@ -183,15 +167,7 @@ extension MacOSNativePlayerSession {
     guard info.width > 0, info.height > 0 else {
       throw MacOSNativePlayerError.invalidPayload
     }
-    return MacOSNativeFrameInfo(
-      width: Int(info.width),
-      height: Int(info.height),
-      durationUs: Int(info.duration_us),
-      ptsUs: Int(info.pts_us),
-      dtsUs: Int(info.dts_us),
-      targetPixelBufferAddress: UInt(info.target_pixel_buffer_address),
-      layoutRevision: UInt64(info.layout_revision)
-    )
+    return MacOSNativeFrameInfo(native: info)
   }
 
   func resetRendererOwnedPresentationStats() {

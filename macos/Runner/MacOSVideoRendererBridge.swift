@@ -588,15 +588,36 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
          tracks.count == 1,
          (tracks[0]["fileId"] as? Int) == fileId,
          let frame = player.lastRendererOwnedFrameInfo() {
-        return frame.presentedFrameMap(fileId: fileId)
+        let map = frame.presentedFrameMap(fileId: fileId)
+        tracePresentedFrameSource(
+          route: "currentPresentedFrame",
+          source: "renderer-owned-paused",
+          fileId: fileId,
+          map: map
+        )
+        return map
       }
       for track in tracks {
         if (track["fileId"] as? Int) == fileId {
-          return presentedFrameMap(fromTrackDiagnostic: track, fileId: fileId)
+          let map = presentedFrameMap(fromTrackDiagnostic: track, fileId: fileId)
+          tracePresentedFrameSource(
+            route: "currentPresentedFrame",
+            source: "track-diagnostics",
+            fileId: fileId,
+            map: map
+          )
+          return map
         }
       }
     }
-    return presentationState.currentPresentedFrameMap()
+    let map = presentationState.currentPresentedFrameMap()
+    tracePresentedFrameSource(
+      route: "currentPresentedFrame",
+      source: "presentation-state-fallback",
+      fileId: fileId,
+      map: map
+    )
+    return map
   }
 
   private func playbackSnapshot(arguments: Any?) -> Any {
@@ -620,11 +641,25 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
        tracks.count == 1,
        let fileId = tracks[0]["fileId"] as? Int,
        let frame = player.lastRendererOwnedFrameInfo() {
-      return [frame.presentedFrameMap(fileId: fileId)]
+      let map = frame.presentedFrameMap(fileId: fileId)
+      tracePresentedFrameSource(
+        route: "presentedFrames",
+        source: "renderer-owned-paused",
+        fileId: fileId,
+        map: map
+      )
+      return [map]
     }
     return tracks.compactMap { track in
       guard let fileId = track["fileId"] as? Int else { return nil }
-      return presentedFrameMap(fromTrackDiagnostic: track, fileId: fileId)
+      let map = presentedFrameMap(fromTrackDiagnostic: track, fileId: fileId)
+      tracePresentedFrameSource(
+        route: "presentedFrames",
+        source: "track-diagnostics",
+        fileId: fileId,
+        map: map
+      )
+      return map
     }
   }
 
@@ -652,6 +687,26 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   ) -> Bool {
     player.rendererOwnedPresentationActive() &&
       !playback.currentIsPlaying(player: player)
+  }
+
+  private func tracePresentedFrameSource(
+    route: String,
+    source: String,
+    fileId: Int,
+    map: [String: Any]
+  ) {
+    guard ProcessInfo.processInfo.environment["VOIDPLAYER_QUICK_MARK_TRACE"] == "1" else {
+      return
+    }
+    let pts = map["ptsUs"] ?? "nil"
+    let dts = map["dtsUs"] ?? "nil"
+    let duration = map["durationUs"] ?? "nil"
+    let analysis = map["analysisFrameIndex"] ?? "nil"
+    let packetIndex = map["sourcePacketIndex"] ?? "nil"
+    let packetPos = map["sourcePacketPos"] ?? "nil"
+    NSLog(
+      "VoidPlayer quickmark timing route=\(route) source=\(source) fileId=\(fileId) pts=\(pts) dts=\(dts) duration=\(duration) analysis=\(analysis) packetIndex=\(packetIndex) packetPos=\(packetPos)"
+    )
   }
 
   private func createPlayer(arguments: Any?) -> Any {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
@@ -15,6 +16,12 @@ import '../video_renderer_controller.dart';
 import '../viewport/viewport_display_state.dart';
 import 'main_window_state.dart';
 import 'main_window_timeline_metrics.dart';
+
+String _quickMarkAnchorTrace(QuickMarkAnchor anchor) =>
+    'pts=${anchor.ptsUs},dts=${anchor.dtsUs},dur=${anchor.durationUs},'
+    'afi=${anchor.analysisFrameIndex},mode=${anchor.frameIdentityMode},'
+    'spi=${anchor.sourcePacketIndex},sps=${anchor.sourcePacketSize},'
+    'spp=${anchor.sourcePacketPos}';
 
 class MainWindowPlaybackCoordinator {
   static const double trackDragHandleWidth = 28.0;
@@ -56,6 +63,7 @@ class MainWindowPlaybackCoordinator {
   int _pollSerial = 0;
   int _seekSerial = 0;
   int _loopRangeSyncSerial = 0;
+  String _lastQuickMarkAnchorTrace = '';
 
   MainWindowPlaybackCoordinator({
     required this.controller,
@@ -797,7 +805,7 @@ class MainWindowPlaybackCoordinator {
   Map<int, QuickMarkAnchor>? _anchorsFromSnapshot(PlaybackSnapshot snapshot) {
     if (!_needsPresentedFrameAnchors) return null;
     if (trackManager.isEmpty) return const {};
-    return {
+    final anchors = {
       for (final entry in trackManager.entries)
         entry.info.fileId: QuickMarkAnchor.fromPresentedFrame(
           fileId: entry.info.fileId,
@@ -805,6 +813,8 @@ class MainWindowPlaybackCoordinator {
           fallbackPtsUs: snapshot.currentPtsUs,
         ),
     };
+    _traceQuickMarkAnchors(snapshot: snapshot, anchors: anchors);
+    return anchors;
   }
 
   Future<Map<int, PresentedFrameTiming?>> _pollPresentedFrameTimings() async {
@@ -857,6 +867,30 @@ class MainWindowPlaybackCoordinator {
           dtsUs: ptsUs,
         ),
     };
+  }
+
+  void _traceQuickMarkAnchors({
+    required PlaybackSnapshot snapshot,
+    required Map<int, QuickMarkAnchor> anchors,
+  }) {
+    if (Platform.environment['VOIDPLAYER_QUICK_MARK_TRACE'] != '1') return;
+    final rawFrames = snapshot.presentedFrames.entries
+        .map(
+          (entry) =>
+              '${entry.key}:pts=${entry.value.ptsUs},dts=${entry.value.dtsUs},'
+              'dur=${entry.value.durationUs},afi=${entry.value.analysisFrameIndex},'
+              'spi=${entry.value.sourcePacketIndex},spp=${entry.value.sourcePacketPos}',
+        )
+        .join(';');
+    final anchorText = anchors.entries
+        .map((entry) => '${entry.key}:${_quickMarkAnchorTrace(entry.value)}')
+        .join(';');
+    final signature =
+        'clock=${snapshot.currentPtsUs} playing=${snapshot.isPlaying} '
+        'raw=[$rawFrames] anchors=[$anchorText]';
+    if (signature == _lastQuickMarkAnchorTrace) return;
+    _lastQuickMarkAnchorTrace = signature;
+    log.info('[QuickMarkTrace] playback snapshot $signature');
   }
 
   Future<void> setLoopRangeEnabled(bool enabled) async {

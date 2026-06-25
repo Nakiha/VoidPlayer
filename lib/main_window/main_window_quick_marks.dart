@@ -47,6 +47,7 @@ class MainWindowQuickMarkCoordinator {
   bool _savePending = false;
   bool _thumbnailCaptureInFlight = false;
   bool _thumbnailRerunRequested = false;
+  int? _pendingJumpMarkId;
   String _lastViewTrace = '';
   final Map<int, String> _mediaHashes = <int, String>{};
   List<QuickMarkMediaRef> _pendingSaveRefs = const [];
@@ -80,6 +81,7 @@ class MainWindowQuickMarkCoordinator {
   QuickMarkFrameContext get frameContext => QuickMarkFrameContext(
     currentPtsUs: _currentPtsUs,
     presentedFrameAnchors: _presentedFrameAnchors,
+    allowTimeFallback: _state.pendingSeekUs == null,
   );
 
   QuickMark? get draft => _state.quickMarkDraft;
@@ -101,6 +103,7 @@ class MainWindowQuickMarkCoordinator {
     )) {
       _scheduleThumbnailCapture();
     }
+    _completePendingJumpIfReady();
   }
 
   void reconcilePersistence() {
@@ -217,6 +220,9 @@ class MainWindowQuickMarkCoordinator {
 
   void delete(int id) {
     _applyStore(store.delete(id));
+    if (_pendingJumpMarkId == id) {
+      _pendingJumpMarkId = null;
+    }
     if (_selectedQuickMarkId == id) {
       stateStore.setSelectedQuickMarkId(null);
     }
@@ -241,14 +247,32 @@ class MainWindowQuickMarkCoordinator {
   void jumpTo(int id) {
     final mark = store.markById(id);
     if (mark == null) return;
-    if (!isVisible(mark)) {
-      playbackCoordinator.seekTo(mark.anchor.ptsUs);
+    if (isVisible(mark)) {
+      _pendingJumpMarkId = null;
+      stateStore.setSelectedQuickMarkId(id);
+      return;
     }
-    stateStore.setSelectedQuickMarkId(id);
+    _pendingJumpMarkId = id;
+    stateStore.setSelectedQuickMarkId(null);
+    playbackCoordinator.seekTo(mark.anchor.ptsUs);
   }
 
   bool isVisible(QuickMark mark) {
     return store.isVisible(mark, frameContext);
+  }
+
+  void _completePendingJumpIfReady() {
+    final id = _pendingJumpMarkId;
+    if (id == null || _state.pendingSeekUs != null) return;
+    final mark = store.markById(id);
+    if (mark == null) {
+      _pendingJumpMarkId = null;
+      return;
+    }
+    if (!isVisible(mark)) return;
+    _pendingJumpMarkId = null;
+    stateStore.setSelectedQuickMarkId(id);
+    layoutCoordinator.focusQuickMark(mark);
   }
 
   /// Injects an agent-authored mark anchored to the current presented frame

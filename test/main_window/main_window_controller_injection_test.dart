@@ -520,9 +520,30 @@ void main() {
 
     controller.viewActions.marks.onJumpToMark(2);
 
-    final viewModel = controller.viewModel;
     expect(controller.stateStore.value.currentPtsUs, 5000);
     expect(controller.stateStore.value.pendingSeekUs, 5000);
+    var viewModel = controller.viewModel;
+    expect(viewModel.viewport.quickMarks, isEmpty);
+    expect(viewModel.viewport.selectedQuickMarkId, isNull);
+
+    controller.stateStore
+      ..setPendingSeek(null, null)
+      ..setPolledPlaybackState(
+        5000,
+        10000,
+        false,
+        presentedFrameAnchors: const {
+          1: QuickMarkAnchor(
+            fileId: 1,
+            ptsUs: 5000,
+            dtsUs: 4900,
+            sourcePacketIndex: 8,
+            sourcePacketSize: 1024,
+          ),
+        },
+      );
+
+    viewModel = controller.viewModel;
     expect(viewModel.viewport.quickMarks.map((mark) => mark.id), const [2]);
     expect(viewModel.viewport.selectedQuickMarkId, 2);
   });

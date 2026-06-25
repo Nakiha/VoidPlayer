@@ -101,10 +101,7 @@ class MainWindowPlaybackCoordinator {
   int durationUs() => _state.durationUs;
   int? pendingSeekUs() => _state.pendingSeekUs;
   DateTime? pendingSeekAt() => _state.pendingSeekAt;
-  void setSeekPreview(int ptsUs) => stateStore.setSeekPreview(
-    ptsUs,
-    presentedFrameAnchors: _fallbackPresentedFrameAnchors(ptsUs),
-  );
+  void setSeekPreview(int ptsUs) => stateStore.setSeekPreview(ptsUs);
   void setPendingSeek(int? ptsUs, DateTime? at) =>
       stateStore.setPendingSeek(ptsUs, at);
   void setPolledPlaybackState(
@@ -460,18 +457,47 @@ class MainWindowPlaybackCoordinator {
       return;
     }
     if (event.type != NativePlayerEventType.seekPreviewPresented) return;
+    unawaited(_handleSeekPreviewPresentedEvent(event));
+  }
+
+  Future<void> _handleSeekPreviewPresentedEvent(NativePlayerEvent event) async {
     final requestId = event.requestId;
     if (requestId == null || requestId != _seekSerial) return;
     if (!event.hasPresentedFrame) return;
-    final callback = onSeekPreviewPresented;
-    if (callback == null) return;
+    final ptsUs = event.ptsUs!;
+    final dtsUs = event.dtsUs!;
+    Map<int, QuickMarkAnchor>? presentedFrameAnchors;
+    if (_needsPresentedFrameAnchors) {
+      final timings = await _pollPresentedFrameTimings();
+      if (_disposed || !mounted() || requestId != _seekSerial) return;
+      presentedFrameAnchors = {
+        for (final entry in trackManager.entries)
+          entry.info.fileId: QuickMarkAnchor.fromPresentedFrame(
+            fileId: entry.info.fileId,
+            timing: timings[entry.info.fileId],
+            fallbackPtsUs: ptsUs,
+          ),
+      };
+    }
+    final seekUs = pendingSeekUs();
+    if (seekUs == null || (ptsUs - seekUs).abs() <= 50000) {
+      setPendingSeek(null, null);
+    }
+    setPolledPlaybackState(
+      ptsUs,
+      durationUs(),
+      false,
+      presentedFrameAnchors: presentedFrameAnchors,
+    );
     _seekSettledTimer?.cancel();
     _seekSettledTimer = null;
+    final callback = onSeekPreviewPresented;
+    if (callback == null) return;
     unawaited(
       callback(
         trackFileId: event.trackFileId!,
-        ptsUs: event.ptsUs!,
-        dtsUs: event.dtsUs!,
+        ptsUs: ptsUs,
+        dtsUs: dtsUs,
       ).catchError((Object error, StackTrace stack) {
         log.warning(
           'seek preview callback failed: requestId=$requestId',
@@ -723,9 +749,11 @@ class MainWindowPlaybackCoordinator {
         final settled = clockSettled && anchorsSettled;
         if (settled) {
           setPendingSeek(null, null);
+        } else if (_needsPresentedFrameAnchors) {
+          pts = seekUs;
+          presentedFrameAnchors = const {};
         } else if (seekAge < const Duration(milliseconds: 1500)) {
           pts = seekUs;
-          presentedFrameAnchors = _fallbackPresentedFrameAnchors(seekUs);
         } else {
           setPendingSeek(null, null);
           if (!anchorsSettled) {

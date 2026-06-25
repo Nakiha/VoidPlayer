@@ -5,10 +5,12 @@ import 'quick_mark.dart';
 class QuickMarkFrameContext {
   final int currentPtsUs;
   final Map<int, QuickMarkAnchor> presentedFrameAnchors;
+  final bool allowTimeFallback;
 
   const QuickMarkFrameContext({
     required this.currentPtsUs,
     this.presentedFrameAnchors = const {},
+    this.allowTimeFallback = true,
   });
 }
 
@@ -137,6 +139,7 @@ class QuickMarkStore {
         fallbackToleranceUs: toleranceUs,
       );
     }
+    if (!context.allowTimeFallback) return false;
     return (mark.ptsUs - context.currentPtsUs).abs() <= toleranceUs;
   }
 

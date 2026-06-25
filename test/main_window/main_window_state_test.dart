@@ -159,6 +159,47 @@ void main() {
       fixture.coordinator.seekTo(1500000);
       expect(fixture.store.value.currentPtsUs, 1500000);
       expect(fixture.store.value.pendingSeekUs, 1500000);
+      expect(fixture.store.value.presentedFrameAnchors, isEmpty);
+      expect(
+        QuickMarkStore(marks: fixture.store.value.quickMarks)
+            .view(
+              context: QuickMarkFrameContext(
+                currentPtsUs: fixture.store.value.currentPtsUs,
+                presentedFrameAnchors:
+                    fixture.store.value.presentedFrameAnchors,
+                allowTimeFallback: fixture.store.value.pendingSeekUs == null,
+              ),
+              selectedMarkId: 1,
+            )
+            .visibleMarkIds,
+        isEmpty,
+      );
+
+      await tester.pump();
+      fixture.coordinator.startPolling();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(fixture.api.calls, contains('getPlaybackSnapshot:true'));
+      expect(fixture.api.calls, isNot(contains('currentPresentedFrame:1')));
+      expect(fixture.store.value.currentPtsUs, 1500000);
+      expect(fixture.store.value.pendingSeekUs, 1500000);
+      expect(fixture.store.value.presentedFrameAnchors, isEmpty);
+
+      fixture.api.presentedFrameTiming = const PresentedFrameTiming(
+        ptsUs: 1500000,
+        dtsUs: 1400000,
+        sourcePacketIndex: 8,
+        sourcePacketSize: 1024,
+      );
+      fixture.api.emitSeekPreviewPresented(
+        requestId: 1,
+        trackFileId: 1,
+        ptsUs: 1500000,
+        dtsUs: 1400000,
+      );
+      await tester.pump();
+
+      expect(fixture.store.value.pendingSeekUs, isNull);
       expect(fixture.store.value.presentedFrameAnchors[1]?.ptsUs, 1500000);
       expect(
         QuickMarkStore(marks: fixture.store.value.quickMarks)
@@ -173,16 +214,6 @@ void main() {
             .visibleMarkIds,
         const {1},
       );
-
-      await tester.pump();
-      fixture.coordinator.startPolling();
-      await tester.pump(const Duration(milliseconds: 250));
-
-      expect(fixture.api.calls, contains('getPlaybackSnapshot:true'));
-      expect(fixture.api.calls, isNot(contains('currentPresentedFrame:1')));
-      expect(fixture.store.value.currentPtsUs, 1500000);
-      expect(fixture.store.value.pendingSeekUs, 1500000);
-      expect(fixture.store.value.presentedFrameAnchors[1]?.ptsUs, 1500000);
     } finally {
       fixture.dispose();
     }
@@ -509,6 +540,28 @@ class _PlaybackApi implements NativePlayerApi {
         durationUs: durationUs,
         isPlaying: isPlaying,
         playbackSpeed: playbackSpeed,
+      ),
+    );
+  }
+
+  void emitSeekPreviewPresented({
+    required int requestId,
+    required int trackFileId,
+    required int ptsUs,
+    required int dtsUs,
+  }) {
+    _events.add(
+      NativePlayerEvent(
+        schemaVersion: 1,
+        sequence: 1,
+        rawType: 'seekPreviewPresented',
+        type: NativePlayerEventType.seekPreviewPresented,
+        timestampUs: 0,
+        requestId: requestId,
+        trackFileId: trackFileId,
+        ptsUs: ptsUs,
+        dtsUs: dtsUs,
+        targetPtsUs: ptsUs,
       ),
     );
   }

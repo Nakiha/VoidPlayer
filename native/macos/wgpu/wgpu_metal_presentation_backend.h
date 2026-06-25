@@ -2,6 +2,8 @@
 
 #include "renderer/render/presentation_backend.h"
 
+#include <CoreFoundation/CoreFoundation.h>
+
 #include <array>
 #include <chrono>
 #include <condition_variable>
@@ -79,6 +81,15 @@ private:
     uint64_t cached_pixel_format = 0;
     TargetState state = TargetState::Available;
   };
+  struct SourceTextureCacheEntry {
+    void* pixel_buffer = nullptr;
+    CFTypeRef texture_ref = nullptr;
+    uint64_t pixel_format = 0;
+    int32_t width = 0;
+    int32_t height = 0;
+    size_t plane = 0;
+    uint64_t last_used = 0;
+  };
   struct SourceMetricsResult {
     bool viewport_composite = false;
     bool cache_hit = false;
@@ -122,10 +133,17 @@ private:
   void* acquire_draw_target_locked();
   void release_target_texture_cache_locked();
   void release_target_texture_cache_for_slot(TargetSlot& slot);
+  void release_source_texture_cache_locked();
   void* cached_target_texture_ref(void* pixel_buffer,
                                   uint64_t metal_pixel_format,
                                   int32_t width,
                                   int32_t height,
+                                  std::string& error);
+  void* cached_source_texture_ref(void* pixel_buffer,
+                                  uint64_t metal_pixel_format,
+                                  int32_t width,
+                                  int32_t height,
+                                  size_t plane,
                                   std::string& error);
   void complete_ring_draw_target(uint64_t target_pixel_buffer_address,
                                  bool success);
@@ -175,6 +193,8 @@ private:
   bool wgpu_supports_16bit_norm_ = false;
   bool retained_source_available_ = false;
   std::vector<TargetSlot> target_ring_;
+  std::vector<SourceTextureCacheEntry> source_texture_cache_;
+  uint64_t source_texture_cache_clock_ = 0;
   mutable std::mutex mutex_;
 
   std::string last_error_;

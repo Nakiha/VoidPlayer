@@ -529,9 +529,14 @@ void WgpuMetalPresentationBackend::shutdown() {
       return async_state_->active_callbacks == 0;
     });
   }
+  if (wgpu_renderer_) {
+    VPWgpuMetalRendererDestroy(wgpu_renderer_);
+    wgpu_renderer_ = nullptr;
+  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     release_target_texture_cache_locked();
+    release_source_texture_cache_locked();
     draw_target_pixel_buffer_ = nullptr;
     target_ring_.clear();
     target_ring_enabled_ = false;
@@ -541,10 +546,6 @@ void WgpuMetalPresentationBackend::shutdown() {
   if (texture_cache_) {
     CFRelease(texture_cache_);
     texture_cache_ = nullptr;
-  }
-  if (wgpu_renderer_) {
-    VPWgpuMetalRendererDestroy(wgpu_renderer_);
-    wgpu_renderer_ = nullptr;
   }
   if (metal_device_) {
     CFRelease(metal_device_);
@@ -602,6 +603,17 @@ void WgpuMetalPresentationBackend::release_target_texture_cache_locked() {
   for (auto& slot : target_ring_) {
     release_target_texture_cache_for_slot(slot);
   }
+}
+
+void WgpuMetalPresentationBackend::release_source_texture_cache_locked() {
+  for (auto& entry : source_texture_cache_) {
+    if (entry.texture_ref) {
+      CFRelease(entry.texture_ref);
+      entry.texture_ref = nullptr;
+    }
+  }
+  source_texture_cache_.clear();
+  source_texture_cache_clock_ = 0;
 }
 
 void* WgpuMetalPresentationBackend::cached_target_texture_ref(
@@ -667,6 +679,77 @@ void* WgpuMetalPresentationBackend::cached_target_texture_ref(
     *cached_pixel_format = metal_pixel_format;
   }
   return const_cast<void*>(CFRetain(*texture_ref_slot));
+}
+
+void* WgpuMetalPresentationBackend::cached_source_texture_ref(
+    void* pixel_buffer,
+    uint64_t metal_pixel_format,
+    int32_t width,
+    int32_t height,
+    size_t plane,
+    std::string& error) {
+  if (!pixel_buffer || !texture_cache_ || width <= 0 || height <= 0) {
+    error = "wgpu-metal source texture cache arguments are invalid";
+    return nullptr;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  source_texture_cache_clock_ = source_texture_cache_clock_ + 1;
+  for (auto& entry : source_texture_cache_) {
+    if (entry.pixel_buffer == pixel_buffer &&
+        entry.pixel_format == metal_pixel_format &&
+        entry.width == width &&
+        entry.height == height &&
+        entry.plane == plane &&
+        entry.texture_ref) {
+      entry.last_used = source_texture_cache_clock_;
+      return const_cast<void*>(CFRetain(entry.texture_ref));
+    }
+  }
+
+  CVMetalTextureRef texture_ref = nullptr;
+  const CVReturn status = CVMetalTextureCacheCreateTextureFromImage(
+      kCFAllocatorDefault,
+      static_cast<CVMetalTextureCacheRef>(texture_cache_),
+      as_pixel_buffer(pixel_buffer),
+      nullptr,
+      static_cast<MTLPixelFormat>(metal_pixel_format),
+      width,
+      height,
+      plane,
+      &texture_ref);
+  if (status != kCVReturnSuccess || !texture_ref) {
+    if (texture_ref) {
+      CFRelease(texture_ref);
+    }
+    error = "wgpu-metal failed to wrap source CVPixelBuffer plane";
+    return nullptr;
+  }
+  source_texture_cache_.push_back(SourceTextureCacheEntry{
+      pixel_buffer,
+      texture_ref,
+      metal_pixel_format,
+      width,
+      height,
+      plane,
+      source_texture_cache_clock_,
+  });
+  constexpr size_t kMaxSourceTextureCacheEntries = 128;
+  if (source_texture_cache_.size() > kMaxSourceTextureCacheEntries) {
+    const auto evict = std::min_element(
+        source_texture_cache_.begin(),
+        source_texture_cache_.end(),
+        [](const SourceTextureCacheEntry& lhs,
+           const SourceTextureCacheEntry& rhs) {
+          return lhs.last_used < rhs.last_used;
+        });
+    if (evict != source_texture_cache_.end()) {
+      if (evict->texture_ref) {
+        CFRelease(evict->texture_ref);
+      }
+      source_texture_cache_.erase(evict);
+    }
+  }
+  return const_cast<void*>(CFRetain(texture_ref));
 }
 
 bool WgpuMetalPresentationBackend::update_headless_output(void* output,
@@ -1257,26 +1340,31 @@ bool WgpuMetalPresentationBackend::draw_frame(
           is_p010 ? MTLPixelFormatR16Unorm : MTLPixelFormatR8Unorm;
       const MTLPixelFormat uv_format =
           is_p010 ? MTLPixelFormatRG16Unorm : MTLPixelFormatRG8Unorm;
-      const CVReturn y_status = create_cv_metal_texture(
-          static_cast<CVMetalTextureCacheRef>(texture_cache_),
-          source_pixel_buffer,
-          y_format,
-          CVPixelBufferGetWidthOfPlane(source_pixel_buffer, 0),
-          CVPixelBufferGetHeightOfPlane(source_pixel_buffer, 0),
-          0,
-          &source_y_refs[slot]);
-      const CVReturn uv_status = create_cv_metal_texture(
-          static_cast<CVMetalTextureCacheRef>(texture_cache_),
-          source_pixel_buffer,
-          uv_format,
-          CVPixelBufferGetWidthOfPlane(source_pixel_buffer, 1),
-          CVPixelBufferGetHeightOfPlane(source_pixel_buffer, 1),
-          1,
-          &source_uv_refs[slot]);
-      if (y_status != kCVReturnSuccess || uv_status != kCVReturnSuccess ||
-          !source_y_refs[slot].valid() || !source_uv_refs[slot].valid()) {
-        return fail_after_target_acquire(
-            "wgpu-metal failed to wrap source CVPixelBuffer planes");
+      std::string source_texture_error;
+      source_y_refs[slot].reset(static_cast<CVMetalTextureRef>(
+          cached_source_texture_ref(
+              source_pixel_buffer,
+              static_cast<uint64_t>(y_format),
+              static_cast<int32_t>(CVPixelBufferGetWidthOfPlane(
+                  source_pixel_buffer, 0)),
+              static_cast<int32_t>(CVPixelBufferGetHeightOfPlane(
+                  source_pixel_buffer, 0)),
+              0,
+              source_texture_error)));
+      source_uv_refs[slot].reset(static_cast<CVMetalTextureRef>(
+          cached_source_texture_ref(
+              source_pixel_buffer,
+              static_cast<uint64_t>(uv_format),
+              static_cast<int32_t>(CVPixelBufferGetWidthOfPlane(
+                  source_pixel_buffer, 1)),
+              static_cast<int32_t>(CVPixelBufferGetHeightOfPlane(
+                  source_pixel_buffer, 1)),
+              1,
+              source_texture_error)));
+      if (!source_y_refs[slot].valid() || !source_uv_refs[slot].valid()) {
+        return fail_after_target_acquire(source_texture_error.empty()
+                                             ? "wgpu-metal failed to wrap source CVPixelBuffer planes"
+                                             : source_texture_error);
       }
       request.source_y_mtl_textures[slot] =
           (__bridge void*)source_y_refs[slot].texture();

@@ -439,9 +439,12 @@ pub struct WgpuMetalRenderer {
     bgra8_pipeline: wgpu::RenderPipeline,
     rgba16_float_pipeline: wgpu::RenderPipeline,
     overlay_pipeline: wgpu::RenderPipeline,
-    dummy_bgra_array_texture: wgpu::Texture,
-    dummy_y_texture: wgpu::Texture,
-    dummy_uv_texture: wgpu::Texture,
+    _dummy_bgra_array_texture: wgpu::Texture,
+    dummy_bgra_array_view: wgpu::TextureView,
+    _dummy_y_texture: wgpu::Texture,
+    dummy_y_view: wgpu::TextureView,
+    _dummy_uv_texture: wgpu::Texture,
+    dummy_uv_view: wgpu::TextureView,
     overlay_layer_texture: Option<CachedOverlayLayerTexture>,
     source_texture: Option<CachedSourceTexture>,
     params_buffer: Option<CachedStorageBuffer>,
@@ -504,6 +507,7 @@ struct CachedSourceTexture {
     height: u32,
     layers: u32,
     texture: wgpu::Texture,
+    view: wgpu::TextureView,
 }
 
 struct CachedStorageBuffer {
@@ -520,6 +524,7 @@ struct CachedOverlayLayerTexture {
     line_count: usize,
     motion_count: usize,
     texture: wgpu::Texture,
+    view: wgpu::TextureView,
 }
 
 fn cv_plane_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
@@ -753,6 +758,8 @@ impl WgpuMetalRenderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
+        let dummy_bgra_array_view =
+            dummy_bgra_array_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let dummy_y_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("voidplayer-wgpu-dummy-cv-y"),
             size: wgpu::Extent3d {
@@ -767,6 +774,7 @@ impl WgpuMetalRenderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
+        let dummy_y_view = dummy_y_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let dummy_uv_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("voidplayer-wgpu-dummy-cv-uv"),
             size: wgpu::Extent3d {
@@ -781,6 +789,7 @@ impl WgpuMetalRenderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
+        let dummy_uv_view = dummy_uv_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let (completion_tx, completion_rx) = mpsc::channel::<CompletionJob>();
         let completion_device = device.clone();
         let completion_worker = thread::Builder::new()
@@ -811,9 +820,12 @@ impl WgpuMetalRenderer {
             bgra8_pipeline,
             rgba16_float_pipeline,
             overlay_pipeline,
-            dummy_bgra_array_texture,
-            dummy_y_texture,
-            dummy_uv_texture,
+            _dummy_bgra_array_texture: dummy_bgra_array_texture,
+            dummy_bgra_array_view,
+            _dummy_y_texture: dummy_y_texture,
+            dummy_y_view,
+            _dummy_uv_texture: dummy_uv_texture,
+            dummy_uv_view,
             overlay_layer_texture: None,
             source_texture: None,
             params_buffer: None,
@@ -1400,24 +1412,27 @@ fn write_source_bgra_atlas(
         texture.width != width || texture.height != height || texture.layers != layers
     });
     if recreate {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("voidplayer-wgpu-source-bgra-atlas"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: layers,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         *cache = Some(CachedSourceTexture {
             width,
             height,
             layers,
-            texture: device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("voidplayer-wgpu-source-bgra-atlas"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: layers,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Bgra8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            }),
+            texture,
+            view,
         });
     }
     let texture = &cache
@@ -1550,6 +1565,22 @@ fn encode_overlay_layer_texture(
             cache.width != width || cache.height != height || cache.layers != layers
         });
     if recreate {
+        let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("voidplayer-wgpu-overlay-layer-array"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: layers,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         renderer.overlay_layer_texture = Some(CachedOverlayLayerTexture {
             width,
             height,
@@ -1558,32 +1589,20 @@ fn encode_overlay_layer_texture(
             fill_count,
             line_count,
             motion_count,
-            texture: renderer.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("voidplayer-wgpu-overlay-layer-array"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: layers,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            }),
+            texture,
+            view,
         });
     }
-    let source_view = renderer
-        .dummy_bgra_array_texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
-    let dummy_y_view = renderer
-        .dummy_y_texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
-    let dummy_uv_view = renderer
-        .dummy_uv_texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
+    write_cached_storage_buffer(
+        &renderer.device,
+        &renderer.queue,
+        &mut renderer.overlay_buffer,
+        overlay_rect_bytes(&renderer.overlay_rects_scratch),
+        "voidplayer-wgpu-overlay-combined-rects",
+    );
+    let source_view = &renderer.dummy_bgra_array_view;
+    let dummy_y_view = &renderer.dummy_y_view;
+    let dummy_uv_view = &renderer.dummy_uv_view;
     let package_buffer = &renderer
         .package_buffer
         .as_ref()
@@ -1627,7 +1646,7 @@ fn encode_overlay_layer_texture(
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&source_view),
+                        resource: wgpu::BindingResource::TextureView(source_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
@@ -1643,39 +1662,39 @@ fn encode_overlay_layer_texture(
                     },
                     wgpu::BindGroupEntry {
                         binding: 5,
-                        resource: wgpu::BindingResource::TextureView(&dummy_y_view),
+                        resource: wgpu::BindingResource::TextureView(dummy_y_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 6,
-                        resource: wgpu::BindingResource::TextureView(&dummy_uv_view),
+                        resource: wgpu::BindingResource::TextureView(dummy_uv_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
-                        resource: wgpu::BindingResource::TextureView(&dummy_y_view),
+                        resource: wgpu::BindingResource::TextureView(dummy_y_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 8,
-                        resource: wgpu::BindingResource::TextureView(&dummy_uv_view),
+                        resource: wgpu::BindingResource::TextureView(dummy_uv_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 9,
-                        resource: wgpu::BindingResource::TextureView(&dummy_y_view),
+                        resource: wgpu::BindingResource::TextureView(dummy_y_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 10,
-                        resource: wgpu::BindingResource::TextureView(&dummy_uv_view),
+                        resource: wgpu::BindingResource::TextureView(dummy_uv_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 11,
-                        resource: wgpu::BindingResource::TextureView(&dummy_y_view),
+                        resource: wgpu::BindingResource::TextureView(dummy_y_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 12,
-                        resource: wgpu::BindingResource::TextureView(&dummy_uv_view),
+                        resource: wgpu::BindingResource::TextureView(dummy_uv_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 13,
-                        resource: wgpu::BindingResource::TextureView(&source_view),
+                        resource: wgpu::BindingResource::TextureView(source_view),
                     },
                 ],
             });
@@ -1738,13 +1757,6 @@ fn render_bgra_atlas_with_wgsl(
         &renderer.package_bytes_scratch,
         "voidplayer-wgpu-package-bytes",
     );
-    write_cached_storage_buffer(
-        &renderer.device,
-        &renderer.queue,
-        &mut renderer.overlay_buffer,
-        overlay_rect_bytes(&renderer.overlay_rects_scratch),
-        "voidplayer-wgpu-overlay-combined-rects",
-    );
     let mut encoder = renderer
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1778,27 +1790,18 @@ fn render_bgra_atlas_with_wgsl(
         .overlay_layer_texture
         .as_ref()
         .ok_or("wgpu-metal overlay layer texture is unavailable")?
-        .texture;
-    let source_view = if source_storage == STORAGE_BGRA {
-        renderer
+        .view;
+    let source_view: &wgpu::TextureView = if source_storage == STORAGE_BGRA {
+        &renderer
             .source_texture
             .as_ref()
             .ok_or("wgpu-metal source texture cache is unavailable")?
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default())
+            .view
     } else {
-        renderer
-            .dummy_bgra_array_texture
-            .create_view(&wgpu::TextureViewDescriptor::default())
+        &renderer.dummy_bgra_array_view
     };
-    let overlay_layer_view =
-        overlay_layer_texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let dummy_y_view = renderer
-        .dummy_y_texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
-    let dummy_uv_view = renderer
-        .dummy_uv_texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
+    let dummy_y_view = &renderer.dummy_y_view;
+    let dummy_uv_view = &renderer.dummy_uv_view;
     let destination_view = destination_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let pipeline = composite_pipeline_for_output(renderer, output_format)?;
     let bind_group = renderer
@@ -1813,7 +1816,7 @@ fn render_bgra_atlas_with_wgsl(
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&source_view),
+                    resource: wgpu::BindingResource::TextureView(source_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -1829,39 +1832,39 @@ fn render_bgra_atlas_with_wgsl(
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: wgpu::BindingResource::TextureView(&dummy_y_view),
+                    resource: wgpu::BindingResource::TextureView(dummy_y_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::TextureView(&dummy_uv_view),
+                    resource: wgpu::BindingResource::TextureView(dummy_uv_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 7,
-                    resource: wgpu::BindingResource::TextureView(&dummy_y_view),
+                    resource: wgpu::BindingResource::TextureView(dummy_y_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 8,
-                    resource: wgpu::BindingResource::TextureView(&dummy_uv_view),
+                    resource: wgpu::BindingResource::TextureView(dummy_uv_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 9,
-                    resource: wgpu::BindingResource::TextureView(&dummy_y_view),
+                    resource: wgpu::BindingResource::TextureView(dummy_y_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 10,
-                    resource: wgpu::BindingResource::TextureView(&dummy_uv_view),
+                    resource: wgpu::BindingResource::TextureView(dummy_uv_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 11,
-                    resource: wgpu::BindingResource::TextureView(&dummy_y_view),
+                    resource: wgpu::BindingResource::TextureView(dummy_y_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 12,
-                    resource: wgpu::BindingResource::TextureView(&dummy_uv_view),
+                    resource: wgpu::BindingResource::TextureView(dummy_uv_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 13,
-                    resource: wgpu::BindingResource::TextureView(&overlay_layer_view),
+                    resource: wgpu::BindingResource::TextureView(overlay_layer_texture),
                 },
             ],
         });
@@ -1908,13 +1911,6 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
         &renderer.package_bytes_scratch,
         "voidplayer-wgpu-package-bytes",
     );
-    write_cached_storage_buffer(
-        &renderer.device,
-        &renderer.queue,
-        &mut renderer.overlay_buffer,
-        overlay_rect_bytes(&renderer.overlay_rects_scratch),
-        "voidplayer-wgpu-overlay-combined-rects",
-    );
     let mut encoder = renderer
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -1948,24 +1944,20 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
         .overlay_layer_texture
         .as_ref()
         .ok_or("wgpu-metal overlay layer texture is unavailable")?
-        .texture;
-    let source_view = renderer
-        .dummy_bgra_array_texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
-    let overlay_layer_view =
-        overlay_layer_texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let y_views: [wgpu::TextureView; MAX_TRACKS] = std::array::from_fn(|slot| {
+        .view;
+    let source_view = &renderer.dummy_bgra_array_view;
+    let y_views: [Option<wgpu::TextureView>; MAX_TRACKS] = std::array::from_fn(|slot| {
         source_y_textures[slot]
             .as_ref()
-            .unwrap_or(&renderer.dummy_y_texture)
-            .create_view(&wgpu::TextureViewDescriptor::default())
+            .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()))
     });
-    let uv_views: [wgpu::TextureView; MAX_TRACKS] = std::array::from_fn(|slot| {
+    let uv_views: [Option<wgpu::TextureView>; MAX_TRACKS] = std::array::from_fn(|slot| {
         source_uv_textures[slot]
             .as_ref()
-            .unwrap_or(&renderer.dummy_uv_texture)
-            .create_view(&wgpu::TextureViewDescriptor::default())
+            .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()))
     });
+    let y_view = |slot: usize| y_views[slot].as_ref().unwrap_or(&renderer.dummy_y_view);
+    let uv_view = |slot: usize| uv_views[slot].as_ref().unwrap_or(&renderer.dummy_uv_view);
     let destination_view = destination_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let pipeline = composite_pipeline_for_output(renderer, output_format)?;
     let bind_group = renderer
@@ -1980,7 +1972,7 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&source_view),
+                    resource: wgpu::BindingResource::TextureView(source_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -1996,39 +1988,39 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: wgpu::BindingResource::TextureView(&y_views[0]),
+                    resource: wgpu::BindingResource::TextureView(y_view(0)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::TextureView(&uv_views[0]),
+                    resource: wgpu::BindingResource::TextureView(uv_view(0)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 7,
-                    resource: wgpu::BindingResource::TextureView(&y_views[1]),
+                    resource: wgpu::BindingResource::TextureView(y_view(1)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 8,
-                    resource: wgpu::BindingResource::TextureView(&uv_views[1]),
+                    resource: wgpu::BindingResource::TextureView(uv_view(1)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 9,
-                    resource: wgpu::BindingResource::TextureView(&y_views[2]),
+                    resource: wgpu::BindingResource::TextureView(y_view(2)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 10,
-                    resource: wgpu::BindingResource::TextureView(&uv_views[2]),
+                    resource: wgpu::BindingResource::TextureView(uv_view(2)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 11,
-                    resource: wgpu::BindingResource::TextureView(&y_views[3]),
+                    resource: wgpu::BindingResource::TextureView(y_view(3)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 12,
-                    resource: wgpu::BindingResource::TextureView(&uv_views[3]),
+                    resource: wgpu::BindingResource::TextureView(uv_view(3)),
                 },
                 wgpu::BindGroupEntry {
                     binding: 13,
-                    resource: wgpu::BindingResource::TextureView(&overlay_layer_view),
+                    resource: wgpu::BindingResource::TextureView(overlay_layer_texture),
                 },
             ],
         });

@@ -85,7 +85,7 @@ private struct MacOSStableDisplaySnapshot {
 }
 
 final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
-  private static let rendererOwnedPixelBufferCount = 4
+  private static let rendererOwnedPixelBufferCount = 6
 
   private let lock = NSLock()
   private let prewarmQueue = DispatchQueue(

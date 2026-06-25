@@ -365,6 +365,10 @@ enum MacOSVideoRendererDiagnostics {
       return "explicit-synthetic-texture"
     }
     if state["active"] as? Bool == true {
+      let backendName = state["backendName"] as? String ?? "unknown"
+      if backendName.lowercased().contains("wgpu") {
+        return "native-wgpu-metal-cvpixelbuffer-target"
+      }
       return "native-metal-cvpixelbuffer-target"
     }
     return "native-metal-target-unavailable"

@@ -19,6 +19,7 @@ PerformanceHealthSnapshot _health({
   double nativeCompositorSourceProjectionHz = 0,
   double drawP95Us = 1800,
   double metalP95Us = 1800,
+  String presentationBackend = 'unknown',
   int metalBufferExhaustionCount = 0,
   int largeGapCount = 0,
   bool playing = false,
@@ -28,6 +29,7 @@ PerformanceHealthSnapshot _health({
     level: level,
     kind: kind,
     reason: '',
+    presentationBackend: presentationBackend,
     displayRefreshHz: displayRefreshHz,
     displayTickHz: displayTickHz,
     layoutDrawHz: 0,
@@ -231,6 +233,33 @@ void main() {
     expect(find.textContaining('绘制 p95 2.1ms'), findsOneWidget);
     expect(find.textContaining('compositor'), findsNothing);
     expect(find.textContaining('display-link'), findsNothing);
+  });
+
+  testWidgets('health summary labels wgpu backend latency', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh'),
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: SizedBox(
+          width: 560,
+          child: StatsHealthSummarySection(
+            health: _health(
+              presentationBackend: 'native-wgpu-metal-cvpixelbuffer-target',
+              metalP95Us: 2400,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('WGPU p95 2.4ms'), findsOneWidget);
+    expect(find.textContaining('Metal p95'), findsNothing);
   });
 
   testWidgets('health summary keeps a stable height across metric counts', (

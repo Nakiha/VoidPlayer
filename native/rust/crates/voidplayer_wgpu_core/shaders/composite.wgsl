@@ -296,6 +296,29 @@ fn source_uv(track: i32, local_uv: vec2<f32>) -> vec2<f32> {
   );
 }
 
+fn source_pixel_footprint(track: i32) -> f32 {
+  let mode = i32(round(params.target_mode.z));
+  let target_w = max(1.0, params.target_mode.x);
+  let target_h = max(1.0, params.target_mode.y);
+  let track_count = max(1, min(i32(round(params.target_mode.w)), 4));
+  let local_step_x = select(
+    f32(track_count) / target_w,
+    1.0 / target_w,
+    mode == 1);
+  let local_step_y = 1.0 / target_h;
+  let source_w = max(1.0, vec4_get_f(params.source_width, track));
+  let source_h = max(1.0, vec4_get_f(params.source_height, track));
+  let sample_step_x =
+      source_w * local_step_x * abs(vec4_get_f(params.inv_display_size_x, track));
+  let sample_step_y =
+      source_h * local_step_y * abs(vec4_get_f(params.inv_display_size_y, track));
+  return max(sample_step_x, sample_step_y);
+}
+
+fn should_bilinear_downsample(track: i32) -> bool {
+  return source_pixel_footprint(track) > 1.0001;
+}
+
 fn apply_split_divider(color: vec4<f32>, tex_x: f32) -> vec4<f32> {
   let mode = i32(round(params.target_mode.z));
   if (mode != 1) {
@@ -573,19 +596,19 @@ fn matrix_rgb(y: f32, cb: f32, cr: f32, matrix: i32) -> vec3<f32> {
   );
 }
 
-fn sample_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
+fn sample_yuv_pixel(track: i32, sx: i32, sy: i32) -> vec4<f32> {
   let format = vec4_get_i(params.yuv_format, track);
   let high_bit = format == 2;
   let bytes_per_sample = select(1u, 2u, high_bit);
   let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
   let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
-  let sx = clamp(i32(uv.x * f32(source_w)), 0, source_w - 1);
-  let sy = clamp(i32(uv.y * f32(source_h)), 0, source_h - 1);
-  let chroma_x = max(0, sx / 2);
-  let chroma_y = max(0, sy / 2);
+  let clamped_x = clamp(sx, 0, source_w - 1);
+  let clamped_y = clamp(sy, 0, source_h - 1);
+  let chroma_x = max(0, clamped_x / 2);
+  let chroma_y = max(0, clamped_y / 2);
   let y_index = u32(vec4_get_i(params.y_offset, track) +
-      sy * vec4_get_i(params.y_stride, track) +
-      sx * i32(bytes_per_sample));
+      clamped_y * vec4_get_i(params.y_stride, track) +
+      clamped_x * i32(bytes_per_sample));
   let y_code = sample_code(y_index, high_bit);
   var u_code = 128.0;
   var v_code = 128.0;
@@ -619,12 +642,72 @@ fn sample_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
   return vec4<f32>(clamp(matrix_rgb(y, cb, cr, matrix), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
 
-fn sample_bgra(track: i32, uv: vec2<f32>) -> vec4<f32> {
+fn sample_yuv_nearest(track: i32, uv: vec2<f32>) -> vec4<f32> {
   let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
   let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
   let sx = clamp(i32(uv.x * f32(source_w)), 0, source_w - 1);
   let sy = clamp(i32(uv.y * f32(source_h)), 0, source_h - 1);
-  return textureLoad(src_texture, vec2<i32>(sx, sy), track, 0);
+  return sample_yuv_pixel(track, sx, sy);
+}
+
+fn sample_yuv_bilinear(track: i32, uv: vec2<f32>) -> vec4<f32> {
+  let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
+  let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
+  let coord = uv * vec2<f32>(f32(source_w), f32(source_h)) - vec2<f32>(0.5);
+  let base_f = floor(coord);
+  let base = vec2<i32>(i32(base_f.x), i32(base_f.y));
+  let frac = clamp(coord - base_f, vec2<f32>(0.0), vec2<f32>(1.0));
+  let c00 = sample_yuv_pixel(track, base.x, base.y);
+  let c10 = sample_yuv_pixel(track, base.x + 1, base.y);
+  let c01 = sample_yuv_pixel(track, base.x, base.y + 1);
+  let c11 = sample_yuv_pixel(track, base.x + 1, base.y + 1);
+  return mix(mix(c00, c10, frac.x), mix(c01, c11, frac.x), frac.y);
+}
+
+fn sample_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
+  if (should_bilinear_downsample(track)) {
+    return sample_yuv_bilinear(track, uv);
+  }
+  return sample_yuv_nearest(track, uv);
+}
+
+fn sample_bgra_pixel(track: i32, sx: i32, sy: i32) -> vec4<f32> {
+  let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
+  let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
+  return textureLoad(
+    src_texture,
+    vec2<i32>(clamp(sx, 0, source_w - 1), clamp(sy, 0, source_h - 1)),
+    track,
+    0);
+}
+
+fn sample_bgra_nearest(track: i32, uv: vec2<f32>) -> vec4<f32> {
+  let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
+  let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
+  let sx = clamp(i32(uv.x * f32(source_w)), 0, source_w - 1);
+  let sy = clamp(i32(uv.y * f32(source_h)), 0, source_h - 1);
+  return sample_bgra_pixel(track, sx, sy);
+}
+
+fn sample_bgra_bilinear(track: i32, uv: vec2<f32>) -> vec4<f32> {
+  let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
+  let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
+  let coord = uv * vec2<f32>(f32(source_w), f32(source_h)) - vec2<f32>(0.5);
+  let base_f = floor(coord);
+  let base = vec2<i32>(i32(base_f.x), i32(base_f.y));
+  let frac = clamp(coord - base_f, vec2<f32>(0.0), vec2<f32>(1.0));
+  let c00 = sample_bgra_pixel(track, base.x, base.y);
+  let c10 = sample_bgra_pixel(track, base.x + 1, base.y);
+  let c01 = sample_bgra_pixel(track, base.x, base.y + 1);
+  let c11 = sample_bgra_pixel(track, base.x + 1, base.y + 1);
+  return mix(mix(c00, c10, frac.x), mix(c01, c11, frac.x), frac.y);
+}
+
+fn sample_bgra(track: i32, uv: vec2<f32>) -> vec4<f32> {
+  if (should_bilinear_downsample(track)) {
+    return sample_bgra_bilinear(track, uv);
+  }
+  return sample_bgra_nearest(track, uv);
 }
 
 fn cv_yuv_to_rgb(track: i32, y_norm: f32, uv_norm: vec2<f32>) -> vec4<f32> {
@@ -652,15 +735,14 @@ fn sample_cv_yuv_track(
     y_texture: texture_2d<f32>,
     uv_texture: texture_2d<f32>,
     track: i32,
-    uv: vec2<f32>) -> vec4<f32> {
+    sx: i32,
+    sy: i32) -> vec4<f32> {
   let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
   let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
   let coded_w = max(1, vec4_get_i(params.coded_width, track));
   let coded_h = max(1, vec4_get_i(params.coded_height, track));
-  let sx = clamp(i32(uv.x * f32(source_w)), 0, source_w - 1);
-  let sy = clamp(i32(uv.y * f32(source_h)), 0, source_h - 1);
-  let y_x = min(sx, coded_w - 1);
-  let y_y = min(sy, coded_h - 1);
+  let y_x = min(clamp(sx, 0, source_w - 1), coded_w - 1);
+  let y_y = min(clamp(sy, 0, source_h - 1), coded_h - 1);
   let uv_x = min(max(0, y_x / 2), max(1, (coded_w + 1) / 2) - 1);
   let uv_y = min(max(0, y_y / 2), max(1, (coded_h + 1) / 2) - 1);
   let y_norm = textureLoad(y_texture, vec2<i32>(y_x, y_y), 0).r;
@@ -668,17 +750,59 @@ fn sample_cv_yuv_track(
   return cv_yuv_to_rgb(track, y_norm, uv_norm);
 }
 
+fn sample_cv_yuv_track_nearest(
+    y_texture: texture_2d<f32>,
+    uv_texture: texture_2d<f32>,
+    track: i32,
+    uv: vec2<f32>) -> vec4<f32> {
+  let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
+  let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
+  let sx = clamp(i32(uv.x * f32(source_w)), 0, source_w - 1);
+  let sy = clamp(i32(uv.y * f32(source_h)), 0, source_h - 1);
+  return sample_cv_yuv_track(y_texture, uv_texture, track, sx, sy);
+}
+
+fn sample_cv_yuv_track_bilinear(
+    y_texture: texture_2d<f32>,
+    uv_texture: texture_2d<f32>,
+    track: i32,
+    uv: vec2<f32>) -> vec4<f32> {
+  let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
+  let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
+  let coord = uv * vec2<f32>(f32(source_w), f32(source_h)) - vec2<f32>(0.5);
+  let base_f = floor(coord);
+  let base = vec2<i32>(i32(base_f.x), i32(base_f.y));
+  let frac = clamp(coord - base_f, vec2<f32>(0.0), vec2<f32>(1.0));
+  let c00 = sample_cv_yuv_track(y_texture, uv_texture, track, base.x, base.y);
+  let c10 = sample_cv_yuv_track(y_texture, uv_texture, track, base.x + 1, base.y);
+  let c01 = sample_cv_yuv_track(y_texture, uv_texture, track, base.x, base.y + 1);
+  let c11 = sample_cv_yuv_track(y_texture, uv_texture, track, base.x + 1, base.y + 1);
+  return mix(mix(c00, c10, frac.x), mix(c01, c11, frac.x), frac.y);
+}
+
 fn sample_cv_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
   if (track == 0) {
-    return sample_cv_yuv_track(cv_y0, cv_uv0, track, uv);
+    if (should_bilinear_downsample(track)) {
+      return sample_cv_yuv_track_bilinear(cv_y0, cv_uv0, track, uv);
+    }
+    return sample_cv_yuv_track_nearest(cv_y0, cv_uv0, track, uv);
   }
   if (track == 1) {
-    return sample_cv_yuv_track(cv_y1, cv_uv1, track, uv);
+    if (should_bilinear_downsample(track)) {
+      return sample_cv_yuv_track_bilinear(cv_y1, cv_uv1, track, uv);
+    }
+    return sample_cv_yuv_track_nearest(cv_y1, cv_uv1, track, uv);
   }
   if (track == 2) {
-    return sample_cv_yuv_track(cv_y2, cv_uv2, track, uv);
+    if (should_bilinear_downsample(track)) {
+      return sample_cv_yuv_track_bilinear(cv_y2, cv_uv2, track, uv);
+    }
+    return sample_cv_yuv_track_nearest(cv_y2, cv_uv2, track, uv);
   }
-  return sample_cv_yuv_track(cv_y3, cv_uv3, track, uv);
+  if (should_bilinear_downsample(track)) {
+    return sample_cv_yuv_track_bilinear(cv_y3, cv_uv3, track, uv);
+  }
+  return sample_cv_yuv_track_nearest(cv_y3, cv_uv3, track, uv);
 }
 
 @fragment

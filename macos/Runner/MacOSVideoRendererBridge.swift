@@ -584,7 +584,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") ?? -1
     if fileId >= 0, let player = nativePlayer {
       let tracks = player.trackDiagnostics()
-      if tracks.count == 1,
+      if shouldUseRendererOwnedPresentedFrame(player: player),
+         tracks.count == 1,
          (tracks[0]["fileId"] as? Int) == fileId,
          let frame = player.lastRendererOwnedFrameInfo() {
         return frame.presentedFrameMap(fileId: fileId)
@@ -615,7 +616,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func currentPresentedFrames() -> [[String: Any]] {
     guard textureId != nil, let player = nativePlayer else { return [] }
     let tracks = player.trackDiagnostics()
-    if tracks.count == 1,
+    if shouldUseRendererOwnedPresentedFrame(player: player),
+       tracks.count == 1,
        let fileId = tracks[0]["fileId"] as? Int,
        let frame = player.lastRendererOwnedFrameInfo() {
       return [frame.presentedFrameMap(fileId: fileId)]
@@ -643,6 +645,13 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       "sourcePacketPtsUs": track["sourcePacketPtsUs"] as? Int64 ?? Int64.min,
       "sourcePacketDtsUs": track["sourcePacketDtsUs"] as? Int64 ?? Int64.min,
     ]
+  }
+
+  private func shouldUseRendererOwnedPresentedFrame(
+    player: MacOSNativePlayerSession
+  ) -> Bool {
+    player.rendererOwnedPresentationActive() &&
+      !playback.currentIsPlaying(player: player)
   }
 
   private func createPlayer(arguments: Any?) -> Any {

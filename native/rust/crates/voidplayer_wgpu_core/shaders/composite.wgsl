@@ -81,6 +81,11 @@ struct VertexOut {
   @builtin(position) position: vec4<f32>,
 };
 
+struct OverlayFillVertexOut {
+  @builtin(position) position: vec4<f32>,
+  @location(0) color: vec4<f32>,
+};
+
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOut {
   var positions = array<vec2<f32>, 3>(
@@ -315,83 +320,11 @@ fn overlay_line_strength(rect: OverlayRect) -> f32 {
   return f32((rect.track_idx >> 8u) & 0xffu) / 255.0;
 }
 
-fn overlay_display_slot_for_track(track: i32) -> i32 {
-  if (params.order.x == track) {
-    return 0;
-  }
-  if (params.order.y == track) {
-    return 1;
-  }
-  if (params.order.z == track) {
-    return 2;
-  }
-  return 3;
-}
-
 fn overlay_unpack_uv16(packed: u32) -> vec2<f32> {
   return vec2<f32>(
     f32(packed & 0xffffu) / 65535.0,
     f32((packed >> 16u) & 0xffffu) / 65535.0,
   );
-}
-
-fn overlay_local_from_video(video_uv: vec2<f32>, track: i32) -> vec2<f32> {
-  let inv_display_size = vec2<f32>(
-    vec4_get_f(params.inv_display_size_x, track),
-    vec4_get_f(params.inv_display_size_y, track),
-  );
-  let display_size = vec2<f32>(
-    select(0.0, 1.0 / inv_display_size.x, abs(inv_display_size.x) > 0.00001),
-    select(0.0, 1.0 / inv_display_size.y, abs(inv_display_size.y) > 0.00001),
-  );
-  let display_offset = vec2<f32>(
-    vec4_get_f(params.display_offset_x, track),
-    vec4_get_f(params.display_offset_y, track),
-  );
-  let view_offset = vec2<f32>(
-    vec4_get_f(params.view_offset_uv_x, track),
-    vec4_get_f(params.view_offset_uv_y, track),
-  );
-  return display_offset + (video_uv + view_offset) * display_size;
-}
-
-fn overlay_visible_local_rect_for_track(track: i32) -> vec4<f32> {
-  var visible_min = vec2<f32>(0.0, 0.0);
-  var visible_max = vec2<f32>(1.0, 1.0);
-  let mode = i32(round(params.target_mode.z));
-  if (mode == 1) {
-    let slot = overlay_display_slot_for_track(track);
-    if (slot == 0) {
-      visible_max.x = clamp(params.split.x, 0.0, 1.0);
-    } else if (slot == 1) {
-      visible_min.x = clamp(params.split.x, 0.0, 1.0);
-    } else {
-      visible_max = visible_min;
-    }
-  }
-  return vec4<f32>(visible_min, visible_max);
-}
-
-fn overlay_global_from_local(local_uv: vec2<f32>, track: i32) -> vec2<f32> {
-  let mode = i32(round(params.target_mode.z));
-  if (mode == 1) {
-    return local_uv;
-  }
-  let track_count = max(1, min(i32(round(params.target_mode.w)), 4));
-  let slot = clamp(overlay_display_slot_for_track(track), 0, track_count - 1);
-  return vec2<f32>((f32(slot) + local_uv.x) / f32(track_count), local_uv.y);
-}
-
-fn overlay_global_rect(rect: OverlayRect) -> vec4<f32> {
-  let track = overlay_track_index(rect);
-  let local_a = overlay_local_from_video(overlay_unpack_uv16(rect.rect_uv0), track);
-  let local_b = overlay_local_from_video(overlay_unpack_uv16(rect.rect_uv1), track);
-  let visible = overlay_visible_local_rect_for_track(track);
-  let clipped_min = max(min(local_a, local_b), visible.xy);
-  let clipped_max = min(max(local_a, local_b), visible.zw);
-  let global_min = overlay_global_from_local(clipped_min, track);
-  let global_max = overlay_global_from_local(clipped_max, track);
-  return vec4<f32>(min(global_min, global_max), max(global_min, global_max));
 }
 
 fn overlay_color_from_bgra(color_bgra: u32) -> vec4<f32> {
@@ -421,187 +354,175 @@ fn overlay_layer_rect(rect: OverlayRect) -> vec4<f32> {
   return vec4<f32>(min(a, b), max(a, b));
 }
 
-fn overlay_layer_apply_fill(color: vec4<f32>, video_uv: vec2<f32>, track: i32) -> vec4<f32> {
-  var out = color;
-  let count = max(0, params.overlay_counts.x);
-  for (var i = 0; i < count; i = i + 1) {
-    let rect = overlay_rects[u32(i)];
-    if (!overlay_rect_matches_track(rect, track)) {
-      continue;
-    }
-    let r = overlay_layer_rect(rect);
-    if (video_uv.x >= r.x && video_uv.x <= r.z &&
-        video_uv.y >= r.y && video_uv.y <= r.w) {
-      out = overlay_blend_over(out, overlay_color_from_bgra(rect.color_bgra));
-    }
-  }
-  return out;
+fn overlay_layer_size() -> vec2<f32> {
+  return vec2<f32>(
+    max(1.0, f32(params.output_mode.y)),
+    max(1.0, f32(params.output_mode.z)),
+  );
 }
 
-fn overlay_layer_apply_lines(color: vec4<f32>, video_uv: vec2<f32>, track: i32) -> vec4<f32> {
-  var out = color;
-  let target_size = vec2<f32>(params.target_mode.x, params.target_mode.y);
-  let px = video_uv * target_size;
-  let count = max(0, params.overlay_counts.y);
-  for (var i = 0; i < count; i = i + 1) {
-    let rect = overlay_rects[u32(params.overlay_counts.x + i)];
-    if (!overlay_rect_matches_track(rect, track) || overlay_line_strength(rect) <= 0.0) {
-      continue;
-    }
-    let r = overlay_layer_rect(rect);
-    let min_px = r.xy * target_size;
-    let max_px = r.zw * target_size;
-    let inside = px.x >= min_px.x && px.x <= max_px.x &&
-        px.y >= min_px.y && px.y <= max_px.y;
-    let edge_dist = min(
-      min(abs(px.x - min_px.x), abs(px.x - max_px.x)),
-      min(abs(px.y - min_px.y), abs(px.y - max_px.y)),
-    );
-    if (inside && edge_dist <= 1.5) {
-      out = overlay_blend_over(out, vec4<f32>(0.0, 0.0, 0.0, 0.88));
-    }
-    if (inside && edge_dist <= 0.5) {
-      out = overlay_blend_over(out, vec4<f32>(1.0, 1.0, 1.0, 0.97));
-    }
-  }
-  return out;
+fn overlay_position_from_px(px: vec2<f32>, layer_size: vec2<f32>) -> vec4<f32> {
+  return vec4<f32>(
+    px.x / layer_size.x * 2.0 - 1.0,
+    1.0 - px.y / layer_size.y * 2.0,
+    0.0,
+    1.0,
+  );
 }
 
-fn overlay_layer_apply_motion(color: vec4<f32>, video_uv: vec2<f32>, track: i32) -> vec4<f32> {
-  var out = color;
-  let target_size = vec2<f32>(params.target_mode.x, params.target_mode.y);
-  let px = video_uv * target_size;
-  let count = max(0, params.overlay_counts.z);
-  for (var i = 0; i < count; i = i + 1) {
-    let rect = overlay_rects[u32(params.overlay_counts.x + params.overlay_counts.y + i)];
-    if (!overlay_rect_matches_track(rect, track)) {
-      continue;
-    }
-    let a = overlay_unpack_uv16(rect.rect_uv0) * target_size;
-    let b = overlay_unpack_uv16(rect.rect_uv1) * target_size;
-    if (overlay_segment_distance_px(px, a, b) <= 1.0) {
-      out = overlay_blend_over(out, overlay_color_from_bgra(rect.color_bgra));
-    }
-  }
-  return out;
-}
+@vertex
+fn vs_overlay_fill_rect(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
+  var out: OverlayFillVertexOut;
+  out.position = vec4<f32>(-2.0, -2.0, 0.0, 1.0);
+  out.color = vec4<f32>(0.0);
 
-fn overlay_layer_color(video_uv: vec2<f32>, track: i32) -> vec4<f32> {
-  return overlay_layer_apply_motion(
-      overlay_layer_apply_lines(overlay_layer_apply_fill(vec4<f32>(0.0), video_uv, track),
-                                video_uv,
-                                track),
-      video_uv,
-      track);
+  let layer_size = overlay_layer_size();
+  let rect_id = vertex_index / 6u;
+  let corner = vertex_index - rect_id * 6u;
+  let rect = overlay_rects[rect_id];
+  let track = clamp(i32(round(params.split.z)), 0, 3);
+  if (!overlay_rect_matches_track(rect, track)) {
+    return out;
+  }
+
+  let color = overlay_color_from_bgra(rect.color_bgra);
+  if (color.a <= 0.0) {
+    return out;
+  }
+
+  let r = overlay_layer_rect(rect);
+  let min_px = clamp(floor(r.xy * layer_size), vec2<f32>(0.0), layer_size);
+  let max_px = clamp(ceil(r.zw * layer_size), vec2<f32>(0.0), layer_size);
+  if (max_px.x <= min_px.x || max_px.y <= min_px.y) {
+    return out;
+  }
+
+  var px = min_px;
+  if (corner == 1u || corner == 3u || corner == 4u) {
+    px.x = max_px.x;
+  }
+  if (corner == 2u || corner == 4u || corner == 5u) {
+    px.y = max_px.y;
+  }
+  out.position = overlay_position_from_px(px, layer_size);
+  out.color = color;
+  return out;
 }
 
 @fragment
-fn fs_overlay_layer(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-  let target_size = vec2<f32>(params.target_mode.x, params.target_mode.y);
-  let video_uv = position.xy / target_size;
+fn fs_overlay_primitive(in: OverlayFillVertexOut) -> @location(0) vec4<f32> {
+  return in.color;
+}
+
+fn overlay_line_rect_vertex(
+    vertex_index: u32,
+    thickness: f32,
+    color: vec4<f32>) -> OverlayFillVertexOut {
+  var out: OverlayFillVertexOut;
+  out.position = vec4<f32>(-2.0, -2.0, 0.0, 1.0);
+  out.color = vec4<f32>(0.0);
+
+  let line_count = max(0, params.overlay_counts.y);
+  if (line_count <= 0) {
+    return out;
+  }
+  let primitive_id = vertex_index / 6u;
+  let rect_id = primitive_id / 4u;
+  let side = primitive_id - rect_id * 4u;
+  let corner = vertex_index - primitive_id * 6u;
+  let rect = overlay_rects[u32(params.overlay_counts.x) + rect_id];
   let track = clamp(i32(round(params.split.z)), 0, 3);
-  if (vec4_get_i(params.present, track) == 0) {
-    return vec4<f32>(0.0);
+  if (!overlay_rect_matches_track(rect, track) || overlay_line_strength(rect) <= 0.0) {
+    return out;
   }
-  return overlay_layer_color(video_uv, track);
-}
 
-fn overlay_apply_fill(color: vec4<f32>, tex_uv: vec2<f32>) -> vec4<f32> {
-  var out = color;
-  let count = max(0, params.overlay_counts.x);
-  for (var i = 0; i < count; i = i + 1) {
-    let rect = overlay_rects[u32(i)];
-    let track = overlay_track_index(rect);
-    if (vec4_get_i(params.present, track) == 0) {
-      continue;
-    }
-    let global_rect = overlay_global_rect(rect);
-    if (global_rect.z <= global_rect.x || global_rect.w <= global_rect.y) {
-      continue;
-    }
-    if (tex_uv.x >= global_rect.x && tex_uv.x <= global_rect.z &&
-        tex_uv.y >= global_rect.y && tex_uv.y <= global_rect.w) {
-      out = overlay_blend_over(out, overlay_color_from_bgra(rect.color_bgra));
-    }
+  let layer_size = overlay_layer_size();
+  let r = overlay_layer_rect(rect);
+  let min_px = clamp(floor(r.xy * layer_size), vec2<f32>(0.0), layer_size);
+  let max_px = clamp(ceil(r.zw * layer_size), vec2<f32>(0.0), layer_size);
+  if (max_px.x <= min_px.x || max_px.y <= min_px.y) {
+    return out;
   }
+
+  var strip_min = min_px;
+  var strip_max = max_px;
+  if (side == 0u) {
+    strip_max.y = min(max_px.y, min_px.y + thickness);
+  } else if (side == 1u) {
+    strip_min.y = max(min_px.y, max_px.y - thickness);
+  } else if (side == 2u) {
+    strip_max.x = min(max_px.x, min_px.x + thickness);
+  } else {
+    strip_min.x = max(min_px.x, max_px.x - thickness);
+  }
+
+  var px = strip_min;
+  if (corner == 1u || corner == 3u || corner == 4u) {
+    px.x = strip_max.x;
+  }
+  if (corner == 2u || corner == 4u || corner == 5u) {
+    px.y = strip_max.y;
+  }
+  out.position = overlay_position_from_px(px, layer_size);
+  out.color = color;
   return out;
 }
 
-fn overlay_apply_lines(color: vec4<f32>, tex_uv: vec2<f32>) -> vec4<f32> {
-  var out = color;
-  let target_size = vec2<f32>(params.target_mode.x, params.target_mode.y);
-  let px = tex_uv * target_size;
-  let count = max(0, params.overlay_counts.y);
-  for (var i = 0; i < count; i = i + 1) {
-    let rect = overlay_rects[u32(params.overlay_counts.x + i)];
-    if (overlay_line_strength(rect) <= 0.0) {
-      continue;
-    }
-    let track = overlay_track_index(rect);
-    if (vec4_get_i(params.present, track) == 0) {
-      continue;
-    }
-    let global_rect = overlay_global_rect(rect);
-    if (global_rect.z <= global_rect.x || global_rect.w <= global_rect.y) {
-      continue;
-    }
-    let min_px = global_rect.xy * target_size;
-    let max_px = global_rect.zw * target_size;
-    let inside = px.x >= min_px.x && px.x <= max_px.x &&
-        px.y >= min_px.y && px.y <= max_px.y;
-    let edge_dist = min(
-      min(abs(px.x - min_px.x), abs(px.x - max_px.x)),
-      min(abs(px.y - min_px.y), abs(px.y - max_px.y)),
-    );
-    if (inside && edge_dist <= 1.5) {
-      out = overlay_blend_over(out, vec4<f32>(0.0, 0.0, 0.0, 0.88));
-    }
-    if (inside && edge_dist <= 0.5) {
-      out = overlay_blend_over(out, vec4<f32>(1.0, 1.0, 1.0, 0.97));
-    }
+@vertex
+fn vs_overlay_line_rect_black(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
+  return overlay_line_rect_vertex(vertex_index, 2.0, vec4<f32>(0.0, 0.0, 0.0, 0.88));
+}
+
+@vertex
+fn vs_overlay_line_rect_white(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
+  return overlay_line_rect_vertex(vertex_index, 1.0, vec4<f32>(1.0, 1.0, 1.0, 0.97));
+}
+
+@vertex
+fn vs_overlay_motion_line(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
+  var out: OverlayFillVertexOut;
+  out.position = vec4<f32>(-2.0, -2.0, 0.0, 1.0);
+  out.color = vec4<f32>(0.0);
+
+  let motion_count = max(0, params.overlay_counts.z);
+  if (motion_count <= 0) {
+    return out;
   }
-  return out;
-}
-
-fn overlay_segment_distance_px(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
-  let ab = b - a;
-  let denom = max(dot(ab, ab), 0.00001);
-  let t = clamp(dot(p - a, ab) / denom, 0.0, 1.0);
-  return length(p - (a + ab * t));
-}
-
-fn overlay_apply_motion(color: vec4<f32>, tex_uv: vec2<f32>) -> vec4<f32> {
-  var out = color;
-  let target_size = vec2<f32>(params.target_mode.x, params.target_mode.y);
-  let px = tex_uv * target_size;
-  let count = max(0, params.overlay_counts.z);
-  for (var i = 0; i < count; i = i + 1) {
-    let rect = overlay_rects[u32(params.overlay_counts.x + params.overlay_counts.y + i)];
-    let track = overlay_track_index(rect);
-    if (vec4_get_i(params.present, track) == 0) {
-      continue;
-    }
-    let local_a = overlay_local_from_video(overlay_unpack_uv16(rect.rect_uv0), track);
-    let local_b = overlay_local_from_video(overlay_unpack_uv16(rect.rect_uv1), track);
-    let visible = overlay_visible_local_rect_for_track(track);
-    if ((local_a.x < visible.x && local_b.x < visible.x) ||
-        (local_a.x > visible.z && local_b.x > visible.z) ||
-        (local_a.y < visible.y && local_b.y < visible.y) ||
-        (local_a.y > visible.w && local_b.y > visible.w)) {
-      continue;
-    }
-    let a = overlay_global_from_local(local_a, track) * target_size;
-    let b = overlay_global_from_local(local_b, track) * target_size;
-    if (overlay_segment_distance_px(px, a, b) <= 1.0) {
-      out = overlay_blend_over(out, overlay_color_from_bgra(rect.color_bgra));
-    }
+  let line_id = vertex_index / 6u;
+  let corner = vertex_index - line_id * 6u;
+  let rect = overlay_rects[u32(params.overlay_counts.x + params.overlay_counts.y) + line_id];
+  let track = clamp(i32(round(params.split.z)), 0, 3);
+  if (!overlay_rect_matches_track(rect, track)) {
+    return out;
   }
-  return out;
-}
 
-fn apply_overlay(color: vec4<f32>, tex_uv: vec2<f32>) -> vec4<f32> {
-  return overlay_apply_motion(
-      overlay_apply_lines(overlay_apply_fill(color, tex_uv), tex_uv), tex_uv);
+  let color = overlay_color_from_bgra(rect.color_bgra);
+  if (color.a <= 0.0) {
+    return out;
+  }
+
+  let layer_size = overlay_layer_size();
+  let a = overlay_unpack_uv16(rect.rect_uv0) * layer_size;
+  let b = overlay_unpack_uv16(rect.rect_uv1) * layer_size;
+  let delta = b - a;
+  let len = length(delta);
+  if (len <= 0.001) {
+    return out;
+  }
+  let normal = vec2<f32>(-delta.y, delta.x) / len;
+  let half_width = 1.0;
+
+  var px = a - normal * half_width;
+  if (corner == 1u || corner == 3u) {
+    px = b - normal * half_width;
+  } else if (corner == 2u || corner == 5u) {
+    px = a + normal * half_width;
+  } else if (corner == 4u) {
+    px = b + normal * half_width;
+  }
+  out.position = overlay_position_from_px(clamp(px, vec2<f32>(0.0), layer_size), layer_size);
+  out.color = color;
+  return out;
 }
 
 fn read_u8(byte_offset: u32) -> u32 {

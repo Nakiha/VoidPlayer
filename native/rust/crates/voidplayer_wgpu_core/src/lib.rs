@@ -458,7 +458,10 @@ pub struct WgpuMetalRenderer {
     bind_group_layout: wgpu::BindGroupLayout,
     bgra8_pipeline: wgpu::RenderPipeline,
     rgba16_float_pipeline: wgpu::RenderPipeline,
-    overlay_pipeline: wgpu::RenderPipeline,
+    overlay_fill_pipeline: wgpu::RenderPipeline,
+    overlay_line_black_pipeline: wgpu::RenderPipeline,
+    overlay_line_white_pipeline: wgpu::RenderPipeline,
+    overlay_motion_pipeline: wgpu::RenderPipeline,
     _dummy_bgra_array_texture: wgpu::Texture,
     dummy_bgra_array_view: wgpu::TextureView,
     _dummy_y_texture: wgpu::Texture,
@@ -764,6 +767,41 @@ fn create_composite_pipeline(
     })
 }
 
+fn create_overlay_primitive_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    vertex_entry: &'static str,
+    label: &'static str,
+    blend: Option<wgpu::BlendState>,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some(vertex_entry),
+            buffers: &[],
+            compilation_options: Default::default(),
+        },
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_overlay_primitive"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                blend,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: Default::default(),
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 fn composite_pipeline_for_output<'a>(
     renderer: &'a WgpuMetalRenderer,
     output_format: wgpu::TextureFormat,
@@ -826,7 +864,7 @@ impl WgpuMetalRenderer {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -862,7 +900,7 @@ impl WgpuMetalRenderer {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
@@ -909,31 +947,50 @@ impl WgpuMetalRenderer {
             wgpu::TextureFormat::Rgba16Float,
             "voidplayer-wgpu-composite-rgba16float-pipeline",
         );
-        let overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("voidplayer-wgpu-overlay-layer-pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
+        let overlay_blend = Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
             },
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_overlay_layer"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            multiview_mask: None,
-            cache: None,
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
         });
+        let overlay_fill_pipeline = create_overlay_primitive_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            "vs_overlay_fill_rect",
+            "voidplayer-wgpu-overlay-fill-layer-pipeline",
+            overlay_blend,
+        );
+        let overlay_line_black_pipeline = create_overlay_primitive_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            "vs_overlay_line_rect_black",
+            "voidplayer-wgpu-overlay-line-black-layer-pipeline",
+            overlay_blend,
+        );
+        let overlay_line_white_pipeline = create_overlay_primitive_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            "vs_overlay_line_rect_white",
+            "voidplayer-wgpu-overlay-line-white-layer-pipeline",
+            overlay_blend,
+        );
+        let overlay_motion_pipeline = create_overlay_primitive_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            "vs_overlay_motion_line",
+            "voidplayer-wgpu-overlay-motion-layer-pipeline",
+            overlay_blend,
+        );
         let dummy_bgra_array_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("voidplayer-wgpu-dummy-bgra-array"),
             size: wgpu::Extent3d {
@@ -1009,7 +1066,10 @@ impl WgpuMetalRenderer {
             bind_group_layout,
             bgra8_pipeline,
             rgba16_float_pipeline,
-            overlay_pipeline,
+            overlay_fill_pipeline,
+            overlay_line_black_pipeline,
+            overlay_line_white_pipeline,
+            overlay_motion_pipeline,
             _dummy_bgra_array_texture: dummy_bgra_array_texture,
             dummy_bgra_array_view,
             _dummy_y_texture: dummy_y_texture,
@@ -1659,6 +1719,66 @@ fn package_params(
     push_vec4_i32(bytes, [output_color_mode, 0, 0, 0]);
 }
 
+const PARAM_VEC4_BYTES: usize = 16;
+const PARAM_PRESENT_VEC: usize = 10;
+const PARAM_SOURCE_WIDTH_VEC: usize = 11;
+const PARAM_SOURCE_HEIGHT_VEC: usize = 12;
+const PARAM_OUTPUT_MODE_VEC: usize = 26;
+const MAX_OVERLAY_LAYER_WIDTH: u32 = 1280;
+const MAX_OVERLAY_LAYER_HEIGHT: u32 = 720;
+
+fn param_i32(params: &[u8], vec_index: usize, lane: usize) -> i32 {
+    let offset = vec_index * PARAM_VEC4_BYTES + lane * core::mem::size_of::<i32>();
+    params
+        .get(offset..offset + core::mem::size_of::<i32>())
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(i32::from_ne_bytes)
+        .unwrap_or(0)
+}
+
+fn param_f32(params: &[u8], vec_index: usize, lane: usize) -> f32 {
+    let offset = vec_index * PARAM_VEC4_BYTES + lane * core::mem::size_of::<f32>();
+    params
+        .get(offset..offset + core::mem::size_of::<f32>())
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(f32::from_ne_bytes)
+        .unwrap_or(0.0)
+}
+
+fn write_param_i32(params: &mut [u8], vec_index: usize, lane: usize, value: i32) {
+    let offset = vec_index * PARAM_VEC4_BYTES + lane * core::mem::size_of::<i32>();
+    if let Some(bytes) = params.get_mut(offset..offset + core::mem::size_of::<i32>()) {
+        bytes.copy_from_slice(&value.to_ne_bytes());
+    }
+}
+
+fn overlay_layer_dimensions(
+    params: &mut [u8],
+    target_width: u32,
+    target_height: u32,
+) -> (u32, u32) {
+    let mut width = 1u32;
+    let mut height = 1u32;
+    for track in 0..MAX_TRACKS {
+        if param_i32(params, PARAM_PRESENT_VEC, track) == 0 {
+            continue;
+        }
+        width = width.max(param_f32(params, PARAM_SOURCE_WIDTH_VEC, track).ceil() as u32);
+        height = height.max(param_f32(params, PARAM_SOURCE_HEIGHT_VEC, track).ceil() as u32);
+    }
+    width = width
+        .max(1)
+        .min(target_width.max(1))
+        .min(MAX_OVERLAY_LAYER_WIDTH);
+    height = height
+        .max(1)
+        .min(target_height.max(1))
+        .min(MAX_OVERLAY_LAYER_HEIGHT);
+    write_param_i32(params, PARAM_OUTPUT_MODE_VEC, 1, width as i32);
+    write_param_i32(params, PARAM_OUTPUT_MODE_VEC, 2, height as i32);
+    (width, height)
+}
+
 fn write_source_bgra_atlas(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -2183,6 +2303,9 @@ fn encode_overlay_layer_texture(
     let final_params = renderer.params_scratch.clone();
     let mut layer_params = Vec::with_capacity(final_params.len());
     for track in 0..MAX_TRACKS {
+        if param_i32(&final_params, PARAM_PRESENT_VEC, track) == 0 {
+            continue;
+        }
         write_overlay_layer_track_params(&final_params, track, &mut layer_params);
         write_cached_storage_buffer(
             &renderer.device,
@@ -2344,10 +2467,35 @@ fn encode_overlay_layer_texture(
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(&renderer.overlay_pipeline);
             pass.set_bind_group(0, bind_group, &[]);
             pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
-            pass.draw(0..3, 0..1);
+            if fill_count > 0 {
+                let fill_vertices = fill_count
+                    .checked_mul(6)
+                    .and_then(|count| u32::try_from(count).ok())
+                    .ok_or("wgpu-metal overlay fill vertex count is too large")?;
+                pass.set_pipeline(&renderer.overlay_fill_pipeline);
+                pass.draw(0..fill_vertices, 0..1);
+            }
+            if line_count > 0 {
+                let line_vertices = line_count
+                    .checked_mul(4)
+                    .and_then(|count| count.checked_mul(6))
+                    .and_then(|count| u32::try_from(count).ok())
+                    .ok_or("wgpu-metal overlay line vertex count is too large")?;
+                pass.set_pipeline(&renderer.overlay_line_black_pipeline);
+                pass.draw(0..line_vertices, 0..1);
+                pass.set_pipeline(&renderer.overlay_line_white_pipeline);
+                pass.draw(0..line_vertices, 0..1);
+            }
+            if motion_count > 0 {
+                let motion_vertices = motion_count
+                    .checked_mul(6)
+                    .and_then(|count| u32::try_from(count).ok())
+                    .ok_or("wgpu-metal overlay motion vertex count is too large")?;
+                pass.set_pipeline(&renderer.overlay_motion_pipeline);
+                pass.draw(0..motion_vertices, 0..1);
+            }
         }
     }
     if let Some(cache) = renderer.overlay_layer_texture.as_mut() {
@@ -2444,7 +2592,15 @@ fn render_bgra_atlas_with_wgsl(
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("voidplayer-wgpu-composite-encoder"),
         });
-    encode_overlay_layer_texture(renderer, width, height, overlay_generation, &mut encoder)?;
+    let (overlay_width, overlay_height) =
+        overlay_layer_dimensions(&mut renderer.params_scratch, width, height);
+    encode_overlay_layer_texture(
+        renderer,
+        overlay_width,
+        overlay_height,
+        overlay_generation,
+        &mut encoder,
+    )?;
     write_cached_storage_buffer(
         &renderer.device,
         &renderer.queue,
@@ -2615,7 +2771,15 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("voidplayer-wgpu-cvpixelbuffer-composite-encoder"),
         });
-    encode_overlay_layer_texture(renderer, width, height, overlay_generation, &mut encoder)?;
+    let (overlay_width, overlay_height) =
+        overlay_layer_dimensions(&mut renderer.params_scratch, width, height);
+    encode_overlay_layer_texture(
+        renderer,
+        overlay_width,
+        overlay_height,
+        overlay_generation,
+        &mut encoder,
+    )?;
     write_cached_storage_buffer(
         &renderer.device,
         &renderer.queue,

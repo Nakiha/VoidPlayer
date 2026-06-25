@@ -13,20 +13,13 @@ enum MacOSNativeSeekRefreshResult {
   case failed(FlutterError)
 }
 
-enum MacOSNativeLateFramePublishResult {
-  case published
-  case alreadyPresented
-  case stale
-  case unavailable
-}
-
 enum MacOSNativeFrameRefresh {
-  private static func acceptsSeekFrame(_ frameInfo: MacOSNativeFrameInfo, targetPtsUs: Int) -> Bool {
+  static func acceptsSeekFrame(_ frameInfo: MacOSNativeFrameInfo, targetPtsUs: Int) -> Bool {
     frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
       frameInfo.ptsUs <= targetPtsUs + 1_500_000
   }
 
-  private static func acceptsSeekPts(_ ptsUs: Int, targetPtsUs: Int) -> Bool {
+  static func acceptsSeekPts(_ ptsUs: Int, targetPtsUs: Int) -> Bool {
     ptsUs >= max(0, targetPtsUs - 500_000) &&
       ptsUs <= targetPtsUs + 1_500_000
   }
@@ -81,86 +74,6 @@ enum MacOSNativeFrameRefresh {
         details: "\(error)"
       ))
     }
-  }
-
-  static func publishLatestSeekFrameIfAvailable(
-    player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
-    targetPtsUs: Int,
-    maxTrackSlots: Int,
-    presentationState: MacOSFramePresentationState,
-    framePump: MacOSNativeFramePump
-  ) -> MacOSNativeLateFramePublishResult {
-    let startNs = DispatchTime.now().uptimeNanoseconds
-    if let presentedPtsUs = presentationState.lastPresentedPtsUs,
-       acceptsSeekPts(presentedPtsUs, targetPtsUs: targetPtsUs) {
-      logRefreshProfiler(
-        route: "seek-late",
-        startNs: startNs,
-        timeoutMs: 0,
-        result: "already-presented",
-        ptsUs: presentedPtsUs
-      )
-      return .alreadyPresented
-    }
-    guard let frameInfo = player.lastRendererOwnedFrameInfo() else {
-      presentationState.recordMiss()
-      logRefreshProfiler(
-        route: "seek-late",
-        startNs: startNs,
-        timeoutMs: 0,
-        result: "unavailable:no-frame",
-        ptsUs: -1
-      )
-      return .unavailable
-    }
-    guard acceptsSeekFrame(frameInfo, targetPtsUs: targetPtsUs) else {
-      logRefreshProfiler(
-        route: "seek-late",
-        startNs: startNs,
-        timeoutMs: 0,
-        result: "stale pts=\(frameInfo.ptsUs)",
-        ptsUs: frameInfo.ptsUs
-      )
-      return .stale
-    }
-    let published = texture.publishRenderedTargetAndInstallNext(
-      player,
-      maxTrackSlots: maxTrackSlots,
-      frameInfo: frameInfo
-    )
-    framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
-    if published {
-      presentationState.recordDiscontinuityFrame(frameInfo)
-      logRefreshProfiler(
-        route: "seek-late",
-        startNs: startNs,
-        timeoutMs: 0,
-        result: "published",
-        ptsUs: frameInfo.ptsUs
-      )
-      return .published
-    }
-    if let presentedPtsUs = presentationState.lastPresentedPtsUs,
-       acceptsSeekPts(presentedPtsUs, targetPtsUs: targetPtsUs) {
-      logRefreshProfiler(
-        route: "seek-late",
-        startNs: startNs,
-        timeoutMs: 0,
-        result: "already-presented-after-publish",
-        ptsUs: presentedPtsUs
-      )
-      return .alreadyPresented
-    }
-    presentationState.recordMiss()
-    logRefreshProfiler(
-      route: "seek-late",
-      startNs: startNs,
-      timeoutMs: 0,
-      result: "unavailable:not-published",
-      ptsUs: frameInfo.ptsUs
-    )
-    return .unavailable
   }
 
   private static func updateFromNativePlayerWithTransientRetry(

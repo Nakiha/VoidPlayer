@@ -61,6 +61,7 @@ compile_commands.json
 /native/dist
 /native/build-msvc
 /native/_deps
+/native/rust/target/
 /windows/native/build
 /windows/native/dist
 /windows/native/build-msvc

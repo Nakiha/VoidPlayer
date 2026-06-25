@@ -75,9 +75,13 @@ destination used as the render attachment. CPU NV12/P010/planar YUV420P packages
 upload their raw package bytes as a WGSL storage buffer; the shader samples
 luma/chroma planes, handles P010 unpacking, and applies the basic SDR
 range/matrix conversion before writing the same imported destination.
-CVPixelBuffer frame sets can also import each source Y/UV plane as an
-`MTLTexture` via `CVMetalTextureCache` and `wgpu-hal`, avoiding CPU readback in
-the backend when every present frame is a supported NV12/P010 CVPixelBuffer.
+The backend creates the Rust/wgpu renderer first, borrows wgpu's internal
+Metal `MTLDevice`, and uses that same device for `CVMetalTextureCache`.
+Destination imports assert that the renderer-owned `MTLTexture` was created by
+that device before passing it to `wgpu-hal`; a mismatch is reported as an
+explicit draw failure. CVPixelBuffer frame sets can also import each source Y/UV
+plane as an `MTLTexture` via the same cache and `wgpu-hal`, avoiding CPU readback
+in the backend when every present frame is a supported NV12/P010 CVPixelBuffer.
 The Rust renderer requests `TEXTURE_FORMAT_16BIT_NORM` during device creation
 so P010 source planes can be imported as `R16Unorm`/`RG16Unorm`; adapters that
 cannot provide it fail closed during wgpu-metal initialization.
@@ -237,7 +241,9 @@ The macOS runner should report health from native state fields, including:
   linked Rust FFI ABI version into the existing `feature_level` diagnostic so
   runner logs can identify C++/Rust ABI skew. ABI v5 carries explicit output
   format/color-mode fields, retained-source composite requests, and overlay
-  generation keys across the C++/Rust render boundary.
+  generation keys across the C++/Rust render boundary; ABI v9 exposes the
+  wgpu-owned Metal device for `CVMetalTextureCache` plus destination texture
+  identity checks.
 - layout intent/present/deferred counters
 - source update, viewport composite, source-cache hit/miss, and ring-pressure
   counters

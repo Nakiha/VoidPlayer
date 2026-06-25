@@ -13,7 +13,7 @@ extern "C" {
 typedef struct VPWgpuMetalRenderer VPWgpuMetalRenderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 8,
+  VP_WGPU_FFI_ABI_VERSION = 9,
 };
 
 enum {
@@ -135,6 +135,7 @@ int VPWgpuMetalRendererGetInfo(VPWgpuMetalRenderer* renderer,
 int VPWgpuMetalRendererGetProfilerSnapshot(
     VPWgpuMetalRenderer* renderer,
     VPWgpuMetalProfilerSnapshot* snapshot);
+void* VPWgpuMetalRendererMetalDevice(VPWgpuMetalRenderer* renderer);
 int VPWgpuMetalRendererRenderPackage(VPWgpuMetalRenderer* renderer,
                                      const VPWgpuMetalRenderRequest* request);
 int VPWgpuMetalRendererRenderPackageAsync(

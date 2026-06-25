@@ -7,13 +7,13 @@ pub mod overlay;
 
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{MTLTexture, MTLTextureType};
+use objc2_metal::{MTLResource, MTLTexture, MTLTextureType};
 use overlay::OverlayRect;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
-pub const ABI_VERSION: i32 = 8;
+pub const ABI_VERSION: i32 = 9;
 const MAX_TRACKS: usize = 4;
 const STORAGE_NONE: i32 = 0;
 const STORAGE_YUV: i32 = 1;
@@ -880,6 +880,15 @@ impl WgpuMetalRenderer {
         pollster::block_on(Self::new_async())
     }
 
+    pub fn metal_device_ptr(&self) -> *mut core::ffi::c_void {
+        unsafe {
+            self.device
+                .as_hal::<wgpu_hal::metal::Api>()
+                .map(|device| Retained::as_ptr(device.raw_device()).cast_mut().cast())
+                .unwrap_or(core::ptr::null_mut())
+        }
+    }
+
     async fn new_async() -> Result<Self, &'static str> {
         let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
         instance_desc.backends = wgpu::Backends::METAL;
@@ -1183,6 +1192,17 @@ fn import_metal_texture_2d_raw(
     let raw_texture =
         unsafe { Retained::retain(metal_texture.cast::<ProtocolObject<dyn MTLTexture>>()) }
             .ok_or("wgpu-metal failed to retain MTLTexture")?;
+    let expected_device = unsafe {
+        device
+            .as_hal::<wgpu_hal::metal::Api>()
+            .map(|device| Retained::as_ptr(device.raw_device()).cast::<core::ffi::c_void>())
+    }
+    .ok_or("wgpu-metal failed to query wgpu Metal device")?;
+    let texture_device = raw_texture.device();
+    let texture_device_ptr: *const core::ffi::c_void = Retained::as_ptr(&texture_device).cast();
+    if texture_device_ptr != expected_device {
+        return Err("wgpu-metal MTLTexture device does not match wgpu Metal device");
+    }
     let size = wgpu::Extent3d {
         width,
         height,

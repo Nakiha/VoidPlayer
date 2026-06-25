@@ -31,7 +31,7 @@ bool require_c_abi_struct(const char* name) {
 int main() {
   static_assert(VP_MACOS_NATIVE_API_VERSION == 7u,
                 "bump this smoke when the macOS native ABI version changes");
-  static_assert(VP_WGPU_FFI_ABI_VERSION == 8,
+  static_assert(VP_WGPU_FFI_ABI_VERSION == 9,
                 "bump this smoke when the wgpu FFI ABI version changes");
   static_assert(offsetof(VPMacOSNativeFrameInfo, struct_size) == 0,
                 "versioned ABI structs must start with struct_size");
@@ -66,6 +66,9 @@ int main() {
       !require_c_abi_struct<VPWgpuMetalProfilerSnapshot>(
           "VPWgpuMetalProfilerSnapshot")) {
     return 1;
+  }
+  if (VPWgpuMetalRendererMetalDevice(nullptr) != nullptr) {
+    return fail("wgpu FFI Metal device query must reject null renderer");
   }
 
   VPMacOSNativeFrameInfo frame_info{};

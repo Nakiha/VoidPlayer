@@ -198,6 +198,20 @@ pub extern "C" fn VPWgpuMetalRendererGetProfilerSnapshot(
 }
 
 #[no_mangle]
+pub extern "C" fn VPWgpuMetalRendererMetalDevice(
+    renderer: *mut WgpuMetalRenderer,
+) -> *mut core::ffi::c_void {
+    if renderer.is_null() {
+        return ptr::null_mut();
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let renderer_ref = unsafe { &mut *renderer };
+        renderer_ref.metal_device_ptr()
+    }));
+    result.unwrap_or(ptr::null_mut())
+}
+
+#[no_mangle]
 pub extern "C" fn VPWgpuMetalRendererDestroy(renderer: *mut WgpuMetalRenderer) {
     if renderer.is_null() {
         return;

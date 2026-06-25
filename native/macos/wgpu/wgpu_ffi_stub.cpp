@@ -57,6 +57,11 @@ extern "C" __attribute__((weak)) int VPWgpuMetalRendererGetProfilerSnapshot(
   return -1;
 }
 
+extern "C" __attribute__((weak)) void* VPWgpuMetalRendererMetalDevice(
+    VPWgpuMetalRenderer*) {
+  return nullptr;
+}
+
 extern "C" __attribute__((weak)) int VPWgpuMetalRendererRenderPackage(
     VPWgpuMetalRenderer*,
     const VPWgpuMetalRenderRequest* request) {

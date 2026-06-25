@@ -54,6 +54,13 @@ bool wgpu_profiler_enabled() {
   return enabled;
 }
 
+bool metal_texture_matches_device(id<MTLTexture> texture, void* metal_device) {
+  if (!texture || !metal_device) {
+    return false;
+  }
+  return [texture device] == (__bridge id<MTLDevice>)metal_device;
+}
+
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
   return static_cast<uint64_t>(
       std::chrono::duration_cast<std::chrono::microseconds>(
@@ -476,11 +483,24 @@ bool WgpuMetalPresentationBackend::initialize(const vr::PresentationBackendConfi
   height_ = config.height;
   draw_target_max_track_slots_ = std::max(1, config.max_track_slots);
 
-  id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-  if (!device) {
-    mark_draw_failure("wgpu-metal failed to create Metal device");
+  if (!wgpu_ffi_available()) {
+    mark_draw_failure("wgpu-metal Rust FFI is not linked");
     return false;
   }
+  char ffi_error[256] = {};
+  wgpu_renderer_ = VPWgpuMetalRendererCreate(ffi_error, sizeof(ffi_error));
+  if (!wgpu_renderer_) {
+    mark_draw_failure(ffi_error[0] ? ffi_error : "wgpu-metal renderer create failed");
+    shutdown();
+    return false;
+  }
+  void* wgpu_metal_device = VPWgpuMetalRendererMetalDevice(wgpu_renderer_);
+  if (!wgpu_metal_device) {
+    mark_draw_failure("wgpu-metal failed to expose wgpu Metal device");
+    shutdown();
+    return false;
+  }
+  id<MTLDevice> device = (__bridge id<MTLDevice>)wgpu_metal_device;
   metal_device_ = (__bridge_retained void*)device;
   CVMetalTextureCacheRef cache = nullptr;
   if (CVMetalTextureCacheCreate(kCFAllocatorDefault,
@@ -498,17 +518,6 @@ bool WgpuMetalPresentationBackend::initialize(const vr::PresentationBackendConfi
                               config.width,
                               config.height,
                               config.max_track_slots)) {
-    return false;
-  }
-  if (!wgpu_ffi_available()) {
-    mark_draw_failure("wgpu-metal Rust FFI is not linked");
-    shutdown();
-    return false;
-  }
-  char ffi_error[256] = {};
-  wgpu_renderer_ = VPWgpuMetalRendererCreate(ffi_error, sizeof(ffi_error));
-  if (!wgpu_renderer_) {
-    mark_draw_failure(ffi_error[0] ? ffi_error : "wgpu-metal renderer create failed");
     shutdown();
     return false;
   }
@@ -1275,6 +1284,11 @@ bool WgpuMetalPresentationBackend::draw_frame(
                                           : destination_error);
     }
     id<MTLTexture> destination_texture = CVMetalTextureGetTexture(destination_ref);
+    if (!metal_texture_matches_device(destination_texture, metal_device_)) {
+      CFRelease(destination_ref);
+      return fail_after_target_acquire(
+          "wgpu-metal destination texture device does not match wgpu Metal device");
+    }
     char ffi_error[256] = {};
     VPWgpuMetalRetainedCompositeRequest request = {};
     request.destination_mtl_texture = (__bridge void*)destination_texture;
@@ -1394,6 +1408,11 @@ bool WgpuMetalPresentationBackend::draw_frame(
                                           : destination_error);
     }
     id<MTLTexture> destination_texture = CVMetalTextureGetTexture(destination_ref);
+    if (!metal_texture_matches_device(destination_texture, metal_device_)) {
+      CFRelease(destination_ref);
+      return fail_after_target_acquire(
+          "wgpu-metal destination texture device does not match wgpu Metal device");
+    }
     char ffi_error[256] = {};
     request.destination_mtl_texture = (__bridge void*)destination_texture;
     request.output_format = output_target.ffi_output_format;
@@ -1527,6 +1546,11 @@ bool WgpuMetalPresentationBackend::draw_frame(
                                         : destination_error);
   }
   id<MTLTexture> destination_texture = CVMetalTextureGetTexture(destination_ref);
+  if (!metal_texture_matches_device(destination_texture, metal_device_)) {
+    CFRelease(destination_ref);
+    return fail_after_target_acquire(
+        "wgpu-metal destination texture device does not match wgpu Metal device");
+  }
   char ffi_error[256] = {};
   VPWgpuMetalRenderRequest request = {};
   request.destination_mtl_texture = (__bridge void*)destination_texture;

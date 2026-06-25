@@ -2,10 +2,11 @@
 name = "voidplayer_wgpu_core"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.87"
 
 [dependencies]
 objc2 = "0.6.4"
 objc2-metal = "0.3.2"
 pollster = "0.4.0"
-wgpu = "29.0.3"
-wgpu-hal = "29.0.3"
+wgpu = { version = "29.0.3", default-features = false, features = ["std", "metal", "wgsl"] }
+wgpu-hal = { version = "29.0.3", default-features = false, features = ["metal"] }

@@ -103,6 +103,37 @@ def _run_macos_hdr_edr_smoke() -> None:
     _python_dev("mac-ui-test", "--build", *_load_ui_profile("macos-hdr-edr-smoke"))
 
 
+def _run_macos_wgpu_metal_smoke() -> None:
+    _python_dev_with_env(
+        {"VOIDPLAYER_MACOS_PRESENTATION_MODE": "wgpu-metal"},
+        "mac-ui-test",
+        "--build",
+        "ui_tests/macos/wgpu_metal_default_software_smoke.csv",
+        "ui_tests/macos/wgpu_metal_source_projection_overlay_smoke.csv",
+    )
+    _python_dev_with_env(
+        {
+            "VOIDPLAYER_MACOS_PRESENTATION_MODE": "wgpu-metal",
+            "VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX": "1",
+        },
+        "mac-ui-test",
+        "ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv",
+        "ui_tests/macos/wgpu_metal_4k60_videotoolbox_smoke.csv",
+    )
+
+
+def _run_macos_wgpu_metal_edr_smoke() -> None:
+    _python_dev_with_env(
+        {
+            "VOIDPLAYER_MACOS_PRESENTATION_MODE": "wgpu-metal",
+            "VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX": "1",
+        },
+        "mac-ui-test",
+        "--build",
+        "ui_tests/macos/wgpu_metal_hlg_edr_smoke.csv",
+    )
+
+
 def _run_windows_preservation() -> None:
     _python_dev("test", "--native-only")
     local_engine_src = os.environ.get(
@@ -573,6 +604,18 @@ def cmd_gate(args: argparse.Namespace) -> None:
         if not _is_macos():
             _unsupported(profile, "macOS with an EDR-capable display")
         _run_macos_hdr_edr_smoke()
+        return
+
+    if profile == "macos-wgpu-metal-smoke":
+        if not _is_macos():
+            _unsupported(profile, "macOS")
+        _run_macos_wgpu_metal_smoke()
+        return
+
+    if profile == "macos-wgpu-metal-edr-smoke":
+        if not _is_macos():
+            _unsupported(profile, "macOS with an EDR-capable display")
+        _run_macos_wgpu_metal_edr_smoke()
         return
 
     if profile == "windows-preservation":

@@ -92,6 +92,7 @@ for the current backend contracts.
 | Shared renderer scheduling | macOS native tests plus Windows native/UI preservation checks |
 | Metal/color/layout behavior | native parity tests plus targeted macOS UI capture smokes |
 | macOS HDR Auto policy | `python dev.py gate macos-ui-smoke` for SDR policy plus `python dev.py gate macos-hdr-edr-smoke` on an EDR-capable display |
+| experimental wgpu-metal backend | `python dev.py gate macos-wgpu-metal-smoke` plus `python dev.py gate macos-wgpu-metal-edr-smoke` on an EDR-capable display |
 | Packaging | `python dev.py gate macos-release-readiness` |
 
 Representative local macOS smoke set:
@@ -106,4 +107,11 @@ Current stabilization gate:
 python3.12 dev.py gate pr-fast
 python3.12 dev.py gate macos-ui-smoke
 python3.12 dev.py gate macos-hdr-edr-smoke
+```
+
+Experimental wgpu-metal promotion evidence:
+
+```bash
+python3.12 dev.py gate macos-wgpu-metal-smoke
+python3.12 dev.py gate macos-wgpu-metal-edr-smoke
 ```

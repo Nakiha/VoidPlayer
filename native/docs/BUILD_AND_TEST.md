@@ -181,6 +181,23 @@ This gate generates a portable 10-bit HEVC/HLG fixture and asserts that Auto
 selects `native-compositor-edr`, uses the `64RGBAHalf` target, and produces
 values above SDR reference white.
 
+The experimental wgpu-metal backend has explicit local gates. The baseline gate
+keeps the backend opt-in, then covers software packages, retained
+source-projection/overlay composition, VideoToolbox CVPixelBuffer source import,
+and 4K60 cadence:
+
+```bash
+python3.12 dev.py gate macos-wgpu-metal-smoke
+```
+
+The EDR wgpu gate requires an EDR-capable display. It verifies forced
+wgpu-metal EDR policy, RGBA16F renderer-owned targets, HLG/BT.2020 diagnostics,
+and values above SDR reference white:
+
+```bash
+python3.12 dev.py gate macos-wgpu-metal-edr-smoke
+```
+
 ## Windows Preservation Gate
 
 The macOS backend work changed shared renderer boundaries, so Windows preservation remains a release gate. Run it on a

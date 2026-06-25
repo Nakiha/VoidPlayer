@@ -90,7 +90,9 @@ For SDR targets the WGSL color path tone-maps PQ/HLG/BT.2020 input into SDR;
 for EDR targets it maps SDR/PQ/HLG sources into extended-linear Display-P3
 before writing the imported RGBA16Float destination. This is the first HDR/EDR
 canary slice; stronger EDR capture/parity evidence and headed HDR display gates
-remain follow-up work before wgpu-metal can replace Metal by default.
+remain follow-up work before wgpu-metal can replace Metal by default. The local
+wgpu gate entry points are `python dev.py gate macos-wgpu-metal-smoke` and, on
+an EDR-capable display, `python dev.py gate macos-wgpu-metal-edr-smoke`.
 The macOS player canary still forces software/package input by default;
 `VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX=1` explicitly opts wgpu-metal into
 VideoToolbox source import for headed canary smoke tests. Analysis overlay

@@ -485,7 +485,7 @@ pub struct WgpuMetalRenderer {
     resource_generation: u64,
     retained_source_generation: u64,
     generic_bind_group: Option<CachedBindGroup>,
-    cv_bind_group: Option<CachedCvBindGroup>,
+    cv_bind_groups: Vec<CachedCvBindGroup>,
     profiler: WgpuMetalProfilerSnapshot,
     source_bgra_scratch: Vec<u8>,
     params_scratch: Vec<u8>,
@@ -662,6 +662,7 @@ struct CachedCpuYuvTexture {
     width: u32,
     height: u32,
     format: wgpu::TextureFormat,
+    generation: u64,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
 }
@@ -1066,7 +1067,7 @@ impl WgpuMetalRenderer {
             resource_generation: 0,
             retained_source_generation: 0,
             generic_bind_group: None,
-            cv_bind_group: None,
+            cv_bind_groups: Vec::new(),
             profiler: WgpuMetalProfilerSnapshot::default(),
             source_bgra_scratch: Vec::new(),
             params_scratch: Vec::new(),
@@ -1181,8 +1182,8 @@ fn render_package_to_metal_destination(
             0.0,
             &mut renderer.params_scratch,
         );
-        dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
-        renderer.package_buffer_dirty = true;
+        renderer.package_buffer_dirty |=
+            set_dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
         write_source_bgra_atlas(
             &renderer.device,
             &renderer.queue,
@@ -1204,8 +1205,8 @@ fn render_package_to_metal_destination(
                 0.0,
                 &mut renderer.params_scratch,
             );
-            dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
-            renderer.package_buffer_dirty = true;
+            renderer.package_buffer_dirty |=
+                set_dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
             cpu_yuv_texture_sources = Some(textures);
         } else {
             package_params(
@@ -1229,38 +1230,38 @@ fn render_package_to_metal_destination(
         &mut renderer.overlay_rects_scratch,
     );
 
-    let submission = if let Some((y_textures, uv_textures)) = cpu_yuv_texture_sources {
-        renderer.retained_source_generation =
-            renderer.retained_source_generation.wrapping_add(1).max(1);
-        let submission = render_cv_pixel_buffer_frame_set_with_wgsl(
-            renderer,
-            &destination_view,
-            &y_textures,
-            &uv_textures,
-            output.format,
-            output.width,
-            output.height,
-            overlay_generation,
-        )?;
-        renderer.retained_storage = STORAGE_CV_PIXEL_BUFFER;
-        renderer.retained_cv_y_textures = y_textures;
-        renderer.retained_cv_uv_textures = uv_textures;
-        submission
-    } else {
-        let submission = render_bgra_atlas_with_wgsl(
-            renderer,
-            &destination_view,
-            package.storage,
-            output.format,
-            output.width,
-            output.height,
-            overlay_generation,
-        )?;
-        renderer.retained_storage = package.storage;
-        renderer.retained_cv_y_textures = std::array::from_fn(|_| None);
-        renderer.retained_cv_uv_textures = std::array::from_fn(|_| None);
-        submission
-    };
+    let submission =
+        if let Some((y_textures, uv_textures, source_generation)) = cpu_yuv_texture_sources {
+            renderer.retained_source_generation = source_generation;
+            let submission = render_cv_pixel_buffer_frame_set_with_wgsl(
+                renderer,
+                &destination_view,
+                &y_textures,
+                &uv_textures,
+                output.format,
+                output.width,
+                output.height,
+                overlay_generation,
+            )?;
+            renderer.retained_storage = STORAGE_CV_PIXEL_BUFFER;
+            renderer.retained_cv_y_textures = y_textures;
+            renderer.retained_cv_uv_textures = uv_textures;
+            submission
+        } else {
+            let submission = render_bgra_atlas_with_wgsl(
+                renderer,
+                &destination_view,
+                package.storage,
+                output.format,
+                output.width,
+                output.height,
+                overlay_generation,
+            )?;
+            renderer.retained_storage = package.storage;
+            renderer.retained_cv_y_textures = std::array::from_fn(|_| None);
+            renderer.retained_cv_uv_textures = std::array::from_fn(|_| None);
+            submission
+        };
     Ok(submission)
 }
 
@@ -1292,6 +1293,7 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
         std::array::from_fn(|_| None);
     let mut source_uv_textures: [Option<wgpu::TextureView>; MAX_TRACKS] =
         std::array::from_fn(|_| None);
+    let mut source_generation = 0x9e3779b97f4a7c15u64;
     for slot in 0..MAX_TRACKS {
         if frame_set.decision.frames[slot].present == 0 {
             continue;
@@ -1310,6 +1312,17 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
         let chroma_width = coded_width.div_ceil(2).max(1);
         let chroma_height = coded_height.div_ceil(2).max(1);
         let is_p010 = frame_set.is_p010[slot] != 0;
+        source_generation = source_generation
+            .wrapping_mul(1099511628211)
+            .wrapping_add(((slot as u64) + 1) << 56)
+            .wrapping_add(source_y_mtl_textures[slot] as usize as u64)
+            .wrapping_mul(1099511628211)
+            .wrapping_add(source_uv_mtl_textures[slot] as usize as u64)
+            .wrapping_mul(1099511628211)
+            .wrapping_add((coded_width as u64) << 32)
+            .wrapping_add(coded_height as u64)
+            .wrapping_mul(1099511628211)
+            .wrapping_add(if is_p010 { 1 } else { 0 });
         source_y_textures[slot] = Some(
             renderer
                 .import_metal_texture_2d_cached(
@@ -1367,17 +1380,15 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
         0.0,
         &mut renderer.params_scratch,
     );
-    renderer.package_bytes_scratch.clear();
-    renderer.package_bytes_scratch.resize(4, 0);
-    renderer.package_buffer_dirty = true;
+    renderer.package_buffer_dirty |=
+        set_dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
     combined_overlay_rects(
         overlay_fill_rects,
         overlay_line_rects,
         overlay_motion_lines,
         &mut renderer.overlay_rects_scratch,
     );
-    renderer.retained_source_generation =
-        renderer.retained_source_generation.wrapping_add(1).max(1);
+    renderer.retained_source_generation = source_generation.max(1);
     let submission = render_cv_pixel_buffer_frame_set_with_wgsl(
         renderer,
         &destination_view,
@@ -1571,9 +1582,13 @@ fn package_storage_bytes(source: &[u8], bytes: &mut Vec<u8>) {
     bytes[..source.len()].copy_from_slice(source);
 }
 
-fn dummy_package_storage_bytes(bytes: &mut Vec<u8>) {
+fn set_dummy_package_storage_bytes(bytes: &mut Vec<u8>) -> bool {
+    if bytes.len() == 4 && bytes.iter().all(|byte| *byte == 0) {
+        return false;
+    }
     bytes.clear();
     bytes.extend_from_slice(&[0, 0, 0, 0]);
+    true
 }
 
 fn combined_overlay_rects(
@@ -1825,11 +1840,12 @@ fn write_source_bgra_atlas(
 fn ensure_cpu_yuv_texture(
     device: &wgpu::Device,
     cache: &mut Option<CachedCpuYuvTexture>,
+    resource_generation: &mut u64,
     width: u32,
     height: u32,
     format: wgpu::TextureFormat,
     label: &'static str,
-) {
+) -> u64 {
     let recreate = cache.as_ref().map_or(true, |texture| {
         texture.width != width || texture.height != height || texture.format != format
     });
@@ -1849,14 +1865,17 @@ fn ensure_cpu_yuv_texture(
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        *resource_generation = resource_generation.wrapping_add(1).max(1);
         *cache = Some(CachedCpuYuvTexture {
             width,
             height,
             format,
+            generation: *resource_generation,
             texture,
             view,
         });
     }
+    cache.as_ref().map_or(0, |texture| texture.generation)
 }
 
 fn upload_cpu_yuv_plane(
@@ -1927,11 +1946,13 @@ fn upload_cpu_yuv_package_textures(
     Option<(
         [Option<wgpu::TextureView>; MAX_TRACKS],
         [Option<wgpu::TextureView>; MAX_TRACKS],
+        u64,
     )>,
     &'static str,
 > {
     let mut y_textures: [Option<wgpu::TextureView>; MAX_TRACKS] = std::array::from_fn(|_| None);
     let mut uv_textures: [Option<wgpu::TextureView>; MAX_TRACKS] = std::array::from_fn(|_| None);
+    let mut source_generation = 0u64;
     for slot in 0..MAX_TRACKS {
         if package.decision.frames[slot].present == 0 {
             continue;
@@ -1959,9 +1980,10 @@ fn upload_cpu_yuv_package_textures(
                 .ok_or("wgpu-metal CPU YUV package metadata overflow")?,
             coded_height,
         )?;
-        ensure_cpu_yuv_texture(
+        let y_generation = ensure_cpu_yuv_texture(
             &renderer.device,
             &mut renderer.cpu_yuv_y_textures[slot],
+            &mut renderer.resource_generation,
             coded_width,
             coded_height,
             if high_bit {
@@ -1982,9 +2004,10 @@ fn upload_cpu_yuv_package_textures(
             coded_width,
             coded_height,
         );
-        ensure_cpu_yuv_texture(
+        let uv_generation = ensure_cpu_yuv_texture(
             &renderer.device,
             &mut renderer.cpu_yuv_uv_textures[slot],
+            &mut renderer.resource_generation,
             chroma_width,
             chroma_height,
             if high_bit {
@@ -1994,6 +2017,13 @@ fn upload_cpu_yuv_package_textures(
             },
             "voidplayer-wgpu-cpu-yuv-uv",
         );
+        source_generation = source_generation
+            .wrapping_mul(1099511628211)
+            .wrapping_add(((slot as u64) + 1) << 32)
+            .wrapping_add(y_generation)
+            .wrapping_mul(1099511628211)
+            .wrapping_add(uv_generation)
+            .max(1);
         if format == YUV_FORMAT_YUV420P {
             let u_plane = source_range(
                 source,
@@ -2077,7 +2107,7 @@ fn upload_cpu_yuv_package_textures(
                 .clone(),
         );
     }
-    Ok(Some((y_textures, uv_textures)))
+    Ok(Some((y_textures, uv_textures, source_generation)))
 }
 
 fn grow_buffer_capacity(size: u64) -> u64 {
@@ -2798,81 +2828,12 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
         overlay_layer_generation,
         source_generation: renderer.retained_source_generation,
     };
-    let bind_group = if let Some(cache) = renderer.cv_bind_group.as_ref() {
-        if cache.key == bind_group_key {
-            cache.bind_group.clone()
-        } else {
-            let bind_group = renderer
-                .device
-                .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("voidplayer-wgpu-cvpixelbuffer-composite-bind-group"),
-                    layout: &renderer.bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: params_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::TextureView(source_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::Sampler(&renderer.sampler),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 3,
-                            resource: package_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 4,
-                            resource: overlay_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 5,
-                            resource: wgpu::BindingResource::TextureView(y_view(0)),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 6,
-                            resource: wgpu::BindingResource::TextureView(uv_view(0)),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 7,
-                            resource: wgpu::BindingResource::TextureView(y_view(1)),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 8,
-                            resource: wgpu::BindingResource::TextureView(uv_view(1)),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 9,
-                            resource: wgpu::BindingResource::TextureView(y_view(2)),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 10,
-                            resource: wgpu::BindingResource::TextureView(uv_view(2)),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 11,
-                            resource: wgpu::BindingResource::TextureView(y_view(3)),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 12,
-                            resource: wgpu::BindingResource::TextureView(uv_view(3)),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 13,
-                            resource: wgpu::BindingResource::TextureView(overlay_layer_texture),
-                        },
-                    ],
-                });
-            renderer.cv_bind_group = Some(CachedCvBindGroup {
-                key: bind_group_key,
-                bind_group: bind_group.clone(),
-            });
-            renderer.profiler.final_bind_group_create_count += 1;
-            bind_group
-        }
+    let bind_group = if let Some(cache) = renderer
+        .cv_bind_groups
+        .iter()
+        .find(|cache| cache.key == bind_group_key)
+    {
+        cache.bind_group.clone()
     } else {
         let bind_group = renderer
             .device
@@ -2938,10 +2899,14 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
                     },
                 ],
             });
-        renderer.cv_bind_group = Some(CachedCvBindGroup {
+        renderer.cv_bind_groups.push(CachedCvBindGroup {
             key: bind_group_key,
             bind_group: bind_group.clone(),
         });
+        const MAX_CV_BIND_GROUPS: usize = 128;
+        if renderer.cv_bind_groups.len() > MAX_CV_BIND_GROUPS {
+            renderer.cv_bind_groups.remove(0);
+        }
         renderer.profiler.final_bind_group_create_count += 1;
         bind_group
     };

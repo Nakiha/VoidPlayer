@@ -38,6 +38,37 @@ target_link_libraries(void_macos_native_player PUBLIC
     "-framework CoreVideo"
 )
 
+set(VOID_WGPU_RUST_DIR "${VOID_NATIVE_DIR}/rust")
+set(VOID_CARGO_HINTS)
+if(DEFINED ENV{HOME})
+    list(APPEND VOID_CARGO_HINTS "$ENV{HOME}/.cargo/bin")
+endif()
+find_program(VOID_CARGO_EXECUTABLE cargo HINTS ${VOID_CARGO_HINTS})
+if(VOID_CARGO_EXECUTABLE AND EXISTS "${VOID_WGPU_RUST_DIR}/Cargo.toml")
+    set(VOID_WGPU_RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/rust")
+    set(VOID_WGPU_RUST_LIB
+        "${VOID_WGPU_RUST_TARGET_DIR}/$<IF:$<CONFIG:Debug>,debug,release>/libvoidplayer_wgpu_ffi.a")
+    set(VOID_WGPU_CARGO_PROFILE_ARGS)
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+        list(APPEND VOID_WGPU_CARGO_PROFILE_ARGS --release)
+    endif()
+    add_custom_target(voidplayer_wgpu_ffi_rust
+        COMMAND "${VOID_CARGO_EXECUTABLE}" build
+                ${VOID_WGPU_CARGO_PROFILE_ARGS}
+                --manifest-path "${VOID_WGPU_RUST_DIR}/Cargo.toml"
+                --target-dir "${VOID_WGPU_RUST_TARGET_DIR}"
+        WORKING_DIRECTORY "${VOID_WGPU_RUST_DIR}"
+        COMMENT "Building VoidPlayer wgpu Rust FFI"
+        VERBATIM)
+    add_dependencies(void_macos_native_player voidplayer_wgpu_ffi_rust)
+    target_compile_definitions(void_macos_native_player PRIVATE
+        VOIDPLAYER_WGPU_RUST_LINKED=1
+    )
+    target_link_libraries(void_macos_native_player PUBLIC "${VOID_WGPU_RUST_LIB}")
+else()
+    message(STATUS "VoidPlayer wgpu Rust FFI disabled: cargo not found or native/rust missing")
+endif()
+
 target_sources(void_media_ffmpeg PRIVATE
     "${VOID_NATIVE_DIR}/macos/decode/videotoolbox_provider.cpp"
 )

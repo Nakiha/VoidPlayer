@@ -55,6 +55,13 @@ extension MacOSNativePlayerSession {
       }
       return String(cString: base)
     }
+    let backendName = withUnsafeBytes(of: &state.backend_name) { rawBuffer -> String in
+      guard let base = rawBuffer.bindMemory(to: CChar.self).baseAddress else {
+        return "unknown"
+      }
+      let value = String(cString: base)
+      return value.isEmpty ? "unknown" : value
+    }
     let active = state.renderer_initialized != 0 &&
       state.target_installed != 0 &&
       state.backend_available != 0 &&
@@ -63,6 +70,7 @@ extension MacOSNativePlayerSession {
       "rendererInitialized": state.renderer_initialized != 0,
       "targetInstalled": state.target_installed != 0,
       "backendAvailable": state.backend_available != 0,
+      "backendName": backendName,
       "active": active,
       "lastDrawSucceeded": state.last_draw_succeeded != 0,
       "consecutiveDrawFailures": Int64(min(state.consecutive_draw_failures, UInt64(Int64.max))),
@@ -121,6 +129,20 @@ extension MacOSNativePlayerSession {
     guard VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(handle, &info) == 0 else {
       return Self.emptyRendererOwnedLastFrameColorDiagnostics()
     }
+    if let fallback = rendererOwnedTrackColorFallback() {
+      if info.color_range == 0 {
+        info.color_range = Int32(fallback.colorRange)
+      }
+      if info.color_matrix == 0 {
+        info.color_matrix = Int32(fallback.colorMatrix)
+      }
+      if info.color_transfer == 0 {
+        info.color_transfer = Int32(fallback.colorTransfer)
+      }
+      if info.color_primaries == 0 {
+        info.color_primaries = Int32(fallback.colorPrimaries)
+      }
+    }
     return [
       "lastFrameColorRangeCode": Int(info.color_range),
       "lastFrameColorRange": Self.colorRangeName(info.color_range),
@@ -131,6 +153,23 @@ extension MacOSNativePlayerSession {
       "lastFrameColorPrimariesCode": Int(info.color_primaries),
       "lastFrameColorPrimaries": Self.colorPrimariesName(info.color_primaries),
     ]
+  }
+
+  private func rendererOwnedTrackColorFallback() -> (
+    colorRange: Int,
+    colorMatrix: Int,
+    colorTransfer: Int,
+    colorPrimaries: Int
+  )? {
+    guard let firstTrack = trackDiagnostics().first else {
+      return nil
+    }
+    return (
+      firstTrack["colorRangeCode"] as? Int ?? 0,
+      firstTrack["colorMatrixCode"] as? Int ?? 0,
+      firstTrack["colorTransferCode"] as? Int ?? 0,
+      firstTrack["colorPrimariesCode"] as? Int ?? 0
+    )
   }
 
   func performanceStats() -> [String: Any] {
@@ -396,6 +435,14 @@ extension MacOSNativePlayerSession {
         "sourcePacketPos": Int64(track.source_packet_pos),
         "sourcePacketPtsUs": Int64(track.source_packet_pts),
         "sourcePacketDtsUs": Int64(track.source_packet_dts),
+        "colorRangeCode": Int(track.color_range),
+        "colorRange": Self.colorRangeName(track.color_range),
+        "colorMatrixCode": Int(track.color_matrix),
+        "colorMatrix": Self.colorMatrixName(track.color_matrix),
+        "colorTransferCode": Int(track.color_transfer),
+        "colorTransfer": Self.colorTransferName(track.color_transfer),
+        "colorPrimariesCode": Int(track.color_primaries),
+        "colorPrimaries": Self.colorPrimariesName(track.color_primaries),
         "codecName": Self.cString(track.codec_name),
         "decoderName": Self.cString(track.decoder_name),
         "decodeMode": Self.cString(track.decode_mode),
@@ -515,6 +562,7 @@ extension MacOSNativePlayerSession {
       "overlayGpuSuccessCount": 0,
       "overlayGpuFailureCount": 0,
       "overlayCpuFallbackCount": 0,
+      "backendName": "unknown",
       "lastDrawError": "",
     ]
   }

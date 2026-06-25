@@ -1,0 +1,31 @@
+# macOS wgpu-metal headed HLG/EDR compositor canary.
+# Run with:
+#   VOIDPLAYER_MACOS_PRESENTATION_MODE=wgpu-metal VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX=1 python dev.py mac-ui-test --build ui_tests/macos/wgpu_metal_hlg_edr_smoke.csv
+@WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/wgpu_metal_hlg_edr.mp4, 90, 30, 640, 360, 0, hevc-hlg
+0.3, ADD_MEDIA, build/generated/macos/wgpu_metal_hlg_edr.mp4
+1.5, ASSERT_TRACK_COUNT, 1
+1.6, ASSERT_NATIVE_BACKEND, macos-native-player, true
+1.8, DEBUG_NATIVE_COMPOSITOR
+1.82, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationRequest, wgpu-metal
+1.84, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationReason, forced-wgpu-metal-edr
+1.86, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-edr
+1.88, ASSERT_NATIVE_DIAGNOSTIC_BOOL, macOSPresentationEDROutputEnabled, true
+1.9, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorEDREnabled, true
+1.92, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorVideoPixelFormat, 64RGBAHalf
+1.93, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
+1.98, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
+2.0, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoSampleCount, 1
+2.02, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoMaxRGBX1000, 1001
+2.04, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoPixelsOver1X1000, 1
+2.06, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+2.08, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
+2.1, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+2.11, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, hlg
+2.115, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorPrimaries, bt2020
+2.12, CAPTURE_VIEWPORT_REGION, wgpu_metal_hlg_edr_roi, 80, 50, 320, 180, 96, build/wgpu_metal_hlg_edr_roi.png
+2.14, ASSERT_CAPTURE_NOT_BLACK, wgpu_metal_hlg_edr_roi, 0.01, 4.0
+2.2, CAPTURE_WINDOW, wgpu_metal_hlg_edr
+2.3, ASSERT_CAPTURE_NOT_BLACK, wgpu_metal_hlg_edr, 0.01, 4.0
+2.5, QUIT, 0

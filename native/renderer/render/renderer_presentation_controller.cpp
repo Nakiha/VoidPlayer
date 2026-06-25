@@ -353,6 +353,10 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
         result.failure_error = backend_last_error();
     }
     if (backend_) {
+        if (result.drew && !result.async_draw_submitted) {
+            result.frame_info_available =
+                backend_->copy_last_frame_info(&result.frame_info);
+        }
         const auto diagnostics = backend_->diagnostics();
         if (diagnostics.source_cache_presented_anchor_publish_count >
             source_cache_publish_count_before) {

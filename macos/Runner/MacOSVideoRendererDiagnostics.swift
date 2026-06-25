@@ -42,7 +42,8 @@ enum MacOSVideoRendererDiagnostics {
     nativeEventDiagnostics: [String: Any],
     frameCallbackDiagnostics: [String: Any],
     viewportDiagnostics: [String: Any],
-    presentationDiagnostics: [String: Any]
+    presentationDiagnostics: [String: Any],
+    trackPayloads: [[String: Any]] = []
   ) -> [String: Any] {
     let layoutSnapshot = player?.layoutSnapshotMap()
     let schedulerStats = player?.presentationSchedulerStats()
@@ -50,9 +51,34 @@ enum MacOSVideoRendererDiagnostics {
     let audioDiagnostics = player?.audioDiagnostics() ?? [:]
     let trackDiagnostics = player?.trackDiagnostics() ?? []
     let primaryTrack = trackDiagnostics.first
+    let primaryTrackPayload = trackPayloads.first
     let secondaryTrack = trackDiagnostics.dropFirst().first
     let rendererOwnedState = player?.rendererOwnedPresentationState()
       ?? Self.emptyRendererOwnedPresentationState()
+    let rendererOwnedLastFrameColorRangeCode = colorDiagnosticCode(
+      state: rendererOwnedState,
+      stateKey: "lastFrameColorRangeCode",
+      fallbackTrack: primaryTrackPayload,
+      trackKey: "colorRange"
+    )
+    let rendererOwnedLastFrameColorMatrixCode = colorDiagnosticCode(
+      state: rendererOwnedState,
+      stateKey: "lastFrameColorMatrixCode",
+      fallbackTrack: primaryTrackPayload,
+      trackKey: "colorMatrix"
+    )
+    let rendererOwnedLastFrameColorTransferCode = colorDiagnosticCode(
+      state: rendererOwnedState,
+      stateKey: "lastFrameColorTransferCode",
+      fallbackTrack: primaryTrackPayload,
+      trackKey: "colorTransfer"
+    )
+    let rendererOwnedLastFrameColorPrimariesCode = colorDiagnosticCode(
+      state: rendererOwnedState,
+      stateKey: "lastFrameColorPrimariesCode",
+      fallbackTrack: primaryTrackPayload,
+      trackKey: "colorPrimaries"
+    )
     let rendererOwnedActive = rendererOwnedState["active"] as? Bool ?? false
     let rendererDrawCount = int64Diagnostic(perfStats?["rendererDrawCount"])
     let nativeFramePresentationCount =
@@ -86,6 +112,7 @@ enum MacOSVideoRendererDiagnostics {
       "rendererOwnedRendererInitialized": rendererOwnedState["rendererInitialized"] ?? false,
       "rendererOwnedTargetInstalled": rendererOwnedState["targetInstalled"] ?? false,
       "rendererOwnedBackendAvailable": rendererOwnedState["backendAvailable"] ?? false,
+      "rendererOwnedBackendName": rendererOwnedState["backendName"] ?? "unknown",
       "rendererOwnedLastDrawSucceeded": rendererOwnedState["lastDrawSucceeded"] ?? false,
       "rendererOwnedConsecutiveDrawFailures":
         rendererOwnedState["consecutiveDrawFailures"] ?? 0,
@@ -107,22 +134,17 @@ enum MacOSVideoRendererDiagnostics {
       "rendererOwnedUploadStorageKind": rendererOwnedState["uploadStorageKind"] ?? "unavailable",
       "rendererOwnedLastSuccessfulFramePtsUs":
         rendererOwnedState["lastSuccessfulFramePtsUs"] ?? 0,
-      "rendererOwnedLastFrameColorRangeCode":
-        rendererOwnedState["lastFrameColorRangeCode"] ?? 0,
-      "rendererOwnedLastFrameColorRange":
-        rendererOwnedState["lastFrameColorRange"] ?? "unknown",
-      "rendererOwnedLastFrameColorMatrixCode":
-        rendererOwnedState["lastFrameColorMatrixCode"] ?? 0,
+      "rendererOwnedLastFrameColorRangeCode": rendererOwnedLastFrameColorRangeCode,
+      "rendererOwnedLastFrameColorRange": colorRangeName(rendererOwnedLastFrameColorRangeCode),
+      "rendererOwnedLastFrameColorMatrixCode": rendererOwnedLastFrameColorMatrixCode,
       "rendererOwnedLastFrameColorMatrix":
-        rendererOwnedState["lastFrameColorMatrix"] ?? "unknown",
-      "rendererOwnedLastFrameColorTransferCode":
-        rendererOwnedState["lastFrameColorTransferCode"] ?? 0,
+        colorMatrixName(rendererOwnedLastFrameColorMatrixCode),
+      "rendererOwnedLastFrameColorTransferCode": rendererOwnedLastFrameColorTransferCode,
       "rendererOwnedLastFrameColorTransfer":
-        rendererOwnedState["lastFrameColorTransfer"] ?? "unknown",
-      "rendererOwnedLastFrameColorPrimariesCode":
-        rendererOwnedState["lastFrameColorPrimariesCode"] ?? 0,
+        colorTransferName(rendererOwnedLastFrameColorTransferCode),
+      "rendererOwnedLastFrameColorPrimariesCode": rendererOwnedLastFrameColorPrimariesCode,
       "rendererOwnedLastFrameColorPrimaries":
-        rendererOwnedState["lastFrameColorPrimaries"] ?? "unknown",
+        colorPrimariesName(rendererOwnedLastFrameColorPrimariesCode),
       "rendererOwnedOverlayLastExpected":
         rendererOwnedState["overlayLastExpected"] ?? false,
       "rendererOwnedOverlayLastApplied":
@@ -379,6 +401,7 @@ enum MacOSVideoRendererDiagnostics {
       "rendererInitialized": false,
       "targetInstalled": false,
       "backendAvailable": false,
+      "backendName": "unknown",
       "active": false,
       "lastDrawSucceeded": false,
       "consecutiveDrawFailures": 0,
@@ -430,5 +453,87 @@ enum MacOSVideoRendererDiagnostics {
       return Int64(value)
     }
     return 0
+  }
+
+  private static func intDiagnostic(_ value: Any?) -> Int {
+    if let value = value as? Int {
+      return value
+    }
+    if let value = value as? Int32 {
+      return Int(value)
+    }
+    if let value = value as? Int64 {
+      return Int(value)
+    }
+    if let value = value as? UInt64 {
+      return Int(min(value, UInt64(Int.max)))
+    }
+    if let value = value as? Double {
+      return Int(value)
+    }
+    return 0
+  }
+
+  private static func colorDiagnosticCode(
+    state: [String: Any],
+    stateKey: String,
+    fallbackTrack: [String: Any]?,
+    trackKey: String
+  ) -> Int {
+    let stateValue = intDiagnostic(state[stateKey])
+    if stateValue != 0 {
+      return stateValue
+    }
+    return MacOSFlutterArguments.intValue(fallbackTrack?[trackKey]) ?? 0
+  }
+
+  private static func colorRangeName(_ value: Int) -> String {
+    switch value {
+    case 1:
+      return "limited"
+    case 2:
+      return "full"
+    default:
+      return "unknown"
+    }
+  }
+
+  private static func colorMatrixName(_ value: Int) -> String {
+    switch value {
+    case 1:
+      return "bt601"
+    case 2:
+      return "bt709"
+    case 3:
+      return "bt2020-ncl"
+    default:
+      return "unknown"
+    }
+  }
+
+  private static func colorTransferName(_ value: Int) -> String {
+    switch value {
+    case 1:
+      return "sdr"
+    case 2:
+      return "pq"
+    case 3:
+      return "hlg"
+    default:
+      return "unknown"
+    }
+  }
+
+  private static func colorPrimariesName(_ value: Int) -> String {
+    switch value {
+    case 1:
+      return "bt601"
+    case 2:
+      return "bt709"
+    case 3:
+      return "bt2020"
+    default:
+      return "unknown"
+    }
   }
 }

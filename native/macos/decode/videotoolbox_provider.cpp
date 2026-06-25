@@ -46,8 +46,9 @@ bool VideoToolboxProvider::probe(const AVCodec* codec) const {
 HwDecodeInitResult VideoToolboxProvider::init(const HwDecodeInitParams& params) {
     HwDecodeInitResult result;
     if (params.backend != RenderBackendKind::Metal &&
+        params.backend != RenderBackendKind::WgpuMetal &&
         params.device_mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice) {
-        spdlog::info("[VideoToolbox] Renderer-owned CVPixelBuffer output requires Metal backend");
+        spdlog::info("[VideoToolbox] Renderer-owned CVPixelBuffer output requires Metal-compatible backend");
         return result;
     }
 

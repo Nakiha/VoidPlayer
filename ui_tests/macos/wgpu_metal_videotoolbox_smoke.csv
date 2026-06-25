@@ -1,0 +1,28 @@
+# macOS wgpu-metal canary: explicit VideoToolbox CVPixelBuffer source import.
+# Run with:
+#   VOIDPLAYER_MACOS_PRESENTATION_MODE=wgpu-metal VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX=1 python dev.py mac-ui-test --build ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv
+@WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/wgpu_metal_videotoolbox_h264.mp4, 180, 30, 1920, 1080
+0.3, ADD_MEDIA, build/generated/macos/wgpu_metal_videotoolbox_h264.mp4
+3.0, ASSERT_TRACK_COUNT, 1
+3.1, ASSERT_NATIVE_BACKEND, macos-native-player, true
+3.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-metal
+3.21, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
+3.22, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedBackendAvailable, true
+3.23, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+3.235, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
+3.24, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
+3.25, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
+3.26, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
+3.27, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, false
+3.28, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-videotoolbox
+3.29, ASSERT_NATIVE_DIAGNOSTIC_STRING, primaryTrackDecodeMode, shared-renderer-videotoolbox
+3.30, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
+3.305, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, cvpixelbuffer
+3.31, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount, 1
+3.32, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+3.5, CAPTURE_VIEWPORT, wgpu_metal_videotoolbox_first_frame
+3.6, ASSERT_CAPTURE_NOT_BLACK, wgpu_metal_videotoolbox_first_frame, 0.01, 4.0
+3.8, ASSERT_PRESENTED_FRAME_RANGE, 0, 0, 100000
+3.9, QUIT, 0

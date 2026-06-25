@@ -90,6 +90,7 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
   }
   *out = {};
   std::string last_error;
+  std::string backend_name = "metal";
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
     out->target_installed =
@@ -130,6 +131,11 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
     out->renderer_initialized = player->renderer_active_locked() ? 1 : 0;
     if (player->renderer_active_locked()) {
       const auto backend_stats = player->renderer->presentation_backend_stats();
+      const auto backend_diagnostics =
+          player->renderer->presentation_backend_diagnostics();
+      if (!backend_diagnostics.backend.empty()) {
+        backend_name = backend_diagnostics.backend;
+      }
       out->backend_available = backend_stats.backend_available;
       out->target_installed =
           out->target_installed != 0 && backend_stats.target_installed != 0 ? 1 : 0;
@@ -151,6 +157,7 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
       }
     }
   }
+  write_c_string(out->backend_name, sizeof(out->backend_name), backend_name);
   vp_macos::write_error(
       out->last_draw_error, sizeof(out->last_draw_error), last_error);
   return 0;
@@ -192,6 +199,10 @@ int VPMacOSNativePlayerCopyTrackDiagnostics(
     dst.height = info.height;
     dst.duration_us = info.duration_us;
     dst.offset_us = player->renderer->track_offset_us(info.file_id);
+    dst.color_range = static_cast<int32_t>(info.color.range);
+    dst.color_matrix = static_cast<int32_t>(info.color.matrix);
+    dst.color_transfer = static_cast<int32_t>(info.color.transfer);
+    dst.color_primaries = static_cast<int32_t>(info.color.primaries);
     const std::string decoder_name =
         info.decoder_name.empty() ? "renderer" : info.decoder_name;
     const bool videotoolbox =

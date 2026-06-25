@@ -5,6 +5,11 @@ implementation details remain in [D3D11_BACKEND.md](D3D11_BACKEND.md); shared
 renderer ownership and color rules remain in
 [ARCHITECTURE.md](ARCHITECTURE.md) and [COLOR_PIPELINE.md](COLOR_PIPELINE.md).
 
+The experimental wgpu work starts on macOS. Windows remains on the D3D11/DComp
+product route until a later Windows-specific wgpu/D3D12VA phase proves source
+import, DirectComposition integration, HDR/scRGB behavior, and D3D11VA fallback
+preservation.
+
 ## Current Product And Experimental Routes
 
 The default Windows product policy is now `auto` and requires the locked

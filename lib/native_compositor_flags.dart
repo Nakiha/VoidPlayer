@@ -22,6 +22,7 @@ class NativeCompositorFlags {
         mode == 'auto' ||
         mode == 'native-compositor-sdr' ||
         mode == 'native-compositor-edr' ||
+        mode == 'wgpu-metal' ||
         mode == 'native' ||
         mode == 'compositor' ||
         mode == 'edr' ||

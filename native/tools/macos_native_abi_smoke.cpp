@@ -1,4 +1,5 @@
 #include "macos/player/native_player_bridge.h"
+#include "macos/wgpu/wgpu_ffi_bridge.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -28,8 +29,10 @@ bool require_c_abi_struct(const char* name) {
 }  // namespace
 
 int main() {
-  static_assert(VP_MACOS_NATIVE_API_VERSION == 5u,
+  static_assert(VP_MACOS_NATIVE_API_VERSION == 7u,
                 "bump this smoke when the macOS native ABI version changes");
+  static_assert(VP_WGPU_FFI_ABI_VERSION == 5,
+                "bump this smoke when the wgpu FFI ABI version changes");
   static_assert(offsetof(VPMacOSNativeFrameInfo, struct_size) == 0,
                 "versioned ABI structs must start with struct_size");
   static_assert(offsetof(VPMacOSNativeFrameInfo, api_version) ==
@@ -57,7 +60,9 @@ int main() {
       !require_c_abi_struct<VPMacOSNativePlayerPerfStats>(
           "VPMacOSNativePlayerPerfStats") ||
       !require_c_abi_struct<VPMacOSNativeAudioDiagnostics>(
-          "VPMacOSNativeAudioDiagnostics")) {
+          "VPMacOSNativeAudioDiagnostics") ||
+      !require_c_abi_struct<VPWgpuMetalRendererInfo>(
+          "VPWgpuMetalRendererInfo")) {
     return 1;
   }
 

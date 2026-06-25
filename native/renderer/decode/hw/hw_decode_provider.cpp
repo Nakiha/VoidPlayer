@@ -17,6 +17,7 @@ using HwDecodeProviderFactory = std::unique_ptr<HwDecodeProvider> (*)();
 struct HwDecodeProviderDescriptor {
     const char* name = "";
     RenderBackendKind backend = RenderBackendKind::Unknown;
+    RenderBackendKind secondary_backend = RenderBackendKind::Unknown;
     bool allow_ffmpeg_owned_hwdownload = false;
     HwDecodeProviderFactory create = nullptr;
 };
@@ -39,6 +40,7 @@ std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
     providers.push_back({
         "D3D11VA",
         RenderBackendKind::D3D11,
+        RenderBackendKind::Unknown,
         false,
         &create_d3d11va_provider,
     });
@@ -47,6 +49,7 @@ std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
     providers.push_back({
         "VideoToolbox",
         RenderBackendKind::Metal,
+        RenderBackendKind::WgpuMetal,
         true,
         &create_videotoolbox_provider,
     });
@@ -57,6 +60,9 @@ std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
 bool provider_matches_request(const HwDecodeProviderDescriptor& provider,
                               const HwDecodeInitParams& params) {
     if (provider.backend == params.backend) {
+        return true;
+    }
+    if (provider.secondary_backend == params.backend) {
         return true;
     }
     return provider.allow_ffmpeg_owned_hwdownload &&

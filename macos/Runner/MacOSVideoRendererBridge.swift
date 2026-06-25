@@ -284,7 +284,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         nativeEventDiagnostics: nativeEvents.diagnosticMap(),
         frameCallbackDiagnostics: frameCallbackDiagnostics(),
         viewportDiagnostics: presentation.diagnosticMap(),
-        presentationDiagnostics: presentationState.diagnosticMap()
+        presentationDiagnostics: presentationState.diagnosticMap(),
+        trackPayloads: tracks.tracks
       )
       diagnostics.merge(MacOSPresentationConfiguration.current.diagnostics) { _, next in next }
       if let nativeCompositor {

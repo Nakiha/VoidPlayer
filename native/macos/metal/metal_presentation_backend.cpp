@@ -516,6 +516,13 @@ MetalPresentationBackend::~MetalPresentationBackend() {
   shutdown();
 }
 
+const char* MetalPresentationBackend::last_error() const {
+  thread_local std::string error_copy;
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  error_copy = last_error_;
+  return error_copy.c_str();
+}
+
 bool MetalPresentationBackend::initialize(const vr::PresentationBackendConfig& config) {
   shutdown();
   {

@@ -619,6 +619,14 @@ fn sample_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
   return vec4<f32>(clamp(matrix_rgb(y, cb, cr, matrix), vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
 
+fn sample_bgra(track: i32, uv: vec2<f32>) -> vec4<f32> {
+  let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
+  let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
+  let sx = clamp(i32(uv.x * f32(source_w)), 0, source_w - 1);
+  let sy = clamp(i32(uv.y * f32(source_h)), 0, source_h - 1);
+  return textureLoad(src_texture, vec2<i32>(sx, sy), track, 0);
+}
+
 fn cv_yuv_to_rgb(track: i32, y_norm: f32, uv_norm: vec2<f32>) -> vec4<f32> {
   let format = vec4_get_i(params.yuv_format, track);
   let high_bit = format == 2;
@@ -688,7 +696,7 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     return map_sdr_ui_to_output(params.background);
   }
   let storage = i32(round(params.split.y));
-  var color = textureSample(src_texture, src_sampler, uv, track);
+  var color = sample_bgra(track, uv);
   if (storage == 1) {
     color = sample_yuv(track, uv);
   } else if (storage == 3) {

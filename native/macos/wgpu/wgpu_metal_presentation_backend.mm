@@ -460,6 +460,13 @@ WgpuMetalPresentationBackend::~WgpuMetalPresentationBackend() {
   shutdown();
 }
 
+const char* WgpuMetalPresentationBackend::last_error() const {
+  thread_local std::string error_copy;
+  std::lock_guard<std::mutex> lock(mutex_);
+  error_copy = last_error_;
+  return error_copy.c_str();
+}
+
 bool WgpuMetalPresentationBackend::initialize(const vr::PresentationBackendConfig& config) {
   shutdown();
   async_state_ = std::make_shared<AsyncState>();
@@ -570,6 +577,8 @@ void WgpuMetalPresentationBackend::shutdown() {
   wgpu_adapter_device_id_ = 0;
   wgpu_supports_16bit_norm_ = false;
   retained_source_available_ = false;
+  retained_source_submitted_generation_ = 0;
+  retained_source_committed_generation_ = 0;
   retained_source_frame_info_available_ = false;
   retained_source_frame_info_ = {};
 }
@@ -1225,6 +1234,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
   auto make_async_pending = [&](vr::PresentationBackendFrameInfo frame_info,
                                 uint64_t package_copy_us,
                                 int32_t package_storage,
+                                uint64_t source_generation,
                                 bool source_upload) {
     auto pending = std::make_unique<AsyncDrawPending>();
     pending->state = async_state_;
@@ -1235,6 +1245,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
     pending->target_pixel_buffer_address = acquired_target_address;
     pending->package_copy_us = package_copy_us;
     pending->package_storage = package_storage;
+    pending->source_generation = source_generation;
     pending->source_upload = source_upload;
     pending->target_acquired = target_acquired;
     pending->overlay_expected = overlay_expected;
@@ -1292,7 +1303,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
         : frame_info_from_decision(retained_decision, target);
     frame_info.target_pixel_buffer_address = pointer_bits(target);
     auto pending =
-        make_async_pending(frame_info, 0, retained_source_storage, false);
+        make_async_pending(frame_info, 0, retained_source_storage, 0, false);
     pending->destination_texture_ref = destination_ref;
     destination_ref = nullptr;
     pending->render_call_start = std::chrono::steady_clock::now();
@@ -1405,8 +1416,19 @@ bool WgpuMetalPresentationBackend::draw_frame(
     request.error = ffi_error;
     request.error_size = sizeof(ffi_error);
     const auto frame_info = frame_info_from_decision(frame_set.decision, target);
+    uint64_t source_generation = 0;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      source_generation = ++retained_source_submitted_generation_;
+      retained_source_available_ = false;
+      retained_source_frame_info_available_ = false;
+    }
     auto pending = make_async_pending(
-        frame_info, 0, VPMacOSNativePresentPackageStorageCVPixelBuffer, true);
+        frame_info,
+        0,
+        VPMacOSNativePresentPackageStorageCVPixelBuffer,
+        source_generation,
+        true);
     pending->destination_texture_ref = destination_ref;
     destination_ref = nullptr;
     for (size_t slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
@@ -1531,7 +1553,18 @@ bool WgpuMetalPresentationBackend::draw_frame(
   request.error = ffi_error;
   request.error_size = sizeof(ffi_error);
   auto frame_info = frame_info_from_package(package, target);
-  auto pending = make_async_pending(frame_info, package_copy_us, package.storage, true);
+  uint64_t source_generation = 0;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    source_generation = ++retained_source_submitted_generation_;
+    retained_source_available_ = false;
+    retained_source_frame_info_available_ = false;
+  }
+  auto pending = make_async_pending(frame_info,
+                                    package_copy_us,
+                                    package.storage,
+                                    source_generation,
+                                    true);
   pending->destination_texture_ref = destination_ref;
   destination_ref = nullptr;
   pending->render_call_start = std::chrono::steady_clock::now();
@@ -1572,18 +1605,23 @@ void WgpuMetalPresentationBackend::mark_draw_failure(std::string error) {
 void WgpuMetalPresentationBackend::mark_draw_success(
     const vr::PresentationBackendFrameInfo& frame_info,
     int32_t package_storage,
+    uint64_t source_generation,
     bool source_upload) {
   std::lock_guard<std::mutex> lock(mutex_);
   last_draw_succeeded_ = true;
   last_frame_info_available_ = true;
   last_frame_info_ = frame_info;
-  if (source_upload) {
+  const bool commit_source =
+      source_upload && source_generation != 0 &&
+      source_generation == retained_source_submitted_generation_;
+  if (commit_source) {
     retained_source_frame_info_available_ = true;
     retained_source_frame_info_ = frame_info;
+    last_present_package_storage_ = package_storage;
+    retained_source_available_ = true;
+    retained_source_committed_generation_ = source_generation;
   }
   consecutive_draw_failures_ = 0;
-  last_present_package_storage_ = package_storage;
-  retained_source_available_ = true;
   if (source_upload) {
     if (package_storage == VPMacOSNativePresentPackageStorageCVPixelBuffer) {
       ++cvpixelbuffer_upload_count_;
@@ -1656,31 +1694,6 @@ void* WgpuMetalPresentationBackend::acquire_draw_target_locked(
     slot.state = TargetState::InFlight;
     ++in_flight_draws_;
     return slot.pixel_buffer;
-  }
-  // wgpu owns a latest-frame presentation policy: stale completed targets may
-  // be dropped, while displayed/protected/in-flight targets remain preserved.
-  if (in_flight_draws_ == 0) {
-    for (auto& slot : target_ring_) {
-      if (slot.state != TargetState::Completed || !slot.pixel_buffer) {
-        continue;
-      }
-      slot.state = TargetState::InFlight;
-      ++in_flight_draws_;
-      ++target_ring_completed_recycle_count_;
-      if (wgpu_profiler_enabled() &&
-          (target_ring_completed_recycle_count_ <= 8 ||
-           (target_ring_completed_recycle_count_ % 60) == 0)) {
-        spdlog::info(
-            "[WgpuMetalProfile] target_recycle_completed source={} "
-            "in_flight={} limit={} targets={} count={}",
-            draw_source ? draw_source : "",
-            in_flight_draws_,
-            limit,
-            target_ring_.size(),
-            target_ring_completed_recycle_count_);
-      }
-      return slot.pixel_buffer;
-    }
   }
   record_backpressure("renderer-owned wgpu-metal presentation target ring is busy",
                       limit,
@@ -1885,6 +1898,7 @@ void WgpuMetalPresentationBackend::complete_async_draw(
   if (success) {
     mark_draw_success(pending->frame_info,
                       pending->package_storage,
+                      pending->source_generation,
                       pending->source_upload);
   } else {
     mark_draw_failure("wgpu-metal async GPU completion failed");

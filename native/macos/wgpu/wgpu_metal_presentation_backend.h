@@ -62,7 +62,7 @@ public:
                                    std::vector<uint8_t>& bgra,
                                    int& region_width,
                                    int& region_height) override;
-  const char* last_error() const override { return last_error_.c_str(); }
+  const char* last_error() const override;
   bool draw_frame(const vr::RendererDrawSnapshot& snapshot,
                   const vr::PresentationBackendDrawHooks& hooks) override;
 
@@ -113,6 +113,7 @@ private:
     uint64_t target_pixel_buffer_address = 0;
     uint64_t package_copy_us = 0;
     int32_t package_storage = 0;
+    uint64_t source_generation = 0;
     bool source_upload = true;
     bool target_acquired = false;
     bool overlay_expected = false;
@@ -131,6 +132,7 @@ private:
   void mark_draw_failure(std::string error);
   void mark_draw_success(const vr::PresentationBackendFrameInfo& frame_info,
                          int32_t package_storage,
+                         uint64_t source_generation,
                          bool source_upload = true);
   bool target_installed_locked() const;
   void* acquire_draw_target_locked(const char* draw_source);
@@ -194,6 +196,8 @@ private:
   uint32_t wgpu_adapter_device_id_ = 0;
   bool wgpu_supports_16bit_norm_ = false;
   bool retained_source_available_ = false;
+  uint64_t retained_source_submitted_generation_ = 0;
+  uint64_t retained_source_committed_generation_ = 0;
   std::vector<TargetSlot> target_ring_;
   std::vector<SourceTextureCacheEntry> source_texture_cache_;
   uint64_t source_texture_cache_clock_ = 0;
@@ -211,7 +215,6 @@ private:
   uint64_t staging_allocation_count_ = 0;
   uint64_t staging_reuse_count_ = 0;
   uint64_t target_ring_backpressure_count_ = 0;
-  uint64_t target_ring_completed_recycle_count_ = 0;
   uint64_t in_flight_draws_ = 0;
   size_t staging_max_bytes_ = 0;
   int32_t last_present_package_storage_ = 0;

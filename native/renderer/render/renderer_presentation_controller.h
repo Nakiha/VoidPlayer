@@ -139,6 +139,7 @@ public:
     const PresentationBackend* backend() const;
     bool has_backend() const;
     PresentationBackendKind backend_kind() const;
+    bool uses_macos_native_compositor_scheduling() const;
     void set_backend(std::unique_ptr<PresentationBackend> backend);
     std::unique_ptr<PresentationBackend> release_backend();
     void shutdown_backend();

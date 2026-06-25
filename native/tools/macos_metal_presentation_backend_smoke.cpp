@@ -1011,6 +1011,54 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend retained viewport composite did not reuse cached source");
   }
+  auto small_bgra =
+      std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(2 * 2 * 4), 0);
+  const auto set_small_pixel = [&](int x, int y, uint8_t b, uint8_t g, uint8_t r) {
+    const size_t offset = (static_cast<size_t>(y) * 2u + static_cast<size_t>(x)) * 4u;
+    (*small_bgra)[offset + 0] = b;
+    (*small_bgra)[offset + 1] = g;
+    (*small_bgra)[offset + 2] = r;
+    (*small_bgra)[offset + 3] = 255;
+  };
+  set_small_pixel(0, 0, 16, 32, 48);
+  set_small_pixel(1, 0, 64, 80, 96);
+  set_small_pixel(0, 1, 112, 128, 144);
+  set_small_pixel(1, 1, 11, 222, 33);
+  vr::TextureFrame small_frame = frame;
+  small_frame.width = 2;
+  small_frame.height = 2;
+  small_frame.storage = vr::CpuRgbaFrameStorage{small_bgra, 2 * 4};
+  vr::RendererDrawSnapshot small_source_snapshot = snapshot;
+  small_source_snapshot.decision.frames[0] = small_frame;
+  small_source_snapshot.tracks[0].video_width = 2;
+  small_source_snapshot.tracks[0].video_height = 2;
+  small_source_snapshot.track_geometry[0] = {true, 2, 2, 1.0f};
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                small_source_snapshot,
+                                vr::PresentationBackendDrawHooks{})) {
+    std::cerr << "WgpuMetal backend rejected source-size BGRA snapshot: "
+              << wgpu_backend->last_error() << "\n";
+    CVPixelBufferRelease(pixel_buffer);
+    return 1;
+  }
+  wgpu_capture.clear();
+  if (!wgpu_backend->capture_front_buffer(wgpu_capture,
+                                          wgpu_capture_width,
+                                          wgpu_capture_height) ||
+      wgpu_capture_width != kWidth || wgpu_capture_height != kHeight ||
+      wgpu_capture.size() < static_cast<size_t>(kWidth * kHeight * 4)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend source-size BGRA capture failed");
+  }
+  const size_t bottom_right =
+      (static_cast<size_t>(kHeight - 1) * kWidth + static_cast<size_t>(kWidth - 1)) * 4u;
+  if (wgpu_capture[bottom_right + 0] != 11 ||
+      wgpu_capture[bottom_right + 1] != 222 ||
+      wgpu_capture[bottom_right + 2] != 33 ||
+      wgpu_capture[bottom_right + 3] != 255) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend BGRA source-size sampling read atlas padding");
+  }
   auto ring_displayed = make_bgra_pixel_buffer(kWidth, kHeight);
   auto ring_protected = make_bgra_pixel_buffer(kWidth, kHeight);
   auto ring_available = make_bgra_pixel_buffer(kWidth, kHeight);
@@ -1067,6 +1115,23 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend target ring draw did not avoid displayed/protected buffers");
   }
+  if (wgpu_backend->draw_frame(snapshot, vr::PresentationBackendDrawHooks{})) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend target ring reused completed buffer before release");
+  }
+  const std::string ring_busy_error = wgpu_backend->last_error();
+  if (ring_busy_error.find("wgpu-metal presentation target ring is busy") ==
+      std::string::npos) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend target ring busy failure was not diagnostic");
+  }
+  const auto wgpu_busy_stats = wgpu_backend->presentation_stats();
+  if (wgpu_busy_stats.target_installed != 1 ||
+      wgpu_busy_stats.metal_buffer_exhaustion_count == 0) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend target ring busy state lost diagnostics");
+  }
+  wgpu_backend->release_headless_output(ring_available.buffer);
   ring_completion_count = 0;
   ring_completion_target = 0;
   if (!draw_wgpu_frame_and_wait(*wgpu_backend, snapshot, ring_hooks) ||
@@ -1075,7 +1140,7 @@ int main() {
           static_cast<uint64_t>(
               reinterpret_cast<uintptr_t>(ring_available.buffer))) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend target ring did not recycle stale completed buffer");
+    return fail("WgpuMetal backend target ring did not reuse released completed buffer");
   }
   wgpu_backend->mark_headless_output_displayed(ring_available.buffer);
   ring_completion_count = 0;

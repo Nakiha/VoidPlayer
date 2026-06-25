@@ -44,7 +44,7 @@ public:
   vr::PresentationBackendStats presentation_stats() const override;
   bool copy_last_frame_info(vr::PresentationBackendFrameInfo* out) const override;
   bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) override;
-  const char* last_error() const override { return last_error_.c_str(); }
+  const char* last_error() const override;
   bool draw_frame(const vr::RendererDrawSnapshot& snapshot,
                   const vr::PresentationBackendDrawHooks& hooks) override;
 

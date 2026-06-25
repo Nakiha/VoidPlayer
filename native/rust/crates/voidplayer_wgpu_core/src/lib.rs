@@ -447,6 +447,7 @@ pub struct WgpuMetalRenderer {
     params_buffer: Option<CachedStorageBuffer>,
     package_buffer: Option<CachedStorageBuffer>,
     overlay_buffer: Option<CachedStorageBuffer>,
+    overlay_layer_params_buffers: [Option<CachedStorageBuffer>; MAX_TRACKS],
     retained_storage: i32,
     retained_cv_y_textures: [Option<wgpu::Texture>; MAX_TRACKS],
     retained_cv_uv_textures: [Option<wgpu::Texture>; MAX_TRACKS],
@@ -818,6 +819,7 @@ impl WgpuMetalRenderer {
             params_buffer: None,
             package_buffer: None,
             overlay_buffer: None,
+            overlay_layer_params_buffers: std::array::from_fn(|_| None),
             retained_storage: STORAGE_NONE,
             retained_cv_y_textures: std::array::from_fn(|_| None),
             retained_cv_uv_textures: std::array::from_fn(|_| None),
@@ -921,8 +923,16 @@ fn render_package_to_metal_destination(
             0.0,
             &mut renderer.params_scratch,
         );
+        dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
+        write_source_bgra_atlas(
+            &renderer.device,
+            &renderer.queue,
+            &mut renderer.source_texture,
+            output.width,
+            output.height,
+            &renderer.source_bgra_scratch,
+        )?;
     } else {
-        blank_bgra_atlas_for_wgsl(package, &mut renderer.source_bgra_scratch)?;
         package_params(
             package,
             STORAGE_YUV,
@@ -933,8 +943,8 @@ fn render_package_to_metal_destination(
             0.0,
             &mut renderer.params_scratch,
         );
+        package_storage_bytes(source, &mut renderer.package_bytes_scratch);
     }
-    package_storage_bytes(source, &mut renderer.package_bytes_scratch);
     combined_overlay_rects(
         overlay_fill_rects,
         overlay_line_rects,
@@ -942,17 +952,10 @@ fn render_package_to_metal_destination(
         &mut renderer.overlay_rects_scratch,
     );
 
-    write_source_bgra_atlas(
-        &renderer.device,
-        &renderer.queue,
-        &mut renderer.source_texture,
-        output.width,
-        output.height,
-        &renderer.source_bgra_scratch,
-    )?;
     let submission = render_bgra_atlas_with_wgsl(
         renderer,
         &destination_texture,
+        package.storage,
         output.format,
         output.width,
         output.height,
@@ -1131,13 +1134,28 @@ fn render_retained_source_to_metal_destination(
         &mut renderer.overlay_rects_scratch,
     );
     match renderer.retained_storage {
-        STORAGE_BGRA | STORAGE_YUV => {
-            if renderer.source_texture.is_none() || renderer.package_buffer.is_none() {
-                return Err("wgpu-metal retained package source cache is incomplete");
+        STORAGE_BGRA => {
+            if renderer.source_texture.is_none() {
+                return Err("wgpu-metal retained BGRA source cache is incomplete");
             }
             render_bgra_atlas_with_wgsl(
                 renderer,
                 &destination_texture,
+                STORAGE_BGRA,
+                output.format,
+                output.width,
+                output.height,
+                overlay_generation,
+            )
+        }
+        STORAGE_YUV => {
+            if renderer.package_buffer.is_none() {
+                return Err("wgpu-metal retained YUV package source cache is incomplete");
+            }
+            render_bgra_atlas_with_wgsl(
+                renderer,
+                &destination_texture,
+                STORAGE_YUV,
                 output.format,
                 output.width,
                 output.height,
@@ -1236,27 +1254,16 @@ fn bgra_atlas_for_wgsl(
     Ok(())
 }
 
-fn blank_bgra_atlas_for_wgsl(
-    package: &PresentFramePackageInfo,
-    atlas: &mut Vec<u8>,
-) -> Result<(), &'static str> {
-    let track_bytes = (package.width as usize)
-        .checked_mul(package.height as usize)
-        .and_then(|pixels| pixels.checked_mul(4))
-        .ok_or("wgpu-metal blank BGRA atlas overflow")?;
-    let atlas_len = track_bytes
-        .checked_mul(MAX_TRACKS)
-        .ok_or("wgpu-metal blank BGRA atlas overflow")?;
-    atlas.clear();
-    atlas.resize(atlas_len, 0);
-    Ok(())
-}
-
 fn package_storage_bytes(source: &[u8], bytes: &mut Vec<u8>) {
     let padded_len = source.len().max(4).next_multiple_of(4);
     bytes.clear();
     bytes.resize(padded_len, 0);
     bytes[..source.len()].copy_from_slice(source);
+}
+
+fn dummy_package_storage_bytes(bytes: &mut Vec<u8>) {
+    bytes.clear();
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
 }
 
 fn combined_overlay_rects(
@@ -1490,11 +1497,12 @@ fn write_overlay_layer_track_params(base: &[u8], track: usize, out: &mut Vec<u8>
     }
 }
 
-fn prepare_overlay_layer_texture(
+fn encode_overlay_layer_texture(
     renderer: &mut WgpuMetalRenderer,
     width: u32,
     height: u32,
     overlay_generation: u64,
+    encoder: &mut wgpu::CommandEncoder,
 ) -> Result<(), &'static str> {
     let fill_count = renderer
         .params_scratch
@@ -1598,14 +1606,14 @@ fn prepare_overlay_layer_texture(
         write_cached_storage_buffer(
             &renderer.device,
             &renderer.queue,
-            &mut renderer.params_buffer,
+            &mut renderer.overlay_layer_params_buffers[track],
             &layer_params,
-            "voidplayer-wgpu-composite-params",
+            "voidplayer-wgpu-overlay-layer-params",
         );
         let params_buffer = &renderer
-            .params_buffer
+            .overlay_layer_params_buffers[track]
             .as_ref()
-            .ok_or("wgpu-metal params buffer cache is unavailable")?
+            .ok_or("wgpu-metal overlay layer params buffer cache is unavailable")?
             .buffer;
         let bind_group = renderer
             .device
@@ -1682,11 +1690,6 @@ fn prepare_overlay_layer_texture(
             base_array_layer: track as u32,
             array_layer_count: Some(1),
         });
-        let mut encoder = renderer
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("voidplayer-wgpu-overlay-layer-encoder"),
-            });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("voidplayer-wgpu-overlay-layer-pass"),
@@ -1709,7 +1712,6 @@ fn prepare_overlay_layer_texture(
             pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
             pass.draw(0..3, 0..1);
         }
-        renderer.queue.submit(std::iter::once(encoder.finish()));
     }
     if let Some(cache) = renderer.overlay_layer_texture.as_mut() {
         cache.generation = overlay_generation;
@@ -1723,6 +1725,7 @@ fn prepare_overlay_layer_texture(
 fn render_bgra_atlas_with_wgsl(
     renderer: &mut WgpuMetalRenderer,
     destination_texture: &wgpu::Texture,
+    source_storage: i32,
     output_format: wgpu::TextureFormat,
     width: u32,
     height: u32,
@@ -1742,7 +1745,12 @@ fn render_bgra_atlas_with_wgsl(
         overlay_rect_bytes(&renderer.overlay_rects_scratch),
         "voidplayer-wgpu-overlay-combined-rects",
     );
-    prepare_overlay_layer_texture(renderer, width, height, overlay_generation)?;
+    let mut encoder = renderer
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("voidplayer-wgpu-composite-encoder"),
+        });
+    encode_overlay_layer_texture(renderer, width, height, overlay_generation, &mut encoder)?;
     write_cached_storage_buffer(
         &renderer.device,
         &renderer.queue,
@@ -1751,11 +1759,6 @@ fn render_bgra_atlas_with_wgsl(
         "voidplayer-wgpu-composite-params",
     );
 
-    let source_texture = &renderer
-        .source_texture
-        .as_ref()
-        .ok_or("wgpu-metal source texture cache is unavailable")?
-        .texture;
     let params_buffer = &renderer
         .params_buffer
         .as_ref()
@@ -1776,7 +1779,18 @@ fn render_bgra_atlas_with_wgsl(
         .as_ref()
         .ok_or("wgpu-metal overlay layer texture is unavailable")?
         .texture;
-    let source_view = source_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let source_view = if source_storage == STORAGE_BGRA {
+        renderer
+            .source_texture
+            .as_ref()
+            .ok_or("wgpu-metal source texture cache is unavailable")?
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default())
+    } else {
+        renderer
+            .dummy_bgra_array_texture
+            .create_view(&wgpu::TextureViewDescriptor::default())
+    };
     let overlay_layer_view =
         overlay_layer_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let dummy_y_view = renderer
@@ -1851,11 +1865,6 @@ fn render_bgra_atlas_with_wgsl(
                 },
             ],
         });
-    let mut encoder = renderer
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("voidplayer-wgpu-composite-encoder"),
-        });
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("voidplayer-wgpu-composite-pass"),
@@ -1906,7 +1915,12 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
         overlay_rect_bytes(&renderer.overlay_rects_scratch),
         "voidplayer-wgpu-overlay-combined-rects",
     );
-    prepare_overlay_layer_texture(renderer, width, height, overlay_generation)?;
+    let mut encoder = renderer
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("voidplayer-wgpu-cvpixelbuffer-composite-encoder"),
+        });
+    encode_overlay_layer_texture(renderer, width, height, overlay_generation, &mut encoder)?;
     write_cached_storage_buffer(
         &renderer.device,
         &renderer.queue,
@@ -2017,11 +2031,6 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
                     resource: wgpu::BindingResource::TextureView(&overlay_layer_view),
                 },
             ],
-        });
-    let mut encoder = renderer
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("voidplayer-wgpu-cvpixelbuffer-composite-encoder"),
         });
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

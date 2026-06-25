@@ -370,8 +370,7 @@ fn overlay_position_from_px(px: vec2<f32>, layer_size: vec2<f32>) -> vec4<f32> {
   );
 }
 
-@vertex
-fn vs_overlay_fill_rect(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
+fn overlay_fill_rect_vertex(vertex_index: u32) -> OverlayFillVertexOut {
   var out: OverlayFillVertexOut;
   out.position = vec4<f32>(-2.0, -2.0, 0.0, 1.0);
   out.color = vec4<f32>(0.0);
@@ -468,18 +467,7 @@ fn overlay_line_rect_vertex(
   return out;
 }
 
-@vertex
-fn vs_overlay_line_rect_black(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
-  return overlay_line_rect_vertex(vertex_index, 2.0, vec4<f32>(0.0, 0.0, 0.0, 0.88));
-}
-
-@vertex
-fn vs_overlay_line_rect_white(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
-  return overlay_line_rect_vertex(vertex_index, 1.0, vec4<f32>(1.0, 1.0, 1.0, 0.97));
-}
-
-@vertex
-fn vs_overlay_motion_line(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
+fn overlay_motion_line_vertex(vertex_index: u32) -> OverlayFillVertexOut {
   var out: OverlayFillVertexOut;
   out.position = vec4<f32>(-2.0, -2.0, 0.0, 1.0);
   out.color = vec4<f32>(0.0);
@@ -523,6 +511,27 @@ fn vs_overlay_motion_line(@builtin(vertex_index) vertex_index: u32) -> OverlayFi
   out.position = overlay_position_from_px(clamp(px, vec2<f32>(0.0), layer_size), layer_size);
   out.color = color;
   return out;
+}
+
+@vertex
+fn vs_overlay_primitive(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
+  let fill_vertices = u32(max(0, params.overlay_counts.x)) * 6u;
+  if (vertex_index < fill_vertices) {
+    return overlay_fill_rect_vertex(vertex_index);
+  }
+
+  let after_fill = vertex_index - fill_vertices;
+  let line_vertices = u32(max(0, params.overlay_counts.y)) * 4u * 6u;
+  if (after_fill < line_vertices) {
+    return overlay_line_rect_vertex(after_fill, 2.0, vec4<f32>(0.0, 0.0, 0.0, 0.88));
+  }
+
+  let after_line_black = after_fill - line_vertices;
+  if (after_line_black < line_vertices) {
+    return overlay_line_rect_vertex(after_line_black, 1.0, vec4<f32>(1.0, 1.0, 1.0, 0.97));
+  }
+
+  return overlay_motion_line_vertex(after_line_black - line_vertices);
 }
 
 fn read_u8(byte_offset: u32) -> u32 {

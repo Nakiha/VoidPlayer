@@ -458,10 +458,7 @@ pub struct WgpuMetalRenderer {
     bind_group_layout: wgpu::BindGroupLayout,
     bgra8_pipeline: wgpu::RenderPipeline,
     rgba16_float_pipeline: wgpu::RenderPipeline,
-    overlay_fill_pipeline: wgpu::RenderPipeline,
-    overlay_line_black_pipeline: wgpu::RenderPipeline,
-    overlay_line_white_pipeline: wgpu::RenderPipeline,
-    overlay_motion_pipeline: wgpu::RenderPipeline,
+    overlay_primitive_pipeline: wgpu::RenderPipeline,
     _dummy_bgra_array_texture: wgpu::Texture,
     dummy_bgra_array_view: wgpu::TextureView,
     _dummy_y_texture: wgpu::Texture,
@@ -959,36 +956,12 @@ impl WgpuMetalRenderer {
                 operation: wgpu::BlendOperation::Add,
             },
         });
-        let overlay_fill_pipeline = create_overlay_primitive_pipeline(
+        let overlay_primitive_pipeline = create_overlay_primitive_pipeline(
             &device,
             &pipeline_layout,
             &shader,
-            "vs_overlay_fill_rect",
-            "voidplayer-wgpu-overlay-fill-layer-pipeline",
-            overlay_blend,
-        );
-        let overlay_line_black_pipeline = create_overlay_primitive_pipeline(
-            &device,
-            &pipeline_layout,
-            &shader,
-            "vs_overlay_line_rect_black",
-            "voidplayer-wgpu-overlay-line-black-layer-pipeline",
-            overlay_blend,
-        );
-        let overlay_line_white_pipeline = create_overlay_primitive_pipeline(
-            &device,
-            &pipeline_layout,
-            &shader,
-            "vs_overlay_line_rect_white",
-            "voidplayer-wgpu-overlay-line-white-layer-pipeline",
-            overlay_blend,
-        );
-        let overlay_motion_pipeline = create_overlay_primitive_pipeline(
-            &device,
-            &pipeline_layout,
-            &shader,
-            "vs_overlay_motion_line",
-            "voidplayer-wgpu-overlay-motion-layer-pipeline",
+            "vs_overlay_primitive",
+            "voidplayer-wgpu-overlay-primitive-layer-pipeline",
             overlay_blend,
         );
         let dummy_bgra_array_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -1066,10 +1039,7 @@ impl WgpuMetalRenderer {
             bind_group_layout,
             bgra8_pipeline,
             rgba16_float_pipeline,
-            overlay_fill_pipeline,
-            overlay_line_black_pipeline,
-            overlay_line_white_pipeline,
-            overlay_motion_pipeline,
+            overlay_primitive_pipeline,
             _dummy_bgra_array_texture: dummy_bgra_array_texture,
             dummy_bgra_array_view,
             _dummy_y_texture: dummy_y_texture,
@@ -2469,32 +2439,15 @@ fn encode_overlay_layer_texture(
             });
             pass.set_bind_group(0, bind_group, &[]);
             pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
-            if fill_count > 0 {
-                let fill_vertices = fill_count
-                    .checked_mul(6)
-                    .and_then(|count| u32::try_from(count).ok())
-                    .ok_or("wgpu-metal overlay fill vertex count is too large")?;
-                pass.set_pipeline(&renderer.overlay_fill_pipeline);
-                pass.draw(0..fill_vertices, 0..1);
-            }
-            if line_count > 0 {
-                let line_vertices = line_count
-                    .checked_mul(4)
-                    .and_then(|count| count.checked_mul(6))
-                    .and_then(|count| u32::try_from(count).ok())
-                    .ok_or("wgpu-metal overlay line vertex count is too large")?;
-                pass.set_pipeline(&renderer.overlay_line_black_pipeline);
-                pass.draw(0..line_vertices, 0..1);
-                pass.set_pipeline(&renderer.overlay_line_white_pipeline);
-                pass.draw(0..line_vertices, 0..1);
-            }
-            if motion_count > 0 {
-                let motion_vertices = motion_count
-                    .checked_mul(6)
-                    .and_then(|count| u32::try_from(count).ok())
-                    .ok_or("wgpu-metal overlay motion vertex count is too large")?;
-                pass.set_pipeline(&renderer.overlay_motion_pipeline);
-                pass.draw(0..motion_vertices, 0..1);
+            let primitive_vertices = fill_count
+                .checked_mul(6)
+                .and_then(|count| count.checked_add(line_count.checked_mul(4 * 6 * 2)?))
+                .and_then(|count| count.checked_add(motion_count.checked_mul(6)?))
+                .and_then(|count| u32::try_from(count).ok())
+                .ok_or("wgpu-metal overlay primitive vertex count is too large")?;
+            if primitive_vertices > 0 {
+                pass.set_pipeline(&renderer.overlay_primitive_pipeline);
+                pass.draw(0..primitive_vertices, 0..1);
             }
         }
     }

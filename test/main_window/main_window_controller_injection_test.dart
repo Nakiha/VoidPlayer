@@ -549,6 +549,87 @@ void main() {
   });
 
   test(
+    'quick mark jump focuses visible mark and supersedes pending seek',
+    () async {
+      const channel = MethodChannel('video_renderer');
+      final seekCalls = <Map<dynamic, dynamic>>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            switch (call.method) {
+              case 'createPlayer':
+                return {
+                  'textureId': 1,
+                  'tracks': const <Map<String, Object?>>[],
+                };
+              case 'seek':
+                seekCalls.add(
+                  Map<dynamic, dynamic>.from(call.arguments as Map),
+                );
+                return null;
+              default:
+                return null;
+            }
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+      );
+      addTearDown(controller.dispose);
+      await controller.player.createPlayer(const ['/tmp/video.mp4']);
+      controller.trackManager.addTrack(
+        const TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: '/tmp/video.mp4',
+          width: 320,
+          height: 180,
+        ),
+      );
+      controller.viewActions.viewport.onResize(320, 180, 1.0);
+      controller.stateStore
+        ..setQuickMarks(const [
+          QuickMark(
+            id: 1,
+            anchor: QuickMarkAnchor(fileId: 1, ptsUs: 1000, dtsUs: 1000),
+            sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+          ),
+        ])
+        ..setPolledPlaybackState(
+          1000,
+          10000,
+          false,
+          presentedFrameAnchors: const {
+            1: QuickMarkAnchor(fileId: 1, ptsUs: 1000, dtsUs: 1000),
+          },
+        )
+        ..setPendingSeek(5000, DateTime.now());
+
+      final previousLayout = controller.stateStore.value.layout;
+
+      controller.viewActions.marks.onJumpToMark(1);
+      await Future<void>.delayed(Duration.zero);
+
+      final nextLayout = controller.stateStore.value.layout;
+      expect(controller.viewModel.viewport.selectedQuickMarkId, 1);
+      expect(nextLayout.zoomRatio, isNot(previousLayout.zoomRatio));
+      expect(seekCalls, hasLength(1));
+      expect(seekCalls.single['ptsUs'], 1000);
+      expect(seekCalls.single['requestId'], isA<int>());
+    },
+  );
+
+  test(
     'quick mark repository loads marks for runtime track file ids',
     () async {
       final repository = _FakeQuickMarkRepository(

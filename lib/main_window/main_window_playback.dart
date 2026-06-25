@@ -303,10 +303,13 @@ class MainWindowPlaybackCoordinator {
     scheduleLoopBoundaryTimer();
   }
 
-  void seekTo(int ptsUs) {
+  void seekTo(int ptsUs, {bool preservePresentedFrameAnchors = false}) {
     if (_disposed) return;
     unawaited(
-      _seekToAsync(ptsUs).catchError((Object error, StackTrace stack) {
+      _seekToAsync(
+        ptsUs,
+        preservePresentedFrameAnchors: preservePresentedFrameAnchors,
+      ).catchError((Object error, StackTrace stack) {
         log.warning('seek failed: targetPtsUs=$ptsUs', error, stack);
       }),
     );
@@ -317,7 +320,10 @@ class MainWindowPlaybackCoordinator {
     return _seekToAsync(ptsUs);
   }
 
-  Future<void> _seekToAsync(int ptsUs) async {
+  Future<void> _seekToAsync(
+    int ptsUs, {
+    bool preservePresentedFrameAnchors = false,
+  }) async {
     if (_disposed) return;
     final targetPtsUs = _clampSeekTargetUs(ptsUs);
     final seekSerial = ++_seekSerial;
@@ -327,7 +333,12 @@ class MainWindowPlaybackCoordinator {
     final shouldResume =
         behavior == SeekAfterJumpBehavior.keepPreviousState &&
         (wasPlaying || _resumeAfterSeek);
-    setSeekPreview(targetPtsUs);
+    stateStore.setSeekPreview(
+      targetPtsUs,
+      presentedFrameAnchors: preservePresentedFrameAnchors
+          ? _state.presentedFrameAnchors
+          : const {},
+    );
     _setPlaybackClockAnchor(
       _PlaybackClockAnchor(
         ptsUs: targetPtsUs,

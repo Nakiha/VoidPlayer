@@ -250,6 +250,13 @@ class MainWindowQuickMarkCoordinator {
     if (isVisible(mark)) {
       _pendingJumpMarkId = null;
       stateStore.setSelectedQuickMarkId(id);
+      layoutCoordinator.focusQuickMark(mark);
+      if (_state.pendingSeekUs != null) {
+        playbackCoordinator.seekTo(
+          mark.anchor.ptsUs,
+          preservePresentedFrameAnchors: true,
+        );
+      }
       return;
     }
     _pendingJumpMarkId = id;

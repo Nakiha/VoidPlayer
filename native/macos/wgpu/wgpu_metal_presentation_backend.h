@@ -73,6 +73,10 @@ private:
   };
   struct TargetSlot {
     void* pixel_buffer = nullptr;
+    void* cached_texture_ref = nullptr;
+    int32_t cached_width = 0;
+    int32_t cached_height = 0;
+    uint64_t cached_pixel_format = 0;
     TargetState state = TargetState::Available;
   };
   struct SourceMetricsResult {
@@ -115,6 +119,13 @@ private:
                          bool source_upload = true);
   bool target_installed_locked() const;
   void* acquire_draw_target_locked();
+  void release_target_texture_cache_locked();
+  void release_target_texture_cache_for_slot(TargetSlot& slot);
+  void* cached_target_texture_ref(void* pixel_buffer,
+                                  uint64_t metal_pixel_format,
+                                  int32_t width,
+                                  int32_t height,
+                                  std::string& error);
   void complete_ring_draw_target(uint64_t target_pixel_buffer_address,
                                  bool success);
   void* capture_target_locked() const;
@@ -137,6 +148,10 @@ private:
   void* texture_cache_ = nullptr;
   VPWgpuMetalRenderer* wgpu_renderer_ = nullptr;
   void* draw_target_pixel_buffer_ = nullptr;
+  void* single_target_texture_ref_ = nullptr;
+  int32_t single_target_texture_width_ = 0;
+  int32_t single_target_texture_height_ = 0;
+  uint64_t single_target_texture_pixel_format_ = 0;
   int width_ = 0;
   int height_ = 0;
   int draw_target_width_ = 0;

@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <vector>
@@ -39,6 +40,15 @@ void hash_combine(uint64_t& seed, uint64_t value) {
 
 bool wgpu_ffi_available() {
   return VPWgpuFfiVersion() >= VP_WGPU_FFI_ABI_VERSION;
+}
+
+bool wgpu_profiler_enabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("VOIDPLAYER_MACOS_WGPU_PROFILE");
+    return value && value[0] != '\0' && std::strcmp(value, "0") != 0 &&
+           std::strcmp(value, "false") != 0;
+  }();
+  return enabled;
 }
 
 uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
@@ -430,6 +440,7 @@ void WgpuMetalPresentationBackend::shutdown() {
   }
   {
     std::lock_guard<std::mutex> lock(mutex_);
+    release_target_texture_cache_locked();
     draw_target_pixel_buffer_ = nullptr;
     target_ring_.clear();
     target_ring_enabled_ = false;
@@ -478,6 +489,95 @@ bool WgpuMetalPresentationBackend::available_locked() const {
   return metal_device_ && texture_cache_ && wgpu_renderer_ && wgpu_ffi_available();
 }
 
+void WgpuMetalPresentationBackend::release_target_texture_cache_for_slot(
+    TargetSlot& slot) {
+  if (slot.cached_texture_ref) {
+    CFRelease(slot.cached_texture_ref);
+    slot.cached_texture_ref = nullptr;
+  }
+  slot.cached_width = 0;
+  slot.cached_height = 0;
+  slot.cached_pixel_format = 0;
+}
+
+void WgpuMetalPresentationBackend::release_target_texture_cache_locked() {
+  if (single_target_texture_ref_) {
+    CFRelease(single_target_texture_ref_);
+    single_target_texture_ref_ = nullptr;
+  }
+  single_target_texture_width_ = 0;
+  single_target_texture_height_ = 0;
+  single_target_texture_pixel_format_ = 0;
+  for (auto& slot : target_ring_) {
+    release_target_texture_cache_for_slot(slot);
+  }
+}
+
+void* WgpuMetalPresentationBackend::cached_target_texture_ref(
+    void* pixel_buffer,
+    uint64_t metal_pixel_format,
+    int32_t width,
+    int32_t height,
+    std::string& error) {
+  if (!pixel_buffer || !texture_cache_ || width <= 0 || height <= 0) {
+    error = "wgpu-metal target texture cache arguments are invalid";
+    return nullptr;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  void** texture_ref_slot = &single_target_texture_ref_;
+  int32_t* cached_width = &single_target_texture_width_;
+  int32_t* cached_height = &single_target_texture_height_;
+  uint64_t* cached_pixel_format = &single_target_texture_pixel_format_;
+  if (target_ring_enabled_) {
+    texture_ref_slot = nullptr;
+    for (auto& slot : target_ring_) {
+      if (slot.pixel_buffer != pixel_buffer) {
+        continue;
+      }
+      texture_ref_slot = &slot.cached_texture_ref;
+      cached_width = &slot.cached_width;
+      cached_height = &slot.cached_height;
+      cached_pixel_format = &slot.cached_pixel_format;
+      break;
+    }
+    if (!texture_ref_slot) {
+      error = "wgpu-metal target texture cache slot is unavailable";
+      return nullptr;
+    }
+  }
+  if (*texture_ref_slot &&
+      (*cached_width != width || *cached_height != height ||
+       *cached_pixel_format != metal_pixel_format)) {
+    CFRelease(*texture_ref_slot);
+    *texture_ref_slot = nullptr;
+  }
+  if (!*texture_ref_slot) {
+    CVMetalTextureRef texture_ref = nullptr;
+    const CVReturn status = CVMetalTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault,
+        static_cast<CVMetalTextureCacheRef>(texture_cache_),
+        as_pixel_buffer(pixel_buffer),
+        nullptr,
+        static_cast<MTLPixelFormat>(metal_pixel_format),
+        width,
+        height,
+        0,
+        &texture_ref);
+    if (status != kCVReturnSuccess || !texture_ref) {
+      if (texture_ref) {
+        CFRelease(texture_ref);
+      }
+      error = "wgpu-metal failed to wrap target CVPixelBuffer";
+      return nullptr;
+    }
+    *texture_ref_slot = texture_ref;
+    *cached_width = width;
+    *cached_height = height;
+    *cached_pixel_format = metal_pixel_format;
+  }
+  return const_cast<void*>(CFRetain(*texture_ref_slot));
+}
+
 bool WgpuMetalPresentationBackend::update_headless_output(void* output,
                                                           int width,
                                                           int height,
@@ -487,6 +587,7 @@ bool WgpuMetalPresentationBackend::update_headless_output(void* output,
     return false;
   }
   std::lock_guard<std::mutex> lock(mutex_);
+  release_target_texture_cache_locked();
   target_ring_.clear();
   target_ring_enabled_ = false;
   displayed_target_address_ = 0;
@@ -530,6 +631,7 @@ bool WgpuMetalPresentationBackend::update_headless_output_ring(
     return false;
   }
   std::lock_guard<std::mutex> lock(mutex_);
+  release_target_texture_cache_locked();
   target_ring_.clear();
   target_ring_.reserve(pixel_buffer_count);
   displayed_target_address_ = pointer_bits(displayed_pixel_buffer);
@@ -652,6 +754,7 @@ void WgpuMetalPresentationBackend::release_headless_output(void* pixel_buffer) {
 
 void WgpuMetalPresentationBackend::clear_headless_output() {
   std::lock_guard<std::mutex> lock(mutex_);
+  release_target_texture_cache_locked();
   draw_target_pixel_buffer_ = nullptr;
   target_ring_.clear();
   target_ring_enabled_ = false;
@@ -718,6 +821,10 @@ vr::PresentationBackendStats WgpuMetalPresentationBackend::presentation_stats() 
 vr::PresentationBackendDiagnostics WgpuMetalPresentationBackend::diagnostics() const {
   vr::PresentationBackendDiagnostics diagnostics;
   std::lock_guard<std::mutex> lock(mutex_);
+  VPWgpuMetalProfilerSnapshot profiler = {};
+  if (wgpu_renderer_) {
+    (void)VPWgpuMetalRendererGetProfilerSnapshot(wgpu_renderer_, &profiler);
+  }
   diagnostics.backend = "wgpu-metal";
   diagnostics.target_format = "CVPixelBuffer/MTLTexture";
   diagnostics.render_target_format = draw_target_render_format_;
@@ -736,8 +843,14 @@ vr::PresentationBackendDiagnostics WgpuMetalPresentationBackend::diagnostics() c
       ? static_cast<int32_t>(target_ring_.size())
       : (draw_target_pixel_buffer_ ? 1 : 0);
   diagnostics.source_cache_active = retained_source_available_;
-  diagnostics.source_cache_texture_count = retained_source_available_ ? 1 : 0;
-  diagnostics.source_cache_publish_count = video_source_update_count_;
+  diagnostics.source_cache_texture_count =
+      static_cast<int32_t>(profiler.imported_texture_cache_size);
+  diagnostics.source_cache_generation =
+      profiler.destination_import_reuse_count + profiler.source_import_reuse_count;
+  diagnostics.source_cache_publish_count =
+      profiler.destination_import_count + profiler.source_import_count;
+  diagnostics.source_cache_backpressure_count =
+      profiler.imported_texture_cache_eviction_count;
   diagnostics.headless = headless_;
   return diagnostics;
 }
@@ -967,20 +1080,18 @@ bool WgpuMetalPresentationBackend::draw_frame(
                                              draw_target_width_,
                                              draw_target_height_,
                                              &retained_decision);
-    CVMetalTextureRef destination_ref = nullptr;
-    const CVReturn texture_status = CVMetalTextureCacheCreateTextureFromImage(
-        kCFAllocatorDefault,
-        static_cast<CVMetalTextureCacheRef>(texture_cache_),
-        as_pixel_buffer(target),
-        nullptr,
-        output_target.metal_pixel_format,
-        draw_target_width_,
-        draw_target_height_,
-        0,
-        &destination_ref);
-    if (texture_status != kCVReturnSuccess || !destination_ref) {
-      return fail_after_target_acquire(
-          "wgpu-metal failed to wrap target CVPixelBuffer");
+    std::string destination_error;
+    CVMetalTextureRef destination_ref =
+        static_cast<CVMetalTextureRef>(cached_target_texture_ref(
+            target,
+            static_cast<uint64_t>(output_target.metal_pixel_format),
+            draw_target_width_,
+            draw_target_height_,
+            destination_error));
+    if (!destination_ref) {
+      return fail_after_target_acquire(destination_error.empty()
+                                          ? "wgpu-metal failed to wrap target CVPixelBuffer"
+                                          : destination_error);
     }
     id<MTLTexture> destination_texture = CVMetalTextureGetTexture(destination_ref);
     char ffi_error[256] = {};
@@ -1080,20 +1191,18 @@ bool WgpuMetalPresentationBackend::draw_frame(
           (__bridge void*)source_uv_refs[slot].texture();
     }
 
-    CVMetalTextureRef destination_ref = nullptr;
-    const CVReturn texture_status = CVMetalTextureCacheCreateTextureFromImage(
-        kCFAllocatorDefault,
-        static_cast<CVMetalTextureCacheRef>(texture_cache_),
-        as_pixel_buffer(target),
-        nullptr,
-        output_target.metal_pixel_format,
-        draw_target_width_,
-        draw_target_height_,
-        0,
-        &destination_ref);
-    if (texture_status != kCVReturnSuccess || !destination_ref) {
-      return fail_after_target_acquire(
-          "wgpu-metal failed to wrap target CVPixelBuffer");
+    std::string destination_error;
+    CVMetalTextureRef destination_ref =
+        static_cast<CVMetalTextureRef>(cached_target_texture_ref(
+            target,
+            static_cast<uint64_t>(output_target.metal_pixel_format),
+            draw_target_width_,
+            draw_target_height_,
+            destination_error));
+    if (!destination_ref) {
+      return fail_after_target_acquire(destination_error.empty()
+                                          ? "wgpu-metal failed to wrap target CVPixelBuffer"
+                                          : destination_error);
     }
     id<MTLTexture> destination_texture = CVMetalTextureGetTexture(destination_ref);
     char ffi_error[256] = {};
@@ -1201,20 +1310,18 @@ bool WgpuMetalPresentationBackend::draw_frame(
     package.storage = VPMacOSNativePresentPackageStorageBGRA;
   }
   const uint64_t package_copy_us = elapsed_us_since(package_copy_start);
-  CVMetalTextureRef destination_ref = nullptr;
-  const CVReturn texture_status = CVMetalTextureCacheCreateTextureFromImage(
-      kCFAllocatorDefault,
-      static_cast<CVMetalTextureCacheRef>(texture_cache_),
-      as_pixel_buffer(target),
-      nullptr,
-      output_target.metal_pixel_format,
-      draw_target_width_,
-      draw_target_height_,
-      0,
-      &destination_ref);
-  if (texture_status != kCVReturnSuccess || !destination_ref) {
-    return fail_after_target_acquire(
-        "wgpu-metal failed to wrap target CVPixelBuffer");
+  std::string destination_error;
+  CVMetalTextureRef destination_ref =
+      static_cast<CVMetalTextureRef>(cached_target_texture_ref(
+          target,
+          static_cast<uint64_t>(output_target.metal_pixel_format),
+          draw_target_width_,
+          draw_target_height_,
+          destination_error));
+  if (!destination_ref) {
+    return fail_after_target_acquire(destination_error.empty()
+                                        ? "wgpu-metal failed to wrap target CVPixelBuffer"
+                                        : destination_error);
   }
   id<MTLTexture> destination_texture = CVMetalTextureGetTexture(destination_ref);
   char ffi_error[256] = {};
@@ -1455,6 +1562,33 @@ void WgpuMetalPresentationBackend::complete_async_draw(
       total_us > pending->package_copy_us ? total_us - pending->package_copy_us : total_us;
   record_wgpu_command_result(gpu_wait_us, success);
   record_present_package_timing(pending->package_copy_us, gpu_wait_us, total_us);
+  if (wgpu_profiler_enabled() && wgpu_renderer_) {
+    VPWgpuMetalProfilerSnapshot profiler = {};
+    if (VPWgpuMetalRendererGetProfilerSnapshot(wgpu_renderer_, &profiler) == 0) {
+      spdlog::info(
+          "[WgpuMetalProfile] total_us={} gpu_wait_us={} success={} "
+          "dst_import={}/{} src_import={}/{} cache={} evict={} "
+          "bind_groups(final={},overlay={}) overlay_layer(rebuild={},reuse={}) "
+          "buffer_writes(package={},params={},overlay={}) submits={}",
+          total_us,
+          gpu_wait_us,
+          success,
+          profiler.destination_import_count,
+          profiler.destination_import_reuse_count,
+          profiler.source_import_count,
+          profiler.source_import_reuse_count,
+          profiler.imported_texture_cache_size,
+          profiler.imported_texture_cache_eviction_count,
+          profiler.final_bind_group_create_count,
+          profiler.overlay_bind_group_create_count,
+          profiler.overlay_layer_rebuild_count,
+          profiler.overlay_layer_reuse_count,
+          profiler.package_buffer_write_count,
+          profiler.params_buffer_write_count,
+          profiler.overlay_buffer_write_count,
+          profiler.submit_count);
+    }
+  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     overlay_last_expected_ = pending->overlay_expected;

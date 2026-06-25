@@ -13,7 +13,7 @@ extern "C" {
 typedef struct VPWgpuMetalRenderer VPWgpuMetalRenderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 6,
+  VP_WGPU_FFI_ABI_VERSION = 7,
 };
 
 enum {
@@ -35,6 +35,23 @@ typedef struct VPWgpuMetalRendererInfo {
   uint32_t device_id;
   uint32_t supports_texture_format_16bit_norm;
 } VPWgpuMetalRendererInfo;
+
+typedef struct VPWgpuMetalProfilerSnapshot {
+  uint64_t destination_import_count;
+  uint64_t destination_import_reuse_count;
+  uint64_t source_import_count;
+  uint64_t source_import_reuse_count;
+  uint64_t imported_texture_cache_size;
+  uint64_t imported_texture_cache_eviction_count;
+  uint64_t final_bind_group_create_count;
+  uint64_t overlay_bind_group_create_count;
+  uint64_t overlay_layer_rebuild_count;
+  uint64_t overlay_layer_reuse_count;
+  uint64_t package_buffer_write_count;
+  uint64_t params_buffer_write_count;
+  uint64_t overlay_buffer_write_count;
+  uint64_t submit_count;
+} VPWgpuMetalProfilerSnapshot;
 
 typedef struct VPWgpuMetalRenderRequest {
   void* destination_mtl_texture;
@@ -107,6 +124,9 @@ VPWgpuMetalRenderer* VPWgpuMetalRendererCreate(char* error, size_t error_size);
 void VPWgpuMetalRendererDestroy(VPWgpuMetalRenderer* renderer);
 int VPWgpuMetalRendererGetInfo(VPWgpuMetalRenderer* renderer,
                                VPWgpuMetalRendererInfo* info);
+int VPWgpuMetalRendererGetProfilerSnapshot(
+    VPWgpuMetalRenderer* renderer,
+    VPWgpuMetalProfilerSnapshot* snapshot);
 int VPWgpuMetalRendererRenderPackage(VPWgpuMetalRenderer* renderer,
                                      const VPWgpuMetalRenderRequest* request);
 int VPWgpuMetalRendererRenderPackageAsync(

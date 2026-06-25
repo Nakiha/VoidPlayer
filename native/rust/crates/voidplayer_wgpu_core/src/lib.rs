@@ -12,12 +12,14 @@ use overlay::OverlayRect;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 
-pub const ABI_VERSION: i32 = 6;
+pub const ABI_VERSION: i32 = 7;
 const MAX_TRACKS: usize = 4;
 const STORAGE_NONE: i32 = 0;
 const STORAGE_YUV: i32 = 1;
 const STORAGE_BGRA: i32 = 2;
 const STORAGE_CV_PIXEL_BUFFER: i32 = 3;
+const YUV_FORMAT_P010: i32 = 2;
+const YUV_FORMAT_YUV420P: i32 = 3;
 const OUTPUT_FORMAT_BGRA8_UNORM: i32 = 1;
 const OUTPUT_FORMAT_RGBA16_FLOAT: i32 = 2;
 const OUTPUT_COLOR_MODE_SDR: i32 = 1;
@@ -84,8 +86,26 @@ pub struct WgpuMetalRetainedCompositeRequest {
     pub error_size: usize,
 }
 
-pub type WgpuMetalAsyncCompletionCallback =
-    extern "C" fn(*mut core::ffi::c_void, i32);
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct WgpuMetalProfilerSnapshot {
+    pub destination_import_count: u64,
+    pub destination_import_reuse_count: u64,
+    pub source_import_count: u64,
+    pub source_import_reuse_count: u64,
+    pub imported_texture_cache_size: u64,
+    pub imported_texture_cache_eviction_count: u64,
+    pub final_bind_group_create_count: u64,
+    pub overlay_bind_group_create_count: u64,
+    pub overlay_layer_rebuild_count: u64,
+    pub overlay_layer_reuse_count: u64,
+    pub package_buffer_write_count: u64,
+    pub params_buffer_write_count: u64,
+    pub overlay_buffer_write_count: u64,
+    pub submit_count: u64,
+}
+
+pub type WgpuMetalAsyncCompletionCallback = extern "C" fn(*mut core::ffi::c_void, i32);
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -449,11 +469,24 @@ pub struct WgpuMetalRenderer {
     source_texture: Option<CachedSourceTexture>,
     params_buffer: Option<CachedStorageBuffer>,
     package_buffer: Option<CachedStorageBuffer>,
+    package_buffer_dirty: bool,
     overlay_buffer: Option<CachedStorageBuffer>,
     overlay_layer_params_buffers: [Option<CachedStorageBuffer>; MAX_TRACKS],
+    overlay_layer_views: [Option<CachedOverlayLayerView>; MAX_TRACKS],
+    overlay_layer_bind_groups: [Option<CachedOverlayLayerBindGroup>; MAX_TRACKS],
+    cpu_yuv_y_textures: [Option<CachedCpuYuvTexture>; MAX_TRACKS],
+    cpu_yuv_uv_textures: [Option<CachedCpuYuvTexture>; MAX_TRACKS],
+    cpu_yuv_uv_scratch: [Vec<u8>; MAX_TRACKS],
     retained_storage: i32,
-    retained_cv_y_textures: [Option<wgpu::Texture>; MAX_TRACKS],
-    retained_cv_uv_textures: [Option<wgpu::Texture>; MAX_TRACKS],
+    retained_cv_y_textures: [Option<wgpu::TextureView>; MAX_TRACKS],
+    retained_cv_uv_textures: [Option<wgpu::TextureView>; MAX_TRACKS],
+    imported_textures: Vec<CachedImportedTexture>,
+    import_clock: u64,
+    resource_generation: u64,
+    retained_source_generation: u64,
+    generic_bind_group: Option<CachedBindGroup>,
+    cv_bind_group: Option<CachedCvBindGroup>,
+    profiler: WgpuMetalProfilerSnapshot,
     source_bgra_scratch: Vec<u8>,
     params_scratch: Vec<u8>,
     package_bytes_scratch: Vec<u8>,
@@ -470,6 +503,89 @@ impl WgpuMetalRenderer {
     pub fn supports_texture_format_16bit_norm(&self) -> bool {
         self.required_features
             .contains(wgpu::Features::TEXTURE_FORMAT_16BIT_NORM)
+    }
+
+    pub fn profiler_snapshot(&self) -> WgpuMetalProfilerSnapshot {
+        let mut snapshot = self.profiler;
+        snapshot.imported_texture_cache_size = self.imported_textures.len() as u64;
+        snapshot
+    }
+
+    fn import_metal_texture_2d_cached(
+        &mut self,
+        metal_texture: *mut core::ffi::c_void,
+        format: wgpu::TextureFormat,
+        width: u32,
+        height: u32,
+        usage: wgpu::TextureUsages,
+        label: &'static str,
+        texture_class: ImportedTextureClass,
+    ) -> Result<(wgpu::Texture, wgpu::TextureView), &'static str> {
+        if metal_texture.is_null() || width == 0 || height == 0 {
+            return Err("wgpu-metal texture import arguments are invalid");
+        }
+        let key = ImportedTextureKey {
+            metal_texture: metal_texture as usize,
+            format: texture_format_key(format)?,
+            width,
+            height,
+            usage_bits: usage.bits(),
+        };
+        self.import_clock = self.import_clock.wrapping_add(1).max(1);
+        if let Some(entry) = self
+            .imported_textures
+            .iter_mut()
+            .find(|entry| entry.key == key)
+        {
+            entry.last_used = self.import_clock;
+            match texture_class {
+                ImportedTextureClass::Destination => {
+                    self.profiler.destination_import_reuse_count += 1;
+                }
+                ImportedTextureClass::Source => {
+                    self.profiler.source_import_reuse_count += 1;
+                }
+            }
+            return Ok((entry.texture.clone(), entry.view.clone()));
+        }
+
+        let texture = import_metal_texture_2d_raw(
+            &self.device,
+            metal_texture,
+            format,
+            width,
+            height,
+            usage,
+            label,
+        )?;
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        match texture_class {
+            ImportedTextureClass::Destination => {
+                self.profiler.destination_import_count += 1;
+            }
+            ImportedTextureClass::Source => {
+                self.profiler.source_import_count += 1;
+            }
+        }
+        self.imported_textures.push(CachedImportedTexture {
+            key,
+            texture: texture.clone(),
+            view: view.clone(),
+            last_used: self.import_clock,
+        });
+        const MAX_IMPORTED_TEXTURES: usize = 96;
+        if self.imported_textures.len() > MAX_IMPORTED_TEXTURES {
+            if let Some((evict_index, _)) = self
+                .imported_textures
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, entry)| entry.last_used)
+            {
+                self.imported_textures.swap_remove(evict_index);
+                self.profiler.imported_texture_cache_eviction_count += 1;
+            }
+        }
+        Ok((texture, view))
     }
 
     fn submit_completion(
@@ -506,12 +622,14 @@ struct CachedSourceTexture {
     width: u32,
     height: u32,
     layers: u32,
+    generation: u64,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
 }
 
 struct CachedStorageBuffer {
     capacity: u64,
+    generation: u64,
     buffer: wgpu::Buffer,
 }
 
@@ -519,12 +637,84 @@ struct CachedOverlayLayerTexture {
     width: u32,
     height: u32,
     layers: u32,
-    generation: u64,
+    overlay_generation: u64,
     fill_count: usize,
     line_count: usize,
     motion_count: usize,
+    resource_generation: u64,
     texture: wgpu::Texture,
     view: wgpu::TextureView,
+}
+
+struct CachedOverlayLayerView {
+    texture_generation: u64,
+    view: wgpu::TextureView,
+}
+
+struct CachedOverlayLayerBindGroup {
+    params_generation: u64,
+    package_generation: u64,
+    overlay_generation: u64,
+    bind_group: wgpu::BindGroup,
+}
+
+struct CachedCpuYuvTexture {
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct BindGroupKey {
+    source_storage: i32,
+    params_generation: u64,
+    package_generation: u64,
+    overlay_generation: u64,
+    source_generation: u64,
+    overlay_layer_generation: u64,
+}
+
+struct CachedBindGroup {
+    key: BindGroupKey,
+    bind_group: wgpu::BindGroup,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct CvBindGroupKey {
+    params_generation: u64,
+    package_generation: u64,
+    overlay_generation: u64,
+    overlay_layer_generation: u64,
+    source_generation: u64,
+}
+
+struct CachedCvBindGroup {
+    key: CvBindGroupKey,
+    bind_group: wgpu::BindGroup,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ImportedTextureClass {
+    Destination,
+    Source,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ImportedTextureKey {
+    metal_texture: usize,
+    format: u8,
+    width: u32,
+    height: u32,
+    usage_bits: u32,
+}
+
+struct CachedImportedTexture {
+    key: ImportedTextureKey,
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    last_used: u64,
 }
 
 fn cv_plane_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
@@ -830,11 +1020,24 @@ impl WgpuMetalRenderer {
             source_texture: None,
             params_buffer: None,
             package_buffer: None,
+            package_buffer_dirty: false,
             overlay_buffer: None,
             overlay_layer_params_buffers: std::array::from_fn(|_| None),
+            overlay_layer_views: std::array::from_fn(|_| None),
+            overlay_layer_bind_groups: std::array::from_fn(|_| None),
+            cpu_yuv_y_textures: std::array::from_fn(|_| None),
+            cpu_yuv_uv_textures: std::array::from_fn(|_| None),
+            cpu_yuv_uv_scratch: std::array::from_fn(|_| Vec::new()),
             retained_storage: STORAGE_NONE,
             retained_cv_y_textures: std::array::from_fn(|_| None),
             retained_cv_uv_textures: std::array::from_fn(|_| None),
+            imported_textures: Vec::new(),
+            import_clock: 0,
+            resource_generation: 0,
+            retained_source_generation: 0,
+            generic_bind_group: None,
+            cv_bind_group: None,
+            profiler: WgpuMetalProfilerSnapshot::default(),
             source_bgra_scratch: Vec::new(),
             params_scratch: Vec::new(),
             package_bytes_scratch: Vec::new(),
@@ -858,7 +1061,19 @@ fn overlay_rects_from_raw<'a>(
     Ok(unsafe { core::slice::from_raw_parts(ptr, count) })
 }
 
-fn import_metal_texture_2d(
+fn texture_format_key(format: wgpu::TextureFormat) -> Result<u8, &'static str> {
+    match format {
+        wgpu::TextureFormat::Bgra8Unorm => Ok(1),
+        wgpu::TextureFormat::Rgba16Float => Ok(2),
+        wgpu::TextureFormat::R8Unorm => Ok(3),
+        wgpu::TextureFormat::Rg8Unorm => Ok(4),
+        wgpu::TextureFormat::R16Unorm => Ok(5),
+        wgpu::TextureFormat::Rg16Unorm => Ok(6),
+        _ => Err("wgpu-metal texture import format is unsupported"),
+    }
+}
+
+fn import_metal_texture_2d_raw(
     device: &wgpu::Device,
     metal_texture: *mut core::ffi::c_void,
     format: wgpu::TextureFormat,
@@ -912,17 +1127,18 @@ fn render_package_to_metal_destination(
     overlay_motion_lines: &[OverlayRect],
     overlay_generation: u64,
 ) -> Result<wgpu::SubmissionIndex, &'static str> {
-    let destination_texture = import_metal_texture_2d(
-        &renderer.device,
+    let (_destination_texture, destination_view) = renderer.import_metal_texture_2d_cached(
         destination_mtl_texture,
         output.format,
         output.width,
         output.height,
         wgpu::TextureUsages::RENDER_ATTACHMENT,
         "voidplayer-imported-cvpixelbuffer-destination",
+        ImportedTextureClass::Destination,
     )?;
 
     renderer.params_scratch.clear();
+    let mut cpu_yuv_texture_sources = None;
     if package.storage == STORAGE_BGRA {
         bgra_atlas_for_wgsl(source, package, &mut renderer.source_bgra_scratch)?;
         package_params(
@@ -936,26 +1152,45 @@ fn render_package_to_metal_destination(
             &mut renderer.params_scratch,
         );
         dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
+        renderer.package_buffer_dirty = true;
         write_source_bgra_atlas(
             &renderer.device,
             &renderer.queue,
             &mut renderer.source_texture,
+            &mut renderer.resource_generation,
             output.width,
             output.height,
             &renderer.source_bgra_scratch,
         )?;
     } else {
-        package_params(
-            package,
-            STORAGE_YUV,
-            output.color_mode,
-            overlay_fill_rects,
-            overlay_line_rects,
-            overlay_motion_lines,
-            0.0,
-            &mut renderer.params_scratch,
-        );
-        package_storage_bytes(source, &mut renderer.package_bytes_scratch);
+        if let Some(textures) = upload_cpu_yuv_package_textures(renderer, source, package)? {
+            package_params(
+                package,
+                STORAGE_CV_PIXEL_BUFFER,
+                output.color_mode,
+                overlay_fill_rects,
+                overlay_line_rects,
+                overlay_motion_lines,
+                0.0,
+                &mut renderer.params_scratch,
+            );
+            dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
+            renderer.package_buffer_dirty = true;
+            cpu_yuv_texture_sources = Some(textures);
+        } else {
+            package_params(
+                package,
+                STORAGE_YUV,
+                output.color_mode,
+                overlay_fill_rects,
+                overlay_line_rects,
+                overlay_motion_lines,
+                0.0,
+                &mut renderer.params_scratch,
+            );
+            package_storage_bytes(source, &mut renderer.package_bytes_scratch);
+            renderer.package_buffer_dirty = true;
+        }
     }
     combined_overlay_rects(
         overlay_fill_rects,
@@ -964,18 +1199,38 @@ fn render_package_to_metal_destination(
         &mut renderer.overlay_rects_scratch,
     );
 
-    let submission = render_bgra_atlas_with_wgsl(
-        renderer,
-        &destination_texture,
-        package.storage,
-        output.format,
-        output.width,
-        output.height,
-        overlay_generation,
-    )?;
-    renderer.retained_storage = package.storage;
-    renderer.retained_cv_y_textures = std::array::from_fn(|_| None);
-    renderer.retained_cv_uv_textures = std::array::from_fn(|_| None);
+    let submission = if let Some((y_textures, uv_textures)) = cpu_yuv_texture_sources {
+        renderer.retained_source_generation =
+            renderer.retained_source_generation.wrapping_add(1).max(1);
+        let submission = render_cv_pixel_buffer_frame_set_with_wgsl(
+            renderer,
+            &destination_view,
+            &y_textures,
+            &uv_textures,
+            output.format,
+            output.width,
+            output.height,
+            overlay_generation,
+        )?;
+        renderer.retained_storage = STORAGE_CV_PIXEL_BUFFER;
+        renderer.retained_cv_y_textures = y_textures;
+        renderer.retained_cv_uv_textures = uv_textures;
+        submission
+    } else {
+        let submission = render_bgra_atlas_with_wgsl(
+            renderer,
+            &destination_view,
+            package.storage,
+            output.format,
+            output.width,
+            output.height,
+            overlay_generation,
+        )?;
+        renderer.retained_storage = package.storage;
+        renderer.retained_cv_y_textures = std::array::from_fn(|_| None);
+        renderer.retained_cv_uv_textures = std::array::from_fn(|_| None);
+        submission
+    };
     Ok(submission)
 }
 
@@ -994,17 +1249,19 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
     if frame_set.decision.should_present == 0 || frame_set.decision.frame_count <= 0 {
         return Err("wgpu-metal CVPixelBuffer frame set has no presentable frame");
     }
-    let destination_texture = import_metal_texture_2d(
-        &renderer.device,
+    let (_destination_texture, destination_view) = renderer.import_metal_texture_2d_cached(
         destination_mtl_texture,
         output.format,
         output.width,
         output.height,
         wgpu::TextureUsages::RENDER_ATTACHMENT,
         "voidplayer-imported-cvpixelbuffer-destination",
+        ImportedTextureClass::Destination,
     )?;
-    let mut source_y_textures: [Option<wgpu::Texture>; MAX_TRACKS] = std::array::from_fn(|_| None);
-    let mut source_uv_textures: [Option<wgpu::Texture>; MAX_TRACKS] = std::array::from_fn(|_| None);
+    let mut source_y_textures: [Option<wgpu::TextureView>; MAX_TRACKS] =
+        std::array::from_fn(|_| None);
+    let mut source_uv_textures: [Option<wgpu::TextureView>; MAX_TRACKS] =
+        std::array::from_fn(|_| None);
     for slot in 0..MAX_TRACKS {
         if frame_set.decision.frames[slot].present == 0 {
             continue;
@@ -1023,32 +1280,40 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
         let chroma_width = coded_width.div_ceil(2).max(1);
         let chroma_height = coded_height.div_ceil(2).max(1);
         let is_p010 = frame_set.is_p010[slot] != 0;
-        source_y_textures[slot] = Some(import_metal_texture_2d(
-            &renderer.device,
-            source_y_mtl_textures[slot],
-            if is_p010 {
-                wgpu::TextureFormat::R16Unorm
-            } else {
-                wgpu::TextureFormat::R8Unorm
-            },
-            coded_width,
-            coded_height,
-            wgpu::TextureUsages::TEXTURE_BINDING,
-            "voidplayer-imported-cvpixelbuffer-source-y",
-        )?);
-        source_uv_textures[slot] = Some(import_metal_texture_2d(
-            &renderer.device,
-            source_uv_mtl_textures[slot],
-            if is_p010 {
-                wgpu::TextureFormat::Rg16Unorm
-            } else {
-                wgpu::TextureFormat::Rg8Unorm
-            },
-            chroma_width,
-            chroma_height,
-            wgpu::TextureUsages::TEXTURE_BINDING,
-            "voidplayer-imported-cvpixelbuffer-source-uv",
-        )?);
+        source_y_textures[slot] = Some(
+            renderer
+                .import_metal_texture_2d_cached(
+                    source_y_mtl_textures[slot],
+                    if is_p010 {
+                        wgpu::TextureFormat::R16Unorm
+                    } else {
+                        wgpu::TextureFormat::R8Unorm
+                    },
+                    coded_width,
+                    coded_height,
+                    wgpu::TextureUsages::TEXTURE_BINDING,
+                    "voidplayer-imported-cvpixelbuffer-source-y",
+                    ImportedTextureClass::Source,
+                )?
+                .1,
+        );
+        source_uv_textures[slot] = Some(
+            renderer
+                .import_metal_texture_2d_cached(
+                    source_uv_mtl_textures[slot],
+                    if is_p010 {
+                        wgpu::TextureFormat::Rg16Unorm
+                    } else {
+                        wgpu::TextureFormat::Rg8Unorm
+                    },
+                    chroma_width,
+                    chroma_height,
+                    wgpu::TextureUsages::TEXTURE_BINDING,
+                    "voidplayer-imported-cvpixelbuffer-source-uv",
+                    ImportedTextureClass::Source,
+                )?
+                .1,
+        );
     }
 
     let package = PresentFramePackageInfo {
@@ -1074,15 +1339,18 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
     );
     renderer.package_bytes_scratch.clear();
     renderer.package_bytes_scratch.resize(4, 0);
+    renderer.package_buffer_dirty = true;
     combined_overlay_rects(
         overlay_fill_rects,
         overlay_line_rects,
         overlay_motion_lines,
         &mut renderer.overlay_rects_scratch,
     );
+    renderer.retained_source_generation =
+        renderer.retained_source_generation.wrapping_add(1).max(1);
     let submission = render_cv_pixel_buffer_frame_set_with_wgsl(
         renderer,
-        &destination_texture,
+        &destination_view,
         &source_y_textures,
         &source_uv_textures,
         output.format,
@@ -1109,14 +1377,14 @@ fn render_retained_source_to_metal_destination(
     if renderer.retained_storage == STORAGE_NONE {
         return Err("wgpu-metal retained source cache is empty");
     }
-    let destination_texture = import_metal_texture_2d(
-        &renderer.device,
+    let (_destination_texture, destination_view) = renderer.import_metal_texture_2d_cached(
         destination_mtl_texture,
         output.format,
         output.width,
         output.height,
         wgpu::TextureUsages::RENDER_ATTACHMENT,
         "voidplayer-imported-retained-composite-destination",
+        ImportedTextureClass::Destination,
     )?;
     let package = PresentFramePackageInfo {
         storage: renderer.retained_storage,
@@ -1152,7 +1420,7 @@ fn render_retained_source_to_metal_destination(
             }
             render_bgra_atlas_with_wgsl(
                 renderer,
-                &destination_texture,
+                &destination_view,
                 STORAGE_BGRA,
                 output.format,
                 output.width,
@@ -1166,7 +1434,7 @@ fn render_retained_source_to_metal_destination(
             }
             render_bgra_atlas_with_wgsl(
                 renderer,
-                &destination_texture,
+                &destination_view,
                 STORAGE_YUV,
                 output.format,
                 output.width,
@@ -1196,7 +1464,7 @@ fn render_retained_source_to_metal_destination(
             );
             let result = render_cv_pixel_buffer_frame_set_with_wgsl(
                 renderer,
-                &destination_texture,
+                &destination_view,
                 &y_textures,
                 &uv_textures,
                 output.format,
@@ -1395,6 +1663,7 @@ fn write_source_bgra_atlas(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     cache: &mut Option<CachedSourceTexture>,
+    resource_generation: &mut u64,
     width: u32,
     height: u32,
     data: &[u8],
@@ -1427,10 +1696,12 @@ fn write_source_bgra_atlas(
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        *resource_generation = resource_generation.wrapping_add(1).max(1);
         *cache = Some(CachedSourceTexture {
             width,
             height,
             layers,
+            generation: *resource_generation,
             texture,
             view,
         });
@@ -1461,6 +1732,251 @@ fn write_source_bgra_atlas(
     Ok(())
 }
 
+fn ensure_cpu_yuv_texture(
+    device: &wgpu::Device,
+    cache: &mut Option<CachedCpuYuvTexture>,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+    label: &'static str,
+) {
+    let recreate = cache.as_ref().map_or(true, |texture| {
+        texture.width != width || texture.height != height || texture.format != format
+    });
+    if recreate {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        *cache = Some(CachedCpuYuvTexture {
+            width,
+            height,
+            format,
+            texture,
+            view,
+        });
+    }
+}
+
+fn upload_cpu_yuv_plane(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    bytes: &[u8],
+    bytes_per_row: u32,
+    width: u32,
+    height: u32,
+) {
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        bytes,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(bytes_per_row),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+}
+
+fn source_range(
+    source: &[u8],
+    offset: i32,
+    stride: i32,
+    row_bytes: usize,
+    height: u32,
+) -> Result<&[u8], &'static str> {
+    if offset < 0 || stride <= 0 {
+        return Err("wgpu-metal CPU YUV package metadata is invalid");
+    }
+    let offset = offset as usize;
+    let stride = stride as usize;
+    if row_bytes > stride {
+        return Err("wgpu-metal CPU YUV package stride is invalid");
+    }
+    let len = if height == 0 {
+        0
+    } else {
+        stride
+            .checked_mul((height - 1) as usize)
+            .and_then(|prefix| prefix.checked_add(row_bytes))
+            .ok_or("wgpu-metal CPU YUV plane range overflow")?
+    };
+    let end = offset
+        .checked_add(len)
+        .ok_or("wgpu-metal CPU YUV plane range overflow")?;
+    source
+        .get(offset..end)
+        .ok_or("wgpu-metal CPU YUV package data is undersized")
+}
+
+fn upload_cpu_yuv_package_textures(
+    renderer: &mut WgpuMetalRenderer,
+    source: &[u8],
+    package: &PresentFramePackageInfo,
+) -> Result<
+    Option<(
+        [Option<wgpu::TextureView>; MAX_TRACKS],
+        [Option<wgpu::TextureView>; MAX_TRACKS],
+    )>,
+    &'static str,
+> {
+    let mut y_textures: [Option<wgpu::TextureView>; MAX_TRACKS] = std::array::from_fn(|_| None);
+    let mut uv_textures: [Option<wgpu::TextureView>; MAX_TRACKS] = std::array::from_fn(|_| None);
+    for slot in 0..MAX_TRACKS {
+        if package.decision.frames[slot].present == 0 {
+            continue;
+        }
+        let format = package.decision.yuv_format[slot];
+        if format == YUV_FORMAT_P010 {
+            return Ok(None);
+        }
+        let coded_width = package.decision.coded_width[slot];
+        let coded_height = package.decision.coded_height[slot];
+        let y_stride = package.decision.y_stride[slot];
+        let uv_stride = package.decision.uv_stride[slot];
+        if coded_width <= 0 || coded_height <= 0 || y_stride <= 0 || uv_stride <= 0 {
+            return Err("wgpu-metal CPU YUV package metadata is invalid");
+        }
+        let coded_width = coded_width as u32;
+        let coded_height = coded_height as u32;
+        let chroma_width = coded_width.div_ceil(2).max(1);
+        let chroma_height = coded_height.div_ceil(2).max(1);
+        let y_plane = source_range(
+            source,
+            package.decision.y_offset[slot],
+            y_stride,
+            coded_width as usize,
+            coded_height,
+        )?;
+        ensure_cpu_yuv_texture(
+            &renderer.device,
+            &mut renderer.cpu_yuv_y_textures[slot],
+            coded_width,
+            coded_height,
+            wgpu::TextureFormat::R8Unorm,
+            "voidplayer-wgpu-cpu-yuv-y",
+        );
+        upload_cpu_yuv_plane(
+            &renderer.queue,
+            &renderer.cpu_yuv_y_textures[slot]
+                .as_ref()
+                .ok_or("wgpu-metal CPU YUV y texture cache is unavailable")?
+                .texture,
+            y_plane,
+            y_stride as u32,
+            coded_width,
+            coded_height,
+        );
+        ensure_cpu_yuv_texture(
+            &renderer.device,
+            &mut renderer.cpu_yuv_uv_textures[slot],
+            chroma_width,
+            chroma_height,
+            wgpu::TextureFormat::Rg8Unorm,
+            "voidplayer-wgpu-cpu-yuv-uv",
+        );
+        if format == YUV_FORMAT_YUV420P {
+            let u_plane = source_range(
+                source,
+                package.decision.uv_offset[slot],
+                uv_stride,
+                chroma_width as usize,
+                chroma_height,
+            )?;
+            let v_plane = source_range(
+                source,
+                package.decision.v_offset[slot],
+                uv_stride,
+                chroma_width as usize,
+                chroma_height,
+            )?;
+            let scratch = &mut renderer.cpu_yuv_uv_scratch[slot];
+            let row_bytes = chroma_width as usize * 2;
+            scratch.clear();
+            scratch.resize(
+                row_bytes
+                    .checked_mul(chroma_height as usize)
+                    .ok_or("wgpu-metal CPU YUV UV scratch overflow")?,
+                0,
+            );
+            for y in 0..chroma_height as usize {
+                let u_row = &u_plane[y * uv_stride as usize..][..chroma_width as usize];
+                let v_row = &v_plane[y * uv_stride as usize..][..chroma_width as usize];
+                let dst_row = &mut scratch[y * row_bytes..][..row_bytes];
+                for x in 0..chroma_width as usize {
+                    dst_row[x * 2] = u_row[x];
+                    dst_row[x * 2 + 1] = v_row[x];
+                }
+            }
+            upload_cpu_yuv_plane(
+                &renderer.queue,
+                &renderer.cpu_yuv_uv_textures[slot]
+                    .as_ref()
+                    .ok_or("wgpu-metal CPU YUV uv texture cache is unavailable")?
+                    .texture,
+                scratch,
+                row_bytes as u32,
+                chroma_width,
+                chroma_height,
+            );
+        } else {
+            let uv_plane = source_range(
+                source,
+                package.decision.uv_offset[slot],
+                uv_stride,
+                chroma_width as usize * 2,
+                chroma_height,
+            )?;
+            upload_cpu_yuv_plane(
+                &renderer.queue,
+                &renderer.cpu_yuv_uv_textures[slot]
+                    .as_ref()
+                    .ok_or("wgpu-metal CPU YUV uv texture cache is unavailable")?
+                    .texture,
+                uv_plane,
+                uv_stride as u32,
+                chroma_width,
+                chroma_height,
+            );
+        }
+        y_textures[slot] = Some(
+            renderer.cpu_yuv_y_textures[slot]
+                .as_ref()
+                .ok_or("wgpu-metal CPU YUV y texture cache is unavailable")?
+                .view
+                .clone(),
+        );
+        uv_textures[slot] = Some(
+            renderer.cpu_yuv_uv_textures[slot]
+                .as_ref()
+                .ok_or("wgpu-metal CPU YUV uv texture cache is unavailable")?
+                .view
+                .clone(),
+        );
+    }
+    Ok(Some((y_textures, uv_textures)))
+}
+
 fn grow_buffer_capacity(size: u64) -> u64 {
     let min_size = size.max(4);
     min_size.checked_next_power_of_two().unwrap_or(min_size)
@@ -1470,6 +1986,7 @@ fn write_cached_storage_buffer(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     cache: &mut Option<CachedStorageBuffer>,
+    resource_generation: &mut u64,
     bytes: &[u8],
     label: &'static str,
 ) {
@@ -1477,8 +1994,10 @@ fn write_cached_storage_buffer(
     let recreate = cache.as_ref().map_or(true, |buffer| buffer.capacity < size);
     if recreate {
         let capacity = grow_buffer_capacity(size);
+        *resource_generation = resource_generation.wrapping_add(1).max(1);
         *cache = Some(CachedStorageBuffer {
             capacity,
+            generation: *resource_generation,
             buffer: device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(label),
                 size: capacity,
@@ -1495,6 +2014,31 @@ fn write_cached_storage_buffer(
         queue.write_buffer(buffer, 0, &[0, 0, 0, 0]);
     } else {
         queue.write_buffer(buffer, 0, bytes);
+    }
+}
+
+fn cached_storage_buffer_needs_capacity(cache: &Option<CachedStorageBuffer>, bytes: &[u8]) -> bool {
+    let size = bytes.len().max(4) as u64;
+    cache.as_ref().map_or(true, |buffer| buffer.capacity < size)
+}
+
+fn write_package_buffer_if_needed(renderer: &mut WgpuMetalRenderer) {
+    if renderer.package_buffer_dirty
+        || cached_storage_buffer_needs_capacity(
+            &renderer.package_buffer,
+            &renderer.package_bytes_scratch,
+        )
+    {
+        write_cached_storage_buffer(
+            &renderer.device,
+            &renderer.queue,
+            &mut renderer.package_buffer,
+            &mut renderer.resource_generation,
+            &renderer.package_bytes_scratch,
+            "voidplayer-wgpu-package-bytes",
+        );
+        renderer.package_buffer_dirty = false;
+        renderer.profiler.package_buffer_write_count += 1;
     }
 }
 
@@ -1548,7 +2092,7 @@ fn encode_overlay_layer_texture(
             cache.width == width
                 && cache.height == height
                 && cache.layers == layers
-                && cache.generation == overlay_generation
+                && cache.overlay_generation == overlay_generation
                 && cache.fill_count == fill_count
                 && cache.line_count == line_count
                 && cache.motion_count == motion_count
@@ -1556,6 +2100,7 @@ fn encode_overlay_layer_texture(
     if cache_hit
         && (overlay_generation != 0 || (fill_count == 0 && line_count == 0 && motion_count == 0))
     {
+        renderer.profiler.overlay_layer_reuse_count += 1;
         return Ok(());
     }
     let recreate = renderer
@@ -1576,33 +2121,332 @@ fn encode_overlay_layer_texture(
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        renderer.resource_generation = renderer.resource_generation.wrapping_add(1).max(1);
         renderer.overlay_layer_texture = Some(CachedOverlayLayerTexture {
             width,
             height,
             layers,
-            generation: overlay_generation,
+            overlay_generation,
             fill_count,
             line_count,
             motion_count,
+            resource_generation: renderer.resource_generation,
             texture,
             view,
         });
     }
+    renderer.profiler.overlay_layer_rebuild_count += 1;
     write_cached_storage_buffer(
         &renderer.device,
         &renderer.queue,
         &mut renderer.overlay_buffer,
+        &mut renderer.resource_generation,
         overlay_rect_bytes(&renderer.overlay_rects_scratch),
         "voidplayer-wgpu-overlay-combined-rects",
     );
+    renderer.profiler.overlay_buffer_write_count += 1;
     let source_view = &renderer.dummy_bgra_array_view;
     let dummy_y_view = &renderer.dummy_y_view;
     let dummy_uv_view = &renderer.dummy_uv_view;
+    let package_generation = renderer
+        .package_buffer
+        .as_ref()
+        .ok_or("wgpu-metal package buffer cache is unavailable")?
+        .generation;
+    let overlay_buffer_generation = renderer
+        .overlay_buffer
+        .as_ref()
+        .ok_or("wgpu-metal overlay buffer cache is unavailable")?
+        .generation;
+    let overlay_texture_generation = renderer
+        .overlay_layer_texture
+        .as_ref()
+        .ok_or("wgpu-metal overlay layer texture is unavailable")?
+        .resource_generation;
+    let final_params = renderer.params_scratch.clone();
+    let mut layer_params = Vec::with_capacity(final_params.len());
+    for track in 0..MAX_TRACKS {
+        write_overlay_layer_track_params(&final_params, track, &mut layer_params);
+        write_cached_storage_buffer(
+            &renderer.device,
+            &renderer.queue,
+            &mut renderer.overlay_layer_params_buffers[track],
+            &mut renderer.resource_generation,
+            &layer_params,
+            "voidplayer-wgpu-overlay-layer-params",
+        );
+        renderer.profiler.params_buffer_write_count += 1;
+        let params_generation = renderer.overlay_layer_params_buffers[track]
+            .as_ref()
+            .ok_or("wgpu-metal overlay layer params buffer cache is unavailable")?
+            .generation;
+        let recreate_bind_group =
+            renderer.overlay_layer_bind_groups[track]
+                .as_ref()
+                .map_or(true, |cache| {
+                    cache.params_generation != params_generation
+                        || cache.package_generation != package_generation
+                        || cache.overlay_generation != overlay_buffer_generation
+                });
+        if recreate_bind_group {
+            let params_buffer = &renderer.overlay_layer_params_buffers[track]
+                .as_ref()
+                .ok_or("wgpu-metal overlay layer params buffer cache is unavailable")?
+                .buffer;
+            let package_buffer = &renderer
+                .package_buffer
+                .as_ref()
+                .ok_or("wgpu-metal package buffer cache is unavailable")?
+                .buffer;
+            let overlay_buffer = &renderer
+                .overlay_buffer
+                .as_ref()
+                .ok_or("wgpu-metal overlay buffer cache is unavailable")?
+                .buffer;
+            let bind_group = renderer
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("voidplayer-wgpu-overlay-layer-bind-group"),
+                    layout: &renderer.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: params_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(source_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&renderer.sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: package_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: overlay_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: wgpu::BindingResource::TextureView(dummy_y_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: wgpu::BindingResource::TextureView(dummy_y_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 9,
+                            resource: wgpu::BindingResource::TextureView(dummy_y_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 10,
+                            resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 11,
+                            resource: wgpu::BindingResource::TextureView(dummy_y_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 12,
+                            resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 13,
+                            resource: wgpu::BindingResource::TextureView(source_view),
+                        },
+                    ],
+                });
+            renderer.overlay_layer_bind_groups[track] = Some(CachedOverlayLayerBindGroup {
+                params_generation,
+                package_generation,
+                overlay_generation: overlay_buffer_generation,
+                bind_group,
+            });
+            renderer.profiler.overlay_bind_group_create_count += 1;
+        }
+        let recreate_layer_view = renderer.overlay_layer_views[track]
+            .as_ref()
+            .map_or(true, |cache| {
+                cache.texture_generation != overlay_texture_generation
+            });
+        if recreate_layer_view {
+            let overlay_texture = &renderer
+                .overlay_layer_texture
+                .as_ref()
+                .ok_or("wgpu-metal overlay layer texture is unavailable")?
+                .texture;
+            let view = overlay_texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("voidplayer-wgpu-overlay-layer-slice-view"),
+                format: Some(wgpu::TextureFormat::Rgba8Unorm),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                usage: Some(wgpu::TextureUsages::RENDER_ATTACHMENT),
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                base_array_layer: track as u32,
+                array_layer_count: Some(1),
+            });
+            renderer.overlay_layer_views[track] = Some(CachedOverlayLayerView {
+                texture_generation: overlay_texture_generation,
+                view,
+            });
+        }
+        let bind_group = &renderer.overlay_layer_bind_groups[track]
+            .as_ref()
+            .ok_or("wgpu-metal overlay layer bind group cache is unavailable")?
+            .bind_group;
+        let layer_view = &renderer.overlay_layer_views[track]
+            .as_ref()
+            .ok_or("wgpu-metal overlay layer view cache is unavailable")?
+            .view;
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("voidplayer-wgpu-overlay-layer-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: layer_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&renderer.overlay_pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
+            pass.draw(0..3, 0..1);
+        }
+    }
+    if let Some(cache) = renderer.overlay_layer_texture.as_mut() {
+        cache.overlay_generation = overlay_generation;
+        cache.fill_count = fill_count;
+        cache.line_count = line_count;
+        cache.motion_count = motion_count;
+    }
+    Ok(())
+}
+
+fn composite_bind_group_entries<'a>(
+    params_buffer: &'a wgpu::Buffer,
+    source_view: &'a wgpu::TextureView,
+    sampler: &'a wgpu::Sampler,
+    package_buffer: &'a wgpu::Buffer,
+    overlay_buffer: &'a wgpu::Buffer,
+    dummy_y_view: &'a wgpu::TextureView,
+    dummy_uv_view: &'a wgpu::TextureView,
+    overlay_layer_texture: &'a wgpu::TextureView,
+) -> [wgpu::BindGroupEntry<'a>; 14] {
+    [
+        wgpu::BindGroupEntry {
+            binding: 0,
+            resource: params_buffer.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 1,
+            resource: wgpu::BindingResource::TextureView(source_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 2,
+            resource: wgpu::BindingResource::Sampler(sampler),
+        },
+        wgpu::BindGroupEntry {
+            binding: 3,
+            resource: package_buffer.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 4,
+            resource: overlay_buffer.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 5,
+            resource: wgpu::BindingResource::TextureView(dummy_y_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 6,
+            resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 7,
+            resource: wgpu::BindingResource::TextureView(dummy_y_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 8,
+            resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 9,
+            resource: wgpu::BindingResource::TextureView(dummy_y_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 10,
+            resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 11,
+            resource: wgpu::BindingResource::TextureView(dummy_y_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 12,
+            resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 13,
+            resource: wgpu::BindingResource::TextureView(overlay_layer_texture),
+        },
+    ]
+}
+
+fn render_bgra_atlas_with_wgsl(
+    renderer: &mut WgpuMetalRenderer,
+    destination_view: &wgpu::TextureView,
+    source_storage: i32,
+    output_format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+    overlay_generation: u64,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
+    write_package_buffer_if_needed(renderer);
+    let mut encoder = renderer
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("voidplayer-wgpu-composite-encoder"),
+        });
+    encode_overlay_layer_texture(renderer, width, height, overlay_generation, &mut encoder)?;
+    write_cached_storage_buffer(
+        &renderer.device,
+        &renderer.queue,
+        &mut renderer.params_buffer,
+        &mut renderer.resource_generation,
+        &renderer.params_scratch,
+        "voidplayer-wgpu-composite-params",
+    );
+    renderer.profiler.params_buffer_write_count += 1;
+
+    let params_buffer = &renderer
+        .params_buffer
+        .as_ref()
+        .ok_or("wgpu-metal params buffer cache is unavailable")?
+        .buffer;
     let package_buffer = &renderer
         .package_buffer
         .as_ref()
@@ -1613,31 +2457,297 @@ fn encode_overlay_layer_texture(
         .as_ref()
         .ok_or("wgpu-metal overlay buffer cache is unavailable")?
         .buffer;
-    let overlay_texture = &renderer
+    let overlay_layer_texture = &renderer
         .overlay_layer_texture
         .as_ref()
         .ok_or("wgpu-metal overlay layer texture is unavailable")?
-        .texture;
-    let final_params = renderer.params_scratch.clone();
-    let mut layer_params = Vec::with_capacity(final_params.len());
-    for track in 0..MAX_TRACKS {
-        write_overlay_layer_track_params(&final_params, track, &mut layer_params);
-        write_cached_storage_buffer(
-            &renderer.device,
-            &renderer.queue,
-            &mut renderer.overlay_layer_params_buffers[track],
-            &layer_params,
-            "voidplayer-wgpu-overlay-layer-params",
-        );
-        let params_buffer = &renderer
-            .overlay_layer_params_buffers[track]
+        .view;
+    let overlay_layer_generation = renderer
+        .overlay_layer_texture
+        .as_ref()
+        .ok_or("wgpu-metal overlay layer texture is unavailable")?
+        .resource_generation;
+    let source_view: &wgpu::TextureView = if source_storage == STORAGE_BGRA {
+        &renderer
+            .source_texture
             .as_ref()
-            .ok_or("wgpu-metal overlay layer params buffer cache is unavailable")?
-            .buffer;
+            .ok_or("wgpu-metal source texture cache is unavailable")?
+            .view
+    } else {
+        &renderer.dummy_bgra_array_view
+    };
+    let source_generation = if source_storage == STORAGE_BGRA {
+        renderer
+            .source_texture
+            .as_ref()
+            .ok_or("wgpu-metal source texture cache is unavailable")?
+            .generation
+    } else {
+        0
+    };
+    let dummy_y_view = &renderer.dummy_y_view;
+    let dummy_uv_view = &renderer.dummy_uv_view;
+    let bind_group_key = BindGroupKey {
+        source_storage,
+        params_generation: renderer
+            .params_buffer
+            .as_ref()
+            .ok_or("wgpu-metal params buffer cache is unavailable")?
+            .generation,
+        package_generation: renderer
+            .package_buffer
+            .as_ref()
+            .ok_or("wgpu-metal package buffer cache is unavailable")?
+            .generation,
+        overlay_generation: renderer
+            .overlay_buffer
+            .as_ref()
+            .ok_or("wgpu-metal overlay buffer cache is unavailable")?
+            .generation,
+        source_generation,
+        overlay_layer_generation,
+    };
+    let bind_group = if let Some(cache) = renderer.generic_bind_group.as_ref() {
+        if cache.key == bind_group_key {
+            cache.bind_group.clone()
+        } else {
+            let bind_group = renderer
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("voidplayer-wgpu-composite-bind-group"),
+                    layout: &renderer.bind_group_layout,
+                    entries: &composite_bind_group_entries(
+                        params_buffer,
+                        source_view,
+                        &renderer.sampler,
+                        package_buffer,
+                        overlay_buffer,
+                        dummy_y_view,
+                        dummy_uv_view,
+                        overlay_layer_texture,
+                    ),
+                });
+            renderer.generic_bind_group = Some(CachedBindGroup {
+                key: bind_group_key,
+                bind_group: bind_group.clone(),
+            });
+            renderer.profiler.final_bind_group_create_count += 1;
+            bind_group
+        }
+    } else {
         let bind_group = renderer
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("voidplayer-wgpu-overlay-layer-bind-group"),
+                label: Some("voidplayer-wgpu-composite-bind-group"),
+                layout: &renderer.bind_group_layout,
+                entries: &composite_bind_group_entries(
+                    params_buffer,
+                    source_view,
+                    &renderer.sampler,
+                    package_buffer,
+                    overlay_buffer,
+                    dummy_y_view,
+                    dummy_uv_view,
+                    overlay_layer_texture,
+                ),
+            });
+        renderer.generic_bind_group = Some(CachedBindGroup {
+            key: bind_group_key,
+            bind_group: bind_group.clone(),
+        });
+        renderer.profiler.final_bind_group_create_count += 1;
+        bind_group
+    };
+    let pipeline = composite_pipeline_for_output(renderer, output_format)?;
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("voidplayer-wgpu-composite-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: destination_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
+        pass.draw(0..3, 0..1);
+    }
+    let submission = renderer.queue.submit(std::iter::once(encoder.finish()));
+    renderer.profiler.submit_count += 1;
+    Ok(submission)
+}
+
+fn render_cv_pixel_buffer_frame_set_with_wgsl(
+    renderer: &mut WgpuMetalRenderer,
+    destination_view: &wgpu::TextureView,
+    source_y_textures: &[Option<wgpu::TextureView>; MAX_TRACKS],
+    source_uv_textures: &[Option<wgpu::TextureView>; MAX_TRACKS],
+    output_format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+    overlay_generation: u64,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
+    write_package_buffer_if_needed(renderer);
+    let mut encoder = renderer
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("voidplayer-wgpu-cvpixelbuffer-composite-encoder"),
+        });
+    encode_overlay_layer_texture(renderer, width, height, overlay_generation, &mut encoder)?;
+    write_cached_storage_buffer(
+        &renderer.device,
+        &renderer.queue,
+        &mut renderer.params_buffer,
+        &mut renderer.resource_generation,
+        &renderer.params_scratch,
+        "voidplayer-wgpu-composite-params",
+    );
+    renderer.profiler.params_buffer_write_count += 1;
+
+    let params_buffer = &renderer
+        .params_buffer
+        .as_ref()
+        .ok_or("wgpu-metal params buffer cache is unavailable")?
+        .buffer;
+    let package_buffer = &renderer
+        .package_buffer
+        .as_ref()
+        .ok_or("wgpu-metal package buffer cache is unavailable")?
+        .buffer;
+    let overlay_buffer = &renderer
+        .overlay_buffer
+        .as_ref()
+        .ok_or("wgpu-metal overlay buffer cache is unavailable")?
+        .buffer;
+    let overlay_layer_texture = &renderer
+        .overlay_layer_texture
+        .as_ref()
+        .ok_or("wgpu-metal overlay layer texture is unavailable")?
+        .view;
+    let overlay_layer_generation = renderer
+        .overlay_layer_texture
+        .as_ref()
+        .ok_or("wgpu-metal overlay layer texture is unavailable")?
+        .resource_generation;
+    let source_view = &renderer.dummy_bgra_array_view;
+    let y_view = |slot: usize| {
+        source_y_textures[slot]
+            .as_ref()
+            .unwrap_or(&renderer.dummy_y_view)
+    };
+    let uv_view = |slot: usize| {
+        source_uv_textures[slot]
+            .as_ref()
+            .unwrap_or(&renderer.dummy_uv_view)
+    };
+    let bind_group_key = CvBindGroupKey {
+        params_generation: renderer
+            .params_buffer
+            .as_ref()
+            .ok_or("wgpu-metal params buffer cache is unavailable")?
+            .generation,
+        package_generation: renderer
+            .package_buffer
+            .as_ref()
+            .ok_or("wgpu-metal package buffer cache is unavailable")?
+            .generation,
+        overlay_generation: renderer
+            .overlay_buffer
+            .as_ref()
+            .ok_or("wgpu-metal overlay buffer cache is unavailable")?
+            .generation,
+        overlay_layer_generation,
+        source_generation: renderer.retained_source_generation,
+    };
+    let bind_group = if let Some(cache) = renderer.cv_bind_group.as_ref() {
+        if cache.key == bind_group_key {
+            cache.bind_group.clone()
+        } else {
+            let bind_group = renderer
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("voidplayer-wgpu-cvpixelbuffer-composite-bind-group"),
+                    layout: &renderer.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: params_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(source_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&renderer.sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 3,
+                            resource: package_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 4,
+                            resource: overlay_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 5,
+                            resource: wgpu::BindingResource::TextureView(y_view(0)),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 6,
+                            resource: wgpu::BindingResource::TextureView(uv_view(0)),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 7,
+                            resource: wgpu::BindingResource::TextureView(y_view(1)),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 8,
+                            resource: wgpu::BindingResource::TextureView(uv_view(1)),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 9,
+                            resource: wgpu::BindingResource::TextureView(y_view(2)),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 10,
+                            resource: wgpu::BindingResource::TextureView(uv_view(2)),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 11,
+                            resource: wgpu::BindingResource::TextureView(y_view(3)),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 12,
+                            resource: wgpu::BindingResource::TextureView(uv_view(3)),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 13,
+                            resource: wgpu::BindingResource::TextureView(overlay_layer_texture),
+                        },
+                    ],
+                });
+            renderer.cv_bind_group = Some(CachedCvBindGroup {
+                key: bind_group_key,
+                bind_group: bind_group.clone(),
+            });
+            renderer.profiler.final_bind_group_create_count += 1;
+            bind_group
+        }
+    } else {
+        let bind_group = renderer
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("voidplayer-wgpu-cvpixelbuffer-composite-bind-group"),
                 layout: &renderer.bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
@@ -1662,373 +2772,55 @@ fn encode_overlay_layer_texture(
                     },
                     wgpu::BindGroupEntry {
                         binding: 5,
-                        resource: wgpu::BindingResource::TextureView(dummy_y_view),
+                        resource: wgpu::BindingResource::TextureView(y_view(0)),
                     },
                     wgpu::BindGroupEntry {
                         binding: 6,
-                        resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+                        resource: wgpu::BindingResource::TextureView(uv_view(0)),
                     },
                     wgpu::BindGroupEntry {
                         binding: 7,
-                        resource: wgpu::BindingResource::TextureView(dummy_y_view),
+                        resource: wgpu::BindingResource::TextureView(y_view(1)),
                     },
                     wgpu::BindGroupEntry {
                         binding: 8,
-                        resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+                        resource: wgpu::BindingResource::TextureView(uv_view(1)),
                     },
                     wgpu::BindGroupEntry {
                         binding: 9,
-                        resource: wgpu::BindingResource::TextureView(dummy_y_view),
+                        resource: wgpu::BindingResource::TextureView(y_view(2)),
                     },
                     wgpu::BindGroupEntry {
                         binding: 10,
-                        resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+                        resource: wgpu::BindingResource::TextureView(uv_view(2)),
                     },
                     wgpu::BindGroupEntry {
                         binding: 11,
-                        resource: wgpu::BindingResource::TextureView(dummy_y_view),
+                        resource: wgpu::BindingResource::TextureView(y_view(3)),
                     },
                     wgpu::BindGroupEntry {
                         binding: 12,
-                        resource: wgpu::BindingResource::TextureView(dummy_uv_view),
+                        resource: wgpu::BindingResource::TextureView(uv_view(3)),
                     },
                     wgpu::BindGroupEntry {
                         binding: 13,
-                        resource: wgpu::BindingResource::TextureView(source_view),
+                        resource: wgpu::BindingResource::TextureView(overlay_layer_texture),
                     },
                 ],
             });
-        let layer_view = overlay_texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("voidplayer-wgpu-overlay-layer-slice-view"),
-            format: Some(wgpu::TextureFormat::Rgba8Unorm),
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            usage: Some(wgpu::TextureUsages::RENDER_ATTACHMENT),
-            aspect: wgpu::TextureAspect::All,
-            base_mip_level: 0,
-            mip_level_count: Some(1),
-            base_array_layer: track as u32,
-            array_layer_count: Some(1),
+        renderer.cv_bind_group = Some(CachedCvBindGroup {
+            key: bind_group_key,
+            bind_group: bind_group.clone(),
         });
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("voidplayer-wgpu-overlay-layer-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &layer_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&renderer.overlay_pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
-            pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
-            pass.draw(0..3, 0..1);
-        }
-    }
-    if let Some(cache) = renderer.overlay_layer_texture.as_mut() {
-        cache.generation = overlay_generation;
-        cache.fill_count = fill_count;
-        cache.line_count = line_count;
-        cache.motion_count = motion_count;
-    }
-    Ok(())
-}
-
-fn render_bgra_atlas_with_wgsl(
-    renderer: &mut WgpuMetalRenderer,
-    destination_texture: &wgpu::Texture,
-    source_storage: i32,
-    output_format: wgpu::TextureFormat,
-    width: u32,
-    height: u32,
-    overlay_generation: u64,
-) -> Result<wgpu::SubmissionIndex, &'static str> {
-    write_cached_storage_buffer(
-        &renderer.device,
-        &renderer.queue,
-        &mut renderer.package_buffer,
-        &renderer.package_bytes_scratch,
-        "voidplayer-wgpu-package-bytes",
-    );
-    let mut encoder = renderer
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("voidplayer-wgpu-composite-encoder"),
-        });
-    encode_overlay_layer_texture(renderer, width, height, overlay_generation, &mut encoder)?;
-    write_cached_storage_buffer(
-        &renderer.device,
-        &renderer.queue,
-        &mut renderer.params_buffer,
-        &renderer.params_scratch,
-        "voidplayer-wgpu-composite-params",
-    );
-
-    let params_buffer = &renderer
-        .params_buffer
-        .as_ref()
-        .ok_or("wgpu-metal params buffer cache is unavailable")?
-        .buffer;
-    let package_buffer = &renderer
-        .package_buffer
-        .as_ref()
-        .ok_or("wgpu-metal package buffer cache is unavailable")?
-        .buffer;
-    let overlay_buffer = &renderer
-        .overlay_buffer
-        .as_ref()
-        .ok_or("wgpu-metal overlay buffer cache is unavailable")?
-        .buffer;
-    let overlay_layer_texture = &renderer
-        .overlay_layer_texture
-        .as_ref()
-        .ok_or("wgpu-metal overlay layer texture is unavailable")?
-        .view;
-    let source_view: &wgpu::TextureView = if source_storage == STORAGE_BGRA {
-        &renderer
-            .source_texture
-            .as_ref()
-            .ok_or("wgpu-metal source texture cache is unavailable")?
-            .view
-    } else {
-        &renderer.dummy_bgra_array_view
+        renderer.profiler.final_bind_group_create_count += 1;
+        bind_group
     };
-    let dummy_y_view = &renderer.dummy_y_view;
-    let dummy_uv_view = &renderer.dummy_uv_view;
-    let destination_view = destination_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let pipeline = composite_pipeline_for_output(renderer, output_format)?;
-    let bind_group = renderer
-        .device
-        .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("voidplayer-wgpu-composite-bind-group"),
-            layout: &renderer.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: params_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(source_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&renderer.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: package_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: overlay_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::TextureView(dummy_y_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::TextureView(dummy_uv_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::TextureView(dummy_y_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::TextureView(dummy_uv_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 9,
-                    resource: wgpu::BindingResource::TextureView(dummy_y_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 10,
-                    resource: wgpu::BindingResource::TextureView(dummy_uv_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 11,
-                    resource: wgpu::BindingResource::TextureView(dummy_y_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 12,
-                    resource: wgpu::BindingResource::TextureView(dummy_uv_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 13,
-                    resource: wgpu::BindingResource::TextureView(overlay_layer_texture),
-                },
-            ],
-        });
-    {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("voidplayer-wgpu-composite-pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &destination_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
-        pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
-        pass.draw(0..3, 0..1);
-    }
-    let submission = renderer.queue.submit(std::iter::once(encoder.finish()));
-    Ok(submission)
-}
-
-fn render_cv_pixel_buffer_frame_set_with_wgsl(
-    renderer: &mut WgpuMetalRenderer,
-    destination_texture: &wgpu::Texture,
-    source_y_textures: &[Option<wgpu::Texture>; MAX_TRACKS],
-    source_uv_textures: &[Option<wgpu::Texture>; MAX_TRACKS],
-    output_format: wgpu::TextureFormat,
-    width: u32,
-    height: u32,
-    overlay_generation: u64,
-) -> Result<wgpu::SubmissionIndex, &'static str> {
-    write_cached_storage_buffer(
-        &renderer.device,
-        &renderer.queue,
-        &mut renderer.package_buffer,
-        &renderer.package_bytes_scratch,
-        "voidplayer-wgpu-package-bytes",
-    );
-    let mut encoder = renderer
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("voidplayer-wgpu-cvpixelbuffer-composite-encoder"),
-        });
-    encode_overlay_layer_texture(renderer, width, height, overlay_generation, &mut encoder)?;
-    write_cached_storage_buffer(
-        &renderer.device,
-        &renderer.queue,
-        &mut renderer.params_buffer,
-        &renderer.params_scratch,
-        "voidplayer-wgpu-composite-params",
-    );
-
-    let params_buffer = &renderer
-        .params_buffer
-        .as_ref()
-        .ok_or("wgpu-metal params buffer cache is unavailable")?
-        .buffer;
-    let package_buffer = &renderer
-        .package_buffer
-        .as_ref()
-        .ok_or("wgpu-metal package buffer cache is unavailable")?
-        .buffer;
-    let overlay_buffer = &renderer
-        .overlay_buffer
-        .as_ref()
-        .ok_or("wgpu-metal overlay buffer cache is unavailable")?
-        .buffer;
-    let overlay_layer_texture = &renderer
-        .overlay_layer_texture
-        .as_ref()
-        .ok_or("wgpu-metal overlay layer texture is unavailable")?
-        .view;
-    let source_view = &renderer.dummy_bgra_array_view;
-    let y_views: [Option<wgpu::TextureView>; MAX_TRACKS] = std::array::from_fn(|slot| {
-        source_y_textures[slot]
-            .as_ref()
-            .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()))
-    });
-    let uv_views: [Option<wgpu::TextureView>; MAX_TRACKS] = std::array::from_fn(|slot| {
-        source_uv_textures[slot]
-            .as_ref()
-            .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()))
-    });
-    let y_view = |slot: usize| y_views[slot].as_ref().unwrap_or(&renderer.dummy_y_view);
-    let uv_view = |slot: usize| uv_views[slot].as_ref().unwrap_or(&renderer.dummy_uv_view);
-    let destination_view = destination_texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let pipeline = composite_pipeline_for_output(renderer, output_format)?;
-    let bind_group = renderer
-        .device
-        .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("voidplayer-wgpu-cvpixelbuffer-composite-bind-group"),
-            layout: &renderer.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: params_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(source_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&renderer.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: package_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: overlay_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::TextureView(y_view(0)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::TextureView(uv_view(0)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: wgpu::BindingResource::TextureView(y_view(1)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 8,
-                    resource: wgpu::BindingResource::TextureView(uv_view(1)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 9,
-                    resource: wgpu::BindingResource::TextureView(y_view(2)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 10,
-                    resource: wgpu::BindingResource::TextureView(uv_view(2)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 11,
-                    resource: wgpu::BindingResource::TextureView(y_view(3)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 12,
-                    resource: wgpu::BindingResource::TextureView(uv_view(3)),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 13,
-                    resource: wgpu::BindingResource::TextureView(overlay_layer_texture),
-                },
-            ],
-        });
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("voidplayer-wgpu-cvpixelbuffer-composite-pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &destination_view,
+                view: destination_view,
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
@@ -2047,5 +2839,6 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
         pass.draw(0..3, 0..1);
     }
     let submission = renderer.queue.submit(std::iter::once(encoder.finish()));
+    renderer.profiler.submit_count += 1;
     Ok(submission)
 }

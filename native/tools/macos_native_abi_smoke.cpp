@@ -31,7 +31,7 @@ bool require_c_abi_struct(const char* name) {
 int main() {
   static_assert(VP_MACOS_NATIVE_API_VERSION == 7u,
                 "bump this smoke when the macOS native ABI version changes");
-  static_assert(VP_WGPU_FFI_ABI_VERSION == 6,
+  static_assert(VP_WGPU_FFI_ABI_VERSION == 7,
                 "bump this smoke when the wgpu FFI ABI version changes");
   static_assert(offsetof(VPMacOSNativeFrameInfo, struct_size) == 0,
                 "versioned ABI structs must start with struct_size");
@@ -62,7 +62,9 @@ int main() {
       !require_c_abi_struct<VPMacOSNativeAudioDiagnostics>(
           "VPMacOSNativeAudioDiagnostics") ||
       !require_c_abi_struct<VPWgpuMetalRendererInfo>(
-          "VPWgpuMetalRendererInfo")) {
+          "VPWgpuMetalRendererInfo") ||
+      !require_c_abi_struct<VPWgpuMetalProfilerSnapshot>(
+          "VPWgpuMetalProfilerSnapshot")) {
     return 1;
   }
 

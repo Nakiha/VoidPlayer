@@ -48,6 +48,15 @@ extern "C" __attribute__((weak)) int VPWgpuMetalRendererGetInfo(
   return -1;
 }
 
+extern "C" __attribute__((weak)) int VPWgpuMetalRendererGetProfilerSnapshot(
+    VPWgpuMetalRenderer*,
+    VPWgpuMetalProfilerSnapshot* snapshot) {
+  if (snapshot) {
+    std::memset(snapshot, 0, sizeof(*snapshot));
+  }
+  return -1;
+}
+
 extern "C" __attribute__((weak)) int VPWgpuMetalRendererRenderPackage(
     VPWgpuMetalRenderer*,
     const VPWgpuMetalRenderRequest* request) {

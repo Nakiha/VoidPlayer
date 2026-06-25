@@ -8,11 +8,11 @@ use std::ptr;
 use voidplayer_wgpu_core::{
     composite_metal_retained_source_with_renderer,
     composite_metal_retained_source_with_renderer_async,
-    render_metal_cv_pixel_buffer_frame_set_with_renderer, render_metal_package,
-    render_metal_cv_pixel_buffer_frame_set_with_renderer_async,
+    render_metal_cv_pixel_buffer_frame_set_with_renderer,
+    render_metal_cv_pixel_buffer_frame_set_with_renderer_async, render_metal_package,
     render_metal_package_with_renderer, render_metal_package_with_renderer_async,
-    WgpuMetalAsyncCompletion, WgpuMetalCVPixelBufferRenderRequest, WgpuMetalRenderRequest,
-    WgpuMetalRenderer, WgpuMetalRetainedCompositeRequest, ABI_VERSION,
+    WgpuMetalAsyncCompletion, WgpuMetalCVPixelBufferRenderRequest, WgpuMetalProfilerSnapshot,
+    WgpuMetalRenderRequest, WgpuMetalRenderer, WgpuMetalRetainedCompositeRequest, ABI_VERSION,
 };
 
 #[repr(C)]
@@ -24,6 +24,46 @@ pub struct VPWgpuMetalRendererInfo {
     vendor_id: u32,
     device_id: u32,
     supports_texture_format_16bit_norm: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct VPWgpuMetalProfilerSnapshot {
+    destination_import_count: u64,
+    destination_import_reuse_count: u64,
+    source_import_count: u64,
+    source_import_reuse_count: u64,
+    imported_texture_cache_size: u64,
+    imported_texture_cache_eviction_count: u64,
+    final_bind_group_create_count: u64,
+    overlay_bind_group_create_count: u64,
+    overlay_layer_rebuild_count: u64,
+    overlay_layer_reuse_count: u64,
+    package_buffer_write_count: u64,
+    params_buffer_write_count: u64,
+    overlay_buffer_write_count: u64,
+    submit_count: u64,
+}
+
+impl From<WgpuMetalProfilerSnapshot> for VPWgpuMetalProfilerSnapshot {
+    fn from(value: WgpuMetalProfilerSnapshot) -> Self {
+        Self {
+            destination_import_count: value.destination_import_count,
+            destination_import_reuse_count: value.destination_import_reuse_count,
+            source_import_count: value.source_import_count,
+            source_import_reuse_count: value.source_import_reuse_count,
+            imported_texture_cache_size: value.imported_texture_cache_size,
+            imported_texture_cache_eviction_count: value.imported_texture_cache_eviction_count,
+            final_bind_group_create_count: value.final_bind_group_create_count,
+            overlay_bind_group_create_count: value.overlay_bind_group_create_count,
+            overlay_layer_rebuild_count: value.overlay_layer_rebuild_count,
+            overlay_layer_reuse_count: value.overlay_layer_reuse_count,
+            package_buffer_write_count: value.package_buffer_write_count,
+            params_buffer_write_count: value.params_buffer_write_count,
+            overlay_buffer_write_count: value.overlay_buffer_write_count,
+            submit_count: value.submit_count,
+        }
+    }
 }
 
 fn write_error(dst: *mut c_char, cap: usize, message: &str) {
@@ -117,6 +157,25 @@ pub extern "C" fn VPWgpuMetalRendererGetInfo(
         info_ref.device_id = adapter.device;
         info_ref.supports_texture_format_16bit_norm =
             renderer_ref.supports_texture_format_16bit_norm() as u32;
+    }));
+    if result.is_err() {
+        return -1;
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn VPWgpuMetalRendererGetProfilerSnapshot(
+    renderer: *mut WgpuMetalRenderer,
+    snapshot: *mut VPWgpuMetalProfilerSnapshot,
+) -> c_int {
+    if renderer.is_null() || snapshot.is_null() {
+        return -1;
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let renderer_ref = unsafe { &mut *renderer };
+        let snapshot_ref = unsafe { &mut *snapshot };
+        *snapshot_ref = renderer_ref.profiler_snapshot().into();
     }));
     if result.is_err() {
         return -1;
@@ -317,11 +376,7 @@ pub extern "C" fn VPWgpuMetalRendererCompositeRetainedSourceAsync(
     let renderer_ref = unsafe { &mut *renderer };
     let request_ref = unsafe { &*request };
     let result = catch_unwind(AssertUnwindSafe(|| {
-        composite_metal_retained_source_with_renderer_async(
-            renderer_ref,
-            request_ref,
-            completion,
-        )
+        composite_metal_retained_source_with_renderer_async(renderer_ref, request_ref, completion)
     }));
     match result {
         Err(_) => {

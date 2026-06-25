@@ -58,16 +58,6 @@ uint64_t percentile_95_us(std::vector<uint64_t> samples) {
   return samples[index];
 }
 
-void complete_async_draw_success(
-    const vr::PresentationBackendDrawHooks& hooks,
-    std::chrono::steady_clock::time_point draw_start,
-    const vr::PresentationBackendFrameInfo& frame_info) {
-  if (!hooks.async_draw_completed) {
-    return;
-  }
-  hooks.async_draw_completed(true, nullptr, elapsed_us_since(draw_start), &frame_info);
-}
-
 CVPixelBufferRef as_pixel_buffer(void* pixel_buffer) {
   return static_cast<CVPixelBufferRef>(pixel_buffer);
 }
@@ -312,12 +302,66 @@ WgpuOverlayPrimitiveBuildResult build_overlay_primitives_for_wgpu(
 
 }  // namespace
 
+WgpuMetalPresentationBackend::WgpuMetalPresentationBackend()
+    : async_state_(std::make_shared<AsyncState>()) {
+  async_state_->backend = this;
+}
+
+WgpuMetalPresentationBackend::AsyncDrawPending::~AsyncDrawPending() {
+  if (destination_texture_ref) {
+    CFRelease(destination_texture_ref);
+    destination_texture_ref = nullptr;
+  }
+  for (void*& texture_ref : source_y_texture_refs) {
+    if (texture_ref) {
+      CFRelease(texture_ref);
+      texture_ref = nullptr;
+    }
+  }
+  for (void*& texture_ref : source_uv_texture_refs) {
+    if (texture_ref) {
+      CFRelease(texture_ref);
+      texture_ref = nullptr;
+    }
+  }
+}
+
+void wgpu_async_draw_completed(void* user_data, int32_t result) {
+  std::unique_ptr<WgpuMetalPresentationBackend::AsyncDrawPending> pending(
+      static_cast<WgpuMetalPresentationBackend::AsyncDrawPending*>(user_data));
+  if (!pending || !pending->state) {
+    return;
+  }
+  auto state = pending->state;
+  WgpuMetalPresentationBackend* backend = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(state->mutex);
+    if (!state->shutdown) {
+      backend = state->backend;
+      if (backend) {
+        ++state->active_callbacks;
+      }
+    }
+  }
+  if (!backend) {
+    return;
+  }
+  backend->complete_async_draw(std::move(pending), result == 0);
+  std::lock_guard<std::mutex> lock(state->mutex);
+  if (state->active_callbacks > 0) {
+    --state->active_callbacks;
+  }
+  state->cv.notify_all();
+}
+
 WgpuMetalPresentationBackend::~WgpuMetalPresentationBackend() {
   shutdown();
 }
 
 bool WgpuMetalPresentationBackend::initialize(const vr::PresentationBackendConfig& config) {
   shutdown();
+  async_state_ = std::make_shared<AsyncState>();
+  async_state_->backend = this;
   headless_ = config.headless;
   width_ = config.width;
   height_ = config.height;
@@ -348,8 +392,9 @@ bool WgpuMetalPresentationBackend::initialize(const vr::PresentationBackendConfi
     return false;
   }
   if (!wgpu_ffi_available()) {
-    set_last_error("wgpu-metal Rust FFI is not linked");
-    return true;
+    mark_draw_failure("wgpu-metal Rust FFI is not linked");
+    shutdown();
+    return false;
   }
   char ffi_error[256] = {};
   wgpu_renderer_ = VPWgpuMetalRendererCreate(ffi_error, sizeof(ffi_error));
@@ -375,6 +420,14 @@ bool WgpuMetalPresentationBackend::initialize(const vr::PresentationBackendConfi
 }
 
 void WgpuMetalPresentationBackend::shutdown() {
+  if (async_state_) {
+    std::unique_lock<std::mutex> lock(async_state_->mutex);
+    async_state_->shutdown = true;
+    async_state_->backend = nullptr;
+    async_state_->cv.wait(lock, [&] {
+      return async_state_->active_callbacks == 0;
+    });
+  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     draw_target_pixel_buffer_ = nullptr;
@@ -887,6 +940,25 @@ bool WgpuMetalPresentationBackend::draw_frame(
   const auto overlay_primitives =
       build_overlay_primitives_for_wgpu(snapshot, hooks);
   const bool overlay_expected = overlay_primitives_expected(overlay_primitives);
+  auto make_async_pending = [&](vr::PresentationBackendFrameInfo frame_info,
+                                uint64_t package_copy_us,
+                                int32_t package_storage,
+                                bool source_upload) {
+    auto pending = std::make_unique<AsyncDrawPending>();
+    pending->state = async_state_;
+    pending->hooks = hooks;
+    pending->frame_info = frame_info;
+    pending->draw_start = draw_start;
+    pending->target_pixel_buffer_address = acquired_target_address;
+    pending->package_copy_us = package_copy_us;
+    pending->package_storage = package_storage;
+    pending->source_upload = source_upload;
+    pending->target_ring_acquired = target_ring_acquired;
+    pending->overlay_expected = overlay_expected;
+    pending->overlay_fill_rect_count = overlay_primitives.fill_rects.size();
+    pending->overlay_line_rect_count = overlay_primitives.line_rects.size();
+    return pending;
+  };
 
   if (source_metrics.viewport_composite && source_metrics.cache_hit &&
       retained_source_available) {
@@ -934,46 +1006,27 @@ bool WgpuMetalPresentationBackend::draw_frame(
     request.height = draw_target_height_;
     request.error = ffi_error;
     request.error_size = sizeof(ffi_error);
-    const auto gpu_start = std::chrono::steady_clock::now();
-    const int ret =
-        VPWgpuMetalRendererCompositeRetainedSource(wgpu_renderer_, &request);
-    const uint64_t gpu_wait_us = elapsed_us_since(gpu_start);
-    record_wgpu_command_result(gpu_wait_us, ret == 0);
-    CFRelease(destination_ref);
-    if (ret != 0) {
-      const std::string error =
-          ffi_error[0] ? ffi_error : "wgpu-metal retained composite failed";
-      overlay_last_expected_ = overlay_expected;
-      overlay_last_applied_ = false;
-      overlay_last_fill_rect_count_ = overlay_primitives.fill_rects.size();
-      overlay_last_line_rect_count_ = overlay_primitives.line_rects.size();
-      if (overlay_expected) {
-        ++overlay_expected_count_;
-        ++overlay_missed_count_;
-        ++overlay_gpu_failure_count_;
-      }
-      return fail_after_target_acquire(error);
-    }
-    overlay_last_expected_ = overlay_expected;
-    overlay_last_applied_ = overlay_expected;
-    overlay_last_fill_rect_count_ = overlay_primitives.fill_rects.size();
-    overlay_last_line_rect_count_ = overlay_primitives.line_rects.size();
-    if (overlay_expected) {
-      ++overlay_expected_count_;
-      ++overlay_applied_count_;
-      ++overlay_gpu_success_count_;
-    }
     auto frame_info = retained_source_frame_info_available
         ? retained_source_frame_info
         : frame_info_from_decision(retained_decision, target);
     frame_info.target_pixel_buffer_address = pointer_bits(target);
-    record_present_package_timing(0, gpu_wait_us, gpu_wait_us);
-    mark_draw_success(frame_info, retained_source_storage, false);
-    if (hooks.record_frame_copy_us) {
-      hooks.record_frame_copy_us(0);
+    auto pending =
+        make_async_pending(frame_info, 0, retained_source_storage, false);
+    pending->destination_texture_ref = destination_ref;
+    destination_ref = nullptr;
+    AsyncDrawPending* pending_raw = pending.release();
+    VPWgpuMetalAsyncCompletion completion = {};
+    completion.callback = wgpu_async_draw_completed;
+    completion.user_data = pending_raw;
+    const int ret = VPWgpuMetalRendererCompositeRetainedSourceAsync(
+        wgpu_renderer_, &request, completion);
+    if (ret != 0) {
+      std::unique_ptr<AsyncDrawPending> reclaim(pending_raw);
+      const std::string error =
+          ffi_error[0] ? ffi_error : "wgpu-metal retained composite failed";
+      return fail_after_target_acquire(error);
     }
-    complete_acquired_target(true);
-    complete_async_draw_success(hooks, draw_start, frame_info);
+    target_ring_acquired = false;
     return true;
   }
 
@@ -1064,43 +1117,34 @@ bool WgpuMetalPresentationBackend::draw_frame(
     request.height = draw_target_height_;
     request.error = ffi_error;
     request.error_size = sizeof(ffi_error);
-    const auto gpu_start = std::chrono::steady_clock::now();
-    const int ret =
-        VPWgpuMetalRendererRenderCVPixelBufferFrameSet(wgpu_renderer_, &request);
-    const uint64_t gpu_wait_us = elapsed_us_since(gpu_start);
-    record_wgpu_command_result(gpu_wait_us, ret == 0);
-    CFRelease(destination_ref);
+    const auto frame_info = frame_info_from_decision(frame_set.decision, target);
+    auto pending = make_async_pending(
+        frame_info, 0, VPMacOSNativePresentPackageStorageCVPixelBuffer, true);
+    pending->destination_texture_ref = destination_ref;
+    destination_ref = nullptr;
+    for (size_t slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
+      if (source_y_refs[slot].get()) {
+        pending->source_y_texture_refs[slot] =
+            const_cast<void*>(CFRetain(source_y_refs[slot].get()));
+      }
+      if (source_uv_refs[slot].get()) {
+        pending->source_uv_texture_refs[slot] =
+            const_cast<void*>(CFRetain(source_uv_refs[slot].get()));
+      }
+    }
+    AsyncDrawPending* pending_raw = pending.release();
+    VPWgpuMetalAsyncCompletion completion = {};
+    completion.callback = wgpu_async_draw_completed;
+    completion.user_data = pending_raw;
+    const int ret = VPWgpuMetalRendererRenderCVPixelBufferFrameSetAsync(
+        wgpu_renderer_, &request, completion);
     if (ret != 0) {
+      std::unique_ptr<AsyncDrawPending> reclaim(pending_raw);
       const std::string error =
           ffi_error[0] ? ffi_error : "wgpu-metal render CVPixelBuffer frame set failed";
-      overlay_last_expected_ = overlay_expected;
-      overlay_last_applied_ = false;
-      overlay_last_fill_rect_count_ = overlay_primitives.fill_rects.size();
-      overlay_last_line_rect_count_ = overlay_primitives.line_rects.size();
-      if (overlay_expected) {
-        ++overlay_expected_count_;
-        ++overlay_missed_count_;
-        ++overlay_gpu_failure_count_;
-      }
       return fail_after_target_acquire(error);
     }
-    overlay_last_expected_ = overlay_expected;
-    overlay_last_applied_ = overlay_expected;
-    overlay_last_fill_rect_count_ = overlay_primitives.fill_rects.size();
-    overlay_last_line_rect_count_ = overlay_primitives.line_rects.size();
-    if (overlay_expected) {
-      ++overlay_expected_count_;
-      ++overlay_applied_count_;
-      ++overlay_gpu_success_count_;
-    }
-    const auto frame_info = frame_info_from_decision(frame_set.decision, target);
-    record_present_package_timing(0, gpu_wait_us, gpu_wait_us);
-    mark_draw_success(frame_info, VPMacOSNativePresentPackageStorageCVPixelBuffer);
-    if (hooks.record_frame_copy_us) {
-      hooks.record_frame_copy_us(0);
-    }
-    complete_acquired_target(true);
-    complete_async_draw_success(hooks, draw_start, frame_info);
+    target_ring_acquired = false;
     return true;
   }
   if (storage_mix.any_cv_pixel_buffer && !storage_mix.any_non_cv_pixel_buffer) {
@@ -1157,9 +1201,6 @@ bool WgpuMetalPresentationBackend::draw_frame(
     package.storage = VPMacOSNativePresentPackageStorageBGRA;
   }
   const uint64_t package_copy_us = elapsed_us_since(package_copy_start);
-  if (hooks.record_frame_copy_us) {
-    hooks.record_frame_copy_us(package_copy_us);
-  }
   CVMetalTextureRef destination_ref = nullptr;
   const CVReturn texture_status = CVMetalTextureCacheCreateTextureFromImage(
       kCFAllocatorDefault,
@@ -1201,41 +1242,23 @@ bool WgpuMetalPresentationBackend::draw_frame(
   request.height = draw_target_height_;
   request.error = ffi_error;
   request.error_size = sizeof(ffi_error);
-  const auto gpu_start = std::chrono::steady_clock::now();
-  const int ret = VPWgpuMetalRendererRenderPackage(wgpu_renderer_, &request);
-  const uint64_t gpu_wait_us = elapsed_us_since(gpu_start);
-  record_wgpu_command_result(gpu_wait_us, ret == 0);
-  CFRelease(destination_ref);
+  auto frame_info = frame_info_from_package(package, target);
+  auto pending = make_async_pending(frame_info, package_copy_us, package.storage, true);
+  pending->destination_texture_ref = destination_ref;
+  destination_ref = nullptr;
+  AsyncDrawPending* pending_raw = pending.release();
+  VPWgpuMetalAsyncCompletion completion = {};
+  completion.callback = wgpu_async_draw_completed;
+  completion.user_data = pending_raw;
+  const int ret =
+      VPWgpuMetalRendererRenderPackageAsync(wgpu_renderer_, &request, completion);
   if (ret != 0) {
+    std::unique_ptr<AsyncDrawPending> reclaim(pending_raw);
     const std::string render_error =
         ffi_error[0] ? ffi_error : "wgpu-metal render package failed";
-    overlay_last_expected_ = overlay_expected;
-    overlay_last_applied_ = false;
-    overlay_last_fill_rect_count_ = overlay_primitives.fill_rects.size();
-    overlay_last_line_rect_count_ = overlay_primitives.line_rects.size();
-    if (overlay_expected) {
-      ++overlay_expected_count_;
-      ++overlay_missed_count_;
-      ++overlay_gpu_failure_count_;
-    }
     return fail_after_target_acquire(render_error);
   }
-  overlay_last_expected_ = overlay_expected;
-  overlay_last_applied_ = overlay_expected;
-  overlay_last_fill_rect_count_ = overlay_primitives.fill_rects.size();
-  overlay_last_line_rect_count_ = overlay_primitives.line_rects.size();
-  if (overlay_expected) {
-    ++overlay_expected_count_;
-    ++overlay_applied_count_;
-    ++overlay_gpu_success_count_;
-  }
-  auto frame_info = frame_info_from_package(package, target);
-  record_present_package_timing(package_copy_us,
-                                gpu_wait_us,
-                                package_copy_us + gpu_wait_us);
-  mark_draw_success(frame_info, package.storage);
-  complete_acquired_target(true);
-  complete_async_draw_success(hooks, draw_start, frame_info);
+  target_ring_acquired = false;
   return true;
 }
 
@@ -1419,6 +1442,55 @@ void WgpuMetalPresentationBackend::record_present_package_timing(
   last_present_package_copy_us_ = copy_us;
   last_present_package_gpu_wait_us_ = gpu_wait_us;
   last_present_package_total_us_ = total_us;
+}
+
+void WgpuMetalPresentationBackend::complete_async_draw(
+    std::unique_ptr<AsyncDrawPending> pending,
+    bool success) {
+  if (!pending) {
+    return;
+  }
+  const uint64_t total_us = elapsed_us_since(pending->draw_start);
+  const uint64_t gpu_wait_us =
+      total_us > pending->package_copy_us ? total_us - pending->package_copy_us : total_us;
+  record_wgpu_command_result(gpu_wait_us, success);
+  record_present_package_timing(pending->package_copy_us, gpu_wait_us, total_us);
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    overlay_last_expected_ = pending->overlay_expected;
+    overlay_last_applied_ = success && pending->overlay_expected;
+    overlay_last_fill_rect_count_ = pending->overlay_fill_rect_count;
+    overlay_last_line_rect_count_ = pending->overlay_line_rect_count;
+    if (pending->overlay_expected) {
+      ++overlay_expected_count_;
+      if (success) {
+        ++overlay_applied_count_;
+        ++overlay_gpu_success_count_;
+      } else {
+        ++overlay_missed_count_;
+        ++overlay_gpu_failure_count_;
+      }
+    }
+  }
+  if (success) {
+    mark_draw_success(pending->frame_info,
+                      pending->package_storage,
+                      pending->source_upload);
+  } else {
+    mark_draw_failure("wgpu-metal async GPU completion failed");
+  }
+  if (pending->target_ring_acquired) {
+    complete_ring_draw_target(pending->target_pixel_buffer_address, success);
+    pending->target_ring_acquired = false;
+  }
+  if (pending->hooks.record_frame_copy_us) {
+    pending->hooks.record_frame_copy_us(pending->package_copy_us);
+  }
+  if (pending->hooks.async_draw_completed) {
+    const char* error = success ? nullptr : "wgpu-metal async GPU completion failed";
+    pending->hooks.async_draw_completed(
+        success, error, total_us, success ? &pending->frame_info : nullptr);
+  }
 }
 
 std::unique_ptr<vr::PresentationBackend> create_wgpu_metal_presentation_backend() {

@@ -13,7 +13,7 @@ extern "C" {
 typedef struct VPWgpuMetalRenderer VPWgpuMetalRenderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 5,
+  VP_WGPU_FFI_ABI_VERSION = 6,
 };
 
 enum {
@@ -94,6 +94,14 @@ typedef struct VPWgpuMetalRetainedCompositeRequest {
   size_t error_size;
 } VPWgpuMetalRetainedCompositeRequest;
 
+typedef void (*VPWgpuMetalAsyncCompletionCallback)(void* user_data,
+                                                   int32_t result);
+
+typedef struct VPWgpuMetalAsyncCompletion {
+  VPWgpuMetalAsyncCompletionCallback callback;
+  void* user_data;
+} VPWgpuMetalAsyncCompletion;
+
 int VPWgpuFfiVersion(void);
 VPWgpuMetalRenderer* VPWgpuMetalRendererCreate(char* error, size_t error_size);
 void VPWgpuMetalRendererDestroy(VPWgpuMetalRenderer* renderer);
@@ -101,12 +109,24 @@ int VPWgpuMetalRendererGetInfo(VPWgpuMetalRenderer* renderer,
                                VPWgpuMetalRendererInfo* info);
 int VPWgpuMetalRendererRenderPackage(VPWgpuMetalRenderer* renderer,
                                      const VPWgpuMetalRenderRequest* request);
+int VPWgpuMetalRendererRenderPackageAsync(
+    VPWgpuMetalRenderer* renderer,
+    const VPWgpuMetalRenderRequest* request,
+    VPWgpuMetalAsyncCompletion completion);
 int VPWgpuMetalRendererRenderCVPixelBufferFrameSet(
     VPWgpuMetalRenderer* renderer,
     const VPWgpuMetalCVPixelBufferRenderRequest* request);
+int VPWgpuMetalRendererRenderCVPixelBufferFrameSetAsync(
+    VPWgpuMetalRenderer* renderer,
+    const VPWgpuMetalCVPixelBufferRenderRequest* request,
+    VPWgpuMetalAsyncCompletion completion);
 int VPWgpuMetalRendererCompositeRetainedSource(
     VPWgpuMetalRenderer* renderer,
     const VPWgpuMetalRetainedCompositeRequest* request);
+int VPWgpuMetalRendererCompositeRetainedSourceAsync(
+    VPWgpuMetalRenderer* renderer,
+    const VPWgpuMetalRetainedCompositeRequest* request,
+    VPWgpuMetalAsyncCompletion completion);
 int VPWgpuMetalRenderPackage(const VPWgpuMetalRenderRequest* request);
 
 #ifdef __cplusplus

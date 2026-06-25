@@ -59,6 +59,18 @@ extern "C" __attribute__((weak)) int VPWgpuMetalRendererRenderPackage(
   return -1;
 }
 
+extern "C" __attribute__((weak)) int VPWgpuMetalRendererRenderPackageAsync(
+    VPWgpuMetalRenderer*,
+    const VPWgpuMetalRenderRequest* request,
+    VPWgpuMetalAsyncCompletion) {
+  if (request) {
+    write_error(request->error,
+                request->error_size,
+                "wgpu-metal Rust FFI is not linked");
+  }
+  return -1;
+}
+
 extern "C" __attribute__((weak)) int
 VPWgpuMetalRendererRenderCVPixelBufferFrameSet(
     VPWgpuMetalRenderer*,
@@ -72,9 +84,35 @@ VPWgpuMetalRendererRenderCVPixelBufferFrameSet(
 }
 
 extern "C" __attribute__((weak)) int
+VPWgpuMetalRendererRenderCVPixelBufferFrameSetAsync(
+    VPWgpuMetalRenderer*,
+    const VPWgpuMetalCVPixelBufferRenderRequest* request,
+    VPWgpuMetalAsyncCompletion) {
+  if (request) {
+    write_error(request->error,
+                request->error_size,
+                "wgpu-metal Rust FFI is not linked");
+  }
+  return -1;
+}
+
+extern "C" __attribute__((weak)) int
 VPWgpuMetalRendererCompositeRetainedSource(
     VPWgpuMetalRenderer*,
     const VPWgpuMetalRetainedCompositeRequest* request) {
+  if (request) {
+    write_error(request->error,
+                request->error_size,
+                "wgpu-metal Rust FFI is not linked");
+  }
+  return -1;
+}
+
+extern "C" __attribute__((weak)) int
+VPWgpuMetalRendererCompositeRetainedSourceAsync(
+    VPWgpuMetalRenderer*,
+    const VPWgpuMetalRetainedCompositeRequest* request,
+    VPWgpuMetalAsyncCompletion) {
   if (request) {
     write_error(request->error,
                 request->error_size,

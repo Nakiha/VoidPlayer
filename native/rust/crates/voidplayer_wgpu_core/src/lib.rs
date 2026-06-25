@@ -9,8 +9,10 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{MTLTexture, MTLTextureType};
 use overlay::OverlayRect;
+use std::sync::mpsc;
+use std::thread::{self, JoinHandle};
 
-pub const ABI_VERSION: i32 = 5;
+pub const ABI_VERSION: i32 = 6;
 const MAX_TRACKS: usize = 4;
 const STORAGE_NONE: i32 = 0;
 const STORAGE_YUV: i32 = 1;
@@ -80,6 +82,22 @@ pub struct WgpuMetalRetainedCompositeRequest {
     pub height: i32,
     pub error: *mut core::ffi::c_char,
     pub error_size: usize,
+}
+
+pub type WgpuMetalAsyncCompletionCallback =
+    extern "C" fn(*mut core::ffi::c_void, i32);
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct WgpuMetalAsyncCompletion {
+    pub callback: Option<WgpuMetalAsyncCompletionCallback>,
+    pub user_data: *mut core::ffi::c_void,
+}
+
+struct CompletionJob {
+    submission: wgpu::SubmissionIndex,
+    callback: WgpuMetalAsyncCompletionCallback,
+    user_data: usize,
 }
 
 #[repr(C)]
@@ -208,6 +226,23 @@ pub fn render_metal_package_with_renderer(
     renderer: &mut WgpuMetalRenderer,
     request: &WgpuMetalRenderRequest,
 ) -> Result<(), &'static str> {
+    let submission = submit_metal_package_with_renderer(renderer, request)?;
+    wait_for_submission(&renderer.device, submission, "wgpu-metal queue wait failed")
+}
+
+pub fn render_metal_package_with_renderer_async(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalRenderRequest,
+    completion: WgpuMetalAsyncCompletion,
+) -> Result<(), &'static str> {
+    let submission = submit_metal_package_with_renderer(renderer, request)?;
+    renderer.submit_completion(submission, completion)
+}
+
+fn submit_metal_package_with_renderer(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalRenderRequest,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
     if request.destination_mtl_texture.is_null() {
         return Err("wgpu-metal destination texture is null");
     }
@@ -268,6 +303,23 @@ pub fn render_metal_cv_pixel_buffer_frame_set_with_renderer(
     renderer: &mut WgpuMetalRenderer,
     request: &WgpuMetalCVPixelBufferRenderRequest,
 ) -> Result<(), &'static str> {
+    let submission = submit_metal_cv_pixel_buffer_frame_set_with_renderer(renderer, request)?;
+    wait_for_submission(&renderer.device, submission, "wgpu-metal queue wait failed")
+}
+
+pub fn render_metal_cv_pixel_buffer_frame_set_with_renderer_async(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalCVPixelBufferRenderRequest,
+    completion: WgpuMetalAsyncCompletion,
+) -> Result<(), &'static str> {
+    let submission = submit_metal_cv_pixel_buffer_frame_set_with_renderer(renderer, request)?;
+    renderer.submit_completion(submission, completion)
+}
+
+fn submit_metal_cv_pixel_buffer_frame_set_with_renderer(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalCVPixelBufferRenderRequest,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
     if request.destination_mtl_texture.is_null() {
         return Err("wgpu-metal CVPixelBuffer destination texture is null");
     }
@@ -310,6 +362,23 @@ pub fn composite_metal_retained_source_with_renderer(
     renderer: &mut WgpuMetalRenderer,
     request: &WgpuMetalRetainedCompositeRequest,
 ) -> Result<(), &'static str> {
+    let submission = submit_metal_retained_source_with_renderer(renderer, request)?;
+    wait_for_submission(&renderer.device, submission, "wgpu-metal queue wait failed")
+}
+
+pub fn composite_metal_retained_source_with_renderer_async(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalRetainedCompositeRequest,
+    completion: WgpuMetalAsyncCompletion,
+) -> Result<(), &'static str> {
+    let submission = submit_metal_retained_source_with_renderer(renderer, request)?;
+    renderer.submit_completion(submission, completion)
+}
+
+fn submit_metal_retained_source_with_renderer(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalRetainedCompositeRequest,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
     if request.destination_mtl_texture.is_null() {
         return Err("wgpu-metal retained destination texture is null");
     }
@@ -343,6 +412,20 @@ pub fn composite_metal_retained_source_with_renderer(
     )
 }
 
+fn wait_for_submission(
+    device: &wgpu::Device,
+    submission: wgpu::SubmissionIndex,
+    error: &'static str,
+) -> Result<(), &'static str> {
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: Some(submission),
+            timeout: None,
+        })
+        .map_err(|_| error)?;
+    Ok(())
+}
+
 pub static WGSL_COMPOSITE_SHADER: &str = include_str!("../shaders/composite.wgsl");
 
 pub struct WgpuMetalRenderer {
@@ -371,6 +454,8 @@ pub struct WgpuMetalRenderer {
     params_scratch: Vec<u8>,
     package_bytes_scratch: Vec<u8>,
     overlay_rects_scratch: Vec<OverlayRect>,
+    completion_tx: Option<mpsc::Sender<CompletionJob>>,
+    completion_worker: Option<JoinHandle<()>>,
 }
 
 impl WgpuMetalRenderer {
@@ -381,6 +466,35 @@ impl WgpuMetalRenderer {
     pub fn supports_texture_format_16bit_norm(&self) -> bool {
         self.required_features
             .contains(wgpu::Features::TEXTURE_FORMAT_16BIT_NORM)
+    }
+
+    fn submit_completion(
+        &self,
+        submission: wgpu::SubmissionIndex,
+        completion: WgpuMetalAsyncCompletion,
+    ) -> Result<(), &'static str> {
+        let callback = completion
+            .callback
+            .ok_or("wgpu-metal async completion callback is null")?;
+        let job = CompletionJob {
+            submission,
+            callback,
+            user_data: completion.user_data as usize,
+        };
+        self.completion_tx
+            .as_ref()
+            .ok_or("wgpu-metal async completion worker is unavailable")?
+            .send(job)
+            .map_err(|_| "wgpu-metal async completion worker stopped")
+    }
+}
+
+impl Drop for WgpuMetalRenderer {
+    fn drop(&mut self) {
+        self.completion_tx.take();
+        if let Some(worker) = self.completion_worker.take() {
+            let _ = worker.join();
+        }
     }
 }
 
@@ -666,6 +780,25 @@ impl WgpuMetalRenderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
+        let (completion_tx, completion_rx) = mpsc::channel::<CompletionJob>();
+        let completion_device = device.clone();
+        let completion_worker = thread::Builder::new()
+            .name("voidplayer-wgpu-completion".to_string())
+            .spawn(move || {
+                while let Ok(job) = completion_rx.recv() {
+                    let success = completion_device
+                        .poll(wgpu::PollType::Wait {
+                            submission_index: Some(job.submission),
+                            timeout: None,
+                        })
+                        .is_ok();
+                    (job.callback)(
+                        job.user_data as *mut core::ffi::c_void,
+                        if success { 0 } else { -1 },
+                    );
+                }
+            })
+            .map_err(|_| "wgpu-metal async completion worker spawn failed")?;
         Ok(Self {
             _instance: instance,
             adapter_info,
@@ -692,6 +825,8 @@ impl WgpuMetalRenderer {
             params_scratch: Vec::new(),
             package_bytes_scratch: Vec::new(),
             overlay_rects_scratch: Vec::new(),
+            completion_tx: Some(completion_tx),
+            completion_worker: Some(completion_worker),
         })
     }
 }
@@ -762,7 +897,7 @@ fn render_package_to_metal_destination(
     overlay_line_rects: &[OverlayRect],
     overlay_motion_lines: &[OverlayRect],
     overlay_generation: u64,
-) -> Result<(), &'static str> {
+) -> Result<wgpu::SubmissionIndex, &'static str> {
     let destination_texture = import_metal_texture_2d(
         &renderer.device,
         destination_mtl_texture,
@@ -815,7 +950,7 @@ fn render_package_to_metal_destination(
         output.height,
         &renderer.source_bgra_scratch,
     )?;
-    render_bgra_atlas_with_wgsl(
+    let submission = render_bgra_atlas_with_wgsl(
         renderer,
         &destination_texture,
         output.format,
@@ -826,7 +961,7 @@ fn render_package_to_metal_destination(
     renderer.retained_storage = package.storage;
     renderer.retained_cv_y_textures = std::array::from_fn(|_| None);
     renderer.retained_cv_uv_textures = std::array::from_fn(|_| None);
-    Ok(())
+    Ok(submission)
 }
 
 fn render_cv_pixel_buffer_frame_set_to_metal_destination(
@@ -840,7 +975,7 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
     overlay_line_rects: &[OverlayRect],
     overlay_motion_lines: &[OverlayRect],
     overlay_generation: u64,
-) -> Result<(), &'static str> {
+) -> Result<wgpu::SubmissionIndex, &'static str> {
     if frame_set.decision.should_present == 0 || frame_set.decision.frame_count <= 0 {
         return Err("wgpu-metal CVPixelBuffer frame set has no presentable frame");
     }
@@ -930,7 +1065,7 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
         overlay_motion_lines,
         &mut renderer.overlay_rects_scratch,
     );
-    render_cv_pixel_buffer_frame_set_with_wgsl(
+    let submission = render_cv_pixel_buffer_frame_set_with_wgsl(
         renderer,
         &destination_texture,
         &source_y_textures,
@@ -943,7 +1078,7 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
     renderer.retained_storage = STORAGE_CV_PIXEL_BUFFER;
     renderer.retained_cv_y_textures = source_y_textures;
     renderer.retained_cv_uv_textures = source_uv_textures;
-    Ok(())
+    Ok(submission)
 }
 
 fn render_retained_source_to_metal_destination(
@@ -955,7 +1090,7 @@ fn render_retained_source_to_metal_destination(
     overlay_line_rects: &[OverlayRect],
     overlay_motion_lines: &[OverlayRect],
     overlay_generation: u64,
-) -> Result<(), &'static str> {
+) -> Result<wgpu::SubmissionIndex, &'static str> {
     if renderer.retained_storage == STORAGE_NONE {
         return Err("wgpu-metal retained source cache is empty");
     }
@@ -1574,14 +1709,7 @@ fn prepare_overlay_layer_texture(
             pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
             pass.draw(0..3, 0..1);
         }
-        let submission = renderer.queue.submit(std::iter::once(encoder.finish()));
-        renderer
-            .device
-            .poll(wgpu::PollType::Wait {
-                submission_index: Some(submission),
-                timeout: None,
-            })
-            .map_err(|_| "wgpu-metal overlay layer queue wait failed")?;
+        renderer.queue.submit(std::iter::once(encoder.finish()));
     }
     if let Some(cache) = renderer.overlay_layer_texture.as_mut() {
         cache.generation = overlay_generation;
@@ -1599,7 +1727,7 @@ fn render_bgra_atlas_with_wgsl(
     width: u32,
     height: u32,
     overlay_generation: u64,
-) -> Result<(), &'static str> {
+) -> Result<wgpu::SubmissionIndex, &'static str> {
     write_cached_storage_buffer(
         &renderer.device,
         &renderer.queue,
@@ -1751,14 +1879,7 @@ fn render_bgra_atlas_with_wgsl(
         pass.draw(0..3, 0..1);
     }
     let submission = renderer.queue.submit(std::iter::once(encoder.finish()));
-    renderer
-        .device
-        .poll(wgpu::PollType::Wait {
-            submission_index: Some(submission),
-            timeout: None,
-        })
-        .map_err(|_| "wgpu-metal queue wait failed")?;
-    Ok(())
+    Ok(submission)
 }
 
 fn render_cv_pixel_buffer_frame_set_with_wgsl(
@@ -1770,7 +1891,7 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
     width: u32,
     height: u32,
     overlay_generation: u64,
-) -> Result<(), &'static str> {
+) -> Result<wgpu::SubmissionIndex, &'static str> {
     write_cached_storage_buffer(
         &renderer.device,
         &renderer.queue,
@@ -1925,12 +2046,5 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
         pass.draw(0..3, 0..1);
     }
     let submission = renderer.queue.submit(std::iter::once(encoder.finish()));
-    renderer
-        .device
-        .poll(wgpu::PollType::Wait {
-            submission_index: Some(submission),
-            timeout: None,
-        })
-        .map_err(|_| "wgpu-metal queue wait failed")?;
-    Ok(())
+    Ok(submission)
 }

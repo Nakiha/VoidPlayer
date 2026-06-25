@@ -2,6 +2,9 @@
 
 #include "renderer/render/presentation_backend.h"
 
+#include <array>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -13,8 +16,10 @@ struct VPWgpuMetalRenderer;
 namespace vp_macos {
 
 class WgpuMetalPresentationBackend final : public vr::PresentationBackend {
+  friend void wgpu_async_draw_completed(void* user_data, int32_t result);
+
 public:
-  WgpuMetalPresentationBackend() = default;
+  WgpuMetalPresentationBackend();
   ~WgpuMetalPresentationBackend() override;
 
   WgpuMetalPresentationBackend(const WgpuMetalPresentationBackend&) = delete;
@@ -74,6 +79,32 @@ private:
     bool viewport_composite = false;
     bool cache_hit = false;
   };
+  struct AsyncState {
+    std::mutex mutex;
+    std::condition_variable cv;
+    WgpuMetalPresentationBackend* backend = nullptr;
+    size_t active_callbacks = 0;
+    bool shutdown = false;
+  };
+  struct AsyncDrawPending {
+    ~AsyncDrawPending();
+
+    std::shared_ptr<AsyncState> state;
+    vr::PresentationBackendDrawHooks hooks;
+    vr::PresentationBackendFrameInfo frame_info{};
+    std::chrono::steady_clock::time_point draw_start;
+    uint64_t target_pixel_buffer_address = 0;
+    uint64_t package_copy_us = 0;
+    int32_t package_storage = 0;
+    bool source_upload = true;
+    bool target_ring_acquired = false;
+    bool overlay_expected = false;
+    uint64_t overlay_fill_rect_count = 0;
+    uint64_t overlay_line_rect_count = 0;
+    void* destination_texture_ref = nullptr;
+    std::array<void*, 4> source_y_texture_refs{};
+    std::array<void*, 4> source_uv_texture_refs{};
+  };
 
   bool available() const;
   bool available_locked() const;
@@ -98,7 +129,10 @@ private:
   void record_present_package_timing(uint64_t copy_us,
                                      uint64_t gpu_wait_us,
                                      uint64_t total_us);
+  void complete_async_draw(std::unique_ptr<AsyncDrawPending> pending,
+                           bool success);
 
+  std::shared_ptr<AsyncState> async_state_;
   void* metal_device_ = nullptr;
   void* texture_cache_ = nullptr;
   VPWgpuMetalRenderer* wgpu_renderer_ = nullptr;

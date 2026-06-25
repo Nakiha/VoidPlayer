@@ -9,12 +9,15 @@
 #include <CoreVideo/CoreVideo.h>
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <condition_variable>
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -23,6 +26,51 @@ namespace {
 int fail(const char* message) {
   std::cerr << message << "\n";
   return 1;
+}
+
+bool draw_wgpu_frame_and_wait(vr::PresentationBackend& backend,
+                              const vr::RendererDrawSnapshot& snapshot,
+                              vr::PresentationBackendDrawHooks hooks = {},
+                              std::string* error = nullptr) {
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool completed = false;
+  bool success = false;
+  std::string completion_error;
+  auto user_async_completed = std::move(hooks.async_draw_completed);
+  hooks.async_draw_completed =
+      [&](bool draw_success,
+          const char* draw_error,
+          uint64_t backend_us,
+          const vr::PresentationBackendFrameInfo* frame_info) mutable {
+        if (user_async_completed) {
+          user_async_completed(draw_success, draw_error, backend_us, frame_info);
+        }
+        {
+          std::lock_guard<std::mutex> lock(mutex);
+          completed = true;
+          success = draw_success;
+          completion_error = draw_error ? draw_error : "";
+        }
+        cv.notify_one();
+      };
+  if (!backend.draw_frame(snapshot, hooks)) {
+    if (error) {
+      *error = backend.last_error();
+    }
+    return false;
+  }
+  std::unique_lock<std::mutex> lock(mutex);
+  if (!cv.wait_for(lock, std::chrono::seconds(5), [&] { return completed; })) {
+    if (error) {
+      *error = "wgpu-metal async draw timed out";
+    }
+    return false;
+  }
+  if (!success && error) {
+    *error = completion_error;
+  }
+  return success;
 }
 
 struct Bgra {
@@ -735,7 +783,9 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not expose RGBA16Float EDR target diagnostics");
   }
-  if (!wgpu_backend->draw_frame(snapshot, vr::PresentationBackendDrawHooks{})) {
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                snapshot,
+                                vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected RGBA16Float EDR target: "
               << wgpu_backend->last_error() << "\n";
     CVPixelBufferRelease(pixel_buffer);
@@ -773,7 +823,7 @@ int main() {
         }
       };
   const auto wgpu_source_stats_base = wgpu_backend->presentation_stats();
-  if (!wgpu_backend->draw_frame(snapshot, wgpu_async_hooks)) {
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend, snapshot, wgpu_async_hooks)) {
     std::cerr << "WgpuMetal backend rejected BGRA snapshot: "
               << wgpu_backend->last_error() << "\n";
     CVPixelBufferRelease(pixel_buffer);
@@ -878,7 +928,8 @@ int main() {
   vr::RendererDrawSnapshot wgpu_cache_snapshot = snapshot;
   wgpu_cache_snapshot.decision.current_pts_us = wgpu_cache_frame.pts_us;
   wgpu_cache_snapshot.decision.frames[0] = wgpu_cache_frame;
-  if (!wgpu_backend->draw_frame(wgpu_cache_snapshot,
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                wgpu_cache_snapshot,
                                 vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected cached BGRA snapshot: "
               << wgpu_backend->last_error() << "\n";
@@ -921,7 +972,9 @@ int main() {
         wgpu_viewport_copy_metric_us = elapsed_us;
       };
   const auto wgpu_before_viewport_stats = wgpu_backend->presentation_stats();
-  if (!wgpu_backend->draw_frame(wgpu_cache_snapshot, wgpu_viewport_hooks)) {
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                wgpu_cache_snapshot,
+                                wgpu_viewport_hooks)) {
     std::cerr << "WgpuMetal backend rejected repeated viewport snapshot: "
               << wgpu_backend->last_error() << "\n";
     CVPixelBufferRelease(pixel_buffer);
@@ -1001,7 +1054,7 @@ int main() {
         }
         ring_completion_target = frame_info->target_pixel_buffer_address;
       };
-  if (!wgpu_backend->draw_frame(snapshot, ring_hooks)) {
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend, snapshot, ring_hooks)) {
     std::cerr << "WgpuMetal backend rejected target ring draw: "
               << wgpu_backend->last_error() << "\n";
     CVPixelBufferRelease(pixel_buffer);
@@ -1033,7 +1086,7 @@ int main() {
   wgpu_backend->release_headless_output(ring_available.buffer);
   ring_completion_count = 0;
   ring_completion_target = 0;
-  if (!wgpu_backend->draw_frame(snapshot, ring_hooks) ||
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend, snapshot, ring_hooks) ||
       ring_completion_count != 1 ||
       ring_completion_target !=
           static_cast<uint64_t>(
@@ -1044,7 +1097,7 @@ int main() {
   wgpu_backend->mark_headless_output_displayed(ring_available.buffer);
   ring_completion_count = 0;
   ring_completion_target = 0;
-  if (!wgpu_backend->draw_frame(snapshot, ring_hooks) ||
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend, snapshot, ring_hooks) ||
       ring_completion_count != 1 ||
       ring_completion_target !=
           static_cast<uint64_t>(
@@ -1077,7 +1130,8 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend could not initialize >2048 target smoke");
   }
-  if (!wgpu_backend->draw_frame(large_snapshot,
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                large_snapshot,
                                 vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected >2048 target snapshot: "
               << wgpu_backend->last_error() << "\n";
@@ -1120,7 +1174,7 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not reinitialize for overlay draw");
   }
-  if (!wgpu_backend->draw_frame(snapshot, wgpu_overlay_hooks)) {
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend, snapshot, wgpu_overlay_hooks)) {
     std::cerr << "WgpuMetal backend rejected overlay snapshot: "
               << wgpu_backend->last_error() << "\n";
     CVPixelBufferRelease(pixel_buffer);
@@ -1200,7 +1254,8 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not reinitialize for split BGRA draw");
   }
-  if (!wgpu_backend->draw_frame(wgpu_split_snapshot,
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                wgpu_split_snapshot,
                                 vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected split BGRA snapshot: "
               << wgpu_backend->last_error() << "\n";
@@ -1305,7 +1360,9 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not reinitialize for NV12 draw");
   }
-  if (!wgpu_backend->draw_frame(nv12_snapshot, vr::PresentationBackendDrawHooks{})) {
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                nv12_snapshot,
+                                vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected NV12 snapshot: "
               << wgpu_backend->last_error() << "\n";
     CVPixelBufferRelease(pixel_buffer);
@@ -1402,7 +1459,8 @@ int main() {
   vr::RendererDrawSnapshot nv12_full_snapshot = snapshot;
   nv12_full_snapshot.decision.current_pts_us = nv12_full_frame.pts_us;
   nv12_full_snapshot.decision.frames[0] = nv12_full_frame;
-  if (!wgpu_backend->draw_frame(nv12_full_snapshot,
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                nv12_full_snapshot,
                                 vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected full-range NV12 snapshot: "
               << wgpu_backend->last_error() << "\n";
@@ -1517,7 +1575,9 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not reinitialize for P010 draw");
   }
-  if (!wgpu_backend->draw_frame(p010_snapshot, vr::PresentationBackendDrawHooks{})) {
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                p010_snapshot,
+                                vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected P010 snapshot: "
               << wgpu_backend->last_error() << "\n";
     CVPixelBufferRelease(pixel_buffer);
@@ -1584,7 +1644,8 @@ int main() {
   p010_hdr_snapshot.decision.frames[0] = p010_hdr_frame;
   const auto p010_failure_count_before =
       wgpu_backend->presentation_stats().draw_failure_count;
-  if (!wgpu_backend->draw_frame(p010_hdr_snapshot,
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                p010_hdr_snapshot,
                                 vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected P010 HDR snapshot: "
               << wgpu_backend->last_error() << "\n";
@@ -1606,7 +1667,8 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend could not install P010 HDR EDR target");
   }
-  if (!wgpu_backend->draw_frame(p010_hdr_snapshot,
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                p010_hdr_snapshot,
                                 vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected P010 HDR EDR snapshot: "
               << wgpu_backend->last_error() << "\n";
@@ -1648,7 +1710,8 @@ int main() {
   vr::RendererDrawSnapshot p010_hlg_snapshot = p010_snapshot;
   p010_hlg_snapshot.decision.current_pts_us = p010_hlg_frame.pts_us;
   p010_hlg_snapshot.decision.frames[0] = p010_hlg_frame;
-  if (!wgpu_backend->draw_frame(p010_hlg_snapshot,
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                p010_hlg_snapshot,
                                 vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected P010 HLG EDR snapshot: "
               << wgpu_backend->last_error() << "\n";
@@ -1716,7 +1779,9 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not reinitialize for planar YUV draw");
   }
-  if (!wgpu_backend->draw_frame(planar_snapshot, vr::PresentationBackendDrawHooks{})) {
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                planar_snapshot,
+                                vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected planar YUV snapshot: "
               << wgpu_backend->last_error() << "\n";
     CVPixelBufferRelease(pixel_buffer);
@@ -1802,7 +1867,7 @@ int main() {
         ++wgpu_cv_copy_metric_count;
         wgpu_cv_copy_metric_us = elapsed_us;
       };
-  if (!wgpu_backend->draw_frame(cv_snapshot, wgpu_cv_hooks)) {
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend, cv_snapshot, wgpu_cv_hooks)) {
     std::cerr << "WgpuMetal backend rejected CVPixelBuffer snapshot: "
               << wgpu_backend->last_error() << "\n";
     CVPixelBufferRelease(pixel_buffer);
@@ -1895,7 +1960,8 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not reinitialize for P010 CVPixelBuffer draw");
   }
-  if (!wgpu_backend->draw_frame(cv_p010_snapshot,
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                cv_p010_snapshot,
                                 vr::PresentationBackendDrawHooks{})) {
     std::cerr << "WgpuMetal backend rejected P010 CVPixelBuffer snapshot: "
               << wgpu_backend->last_error() << "\n";

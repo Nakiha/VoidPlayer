@@ -228,6 +228,20 @@ class _FakeAnalysisToolbarDataSource implements AnalysisToolbarDataSource {
   String formatBytes(int bytes) => '$bytes B';
 }
 
+Future<void> _waitForTestCondition(
+  bool Function() predicate,
+  String description, {
+  Duration timeout = const Duration(seconds: 1),
+}) async {
+  final stopwatch = Stopwatch()..start();
+  while (!predicate()) {
+    if (stopwatch.elapsed >= timeout) {
+      fail('Timed out waiting for $description');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -666,8 +680,12 @@ void main() {
         ),
       );
 
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+      await _waitForTestCondition(
+        () =>
+            repository.loadedRefs.isNotEmpty &&
+            controller.viewModel.marks.allMarks.isNotEmpty,
+        'runtime quick marks to load',
+      );
 
       expect(repository.loadedRefs.single.fileId, 4);
       expect(repository.savedRefs, isEmpty);

@@ -1,11 +1,10 @@
 #pragma once
 
+#include "windows/shared/shared_texture_ring_types.h"
+
 #include <d3d11.h>
-#include <windows.h>
 #include <wrl/client.h>
 
-#include <array>
-#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -14,67 +13,12 @@
 
 namespace vr {
 
-struct AnalysisOverlayPrimitivePackage;
-
-struct SourceCacheTrackDescriptor {
-    int slot = -1;
-    int file_id = -1;
-    int width = 0;
-    int height = 0;
-    int color_transfer = 0;
-};
-
-enum class SharedSourceCacheTextureSyncMode : uint32_t {
-    KeyedMutex = 0,
-    PublishedAfterProducerWait = 1,
-};
-
-struct SharedSourceCacheTextureSnapshot {
-    HANDLE handle = nullptr;
-    int source_slot = -1;
-    int source_file_id = -1;
-    int width = 0;
-    int height = 0;
-    int color_transfer = 0;
-    SharedSourceCacheTextureSyncMode sync_mode =
-        SharedSourceCacheTextureSyncMode::KeyedMutex;
-    uint64_t consumer_acquire_key = 1;
-    uint64_t producer_release_key = 0;
-};
-
-struct SharedSourceCacheBundleSnapshot {
-    std::array<SharedSourceCacheTextureSnapshot, 4> textures{};
-    size_t texture_count = 0;
-    int buffer_index = -1;
-    int ring_depth = 0;
-    uint64_t ring_generation = 0;
-    uint64_t frame_generation = 0;
-    std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay;
-};
-
-struct SourceCacheRingPolicy {
-    int depth = 0;
-    uint64_t bytes_per_frame = 0;
-    uint64_t total_bytes = 0;
-    bool frozen_snapshot = false;
-    bool allowed = false;
-};
-
-struct SourceCachePublishInfo {
-    uint64_t ring_generation = 0;
-    uint64_t frame_generation = 0;
-    size_t texture_count = 0;
-};
-
-SourceCacheRingPolicy resolve_source_cache_ring_policy(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors,
-    uint64_t budget_bytes);
-
 class D3D11SharedSourceCacheRing {
 public:
-    static constexpr int kLiveBufferCount = 3;
+    static constexpr int kLiveBufferCount =
+        kSharedSourceCacheLiveBufferCount;
     static constexpr uint64_t kDefaultBudgetBytes =
-        384ull * 1024ull * 1024ull;
+        kSharedSourceCacheDefaultBudgetBytes;
 
     bool initialize(ID3D11Device* device,
                     ID3D11DeviceContext* context,

@@ -1,8 +1,7 @@
 #pragma once
 
 #include "renderer/render/presentation_backend.h"
-#include "windows/d3d11/shared_fp16_ring.h"
-#include "windows/d3d11/shared_source_cache_ring.h"
+#include "windows/shared/shared_texture_ring_types.h"
 #include "windows/wgpu/wgpu_d3d12_ffi_bridge.h"
 
 #include <functional>

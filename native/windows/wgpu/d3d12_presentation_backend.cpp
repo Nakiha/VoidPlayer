@@ -901,7 +901,7 @@ private:
 class WgpuD3D12SharedSourceCacheRing {
 public:
     static constexpr uint64_t kDefaultBudgetBytes =
-        D3D11SharedSourceCacheRing::kDefaultBudgetBytes;
+        kSharedSourceCacheDefaultBudgetBytes;
 
     ~WgpuD3D12SharedSourceCacheRing() { shutdown(); }
 

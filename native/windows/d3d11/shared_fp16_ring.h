@@ -1,11 +1,11 @@
 #pragma once
 
+#include "windows/shared/shared_texture_ring_types.h"
+
 #include <d3d11.h>
-#include <windows.h>
 #include <wrl/client.h>
 
 #include <array>
-#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -13,34 +13,11 @@
 
 namespace vr {
 
-enum class SharedFp16TextureSyncMode : uint32_t {
-    KeyedMutex = 0,
-    PublishedAfterProducerWait = 1,
-};
-
-struct SharedFp16TextureSnapshot {
-    HANDLE handle = nullptr;
-    int width = 0;
-    int height = 0;
-    int buffer_index = -1;
-    uint64_t ring_generation = 0;
-    uint64_t frame_generation = 0;
-    SharedFp16TextureSyncMode sync_mode = SharedFp16TextureSyncMode::KeyedMutex;
-    uint64_t consumer_acquire_key = 1;
-    uint64_t producer_release_key = 0;
-};
-
-struct D3D11SharedFp16RingPrewarmStats {
-    uint64_t request_count = 0;
-    uint64_t ready_count = 0;
-    uint64_t hit_count = 0;
-    uint64_t dropped_count = 0;
-    uint64_t consumed_count = 0;
-};
+using D3D11SharedFp16RingPrewarmStats = SharedFp16RingPrewarmStats;
 
 class D3D11SharedFp16Ring {
 public:
-    static constexpr int kBufferCount = 3;
+    static constexpr int kBufferCount = kSharedFp16TextureRingBufferCount;
 
     bool initialize(ID3D11Device* device, ID3D11DeviceContext* context,
                     int width, int height);

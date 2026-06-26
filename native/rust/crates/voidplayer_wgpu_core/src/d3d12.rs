@@ -115,6 +115,10 @@ pub struct WgpuD3D12CompositeRequest {
     pub destination_resource: *mut core::ffi::c_void,
     pub output_format: i32,
     pub output_color_mode: i32,
+    pub flutter_resource: *mut core::ffi::c_void,
+    pub flutter_format: i32,
+    pub flutter_width: u32,
+    pub flutter_height: u32,
     pub source_resources: [*mut core::ffi::c_void; MAX_TRACKS],
     pub source_formats: [i32; MAX_TRACKS],
     pub source_array_layers: [u32; MAX_TRACKS],
@@ -216,6 +220,8 @@ pub struct WgpuD3D12Renderer {
     dummy_uv_view: wgpu::TextureView,
     _dummy_overlay_texture: wgpu::Texture,
     dummy_overlay_view: wgpu::TextureView,
+    _dummy_flutter_texture: wgpu::Texture,
+    dummy_flutter_view: wgpu::TextureView,
     params_buffer: Option<wgpu::Buffer>,
     package_buffer: wgpu::Buffer,
     overlay_buffer: wgpu::Buffer,
@@ -374,6 +380,41 @@ impl WgpuD3D12Renderer {
                 depth_or_array_layers: MAX_TRACKS as u32,
             },
         );
+        let dummy_flutter_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 dummy Flutter surface"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let dummy_flutter_view =
+            dummy_flutter_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &dummy_flutter_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &[0u8; 4],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
         let package_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("VoidPlayer wgpu-d3d12 dummy package buffer"),
             size: 4,
@@ -405,6 +446,8 @@ impl WgpuD3D12Renderer {
             dummy_uv_view,
             _dummy_overlay_texture: dummy_overlay_texture,
             dummy_overlay_view,
+            _dummy_flutter_texture: dummy_flutter_texture,
+            dummy_flutter_view,
             params_buffer: None,
             package_buffer,
             overlay_buffer,
@@ -636,6 +679,46 @@ impl WgpuD3D12Renderer {
             std::array::from_fn(|_| None);
         let mut source_uv_views: [Option<wgpu::TextureView>; MAX_TRACKS] =
             std::array::from_fn(|_| None);
+        let mut flutter_texture: Option<wgpu::Texture> = None;
+        let mut flutter_view: Option<wgpu::TextureView> = None;
+        if !request.flutter_resource.is_null() {
+            let flutter_format = d3d12_texture_format(request.flutter_format)?;
+            if flutter_format != wgpu::TextureFormat::Bgra8Unorm {
+                return Err("wgpu-d3d12 Flutter composite source must be BGRA8");
+            }
+            if request.flutter_width == 0 || request.flutter_height == 0 {
+                return Err("wgpu-d3d12 Flutter composite dimensions are invalid");
+            }
+            let texture = unsafe {
+                import_d3d12_resource(
+                    &self.device,
+                    request.flutter_resource,
+                    flutter_format,
+                    wgpu::TextureUsages::TEXTURE_BINDING,
+                    "VoidPlayer imported Flutter D3D12 surface",
+                    wgpu::Extent3d {
+                        width: request.flutter_width,
+                        height: request.flutter_height,
+                        depth_or_array_layers: 1,
+                    },
+                    1,
+                    1,
+                )
+            }?;
+            flutter_view = Some(texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("VoidPlayer imported Flutter D3D12 surface view"),
+                format: Some(wgpu::TextureFormat::Bgra8Unorm),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                base_array_layer: 0,
+                array_layer_count: Some(1),
+            }));
+            flutter_texture = Some(texture);
+            self.profiler.source_import_count = self.profiler.source_import_count.saturating_add(1);
+        }
         for slot in 0..MAX_TRACKS {
             if decision.frames[slot].present == 0 {
                 continue;
@@ -780,6 +863,12 @@ impl WgpuD3D12Renderer {
                     binding: 13,
                     resource: wgpu::BindingResource::TextureView(&self.dummy_overlay_view),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 14,
+                    resource: wgpu::BindingResource::TextureView(
+                        flutter_view.as_ref().unwrap_or(&self.dummy_flutter_view),
+                    ),
+                },
             ],
         });
 
@@ -837,6 +926,7 @@ impl WgpuD3D12Renderer {
         self.profiler.last_submit_us = elapsed_us(submit_start);
         self.profiler.last_cpu_render_us = elapsed_us(start);
         drop(source_textures);
+        drop(flutter_texture);
         Ok(())
     }
 
@@ -1104,6 +1194,16 @@ fn create_composite_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupL
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 14,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
                     multisampled: false,
                 },
                 count: None,

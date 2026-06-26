@@ -77,6 +77,9 @@ var cv_uv3: texture_2d<f32>;
 @group(0) @binding(13)
 var overlay_layer_texture: texture_2d_array<f32>;
 
+@group(0) @binding(14)
+var flutter_surface_texture: texture_2d<f32>;
+
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
 };
@@ -365,6 +368,27 @@ fn overlay_blend_over(dst: vec4<f32>, src: vec4<f32>) -> vec4<f32> {
     src.rgb * alpha + dst.rgb * (1.0 - alpha),
     alpha + dst.a * (1.0 - alpha),
   );
+}
+
+fn premul_blend_over(dst: vec4<f32>, src: vec4<f32>) -> vec4<f32> {
+  let alpha = clamp(src.a, 0.0, 1.0);
+  return vec4<f32>(
+    src.rgb + dst.rgb * (1.0 - alpha),
+    alpha + dst.a * (1.0 - alpha),
+  );
+}
+
+fn map_premul_sdr_ui_to_output(color: vec4<f32>) -> vec4<f32> {
+  let premul = clamp(color, vec4<f32>(0.0), vec4<f32>(1.0));
+  if (!output_is_edr()) {
+    return premul;
+  }
+  if (premul.a <= 0.00001) {
+    return vec4<f32>(0.0);
+  }
+  let straight = vec4<f32>(premul.rgb / premul.a, premul.a);
+  let mapped = map_sdr_ui_to_output(straight);
+  return vec4<f32>(mapped.rgb * premul.a, premul.a);
 }
 
 fn overlay_rect_matches_track(rect: OverlayRect, track: i32) -> bool {
@@ -829,5 +853,8 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
   let divided = apply_split_divider(color, position.x);
   let output_color = map_source_to_output(divided, track);
   let overlay = map_sdr_ui_to_output(textureSample(overlay_layer_texture, src_sampler, uv, track));
-  return overlay_blend_over(output_color, overlay);
+  let with_overlay = overlay_blend_over(output_color, overlay);
+  let flutter = map_premul_sdr_ui_to_output(
+    textureSample(flutter_surface_texture, src_sampler, tex_uv));
+  return premul_blend_over(with_overlay, flutter);
 }

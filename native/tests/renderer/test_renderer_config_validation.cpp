@@ -8,7 +8,10 @@
 #include "renderer/render/presentation_backend_factory.h"
 #include "renderer/renderer_config_validation.h"
 
+#include <array>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -97,6 +100,46 @@ Microsoft::WRL::ComPtr<ID3D12Resource> create_probe_rgba16_target(
     return SUCCEEDED(hr) ? texture : nullptr;
 }
 
+Microsoft::WRL::ComPtr<ID3D12Resource> create_probe_bgra8_target(
+    ID3D12Device* device,
+    UINT width,
+    UINT height) {
+    Microsoft::WRL::ComPtr<ID3D12Resource> texture;
+    if (!device) {
+        return texture;
+    }
+    D3D12_HEAP_PROPERTIES heap = {};
+    heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heap.CreationNodeMask = 1;
+    heap.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Width = width;
+    desc.Height = height;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    D3D12_CLEAR_VALUE clear = {};
+    clear.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    clear.Color[3] = 1.0f;
+
+    const HRESULT hr = device->CreateCommittedResource(
+        &heap,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_COMMON,
+        &clear,
+        IID_PPV_ARGS(&texture));
+    return SUCCEEDED(hr) ? texture : nullptr;
+}
+
 Microsoft::WRL::ComPtr<ID3D12Resource> create_probe_nv12_source(
     ID3D12Device* device,
     UINT width,
@@ -134,6 +177,184 @@ Microsoft::WRL::ComPtr<ID3D12Resource> create_probe_nv12_source(
         nullptr,
         IID_PPV_ARGS(&texture));
     return SUCCEEDED(hr) ? texture : nullptr;
+}
+
+bool readback_probe_bgra8(
+    ID3D12Resource* texture,
+    UINT width,
+    UINT height,
+    std::vector<uint8_t>& bgra,
+    std::string& error) {
+    bgra.clear();
+    if (!texture || width == 0 || height == 0) {
+        error = "invalid bgra8 readback source";
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12Device> device;
+    HRESULT hr = texture->GetDevice(IID_PPV_ARGS(&device));
+    if (FAILED(hr) || !device) {
+        error = "failed to query bgra8 readback device";
+        return false;
+    }
+
+    const D3D12_RESOURCE_DESC source_desc = texture->GetDesc();
+    if (source_desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM) {
+        error = "bgra8 readback source format mismatch";
+        return false;
+    }
+
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
+    UINT num_rows = 0;
+    UINT64 row_size_bytes = 0;
+    UINT64 total_bytes = 0;
+    device->GetCopyableFootprints(&source_desc,
+                                  0,
+                                  1,
+                                  0,
+                                  &footprint,
+                                  &num_rows,
+                                  &row_size_bytes,
+                                  &total_bytes);
+    if (total_bytes == 0 || num_rows == 0) {
+        error = "bgra8 readback footprint is empty";
+        return false;
+    }
+
+    D3D12_HEAP_PROPERTIES readback_heap = {};
+    readback_heap.Type = D3D12_HEAP_TYPE_READBACK;
+    readback_heap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    readback_heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    readback_heap.CreationNodeMask = 1;
+    readback_heap.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC buffer_desc = {};
+    buffer_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    buffer_desc.Width = total_bytes;
+    buffer_desc.Height = 1;
+    buffer_desc.DepthOrArraySize = 1;
+    buffer_desc.MipLevels = 1;
+    buffer_desc.SampleDesc.Count = 1;
+    buffer_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> readback;
+    hr = device->CreateCommittedResource(&readback_heap,
+                                         D3D12_HEAP_FLAG_NONE,
+                                         &buffer_desc,
+                                         D3D12_RESOURCE_STATE_COPY_DEST,
+                                         nullptr,
+                                         IID_PPV_ARGS(&readback));
+    if (FAILED(hr) || !readback) {
+        error = "bgra8 readback allocation failed";
+        return false;
+    }
+
+    D3D12_COMMAND_QUEUE_DESC queue_desc = {};
+    queue_desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue> queue;
+    hr = device->CreateCommandQueue(&queue_desc, IID_PPV_ARGS(&queue));
+    if (FAILED(hr) || !queue) {
+        error = "bgra8 readback queue creation failed";
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> allocator;
+    hr = device->CreateCommandAllocator(
+        D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator));
+    if (FAILED(hr) || !allocator) {
+        error = "bgra8 readback allocator creation failed";
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> command_list;
+    hr = device->CreateCommandList(0,
+                                   D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                   allocator.Get(),
+                                   nullptr,
+                                   IID_PPV_ARGS(&command_list));
+    if (FAILED(hr) || !command_list) {
+        error = "bgra8 readback command list creation failed";
+        return false;
+    }
+
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = texture;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    command_list->ResourceBarrier(1, &barrier);
+
+    D3D12_TEXTURE_COPY_LOCATION dst = {};
+    dst.pResource = readback.Get();
+    dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dst.PlacedFootprint = footprint;
+
+    D3D12_TEXTURE_COPY_LOCATION src = {};
+    src.pResource = texture;
+    src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    src.SubresourceIndex = 0;
+    command_list->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+
+    std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+    command_list->ResourceBarrier(1, &barrier);
+
+    hr = command_list->Close();
+    if (FAILED(hr)) {
+        error = "bgra8 readback command list close failed";
+        return false;
+    }
+    ID3D12CommandList* lists[] = {command_list.Get()};
+    queue->ExecuteCommandLists(1, lists);
+
+    Microsoft::WRL::ComPtr<ID3D12Fence> fence;
+    hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
+    if (FAILED(hr) || !fence) {
+        error = "bgra8 readback fence creation failed";
+        return false;
+    }
+    HANDLE event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (!event) {
+        error = "bgra8 readback fence event creation failed";
+        return false;
+    }
+    constexpr UINT64 kFenceValue = 1;
+    hr = queue->Signal(fence.Get(), kFenceValue);
+    if (SUCCEEDED(hr) && fence->GetCompletedValue() < kFenceValue) {
+        hr = fence->SetEventOnCompletion(kFenceValue, event);
+        if (SUCCEEDED(hr)) {
+            const DWORD wait = WaitForSingleObject(event, 1000);
+            if (wait != WAIT_OBJECT_0) {
+                hr = HRESULT_FROM_WIN32(WAIT_TIMEOUT);
+            }
+        }
+    }
+    CloseHandle(event);
+    if (FAILED(hr)) {
+        error = "bgra8 readback GPU wait failed";
+        return false;
+    }
+
+    void* mapped = nullptr;
+    D3D12_RANGE read_range{0, static_cast<SIZE_T>(total_bytes)};
+    hr = readback->Map(0, &read_range, &mapped);
+    if (FAILED(hr) || !mapped) {
+        error = "bgra8 readback map failed";
+        return false;
+    }
+
+    bgra.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+    const auto* src_bytes = static_cast<const uint8_t*>(mapped) + footprint.Offset;
+    for (UINT row_index = 0; row_index < height; ++row_index) {
+        const auto* row =
+            src_bytes + static_cast<size_t>(row_index) * footprint.Footprint.RowPitch;
+        std::memcpy(bgra.data() + static_cast<size_t>(row_index) * width * 4,
+                    row,
+                    static_cast<size_t>(width) * 4);
+    }
+    D3D12_RANGE written_range{0, 0};
+    readback->Unmap(0, &written_range);
+    return true;
 }
 #endif
 
@@ -342,6 +563,141 @@ TEST_CASE("Windows wgpu-d3d12 imports and clears a D3D12 render target",
     REQUIRE(profiler.submit_count >= 1);
 #else
     SUCCEED("wgpu-d3d12 render target import is Windows-only");
+#endif
+}
+
+TEST_CASE("Windows wgpu-d3d12 composites Flutter BGRA overlay input",
+          "[renderer_config][presentation_backend][wgpu_d3d12]") {
+#ifdef _WIN32
+    std::array<char, 512> error{};
+    WgpuD3D12RendererHandle handle{
+        VPWgpuD3D12RendererCreate(error.data(), error.size())};
+    if (!handle.renderer) {
+        SKIP(std::string("wgpu-d3d12 renderer unavailable: ") + error.data());
+    }
+    auto* device = static_cast<ID3D12Device*>(
+        VPWgpuD3D12RendererD3D12Device(handle.renderer));
+    REQUIRE(device != nullptr);
+
+    constexpr UINT kWidth = 16;
+    constexpr UINT kHeight = 16;
+    auto destination = create_probe_bgra8_target(device, kWidth, kHeight);
+    auto flutter = create_probe_bgra8_target(device, kWidth, kHeight);
+    REQUIRE(destination != nullptr);
+    REQUIRE(flutter != nullptr);
+
+    VPWgpuD3D12RenderTargetClearRequest clear = {};
+    clear.d3d12_resource = flutter.Get();
+    clear.format = VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
+    clear.width = kWidth;
+    clear.height = kHeight;
+    clear.color[0] = 0.5f;
+    clear.color[1] = 0.0f;
+    clear.color[2] = 0.0f;
+    clear.color[3] = 0.5f;
+    clear.error = error.data();
+    clear.error_size = error.size();
+    INFO(error.data());
+    REQUIRE(VPWgpuD3D12RendererClearRenderTargetForProbe(
+                handle.renderer, &clear) == 0);
+
+    std::vector<uint8_t> y_plane(kWidth * kHeight, 16);
+    std::vector<uint8_t> uv_plane((kWidth / 2) * (kHeight / 2) * 2, 128);
+
+    VPWgpuD3D12PresentDecisionInfo decision = {};
+    decision.should_present = 1;
+    decision.frame_count = 1;
+    decision.track_count = 1;
+    decision.mode = LAYOUT_SIDE_BY_SIDE;
+    decision.split_pos = 0.5f;
+    decision.background_color[3] = 1.0f;
+    for (int i = 0; i < 4; ++i) {
+        decision.order[i] = i;
+        decision.inv_display_size_x[i] = 1.0f;
+        decision.inv_display_size_y[i] = 1.0f;
+        decision.source_width[i] = 1;
+        decision.source_height[i] = 1;
+        decision.coded_width[i] = 1;
+        decision.coded_height[i] = 1;
+        decision.nv12_uv_scale_x[i] = 1.0f;
+        decision.nv12_uv_scale_y[i] = 1.0f;
+        decision.color_range[i] = VIDEO_COLOR_RANGE_LIMITED;
+        decision.color_matrix[i] = VIDEO_COLOR_MATRIX_BT709;
+        decision.color_transfer[i] = VIDEO_COLOR_TRANSFER_SDR;
+        decision.color_primaries[i] = VIDEO_COLOR_PRIMARIES_BT709;
+    }
+    decision.frames[0].present = 1;
+    decision.frames[0].slot = 0;
+    decision.frames[0].width = static_cast<int32_t>(kWidth);
+    decision.frames[0].height = static_cast<int32_t>(kHeight);
+    decision.source_width[0] = static_cast<int32_t>(kWidth);
+    decision.source_height[0] = static_cast<int32_t>(kHeight);
+    decision.coded_width[0] = static_cast<int32_t>(kWidth);
+    decision.coded_height[0] = static_cast<int32_t>(kHeight);
+    decision.yuv_format[0] = VP_WGPU_D3D12_TEXTURE_FORMAT_NV12;
+    decision.y_stride[0] = static_cast<int32_t>(kWidth);
+    decision.uv_stride[0] = static_cast<int32_t>(kWidth);
+
+    VPWgpuD3D12CompositeRequest request = {};
+    request.destination_resource = destination.Get();
+    request.output_format = VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
+    request.output_color_mode = VP_WGPU_D3D12_OUTPUT_COLOR_MODE_SDR;
+    request.flutter_resource = flutter.Get();
+    request.flutter_format = VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
+    request.flutter_width = kWidth;
+    request.flutter_height = kHeight;
+    request.source_formats[0] = VP_WGPU_D3D12_TEXTURE_FORMAT_NV12;
+    request.cpu_sources[0].y_data = y_plane.data();
+    request.cpu_sources[0].y_size = y_plane.size();
+    request.cpu_sources[0].uv_data = uv_plane.data();
+    request.cpu_sources[0].uv_size = uv_plane.size();
+    request.cpu_sources[0].format = VP_WGPU_D3D12_TEXTURE_FORMAT_NV12;
+    request.cpu_sources[0].y_stride = static_cast<int32_t>(kWidth);
+    request.cpu_sources[0].uv_stride = static_cast<int32_t>(kWidth);
+    request.cpu_sources[0].y_width = kWidth;
+    request.cpu_sources[0].y_height = kHeight;
+    request.cpu_sources[0].uv_width = kWidth / 2;
+    request.cpu_sources[0].uv_height = kHeight / 2;
+    request.decision = &decision;
+    request.width = static_cast<int32_t>(kWidth);
+    request.height = static_cast<int32_t>(kHeight);
+    request.error = error.data();
+    request.error_size = error.size();
+
+    VPWgpuD3D12ProfilerSnapshot before = {};
+    REQUIRE(VPWgpuD3D12RendererGetProfilerSnapshot(
+                handle.renderer, &before) == 0);
+    error.fill(0);
+    INFO(error.data());
+    REQUIRE(VPWgpuD3D12RendererRenderComposite(
+                handle.renderer, &request) == 0);
+    VPWgpuD3D12ProfilerSnapshot after = {};
+    REQUIRE(VPWgpuD3D12RendererGetProfilerSnapshot(
+                handle.renderer, &after) == 0);
+    REQUIRE(after.destination_import_count > before.destination_import_count);
+    REQUIRE(after.source_import_count >= before.source_import_count + 2);
+    REQUIRE(after.submit_count > before.submit_count);
+
+    std::vector<uint8_t> pixels;
+    std::string readback_error;
+    REQUIRE(readback_probe_bgra8(destination.Get(),
+                                 kWidth,
+                                 kHeight,
+                                 pixels,
+                                 readback_error));
+    const size_t center =
+        ((static_cast<size_t>(kHeight / 2) * kWidth) + (kWidth / 2)) * 4;
+    INFO("readback_error=" << readback_error);
+    INFO("center bgra=(" << static_cast<int>(pixels[center + 0]) << ", "
+                         << static_cast<int>(pixels[center + 1]) << ", "
+                         << static_cast<int>(pixels[center + 2]) << ", "
+                         << static_cast<int>(pixels[center + 3]) << ")");
+    REQUIRE(pixels[center + 2] > 80);
+    REQUIRE(pixels[center + 2] > pixels[center + 1] + 40);
+    REQUIRE(pixels[center + 2] > pixels[center + 0] + 40);
+    REQUIRE(pixels[center + 3] > 200);
+#else
+    SUCCEED("wgpu-d3d12 Flutter overlay composite is Windows-only");
 #endif
 }
 

@@ -42,6 +42,12 @@ class ScriptWaitAnalysisProcessCount extends ScriptInstruction {
   const ScriptWaitAnalysisProcessCount(super.time, this.count, this.timeout);
 }
 
+class ScriptWaitTrackCount extends ScriptInstruction {
+  final int count;
+  final Duration timeout;
+  const ScriptWaitTrackCount(super.time, this.count, this.timeout);
+}
+
 class ScriptWaitPresentedFrameRange extends ScriptInstruction {
   final int fileId;
   final int minUs;
@@ -797,6 +803,17 @@ ScriptInstruction? _parseInstruction(
       }
       final timeoutMs = args.length >= 2 ? int.parse(args[1]) : 10000;
       return ScriptWaitAnalysisProcessCount(
+        time,
+        int.parse(args[0]),
+        Duration(milliseconds: timeoutMs),
+      );
+    case 'WAIT_TRACK_COUNT':
+      if (args.isEmpty) {
+        log.warning('WAIT_TRACK_COUNT missing count argument: $rawLine');
+        return null;
+      }
+      final timeoutMs = args.length >= 2 ? int.parse(args[1]) : 10000;
+      return ScriptWaitTrackCount(
         time,
         int.parse(args[0]),
         Duration(milliseconds: timeoutMs),

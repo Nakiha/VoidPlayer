@@ -115,6 +115,12 @@ class TestRunner {
           );
         }
 
+      case ScriptWaitTrackCount(:final count, :final timeout):
+        log.info(
+          'TestRunner ${instr.time}: WAIT_TRACK_COUNT $count ${timeout.inMilliseconds}ms',
+        );
+        await _executeWaitTrackCount(count, timeout);
+
       case ScriptWaitPresentedFrameRange(
         :final fileId,
         :final minUs,
@@ -824,6 +830,21 @@ class TestRunner {
     }
     throw AssertionError(
       'WAIT_${state.name.toUpperCase()} timed out after ${timeout.inMilliseconds}ms',
+    );
+  }
+
+  Future<void> _executeWaitTrackCount(int count, Duration timeout) async {
+    final sw = Stopwatch()..start();
+    var lastCount = -1;
+    while (sw.elapsed < timeout) {
+      final tracks = await controller.getTracks();
+      lastCount = tracks.length;
+      if (lastCount == count) return;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    throw AssertionError(
+      'WAIT_TRACK_COUNT timed out after ${timeout.inMilliseconds}ms: '
+      'expected $count, got $lastCount',
     );
   }
 

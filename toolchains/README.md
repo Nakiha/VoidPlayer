@@ -13,14 +13,11 @@ the active SDK against this lock before building or testing.
 `.toolchains/ffmpeg/`; the hydrated SDKs are local build inputs and are not
 committed to this repository.
 
-The current Windows FFmpeg artifact is still a D3D11VA/DXVA2 package. It ships
-D3D12VA headers, but its manifest and runtime `avcodec_get_hw_config()` entries
-do not expose D3D12VA decode hwaccels for H.264/HEVC. Windows wgpu-d3d12 can
-consume D3D12 textures once FFmpeg provides them, and it can fall back to CPU YUV
-uploads for canaries, but product-performance wgpu playback requires a new
-Windows FFmpeg artifact that enables at least `h264_d3d12va`,
-`hevc_d3d12va`, `mpeg2_d3d12va`, `vp9_d3d12va`, and `av1_d3d12va`, records them
-in `voidplayer-ffmpeg-manifest.json`, and updates `ffmpeg.lock.json`.
+The Windows FFmpeg artifact is built with D3D11VA, D3D12VA, and DXVA2 hardware
+acceleration. The pinned package exposes at least `h264_d3d12va`,
+`hevc_d3d12va`, `mpeg2_d3d12va`, `vp9_d3d12va`, and `av1_d3d12va`, so the
+Windows wgpu-d3d12 backend can use D3D12VA decode surfaces instead of the CPU YUV
+upload canary path.
 
 Useful commands:
 

@@ -94,8 +94,8 @@ std::string presented_anchor_mode_name(vr::RendererPresentedAnchorMode mode) {
 }
 
 struct WindowsRenderBackendSelection {
-    vr::RendererBackendType type = vr::RendererBackendType::D3D11;
-    std::string name = "d3d11";
+    vr::RendererBackendType type = vr::RendererBackendType::WgpuD3D12;
+    std::string name = "wgpu-d3d12";
     std::string reason = "default";
 };
 
@@ -141,9 +141,15 @@ WindowsRenderBackendSelection resolve_windows_render_backend(
             "d3d11-renderer-disabled",
         };
     }
-    if (normalized.empty() || normalized == "auto" ||
-        normalized == "d3d11" || normalized == "dx11") {
+    if (normalized.empty() || normalized == "auto") {
         return {};
+    }
+    if (normalized == "d3d11" || normalized == "dx11") {
+        return {
+            vr::RendererBackendType::D3D11,
+            "d3d11",
+            "env-override",
+        };
     }
     if (normalized == "wgpu" || normalized == "wgpu-d3d12" ||
         normalized == "d3d12") {
@@ -155,7 +161,7 @@ WindowsRenderBackendSelection resolve_windows_render_backend(
     }
     spdlog::warn(
         "[WindowsRenderBackend] unsupported VOIDPLAYER_WINDOWS_RENDER_BACKEND='{}'; "
-        "using d3d11",
+        "using wgpu-d3d12",
         request);
     return {};
 }

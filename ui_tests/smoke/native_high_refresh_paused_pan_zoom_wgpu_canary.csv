@@ -1,5 +1,5 @@
-# Windows wgpu-d3d12 canary: the D3D11 renderer-disabled path should still
-# publish source-cache bundles and enter retained source-projection DComp.
+# Windows default wgpu-d3d12 path should publish source-cache bundles and enter
+# retained source-projection DComp.
 @WINDOW, 1366, 768
 0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
 3.0, ASSERT_TRACK_COUNT, 1

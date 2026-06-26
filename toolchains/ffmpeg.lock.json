@@ -3,22 +3,24 @@
   "repository": "Nakiha/VoidPlayer-FFmpeg-Build",
   "workflow": "Build FFmpeg",
   "branch": "main",
-  "workflowRunId": 26040995078,
-  "sourceCommit": "960cd22e41c2649526afdd7ebc12466c09f4d3da",
+  "workflowRunId": 28248288169,
+  "sourceCommit": "0bebb079b9fc5931acc4a76e7e7241c63af7a9d6",
   "ffmpegVersion": "n8.1",
   "defaultInstallPath": ".toolchains/ffmpeg",
   "artifacts": {
     "windows-x64": {
       "name": "voidplayer-ffmpeg-windows-x64-n8.1",
-      "githubArtifactId": 7061560210,
-      "githubArtifactSha256": "cb6eb439af4f3b4c83493deb19127f29895fb4d0e8482bf94051950ccf353ace",
-      "sizeBytes": 21210577
+      "githubArtifactId": 7910084978,
+      "githubArtifactSha256": "72ce04874cc603d9f1d267a5a0838c0cf9ad69ae65d3f1273ff2c518549ad093",
+      "zipSha256": "8803976980905a3929cbce8bbf6ff08774d0cfc33c5c7284bc6f83407b156c74",
+      "sizeBytes": 21671060
     },
     "macos-arm64": {
       "name": "voidplayer-ffmpeg-macos-arm64-n8.1",
-      "githubArtifactId": 7061158952,
-      "githubArtifactSha256": "9649a0cde707d7d812c76382e29237fd1ec7b1aaed9900dfa695d9818c14b86a",
-      "sizeBytes": 7436514
+      "githubArtifactId": 7909695833,
+      "githubArtifactSha256": "e545fa77c557e24881fd3c430c7432e1f36600ab3e62ebb8b65f7fe5a833c96e",
+      "zipSha256": "ecf1eb16ddd16356e87a5927fdd58bf3128e70d90f9220b6ee761d8090519e6f",
+      "sizeBytes": 7436498
     }
   }
 }

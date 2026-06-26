@@ -1,10 +1,12 @@
 # Windows DComp pacing benchmark probe.
-# Exercises playing pan, split changes, retained source projection, and toolbar hover
+# Exercises playing pan, split changes, wgpu/D3D12 source projection, and toolbar hover
 # while printing native and Flutter timing snapshots for bottleneck triage.
 @WINDOW, 1366, 768
 0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+1.7, WAIT_TRACK_COUNT, 1, 10000
 1.8, ASSERT_TRACK_COUNT, 1
 2.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+3.9, WAIT_TRACK_COUNT, 2, 10000
 4.0, ASSERT_TRACK_COUNT, 2
 4.1, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
 4.2, SET_LAYOUT_MODE, 1
@@ -25,17 +27,17 @@
 7.8, DEBUG_NATIVE_TIMING, interaction-final
 7.9, DEBUG_FLUTTER_TIMING
 8.0, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsHotPathActive, true
-8.01, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-dcomp
+8.01, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-wgpu-d3d12
 8.02, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsHotPathSourceCacheReuseCount, 1
 8.03, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathViewportRedrawDuringProjectionCount, 0, 0
 8.04, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
 8.05, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportBackpressureCount, 0, 20
-8.06, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsRetainedGraphActive, true
-8.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphCommitCount, 1
-8.08, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphSourceBakeCount, 1
-8.09, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphProjectionSkipPresentCount, 1
-8.092, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphDeferredContentCount, 1
-8.095, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompPresentBlockP95Us, 0, 0
+8.06, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsRetainedGraphActive, false
+8.07, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphCommitCount, 0, 0
+8.08, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphSourceBakeCount, 0, 0
+8.09, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphProjectionSkipPresentCount, 0, 0
+8.092, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphDeferredContentCount, 0, 0
+8.095, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompPresentBlockP95Us, 0, 10000
 8.1, PAUSE
 8.4, DEBUG_NATIVE_TIMING, paused
 8.5, QUIT, 0

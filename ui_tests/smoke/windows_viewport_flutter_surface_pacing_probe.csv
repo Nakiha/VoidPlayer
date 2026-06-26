@@ -1,8 +1,7 @@
 # Windows retained Flutter-surface pacing probe.
-# The failure this guards is not Flutter FrameTiming; it is the Windows
-# retained DComp graph repeatedly committing source projection while deferring
-# fresh Flutter surface content, making annotations appear lower-FPS than the
-# native texture during viewport interactions.
+# The failure this guards is not Flutter FrameTiming; it is Windows presentation
+# pacing while source projection is driven by the wgpu/D3D12 backend. The old
+# retained DComp graph must stay out of this hot path.
 @WINDOW, 1880, 1400
 0.0, GENERATE_TEST_VIDEO, build/generated/windows_viewport_flutter_surface_pacing.mp4, 240, 30, 1280, 720
 0.3, ADD_MEDIA, build/generated/windows_viewport_flutter_surface_pacing.mp4
@@ -27,8 +26,8 @@
 8.7, DRAG_SPLIT_HANDLE_NATIVE, 0.72, 160, 3
 9.45, END_NATIVE_INTERACTION_SAMPLE, viewport-flutter-surface
 9.5, DEBUG_NATIVE_TIMING, viewport-flutter-surface
-9.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphProjectionCommitCount, 220
-9.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphFlutterBakeCount, 1
+9.6, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphProjectionCommitCount, 0, 0
+9.7, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphFlutterBakeCount, 0, 0
 9.72, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsBackendSourceProjectionActive, true
 9.74, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsBackendSourceProjectionUpdateCount, 1
 9.76, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsBackendSourceProjectionConsumeCount, 1

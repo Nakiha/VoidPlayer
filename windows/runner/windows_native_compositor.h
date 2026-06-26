@@ -247,6 +247,7 @@ public:
     bool RequestFlutterFrame(const std::string& reason);
     void BoostFlutterInteraction(const std::string& reason);
     void SetSourceProjection(const SourceProjection& projection);
+    void DisableRetainedSourceProjection(const std::string& reason);
     void ClearSourceProjection(const std::string& reason);
     void SetSourceCacheError(const std::string& error);
     void NotifySourceCachePublished();

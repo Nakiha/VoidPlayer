@@ -1838,14 +1838,17 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
             projection.view_offset_uv_y[i] =
                 static_cast<float>(view_offset_uv_y[i]);
         }
-        native_compositor_->SetSourceProjection(projection);
         const bool backend_projection_ready =
             player_->update_source_projection(projection);
-        if (!backend_projection_ready) {
+        if (backend_projection_ready) {
+            native_compositor_->DisableRetainedSourceProjection(
+                "wgpu-d3d12-backend-source-projection");
+        } else {
             const auto backend = player_->presentation_backend_diagnostics();
             spdlog::warn(
-                "[WindowsSourceProjection] backend projection update failed backend={}",
+                "[WindowsSourceProjection] backend projection update failed backend={}, using retained D3D11 fallback",
                 backend.backend);
+            native_compositor_->SetSourceProjection(projection);
         }
 
         std::string signature = "R16G16B16A16_FLOAT|";
@@ -3512,6 +3515,45 @@ void VideoRendererPlugin::GetDiagnostics(
             "windowsBackendSourceProjectionConsumeCount")] =
             enc_i64(static_cast<int64_t>(
                 backend.source_projection_consume_count));
+        const bool backend_source_projection_hot_path =
+            backend.source_projection_active &&
+            backend.source_projection_consume_count > 0;
+        if (backend_source_projection_hot_path) {
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorSourceProjectionEnabled")] =
+                flutter::EncodableValue(true);
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorSourceCacheActive")] =
+                flutter::EncodableValue(
+                    backend.source_cache_texture_count > 0 ||
+                    backend.source_cache_publish_count > 0);
+            diagnostics[flutter::EncodableValue(
+                "windowsSourceProjectionReuseCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.source_projection_consume_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsSourceCacheConsumedGeneration")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.source_cache_generation));
+            diagnostics[flutter::EncodableValue("windowsHotPathActive")] =
+                flutter::EncodableValue(true);
+            diagnostics[flutter::EncodableValue("windowsHotPathMode")] =
+                flutter::EncodableValue(
+                    "source-projection-wgpu-d3d12");
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathProjectionOnlyUpdateCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.source_projection_update_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathSourceCacheReuseCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.source_projection_consume_count));
+            diagnostics[flutter::EncodableValue("windowsHotPathGateResult")] =
+                flutter::EncodableValue("pass-wgpu-d3d12-source-projection");
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathLastFailureReason")] =
+                flutter::EncodableValue("none");
+        }
         const bool compositor_active =
             compositor.phase == "preparing" || compositor.phase == "active";
         diagnostics[flutter::EncodableValue("windowsPresentationCompositorActive")] =

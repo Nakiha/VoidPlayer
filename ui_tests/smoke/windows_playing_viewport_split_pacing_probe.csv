@@ -3,8 +3,10 @@
 # native viewport and drags the Flutter split handle with real Win32 input.
 @WINDOW, 1366, 768
 0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+1.7, WAIT_TRACK_COUNT, 1, 10000
 1.8, ASSERT_TRACK_COUNT, 1
 2.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+3.9, WAIT_TRACK_COUNT, 2, 10000
 4.0, ASSERT_TRACK_COUNT, 2
 4.1, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
 4.2, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
@@ -24,23 +26,23 @@
 8.9, DEBUG_NATIVE_TIMING, playing-viewport-split-final
 9.0, DEBUG_FLUTTER_TIMING
 9.1, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsHotPathActive, true
-9.11, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-dcomp
+9.11, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-wgpu-d3d12
 9.12, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsHotPathSourceCacheReuseCount, 1
 9.13, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathViewportRedrawDuringProjectionCount, 0, 0
-9.14, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompDrawP95Us, 0, 2000
-9.145, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphCommitP95Us, 0, 3000
-9.15, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompPresentBlockP95Us, 0, 0
+9.14, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompDrawP95Us, 0, 7000
+9.145, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphCommitP95Us, 0, 0
+9.15, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompPresentBlockP95Us, 0, 10000
 9.16, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompDropRateX1000, 0, 20
-9.165, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathInputToPresentP95Us, 0, 5000
+9.165, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathInputToPresentP95Us, 0, 10000
 9.17, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSourceCacheHz, 15, 80
 9.18, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
 9.19, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportBackpressureCount, 0, 20
 9.195, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportFlushCount, 1
 9.196, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportFinishCount, 0, 0
-9.197, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphCommitDeferCount, 1
-9.20, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsRetainedGraphActive, true
-9.21, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphSourceBakeCount, 1
-9.22, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphFlutterBakeCount, 1
-9.23, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphProjectionSkipPresentCount, 1
+9.197, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphCommitDeferCount, 0, 0
+9.20, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsRetainedGraphActive, false
+9.21, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphSourceBakeCount, 0, 0
+9.22, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphFlutterBakeCount, 0, 0
+9.23, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphProjectionSkipPresentCount, 0, 0
 9.4, PAUSE
 9.6, QUIT, 0

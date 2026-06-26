@@ -706,6 +706,18 @@ void WindowsNativeCompositor::SetSourceProjection(
     wake_.notify_one();
 }
 
+void WindowsNativeCompositor::DisableRetainedSourceProjection(
+    const std::string& reason) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    source_projection_ = {};
+    diagnostics_.source_projection_enabled = false;
+    retained_projection_dirty_ = false;
+    last_retained_projection_update_ = {};
+    retained_deferred_content_deadline_ = {};
+    retained_graph_fallback_reason_ =
+        reason.empty() ? "backend-source-projection" : reason;
+}
+
 void WindowsNativeCompositor::ClearSourceProjection(
     const std::string& reason) {
     std::lock_guard<std::mutex> lock(mutex_);

@@ -43,7 +43,7 @@
 9.8, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompResizeCount, 1
 9.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsSourceCacheBackpressureCount, 0, 100
 9.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsHotPathActive, true
-9.92, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-dcomp
+9.92, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-wgpu-d3d12
 9.93, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsHotPathSourceCacheReuseCount, 1
 9.94, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathViewportRedrawDuringProjectionCount, 0, 0
 10.0, DEBUG_FAIL_NATIVE_COMPOSITOR, source-projection-ui-failure

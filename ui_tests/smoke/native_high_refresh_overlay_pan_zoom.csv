@@ -28,7 +28,7 @@
 5.94, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsOverlayLayerUploadP95Us, 0, 1000000
 5.95, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsViewportRedrawDuringProjectionCount, 0, 0
 5.96, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsHotPathActive, true
-5.97, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-dcomp
+5.97, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-wgpu-d3d12
 5.98, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsHotPathSourceCacheReuseCount, 1
 5.99, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsHotPathOverlayReuseCount, 1
 5.995, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathOverlayRasterCount, 0, 100000

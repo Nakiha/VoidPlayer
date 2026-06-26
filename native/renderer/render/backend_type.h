@@ -11,6 +11,16 @@ enum class RenderBackendKind {
     Vulkan,
 };
 
+inline constexpr RenderBackendKind default_render_backend_kind() {
+#ifdef _WIN32
+    return RenderBackendKind::WgpuD3D12;
+#elif defined(__APPLE__)
+    return RenderBackendKind::WgpuMetal;
+#else
+    return RenderBackendKind::Unknown;
+#endif
+}
+
 inline const char* render_backend_kind_name(RenderBackendKind kind) {
     switch (kind) {
     case RenderBackendKind::Unknown:

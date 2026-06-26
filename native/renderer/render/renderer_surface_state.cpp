@@ -15,7 +15,7 @@ void RendererSurfaceState::reset() {
     headless_ = false;
     width_ = 1920;
     height_ = 1080;
-    backend_kind_ = RenderBackendKind::D3D11;
+    backend_kind_ = default_render_backend_kind();
 }
 
 void* RendererSurfaceState::hwnd() const {

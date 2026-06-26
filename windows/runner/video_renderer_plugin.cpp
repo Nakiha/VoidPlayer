@@ -145,11 +145,11 @@ WindowsRenderBackendSelection resolve_windows_render_backend(
         return {};
     }
     if (normalized == "d3d11" || normalized == "dx11") {
-        return {
-            vr::RendererBackendType::D3D11,
-            "d3d11",
-            "env-override",
-        };
+        spdlog::warn(
+            "[WindowsRenderBackend] VOIDPLAYER_WINDOWS_RENDER_BACKEND='{}' "
+            "requests removed D3D11 renderer; using wgpu-d3d12",
+            request);
+        return {};
     }
     if (normalized == "wgpu" || normalized == "wgpu-d3d12" ||
         normalized == "d3d12") {

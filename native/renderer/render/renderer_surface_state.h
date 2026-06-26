@@ -36,7 +36,7 @@ private:
     bool headless_ = false;
     int width_ = 1920;
     int height_ = 1080;
-    RenderBackendKind backend_kind_ = RenderBackendKind::D3D11;
+    RenderBackendKind backend_kind_ = default_render_backend_kind();
 };
 
 } // namespace vr

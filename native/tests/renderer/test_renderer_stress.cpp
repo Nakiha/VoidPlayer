@@ -121,6 +121,7 @@ TEST_CASE("Renderer: shutdown during headless capture and resize stress",
         RendererConfig config;
         config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
         config.headless = true;
+        config.backend.type = RendererBackendType::D3D11;
         config.backend.adapter = adapter;
         config.width = 320;
         config.height = 180;

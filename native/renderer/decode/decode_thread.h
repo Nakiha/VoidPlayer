@@ -89,7 +89,7 @@ public:
     bool enable_hardware_decode(DecodeDeviceMode mode = DecodeDeviceMode::IndependentDevice,
                                 void* render_device = nullptr,
                                 std::recursive_mutex* device_mutex = nullptr,
-                                RenderBackendKind backend = RenderBackendKind::D3D11);
+                                RenderBackendKind backend = default_render_backend_kind());
 
     bool start();
     void stop();

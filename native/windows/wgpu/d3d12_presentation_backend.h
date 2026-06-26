@@ -1,6 +1,7 @@
 #pragma once
 
 #include "renderer/render/presentation_backend.h"
+#include "windows/presentation/windows_dcomp_composite.h"
 #include "windows/shared/shared_texture_ring_types.h"
 #include "windows/wgpu/wgpu_d3d12_ffi_bridge.h"
 
@@ -41,6 +42,9 @@ public:
     bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors) override;
     void clear_source_cache(const char* reason) override;
+    bool update_source_projection(
+        const WindowsSourceProjection& projection) override;
+    void clear_source_projection() override;
     bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot& snapshot) override;
     void release_source_cache_bundle(int buffer_index,
@@ -85,6 +89,10 @@ private:
     std::function<void()> source_cache_callback_;
     std::string source_cache_error_ = "none";
     std::string last_error_ = "wgpu-d3d12 presentation backend is not initialized";
+    mutable std::mutex source_projection_mutex_;
+    WindowsSourceProjection source_projection_;
+    uint64_t source_projection_update_count_ = 0;
+    uint64_t source_projection_consume_count_ = 0;
     mutable std::mutex external_flutter_mutex_;
     ExternalFlutterSurface external_flutter_;
     uint64_t external_flutter_surface_generation_ = 0;

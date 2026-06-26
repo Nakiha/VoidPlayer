@@ -17,6 +17,9 @@
 7.0, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProjectionEnabled, true
 7.01, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, true
 7.02, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceProjectionReuseCount, 1
+7.021, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsBackendSourceProjectionActive, true
+7.022, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsBackendSourceProjectionUpdateCount, 1
+7.023, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsBackendSourceProjectionConsumeCount, 1
 7.03, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsViewportRedrawDuringProjectionCount, 0, 0
 7.04, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHighRefreshDisplayHz, 1, 300
 7.05, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsDCompPresentIntervalP95Us, 0, 1000000

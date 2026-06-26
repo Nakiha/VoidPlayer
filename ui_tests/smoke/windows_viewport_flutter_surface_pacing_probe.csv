@@ -29,6 +29,9 @@
 9.5, DEBUG_NATIVE_TIMING, viewport-flutter-surface
 9.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphProjectionCommitCount, 220
 9.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsRetainedGraphFlutterBakeCount, 1
+9.72, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsBackendSourceProjectionActive, true
+9.74, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsBackendSourceProjectionUpdateCount, 1
+9.76, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsBackendSourceProjectionConsumeCount, 1
 9.8, ASSERT_FLUTTER_TIMING, 120, 24, 3, 12
 9.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
 10.0, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportBackpressureCount, 0, 20

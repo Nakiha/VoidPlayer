@@ -274,6 +274,15 @@ void Renderer::clear_source_cache(const char* reason) {
     impl_->clear_source_cache(reason);
 }
 
+bool Renderer::update_source_projection(
+    const WindowsSourceProjection& projection) {
+    return impl_->update_source_projection(projection);
+}
+
+void Renderer::clear_source_projection() {
+    impl_->clear_source_projection();
+}
+
 bool Renderer::acquire_source_cache_bundle(
     SharedSourceCacheBundleSnapshot& snapshot) const {
     return impl_->acquire_source_cache_bundle(snapshot);

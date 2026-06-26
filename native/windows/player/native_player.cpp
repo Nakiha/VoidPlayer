@@ -406,6 +406,20 @@ void NativePlayer::clear_source_cache(const char* reason) {
     }
 }
 
+bool NativePlayer::update_source_projection(
+    const WindowsSourceProjection& projection) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.update_source_projection(projection);
+}
+
+void NativePlayer::clear_source_projection() {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (renderer_ready_locked()) {
+        renderer_.clear_source_projection();
+    }
+}
+
 bool NativePlayer::acquire_source_cache_bundle(
     SharedSourceCacheBundleSnapshot& snapshot) const {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);

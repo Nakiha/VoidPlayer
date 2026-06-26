@@ -1788,7 +1788,27 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
             }
         }
         if (descriptors.size() != source_slots.size()) {
-            result->Error("BAD_ARGS", "sourceSlots do not match native tracks");
+            const std::string error = "source-cache-track-mismatch";
+            std::string failure_signature = error + "|slots=";
+            for (const int slot : source_slots) {
+                failure_signature += std::to_string(slot) + ",";
+            }
+            failure_signature += "|tracks=" + std::to_string(infos.size());
+            if (failure_signature !=
+                native_compositor_source_failure_signature_) {
+                spdlog::warn(
+                    "[WindowsSourceCache] ignoring stale source slots after track change: requested={} available_tracks={}",
+                    source_slots.size(),
+                    infos.size());
+                native_compositor_source_failure_signature_ =
+                    failure_signature;
+            }
+            player_->clear_source_cache(error.c_str());
+            player_->clear_source_projection();
+            native_compositor_->ClearSourceProjection(error);
+            native_compositor_->SetSourceCacheError(error);
+            native_compositor_source_signature_.clear();
+            result->Success();
             return;
         }
         std::sort(
@@ -1819,6 +1839,14 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
                 static_cast<float>(view_offset_uv_y[i]);
         }
         native_compositor_->SetSourceProjection(projection);
+        const bool backend_projection_ready =
+            player_->update_source_projection(projection);
+        if (!backend_projection_ready) {
+            const auto backend = player_->presentation_backend_diagnostics();
+            spdlog::warn(
+                "[WindowsSourceProjection] backend projection update failed backend={}",
+                backend.backend);
+        }
 
         std::string signature = "R16G16B16A16_FLOAT|";
         for (const int slot : source_order) {
@@ -1851,6 +1879,7 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
                         failure_signature;
                 }
                 player_->clear_source_cache(error.c_str());
+                player_->clear_source_projection();
                 native_compositor_->ClearSourceProjection(error);
                 native_compositor_->SetSourceCacheError(error);
                 native_compositor_source_signature_.clear();
@@ -1871,6 +1900,10 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
             if (backend.source_cache_publish_count == 0) {
                 (void)player_->request_frame_refresh(
                     "windows-source-cache-subscribe");
+            }
+            if (backend_projection_ready) {
+                (void)player_->request_frame_refresh(
+                    "windows-source-projection-refresh");
             }
         }
         result->Success();
@@ -1894,6 +1927,7 @@ void VideoRendererPlugin::ClearNativeCompositorSourceCache(
         }
         if (player_) {
             player_->clear_source_cache(reason.c_str());
+            player_->clear_source_projection();
         }
         if (native_compositor_) {
             native_compositor_->ClearSourceProjection(reason);
@@ -3467,6 +3501,17 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(static_cast<int64_t>(
                 backend.source_cache_fallback_count +
                 compositor.source_cache_fallback_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendSourceProjectionActive")] =
+            flutter::EncodableValue(backend.source_projection_active);
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendSourceProjectionUpdateCount")] =
+            enc_i64(static_cast<int64_t>(
+                backend.source_projection_update_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendSourceProjectionConsumeCount")] =
+            enc_i64(static_cast<int64_t>(
+                backend.source_projection_consume_count));
         const bool compositor_active =
             compositor.phase == "preparing" || compositor.phase == "active";
         diagnostics[flutter::EncodableValue("windowsPresentationCompositorActive")] =

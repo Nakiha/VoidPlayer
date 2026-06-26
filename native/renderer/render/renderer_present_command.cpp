@@ -209,7 +209,8 @@ bool RendererPresentCommandProcessor::draw_paused_frame(
     const char* reason) {
     const bool interactive_refresh =
         reason && (std::strcmp(reason, "macos-renderer-owned-refresh") == 0 ||
-                   std::strcmp(reason, "request_frame_refresh") == 0);
+                   std::strcmp(reason, "request_frame_refresh") == 0 ||
+                   std::strcmp(reason, "windows-source-projection-refresh") == 0);
     const bool decoded_preview_refresh =
         reason && std::strcmp(reason, "seek_frame_refresh") == 0;
     PresentDecision decision;

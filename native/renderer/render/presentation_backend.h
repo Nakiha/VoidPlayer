@@ -15,6 +15,7 @@ struct SharedSourceCacheBundleSnapshot;
 struct AnalysisOverlayPrimitivePackage;
 struct SharedFp16TextureSnapshot;
 struct PresentationExternalD3D12Surface;
+struct WindowsSourceProjection;
 
 using PresentationBackendAsyncDrawCompleted =
     std::function<void(bool, const char*, uint64_t, const PresentationBackendFrameInfo*)>;
@@ -106,6 +107,10 @@ public:
     virtual bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>&) { return false; }
     virtual void clear_source_cache(const char*) {}
+    virtual bool update_source_projection(const WindowsSourceProjection&) {
+        return false;
+    }
+    virtual void clear_source_projection() {}
     virtual bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot&) { return false; }
     virtual void release_source_cache_bundle(int, uint64_t) {}

@@ -530,6 +530,31 @@ void fill_wgpu_d3d12_decision_from_snapshot(
     }
 }
 
+void apply_windows_source_projection(
+    const WindowsSourceProjection& projection,
+    VPWgpuD3D12PresentDecisionInfo& decision) {
+    if (!projection.enabled) {
+        return;
+    }
+    decision.mode = projection.mode;
+    decision.split_pos = projection.split_pos;
+    decision.track_count = std::clamp(
+        projection.active_track_count, 1, kWgpuD3D12MaxTracks);
+    for (int i = 0; i < kWgpuD3D12MaxTracks; ++i) {
+        const auto index = static_cast<size_t>(i);
+        const int source_slot = projection.source_order[index];
+        decision.order[i] = source_slot >= 0 && source_slot < kWgpuD3D12MaxTracks
+            ? source_slot
+            : -1;
+        decision.display_offset_x[i] = projection.display_offset_x[index];
+        decision.display_offset_y[i] = projection.display_offset_y[index];
+        decision.inv_display_size_x[i] = projection.inv_display_size_x[index];
+        decision.inv_display_size_y[i] = projection.inv_display_size_y[index];
+        decision.view_offset_uv_x[i] = projection.view_offset_uv_x[index];
+        decision.view_offset_uv_y[i] = projection.view_offset_uv_y[index];
+    }
+}
+
 bool fill_wgpu_d3d12_source_for_frame(int slot,
                                       const TextureFrame& frame,
                                       VPWgpuD3D12CompositeRequest& composite,
@@ -1401,6 +1426,10 @@ void WgpuD3D12PresentationBackend::shutdown() {
     headless_ = false;
     source_cache_descriptors_.clear();
     source_cache_error_ = "backend-shutdown";
+    {
+        std::lock_guard<std::mutex> lock(source_projection_mutex_);
+        source_projection_ = {};
+    }
 }
 
 void* WgpuD3D12PresentationBackend::native_render_device() const {
@@ -1534,6 +1563,20 @@ void WgpuD3D12PresentationBackend::clear_source_cache(const char* reason) {
     }
     source_cache_descriptors_.clear();
     source_cache_error_ = reason ? reason : "source-cache-cleared";
+}
+
+bool WgpuD3D12PresentationBackend::update_source_projection(
+    const WindowsSourceProjection& projection) {
+    std::lock_guard<std::mutex> lock(source_projection_mutex_);
+    source_projection_ = projection;
+    source_projection_.enabled = projection.enabled;
+    ++source_projection_update_count_;
+    return source_projection_.enabled;
+}
+
+void WgpuD3D12PresentationBackend::clear_source_projection() {
+    std::lock_guard<std::mutex> lock(source_projection_mutex_);
+    source_projection_ = {};
 }
 
 bool WgpuD3D12PresentationBackend::acquire_source_cache_bundle(
@@ -1679,6 +1722,14 @@ PresentationBackendDiagnostics WgpuD3D12PresentationBackend::diagnostics() const
     } else {
         diagnostics.source_cache_last_error = source_cache_error_;
     }
+    {
+        std::lock_guard<std::mutex> lock(source_projection_mutex_);
+        diagnostics.source_projection_active = source_projection_.enabled;
+        diagnostics.source_projection_update_count =
+            source_projection_update_count_;
+        diagnostics.source_projection_consume_count =
+            source_projection_consume_count_;
+    }
     return diagnostics;
 }
 
@@ -1812,6 +1863,13 @@ bool WgpuD3D12PresentationBackend::draw_frame(
         std::max(snapshot.target_width, 1),
         std::max(snapshot.target_height, 1),
         decision);
+    {
+        std::lock_guard<std::mutex> lock(source_projection_mutex_);
+        if (source_projection_.enabled) {
+            apply_windows_source_projection(source_projection_, decision);
+            ++source_projection_consume_count_;
+        }
+    }
     bool has_present_frame = false;
     bool has_composite_source = false;
     for (int slot = 0; slot < kWgpuD3D12MaxTracks; ++slot) {

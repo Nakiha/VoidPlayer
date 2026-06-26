@@ -13,6 +13,7 @@ namespace vr {
 struct SharedFp16TextureSnapshot;
 struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
+struct WindowsSourceProjection;
 
 /// Native player facade that owns playback control and the video renderer as
 /// peers. FFI can adopt this type without changing the renderer/video internals.
@@ -82,6 +83,8 @@ public:
     bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors);
     void clear_source_cache(const char* reason);
+    bool update_source_projection(const WindowsSourceProjection& projection);
+    void clear_source_projection();
     bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot& snapshot) const;
     void release_source_cache_bundle(

@@ -204,6 +204,24 @@ void Renderer::Impl::clear_source_cache(const char* reason) {
 #endif
 }
 
+bool Renderer::Impl::update_source_projection(
+    const WindowsSourceProjection& projection) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.update_d3d_source_projection(projection);
+#else
+    (void)projection;
+    return false;
+#endif
+}
+
+void Renderer::Impl::clear_source_projection() {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    presentation_.clear_d3d_source_projection();
+#endif
+}
+
 bool Renderer::Impl::acquire_source_cache_bundle(
     SharedSourceCacheBundleSnapshot& snapshot) const {
 #ifdef _WIN32

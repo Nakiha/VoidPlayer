@@ -20,6 +20,7 @@ class D3D11RenderBackend;
 struct SharedFp16TextureSnapshot;
 struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
+struct WindowsSourceProjection;
 struct AnalysisOverlayPrimitivePackage;
 
 struct RendererPresentationOverlayHooks {
@@ -237,6 +238,8 @@ public:
     bool configure_d3d_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors);
     void clear_d3d_source_cache(const char* reason);
+    bool update_d3d_source_projection(const WindowsSourceProjection& projection);
+    void clear_d3d_source_projection();
     bool acquire_d3d_source_cache_bundle(
         SharedSourceCacheBundleSnapshot& snapshot) const;
     void release_d3d_source_cache_bundle(

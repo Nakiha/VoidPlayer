@@ -145,6 +145,9 @@ struct PresentationBackendDiagnostics {
     uint64_t source_cache_presented_anchor_publish_count = 0;
     uint64_t source_cache_backpressure_count = 0;
     uint64_t source_cache_fallback_count = 0;
+    uint64_t source_projection_update_count = 0;
+    uint64_t source_projection_consume_count = 0;
+    bool source_projection_active = false;
     uint64_t prewarm_request_count = 0;
     uint64_t prewarm_ready_count = 0;
     uint64_t prewarm_hit_count = 0;

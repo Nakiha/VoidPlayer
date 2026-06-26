@@ -612,16 +612,14 @@ void RendererPresentationController::release_d3d_shared_texture(
 bool RendererPresentationController::acquire_d3d_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    return backend && backend->acquire_shared_fp16_texture(snapshot);
+    return backend_ && backend_->acquire_shared_fp16_texture(snapshot);
 }
 
 void RendererPresentationController::release_d3d_shared_fp16_texture(
     int buffer_index, uint64_t ring_generation) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    if (backend) {
-        backend->release_shared_fp16_texture(
+    if (backend_) {
+        backend_->release_shared_fp16_texture(
             buffer_index, ring_generation);
     }
 }
@@ -629,9 +627,8 @@ void RendererPresentationController::release_d3d_shared_fp16_texture(
 void RendererPresentationController::set_d3d_shared_fp16_frame_callback(
     std::function<void()> callback) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    if (backend) {
-        backend->set_shared_fp16_frame_callback(std::move(callback));
+    if (backend_) {
+        backend_->set_shared_fp16_frame_callback(std::move(callback));
     }
 }
 

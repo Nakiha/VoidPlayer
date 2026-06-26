@@ -105,9 +105,10 @@ public:
     bool capture_fp16_target(std::vector<uint16_t>& rgba_half,
                              int& width,
                              int& height) const;
-    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot);
-    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation);
-    void set_shared_fp16_frame_callback(std::function<void()> callback);
+    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) override;
+    void release_shared_fp16_texture(int buffer_index,
+                                     uint64_t ring_generation) override;
+    void set_shared_fp16_frame_callback(std::function<void()> callback) override;
     bool recover_device_loss(const char* reason, long removed_reason);
     bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors) override;

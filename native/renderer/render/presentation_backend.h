@@ -13,6 +13,7 @@ class PresentationBackend;
 struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
 struct AnalysisOverlayPrimitivePackage;
+struct SharedFp16TextureSnapshot;
 
 using PresentationBackendAsyncDrawCompleted =
     std::function<void(bool, const char*, uint64_t, const PresentationBackendFrameInfo*)>;
@@ -77,6 +78,13 @@ public:
     virtual void clear_headless_output() {}
     virtual bool update_sdr_white_level(double) { return false; }
     virtual void* native_render_device() const { return nullptr; }
+#ifdef _WIN32
+    virtual bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot&) {
+        return false;
+    }
+    virtual void release_shared_fp16_texture(int, uint64_t) {}
+    virtual void set_shared_fp16_frame_callback(std::function<void()>) {}
+#endif
     virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual PresentationBackendDiagnostics diagnostics() const { return {}; }
     virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }

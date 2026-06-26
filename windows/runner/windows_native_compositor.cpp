@@ -438,7 +438,9 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
     held_flutter_texture_.Reset();
 
     if (held_video_valid_) {
-        if (held_video_mutex_) {
+        if (held_video_mutex_ &&
+            held_video_.sync_mode ==
+                vr::SharedFp16TextureSyncMode::KeyedMutex) {
             held_video_mutex_->ReleaseSync(
                 held_video_.producer_release_key);
         }
@@ -2689,7 +2691,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
 
     const auto release_held_video = [&]() {
         if (!held_video_valid_) return;
-        if (held_video_mutex_) {
+        if (held_video_mutex_ &&
+            held_video_.sync_mode ==
+                vr::SharedFp16TextureSyncMode::KeyedMutex) {
             held_video_mutex_->ReleaseSync(
                 held_video_.producer_release_key);
         }
@@ -2846,12 +2850,15 @@ bool WindowsNativeCompositor::CompositeLatest() {
             Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
             Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
             Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-            bool acquired = false;
+            bool acquired = next_video.sync_mode ==
+                vr::SharedFp16TextureSyncMode::PublishedAfterProducerWait;
             const HRESULT open_result = OpenInputTexture(
                 device1.Get(), next_video.handle, &texture)
                 ? S_OK
                 : E_FAIL;
             if (SUCCEEDED(open_result) &&
+                next_video.sync_mode ==
+                    vr::SharedFp16TextureSyncMode::KeyedMutex &&
                 SUCCEEDED(texture.As(&keyed_mutex))) {
                 acquired =
                     keyed_mutex->AcquireSync(
@@ -2883,7 +2890,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                         diagnostics_.transport_generation;
                 }
             } else {
-                if (acquired) {
+                if (acquired && keyed_mutex) {
                     keyed_mutex->ReleaseSync(
                         next_video.producer_release_key);
                 }

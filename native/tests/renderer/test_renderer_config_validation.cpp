@@ -13,6 +13,7 @@
 #include <string>
 
 #ifdef _WIN32
+#include "windows/d3d11/shared_fp16_ring.h"
 #include "windows/wgpu/wgpu_d3d12_ffi_bridge.h"
 
 #include <d3d12.h>
@@ -251,7 +252,7 @@ TEST_CASE("Windows wgpu-d3d12 presentation backend initializes without D3D11 fal
         REQUIRE(diagnostics.fallback_reason == "none");
         REQUIRE_FALSE(backend->draw_frame(RendererDrawSnapshot{},
                                           PresentationBackendDrawHooks{}));
-        REQUIRE(std::string(backend->last_error()).find("draw path is not implemented") !=
+        REQUIRE(std::string(backend->last_error()).find("shared FP16 output") !=
                 std::string::npos);
     } else {
         REQUIRE(backend->native_render_device() == nullptr);
@@ -303,6 +304,48 @@ TEST_CASE("Windows wgpu-d3d12 imports and clears a D3D12 render target",
     REQUIRE(profiler.submit_count >= 1);
 #else
     SUCCEED("wgpu-d3d12 render target import is Windows-only");
+#endif
+}
+
+TEST_CASE("Windows wgpu-d3d12 backend publishes shared FP16 output",
+          "[renderer_config][presentation_backend][wgpu_d3d12]") {
+#ifdef _WIN32
+    auto backend = create_presentation_backend(RenderBackendKind::WgpuD3D12);
+    REQUIRE(backend != nullptr);
+
+    PresentationBackendConfig config;
+    config.headless = true;
+    config.shared_fp16_output = true;
+    config.width = 32;
+    config.height = 24;
+    if (!backend->initialize(config)) {
+        SKIP(std::string("wgpu-d3d12 backend unavailable: ") +
+             backend->last_error());
+    }
+
+    RendererDrawSnapshot snapshot;
+    snapshot.target_width = 32;
+    snapshot.target_height = 24;
+    snapshot.background_color[0] = 0.1f;
+    snapshot.background_color[1] = 0.2f;
+    snapshot.background_color[2] = 0.3f;
+    snapshot.background_color[3] = 1.0f;
+    REQUIRE(backend->draw_frame(snapshot, PresentationBackendDrawHooks{}));
+
+    SharedFp16TextureSnapshot shared;
+    REQUIRE(backend->acquire_shared_fp16_texture(shared));
+    REQUIRE(shared.handle != nullptr);
+    REQUIRE(shared.width == 32);
+    REQUIRE(shared.height == 24);
+    REQUIRE(shared.buffer_index >= 0);
+    REQUIRE(shared.ring_generation != 0);
+    REQUIRE(shared.frame_generation != 0);
+    REQUIRE(shared.sync_mode ==
+            SharedFp16TextureSyncMode::PublishedAfterProducerWait);
+    backend->release_shared_fp16_texture(
+        shared.buffer_index, shared.ring_generation);
+#else
+    SUCCEED("wgpu-d3d12 shared FP16 output is Windows-only");
 #endif
 }
 

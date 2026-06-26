@@ -81,6 +81,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `audio_mixer_smoke` | contract | PR fast | FFmpeg audio support | Mixer active-track behavior. |
 | `macos_presentation_adapter_smoke` | backend canary | PR fast | macOS native build | Software fallback/parity adapter. |
 | `macos_metal_uploader_smoke` | backend canary | PR fast | Metal, sample media | Metal uploader and CVPixelBuffer validation. |
+| `macos_wgpu_metal_presentation_backend_smoke` | backend contract | PR fast / macOS stabilization | wgpu-metal, Metal interop | wgpu-metal provider, target rejection, async completion, BGRA capture, source cache, ring state, CPU YUV/P010, CVPixelBuffer import, EDR diagnostics. |
 | `videotoolbox_provider_smoke` | backend canary | PR fast / macOS stabilization | VideoToolbox availability | VT provider support/fallback visibility. |
 | `renderer_metal_headless_smoke` | backend integration | Nightly/headed or targeted macOS backend changes | wgpu-metal, sample media | Renderer-owned wgpu-metal headless path; labelled `hosted-flaky;nightly` and excluded from hosted PR fast because CI GPUs may fail visible-frame capture. |
 | `macos_media_smoke` | native integration | macOS stabilization | FFmpeg media | macOS media open/metadata path. |

@@ -151,21 +151,6 @@ bool wait_for_playback_presented_frame(VPMacOSNativePlayer* player,
     return false;
 }
 
-bool request_refresh_expect_failure(VPMacOSNativePlayer* player,
-                                    std::string& message,
-                                    std::chrono::milliseconds timeout) {
-    VPMacOSNativeFrameInfo info = {};
-    char error[1024] = {};
-    const int ret = VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
-        player, static_cast<int>(timeout.count()), &info, error, sizeof(error));
-    message = error;
-    if (ret >= 0) {
-        std::cerr << "renderer-owned refresh unexpectedly succeeded\n";
-        return false;
-    }
-    return true;
-}
-
 bool request_refresh_expect_success(VPMacOSNativePlayer* player,
                                     VPMacOSNativeFrameInfo& info,
                                     std::chrono::milliseconds timeout) {
@@ -300,30 +285,26 @@ int main() {
     }
     const uint64_t failure_count_before = state.draw_failure_count;
     if (VPMacOSNativePlayerSetMetalPresentationTarget(
-            player.get(), backend.get(), invalid_target.buffer, target_width, target_height, 2) != 0) {
-        std::cerr << "invalid-size target install should keep renderer alive for diagnostics\n";
-        return 1;
-    }
-    std::string invalid_refresh_error;
-    if (!request_refresh_expect_failure(
-            player.get(), invalid_refresh_error, std::chrono::milliseconds(500)) ||
-        invalid_refresh_error.find("dimensions") == std::string::npos) {
-        std::cerr << "invalid-size target refresh did not return dimensions failure: "
-                  << invalid_refresh_error << "\n";
+            player.get(), backend.get(), invalid_target.buffer, target_width, target_height, 2) == 0) {
+        std::cerr << "invalid-size target install unexpectedly succeeded\n";
         return 1;
     }
     if (!copy_presentation_state(player.get(), state) ||
-        state.last_draw_succeeded != 0 ||
+        state.renderer_initialized == 0 ||
+        state.target_installed == 0 ||
+        state.backend_available == 0 ||
         state.draw_failure_count <= failure_count_before ||
         state.consecutive_draw_failures == 0 ||
         std::strstr(state.last_draw_error, "dimensions") == nullptr) {
-        std::cerr << "shared renderer bridge did not expose invalid target failure state: "
-                  << state.last_draw_error << "\n";
-        return 1;
-    }
-    if (VPMacOSNativePlayerSetMetalPresentationTarget(
-            player.get(), backend.get(), target.buffer, target_width, target_height, 2) != 0) {
-        std::cerr << "failed to reinstall valid shared renderer Metal target\n";
+        std::cerr << "shared renderer bridge did not expose invalid target rejection state: "
+                  << "renderer_initialized=" << state.renderer_initialized
+                  << " target_installed=" << state.target_installed
+                  << " backend_available=" << state.backend_available
+                  << " last_draw_succeeded=" << state.last_draw_succeeded
+                  << " draw_failure_count=" << state.draw_failure_count
+                  << " failure_count_before=" << failure_count_before
+                  << " consecutive_draw_failures=" << state.consecutive_draw_failures
+                  << " error=" << state.last_draw_error << "\n";
         return 1;
     }
     VPMacOSNativeFrameInfo recovered = {};
@@ -337,7 +318,7 @@ int main() {
         state.last_draw_succeeded == 0 ||
         state.consecutive_draw_failures != 0 ||
         state.last_draw_error[0] != '\0') {
-        std::cerr << "shared renderer bridge did not recover presentation state\n";
+        std::cerr << "shared renderer bridge did not preserve target after invalid install\n";
         return 1;
     }
 

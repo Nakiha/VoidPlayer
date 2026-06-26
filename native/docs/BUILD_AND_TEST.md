@@ -167,8 +167,8 @@ python3.12 dev.py gate macos-ui-smoke
 | `native_callback_stress_smoke.csv` | callback lifecycle stress |
 
 Native macOS CTest includes `videotoolbox_provider_smoke`,
-`macos_metal_uploader_smoke`, `renderer_metal_headless_smoke`, and
-`macos_native_player_shared_renderer_smoke`.
+`macos_metal_uploader_smoke`, `macos_wgpu_metal_presentation_backend_smoke`,
+`renderer_metal_headless_smoke`, and `macos_native_player_shared_renderer_smoke`.
 
 HDR Auto promotion needs a real EDR-capable display, so it is an explicit local
 gate rather than a hosted CI default:

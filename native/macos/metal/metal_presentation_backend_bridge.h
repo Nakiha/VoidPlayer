@@ -92,11 +92,14 @@ int VPMacOSMetalPresentationBackendCopyCVPixelBufferPresentFrameWithLayout(
 #endif
 
 #ifdef __cplusplus
+#include <memory>
+
 namespace vr {
 class PresentationBackend;
 }  // namespace vr
 
-vr::PresentationBackend* VPMacOSMetalPresentationBackendSourceBakeBackend(
+std::shared_ptr<vr::PresentationBackend>
+VPMacOSMetalPresentationBackendSourceBakeBackend(
     VPMacOSMetalPresentationBackend* backend,
     void* initial_pixel_buffer,
     int32_t width,

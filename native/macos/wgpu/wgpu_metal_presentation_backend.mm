@@ -861,19 +861,17 @@ bool WgpuMetalPresentationBackend::update_headless_output(void* output,
   }
   WgpuOutputTargetDescriptor descriptor;
   std::string target_error;
-  if (!resolve_output_format_descriptor(output, descriptor, target_error)) {
+  if (!resolve_output_target_descriptor(output,
+                                        width,
+                                        height,
+                                        descriptor,
+                                        target_error)) {
     set_last_error(target_error.empty()
                        ? "wgpu-metal presentation target is invalid"
                        : target_error);
     return false;
   }
-  auto* pixel_buffer = as_pixel_buffer(output);
-  const bool dimensions_match =
-      pixel_buffer &&
-      static_cast<int32_t>(CVPixelBufferGetWidth(pixel_buffer)) == width &&
-      static_cast<int32_t>(CVPixelBufferGetHeight(pixel_buffer)) == height;
-  if (dimensions_match &&
-      !validate_target_texture_device(texture_cache_,
+  if (!validate_target_texture_device(texture_cache_,
                                       output,
                                       descriptor.metal_pixel_format,
                                       width,

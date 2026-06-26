@@ -21,7 +21,7 @@ struct VPMacOSMetalPresentationBackend {
   }
 
   VPMacOSMetalUploader* uploader = nullptr;
-  std::unique_ptr<vr::PresentationBackend> source_bake_backend;
+  std::shared_ptr<vr::PresentationBackend> source_bake_backend;
   std::mutex mutex;
   std::vector<void*> pixel_buffers;
   void* displayed_pixel_buffer = nullptr;
@@ -98,7 +98,8 @@ VPMacOSMetalUploader* VPMacOSMetalPresentationBackendUploader(
   return backend ? backend->uploader : nullptr;
 }
 
-vr::PresentationBackend* VPMacOSMetalPresentationBackendSourceBakeBackend(
+std::shared_ptr<vr::PresentationBackend>
+VPMacOSMetalPresentationBackendSourceBakeBackend(
     VPMacOSMetalPresentationBackend* backend,
     void* initial_pixel_buffer,
     int32_t width,
@@ -107,18 +108,18 @@ vr::PresentationBackend* VPMacOSMetalPresentationBackendSourceBakeBackend(
     size_t error_size) {
   if (!backend || !initial_pixel_buffer || width <= 0 || height <= 0) {
     write_bridge_error(error, error_size, "invalid source bake backend target");
-    return nullptr;
+    return {};
   }
   std::lock_guard<std::mutex> lock(backend->mutex);
   if (backend->source_bake_backend) {
     write_bridge_error(error, error_size, "");
-    return backend->source_bake_backend.get();
+    return backend->source_bake_backend;
   }
   auto source_bake_backend =
       vr::create_presentation_backend(vr::RenderBackendKind::WgpuMetal);
   if (!source_bake_backend) {
     write_bridge_error(error, error_size, "wgpu-metal source bake backend is unavailable");
-    return nullptr;
+    return {};
   }
   vr::PresentationBackendConfig config;
   config.output = initial_pixel_buffer;
@@ -131,11 +132,11 @@ vr::PresentationBackend* VPMacOSMetalPresentationBackendSourceBakeBackend(
         error,
         error_size,
         source_bake_backend->last_error());
-    return nullptr;
+    return {};
   }
   backend->source_bake_backend = std::move(source_bake_backend);
   write_bridge_error(error, error_size, "");
-  return backend->source_bake_backend.get();
+  return backend->source_bake_backend;
 }
 
 void VPMacOSMetalPresentationBackendSetDrawTarget(

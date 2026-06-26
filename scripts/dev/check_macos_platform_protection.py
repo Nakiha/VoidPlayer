@@ -40,6 +40,7 @@ REQUIRED_CMAKE_TARGETS = [
     "target_sources(void_media_ffmpeg PRIVATE",
     "macos/decode/videotoolbox_provider.cpp",
     "macos_metal_uploader_smoke",
+    "macos_wgpu_metal_presentation_backend_smoke",
     "macos_metal_color_reference_smoke",
     "videotoolbox_provider_smoke",
     "renderer_metal_headless_smoke",

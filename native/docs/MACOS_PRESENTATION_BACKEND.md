@@ -264,6 +264,9 @@ Portable native tests should keep covering:
 
 - `macos_presentation_adapter_smoke` for the software fallback/parity adapter;
 - `macos_metal_uploader_smoke` for target validation and Metal upload behavior;
+- `macos_wgpu_metal_presentation_backend_smoke` for wgpu-metal provider,
+  target rejection, async completion, BGRA capture, source-cache, target-ring,
+  CPU YUV/P010, CVPixelBuffer import, and EDR diagnostics contracts;
 - shared renderer-owned presentation smoke for target install/clear, refresh
   success, failure, timeout, and recovery;
 - `macos-wgpu-metal-smoke` exercises the wgpu-metal factory, explicit

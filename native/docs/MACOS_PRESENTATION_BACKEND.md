@@ -1,10 +1,10 @@
 # macOS Presentation Backend
 
-The macOS normal presentation route is renderer-owned Metal:
+The macOS normal presentation route is renderer-owned wgpu-metal:
 
 ```text
 RendererDrawSnapshot
-  -> MetalPresentationBackend::draw_frame()
+  -> WgpuMetalPresentationBackend::draw_frame()
   -> renderer-owned BGRA CVPixelBuffer / IOSurface target
   -> Flutter Texture
 ```
@@ -24,7 +24,7 @@ The shared renderer builds a `RendererDrawSnapshot` from the current
 - wraps the target through `CVMetalTextureCache`;
 - consumes VideoToolbox `CVPixelBuffer` frames or software/fallback present
   packages;
-- runs the Metal layout/color path into the renderer-owned target;
+- runs the wgpu/WGSL layout/color path into the renderer-owned target;
 - when analysis overlay is active, high-refresh presentation samples retained
   per-track overlay layers during final composite; CU line layers retain
   direction markers and decode them to fixed screen-pixel black-edge/bright-center
@@ -36,8 +36,8 @@ The shared renderer builds a `RendererDrawSnapshot` from the current
 
 The renderer-owned target is a Metal-compatible, IOSurface-backed BGRA
 `CVPixelBuffer`. Swift creates/registers it and installs it into native through a
-short locked section. Native owns the Metal device, command queue,
-`CVMetalTextureCache`, validation, upload, draw, and failure accounting.
+short locked section. Native owns the wgpu/Metal device bridge,
+`CVMetalTextureCache`, validation, draw, and failure accounting.
 
 ## Native Compositor Auto Policy
 
@@ -56,11 +56,10 @@ On macOS the default request is Auto:
   SDR compositor and reports `macOSPresentationReason=auto-hdr-display-unavailable`.
 
 `VOIDPLAYER_MACOS_PRESENTATION_MODE` can force `flutter-texture-sdr`,
-`native-compositor-sdr`, or `native-compositor-edr` for diagnostics and
-bisecting. Product defaults should rely on Auto. The renderer-owned macOS
-default now uses the wgpu/Metal presentation backend; the legacy Metal shader
-backend is only selected by the explicit temporary fallback values `metal`,
-`legacy-metal`, or `metal-cvpixelbuffer`.
+`native-compositor-sdr`, `native-compositor-edr`, or `wgpu-metal` for diagnostics
+and bisecting. Product defaults should rely on Auto. The renderer-owned macOS
+default now uses the wgpu-metal presentation backend; the legacy Metal shader
+backend has been removed.
 
 The renderer-owned wgpu/Metal presentation backend keeps the shared renderer,
 playback scheduler, target ring lifecycle, and software package inputs
@@ -96,9 +95,9 @@ For SDR targets the WGSL color path tone-maps PQ/HLG/BT.2020 input into SDR;
 for EDR targets it maps SDR/PQ/HLG sources into extended-linear Display-P3
 before writing the imported RGBA16Float destination. Stronger EDR
 capture/parity evidence and headed HDR display gates remain follow-up work
-before deleting the legacy Metal shader backend. The local wgpu gate entry
-points are `python dev.py gate macos-wgpu-metal-smoke` and, on an EDR-capable
-display, `python dev.py gate macos-wgpu-metal-edr-smoke`.
+before promoting HDR/EDR as release-critical. The local wgpu gate entry points
+are `python dev.py gate macos-wgpu-metal-smoke` and, on an EDR-capable display,
+`python dev.py gate macos-wgpu-metal-edr-smoke`.
 The macOS player wgpu-metal path honors the normal decode preference:
 `preferHardware` uses VideoToolbox source import when available, while
 `forceSoftware` and `VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1` keep the software/package
@@ -133,7 +132,6 @@ interop errors.
 | VideoToolbox `CVPixelBuffer` | `wgpu-metal` default | Zero-copy source preservation for supported H.264/H.265 frames through imported source planes. |
 | CPU NV12/P010/planar YUV package | `wgpu-metal` default | Software or fallback frames staged for WGSL plane sampling/color conversion. |
 | BGRA package | `wgpu-metal` default | Explicit BGRA fallback/capture/parity path through WGSL layout/composite. |
-| legacy Metal package/CVPixelBuffer | explicit `metal` fallback | Temporary fallback while the old shader backend is being removed. |
 | `cvpixelbuffer-bgra-copy` adapter | fallback/parity oracle | Not the normal playback route. Used for software fallback validation and explicit copy tests. |
 
 Unsupported storage kinds, pixel-buffer mismatches, missing Metal state,
@@ -220,7 +218,7 @@ adapter remains useful as:
 - a clear unsupported-format failure surface in native tests.
 
 It is no longer the macOS normal playback presentation route. The normal route
-is the shared renderer plus `MetalPresentationBackend`.
+is the shared renderer plus `WgpuMetalPresentationBackend`.
 
 ## Diagnostics Contract
 
@@ -268,21 +266,12 @@ Portable native tests should keep covering:
 - `macos_metal_uploader_smoke` for target validation and Metal upload behavior;
 - shared renderer-owned presentation smoke for target install/clear, refresh
   success, failure, timeout, and recovery;
-- `macos_metal_color_layout_parity_smoke` for synthetic
-  `RendererDrawSnapshot` -> `MetalPresentationBackend` -> backend capture
-  parity across BGRA, NV12, planar YUV420, P010 high-bit packages, odd
-  dimensions, padded stride, split layout, and aspect-fit behavior.
-- `macos_metal_presentation_backend_smoke` also exercises the wgpu-metal
-  factory, explicit fail-closed behavior, BGRA channel order, layout/split,
-  retained overlay layer WGSL composite, NV12/P010/YUV420P package conversion,
-  P010 `TEXTURE_FORMAT_16BIT_NORM` feature gating, RGBA16Float EDR target
-  import, P010 PQ/BT.2020 SDR tone-map and EDR output smoke, async completion,
-  target-ring displayed/protected/release state transitions, full/region
-  capture, and source CVPixelBuffer NV12/P010 import through
-  `CVMetalTextureCache`, `wgpu-hal`, WGSL sampling, and imported destination
-  `MTLTexture`. Its wgpu coverage includes CPU limited/full range color
-  reference checks for NV12 and P010 plus a Metal parity path for
-  source-CVPixelBuffer import.
+- `macos-wgpu-metal-smoke` exercises the wgpu-metal factory, explicit
+  fail-closed behavior, BGRA channel order, layout/split, retained overlay layer
+  WGSL composite, NV12/P010/YUV420P package conversion, VideoToolbox
+  CVPixelBuffer source import, async completion, target-ring
+  displayed/protected/release state transitions, capture, and headed
+  renderer-owned playback.
 
 macOS UI smoke should assert renderer-owned state, upload storage kind,
 fallback reason, last draw error, frame callback/cadence counters, and

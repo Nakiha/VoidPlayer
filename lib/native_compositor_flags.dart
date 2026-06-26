@@ -24,9 +24,6 @@ class NativeCompositorFlags {
         mode == 'native-compositor-edr' ||
         mode == 'wgpu-metal' ||
         mode == 'wgpu' ||
-        mode == 'metal' ||
-        mode == 'legacy-metal' ||
-        mode == 'metal-cvpixelbuffer' ||
         mode == 'native' ||
         mode == 'compositor' ||
         mode == 'edr' ||

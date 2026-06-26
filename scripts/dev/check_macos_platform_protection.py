@@ -24,7 +24,6 @@ REQUIRED_GATE_SNIPPETS = [
 
 REQUIRED_CMAKE_SOURCES = [
     "macos/metal/metal_presentation_backend_bridge.cpp",
-    "macos/metal/metal_presentation_backend.cpp",
     "macos/metal/metal_uploader_bridge.mm",
     "macos/metal/metal_texture_wrapping.mm",
     "macos/metal/metal_pixel_buffer_uploader.mm",
@@ -41,8 +40,6 @@ REQUIRED_CMAKE_TARGETS = [
     "target_sources(void_media_ffmpeg PRIVATE",
     "macos/decode/videotoolbox_provider.cpp",
     "macos_metal_uploader_smoke",
-    "macos_metal_presentation_backend_smoke",
-    "macos_metal_color_layout_parity_smoke",
     "macos_metal_color_reference_smoke",
     "videotoolbox_provider_smoke",
     "renderer_metal_headless_smoke",
@@ -91,14 +88,13 @@ REQUIRED_SOURCE_MARKERS = {
     ],
     "native/macos/player/native_player_state.cpp": [
         "RendererBackendType::WgpuMetal",
-        "RendererBackendType::Metal",
         "HwDecodeType::VideoToolbox",
         "renderer-owned Metal presentation target is not installed",
         "record_presentation_failure_locked",
     ],
     "native/macos/decode/videotoolbox_provider.cpp": [
         "VideoToolbox",
-        "Renderer-owned CVPixelBuffer output requires Metal-compatible backend",
+        "Renderer-owned CVPixelBuffer output requires wgpu-metal backend",
         "AV_PIX_FMT_VIDEOTOOLBOX",
     ],
 }

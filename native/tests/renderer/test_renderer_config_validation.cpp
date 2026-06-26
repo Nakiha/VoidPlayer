@@ -98,6 +98,17 @@ TEST_CASE("Renderer config validation accepts WgpuMetal headless output interop"
     REQUIRE_FALSE(validate_renderer_config(config).ok);
 }
 
+TEST_CASE("Renderer config validation rejects removed Metal headless backend",
+          "[renderer_config]") {
+    auto config = valid_windowed_config();
+    config.headless = true;
+    config.hwnd = nullptr;
+    config.backend.type = RendererBackendType::Metal;
+    config.backend.output = reinterpret_cast<void*>(0x9abc);
+
+    REQUIRE_FALSE(validate_renderer_config(config).ok);
+}
+
 TEST_CASE("Renderer config validation covers speed and loop range",
           "[renderer_config]") {
     REQUIRE(validate_playback_speed(1.0).ok);

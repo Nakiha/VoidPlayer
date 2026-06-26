@@ -148,7 +148,7 @@ generation、track/file/尺寸、overlay mode 或输出 target class 变化时�
 macOS high-refresh viewport 不应把 overlay primitive rebuild/upload/raster 放在每次
 display-link final composite 热路径里。当前 Metal immediate primitive path 可作为
 兼容 fallback，但不能继续扩张为主路径；高倍率 pan/zoom 下它会让同一批 CU 线框随 layout tick
-反复进入 `MetalPresentationBackend` 和 overlay compute pass，导致 command completion
+反复进入 `WgpuMetalPresentationBackend` 和 overlay composite pass，导致 command completion
 超过 display budget。
 
 当前合同：

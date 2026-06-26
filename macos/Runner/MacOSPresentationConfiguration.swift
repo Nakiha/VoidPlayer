@@ -96,14 +96,6 @@ struct MacOSPresentationConfiguration {
           displayEDRHeadroomX1000: headroomX1000
         )
       }
-      if environment.isLegacyMetalRequest {
-        return MacOSPresentationConfiguration(
-          mode: .nativeCompositorSDR,
-          request: environment.request,
-          reason: "forced-legacy-metal-sdr",
-          displayEDRHeadroomX1000: headroomX1000
-        )
-      }
       return MacOSPresentationConfiguration(
         mode: .nativeCompositorSDR,
         request: environment.request,
@@ -169,10 +161,6 @@ struct MacOSPresentationEnvironment {
     request == "wgpu-metal" || request == "wgpu"
   }
 
-  var isLegacyMetalRequest: Bool {
-    request == "metal" || request == "legacy-metal" || request == "metal-cvpixelbuffer"
-  }
-
   init(environment: [String: String]) {
     if let rawMode = environment["VOIDPLAYER_MACOS_PRESENTATION_MODE"]?.lowercased() {
       switch rawMode {
@@ -189,10 +177,6 @@ struct MacOSPresentationEnvironment {
         overrideMode = .flutterTextureSDR
         return
       case "wgpu-metal", "wgpu":
-        request = rawMode
-        overrideMode = .nativeCompositorSDR
-        return
-      case "metal", "legacy-metal", "metal-cvpixelbuffer":
         request = rawMode
         overrideMode = .nativeCompositorSDR
         return

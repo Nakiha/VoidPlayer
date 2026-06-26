@@ -1,6 +1,6 @@
 #include "native_player_bridge.h"
 
-#include "macos/metal/metal_presentation_backend.h"
+#include "macos/metal/metal_presentation_backend_bridge.h"
 #include "macos/player/native_player_state.h"
 #include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/overlay/analysis_overlay_renderer.h"
@@ -866,6 +866,28 @@ int VPMacOSNativePlayerBakeCurrentFrameSources(
     target.height = targets[i].height;
     renderer_targets.push_back(target);
   }
+  const VPMacOSNativeSourceFrameBakeTarget* initial_target = nullptr;
+  for (size_t i = 0; i < target_count; ++i) {
+    if (targets[i].pixel_buffer && targets[i].width > 0 && targets[i].height > 0) {
+      initial_target = &targets[i];
+      break;
+    }
+  }
+  if (!initial_target) {
+    write_error(error, error_size, "source frame bake target list has no valid pixel buffer");
+    return -1;
+  }
+  vr::PresentationBackend* source_bake_backend =
+      VPMacOSMetalPresentationBackendSourceBakeBackend(
+          backend,
+          initial_target->pixel_buffer,
+          initial_target->width,
+          initial_target->height,
+          error,
+          error_size);
+  if (!source_bake_backend) {
+    return -1;
+  }
 
   std::string message;
   bool ok = false;
@@ -876,7 +898,7 @@ int VPMacOSNativePlayerBakeCurrentFrameSources(
       return -1;
     }
     ok = player->renderer->draw_current_frame_sources(
-        backend->impl,
+        *source_bake_backend,
         renderer_targets.data(),
         renderer_targets.size(),
         &message);

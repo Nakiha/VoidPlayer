@@ -39,7 +39,7 @@ macOS-specific native code owns the Metal presentation backend:
 
 ```text
 RendererDrawSnapshot
-  -> MetalPresentationBackend::draw_frame()
+  -> WgpuMetalPresentationBackend::draw_frame()
   -> renderer-owned BGRA CVPixelBuffer / IOSurface target
   -> Flutter Texture
 ```

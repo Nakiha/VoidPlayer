@@ -6,6 +6,7 @@
 #include "macos/wgpu/wgpu_ffi_bridge.h"
 #include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/overlay/analysis_overlay_renderer.h"
+#include "renderer/render/presentation_backend_factory.h"
 #include "renderer/render/presentation_package.h"
 
 #include <CoreVideo/CoreVideo.h>
@@ -2163,3 +2164,36 @@ std::unique_ptr<vr::PresentationBackend> create_wgpu_metal_presentation_backend(
 }
 
 }  // namespace vp_macos
+
+namespace vr {
+namespace {
+
+class MacOSWgpuPresentationBackendProvider final
+    : public PresentationBackendProvider {
+ public:
+  bool supports(RenderBackendKind kind) const override {
+    return kind == RenderBackendKind::WgpuMetal;
+  }
+
+  std::unique_ptr<PresentationBackend> create(RenderBackendKind kind) const override {
+    if (kind == RenderBackendKind::WgpuMetal) {
+      return vp_macos::create_wgpu_metal_presentation_backend();
+    }
+    return nullptr;
+  }
+};
+
+}  // namespace
+
+const PresentationBackendProvider* default_presentation_backend_provider() {
+  static const MacOSWgpuPresentationBackendProvider provider;
+  return &provider;
+}
+
+std::unique_ptr<PresentationBackend> create_presentation_backend(
+    RenderBackendKind kind) {
+  const auto* provider = default_presentation_backend_provider();
+  return provider && provider->supports(kind) ? provider->create(kind) : nullptr;
+}
+
+}  // namespace vr

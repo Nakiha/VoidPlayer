@@ -52,6 +52,15 @@ int main() {
         return fail("WgpuMetal headless renderer config without output was accepted");
     }
 
+    auto metal_headless = valid_windowed_config();
+    metal_headless.headless = true;
+    metal_headless.hwnd = nullptr;
+    metal_headless.backend.type = vr::RendererBackendType::Metal;
+    metal_headless.backend.output = reinterpret_cast<void*>(0x9abc);
+    if (vr::validate_renderer_config(metal_headless).ok) {
+        return fail("removed Metal headless renderer config was accepted");
+    }
+
     auto invalid_size = valid_windowed_config();
     invalid_size.width = 0;
     if (vr::validate_renderer_config(invalid_size).ok) {

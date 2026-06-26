@@ -279,12 +279,11 @@ Current Windows preservation evidence:
 
 Current macOS release-readiness evidence:
 
-- `macos_metal_color_layout_parity_smoke` drives synthetic
-  `RendererDrawSnapshot` inputs through `MetalPresentationBackend`, then reads
-  the renderer-owned BGRA `CVPixelBuffer` through backend capture. It compares
-  BGRA channel order, NV12 limited BT.709, planar YUV420 full/limited range,
-  odd dimensions, padded strides, split/layout fit, and P010 high-bit samples
-  against a small-tolerance CPU reference.
+- macOS wgpu-metal color/layout parity is covered by the targeted
+  `macos-wgpu-metal-smoke` UI profile and native color reference smoke. It
+  compares BGRA channel order, NV12/P010 paths, split/layout fit, VideoToolbox
+  CVPixelBuffer source import, and headed capture diagnostics against shared
+  CPU/reference expectations.
 - `native_4k60_playback_smoke.csv` remains a headed VideoToolbox/Metal cadence
   canary. It is not a strict 4K60 SLA; it asserts conservative health signals
   such as monotonic PTS, no large PTS gaps, duplicate PTS visibility, host

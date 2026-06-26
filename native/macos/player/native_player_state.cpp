@@ -211,13 +211,16 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   config.width = width;
   config.height = height;
   config.headless = true;
-  const bool use_legacy_metal = vp_macos::legacy_metal_requested_by_env();
+  if (vp_macos::legacy_metal_requested_by_env()) {
+    spdlog::warn(
+        "[MacOSNativePlayer] legacy Metal renderer backend was removed; using "
+        "wgpu-metal");
+  }
   config.use_hardware_decode =
       use_hardware_decode &&
       !vp_macos::videotoolbox_disabled_by_env();
   config.initial_file_id = 0;
-  config.backend.type = use_legacy_metal ? vr::RendererBackendType::Metal
-                                         : vr::RendererBackendType::WgpuMetal;
+  config.backend.type = vr::RendererBackendType::WgpuMetal;
   config.backend.output = output;
   config.backend.max_track_slots =
       std::clamp(max_track_slots,

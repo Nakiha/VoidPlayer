@@ -26,14 +26,7 @@ RendererConfigValidationResult validate_headless_backend(
         }
         return ok_result();
     case RendererBackendType::Metal:
-        if (backend.output == nullptr) {
-            return invalid("headless metal renderer requires an output target");
-        }
-        if (backend.max_track_slots < 0 ||
-            static_cast<size_t>(backend.max_track_slots) > budget.max_tracks) {
-            return invalid("headless metal renderer max track slots out of range");
-        }
-        return ok_result();
+        return invalid("macOS Metal renderer backend has been removed; use wgpu-metal");
     case RendererBackendType::WgpuMetal:
 #ifdef __APPLE__
         if (backend.output == nullptr) {

@@ -734,17 +734,28 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend could not create mismatched target smoke");
   }
-  if (wgpu_backend->update_headless_output(wgpu_mismatch_target.buffer,
-                                           kWidth,
-                                           kHeight,
-                                           3)) {
+  if (!wgpu_backend->update_headless_output(wgpu_mismatch_target.buffer,
+                                            kWidth,
+                                            kHeight,
+                                            3)) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend installed mismatched target dimensions");
+    return fail("WgpuMetal backend could not install mismatched target for deferred diagnostics");
   }
-  if (std::string(wgpu_backend->last_error()).find("dimensions do not match") ==
-      std::string::npos) {
+  std::string mismatch_error;
+  if (draw_wgpu_frame_and_wait(*wgpu_backend,
+                               snapshot,
+                               vr::PresentationBackendDrawHooks{},
+                               &mismatch_error)) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend mismatched target failure was not diagnostic");
+    return fail("WgpuMetal backend drew successfully with mismatched target dimensions");
+  }
+  if (mismatch_error.find("dimensions") == std::string::npos) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend mismatched target draw failure was not diagnostic");
+  }
+  if (!wgpu_backend->update_headless_output(pixel_buffer, kWidth, kHeight, 3)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend could not restore BGRA target after mismatched target");
   }
   auto wgpu_wrong_format_target =
       make_nv12_pixel_buffer(kWidth, kHeight, 96, 128, 128);

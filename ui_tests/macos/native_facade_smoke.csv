@@ -15,7 +15,8 @@
 3.2125, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 3.213, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 3.2135, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-renderer
-3.214, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
+3.214, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-cvpixelbuffer-target
+3.2145, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
 3.26, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, false
 3.27, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, true
 3.275, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-software

@@ -57,13 +57,15 @@ On macOS the default request is Auto:
 
 `VOIDPLAYER_MACOS_PRESENTATION_MODE` can force `flutter-texture-sdr`,
 `native-compositor-sdr`, or `native-compositor-edr` for diagnostics and
-bisecting. Product defaults should rely on Auto.
+bisecting. Product defaults should rely on Auto. The renderer-owned macOS
+default now uses the wgpu/Metal presentation backend; the legacy Metal shader
+backend is only selected by the explicit temporary fallback values `metal`,
+`legacy-metal`, or `metal-cvpixelbuffer`.
 
-`VOIDPLAYER_MACOS_PRESENTATION_MODE=wgpu-metal` selects the experimental
-renderer-owned wgpu/Metal presentation backend. This is a macOS canary only:
-the shared renderer, playback scheduler, target ring lifecycle, and software
-package inputs remain unchanged, while the render core is routed through the
-Rust/wgpu FFI when it is linked. The backend owns one Rust `WgpuMetalRenderer`
+The renderer-owned wgpu/Metal presentation backend keeps the shared renderer,
+playback scheduler, target ring lifecycle, and software package inputs
+unchanged, while the render core is routed through the Rust/wgpu FFI when it is
+linked. The backend owns one Rust `WgpuMetalRenderer`
 for its lifecycle, so the wgpu device/queue/sampler/bind layout/pipeline are
 created during backend initialization and reused across draws. The source BGRA
 texture array plus params/package/overlay storage buffers are cached on the same
@@ -92,12 +94,12 @@ The C++/Rust request ABI carries an explicit wgpu output target descriptor:
 The Rust renderer owns separate BGRA8 and RGBA16Float final composite pipelines.
 For SDR targets the WGSL color path tone-maps PQ/HLG/BT.2020 input into SDR;
 for EDR targets it maps SDR/PQ/HLG sources into extended-linear Display-P3
-before writing the imported RGBA16Float destination. This is the first HDR/EDR
-canary slice; stronger EDR capture/parity evidence and headed HDR display gates
-remain follow-up work before wgpu-metal can replace Metal by default. The local
-wgpu gate entry points are `python dev.py gate macos-wgpu-metal-smoke` and, on
-an EDR-capable display, `python dev.py gate macos-wgpu-metal-edr-smoke`.
-The macOS player wgpu-metal canary now honors the normal decode preference:
+before writing the imported RGBA16Float destination. Stronger EDR
+capture/parity evidence and headed HDR display gates remain follow-up work
+before deleting the legacy Metal shader backend. The local wgpu gate entry
+points are `python dev.py gate macos-wgpu-metal-smoke` and, on an EDR-capable
+display, `python dev.py gate macos-wgpu-metal-edr-smoke`.
+The macOS player wgpu-metal path honors the normal decode preference:
 `preferHardware` uses VideoToolbox source import when available, while
 `forceSoftware` and `VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1` keep the software/package
 fallback path available for parity smoke tests. Analysis overlay
@@ -128,10 +130,10 @@ interop errors.
 
 | Storage kind | Route | Notes |
 | --- | --- | --- |
-| VideoToolbox `CVPixelBuffer` | `metal-cvpixelbuffer-present-package` | Zero-copy source preservation for supported H.264/H.265 frames. |
-| CPU NV12/P010/planar YUV package | `metal-yuv-present-package` | Software or fallback frames staged for the Metal shader path. |
-| BGRA package | `metal-bgra-present-package` | Explicit BGRA fallback/capture/parity path. |
-| wgpu-metal package | `wgpu-metal` canary | Rust imports the destination `MTLTexture`; BGRA layout/split, NV12/P010/YUV420P plane sampling/basic SDR conversion, and analysis overlay primitive compositing run in WGSL. |
+| VideoToolbox `CVPixelBuffer` | `wgpu-metal` default | Zero-copy source preservation for supported H.264/H.265 frames through imported source planes. |
+| CPU NV12/P010/planar YUV package | `wgpu-metal` default | Software or fallback frames staged for WGSL plane sampling/color conversion. |
+| BGRA package | `wgpu-metal` default | Explicit BGRA fallback/capture/parity path through WGSL layout/composite. |
+| legacy Metal package/CVPixelBuffer | explicit `metal` fallback | Temporary fallback while the old shader backend is being removed. |
 | `cvpixelbuffer-bgra-copy` adapter | fallback/parity oracle | Not the normal playback route. Used for software fallback validation and explicit copy tests. |
 
 Unsupported storage kinds, pixel-buffer mismatches, missing Metal state,

@@ -30,10 +30,10 @@ layout 和 diagnostics 都使用微秒时间戳。
 
 | Storage | 典型来源 | 消费方 |
 | --- | --- | --- |
-| `CpuNv12FrameStorage` / planar YUV | software decode、hwdownload fallback | D3D11 upload 或 Metal present package |
-| `CpuRgbaFrameStorage` | 旧测试、BGRA fallback、capture helpers | D3D11/Metal BGRA upload path |
+| `CpuNv12FrameStorage` / planar YUV | software decode、hwdownload fallback | D3D11 upload 或 wgpu-metal present package |
+| `CpuRgbaFrameStorage` | 旧测试、BGRA fallback、capture helpers | D3D11/wgpu-metal BGRA upload path |
 | `D3D11Nv12FrameStorage` / D3D11 texture | Windows D3D11VA renderer-owned path | D3D11 backend |
-| macOS CVPixelBuffer storage | VideoToolbox zero-copy path | Metal backend through CVMetalTextureCache / IOSurface |
+| macOS CVPixelBuffer storage | VideoToolbox zero-copy path | wgpu-metal backend through CVMetalTextureCache / IOSurface |
 
 Frame storage 必须带足 lifetime 信息。D3D11VA 和 VideoToolbox 硬解 frame 都持有底层 FFmpeg/CVPixelBuffer 引用，避免
 decoder pool 在 renderer 使用期间提前复用 surface。
@@ -76,7 +76,7 @@ TextureFrame
   -> Flutter Texture
 ```
 
-VideoToolbox H.264/H.265 支持路径会保留 decoder-owned `CVPixelBuffer`，Metal backend 通过
+VideoToolbox H.264/H.265 支持路径会保留 decoder-owned `CVPixelBuffer`，wgpu-metal backend 通过
 `CVMetalTextureCache` / IOSurface 采样，避免 hwdownload。unsupported codec、unsupported format 或 software decode
 走显式 present-package path，并在 diagnostics 中报告 `presentationFallbackReason` 与 storage kind。
 

@@ -250,22 +250,12 @@ struct WgpuOutputTargetDescriptor {
   bool render_supported = false;
 };
 
-bool resolve_output_target_descriptor(void* target,
-                                      int32_t expected_width,
-                                      int32_t expected_height,
+bool resolve_output_format_descriptor(void* target,
                                       WgpuOutputTargetDescriptor& descriptor,
                                       std::string& error) {
   auto* pixel_buffer = as_pixel_buffer(target);
   if (!pixel_buffer) {
     error = "wgpu-metal presentation target is unavailable";
-    return false;
-  }
-  const int32_t actual_width =
-      static_cast<int32_t>(CVPixelBufferGetWidth(pixel_buffer));
-  const int32_t actual_height =
-      static_cast<int32_t>(CVPixelBufferGetHeight(pixel_buffer));
-  if (actual_width != expected_width || actual_height != expected_height) {
-    error = "wgpu-metal target pixel buffer dimensions do not match the presentation surface";
     return false;
   }
   switch (CVPixelBufferGetPixelFormatType(pixel_buffer)) {
@@ -289,6 +279,26 @@ bool resolve_output_target_descriptor(void* target,
       error = "wgpu-metal target pixel buffer format is unsupported";
       return false;
   }
+}
+
+bool resolve_output_target_descriptor(void* target,
+                                      int32_t expected_width,
+                                      int32_t expected_height,
+                                      WgpuOutputTargetDescriptor& descriptor,
+                                      std::string& error) {
+  if (!resolve_output_format_descriptor(target, descriptor, error)) {
+    return false;
+  }
+  auto* pixel_buffer = as_pixel_buffer(target);
+  const int32_t actual_width =
+      static_cast<int32_t>(CVPixelBufferGetWidth(pixel_buffer));
+  const int32_t actual_height =
+      static_cast<int32_t>(CVPixelBufferGetHeight(pixel_buffer));
+  if (actual_width != expected_width || actual_height != expected_height) {
+    error = "wgpu-metal target pixel buffer dimensions do not match the presentation surface";
+    return false;
+  }
+  return true;
 }
 
 uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
@@ -850,11 +860,18 @@ bool WgpuMetalPresentationBackend::update_headless_output(void* output,
   }
   WgpuOutputTargetDescriptor descriptor;
   std::string target_error;
-  if (!resolve_output_target_descriptor(output,
-                                        width,
-                                        height,
-                                        descriptor,
-                                        target_error) ||
+  if (!resolve_output_format_descriptor(output, descriptor, target_error)) {
+    set_last_error(target_error.empty()
+                       ? "wgpu-metal presentation target is invalid"
+                       : target_error);
+    return false;
+  }
+  auto* pixel_buffer = as_pixel_buffer(output);
+  const bool dimensions_match =
+      pixel_buffer &&
+      static_cast<int32_t>(CVPixelBufferGetWidth(pixel_buffer)) == width &&
+      static_cast<int32_t>(CVPixelBufferGetHeight(pixel_buffer)) == height;
+  if (dimensions_match &&
       !validate_target_texture_device(texture_cache_,
                                       output,
                                       descriptor.metal_pixel_format,

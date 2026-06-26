@@ -72,8 +72,8 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 | Software fallback | `AVFrame(YUV/NV12/P010) -> CPU planar/NV12/P010 TextureFrame` | 显式 fallback；不依赖 libswscale/libyuv 做通用转换 |
 | Windows D3D11VA renderer-owned | `AVFrame(D3D11VA) -> D3D11 TextureFrame` | D3D11 backend 复制/采样 renderer-owned surface |
 | Windows hwdownload | `AVFrame(D3D11VA) -> av_hwframe_transfer_data -> CPU NV12/P010` | 用于需要稳定 CPU upload fallback 的 codec/driver 路径 |
-| macOS VideoToolbox zero-copy | `AVFrame(VideoToolbox) -> CVPixelBuffer TextureFrame` | Metal backend 通过 IOSurface/CVMetalTextureCache 上屏 |
-| macOS fallback package | `AVFrame -> CPU YUV/BGRA package` | VVC/software 或 unsupported format 的 renderer-owned Metal package path |
+| macOS VideoToolbox zero-copy | `AVFrame(VideoToolbox) -> CVPixelBuffer TextureFrame` | wgpu-metal backend 通过 IOSurface/CVMetalTextureCache 上屏 |
+| macOS fallback package | `AVFrame -> CPU YUV/BGRA package` | VVC/software 或 unsupported format 的 renderer-owned wgpu-metal package path |
 
 当前 runtime 不引入 `libswscale` / `libyuv` 作为 broad fallback。新增像素格式必须做确定性 pack/shader 支持，并补颜色一致性测试。
 
@@ -82,14 +82,14 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 - AV1 优先使用 FFmpeg 原生 `av1` decoder 进行硬解协商；硬解不可用时软件回退优先 `libdav1d`。
 - VP9 不跳过硬解探测；支持硬解的机器先试 hardware provider，失败再回退软件。
 - H.264/H.265 在 Windows 走 D3D11VA，在 macOS 走 VideoToolbox；支持时保留 platform hardware frame 进入 renderer-owned backend。
-- VVC/H.266 当前在 macOS VideoToolbox path 明确 decline，走 software decode + Metal package fallback，并在 diagnostics 中报告 `software-decode`。
+- VVC/H.266 当前在 macOS VideoToolbox path 明确 decline，走 software decode + renderer-owned package fallback，并在 diagnostics 中报告 `software-decode`。
 
 ## Zero-Copy 与 Fallback 边界
 
 Zero-copy 是 presentation backend 能直接消费 decoder-owned frame 时的优化，不改变 decode/track/playback policy。
 
 - Windows：D3D11VA surface 由 D3D11 backend 消费；必要时复制到 renderer-owned texture，避免 decoder pool lifetime 问题。
-- macOS：VideoToolbox `CVPixelBuffer` / IOSurface 由 Metal backend 消费；fallback reason 必须可见。
+- macOS：VideoToolbox `CVPixelBuffer` / IOSurface 由 wgpu-metal backend 消费；fallback reason 必须可见。
 - hwdownload fallback：仍可使用 hardware decoder，但 presentation 前下载到 CPU。
 - software fallback：decoder 本身是 software，presentation 仍走 renderer-owned backend。
 

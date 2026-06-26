@@ -80,12 +80,12 @@ TEST_CASE("Renderer config validation enforces headless interop shape",
     REQUIRE(validate_renderer_config(config).ok);
 }
 
-TEST_CASE("Renderer config validation accepts Metal headless output interop",
+TEST_CASE("Renderer config validation accepts WgpuMetal headless output interop",
           "[renderer_config]") {
     auto config = valid_windowed_config();
     config.headless = true;
     config.hwnd = nullptr;
-    config.backend.type = RendererBackendType::Metal;
+    config.backend.type = RendererBackendType::WgpuMetal;
     config.backend.output = reinterpret_cast<void*>(0x9abc);
 
     REQUIRE(validate_renderer_config(config).ok);

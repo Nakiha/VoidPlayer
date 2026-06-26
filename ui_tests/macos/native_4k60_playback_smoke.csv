@@ -1,5 +1,5 @@
 # macOS native playback smoke for a generated 3840x2160 60fps H.264 sample.
-# This is a throughput canary for the VideoToolbox renderer-owned CVPixelBuffer + Metal path.
+# This is a throughput canary for the default wgpu-metal VideoToolbox CVPixelBuffer path.
 @WINDOW, 960, 540
 0.0, SET_DECODE_MODE, preferHardware
 0.0, GENERATE_TEST_VIDEO, build/generated/macos/native_4k60_h264.mp4, 180, 60, 3840, 2160
@@ -9,7 +9,8 @@
 2.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
 2.36, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-videotoolbox
 2.42, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-renderer
-2.44, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
+2.44, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-cvpixelbuffer-target
+2.441, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
 2.445, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 2.4455, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 2.446, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
@@ -35,7 +36,8 @@
 6.755, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 6.756, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 6.757, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
-6.76, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-metal-cvpixelbuffer-target
+6.76, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-cvpixelbuffer-target
+6.7605, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
 6.761, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationFallbackReason, none
 6.7615, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackDiagnosticCount, 1
 6.762, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true

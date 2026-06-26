@@ -53,7 +53,7 @@ NativePlayer / Renderer command surface
 - Windows D3D11VA may serialize immediate-context access through the backend
   device mutex depending on decode device mode.
 - macOS VideoToolbox preserves `CVPixelBuffer` frames for the renderer-owned
-  Metal path when the codec/pixel format is supported, and otherwise falls back
+  wgpu-metal path when the codec/pixel format is supported, and otherwise falls back
   to explicit software or hwdownload packages.
 - Does not call renderer public lifecycle APIs and does not access platform
   texture publication locks directly.

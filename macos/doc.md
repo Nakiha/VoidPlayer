@@ -99,8 +99,8 @@ Useful macOS smoke areas:
 - `analysis_gated_smoke.csv`: analysis FFI and media-header overlay activation present, external
   analysis UI/IPC still gated.
 
-Native VideoToolbox/provider and Metal presentation smokes are part of the
-native test suite where available. If the runner, Swift bridge, Metal backend,
+Native VideoToolbox/provider and macOS presentation smokes are part of the
+native test suite where available. If the runner, Swift bridge, macOS backend,
 or shared renderer boundary changes, include a Windows preservation pass on a
 Windows host before release.
 

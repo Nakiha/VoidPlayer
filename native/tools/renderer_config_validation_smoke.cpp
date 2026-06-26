@@ -39,17 +39,17 @@ int main() {
         return fail("D3D11 headless renderer config without adapter was accepted");
     }
 
-    auto metal_headless = valid_windowed_config();
-    metal_headless.headless = true;
-    metal_headless.hwnd = nullptr;
-    metal_headless.backend.type = vr::RendererBackendType::Metal;
-    metal_headless.backend.output = reinterpret_cast<void*>(0x9abc);
-    if (!vr::validate_renderer_config(metal_headless).ok) {
-        return fail("valid Metal headless renderer config was rejected");
+    auto wgpu_metal_headless = valid_windowed_config();
+    wgpu_metal_headless.headless = true;
+    wgpu_metal_headless.hwnd = nullptr;
+    wgpu_metal_headless.backend.type = vr::RendererBackendType::WgpuMetal;
+    wgpu_metal_headless.backend.output = reinterpret_cast<void*>(0x9abc);
+    if (!vr::validate_renderer_config(wgpu_metal_headless).ok) {
+        return fail("valid WgpuMetal headless renderer config was rejected");
     }
-    metal_headless.backend.output = nullptr;
-    if (vr::validate_renderer_config(metal_headless).ok) {
-        return fail("Metal headless renderer config without output was accepted");
+    wgpu_metal_headless.backend.output = nullptr;
+    if (vr::validate_renderer_config(wgpu_metal_headless).ok) {
+        return fail("WgpuMetal headless renderer config without output was accepted");
     }
 
     auto invalid_size = valid_windowed_config();

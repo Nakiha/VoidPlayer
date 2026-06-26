@@ -245,7 +245,7 @@ TEST_CASE("Renderer config validation rejects removed Metal headless backend",
     REQUIRE_FALSE(validate_renderer_config(config).ok);
 }
 
-TEST_CASE("Hardware decode provider compatibility separates D3D11 and wgpu-d3d12",
+TEST_CASE("Hardware decode provider compatibility keeps Windows on D3D12VA",
           "[renderer_config][hw_decode]") {
     auto d3d11_names = compatible_hw_decode_provider_names(
         RenderBackendKind::D3D11,
@@ -255,12 +255,7 @@ TEST_CASE("Hardware decode provider compatibility separates D3D11 and wgpu-d3d12
         DecodeDeviceMode::IndependentDevice);
 
 #ifdef _WIN32
-    bool has_d3d11va = false;
-    for (const auto* name : d3d11_names) {
-        has_d3d11va = has_d3d11va || std::string(name) == "D3D11VA";
-        REQUIRE(std::string(name) != "D3D12VA");
-    }
-    REQUIRE(has_d3d11va);
+    REQUIRE(d3d11_names.empty());
 
     bool has_d3d12va = false;
     for (const auto* name : d3d12_names) {

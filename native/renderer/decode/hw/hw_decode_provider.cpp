@@ -1,6 +1,5 @@
 #include "renderer/decode/hw/hw_decode_provider.h"
 #ifdef _WIN32
-#include "windows/decode/d3d11va_provider.h"
 #include "windows/decode/d3d12va_provider.h"
 #endif
 #ifdef __APPLE__
@@ -24,10 +23,6 @@ struct HwDecodeProviderDescriptor {
 };
 
 #ifdef _WIN32
-std::unique_ptr<HwDecodeProvider> create_d3d11va_provider() {
-    return std::make_unique<D3D11VAProvider>();
-}
-
 std::unique_ptr<HwDecodeProvider> create_d3d12va_provider() {
     return std::make_unique<D3D12VAProvider>();
 }
@@ -48,13 +43,6 @@ std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
         RenderBackendKind::Unknown,
         false,
         &create_d3d12va_provider,
-    });
-    providers.push_back({
-        "D3D11VA",
-        RenderBackendKind::D3D11,
-        RenderBackendKind::Unknown,
-        false,
-        &create_d3d11va_provider,
     });
 #endif
 #ifdef __APPLE__

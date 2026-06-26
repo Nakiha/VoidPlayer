@@ -107,9 +107,6 @@ static enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
         if (*p == AV_PIX_FMT_D3D12 && fallback == AV_PIX_FMT_NONE) {
             fallback = *p;
         }
-        if (*p == AV_PIX_FMT_D3D11) {
-            fallback = *p;
-        }
     }
     if (fallback != AV_PIX_FMT_NONE) {
         const char* name = av_get_pix_fmt_name(fallback);

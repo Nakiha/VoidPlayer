@@ -1,12 +1,130 @@
 use std::time::Instant;
 use windows::core::Interface;
 
+use crate::{MAX_TRACKS, YUV_FORMAT_NV12};
+
 pub const D3D12_TEXTURE_FORMAT_NV12: i32 = 1;
 pub const D3D12_TEXTURE_FORMAT_P010: i32 = 2;
 pub const D3D12_TEXTURE_FORMAT_BGRA8_UNORM: i32 = 3;
 pub const D3D12_TEXTURE_FORMAT_RGBA16_FLOAT: i32 = 4;
 pub const OUTPUT_COLOR_MODE_SDR: i32 = 1;
 pub const OUTPUT_COLOR_MODE_EDR: i32 = 2;
+const STORAGE_CV_PIXEL_BUFFER: i32 = 3;
+
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct D3D12PresentFrameInfo {
+    pub present: i32,
+    pub file_id: i32,
+    pub slot: i32,
+    pub width: i32,
+    pub height: i32,
+    pub pts_us: i64,
+    pub dts_us: i64,
+    pub duration_us: i64,
+    pub analysis_frame_index: i32,
+    pub frame_identity_mode: i32,
+    pub source_packet_index: i32,
+    pub source_packet_size: i32,
+    pub source_packet_pos: i64,
+    pub source_packet_pts: i64,
+    pub source_packet_dts: i64,
+    pub color_range: i32,
+    pub color_matrix: i32,
+    pub color_transfer: i32,
+    pub color_primaries: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct D3D12PresentDecisionInfo {
+    pub should_present: i32,
+    pub frame_count: i32,
+    pub track_count: i32,
+    pub mode: i32,
+    pub current_pts_us: i64,
+    pub split_pos: f32,
+    pub background_color: [f32; 4],
+    pub order: [i32; MAX_TRACKS],
+    pub display_offset_x: [f32; MAX_TRACKS],
+    pub display_offset_y: [f32; MAX_TRACKS],
+    pub inv_display_size_x: [f32; MAX_TRACKS],
+    pub inv_display_size_y: [f32; MAX_TRACKS],
+    pub view_offset_uv_x: [f32; MAX_TRACKS],
+    pub view_offset_uv_y: [f32; MAX_TRACKS],
+    pub source_width: [i32; MAX_TRACKS],
+    pub source_height: [i32; MAX_TRACKS],
+    pub yuv_format: [i32; MAX_TRACKS],
+    pub y_offset: [i32; MAX_TRACKS],
+    pub uv_offset: [i32; MAX_TRACKS],
+    pub v_offset: [i32; MAX_TRACKS],
+    pub y_stride: [i32; MAX_TRACKS],
+    pub uv_stride: [i32; MAX_TRACKS],
+    pub coded_width: [i32; MAX_TRACKS],
+    pub coded_height: [i32; MAX_TRACKS],
+    pub nv12_uv_scale_x: [f32; MAX_TRACKS],
+    pub nv12_uv_scale_y: [f32; MAX_TRACKS],
+    pub color_range: [i32; MAX_TRACKS],
+    pub color_matrix: [i32; MAX_TRACKS],
+    pub color_transfer: [i32; MAX_TRACKS],
+    pub color_primaries: [i32; MAX_TRACKS],
+    pub frames: [D3D12PresentFrameInfo; MAX_TRACKS],
+}
+
+impl Default for D3D12PresentDecisionInfo {
+    fn default() -> Self {
+        Self {
+            should_present: 0,
+            frame_count: 0,
+            track_count: 0,
+            mode: 0,
+            current_pts_us: 0,
+            split_pos: 0.5,
+            background_color: [0.0; 4],
+            order: [0, 1, 2, 3],
+            display_offset_x: [0.0; MAX_TRACKS],
+            display_offset_y: [0.0; MAX_TRACKS],
+            inv_display_size_x: [1.0; MAX_TRACKS],
+            inv_display_size_y: [1.0; MAX_TRACKS],
+            view_offset_uv_x: [0.0; MAX_TRACKS],
+            view_offset_uv_y: [0.0; MAX_TRACKS],
+            source_width: [1; MAX_TRACKS],
+            source_height: [1; MAX_TRACKS],
+            yuv_format: [YUV_FORMAT_NV12; MAX_TRACKS],
+            y_offset: [0; MAX_TRACKS],
+            uv_offset: [0; MAX_TRACKS],
+            v_offset: [0; MAX_TRACKS],
+            y_stride: [0; MAX_TRACKS],
+            uv_stride: [0; MAX_TRACKS],
+            coded_width: [1; MAX_TRACKS],
+            coded_height: [1; MAX_TRACKS],
+            nv12_uv_scale_x: [1.0; MAX_TRACKS],
+            nv12_uv_scale_y: [1.0; MAX_TRACKS],
+            color_range: [1; MAX_TRACKS],
+            color_matrix: [2; MAX_TRACKS],
+            color_transfer: [1; MAX_TRACKS],
+            color_primaries: [2; MAX_TRACKS],
+            frames: [D3D12PresentFrameInfo::default(); MAX_TRACKS],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct WgpuD3D12CompositeRequest {
+    pub destination_resource: *mut core::ffi::c_void,
+    pub output_format: i32,
+    pub output_color_mode: i32,
+    pub source_resources: [*mut core::ffi::c_void; MAX_TRACKS],
+    pub source_formats: [i32; MAX_TRACKS],
+    pub source_array_layers: [u32; MAX_TRACKS],
+    pub source_base_array_layers: [u32; MAX_TRACKS],
+    pub decision: *const D3D12PresentDecisionInfo,
+    pub width: i32,
+    pub height: i32,
+    pub error: *mut core::ffi::c_char,
+    pub error_size: usize,
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -51,6 +169,21 @@ pub struct WgpuD3D12Renderer {
     adapter_info: wgpu::AdapterInfo,
     device: wgpu::Device,
     queue: wgpu::Queue,
+    sampler: wgpu::Sampler,
+    bind_group_layout: wgpu::BindGroupLayout,
+    bgra8_pipeline: wgpu::RenderPipeline,
+    rgba16_float_pipeline: wgpu::RenderPipeline,
+    _dummy_bgra_array_texture: wgpu::Texture,
+    dummy_bgra_array_view: wgpu::TextureView,
+    _dummy_y_texture: wgpu::Texture,
+    dummy_y_view: wgpu::TextureView,
+    _dummy_uv_texture: wgpu::Texture,
+    dummy_uv_view: wgpu::TextureView,
+    _dummy_overlay_texture: wgpu::Texture,
+    dummy_overlay_view: wgpu::TextureView,
+    params_buffer: Option<wgpu::Buffer>,
+    package_buffer: wgpu::Buffer,
+    overlay_buffer: wgpu::Buffer,
     profiler: WgpuD3D12ProfilerSnapshot,
     supports_nv12: bool,
     supports_p010: bool,
@@ -91,11 +224,155 @@ impl WgpuD3D12Renderer {
         }))
         .map_err(|_| "wgpu-d3d12 device creation failed")?;
 
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 composite sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 composite WGSL"),
+            source: wgpu::ShaderSource::Wgsl(WGSL_COMPOSITE_SHADER.into()),
+        });
+        let bind_group_layout = create_composite_bind_group_layout(&device);
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 composite pipeline layout"),
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
+        });
+        let bgra8_pipeline = create_composite_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            wgpu::TextureFormat::Bgra8Unorm,
+            "VoidPlayer wgpu-d3d12 BGRA8 composite pipeline",
+        );
+        let rgba16_float_pipeline = create_composite_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            wgpu::TextureFormat::Rgba16Float,
+            "VoidPlayer wgpu-d3d12 RGBA16F composite pipeline",
+        );
+        let dummy_bgra_array_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 dummy BGRA array"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: MAX_TRACKS as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let dummy_bgra_array_view =
+            dummy_bgra_array_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let dummy_y_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 dummy Y plane"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let dummy_y_view = dummy_y_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let dummy_uv_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 dummy UV plane"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rg8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let dummy_uv_view = dummy_uv_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let dummy_overlay_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 dummy overlay array"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: MAX_TRACKS as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let dummy_overlay_view =
+            dummy_overlay_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &dummy_overlay_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &[0u8; MAX_TRACKS * 4],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: MAX_TRACKS as u32,
+            },
+        );
+        let package_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 dummy package buffer"),
+            size: 4,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&package_buffer, 0, &[0u8; 4]);
+        let overlay_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 dummy overlay buffer"),
+            size: 16,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&overlay_buffer, 0, &[0u8; 16]);
         let adapter_info = adapter.get_info();
         Ok(Self {
             adapter_info,
             device,
             queue,
+            sampler,
+            bind_group_layout,
+            bgra8_pipeline,
+            rgba16_float_pipeline,
+            _dummy_bgra_array_texture: dummy_bgra_array_texture,
+            dummy_bgra_array_view,
+            _dummy_y_texture: dummy_y_texture,
+            dummy_y_view,
+            _dummy_uv_texture: dummy_uv_texture,
+            dummy_uv_view,
+            _dummy_overlay_texture: dummy_overlay_texture,
+            dummy_overlay_view,
+            params_buffer: None,
+            package_buffer,
+            overlay_buffer,
             profiler: WgpuD3D12ProfilerSnapshot::default(),
             supports_nv12: required_features.contains(wgpu::Features::TEXTURE_FORMAT_NV12),
             supports_p010: required_features.contains(wgpu::Features::TEXTURE_FORMAT_P010),
@@ -185,8 +462,7 @@ impl WgpuD3D12Renderer {
     ) -> Result<(), &'static str> {
         let start = Instant::now();
         let format = d3d12_texture_format(request.format)?;
-        if format != wgpu::TextureFormat::Rgba16Float &&
-            format != wgpu::TextureFormat::Bgra8Unorm {
+        if format != wgpu::TextureFormat::Rgba16Float && format != wgpu::TextureFormat::Bgra8Unorm {
             return Err("wgpu-d3d12 render target clear requires BGRA8 or RGBA16F");
         }
         if format == wgpu::TextureFormat::Rgba16Float && !self.supports_rgba16_float {
@@ -225,9 +501,11 @@ impl WgpuD3D12Renderer {
         self.profiler.last_prepare_us = elapsed_us(prepare_start);
 
         let encode_start = Instant::now();
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("VoidPlayer wgpu-d3d12 clear encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("VoidPlayer wgpu-d3d12 clear encoder"),
+            });
         {
             let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("VoidPlayer wgpu-d3d12 clear pass"),
@@ -266,7 +544,256 @@ impl WgpuD3D12Renderer {
         self.profiler.last_cpu_render_us = elapsed_us(start);
         Ok(())
     }
+
+    pub fn render_composite(
+        &mut self,
+        request: &WgpuD3D12CompositeRequest,
+    ) -> Result<(), &'static str> {
+        let start = Instant::now();
+        if request.destination_resource.is_null() {
+            return Err("wgpu-d3d12 composite destination is null");
+        }
+        if request.decision.is_null() {
+            return Err("wgpu-d3d12 composite decision is null");
+        }
+        if request.width <= 0 || request.height <= 0 {
+            return Err("wgpu-d3d12 composite target dimensions are invalid");
+        }
+        let output_format = d3d12_texture_format(request.output_format)?;
+        if output_format != wgpu::TextureFormat::Rgba16Float
+            && output_format != wgpu::TextureFormat::Bgra8Unorm
+        {
+            return Err("wgpu-d3d12 composite destination format is unsupported");
+        }
+        let decision = unsafe { &*request.decision };
+        if decision.should_present == 0 || decision.frame_count <= 0 {
+            return Err("wgpu-d3d12 composite has no presentable frame");
+        }
+
+        let import_start = Instant::now();
+        let destination = unsafe {
+            import_d3d12_resource(
+                &self.device,
+                request.destination_resource,
+                output_format,
+                wgpu::TextureUsages::RENDER_ATTACHMENT,
+                "VoidPlayer imported D3D12 composite destination",
+                wgpu::Extent3d {
+                    width: request.width as u32,
+                    height: request.height as u32,
+                    depth_or_array_layers: 1,
+                },
+                1,
+                1,
+            )
+        }?;
+        let destination_view = destination.create_view(&wgpu::TextureViewDescriptor::default());
+        self.profiler.destination_import_count =
+            self.profiler.destination_import_count.saturating_add(1);
+
+        let mut source_textures: [Option<wgpu::Texture>; MAX_TRACKS] =
+            std::array::from_fn(|_| None);
+        let mut source_y_views: [Option<wgpu::TextureView>; MAX_TRACKS] =
+            std::array::from_fn(|_| None);
+        let mut source_uv_views: [Option<wgpu::TextureView>; MAX_TRACKS] =
+            std::array::from_fn(|_| None);
+        for slot in 0..MAX_TRACKS {
+            if decision.frames[slot].present == 0 {
+                continue;
+            }
+            let format = d3d12_texture_format(request.source_formats[slot])?;
+            if format == wgpu::TextureFormat::NV12 && !self.supports_nv12 {
+                return Err("wgpu-d3d12 adapter does not support NV12 composite");
+            }
+            if format == wgpu::TextureFormat::P010 && !self.supports_p010 {
+                return Err("wgpu-d3d12 adapter does not support P010 composite");
+            }
+            if request.source_resources[slot].is_null() {
+                return Err("wgpu-d3d12 composite source resource is null");
+            }
+            let coded_width = decision.coded_width[slot]
+                .max(decision.source_width[slot])
+                .max(1);
+            let coded_height = decision.coded_height[slot]
+                .max(decision.source_height[slot])
+                .max(1);
+            let array_layers = request.source_array_layers[slot].max(1);
+            let base_array_layer = request.source_base_array_layers[slot];
+            if base_array_layer >= array_layers {
+                return Err("wgpu-d3d12 composite source array layer is out of range");
+            }
+            let texture = unsafe {
+                import_d3d12_resource(
+                    &self.device,
+                    request.source_resources[slot],
+                    format,
+                    wgpu::TextureUsages::TEXTURE_BINDING,
+                    "VoidPlayer imported D3D12VA source",
+                    wgpu::Extent3d {
+                        width: coded_width as u32,
+                        height: coded_height as u32,
+                        depth_or_array_layers: array_layers,
+                    },
+                    1,
+                    1,
+                )
+            }?;
+            source_y_views[slot] = Some(texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("VoidPlayer imported D3D12VA source Y view"),
+                format: Some(if format == wgpu::TextureFormat::P010 {
+                    wgpu::TextureFormat::R16Unorm
+                } else {
+                    wgpu::TextureFormat::R8Unorm
+                }),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
+                aspect: wgpu::TextureAspect::Plane0,
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                base_array_layer,
+                array_layer_count: Some(1),
+            }));
+            source_uv_views[slot] = Some(texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("VoidPlayer imported D3D12VA source UV view"),
+                format: Some(if format == wgpu::TextureFormat::P010 {
+                    wgpu::TextureFormat::Rg16Unorm
+                } else {
+                    wgpu::TextureFormat::Rg8Unorm
+                }),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
+                aspect: wgpu::TextureAspect::Plane1,
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                base_array_layer,
+                array_layer_count: Some(1),
+            }));
+            source_textures[slot] = Some(texture);
+            self.profiler.source_import_count = self.profiler.source_import_count.saturating_add(1);
+        }
+        self.profiler.last_import_us = elapsed_us(import_start);
+
+        let prepare_start = Instant::now();
+        let mut params = Vec::with_capacity(27 * 16);
+        package_params(
+            decision,
+            request.width,
+            request.height,
+            STORAGE_CV_PIXEL_BUFFER,
+            request.output_color_mode,
+            &mut params,
+        );
+        write_storage_buffer(
+            &self.device,
+            &self.queue,
+            &mut self.params_buffer,
+            &params,
+            "VoidPlayer wgpu-d3d12 composite params",
+        );
+        let params_buffer = self
+            .params_buffer
+            .as_ref()
+            .ok_or("wgpu-d3d12 composite params buffer is unavailable")?;
+        self.profiler.last_prepare_us = elapsed_us(prepare_start);
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 composite bind group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&self.dummy_bgra_array_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.package_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.overlay_buffer.as_entire_binding(),
+                },
+                cv_bind_entry(5, 0, &source_y_views, &self.dummy_y_view),
+                cv_bind_entry(6, 0, &source_uv_views, &self.dummy_uv_view),
+                cv_bind_entry(7, 1, &source_y_views, &self.dummy_y_view),
+                cv_bind_entry(8, 1, &source_uv_views, &self.dummy_uv_view),
+                cv_bind_entry(9, 2, &source_y_views, &self.dummy_y_view),
+                cv_bind_entry(10, 2, &source_uv_views, &self.dummy_uv_view),
+                cv_bind_entry(11, 3, &source_y_views, &self.dummy_y_view),
+                cv_bind_entry(12, 3, &source_uv_views, &self.dummy_uv_view),
+                wgpu::BindGroupEntry {
+                    binding: 13,
+                    resource: wgpu::BindingResource::TextureView(&self.dummy_overlay_view),
+                },
+            ],
+        });
+
+        let encode_start = Instant::now();
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("VoidPlayer wgpu-d3d12 composite encoder"),
+            });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("VoidPlayer wgpu-d3d12 composite pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &destination_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            let pipeline = match output_format {
+                wgpu::TextureFormat::Rgba16Float => &self.rgba16_float_pipeline,
+                wgpu::TextureFormat::Bgra8Unorm => &self.bgra8_pipeline,
+                _ => return Err("wgpu-d3d12 composite pipeline format is unsupported"),
+            };
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_viewport(
+                0.0,
+                0.0,
+                request.width as f32,
+                request.height as f32,
+                0.0,
+                1.0,
+            );
+            pass.draw(0..3, 0..1);
+        }
+        self.profiler.last_pass_encode_us = elapsed_us(encode_start);
+
+        let submit_start = Instant::now();
+        let submission = self.queue.submit(Some(encoder.finish()));
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: None,
+            })
+            .map_err(|_| "wgpu-d3d12 composite wait failed")?;
+        self.profiler.submit_count = self.profiler.submit_count.saturating_add(1);
+        self.profiler.last_submit_us = elapsed_us(submit_start);
+        self.profiler.last_cpu_render_us = elapsed_us(start);
+        drop(source_textures);
+        Ok(())
+    }
 }
+
+pub static WGSL_COMPOSITE_SHADER: &str = include_str!("../shaders/composite.wgsl");
 
 fn texture_format_supported(adapter: &wgpu::Adapter, format: wgpu::TextureFormat) -> bool {
     let features = adapter.get_texture_format_features(format);
@@ -285,6 +812,241 @@ fn d3d12_texture_format(format: i32) -> Result<wgpu::TextureFormat, &'static str
         D3D12_TEXTURE_FORMAT_BGRA8_UNORM => Ok(wgpu::TextureFormat::Bgra8Unorm),
         D3D12_TEXTURE_FORMAT_RGBA16_FLOAT => Ok(wgpu::TextureFormat::Rgba16Float),
         _ => Err("unsupported wgpu-d3d12 texture format"),
+    }
+}
+
+fn cv_plane_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
+fn create_composite_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("VoidPlayer wgpu-d3d12 composite bind group layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            cv_plane_layout_entry(5),
+            cv_plane_layout_entry(6),
+            cv_plane_layout_entry(7),
+            cv_plane_layout_entry(8),
+            cv_plane_layout_entry(9),
+            cv_plane_layout_entry(10),
+            cv_plane_layout_entry(11),
+            cv_plane_layout_entry(12),
+            wgpu::BindGroupLayoutEntry {
+                binding: 13,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            },
+        ],
+    })
+}
+
+fn create_composite_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    output_format: wgpu::TextureFormat,
+    label: &'static str,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: output_format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn cv_bind_entry<'a>(
+    binding: u32,
+    slot: usize,
+    views: &'a [Option<wgpu::TextureView>; MAX_TRACKS],
+    dummy: &'a wgpu::TextureView,
+) -> wgpu::BindGroupEntry<'a> {
+    wgpu::BindGroupEntry {
+        binding,
+        resource: wgpu::BindingResource::TextureView(views[slot].as_ref().unwrap_or(dummy)),
+    }
+}
+
+fn push_vec4_f32(bytes: &mut Vec<u8>, values: [f32; 4]) {
+    for value in values {
+        bytes.extend_from_slice(&value.to_ne_bytes());
+    }
+}
+
+fn push_vec4_i32(bytes: &mut Vec<u8>, values: [i32; 4]) {
+    for value in values {
+        bytes.extend_from_slice(&value.to_ne_bytes());
+    }
+}
+
+fn package_params(
+    decision: &D3D12PresentDecisionInfo,
+    width: i32,
+    height: i32,
+    storage: i32,
+    output_color_mode: i32,
+    bytes: &mut Vec<u8>,
+) {
+    bytes.clear();
+    push_vec4_f32(
+        bytes,
+        [
+            width as f32,
+            height as f32,
+            decision.mode as f32,
+            decision.track_count.max(1).min(MAX_TRACKS as i32) as f32,
+        ],
+    );
+    push_vec4_f32(bytes, [decision.split_pos, storage as f32, 0.0, 0.0]);
+    push_vec4_f32(bytes, decision.background_color);
+    push_vec4_i32(bytes, decision.order);
+    push_vec4_f32(bytes, decision.display_offset_x);
+    push_vec4_f32(bytes, decision.display_offset_y);
+    push_vec4_f32(bytes, decision.inv_display_size_x);
+    push_vec4_f32(bytes, decision.inv_display_size_y);
+    push_vec4_f32(bytes, decision.view_offset_uv_x);
+    push_vec4_f32(bytes, decision.view_offset_uv_y);
+    push_vec4_i32(
+        bytes,
+        [
+            decision.frames[0].present,
+            decision.frames[1].present,
+            decision.frames[2].present,
+            decision.frames[3].present,
+        ],
+    );
+    push_vec4_f32(
+        bytes,
+        [
+            decision.source_width[0] as f32,
+            decision.source_width[1] as f32,
+            decision.source_width[2] as f32,
+            decision.source_width[3] as f32,
+        ],
+    );
+    push_vec4_f32(
+        bytes,
+        [
+            decision.source_height[0] as f32,
+            decision.source_height[1] as f32,
+            decision.source_height[2] as f32,
+            decision.source_height[3] as f32,
+        ],
+    );
+    push_vec4_i32(bytes, decision.yuv_format);
+    push_vec4_i32(bytes, decision.y_offset);
+    push_vec4_i32(bytes, decision.uv_offset);
+    push_vec4_i32(bytes, decision.v_offset);
+    push_vec4_i32(bytes, decision.y_stride);
+    push_vec4_i32(bytes, decision.uv_stride);
+    push_vec4_i32(bytes, decision.coded_width);
+    push_vec4_i32(bytes, decision.coded_height);
+    push_vec4_i32(bytes, decision.color_range);
+    push_vec4_i32(bytes, decision.color_matrix);
+    push_vec4_i32(bytes, [0, 0, 0, 0]);
+    push_vec4_i32(bytes, decision.color_transfer);
+    push_vec4_i32(bytes, decision.color_primaries);
+    push_vec4_i32(bytes, [output_color_mode, 1, 1, 0]);
+}
+
+fn write_storage_buffer(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    cache: &mut Option<wgpu::Buffer>,
+    bytes: &[u8],
+    label: &'static str,
+) {
+    let size = bytes.len().max(4) as u64;
+    let recreate = cache.as_ref().map_or(true, |buffer| buffer.size() < size);
+    if recreate {
+        *cache = Some(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        }));
+    }
+    if let Some(buffer) = cache.as_ref() {
+        queue.write_buffer(buffer, 0, bytes);
     }
 }
 

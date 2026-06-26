@@ -1,7 +1,7 @@
+use crate::overlay::OverlayRect;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{MTLPixelFormat, MTLResource, MTLTexture, MTLTextureType};
-use crate::overlay::OverlayRect;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Instant;

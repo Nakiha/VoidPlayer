@@ -4,8 +4,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
 use voidplayer_wgpu_core::{
-    WgpuD3D12ProfilerSnapshot, WgpuD3D12RenderTargetClearRequest, WgpuD3D12Renderer,
-    WgpuD3D12TextureImportRequest,
+    WgpuD3D12CompositeRequest, WgpuD3D12ProfilerSnapshot, WgpuD3D12RenderTargetClearRequest,
+    WgpuD3D12Renderer, WgpuD3D12TextureImportRequest,
 };
 
 #[repr(C)]
@@ -213,6 +213,31 @@ pub extern "C" fn VPWgpuD3D12RendererClearRenderTargetForProbe(
         let renderer_ref = unsafe { &mut *renderer };
         let request_ref = unsafe { &*request };
         match renderer_ref.clear_render_target_for_probe(request_ref) {
+            Ok(()) => {
+                write_error(request_ref.error, request_ref.error_size, "");
+                0
+            }
+            Err(message) => {
+                write_error(request_ref.error, request_ref.error_size, message);
+                -1
+            }
+        }
+    }));
+    result.unwrap_or(-1)
+}
+
+#[no_mangle]
+pub extern "C" fn VPWgpuD3D12RendererRenderComposite(
+    renderer: *mut WgpuD3D12Renderer,
+    request: *const WgpuD3D12CompositeRequest,
+) -> c_int {
+    if renderer.is_null() || request.is_null() {
+        return -1;
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let renderer_ref = unsafe { &mut *renderer };
+        let request_ref = unsafe { &*request };
+        match renderer_ref.render_composite(request_ref) {
             Ok(()) => {
                 write_error(request_ref.error, request_ref.error_size, "");
                 0

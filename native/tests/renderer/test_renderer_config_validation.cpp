@@ -92,6 +92,45 @@ Microsoft::WRL::ComPtr<ID3D12Resource> create_probe_rgba16_target(
         IID_PPV_ARGS(&texture));
     return SUCCEEDED(hr) ? texture : nullptr;
 }
+
+Microsoft::WRL::ComPtr<ID3D12Resource> create_probe_nv12_source(
+    ID3D12Device* device,
+    UINT width,
+    UINT height,
+    UINT array_layers = 1) {
+    Microsoft::WRL::ComPtr<ID3D12Resource> texture;
+    if (!device) {
+        return texture;
+    }
+    D3D12_HEAP_PROPERTIES heap = {};
+    heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heap.CreationNodeMask = 1;
+    heap.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Alignment = 0;
+    desc.Width = width;
+    desc.Height = height;
+    desc.DepthOrArraySize = static_cast<UINT16>(array_layers);
+    desc.MipLevels = 1;
+    desc.Format = DXGI_FORMAT_NV12;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    const HRESULT hr = device->CreateCommittedResource(
+        &heap,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_COMMON,
+        nullptr,
+        IID_PPV_ARGS(&texture));
+    return SUCCEEDED(hr) ? texture : nullptr;
+}
 #endif
 
 } // namespace
@@ -346,6 +385,86 @@ TEST_CASE("Windows wgpu-d3d12 backend publishes shared FP16 output",
         shared.buffer_index, shared.ring_generation);
 #else
     SUCCEED("wgpu-d3d12 shared FP16 output is Windows-only");
+#endif
+}
+
+TEST_CASE("Windows wgpu-d3d12 backend composites a D3D12VA NV12 source",
+          "[renderer_config][presentation_backend][wgpu_d3d12]") {
+#ifdef _WIN32
+    auto backend = create_presentation_backend(RenderBackendKind::WgpuD3D12);
+    REQUIRE(backend != nullptr);
+
+    PresentationBackendConfig config;
+    config.headless = true;
+    config.shared_fp16_output = true;
+    config.width = 64;
+    config.height = 48;
+    if (!backend->initialize(config)) {
+        SKIP(std::string("wgpu-d3d12 backend unavailable: ") +
+             backend->last_error());
+    }
+    auto* device = static_cast<ID3D12Device*>(backend->native_render_device());
+    REQUIRE(device != nullptr);
+
+    constexpr int kSourceWidth = 32;
+    constexpr int kSourceHeight = 24;
+    auto source = create_probe_nv12_source(device, kSourceWidth, kSourceHeight);
+    REQUIRE(source != nullptr);
+
+    TextureFrame frame;
+    frame.width = kSourceWidth;
+    frame.height = kSourceHeight;
+    frame.pts_us = 0;
+    frame.duration_us = 16667;
+    frame.is_nv12 = true;
+    frame.color.range = VIDEO_COLOR_RANGE_LIMITED;
+    frame.color.matrix = VIDEO_COLOR_MATRIX_BT709;
+    frame.color.transfer = VIDEO_COLOR_TRANSFER_SDR;
+    frame.color.primaries = VIDEO_COLOR_PRIMARIES_BT709;
+    frame.storage = D3D12TextureFrameStorage{
+        source.Get(),
+        0,
+        nullptr,
+        nullptr,
+        0,
+        false,
+        false,
+        kSourceWidth,
+        kSourceHeight,
+        {},
+    };
+
+    RendererDrawSnapshot snapshot;
+    snapshot.target_width = 64;
+    snapshot.target_height = 48;
+    snapshot.background_color[3] = 1.0f;
+    snapshot.layout.mode = LAYOUT_SIDE_BY_SIDE;
+    snapshot.layout.order[0] = 0;
+    snapshot.layout.order[1] = 1;
+    snapshot.layout.order[2] = 2;
+    snapshot.layout.order[3] = 3;
+    snapshot.track_geometry[0] = {
+        true,
+        kSourceWidth,
+        kSourceHeight,
+        static_cast<float>(kSourceWidth) / static_cast<float>(kSourceHeight),
+    };
+    snapshot.decision.should_present = true;
+    snapshot.decision.file_ids[0] = 0;
+    snapshot.decision.frames[0] = frame;
+    REQUIRE(backend->draw_frame(snapshot, PresentationBackendDrawHooks{}));
+
+    SharedFp16TextureSnapshot shared;
+    REQUIRE(backend->acquire_shared_fp16_texture(shared));
+    REQUIRE(shared.handle != nullptr);
+    REQUIRE(shared.width == 64);
+    REQUIRE(shared.height == 48);
+    REQUIRE(shared.sync_mode ==
+            SharedFp16TextureSyncMode::PublishedAfterProducerWait);
+    backend->release_shared_fp16_texture(
+        shared.buffer_index, shared.ring_generation);
+#else
+    SUCCEED("wgpu-d3d12 D3D12VA composite is Windows-only");
 #endif
 }
 

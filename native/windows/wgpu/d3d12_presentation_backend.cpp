@@ -1,5 +1,7 @@
 #include "windows/wgpu/d3d12_presentation_backend.h"
 
+#include "renderer/render/presentation_snapshot.h"
+
 #include <array>
 #include <algorithm>
 #include <d3d12.h>
@@ -11,6 +13,125 @@
 #include <wrl/client.h>
 
 namespace vr {
+namespace {
+
+constexpr int kWgpuD3D12MaxTracks = 4;
+
+int d3d12_texture_format_for_storage(const D3D12TextureFrameStorage& storage) {
+    return storage.is_p010 ? VP_WGPU_D3D12_TEXTURE_FORMAT_P010
+                           : VP_WGPU_D3D12_TEXTURE_FORMAT_NV12;
+}
+
+bool wait_for_d3d12_frame_ready(const D3D12TextureFrameStorage& storage,
+                                std::string& error) {
+    if (!storage.fence || storage.fence_value == 0) {
+        return true;
+    }
+    if (storage.fence->GetCompletedValue() >= storage.fence_value) {
+        return true;
+    }
+    HANDLE event = static_cast<HANDLE>(storage.fence_event);
+    HANDLE owned_event = nullptr;
+    if (!event) {
+        owned_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        event = owned_event;
+    }
+    if (!event) {
+        error = "wgpu-d3d12 source fence event creation failed";
+        return false;
+    }
+    const HRESULT hr =
+        storage.fence->SetEventOnCompletion(storage.fence_value, event);
+    if (FAILED(hr)) {
+        if (owned_event) {
+            CloseHandle(owned_event);
+        }
+        error = "wgpu-d3d12 source fence SetEventOnCompletion failed";
+        return false;
+    }
+    const DWORD wait_result = WaitForSingleObject(event, 1000);
+    if (owned_event) {
+        CloseHandle(owned_event);
+    }
+    if (wait_result != WAIT_OBJECT_0) {
+        error = "wgpu-d3d12 source fence wait timed out";
+        return false;
+    }
+    return true;
+}
+
+void fill_wgpu_d3d12_decision_from_snapshot(
+    const RendererDrawSnapshot& draw_snapshot,
+    int width,
+    int height,
+    VPWgpuD3D12PresentDecisionInfo& out) {
+    out = {};
+    const auto snapshot = build_presentation_snapshot(
+        draw_snapshot.decision,
+        draw_snapshot.layout,
+        draw_snapshot.track_geometry,
+        width,
+        height,
+        draw_snapshot.background_color);
+    const auto& constants = snapshot.constants;
+    out.should_present = snapshot.should_present ? 1 : 0;
+    out.current_pts_us = snapshot.current_pts_us;
+    out.frame_count = snapshot.frame_count;
+    out.track_count = constants.track_count;
+    out.mode = constants.mode;
+    out.split_pos = constants.split_pos;
+    for (int i = 0; i < kWgpuD3D12MaxTracks; ++i) {
+        out.background_color[i] = constants.background_color[i];
+        out.order[i] = constants.order[i];
+        out.display_offset_x[i] = constants.display_offset_x[i];
+        out.display_offset_y[i] = constants.display_offset_y[i];
+        out.inv_display_size_x[i] = constants.inv_display_size_x[i];
+        out.inv_display_size_y[i] = constants.inv_display_size_y[i];
+        out.view_offset_uv_x[i] = constants.view_offset_uv_x[i];
+        out.view_offset_uv_y[i] = constants.view_offset_uv_y[i];
+
+        const auto& frame = snapshot.frames[i];
+        auto& frame_out = out.frames[i];
+        frame_out.file_id = frame.file_id;
+        frame_out.slot = i;
+        out.source_width[i] = frame.width > 0 ? frame.width : 1;
+        out.source_height[i] = frame.height > 0 ? frame.height : 1;
+        out.nv12_uv_scale_x[i] = frame.present ? frame.nv12_uv_scale_x : 1.0f;
+        out.nv12_uv_scale_y[i] = frame.present ? frame.nv12_uv_scale_y : 1.0f;
+        out.color_range[i] = frame.color_range;
+        out.color_matrix[i] = frame.color_matrix;
+        out.color_transfer[i] = frame.color_transfer;
+        out.color_primaries[i] = frame.color_primaries;
+        out.yuv_format[i] = frame.is_p010 ? VP_WGPU_D3D12_TEXTURE_FORMAT_P010
+                                           : VP_WGPU_D3D12_TEXTURE_FORMAT_NV12;
+        out.coded_width[i] = frame.coded_width > 0 ? frame.coded_width
+                                                   : out.source_width[i];
+        out.coded_height[i] = frame.coded_height > 0 ? frame.coded_height
+                                                     : out.source_height[i];
+        if (!frame.present) {
+            continue;
+        }
+        frame_out.present = 1;
+        frame_out.width = frame.width;
+        frame_out.height = frame.height;
+        frame_out.pts_us = frame.pts_us;
+        frame_out.dts_us = frame.dts_us;
+        frame_out.duration_us = frame.duration_us;
+        frame_out.analysis_frame_index = frame.analysis_frame_index;
+        frame_out.frame_identity_mode = frame.frame_identity_mode;
+        frame_out.source_packet_index = frame.source_packet_index;
+        frame_out.source_packet_size = frame.source_packet_size;
+        frame_out.source_packet_pos = frame.source_packet_pos;
+        frame_out.source_packet_pts = frame.source_packet_pts;
+        frame_out.source_packet_dts = frame.source_packet_dts;
+        frame_out.color_range = frame.color_range;
+        frame_out.color_matrix = frame.color_matrix;
+        frame_out.color_transfer = frame.color_transfer;
+        frame_out.color_primaries = frame.color_primaries;
+    }
+}
+
+} // namespace
 
 class WgpuD3D12SharedFp16Ring {
 public:
@@ -451,6 +572,88 @@ bool WgpuD3D12PresentationBackend::draw_frame(
         return false;
     }
     std::array<char, 512> error{};
+    VPWgpuD3D12CompositeRequest composite = {};
+    VPWgpuD3D12PresentDecisionInfo decision = {};
+    fill_wgpu_d3d12_decision_from_snapshot(
+        snapshot,
+        std::max(snapshot.target_width, 1),
+        std::max(snapshot.target_height, 1),
+        decision);
+    bool has_present_frame = false;
+    bool has_d3d12_frame = false;
+    for (int slot = 0; slot < kWgpuD3D12MaxTracks; ++slot) {
+        if (!snapshot.decision.frames[slot].has_value()) {
+            continue;
+        }
+        has_present_frame = true;
+        const auto& frame = *snapshot.decision.frames[slot];
+        const auto* storage = frame.d3d12_texture_storage();
+        if (!storage || !storage->texture) {
+            continue;
+        }
+        has_d3d12_frame = true;
+        std::string wait_error;
+        if (!wait_for_d3d12_frame_ready(*storage, wait_error)) {
+            shared_fp16_ring_->cancel_frame();
+            last_error_ = wait_error;
+            spdlog::error("[WgpuD3D12] {}", last_error_);
+            return false;
+        }
+        D3D12_RESOURCE_DESC desc = storage->texture->GetDesc();
+        const UINT array_layers = std::max<UINT>(desc.DepthOrArraySize, 1);
+        const UINT base_layer = storage->is_texture_array
+            ? static_cast<UINT>(std::max(storage->subresource_index, 0))
+            : 0;
+        composite.source_resources[slot] = storage->texture;
+        composite.source_formats[slot] = d3d12_texture_format_for_storage(*storage);
+        composite.source_array_layers[slot] = array_layers;
+        composite.source_base_array_layers[slot] = std::min(base_layer, array_layers - 1);
+        decision.yuv_format[slot] = composite.source_formats[slot];
+        decision.coded_width[slot] = storage->coded_width > 0
+            ? storage->coded_width
+            : std::max(frame.width, 1);
+        decision.coded_height[slot] = storage->coded_height > 0
+            ? storage->coded_height
+            : std::max(frame.height, 1);
+        decision.source_width[slot] = std::max(frame.width, 1);
+        decision.source_height[slot] = std::max(frame.height, 1);
+        decision.nv12_uv_scale_x[slot] =
+            static_cast<float>(decision.source_width[slot]) /
+            static_cast<float>(std::max(decision.coded_width[slot], 1));
+        decision.nv12_uv_scale_y[slot] =
+            static_cast<float>(decision.source_height[slot]) /
+            static_cast<float>(std::max(decision.coded_height[slot], 1));
+    }
+    if (has_present_frame && !has_d3d12_frame) {
+        shared_fp16_ring_->cancel_frame();
+        last_error_ = "wgpu-d3d12 draw requires D3D12VA source frames";
+        return false;
+    }
+    if (has_d3d12_frame) {
+        composite.destination_resource = target;
+        composite.output_format = VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
+        composite.output_color_mode = VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
+        composite.decision = &decision;
+        composite.width = static_cast<int32_t>(std::max(snapshot.target_width, 1));
+        composite.height = static_cast<int32_t>(std::max(snapshot.target_height, 1));
+        composite.error = error.data();
+        composite.error_size = error.size();
+        if (VPWgpuD3D12RendererRenderComposite(renderer_, &composite) != 0) {
+            shared_fp16_ring_->cancel_frame();
+            last_error_ = error.data()[0] != '\0'
+                              ? error.data()
+                              : "wgpu-d3d12 composite failed";
+            spdlog::error("[WgpuD3D12] {}", last_error_);
+            return false;
+        }
+        if (!shared_fp16_ring_->publish_frame()) {
+            last_error_ = "wgpu-d3d12 shared FP16 publish failed";
+            return false;
+        }
+        last_error_.clear();
+        return true;
+    }
+
     VPWgpuD3D12RenderTargetClearRequest request = {};
     request.d3d12_resource = target;
     request.format = VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;

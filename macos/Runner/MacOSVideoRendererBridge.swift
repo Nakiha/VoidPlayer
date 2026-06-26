@@ -284,7 +284,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         nativeEventDiagnostics: nativeEvents.diagnosticMap(),
         frameCallbackDiagnostics: frameCallbackDiagnostics(),
         viewportDiagnostics: presentation.diagnosticMap(),
-        presentationDiagnostics: presentationState.diagnosticMap()
+        presentationDiagnostics: presentationState.diagnosticMap(),
+        trackPayloads: tracks.tracks
       )
       diagnostics.merge(MacOSPresentationConfiguration.current.diagnostics) { _, next in next }
       if let nativeCompositor {
@@ -582,24 +583,41 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     guard textureId != nil else { return nil }
     let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") ?? -1
     if fileId >= 0, let player = nativePlayer {
-      for track in player.trackDiagnostics() {
+      let tracks = player.trackDiagnostics()
+      if shouldUseRendererOwnedPresentedFrame(player: player),
+         tracks.count == 1,
+         (tracks[0]["fileId"] as? Int) == fileId,
+         let frame = player.lastRendererOwnedFrameInfo() {
+        let map = frame.presentedFrameMap(fileId: fileId)
+        tracePresentedFrameSource(
+          route: "currentPresentedFrame",
+          source: "renderer-owned-paused",
+          fileId: fileId,
+          map: map
+        )
+        return map
+      }
+      for track in tracks {
         if (track["fileId"] as? Int) == fileId {
-          let frame: [String: Any] = [
-            "ptsUs": track["currentPtsUs"] as? Int64 ?? -1,
-            "dtsUs": track["currentDtsUs"] as? Int64 ?? Int64.min,
-            "analysisFrameIndex": track["analysisFrameIndex"] as? Int ?? -1,
-            "frameIdentityMode": track["frameIdentityMode"] as? Int ?? 0,
-            "sourcePacketIndex": track["sourcePacketIndex"] as? Int ?? -1,
-            "sourcePacketSize": track["sourcePacketSize"] as? Int ?? 0,
-            "sourcePacketPos": track["sourcePacketPos"] as? Int64 ?? -1,
-            "sourcePacketPtsUs": track["sourcePacketPtsUs"] as? Int64 ?? Int64.min,
-            "sourcePacketDtsUs": track["sourcePacketDtsUs"] as? Int64 ?? Int64.min,
-          ]
-          return frame
+          let map = presentedFrameMap(fromTrackDiagnostic: track, fileId: fileId)
+          tracePresentedFrameSource(
+            route: "currentPresentedFrame",
+            source: "track-diagnostics",
+            fileId: fileId,
+            map: map
+          )
+          return map
         }
       }
     }
-    return presentationState.currentPresentedFrameMap()
+    let map = presentationState.currentPresentedFrameMap()
+    tracePresentedFrameSource(
+      route: "currentPresentedFrame",
+      source: "presentation-state-fallback",
+      fileId: fileId,
+      map: map
+    )
+    return map
   }
 
   private func playbackSnapshot(arguments: Any?) -> Any {
@@ -618,21 +636,77 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   private func currentPresentedFrames() -> [[String: Any]] {
     guard textureId != nil, let player = nativePlayer else { return [] }
-    return player.trackDiagnostics().compactMap { track in
-      guard let fileId = track["fileId"] as? Int else { return nil }
-      return [
-        "fileId": fileId,
-        "ptsUs": track["currentPtsUs"] as? Int64 ?? -1,
-        "dtsUs": track["currentDtsUs"] as? Int64 ?? Int64.min,
-        "analysisFrameIndex": track["analysisFrameIndex"] as? Int ?? -1,
-        "frameIdentityMode": track["frameIdentityMode"] as? Int ?? 0,
-        "sourcePacketIndex": track["sourcePacketIndex"] as? Int ?? -1,
-        "sourcePacketSize": track["sourcePacketSize"] as? Int ?? 0,
-        "sourcePacketPos": track["sourcePacketPos"] as? Int64 ?? -1,
-        "sourcePacketPtsUs": track["sourcePacketPtsUs"] as? Int64 ?? Int64.min,
-        "sourcePacketDtsUs": track["sourcePacketDtsUs"] as? Int64 ?? Int64.min,
-      ]
+    let tracks = player.trackDiagnostics()
+    if shouldUseRendererOwnedPresentedFrame(player: player),
+       tracks.count == 1,
+       let fileId = tracks[0]["fileId"] as? Int,
+       let frame = player.lastRendererOwnedFrameInfo() {
+      let map = frame.presentedFrameMap(fileId: fileId)
+      tracePresentedFrameSource(
+        route: "presentedFrames",
+        source: "renderer-owned-paused",
+        fileId: fileId,
+        map: map
+      )
+      return [map]
     }
+    return tracks.compactMap { track in
+      guard let fileId = track["fileId"] as? Int else { return nil }
+      let map = presentedFrameMap(fromTrackDiagnostic: track, fileId: fileId)
+      tracePresentedFrameSource(
+        route: "presentedFrames",
+        source: "track-diagnostics",
+        fileId: fileId,
+        map: map
+      )
+      return map
+    }
+  }
+
+  private func presentedFrameMap(
+    fromTrackDiagnostic track: [String: Any],
+    fileId: Int
+  ) -> [String: Any] {
+    [
+      "fileId": fileId,
+      "ptsUs": track["currentPtsUs"] as? Int64 ?? -1,
+      "dtsUs": track["currentDtsUs"] as? Int64 ?? Int64.min,
+      "durationUs": 0,
+      "analysisFrameIndex": track["analysisFrameIndex"] as? Int ?? -1,
+      "frameIdentityMode": track["frameIdentityMode"] as? Int ?? 0,
+      "sourcePacketIndex": track["sourcePacketIndex"] as? Int ?? -1,
+      "sourcePacketSize": track["sourcePacketSize"] as? Int ?? 0,
+      "sourcePacketPos": track["sourcePacketPos"] as? Int64 ?? -1,
+      "sourcePacketPtsUs": track["sourcePacketPtsUs"] as? Int64 ?? Int64.min,
+      "sourcePacketDtsUs": track["sourcePacketDtsUs"] as? Int64 ?? Int64.min,
+    ]
+  }
+
+  private func shouldUseRendererOwnedPresentedFrame(
+    player: MacOSNativePlayerSession
+  ) -> Bool {
+    player.rendererOwnedPresentationActive() &&
+      !playback.currentIsPlaying(player: player)
+  }
+
+  private func tracePresentedFrameSource(
+    route: String,
+    source: String,
+    fileId: Int,
+    map: [String: Any]
+  ) {
+    guard ProcessInfo.processInfo.environment["VOIDPLAYER_QUICK_MARK_TRACE"] == "1" else {
+      return
+    }
+    let pts = map["ptsUs"] ?? "nil"
+    let dts = map["dtsUs"] ?? "nil"
+    let duration = map["durationUs"] ?? "nil"
+    let analysis = map["analysisFrameIndex"] ?? "nil"
+    let packetIndex = map["sourcePacketIndex"] ?? "nil"
+    let packetPos = map["sourcePacketPos"] ?? "nil"
+    NSLog(
+      "VoidPlayer quickmark timing route=\(route) source=\(source) fileId=\(fileId) pts=\(pts) dts=\(dts) duration=\(duration) analysis=\(analysis) packetIndex=\(packetIndex) packetPos=\(packetPos)"
+    )
   }
 
   private func createPlayer(arguments: Any?) -> Any {
@@ -999,6 +1073,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         presentationState: presentationState,
         markFrameAvailable: {
           self.markFrameAvailable(refreshSourceRing: !sourceRingRefreshRequested)
+          self.transport.resolvePendingSeekPreviewIfPresented(
+            presentationState: self.presentationState,
+            emitSeekPreviewPresented: { [weak self] requestId, targetPtsUs in
+              self?.emitSeekPreviewPresented(requestId: requestId, targetPtsUs: targetPtsUs)
+            }
+          )
         }
       )
     }

@@ -47,6 +47,8 @@ class MainWindowQuickMarkCoordinator {
   bool _savePending = false;
   bool _thumbnailCaptureInFlight = false;
   bool _thumbnailRerunRequested = false;
+  int? _pendingJumpMarkId;
+  String _lastViewTrace = '';
   final Map<int, String> _mediaHashes = <int, String>{};
   List<QuickMarkMediaRef> _pendingSaveRefs = const [];
   List<QuickMark> _pendingSaveMarks = const [];
@@ -62,8 +64,16 @@ class MainWindowQuickMarkCoordinator {
     required this.shuttingDown,
   });
 
-  QuickMarkView get view =>
-      store.view(context: frameContext, selectedMarkId: _selectedQuickMarkId);
+  QuickMarkView get view {
+    final currentStore = store;
+    final context = frameContext;
+    final markView = currentStore.view(
+      context: context,
+      selectedMarkId: _selectedQuickMarkId,
+    );
+    _traceView(currentStore, context, markView);
+    return markView;
+  }
 
   QuickMarkStore get store =>
       QuickMarkStore(marks: _quickMarks, nextId: _nextQuickMarkId);
@@ -71,6 +81,7 @@ class MainWindowQuickMarkCoordinator {
   QuickMarkFrameContext get frameContext => QuickMarkFrameContext(
     currentPtsUs: _currentPtsUs,
     presentedFrameAnchors: _presentedFrameAnchors,
+    allowTimeFallback: _state.pendingSeekUs == null,
   );
 
   QuickMark? get draft => _state.quickMarkDraft;
@@ -92,6 +103,7 @@ class MainWindowQuickMarkCoordinator {
     )) {
       _scheduleThumbnailCapture();
     }
+    _completePendingJumpIfReady();
   }
 
   void reconcilePersistence() {
@@ -208,6 +220,9 @@ class MainWindowQuickMarkCoordinator {
 
   void delete(int id) {
     _applyStore(store.delete(id));
+    if (_pendingJumpMarkId == id) {
+      _pendingJumpMarkId = null;
+    }
     if (_selectedQuickMarkId == id) {
       stateStore.setSelectedQuickMarkId(null);
     }
@@ -232,14 +247,39 @@ class MainWindowQuickMarkCoordinator {
   void jumpTo(int id) {
     final mark = store.markById(id);
     if (mark == null) return;
-    if (!isVisible(mark)) {
-      playbackCoordinator.seekTo(mark.anchor.ptsUs);
+    if (isVisible(mark)) {
+      _pendingJumpMarkId = null;
+      stateStore.setSelectedQuickMarkId(id);
+      layoutCoordinator.focusQuickMark(mark);
+      if (_state.pendingSeekUs != null) {
+        playbackCoordinator.seekTo(
+          mark.anchor.ptsUs,
+          preservePresentedFrameAnchors: true,
+        );
+      }
+      return;
     }
-    stateStore.setSelectedQuickMarkId(id);
+    _pendingJumpMarkId = id;
+    stateStore.setSelectedQuickMarkId(null);
+    playbackCoordinator.seekTo(mark.anchor.ptsUs);
   }
 
   bool isVisible(QuickMark mark) {
     return store.isVisible(mark, frameContext);
+  }
+
+  void _completePendingJumpIfReady() {
+    final id = _pendingJumpMarkId;
+    if (id == null || _state.pendingSeekUs != null) return;
+    final mark = store.markById(id);
+    if (mark == null) {
+      _pendingJumpMarkId = null;
+      return;
+    }
+    if (!isVisible(mark)) return;
+    _pendingJumpMarkId = null;
+    stateStore.setSelectedQuickMarkId(id);
+    layoutCoordinator.focusQuickMark(mark);
   }
 
   /// Injects an agent-authored mark anchored to the current presented frame
@@ -259,6 +299,7 @@ class MainWindowQuickMarkCoordinator {
       );
     }
     final anchor = await _anchorForFileId(entries[slotIndex].fileId);
+    _traceAnchor('add-agent-mark', anchor);
     _applyStore(
       store.add(
         QuickMark(
@@ -800,11 +841,13 @@ class MainWindowQuickMarkCoordinator {
       );
       timing = null;
     }
-    return QuickMarkAnchor.fromPresentedFrame(
+    final anchor = QuickMarkAnchor.fromPresentedFrame(
       fileId: fileId,
       timing: timing,
       fallbackPtsUs: _currentPtsUs,
     );
+    _traceAnchor('anchor-for-file fileId=$fileId', anchor);
+    return anchor;
   }
 
   QuickMark _draftForDrag({
@@ -852,4 +895,47 @@ class MainWindowQuickMarkCoordinator {
     );
     if (persist) _scheduleSave();
   }
+
+  void _traceAnchor(String route, QuickMarkAnchor anchor) {
+    if (Platform.environment['VOIDPLAYER_QUICK_MARK_TRACE'] != '1') return;
+    log.info('[QuickMarkTrace] $route anchor=${_quickMarkAnchorTrace(anchor)}');
+  }
+
+  void _traceView(
+    QuickMarkStore currentStore,
+    QuickMarkFrameContext context,
+    QuickMarkView markView,
+  ) {
+    if (Platform.environment['VOIDPLAYER_QUICK_MARK_TRACE'] != '1') return;
+    final anchors = context.presentedFrameAnchors.entries
+        .map((entry) => '${entry.key}:${_quickMarkAnchorTrace(entry.value)}')
+        .join(';');
+    final marks = currentStore.marks
+        .map((mark) {
+          final currentAnchor = context.presentedFrameAnchors[mark.fileId];
+          final toleranceUs = mark.anchor.durationUs > 0
+              ? (mark.anchor.durationUs / 2).round()
+              : 0;
+          final visible = currentStore.isVisible(mark, context);
+          return '#${mark.id}(file=${mark.fileId},visible=$visible,'
+              'selected=${mark.id == _selectedQuickMarkId},tol=$toleranceUs,'
+              'mark=${_quickMarkAnchorTrace(mark.anchor)},'
+              'current=${currentAnchor == null ? "null" : _quickMarkAnchorTrace(currentAnchor)})';
+        })
+        .join(' | ');
+    final signature =
+        'clock=${context.currentPtsUs} selected=$_selectedQuickMarkId '
+        'visible=${markView.visibleMarkIds.join(",")} '
+        'visibleSelected=${markView.visibleSelectedMarkId} '
+        'anchors=[$anchors] marks=[$marks]';
+    if (signature == _lastViewTrace) return;
+    _lastViewTrace = signature;
+    log.info('[QuickMarkTrace] view $signature');
+  }
 }
+
+String _quickMarkAnchorTrace(QuickMarkAnchor anchor) =>
+    'pts=${anchor.ptsUs},dts=${anchor.dtsUs},dur=${anchor.durationUs},'
+    'afi=${anchor.analysisFrameIndex},mode=${anchor.frameIdentityMode},'
+    'spi=${anchor.sourcePacketIndex},sps=${anchor.sourcePacketSize},'
+    'spp=${anchor.sourcePacketPos}';

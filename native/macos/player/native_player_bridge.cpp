@@ -288,10 +288,13 @@ int VPMacOSNativePlayerAddTrack(VPMacOSNativePlayer* player,
     write_error(error, error_size, message);
     return -1;
   }
+  const bool allow_hardware_decode =
+      use_hardware_decode != 0 &&
+      !vp_macos::videotoolbox_disabled_by_env();
   const int slot = player->renderer->add_track_with_file_id(
       path ? path : "",
       file_id,
-      use_hardware_decode != 0 && !vp_macos::videotoolbox_disabled_by_env());
+      allow_hardware_decode);
   if (slot < 0) {
     write_error(error, error_size, "shared macOS renderer failed to add track");
     return -1;

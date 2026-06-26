@@ -317,6 +317,13 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
   {
     std::lock_guard<std::mutex> player_lock(player->mutex);
     if (player->renderer_active_locked()) {
+      if (!target_changed) {
+        if (displayed_pixel_buffer) {
+          player->renderer->mark_headless_output_displayed(displayed_pixel_buffer);
+        }
+        player->renderer->protect_headless_output(protected_pixel_buffer);
+        return 0;
+      }
       if (player->renderer->install_headless_output_ring(pixel_buffers,
                                                          pixel_buffer_count,
                                                          displayed_pixel_buffer,

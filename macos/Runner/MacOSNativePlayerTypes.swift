@@ -6,8 +6,51 @@ struct MacOSNativeFrameInfo {
   let durationUs: Int
   let ptsUs: Int
   let dtsUs: Int
+  let analysisFrameIndex: Int
+  let frameIdentityMode: Int
+  let sourcePacketIndex: Int
+  let sourcePacketSize: Int
+  let sourcePacketPos: Int64
+  let sourcePacketPtsUs: Int64
+  let sourcePacketDtsUs: Int64
   let targetPixelBufferAddress: UInt
   let layoutRevision: UInt64
+
+  init(native info: VPMacOSNativeFrameInfo) {
+    width = Int(info.width)
+    height = Int(info.height)
+    durationUs = Int(info.duration_us)
+    ptsUs = Int(info.pts_us)
+    dtsUs = Int(info.dts_us)
+    analysisFrameIndex = Int(info.analysis_frame_index)
+    frameIdentityMode = Int(info.frame_identity_mode)
+    sourcePacketIndex = Int(info.source_packet_index)
+    sourcePacketSize = Int(info.source_packet_size)
+    sourcePacketPos = Int64(info.source_packet_pos)
+    sourcePacketPtsUs = Int64(info.source_packet_pts)
+    sourcePacketDtsUs = Int64(info.source_packet_dts)
+    targetPixelBufferAddress = UInt(info.target_pixel_buffer_address)
+    layoutRevision = UInt64(info.layout_revision)
+  }
+
+  func presentedFrameMap(fileId: Int? = nil) -> [String: Any] {
+    var map: [String: Any] = [
+      "ptsUs": Int64(ptsUs),
+      "dtsUs": Int64(dtsUs),
+      "durationUs": durationUs,
+      "analysisFrameIndex": analysisFrameIndex,
+      "frameIdentityMode": frameIdentityMode,
+      "sourcePacketIndex": sourcePacketIndex,
+      "sourcePacketSize": sourcePacketSize,
+      "sourcePacketPos": sourcePacketPos,
+      "sourcePacketPtsUs": sourcePacketPtsUs,
+      "sourcePacketDtsUs": sourcePacketDtsUs,
+    ]
+    if let fileId {
+      map["fileId"] = fileId
+    }
+    return map
+  }
 }
 
 struct MacOSPendingNativeFrame {

@@ -192,7 +192,9 @@ RendererPresentationSubmitDispatchHooks dispatch_hooks(
                 completion.draw.drew,
                 completion.draw.failure_error.c_str(),
                 completion.draw.backend_us,
-                nullptr,
+                completion.draw.frame_info_available
+                    ? &completion.draw.frame_info
+                    : nullptr,
                 completion.draw.source_cache_published,
                 completion.draw.source_cache_ring_generation,
                 completion.draw.source_cache_frame_generation);

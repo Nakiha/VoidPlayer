@@ -1,0 +1,6 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/voidplayer_wgpu_core",
+  "crates/voidplayer_wgpu_ffi",
+]

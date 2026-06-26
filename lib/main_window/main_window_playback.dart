@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
@@ -15,6 +16,17 @@ import '../video_renderer_controller.dart';
 import '../viewport/viewport_display_state.dart';
 import 'main_window_state.dart';
 import 'main_window_timeline_metrics.dart';
+
+String _quickMarkAnchorTrace(QuickMarkAnchor anchor) =>
+    'pts=${anchor.ptsUs},dts=${anchor.dtsUs},dur=${anchor.durationUs},'
+    'afi=${anchor.analysisFrameIndex},mode=${anchor.frameIdentityMode},'
+    'spi=${anchor.sourcePacketIndex},sps=${anchor.sourcePacketSize},'
+    'spp=${anchor.sourcePacketPos}';
+
+const int _playbackClockFallbackAnchorDurationUs = 33334;
+const int _presentedFrameAnchorToleranceUs = 50000;
+const int _maxPresentedFrameDurationUs = 250000;
+const Duration _pendingSeekTimeout = Duration(milliseconds: 1500);
 
 class MainWindowPlaybackCoordinator {
   static const double trackDragHandleWidth = 28.0;
@@ -55,7 +67,9 @@ class MainWindowPlaybackCoordinator {
   bool _resumeAfterSeek = false;
   int _pollSerial = 0;
   int _seekSerial = 0;
+  int _seekPreviewEventSerial = 0;
   int _loopRangeSyncSerial = 0;
+  String _lastQuickMarkAnchorTrace = '';
 
   MainWindowPlaybackCoordinator({
     required this.controller,
@@ -91,10 +105,7 @@ class MainWindowPlaybackCoordinator {
   int durationUs() => _state.durationUs;
   int? pendingSeekUs() => _state.pendingSeekUs;
   DateTime? pendingSeekAt() => _state.pendingSeekAt;
-  void setSeekPreview(int ptsUs) => stateStore.setSeekPreview(
-    ptsUs,
-    presentedFrameAnchors: _fallbackPresentedFrameAnchors(ptsUs),
-  );
+  void setSeekPreview(int ptsUs) => stateStore.setSeekPreview(ptsUs);
   void setPendingSeek(int? ptsUs, DateTime? at) =>
       stateStore.setPendingSeek(ptsUs, at);
   void setPolledPlaybackState(
@@ -135,6 +146,7 @@ class MainWindowPlaybackCoordinator {
   void dispose() {
     _disposed = true;
     _pollSerial++;
+    _seekPreviewEventSerial++;
     _loopRangeSyncSerial++;
     _playbackClockTickerBaseUs = null;
     _playbackClockTicker?.dispose();
@@ -202,6 +214,7 @@ class MainWindowPlaybackCoordinator {
     if (_disposed) return;
     _resumeAfterSeek = false;
     _seekSerial++;
+    _seekPreviewEventSerial++;
     await controller.pause();
     if (_disposed || !mounted()) return;
     cancelLoopBoundaryTimer();
@@ -294,10 +307,13 @@ class MainWindowPlaybackCoordinator {
     scheduleLoopBoundaryTimer();
   }
 
-  void seekTo(int ptsUs) {
+  void seekTo(int ptsUs, {bool preservePresentedFrameAnchors = false}) {
     if (_disposed) return;
     unawaited(
-      _seekToAsync(ptsUs).catchError((Object error, StackTrace stack) {
+      _seekToAsync(
+        ptsUs,
+        preservePresentedFrameAnchors: preservePresentedFrameAnchors,
+      ).catchError((Object error, StackTrace stack) {
         log.warning('seek failed: targetPtsUs=$ptsUs', error, stack);
       }),
     );
@@ -308,17 +324,26 @@ class MainWindowPlaybackCoordinator {
     return _seekToAsync(ptsUs);
   }
 
-  Future<void> _seekToAsync(int ptsUs) async {
+  Future<void> _seekToAsync(
+    int ptsUs, {
+    bool preservePresentedFrameAnchors = false,
+  }) async {
     if (_disposed) return;
     final targetPtsUs = _clampSeekTargetUs(ptsUs);
     final seekSerial = ++_seekSerial;
+    _seekPreviewEventSerial++;
     _pollSerial++;
     final wasPlaying = isPlaying();
     final behavior = playbackPreferences.seekAfterJumpBehavior;
     final shouldResume =
         behavior == SeekAfterJumpBehavior.keepPreviousState &&
         (wasPlaying || _resumeAfterSeek);
-    setSeekPreview(targetPtsUs);
+    stateStore.setSeekPreview(
+      targetPtsUs,
+      presentedFrameAnchors: preservePresentedFrameAnchors
+          ? _state.presentedFrameAnchors
+          : const {},
+    );
     _setPlaybackClockAnchor(
       _PlaybackClockAnchor(
         ptsUs: targetPtsUs,
@@ -346,7 +371,7 @@ class MainWindowPlaybackCoordinator {
     if (_disposed || !mounted()) return;
 
     if (seekSerial != _seekSerial) return;
-    _scheduleSeekSettledNotification(seekSerial, targetPtsUs);
+    _schedulePendingSeekTimeout(seekSerial, targetPtsUs);
 
     final resume = shouldResume && _resumeAfterSeek;
     _resumeAfterSeek = false;
@@ -366,26 +391,62 @@ class MainWindowPlaybackCoordinator {
     scheduleLoopBoundaryTimer(fromPtsUs: targetPtsUs);
   }
 
-  void _scheduleSeekSettledNotification(int seekSerial, int targetPtsUs) {
-    final seekSettled = onSeekSettled;
-    if (seekSettled == null) return;
+  void _schedulePendingSeekTimeout(int seekSerial, int targetPtsUs) {
     _seekSettledTimer?.cancel();
-    _seekSettledTimer = Timer(const Duration(seconds: 2), () {
+    _seekSettledTimer = Timer(_pendingSeekTimeout, () {
       if (_disposed || !mounted() || seekSerial != _seekSerial) return;
-      log.info(
-        'Seek preview event timed out; refreshing overlay by current frame '
-        'fallback (requestId=$seekSerial, targetPtsUs=$targetPtsUs)',
-      );
-      unawaited(
-        seekSettled(targetPtsUs).catchError((Object error, StackTrace stack) {
-          log.warning(
-            'seek settled fallback failed: targetPtsUs=$targetPtsUs',
-            error,
-            stack,
-          );
-        }),
+      _completePendingSeekByTimeout(
+        seekSerial: seekSerial,
+        targetPtsUs: targetPtsUs,
       );
     });
+  }
+
+  void _completePendingSeekByTimeout({
+    required int seekSerial,
+    required int targetPtsUs,
+  }) {
+    if (_disposed ||
+        !mounted() ||
+        seekSerial != _seekSerial ||
+        pendingSeekUs() != targetPtsUs) {
+      return;
+    }
+    logFine(
+      'Seek preview event timed out; committing target fallback '
+      '(requestId=$seekSerial, targetPtsUs=$targetPtsUs)',
+    );
+    _seekSettledTimer?.cancel();
+    _seekSettledTimer = null;
+    _clearPendingSeek();
+    final presentedFrameAnchors = _needsPresentedFrameAnchors
+        ? _fallbackPresentedFrameAnchorsForTimeline(targetPtsUs)
+        : null;
+    setPolledPlaybackState(
+      targetPtsUs,
+      durationUs(),
+      isPlaying(),
+      presentedFrameAnchors: presentedFrameAnchors,
+    );
+    _setPlaybackClockAnchor(
+      _PlaybackClockAnchor(
+        ptsUs: targetPtsUs,
+        durationUs: durationUs(),
+        playing: isPlaying(),
+        speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
+      ),
+    );
+    final seekSettled = onSeekSettled;
+    if (seekSettled == null) return;
+    unawaited(
+      seekSettled(targetPtsUs).catchError((Object error, StackTrace stack) {
+        log.warning(
+          'seek settled fallback failed: targetPtsUs=$targetPtsUs',
+          error,
+          stack,
+        );
+      }),
+    );
   }
 
   void _handleNativePlayerEvent(NativePlayerEvent event) {
@@ -450,18 +511,83 @@ class MainWindowPlaybackCoordinator {
       return;
     }
     if (event.type != NativePlayerEventType.seekPreviewPresented) return;
+    unawaited(_handleSeekPreviewPresentedEvent(event));
+  }
+
+  Future<void> _handleSeekPreviewPresentedEvent(NativePlayerEvent event) async {
     final requestId = event.requestId;
     if (requestId == null || requestId != _seekSerial) return;
     if (!event.hasPresentedFrame) return;
-    final callback = onSeekPreviewPresented;
-    if (callback == null) return;
+    final seekUs = pendingSeekUs();
+    if (seekUs == null) return;
+    final targetPtsUs = event.targetPtsUs ?? seekUs;
+    if ((targetPtsUs - seekUs).abs() > 50000) return;
+    final eventSerial = ++_seekPreviewEventSerial;
+    final eventPtsUs = event.ptsUs!;
+    final eventDtsUs = event.dtsUs!;
+    Map<int, QuickMarkAnchor>? presentedFrameAnchors;
+    if (_needsPresentedFrameAnchors) {
+      final timings = await _pollPresentedFrameTimings();
+      if (_disposed ||
+          !mounted() ||
+          requestId != _seekSerial ||
+          eventSerial != _seekPreviewEventSerial ||
+          pendingSeekUs() != seekUs) {
+        return;
+      }
+      presentedFrameAnchors = {
+        for (final entry in trackManager.entries)
+          entry.info.fileId: _quickMarkAnchorFromPresentedFrame(
+            fileId: entry.info.fileId,
+            timing: timings[entry.info.fileId],
+            fallbackPtsUs: _trackPtsForTimelinePts(
+              entry.info.fileId,
+              targetPtsUs,
+            ),
+            fallbackDtsUs: _trackPtsForTimelinePts(
+              entry.info.fileId,
+              targetPtsUs,
+            ),
+            fallbackDurationUs: _playbackClockFallbackAnchorDurationUs,
+            expectedPtsUs: _trackPtsForTimelinePts(
+              entry.info.fileId,
+              targetPtsUs,
+            ),
+            requireExpectedPtsMatch: true,
+          )!,
+      };
+    } else if (_disposed ||
+        !mounted() ||
+        requestId != _seekSerial ||
+        eventSerial != _seekPreviewEventSerial ||
+        pendingSeekUs() != seekUs) {
+      return;
+    }
+    _clearPendingSeek();
+    final playing = isPlaying();
+    setPolledPlaybackState(
+      targetPtsUs,
+      durationUs(),
+      playing,
+      presentedFrameAnchors: presentedFrameAnchors,
+    );
+    _setPlaybackClockAnchor(
+      _PlaybackClockAnchor(
+        ptsUs: targetPtsUs,
+        durationUs: durationUs(),
+        playing: playing,
+        speed: playbackSpeed() <= 0 ? 1.0 : playbackSpeed(),
+      ),
+    );
     _seekSettledTimer?.cancel();
     _seekSettledTimer = null;
+    final callback = onSeekPreviewPresented;
+    if (callback == null) return;
     unawaited(
       callback(
         trackFileId: event.trackFileId!,
-        ptsUs: event.ptsUs!,
-        dtsUs: event.dtsUs!,
+        ptsUs: eventPtsUs,
+        dtsUs: eventDtsUs,
       ).catchError((Object error, StackTrace stack) {
         log.warning(
           'seek preview callback failed: requestId=$requestId',
@@ -485,12 +611,19 @@ class MainWindowPlaybackCoordinator {
           : DateTime.now().difference(pendingSeekAt()!);
       const seekSettleToleranceUs = 50000;
       final settled = (pts - seekUs).abs() <= seekSettleToleranceUs;
-      if (settled) {
-        setPendingSeek(null, null);
-      } else if (seekAge < const Duration(milliseconds: 1500)) {
+      if (_needsPresentedFrameAnchors) {
+        if (seekAge < _pendingSeekTimeout) {
+          pts = seekUs;
+        } else {
+          _clearPendingSeek();
+          pts = seekUs;
+        }
+      } else if (settled) {
+        _clearPendingSeek();
+      } else if (seekAge < _pendingSeekTimeout) {
         pts = seekUs;
       } else {
-        setPendingSeek(null, null);
+        _clearPendingSeek();
       }
     }
 
@@ -533,7 +666,19 @@ class MainWindowPlaybackCoordinator {
       );
     }
 
-    setPolledPlaybackState(clampedPts, durationUs, playing);
+    final presentedFrameAnchors =
+        _needsPresentedFrameAnchors && pendingSeekUs() == null
+        ? _fallbackPresentedFrameAnchorsForTimeline(
+            clampedPts,
+            durationUs: _playbackClockFallbackAnchorDurationUs,
+          )
+        : null;
+    setPolledPlaybackState(
+      clampedPts,
+      durationUs,
+      playing,
+      presentedFrameAnchors: presentedFrameAnchors,
+    );
     if (fromNativeEvent) {
       if (playing) {
         scheduleLoopBoundaryTimer(fromPtsUs: clampedPts);
@@ -686,8 +831,11 @@ class MainWindowPlaybackCoordinator {
       var pts = snapshot.currentPtsUs;
       final dur = snapshot.durationUs;
       final playing = snapshot.isPlaying;
-      var presentedFrameAnchors = _anchorsFromSnapshot(snapshot);
       final seekUs = pendingSeekUs();
+      var presentedFrameAnchors = _anchorsFromSnapshot(
+        snapshot,
+        allowFallbackAnchors: seekUs == null,
+      );
       if (seekUs != null) {
         final seekAge = pendingSeekAt() == null
             ? Duration.zero
@@ -701,14 +849,19 @@ class MainWindowPlaybackCoordinator {
         );
         final settled = clockSettled && anchorsSettled;
         if (settled) {
-          setPendingSeek(null, null);
-        } else if (seekAge < const Duration(milliseconds: 1500)) {
+          _clearPendingSeek();
+        } else if (_needsPresentedFrameAnchors &&
+            seekAge < _pendingSeekTimeout) {
           pts = seekUs;
-          presentedFrameAnchors = _fallbackPresentedFrameAnchors(seekUs);
+          presentedFrameAnchors = const {};
+        } else if (seekAge < _pendingSeekTimeout) {
+          pts = seekUs;
         } else {
-          setPendingSeek(null, null);
+          _clearPendingSeek();
           if (!anchorsSettled) {
-            presentedFrameAnchors = _fallbackPresentedFrameAnchors(seekUs);
+            presentedFrameAnchors = _fallbackPresentedFrameAnchorsForTimeline(
+              seekUs,
+            );
           }
         }
       }
@@ -794,17 +947,29 @@ class MainWindowPlaybackCoordinator {
   bool get _needsPresentedFrameAnchors =>
       _state.quickMarks.isNotEmpty || _state.quickMarkDraft != null;
 
-  Map<int, QuickMarkAnchor>? _anchorsFromSnapshot(PlaybackSnapshot snapshot) {
+  Map<int, QuickMarkAnchor>? _anchorsFromSnapshot(
+    PlaybackSnapshot snapshot, {
+    bool allowFallbackAnchors = true,
+  }) {
     if (!_needsPresentedFrameAnchors) return null;
     if (trackManager.isEmpty) return const {};
-    return {
-      for (final entry in trackManager.entries)
-        entry.info.fileId: QuickMarkAnchor.fromPresentedFrame(
-          fileId: entry.info.fileId,
-          timing: snapshot.presentedFrames[entry.info.fileId],
-          fallbackPtsUs: snapshot.currentPtsUs,
+    final anchors = <int, QuickMarkAnchor>{};
+    for (final entry in trackManager.entries) {
+      final anchor = _quickMarkAnchorFromPresentedFrame(
+        fileId: entry.info.fileId,
+        timing: snapshot.presentedFrames[entry.info.fileId],
+        fallbackPtsUs: _trackPtsForTimelinePts(
+          entry.info.fileId,
+          snapshot.currentPtsUs,
         ),
-    };
+        allowFallbackAnchor: allowFallbackAnchors,
+      );
+      if (anchor != null) {
+        anchors[entry.info.fileId] = anchor;
+      }
+    }
+    _traceQuickMarkAnchors(snapshot: snapshot, anchors: anchors);
+    return anchors;
   }
 
   Future<Map<int, PresentedFrameTiming?>> _pollPresentedFrameTimings() async {
@@ -840,23 +1005,124 @@ class MainWindowPlaybackCoordinator {
   }) {
     if (anchors == null || anchors.isEmpty) return false;
     for (final anchor in anchors.values) {
-      if ((anchor.ptsUs - targetPtsUs).abs() > toleranceUs) {
+      final expectedPtsUs = _trackPtsForTimelinePts(anchor.fileId, targetPtsUs);
+      if ((anchor.ptsUs - expectedPtsUs).abs() > toleranceUs) {
         return false;
       }
     }
     return true;
   }
 
-  Map<int, QuickMarkAnchor> _fallbackPresentedFrameAnchors(int ptsUs) {
+  void _clearPendingSeek() {
+    if (pendingSeekUs() != null) {
+      _seekPreviewEventSerial++;
+    }
+    setPendingSeek(null, null);
+  }
+
+  Map<int, QuickMarkAnchor> _fallbackPresentedFrameAnchorsForTimeline(
+    int timelinePtsUs, {
+    int durationUs = 0,
+  }) {
     if (trackManager.isEmpty) return const {};
     return {
       for (final entry in trackManager.entries)
         entry.info.fileId: QuickMarkAnchor(
           fileId: entry.info.fileId,
-          ptsUs: ptsUs,
-          dtsUs: ptsUs,
+          ptsUs: _trackPtsForTimelinePts(entry.info.fileId, timelinePtsUs),
+          dtsUs: _trackPtsForTimelinePts(entry.info.fileId, timelinePtsUs),
+          durationUs: durationUs,
         ),
     };
+  }
+
+  int _trackPtsForTimelinePts(int fileId, int timelinePtsUs) {
+    final offsetUs = _state.syncOffsets[fileId] ?? 0;
+    return (timelinePtsUs - offsetUs).clamp(0, 1 << 62).toInt();
+  }
+
+  QuickMarkAnchor? _quickMarkAnchorFromPresentedFrame({
+    required int fileId,
+    required PresentedFrameTiming? timing,
+    required int fallbackPtsUs,
+    int? fallbackDtsUs,
+    int fallbackDurationUs = 0,
+    int? expectedPtsUs,
+    bool requireExpectedPtsMatch = false,
+    bool allowFallbackAnchor = true,
+  }) {
+    QuickMarkAnchor? fallback() => allowFallbackAnchor
+        ? QuickMarkAnchor(
+            fileId: fileId,
+            ptsUs: fallbackPtsUs,
+            dtsUs: fallbackDtsUs ?? fallbackPtsUs,
+            durationUs: fallbackDurationUs,
+          )
+        : null;
+
+    if (timing == null || !timing.isValid) {
+      return fallback();
+    }
+
+    final timingPtsUs = timing.ptsUs;
+    final expectedUs = expectedPtsUs ?? fallbackPtsUs;
+    final hasExpectedPts = expectedUs >= 0 && timingPtsUs >= 0;
+    final matchesExpected =
+        !hasExpectedPts ||
+        (timingPtsUs - expectedUs).abs() <= _presentedFrameAnchorToleranceUs;
+    if (requireExpectedPtsMatch && !matchesExpected) {
+      return fallback();
+    }
+    if (!timing.hasStableSourceIdentity && !matchesExpected) {
+      return fallback();
+    }
+
+    final ptsUs = timingPtsUs >= 0 ? timingPtsUs : fallbackPtsUs;
+    final dtsUs = timing.dtsUs == PresentedFrameTiming.noTimestampUs
+        ? ptsUs
+        : timing.dtsUs;
+    final durationUs =
+        timing.durationUs > 0 &&
+            timing.durationUs <= _maxPresentedFrameDurationUs
+        ? timing.durationUs
+        : fallbackDurationUs;
+    return QuickMarkAnchor(
+      fileId: fileId,
+      ptsUs: ptsUs,
+      dtsUs: dtsUs,
+      durationUs: durationUs,
+      analysisFrameIndex: timing.analysisFrameIndex,
+      frameIdentityMode: timing.frameIdentityMode,
+      sourcePacketIndex: timing.sourcePacketIndex,
+      sourcePacketSize: timing.sourcePacketSize,
+      sourcePacketPos: timing.sourcePacketPos,
+      sourcePacketPtsUs: timing.sourcePacketPtsUs,
+      sourcePacketDtsUs: timing.sourcePacketDtsUs,
+    );
+  }
+
+  void _traceQuickMarkAnchors({
+    required PlaybackSnapshot snapshot,
+    required Map<int, QuickMarkAnchor> anchors,
+  }) {
+    if (Platform.environment['VOIDPLAYER_QUICK_MARK_TRACE'] != '1') return;
+    final rawFrames = snapshot.presentedFrames.entries
+        .map(
+          (entry) =>
+              '${entry.key}:pts=${entry.value.ptsUs},dts=${entry.value.dtsUs},'
+              'dur=${entry.value.durationUs},afi=${entry.value.analysisFrameIndex},'
+              'spi=${entry.value.sourcePacketIndex},spp=${entry.value.sourcePacketPos}',
+        )
+        .join(';');
+    final anchorText = anchors.entries
+        .map((entry) => '${entry.key}:${_quickMarkAnchorTrace(entry.value)}')
+        .join(';');
+    final signature =
+        'clock=${snapshot.currentPtsUs} playing=${snapshot.isPlaying} '
+        'raw=[$rawFrames] anchors=[$anchorText]';
+    if (signature == _lastQuickMarkAnchorTrace) return;
+    _lastQuickMarkAnchorTrace = signature;
+    log.info('[QuickMarkTrace] playback snapshot $signature');
   }
 
   Future<void> setLoopRangeEnabled(bool enabled) async {

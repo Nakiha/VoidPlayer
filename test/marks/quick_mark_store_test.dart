@@ -97,6 +97,110 @@ void main() {
     expect(view.visibleSelectedMarkId, isNull);
   });
 
+  test(
+    'quick mark view hides selected mark after presented frame advances',
+    () {
+      const mark = QuickMark(
+        id: 1,
+        anchor: QuickMarkAnchor(
+          fileId: 1,
+          ptsUs: 1000000,
+          dtsUs: 900000,
+          durationUs: 33333,
+          sourcePacketIndex: 10,
+          sourcePacketSize: 2048,
+          sourcePacketPos: 4096,
+        ),
+        sourceRect: Rect.zero,
+      );
+      final store = QuickMarkStore(marks: const [mark]);
+
+      final currentFrame = store.view(
+        context: const QuickMarkFrameContext(
+          currentPtsUs: 1000000,
+          presentedFrameAnchors: {
+            1: QuickMarkAnchor(
+              fileId: 1,
+              ptsUs: 1000000,
+              dtsUs: 900000,
+              sourcePacketIndex: 10,
+              sourcePacketSize: 2048,
+              sourcePacketPos: 4096,
+            ),
+          },
+        ),
+        selectedMarkId: 1,
+      );
+      final nextFrame = store.view(
+        context: const QuickMarkFrameContext(
+          currentPtsUs: 1033333,
+          presentedFrameAnchors: {
+            1: QuickMarkAnchor(
+              fileId: 1,
+              ptsUs: 1033333,
+              dtsUs: 933333,
+              sourcePacketIndex: 11,
+              sourcePacketSize: 2048,
+              sourcePacketPos: 6144,
+            ),
+          },
+        ),
+        selectedMarkId: 1,
+      );
+
+      expect(currentFrame.visibleMarks.map((mark) => mark.id), const [1]);
+      expect(currentFrame.visibleSelectedMarkId, 1);
+      expect(nextFrame.visibleMarks, isEmpty);
+      expect(nextFrame.selectedMarkId, 1);
+      expect(nextFrame.visibleSelectedMarkId, isNull);
+    },
+  );
+
+  test('quick mark view uses frame window for weak playback clock anchors', () {
+    const mark = QuickMark(
+      id: 1,
+      anchor: QuickMarkAnchor(
+        fileId: 1,
+        ptsUs: 1000000,
+        dtsUs: 900000,
+        sourcePacketIndex: 10,
+        sourcePacketSize: 2048,
+        sourcePacketPos: 4096,
+      ),
+      sourceRect: Rect.zero,
+    );
+    final store = QuickMarkStore(marks: const [mark]);
+
+    final nearbyFrame = store.view(
+      context: const QuickMarkFrameContext(
+        currentPtsUs: 1008000,
+        presentedFrameAnchors: {
+          1: QuickMarkAnchor(
+            fileId: 1,
+            ptsUs: 1008000,
+            dtsUs: 1008000,
+            durationUs: 33334,
+          ),
+        },
+      ),
+      selectedMarkId: 1,
+    );
+    final advancedFrame = store.view(
+      context: const QuickMarkFrameContext(
+        currentPtsUs: 1034000,
+        presentedFrameAnchors: {
+          1: QuickMarkAnchor(fileId: 1, ptsUs: 1034000, dtsUs: 1034000),
+        },
+      ),
+      selectedMarkId: 1,
+    );
+
+    expect(nearbyFrame.visibleMarkIds, const {1});
+    expect(nearbyFrame.visibleSelectedMarkId, 1);
+    expect(advancedFrame.visibleMarks, isEmpty);
+    expect(advancedFrame.visibleSelectedMarkId, isNull);
+  });
+
   test('mergeLoaded replaces marks for loaded files and keeps others', () {
     const keptMark = QuickMark(
       id: 5,

@@ -5,10 +5,12 @@ import 'quick_mark.dart';
 class QuickMarkFrameContext {
   final int currentPtsUs;
   final Map<int, QuickMarkAnchor> presentedFrameAnchors;
+  final bool allowTimeFallback;
 
   const QuickMarkFrameContext({
     required this.currentPtsUs,
     this.presentedFrameAnchors = const {},
+    this.allowTimeFallback = true,
   });
 }
 
@@ -130,16 +132,31 @@ class QuickMarkStore {
 
   bool isVisible(QuickMark mark, QuickMarkFrameContext context) {
     final currentAnchor = context.presentedFrameAnchors[mark.fileId];
-    final toleranceUs = mark.anchor.durationUs > 0
-        ? (mark.anchor.durationUs / 2).round()
-        : 0;
+    final toleranceUs = _visibilityToleranceUs(mark.anchor, currentAnchor);
     if (currentAnchor != null) {
       return mark.anchor.matchesPresentedFrameOrTime(
         currentAnchor,
         fallbackToleranceUs: toleranceUs,
       );
     }
+    if (!context.allowTimeFallback) return false;
     return (mark.ptsUs - context.currentPtsUs).abs() <= toleranceUs;
+  }
+
+  int _visibilityToleranceUs(
+    QuickMarkAnchor markAnchor,
+    QuickMarkAnchor? currentAnchor,
+  ) {
+    var toleranceUs = markAnchor.durationUs > 0
+        ? (markAnchor.durationUs / 2).round()
+        : 0;
+    if (currentAnchor != null && currentAnchor.durationUs > 0) {
+      toleranceUs = math.max(
+        toleranceUs,
+        (currentAnchor.durationUs / 2).round(),
+      );
+    }
+    return toleranceUs;
   }
 
   QuickMarkView view({

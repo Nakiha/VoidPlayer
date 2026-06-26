@@ -12,6 +12,8 @@ and UI tests into gates and records cleanup decisions that changed the active se
 | Windows preservation | Windows runner/D3D11 preservation after shared renderer/backend changes. | `python dev.py gate windows-preservation` |
 | macOS stabilization | macOS native playback and renderer-owned Metal confidence. | `python3.12 dev.py gate macos-ui-smoke` |
 | macOS HDR EDR | Local HLG/PQ Auto promotion evidence on an EDR-capable display. | `python3.12 dev.py gate macos-hdr-edr-smoke` |
+| macOS wgpu-metal canary | Experimental wgpu-metal software, VideoToolbox, source-projection/overlay, and 4K60 evidence. | `python3.12 dev.py gate macos-wgpu-metal-smoke` |
+| macOS wgpu-metal EDR | Experimental wgpu-metal HLG/BT.2020 EDR evidence on an EDR-capable display. | `python3.12 dev.py gate macos-wgpu-metal-edr-smoke` |
 | Nightly/headed | Slower headed UI, stress, audio, 4K/cadence, and lifecycle churn. | `python3.12 dev.py gate macos-ui-nightly` or Windows UI suites |
 | macOS release readiness | macOS package stage, FFmpeg dylibs, `@rpath`, notices, entitlements, sandbox/crash-log inputs, and codesign smoke. | `python3.12 dev.py gate macos-release-readiness` |
 | Release candidate | Full native config matrix, platform UI preservation, package, compliance, signing inputs. | `python3.12 dev.py gate release-candidate` plus CI full matrix |
@@ -140,6 +142,11 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `ui_tests/macos/native_audio_play_seek_smoke.csv` | Native audio play/seek and audible-track diagnostics. | Nightly/headed; manual audible check remains separate. |
 | `ui_tests/macos/native_callback_stress_smoke.csv` | Callback lifecycle stress. | Nightly/headed. |
 | `ui_tests/macos/native_quit_while_playing_smoke.csv` / `native_user_window_close_smoke.csv` | Teardown and crash-report regression. | Nightly/headed or targeted runner changes. |
+| `ui_tests/macos/wgpu_metal_default_software_smoke.csv` | Experimental wgpu-metal software/package presentation canary; asserts backend selection, software fallback, YUV upload, and non-black capture. | Local `macos-wgpu-metal-smoke`. |
+| `ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv` | Experimental wgpu-metal VideoToolbox CVPixelBuffer source import canary. | Local `macos-wgpu-metal-smoke`; uses normal `preferHardware` decode preference. |
+| `ui_tests/macos/wgpu_metal_source_projection_overlay_smoke.csv` | Experimental wgpu-metal retained source-projection and overlay composite canary through split/pan/zoom. | Local `macos-wgpu-metal-smoke`. |
+| `ui_tests/macos/wgpu_metal_4k60_videotoolbox_smoke.csv` | Experimental wgpu-metal 4K60 VideoToolbox/cadence pressure canary. | Local `macos-wgpu-metal-smoke`; uses normal `preferHardware` decode preference. |
+| `ui_tests/macos/wgpu_metal_hlg_edr_smoke.csv` | Experimental wgpu-metal HLG/BT.2020 EDR canary with RGBA16F target and renderer-owned color diagnostics. | Local `macos-wgpu-metal-edr-smoke`; requires an EDR-capable display. |
 | `ui_tests/local/**` | Developer-specific absolute-path regressions. | Manual/local only; never CI. |
 
 ## Workflow Mapping
@@ -152,6 +159,8 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `.github/workflows/macos-ui.yml` | weekly | `python3.12 dev.py gate macos-ui-smoke` |
 | `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
 | Local HDR EDR gate | manual on EDR-capable macOS display before merging HDR compositor changes | `python3.12 dev.py gate macos-hdr-edr-smoke` |
+| Local wgpu-metal gate | manual before promoting the experimental wgpu backend | `python3.12 dev.py gate macos-wgpu-metal-smoke` |
+| Local wgpu-metal EDR gate | manual on EDR-capable macOS display before promoting wgpu-metal HDR/EDR | `python3.12 dev.py gate macos-wgpu-metal-edr-smoke` |
 | Local Windows cross-adapter gate | manual on multi-adapter Windows desktop before merging output migration or shared-fence sync changes; runs event-query and shared-fence A/B evidence | `python dev.py gate windows-cross-adapter-local` |
 | Local macOS package gate | manual before release candidate | `python3.12 dev.py gate macos-release-readiness` |
 
@@ -166,6 +175,10 @@ evidence set: `toolchain doctor`, macOS local-engine bootstrap, `pr-fast`,
 checks. The GitHub-hosted Windows UI preservation job may use documented
 CI-only adapter fallbacks; do not treat that fallback as release coverage for a
 real Windows desktop GPU.
+
+For the experimental wgpu-metal backend, add local `macos-wgpu-metal-smoke` and,
+on an EDR-capable display, `macos-wgpu-metal-edr-smoke` before discussing a
+default-backend switch.
 
 ## Rules
 

@@ -142,7 +142,9 @@ inline bool is_transient_presentation_backpressure_error(const std::string& erro
            error == "native Metal uploader shared resources are busy" ||
            error == "native Metal uploader frame resource pool is busy" ||
            error == "native Metal uploader overlay layer resources are busy" ||
-           error == "renderer-owned Metal presentation target ring is busy";
+           error == "renderer-owned Metal presentation target ring is busy" ||
+           error == "renderer-owned wgpu-metal async draw deferred by backpressure" ||
+           error == "renderer-owned wgpu-metal presentation target ring is busy";
 }
 
 struct PresentationBackendMetrics {

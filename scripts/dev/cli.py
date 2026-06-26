@@ -80,6 +80,8 @@ Examples:
   python dev.py gate pr-fast
   python dev.py gate macos-ui-smoke
   python dev.py gate macos-hdr-edr-smoke
+  python dev.py gate macos-wgpu-metal-smoke
+  python dev.py gate macos-wgpu-metal-edr-smoke
   python dev.py gate macos-release-readiness
   python dev.py gate flutter-fork-protection
   python dev.py gate macos-platform-protection
@@ -147,6 +149,8 @@ Examples:
             "macos-ui-smoke",
             "macos-ui-nightly",
             "macos-hdr-edr-smoke",
+            "macos-wgpu-metal-smoke",
+            "macos-wgpu-metal-edr-smoke",
             "macos-release-readiness",
             "repo-hygiene",
             "flutter-fork-protection",

@@ -2,6 +2,7 @@
 
 #include "macos/metal/metal_concurrency_policy.h"
 #include "macos/presentation/presentation_package_builder.h"
+#include "macos/wgpu/wgpu_metal_presentation_backend.h"
 #include "renderer/layout/layout_geometry.h"
 #include "renderer/render/shader_constants.h"
 #include "renderer/render/presentation_backend_factory.h"
@@ -513,6 +514,13 @@ std::pair<int32_t, int32_t> package_storage_extent(
 
 MetalPresentationBackend::~MetalPresentationBackend() {
   shutdown();
+}
+
+const char* MetalPresentationBackend::last_error() const {
+  thread_local std::string error_copy;
+  std::lock_guard<std::mutex> lock(async_mutex_);
+  error_copy = last_error_;
+  return error_copy.c_str();
 }
 
 bool MetalPresentationBackend::initialize(const vr::PresentationBackendConfig& config) {
@@ -2150,12 +2158,16 @@ namespace {
 class MetalPresentationBackendProvider final : public PresentationBackendProvider {
 public:
   bool supports(RenderBackendKind kind) const override {
-    return kind == RenderBackendKind::Metal;
+    return kind == RenderBackendKind::Metal ||
+           kind == RenderBackendKind::WgpuMetal;
   }
 
   std::unique_ptr<PresentationBackend> create(RenderBackendKind kind) const override {
     if (!supports(kind)) {
       return nullptr;
+    }
+    if (kind == RenderBackendKind::WgpuMetal) {
+      return vp_macos::create_wgpu_metal_presentation_backend();
     }
     return vp_macos::create_metal_presentation_backend();
   }

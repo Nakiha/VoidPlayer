@@ -59,6 +59,71 @@ On macOS the default request is Auto:
 `native-compositor-sdr`, or `native-compositor-edr` for diagnostics and
 bisecting. Product defaults should rely on Auto.
 
+`VOIDPLAYER_MACOS_PRESENTATION_MODE=wgpu-metal` selects the experimental
+renderer-owned wgpu/Metal presentation backend. This is a macOS canary only:
+the shared renderer, playback scheduler, target ring lifecycle, and software
+package inputs remain unchanged, while the render core is routed through the
+Rust/wgpu FFI when it is linked. The backend owns one Rust `WgpuMetalRenderer`
+for its lifecycle, so the wgpu device/queue/sampler/bind layout/pipeline are
+created during backend initialization and reused across draws. The source BGRA
+texture array plus params/package/overlay storage buffers are cached on the same
+renderer and grow only when the target size or buffer capacity requires it. The
+canary imports the renderer-owned destination `MTLTexture` through `wgpu-hal`
+Metal interop. BGRA package layout/split/background sampling runs through a WGSL
+render pass over a per-track texture-array source, with the imported
+destination used as the render attachment. CPU NV12/P010/planar YUV420P packages
+upload their raw package bytes as a WGSL storage buffer; the shader samples
+luma/chroma planes, handles P010 unpacking, and applies the basic SDR
+range/matrix conversion before writing the same imported destination.
+The backend creates the Rust/wgpu renderer first, borrows wgpu's internal
+Metal `MTLDevice`, and uses that same device for `CVMetalTextureCache`.
+Destination imports assert that the renderer-owned `MTLTexture` was created by
+that device before passing it to `wgpu-hal`; a mismatch is reported as an
+explicit draw failure. CVPixelBuffer frame sets can also import each source Y/UV
+plane as an `MTLTexture` via the same cache and `wgpu-hal`, avoiding CPU readback
+in the backend when every present frame is a supported NV12/P010 CVPixelBuffer.
+The Rust renderer requests `TEXTURE_FORMAT_16BIT_NORM` during device creation
+so P010 source planes can be imported as `R16Unorm`/`RG16Unorm`; adapters that
+cannot provide it fail closed during wgpu-metal initialization.
+The C++/Rust request ABI carries an explicit wgpu output target descriptor:
+`Bgra8Sdr` maps the renderer-owned `kCVPixelFormatType_32BGRA` target to
+`MTLPixelFormatBGRA8Unorm`, while `Rgba16FloatEdr` maps the
+`kCVPixelFormatType_64RGBAHalf`/`MTLPixelFormatRGBA16Float` EDR target shape.
+The Rust renderer owns separate BGRA8 and RGBA16Float final composite pipelines.
+For SDR targets the WGSL color path tone-maps PQ/HLG/BT.2020 input into SDR;
+for EDR targets it maps SDR/PQ/HLG sources into extended-linear Display-P3
+before writing the imported RGBA16Float destination. This is the first HDR/EDR
+canary slice; stronger EDR capture/parity evidence and headed HDR display gates
+remain follow-up work before wgpu-metal can replace Metal by default. The local
+wgpu gate entry points are `python dev.py gate macos-wgpu-metal-smoke` and, on
+an EDR-capable display, `python dev.py gate macos-wgpu-metal-edr-smoke`.
+The macOS player wgpu-metal canary now honors the normal decode preference:
+`preferHardware` uses VideoToolbox source import when available, while
+`forceSoftware` and `VOIDPLAYER_DISABLE_VIDEOTOOLBOX=1` keep the software/package
+fallback path available for parity smoke tests. Analysis overlay
+fill/outline/motion primitives are passed as plain rect buffers and baked into a
+Rust-retained per-track overlay texture-array layer keyed by the overlay package
+`cache_generation`; the final composite pass samples that retained layer instead
+of directly scanning primitives. The wgpu canary does not use the CPU BGRA
+overlay fallback. The Rust renderer now retains the last successful source cache
+inside the `WgpuMetalRenderer`: package draws keep the uploaded BGRA/source
+package buffers, and CVPixelBuffer draws keep the imported per-track Y/UV source
+textures. When a later `viewport_composite` draw has the same source signature,
+C++ sends only the updated projection/layout decision and overlay generation
+through the retained-composite FFI entry; Rust rewrites params as needed and
+composites from the retained source/overlay caches without rebuilding the video
+source.
+The backend follows the same renderer-owned async completion contract
+and target-ring ownership shape as Metal: draws acquire an available target,
+avoid displayed/protected buffers, mark successful draws completed after wgpu
+queue work has finished, and report ring backpressure explicitly instead of
+silently reusing a busy target. The backend fails closed with diagnostics if
+the Rust FFI, package storage, source import, or destination import path is
+unavailable. It also validates the renderer-owned target dimensions and BGRA
+pixel format before importing the destination `MTLTexture`, so target contract
+violations fail with a stable diagnostic instead of relying on lower-level
+interop errors.
+
 ## Storage Kinds
 
 | Storage kind | Route | Notes |
@@ -66,6 +131,7 @@ bisecting. Product defaults should rely on Auto.
 | VideoToolbox `CVPixelBuffer` | `metal-cvpixelbuffer-present-package` | Zero-copy source preservation for supported H.264/H.265 frames. |
 | CPU NV12/P010/planar YUV package | `metal-yuv-present-package` | Software or fallback frames staged for the Metal shader path. |
 | BGRA package | `metal-bgra-present-package` | Explicit BGRA fallback/capture/parity path. |
+| wgpu-metal package | `wgpu-metal` canary | Rust imports the destination `MTLTexture`; BGRA layout/split, NV12/P010/YUV420P plane sampling/basic SDR conversion, and analysis overlay primitive compositing run in WGSL. |
 | `cvpixelbuffer-bgra-copy` adapter | fallback/parity oracle | Not the normal playback route. Used for software fallback validation and explicit copy tests. |
 
 Unsupported storage kinds, pixel-buffer mismatches, missing Metal state,
@@ -169,9 +235,20 @@ The macOS runner should report health from native state fields, including:
 - `targetWidth` / `targetHeight`
 - `uploadStorageKind`
 - upload/failure counters
+- last package copy/gpu-wait/total timing counters
+- adapter/backend/device diagnostics and required feature gates such as
+  wgpu-metal 16-bit normalized texture support; wgpu-metal also mirrors the
+  linked Rust FFI ABI version into the existing `feature_level` diagnostic so
+  runner logs can identify C++/Rust ABI skew. ABI v5 carries explicit output
+  format/color-mode fields, retained-source composite requests, and overlay
+  generation keys across the C++/Rust render boundary; ABI v9 exposes the
+  wgpu-owned Metal device for `CVMetalTextureCache` plus destination texture
+  identity checks.
 - layout intent/present/deferred counters
 - source update, viewport composite, source-cache hit/miss, and ring-pressure
   counters
+- async publish active state plus command completion p95/failure counters;
+  wgpu-metal maps its waited wgpu queue work to the same diagnostic fields
 - cadence counters such as duplicate PTS, large PTS gaps, host interval samples,
   host interval max/p95, drop/error aliases, and renderer-owned presentation
   ratio
@@ -193,6 +270,17 @@ Portable native tests should keep covering:
   `RendererDrawSnapshot` -> `MetalPresentationBackend` -> backend capture
   parity across BGRA, NV12, planar YUV420, P010 high-bit packages, odd
   dimensions, padded stride, split layout, and aspect-fit behavior.
+- `macos_metal_presentation_backend_smoke` also exercises the wgpu-metal
+  factory, explicit fail-closed behavior, BGRA channel order, layout/split,
+  retained overlay layer WGSL composite, NV12/P010/YUV420P package conversion,
+  P010 `TEXTURE_FORMAT_16BIT_NORM` feature gating, RGBA16Float EDR target
+  import, P010 PQ/BT.2020 SDR tone-map and EDR output smoke, async completion,
+  target-ring displayed/protected/release state transitions, full/region
+  capture, and source CVPixelBuffer NV12/P010 import through
+  `CVMetalTextureCache`, `wgpu-hal`, WGSL sampling, and imported destination
+  `MTLTexture`. Its wgpu coverage includes CPU limited/full range color
+  reference checks for NV12 and P010 plus a Metal parity path for
+  source-CVPixelBuffer import.
 
 macOS UI smoke should assert renderer-owned state, upload storage kind,
 fallback reason, last draw error, frame callback/cadence counters, and

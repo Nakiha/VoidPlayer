@@ -16,6 +16,8 @@ REQUIRED_GATE_SNIPPETS = [
     "_run_macos_native_fast()",
     "_run_macos_ui_smoke()",
     "_run_macos_hdr_edr_smoke()",
+    "_run_macos_wgpu_metal_smoke()",
+    "_run_macos_wgpu_metal_edr_smoke()",
     "_run_macos_release_readiness()",
     "macos-platform-protection",
 ]
@@ -30,6 +32,8 @@ REQUIRED_CMAKE_SOURCES = [
     "macos/presentation/presentation_adapter.cpp",
     "macos/presentation/presentation_cv_pixel_buffer_frame.cpp",
     "macos/presentation/presentation_package_builder.cpp",
+    "macos/wgpu/wgpu_ffi_stub.cpp",
+    "macos/wgpu/wgpu_metal_presentation_backend.mm",
 ]
 
 REQUIRED_CMAKE_TARGETS = [
@@ -43,6 +47,7 @@ REQUIRED_CMAKE_TARGETS = [
     "videotoolbox_provider_smoke",
     "renderer_metal_headless_smoke",
     "macos_native_player_shared_renderer_smoke",
+    "voidplayer_wgpu_ffi_rust",
 ]
 
 REQUIRED_SOURCE_MARKERS = {
@@ -92,7 +97,7 @@ REQUIRED_SOURCE_MARKERS = {
     ],
     "native/macos/decode/videotoolbox_provider.cpp": [
         "VideoToolbox",
-        "Renderer-owned CVPixelBuffer output requires Metal backend",
+        "Renderer-owned CVPixelBuffer output requires Metal-compatible backend",
         "AV_PIX_FMT_VIDEOTOOLBOX",
     ],
 }

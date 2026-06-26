@@ -24,6 +24,7 @@ class PerformanceHealthSnapshot {
   final PerformanceHealthLevel level;
   final PerformanceHealthKind kind;
   final String reason;
+  final String presentationBackend;
   final double displayRefreshHz;
   final double displayTickHz;
   final double layoutDrawHz;
@@ -55,6 +56,7 @@ class PerformanceHealthSnapshot {
     required this.level,
     required this.kind,
     required this.reason,
+    this.presentationBackend = 'unknown',
     required this.displayRefreshHz,
     required this.displayTickHz,
     required this.layoutDrawHz,
@@ -88,6 +90,7 @@ class PerformanceHealthSnapshot {
         level: PerformanceHealthLevel.ok,
         kind: PerformanceHealthKind.ok,
         reason: '',
+        presentationBackend: 'unknown',
         displayRefreshHz: 0,
         displayTickHz: 0,
         layoutDrawHz: 0,
@@ -143,6 +146,11 @@ class PerformanceHealthSnapshot {
     );
     final nativeCompositorSourceProjectionHz = _doubleValue(
       diagnostics['nativeCompositorSourceProjectionHz'],
+    );
+    final presentationBackend = _stringValue(
+      diagnostics['presentationBackend'] ??
+          diagnostics['rendererOwnedBackendName'] ??
+          diagnostics['backend'],
     );
     final drawP95Us = _doubleValue(diagnostics['nativeRendererDrawP95Us']);
     final backendP95Us = _doubleValue(
@@ -282,6 +290,7 @@ class PerformanceHealthSnapshot {
       level: level,
       kind: kind,
       reason: reason,
+      presentationBackend: presentationBackend,
       displayRefreshHz: displayRefreshHz,
       displayTickHz: displayTickHz,
       layoutDrawHz: layoutDrawHz,
@@ -329,9 +338,11 @@ class PerformanceHealthSnapshot {
         'source=${_hzText(nativeCompositorSourceCacheHz)}',
       if (nativeCompositorSourceProjectionHz > 0)
         'projection=${_hzText(nativeCompositorSourceProjectionHz)}',
+      if (presentationBackend.isNotEmpty && presentationBackend != 'unknown')
+        'presentation=$presentationBackend',
       'drawP95=${_usText(drawP95Us)}',
       'backendP95=${_usText(backendP95Us)}',
-      'metalP95=${_usText(metalP95Us)}',
+      'commandP95=${_usText(metalP95Us)}',
       if (hostIntervalP95Ms > 0)
         'hostIntervalP95=${hostIntervalP95Ms.toStringAsFixed(2)}ms',
       if (playbackCadenceRatio > 0)
@@ -473,7 +484,7 @@ class PerformanceHealthSnapshot {
     if (metalP95Us > 0) {
       metrics.add(
         PerformanceHealthDetailMetric(
-          l.performanceMetricMetalP95,
+          _backendCompletionMetricLabel(l),
           _usText(metalP95Us),
         ),
       );
@@ -549,7 +560,7 @@ class PerformanceHealthSnapshot {
       parts.add('draw p95 ${_usText(drawP95Us)}');
     }
     if (metalP95Us > 0) {
-      parts.add('metal p95 ${_usText(metalP95Us)}');
+      parts.add('${_backendCompletionShortLabel()} p95 ${_usText(metalP95Us)}');
     }
     if (metalBufferExhaustionCount > 0) {
       parts.add('ring $metalBufferExhaustionCount');
@@ -566,6 +577,7 @@ class PerformanceHealthSnapshot {
       level == other.level &&
       kind == other.kind &&
       reason == other.reason &&
+      presentationBackend == other.presentationBackend &&
       displayRefreshHz == other.displayRefreshHz &&
       displayTickHz == other.displayTickHz &&
       layoutDrawHz == other.layoutDrawHz &&
@@ -600,6 +612,7 @@ class PerformanceHealthSnapshot {
     level,
     kind,
     reason,
+    presentationBackend,
     displayRefreshHz.round(),
     displayTickHz.round(),
     layoutDrawHz.round(),
@@ -629,6 +642,28 @@ class PerformanceHealthSnapshot {
   ]);
 
   static const _fallbackDisplayTargetHz = 60.0;
+
+  String _backendCompletionMetricLabel(AppLocalizations l) {
+    final backend = _backendCompletionShortLabel();
+    if (backend == 'Metal') {
+      return l.performanceMetricMetalP95;
+    }
+    return '$backend p95';
+  }
+
+  String _backendCompletionShortLabel() {
+    final normalized = presentationBackend.toLowerCase();
+    if (normalized.contains('wgpu')) {
+      return 'WGPU';
+    }
+    if (normalized.contains('metal')) {
+      return 'Metal';
+    }
+    if (normalized.contains('d3d') || normalized.contains('dcomp')) {
+      return 'D3D';
+    }
+    return 'Backend';
+  }
 
   static double _presentationDrawHz({
     required bool nativeCompositorEnabled,
@@ -718,6 +753,11 @@ class PerformanceHealthSnapshot {
     if (value is double) return value;
     if (value is num) return value.toDouble();
     return 0.0;
+  }
+
+  static String _stringValue(Object? value) {
+    if (value is String) return value;
+    return '';
   }
 
   static bool _boolValue(Object? value) {

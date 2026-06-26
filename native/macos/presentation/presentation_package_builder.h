@@ -38,6 +38,15 @@ bool copy_snapshot_bgra_package(const vr::RendererDrawSnapshot& snapshot,
                                 VPMacOSNativePresentFramePackageInfo* out,
                                 std::string& error);
 
+bool copy_snapshot_bgra_source_package(
+    const vr::RendererDrawSnapshot& snapshot,
+    uint8_t* dst,
+    size_t dst_size,
+    int32_t width,
+    int32_t height,
+    VPMacOSNativePresentFramePackageInfo* out,
+    std::string& error);
+
 bool snapshot_cv_pixel_buffer_frame(const vr::RendererDrawSnapshot& snapshot,
                                     int32_t width,
                                     int32_t height,

@@ -9,6 +9,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <memory>
 #include <utility>
 
 namespace vr {
@@ -24,6 +26,12 @@ uint64_t presentation_elapsed_us_since(
 }
 
 } // namespace
+
+struct AsyncSubmissionGate {
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool opened = false;
+};
 
 RendererPresentationController::RendererPresentationController() = default;
 
@@ -43,6 +51,12 @@ bool RendererPresentationController::has_backend() const {
 
 PresentationBackendKind RendererPresentationController::backend_kind() const {
     return backend_ ? backend_->kind() : PresentationBackendKind::Unknown;
+}
+
+bool RendererPresentationController::uses_macos_native_compositor_scheduling() const {
+    const PresentationBackendKind kind = backend_kind();
+    return kind == PresentationBackendKind::Metal ||
+           kind == PresentationBackendKind::WgpuMetal;
 }
 
 void RendererPresentationController::set_backend(std::unique_ptr<PresentationBackend> backend) {
@@ -353,6 +367,10 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
         result.failure_error = backend_last_error();
     }
     if (backend_) {
+        if (result.drew && !result.async_draw_submitted) {
+            result.frame_info_available =
+                backend_->copy_last_frame_info(&result.frame_info);
+        }
         const auto diagnostics = backend_->diagnostics();
         if (diagnostics.source_cache_presented_anchor_publish_count >
             source_cache_publish_count_before) {
@@ -412,18 +430,50 @@ RendererPresentationSubmitResult RendererPresentationController::submit_draw(
 bool RendererPresentationController::submit_and_dispatch(
     RendererPresentationSubmitRequest request,
     RendererPresentationSubmitDispatchHooks hooks) {
+    std::shared_ptr<AsyncSubmissionGate> async_gate;
+    if (request.async_completed) {
+        async_gate = std::make_shared<AsyncSubmissionGate>();
+        auto async_completed = std::move(request.async_completed);
+        request.async_completed =
+            [async_gate, async_completed = std::move(async_completed)](
+                const RendererPresentationAsyncCompletion& completion) mutable {
+                {
+                    std::unique_lock<std::mutex> lock(async_gate->mutex);
+                    async_gate->cv.wait(lock, [&] { return async_gate->opened; });
+                }
+                async_completed(completion);
+            };
+    }
+    const auto open_async_gate = [&]() {
+        if (!async_gate) {
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lock(async_gate->mutex);
+            async_gate->opened = true;
+        }
+        async_gate->cv.notify_all();
+    };
     auto submit_result = submit_draw(std::move(request));
+    if (submit_result.draw.async_draw_submitted) {
+        if (hooks.async_submitted) {
+            hooks.async_submitted();
+        }
+        open_async_gate();
+        if (submit_result.draw.device_lost) {
+            if (hooks.device_lost) {
+                hooks.device_lost();
+            }
+            return false;
+        }
+        return submit_result.draw.drew;
+    }
+    open_async_gate();
     if (submit_result.draw.device_lost) {
         if (hooks.device_lost) {
             hooks.device_lost();
         }
         return false;
-    }
-    if (submit_result.draw.async_draw_submitted) {
-        if (hooks.async_submitted) {
-            hooks.async_submitted();
-        }
-        return submit_result.draw.drew;
     }
 
     const bool drew = submit_result.draw.drew;

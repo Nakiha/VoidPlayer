@@ -15,7 +15,7 @@ bool Renderer::Impl::should_present_frame_consume_pending_layout() const {
         timeline_.playback().clock().is_paused()) {
         return true;
     }
-    if (presentation_.backend_kind() != PresentationBackendKind::Metal) {
+    if (!presentation_.uses_macos_native_compositor_scheduling()) {
         return true;
     }
     return false;
@@ -33,7 +33,7 @@ void Renderer::Impl::note_viewport_compositor_activity() {
 bool Renderer::Impl::should_suppress_playback_present_for_viewport_compositor() const {
     if (!timeline_.playing() ||
         timeline_.playback().clock().is_paused() ||
-        presentation_.backend_kind() != PresentationBackendKind::Metal) {
+        !presentation_.uses_macos_native_compositor_scheduling()) {
         return false;
     }
     return layout_state_.viewport_compositor_active(steady_clock_us_now());

@@ -1472,18 +1472,37 @@ final class MacOSNativeCompositorView: NSView {
       }
 
       float4 sampleSourceCacheTexture(
+        texture2d<float> source,
+        float2 uv,
+        sampler linearSampler,
+        sampler nearestSampler
+      ) {
+        float2 sourceSize = float2(source.get_width(), source.get_height());
+        float2 dx = dfdx(uv) * sourceSize;
+        float2 dy = dfdy(uv) * sourceSize;
+        float footprint = max(
+          max(abs(dx.x), abs(dx.y)),
+          max(abs(dy.x), abs(dy.y)));
+        if (footprint > 1.0001) {
+          return source.sample(linearSampler, uv);
+        }
+        return source.sample(nearestSampler, uv);
+      }
+
+      float4 sampleSourceCacheTexture(
         int slot,
         float2 uv,
         texture2d<float> source0,
         texture2d<float> source1,
         texture2d<float> source2,
         texture2d<float> source3,
-        sampler s
+        sampler linearSampler,
+        sampler nearestSampler
       ) {
-        if (slot == 0) return source0.sample(s, uv);
-        if (slot == 1) return source1.sample(s, uv);
-        if (slot == 2) return source2.sample(s, uv);
-        return source3.sample(s, uv);
+        if (slot == 0) return sampleSourceCacheTexture(source0, uv, linearSampler, nearestSampler);
+        if (slot == 1) return sampleSourceCacheTexture(source1, uv, linearSampler, nearestSampler);
+        if (slot == 2) return sampleSourceCacheTexture(source2, uv, linearSampler, nearestSampler);
+        return sampleSourceCacheTexture(source3, uv, linearSampler, nearestSampler);
       }
 
       float4 sampleSourceCacheVideo(
@@ -1502,7 +1521,8 @@ final class MacOSNativeCompositorView: NSView {
         texture2d<float> source1,
         texture2d<float> source2,
         texture2d<float> source3,
-        sampler s
+        sampler linearSampler,
+        sampler nearestSampler
       ) {
         int mode = int(round(layoutFlags.y));
         int trackCount = max(1, int(round(layoutFlags.w)));
@@ -1549,7 +1569,8 @@ final class MacOSNativeCompositorView: NSView {
           source1,
           source2,
           source3,
-          s);
+          linearSampler,
+          nearestSampler);
       }
 
       fragment float4 fs_video(
@@ -1573,7 +1594,8 @@ final class MacOSNativeCompositorView: NSView {
         constant float4& backgroundColor [[buffer(11)]],
         constant float4& compositorFlags [[buffer(12)]]
       ) {
-        constexpr sampler s(address::clamp_to_edge, filter::linear);
+        constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
+        constexpr sampler nearestSampler(address::clamp_to_edge, filter::nearest);
         float2 uv = clamp(in.uv, 0.0, 1.0);
         bool validHole = holeRect.z > holeRect.x && holeRect.w > holeRect.y;
         bool insideHole = validHole &&
@@ -1611,11 +1633,12 @@ final class MacOSNativeCompositorView: NSView {
               sourceTexture1,
               sourceTexture2,
               sourceTexture3,
-              s);
+              linearSampler,
+              nearestSampler);
           } else if (compositorFlags.x > 0.5) {
             video = outputBackground;
           } else {
-            video = videoTexture.sample(s, videoUv);
+            video = videoTexture.sample(linearSampler, videoUv);
           }
         }
         return colorFlags.y > 0.5

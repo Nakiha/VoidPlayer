@@ -12,6 +12,13 @@
 #include <cmath>
 #include <string>
 
+#ifdef _WIN32
+#include "windows/wgpu/wgpu_d3d12_ffi_bridge.h"
+
+#include <d3d12.h>
+#include <wrl/client.h>
+#endif
+
 using namespace vr;
 
 namespace {
@@ -29,6 +36,62 @@ RendererConfig valid_windowed_config() {
 bool layout_float_near(float lhs, float rhs, float epsilon = 0.0001f) {
     return std::fabs(lhs - rhs) <= epsilon;
 }
+
+#ifdef _WIN32
+struct WgpuD3D12RendererHandle {
+    VPWgpuD3D12Renderer* renderer = nullptr;
+    ~WgpuD3D12RendererHandle() {
+        if (renderer) {
+            VPWgpuD3D12RendererDestroy(renderer);
+        }
+    }
+};
+
+Microsoft::WRL::ComPtr<ID3D12Resource> create_probe_rgba16_target(
+    ID3D12Device* device,
+    UINT width,
+    UINT height) {
+    Microsoft::WRL::ComPtr<ID3D12Resource> texture;
+    if (!device) {
+        return texture;
+    }
+    D3D12_HEAP_PROPERTIES heap = {};
+    heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heap.CreationNodeMask = 1;
+    heap.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC desc = {};
+    desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Alignment = 0;
+    desc.Width = width;
+    desc.Height = height;
+    desc.DepthOrArraySize = 1;
+    desc.MipLevels = 1;
+    desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    desc.SampleDesc.Count = 1;
+    desc.SampleDesc.Quality = 0;
+    desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    D3D12_CLEAR_VALUE clear = {};
+    clear.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+    clear.Color[0] = 0.0f;
+    clear.Color[1] = 0.0f;
+    clear.Color[2] = 0.0f;
+    clear.Color[3] = 1.0f;
+
+    const HRESULT hr = device->CreateCommittedResource(
+        &heap,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_COMMON,
+        &clear,
+        IID_PPV_ARGS(&texture));
+    return SUCCEEDED(hr) ? texture : nullptr;
+}
+#endif
 
 } // namespace
 
@@ -196,6 +259,50 @@ TEST_CASE("Windows wgpu-d3d12 presentation backend initializes without D3D11 fal
     }
 #else
     REQUIRE(create_presentation_backend(RenderBackendKind::WgpuD3D12) == nullptr);
+#endif
+}
+
+TEST_CASE("Windows wgpu-d3d12 imports and clears a D3D12 render target",
+          "[renderer_config][presentation_backend][wgpu_d3d12]") {
+#ifdef _WIN32
+    std::array<char, 512> error{};
+    WgpuD3D12RendererHandle handle{
+        VPWgpuD3D12RendererCreate(error.data(), error.size())};
+    if (!handle.renderer) {
+        SKIP(std::string("wgpu-d3d12 renderer unavailable: ") + error.data());
+    }
+    auto* device = static_cast<ID3D12Device*>(
+        VPWgpuD3D12RendererD3D12Device(handle.renderer));
+    REQUIRE(device != nullptr);
+
+    constexpr UINT kWidth = 16;
+    constexpr UINT kHeight = 16;
+    auto target = create_probe_rgba16_target(device, kWidth, kHeight);
+    REQUIRE(target != nullptr);
+
+    error.fill(0);
+    VPWgpuD3D12RenderTargetClearRequest request = {};
+    request.d3d12_resource = target.Get();
+    request.format = VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
+    request.width = kWidth;
+    request.height = kHeight;
+    request.color[0] = 0.25f;
+    request.color[1] = 0.5f;
+    request.color[2] = 0.75f;
+    request.color[3] = 1.0f;
+    request.error = error.data();
+    request.error_size = error.size();
+    INFO(error.data());
+    REQUIRE(VPWgpuD3D12RendererClearRenderTargetForProbe(
+                handle.renderer, &request) == 0);
+
+    VPWgpuD3D12ProfilerSnapshot profiler = {};
+    REQUIRE(VPWgpuD3D12RendererGetProfilerSnapshot(
+                handle.renderer, &profiler) == 0);
+    REQUIRE(profiler.destination_import_count >= 1);
+    REQUIRE(profiler.submit_count >= 1);
+#else
+    SUCCEED("wgpu-d3d12 render target import is Windows-only");
 #endif
 }
 

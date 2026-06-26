@@ -55,6 +55,16 @@ typedef struct VPWgpuD3D12TextureImportRequest {
   size_t error_size;
 } VPWgpuD3D12TextureImportRequest;
 
+typedef struct VPWgpuD3D12RenderTargetClearRequest {
+  void* d3d12_resource;
+  int32_t format;
+  uint32_t width;
+  uint32_t height;
+  float color[4];
+  char* error;
+  size_t error_size;
+} VPWgpuD3D12RenderTargetClearRequest;
+
 int VPWgpuFfiVersion(void);
 VPWgpuD3D12Renderer* VPWgpuD3D12RendererCreate(char* error,
                                                size_t error_size);
@@ -68,6 +78,9 @@ void* VPWgpuD3D12RendererD3D12Device(VPWgpuD3D12Renderer* renderer);
 int VPWgpuD3D12RendererImportTextureForProbe(
     VPWgpuD3D12Renderer* renderer,
     const VPWgpuD3D12TextureImportRequest* request);
+int VPWgpuD3D12RendererClearRenderTargetForProbe(
+    VPWgpuD3D12Renderer* renderer,
+    const VPWgpuD3D12RenderTargetClearRequest* request);
 
 #ifdef __cplusplus
 }  // extern "C"

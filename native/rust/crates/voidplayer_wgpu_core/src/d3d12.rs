@@ -35,10 +35,22 @@ pub struct WgpuD3D12TextureImportRequest {
     pub error_size: usize,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct WgpuD3D12RenderTargetClearRequest {
+    pub d3d12_resource: *mut core::ffi::c_void,
+    pub format: i32,
+    pub width: u32,
+    pub height: u32,
+    pub color: [f32; 4],
+    pub error: *mut core::ffi::c_char,
+    pub error_size: usize,
+}
+
 pub struct WgpuD3D12Renderer {
     adapter_info: wgpu::AdapterInfo,
     device: wgpu::Device,
-    _queue: wgpu::Queue,
+    queue: wgpu::Queue,
     profiler: WgpuD3D12ProfilerSnapshot,
     supports_nv12: bool,
     supports_p010: bool,
@@ -83,7 +95,7 @@ impl WgpuD3D12Renderer {
         Ok(Self {
             adapter_info,
             device,
-            _queue: queue,
+            queue,
             profiler: WgpuD3D12ProfilerSnapshot::default(),
             supports_nv12: required_features.contains(wgpu::Features::TEXTURE_FORMAT_NV12),
             supports_p010: required_features.contains(wgpu::Features::TEXTURE_FORMAT_P010),
@@ -150,6 +162,8 @@ impl WgpuD3D12Renderer {
                 &self.device,
                 request.d3d12_resource,
                 format,
+                wgpu::TextureUsages::TEXTURE_BINDING,
+                "VoidPlayer imported D3D12VA frame",
                 wgpu::Extent3d {
                     width: request.width,
                     height: request.height,
@@ -162,6 +176,94 @@ impl WgpuD3D12Renderer {
         drop(texture);
         self.profiler.source_import_count = self.profiler.source_import_count.saturating_add(1);
         self.profiler.last_import_us = elapsed_us(start);
+        Ok(())
+    }
+
+    pub fn clear_render_target_for_probe(
+        &mut self,
+        request: &WgpuD3D12RenderTargetClearRequest,
+    ) -> Result<(), &'static str> {
+        let start = Instant::now();
+        let format = d3d12_texture_format(request.format)?;
+        if format != wgpu::TextureFormat::Rgba16Float &&
+            format != wgpu::TextureFormat::Bgra8Unorm {
+            return Err("wgpu-d3d12 render target clear requires BGRA8 or RGBA16F");
+        }
+        if format == wgpu::TextureFormat::Rgba16Float && !self.supports_rgba16_float {
+            return Err("wgpu-d3d12 adapter does not support RGBA16F render targets");
+        }
+        if request.d3d12_resource.is_null() {
+            return Err("wgpu-d3d12 render target clear requires a D3D12 resource");
+        }
+        if request.width == 0 || request.height == 0 {
+            return Err("wgpu-d3d12 render target clear requires non-zero dimensions");
+        }
+
+        let import_start = Instant::now();
+        let texture = unsafe {
+            import_d3d12_resource(
+                &self.device,
+                request.d3d12_resource,
+                format,
+                wgpu::TextureUsages::RENDER_ATTACHMENT,
+                "VoidPlayer imported D3D12 render target",
+                wgpu::Extent3d {
+                    width: request.width,
+                    height: request.height,
+                    depth_or_array_layers: 1,
+                },
+                1,
+                1,
+            )
+        }?;
+        self.profiler.destination_import_count =
+            self.profiler.destination_import_count.saturating_add(1);
+        self.profiler.last_import_us = elapsed_us(import_start);
+
+        let prepare_start = Instant::now();
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.profiler.last_prepare_us = elapsed_us(prepare_start);
+
+        let encode_start = Instant::now();
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 clear encoder"),
+        });
+        {
+            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("VoidPlayer wgpu-d3d12 clear pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: request.color[0] as f64,
+                            g: request.color[1] as f64,
+                            b: request.color[2] as f64,
+                            a: request.color[3] as f64,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+        }
+        self.profiler.last_pass_encode_us = elapsed_us(encode_start);
+
+        let submit_start = Instant::now();
+        let submission = self.queue.submit(Some(encoder.finish()));
+        self.device
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission),
+                timeout: None,
+            })
+            .map_err(|_| "wgpu-d3d12 render target clear wait failed")?;
+        self.profiler.submit_count = self.profiler.submit_count.saturating_add(1);
+        self.profiler.last_submit_us = elapsed_us(submit_start);
+        self.profiler.last_cpu_render_us = elapsed_us(start);
         Ok(())
     }
 }
@@ -190,6 +292,8 @@ unsafe fn import_d3d12_resource(
     device: &wgpu::Device,
     resource: *mut core::ffi::c_void,
     format: wgpu::TextureFormat,
+    usage: wgpu::TextureUsages,
+    label: &'static str,
     size: wgpu::Extent3d,
     mip_level_count: u32,
     sample_count: u32,
@@ -213,13 +317,13 @@ unsafe fn import_d3d12_resource(
         )
     };
     let desc = wgpu::TextureDescriptor {
-        label: Some("VoidPlayer imported D3D12VA frame"),
+        label: Some(label),
         size,
         mip_level_count,
         sample_count,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING,
+        usage,
         view_formats: &[],
     };
     Ok(unsafe { device.create_texture_from_hal::<wgpu_hal::api::Dx12>(hal_texture, &desc) })

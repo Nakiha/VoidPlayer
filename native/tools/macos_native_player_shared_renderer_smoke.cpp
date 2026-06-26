@@ -277,6 +277,56 @@ int main() {
         return 1;
     }
 
+    PixelBufferHolder replacement_target =
+        make_bgra_pixel_buffer(target_width, target_height);
+    if (!replacement_target.buffer) {
+        std::cerr << "failed to create replacement presentation target fixture\n";
+        return 1;
+    }
+    if (VPMacOSNativePlayerSetMetalPresentationTarget(
+            player.get(),
+            backend.get(),
+            replacement_target.buffer,
+            target_width,
+            target_height,
+            2) != 0) {
+        std::cerr << "active renderer valid target reinstall unexpectedly failed\n";
+        return 1;
+    }
+    VPMacOSNativeFrameInfo replacement = {};
+    double replacement_non_black = 0.0;
+    if (!wait_for_presented_frame(player.get(),
+                                  replacement_target.buffer,
+                                  replacement,
+                                  replacement_non_black,
+                                  std::chrono::seconds(2)) ||
+        !copy_presentation_state(player.get(), state) ||
+        state.last_draw_succeeded == 0 ||
+        state.consecutive_draw_failures != 0 ||
+        state.last_draw_error[0] != '\0') {
+        std::cerr << "shared renderer bridge did not present after valid target reinstall\n";
+        return 1;
+    }
+    if (VPMacOSNativePlayerSetMetalPresentationTarget(
+            player.get(), backend.get(), target.buffer, target_width, target_height, 2) != 0) {
+        std::cerr << "active renderer original target reinstall unexpectedly failed\n";
+        return 1;
+    }
+    VPMacOSNativeFrameInfo original_restored = {};
+    double original_restored_non_black = 0.0;
+    if (!wait_for_presented_frame(player.get(),
+                                  target.buffer,
+                                  original_restored,
+                                  original_restored_non_black,
+                                  std::chrono::seconds(2)) ||
+        !copy_presentation_state(player.get(), state) ||
+        state.last_draw_succeeded == 0 ||
+        state.consecutive_draw_failures != 0 ||
+        state.last_draw_error[0] != '\0') {
+        std::cerr << "shared renderer bridge did not present after original target reinstall\n";
+        return 1;
+    }
+
     PixelBufferHolder invalid_target =
         make_bgra_pixel_buffer(target_width / 2, target_height / 2);
     if (!invalid_target.buffer) {

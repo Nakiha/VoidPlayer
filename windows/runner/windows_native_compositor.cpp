@@ -3136,7 +3136,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 srv_ready = SUCCEEDED(device_->CreateShaderResourceView(
                     texture.Get(), nullptr, &srv));
             }
-            if (srv_ready) {
+            if (acquired) {
                 release_held_flutter();
                 held_flutter_ = next_flutter;
                 held_flutter_texture_ = std::move(texture);
@@ -3196,14 +3196,15 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     spdlog::debug(
                         "[WindowsCompositorDebug] dcomp acquired flutter "
                         "surface generation={} ring={} slot={} size={}x{} "
-                        "lease={} backend={}",
+                        "lease={} backend={} d3d11Srv={}",
                         held_flutter_.frame_generation,
                         held_flutter_.ring_generation,
                         held_flutter_.slot,
                         held_flutter_.width,
                         held_flutter_.height,
                         held_flutter_.lease_id,
-                        static_cast<int>(held_flutter_.backend));
+                        static_cast<int>(held_flutter_.backend),
+                        srv_ready);
                 }
                 if (IsCrossAdapterActive()) {
                     std::lock_guard<std::mutex> lock(mutex_);
@@ -3212,13 +3213,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 }
             } else {
                 log_pending_flutter_request_acquire(
-                    acquired ? "srv-create-failed" :
-                               "open-or-keyed-mutex-acquire-failed",
+                    "open-or-keyed-mutex-acquire-failed",
                     &next_flutter);
-                if (acquired) {
-                    keyed_mutex->ReleaseSync(
-                        next_flutter.producer_release_key);
-                }
                 engine_api_.release(
                     flutter_view_, next_flutter.lease_id);
             }
@@ -3846,7 +3842,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
             held_video_.external_flutter_frame_generation != 0 &&
             held_video_.external_flutter_frame_generation ==
                 held_flutter_.frame_generation;
-        if (!flutter_already_composited_by_d3d12) {
+        if (!flutter_already_composited_by_d3d12 && held_flutter_srv_) {
             context_->OMSetBlendState(
                 premultiplied_blend_state_.Get(), nullptr, 0xffffffff);
             context_->PSSetShader(flutter_pixel_shader_.Get(), nullptr, 0);

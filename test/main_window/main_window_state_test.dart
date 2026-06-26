@@ -385,6 +385,58 @@ void main() {
     }
   });
 
+  testWidgets('late seek preview after pending timeout is ignored', (
+    tester,
+  ) async {
+    final fixture = _PlaybackFixture();
+    try {
+      await fixture.controller.createPlayer(
+        ['clip.mp4'],
+        width: 1920,
+        height: 1080,
+      );
+      fixture.store.setTextureId(1);
+      fixture.store.setQuickMarks(const [
+        QuickMark(
+          id: 1,
+          anchor: QuickMarkAnchor(fileId: 1, ptsUs: 1500000, dtsUs: 1500000),
+          sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+        ),
+      ]);
+
+      fixture.coordinator.seekTo(1500000);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1501));
+
+      expect(fixture.store.value.pendingSeekUs, isNull);
+      expect(fixture.store.value.currentPtsUs, 1500000);
+
+      fixture.api.emitPlaybackClock(
+        ptsUs: 1700000,
+        durationUs: fixture.metrics.effectiveDurationUs,
+        isPlaying: true,
+      );
+      await tester.pump();
+
+      expect(fixture.store.value.currentPtsUs, 1700000);
+
+      fixture.api.emitSeekPreviewPresented(
+        requestId: 1,
+        trackFileId: 1,
+        ptsUs: 1500000,
+        dtsUs: 1500000,
+        targetPtsUs: 1500000,
+      );
+      await tester.pump();
+
+      expect(fixture.store.value.currentPtsUs, 1700000);
+      expect(fixture.store.value.pendingSeekUs, isNull);
+      expect(fixture.store.value.presentedFrameAnchors[1]?.ptsUs, 1700000);
+    } finally {
+      fixture.dispose();
+    }
+  });
+
   testWidgets('seek preview event keeps resumed playback state', (
     tester,
   ) async {

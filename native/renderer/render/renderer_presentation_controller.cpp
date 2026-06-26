@@ -632,6 +632,19 @@ void RendererPresentationController::set_d3d_shared_fp16_frame_callback(
     }
 }
 
+bool RendererPresentationController::update_external_flutter_surface(
+    const PresentationExternalD3D12Surface& surface) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ && backend_->update_external_flutter_surface(surface);
+}
+
+void RendererPresentationController::clear_external_flutter_surface() {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (backend_) {
+        backend_->clear_external_flutter_surface();
+    }
+}
+
 bool RendererPresentationController::configure_d3d_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);

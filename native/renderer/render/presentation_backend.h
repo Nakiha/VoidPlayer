@@ -14,6 +14,7 @@ struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
 struct AnalysisOverlayPrimitivePackage;
 struct SharedFp16TextureSnapshot;
+struct PresentationExternalD3D12Surface;
 
 using PresentationBackendAsyncDrawCompleted =
     std::function<void(bool, const char*, uint64_t, const PresentationBackendFrameInfo*)>;
@@ -84,6 +85,11 @@ public:
     }
     virtual void release_shared_fp16_texture(int, uint64_t) {}
     virtual void set_shared_fp16_frame_callback(std::function<void()>) {}
+    virtual bool update_external_flutter_surface(
+        const PresentationExternalD3D12Surface&) {
+        return false;
+    }
+    virtual void clear_external_flutter_surface() {}
 #endif
     virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual PresentationBackendDiagnostics diagnostics() const { return {}; }

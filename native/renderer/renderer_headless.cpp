@@ -156,6 +156,24 @@ void Renderer::Impl::set_shared_fp16_frame_callback(
 #endif
 }
 
+bool Renderer::Impl::update_external_flutter_surface(
+    const PresentationExternalD3D12Surface& surface) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.update_external_flutter_surface(surface);
+#else
+    (void)surface;
+    return false;
+#endif
+}
+
+void Renderer::Impl::clear_external_flutter_surface() {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    presentation_.clear_external_flutter_surface();
+#endif
+}
+
 bool Renderer::Impl::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
 #ifdef _WIN32

@@ -545,6 +545,8 @@ private:
     Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_flutter_mutex_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_flutter_srv_;
     vr::D3D11CrossAdapterTextureTransport flutter_transport_;
+    uint64_t external_flutter_surface_submitted_generation_ = 0;
+    uint64_t external_flutter_surface_refresh_generation_ = 0;
 
     bool held_source_valid_ = false;
     vr::SharedSourceCacheBundleSnapshot held_source_;

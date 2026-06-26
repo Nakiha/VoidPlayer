@@ -438,7 +438,13 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
     held_flutter_ = {};
     held_flutter_srv_.Reset();
     held_flutter_mutex_.Reset();
+    held_flutter_d3d12_resource_.Reset();
     held_flutter_texture_.Reset();
+    external_flutter_surface_submitted_generation_ = 0;
+    external_flutter_surface_refresh_generation_ = 0;
+    if (player) {
+        player->clear_external_flutter_surface();
+    }
 
     if (held_video_valid_) {
         if (held_video_mutex_ &&
@@ -3139,6 +3145,50 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 held_flutter_mutex_ = std::move(keyed_mutex);
                 held_flutter_srv_ = std::move(srv);
                 held_flutter_valid_ = true;
+                vr::PresentationExternalD3D12Surface external_surface;
+                external_surface.resource =
+                    held_flutter_d3d12_resource_.Get();
+                external_surface.fence_handle = held_flutter_.fence_handle;
+                external_surface.width =
+                    static_cast<int32_t>(held_flutter_.width);
+                external_surface.height =
+                    static_cast<int32_t>(held_flutter_.height);
+                external_surface.format =
+                    static_cast<int32_t>(held_flutter_.format);
+                external_surface.sync =
+                    static_cast<int32_t>(held_flutter_.sync);
+                external_surface.fence_value = held_flutter_.fence_value;
+                external_surface.ring_generation =
+                    held_flutter_.ring_generation;
+                external_surface.frame_generation =
+                    held_flutter_.frame_generation;
+                const bool submitted_new_external_surface =
+                    held_flutter_.frame_generation !=
+                    external_flutter_surface_submitted_generation_;
+                bool should_refresh_external_surface = false;
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    should_refresh_external_surface =
+                        pending_flutter_frame_request_sequence_ != 0 &&
+                        held_flutter_.frame_generation >
+                            pending_flutter_frame_request_base_generation_;
+                }
+                const bool external_surface_ready =
+                    player->update_external_flutter_surface(external_surface);
+                if (external_surface_ready) {
+                    external_flutter_surface_submitted_generation_ =
+                        held_flutter_.frame_generation;
+                }
+                if (external_surface_ready &&
+                    submitted_new_external_surface &&
+                    should_refresh_external_surface &&
+                    held_flutter_.frame_generation !=
+                        external_flutter_surface_refresh_generation_) {
+                    player->request_frame_refresh(
+                        "windows-d3d12-flutter-surface-overlay");
+                    external_flutter_surface_refresh_generation_ =
+                        held_flutter_.frame_generation;
+                }
                 complete_pending_flutter_request(held_flutter_);
                 ++flutter_generation_log_count_;
                 if (flutter_generation_log_count_ <= 8 ||
@@ -3790,11 +3840,19 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
             context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
         }
-        context_->OMSetBlendState(
-            premultiplied_blend_state_.Get(), nullptr, 0xffffffff);
-        context_->PSSetShader(flutter_pixel_shader_.Get(), nullptr, 0);
-        context_->Draw(4, 0);
-        context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+        const bool flutter_already_composited_by_d3d12 =
+            !source_bundle_active && held_video_valid_ &&
+            (output->target == OutputTarget::ScRGB || !held_sdr_video_valid_) &&
+            held_video_.external_flutter_frame_generation != 0 &&
+            held_video_.external_flutter_frame_generation ==
+                held_flutter_.frame_generation;
+        if (!flutter_already_composited_by_d3d12) {
+            context_->OMSetBlendState(
+                premultiplied_blend_state_.Get(), nullptr, 0xffffffff);
+            context_->PSSetShader(flutter_pixel_shader_.Get(), nullptr, 0);
+            context_->Draw(4, 0);
+            context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
+        }
         std::array<ID3D11ShaderResourceView*, 7> null_srvs = {};
         context_->PSSetShaderResources(
             0, static_cast<UINT>(null_srvs.size()), null_srvs.data());

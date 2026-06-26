@@ -172,6 +172,9 @@ public:
     bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
     void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
     void set_shared_fp16_frame_callback(std::function<void()> cb);
+    bool update_external_flutter_surface(
+        const PresentationExternalD3D12Surface& surface);
+    void clear_external_flutter_surface();
     bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors);
     void clear_source_cache(const char* reason);

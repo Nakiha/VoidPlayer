@@ -378,6 +378,20 @@ void NativePlayer::set_shared_fp16_frame_callback(
     }
 }
 
+bool NativePlayer::update_external_flutter_surface(
+    const PresentationExternalD3D12Surface& surface) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.update_external_flutter_surface(surface);
+}
+
+void NativePlayer::clear_external_flutter_surface() {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (renderer_ready_locked()) {
+        renderer_.clear_external_flutter_surface();
+    }
+}
+
 bool NativePlayer::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);

@@ -406,6 +406,34 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         "windowsPresentationSDRCompatibilityDrawCount")] =
         flutter::EncodableValue(static_cast<int64_t>(
             presentation.sdr_compatibility_draw_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceGeneration")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_generation));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceConsumedGeneration")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_consumed_generation));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceUpdateCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_update_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceConsumeCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_consume_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceWaitCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_wait_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceWaitFailureCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_wait_failure_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceLastError")] =
+        flutter::EncodableValue(
+            presentation.external_flutter_surface_last_error);
     const std::string fallback_reason =
         presentation.fallback_reason != "none"
             ? presentation.fallback_reason

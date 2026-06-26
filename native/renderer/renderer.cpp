@@ -256,6 +256,15 @@ void Renderer::set_shared_fp16_frame_callback(std::function<void()> cb) {
     impl_->set_shared_fp16_frame_callback(std::move(cb));
 }
 
+bool Renderer::update_external_flutter_surface(
+    const PresentationExternalD3D12Surface& surface) {
+    return impl_->update_external_flutter_surface(surface);
+}
+
+void Renderer::clear_external_flutter_surface() {
+    impl_->clear_external_flutter_surface();
+}
+
 bool Renderer::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     return impl_->configure_source_cache(descriptors);

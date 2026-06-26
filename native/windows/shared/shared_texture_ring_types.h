@@ -29,6 +29,7 @@ struct SharedFp16TextureSnapshot {
     int buffer_index = -1;
     uint64_t ring_generation = 0;
     uint64_t frame_generation = 0;
+    uint64_t external_flutter_frame_generation = 0;
     SharedFp16TextureSyncMode sync_mode = SharedFp16TextureSyncMode::KeyedMutex;
     uint64_t consumer_acquire_key = 1;
     uint64_t producer_release_key = 0;

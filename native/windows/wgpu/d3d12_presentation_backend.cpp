@@ -643,7 +643,7 @@ public:
         return begin_frame_locked();
     }
 
-    bool publish_frame() {
+    bool publish_frame(uint64_t external_flutter_frame_generation = 0) {
         std::function<void()> callback;
         Slot* slot = nullptr;
         {
@@ -654,6 +654,8 @@ public:
             slot = writing_;
             slot->writing = false;
             slot->frame_generation = next_frame_generation_++;
+            slot->external_flutter_frame_generation =
+                external_flutter_frame_generation;
             latest_ = slot;
             latest_generation_ = active_;
             writing_ = nullptr;
@@ -690,6 +692,8 @@ public:
         snapshot.height = latest_generation_->height;
         snapshot.ring_generation = latest_generation_->id;
         snapshot.frame_generation = latest_->frame_generation;
+        snapshot.external_flutter_frame_generation =
+            latest_->external_flutter_frame_generation;
         snapshot.sync_mode = SharedFp16TextureSyncMode::PublishedAfterProducerWait;
         snapshot.consumer_acquire_key = 0;
         snapshot.producer_release_key = 0;
@@ -758,6 +762,7 @@ private:
         HANDLE handle = nullptr;
         uint32_t leases = 0;
         uint64_t frame_generation = 0;
+        uint64_t external_flutter_frame_generation = 0;
         bool writing = false;
         ~Slot() {
             if (handle) {
@@ -1427,6 +1432,67 @@ void WgpuD3D12PresentationBackend::set_shared_fp16_frame_callback(
     }
 }
 
+bool WgpuD3D12PresentationBackend::update_external_flutter_surface(
+    const PresentationExternalD3D12Surface& surface) {
+#if VOIDPLAYER_WGPU_RUST_LINKED
+    if (!renderer_ || !surface.resource || surface.width <= 0 ||
+        surface.height <= 0 || surface.format != DXGI_FORMAT_B8G8R8A8_UNORM) {
+        std::lock_guard<std::mutex> lock(external_flutter_mutex_);
+        external_flutter_ = {};
+        external_flutter_surface_last_error_ =
+            "external-flutter-surface-invalid";
+        return false;
+    }
+
+    ExternalFlutterSurface next;
+    next.resource = static_cast<ID3D12Resource*>(surface.resource);
+    next.width = surface.width;
+    next.height = surface.height;
+    next.format = surface.format;
+    next.sync = surface.sync;
+    next.fence_value = surface.fence_value;
+    next.ring_generation = surface.ring_generation;
+    next.frame_generation = surface.frame_generation;
+    next.valid = next.resource != nullptr;
+
+    if (surface.fence_handle) {
+        auto* device = static_cast<ID3D12Device*>(
+            VPWgpuD3D12RendererD3D12Device(renderer_));
+        if (!device) {
+            std::lock_guard<std::mutex> lock(external_flutter_mutex_);
+            external_flutter_surface_last_error_ =
+                "external-flutter-surface-device-unavailable";
+            return false;
+        }
+        const HRESULT hr = device->OpenSharedHandle(
+            static_cast<HANDLE>(surface.fence_handle),
+            IID_PPV_ARGS(&next.fence));
+        if (FAILED(hr) || !next.fence) {
+            std::lock_guard<std::mutex> lock(external_flutter_mutex_);
+            external_flutter_surface_last_error_ =
+                "external-flutter-surface-fence-open-failed";
+            return false;
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(external_flutter_mutex_);
+    external_flutter_ = std::move(next);
+    external_flutter_surface_generation_ = surface.frame_generation;
+    ++external_flutter_surface_update_count_;
+    external_flutter_surface_last_error_ = "none";
+    return true;
+#else
+    (void)surface;
+    return false;
+#endif
+}
+
+void WgpuD3D12PresentationBackend::clear_external_flutter_surface() {
+    std::lock_guard<std::mutex> lock(external_flutter_mutex_);
+    external_flutter_ = {};
+    external_flutter_surface_last_error_ = "cleared";
+}
+
 bool WgpuD3D12PresentationBackend::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
 #if VOIDPLAYER_WGPU_RUST_LINKED
@@ -1574,6 +1640,23 @@ PresentationBackendDiagnostics WgpuD3D12PresentationBackend::diagnostics() const
     diagnostics.driver_type = renderer_info_.driver_type;
     diagnostics.adapter_vendor_id = static_cast<int32_t>(renderer_info_.vendor_id);
     diagnostics.adapter_device_id = static_cast<int32_t>(renderer_info_.device_id);
+    {
+        std::lock_guard<std::mutex> lock(external_flutter_mutex_);
+        diagnostics.external_flutter_surface_generation =
+            external_flutter_surface_generation_;
+        diagnostics.external_flutter_surface_consumed_generation =
+            external_flutter_surface_consumed_generation_;
+        diagnostics.external_flutter_surface_update_count =
+            external_flutter_surface_update_count_;
+        diagnostics.external_flutter_surface_consume_count =
+            external_flutter_surface_consume_count_;
+        diagnostics.external_flutter_surface_wait_count =
+            external_flutter_surface_wait_count_;
+        diagnostics.external_flutter_surface_wait_failure_count =
+            external_flutter_surface_wait_failure_count_;
+        diagnostics.external_flutter_surface_last_error =
+            external_flutter_surface_last_error_;
+    }
     if (source_cache_ring_) {
         diagnostics.source_cache_active =
             source_cache_ring_->publish_count() > 0;
@@ -1719,6 +1802,11 @@ bool WgpuD3D12PresentationBackend::draw_frame(
     VPWgpuD3D12CompositeRequest composite = {};
     VPWgpuD3D12PresentDecisionInfo decision = {};
     WgpuD3D12CpuUploadScratch cpu_scratch;
+    ExternalFlutterSurface flutter_surface;
+    {
+        std::lock_guard<std::mutex> lock(external_flutter_mutex_);
+        flutter_surface = external_flutter_;
+    }
     fill_wgpu_d3d12_decision_from_snapshot(
         snapshot,
         std::max(snapshot.target_width, 1),
@@ -1752,6 +1840,54 @@ bool WgpuD3D12PresentationBackend::draw_frame(
         composite.destination_resource = target;
         composite.output_format = VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
         composite.output_color_mode = VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
+        uint64_t consumed_flutter_generation = 0;
+        if (flutter_surface.valid && flutter_surface.resource &&
+            flutter_surface.width > 0 && flutter_surface.height > 0 &&
+            flutter_surface.format == DXGI_FORMAT_B8G8R8A8_UNORM) {
+            bool flutter_ready = true;
+            if (flutter_surface.fence && flutter_surface.fence_value > 0) {
+                {
+                    std::lock_guard<std::mutex> lock(external_flutter_mutex_);
+                    ++external_flutter_surface_wait_count_;
+                }
+                if (flutter_surface.fence->GetCompletedValue() <
+                    flutter_surface.fence_value) {
+                    HANDLE event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+                    if (!event) {
+                        flutter_ready = false;
+                    } else {
+                        HRESULT wait_result =
+                            flutter_surface.fence->SetEventOnCompletion(
+                                flutter_surface.fence_value, event);
+                        if (SUCCEEDED(wait_result)) {
+                            const DWORD wait = WaitForSingleObject(event, 8);
+                            if (wait != WAIT_OBJECT_0) {
+                                wait_result = HRESULT_FROM_WIN32(WAIT_TIMEOUT);
+                            }
+                        }
+                        CloseHandle(event);
+                        flutter_ready = SUCCEEDED(wait_result);
+                    }
+                }
+                if (!flutter_ready) {
+                    std::lock_guard<std::mutex> lock(external_flutter_mutex_);
+                    ++external_flutter_surface_wait_failure_count_;
+                    external_flutter_surface_last_error_ =
+                        "external-flutter-surface-fence-wait-failed";
+                }
+            }
+            if (flutter_ready) {
+                composite.flutter_resource = flutter_surface.resource.Get();
+                composite.flutter_format =
+                    VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
+                composite.flutter_width =
+                    static_cast<uint32_t>(flutter_surface.width);
+                composite.flutter_height =
+                    static_cast<uint32_t>(flutter_surface.height);
+                consumed_flutter_generation =
+                    flutter_surface.frame_generation;
+            }
+        }
         composite.decision = &decision;
         composite.width = static_cast<int32_t>(std::max(snapshot.target_width, 1));
         composite.height = static_cast<int32_t>(std::max(snapshot.target_height, 1));
@@ -1765,7 +1901,14 @@ bool WgpuD3D12PresentationBackend::draw_frame(
             spdlog::error("[WgpuD3D12] {}", last_error_);
             return false;
         }
-        if (!shared_fp16_ring_->publish_frame()) {
+        if (consumed_flutter_generation != 0) {
+            std::lock_guard<std::mutex> lock(external_flutter_mutex_);
+            external_flutter_surface_consumed_generation_ =
+                consumed_flutter_generation;
+            ++external_flutter_surface_consume_count_;
+            external_flutter_surface_last_error_ = "none";
+        }
+        if (!shared_fp16_ring_->publish_frame(consumed_flutter_generation)) {
             last_error_ = "wgpu-d3d12 shared FP16 publish failed";
             return false;
         }

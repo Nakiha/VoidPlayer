@@ -24,6 +24,18 @@ struct PresentationBackendConfig {
     bool shared_fp16_output = false;
 };
 
+struct PresentationExternalD3D12Surface {
+    void* resource = nullptr;
+    void* fence_handle = nullptr;
+    int32_t width = 0;
+    int32_t height = 0;
+    int32_t format = 0;
+    int32_t sync = 0;
+    uint64_t fence_value = 0;
+    uint64_t ring_generation = 0;
+    uint64_t frame_generation = 0;
+};
+
 struct PresentationBackendFrameInfo {
     int32_t width = 0;
     int32_t height = 0;
@@ -140,6 +152,13 @@ struct PresentationBackendDiagnostics {
     uint64_t prewarm_consumed_count = 0;
     std::string source_cache_format = "R16G16B16A16_FLOAT";
     std::string source_cache_last_error = "none";
+    uint64_t external_flutter_surface_generation = 0;
+    uint64_t external_flutter_surface_consumed_generation = 0;
+    uint64_t external_flutter_surface_update_count = 0;
+    uint64_t external_flutter_surface_consume_count = 0;
+    uint64_t external_flutter_surface_wait_count = 0;
+    uint64_t external_flutter_surface_wait_failure_count = 0;
+    std::string external_flutter_surface_last_error = "none";
 };
 
 inline bool is_transient_presentation_backpressure_error(const std::string& error) {

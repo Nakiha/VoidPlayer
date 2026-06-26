@@ -346,6 +346,14 @@ void NativePlayer::release_shared_texture(int buffer_index,
     renderer_.release_shared_texture(buffer_index, buffer_generation);
 }
 
+void* NativePlayer::native_render_device() const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (!renderer_ready_locked()) {
+        return nullptr;
+    }
+    return renderer_.native_render_device();
+}
+
 bool NativePlayer::acquire_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);

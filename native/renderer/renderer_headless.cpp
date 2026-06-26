@@ -114,6 +114,15 @@ void Renderer::Impl::release_shared_texture(int buffer_index, uint64_t buffer_ge
 #endif
 }
 
+void* Renderer::Impl::native_render_device() const {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.native_render_device();
+#else
+    return nullptr;
+#endif
+}
+
 bool Renderer::Impl::acquire_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
 #ifdef _WIN32

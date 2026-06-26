@@ -1140,6 +1140,8 @@ bool WindowsNativeCompositor::LoadEngineApi() {
         GetProcAddress(module, "FlutterDesktopViewSetSurfacePublishedCallback"));
     engine_api_.acquire = reinterpret_cast<AcquireFlutterSurfaceFn>(
         GetProcAddress(module, "FlutterDesktopViewAcquireLatestSurface"));
+    engine_api_.acquire_v2 = reinterpret_cast<AcquireFlutterSurfaceV2Fn>(
+        GetProcAddress(module, "FlutterDesktopViewAcquireLatestSurfaceV2"));
     engine_api_.release = reinterpret_cast<ReleaseFlutterSurfaceFn>(
         GetProcAddress(module, "FlutterDesktopViewReleaseSurface"));
     return engine_api_.available();
@@ -2766,6 +2768,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
         held_flutter_ = {};
         held_flutter_srv_.Reset();
         held_flutter_mutex_.Reset();
+        held_flutter_d3d12_resource_.Reset();
         held_flutter_texture_.Reset();
     };
     const auto release_held_source = [&]() {
@@ -2922,12 +2925,31 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 held_video_mutex_ = std::move(keyed_mutex);
                 held_video_srv_ = std::move(srv);
                 held_video_valid_ = true;
+                spdlog::debug(
+                    "[WindowsNativeCompositor] acquired shared FP16 video "
+                    "generation={} ring={} size={}x{} sync={}",
+                    held_video_.frame_generation,
+                    held_video_.ring_generation,
+                    held_video_.width,
+                    held_video_.height,
+                    static_cast<int>(held_video_.sync_mode));
                 if (IsCrossAdapterActive()) {
                     std::lock_guard<std::mutex> lock(mutex_);
                     diagnostics_.video_transport_generation =
                         diagnostics_.transport_generation;
                 }
             } else {
+                spdlog::debug(
+                    "[WindowsNativeCompositor] failed to acquire shared FP16 "
+                    "video generation={} ring={} size={}x{} open={} "
+                    "acquired={} crossAdapter={}",
+                    next_video.frame_generation,
+                    next_video.ring_generation,
+                    next_video.width,
+                    next_video.height,
+                    SUCCEEDED(open_result),
+                    acquired,
+                    IsCrossAdapterActive());
                 if (acquired && keyed_mutex) {
                     keyed_mutex->ReleaseSync(
                         next_video.producer_release_key);
@@ -2996,7 +3018,95 @@ bool WindowsNativeCompositor::CompositeLatest() {
     }
 
     FlutterSurface next_flutter;
-    if (engine_api_.acquire(flutter_view_, &next_flutter)) {
+    Microsoft::WRL::ComPtr<ID3D12Resource> next_flutter_d3d12_resource;
+    const auto acquire_flutter_surface = [&]() -> bool {
+        const auto assign_v2_surface =
+            [&](const FlutterSurfaceV2& surface) {
+                next_flutter.backend = surface.backend;
+                next_flutter.sync = surface.sync;
+                next_flutter.shared_texture_handle = surface.texture_handle;
+                next_flutter.fence_handle = surface.fence_handle;
+                next_flutter.fence_value = surface.fence_value;
+                next_flutter.width = surface.width;
+                next_flutter.height = surface.height;
+                next_flutter.format = surface.format;
+                next_flutter.alpha_mode = surface.alpha_mode;
+                next_flutter.ring_generation = surface.ring_generation;
+                next_flutter.frame_generation = surface.frame_generation;
+                next_flutter.slot = surface.slot;
+                next_flutter.consumer_acquire_key =
+                    surface.consumer_acquire_key;
+                next_flutter.producer_release_key =
+                    surface.producer_release_key;
+                next_flutter.lease_id = surface.lease_id;
+            };
+        if (engine_api_.acquire_v2) {
+            FlutterSurfaceAcquireOptions d3d12_options;
+            d3d12_options.requested_backend = FlutterSurfaceBackend::D3D12;
+            FlutterSurfaceV2 d3d12_surface;
+            if (engine_api_.acquire_v2(
+                    flutter_view_, &d3d12_options, &d3d12_surface)) {
+                if (d3d12_surface.backend == FlutterSurfaceBackend::D3D12) {
+                    Microsoft::WRL::ComPtr<ID3D12Device> render_device;
+                    if (auto* raw_device = static_cast<ID3D12Device*>(
+                            player->native_render_device())) {
+                        raw_device->QueryInterface(
+                            IID_PPV_ARGS(&render_device));
+                    }
+                    HRESULT open_result = E_FAIL;
+                    if (render_device && d3d12_surface.texture_handle) {
+                        open_result = render_device->OpenSharedHandle(
+                            d3d12_surface.texture_handle,
+                            IID_PPV_ARGS(&next_flutter_d3d12_resource));
+                    }
+                    if (SUCCEEDED(open_result) &&
+                        next_flutter_d3d12_resource) {
+                        assign_v2_surface(d3d12_surface);
+                        spdlog::debug(
+                            "[WindowsCompositorDebug] flutter D3D12 export "
+                            "opened generation={} ring={} slot={} size={}x{} "
+                            "lease={} sync={} fenceValue={}",
+                            d3d12_surface.frame_generation,
+                            d3d12_surface.ring_generation,
+                            d3d12_surface.slot,
+                            d3d12_surface.width,
+                            d3d12_surface.height,
+                            d3d12_surface.lease_id,
+                            static_cast<int>(d3d12_surface.sync),
+                            d3d12_surface.fence_value);
+                        return true;
+                    }
+                    spdlog::debug(
+                        "[WindowsCompositorDebug] flutter D3D12 export "
+                        "open failed hr=0x{:08x}; falling back to D3D11",
+                        static_cast<uint32_t>(open_result));
+                    engine_api_.release(
+                        flutter_view_, d3d12_surface.lease_id);
+                } else if (d3d12_surface.lease_id != 0) {
+                    engine_api_.release(
+                        flutter_view_, d3d12_surface.lease_id);
+                }
+            }
+
+            FlutterSurfaceAcquireOptions d3d11_options;
+            d3d11_options.requested_backend = FlutterSurfaceBackend::D3D11;
+            FlutterSurfaceV2 d3d11_surface;
+            if (engine_api_.acquire_v2(
+                    flutter_view_, &d3d11_options, &d3d11_surface)) {
+                if (d3d11_surface.backend == FlutterSurfaceBackend::D3D11 &&
+                    d3d11_surface.sync == FlutterSurfaceSync::KeyedMutex) {
+                    assign_v2_surface(d3d11_surface);
+                    return true;
+                }
+                if (d3d11_surface.lease_id != 0) {
+                    engine_api_.release(
+                        flutter_view_, d3d11_surface.lease_id);
+                }
+            }
+        }
+        return engine_api_.acquire(flutter_view_, &next_flutter);
+    };
+    if (acquire_flutter_surface()) {
         const bool unchanged =
             held_flutter_valid_ &&
             next_flutter.ring_generation ==
@@ -3041,6 +3151,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 release_held_flutter();
                 held_flutter_ = next_flutter;
                 held_flutter_texture_ = std::move(texture);
+                held_flutter_d3d12_resource_ =
+                    std::move(next_flutter_d3d12_resource);
                 held_flutter_mutex_ = std::move(keyed_mutex);
                 held_flutter_srv_ = std::move(srv);
                 held_flutter_valid_ = true;
@@ -3051,13 +3163,14 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     spdlog::debug(
                         "[WindowsCompositorDebug] dcomp acquired flutter "
                         "surface generation={} ring={} slot={} size={}x{} "
-                        "lease={}",
+                        "lease={} backend={}",
                         held_flutter_.frame_generation,
                         held_flutter_.ring_generation,
                         held_flutter_.slot,
                         held_flutter_.width,
                         held_flutter_.height,
-                        held_flutter_.lease_id);
+                        held_flutter_.lease_id,
+                        static_cast<int>(held_flutter_.backend));
                 }
                 if (IsCrossAdapterActive()) {
                     std::lock_guard<std::mutex> lock(mutex_);
@@ -3275,6 +3388,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
         std::lock_guard<std::mutex> lock(mutex_);
         retained_graph_supported =
             phase_ == Phase::Active &&
+            !pending_swap_chain_.swap_chain &&
             source_bundle_active &&
             CanUseRetainedGraph(source_projection, composite_target);
     }
@@ -3530,6 +3644,22 @@ bool WindowsNativeCompositor::CompositeLatest() {
         if (held_video_generation < min_video_generation ||
             (source_projection.enabled &&
              held_source_.frame_generation < min_source_generation)) {
+            const auto now = std::chrono::steady_clock::now();
+            if (last_transition_guard_log_.time_since_epoch().count() == 0 ||
+                now - last_transition_guard_log_ >=
+                    std::chrono::milliseconds(500)) {
+                last_transition_guard_log_ = now;
+                spdlog::info(
+                    "[WindowsNativeCompositor] waiting for output target "
+                    "transition inputs target={} video={}/{} source={}/{} "
+                    "sourceProjection={}",
+                    OutputTargetName(composite_target),
+                    held_video_generation,
+                    min_video_generation,
+                    held_source_.frame_generation,
+                    min_source_generation,
+                    source_projection.enabled);
+            }
             return false;
         }
     }

@@ -72,6 +72,7 @@ public:
     int texture_height() const;
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
     void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
+    void* native_render_device() const;
     bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
     void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
     void set_shared_fp16_frame_callback(std::function<void()> cb);

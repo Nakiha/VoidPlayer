@@ -2762,7 +2762,10 @@ VideoRendererPlugin::RefreshPresentationPolicy(
             white_nits,
             display.generation,
             presentation_policy_.reason);
-        if (player_->update_presentation_sdr_white_level(white_nits)) {
+        const bool white_level_applied =
+            player_->update_presentation_sdr_white_level(white_nits);
+        if (policy_changed || white_changed || display_changed ||
+            white_level_applied) {
             (void)player_->request_frame_refresh(
                 "windows-presentation-policy-refresh");
         }
@@ -2783,6 +2786,14 @@ VideoRendererPlugin::RefreshPresentationPolicy(
             presentation_policy_.has_hdr_track,
             display.generation,
             white_nits);
+    }
+    if (native_compositor_) {
+        const auto compositor = native_compositor_->diagnostics();
+        if (compositor.transition_state == "preparing" &&
+            compositor.desired_output_target != compositor.output_target) {
+            (void)player_->request_frame_refresh(
+                "windows-presentation-transition-refresh");
+        }
     }
     return display;
 }

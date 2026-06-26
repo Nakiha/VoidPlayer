@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "name": "voidplayer-flutter",
   "upstreamFlutter": "3.44.1",
-  "flutterVersion": "3.44.2-0.0.pre-6",
+  "flutterVersion": "3.44.2-0.0.pre-11",
   "dartSdkVersion": "3.12.1",
-  "frameworkRevision": "8c154ed18d70b49375b88b743f796253156b8ddf",
+  "frameworkRevision": "dc279be982920181a35857ec644c5fc4929368bc",
   "engineRevision": "c416acfeb8126e097f758c664aaa3da929e27da0",
   "forkRemote": "https://github.com/Nakiha/VoidPlayer-Flutter.git",
   "forkRef": "codex/windows-surface-export-pacing",
   "forkBranch": "codex/windows-surface-export-pacing",
-  "forkCommit": "8c154ed18d70b49375b88b743f796253156b8ddf",
+  "forkCommit": "dc279be982920181a35857ec644c5fc4929368bc",
   "defaultInstallPath": ".toolchains/flutter",
   "macosLocalEngineReleaseTag": "voidplayer-flutter-3.44.1-hdr.2",
-  "windowsEngineReleaseTag": "voidplayer-flutter-8c154ed18d70-windows.1",
+  "windowsEngineReleaseTag": "voidplayer-flutter-dc279be98292-windows.1",
   "macosLocalEngineArtifacts": {
     "debug": {
       "engine": "host_debug_unopt_arm64",
@@ -31,14 +31,14 @@
     "debug": {
       "engine": "host_debug_unopt",
       "host": "host_debug_unopt",
-      "asset": "voidplayer-flutter-8c154ed18d70-windows-host_debug_unopt.zip",
-      "sha256": "e610a811710b96d61f64738f488426576aeb5cbcb7c47bf12164a9ebcf738986"
+      "asset": "voidplayer-flutter-dc279be98292-windows-host_debug_unopt.zip",
+      "sha256": "85aa263c9fcc85fc02390a3f477fd06194c7799ae50021cf8f72669055b9ab6b"
     },
     "release": {
       "engine": "host_release",
       "host": "host_release",
-      "asset": "voidplayer-flutter-8c154ed18d70-windows-host_release.zip",
-      "sha256": "303745b5bbd8dcd7bdaee983ffe06b3173550743ff56736c95ba996d32673a8d"
+      "asset": "voidplayer-flutter-dc279be98292-windows-host_release.zip",
+      "sha256": "f18fa0cc7253048f3e1fa104109984f04ab4e488ecb97743f701f4f798e40b6c"
     }
   },
   "requiredPatchMarkers": [

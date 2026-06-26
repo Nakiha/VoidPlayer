@@ -11,6 +11,7 @@
 
 #include <d3d11.h>
 #include <d3d11_1.h>
+#include <d3d12.h>
 #include <dcomp.h>
 #include <dxgi1_4.h>
 #include <windows.h>
@@ -269,9 +270,49 @@ private:
         bool color_space_supported = false;
     };
 
+    enum class FlutterSurfaceBackend : int {
+        Unknown = 0,
+        D3D11 = 1,
+        D3D12 = 2,
+    };
+
+    enum class FlutterSurfaceSync : int {
+        None = 0,
+        KeyedMutex = 1,
+        SharedFence = 2,
+    };
+
     struct FlutterSurface {
         size_t struct_size = sizeof(FlutterSurface);
+        FlutterSurfaceBackend backend = FlutterSurfaceBackend::D3D11;
+        FlutterSurfaceSync sync = FlutterSurfaceSync::KeyedMutex;
         HANDLE shared_texture_handle = nullptr;
+        HANDLE fence_handle = nullptr;
+        uint64_t fence_value = 0;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+        int alpha_mode = 0;
+        uint64_t ring_generation = 0;
+        uint64_t frame_generation = 0;
+        uint32_t slot = 0;
+        uint64_t consumer_acquire_key = 1;
+        uint64_t producer_release_key = 0;
+        uint64_t lease_id = 0;
+    };
+
+    struct FlutterSurfaceAcquireOptions {
+        size_t struct_size = sizeof(FlutterSurfaceAcquireOptions);
+        FlutterSurfaceBackend requested_backend = FlutterSurfaceBackend::Unknown;
+    };
+
+    struct FlutterSurfaceV2 {
+        size_t struct_size = sizeof(FlutterSurfaceV2);
+        FlutterSurfaceBackend backend = FlutterSurfaceBackend::Unknown;
+        FlutterSurfaceSync sync = FlutterSurfaceSync::None;
+        HANDLE texture_handle = nullptr;
+        HANDLE fence_handle = nullptr;
+        uint64_t fence_value = 0;
         uint32_t width = 0;
         uint32_t height = 0;
         DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
@@ -347,6 +388,8 @@ private:
     using PublishedCallback = void (*)(void*, uint64_t, void*);
     using SetPublishedCallbackFn = void (*)(void*, PublishedCallback, void*);
     using AcquireFlutterSurfaceFn = bool (*)(void*, FlutterSurface*);
+    using AcquireFlutterSurfaceV2Fn =
+        bool (*)(void*, const FlutterSurfaceAcquireOptions*, FlutterSurfaceV2*);
     using ReleaseFlutterSurfaceFn = bool (*)(void*, uint64_t);
 
     struct EngineApi {
@@ -355,6 +398,7 @@ private:
         GetSurfaceExportStateFn get_state = nullptr;
         SetPublishedCallbackFn set_callback = nullptr;
         AcquireFlutterSurfaceFn acquire = nullptr;
+        AcquireFlutterSurfaceV2Fn acquire_v2 = nullptr;
         ReleaseFlutterSurfaceFn release = nullptr;
         bool available() const {
             return set_mode && set_callback && acquire && release;
@@ -499,6 +543,7 @@ private:
     bool held_flutter_valid_ = false;
     FlutterSurface held_flutter_;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> held_flutter_texture_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> held_flutter_d3d12_resource_;
     Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_flutter_mutex_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_flutter_srv_;
     vr::D3D11CrossAdapterTextureTransport flutter_transport_;
@@ -559,6 +604,8 @@ private:
         last_retained_graph_commit_time_{};
     std::chrono::steady_clock::time_point
         last_retained_projection_update_{};
+    std::chrono::steady_clock::time_point
+        last_transition_guard_log_{};
     std::chrono::steady_clock::time_point
         last_source_projection_debug_log_{};
     std::chrono::steady_clock::time_point

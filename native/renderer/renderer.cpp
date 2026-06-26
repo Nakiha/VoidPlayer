@@ -238,6 +238,10 @@ void Renderer::release_shared_texture(int buffer_index, uint64_t buffer_generati
     impl_->release_shared_texture(buffer_index, buffer_generation);
 }
 
+void* Renderer::native_render_device() const {
+    return impl_->native_render_device();
+}
+
 bool Renderer::acquire_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
     return impl_->acquire_shared_fp16_texture(snapshot);

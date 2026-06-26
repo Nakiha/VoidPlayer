@@ -1138,8 +1138,6 @@ bool WindowsNativeCompositor::LoadEngineApi() {
         GetProcAddress(module, "FlutterDesktopViewGetSurfaceExportState"));
     engine_api_.set_callback = reinterpret_cast<SetPublishedCallbackFn>(
         GetProcAddress(module, "FlutterDesktopViewSetSurfacePublishedCallback"));
-    engine_api_.acquire = reinterpret_cast<AcquireFlutterSurfaceFn>(
-        GetProcAddress(module, "FlutterDesktopViewAcquireLatestSurface"));
     engine_api_.acquire_v2 = reinterpret_cast<AcquireFlutterSurfaceV2Fn>(
         GetProcAddress(module, "FlutterDesktopViewAcquireLatestSurfaceV2"));
     engine_api_.release = reinterpret_cast<ReleaseFlutterSurfaceFn>(
@@ -3040,71 +3038,56 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     surface.producer_release_key;
                 next_flutter.lease_id = surface.lease_id;
             };
-        if (engine_api_.acquire_v2) {
-            FlutterSurfaceAcquireOptions d3d12_options;
-            d3d12_options.requested_backend = FlutterSurfaceBackend::D3D12;
-            FlutterSurfaceV2 d3d12_surface;
-            if (engine_api_.acquire_v2(
-                    flutter_view_, &d3d12_options, &d3d12_surface)) {
-                if (d3d12_surface.backend == FlutterSurfaceBackend::D3D12) {
-                    Microsoft::WRL::ComPtr<ID3D12Device> render_device;
-                    if (auto* raw_device = static_cast<ID3D12Device*>(
-                            player->native_render_device())) {
-                        raw_device->QueryInterface(
-                            IID_PPV_ARGS(&render_device));
-                    }
-                    HRESULT open_result = E_FAIL;
-                    if (render_device && d3d12_surface.texture_handle) {
-                        open_result = render_device->OpenSharedHandle(
-                            d3d12_surface.texture_handle,
-                            IID_PPV_ARGS(&next_flutter_d3d12_resource));
-                    }
-                    if (SUCCEEDED(open_result) &&
-                        next_flutter_d3d12_resource) {
-                        assign_v2_surface(d3d12_surface);
-                        spdlog::debug(
-                            "[WindowsCompositorDebug] flutter D3D12 export "
-                            "opened generation={} ring={} slot={} size={}x{} "
-                            "lease={} sync={} fenceValue={}",
-                            d3d12_surface.frame_generation,
-                            d3d12_surface.ring_generation,
-                            d3d12_surface.slot,
-                            d3d12_surface.width,
-                            d3d12_surface.height,
-                            d3d12_surface.lease_id,
-                            static_cast<int>(d3d12_surface.sync),
-                            d3d12_surface.fence_value);
-                        return true;
-                    }
-                    spdlog::debug(
-                        "[WindowsCompositorDebug] flutter D3D12 export "
-                        "open failed hr=0x{:08x}; falling back to D3D11",
-                        static_cast<uint32_t>(open_result));
-                    engine_api_.release(
-                        flutter_view_, d3d12_surface.lease_id);
-                } else if (d3d12_surface.lease_id != 0) {
-                    engine_api_.release(
-                        flutter_view_, d3d12_surface.lease_id);
-                }
-            }
-
-            FlutterSurfaceAcquireOptions d3d11_options;
-            d3d11_options.requested_backend = FlutterSurfaceBackend::D3D11;
-            FlutterSurfaceV2 d3d11_surface;
-            if (engine_api_.acquire_v2(
-                    flutter_view_, &d3d11_options, &d3d11_surface)) {
-                if (d3d11_surface.backend == FlutterSurfaceBackend::D3D11 &&
-                    d3d11_surface.sync == FlutterSurfaceSync::KeyedMutex) {
-                    assign_v2_surface(d3d11_surface);
-                    return true;
-                }
-                if (d3d11_surface.lease_id != 0) {
-                    engine_api_.release(
-                        flutter_view_, d3d11_surface.lease_id);
-                }
-            }
+        FlutterSurfaceAcquireOptions d3d12_options;
+        d3d12_options.requested_backend = FlutterSurfaceBackend::D3D12;
+        FlutterSurfaceV2 d3d12_surface;
+        if (!engine_api_.acquire_v2(
+                flutter_view_, &d3d12_options, &d3d12_surface)) {
+            return false;
         }
-        return engine_api_.acquire(flutter_view_, &next_flutter);
+        if (d3d12_surface.backend != FlutterSurfaceBackend::D3D12) {
+            if (d3d12_surface.lease_id != 0) {
+                engine_api_.release(flutter_view_, d3d12_surface.lease_id);
+            }
+            spdlog::debug(
+                "[WindowsCompositorDebug] flutter export rejected "
+                "non-D3D12 backend={}",
+                static_cast<int>(d3d12_surface.backend));
+            return false;
+        }
+        Microsoft::WRL::ComPtr<ID3D12Device> render_device;
+        if (auto* raw_device = static_cast<ID3D12Device*>(
+                player->native_render_device())) {
+            raw_device->QueryInterface(IID_PPV_ARGS(&render_device));
+        }
+        HRESULT open_result = E_FAIL;
+        if (render_device && d3d12_surface.texture_handle) {
+            open_result = render_device->OpenSharedHandle(
+                d3d12_surface.texture_handle,
+                IID_PPV_ARGS(&next_flutter_d3d12_resource));
+        }
+        if (SUCCEEDED(open_result) && next_flutter_d3d12_resource) {
+            assign_v2_surface(d3d12_surface);
+            spdlog::debug(
+                "[WindowsCompositorDebug] flutter D3D12 export "
+                "opened generation={} ring={} slot={} size={}x{} "
+                "lease={} sync={} fenceValue={}",
+                d3d12_surface.frame_generation,
+                d3d12_surface.ring_generation,
+                d3d12_surface.slot,
+                d3d12_surface.width,
+                d3d12_surface.height,
+                d3d12_surface.lease_id,
+                static_cast<int>(d3d12_surface.sync),
+                d3d12_surface.fence_value);
+            return true;
+        }
+        spdlog::debug(
+            "[WindowsCompositorDebug] flutter D3D12 export open failed "
+            "hr=0x{:08x}",
+            static_cast<uint32_t>(open_result));
+        engine_api_.release(flutter_view_, d3d12_surface.lease_id);
+        return false;
     };
     if (acquire_flutter_surface()) {
         const bool unchanged =

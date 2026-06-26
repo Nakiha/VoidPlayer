@@ -387,7 +387,6 @@ private:
         bool (*)(void*, FlutterSurfaceExportState*);
     using PublishedCallback = void (*)(void*, uint64_t, void*);
     using SetPublishedCallbackFn = void (*)(void*, PublishedCallback, void*);
-    using AcquireFlutterSurfaceFn = bool (*)(void*, FlutterSurface*);
     using AcquireFlutterSurfaceV2Fn =
         bool (*)(void*, const FlutterSurfaceAcquireOptions*, FlutterSurfaceV2*);
     using ReleaseFlutterSurfaceFn = bool (*)(void*, uint64_t);
@@ -397,11 +396,10 @@ private:
         RequestSurfaceExportFrameFn request_frame = nullptr;
         GetSurfaceExportStateFn get_state = nullptr;
         SetPublishedCallbackFn set_callback = nullptr;
-        AcquireFlutterSurfaceFn acquire = nullptr;
         AcquireFlutterSurfaceV2Fn acquire_v2 = nullptr;
         ReleaseFlutterSurfaceFn release = nullptr;
         bool available() const {
-            return set_mode && set_callback && acquire && release;
+            return set_mode && set_callback && acquire_v2 && release;
         }
         bool frame_pump_available() const {
             return request_frame && get_state;

@@ -4,10 +4,13 @@
 #include "renderer/layout/layout_controller.h"
 #include "renderer/layout/layout_geometry.h"
 #include "renderer/render/render_loop_controller.h"
+#include "renderer/decode/hw/hw_decode_provider.h"
+#include "renderer/render/presentation_backend_factory.h"
 #include "renderer/renderer_config_validation.h"
 
 #include <chrono>
 #include <cmath>
+#include <string>
 
 using namespace vr;
 
@@ -88,6 +91,7 @@ TEST_CASE("Renderer config validation accepts WgpuMetal headless output interop"
     config.backend.type = RendererBackendType::WgpuMetal;
     config.backend.output = reinterpret_cast<void*>(0x9abc);
 
+#ifdef __APPLE__
     REQUIRE(validate_renderer_config(config).ok);
 
     config.backend.output = nullptr;
@@ -96,6 +100,31 @@ TEST_CASE("Renderer config validation accepts WgpuMetal headless output interop"
     config.backend.output = reinterpret_cast<void*>(0x9abc);
     config.backend.max_track_slots = kMaxRendererVideoPaths + 1;
     REQUIRE_FALSE(validate_renderer_config(config).ok);
+#else
+    REQUIRE_FALSE(validate_renderer_config(config).ok);
+#endif
+}
+
+TEST_CASE("Renderer config validation accepts WgpuD3D12 headless output interop",
+          "[renderer_config]") {
+    auto config = valid_windowed_config();
+    config.headless = true;
+    config.hwnd = nullptr;
+    config.backend.type = RendererBackendType::WgpuD3D12;
+    config.backend.output = reinterpret_cast<void*>(0x9abc);
+
+#ifdef _WIN32
+    REQUIRE(validate_renderer_config(config).ok);
+
+    config.backend.output = nullptr;
+    REQUIRE_FALSE(validate_renderer_config(config).ok);
+
+    config.backend.output = reinterpret_cast<void*>(0x9abc);
+    config.backend.max_track_slots = kMaxRendererVideoPaths + 1;
+    REQUIRE_FALSE(validate_renderer_config(config).ok);
+#else
+    REQUIRE_FALSE(validate_renderer_config(config).ok);
+#endif
 }
 
 TEST_CASE("Renderer config validation rejects removed Metal headless backend",
@@ -107,6 +136,55 @@ TEST_CASE("Renderer config validation rejects removed Metal headless backend",
     config.backend.output = reinterpret_cast<void*>(0x9abc);
 
     REQUIRE_FALSE(validate_renderer_config(config).ok);
+}
+
+TEST_CASE("Hardware decode provider compatibility separates D3D11 and wgpu-d3d12",
+          "[renderer_config][hw_decode]") {
+    auto d3d11_names = compatible_hw_decode_provider_names(
+        RenderBackendKind::D3D11,
+        DecodeDeviceMode::IndependentDevice);
+    auto d3d12_names = compatible_hw_decode_provider_names(
+        RenderBackendKind::WgpuD3D12,
+        DecodeDeviceMode::IndependentDevice);
+
+#ifdef _WIN32
+    bool has_d3d11va = false;
+    for (const auto* name : d3d11_names) {
+        has_d3d11va = has_d3d11va || std::string(name) == "D3D11VA";
+        REQUIRE(std::string(name) != "D3D12VA");
+    }
+    REQUIRE(has_d3d11va);
+
+    bool has_d3d12va = false;
+    for (const auto* name : d3d12_names) {
+        has_d3d12va = has_d3d12va || std::string(name) == "D3D12VA";
+        REQUIRE(std::string(name) != "D3D11VA");
+    }
+    REQUIRE(has_d3d12va);
+    REQUIRE(std::string(hw_decode_type_name(HwDecodeType::D3D12VA)) == "D3D12VA");
+#else
+    REQUIRE(d3d12_names.empty());
+#endif
+}
+
+TEST_CASE("Windows wgpu-d3d12 presentation backend fails closed instead of D3D11 fallback",
+          "[renderer_config][presentation_backend]") {
+#ifdef _WIN32
+    auto backend = create_presentation_backend(RenderBackendKind::WgpuD3D12);
+    REQUIRE(backend != nullptr);
+    REQUIRE(backend->kind() == PresentationBackendKind::WgpuD3D12);
+
+    PresentationBackendConfig config;
+    config.headless = true;
+    config.output = reinterpret_cast<void*>(0x1234);
+    config.width = 64;
+    config.height = 64;
+    REQUIRE_FALSE(backend->initialize(config));
+    REQUIRE(std::string(backend->last_error()).find("D3D11 fallback is disabled") !=
+            std::string::npos);
+#else
+    REQUIRE(create_presentation_backend(RenderBackendKind::WgpuD3D12) == nullptr);
+#endif
 }
 
 TEST_CASE("Renderer config validation covers speed and loop range",

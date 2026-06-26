@@ -125,6 +125,9 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
     if (!hardware_converter_) {
         return std::nullopt;
     }
+    if (hardware_converter_->hw_type() == HwDecodeType::D3D12VA) {
+        return hardware_converter_->convert(frame);
+    }
     if (hardware_converter_->hw_type() != HwDecodeType::D3D11VA) {
         return hardware_converter_->convert(frame);
     }

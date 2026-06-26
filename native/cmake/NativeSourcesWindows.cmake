@@ -11,7 +11,9 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/windows/presentation/windows_presentation_policy.cpp"
     "${VOID_NATIVE_DIR}/windows/d3d11/frame_capture_service.cpp"
     "${VOID_NATIVE_DIR}/windows/decode/d3d11_frame_snapshot.cpp"
+    "${VOID_NATIVE_DIR}/windows/decode/d3d12va_provider.cpp"
     "${VOID_NATIVE_DIR}/windows/decode/d3d11va_provider.cpp"
+    "${VOID_NATIVE_DIR}/windows/wgpu/d3d12_presentation_backend.cpp"
 )
 
 if(BUILD_ANALYSIS)

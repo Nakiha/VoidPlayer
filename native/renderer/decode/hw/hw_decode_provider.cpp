@@ -1,6 +1,7 @@
 #include "renderer/decode/hw/hw_decode_provider.h"
 #ifdef _WIN32
 #include "windows/decode/d3d11va_provider.h"
+#include "windows/decode/d3d12va_provider.h"
 #endif
 #ifdef __APPLE__
 #include "macos/decode/videotoolbox_provider.h"
@@ -26,6 +27,10 @@ struct HwDecodeProviderDescriptor {
 std::unique_ptr<HwDecodeProvider> create_d3d11va_provider() {
     return std::make_unique<D3D11VAProvider>();
 }
+
+std::unique_ptr<HwDecodeProvider> create_d3d12va_provider() {
+    return std::make_unique<D3D12VAProvider>();
+}
 #endif
 
 #ifdef __APPLE__
@@ -37,6 +42,13 @@ std::unique_ptr<HwDecodeProvider> create_videotoolbox_provider() {
 std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
     std::vector<HwDecodeProviderDescriptor> providers;
 #ifdef _WIN32
+    providers.push_back({
+        "D3D12VA",
+        RenderBackendKind::WgpuD3D12,
+        RenderBackendKind::Unknown,
+        false,
+        &create_d3d12va_provider,
+    });
     providers.push_back({
         "D3D11VA",
         RenderBackendKind::D3D11,
@@ -117,6 +129,8 @@ const char* hw_decode_type_name(HwDecodeType type) {
         return "none";
     case HwDecodeType::D3D11VA:
         return "D3D11VA";
+    case HwDecodeType::D3D12VA:
+        return "D3D12VA";
     case HwDecodeType::CUDA:
         return "CUDA";
     case HwDecodeType::DXVA2:

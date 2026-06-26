@@ -40,6 +40,19 @@ RendererConfigValidationResult validate_headless_backend(
 #else
         return invalid("wgpu-metal renderer is only supported on macOS");
 #endif
+    case RendererBackendType::WgpuD3D12:
+#ifdef _WIN32
+        if (backend.output == nullptr) {
+            return invalid("headless wgpu-d3d12 renderer requires an output target");
+        }
+        if (backend.max_track_slots < 0 ||
+            static_cast<size_t>(backend.max_track_slots) > budget.max_tracks) {
+            return invalid("headless wgpu-d3d12 renderer max track slots out of range");
+        }
+        return ok_result();
+#else
+        return invalid("wgpu-d3d12 renderer is only supported on Windows");
+#endif
     case RendererBackendType::Unknown:
     case RendererBackendType::Vulkan:
         return invalid("unsupported renderer backend type");

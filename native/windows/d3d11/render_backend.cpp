@@ -5,6 +5,7 @@
 #include "renderer/render/presentation_backend_factory.h"
 #include "renderer/render/presentation_snapshot.h"
 #include "renderer/render/shader_constants.h"
+#include "windows/wgpu/d3d12_presentation_backend.h"
 
 #include <array>
 #include <chrono>
@@ -64,14 +65,18 @@ namespace {
 class D3D11PresentationBackendProvider final : public PresentationBackendProvider {
 public:
     bool supports(RenderBackendKind kind) const override {
-        return kind == RenderBackendKind::D3D11;
+        return kind == RenderBackendKind::D3D11 ||
+               kind == RenderBackendKind::WgpuD3D12;
     }
 
     std::unique_ptr<PresentationBackend> create(RenderBackendKind kind) const override {
-        if (!supports(kind)) {
-            return nullptr;
+        if (kind == RenderBackendKind::D3D11) {
+            return std::make_unique<D3D11RenderBackend>();
         }
-        return std::make_unique<D3D11RenderBackend>();
+        if (kind == RenderBackendKind::WgpuD3D12) {
+            return std::make_unique<WgpuD3D12PresentationBackend>();
+        }
+        return nullptr;
     }
 };
 

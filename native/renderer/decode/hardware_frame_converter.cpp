@@ -10,10 +10,16 @@
 #ifdef __APPLE__
 #include <CoreVideo/CoreVideo.h>
 #endif
+#ifdef _WIN32
+#include <d3d12.h>
+#endif
 
 extern "C" {
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
+#ifdef _WIN32
+#include <libavutil/hwcontext_d3d12va.h>
+#endif
 }
 
 namespace vr {
@@ -96,6 +102,67 @@ std::optional<TextureFrame> populate_videotoolbox_frame(AVFrame* frame,
         pixel_buffer,
         pixel_format,
         plane_count,
+        metadata.is_p010,
+        coded_width,
+        coded_height,
+        frame_ref,
+    };
+    return metadata;
+}
+#endif
+
+#ifdef _WIN32
+bool av_pix_fmt_is_p010_like(AVPixelFormat format) {
+    return format == AV_PIX_FMT_P010LE || format == AV_PIX_FMT_P016LE ||
+           format == AV_PIX_FMT_YUV420P10LE || format == AV_PIX_FMT_YUV420P12LE;
+}
+
+std::optional<TextureFrame> populate_d3d12_hardware_texture_frame(
+    AVFrame* frame,
+    TextureFrame metadata) {
+    if (frame->format != AV_PIX_FMT_D3D12 || !frame->data[0]) {
+        spdlog::error("[HardwareFrameConverter] D3D12VA frame is missing AVD3D12VAFrame");
+        return std::nullopt;
+    }
+
+    auto* d3d12_frame = reinterpret_cast<AVD3D12VAFrame*>(frame->data[0]);
+    if (!d3d12_frame->texture) {
+        spdlog::error("[HardwareFrameConverter] D3D12VA frame is missing ID3D12Resource");
+        return std::nullopt;
+    }
+
+    auto frame_ref = clone_av_frame_ref(frame);
+    if (!frame_ref) {
+        spdlog::error("[HardwareFrameConverter] Failed to retain D3D12VA frame");
+        return std::nullopt;
+    }
+
+    int coded_width = frame->width;
+    int coded_height = frame->height;
+    AVPixelFormat sw_format = AV_PIX_FMT_NONE;
+    if (frame->hw_frames_ctx) {
+        auto* frames_ctx =
+            reinterpret_cast<AVHWFramesContext*>(frame->hw_frames_ctx->data);
+        if (frames_ctx) {
+            coded_width = frames_ctx->width > 0 ? frames_ctx->width : coded_width;
+            coded_height = frames_ctx->height > 0 ? frames_ctx->height : coded_height;
+            sw_format = static_cast<AVPixelFormat>(frames_ctx->sw_format);
+        }
+    }
+
+    metadata.texture_handle = d3d12_frame->texture;
+    metadata.is_ref = true;
+    metadata.is_nv12 = true;
+    metadata.is_p010 = av_pix_fmt_is_p010_like(sw_format);
+    metadata.texture_array_index = d3d12_frame->subresource_index;
+    metadata.hw_frame_ref = frame_ref;
+    metadata.storage = D3D12TextureFrameStorage{
+        d3d12_frame->texture,
+        d3d12_frame->subresource_index,
+        d3d12_frame->sync_ctx.fence,
+        d3d12_frame->sync_ctx.event,
+        d3d12_frame->sync_ctx.fence_value,
+        (d3d12_frame->flags & AV_D3D12VA_FRAME_FLAG_TEXTURE_ARRAY) != 0,
         metadata.is_p010,
         coded_width,
         coded_height,
@@ -188,6 +255,12 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
         return std::nullopt;
 #endif
     }
+
+#ifdef _WIN32
+    if (hw_type_ == HwDecodeType::D3D12VA) {
+        return populate_d3d12_hardware_texture_frame(frame, result);
+    }
+#endif
 
 #ifdef __APPLE__
     if (hw_type_ == HwDecodeType::VideoToolbox) {

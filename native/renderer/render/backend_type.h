@@ -7,6 +7,7 @@ enum class RenderBackendKind {
     D3D11,
     Metal,
     WgpuMetal,
+    WgpuD3D12,
     Vulkan,
 };
 
@@ -20,6 +21,8 @@ inline const char* render_backend_kind_name(RenderBackendKind kind) {
         return "metal";
     case RenderBackendKind::WgpuMetal:
         return "wgpu-metal";
+    case RenderBackendKind::WgpuD3D12:
+        return "wgpu-d3d12";
     case RenderBackendKind::Vulkan:
         return "vulkan";
     }

@@ -45,6 +45,7 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
         ${AVUTIL_LIBRARY}
         ${SWRESAMPLE_LIBRARY}
         dxgi
+        d3d12
         d3d11
         d3dcompiler
         winmm

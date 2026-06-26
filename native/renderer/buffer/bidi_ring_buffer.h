@@ -58,6 +58,9 @@ struct TextureFrame {
     const D3D11TextureFrameStorage* hardware_texture_storage() const {
         return std::get_if<D3D11TextureFrameStorage>(&storage);
     }
+    const D3D12TextureFrameStorage* d3d12_texture_storage() const {
+        return std::get_if<D3D12TextureFrameStorage>(&storage);
+    }
     const MacOSCVPixelBufferFrameStorage* cv_pixel_buffer_storage() const {
         return std::get_if<MacOSCVPixelBufferFrameStorage>(&storage);
     }

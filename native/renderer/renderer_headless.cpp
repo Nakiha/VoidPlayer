@@ -212,11 +212,7 @@ void Renderer::Impl::set_source_cache_frame_callback(
 
 bool Renderer::Impl::prewarm_presentation_target(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-#ifdef _WIN32
-    if (!surface_state_.headless() || !presentation_.d3d_device()) return false;
-#else
     if (!surface_state_.headless() || !presentation_.has_backend()) return false;
-#endif
     const auto validation =
         validate_renderer_dimensions(width, height, "prewarm dimensions");
     if (!validation.ok) {
@@ -229,11 +225,7 @@ bool Renderer::Impl::prewarm_presentation_target(int width, int height) {
 
 void Renderer::Impl::resize(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-#ifdef _WIN32
-    if (!surface_state_.headless() || !presentation_.d3d_device()) return;
-#else
     if (!surface_state_.headless() || !presentation_.has_backend()) return;
-#endif
     const auto validation = validate_renderer_dimensions(width, height, "resize dimensions");
     if (!validation.ok) {
         spdlog::warn("[Renderer] ignoring invalid resize: {}", validation.message);

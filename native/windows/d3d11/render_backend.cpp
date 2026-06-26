@@ -2,10 +2,8 @@
 
 #include "embedded_shaders.h"
 #include "renderer/overlay/analysis_overlay_renderer.h"
-#include "renderer/render/presentation_backend_factory.h"
 #include "renderer/render/presentation_snapshot.h"
 #include "renderer/render/shader_constants.h"
-#include "windows/wgpu/d3d12_presentation_backend.h"
 
 #include <array>
 #include <chrono>
@@ -58,39 +56,6 @@ RendererDrawSnapshot make_d3d_source_snapshot(
 
 D3D11RenderBackend::~D3D11RenderBackend() {
     shutdown();
-}
-
-namespace {
-
-class D3D11PresentationBackendProvider final : public PresentationBackendProvider {
-public:
-    bool supports(RenderBackendKind kind) const override {
-        return kind == RenderBackendKind::D3D11 ||
-               kind == RenderBackendKind::WgpuD3D12;
-    }
-
-    std::unique_ptr<PresentationBackend> create(RenderBackendKind kind) const override {
-        if (kind == RenderBackendKind::D3D11) {
-            return std::make_unique<D3D11RenderBackend>();
-        }
-        if (kind == RenderBackendKind::WgpuD3D12) {
-            return std::make_unique<WgpuD3D12PresentationBackend>();
-        }
-        return nullptr;
-    }
-};
-
-}  // namespace
-
-const PresentationBackendProvider* default_presentation_backend_provider() {
-    static const D3D11PresentationBackendProvider provider;
-    return &provider;
-}
-
-std::unique_ptr<PresentationBackend> create_presentation_backend(
-    RenderBackendKind kind) {
-    const auto* provider = default_presentation_backend_provider();
-    return provider && provider->supports(kind) ? provider->create(kind) : nullptr;
 }
 
 bool D3D11RenderBackend::initialize(const PresentationBackendConfig& config) {

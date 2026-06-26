@@ -24,6 +24,7 @@ cbuffer CompositeConstants : register(b0) {
   float source_split_pos;
   float source_track_count;
   float source_header_padding;
+  float sdr_video_is_scrgb;
   float4 source_present;
   float4 source_order;
   float4 source_transfer;
@@ -229,7 +230,12 @@ float4 PSVideo(VSOut input) : SV_TARGET {
     if (source_projection_enabled > 0.5) {
       video = source_projected_video(video_uv);
     } else if (output_mode < 0.5) {
-      video = sdr_video_texture.Sample(linear_sampler, video_uv);
+      if (sdr_video_is_scrgb > 0.5) {
+        video = video_texture.Sample(linear_sampler, video_uv);
+        video.rgb = scrgb_to_sdr(video.rgb, 0);
+      } else {
+        video = sdr_video_texture.Sample(linear_sampler, video_uv);
+      }
     } else {
       video = video_texture.Sample(linear_sampler, video_uv);
     }

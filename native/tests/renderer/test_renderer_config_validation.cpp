@@ -18,6 +18,7 @@
 #include "windows/d3d11/shared_fp16_ring.h"
 #include "windows/wgpu/wgpu_d3d12_ffi_bridge.h"
 
+#include <d3d11_1.h>
 #include <d3d12.h>
 #include <wrl/client.h>
 #endif
@@ -383,6 +384,23 @@ TEST_CASE("Windows wgpu-d3d12 backend publishes shared FP16 output",
     REQUIRE(shared.frame_generation != 0);
     REQUIRE(shared.sync_mode ==
             SharedFp16TextureSyncMode::PublishedAfterProducerWait);
+
+    Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3d11_context;
+    D3D_FEATURE_LEVEL level = {};
+    REQUIRE(SUCCEEDED(D3D11CreateDevice(
+        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
+        &d3d11_device, &level, &d3d11_context)));
+    Microsoft::WRL::ComPtr<ID3D11Device1> d3d11_device1;
+    REQUIRE(SUCCEEDED(d3d11_device.As(&d3d11_device1)));
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d11_texture;
+    REQUIRE(SUCCEEDED(d3d11_device1->OpenSharedResource1(
+        shared.handle, IID_PPV_ARGS(&d3d11_texture))));
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+    REQUIRE(SUCCEEDED(d3d11_device->CreateShaderResourceView(
+        d3d11_texture.Get(), nullptr, &srv)));
+
     backend->release_shared_fp16_texture(
         shared.buffer_index, shared.ring_generation);
 #else

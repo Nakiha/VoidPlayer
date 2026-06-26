@@ -321,6 +321,7 @@ bool WindowsNativeCompositor::Start(
             transport_support_.shared_fence_open_succeeded;
     }
     thread_ = std::thread(&WindowsNativeCompositor::ThreadMain, this);
+    (void)RequestFlutterFrame("startup-bootstrap");
     return true;
 }
 
@@ -546,13 +547,14 @@ bool WindowsNativeCompositor::RequestFlutterFrame(const std::string& reason) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         phase = phase_;
-        if (terminal_inactive_ || phase == Phase::Failed ||
-            phase == Phase::Inactive) {
+        if (terminal_inactive_ || phase == Phase::Failed) {
             return false;
         }
         request_sequence = ++flutter_frame_request_sequence_;
         base_generation = pending_flutter_frame_request_base_generation_;
-        track_surface_update = phase != Phase::Preparing;
+        const bool bootstrap =
+            phase == Phase::Inactive || phase == Phase::Preparing;
+        track_surface_update = !bootstrap;
         if (track_surface_update) {
             pending_flutter_frame_request_sequence_ = request_sequence;
             pending_flutter_frame_request_base_generation_ =
@@ -569,21 +571,31 @@ bool WindowsNativeCompositor::RequestFlutterFrame(const std::string& reason) {
             base_generation = diagnostics_.flutter_generation;
         }
     }
-    const bool preparing = phase == Phase::Preparing;
-    const bool ok = preparing
-        ? (engine_api_.set_mode &&
-           engine_api_.set_mode(flutter_view_, kExportMirror))
-        : (engine_api_.request_frame &&
-           engine_api_.request_frame(flutter_view_));
+    const bool bootstrap =
+        phase == Phase::Inactive || phase == Phase::Preparing;
+    bool ok = false;
+    bool request_ok = false;
+    if (bootstrap) {
+        ok = engine_api_.set_mode &&
+             engine_api_.set_mode(flutter_view_, kExportMirror);
+        request_ok = engine_api_.request_frame &&
+                     engine_api_.request_frame(flutter_view_);
+        ok = ok && request_ok;
+    } else {
+        ok = engine_api_.request_frame &&
+             engine_api_.request_frame(flutter_view_);
+        request_ok = ok;
+    }
     spdlog::debug(
         "[WindowsCompositorDebug] request flutter frame reason={} "
-        "phase={} action={} seq={} baseGeneration={} ok={}",
+        "phase={} action={} seq={} baseGeneration={} ok={} requestOk={}",
         reason.empty() ? "unspecified" : reason,
         PhaseName(phase),
-        preparing ? "mirror-bootstrap" : "request-compositor-owned-export",
+        bootstrap ? "mirror-bootstrap" : "request-compositor-owned-export",
         request_sequence,
         base_generation,
-        ok);
+        ok,
+        request_ok);
     if (ok && engine_api_.get_state && flutter_view_) {
         FlutterSurfaceExportState export_state = {};
         export_state.struct_size = sizeof(export_state);
@@ -2253,6 +2265,28 @@ void WindowsNativeCompositor::ThreadMain() {
         if (first_present_timed_out) {
             {
                 std::lock_guard<std::mutex> lock(mutex_);
+                spdlog::error(
+                    "[WindowsNativeCompositor] first present timeout: "
+                    "heldVideo={} heldSdrVideo={} heldFlutter={} "
+                    "videoGen={} sdrVideoGen={} flutterGen={} "
+                    "flutterExportPublish={} flutterExportPresent={} "
+                    "flutterExportRequest={} flutterExportDispatch={} "
+                    "flutterExportSchedule={} flutterExportVsync={} "
+                    "flutterLatest={} flutterPendingPump={}",
+                    held_video_valid_,
+                    held_sdr_video_valid_,
+                    held_flutter_valid_,
+                    held_video_.frame_generation,
+                    held_sdr_video_.buffer_generation,
+                    held_flutter_.frame_generation,
+                    diagnostics_.flutter_export_publish_count,
+                    diagnostics_.flutter_export_present_count,
+                    diagnostics_.flutter_export_request_count,
+                    diagnostics_.flutter_export_request_dispatch_count,
+                    diagnostics_.flutter_export_schedule_frame_count,
+                    diagnostics_.flutter_export_vsync_count,
+                    diagnostics_.flutter_export_latest_available,
+                    diagnostics_.flutter_export_pending_frame_pump_frames);
                 terminal_inactive_ = true;
                 ++diagnostics_.failure_count;
                 diagnostics_.fallback_reason = "first-dcomp-present-timeout";
@@ -3065,9 +3099,11 @@ bool WindowsNativeCompositor::CompositeLatest() {
             ? pending_swap_chain_.target
             : current_swap_chain_.target;
     const bool needs_fp16_video = composite_target == OutputTarget::ScRGB;
-    const bool needs_sdr_video = composite_target == OutputTarget::SDR;
+    const bool needs_sdr_video =
+        composite_target == OutputTarget::SDR &&
+        !held_sdr_video_valid_;
     if ((needs_fp16_video && !held_video_valid_) ||
-        (needs_sdr_video && !held_sdr_video_valid_)) {
+        (needs_sdr_video && !held_video_valid_)) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (source_cache_publish_count_ > 0 &&
             source_projection.enabled &&
@@ -3479,7 +3515,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
         const uint64_t held_video_generation =
             composite_target == OutputTarget::ScRGB
                 ? held_video_.frame_generation
-                : held_sdr_video_.buffer_generation;
+                : (held_sdr_video_valid_
+                       ? held_sdr_video_.buffer_generation
+                       : held_video_.frame_generation);
         if (held_video_generation < min_video_generation ||
             (source_projection.enabled &&
              held_source_.frame_generation < min_source_generation)) {
@@ -3510,12 +3548,16 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 0,
                 composite_target == OutputTarget::ScRGB
                     ? held_video_.width
-                    : held_sdr_video_.width));
+                    : (held_sdr_video_valid_
+                           ? held_sdr_video_.width
+                           : held_video_.width)));
             const auto video_height = static_cast<uint32_t>(std::max(
                 0,
                 composite_target == OutputTarget::ScRGB
                     ? held_video_.height
-                    : held_sdr_video_.height));
+                    : (held_sdr_video_valid_
+                           ? held_sdr_video_.height
+                           : held_video_.height)));
             const bool size_changed =
                 back_desc.Width != last_logged_backbuffer_width_ ||
                 back_desc.Height != last_logged_backbuffer_height_ ||
@@ -3562,7 +3604,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
             held_source_srvs_[1].Get(),
             held_source_srvs_[2].Get(),
             held_source_srvs_[3].Get(),
-            held_sdr_video_srv_.Get(),
+            held_sdr_video_valid_
+                ? held_sdr_video_srv_.Get()
+                : held_video_srv_.Get(),
         };
         context_->PSSetShaderResources(0, 7, srvs);
         ID3D11SamplerState* sampler = sampler_.Get();
@@ -3585,6 +3629,11 @@ bool WindowsNativeCompositor::CompositeLatest() {
         values.source_split_pos = source_projection.split_pos;
         values.source_track_count =
             static_cast<float>(source_projection.active_track_count);
+        values.source_header_padding[1] =
+            output->target == OutputTarget::SDR && !held_sdr_video_valid_ &&
+                    held_video_valid_
+                ? 1.0f
+                : 0.0f;
         for (size_t i = 0; i < 4; ++i) {
             values.source_present[i] =
                 held_source_present_[i] ? 1.0f : 0.0f;
@@ -3733,7 +3782,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
         diagnostics_.video_generation =
             composite_target == OutputTarget::ScRGB
                 ? held_video_.frame_generation
-                : held_sdr_video_.buffer_generation;
+                : (held_sdr_video_valid_
+                       ? held_sdr_video_.buffer_generation
+                       : held_video_.frame_generation);
         diagnostics_.source_projection_enabled =
             source_projection.enabled;
         diagnostics_.source_cache_active =

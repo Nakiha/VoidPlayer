@@ -1263,6 +1263,26 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend target ring busy state lost diagnostics");
   }
+  if (!wgpu_backend->update_headless_output_ring(ring_targets,
+                                                 3,
+                                                 ring_displayed.buffer,
+                                                 ring_protected.buffer,
+                                                 kWidth,
+                                                 kHeight,
+                                                 3)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend could not reinstall identical target ring");
+  }
+  if (wgpu_backend->draw_frame(snapshot, vr::PresentationBackendDrawHooks{})) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend identical ring reinstall released completed target");
+  }
+  if (std::string(wgpu_backend->last_error())
+          .find("wgpu-metal presentation target ring is busy") ==
+      std::string::npos) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend identical ring reinstall lost busy state");
+  }
   wgpu_backend->release_headless_output(ring_available.buffer);
   ring_completion_count = 0;
   ring_completion_target = 0;

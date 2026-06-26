@@ -966,6 +966,49 @@ bool WgpuMetalPresentationBackend::update_headless_output_ring(
     return false;
   }
   std::lock_guard<std::mutex> lock(mutex_);
+  const int clamped_track_slots = std::max(1, max_track_slots);
+  const bool same_ring =
+      target_ring_.size() == next_ring.size() &&
+      draw_target_width_ == width &&
+      draw_target_height_ == height &&
+      draw_target_max_track_slots_ == clamped_track_slots &&
+      draw_target_output_format_ == ring_descriptor.ffi_output_format &&
+      draw_target_output_color_mode_ == ring_descriptor.ffi_output_color_mode &&
+      draw_target_render_format_ == ring_descriptor.render_target_format &&
+      draw_target_color_space_ == ring_descriptor.render_color_space &&
+      std::equal(
+          target_ring_.begin(),
+          target_ring_.end(),
+          next_ring.begin(),
+          [](const TargetSlot& current, const TargetSlot& next) {
+            return current.pixel_buffer == next.pixel_buffer;
+          });
+  if (same_ring) {
+    displayed_target_address_ = displayed_address;
+    protected_target_address_ = protected_address;
+    target_ring_enabled_ = target_ring_.size() >= 2;
+    draw_target_pixel_buffer_ = target_ring_enabled_
+                                    ? nullptr
+                                    : (target_ring_.empty()
+                                           ? nullptr
+                                           : target_ring_.front().pixel_buffer);
+    for (auto& slot : target_ring_) {
+      if (slot.state == TargetState::InFlight) {
+        continue;
+      }
+      const uint64_t address = pointer_bits(slot.pixel_buffer);
+      if (address == displayed_target_address_) {
+        slot.state = TargetState::Displayed;
+      } else if (address == protected_target_address_) {
+        slot.state = TargetState::Protected;
+      } else if (slot.state == TargetState::Displayed ||
+                 slot.state == TargetState::Protected) {
+        slot.state = TargetState::Available;
+      }
+    }
+    last_error_.clear();
+    return metal_device_ && texture_cache_;
+  }
   release_target_texture_cache_locked();
   ++target_ring_generation_;
   for (auto& slot : next_ring) {
@@ -985,7 +1028,7 @@ bool WgpuMetalPresentationBackend::update_headless_output_ring(
   height_ = height;
   draw_target_width_ = width;
   draw_target_height_ = height;
-  draw_target_max_track_slots_ = std::max(1, max_track_slots);
+  draw_target_max_track_slots_ = clamped_track_slots;
   last_error_.clear();
   return metal_device_ && texture_cache_;
 }

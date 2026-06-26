@@ -261,7 +261,7 @@ void main() {
       final anchor = fixture.store.value.presentedFrameAnchors[1];
       expect(fixture.store.value.pendingSeekUs, isNull);
       expect(anchor?.ptsUs, 1500000);
-      expect(anchor?.dtsUs, 1400000);
+      expect(anchor?.dtsUs, 1500000);
       expect(anchor?.durationUs, 33334);
       expect(
         QuickMarkStore(marks: fixture.store.value.quickMarks)
@@ -336,6 +336,172 @@ void main() {
       }
     },
   );
+
+  testWidgets('pending quick mark seek times out instead of sticking', (
+    tester,
+  ) async {
+    final fixture = _PlaybackFixture();
+    try {
+      await fixture.controller.createPlayer(
+        ['clip.mp4'],
+        width: 1920,
+        height: 1080,
+      );
+      fixture.store.setTextureId(1);
+      fixture.store.setQuickMarks(const [
+        QuickMark(
+          id: 1,
+          anchor: QuickMarkAnchor(fileId: 1, ptsUs: 1500000, dtsUs: 1400000),
+          sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+        ),
+      ]);
+
+      fixture.coordinator.seekTo(1500000);
+      await tester.pump();
+
+      expect(fixture.store.value.pendingSeekUs, 1500000);
+      expect(fixture.store.value.presentedFrameAnchors, isEmpty);
+
+      await tester.pump(const Duration(milliseconds: 1501));
+
+      expect(fixture.store.value.pendingSeekUs, isNull);
+      expect(fixture.store.value.currentPtsUs, 1500000);
+      expect(fixture.store.value.presentedFrameAnchors[1]?.ptsUs, 1500000);
+      expect(
+        QuickMarkStore(marks: fixture.store.value.quickMarks)
+            .view(
+              context: QuickMarkFrameContext(
+                currentPtsUs: fixture.store.value.currentPtsUs,
+                presentedFrameAnchors:
+                    fixture.store.value.presentedFrameAnchors,
+              ),
+              selectedMarkId: 1,
+            )
+            .visibleMarkIds,
+        const {1},
+      );
+    } finally {
+      fixture.dispose();
+    }
+  });
+
+  testWidgets('seek preview event keeps resumed playback state', (
+    tester,
+  ) async {
+    final fixture = _PlaybackFixture();
+    try {
+      await fixture.controller.createPlayer(
+        ['clip.mp4'],
+        width: 1920,
+        height: 1080,
+      );
+      fixture.store.setTextureId(1);
+      fixture.store.setPolledPlaybackState(
+        1000000,
+        fixture.metrics.effectiveDurationUs,
+        true,
+      );
+      fixture.api.playing = true;
+
+      fixture.coordinator.seekTo(1500000);
+      await tester.pump();
+
+      expect(fixture.api.calls, contains('pause'));
+      expect(fixture.api.calls, contains('play'));
+      expect(fixture.store.value.isPlaying, isTrue);
+
+      fixture.api.emitSeekPreviewPresented(
+        requestId: 1,
+        trackFileId: 1,
+        ptsUs: 1500000,
+        dtsUs: 1400000,
+        targetPtsUs: 1500000,
+      );
+      await tester.pump();
+
+      expect(fixture.store.value.pendingSeekUs, isNull);
+      expect(fixture.store.value.currentPtsUs, 1500000);
+      expect(fixture.store.value.isPlaying, isTrue);
+    } finally {
+      fixture.dispose();
+    }
+  });
+
+  testWidgets('seek preview uses global target with offset track anchors', (
+    tester,
+  ) async {
+    final fixture = _PlaybackFixture();
+    try {
+      fixture.tracks.setTracks(const [
+        TrackInfo(
+          fileId: 1,
+          slot: 0,
+          path: 'first.mp4',
+          width: 1920,
+          height: 1080,
+          durationUs: 2000000,
+        ),
+        TrackInfo(
+          fileId: 2,
+          slot: 1,
+          path: 'second.mp4',
+          width: 1920,
+          height: 1080,
+          durationUs: 2000000,
+        ),
+      ]);
+      fixture.store.setTextureId(1);
+      fixture.store.setSyncOffsets(const {2: 500000});
+      fixture.store.setQuickMarks(const [
+        QuickMark(
+          id: 1,
+          anchor: QuickMarkAnchor(fileId: 1, ptsUs: 1500000, dtsUs: 1500000),
+          sourceRect: Rect.fromLTRB(0.1, 0.1, 0.2, 0.2),
+        ),
+        QuickMark(
+          id: 2,
+          anchor: QuickMarkAnchor(fileId: 2, ptsUs: 1000000, dtsUs: 1000000),
+          sourceRect: Rect.fromLTRB(0.3, 0.3, 0.4, 0.4),
+        ),
+      ]);
+      fixture.api.presentedFrameTimings = const {
+        1: PresentedFrameTiming(ptsUs: 1500000, dtsUs: 1500000),
+        2: PresentedFrameTiming(ptsUs: 1000000, dtsUs: 1000000),
+      };
+
+      fixture.coordinator.seekTo(1500000);
+      await tester.pump();
+
+      fixture.api.emitSeekPreviewPresented(
+        requestId: 1,
+        trackFileId: 2,
+        ptsUs: 1000000,
+        dtsUs: 1000000,
+        targetPtsUs: 1500000,
+      );
+      await tester.pump();
+
+      expect(fixture.store.value.pendingSeekUs, isNull);
+      expect(fixture.store.value.currentPtsUs, 1500000);
+      expect(fixture.store.value.presentedFrameAnchors[1]?.ptsUs, 1500000);
+      expect(fixture.store.value.presentedFrameAnchors[2]?.ptsUs, 1000000);
+      expect(
+        QuickMarkStore(marks: fixture.store.value.quickMarks)
+            .view(
+              context: QuickMarkFrameContext(
+                currentPtsUs: fixture.store.value.currentPtsUs,
+                presentedFrameAnchors:
+                    fixture.store.value.presentedFrameAnchors,
+              ),
+              selectedMarkId: null,
+            )
+            .visibleMarkIds,
+        const {1, 2},
+      );
+    } finally {
+      fixture.dispose();
+    }
+  });
 
   testWidgets('playback clock refreshes quick mark frame anchors', (
     tester,
@@ -634,7 +800,9 @@ class _PlaybackApi implements NativePlayerApi {
   final int? stepForwardPtsUs;
   final int? stepBackwardPtsUs;
   int ptsUs = 1000000;
+  bool playing = false;
   PresentedFrameTiming? presentedFrameTiming;
+  Map<int, PresentedFrameTiming?> presentedFrameTimings = const {};
 
   _PlaybackApi({this.stepForwardPtsUs, this.stepBackwardPtsUs});
 
@@ -667,6 +835,7 @@ class _PlaybackApi implements NativePlayerApi {
     required int trackFileId,
     required int ptsUs,
     required int dtsUs,
+    int? targetPtsUs,
   }) {
     _events.add(
       NativePlayerEvent(
@@ -679,7 +848,7 @@ class _PlaybackApi implements NativePlayerApi {
         trackFileId: trackFileId,
         ptsUs: ptsUs,
         dtsUs: dtsUs,
-        targetPtsUs: ptsUs,
+        targetPtsUs: targetPtsUs ?? ptsUs,
       ),
     );
   }
@@ -720,11 +889,13 @@ class _PlaybackApi implements NativePlayerApi {
   @override
   Future<void> play() async {
     calls.add('play');
+    playing = true;
   }
 
   @override
   Future<void> pause() async {
     calls.add('pause');
+    playing = false;
   }
 
   @override
@@ -918,14 +1089,14 @@ class _PlaybackApi implements NativePlayerApi {
   @override
   Future<PresentedFrameTiming?> currentPresentedFrame(int fileId) async {
     calls.add('currentPresentedFrame:$fileId');
-    return presentedFrameTiming;
+    return presentedFrameTimings[fileId] ?? presentedFrameTiming;
   }
 
   @override
   Future<int> duration() async => 2000000;
 
   @override
-  Future<bool> isPlaying() async => false;
+  Future<bool> isPlaying() async => playing;
 
   @override
   Future<PlaybackSnapshot> getPlaybackSnapshot({
@@ -935,9 +1106,14 @@ class _PlaybackApi implements NativePlayerApi {
     return PlaybackSnapshot(
       currentPtsUs: ptsUs,
       durationUs: 2000000,
-      isPlaying: false,
-      presentedFrames: includePresentedFrames && presentedFrameTiming != null
-          ? {1: presentedFrameTiming!}
+      isPlaying: playing,
+      presentedFrames: includePresentedFrames
+          ? {
+              for (final entry in presentedFrameTimings.entries)
+                if (entry.value?.isValid ?? false) entry.key: entry.value!,
+              if (presentedFrameTiming?.isValid ?? false)
+                1: presentedFrameTiming!,
+            }
           : const {},
     );
   }

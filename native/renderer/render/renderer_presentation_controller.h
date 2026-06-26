@@ -157,6 +157,7 @@ public:
     PresentationBackendStats backend_stats() const;
     PresentationBackendDiagnostics backend_diagnostics() const;
     bool copy_last_frame_info(PresentationBackendFrameInfo* out) const;
+    void* native_render_device() const;
     bool poll_device_removed(const char* operation) const;
     bool device_lost() const;
     long device_removed_reason() const;

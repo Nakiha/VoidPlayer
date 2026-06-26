@@ -71,7 +71,11 @@ bool Renderer::Impl::initialize(const RendererConfig& config) {
     const InitialTrackOpenHooks initial_track_hooks{
         [this](const std::string& path, bool use_hardware_decode) {
             return track_controller_.create_pipeline(
-                path, use_hardware_decode, surface_state_.backend_kind());
+                path,
+                use_hardware_decode,
+                surface_state_.backend_kind(),
+                presentation_.native_render_device(),
+                &presentation_.device_mutex());
         },
         [this, &next_initial_file_id]() {
             const int file_id = next_initial_file_id++;

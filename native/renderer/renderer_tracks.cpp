@@ -44,6 +44,8 @@ bool Renderer::Impl::recreate_pipeline_for_seek(std::unique_lock<std::mutex>& st
         detached.file_path,
         detached.use_hardware_decode,
         surface_state_.backend_kind(),
+        presentation_.native_render_device(),
+        &presentation_.device_mutex(),
         &initial_seek);
     if (!replacement) {
         spdlog::error("[Renderer] Failed to recreate pipeline for {}", detached.file_path);
@@ -142,7 +144,11 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
     }
 
     auto pipeline = track_controller_.create_pipeline(
-        video_path, use_hardware_decode, surface_state_.backend_kind());
+        video_path,
+        use_hardware_decode,
+        surface_state_.backend_kind(),
+        presentation_.native_render_device(),
+        &presentation_.device_mutex());
     if (!pipeline) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         rollback_track_mutation_playback(playback_state, playback_hooks);

@@ -5,8 +5,17 @@ edition = "2021"
 rust-version = "1.87"
 
 [dependencies]
+pollster = "0.4.0"
+wgpu = { version = "29.0.3", default-features = false, features = ["std", "wgsl"] }
+wgpu-hal = { version = "29.0.3", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
 objc2-metal = "0.3.2"
-pollster = "0.4.0"
 wgpu = { version = "29.0.3", default-features = false, features = ["std", "metal", "wgsl"] }
 wgpu-hal = { version = "29.0.3", default-features = false, features = ["metal"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Graphics_Direct3D12"] }
+wgpu = { version = "29.0.3", default-features = false, features = ["std", "dx12", "wgsl"] }
+wgpu-hal = { version = "29.0.3", default-features = false, features = ["dx12"] }

@@ -130,6 +130,11 @@ bool RendererPresentationController::copy_last_frame_info(
     return backend_ && backend_->copy_last_frame_info(out);
 }
 
+void* RendererPresentationController::native_render_device() const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ ? backend_->native_render_device() : nullptr;
+}
+
 bool RendererPresentationController::poll_device_removed(const char* operation) const {
     return backend_ && backend_->poll_device_removed(operation);
 }

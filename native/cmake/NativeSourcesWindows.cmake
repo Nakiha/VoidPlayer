@@ -14,6 +14,7 @@ set(VOID_RENDERER_WINDOWS_SOURCES
     "${VOID_NATIVE_DIR}/windows/decode/d3d12va_provider.cpp"
     "${VOID_NATIVE_DIR}/windows/decode/d3d11va_provider.cpp"
     "${VOID_NATIVE_DIR}/windows/wgpu/d3d12_presentation_backend.cpp"
+    "${VOID_NATIVE_DIR}/windows/wgpu/wgpu_d3d12_ffi_bridge.h"
 )
 
 if(BUILD_ANALYSIS)

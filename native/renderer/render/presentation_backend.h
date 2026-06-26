@@ -76,6 +76,7 @@ public:
     virtual void release_headless_output(void*) {}
     virtual void clear_headless_output() {}
     virtual bool update_sdr_white_level(double) { return false; }
+    virtual void* native_render_device() const { return nullptr; }
     virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual PresentationBackendDiagnostics diagnostics() const { return {}; }
     virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }

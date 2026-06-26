@@ -167,7 +167,7 @@ TEST_CASE("Hardware decode provider compatibility separates D3D11 and wgpu-d3d12
 #endif
 }
 
-TEST_CASE("Windows wgpu-d3d12 presentation backend fails closed instead of D3D11 fallback",
+TEST_CASE("Windows wgpu-d3d12 presentation backend initializes without D3D11 fallback",
           "[renderer_config][presentation_backend]") {
 #ifdef _WIN32
     auto backend = create_presentation_backend(RenderBackendKind::WgpuD3D12);
@@ -179,9 +179,21 @@ TEST_CASE("Windows wgpu-d3d12 presentation backend fails closed instead of D3D11
     config.output = reinterpret_cast<void*>(0x1234);
     config.width = 64;
     config.height = 64;
-    REQUIRE_FALSE(backend->initialize(config));
-    REQUIRE(std::string(backend->last_error()).find("D3D11 fallback is disabled") !=
-            std::string::npos);
+    const bool initialized = backend->initialize(config);
+    REQUIRE(backend->kind() == PresentationBackendKind::WgpuD3D12);
+    const auto diagnostics = backend->diagnostics();
+    REQUIRE(diagnostics.backend == "wgpu-d3d12");
+    if (initialized) {
+        REQUIRE(backend->native_render_device() != nullptr);
+        REQUIRE(diagnostics.fallback_reason == "none");
+        REQUIRE_FALSE(backend->draw_frame(RendererDrawSnapshot{},
+                                          PresentationBackendDrawHooks{}));
+        REQUIRE(std::string(backend->last_error()).find("draw path is not implemented") !=
+                std::string::npos);
+    } else {
+        REQUIRE(backend->native_render_device() == nullptr);
+        REQUIRE_FALSE(diagnostics.fallback_reason.empty());
+    }
 #else
     REQUIRE(create_presentation_backend(RenderBackendKind::WgpuD3D12) == nullptr);
 #endif

@@ -20,9 +20,11 @@ std::unique_ptr<TrackPipeline> RendererTrackController::create_pipeline(
     const std::string& path,
     bool hw_decode,
     RenderBackendKind render_backend,
+    void* render_device,
+    std::recursive_mutex* device_mutex,
     const SeekRequest* initial_seek) const {
     return registry_->create_pipeline(
-        path, hw_decode, render_backend, initial_seek);
+        path, hw_decode, render_backend, render_device, device_mutex, initial_seek);
 }
 
 bool RendererTrackController::configure_and_start_pipeline(

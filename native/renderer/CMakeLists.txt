@@ -45,6 +45,8 @@ target_link_libraries(video_renderer_lib PUBLIC
     d3dcompiler
     winmm
 )
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/WgpuRustTarget.cmake")
+void_link_wgpu_rust_ffi(video_renderer_lib)
 if(BUILD_ANALYSIS)
     target_link_libraries(video_renderer_lib PUBLIC analysis_lib)
 endif()

@@ -16,6 +16,7 @@
 
 #ifdef _WIN32
 #include "windows/d3d11/shared_fp16_ring.h"
+#include "windows/d3d11/shared_source_cache_ring.h"
 #include "windows/wgpu/wgpu_d3d12_ffi_bridge.h"
 
 #include <d3d11_1.h>
@@ -565,6 +566,112 @@ TEST_CASE("Windows wgpu-d3d12 backend composites a CPU planar YUV420 source",
         shared.buffer_index, shared.ring_generation);
 #else
     SUCCEED("wgpu-d3d12 CPU planar composite is Windows-only");
+#endif
+}
+
+TEST_CASE("Windows wgpu-d3d12 backend publishes retained source-cache bundles",
+          "[renderer_config][presentation_backend][wgpu_d3d12][windows_source_cache]") {
+#ifdef _WIN32
+    auto backend = create_presentation_backend(RenderBackendKind::WgpuD3D12);
+    REQUIRE(backend != nullptr);
+
+    PresentationBackendConfig config;
+    config.headless = true;
+    config.shared_fp16_output = true;
+    config.width = 64;
+    config.height = 48;
+    if (!backend->initialize(config)) {
+        SKIP(std::string("wgpu-d3d12 backend unavailable: ") +
+             backend->last_error());
+    }
+
+    constexpr int kFileId = 42;
+    constexpr int kSourceWidth = 32;
+    constexpr int kSourceHeight = 24;
+    constexpr int kChromaWidth = kSourceWidth / 2;
+    constexpr int kChromaHeight = kSourceHeight / 2;
+    auto y_plane = std::make_shared<std::vector<uint8_t>>(
+        kSourceWidth * kSourceHeight, 180);
+    auto u_plane = std::make_shared<std::vector<uint8_t>>(
+        kChromaWidth * kChromaHeight, 96);
+    auto v_plane = std::make_shared<std::vector<uint8_t>>(
+        kChromaWidth * kChromaHeight, 160);
+
+    REQUIRE(backend->configure_source_cache({
+        SourceCacheTrackDescriptor{
+            0,
+            kFileId,
+            kSourceWidth,
+            kSourceHeight,
+            VIDEO_COLOR_TRANSFER_SDR,
+        },
+    }));
+
+    TextureFrame frame;
+    frame.width = kSourceWidth;
+    frame.height = kSourceHeight;
+    frame.pts_us = 0;
+    frame.duration_us = 16667;
+    frame.is_nv12 = false;
+    frame.color.range = VIDEO_COLOR_RANGE_LIMITED;
+    frame.color.matrix = VIDEO_COLOR_MATRIX_BT709;
+    frame.color.transfer = VIDEO_COLOR_TRANSFER_SDR;
+    frame.color.primaries = VIDEO_COLOR_PRIMARIES_BT709;
+    frame.storage = CpuPlanarYuvFrameStorage{
+        {},
+        {y_plane->data(), u_plane->data(), v_plane->data()},
+        {kSourceWidth, kChromaWidth, kChromaWidth},
+        {kSourceWidth, kChromaWidth, kChromaWidth},
+        {kSourceHeight, kChromaHeight, kChromaHeight},
+        1,
+    };
+
+    RendererDrawSnapshot snapshot;
+    snapshot.target_width = 64;
+    snapshot.target_height = 48;
+    snapshot.background_color[3] = 1.0f;
+    snapshot.layout.mode = LAYOUT_SIDE_BY_SIDE;
+    snapshot.layout.order[0] = kFileId;
+    snapshot.layout.order[1] = -1;
+    snapshot.layout.order[2] = -1;
+    snapshot.layout.order[3] = -1;
+    snapshot.tracks[0].active = true;
+    snapshot.tracks[0].file_id = kFileId;
+    snapshot.tracks[0].video_width = kSourceWidth;
+    snapshot.tracks[0].video_height = kSourceHeight;
+    snapshot.tracks[0].video_aspect =
+        static_cast<float>(kSourceWidth) / static_cast<float>(kSourceHeight);
+    snapshot.track_geometry[0] = {
+        true,
+        kSourceWidth,
+        kSourceHeight,
+        snapshot.tracks[0].video_aspect,
+    };
+    snapshot.decision.should_present = true;
+    snapshot.decision.file_ids[0] = kFileId;
+    snapshot.decision.frames[0] = frame;
+    REQUIRE(backend->draw_frame(snapshot, PresentationBackendDrawHooks{}));
+
+    SharedSourceCacheBundleSnapshot bundle;
+    REQUIRE(backend->acquire_source_cache_bundle(bundle));
+    REQUIRE(bundle.buffer_index >= 0);
+    REQUIRE(bundle.ring_generation != 0);
+    REQUIRE(bundle.frame_generation != 0);
+    REQUIRE(bundle.texture_count == 1);
+    REQUIRE(bundle.textures[0].handle != nullptr);
+    REQUIRE(bundle.textures[0].source_slot == 0);
+    REQUIRE(bundle.textures[0].source_file_id == kFileId);
+    REQUIRE(bundle.textures[0].width == kSourceWidth);
+    REQUIRE(bundle.textures[0].height == kSourceHeight);
+    REQUIRE(bundle.textures[0].sync_mode ==
+            SharedSourceCacheTextureSyncMode::PublishedAfterProducerWait);
+    REQUIRE(bundle.textures[0].consumer_acquire_key == 0);
+    REQUIRE(bundle.textures[0].producer_release_key == 0);
+
+    backend->release_source_cache_bundle(
+        bundle.buffer_index, bundle.ring_generation);
+#else
+    SUCCEED("wgpu-d3d12 source-cache bundles are Windows-only");
 #endif
 }
 

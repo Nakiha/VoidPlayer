@@ -24,6 +24,11 @@ struct SourceCacheTrackDescriptor {
     int color_transfer = 0;
 };
 
+enum class SharedSourceCacheTextureSyncMode : uint32_t {
+    KeyedMutex = 0,
+    PublishedAfterProducerWait = 1,
+};
+
 struct SharedSourceCacheTextureSnapshot {
     HANDLE handle = nullptr;
     int source_slot = -1;
@@ -31,6 +36,8 @@ struct SharedSourceCacheTextureSnapshot {
     int width = 0;
     int height = 0;
     int color_transfer = 0;
+    SharedSourceCacheTextureSyncMode sync_mode =
+        SharedSourceCacheTextureSyncMode::KeyedMutex;
     uint64_t consumer_acquire_key = 1;
     uint64_t producer_release_key = 0;
 };

@@ -635,30 +635,28 @@ void RendererPresentationController::set_d3d_shared_fp16_frame_callback(
 bool RendererPresentationController::configure_d3d_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    return backend && backend->configure_source_cache(descriptors);
+    return backend_ && backend_->configure_source_cache(descriptors);
 }
 
 void RendererPresentationController::clear_d3d_source_cache(
     const char* reason) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (auto* backend = d3d_backend()) {
-        backend->clear_source_cache(reason);
+    if (backend_) {
+        backend_->clear_source_cache(reason);
     }
 }
 
 bool RendererPresentationController::acquire_d3d_source_cache_bundle(
     SharedSourceCacheBundleSnapshot& snapshot) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    return backend && backend->acquire_source_cache_bundle(snapshot);
+    return backend_ && backend_->acquire_source_cache_bundle(snapshot);
 }
 
 void RendererPresentationController::release_d3d_source_cache_bundle(
     int buffer_index, uint64_t ring_generation) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (auto* backend = d3d_backend()) {
-        backend->release_source_cache_bundle(
+    if (backend_) {
+        backend_->release_source_cache_bundle(
             buffer_index, ring_generation);
     }
 }
@@ -666,8 +664,8 @@ void RendererPresentationController::release_d3d_source_cache_bundle(
 void RendererPresentationController::set_d3d_source_cache_frame_callback(
     std::function<void()> callback) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (auto* backend = d3d_backend()) {
-        backend->set_source_cache_frame_callback(std::move(callback));
+    if (backend_) {
+        backend_->set_source_cache_frame_callback(std::move(callback));
     }
 }
 

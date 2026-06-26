@@ -403,7 +403,9 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
     const std::shared_ptr<vr::NativePlayer>& player) {
     if (held_source_valid_) {
         for (size_t slot = 0; slot < held_source_mutexes_.size(); ++slot) {
-            if (held_source_present_[slot] && held_source_mutexes_[slot]) {
+            if (held_source_present_[slot] && held_source_mutexes_[slot] &&
+                held_source_.textures[slot].sync_mode ==
+                    vr::SharedSourceCacheTextureSyncMode::KeyedMutex) {
                 held_source_mutexes_[slot]->ReleaseSync(0);
             }
         }
@@ -2769,7 +2771,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
     const auto release_held_source = [&]() {
         if (!held_source_valid_) return;
         for (size_t slot = 0; slot < held_source_mutexes_.size(); ++slot) {
-            if (held_source_present_[slot] && held_source_mutexes_[slot]) {
+            if (held_source_present_[slot] && held_source_mutexes_[slot] &&
+                held_source_.textures[slot].sync_mode ==
+                    vr::SharedSourceCacheTextureSyncMode::KeyedMutex) {
                 held_source_mutexes_[slot]->ReleaseSync(0);
             }
         }
@@ -3177,18 +3181,21 @@ bool WindowsNativeCompositor::CompositeLatest() {
                         complete = false;
                         break;
                     }
-                    result = textures[slot].As(&mutexes[slot]);
-                    if (FAILED(result)) {
-                        error = "source-cache-keyed-mutex-query-failed";
-                        complete = false;
-                        break;
-                    }
-                    result = mutexes[slot]->AcquireSync(
-                        source.consumer_acquire_key, 8);
-                    if (result != S_OK) {
-                        error = "source-cache-keyed-mutex-timeout";
-                        complete = false;
-                        break;
+                    if (source.sync_mode ==
+                        vr::SharedSourceCacheTextureSyncMode::KeyedMutex) {
+                        result = textures[slot].As(&mutexes[slot]);
+                        if (FAILED(result)) {
+                            error = "source-cache-keyed-mutex-query-failed";
+                            complete = false;
+                            break;
+                        }
+                        result = mutexes[slot]->AcquireSync(
+                            source.consumer_acquire_key, 8);
+                        if (result != S_OK) {
+                            error = "source-cache-keyed-mutex-timeout";
+                            complete = false;
+                            break;
+                        }
                     }
                     present[slot] = true;
                     transfers[slot] = source.color_transfer;
@@ -3228,7 +3235,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     }
                 } else {
                     for (size_t slot = 0; slot < present.size(); ++slot) {
-                        if (present[slot] && mutexes[slot]) {
+                        if (present[slot] && mutexes[slot] &&
+                            next_source.textures[slot].sync_mode ==
+                                vr::SharedSourceCacheTextureSyncMode::KeyedMutex) {
                             mutexes[slot]->ReleaseSync(0);
                         }
                     }

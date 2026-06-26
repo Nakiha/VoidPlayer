@@ -19,6 +19,41 @@ namespace {
 
 constexpr int kWgpuD3D12MaxTracks = 4;
 
+RendererDrawSnapshot make_wgpu_source_snapshot(
+    const RendererDrawSnapshot& snapshot,
+    size_t source_slot,
+    int width,
+    int height) {
+    RendererDrawSnapshot source;
+    source.decision.should_present = true;
+    source.decision.current_pts_us = snapshot.decision.current_pts_us;
+    source.decision.frames[0] = snapshot.decision.frames[source_slot];
+    source.decision.file_ids[0] = snapshot.decision.file_ids[source_slot];
+    source.decision.track_generations[0] =
+        snapshot.decision.track_generations[source_slot];
+    source.layout.mode = LAYOUT_SIDE_BY_SIDE;
+    source.layout.split_pos = 0.5f;
+    source.layout.zoom_ratio = 1.0f;
+    source.layout.pixel_size_mode = PIXEL_SIZE_FILL_VIEW;
+    source.layout.order[0] = 0;
+    source.layout.order[1] = -1;
+    source.layout.order[2] = -1;
+    source.layout.order[3] = -1;
+    source.track_geometry[0].active = true;
+    source.track_geometry[0].width = width;
+    source.track_geometry[0].height = height;
+    source.track_geometry[0].aspect =
+        height > 0 ? static_cast<float>(width) / height : 1.0f;
+    source.tracks[0] = snapshot.tracks[source_slot];
+    source.tracks[0].active = true;
+    source.tracks[0].video_width = width;
+    source.tracks[0].video_height = height;
+    source.tracks[0].video_aspect = source.track_geometry[0].aspect;
+    source.target_width = width;
+    source.target_height = height;
+    return source;
+}
+
 int d3d12_texture_format_for_storage(const D3D12TextureFrameStorage& storage) {
     return storage.is_p010 ? VP_WGPU_D3D12_TEXTURE_FORMAT_P010
                            : VP_WGPU_D3D12_TEXTURE_FORMAT_NV12;
@@ -495,6 +530,63 @@ void fill_wgpu_d3d12_decision_from_snapshot(
     }
 }
 
+bool fill_wgpu_d3d12_source_for_frame(int slot,
+                                      const TextureFrame& frame,
+                                      VPWgpuD3D12CompositeRequest& composite,
+                                      VPWgpuD3D12PresentDecisionInfo& decision,
+                                      WgpuD3D12CpuUploadScratch& scratch,
+                                      std::string& error) {
+    const auto* storage = frame.d3d12_texture_storage();
+    if (storage && storage->texture) {
+        std::string wait_error;
+        if (!wait_for_d3d12_frame_ready(*storage, wait_error)) {
+            error = wait_error;
+            return false;
+        }
+        D3D12_RESOURCE_DESC desc = storage->texture->GetDesc();
+        const UINT array_layers = std::max<UINT>(desc.DepthOrArraySize, 1);
+        const UINT base_layer = storage->is_texture_array
+            ? static_cast<UINT>(std::max(storage->subresource_index, 0))
+            : 0;
+        composite.source_resources[slot] = storage->texture;
+        composite.source_formats[slot] = d3d12_texture_format_for_storage(*storage);
+        composite.source_array_layers[slot] = array_layers;
+        composite.source_base_array_layers[slot] =
+            std::min(base_layer, array_layers - 1);
+        decision.yuv_format[slot] = composite.source_formats[slot];
+        decision.coded_width[slot] = storage->coded_width > 0
+            ? storage->coded_width
+            : std::max(frame.width, 1);
+        decision.coded_height[slot] = storage->coded_height > 0
+            ? storage->coded_height
+            : std::max(frame.height, 1);
+        decision.source_width[slot] = std::max(frame.width, 1);
+        decision.source_height[slot] = std::max(frame.height, 1);
+        decision.nv12_uv_scale_x[slot] =
+            static_cast<float>(decision.source_width[slot]) /
+            static_cast<float>(std::max(decision.coded_width[slot], 1));
+        decision.nv12_uv_scale_y[slot] =
+            static_cast<float>(decision.source_height[slot]) /
+            static_cast<float>(std::max(decision.coded_height[slot], 1));
+        return true;
+    }
+    if (const auto* cpu_nv12 = frame.cpu_nv12_storage()) {
+        return fill_cpu_nv12_source(
+            slot, frame, *cpu_nv12, composite, decision, error);
+    }
+    if (const auto* planar_yuv = frame.cpu_planar_yuv_storage()) {
+        return fill_cpu_planar_yuv420_source(slot,
+                                             frame,
+                                             *planar_yuv,
+                                             composite,
+                                             decision,
+                                             scratch,
+                                             error);
+    }
+    error = "wgpu-d3d12 draw source frame storage is unsupported";
+    return false;
+}
+
 } // namespace
 
 class WgpuD3D12SharedFp16Ring {
@@ -806,6 +898,415 @@ private:
     std::function<void()> callback_;
 };
 
+class WgpuD3D12SharedSourceCacheRing {
+public:
+    static constexpr uint64_t kDefaultBudgetBytes =
+        D3D11SharedSourceCacheRing::kDefaultBudgetBytes;
+
+    ~WgpuD3D12SharedSourceCacheRing() { shutdown(); }
+
+    bool initialize(ID3D12Device* device,
+                    const std::vector<SourceCacheTrackDescriptor>& descriptors,
+                    uint64_t budget_bytes = kDefaultBudgetBytes) {
+        shutdown();
+        device_ = device;
+        active_ = create_generation(descriptors, budget_bytes);
+        return active_ != nullptr;
+    }
+
+    void clear() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (writing_) {
+            writing_->writing = false;
+        }
+        writing_ = nullptr;
+        writing_index_ = -1;
+        if (active_) {
+            retired_.push_back(active_);
+        }
+        active_.reset();
+        latest_ = nullptr;
+        latest_generation_.reset();
+        collect_retired_locked();
+    }
+
+    void shutdown() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        callback_ = {};
+        writing_ = nullptr;
+        latest_ = nullptr;
+        active_.reset();
+        latest_generation_.reset();
+        retired_.clear();
+        device_ = nullptr;
+    }
+
+    bool reconfigure(const std::vector<SourceCacheTrackDescriptor>& descriptors,
+                     uint64_t budget_bytes = kDefaultBudgetBytes) {
+        auto replacement = create_generation(descriptors, budget_bytes);
+        if (!replacement) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            ++fallback_count_;
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (active_) {
+            retired_.push_back(active_);
+        }
+        active_ = std::move(replacement);
+        latest_ = nullptr;
+        latest_generation_.reset();
+        writing_ = nullptr;
+        writing_index_ = -1;
+        collect_retired_locked();
+        return true;
+    }
+
+    bool begin_bundle(std::array<ID3D12Resource*, 4>& targets,
+                      size_t& texture_count) {
+        targets = {};
+        texture_count = 0;
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!active_ || writing_) {
+            return false;
+        }
+        if (active_->frozen_snapshot && latest_generation_ == active_ && latest_) {
+            return false;
+        }
+        for (int i = 0; i < active_->depth; ++i) {
+            auto* bundle = active_->bundles[static_cast<size_t>(i)].get();
+            if (!bundle || bundle->writing || bundle->leases != 0 ||
+                (latest_generation_ == active_ && latest_ == bundle)) {
+                continue;
+            }
+            bundle->writing = true;
+            writing_ = bundle;
+            writing_index_ = i;
+            texture_count = bundle->textures.size();
+            for (size_t track = 0; track < texture_count; ++track) {
+                targets[track] = bundle->textures[track]->texture.Get();
+            }
+            return texture_count > 0;
+        }
+        ++backpressure_count_;
+        return false;
+    }
+
+    bool publish_bundle(std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay,
+                        SourceCachePublishInfo* publish_info = nullptr) {
+        std::function<void()> callback;
+        uint64_t ring_generation = 0;
+        uint64_t frame_generation = 0;
+        size_t texture_count = 0;
+        bool first_publish = false;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!writing_ || !active_) {
+                return false;
+            }
+            writing_->writing = false;
+            writing_->frame_generation = next_frame_generation_++;
+            writing_->overlay = std::move(overlay);
+            latest_ = writing_;
+            latest_generation_ = active_;
+            writing_ = nullptr;
+            writing_index_ = -1;
+            ++publish_count_;
+            ring_generation = active_->id;
+            frame_generation = latest_->frame_generation;
+            texture_count = latest_->textures.size();
+            first_publish = publish_count_ == 1;
+            callback = callback_;
+            last_error_ = "none";
+            if (publish_info) {
+                publish_info->ring_generation = ring_generation;
+                publish_info->frame_generation = frame_generation;
+                publish_info->texture_count = texture_count;
+            }
+            collect_retired_locked();
+        }
+        if (callback) {
+            callback();
+        }
+        if (first_publish) {
+            spdlog::info(
+                "[WgpuD3D12SourceCache] first publish ring_generation={} "
+                "frame_generation={} textures={}",
+                ring_generation,
+                frame_generation,
+                texture_count);
+        }
+        return true;
+    }
+
+    void cancel_bundle() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!writing_) {
+            return;
+        }
+        writing_->writing = false;
+        writing_ = nullptr;
+        writing_index_ = -1;
+    }
+
+    bool acquire_latest(SharedSourceCacheBundleSnapshot& snapshot) {
+        snapshot = {};
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!latest_ || !latest_generation_ || latest_->writing) {
+            return false;
+        }
+        ++latest_->leases;
+        snapshot.ring_generation = latest_generation_->id;
+        snapshot.frame_generation = latest_->frame_generation;
+        snapshot.ring_depth = latest_generation_->depth;
+        snapshot.overlay = latest_->overlay;
+        for (size_t i = 0; i < latest_generation_->bundles.size(); ++i) {
+            if (latest_generation_->bundles[i].get() == latest_) {
+                snapshot.buffer_index = static_cast<int>(i);
+                break;
+            }
+        }
+        snapshot.texture_count = latest_->textures.size();
+        for (size_t i = 0; i < snapshot.texture_count; ++i) {
+            const auto& texture = *latest_->textures[i];
+            auto& out = snapshot.textures[i];
+            out.handle = texture.handle;
+            out.source_slot = texture.descriptor.slot;
+            out.source_file_id = texture.descriptor.file_id;
+            out.width = texture.descriptor.width;
+            out.height = texture.descriptor.height;
+            out.color_transfer = texture.descriptor.color_transfer;
+            out.sync_mode =
+                SharedSourceCacheTextureSyncMode::PublishedAfterProducerWait;
+            out.consumer_acquire_key = 0;
+            out.producer_release_key = 0;
+        }
+        return snapshot.buffer_index >= 0 && snapshot.texture_count > 0;
+    }
+
+    void release(int buffer_index, uint64_t ring_generation) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto release_from = [&](const std::shared_ptr<Generation>& generation) {
+            if (!generation || generation->id != ring_generation ||
+                buffer_index < 0 ||
+                buffer_index >= static_cast<int>(generation->bundles.size())) {
+                return false;
+            }
+            auto* bundle = generation->bundles[static_cast<size_t>(buffer_index)].get();
+            if (bundle && bundle->leases > 0) {
+                --bundle->leases;
+            }
+            return true;
+        };
+        if (!release_from(active_)) {
+            for (const auto& generation : retired_) {
+                if (release_from(generation)) {
+                    break;
+                }
+            }
+        }
+        collect_retired_locked();
+    }
+
+    void set_frame_callback(std::function<void()> callback) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        callback_ = std::move(callback);
+    }
+
+    uint64_t estimated_bytes() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return active_ ? active_->estimated_bytes : 0;
+    }
+    uint64_t publish_count() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return publish_count_;
+    }
+    uint64_t backpressure_count() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return backpressure_count_;
+    }
+    uint64_t fallback_count() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return fallback_count_;
+    }
+    uint64_t generation() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return active_ ? active_->id : 0;
+    }
+    int ring_depth() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return active_ ? active_->depth : 0;
+    }
+    bool frozen_snapshot() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return active_ && active_->frozen_snapshot;
+    }
+    size_t texture_count() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return active_ && !active_->bundles.empty()
+            ? active_->bundles.front()->textures.size()
+            : 0;
+    }
+    std::string last_error() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return last_error_;
+    }
+
+private:
+    struct TrackTexture {
+        SourceCacheTrackDescriptor descriptor;
+        Microsoft::WRL::ComPtr<ID3D12Resource> texture;
+        HANDLE handle = nullptr;
+        ~TrackTexture() {
+            if (handle) {
+                CloseHandle(handle);
+            }
+        }
+    };
+
+    struct BundleSlot {
+        std::vector<std::unique_ptr<TrackTexture>> textures;
+        uint32_t leases = 0;
+        uint64_t frame_generation = 0;
+        bool writing = false;
+        std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay;
+    };
+
+    struct Generation {
+        uint64_t id = 0;
+        int depth = 0;
+        uint64_t estimated_bytes = 0;
+        bool frozen_snapshot = false;
+        std::vector<std::unique_ptr<BundleSlot>> bundles;
+    };
+
+    std::shared_ptr<Generation> create_generation(
+        const std::vector<SourceCacheTrackDescriptor>& descriptors,
+        uint64_t budget_bytes) {
+        if (!device_) {
+            return nullptr;
+        }
+        const auto policy =
+            resolve_source_cache_ring_policy(descriptors, budget_bytes);
+        if (!policy.allowed || policy.depth <= 0) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            last_error_ = "source-cache-budget-exceeded";
+            ++fallback_count_;
+            return nullptr;
+        }
+        auto generation = std::make_shared<Generation>();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            generation->id = next_ring_generation_++;
+        }
+        generation->depth = policy.depth;
+        generation->estimated_bytes = policy.total_bytes;
+        generation->frozen_snapshot = policy.frozen_snapshot;
+        generation->bundles.reserve(static_cast<size_t>(policy.depth));
+        for (int i = 0; i < policy.depth; ++i) {
+            auto bundle = std::make_unique<BundleSlot>();
+            for (const auto& descriptor : descriptors) {
+                auto texture = std::make_unique<TrackTexture>();
+                texture->descriptor = descriptor;
+                D3D12_HEAP_PROPERTIES heap = {};
+                heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+                heap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+                heap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+                heap.CreationNodeMask = 1;
+                heap.VisibleNodeMask = 1;
+
+                D3D12_RESOURCE_DESC desc = {};
+                desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+                desc.Width = static_cast<UINT64>(descriptor.width);
+                desc.Height = static_cast<UINT>(descriptor.height);
+                desc.DepthOrArraySize = 1;
+                desc.MipLevels = 1;
+                desc.Format = DXGI_FORMAT_R16G16B16A16_FLOAT;
+                desc.SampleDesc.Count = 1;
+                desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+                desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+                D3D12_CLEAR_VALUE clear = {};
+                clear.Format = desc.Format;
+                clear.Color[3] = 1.0f;
+
+                HRESULT hr = device_->CreateCommittedResource(
+                    &heap,
+                    D3D12_HEAP_FLAG_SHARED,
+                    &desc,
+                    D3D12_RESOURCE_STATE_COMMON,
+                    &clear,
+                    IID_PPV_ARGS(&texture->texture));
+                if (FAILED(hr) || !texture->texture) {
+                    spdlog::error(
+                        "[WgpuD3D12SourceCache] CreateCommittedResource failed: {:#x}",
+                        static_cast<unsigned long>(hr));
+                    return nullptr;
+                }
+                hr = device_->CreateSharedHandle(
+                    texture->texture.Get(),
+                    nullptr,
+                    GENERIC_ALL,
+                    nullptr,
+                    &texture->handle);
+                if (FAILED(hr) || !texture->handle) {
+                    spdlog::error(
+                        "[WgpuD3D12SourceCache] CreateSharedHandle failed: {:#x}",
+                        static_cast<unsigned long>(hr));
+                    return nullptr;
+                }
+                bundle->textures.push_back(std::move(texture));
+            }
+            generation->bundles.push_back(std::move(bundle));
+        }
+        spdlog::info(
+            "[WgpuD3D12SourceCache] created generation={} tracks={} depth={} "
+            "bytes={} frozen={}",
+            generation->id,
+            descriptors.size(),
+            generation->depth,
+            generation->estimated_bytes,
+            generation->frozen_snapshot);
+        return generation;
+    }
+
+    void collect_retired_locked() {
+        retired_.erase(
+            std::remove_if(
+                retired_.begin(),
+                retired_.end(),
+                [this](const std::shared_ptr<Generation>& generation) {
+                    if (generation == latest_generation_) {
+                        return false;
+                    }
+                    return std::none_of(
+                        generation->bundles.begin(),
+                        generation->bundles.end(),
+                        [](const std::unique_ptr<BundleSlot>& bundle) {
+                            return bundle &&
+                                   (bundle->leases != 0 || bundle->writing);
+                        });
+                }),
+            retired_.end());
+    }
+
+    ID3D12Device* device_ = nullptr;
+    mutable std::mutex mutex_;
+    std::shared_ptr<Generation> active_;
+    std::vector<std::shared_ptr<Generation>> retired_;
+    std::shared_ptr<Generation> latest_generation_;
+    BundleSlot* latest_ = nullptr;
+    BundleSlot* writing_ = nullptr;
+    int writing_index_ = -1;
+    uint64_t next_ring_generation_ = 1;
+    uint64_t next_frame_generation_ = 1;
+    uint64_t publish_count_ = 0;
+    uint64_t backpressure_count_ = 0;
+    uint64_t fallback_count_ = 0;
+    std::string last_error_ = "none";
+    std::function<void()> callback_;
+};
+
 WgpuD3D12PresentationBackend::WgpuD3D12PresentationBackend() = default;
 
 WgpuD3D12PresentationBackend::~WgpuD3D12PresentationBackend() {
@@ -879,6 +1380,10 @@ bool WgpuD3D12PresentationBackend::initialize(
 }
 
 void WgpuD3D12PresentationBackend::shutdown() {
+    if (source_cache_ring_) {
+        source_cache_ring_->shutdown();
+        source_cache_ring_.reset();
+    }
     if (shared_fp16_ring_) {
         shared_fp16_ring_->shutdown();
         shared_fp16_ring_.reset();
@@ -889,6 +1394,8 @@ void WgpuD3D12PresentationBackend::shutdown() {
     }
     renderer_info_ = VPWgpuD3D12RendererInfo{};
     headless_ = false;
+    source_cache_descriptors_.clear();
+    source_cache_error_ = "backend-shutdown";
 }
 
 void* WgpuD3D12PresentationBackend::native_render_device() const {
@@ -917,6 +1424,70 @@ void WgpuD3D12PresentationBackend::set_shared_fp16_frame_callback(
     shared_fp16_callback_ = std::move(callback);
     if (shared_fp16_ring_) {
         shared_fp16_ring_->set_frame_callback(shared_fp16_callback_);
+    }
+}
+
+bool WgpuD3D12PresentationBackend::configure_source_cache(
+    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+#if VOIDPLAYER_WGPU_RUST_LINKED
+    auto* d3d12_device = renderer_
+        ? static_cast<ID3D12Device*>(VPWgpuD3D12RendererD3D12Device(renderer_))
+        : nullptr;
+    if (!d3d12_device || descriptors.empty()) {
+        source_cache_error_ = "source-cache-device-unavailable";
+        return false;
+    }
+    if (!source_cache_ring_) {
+        auto ring = std::make_unique<WgpuD3D12SharedSourceCacheRing>();
+        if (!ring->initialize(d3d12_device, descriptors)) {
+            source_cache_error_ = ring->last_error();
+            return false;
+        }
+        source_cache_ring_ = std::move(ring);
+    } else if (!source_cache_ring_->reconfigure(descriptors)) {
+        source_cache_error_ = source_cache_ring_->last_error();
+        return false;
+    }
+    source_cache_ring_->set_frame_callback(source_cache_callback_);
+    source_cache_descriptors_ = descriptors;
+    source_cache_error_ = "none";
+    return true;
+#else
+    (void)descriptors;
+    source_cache_error_ = "wgpu-d3d12 Rust FFI is not linked";
+    return false;
+#endif
+}
+
+void WgpuD3D12PresentationBackend::clear_source_cache(const char* reason) {
+    if (source_cache_ring_) {
+        spdlog::info(
+            "[WgpuD3D12SourceCache] clear reason={}",
+            reason ? reason : "unspecified");
+        source_cache_ring_->clear();
+    }
+    source_cache_descriptors_.clear();
+    source_cache_error_ = reason ? reason : "source-cache-cleared";
+}
+
+bool WgpuD3D12PresentationBackend::acquire_source_cache_bundle(
+    SharedSourceCacheBundleSnapshot& snapshot) {
+    return source_cache_ring_ && source_cache_ring_->acquire_latest(snapshot);
+}
+
+void WgpuD3D12PresentationBackend::release_source_cache_bundle(
+    int buffer_index,
+    uint64_t ring_generation) {
+    if (source_cache_ring_) {
+        source_cache_ring_->release(buffer_index, ring_generation);
+    }
+}
+
+void WgpuD3D12PresentationBackend::set_source_cache_frame_callback(
+    std::function<void()> callback) {
+    source_cache_callback_ = std::move(callback);
+    if (source_cache_ring_) {
+        source_cache_ring_->set_frame_callback(source_cache_callback_);
     }
 }
 
@@ -1003,18 +1574,139 @@ PresentationBackendDiagnostics WgpuD3D12PresentationBackend::diagnostics() const
     diagnostics.driver_type = renderer_info_.driver_type;
     diagnostics.adapter_vendor_id = static_cast<int32_t>(renderer_info_.vendor_id);
     diagnostics.adapter_device_id = static_cast<int32_t>(renderer_info_.device_id);
+    if (source_cache_ring_) {
+        diagnostics.source_cache_active =
+            source_cache_ring_->publish_count() > 0;
+        diagnostics.source_cache_texture_count =
+            static_cast<int32_t>(source_cache_ring_->texture_count());
+        diagnostics.source_cache_generation = source_cache_ring_->generation();
+        diagnostics.source_cache_bytes = source_cache_ring_->estimated_bytes();
+        diagnostics.source_cache_ring_depth = source_cache_ring_->ring_depth();
+        diagnostics.source_cache_frozen_snapshot =
+            source_cache_ring_->frozen_snapshot();
+        diagnostics.source_cache_publish_count =
+            source_cache_ring_->publish_count();
+        diagnostics.source_cache_backpressure_count =
+            source_cache_ring_->backpressure_count();
+        diagnostics.source_cache_fallback_count =
+            source_cache_ring_->fallback_count();
+        diagnostics.source_cache_last_error = source_cache_error_ != "none"
+            ? source_cache_error_
+            : source_cache_ring_->last_error();
+    } else {
+        diagnostics.source_cache_last_error = source_cache_error_;
+    }
     return diagnostics;
 }
 
 bool WgpuD3D12PresentationBackend::draw_frame(
     const RendererDrawSnapshot& snapshot,
     const PresentationBackendDrawHooks& hooks) {
-    (void)hooks;
 #if VOIDPLAYER_WGPU_RUST_LINKED
     if (!renderer_ || !shared_fp16_ring_) {
         last_error_ =
             "wgpu-d3d12 draw requires renderer and shared FP16 output";
         return false;
+    }
+    if (source_cache_ring_ && !source_cache_descriptors_.empty()) {
+        std::array<ID3D12Resource*, 4> source_targets{};
+        size_t target_count = 0;
+        if (source_cache_ring_->begin_bundle(source_targets, target_count)) {
+            bool complete = target_count == source_cache_descriptors_.size();
+            std::string source_error = complete
+                ? "none"
+                : "source-cache-target-count-mismatch";
+            for (size_t target_index = 0;
+                 complete && target_index < target_count;
+                 ++target_index) {
+                const auto& descriptor =
+                    source_cache_descriptors_[target_index];
+                const size_t source_slot =
+                    static_cast<size_t>(descriptor.slot);
+                if (!source_targets[target_index] ||
+                    source_slot >= kWgpuD3D12MaxTracks ||
+                    !snapshot.decision.frames[source_slot].has_value() ||
+                    !snapshot.tracks[source_slot].active ||
+                    snapshot.decision.file_ids[source_slot] !=
+                        descriptor.file_id ||
+                    snapshot.tracks[source_slot].file_id !=
+                        descriptor.file_id ||
+                    snapshot.decision.frames[source_slot]->width !=
+                        descriptor.width ||
+                    snapshot.decision.frames[source_slot]->height !=
+                        descriptor.height) {
+                    source_error =
+                        "track-not-ready slot=" +
+                        std::to_string(descriptor.slot) +
+                        " file=" +
+                        std::to_string(descriptor.file_id);
+                    complete = false;
+                    break;
+                }
+                const auto source_snapshot = make_wgpu_source_snapshot(
+                    snapshot,
+                    source_slot,
+                    descriptor.width,
+                    descriptor.height);
+                VPWgpuD3D12CompositeRequest source_composite = {};
+                VPWgpuD3D12PresentDecisionInfo source_decision = {};
+                WgpuD3D12CpuUploadScratch source_scratch;
+                fill_wgpu_d3d12_decision_from_snapshot(
+                    source_snapshot,
+                    descriptor.width,
+                    descriptor.height,
+                    source_decision);
+                if (!fill_wgpu_d3d12_source_for_frame(
+                        0,
+                        *source_snapshot.decision.frames[0],
+                        source_composite,
+                        source_decision,
+                        source_scratch,
+                        source_error)) {
+                    complete = false;
+                    break;
+                }
+                std::array<char, 512> source_ffi_error{};
+                source_composite.destination_resource =
+                    source_targets[target_index];
+                source_composite.output_format =
+                    VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
+                source_composite.output_color_mode =
+                    VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
+                source_composite.decision = &source_decision;
+                source_composite.width = descriptor.width;
+                source_composite.height = descriptor.height;
+                source_composite.error = source_ffi_error.data();
+                source_composite.error_size = source_ffi_error.size();
+                if (VPWgpuD3D12RendererRenderComposite(
+                        renderer_, &source_composite) != 0) {
+                    source_error = source_ffi_error.data()[0] != '\0'
+                        ? source_ffi_error.data()
+                        : "wgpu-d3d12 source-cache composite failed";
+                    complete = false;
+                    break;
+                }
+            }
+            if (complete) {
+                std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay;
+                if (hooks.build_overlay_primitives) {
+                    overlay = hooks.build_overlay_primitives(snapshot);
+                }
+                SourceCachePublishInfo publish_info;
+                if (!source_cache_ring_->publish_bundle(
+                        std::move(overlay), &publish_info)) {
+                    source_cache_error_ = "source-cache-publish-failed";
+                } else {
+                    source_cache_error_ = "none";
+                }
+            } else {
+                source_cache_ring_->cancel_bundle();
+                if (source_cache_error_ != source_error) {
+                    source_cache_error_ = source_error;
+                    spdlog::warn("[WgpuD3D12SourceCache] {}", source_error);
+                }
+            }
+        }
     }
     ID3D12Resource* target = shared_fp16_ring_->begin_frame(
         std::max(snapshot.target_width, 1),
@@ -1040,72 +1732,14 @@ bool WgpuD3D12PresentationBackend::draw_frame(
         }
         has_present_frame = true;
         const auto& frame = *snapshot.decision.frames[slot];
-        const auto* storage = frame.d3d12_texture_storage();
-        if (storage && storage->texture) {
-            std::string wait_error;
-            if (!wait_for_d3d12_frame_ready(*storage, wait_error)) {
-                shared_fp16_ring_->cancel_frame();
-                last_error_ = wait_error;
-                spdlog::error("[WgpuD3D12] {}", last_error_);
-                return false;
-            }
-            D3D12_RESOURCE_DESC desc = storage->texture->GetDesc();
-            const UINT array_layers = std::max<UINT>(desc.DepthOrArraySize, 1);
-            const UINT base_layer = storage->is_texture_array
-                ? static_cast<UINT>(std::max(storage->subresource_index, 0))
-                : 0;
-            composite.source_resources[slot] = storage->texture;
-            composite.source_formats[slot] = d3d12_texture_format_for_storage(*storage);
-            composite.source_array_layers[slot] = array_layers;
-            composite.source_base_array_layers[slot] = std::min(base_layer, array_layers - 1);
-            decision.yuv_format[slot] = composite.source_formats[slot];
-            decision.coded_width[slot] = storage->coded_width > 0
-                ? storage->coded_width
-                : std::max(frame.width, 1);
-            decision.coded_height[slot] = storage->coded_height > 0
-                ? storage->coded_height
-                : std::max(frame.height, 1);
-            decision.source_width[slot] = std::max(frame.width, 1);
-            decision.source_height[slot] = std::max(frame.height, 1);
-            decision.nv12_uv_scale_x[slot] =
-                static_cast<float>(decision.source_width[slot]) /
-                static_cast<float>(std::max(decision.coded_width[slot], 1));
-            decision.nv12_uv_scale_y[slot] =
-                static_cast<float>(decision.source_height[slot]) /
-                static_cast<float>(std::max(decision.coded_height[slot], 1));
-            has_composite_source = true;
-            continue;
-        }
         std::string cpu_error;
-        if (const auto* cpu_nv12 = frame.cpu_nv12_storage()) {
-            if (!fill_cpu_nv12_source(
-                    slot, frame, *cpu_nv12, composite, decision, cpu_error)) {
-                shared_fp16_ring_->cancel_frame();
-                last_error_ = cpu_error;
-                spdlog::error("[WgpuD3D12] {}", last_error_);
-                return false;
-            }
-            has_composite_source = true;
-            continue;
-        }
-        if (const auto* planar_yuv = frame.cpu_planar_yuv_storage()) {
-            if (!fill_cpu_planar_yuv420_source(slot,
-                                               frame,
-                                               *planar_yuv,
-                                               composite,
-                                               decision,
-                                               cpu_scratch,
-                                               cpu_error)) {
-                shared_fp16_ring_->cancel_frame();
-                last_error_ = cpu_error;
-                spdlog::error("[WgpuD3D12] {}", last_error_);
-                return false;
-            }
+        if (fill_wgpu_d3d12_source_for_frame(
+                slot, frame, composite, decision, cpu_scratch, cpu_error)) {
             has_composite_source = true;
             continue;
         }
         shared_fp16_ring_->cancel_frame();
-        last_error_ = "wgpu-d3d12 draw source frame storage is unsupported";
+        last_error_ = cpu_error;
         spdlog::error("[WgpuD3D12] {}", last_error_);
         return false;
     }

@@ -92,7 +92,7 @@ int main() {
     constexpr int target_height = 360;
     auto target = make_bgra_pixel_buffer(target_width, target_height);
     if (!target.buffer) {
-        std::cerr << "failed to create Metal-compatible target buffer\n";
+        std::cerr << "failed to create renderer-owned target buffer\n";
         return 1;
     }
 
@@ -103,12 +103,12 @@ int main() {
     config.height = target_height;
     config.headless = true;
     config.use_hardware_decode = true;
-    config.backend.type = vr::RendererBackendType::Metal;
+    config.backend.type = vr::RendererBackendType::WgpuMetal;
     config.backend.output = target.buffer;
     config.backend.max_track_slots = 1;
 
     if (!renderer.initialize(config)) {
-        std::cerr << "shared Renderer failed to initialize with Metal backend\n";
+        std::cerr << "shared Renderer failed to initialize with WgpuMetal backend\n";
         return 1;
     }
     std::atomic<int> callbacks{0};

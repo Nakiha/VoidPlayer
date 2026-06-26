@@ -2,6 +2,10 @@
 #include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/render/renderer_draw_snapshot_builder.h"
 
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+
 #ifndef VOID_BUILD_ANALYSIS
 #define VOID_BUILD_ANALYSIS 0
 #endif
@@ -485,12 +489,49 @@ bool Renderer::Impl::draw_current_frame_sources(
         }
         PresentationBackendDrawHooks hooks;
         hooks.suppress_analysis_overlay = true;
+        std::mutex completion_mutex;
+        std::condition_variable completion_cv;
+        bool completion_seen = false;
+        bool completion_success = true;
+        std::string completion_error;
+        if (backend.completes_draw_asynchronously()) {
+            completion_success = false;
+            hooks.async_draw_completed =
+                [&](bool success,
+                    const char* draw_error,
+                    uint64_t,
+                    const PresentationBackendFrameInfo*) {
+                    {
+                        std::lock_guard<std::mutex> lock(completion_mutex);
+                        completion_seen = true;
+                        completion_success = success;
+                        completion_error = draw_error ? draw_error : "";
+                    }
+                    completion_cv.notify_one();
+                };
+        }
         if (!backend.draw_frame(snapshot, hooks)) {
             last_error = backend.last_error();
             if (last_error.empty()) {
                 last_error = "source frame bake draw failed";
             }
             continue;
+        }
+        if (backend.completes_draw_asynchronously()) {
+            std::unique_lock<std::mutex> lock(completion_mutex);
+            if (!completion_cv.wait_for(
+                    lock,
+                    std::chrono::seconds(5),
+                    [&] { return completion_seen; })) {
+                last_error = "source frame bake async draw timed out";
+                continue;
+            }
+            if (!completion_success) {
+                last_error = completion_error.empty()
+                                 ? "source frame bake async draw failed"
+                                 : completion_error;
+                continue;
+            }
         }
         PresentationBackendFrameInfo frame_info;
         if (backend.copy_last_frame_info(&frame_info)) {

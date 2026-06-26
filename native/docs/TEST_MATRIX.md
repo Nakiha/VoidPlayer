@@ -10,10 +10,10 @@ and UI tests into gates and records cleanup decisions that changed the active se
 | PR fast | Stable, high-signal checks for shared native logic and platform backend canaries. | `python3.12 dev.py gate pr-fast` |
 | Platform protection | Cheap static guardrails for pinned Flutter fork, macOS presentation, and Windows compositor protection lines. | `python3.12 dev.py gate repo-hygiene` or targeted `*-protection` gates |
 | Windows preservation | Windows runner/D3D11 preservation after shared renderer/backend changes. | `python dev.py gate windows-preservation` |
-| macOS stabilization | macOS native playback and renderer-owned Metal confidence. | `python3.12 dev.py gate macos-ui-smoke` |
+| macOS stabilization | macOS native playback and renderer-owned wgpu-metal confidence. | `python3.12 dev.py gate macos-ui-smoke` |
 | macOS HDR EDR | Local HLG/PQ Auto promotion evidence on an EDR-capable display. | `python3.12 dev.py gate macos-hdr-edr-smoke` |
-| macOS wgpu-metal canary | Experimental wgpu-metal software, VideoToolbox, source-projection/overlay, and 4K60 evidence. | `python3.12 dev.py gate macos-wgpu-metal-smoke` |
-| macOS wgpu-metal EDR | Experimental wgpu-metal HLG/BT.2020 EDR evidence on an EDR-capable display. | `python3.12 dev.py gate macos-wgpu-metal-edr-smoke` |
+| macOS wgpu-metal canary | Default wgpu-metal software, VideoToolbox, source-projection/overlay, and 4K60 evidence. | `python3.12 dev.py gate macos-wgpu-metal-smoke` |
+| macOS wgpu-metal EDR | Default wgpu-metal HLG/BT.2020 EDR evidence on an EDR-capable display. | `python3.12 dev.py gate macos-wgpu-metal-edr-smoke` |
 | Nightly/headed | Slower headed UI, stress, audio, 4K/cadence, and lifecycle churn. | `python3.12 dev.py gate macos-ui-nightly` or Windows UI suites |
 | macOS release readiness | macOS package stage, FFmpeg dylibs, `@rpath`, notices, entitlements, sandbox/crash-log inputs, and codesign smoke. | `python3.12 dev.py gate macos-release-readiness` |
 | Release candidate | Full native config matrix, platform UI preservation, package, compliance, signing inputs. | `python3.12 dev.py gate release-candidate` plus CI full matrix |
@@ -81,10 +81,9 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `audio_mixer_smoke` | contract | PR fast | FFmpeg audio support | Mixer active-track behavior. |
 | `macos_presentation_adapter_smoke` | backend canary | PR fast | macOS native build | Software fallback/parity adapter. |
 | `macos_metal_uploader_smoke` | backend canary | PR fast | Metal, sample media | Metal uploader and CVPixelBuffer validation. |
-| `macos_metal_presentation_backend_smoke` | backend canary | PR fast | Metal | Metal backend provider/draw canary. |
-| `macos_metal_color_layout_parity_smoke` | backend contract | PR fast | Metal | Synthetic shared renderer snapshots through Metal backend capture; BGRA, NV12, planar YUV420, P010, odd stride, split/layout fit. |
+| `macos_wgpu_metal_presentation_backend_smoke` | backend contract | PR fast / macOS stabilization | wgpu-metal, Metal interop | wgpu-metal provider, target rejection, async completion, BGRA capture, source cache, ring state, CPU YUV/P010, CVPixelBuffer import, EDR diagnostics. |
 | `videotoolbox_provider_smoke` | backend canary | PR fast / macOS stabilization | VideoToolbox availability | VT provider support/fallback visibility. |
-| `renderer_metal_headless_smoke` | backend integration | Nightly/headed or targeted Metal changes | Metal, sample media | Renderer-owned Metal headless path; labelled `hosted-flaky;nightly` and excluded from hosted PR fast because CI GPUs may fail visible-frame capture. |
+| `renderer_metal_headless_smoke` | backend integration | Nightly/headed or targeted macOS backend changes | wgpu-metal, sample media | Renderer-owned wgpu-metal headless path; labelled `hosted-flaky;nightly` and excluded from hosted PR fast because CI GPUs may fail visible-frame capture. |
 | `macos_media_smoke` | native integration | macOS stabilization | FFmpeg media | macOS media open/metadata path. |
 | `software_decode_frame_queue_smoke` | native integration | macOS stabilization | sample media | Software decode frame queue. |
 | `decode_thread_software_smoke` | native integration | macOS stabilization | sample media | Decode thread software path. |
@@ -176,9 +175,9 @@ checks. The GitHub-hosted Windows UI preservation job may use documented
 CI-only adapter fallbacks; do not treat that fallback as release coverage for a
 real Windows desktop GPU.
 
-For the experimental wgpu-metal backend, add local `macos-wgpu-metal-smoke` and,
-on an EDR-capable display, `macos-wgpu-metal-edr-smoke` before discussing a
-default-backend switch.
+For wgpu-metal backend changes, add local `macos-wgpu-metal-smoke` and, on an
+EDR-capable display, `macos-wgpu-metal-edr-smoke` before removing more legacy
+Metal fallback code.
 
 ## Rules
 

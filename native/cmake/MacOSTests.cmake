@@ -97,26 +97,16 @@ target_compile_definitions(macos_metal_uploader_smoke PRIVATE
 add_test(NAME macos_metal_uploader_smoke COMMAND macos_metal_uploader_smoke)
 void_label_test(macos_metal_uploader_smoke "macos;backend;canary")
 
-add_executable(macos_metal_presentation_backend_smoke
-    "${VOID_NATIVE_DIR}/tools/macos_metal_presentation_backend_smoke.cpp"
+add_executable(macos_wgpu_metal_presentation_backend_smoke
+    "${VOID_NATIVE_DIR}/tools/macos_wgpu_metal_presentation_backend_smoke.cpp"
 )
-void_apply_native_compile_options(macos_metal_presentation_backend_smoke)
-target_link_libraries(macos_metal_presentation_backend_smoke PRIVATE
+void_apply_native_compile_options(macos_wgpu_metal_presentation_backend_smoke)
+target_link_libraries(macos_wgpu_metal_presentation_backend_smoke PRIVATE
     void_macos_native_player
 )
-add_test(NAME macos_metal_presentation_backend_smoke COMMAND macos_metal_presentation_backend_smoke)
-void_label_test(macos_metal_presentation_backend_smoke "macos;backend;canary")
-
-add_executable(macos_metal_color_layout_parity_smoke
-    "${VOID_NATIVE_DIR}/tools/macos_metal_color_layout_parity_smoke.cpp"
-)
-void_apply_native_compile_options(macos_metal_color_layout_parity_smoke)
-target_link_libraries(macos_metal_color_layout_parity_smoke PRIVATE
-    void_macos_native_player
-)
-add_test(NAME macos_metal_color_layout_parity_smoke
-    COMMAND macos_metal_color_layout_parity_smoke)
-void_label_test(macos_metal_color_layout_parity_smoke "macos;backend;contract")
+add_test(NAME macos_wgpu_metal_presentation_backend_smoke
+    COMMAND macos_wgpu_metal_presentation_backend_smoke)
+void_label_test(macos_wgpu_metal_presentation_backend_smoke "macos;wgpu;backend;contract")
 
 add_executable(macos_metal_color_reference_smoke
     "${VOID_NATIVE_DIR}/tools/macos_metal_color_reference_smoke.cpp"

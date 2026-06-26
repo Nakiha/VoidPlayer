@@ -48,8 +48,8 @@ std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
 #ifdef __APPLE__
     providers.push_back({
         "VideoToolbox",
-        RenderBackendKind::Metal,
         RenderBackendKind::WgpuMetal,
+        RenderBackendKind::Unknown,
         true,
         &create_videotoolbox_provider,
     });

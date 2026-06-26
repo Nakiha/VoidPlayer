@@ -6,6 +6,7 @@
 #include "macos/wgpu/wgpu_ffi_bridge.h"
 #include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/overlay/analysis_overlay_renderer.h"
+#include "renderer/render/presentation_backend_factory.h"
 #include "renderer/render/presentation_package.h"
 
 #include <CoreVideo/CoreVideo.h>
@@ -250,22 +251,12 @@ struct WgpuOutputTargetDescriptor {
   bool render_supported = false;
 };
 
-bool resolve_output_target_descriptor(void* target,
-                                      int32_t expected_width,
-                                      int32_t expected_height,
+bool resolve_output_format_descriptor(void* target,
                                       WgpuOutputTargetDescriptor& descriptor,
                                       std::string& error) {
   auto* pixel_buffer = as_pixel_buffer(target);
   if (!pixel_buffer) {
     error = "wgpu-metal presentation target is unavailable";
-    return false;
-  }
-  const int32_t actual_width =
-      static_cast<int32_t>(CVPixelBufferGetWidth(pixel_buffer));
-  const int32_t actual_height =
-      static_cast<int32_t>(CVPixelBufferGetHeight(pixel_buffer));
-  if (actual_width != expected_width || actual_height != expected_height) {
-    error = "wgpu-metal target pixel buffer dimensions do not match the presentation surface";
     return false;
   }
   switch (CVPixelBufferGetPixelFormatType(pixel_buffer)) {
@@ -289,6 +280,26 @@ bool resolve_output_target_descriptor(void* target,
       error = "wgpu-metal target pixel buffer format is unsupported";
       return false;
   }
+}
+
+bool resolve_output_target_descriptor(void* target,
+                                      int32_t expected_width,
+                                      int32_t expected_height,
+                                      WgpuOutputTargetDescriptor& descriptor,
+                                      std::string& error) {
+  if (!resolve_output_format_descriptor(target, descriptor, error)) {
+    return false;
+  }
+  auto* pixel_buffer = as_pixel_buffer(target);
+  const int32_t actual_width =
+      static_cast<int32_t>(CVPixelBufferGetWidth(pixel_buffer));
+  const int32_t actual_height =
+      static_cast<int32_t>(CVPixelBufferGetHeight(pixel_buffer));
+  if (actual_width != expected_width || actual_height != expected_height) {
+    error = "wgpu-metal target pixel buffer dimensions do not match the presentation surface";
+    return false;
+  }
+  return true;
 }
 
 uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
@@ -854,8 +865,13 @@ bool WgpuMetalPresentationBackend::update_headless_output(void* output,
                                         width,
                                         height,
                                         descriptor,
-                                        target_error) ||
-      !validate_target_texture_device(texture_cache_,
+                                        target_error)) {
+    set_last_error(target_error.empty()
+                       ? "wgpu-metal presentation target is invalid"
+                       : target_error);
+    return false;
+  }
+  if (!validate_target_texture_device(texture_cache_,
                                       output,
                                       descriptor.metal_pixel_format,
                                       width,
@@ -2146,3 +2162,36 @@ std::unique_ptr<vr::PresentationBackend> create_wgpu_metal_presentation_backend(
 }
 
 }  // namespace vp_macos
+
+namespace vr {
+namespace {
+
+class MacOSWgpuPresentationBackendProvider final
+    : public PresentationBackendProvider {
+ public:
+  bool supports(RenderBackendKind kind) const override {
+    return kind == RenderBackendKind::WgpuMetal;
+  }
+
+  std::unique_ptr<PresentationBackend> create(RenderBackendKind kind) const override {
+    if (kind == RenderBackendKind::WgpuMetal) {
+      return vp_macos::create_wgpu_metal_presentation_backend();
+    }
+    return nullptr;
+  }
+};
+
+}  // namespace
+
+const PresentationBackendProvider* default_presentation_backend_provider() {
+  static const MacOSWgpuPresentationBackendProvider provider;
+  return &provider;
+}
+
+std::unique_ptr<PresentationBackend> create_presentation_backend(
+    RenderBackendKind kind) {
+  const auto* provider = default_presentation_backend_provider();
+  return provider && provider->supports(kind) ? provider->create(kind) : nullptr;
+}
+
+}  // namespace vr

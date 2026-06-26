@@ -1,6 +1,6 @@
 #include "native_player_bridge.h"
 
-#include "macos/metal/metal_presentation_backend.h"
+#include "macos/metal/metal_presentation_backend_bridge.h"
 #include "macos/player/native_player_state.h"
 #include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/overlay/analysis_overlay_renderer.h"
@@ -81,6 +81,107 @@ std::string target_address_summary(const std::vector<void*>& targets) {
   return stream.str();
 }
 
+bool single_target_changed_locked(VPMacOSNativePlayer* player,
+                                  VPMacOSMetalPresentationBackend* backend,
+                                  void* pixel_buffer,
+                                  int32_t width,
+                                  int32_t height,
+                                  int32_t max_track_slots) {
+  return player->presentation_target_backend != backend ||
+         player->presentation_target_pixel_buffer != pixel_buffer ||
+         player->presentation_target_width != width ||
+         player->presentation_target_height != height ||
+         player->presentation_target_max_track_slots != max_track_slots;
+}
+
+void commit_single_target_locked(VPMacOSNativePlayer* player,
+                                 VPMacOSMetalPresentationBackend* backend,
+                                 void* pixel_buffer,
+                                 int32_t width,
+                                 int32_t height,
+                                 int32_t max_track_slots,
+                                 bool target_changed,
+                                 bool refresh_now) {
+  player->presentation_target_backend = backend;
+  player->presentation_target_pixel_buffer = pixel_buffer;
+  player->presentation_target_pixel_buffers.clear();
+  player->presentation_target_pixel_buffers.push_back(pixel_buffer);
+  player->presentation_target_width = width;
+  player->presentation_target_height = height;
+  player->presentation_target_max_track_slots = max_track_slots;
+  if (!target_changed) {
+    return;
+  }
+  ++player->presentation_target_generation;
+  reset_target_warmup_locked(player);
+  spdlog::info(
+      "[MacOSFrameRefresh] install_target generation={} target=0x{:x} "
+      "size={}x{} slots={} refresh={}",
+      player->presentation_target_generation,
+      pointer_address(pixel_buffer),
+      width,
+      height,
+      max_track_slots,
+      refresh_now);
+  if (refresh_now) {
+    player->last_renderer_owned_presentation_succeeded = false;
+    player->last_renderer_owned_frame_info_available = false;
+    player->last_renderer_owned_frame_info = {};
+    player->renderer_owned_presentation_consecutive_failures = 0;
+    player->renderer_owned_presentation_last_error.clear();
+  }
+}
+
+bool target_ring_changed_locked(VPMacOSNativePlayer* player,
+                                VPMacOSMetalPresentationBackend* backend,
+                                const std::vector<void*>& targets,
+                                int32_t width,
+                                int32_t height,
+                                int32_t max_track_slots) {
+  return player->presentation_target_backend != backend ||
+         player->presentation_target_pixel_buffers != targets ||
+         player->presentation_target_width != width ||
+         player->presentation_target_height != height ||
+         player->presentation_target_max_track_slots != max_track_slots;
+}
+
+void commit_target_ring_locked(VPMacOSNativePlayer* player,
+                               VPMacOSMetalPresentationBackend* backend,
+                               const std::vector<void*>& targets,
+                               void* displayed_pixel_buffer,
+                               void* protected_pixel_buffer,
+                               int32_t width,
+                               int32_t height,
+                               int32_t max_track_slots,
+                               bool target_changed) {
+  player->presentation_target_backend = backend;
+  player->presentation_target_pixel_buffer = targets.empty() ? nullptr : targets.front();
+  player->presentation_target_pixel_buffers = targets;
+  player->presentation_target_width = width;
+  player->presentation_target_height = height;
+  player->presentation_target_max_track_slots = max_track_slots;
+  if (!target_changed) {
+    return;
+  }
+  ++player->presentation_target_generation;
+  reset_target_warmup_locked(player);
+  spdlog::info(
+      "[MacOSFrameRefresh] install_target_ring generation={} targets=[{}] "
+      "displayed=0x{:x} protected=0x{:x} size={}x{} slots={}",
+      player->presentation_target_generation,
+      target_address_summary(targets),
+      pointer_address(displayed_pixel_buffer),
+      pointer_address(protected_pixel_buffer),
+      width,
+      height,
+      max_track_slots);
+  player->last_renderer_owned_presentation_succeeded = false;
+  player->last_renderer_owned_frame_info_available = false;
+  player->last_renderer_owned_frame_info = {};
+  player->renderer_owned_presentation_consecutive_failures = 0;
+  player->renderer_owned_presentation_last_error.clear();
+}
+
 void copy_frame_info(const vr::PresentationBackendFrameInfo& source,
                      VPMacOSNativeFrameInfo* out) {
   if (!out) {
@@ -146,71 +247,65 @@ int set_metal_presentation_target(
   bool target_changed = false;
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
-    target_changed =
-        player->presentation_target_backend != backend ||
-        player->presentation_target_pixel_buffer != pixel_buffer ||
-        player->presentation_target_width != width ||
-        player->presentation_target_height != height ||
-        player->presentation_target_max_track_slots != clamped_track_slots;
-    player->presentation_target_backend = backend;
-    player->presentation_target_pixel_buffer = pixel_buffer;
-    player->presentation_target_pixel_buffers.clear();
-    player->presentation_target_pixel_buffers.push_back(pixel_buffer);
-    player->presentation_target_width = width;
-    player->presentation_target_height = height;
-    player->presentation_target_max_track_slots = clamped_track_slots;
-    if (target_changed) {
-      ++player->presentation_target_generation;
-      reset_target_warmup_locked(player);
-      spdlog::info(
-          "[MacOSFrameRefresh] install_target generation={} target=0x{:x} "
-          "size={}x{} slots={} refresh={}",
-          player->presentation_target_generation,
-          pointer_address(pixel_buffer),
-          width,
-          height,
-          clamped_track_slots,
-          refresh_now);
-      if (refresh_now) {
-        player->last_renderer_owned_presentation_succeeded = false;
-        player->last_renderer_owned_frame_info_available = false;
-        player->last_renderer_owned_frame_info = {};
-        player->renderer_owned_presentation_consecutive_failures = 0;
-        player->renderer_owned_presentation_last_error.clear();
+    target_changed = single_target_changed_locked(
+        player, backend, pixel_buffer, width, height, clamped_track_slots);
+  }
+
+  std::string renderer_error;
+  bool renderer_was_active = false;
+  bool renderer_install_failed = false;
+  {
+    std::lock_guard<std::mutex> player_lock(player->mutex);
+    renderer_was_active = player->renderer_active_locked();
+    if (renderer_was_active) {
+      if (!target_changed) {
+        return 0;
+      }
+      const bool installed =
+          refresh_now
+              ? player->renderer->update_headless_output(
+                    pixel_buffer, width, height, clamped_track_slots)
+              : player->renderer->install_headless_output(
+                    pixel_buffer, width, height, clamped_track_slots);
+      if (!installed) {
+        renderer_install_failed = true;
+        renderer_error = player->renderer->presentation_backend_last_error();
+      }
+      if (renderer_install_failed && renderer_error.empty()) {
+        renderer_error = "failed to install renderer-owned Metal presentation target";
       }
     }
+  }
+  if (renderer_install_failed) {
+    std::lock_guard<std::mutex> lock(player->callback_mutex);
+    player->record_presentation_failure_locked(renderer_error, true);
+    player->presentation_condition.notify_all();
+    return -1;
+  }
+  {
+    std::lock_guard<std::mutex> lock(player->callback_mutex);
+    commit_single_target_locked(player,
+                                backend,
+                                pixel_buffer,
+                                width,
+                                height,
+                                clamped_track_slots,
+                                target_changed,
+                                refresh_now);
   }
   if (target_changed) {
     player->presentation_condition.notify_all();
   }
+  if (renderer_was_active) {
+    return 0;
+  }
 
-  std::string renderer_error;
   {
     std::lock_guard<std::mutex> player_lock(player->mutex);
-    if (player->renderer_active_locked()) {
-      if (!target_changed) {
-        return 0;
-      }
-      if (!refresh_now) {
-        if (player->renderer->install_headless_output(
-                pixel_buffer, width, height, clamped_track_slots)) {
-          return 0;
-        }
-        renderer_error = "failed to install renderer-owned Metal presentation target";
-      } else {
-        if (player->renderer->update_headless_output(
-                pixel_buffer, width, height, clamped_track_slots)) {
-          return 0;
-        }
-      }
-      if (renderer_error.empty()) {
-        renderer_error = "failed to install renderer-owned Metal presentation target";
-      }
-    } else if (!player->opened_path.empty()) {
-      if (player->ensure_renderer_locked(renderer_error)) {
-        return 0;
-      }
-    } else {
+    if (player->opened_path.empty()) {
+      return 0;
+    }
+    if (player->ensure_renderer_locked(renderer_error)) {
       return 0;
     }
   }
@@ -277,46 +372,17 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
   bool target_changed = false;
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
-    target_changed =
-        player->presentation_target_backend != backend ||
-        player->presentation_target_pixel_buffers != targets ||
-        player->presentation_target_width != width ||
-        player->presentation_target_height != height ||
-        player->presentation_target_max_track_slots != clamped_track_slots;
-    player->presentation_target_backend = backend;
-    player->presentation_target_pixel_buffer = targets.front();
-    player->presentation_target_pixel_buffers = targets;
-    player->presentation_target_width = width;
-    player->presentation_target_height = height;
-    player->presentation_target_max_track_slots = clamped_track_slots;
-    if (target_changed) {
-      ++player->presentation_target_generation;
-      reset_target_warmup_locked(player);
-      spdlog::info(
-          "[MacOSFrameRefresh] install_target_ring generation={} targets=[{}] "
-          "displayed=0x{:x} protected=0x{:x} size={}x{} slots={}",
-          player->presentation_target_generation,
-          target_address_summary(targets),
-          pointer_address(displayed_pixel_buffer),
-          pointer_address(protected_pixel_buffer),
-          width,
-          height,
-          clamped_track_slots);
-      player->last_renderer_owned_presentation_succeeded = false;
-      player->last_renderer_owned_frame_info_available = false;
-      player->last_renderer_owned_frame_info = {};
-      player->renderer_owned_presentation_consecutive_failures = 0;
-      player->renderer_owned_presentation_last_error.clear();
-    }
-  }
-  if (target_changed) {
-    player->presentation_condition.notify_all();
+    target_changed = target_ring_changed_locked(
+        player, backend, targets, width, height, clamped_track_slots);
   }
 
   std::string renderer_error;
+  bool renderer_was_active = false;
+  bool renderer_install_failed = false;
   {
     std::lock_guard<std::mutex> player_lock(player->mutex);
-    if (player->renderer_active_locked()) {
+    renderer_was_active = player->renderer_active_locked();
+    if (renderer_was_active) {
       if (!target_changed) {
         if (displayed_pixel_buffer) {
           player->renderer->mark_headless_output_displayed(displayed_pixel_buffer);
@@ -324,17 +390,49 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
         player->renderer->protect_headless_output(protected_pixel_buffer);
         return 0;
       }
-      if (player->renderer->install_headless_output_ring(pixel_buffers,
-                                                         pixel_buffer_count,
-                                                         displayed_pixel_buffer,
-                                                         protected_pixel_buffer,
-                                                         width,
-                                                         height,
-                                                         clamped_track_slots)) {
-        return 0;
+      if (!player->renderer->install_headless_output_ring(pixel_buffers,
+                                                          pixel_buffer_count,
+                                                          displayed_pixel_buffer,
+                                                          protected_pixel_buffer,
+                                                          width,
+                                                          height,
+                                                          clamped_track_slots)) {
+        renderer_install_failed = true;
+        renderer_error = player->renderer->presentation_backend_last_error();
       }
-      renderer_error = "failed to install renderer-owned Metal presentation target ring";
-    } else if (!player->opened_path.empty()) {
+      if (renderer_install_failed && renderer_error.empty()) {
+        renderer_error = "failed to install renderer-owned Metal presentation target ring";
+      }
+    }
+  }
+  if (renderer_install_failed) {
+    std::lock_guard<std::mutex> lock(player->callback_mutex);
+    player->record_presentation_failure_locked(renderer_error, true);
+    player->presentation_condition.notify_all();
+    return -1;
+  }
+  {
+    std::lock_guard<std::mutex> lock(player->callback_mutex);
+    commit_target_ring_locked(player,
+                              backend,
+                              targets,
+                              displayed_pixel_buffer,
+                              protected_pixel_buffer,
+                              width,
+                              height,
+                              clamped_track_slots,
+                              target_changed);
+  }
+  if (target_changed) {
+    player->presentation_condition.notify_all();
+  }
+  if (renderer_was_active) {
+    return 0;
+  }
+
+  {
+    std::lock_guard<std::mutex> player_lock(player->mutex);
+    if (!player->opened_path.empty()) {
       if (!player->ensure_renderer_locked(renderer_error)) {
         std::lock_guard<std::mutex> lock(player->callback_mutex);
         player->record_presentation_failure_locked(renderer_error, true);
@@ -349,18 +447,17 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
                                                           height,
                                                           clamped_track_slots)) {
         std::lock_guard<std::mutex> lock(player->callback_mutex);
-        player->record_presentation_failure_locked(
-            "failed to install renderer-owned Metal presentation target ring", true);
+        std::string install_error =
+            player->renderer->presentation_backend_last_error();
+        if (install_error.empty()) {
+          install_error =
+              "failed to install renderer-owned Metal presentation target ring";
+        }
+        player->record_presentation_failure_locked(install_error, true);
         player->presentation_condition.notify_all();
         return -1;
       }
     }
-  }
-  if (!renderer_error.empty()) {
-    std::lock_guard<std::mutex> lock(player->callback_mutex);
-    player->record_presentation_failure_locked(renderer_error, true);
-    player->presentation_condition.notify_all();
-    return -1;
   }
   return 0;
 }
@@ -866,6 +963,28 @@ int VPMacOSNativePlayerBakeCurrentFrameSources(
     target.height = targets[i].height;
     renderer_targets.push_back(target);
   }
+  const VPMacOSNativeSourceFrameBakeTarget* initial_target = nullptr;
+  for (size_t i = 0; i < target_count; ++i) {
+    if (targets[i].pixel_buffer && targets[i].width > 0 && targets[i].height > 0) {
+      initial_target = &targets[i];
+      break;
+    }
+  }
+  if (!initial_target) {
+    write_error(error, error_size, "source frame bake target list has no valid pixel buffer");
+    return -1;
+  }
+  std::shared_ptr<vr::PresentationBackend> source_bake_backend =
+      VPMacOSMetalPresentationBackendSourceBakeBackend(
+          backend,
+          initial_target->pixel_buffer,
+          initial_target->width,
+          initial_target->height,
+          error,
+          error_size);
+  if (!source_bake_backend) {
+    return -1;
+  }
 
   std::string message;
   bool ok = false;
@@ -876,7 +995,7 @@ int VPMacOSNativePlayerBakeCurrentFrameSources(
       return -1;
     }
     ok = player->renderer->draw_current_frame_sources(
-        backend->impl,
+        *source_bake_backend,
         renderer_targets.data(),
         renderer_targets.size(),
         &message);

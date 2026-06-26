@@ -82,7 +82,7 @@ behavior remain testable.
 | `YUV422P10LE` | CPU P010 | Chroma is vertically downsampled to 4:2:0. |
 | `YUV444P10LE` | CPU P010 | Chroma is 2x2 downsampled to 4:2:0. |
 | D3D11VA NV12/P010/P016 | GPU plane textures | Windows renderer-owned direct path. |
-| VideoToolbox NV12/P010 `CVPixelBuffer` | `CVPixelBuffer` fast path | macOS renderer-owned Metal path when supported. |
+| VideoToolbox NV12/P010 `CVPixelBuffer` | `CVPixelBuffer` fast path | macOS renderer-owned wgpu-metal path when supported. |
 | BGRA package | BGRA texture/package | Fallback, capture, and parity path. |
 
 4:2:2 and 4:4:4 software frames are currently displayed after downsampling to
@@ -181,17 +181,17 @@ the same SDR white contract on scRGB targets, while SDR targets keep the BGRA
 compatibility contract. This preserves the order
 `source video -> analysis overlay -> Flutter UI`.
 
-## macOS Metal / CVPixelBuffer Path
+## macOS wgpu-metal / CVPixelBuffer Path
 
-macOS uses the same metadata and layout contract through Metal:
+macOS uses the same metadata and layout contract through wgpu-metal:
 
 - VideoToolbox zero-copy frames keep their `CVPixelBuffer` storage when the
-  codec and pixel format are supported by the renderer-owned Metal path.
+  codec and pixel format are supported by the renderer-owned wgpu-metal path.
 - VideoToolbox renderer-owned direct decode is gated to 4:2:0-like stream
   formats before codec open; 4:2:2 / 4:4:4 streams fall back to software decode
   until dedicated CVPixelBuffer/shader layouts exist.
 - Software/fallback frames use explicit YUV or BGRA present packages.
-- The Metal uploader validates target size, BGRA pixel-buffer compatibility,
+- The macOS uploader validates target size, BGRA pixel-buffer compatibility,
   `CVMetalTextureCache` wrapping, storage kind, and package dimensions before
   draw.
 - The SDR renderer-owned target is a Metal-compatible, IOSurface-backed BGRA
@@ -279,12 +279,11 @@ Current Windows preservation evidence:
 
 Current macOS release-readiness evidence:
 
-- `macos_metal_color_layout_parity_smoke` drives synthetic
-  `RendererDrawSnapshot` inputs through `MetalPresentationBackend`, then reads
-  the renderer-owned BGRA `CVPixelBuffer` through backend capture. It compares
-  BGRA channel order, NV12 limited BT.709, planar YUV420 full/limited range,
-  odd dimensions, padded strides, split/layout fit, and P010 high-bit samples
-  against a small-tolerance CPU reference.
+- macOS wgpu-metal color/layout parity is covered by the targeted
+  `macos-wgpu-metal-smoke` UI profile and native color reference smoke. It
+  compares BGRA channel order, NV12/P010 paths, split/layout fit, VideoToolbox
+  CVPixelBuffer source import, and headed capture diagnostics against shared
+  CPU/reference expectations.
 - `native_4k60_playback_smoke.csv` remains a headed VideoToolbox/Metal cadence
   canary. It is not a strict 4K60 SLA; it asserts conservative health signals
   such as monotonic PTS, no large PTS gaps, duplicate PTS visibility, host

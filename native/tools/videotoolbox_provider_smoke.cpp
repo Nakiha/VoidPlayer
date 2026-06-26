@@ -64,8 +64,9 @@ int main() {
 
   vr::HwDecodeInitParams renderer_owned_params = params;
   renderer_owned_params.device_mode = vr::DecodeDeviceMode::IndependentDevice;
+  renderer_owned_params.backend = vr::RenderBackendType::WgpuMetal;
   auto renderer_owned_compatible = vr::compatible_hw_decode_provider_names(
-      vr::RenderBackendType::Metal,
+      vr::RenderBackendType::WgpuMetal,
       vr::DecodeDeviceMode::IndependentDevice);
   bool renderer_owned_has_videotoolbox = false;
   for (const char* name : renderer_owned_compatible) {
@@ -73,7 +74,16 @@ int main() {
         renderer_owned_has_videotoolbox || std::string(name) == "VideoToolbox";
   }
   if (!renderer_owned_has_videotoolbox) {
-    return fail("VideoToolbox provider is not registered for Metal renderer-owned decode");
+    return fail("VideoToolbox provider is not registered for wgpu-metal renderer-owned decode");
+  }
+  auto legacy_metal_renderer_owned_compatible =
+      vr::compatible_hw_decode_provider_names(
+          vr::RenderBackendType::Metal,
+          vr::DecodeDeviceMode::IndependentDevice);
+  for (const char* name : legacy_metal_renderer_owned_compatible) {
+    if (std::string(name) == "VideoToolbox") {
+      return fail("VideoToolbox provider is still registered for removed Metal renderer-owned decode");
+    }
   }
   auto renderer_owned_result =
       vr::try_hw_decode_providers(codec, renderer_owned_params);

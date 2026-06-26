@@ -1,4 +1,4 @@
-#include "macos/metal/metal_presentation_backend.h"
+#include "macos/metal/metal_presentation_backend_bridge.h"
 
 #include "macos/wgpu/wgpu_ffi_bridge.h"
 #include "renderer/decode/yuv_to_bgra.h"
@@ -591,32 +591,21 @@ int main() {
     CFRelease(io_surface_properties);
   }
 
-  vp_macos::MetalPresentationBackend backend;
-  auto factory_backend =
-      vr::create_presentation_backend(vr::RenderBackendKind::Metal);
   const auto* default_provider = vr::default_presentation_backend_provider();
   if (!default_provider ||
-      !default_provider->supports(vr::RenderBackendKind::Metal) ||
+      default_provider->supports(vr::RenderBackendKind::Metal) ||
       !default_provider->supports(vr::RenderBackendKind::WgpuMetal) ||
       default_provider->supports(vr::RenderBackendKind::D3D11)) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend default provider support set is wrong");
-  }
-  auto provider_backend = default_provider->create(vr::RenderBackendKind::Metal);
-  if (!provider_backend ||
-      provider_backend->kind() != vr::PresentationBackendKind::Metal) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend provider did not create Metal backend");
-  }
-  if (!factory_backend ||
-      factory_backend->kind() != vr::PresentationBackendKind::Metal ||
-      std::string(factory_backend->name()) != "metal-cvpixelbuffer") {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend factory did not create Metal backend");
+    return fail("WgpuMetal presentation backend default provider support set is wrong");
   }
   if (vr::create_presentation_backend(vr::RenderBackendKind::D3D11)) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend factory created unsupported D3D11 backend");
+    return fail("WgpuMetal presentation backend factory created unsupported D3D11 backend");
+  }
+  if (vr::create_presentation_backend(vr::RenderBackendKind::Metal)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal presentation backend factory created removed Metal backend");
   }
   auto wgpu_backend =
       vr::create_presentation_backend(vr::RenderBackendKind::WgpuMetal);
@@ -624,7 +613,7 @@ int main() {
       wgpu_backend->kind() != vr::PresentationBackendKind::WgpuMetal ||
       std::string(wgpu_backend->name()) != "wgpu-metal") {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend factory did not create WgpuMetal backend");
+    return fail("WgpuMetal presentation backend factory did not create WgpuMetal backend");
   }
   vr::PresentationBackendConfig config;
   config.output = pixel_buffer;
@@ -659,27 +648,6 @@ int main() {
     return fail("WgpuMetal backend did not fail closed with wgpu diagnostics");
   }
   wgpu_backend->shutdown();
-
-  if (!backend.initialize(config)) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend did not initialize");
-  }
-  if (backend.kind() != vr::PresentationBackendKind::Metal) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend kind mismatch");
-  }
-  if (!backend.headless()) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend should be headless");
-  }
-  if (backend.width() != kWidth || backend.height() != kHeight) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend dimensions mismatch");
-  }
-  if (!backend.available() || !backend.uploader()) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend uploader is unavailable");
-  }
 
   auto bgra = std::make_shared<std::vector<uint8_t>>(
       static_cast<size_t>(kWidth * kHeight * 4), 0);
@@ -716,11 +684,6 @@ int main() {
   snapshot.target_width = kWidth;
   snapshot.target_height = kHeight;
 
-  uint64_t copy_metric_count = 0;
-  vr::PresentationBackendDrawHooks hooks;
-  hooks.record_frame_copy_us = [&copy_metric_count](uint64_t) {
-    ++copy_metric_count;
-  };
   if (!wgpu_backend->initialize(config)) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not reinitialize for BGRA draw");
@@ -741,10 +704,15 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend installed mismatched target dimensions");
   }
-  if (std::string(wgpu_backend->last_error()).find("dimensions do not match") ==
+  if (std::string(wgpu_backend->last_error()).find("dimensions") ==
       std::string::npos) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend mismatched target failure was not diagnostic");
+    return fail("WgpuMetal backend mismatched target install failure was not diagnostic");
+  }
+  if (!draw_wgpu_frame_and_wait(
+          *wgpu_backend, snapshot, vr::PresentationBackendDrawHooks{})) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend mismatched target rejection did not preserve prior target");
   }
   auto wgpu_wrong_format_target =
       make_nv12_pixel_buffer(kWidth, kHeight, 96, 128, 128);
@@ -1400,18 +1368,6 @@ int main() {
   }
   wgpu_backend->shutdown();
 
-  if (!backend.draw_frame(snapshot, hooks)) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend draw_frame did not upload a snapshot");
-  }
-  if (copy_metric_count != 1 ||
-      VPMacOSMetalUploaderPresentPackageUploadCount(backend.uploader()) != 1 ||
-      VPMacOSMetalUploaderLastPresentPackageStorage(backend.uploader()) !=
-          VPMacOSNativePresentPackageStorageBGRA) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend draw_frame diagnostics did not update");
-  }
-
   auto second_bgra = std::make_shared<std::vector<uint8_t>>(
       static_cast<size_t>(kWidth * kHeight * 4), 0);
   for (int i = 0; i < kWidth * kHeight; ++i) {
@@ -1487,21 +1443,6 @@ int main() {
     return fail("WgpuMetal backend split BGRA WGSL layout sampled wrong tracks");
   }
   wgpu_backend->shutdown();
-  if (!backend.draw_frame(partial_snapshot, hooks)) {
-    std::cerr << "Metal presentation backend rejected partial multi-track "
-                 "snapshot: "
-              << backend.last_error() << "\n";
-    CVPixelBufferRelease(pixel_buffer);
-    return 1;
-  }
-  if (copy_metric_count != 2 ||
-      VPMacOSMetalUploaderPresentPackageUploadCount(backend.uploader()) != 2 ||
-      VPMacOSMetalUploaderLastPresentPackageStorage(backend.uploader()) !=
-          VPMacOSNativePresentPackageStorageBGRA) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend partial multi-track diagnostics did not update");
-  }
-
   auto nv12 = std::make_shared<std::vector<uint8_t>>(
       static_cast<size_t>(kWidth * kHeight + kWidth * (kHeight / 2)), 0);
   const uint8_t nv12_y[] = {
@@ -1542,17 +1483,6 @@ int main() {
   vr::RendererDrawSnapshot nv12_snapshot = snapshot;
   nv12_snapshot.decision.current_pts_us = nv12_frame.pts_us;
   nv12_snapshot.decision.frames[0] = nv12_frame;
-  if (!backend.draw_frame(nv12_snapshot, hooks)) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend draw_frame did not upload NV12 snapshot");
-  }
-  if (copy_metric_count != 3 ||
-      VPMacOSMetalUploaderPresentPackageUploadCount(backend.uploader()) != 3 ||
-      VPMacOSMetalUploaderLastPresentPackageStorage(backend.uploader()) !=
-          VPMacOSNativePresentPackageStorageYUV) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend NV12 draw_frame diagnostics did not update");
-  }
   if (!wgpu_backend->initialize(config)) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not reinitialize for NV12 draw");
@@ -1998,14 +1928,6 @@ int main() {
     return fail("WgpuMetal backend planar YUV WGSL capture did not produce red BGRA output");
   }
   wgpu_backend->shutdown();
-  const auto backend_stats = backend.presentation_stats();
-  if (backend_stats.staging_allocation_count == 0 ||
-      backend_stats.staging_reuse_count == 0 ||
-      backend_stats.staging_max_bytes == 0) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend staging diagnostics did not update");
-  }
-
   auto left_cv = make_nv12_pixel_buffer(kWidth, kHeight, 96, 128, 128);
   auto right_cv = make_nv12_pixel_buffer(kWidth, kHeight, 180, 128, 128);
   if (!left_cv.buffer || !right_cv.buffer) {
@@ -2033,25 +1955,6 @@ int main() {
   cv_snapshot.tracks[1].video_height = kHeight;
   cv_snapshot.tracks[1].video_aspect = 1.0f;
   cv_snapshot.track_geometry[1] = {true, kWidth, kHeight, 1.0f};
-  const int64_t cv_upload_count_before =
-      VPMacOSMetalUploaderCVPixelBufferUploadCount(backend.uploader());
-  if (!backend.draw_frame(cv_snapshot, hooks)) {
-    std::cerr << "Metal presentation backend rejected multi-track "
-                 "CVPixelBuffer snapshot: "
-              << backend.last_error() << "\n";
-    CVPixelBufferRelease(pixel_buffer);
-    return 1;
-  }
-  if (copy_metric_count != 4 ||
-      VPMacOSMetalUploaderPresentPackageUploadCount(backend.uploader()) != 3 ||
-      VPMacOSMetalUploaderCVPixelBufferUploadCount(backend.uploader()) !=
-          cv_upload_count_before + 1 ||
-      VPMacOSMetalUploaderLastPresentPackageStorage(backend.uploader()) !=
-          VPMacOSNativePresentPackageStorageCVPixelBuffer ||
-      VPMacOSMetalUploaderLastPresentPackageCopyUs(backend.uploader()) != 0) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend multi-track CVPixelBuffer diagnostics did not update");
-  }
   if (!wgpu_backend->initialize(config)) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not reinitialize for CVPixelBuffer draw");
@@ -2141,18 +2044,6 @@ int main() {
       make_cv_p010_frame(p010_cv.buffer, kWidth, kHeight, 240000);
   cv_p010_snapshot.decision.current_pts_us = cv_p010_frame.pts_us;
   cv_p010_snapshot.decision.frames[0] = cv_p010_frame;
-  if (!backend.draw_frame(cv_p010_snapshot, hooks)) {
-    std::cerr << "Metal presentation backend rejected P010 CVPixelBuffer "
-                 "snapshot: "
-              << backend.last_error() << "\n";
-    CVPixelBufferRelease(pixel_buffer);
-    return 1;
-  }
-  if (VPMacOSMetalUploaderLastPresentPackageStorage(backend.uploader()) !=
-      VPMacOSNativePresentPackageStorageCVPixelBuffer) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend P010 CVPixelBuffer diagnostics did not update");
-  }
   if (!wgpu_backend->initialize(config)) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not reinitialize for P010 CVPixelBuffer draw");
@@ -2212,11 +2103,6 @@ int main() {
   }
   wgpu_backend->shutdown();
 
-  backend.shutdown();
-  if (backend.available() || backend.uploader()) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("Metal presentation backend did not release uploader");
-  }
   CVPixelBufferRelease(pixel_buffer);
 
   VPMacOSMetalPresentationBackend* c_backend =

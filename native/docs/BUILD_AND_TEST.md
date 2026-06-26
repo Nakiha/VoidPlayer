@@ -142,7 +142,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 
 ## macOS Stabilization Gates
 
-macOS native playback 当前是 feature-complete / stabilization 状态。修改 shared renderer、Metal backend、VideoToolbox、
+macOS native playback 当前是 feature-complete / stabilization 状态。修改 shared renderer、wgpu-metal backend、VideoToolbox、
 Swift texture bridge 或 diagnostics 时，优先使用以下 gate：
 
 ```bash
@@ -160,15 +160,15 @@ python3.12 dev.py gate macos-ui-smoke
 | `native_loop_range_smoke.csv` | loop policy |
 | `native_audio_play_seek_smoke.csv` | miniaudio/CoreAudio playback、seek、audible-track diagnostics |
 | `native_layout_split_smoke.csv` | split/layout and multi-track presentation |
-| `native_4k60_playback_smoke.csv` | VideoToolbox CVPixelBuffer + Metal 4K canary |
-| `native_vvc_software_playback_smoke.csv` | software fallback + Metal package path |
+| `native_4k60_playback_smoke.csv` | VideoToolbox CVPixelBuffer + wgpu-metal 4K canary |
+| `native_vvc_software_playback_smoke.csv` | software fallback + renderer-owned package path |
 | `native_p010_presentation_smoke.csv` | 10-bit/P010 presentation path |
 | `native_add_short_after_eof_smoke.csv` | EOF carry-forward after adding a shorter third track |
 | `native_callback_stress_smoke.csv` | callback lifecycle stress |
 
-Native macOS CTest includes `videotoolbox_provider_smoke`, `macos_metal_uploader_smoke`,
-`macos_metal_presentation_backend_smoke`, `renderer_metal_headless_smoke`, and
-`macos_native_player_shared_renderer_smoke`.
+Native macOS CTest includes `videotoolbox_provider_smoke`,
+`macos_metal_uploader_smoke`, `macos_wgpu_metal_presentation_backend_smoke`,
+`renderer_metal_headless_smoke`, and `macos_native_player_shared_renderer_smoke`.
 
 HDR Auto promotion needs a real EDR-capable display, so it is an explicit local
 gate rather than a hosted CI default:
@@ -181,10 +181,9 @@ This gate generates a portable 10-bit HEVC/HLG fixture and asserts that Auto
 selects `native-compositor-edr`, uses the `64RGBAHalf` target, and produces
 values above SDR reference white.
 
-The experimental wgpu-metal backend has explicit local gates. The baseline gate
-keeps the backend opt-in, then covers software packages, retained
-source-projection/overlay composition, VideoToolbox CVPixelBuffer source import,
-and 4K60 cadence:
+The default wgpu-metal backend has explicit local gates. The baseline gate
+covers software packages, retained source-projection/overlay composition,
+VideoToolbox CVPixelBuffer source import, and 4K60 cadence:
 
 ```bash
 python3.12 dev.py gate macos-wgpu-metal-smoke

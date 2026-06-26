@@ -81,13 +81,14 @@ bool videotoolbox_hwdownload_forced_by_env() {
   return env_enabled("VOIDPLAYER_FORCE_VIDEOTOOLBOX_HWDOWNLOAD");
 }
 
-bool wgpu_metal_requested_by_env() {
+bool legacy_metal_requested_by_env() {
   const char* mode = std::getenv("VOIDPLAYER_MACOS_PRESENTATION_MODE");
   if (!mode) {
     return false;
   }
   const std::string normalized = lower_ascii(mode);
-  return normalized == "wgpu-metal" || normalized == "wgpu";
+  return normalized == "metal" || normalized == "legacy-metal" ||
+         normalized == "metal-cvpixelbuffer";
 }
 
 bool probe_videotoolbox_h264() {
@@ -100,7 +101,7 @@ bool probe_videotoolbox_h264() {
   }
 
   vr::HwDecodeInitParams params;
-  params.backend = vr::RenderBackendType::Metal;
+  params.backend = vr::RenderBackendType::WgpuMetal;
   params.device_mode = videotoolbox_hwdownload_forced_by_env()
       ? vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice
       : vr::DecodeDeviceMode::IndependentDevice;
@@ -210,13 +211,16 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   config.width = width;
   config.height = height;
   config.headless = true;
-  const bool use_wgpu_metal = vp_macos::wgpu_metal_requested_by_env();
+  if (vp_macos::legacy_metal_requested_by_env()) {
+    spdlog::warn(
+        "[MacOSNativePlayer] legacy Metal renderer backend was removed; using "
+        "wgpu-metal");
+  }
   config.use_hardware_decode =
       use_hardware_decode &&
       !vp_macos::videotoolbox_disabled_by_env();
   config.initial_file_id = 0;
-  config.backend.type = use_wgpu_metal ? vr::RendererBackendType::WgpuMetal
-                                       : vr::RendererBackendType::Metal;
+  config.backend.type = vr::RendererBackendType::WgpuMetal;
   config.backend.output = output;
   config.backend.max_track_slots =
       std::clamp(max_track_slots,

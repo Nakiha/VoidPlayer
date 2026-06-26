@@ -116,6 +116,9 @@ public:
         uint64_t flutter_export_stale_timeout_count = 0;
         uint64_t flutter_export_unsolicited_signal_count = 0;
         uint64_t flutter_export_unsolicited_throttle_count = 0;
+        uint64_t flutter_d3d11_srv_available_count = 0;
+        uint64_t flutter_d3d11_srv_unavailable_count = 0;
+        uint64_t flutter_d3d11_srv_forced_skip_count = 0;
         uint64_t video_generation = 0;
         uint64_t composite_count = 0;
         uint64_t present_count = 0;
@@ -189,6 +192,7 @@ public:
         bool engine_export_available = false;
         bool engine_export_frame_pump_available = false;
         bool flutter_export_latest_available = false;
+        bool flutter_d3d11_srv_forced_disabled = false;
         bool swap_chain_active = false;
         bool color_space_supported = false;
         bool sdr_tone_map_active = true;
@@ -547,6 +551,7 @@ private:
     vr::D3D11CrossAdapterTextureTransport flutter_transport_;
     uint64_t external_flutter_surface_submitted_generation_ = 0;
     uint64_t external_flutter_surface_refresh_generation_ = 0;
+    bool disable_flutter_d3d11_srv_ = false;
 
     bool held_source_valid_ = false;
     vr::SharedSourceCacheBundleSnapshot held_source_;

@@ -2985,6 +2985,22 @@ void VideoRendererPlugin::GetDiagnostics(
             "windowsFlutterExportFramePumpAvailable")] =
             flutter::EncodableValue(
                 compositor.engine_export_frame_pump_available);
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterD3D11SRVForcedDisabled")] =
+            flutter::EncodableValue(
+                compositor.flutter_d3d11_srv_forced_disabled);
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterD3D11SRVAvailableCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_d3d11_srv_available_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterD3D11SRVUnavailableCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_d3d11_srv_unavailable_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterD3D11SRVForcedSkipCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_d3d11_srv_forced_skip_count));
         diagnostics[flutter::EncodableValue("windowsVideoRingGeneration")] =
             enc_i64(static_cast<int64_t>(compositor.video_generation));
         diagnostics[flutter::EncodableValue("windowsDCompCompositeCount")] =

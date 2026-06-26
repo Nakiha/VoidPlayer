@@ -119,6 +119,7 @@ public:
         uint64_t flutter_d3d11_srv_available_count = 0;
         uint64_t flutter_d3d11_srv_unavailable_count = 0;
         uint64_t flutter_d3d11_srv_forced_skip_count = 0;
+        uint64_t flutter_d3d11_srv_lazy_create_count = 0;
         uint64_t video_generation = 0;
         uint64_t composite_count = 0;
         uint64_t present_count = 0;
@@ -448,6 +449,7 @@ private:
     bool BakeRetainedFlutterSurface(const FlutterSurface& surface,
                                     OutputTarget target,
                                     ID3D11ShaderResourceView* flutter_srv);
+    bool EnsureHeldFlutterSrv();
     bool ApplyRetainedProjection(uint32_t width,
                                  uint32_t height,
                                  OutputTarget target,

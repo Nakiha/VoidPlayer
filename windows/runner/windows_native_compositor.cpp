@@ -340,6 +340,7 @@ bool WindowsNativeCompositor::Start(
         diagnostics_.flutter_d3d11_srv_available_count = 0;
         diagnostics_.flutter_d3d11_srv_unavailable_count = 0;
         diagnostics_.flutter_d3d11_srv_forced_skip_count = 0;
+        diagnostics_.flutter_d3d11_srv_lazy_create_count = 0;
     }
     thread_ = std::thread(&WindowsNativeCompositor::ThreadMain, this);
     (void)RequestFlutterFrame("startup-bootstrap");
@@ -1502,6 +1503,57 @@ bool WindowsNativeCompositor::TransportInput(
                 source_transport.event_query_p95_wait_us());
         }
     }
+    return true;
+}
+
+bool WindowsNativeCompositor::EnsureHeldFlutterSrv() {
+    if (held_flutter_srv_) {
+        return true;
+    }
+    if (!held_flutter_valid_ || !held_flutter_texture_ || !device_) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ++diagnostics_.flutter_d3d11_srv_unavailable_count;
+        return false;
+    }
+    if (disable_flutter_d3d11_srv_) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ++diagnostics_.flutter_d3d11_srv_forced_skip_count;
+        ++diagnostics_.flutter_d3d11_srv_unavailable_count;
+        return false;
+    }
+
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+    bool srv_ready = false;
+    if (IsCrossAdapterActive()) {
+        srv_ready = TransportInput(
+            held_flutter_texture_.Get(),
+            DXGI_FORMAT_B8G8R8A8_UNORM,
+            held_flutter_.width,
+            held_flutter_.height,
+            flutter_transport_,
+            srv);
+    } else {
+        srv_ready = SUCCEEDED(device_->CreateShaderResourceView(
+            held_flutter_texture_.Get(), nullptr, &srv));
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (srv_ready) {
+            ++diagnostics_.flutter_d3d11_srv_available_count;
+            ++diagnostics_.flutter_d3d11_srv_lazy_create_count;
+            if (IsCrossAdapterActive()) {
+                diagnostics_.flutter_transport_generation =
+                    diagnostics_.transport_generation;
+            }
+        } else {
+            ++diagnostics_.flutter_d3d11_srv_unavailable_count;
+        }
+    }
+    if (!srv_ready) {
+        return false;
+    }
+    held_flutter_srv_ = std::move(srv);
     return true;
 }
 
@@ -3130,7 +3182,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
         } else {
             Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
             Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
-            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
             bool acquired = false;
             const HRESULT open_result = OpenInputTexture(
                 device1.Get(),
@@ -3144,30 +3195,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     keyed_mutex->AcquireSync(
                         next_flutter.consumer_acquire_key, 8) == S_OK;
             }
-            bool srv_ready = false;
             if (acquired && disable_flutter_d3d11_srv_) {
                 std::lock_guard<std::mutex> lock(mutex_);
                 ++diagnostics_.flutter_d3d11_srv_forced_skip_count;
-                ++diagnostics_.flutter_d3d11_srv_unavailable_count;
-            } else if (acquired && IsCrossAdapterActive()) {
-                srv_ready = TransportInput(
-                    texture.Get(),
-                    DXGI_FORMAT_B8G8R8A8_UNORM,
-                    next_flutter.width,
-                    next_flutter.height,
-                    flutter_transport_,
-                    srv);
-            } else if (acquired) {
-                srv_ready = SUCCEEDED(device_->CreateShaderResourceView(
-                    texture.Get(), nullptr, &srv));
-            }
-            if (acquired && !disable_flutter_d3d11_srv_) {
-                std::lock_guard<std::mutex> lock(mutex_);
-                if (srv_ready) {
-                    ++diagnostics_.flutter_d3d11_srv_available_count;
-                } else {
-                    ++diagnostics_.flutter_d3d11_srv_unavailable_count;
-                }
             }
             if (acquired) {
                 release_held_flutter();
@@ -3176,7 +3206,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 held_flutter_d3d12_resource_ =
                     std::move(next_flutter_d3d12_resource);
                 held_flutter_mutex_ = std::move(keyed_mutex);
-                held_flutter_srv_ = std::move(srv);
                 held_flutter_valid_ = true;
                 vr::PresentationExternalD3D12Surface external_surface;
                 external_surface.resource =
@@ -3237,12 +3266,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                         held_flutter_.height,
                         held_flutter_.lease_id,
                         static_cast<int>(held_flutter_.backend),
-                        srv_ready);
-                }
-                if (IsCrossAdapterActive()) {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    diagnostics_.flutter_transport_generation =
-                        diagnostics_.transport_generation;
+                        static_cast<bool>(held_flutter_srv_));
                 }
             } else {
                 log_pending_flutter_request_acquire(
@@ -3552,8 +3576,11 @@ bool WindowsNativeCompositor::CompositeLatest() {
             retained_flutter_.format != retained_surface_format(composite_target)) {
             retained_flutter_baked = true;
             const auto bake_started = std::chrono::steady_clock::now();
-            retained_ok = BakeRetainedFlutterSurface(
-                held_flutter_, composite_target, held_flutter_srv_.Get());
+            retained_ok = EnsureHeldFlutterSrv() &&
+                          BakeRetainedFlutterSurface(
+                              held_flutter_,
+                              composite_target,
+                              held_flutter_srv_.Get());
             const auto bake_finished = std::chrono::steady_clock::now();
             retained_flutter_bake_us = static_cast<int64_t>(
                 std::chrono::duration_cast<std::chrono::microseconds>(
@@ -3798,6 +3825,16 @@ bool WindowsNativeCompositor::CompositeLatest() {
         context_->OMSetRenderTargets(1, &rtv, nullptr);
         context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
         context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
+        const bool flutter_already_composited_by_d3d12 =
+            !source_bundle_active && held_video_valid_ &&
+            (output->target == OutputTarget::ScRGB || !held_sdr_video_valid_) &&
+            held_video_.external_flutter_frame_generation != 0 &&
+            held_video_.external_flutter_frame_generation ==
+                held_flutter_.frame_generation;
+        const bool legacy_flutter_pass_ready =
+            source_bundle_active &&
+            !flutter_already_composited_by_d3d12 &&
+            EnsureHeldFlutterSrv();
         ID3D11ShaderResourceView* srvs[] = {
             held_video_srv_.Get(),
             held_flutter_srv_.Get(),
@@ -3869,13 +3906,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
             context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
         }
-        const bool flutter_already_composited_by_d3d12 =
-            !source_bundle_active && held_video_valid_ &&
-            (output->target == OutputTarget::ScRGB || !held_sdr_video_valid_) &&
-            held_video_.external_flutter_frame_generation != 0 &&
-            held_video_.external_flutter_frame_generation ==
-                held_flutter_.frame_generation;
-        if (!flutter_already_composited_by_d3d12 && held_flutter_srv_) {
+        if (legacy_flutter_pass_ready) {
             context_->OMSetBlendState(
                 premultiplied_blend_state_.Get(), nullptr, 0xffffffff);
             context_->PSSetShader(flutter_pixel_shader_.Get(), nullptr, 0);

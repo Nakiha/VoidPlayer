@@ -3001,6 +3001,10 @@ void VideoRendererPlugin::GetDiagnostics(
             "windowsFlutterD3D11SRVForcedSkipCount")] =
             enc_i64(static_cast<int64_t>(
                 compositor.flutter_d3d11_srv_forced_skip_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterD3D11SRVLazyCreateCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_d3d11_srv_lazy_create_count));
         diagnostics[flutter::EncodableValue("windowsVideoRingGeneration")] =
             enc_i64(static_cast<int64_t>(compositor.video_generation));
         diagnostics[flutter::EncodableValue("windowsDCompCompositeCount")] =

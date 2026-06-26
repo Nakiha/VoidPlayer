@@ -1845,10 +1845,21 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
                 "wgpu-d3d12-backend-source-projection");
         } else {
             const auto backend = player_->presentation_backend_diagnostics();
+            const std::string error =
+                backend.backend == "wgpu-d3d12"
+                    ? "wgpu-d3d12-source-projection-update-failed"
+                    : "source-projection-backend-unavailable";
             spdlog::warn(
-                "[WindowsSourceProjection] backend projection update failed backend={}, using retained D3D11 fallback",
-                backend.backend);
-            native_compositor_->SetSourceProjection(projection);
+                "[WindowsSourceProjection] backend projection update failed backend={} error={}; retained D3D11 fallback is disabled",
+                backend.backend,
+                error);
+            player_->clear_source_cache(error.c_str());
+            player_->clear_source_projection();
+            native_compositor_->ClearSourceProjection(error);
+            native_compositor_->SetSourceCacheError(error);
+            native_compositor_source_signature_.clear();
+            result->Success();
+            return;
         }
 
         std::string signature = "R16G16B16A16_FLOAT|";

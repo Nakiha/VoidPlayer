@@ -246,7 +246,6 @@ public:
     void SetViewportBackgroundColor(uint32_t argb);
     bool RequestFlutterFrame(const std::string& reason);
     void BoostFlutterInteraction(const std::string& reason);
-    void SetSourceProjection(const SourceProjection& projection);
     void DisableRetainedSourceProjection(const std::string& reason);
     void ClearSourceProjection(const std::string& reason);
     void SetSourceCacheError(const std::string& error);
@@ -614,8 +613,6 @@ private:
         last_retained_projection_update_{};
     std::chrono::steady_clock::time_point
         last_transition_guard_log_{};
-    std::chrono::steady_clock::time_point
-        last_source_projection_debug_log_{};
     std::chrono::steady_clock::time_point
         last_flutter_export_pacing_log_{};
     uint64_t last_flutter_export_pacing_request_count_ = 0;

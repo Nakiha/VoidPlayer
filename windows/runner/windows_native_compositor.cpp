@@ -30,8 +30,6 @@ constexpr int64_t kMinRetainedGraphCommitIntervalUs = 1000;
 constexpr int64_t kMaxRetainedGraphCommitIntervalUs = 16667;
 constexpr auto kRetainedProjectionInteractionWindow =
     std::chrono::milliseconds(50);
-constexpr auto kSourceProjectionDebugSampleInterval =
-    std::chrono::milliseconds(250);
 constexpr auto kFlutterExportPacingSampleInterval =
     std::chrono::milliseconds(250);
 constexpr size_t kMaxRetainedGraphTimingSamples = 512;
@@ -670,38 +668,6 @@ void WindowsNativeCompositor::BoostFlutterInteraction(
     last_explicit_flutter_frame_request_time_ =
         std::chrono::steady_clock::now();
     retained_flutter_content_dirty_ = true;
-    work_pending_ = true;
-    wake_.notify_one();
-}
-
-void WindowsNativeCompositor::SetSourceProjection(
-    const SourceProjection& projection) {
-    const auto now = std::chrono::steady_clock::now();
-    std::lock_guard<std::mutex> lock(mutex_);
-    source_projection_ = projection;
-    diagnostics_.source_projection_enabled = projection.enabled;
-    ++diagnostics_.source_projection_update_count;
-    retained_projection_dirty_ = projection.enabled;
-    if (projection.enabled) {
-        last_retained_projection_update_ = now;
-    }
-    if (last_source_projection_debug_log_.time_since_epoch().count() == 0 ||
-        now - last_source_projection_debug_log_ >=
-            kSourceProjectionDebugSampleInterval) {
-        last_source_projection_debug_log_ = now;
-        spdlog::debug(
-            "[WindowsCompositorDebug] source projection sample updates={} "
-            "enabled={} mode={} split={} activeTracks={} retainedDirty={} "
-            "heldSource={} retainedGraph={} deferredContent={} "
-            "flutterDirty={} commits={} projectionCommits={}",
-            diagnostics_.source_projection_update_count, projection.enabled,
-            projection.mode, projection.split_pos,
-            projection.active_track_count, retained_projection_dirty_,
-            held_source_valid_, retained_graph_active_,
-            retained_deferred_content_deadline_.time_since_epoch().count() != 0,
-            retained_flutter_content_dirty_, retained_graph_commit_count_,
-            retained_graph_projection_commit_count_);
-    }
     work_pending_ = true;
     wake_.notify_one();
 }

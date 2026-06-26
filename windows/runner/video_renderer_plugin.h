@@ -201,6 +201,7 @@ private:
     vr::WindowsPresentationPolicy presentation_policy_;
     std::unique_ptr<WindowsNativeCompositor> native_compositor_;
     std::string native_compositor_source_signature_;
+    std::string native_compositor_source_failure_signature_;
     vr::WindowsDeviceRecoveryDiagnostics device_recovery_;
     void* flutter_view_handle_ = nullptr;
     std::string presentation_sdr_white_level_status_ = "nominal-default";

@@ -23,6 +23,8 @@
 #include <variant>
 #include <limits>
 #include <utility>
+#include <algorithm>
+#include <cctype>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -89,6 +91,73 @@ std::string presented_anchor_mode_name(vr::RendererPresentedAnchorMode mode) {
         default:
             return "none";
     }
+}
+
+struct WindowsRenderBackendSelection {
+    vr::RendererBackendType type = vr::RendererBackendType::D3D11;
+    std::string name = "d3d11";
+    std::string reason = "default";
+};
+
+std::string normalize_backend_request(std::string request) {
+    request.erase(
+        request.begin(),
+        std::find_if(
+            request.begin(),
+            request.end(),
+            [](unsigned char ch) { return !std::isspace(ch); }));
+    request.erase(
+        std::find_if(
+            request.rbegin(),
+            request.rend(),
+            [](unsigned char ch) { return !std::isspace(ch); }).base(),
+        request.end());
+    std::transform(
+        request.begin(),
+        request.end(),
+        request.begin(),
+        [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+    return request;
+}
+
+bool env_flag_enabled(std::string value) {
+    value = normalize_backend_request(std::move(value));
+    return value == "1" || value == "true" || value == "yes" ||
+           value == "on";
+}
+
+WindowsRenderBackendSelection resolve_windows_render_backend(
+    const std::string& request,
+    bool disable_d3d11_renderer) {
+    const std::string normalized = normalize_backend_request(request);
+    if (disable_d3d11_renderer &&
+        (normalized.empty() || normalized == "auto" ||
+         normalized == "d3d11" || normalized == "dx11")) {
+        return {
+            vr::RendererBackendType::WgpuD3D12,
+            "wgpu-d3d12",
+            "d3d11-renderer-disabled",
+        };
+    }
+    if (normalized.empty() || normalized == "auto" ||
+        normalized == "d3d11" || normalized == "dx11") {
+        return {};
+    }
+    if (normalized == "wgpu" || normalized == "wgpu-d3d12" ||
+        normalized == "d3d12") {
+        return {
+            vr::RendererBackendType::WgpuD3D12,
+            "wgpu-d3d12",
+            "env-override",
+        };
+    }
+    spdlog::warn(
+        "[WindowsRenderBackend] unsupported VOIDPLAYER_WINDOWS_RENDER_BACKEND='{}'; "
+        "using d3d11",
+        request);
+    return {};
 }
 
 flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
@@ -840,13 +909,15 @@ void VideoRendererPlugin::CreatePlayer(
     config.headless = true;
     const std::string render_backend_request =
         vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_RENDER_BACKEND");
+    const bool disable_d3d11_renderer = env_flag_enabled(
+        vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_DISABLE_D3D11_RENDERER"));
+    const auto render_backend =
+        resolve_windows_render_backend(
+            render_backend_request,
+            disable_d3d11_renderer);
     const bool use_wgpu_d3d12_backend =
-        render_backend_request == "wgpu-d3d12" ||
-        render_backend_request == "d3d12" ||
-        render_backend_request == "wgpu";
-    config.backend.type = use_wgpu_d3d12_backend
-        ? vr::RendererBackendType::WgpuD3D12
-        : vr::RendererBackendType::D3D11;
+        render_backend.type == vr::RendererBackendType::WgpuD3D12;
+    config.backend.type = render_backend.type;
     config.backend.adapter = dxgi_adapter_.Get();
     if (use_wgpu_d3d12_backend) {
         config.backend.output = window_handle_;
@@ -895,7 +966,13 @@ void VideoRendererPlugin::CreatePlayer(
         config.backend.sdr_white_level_nits,
         presentation_sdr_white_level_status_,
         presentation_policy_.fallback_reason,
-        use_wgpu_d3d12_backend ? "wgpu-d3d12" : "d3d11");
+        render_backend.name);
+    spdlog::info(
+        "[WindowsRenderBackend] request='{}' disable_d3d11={} selected={} reason={}",
+        render_backend_request,
+        disable_d3d11_renderer,
+        render_backend.name,
+        render_backend.reason);
 
     for (const auto& p : paths_list) {
         std::string path;
@@ -1078,6 +1155,7 @@ void VideoRendererPlugin::DestroyPlayer(
             player_->clear_source_cache("destroy-player");
         }
         native_compositor_source_signature_.clear();
+        native_compositor_source_failure_signature_.clear();
         native_compositor_->Stop("destroy-player");
         native_compositor_.reset();
     }
@@ -1207,6 +1285,7 @@ void VideoRendererPlugin::RemoveTrack(
     if (player_->track_count() == 0) {
         player_->clear_source_cache("all-tracks-removed");
         native_compositor_source_signature_.clear();
+        native_compositor_source_failure_signature_.clear();
     }
     (void)RefreshPresentationPolicy("track-removed", false);
     spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
@@ -1748,8 +1827,23 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
         }
         if (signature != native_compositor_source_signature_) {
             if (!player_->configure_source_cache(descriptors)) {
+                const auto backend =
+                    player_->presentation_backend_diagnostics();
                 const std::string error =
-                    "source-cache-configuration-failed";
+                    backend.backend == "wgpu-d3d12"
+                        ? "wgpu-d3d12-source-cache-unimplemented"
+                        : "source-cache-configuration-failed";
+                const std::string failure_signature =
+                    backend.backend + "|" + error + "|" + signature;
+                if (failure_signature !=
+                    native_compositor_source_failure_signature_) {
+                    spdlog::warn(
+                        "[WindowsSourceCache] configure failed backend={} error={}",
+                        backend.backend,
+                        error);
+                    native_compositor_source_failure_signature_ =
+                        failure_signature;
+                }
                 player_->clear_source_cache(error.c_str());
                 native_compositor_->ClearSourceProjection(error);
                 native_compositor_->SetSourceCacheError(error);
@@ -1758,6 +1852,7 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
                 return;
             }
             native_compositor_source_signature_ = signature;
+            native_compositor_source_failure_signature_.clear();
             player_->set_source_cache_frame_callback(
                 [compositor = native_compositor_.get()]() {
                     if (compositor) {
@@ -1798,6 +1893,7 @@ void VideoRendererPlugin::ClearNativeCompositorSourceCache(
             native_compositor_->ClearSourceProjection(reason);
         }
         native_compositor_source_signature_.clear();
+        native_compositor_source_failure_signature_.clear();
         result->Success();
     } catch (const std::exception& e) {
         ReportMethodException(

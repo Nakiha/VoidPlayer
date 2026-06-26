@@ -5,6 +5,8 @@
 #include <spdlog/spdlog.h>
 
 #include <d3d12.h>
+#include <sstream>
+#include <string>
 
 extern "C" {
 #include <libavutil/hwcontext_d3d12va.h>
@@ -42,6 +44,30 @@ bool codec_has_d3d12va_config(const AVCodec* codec, AVPixelFormat& pix_fmt) {
     return false;
 }
 
+std::string describe_hw_configs(const AVCodec* codec) {
+    if (!codec) {
+        return "none";
+    }
+    std::ostringstream out;
+    bool any = false;
+    for (int i = 0;; ++i) {
+        const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
+        if (!config) {
+            break;
+        }
+        if (any) {
+            out << "; ";
+        }
+        any = true;
+        const char* device = av_hwdevice_get_type_name(config->device_type);
+        const char* pix_fmt = av_get_pix_fmt_name(config->pix_fmt);
+        out << "#" << i << "{device=" << (device ? device : "unknown")
+            << ", pix_fmt=" << (pix_fmt ? pix_fmt : "unknown")
+            << ", methods=" << config->methods << "}";
+    }
+    return any ? out.str() : "none";
+}
+
 } // namespace
 
 D3D12VAProvider::~D3D12VAProvider() {
@@ -56,6 +82,9 @@ bool D3D12VAProvider::probe(const AVCodec* codec) const {
     probed_codec_id_ = codec->id;
     AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
     if (!codec_has_d3d12va_config(codec, pix_fmt)) {
+        spdlog::info("[D3D12VA] No compatible D3D12VA hw config for codec {}; configs={}",
+                     codec->name,
+                     describe_hw_configs(codec));
         return false;
     }
 

@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace vr {
 
@@ -29,6 +30,16 @@ public:
     void release_shared_fp16_texture(int buffer_index,
                                      uint64_t ring_generation) override;
     void set_shared_fp16_frame_callback(std::function<void()> callback) override;
+    bool capture_front_buffer(std::vector<uint8_t>& bgra,
+                              int& width,
+                              int& height) override;
+    bool capture_front_buffer_region(int x,
+                                     int y,
+                                     int width,
+                                     int height,
+                                     std::vector<uint8_t>& bgra,
+                                     int& out_width,
+                                     int& out_height) override;
     PresentationBackendDiagnostics diagnostics() const override;
     const char* last_error() const override { return last_error_.c_str(); }
     bool draw_frame(const RendererDrawSnapshot& snapshot,

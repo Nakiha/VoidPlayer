@@ -119,11 +119,46 @@ pub struct WgpuD3D12CompositeRequest {
     pub source_formats: [i32; MAX_TRACKS],
     pub source_array_layers: [u32; MAX_TRACKS],
     pub source_base_array_layers: [u32; MAX_TRACKS],
+    pub cpu_sources: [WgpuD3D12CpuSourceInfo; MAX_TRACKS],
     pub decision: *const D3D12PresentDecisionInfo,
     pub width: i32,
     pub height: i32,
     pub error: *mut core::ffi::c_char,
     pub error_size: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct WgpuD3D12CpuSourceInfo {
+    pub y_data: *const core::ffi::c_void,
+    pub y_size: usize,
+    pub uv_data: *const core::ffi::c_void,
+    pub uv_size: usize,
+    pub format: i32,
+    pub y_stride: i32,
+    pub uv_stride: i32,
+    pub y_width: u32,
+    pub y_height: u32,
+    pub uv_width: u32,
+    pub uv_height: u32,
+}
+
+impl Default for WgpuD3D12CpuSourceInfo {
+    fn default() -> Self {
+        Self {
+            y_data: core::ptr::null(),
+            y_size: 0,
+            uv_data: core::ptr::null(),
+            uv_size: 0,
+            format: D3D12_TEXTURE_FORMAT_NV12,
+            y_stride: 0,
+            uv_stride: 0,
+            y_width: 0,
+            y_height: 0,
+            uv_width: 0,
+            uv_height: 0,
+        }
+    }
 }
 
 #[repr(C)]
@@ -593,6 +628,10 @@ impl WgpuD3D12Renderer {
 
         let mut source_textures: [Option<wgpu::Texture>; MAX_TRACKS] =
             std::array::from_fn(|_| None);
+        let mut source_y_textures: [Option<wgpu::Texture>; MAX_TRACKS] =
+            std::array::from_fn(|_| None);
+        let mut source_uv_textures: [Option<wgpu::Texture>; MAX_TRACKS] =
+            std::array::from_fn(|_| None);
         let mut source_y_views: [Option<wgpu::TextureView>; MAX_TRACKS] =
             std::array::from_fn(|_| None);
         let mut source_uv_views: [Option<wgpu::TextureView>; MAX_TRACKS] =
@@ -609,7 +648,16 @@ impl WgpuD3D12Renderer {
                 return Err("wgpu-d3d12 adapter does not support P010 composite");
             }
             if request.source_resources[slot].is_null() {
-                return Err("wgpu-d3d12 composite source resource is null");
+                let cpu_source = request.cpu_sources[slot];
+                let (y_texture, uv_texture, y_view, uv_view) =
+                    self.upload_cpu_yuv_source(slot, format, &cpu_source)?;
+                source_y_textures[slot] = Some(y_texture);
+                source_uv_textures[slot] = Some(uv_texture);
+                source_y_views[slot] = Some(y_view);
+                source_uv_views[slot] = Some(uv_view);
+                self.profiler.source_import_count =
+                    self.profiler.source_import_count.saturating_add(1);
+                continue;
             }
             let coded_width = decision.coded_width[slot]
                 .max(decision.source_width[slot])
@@ -791,6 +839,170 @@ impl WgpuD3D12Renderer {
         drop(source_textures);
         Ok(())
     }
+
+    fn upload_cpu_yuv_source(
+        &self,
+        slot: usize,
+        format: wgpu::TextureFormat,
+        source: &WgpuD3D12CpuSourceInfo,
+    ) -> Result<
+        (
+            wgpu::Texture,
+            wgpu::Texture,
+            wgpu::TextureView,
+            wgpu::TextureView,
+        ),
+        &'static str,
+    > {
+        if source.y_data.is_null() || source.uv_data.is_null() {
+            return Err("wgpu-d3d12 CPU composite source planes are null");
+        }
+        let high_bit = format == wgpu::TextureFormat::P010;
+        if format != wgpu::TextureFormat::NV12 && format != wgpu::TextureFormat::P010 {
+            return Err("wgpu-d3d12 CPU composite source format is unsupported");
+        }
+        let y_sample_bytes = if high_bit { 2usize } else { 1usize };
+        let uv_pixel_bytes = if high_bit { 4usize } else { 2usize };
+        let y_width = source.y_width.max(1);
+        let y_height = source.y_height.max(1);
+        let uv_width = source.uv_width.max(1);
+        let uv_height = source.uv_height.max(1);
+        let y_stride =
+            usize::try_from(source.y_stride).map_err(|_| "wgpu-d3d12 CPU Y stride is invalid")?;
+        let uv_stride =
+            usize::try_from(source.uv_stride).map_err(|_| "wgpu-d3d12 CPU UV stride is invalid")?;
+        let y_row_bytes = y_width as usize * y_sample_bytes;
+        let uv_row_bytes = uv_width as usize * uv_pixel_bytes;
+        if y_stride < y_row_bytes || uv_stride < uv_row_bytes {
+            return Err("wgpu-d3d12 CPU source stride is smaller than row bytes");
+        }
+        let required_y = required_plane_bytes(y_stride, y_row_bytes, y_height as usize)?;
+        let required_uv = required_plane_bytes(uv_stride, uv_row_bytes, uv_height as usize)?;
+        if source.y_size < required_y || source.uv_size < required_uv {
+            return Err("wgpu-d3d12 CPU source plane buffer is too small");
+        }
+
+        let y_format = if high_bit {
+            wgpu::TextureFormat::R16Unorm
+        } else {
+            wgpu::TextureFormat::R8Unorm
+        };
+        let uv_format = if high_bit {
+            wgpu::TextureFormat::Rg16Unorm
+        } else {
+            wgpu::TextureFormat::Rg8Unorm
+        };
+        let y_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 CPU Y plane"),
+            size: wgpu::Extent3d {
+                width: y_width,
+                height: y_height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: y_format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let uv_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 CPU UV plane"),
+            size: wgpu::Extent3d {
+                width: uv_width,
+                height: uv_height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: uv_format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        let y_bytes =
+            unsafe { core::slice::from_raw_parts(source.y_data.cast::<u8>(), source.y_size) };
+        let uv_bytes =
+            unsafe { core::slice::from_raw_parts(source.uv_data.cast::<u8>(), source.uv_size) };
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &y_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            y_bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(y_stride as u32),
+                rows_per_image: Some(y_height),
+            },
+            wgpu::Extent3d {
+                width: y_width,
+                height: y_height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &uv_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            uv_bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(uv_stride as u32),
+                rows_per_image: Some(uv_height),
+            },
+            wgpu::Extent3d {
+                width: uv_width,
+                height: uv_height,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let y_view = y_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 CPU Y view"),
+            format: Some(y_format),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            base_array_layer: 0,
+            array_layer_count: Some(1),
+        });
+        let uv_view = uv_texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 CPU UV view"),
+            format: Some(uv_format),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            usage: Some(wgpu::TextureUsages::TEXTURE_BINDING),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            base_array_layer: 0,
+            array_layer_count: Some(1),
+        });
+        let _ = slot;
+        Ok((y_texture, uv_texture, y_view, uv_view))
+    }
+}
+
+fn required_plane_bytes(
+    stride: usize,
+    row_bytes: usize,
+    height: usize,
+) -> Result<usize, &'static str> {
+    if height == 0 {
+        return Ok(0);
+    }
+    stride
+        .checked_mul(height - 1)
+        .and_then(|value| value.checked_add(row_bytes))
+        .ok_or("wgpu-d3d12 CPU source plane size overflow")
 }
 
 pub static WGSL_COMPOSITE_SHADER: &str = include_str!("../shaders/composite.wgsl");

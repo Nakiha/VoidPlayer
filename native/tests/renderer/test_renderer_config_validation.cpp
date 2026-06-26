@@ -10,7 +10,9 @@
 
 #include <chrono>
 #include <cmath>
+#include <memory>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #include "windows/d3d11/shared_fp16_ring.h"
@@ -465,6 +467,86 @@ TEST_CASE("Windows wgpu-d3d12 backend composites a D3D12VA NV12 source",
         shared.buffer_index, shared.ring_generation);
 #else
     SUCCEED("wgpu-d3d12 D3D12VA composite is Windows-only");
+#endif
+}
+
+TEST_CASE("Windows wgpu-d3d12 backend composites a CPU planar YUV420 source",
+          "[renderer_config][presentation_backend][wgpu_d3d12]") {
+#ifdef _WIN32
+    auto backend = create_presentation_backend(RenderBackendKind::WgpuD3D12);
+    REQUIRE(backend != nullptr);
+
+    PresentationBackendConfig config;
+    config.headless = true;
+    config.shared_fp16_output = true;
+    config.width = 64;
+    config.height = 48;
+    if (!backend->initialize(config)) {
+        SKIP(std::string("wgpu-d3d12 backend unavailable: ") +
+             backend->last_error());
+    }
+
+    constexpr int kSourceWidth = 32;
+    constexpr int kSourceHeight = 24;
+    constexpr int kChromaWidth = kSourceWidth / 2;
+    constexpr int kChromaHeight = kSourceHeight / 2;
+    auto y_plane = std::make_shared<std::vector<uint8_t>>(
+        kSourceWidth * kSourceHeight, 180);
+    auto u_plane = std::make_shared<std::vector<uint8_t>>(
+        kChromaWidth * kChromaHeight, 96);
+    auto v_plane = std::make_shared<std::vector<uint8_t>>(
+        kChromaWidth * kChromaHeight, 160);
+
+    TextureFrame frame;
+    frame.width = kSourceWidth;
+    frame.height = kSourceHeight;
+    frame.pts_us = 0;
+    frame.duration_us = 16667;
+    frame.is_nv12 = false;
+    frame.color.range = VIDEO_COLOR_RANGE_LIMITED;
+    frame.color.matrix = VIDEO_COLOR_MATRIX_BT709;
+    frame.color.transfer = VIDEO_COLOR_TRANSFER_SDR;
+    frame.color.primaries = VIDEO_COLOR_PRIMARIES_BT709;
+    frame.storage = CpuPlanarYuvFrameStorage{
+        {},
+        {y_plane->data(), u_plane->data(), v_plane->data()},
+        {kSourceWidth, kChromaWidth, kChromaWidth},
+        {kSourceWidth, kChromaWidth, kChromaWidth},
+        {kSourceHeight, kChromaHeight, kChromaHeight},
+        1,
+    };
+
+    RendererDrawSnapshot snapshot;
+    snapshot.target_width = 64;
+    snapshot.target_height = 48;
+    snapshot.background_color[3] = 1.0f;
+    snapshot.layout.mode = LAYOUT_SIDE_BY_SIDE;
+    snapshot.layout.order[0] = 0;
+    snapshot.layout.order[1] = 1;
+    snapshot.layout.order[2] = 2;
+    snapshot.layout.order[3] = 3;
+    snapshot.track_geometry[0] = {
+        true,
+        kSourceWidth,
+        kSourceHeight,
+        static_cast<float>(kSourceWidth) / static_cast<float>(kSourceHeight),
+    };
+    snapshot.decision.should_present = true;
+    snapshot.decision.file_ids[0] = 0;
+    snapshot.decision.frames[0] = frame;
+    REQUIRE(backend->draw_frame(snapshot, PresentationBackendDrawHooks{}));
+
+    SharedFp16TextureSnapshot shared;
+    REQUIRE(backend->acquire_shared_fp16_texture(shared));
+    REQUIRE(shared.handle != nullptr);
+    REQUIRE(shared.width == 64);
+    REQUIRE(shared.height == 48);
+    REQUIRE(shared.sync_mode ==
+            SharedFp16TextureSyncMode::PublishedAfterProducerWait);
+    backend->release_shared_fp16_texture(
+        shared.buffer_index, shared.ring_generation);
+#else
+    SUCCEED("wgpu-d3d12 CPU planar composite is Windows-only");
 #endif
 }
 

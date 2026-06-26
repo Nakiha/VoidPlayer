@@ -838,8 +838,19 @@ void VideoRendererPlugin::CreatePlayer(
     // Create player in headless mode
     vr::RendererConfig config;
     config.headless = true;
-    config.backend.type = vr::RendererBackendType::D3D11;
+    const std::string render_backend_request =
+        vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_RENDER_BACKEND");
+    const bool use_wgpu_d3d12_backend =
+        render_backend_request == "wgpu-d3d12" ||
+        render_backend_request == "d3d12" ||
+        render_backend_request == "wgpu";
+    config.backend.type = use_wgpu_d3d12_backend
+        ? vr::RendererBackendType::WgpuD3D12
+        : vr::RendererBackendType::D3D11;
     config.backend.adapter = dxgi_adapter_.Get();
+    if (use_wgpu_d3d12_backend) {
+        config.backend.output = window_handle_;
+    }
     config.width = width;
     config.height = height;
     config.use_hardware_decode = use_hardware_decode;
@@ -877,13 +888,14 @@ void VideoRendererPlugin::CreatePlayer(
         locked_display.probe.sdr_white_level_status;
     spdlog::info(
         "[WindowsPresentation] request={} mode={} output_target={} "
-        "sdr_white_nits={:.3f} white_status={} fallback={}",
+        "sdr_white_nits={:.3f} white_status={} fallback={} render_backend={}",
         presentation_policy_.request,
         presentation_policy_.mode,
         presentation_policy_.fp16_scrgb_requested ? "fp16-scrgb" : "sdr",
         config.backend.sdr_white_level_nits,
         presentation_sdr_white_level_status_,
-        presentation_policy_.fallback_reason);
+        presentation_policy_.fallback_reason,
+        use_wgpu_d3d12_backend ? "wgpu-d3d12" : "d3d11");
 
     for (const auto& p : paths_list) {
         std::string path;

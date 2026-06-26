@@ -10,7 +10,7 @@ extern "C" {
 typedef struct VPWgpuD3D12Renderer VPWgpuD3D12Renderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 10,
+  VP_WGPU_FFI_ABI_VERSION = 11,
 };
 
 enum {
@@ -126,6 +126,20 @@ typedef struct VPWgpuD3D12PresentDecisionInfo {
   VPWgpuD3D12PresentFrameInfo frames[4];
 } VPWgpuD3D12PresentDecisionInfo;
 
+typedef struct VPWgpuD3D12CpuSourceInfo {
+  const void* y_data;
+  size_t y_size;
+  const void* uv_data;
+  size_t uv_size;
+  int32_t format;
+  int32_t y_stride;
+  int32_t uv_stride;
+  uint32_t y_width;
+  uint32_t y_height;
+  uint32_t uv_width;
+  uint32_t uv_height;
+} VPWgpuD3D12CpuSourceInfo;
+
 typedef struct VPWgpuD3D12CompositeRequest {
   void* destination_resource;
   int32_t output_format;
@@ -134,6 +148,7 @@ typedef struct VPWgpuD3D12CompositeRequest {
   int32_t source_formats[4];
   uint32_t source_array_layers[4];
   uint32_t source_base_array_layers[4];
+  VPWgpuD3D12CpuSourceInfo cpu_sources[4];
   const VPWgpuD3D12PresentDecisionInfo* decision;
   int32_t width;
   int32_t height;

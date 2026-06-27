@@ -28,18 +28,19 @@
   注入合成的 removed/reset/hung 场景
 - 注册 native texture id 仅用于 controller/player lifecycle；Windows 视频
   上屏不得使用 Flutter Texture fallback
-- 在 compositor opt-in 下消费 Flutter engine 导出的完整 alpha surface，
-  与共享 FP16 video ring 合成到同一 DComp swap chain；跨 adapter 时只迁移
-  final compositor/output device，不迁移 renderer/decoder producer device
+- 在 compositor opt-in 下消费 Flutter engine 导出的完整 alpha surface
+  的 D3D12 shared texture / fence / generation，并把该 surface 交给
+  wgpu/D3D12 render core 做最终合成；runner 只保留窗口、DComp/DXGI
+  present、HDR/SDR target 和 device-loss 边界
 - 通过既有 source-projection MethodChannel 校验 projection/signature，并让
-  DComp 对最多四轨 source-resolution FP16 bundle 实时执行 pan/zoom/split
-- 在 same-adapter SDR/scRGB 下维护 DComp retained graph：source/Flutter
-  内容更新时烘焙到 retained surface，pan/zoom/split/order 只更新 visual
-  transform/clip 并 commit DComp tree，避免投影交互进入 final swap-chain
-  Present/flip queue
-- 在 source-projection overlay active 时使用 DComp retained video-space
-  overlay primitive buffer；pan/zoom/split/order 只更新 projection constants，
-  不在每次 composite tick 重建 CPU vertices
+  wgpu/D3D12 render core 对最多四轨 source-resolution bundle 实时执行
+  pan/zoom/split；DComp source/overlay bridge 只作为迁移期兼容层
+- retained D3D11 source/Flutter graph 不是产品路径；投影交互性能应通过
+  wgpu source consume、Flutter surface consume、present cadence 和
+  `windowsHotPath*` 诊断证明
+- source-projection overlay active 时仍可使用 DComp retained video-space
+  overlay primitive buffer 作为兼容桥；新增 overlay 能力应迁往 wgpu
+  composite pass，pan/zoom/split/order 不能在每次 tick 重建 CPU vertices
 - 暴露 high-refresh interaction diagnostics，UI 自动化可用
   `RESET_NATIVE_PERF_COUNTERS`、`BEGIN_NATIVE_INTERACTION_SAMPLE` 和
   `END_NATIVE_INTERACTION_SAMPLE` 包住 pan/zoom/split/overlay 采样窗口
@@ -65,7 +66,7 @@ windows/
 │   ├── analysis_ffi.*             # VAC2/VACHUNK generation, cache publish, overlay state FFI
 │   ├── main.cpp                   # Windows app 入口
 │   ├── win32_window.*             # Win32 窗口包装
-│   ├── windows_native_compositor.* # Flutter surface + FP16 video 的 DComp final composite
+│   ├── windows_native_compositor.* # DComp/DXGI present bridge + migration compatibility
 │   └── video_renderer_plugin.*    # video_renderer MethodChannel + Texture bridge
 └── libs/ffmpeg/                   # Windows FFmpeg DLL bundle / import libs
 ```
@@ -77,20 +78,21 @@ windows/
 - `runner/analysis_ffi.*` 可以做 Dart FFI 参数校验、cache path/publish、工具进程调度和 native analysis handle 管理；具体 VAC2/VACHUNK 格式仍归 `native/analysis`。
 - 复杂渲染/解码/同步逻辑不要写进 `runner/`，应放在 `native/`。
 - runner 只解析 Windows presentation 请求和 display capability；FP16
-  target、颜色映射和 fallback 实现在 `PresentationBackend` / D3D11 backend。
+  target、颜色映射、Flutter UI 合成和 fallback 应收敛在
+  `PresentationBackend` / wgpu D3D12 backend。
 - source cache 纹理创建、384 MiB budget、bundle generation/lease 和 source
-  pass 属于 D3D11 backend；runner 只校验 wire 参数、维护 signature，并在
-  composition thread 消费原子 bundle。
+  pass 正在从 D3D11 backend 迁往 wgpu D3D12 backend；runner 只校验 wire
+  参数、维护 signature，并透出迁移期兼容诊断。
 - source-projection 的 `currentPresentedFrame` anchor 由 renderer 在完整
   source-cache bundle 发布成功后更新；runner 只透出
   `nativeCompositorPresentedAnchor*` diagnostics，不从 compositor 消费状态反推帧。
-- cross-adapter transport 属于 Windows D3D11/native compositor 边界；runner
-  只传递 producer/output adapter、刷新 display capability，并发布诊断。
+- cross-adapter transport 属于 Windows presentation/native compositor 边界；
+  runner 只传递 producer/output adapter、刷新 display capability，并发布诊断。
   禁止用 CPU readback、窗口截图或私有 ICC/LUT 替代 GPU-copy bridge 和系统
   Advanced Color 校准。`VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC=shared-fence`
   只用于本地多 adapter A/B 证据；默认仍是 event-query，shared-fence 失败必须
   可诊断回落 event-query。
-- device-loss recovery 属于 `PresentationBackend`、D3D11 backend 和
+- device-loss recovery 属于 `PresentationBackend`、wgpu/D3D12 backend 和
   `WindowsNativeCompositor` 边界；runner 只暴露 debug 注入、ACK/serial 和
   diagnostics。恢复失败按 native scRGB -> native SDR -> fail closed
   的可诊断顺序处理，不销毁 player 或 track model，不恢复 Flutter Texture 视频。

@@ -34,7 +34,7 @@ Concrete presentation targets are platform-specific:
 
 | Platform | Backend target | Notes |
 | --- | --- | --- |
-| Windows | D3D11 BGRA compatibility texture, shared RGBA16F video/source rings, and locked-engine DComp dual target | Auto selects BGRA8 SDR or FP16 scRGB native compositor targets; Flutter Texture SDR is not an allowed fallback. |
+| Windows | wgpu/D3D12 render target with D3D12 Flutter surface import, D3D12 video/source imports, and locked-engine DComp/DXGI present bridge | Auto selects BGRA8 SDR or FP16 scRGB native compositor targets; Flutter Texture SDR is not an allowed fallback. |
 | macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
 | macOS EDR | Native compositor `RGBA16Float` `CAMetalLayer` | Uses `extendedLinearDisplayP3` and composites native video with the exported Flutter texture. |
 
@@ -128,16 +128,16 @@ Dolby Vision dynamic metadata / RPU is not consumed yet. Dolby Vision profile 8
 and similar files are displayed through their base HLG/PQ layer when FFmpeg
 reports that transfer metadata; full Dolby Vision grading remains future work.
 
-## Windows HLSL / D3D11 Path
+## Windows wgpu/D3D12 Path
 
-Windows samples shader inputs through D3D11 SRVs:
+Windows is migrating shader input sampling to wgpu/D3D12 resources:
 
 - 8-bit planar YUV420 software frames use `R8` plane textures.
-- NV12 uses Y `R8` and UV `R8G8` plane SRVs.
-- P010/P016 uses Y `R16` and UV `R16G16` plane SRVs.
+- NV12 uses Y `R8` and UV `R8G8` plane views.
+- P010/P016 uses Y `R16` and UV `R16G16` plane views.
 - BGRA fallback uses a BGRA texture.
-- `shaders/multitrack.hlsl` includes `shaders/color_pipeline.hlsl` for range,
-  matrix, primaries, transfer, tone mapping, and final BGRA output.
+- The wgpu shader path must share the same range, matrix, primaries, transfer,
+  tone mapping, and final output rules as the legacy HLSL canaries.
 
 The compatibility pass tone-maps to the BGRA shared texture used by Flutter or
 the native SDR compositor. In native-compositor modes the same
@@ -154,15 +154,16 @@ prepared source snapshot is first rendered to
 The BGRA compatibility pass rerenders from source rather than tone-mapping the
 mixed FP16 texture. This keeps existing SDR layout/color canaries stable.
 
-In native-compositor mode, the renderer publishes the same linear
-BT.709 scRGB video contract through a triple shared FP16 ring. The final DComp
-shader samples the locked engine's full-window premultiplied BGRA Flutter
-surface, restores straight sRGB for transfer decoding, re-premultiplies in
-linear light, applies `SDRWhiteLevel / 80`, and composites it source-over the
-video. Transparent viewport pixels reveal video without color keys or a
-rectangular native hole. The final swap-chain capture must preserve video
-values above `1.0` and Flutter alpha-edge behavior. Auto SDR instead samples
-the source-rerendered BGRA compatibility texture into a BGRA8/G22 target.
+In native-compositor mode, the renderer publishes the same linear BT.709 scRGB
+video contract through D3D12 resources. The wgpu final composition shader
+samples the locked engine's full-window premultiplied BGRA Flutter surface,
+restores straight sRGB for transfer decoding, re-premultiplies in linear light,
+applies `SDRWhiteLevel / 80`, and composites it source-over the video.
+Transparent viewport pixels reveal video without color keys or a rectangular
+native hole. The final target capture must preserve video values above `1.0`
+and Flutter alpha-edge behavior. Auto SDR instead samples the source-rerendered
+BGRA compatibility texture into a BGRA8/G22 target where the compatibility
+bridge still requires it.
 Auto HDR uses FP16/G10 scRGB for PQ/HLG media on a resolved HDR output. Matching
 adapters consume the producer leases directly; mismatched adapters bridge the
 same BGRA/scRGB inputs through row-major shared textures and GPU copies without

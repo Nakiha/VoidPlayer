@@ -1,9 +1,9 @@
 # Windows Presentation Backend
 
-This document defines the Windows presentation contract. D3D11 implementation
-details remain in [D3D11_BACKEND.md](D3D11_BACKEND.md); shared renderer
-ownership and color rules remain in [ARCHITECTURE.md](ARCHITECTURE.md) and
-[COLOR_PIPELINE.md](COLOR_PIPELINE.md).
+This document defines the Windows presentation contract. Legacy D3D11
+implementation details remain in [D3D11_BACKEND.md](D3D11_BACKEND.md);
+shared renderer ownership and color rules remain in
+[ARCHITECTURE.md](ARCHITECTURE.md) and [COLOR_PIPELINE.md](COLOR_PIPELINE.md).
 
 The target architecture is runner-owned presentation with wgpu-owned
 composition:
@@ -22,29 +22,28 @@ Windows runner / platform backend
   -> presents to the window
 ```
 
-The D3D11/DComp compositor, source-cache, retained graph, and Flutter export
-paths are compatibility layers during the migration. They are not the final
-Windows architecture once the D3D12 surface export ABI v2, wgpu/D3D12
-composition path, UI smoke, pacing probes, HDR/scRGB, and recovery gates prove
-stable.
+The remaining D3D11/DComp present bridge and source-cache/overlay bridge are
+compatibility layers during the migration. The old Flutter D3D11 SRV
+composition pass, readback-only diagnostics, and retained D3D11
+source/Flutter graph have been removed from the product route. They must not
+be reintroduced as workarounds for Flutter pacing or projection issues.
 
 ## Current Product And Experimental Routes
 
-This section describes the legacy D3D11 product route and the active
-wgpu/D3D12 migration state. New composition work should move toward
-`WgpuD3D12PresentationBackend`/Rust wgpu instead of adding shader or retained
-graph behavior to `WindowsNativeCompositor`.
+This section describes the active wgpu/D3D12 migration state. New composition
+work must move toward `WgpuD3D12PresentationBackend`/Rust wgpu instead of
+adding shader or retained graph behavior to `WindowsNativeCompositor`.
 
 The default Windows product policy is now `auto` and requires the locked
 VoidPlayer Flutter engine:
 
 ```text
 shared RendererDrawSnapshot
-  -> D3D11RenderBackend
-  -> shared FP16 video/source rings + BGRA compatibility ring
-  -> WindowsNativeCompositor
-  -> BGRA8 SDR or FP16 scRGB DComp swap chain
-  -> Flutter HWND
+  -> WgpuD3D12PresentationBackend / Rust WgpuRenderCore
+  -> D3D12 video/source imports + D3D12 Flutter UI surface import
+  -> final BGRA8 SDR or FP16 scRGB output resource
+  -> WindowsNativeCompositor present bridge
+  -> DComp/DXGI presentation to the Flutter HWND
 ```
 
 SDR-only sessions use `native-compositor-sdr`. A session containing an active
@@ -66,7 +65,7 @@ toggle. `flutter-texture-sdr`, `flutter`, `fp16-scrgb`, and unknown Windows
 presentation requests fail closed instead of creating a Flutter Texture video
 route.
 
-The forced HDR compositor diagnostic mode is:
+The forced HDR compositor diagnostic mode remains:
 
 ```powershell
 $env:VOIDPLAYER_WINDOWS_PRESENTATION_MODE="native-compositor-scrgb"
@@ -74,22 +73,21 @@ python dev.py launch
 ```
 
 The Auto and forced native-compositor routes require the locked VoidPlayer
-Flutter local engine. ANGLE copies
-Flutter's final premultiplied-alpha frame into a three-slot shared BGRA ring.
-The renderer publishes a separate three-slot shared FP16 scRGB video ring.
-`WindowsNativeCompositor` consumes both rings on its composition thread and
-presents one full-window flip swap chain through DirectComposition attached
-directly to the Flutter HWND. The SDR target is `B8G8R8A8_UNORM` with
-`RGB_FULL_G22_NONE_P709`; the HDR target is `R16G16B16A16_FLOAT` with
-`RGB_FULL_G10_NONE_P709`. It does not use a key color, `WS_EX_LAYERED`, window
-capture, a child HWND sandwich, or a rectangular native hole.
+Flutter local engine. The engine exports Flutter's final premultiplied-alpha
+frame through the D3D12 surface export ABI v2: shared texture handle, fence,
+and generation. The wgpu/D3D12 render core imports that surface together with
+video/source textures, performs color/layout/split/pan/zoom/overlay and
+Flutter premultiplied-alpha composition, then writes a final target. The Windows
+runner owns HWND/DComp/DXGI, display/HDR/SDR policy, device-loss recovery, and
+presenting the final target to the window. It does not use a key color,
+`WS_EX_LAYERED`, window capture, a child HWND sandwich, or a rectangular native
+hole.
 
 Runtime track changes and debounced display/window notifications rerun the same
-resolver. Target changes build and render a candidate swap chain from retained
-video/source/Flutter inputs, Present it, then atomically replace the DComp
-visual content. HDR candidate failure falls back to native SDR; failure of the
-SDR compositor enters an explicit failed state and does not restore Flutter
-Texture SDR.
+resolver. Target changes create a candidate output target, render one valid
+wgpu/D3D12 frame into it, then atomically replace the DComp visual content.
+HDR candidate failure falls back to native SDR; failure of the SDR compositor
+enters an explicit failed state and does not restore Flutter Texture SDR.
 
 If the active output belongs to a different adapter, the renderer and Flutter
 export remain on the producer adapter while `WindowsNativeCompositor` recreates
@@ -101,23 +99,20 @@ requests the optional shared-fence path for local evidence; initialization or
 capability failure falls back to event-query with diagnostics. The transport
 never reads pixels back to the CPU and does not change color transforms.
 
-Once Dart publishes a valid projection signature, D3D11 also maintains an
-atomic source-resolution bundle with up to four FP16 scRGB textures. The render
-thread draws every active source from the same prepared frame snapshot, then
-publishes the complete bundle with its analysis primitive package. DComp
-applies pan, zoom, side-by-side order, split position, background, and retained
-overlay projection without waiting for a viewport-sized redraw. The viewport
-FP16 ring remains the startup, allocation-failure, and transient-miss fallback.
+Once Dart publishes a valid projection signature, the render path maintains an
+atomic source-resolution bundle with up to four FP16 scRGB textures. The
+projection state is consumed by the wgpu/D3D12 render core so pan, zoom,
+side-by-side order, split position, background, overlay, and Flutter UI are
+composited in one render-domain. The viewport FP16 ring remains the startup,
+allocation-failure, and transient-miss fallback until the D3D12 source-cache
+path is fully promoted.
 
-On same-adapter SDR and scRGB targets, `WindowsNativeCompositor` can switch the
-active DComp root to a retained visual graph after the first normal compositor
-present and transparent Flutter ACK. Source-cache and Flutter-export content
-updates are baked into retained `IDCompositionSurface` layers (`BGRA8` for SDR,
-`R16G16B16A16_FLOAT` for scRGB). Pure projection changes then update only the
-source visual transform/clip and commit the DComp tree, so pan/zoom/split/order
-interactions do not call final swap-chain `Present` and should report
-`windowsDCompPresentBlockP95Us == 0`. Cross-adapter output keeps using the
-full-composite path until there is separate local transport evidence.
+The retained D3D11 source/Flutter graph is no longer a product path. Diagnostic
+fields with `windowsRetainedGraph*` names remain as compatibility evidence and
+should report inactive/zero unless a test explicitly exercises an old canary.
+Projection performance should be proven through wgpu/D3D12 source consumption,
+Flutter surface generation consumption, present cadence, and hot-path
+diagnostics rather than DComp retained bake counts.
 
 The source cache budget is 384 MiB. A three-slot bundle ring is preferred; if
 that exceeds the budget, one frozen snapshot is allowed. A single bundle that
@@ -126,13 +121,13 @@ changes stop exposing the previous bundle, while leased old generations remain
 alive until release. A draw miss with an unchanged signature keeps the last
 complete bundle and never publishes partial track updates.
 
-Analysis overlay in source-projection mode is retained on the DComp compositor
-device. A dirty primitive package is packed once into a video-space GPU
-primitive buffer keyed by primitive generation, track/file/size/mode signature,
-output target class, and SDR white scale. Pan, zoom, split, and order changes
-only update projection constants; they do not rebuild or upload the overlay
-buffer. Rebuild failure drops only the overlay layer for that frame and reports
-a fallback reason. Device removal follows the normal presentation recovery
+Analysis overlay in source-projection mode is in migration. The retained DComp
+primitive-buffer bridge remains as a compatibility path while the same
+video-space primitives are moved into the wgpu/D3D12 composite pass. New overlay
+features should target the wgpu renderer. Pan, zoom, split, and order changes
+must still update projection constants without rebuilding CPU vertices.
+Rebuild failure drops only the overlay layer for that frame and reports a
+fallback reason. Device removal follows the normal presentation recovery
 contract and clears old overlay generations.
 
 The standalone native window path may use a double-buffered flip-discard swap
@@ -142,7 +137,12 @@ chain. It is not the current Flutter product presentation route.
 
 - Shared renderer code owns scheduling, `PresentDecision`,
   `RendererDrawSnapshot`, layout, and normalized color metadata.
-- `D3D11RenderBackend` owns the D3D11 device-facing presentation resources.
+- `WgpuD3D12PresentationBackend` / Rust `WgpuRenderCore` owns the target
+  composition path: video/source imports, projection, overlay, Flutter surface
+  import, color, layout, and final-target rendering.
+- `D3D11RenderBackend` owns the remaining legacy D3D11 device-facing
+  presentation resources until their responsibilities are moved behind the
+  wgpu/D3D12 backend.
 - `D3D11HeadlessOutput` owns the shared BGRA texture ring, handles, front/back
   selection, GPU fence, and capture.
 - `D3D11Fp16Target` owns the single-buffer renderer-only scRGB texture, RTV,
@@ -160,11 +160,11 @@ chain. It is not the current Flutter product presentation route.
   compositor-owned mode it must keep publishing a full premultiplied-alpha
   surface stream for normal Flutter UI frames; `mirror` is only a preparation
   mode before DComp becomes active, not an active fallback.
-- `WindowsNativeCompositor` owns an independent D3D11 device/context, DComp
-  target, candidate/current SDR or FP16 swap chains, final shader, composition
-  thread, and the latest
-  successfully synchronized video, Flutter, source-cache input leases, and
-  retained overlay primitive buffers.
+- `WindowsNativeCompositor` owns the Windows present bridge: an independent
+  D3D/DComp device, target, candidate/current SDR or FP16 swap chains,
+  composition thread, and the latest successfully synchronized final-target or
+  compatibility input leases. It must not regain ownership of Flutter UI
+  blending or final color/layout composition.
   Held inputs are replaced only after a newer generation is acquired
   successfully, then released during replacement, failed-state cleanup, or
   shutdown.
@@ -182,17 +182,19 @@ shared scheduler.
   `RGB_FULL_G22_NONE_P709`.
 - Auto HDR presents `R16G16B16A16_FLOAT`, linear BT.709 scRGB, in
   `RGB_FULL_G10_NONE_P709`.
-- The renderer keeps FP16 video/source rings as the common compositor input.
-- SDR final composition samples the existing source-rerendered BGRA
-  compatibility texture, while source projection tone-maps each PQ/HLG source
-  before Flutter premultiplied sRGB source-over.
+- The wgpu render core keeps FP16 video/source resources as the common
+  compositor input.
+- SDR final composition samples the source-rerendered BGRA compatibility
+  texture only where the compatibility bridge still requires it. The target
+  path is source projection in wgpu/D3D12, where each PQ/HLG source is
+  tone-mapped before Flutter premultiplied sRGB source-over.
 - scRGB `1.0` represents 80 nits. SDR content, backgrounds, dividers, and
   overlays are linearized and scaled by `SDRWhiteLevel / 80`.
 - PQ is decoded to absolute nits then divided by 80. HLG keeps the shared
   reference policy and is converted to the same 80-nit scale.
 - Valid FP16 values above `1.0` and below `0.0` are not clamped.
-- Flutter export is BGRA premultiplied sRGB. The final shader recovers straight
-  RGB, decodes sRGB to linear, re-premultiplies, applies
+- Flutter export is BGRA premultiplied sRGB. The wgpu final composition shader
+  recovers straight RGB, decodes sRGB to linear, re-premultiplies, applies
   `SDRWhiteLevel / 80`, and performs standard premultiplied source-over.
 - CPU fallback packages are BGRA byte streams. The Windows upload texture is
   also `B8G8R8A8_UNORM`; treating that storage as RGBA swaps red and blue.
@@ -233,7 +235,7 @@ and unchanged BGRA compatibility output.
 | `windowsPresentationCrossAdapterSupported/Active` | Cross-adapter transport availability and active route |
 | `windowsPresentationOutputMigrationCount/OutputMigrationFailureCount` | Runtime output-device migration evidence |
 | `windowsPresentationLockedDisplayGeneration/LockedSDRWhiteLevelMilliNits` | Inputs locked to the current target generation |
-| `windowsPresentationBackend` | `d3d11` |
+| `windowsPresentationBackend` | Active backend identity, currently migrating from `d3d11` compatibility to `wgpu-d3d12` |
 | `windowsPresentationTargetFormat` | `B8G8R8A8_UNORM` |
 | `windowsPresentationRenderTargetFormat/RenderColorSpace` | Actual internal render target and working color space |
 | `windowsPresentationFP16Target*` | Active state, dimensions, and single-buffer contract |
@@ -241,6 +243,7 @@ and unchanged BGRA compatibility output.
 | `windowsPresentationSDRWhiteLevel*` | Player-creation locked white level/status/scale |
 | `windowsPresentationFP16DrawCount` | Successful experimental draws |
 | `windowsPresentationSDRCompatibilityDrawCount` | Matching BGRA compatibility redraws |
+| `windowsPresentationExternalFlutterSurface*` | D3D12 Flutter surface update/consume/wait evidence for the wgpu composition path |
 | `windowsPresentationFallbackReason` | Native target downgrade/failure reason; never a Flutter Texture restore reason |
 | `windowsPresentationWidth/Height` | Active target dimensions |
 | `windowsPresentationBufferCount` | Active output buffer count |
@@ -251,12 +254,12 @@ and unchanged BGRA compatibility output.
 | `windowsFlutterExportFramePumpAvailable` | Locked engine exposes the compositor-owned surface export request/state ABI |
 | `windowsFlutterExportPublishCount/windowsFlutterExportRequestCount` | Engine-owned export frame stream activity |
 | `windowsFlutterExportStaleTimeoutCount` | Native compositor failed closed because a requested Flutter generation never advanced |
-| `windowsDComp*` | Swap-chain format/color space/support, SDR tone-map state, and composite/present/drop/failure counters |
+| `windowsDComp*` | Present-bridge swap-chain format/color space/support, SDR tone-map state, and composite/present/drop/failure counters |
 | `windowsDeviceRecovery*` | In-place D3D11/DComp recovery state, generation, attempts, success/failure counters, preserved player/track evidence, last removed reason, fallback stage, and last-frame hold |
 | `windowsCrossAdapter*` | Transport mode/status, requested/active sync kind, shared-fence capability/open/signal/wait counters, event-query/shared-fence P95 waits, copy counters, consumed generations, fallback reason, and last error |
 | `windowsOverlay*` | Retained overlay layer active state, mode, generation, bytes, raster/upload/reuse/composite/miss/backpressure counts, p95 costs, and fallback reason |
 | `windowsHotPath*` | Source-projection hot-path summary: active/mode, display Hz, frame budget, present/composite/acquire/input p95, drop rate, source/overlay reuse, viewport redraws, failure reason, and gate result |
-| `windowsRetainedGraph*` | DComp retained source/Flutter graph state, fallback reason, commit counts, source/Flutter bake counts, and projection-only commits that skipped final swap-chain Present |
+| `windowsRetainedGraph*` | Compatibility counters for the removed retained D3D11 source/Flutter graph; product-route evidence should remain inactive/zero |
 | `nativeCompositorSource*` | Projection/cache activity, generation, bytes, rates, and overlay primitive counts |
 | `windowsSourceCache*` | Format, depth/frozen policy, publish/backpressure/consume/fallback counters |
 | `windowsD3DAdapter*` | Description, vendor/device IDs, and LUID |
@@ -315,8 +318,9 @@ and expose the selected request, actual mode, transition, and failure reason.
 
 ## High Refresh Interaction Diagnostics
 
-Windows native compositor exposes high-refresh parity counters for the retained
-source-projection path. `RESET_NATIVE_PERF_COUNTERS`,
+Windows native compositor exposes high-refresh parity counters for the
+source-projection path while it is migrating to wgpu-owned composition.
+`RESET_NATIVE_PERF_COUNTERS`,
 `BEGIN_NATIVE_INTERACTION_SAMPLE,label`, and
 `END_NATIVE_INTERACTION_SAMPLE,label` let UI automation bracket pan/zoom/split
 or overlay interactions. Diagnostics include DComp present/composite P95,
@@ -326,10 +330,11 @@ cost. Displays below 100 Hz run as `functional-only-low-refresh` evidence;
 high-refresh local gates enforce timing thresholds.
 
 During source-cache projection, pan/zoom/split/order changes must update
-compositor projection state without forcing viewport-sized renderer redraws.
-Analysis overlay diagnostics require retained layer reuse to outpace dirty
-raster/upload on high-refresh displays. The old per-composite CPU vertex rebuild
-path is not a valid high-refresh overlay result.
+projection state without forcing viewport-sized renderer redraws. Analysis
+overlay diagnostics require the retained bridge, or the future wgpu overlay
+path, to reuse GPU-side primitive data so dirty raster/upload does not dominate
+high-refresh interaction. The old per-composite CPU vertex rebuild path is not
+a valid high-refresh overlay result.
 
 The hot-path gate reports concrete failure reasons:
 `fail-viewport-redraw`, `fail-source-cache-no-reuse`,
@@ -345,7 +350,7 @@ maps to macOS by behavior:
 
 | Capability | Windows evidence | macOS evidence |
 | --- | --- | --- |
-| Flutter UI composition | Exported BGRA premultiplied surface + DComp final composite | Exported Flutter surface + native compositor |
+| Flutter UI composition | Exported D3D12 premultiplied surface + wgpu/D3D12 final composite | Exported Flutter surface + native compositor |
 | Source-resolution interaction | `nativeCompositorSourceCacheActive`, `windowsHotPathSourceCacheReuseCount` | `sourceFrameCacheHitCount`, source projection diagnostics |
 | Presented-frame anchor | `nativeCompositorPresentedAnchorMode=source-cache-publish`, source-cache anchor generation fields | source projection publish frame anchor |
 | No viewport redraw on pan/zoom | `windowsHotPathViewportRedrawDuringProjectionCount == 0` | display-link viewport composite without renderer round-trip |
@@ -355,9 +360,13 @@ maps to macOS by behavior:
 
 ## Catch-Up Roadmap
 
-1. Harden Windows release evidence: real HDR, multi-adapter, and high-refresh
+1. Move the retained overlay primitive bridge into the wgpu/D3D12 composite
+   pass while preserving high-refresh reuse diagnostics.
+2. Thin `WindowsNativeCompositor` to final-target acquisition, DComp/DXGI
+   present, HDR/SDR target switching, and device-loss recovery.
+3. Harden Windows release evidence: real HDR, multi-adapter, and high-refresh
    combinations must preserve native compositor state, source projection,
-   retained overlay reuse, and documented fallback diagnostics.
+   overlay reuse, and documented fallback diagnostics.
 
 This sequence is capability parity with macOS, not a mechanical Metal/Swift
 port.

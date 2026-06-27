@@ -151,6 +151,134 @@ bool WindowsD3D12PresentTarget::initialize(
     return true;
 }
 
+bool WindowsD3D12PresentTarget::initialize_with_composition_visual(
+    IDCompositionDevice* dcomp_device,
+    IDCompositionTarget* dcomp_target,
+    IDCompositionVisual* dcomp_visual,
+    ID3D12Device* device,
+    ID3D12CommandQueue* queue,
+    uint32_t width,
+    uint32_t height,
+    WindowsD3D12PresentTargetFormat format) {
+    shutdown();
+    const auto fail_and_shutdown = [&](const char* stage, HRESULT hr) {
+        fail(stage, hr);
+        const std::string error = last_error_;
+        shutdown();
+        last_error_ = error;
+        return false;
+    };
+    if (!dcomp_device || !dcomp_target || !dcomp_visual || !device || !queue) {
+        last_error_ = "d3d12-present-target-invalid-arguments";
+        return false;
+    }
+    width_ = std::max(width, 1u);
+    height_ = std::max(height, 1u);
+    dxgi_format_ = format == WindowsD3D12PresentTargetFormat::ScRGB
+        ? DXGI_FORMAT_R16G16B16A16_FLOAT
+        : DXGI_FORMAT_B8G8R8A8_UNORM;
+    color_space_ = format == WindowsD3D12PresentTargetFormat::ScRGB
+        ? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+        : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    device_ = device;
+    queue_ = queue;
+    dcomp_device_ = dcomp_device;
+    dcomp_target_ = dcomp_target;
+    dcomp_visual_ = dcomp_visual;
+
+    Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
+    HRESULT hr = CreateDXGIFactory2(0, IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) {
+        return fail_and_shutdown("CreateDXGIFactory2", hr);
+    }
+
+    DXGI_SWAP_CHAIN_DESC1 desc = {};
+    desc.Width = width_;
+    desc.Height = height_;
+    desc.Format = dxgi_format_;
+    desc.SampleDesc.Count = 1;
+    desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    desc.BufferCount = kBufferCount;
+    desc.Scaling = DXGI_SCALING_STRETCH;
+    desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+    desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+
+    Microsoft::WRL::ComPtr<IDXGISwapChain1> chain;
+    hr = factory->CreateSwapChainForComposition(
+        queue_.Get(), &desc, nullptr, &chain);
+    if (FAILED(hr) || !chain) {
+        return fail_and_shutdown("CreateSwapChainForComposition(D3D12)", hr);
+    }
+    hr = chain.As(&swap_chain_);
+    if (FAILED(hr) || !swap_chain_) {
+        return fail_and_shutdown("Query IDXGISwapChain3", hr);
+    }
+    UINT color_support = 0;
+    hr = swap_chain_->CheckColorSpaceSupport(color_space_, &color_support);
+    if (FAILED(hr) ||
+        (color_support &
+         DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT) == 0) {
+        return fail_and_shutdown(
+            "CheckColorSpaceSupport", FAILED(hr) ? hr : E_FAIL);
+    }
+    hr = swap_chain_->SetColorSpace1(color_space_);
+    if (FAILED(hr)) {
+        return fail_and_shutdown("SetColorSpace1", hr);
+    }
+
+    hr = dcomp_visual_->SetContent(swap_chain_.Get());
+    if (FAILED(hr)) {
+        return fail_and_shutdown("SetContent(D3D12 swapchain)", hr);
+    }
+    hr = dcomp_target_->SetRoot(dcomp_visual_.Get());
+    if (FAILED(hr)) {
+        return fail_and_shutdown("SetRoot(D3D12 swapchain)", hr);
+    }
+    hr = dcomp_device_->Commit();
+    if (FAILED(hr)) {
+        return fail_and_shutdown("DComp Commit(D3D12 swapchain)", hr);
+    }
+
+    D3D12_DESCRIPTOR_HEAP_DESC heap_desc = {};
+    heap_desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    heap_desc.NumDescriptors = kBufferCount;
+    hr = device_->CreateDescriptorHeap(
+        &heap_desc, IID_PPV_ARGS(&rtv_heap_));
+    if (FAILED(hr) || !rtv_heap_) {
+        return fail_and_shutdown("CreateDescriptorHeap(RTV)", hr);
+    }
+    rtv_descriptor_size_ = device_->GetDescriptorHandleIncrementSize(
+        D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    hr = device_->CreateCommandAllocator(
+        D3D12_COMMAND_LIST_TYPE_DIRECT,
+        IID_PPV_ARGS(&command_allocator_));
+    if (FAILED(hr) || !command_allocator_) {
+        return fail_and_shutdown("CreateCommandAllocator", hr);
+    }
+    hr = device_->CreateCommandList(0,
+                                    D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                    command_allocator_.Get(),
+                                    nullptr,
+                                    IID_PPV_ARGS(&command_list_));
+    if (FAILED(hr) || !command_list_) {
+        return fail_and_shutdown("CreateCommandList", hr);
+    }
+    command_list_->Close();
+    hr = device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_));
+    if (FAILED(hr) || !fence_) {
+        return fail_and_shutdown("CreateFence", hr);
+    }
+    fence_event_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (!fence_event_) {
+        const std::string error = "CreateEventW failed";
+        shutdown();
+        last_error_ = error;
+        return false;
+    }
+    last_error_ = "none";
+    return true;
+}
+
 void WindowsD3D12PresentTarget::shutdown() {
     if (queue_ && fence_) {
         wait_for_gpu();
@@ -261,6 +389,43 @@ bool WindowsD3D12PresentTarget::present(UINT sync_interval) {
     }
     last_error_ = "none";
     return true;
+}
+
+bool WindowsD3D12PresentTarget::present_after_external_render(
+    const WindowsD3D12PresentTargetFrame& frame,
+    UINT sync_interval) {
+    if (!device_ || !queue_ || !swap_chain_ || !command_allocator_ ||
+        !command_list_ || !frame.resource) {
+        last_error_ = "d3d12-present-target-not-initialized";
+        return false;
+    }
+    HRESULT hr = command_allocator_->Reset();
+    if (FAILED(hr)) {
+        return fail("CommandAllocator::Reset(present)", hr);
+    }
+    hr = command_list_->Reset(command_allocator_.Get(), nullptr);
+    if (FAILED(hr)) {
+        return fail("CommandList::Reset(present)", hr);
+    }
+
+    D3D12_RESOURCE_BARRIER to_present = {};
+    to_present.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    to_present.Transition.pResource = frame.resource.Get();
+    to_present.Transition.Subresource =
+        D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    to_present.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    to_present.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+    command_list_->ResourceBarrier(1, &to_present);
+    hr = command_list_->Close();
+    if (FAILED(hr)) {
+        return fail("CommandList::Close(present)", hr);
+    }
+    ID3D12CommandList* lists[] = {command_list_.Get()};
+    queue_->ExecuteCommandLists(1, lists);
+    if (!wait_for_gpu()) {
+        return false;
+    }
+    return present(sync_interval);
 }
 
 bool WindowsD3D12PresentTarget::fail(const char* stage, HRESULT hr) {

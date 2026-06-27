@@ -2158,12 +2158,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
             std::lock_guard<std::mutex> lock(mutex_);
             direct_target = desired_output_target_;
         }
-        if (direct_target != OutputTarget::SDR) {
-            if (d3d12_present_target_) {
-                d3d12_present_target_->shutdown();
-            }
-            goto d3d11_compositor_fallback;
-        }
         const auto present_format =
             direct_target == OutputTarget::ScRGB
                 ? vr::WindowsD3D12PresentTargetFormat::ScRGB
@@ -2193,13 +2187,26 @@ bool WindowsNativeCompositor::CompositeLatest() {
                       DXGI_FORMAT_B8G8R8A8_UNORM));
             if (!target_matches) {
                 d3d12_present_target_->shutdown();
-                (void)d3d12_present_target_->initialize(
-                    hwnd_,
-                    render_device.Get(),
-                    render_queue.Get(),
-                    direct_width,
-                    direct_height,
-                    present_format);
+                const bool initialized =
+                    d3d12_present_target_->initialize_with_composition_visual(
+                        dcomp_device_.Get(),
+                        dcomp_target_.Get(),
+                        dcomp_visual_.Get(),
+                        render_device.Get(),
+                        render_queue.Get(),
+                        direct_width,
+                        direct_height,
+                        present_format);
+                if (!initialized) {
+                    spdlog::warn(
+                        "[WindowsNativeCompositor] D3D12 direct present "
+                        "target initialize failed target={} size={}x{}: {}",
+                        OutputTargetName(direct_target),
+                        direct_width,
+                        direct_height,
+                        d3d12_present_target_->last_error());
+                    d3d12_present_target_->shutdown();
+                }
             }
             vr::WindowsD3D12PresentTargetFrame direct_frame;
             if (d3d12_present_target_->active() &&
@@ -2219,7 +2226,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     const auto present_started =
                         std::chrono::steady_clock::now();
                     const bool presented =
-                        d3d12_present_target_->present(1);
+                        d3d12_present_target_->present_after_external_render(
+                            direct_frame, 1);
                     const auto present_finished =
                         std::chrono::steady_clock::now();
                     if (presented) {
@@ -2276,6 +2284,22 @@ bool WindowsNativeCompositor::CompositeLatest() {
                             ++diagnostics_.present_count;
                             ++diagnostics_.composite_count;
                         }
+                        Phase phase = Phase::Inactive;
+                        {
+                            std::lock_guard<std::mutex> lock(mutex_);
+                            phase = phase_;
+                        }
+                        if (phase == Phase::Inactive) {
+                            engine_api_.set_mode(
+                                flutter_view_, kExportCompositorOwned);
+                            PublishState(
+                                Phase::Active,
+                                "d3d12-direct-present-active");
+                        } else if (phase == Phase::Preparing) {
+                            PublishState(
+                                Phase::Active,
+                                "d3d12-direct-present-ready");
+                        }
                         release_held_video();
                         release_held_sdr_video();
                         return true;
@@ -2293,7 +2317,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
             }
         }
     }
-d3d11_compositor_fallback:
     if (!legacy_inputs_preacquired) {
         acquire_legacy_video_inputs();
     }

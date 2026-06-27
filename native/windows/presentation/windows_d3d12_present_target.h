@@ -41,13 +41,28 @@ public:
                     uint32_t width,
                     uint32_t height,
                     WindowsD3D12PresentTargetFormat format);
+    bool initialize_with_composition_visual(
+        IDCompositionDevice* dcomp_device,
+        IDCompositionTarget* dcomp_target,
+        IDCompositionVisual* dcomp_visual,
+        ID3D12Device* device,
+        ID3D12CommandQueue* queue,
+        uint32_t width,
+        uint32_t height,
+        WindowsD3D12PresentTargetFormat format);
     void shutdown();
 
     bool acquire_frame(WindowsD3D12PresentTargetFrame& frame);
     bool present(UINT sync_interval);
+    bool present_after_external_render(
+        const WindowsD3D12PresentTargetFrame& frame,
+        UINT sync_interval);
     bool clear_and_present(const float color[4], UINT sync_interval);
 
-    bool active() const { return swap_chain_ != nullptr; }
+    bool active() const {
+        return swap_chain_ != nullptr && command_allocator_ != nullptr &&
+               command_list_ != nullptr;
+    }
     uint32_t width() const { return width_; }
     uint32_t height() const { return height_; }
     DXGI_FORMAT dxgi_format() const { return dxgi_format_; }

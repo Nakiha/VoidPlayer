@@ -24,7 +24,7 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
     target_sources(${target_name} PRIVATE
         ${VOID_RENDERER_CORE_SOURCES}
         ${VOID_RENDERER_WINDOWS_SOURCES}
-        ${VOID_D3D11_BACKEND_SOURCES}
+        ${VOID_WINDOWS_ANALYSIS_OVERLAY_STUB_SOURCE}
     )
     if(BUILD_ANALYSIS)
         target_sources(${target_name} PRIVATE ${VOID_ANALYSIS_SOURCES})
@@ -59,6 +59,7 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
     target_compile_definitions(${target_name} PRIVATE
         _CRT_SECURE_NO_WARNINGS
         VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>
+        VOID_ENABLE_D3D11_BACKEND=0
     )
 
     void_configure_renderer_shaders("${generated_include_dir}")

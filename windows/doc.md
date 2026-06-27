@@ -42,6 +42,10 @@
 - source-projection overlay 由 wgpu/D3D12 composite pass 消费 video-space
   primitives；新增 overlay 能力应继续落在 wgpu renderer，pan/zoom/split/order
   不能在每次 tick 重建 CPU vertices
+- Flutter Windows runner 目标不再编译 `D3D11RenderBackend` / D3D11 overlay
+  renderer；这些只保留在 standalone native parity/test 构建中。runner 仍可在
+  DComp present bridge 内使用少量 D3D11 transport，直到 DX12 present target
+  接管。
 - 暴露 high-refresh interaction diagnostics，UI 自动化可用
   `RESET_NATIVE_PERF_COUNTERS`、`BEGIN_NATIVE_INTERACTION_SAMPLE` 和
   `END_NATIVE_INTERACTION_SAMPLE` 包住 pan/zoom/split/overlay 采样窗口

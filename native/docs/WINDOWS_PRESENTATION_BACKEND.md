@@ -140,9 +140,9 @@ chain. It is not the current Flutter product presentation route.
 - `WgpuD3D12PresentationBackend` / Rust `WgpuRenderCore` owns the target
   composition path: video/source imports, projection, overlay, Flutter surface
   import, color, layout, and final-target rendering.
-- `D3D11RenderBackend` owns the remaining legacy D3D11 device-facing
-  presentation resources until their responsibilities are moved behind the
-  wgpu/D3D12 backend.
+- `D3D11RenderBackend` is no longer compiled into the Flutter Windows runner.
+  It remains in standalone/native parity builds for legacy color/layout and
+  FP16 evidence while the product path runs through wgpu/D3D12.
 - `D3D11HeadlessOutput` owns the shared BGRA texture ring, handles, front/back
   selection, GPU fence, and capture.
 - `D3D11Fp16Target` owns the single-buffer renderer-only scRGB texture, RTV,
@@ -153,7 +153,7 @@ chain. It is not the current Flutter product presentation route.
   retirement, the 384 MiB depth policy, and overlay-package attachment.
 - `D3D11CrossAdapterTextureTransport` owns row-major shared bridge textures,
   producer-to-bridge and bridge-to-output GPU copies, capability reporting, and
-  copy/backpressure diagnostics for cross-adapter compositor inputs.
+  copy/backpressure diagnostics for the remaining D3D11 DComp present bridge.
 - `FlutterTextureBridge` owns Flutter texture registration and lease release.
 - The engine fork owns immutable Flutter surface leases. Old resize
   generations remain alive until their leases are released. In active

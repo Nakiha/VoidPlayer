@@ -210,9 +210,10 @@ The native portion includes
 `windows_d3d11_color_layout_parity_smoke` plus
 `windows_d3d11_fp16_scrgb_smoke`. They capture the remaining D3D11 present
 bridge BGRA and RGBA16F outputs for SDR layout parity and FP16/scRGB
-transfer/white-level behavior. Full-frame Flutter premultiplied-alpha
-composition is a wgpu/D3D12 product-path responsibility and is covered by the
-external Flutter surface UI probes.
+transfer/white-level behavior in standalone/native parity builds. The Flutter
+Windows runner does not compile the legacy `D3D11RenderBackend`; full-frame
+Flutter premultiplied-alpha composition is a wgpu/D3D12 product-path
+responsibility and is covered by the external Flutter surface UI probes.
 Run them directly with:
 
 ```powershell

@@ -2,7 +2,7 @@
 #include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/render/renderer_draw_snapshot_builder.h"
 
-#ifdef _WIN32
+#if defined(_WIN32) && (!defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND)
 #include "windows/d3d11/render_backend.h"
 #endif
 
@@ -145,7 +145,7 @@ void Renderer::Impl::render_loop() noexcept {
 
 RendererPresentationOverlayHooks Renderer::Impl::presentation_overlay_hooks() {
     RendererPresentationOverlayHooks hooks;
-#ifdef _WIN32
+#if defined(_WIN32) && (!defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND)
     hooks.draw_overlay = [this](PresentationBackend& backend,
                                 const RendererDrawSnapshot& draw_snapshot) {
         if (!analysis_overlay_renderer_ ||

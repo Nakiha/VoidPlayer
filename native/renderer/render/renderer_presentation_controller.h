@@ -235,16 +235,16 @@ public:
     bool update_external_flutter_surface(
         const PresentationExternalD3D12Surface& surface);
     void clear_external_flutter_surface();
-    bool configure_d3d_source_cache(
+    bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors);
-    void clear_d3d_source_cache(const char* reason);
-    bool update_d3d_source_projection(const WindowsSourceProjection& projection);
-    void clear_d3d_source_projection();
-    bool acquire_d3d_source_cache_bundle(
+    void clear_source_cache(const char* reason);
+    bool update_source_projection(const WindowsSourceProjection& projection);
+    void clear_source_projection();
+    bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot& snapshot) const;
-    void release_d3d_source_cache_bundle(
+    void release_source_cache_bundle(
         int buffer_index, uint64_t ring_generation) const;
-    void set_d3d_source_cache_frame_callback(std::function<void()> callback);
+    void set_source_cache_frame_callback(std::function<void()> callback);
     bool recover_d3d_device_loss(const char* reason, long removed_reason);
     D3D11RenderBackend* d3d_backend() const;
     D3D11Device* d3d_device() const;

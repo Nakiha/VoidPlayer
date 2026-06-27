@@ -178,7 +178,7 @@ bool Renderer::Impl::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    return presentation_.configure_d3d_source_cache(descriptors);
+    return presentation_.configure_source_cache(descriptors);
 #else
     (void)descriptors;
     return false;
@@ -198,7 +198,7 @@ bool Renderer::Impl::update_presentation_sdr_white_level(double nits) {
 void Renderer::Impl::clear_source_cache(const char* reason) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    presentation_.clear_d3d_source_cache(reason);
+    presentation_.clear_source_cache(reason);
 #else
     (void)reason;
 #endif
@@ -208,7 +208,7 @@ bool Renderer::Impl::update_source_projection(
     const WindowsSourceProjection& projection) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    return presentation_.update_d3d_source_projection(projection);
+    return presentation_.update_source_projection(projection);
 #else
     (void)projection;
     return false;
@@ -218,7 +218,7 @@ bool Renderer::Impl::update_source_projection(
 void Renderer::Impl::clear_source_projection() {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    presentation_.clear_d3d_source_projection();
+    presentation_.clear_source_projection();
 #endif
 }
 
@@ -226,7 +226,7 @@ bool Renderer::Impl::acquire_source_cache_bundle(
     SharedSourceCacheBundleSnapshot& snapshot) const {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    return presentation_.acquire_d3d_source_cache_bundle(snapshot);
+    return presentation_.acquire_source_cache_bundle(snapshot);
 #else
     (void)snapshot;
     return false;
@@ -237,7 +237,7 @@ void Renderer::Impl::release_source_cache_bundle(
     int buffer_index, uint64_t ring_generation) const {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    presentation_.release_d3d_source_cache_bundle(
+    presentation_.release_source_cache_bundle(
         buffer_index, ring_generation);
 #else
     (void)buffer_index;
@@ -249,7 +249,7 @@ void Renderer::Impl::set_source_cache_frame_callback(
     std::function<void()> cb) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    presentation_.set_d3d_source_cache_frame_callback(std::move(cb));
+    presentation_.set_source_cache_frame_callback(std::move(cb));
 #else
     (void)cb;
 #endif

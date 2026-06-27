@@ -1,13 +1,12 @@
 #pragma once
 
-#include "windows/d3d11/shared_fp16_ring.h"
-#include "windows/d3d11/shared_source_cache_ring.h"
 #include "windows/d3d11/cross_adapter_transport.h"
 #include "windows/presentation/windows_dcomp_composite.h"
 #include "windows/presentation/windows_device_recovery.h"
 #include "windows/presentation/windows_high_refresh_metrics.h"
 #include "windows/presentation/windows_overlay_layer_state.h"
 #include "windows/player/native_player.h"
+#include "windows/shared/shared_texture_ring_types.h"
 
 #include <d3d11.h>
 #include <d3d11_1.h>

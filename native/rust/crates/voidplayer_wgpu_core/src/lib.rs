@@ -9,7 +9,7 @@ pub mod layout;
 pub mod metal;
 pub mod overlay;
 
-pub const ABI_VERSION: i32 = 12;
+pub const ABI_VERSION: i32 = 13;
 pub const MAX_TRACKS: usize = 4;
 
 pub const YUV_FORMAT_NV12: i32 = 1;

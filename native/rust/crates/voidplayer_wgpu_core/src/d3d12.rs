@@ -1,6 +1,7 @@
 use std::time::Instant;
 use windows::core::Interface;
 
+use crate::overlay::OverlayRect;
 use crate::{MAX_TRACKS, YUV_FORMAT_NV12};
 
 pub const D3D12_TEXTURE_FORMAT_NV12: i32 = 1;
@@ -124,6 +125,13 @@ pub struct WgpuD3D12CompositeRequest {
     pub source_array_layers: [u32; MAX_TRACKS],
     pub source_base_array_layers: [u32; MAX_TRACKS],
     pub cpu_sources: [WgpuD3D12CpuSourceInfo; MAX_TRACKS],
+    pub overlay_fill_rects: *const OverlayRect,
+    pub overlay_fill_rect_count: usize,
+    pub overlay_line_rects: *const OverlayRect,
+    pub overlay_line_rect_count: usize,
+    pub overlay_motion_lines: *const OverlayRect,
+    pub overlay_motion_line_count: usize,
+    pub overlay_generation: u64,
     pub decision: *const D3D12PresentDecisionInfo,
     pub width: i32,
     pub height: i32,
@@ -176,6 +184,22 @@ pub struct WgpuD3D12ProfilerSnapshot {
     pub last_pass_encode_us: u64,
     pub last_submit_us: u64,
     pub last_cpu_render_us: u64,
+    pub overlay_layer_rebuild_count: u64,
+    pub overlay_layer_reuse_count: u64,
+    pub overlay_buffer_write_count: u64,
+    pub last_overlay_encode_us: u64,
+}
+
+struct CachedOverlayLayerTexture {
+    width: u32,
+    height: u32,
+    layers: u32,
+    overlay_generation: u64,
+    fill_count: usize,
+    line_count: usize,
+    motion_count: usize,
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
 }
 
 #[repr(C)]
@@ -212,6 +236,7 @@ pub struct WgpuD3D12Renderer {
     bind_group_layout: wgpu::BindGroupLayout,
     bgra8_pipeline: wgpu::RenderPipeline,
     rgba16_float_pipeline: wgpu::RenderPipeline,
+    overlay_primitive_pipeline: wgpu::RenderPipeline,
     _dummy_bgra_array_texture: wgpu::Texture,
     dummy_bgra_array_view: wgpu::TextureView,
     _dummy_y_texture: wgpu::Texture,
@@ -224,7 +249,10 @@ pub struct WgpuD3D12Renderer {
     dummy_flutter_view: wgpu::TextureView,
     params_buffer: Option<wgpu::Buffer>,
     package_buffer: wgpu::Buffer,
-    overlay_buffer: wgpu::Buffer,
+    overlay_buffer: Option<wgpu::Buffer>,
+    overlay_layer_texture: Option<CachedOverlayLayerTexture>,
+    overlay_rects_scratch: Vec<OverlayRect>,
+    overlay_params_scratch: Vec<u8>,
     profiler: WgpuD3D12ProfilerSnapshot,
     supports_nv12: bool,
     supports_p010: bool,
@@ -299,6 +327,20 @@ impl WgpuD3D12Renderer {
             wgpu::TextureFormat::Rgba16Float,
             "VoidPlayer wgpu-d3d12 RGBA16F composite pipeline",
         );
+        let overlay_blend = Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::SrcAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        });
+        let overlay_primitive_pipeline =
+            create_overlay_primitive_pipeline(&device, &pipeline_layout, &shader, overlay_blend);
         let dummy_bgra_array_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("VoidPlayer wgpu-d3d12 dummy BGRA array"),
             size: wgpu::Extent3d {
@@ -438,6 +480,7 @@ impl WgpuD3D12Renderer {
             bind_group_layout,
             bgra8_pipeline,
             rgba16_float_pipeline,
+            overlay_primitive_pipeline,
             _dummy_bgra_array_texture: dummy_bgra_array_texture,
             dummy_bgra_array_view,
             _dummy_y_texture: dummy_y_texture,
@@ -450,7 +493,10 @@ impl WgpuD3D12Renderer {
             dummy_flutter_view,
             params_buffer: None,
             package_buffer,
-            overlay_buffer,
+            overlay_buffer: Some(overlay_buffer),
+            overlay_layer_texture: None,
+            overlay_rects_scratch: Vec::new(),
+            overlay_params_scratch: Vec::new(),
             profiler: WgpuD3D12ProfilerSnapshot::default(),
             supports_nv12: required_features.contains(wgpu::Features::TEXTURE_FORMAT_NV12),
             supports_p010: required_features.contains(wgpu::Features::TEXTURE_FORMAT_P010),
@@ -647,6 +693,14 @@ impl WgpuD3D12Renderer {
         if decision.should_present == 0 || decision.frame_count <= 0 {
             return Err("wgpu-d3d12 composite has no presentable frame");
         }
+        let overlay_fill_rects =
+            overlay_rects_from_raw(request.overlay_fill_rects, request.overlay_fill_rect_count)?;
+        let overlay_line_rects =
+            overlay_rects_from_raw(request.overlay_line_rects, request.overlay_line_rect_count)?;
+        let overlay_motion_lines = overlay_rects_from_raw(
+            request.overlay_motion_lines,
+            request.overlay_motion_line_count,
+        )?;
 
         let import_start = Instant::now();
         let destination = unsafe {
@@ -812,8 +866,19 @@ impl WgpuD3D12Renderer {
             request.height,
             STORAGE_CV_PIXEL_BUFFER,
             request.output_color_mode,
+            overlay_fill_rects,
+            overlay_line_rects,
+            overlay_motion_lines,
             &mut params,
         );
+        combined_overlay_rects(
+            overlay_fill_rects,
+            overlay_line_rects,
+            overlay_motion_lines,
+            &mut self.overlay_rects_scratch,
+        );
+        let (overlay_width, overlay_height) =
+            overlay_layer_dimensions(&mut params, request.width as u32, request.height as u32);
         write_storage_buffer(
             &self.device,
             &self.queue,
@@ -821,12 +886,35 @@ impl WgpuD3D12Renderer {
             &params,
             "VoidPlayer wgpu-d3d12 composite params",
         );
+        self.profiler.last_prepare_us = elapsed_us(prepare_start);
+
+        let encode_start = Instant::now();
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("VoidPlayer wgpu-d3d12 composite encoder"),
+            });
+        encode_overlay_layer_texture(
+            self,
+            &params,
+            overlay_width,
+            overlay_height,
+            request.overlay_generation,
+            &mut encoder,
+        )?;
         let params_buffer = self
             .params_buffer
             .as_ref()
             .ok_or("wgpu-d3d12 composite params buffer is unavailable")?;
-        self.profiler.last_prepare_us = elapsed_us(prepare_start);
-
+        let overlay_layer_view = self
+            .overlay_layer_texture
+            .as_ref()
+            .map(|texture| &texture.view)
+            .unwrap_or(&self.dummy_overlay_view);
+        let overlay_buffer = self
+            .overlay_buffer
+            .as_ref()
+            .ok_or("wgpu-d3d12 overlay buffer is unavailable")?;
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("VoidPlayer wgpu-d3d12 composite bind group"),
             layout: &self.bind_group_layout,
@@ -849,7 +937,7 @@ impl WgpuD3D12Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: self.overlay_buffer.as_entire_binding(),
+                    resource: overlay_buffer.as_entire_binding(),
                 },
                 cv_bind_entry(5, 0, &source_y_views, &self.dummy_y_view),
                 cv_bind_entry(6, 0, &source_uv_views, &self.dummy_uv_view),
@@ -861,7 +949,7 @@ impl WgpuD3D12Renderer {
                 cv_bind_entry(12, 3, &source_uv_views, &self.dummy_uv_view),
                 wgpu::BindGroupEntry {
                     binding: 13,
-                    resource: wgpu::BindingResource::TextureView(&self.dummy_overlay_view),
+                    resource: wgpu::BindingResource::TextureView(overlay_layer_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 14,
@@ -872,12 +960,6 @@ impl WgpuD3D12Renderer {
             ],
         });
 
-        let encode_start = Instant::now();
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("VoidPlayer wgpu-d3d12 composite encoder"),
-            });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("VoidPlayer wgpu-d3d12 composite pass"),
@@ -1246,6 +1328,39 @@ fn create_composite_pipeline(
     })
 }
 
+fn create_overlay_primitive_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    blend: Option<wgpu::BlendState>,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("VoidPlayer wgpu-d3d12 overlay primitive layer pipeline"),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_overlay_primitive"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_overlay_primitive"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                blend,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 fn cv_bind_entry<'a>(
     binding: u32,
     slot: usize,
@@ -1276,6 +1391,9 @@ fn package_params(
     height: i32,
     storage: i32,
     output_color_mode: i32,
+    overlay_fill_rects: &[OverlayRect],
+    overlay_line_rects: &[OverlayRect],
+    overlay_motion_lines: &[OverlayRect],
     bytes: &mut Vec<u8>,
 ) {
     bytes.clear();
@@ -1334,10 +1452,356 @@ fn package_params(
     push_vec4_i32(bytes, decision.coded_height);
     push_vec4_i32(bytes, decision.color_range);
     push_vec4_i32(bytes, decision.color_matrix);
-    push_vec4_i32(bytes, [0, 0, 0, 0]);
+    push_vec4_i32(
+        bytes,
+        [
+            overlay_fill_rects.len().min(i32::MAX as usize) as i32,
+            overlay_line_rects.len().min(i32::MAX as usize) as i32,
+            overlay_motion_lines.len().min(i32::MAX as usize) as i32,
+            0,
+        ],
+    );
     push_vec4_i32(bytes, decision.color_transfer);
     push_vec4_i32(bytes, decision.color_primaries);
     push_vec4_i32(bytes, [output_color_mode, 1, 1, 0]);
+}
+
+const PARAM_VEC4_BYTES: usize = 16;
+const PARAM_PRESENT_VEC: usize = 10;
+const PARAM_SOURCE_WIDTH_VEC: usize = 11;
+const PARAM_SOURCE_HEIGHT_VEC: usize = 12;
+const PARAM_OUTPUT_MODE_VEC: usize = 26;
+const MAX_OVERLAY_LAYER_WIDTH: u32 = 1280;
+const MAX_OVERLAY_LAYER_HEIGHT: u32 = 720;
+
+fn overlay_rects_from_raw<'a>(
+    ptr: *const OverlayRect,
+    count: usize,
+) -> Result<&'a [OverlayRect], &'static str> {
+    if count == 0 {
+        return Ok(&[]);
+    }
+    if ptr.is_null() {
+        return Err("wgpu-d3d12 overlay rect pointer is null");
+    }
+    Ok(unsafe { core::slice::from_raw_parts(ptr, count) })
+}
+
+fn combined_overlay_rects(
+    fill: &[OverlayRect],
+    line: &[OverlayRect],
+    motion: &[OverlayRect],
+    rects: &mut Vec<OverlayRect>,
+) {
+    rects.clear();
+    rects.reserve(fill.len() + line.len() + motion.len());
+    rects.extend_from_slice(fill);
+    rects.extend_from_slice(line);
+    rects.extend_from_slice(motion);
+    if rects.is_empty() {
+        rects.push(OverlayRect::default());
+    }
+}
+
+fn param_i32(params: &[u8], vec_index: usize, lane: usize) -> i32 {
+    let offset = vec_index * PARAM_VEC4_BYTES + lane * core::mem::size_of::<i32>();
+    params
+        .get(offset..offset + core::mem::size_of::<i32>())
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(i32::from_ne_bytes)
+        .unwrap_or(0)
+}
+
+fn param_f32(params: &[u8], vec_index: usize, lane: usize) -> f32 {
+    let offset = vec_index * PARAM_VEC4_BYTES + lane * core::mem::size_of::<f32>();
+    params
+        .get(offset..offset + core::mem::size_of::<f32>())
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(f32::from_ne_bytes)
+        .unwrap_or(0.0)
+}
+
+fn write_param_i32(params: &mut [u8], vec_index: usize, lane: usize, value: i32) {
+    let offset = vec_index * PARAM_VEC4_BYTES + lane * core::mem::size_of::<i32>();
+    if let Some(bytes) = params.get_mut(offset..offset + core::mem::size_of::<i32>()) {
+        bytes.copy_from_slice(&value.to_ne_bytes());
+    }
+}
+
+fn overlay_layer_dimensions(
+    params: &mut [u8],
+    target_width: u32,
+    target_height: u32,
+) -> (u32, u32) {
+    let mut width = 1u32;
+    let mut height = 1u32;
+    for track in 0..MAX_TRACKS {
+        if param_i32(params, PARAM_PRESENT_VEC, track) == 0 {
+            continue;
+        }
+        width = width.max(param_f32(params, PARAM_SOURCE_WIDTH_VEC, track).ceil() as u32);
+        height = height.max(param_f32(params, PARAM_SOURCE_HEIGHT_VEC, track).ceil() as u32);
+    }
+    width = width
+        .max(1)
+        .min(target_width.max(1))
+        .min(MAX_OVERLAY_LAYER_WIDTH);
+    height = height
+        .max(1)
+        .min(target_height.max(1))
+        .min(MAX_OVERLAY_LAYER_HEIGHT);
+    write_param_i32(params, PARAM_OUTPUT_MODE_VEC, 1, width as i32);
+    write_param_i32(params, PARAM_OUTPUT_MODE_VEC, 2, height as i32);
+    (width, height)
+}
+
+fn overlay_rect_bytes(rects: &[OverlayRect]) -> &[u8] {
+    let len = core::mem::size_of_val(rects);
+    unsafe { core::slice::from_raw_parts(rects.as_ptr().cast::<u8>(), len) }
+}
+
+fn write_overlay_layer_track_params(base: &[u8], track: usize, out: &mut Vec<u8>) {
+    out.clear();
+    out.extend_from_slice(base);
+    let split_z_offset = 16 + 8;
+    if out.len() >= split_z_offset + core::mem::size_of::<f32>() {
+        out[split_z_offset..split_z_offset + 4].copy_from_slice(&(track as f32).to_ne_bytes());
+    }
+}
+
+fn overlay_primitive_vertex_count(
+    fill_count: usize,
+    line_count: usize,
+    motion_count: usize,
+) -> Result<u32, &'static str> {
+    fill_count
+        .checked_mul(6)
+        .and_then(|count| count.checked_add(line_count.checked_mul(4 * 6 * 2)?))
+        .and_then(|count| count.checked_add(motion_count.checked_mul(6)?))
+        .and_then(|count| u32::try_from(count).ok())
+        .ok_or("wgpu-d3d12 overlay primitive vertex count is too large")
+}
+
+fn encode_overlay_layer_texture(
+    renderer: &mut WgpuD3D12Renderer,
+    final_params: &[u8],
+    width: u32,
+    height: u32,
+    overlay_generation: u64,
+    encoder: &mut wgpu::CommandEncoder,
+) -> Result<(), &'static str> {
+    let profile_start = Instant::now();
+    let fill_count = param_i32(final_params, 23, 0).max(0) as usize;
+    let line_count = param_i32(final_params, 23, 1).max(0) as usize;
+    let motion_count = param_i32(final_params, 23, 2).max(0) as usize;
+    let layers = MAX_TRACKS as u32;
+    let cache_hit = renderer
+        .overlay_layer_texture
+        .as_ref()
+        .map_or(false, |cache| {
+            cache.width == width
+                && cache.height == height
+                && cache.layers == layers
+                && cache.overlay_generation == overlay_generation
+                && cache.fill_count == fill_count
+                && cache.line_count == line_count
+                && cache.motion_count == motion_count
+        });
+    if cache_hit
+        && (overlay_generation != 0 || (fill_count == 0 && line_count == 0 && motion_count == 0))
+    {
+        renderer.profiler.overlay_layer_reuse_count = renderer
+            .profiler
+            .overlay_layer_reuse_count
+            .saturating_add(1);
+        renderer.profiler.last_overlay_encode_us = elapsed_us(profile_start);
+        return Ok(());
+    }
+    let recreate = renderer
+        .overlay_layer_texture
+        .as_ref()
+        .map_or(true, |cache| {
+            cache.width != width || cache.height != height || cache.layers != layers
+        });
+    if recreate {
+        let texture = renderer.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 overlay layer array"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: layers,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        renderer.overlay_layer_texture = Some(CachedOverlayLayerTexture {
+            width,
+            height,
+            layers,
+            overlay_generation,
+            fill_count,
+            line_count,
+            motion_count,
+            texture,
+            view,
+        });
+    }
+    renderer.profiler.overlay_layer_rebuild_count = renderer
+        .profiler
+        .overlay_layer_rebuild_count
+        .saturating_add(1);
+    write_storage_buffer(
+        &renderer.device,
+        &renderer.queue,
+        &mut renderer.overlay_buffer,
+        overlay_rect_bytes(&renderer.overlay_rects_scratch),
+        "VoidPlayer wgpu-d3d12 overlay combined rects",
+    );
+    renderer.profiler.overlay_buffer_write_count = renderer
+        .profiler
+        .overlay_buffer_write_count
+        .saturating_add(1);
+    let overlay_buffer = renderer
+        .overlay_buffer
+        .as_ref()
+        .ok_or("wgpu-d3d12 overlay buffer is unavailable")?;
+    let primitive_vertices = overlay_primitive_vertex_count(fill_count, line_count, motion_count)?;
+    for track in 0..MAX_TRACKS {
+        if param_i32(final_params, PARAM_PRESENT_VEC, track) == 0 {
+            continue;
+        }
+        write_overlay_layer_track_params(final_params, track, &mut renderer.overlay_params_scratch);
+        let params_buffer = renderer.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 overlay layer params"),
+            size: renderer.overlay_params_scratch.len().max(4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        renderer
+            .queue
+            .write_buffer(&params_buffer, 0, &renderer.overlay_params_scratch);
+        let bind_group = renderer
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("VoidPlayer wgpu-d3d12 overlay layer bind group"),
+                layout: &renderer.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: params_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(
+                            &renderer.dummy_bgra_array_view,
+                        ),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&renderer.sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: renderer.package_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: overlay_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_y_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 6,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_uv_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 7,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_y_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_uv_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 9,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_y_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 10,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_uv_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 11,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_y_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 12,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_uv_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 13,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_overlay_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 14,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_flutter_view),
+                    },
+                ],
+            });
+        let layer_view = renderer
+            .overlay_layer_texture
+            .as_ref()
+            .ok_or("wgpu-d3d12 overlay layer texture is unavailable")?
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor {
+                label: Some("VoidPlayer wgpu-d3d12 overlay layer slice view"),
+                format: Some(wgpu::TextureFormat::Rgba8Unorm),
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                usage: Some(wgpu::TextureUsages::RENDER_ATTACHMENT),
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                base_array_layer: track as u32,
+                array_layer_count: Some(1),
+            });
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("VoidPlayer wgpu-d3d12 overlay layer pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &layer_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        if primitive_vertices > 0 {
+            pass.set_pipeline(&renderer.overlay_primitive_pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
+            pass.draw(0..primitive_vertices, 0..1);
+        }
+    }
+    if let Some(cache) = renderer.overlay_layer_texture.as_mut() {
+        cache.overlay_generation = overlay_generation;
+        cache.fill_count = fill_count;
+        cache.line_count = line_count;
+        cache.motion_count = motion_count;
+    }
+    renderer.profiler.last_overlay_encode_us = elapsed_us(profile_start);
+    Ok(())
 }
 
 fn write_storage_buffer(

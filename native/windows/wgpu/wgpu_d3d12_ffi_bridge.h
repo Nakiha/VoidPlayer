@@ -10,7 +10,7 @@ extern "C" {
 typedef struct VPWgpuD3D12Renderer VPWgpuD3D12Renderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 12,
+  VP_WGPU_FFI_ABI_VERSION = 13,
 };
 
 enum {
@@ -46,7 +46,18 @@ typedef struct VPWgpuD3D12ProfilerSnapshot {
   uint64_t last_pass_encode_us;
   uint64_t last_submit_us;
   uint64_t last_cpu_render_us;
+  uint64_t overlay_layer_rebuild_count;
+  uint64_t overlay_layer_reuse_count;
+  uint64_t overlay_buffer_write_count;
+  uint64_t last_overlay_encode_us;
 } VPWgpuD3D12ProfilerSnapshot;
+
+typedef struct VPWgpuD3D12OverlayRect {
+  uint32_t rect_uv0;
+  uint32_t rect_uv1;
+  uint32_t color_bgra;
+  uint32_t track_idx;
+} VPWgpuD3D12OverlayRect;
 
 typedef struct VPWgpuD3D12TextureImportRequest {
   void* d3d12_resource;
@@ -153,6 +164,13 @@ typedef struct VPWgpuD3D12CompositeRequest {
   uint32_t source_array_layers[4];
   uint32_t source_base_array_layers[4];
   VPWgpuD3D12CpuSourceInfo cpu_sources[4];
+  const VPWgpuD3D12OverlayRect* overlay_fill_rects;
+  size_t overlay_fill_rect_count;
+  const VPWgpuD3D12OverlayRect* overlay_line_rects;
+  size_t overlay_line_rect_count;
+  const VPWgpuD3D12OverlayRect* overlay_motion_lines;
+  size_t overlay_motion_line_count;
+  uint64_t overlay_generation;
   const VPWgpuD3D12PresentDecisionInfo* decision;
   int32_t width;
   int32_t height;

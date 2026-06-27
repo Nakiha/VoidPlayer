@@ -3487,6 +3487,87 @@ void VideoRendererPlugin::GetDiagnostics(
             "windowsBackendSourceProjectionConsumeCount")] =
             enc_i64(static_cast<int64_t>(
                 backend.source_projection_consume_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendOverlayLayerActive")] =
+            flutter::EncodableValue(backend.overlay_layer_active);
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendOverlayLayerMode")] =
+            flutter::EncodableValue(backend.overlay_layer_mode);
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendOverlayLayerGeneration")] =
+            enc_i64(static_cast<int64_t>(
+                backend.overlay_layer_generation));
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendOverlayLayerCompositeCount")] =
+            enc_i64(static_cast<int64_t>(
+                backend.overlay_layer_composite_count));
+        if (backend.overlay_layer_active) {
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayRetainedLayerActive")] =
+                flutter::EncodableValue(true);
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayRetainedLayerMode")] =
+                flutter::EncodableValue(backend.overlay_layer_mode);
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerRasterCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_rebuild_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerUploadCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_upload_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerReuseCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_reuse_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerBytes")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_bytes));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerGeneration")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_generation));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerCompositeCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_composite_count));
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorOverlayGeneration")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_generation));
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorOverlayFillRectCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_fill_rect_count));
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorOverlayLineRectCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_line_rect_count));
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorOverlayMotionLineCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_motion_line_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerFallbackReason")] =
+                flutter::EncodableValue(
+                    backend.overlay_layer_fallback_reason);
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerLastError")] =
+                flutter::EncodableValue(backend.overlay_layer_last_error);
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathOverlayReuseCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_reuse_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathOverlayRasterCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_rebuild_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathOverlayUploadCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_upload_count));
+        }
         const bool backend_source_projection_hot_path =
             backend.source_projection_active &&
             backend.source_projection_consume_count > 0;

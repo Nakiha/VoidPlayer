@@ -32,6 +32,10 @@ pub struct VPWgpuD3D12ProfilerSnapshot {
     last_pass_encode_us: u64,
     last_submit_us: u64,
     last_cpu_render_us: u64,
+    overlay_layer_rebuild_count: u64,
+    overlay_layer_reuse_count: u64,
+    overlay_buffer_write_count: u64,
+    last_overlay_encode_us: u64,
 }
 
 impl From<WgpuD3D12ProfilerSnapshot> for VPWgpuD3D12ProfilerSnapshot {
@@ -45,6 +49,10 @@ impl From<WgpuD3D12ProfilerSnapshot> for VPWgpuD3D12ProfilerSnapshot {
             last_pass_encode_us: value.last_pass_encode_us,
             last_submit_us: value.last_submit_us,
             last_cpu_render_us: value.last_cpu_render_us,
+            overlay_layer_rebuild_count: value.overlay_layer_rebuild_count,
+            overlay_layer_reuse_count: value.overlay_layer_reuse_count,
+            overlay_buffer_write_count: value.overlay_buffer_write_count,
+            last_overlay_encode_us: value.last_overlay_encode_us,
         }
     }
 }

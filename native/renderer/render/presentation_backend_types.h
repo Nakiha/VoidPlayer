@@ -162,6 +162,20 @@ struct PresentationBackendDiagnostics {
     uint64_t external_flutter_surface_wait_count = 0;
     uint64_t external_flutter_surface_wait_failure_count = 0;
     std::string external_flutter_surface_last_error = "none";
+    bool overlay_layer_active = false;
+    std::string overlay_layer_mode = "inactive";
+    uint64_t overlay_layer_generation = 0;
+    uint64_t overlay_layer_rebuild_count = 0;
+    uint64_t overlay_layer_reuse_count = 0;
+    uint64_t overlay_layer_upload_count = 0;
+    uint64_t overlay_layer_composite_count = 0;
+    uint64_t overlay_layer_bytes = 0;
+    uint64_t overlay_layer_fill_rect_count = 0;
+    uint64_t overlay_layer_line_rect_count = 0;
+    uint64_t overlay_layer_motion_line_count = 0;
+    uint64_t overlay_layer_last_encode_us = 0;
+    std::string overlay_layer_fallback_reason = "none";
+    std::string overlay_layer_last_error = "none";
 };
 
 inline bool is_transient_presentation_backpressure_error(const std::string& error) {

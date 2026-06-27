@@ -1,5 +1,7 @@
 #include "windows/wgpu/d3d12_presentation_backend.h"
 
+#include "renderer/overlay/analysis_overlay_renderer.h"
+#include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/render/presentation_snapshot.h"
 
 #include <array>
@@ -69,6 +71,175 @@ size_t required_plane_bytes(size_t stride, size_t row_bytes, int height) {
 struct WgpuD3D12CpuUploadScratch {
     std::array<std::vector<uint8_t>, kWgpuD3D12MaxTracks> planar_uv;
 };
+
+uint32_t pack_overlay_bgra(analysis::OverlayColor color) {
+    return static_cast<uint32_t>(color.b) |
+           (static_cast<uint32_t>(color.g) << 8) |
+           (static_cast<uint32_t>(color.r) << 16) |
+           (static_cast<uint32_t>(color.a) << 24);
+}
+
+uint32_t pack_overlay_track_payload(int slot, uint8_t line_alpha) {
+    return static_cast<uint32_t>(slot & 0xff) |
+           (static_cast<uint32_t>(line_alpha) << 8);
+}
+
+struct WgpuD3D12OverlayPrimitiveBuildResult {
+    std::vector<VPWgpuD3D12OverlayRect> fill_rects;
+    std::vector<VPWgpuD3D12OverlayRect> line_rects;
+    std::vector<VPWgpuD3D12OverlayRect> motion_lines;
+    uint64_t generation = 0;
+};
+
+bool overlay_primitives_expected(
+    const WgpuD3D12OverlayPrimitiveBuildResult& overlay) {
+    return !overlay.fill_rects.empty() || !overlay.line_rects.empty() ||
+           !overlay.motion_lines.empty();
+}
+
+struct WgpuD3D12OverlayPrimitiveCacheKey {
+    const void* package = nullptr;
+    uint64_t generation = 0;
+
+    bool operator==(const WgpuD3D12OverlayPrimitiveCacheKey& other) const {
+        return package == other.package && generation == other.generation;
+    }
+};
+
+struct WgpuD3D12OverlayPrimitiveCacheEntry {
+    WgpuD3D12OverlayPrimitiveCacheKey key;
+    std::shared_ptr<const WgpuD3D12OverlayPrimitiveBuildResult> result;
+    uint64_t last_used = 0;
+};
+
+constexpr size_t kWgpuD3D12OverlayPrimitiveCacheLimit = 24;
+
+std::mutex& wgpu_d3d12_overlay_primitive_cache_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+std::vector<WgpuD3D12OverlayPrimitiveCacheEntry>&
+wgpu_d3d12_overlay_primitive_cache_entries() {
+    static std::vector<WgpuD3D12OverlayPrimitiveCacheEntry> entries;
+    return entries;
+}
+
+uint64_t& wgpu_d3d12_overlay_primitive_cache_clock() {
+    static uint64_t clock = 0;
+    return clock;
+}
+
+std::shared_ptr<const WgpuD3D12OverlayPrimitiveBuildResult>
+lookup_wgpu_d3d12_overlay_primitives(
+    WgpuD3D12OverlayPrimitiveCacheKey key) {
+    std::lock_guard<std::mutex> lock(
+        wgpu_d3d12_overlay_primitive_cache_mutex());
+    auto& clock = wgpu_d3d12_overlay_primitive_cache_clock();
+    const uint64_t use_token = ++clock;
+    for (auto& entry : wgpu_d3d12_overlay_primitive_cache_entries()) {
+        if (entry.key == key) {
+            entry.last_used = use_token;
+            return entry.result;
+        }
+    }
+    return nullptr;
+}
+
+void store_wgpu_d3d12_overlay_primitives(
+    WgpuD3D12OverlayPrimitiveCacheKey key,
+    std::shared_ptr<const WgpuD3D12OverlayPrimitiveBuildResult> result) {
+    if (!result) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(
+        wgpu_d3d12_overlay_primitive_cache_mutex());
+    auto& clock = wgpu_d3d12_overlay_primitive_cache_clock();
+    auto& entries = wgpu_d3d12_overlay_primitive_cache_entries();
+    const uint64_t use_token = ++clock;
+    for (auto& entry : entries) {
+        if (entry.key == key) {
+            entry.result = std::move(result);
+            entry.last_used = use_token;
+            return;
+        }
+    }
+    if (entries.size() >= kWgpuD3D12OverlayPrimitiveCacheLimit) {
+        const auto oldest = std::min_element(
+            entries.begin(),
+            entries.end(),
+            [](const auto& lhs, const auto& rhs) {
+                return lhs.last_used < rhs.last_used;
+            });
+        if (oldest != entries.end()) {
+            entries.erase(oldest);
+        }
+    }
+    entries.push_back(
+        WgpuD3D12OverlayPrimitiveCacheEntry{key, std::move(result), use_token});
+}
+
+WgpuD3D12OverlayPrimitiveBuildResult build_overlay_primitives_for_wgpu_d3d12(
+    const RendererDrawSnapshot& snapshot,
+    const PresentationBackendDrawHooks& hooks) {
+    WgpuD3D12OverlayPrimitiveBuildResult result;
+    if (hooks.suppress_analysis_overlay || !hooks.build_overlay_primitives) {
+        return result;
+    }
+    const auto package = hooks.build_overlay_primitives(snapshot);
+    if (!package || package->empty()) {
+        return result;
+    }
+    const WgpuD3D12OverlayPrimitiveCacheKey cache_key{
+        package.get(),
+        package->cache_generation,
+    };
+    if (const auto cached = lookup_wgpu_d3d12_overlay_primitives(cache_key)) {
+        return *cached;
+    }
+    auto cached_result =
+        std::make_shared<WgpuD3D12OverlayPrimitiveBuildResult>();
+    cached_result->generation = package->cache_generation;
+    for (const auto& track : package->tracks) {
+        if (track.video_width <= 0 || track.video_height <= 0) {
+            continue;
+        }
+        for (const auto& primitive : track.fill_rects) {
+            VPWgpuD3D12OverlayRect rect = {};
+            rect.rect_uv0 = pack_overlay_uv16(
+                primitive.x0, track.video_width, primitive.y0, track.video_height);
+            rect.rect_uv1 = pack_overlay_uv16(
+                primitive.x1, track.video_width, primitive.y1, track.video_height);
+            rect.color_bgra = pack_overlay_bgra(primitive.color);
+            rect.track_idx =
+                pack_overlay_track_payload(track.slot, track.line_alpha);
+            cached_result->fill_rects.push_back(rect);
+        }
+        for (const auto& primitive : track.outline_rects) {
+            VPWgpuD3D12OverlayRect rect = {};
+            rect.rect_uv0 = pack_overlay_uv16(
+                primitive.x0, track.video_width, primitive.y0, track.video_height);
+            rect.rect_uv1 = pack_overlay_uv16(
+                primitive.x1, track.video_width, primitive.y1, track.video_height);
+            rect.track_idx =
+                pack_overlay_track_payload(track.slot, track.line_alpha);
+            cached_result->line_rects.push_back(rect);
+        }
+        for (const auto& line : track.motion_lines) {
+            VPWgpuD3D12OverlayRect rect = {};
+            rect.rect_uv0 = pack_overlay_uv16(
+                line.x0, track.video_width, line.y0, track.video_height);
+            rect.rect_uv1 = pack_overlay_uv16(
+                line.x1, track.video_width, line.y1, track.video_height);
+            rect.color_bgra = pack_overlay_bgra(line.color);
+            rect.track_idx =
+                pack_overlay_track_payload(track.slot, track.line_alpha);
+            cached_result->motion_lines.push_back(rect);
+        }
+    }
+    store_wgpu_d3d12_overlay_primitives(cache_key, cached_result);
+    return *cached_result;
+}
 
 bool fill_cpu_nv12_source(int slot,
                           const TextureFrame& frame,
@@ -1730,6 +1901,30 @@ PresentationBackendDiagnostics WgpuD3D12PresentationBackend::diagnostics() const
         diagnostics.source_projection_consume_count =
             source_projection_consume_count_;
     }
+#if VOIDPLAYER_WGPU_RUST_LINKED
+    VPWgpuD3D12ProfilerSnapshot profiler = {};
+    if (renderer_ &&
+        VPWgpuD3D12RendererGetProfilerSnapshot(renderer_, &profiler) == 0) {
+        diagnostics.overlay_layer_rebuild_count =
+            profiler.overlay_layer_rebuild_count;
+        diagnostics.overlay_layer_reuse_count =
+            profiler.overlay_layer_reuse_count;
+        diagnostics.overlay_layer_upload_count =
+            profiler.overlay_buffer_write_count;
+        diagnostics.overlay_layer_last_encode_us =
+            profiler.last_overlay_encode_us;
+    }
+#endif
+    diagnostics.overlay_layer_active = overlay_layer_active_;
+    diagnostics.overlay_layer_mode = overlay_layer_mode_;
+    diagnostics.overlay_layer_generation = overlay_layer_generation_;
+    diagnostics.overlay_layer_fill_rect_count = overlay_layer_fill_rect_count_;
+    diagnostics.overlay_layer_line_rect_count = overlay_layer_line_rect_count_;
+    diagnostics.overlay_layer_motion_line_count =
+        overlay_layer_motion_line_count_;
+    diagnostics.overlay_layer_bytes = overlay_layer_bytes_;
+    diagnostics.overlay_layer_composite_count = overlay_layer_composite_count_;
+    diagnostics.overlay_layer_last_error = overlay_layer_last_error_;
     return diagnostics;
 }
 
@@ -1946,6 +2141,25 @@ bool WgpuD3D12PresentationBackend::draw_frame(
                     flutter_surface.frame_generation;
             }
         }
+        const auto overlay_primitives =
+            build_overlay_primitives_for_wgpu_d3d12(snapshot, hooks);
+        composite.overlay_fill_rects = overlay_primitives.fill_rects.empty()
+            ? nullptr
+            : overlay_primitives.fill_rects.data();
+        composite.overlay_fill_rect_count =
+            overlay_primitives.fill_rects.size();
+        composite.overlay_line_rects = overlay_primitives.line_rects.empty()
+            ? nullptr
+            : overlay_primitives.line_rects.data();
+        composite.overlay_line_rect_count =
+            overlay_primitives.line_rects.size();
+        composite.overlay_motion_lines =
+            overlay_primitives.motion_lines.empty()
+                ? nullptr
+                : overlay_primitives.motion_lines.data();
+        composite.overlay_motion_line_count =
+            overlay_primitives.motion_lines.size();
+        composite.overlay_generation = overlay_primitives.generation;
         composite.decision = &decision;
         composite.width = static_cast<int32_t>(std::max(snapshot.target_width, 1));
         composite.height = static_cast<int32_t>(std::max(snapshot.target_height, 1));
@@ -1959,6 +2173,27 @@ bool WgpuD3D12PresentationBackend::draw_frame(
             spdlog::error("[WgpuD3D12] {}", last_error_);
             return false;
         }
+        const bool overlay_active = overlay_primitives_expected(
+            overlay_primitives);
+        overlay_layer_active_ = overlay_active;
+        overlay_layer_mode_ = overlay_active ? "wgpu-d3d12-primitive-layer"
+                                             : "inactive";
+        overlay_layer_generation_ = overlay_primitives.generation;
+        overlay_layer_fill_rect_count_ =
+            overlay_primitives.fill_rects.size();
+        overlay_layer_line_rect_count_ =
+            overlay_primitives.line_rects.size();
+        overlay_layer_motion_line_count_ =
+            overlay_primitives.motion_lines.size();
+        overlay_layer_bytes_ =
+            (overlay_primitives.fill_rects.size() +
+             overlay_primitives.line_rects.size() +
+             overlay_primitives.motion_lines.size()) *
+            sizeof(VPWgpuD3D12OverlayRect);
+        if (overlay_active) {
+            ++overlay_layer_composite_count_;
+        }
+        overlay_layer_last_error_ = "none";
         if (consumed_flutter_generation != 0) {
             std::lock_guard<std::mutex> lock(external_flutter_mutex_);
             external_flutter_surface_consumed_generation_ =
@@ -1975,6 +2210,12 @@ bool WgpuD3D12PresentationBackend::draw_frame(
     }
 
     VPWgpuD3D12RenderTargetClearRequest request = {};
+    overlay_layer_active_ = false;
+    overlay_layer_mode_ = "inactive";
+    overlay_layer_fill_rect_count_ = 0;
+    overlay_layer_line_rect_count_ = 0;
+    overlay_layer_motion_line_count_ = 0;
+    overlay_layer_bytes_ = 0;
     request.d3d12_resource = target;
     request.format = VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
     request.width = static_cast<uint32_t>(std::max(snapshot.target_width, 1));

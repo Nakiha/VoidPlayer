@@ -2727,13 +2727,29 @@ bool WindowsNativeCompositor::CompositeLatest() {
         context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
         context_->PSSetShader(video_pixel_shader_.Get(), nullptr, 0);
         context_->Draw(4, 0);
+        bool overlay_consumed_by_backend = false;
         if (source_bundle_active && held_source_.overlay) {
+            const auto backend = player->presentation_backend_diagnostics();
+            overlay_consumed_by_backend =
+                backend.overlay_layer_active &&
+                backend.overlay_layer_generation >=
+                    held_source_.overlay->cache_generation;
+        }
+        if (source_bundle_active && held_source_.overlay &&
+            !overlay_consumed_by_backend) {
             (void)DrawOverlay(
                 held_source_.overlay, source_projection, back_desc);
             context_->IASetInputLayout(nullptr);
             context_->IASetPrimitiveTopology(
                 D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
             context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
+        } else if (overlay_consumed_by_backend) {
+            diagnostics_.overlay_retained_layer_active = true;
+            diagnostics_.overlay_layer_mode = "wgpu-d3d12-primitive-layer";
+            diagnostics_.overlay_layer_generation =
+                held_source_.overlay->cache_generation;
+            diagnostics_.overlay_layer_fallback_reason = "none";
+            diagnostics_.overlay_layer_last_error = "none";
         }
         std::array<ID3D11ShaderResourceView*, 7> null_srvs = {};
         context_->PSSetShaderResources(

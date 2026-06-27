@@ -434,6 +434,25 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         "windowsPresentationExternalFlutterSurfaceLastError")] =
         flutter::EncodableValue(
             presentation.external_flutter_surface_last_error);
+    map[flutter::EncodableValue("windowsPresentationOverlayLayerActive")] =
+        flutter::EncodableValue(presentation.overlay_layer_active);
+    map[flutter::EncodableValue("windowsPresentationOverlayLayerMode")] =
+        flutter::EncodableValue(presentation.overlay_layer_mode);
+    map[flutter::EncodableValue(
+        "windowsPresentationOverlayLayerGeneration")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.overlay_layer_generation));
+    map[flutter::EncodableValue(
+        "windowsPresentationOverlayLayerCompositeCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.overlay_layer_composite_count));
+    map[flutter::EncodableValue("windowsPresentationOverlayLayerBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.overlay_layer_bytes));
+    map[flutter::EncodableValue(
+        "windowsPresentationOverlayLayerLastEncodeUs")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.overlay_layer_last_encode_us));
     const std::string fallback_reason =
         presentation.fallback_reason != "none"
             ? presentation.fallback_reason

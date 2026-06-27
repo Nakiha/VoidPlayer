@@ -102,6 +102,15 @@ private:
     uint64_t external_flutter_surface_wait_count_ = 0;
     uint64_t external_flutter_surface_wait_failure_count_ = 0;
     std::string external_flutter_surface_last_error_ = "none";
+    uint64_t overlay_layer_generation_ = 0;
+    uint64_t overlay_layer_fill_rect_count_ = 0;
+    uint64_t overlay_layer_line_rect_count_ = 0;
+    uint64_t overlay_layer_motion_line_count_ = 0;
+    uint64_t overlay_layer_bytes_ = 0;
+    uint64_t overlay_layer_composite_count_ = 0;
+    bool overlay_layer_active_ = false;
+    std::string overlay_layer_mode_ = "inactive";
+    std::string overlay_layer_last_error_ = "none";
 };
 
 } // namespace vr

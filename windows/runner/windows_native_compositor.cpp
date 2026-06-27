@@ -293,7 +293,6 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     dcomp_device_.Reset();
     constants_.Reset();
     sampler_.Reset();
-    pixel_shader_.Reset();
     video_pixel_shader_.Reset();
     overlay_blend_state_.Reset();
     overlay_input_layout_.Reset();
@@ -1074,7 +1073,6 @@ bool WindowsNativeCompositor::InitializeDeviceAndComposition(
     retained_graph_fallback_reason_ = "device-rebuild";
     constants_.Reset();
     sampler_.Reset();
-    pixel_shader_.Reset();
     video_pixel_shader_.Reset();
     overlay_blend_state_.Reset();
     overlay_input_layout_.Reset();
@@ -1467,7 +1465,6 @@ bool WindowsNativeCompositor::CreatePipeline() {
     const char* shader = vr::windows_dcomp_composite_hlsl();
     const size_t shader_size = std::strlen(shader);
     Microsoft::WRL::ComPtr<ID3DBlob> vs_blob;
-    Microsoft::WRL::ComPtr<ID3DBlob> ps_blob;
     Microsoft::WRL::ComPtr<ID3DBlob> video_ps_blob;
     Microsoft::WRL::ComPtr<ID3DBlob> overlay_vs_blob;
     Microsoft::WRL::ComPtr<ID3DBlob> overlay_ps_blob;
@@ -1476,11 +1473,6 @@ bool WindowsNativeCompositor::CreatePipeline() {
         shader, shader_size, nullptr, nullptr, nullptr,
         "VSMain", "vs_5_0", 0, 0, &vs_blob, &errors);
     if (FAILED(hr)) return log_compile_failure("compile VSMain", hr, errors);
-    errors.Reset();
-    hr = D3DCompile(
-        shader, shader_size, nullptr, nullptr, nullptr,
-        "PSMain", "ps_5_0", 0, 0, &ps_blob, &errors);
-    if (FAILED(hr)) return log_compile_failure("compile PSMain", hr, errors);
     errors.Reset();
     hr = D3DCompile(
         shader, shader_size, nullptr, nullptr, nullptr,
@@ -1501,10 +1493,6 @@ bool WindowsNativeCompositor::CreatePipeline() {
             vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(),
             nullptr, &vertex_shader_);
     if (FAILED(hr)) return log_failure("CreateVertexShader", hr);
-    hr = device_->CreatePixelShader(
-            ps_blob->GetBufferPointer(), ps_blob->GetBufferSize(),
-            nullptr, &pixel_shader_);
-    if (FAILED(hr)) return log_failure("CreatePixelShader PSMain", hr);
     hr = device_->CreatePixelShader(
             video_ps_blob->GetBufferPointer(),
             video_ps_blob->GetBufferSize(),

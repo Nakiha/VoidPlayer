@@ -470,7 +470,6 @@ private:
     Microsoft::WRL::ComPtr<IDCompositionTarget> dcomp_target_;
     Microsoft::WRL::ComPtr<IDCompositionVisual> dcomp_visual_;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> video_pixel_shader_;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> overlay_vertex_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> overlay_pixel_shader_;

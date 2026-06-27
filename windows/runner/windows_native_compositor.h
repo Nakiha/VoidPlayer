@@ -416,7 +416,6 @@ private:
         const SourceProjection& projection,
         const D3D11_TEXTURE2D_DESC& back_desc);
     void ResetOverlayLayer(const std::string& reason);
-    bool EnsureHeldFlutterSrv();
     void ReleaseHeldInputs(const std::shared_ptr<vr::NativePlayer>& player);
     void ThreadMain();
     bool CompositeLatest();
@@ -473,8 +472,6 @@ private:
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> video_pixel_shader_;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> flutter_pixel_shader_;
-    Microsoft::WRL::ComPtr<ID3D11BlendState> premultiplied_blend_state_;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> overlay_vertex_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> overlay_pixel_shader_;
     Microsoft::WRL::ComPtr<ID3D11InputLayout> overlay_input_layout_;
@@ -500,8 +497,6 @@ private:
     Microsoft::WRL::ComPtr<ID3D11Texture2D> held_flutter_texture_;
     Microsoft::WRL::ComPtr<ID3D12Resource> held_flutter_d3d12_resource_;
     Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_flutter_mutex_;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_flutter_srv_;
-    vr::D3D11CrossAdapterTextureTransport flutter_transport_;
     uint64_t external_flutter_surface_submitted_generation_ = 0;
     uint64_t external_flutter_surface_refresh_generation_ = 0;
     bool disable_flutter_d3d11_srv_ = false;

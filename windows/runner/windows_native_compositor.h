@@ -470,9 +470,7 @@ private:
 
     bool held_flutter_valid_ = false;
     FlutterSurface held_flutter_;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> held_flutter_texture_;
     Microsoft::WRL::ComPtr<ID3D12Resource> held_flutter_d3d12_resource_;
-    Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_flutter_mutex_;
     uint64_t external_flutter_surface_submitted_generation_ = 0;
     uint64_t external_flutter_surface_refresh_generation_ = 0;
 

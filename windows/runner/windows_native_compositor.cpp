@@ -257,10 +257,6 @@ void WindowsNativeCompositor::Stop(const char* reason) {
 void WindowsNativeCompositor::ReleaseHeldInputs(
     const std::shared_ptr<vr::NativePlayer>& player) {
     if (held_flutter_valid_) {
-        if (held_flutter_mutex_) {
-            held_flutter_mutex_->ReleaseSync(
-                held_flutter_.producer_release_key);
-        }
         if (engine_api_.available() && flutter_view_ &&
             held_flutter_.lease_id != 0) {
             engine_api_.release(flutter_view_, held_flutter_.lease_id);
@@ -268,9 +264,7 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
     }
     held_flutter_valid_ = false;
     held_flutter_ = {};
-    held_flutter_mutex_.Reset();
     held_flutter_d3d12_resource_.Reset();
-    held_flutter_texture_.Reset();
     external_flutter_surface_submitted_generation_ = 0;
     external_flutter_surface_refresh_generation_ = 0;
     if (player) {
@@ -1730,16 +1724,10 @@ bool WindowsNativeCompositor::CompositeLatest() {
     };
     const auto release_held_flutter = [&]() {
         if (!held_flutter_valid_) return;
-        if (held_flutter_mutex_) {
-            held_flutter_mutex_->ReleaseSync(
-                held_flutter_.producer_release_key);
-        }
         engine_api_.release(flutter_view_, held_flutter_.lease_id);
         held_flutter_valid_ = false;
         held_flutter_ = {};
-        held_flutter_mutex_.Reset();
         held_flutter_d3d12_resource_.Reset();
-        held_flutter_texture_.Reset();
     };
     const auto log_pending_flutter_request_acquire =
         [&](const char* outcome, const FlutterSurface* surface) {
@@ -2054,28 +2042,11 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 "unchanged-latest-surface", &next_flutter);
             engine_api_.release(flutter_view_, next_flutter.lease_id);
         } else {
-            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-            Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
-            bool acquired = false;
-            const HRESULT open_result = OpenInputTexture(
-                device1.Get(),
-                next_flutter.shared_texture_handle,
-                &texture)
-                ? S_OK
-                : E_FAIL;
-            if (SUCCEEDED(open_result) &&
-                SUCCEEDED(texture.As(&keyed_mutex))) {
-                acquired =
-                    keyed_mutex->AcquireSync(
-                        next_flutter.consumer_acquire_key, 8) == S_OK;
-            }
-            if (acquired) {
+            if (next_flutter_d3d12_resource) {
                 release_held_flutter();
                 held_flutter_ = next_flutter;
-                held_flutter_texture_ = std::move(texture);
                 held_flutter_d3d12_resource_ =
                     std::move(next_flutter_d3d12_resource);
-                held_flutter_mutex_ = std::move(keyed_mutex);
                 held_flutter_valid_ = true;
                 vr::PresentationExternalD3D12Surface external_surface;
                 external_surface.resource =
@@ -2140,7 +2111,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 }
             } else {
                 log_pending_flutter_request_acquire(
-                    "open-or-keyed-mutex-acquire-failed",
+                    "d3d12-resource-open-failed",
                     &next_flutter);
                 engine_api_.release(
                     flutter_view_, next_flutter.lease_id);

@@ -1,16 +1,39 @@
 # Windows Presentation Backend
 
-This document defines the Windows product presentation contract. D3D11
-implementation details remain in [D3D11_BACKEND.md](D3D11_BACKEND.md); shared
-renderer ownership and color rules remain in
-[ARCHITECTURE.md](ARCHITECTURE.md) and [COLOR_PIPELINE.md](COLOR_PIPELINE.md).
+This document defines the Windows presentation contract. D3D11 implementation
+details remain in [D3D11_BACKEND.md](D3D11_BACKEND.md); shared renderer
+ownership and color rules remain in [ARCHITECTURE.md](ARCHITECTURE.md) and
+[COLOR_PIPELINE.md](COLOR_PIPELINE.md).
 
-The experimental wgpu work starts on macOS. Windows remains on the D3D11/DComp
-product route until a later Windows-specific wgpu/D3D12VA phase proves source
-import, DirectComposition integration, HDR/scRGB behavior, and D3D11VA fallback
-preservation.
+The target architecture is runner-owned presentation with wgpu-owned
+composition:
+
+```text
+Flutter engine fork
+  -> complete premultiplied Flutter UI surface export
+Windows runner / platform backend
+  -> D3D12 shared texture/fence/generation acquisition
+  -> HWND, DirectComposition/DXGI target, HDR/SDR policy, device recovery
+WgpuD3D12PresentationBackend / Rust WgpuRenderCore
+  -> imports Flutter UI + video/source textures
+  -> performs color/layout/split/pan/zoom/overlay/Flutter composition
+  -> outputs the final target
+Windows runner / platform backend
+  -> presents to the window
+```
+
+The D3D11/DComp compositor, source-cache, retained graph, and Flutter export
+paths are compatibility layers during the migration. They are not the final
+Windows architecture once the D3D12 surface export ABI v2, wgpu/D3D12
+composition path, UI smoke, pacing probes, HDR/scRGB, and recovery gates prove
+stable.
 
 ## Current Product And Experimental Routes
+
+This section describes the legacy D3D11 product route and the active
+wgpu/D3D12 migration state. New composition work should move toward
+`WgpuD3D12PresentationBackend`/Rust wgpu instead of adding shader or retained
+graph behavior to `WindowsNativeCompositor`.
 
 The default Windows product policy is now `auto` and requires the locked
 VoidPlayer Flutter engine:

@@ -58,22 +58,6 @@ if(WIN32 AND BUILD_TESTS)
         windows_d3d11_fp16_scrgb_smoke
         tools/windows_d3d11_fp16_scrgb_smoke.cpp
         "windows;backend;contract;canary;fp16")
-    void_add_windows_backend_smoke(
-        windows_d3d11_dcomp_flutter_composite_smoke
-        tools/windows_d3d11_dcomp_flutter_composite_smoke.cpp
-        "windows;backend;contract;canary;dcomp")
-    void_add_windows_backend_smoke(
-        windows_d3d11_source_projection_smoke
-        tools/windows_d3d11_source_projection_smoke.cpp
-        "windows;backend;contract;canary;source-projection")
-    void_add_windows_backend_smoke(
-        windows_d3d11_high_refresh_projection_overlay_smoke
-        tools/windows_d3d11_high_refresh_projection_overlay_smoke.cpp
-        "windows;backend;contract;canary;high-refresh")
-    void_add_windows_backend_smoke(
-        windows_d3d11_retained_overlay_layer_smoke
-        tools/windows_d3d11_retained_overlay_layer_smoke.cpp
-        "windows;backend;contract;canary;overlay")
 endif()
 
 if(WIN32 AND BUILD_ANALYSIS)

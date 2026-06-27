@@ -208,15 +208,16 @@ python dev.py gate windows-preservation
 
 The native portion includes
 `windows_d3d11_color_layout_parity_smoke` plus
-`windows_d3d11_fp16_scrgb_smoke` and
-`windows_d3d11_dcomp_flutter_composite_smoke`. They capture the real D3D11 BGRA
-and RGBA16F outputs for SDR layout parity, FP16/scRGB transfer/white-level
-behavior, and full-frame Flutter premultiplied-alpha composition.
+`windows_d3d11_fp16_scrgb_smoke`. They capture the remaining D3D11 present
+bridge BGRA and RGBA16F outputs for SDR layout parity and FP16/scRGB
+transfer/white-level behavior. Full-frame Flutter premultiplied-alpha
+composition is a wgpu/D3D12 product-path responsibility and is covered by the
+external Flutter surface UI probes.
 Run them directly with:
 
 ```powershell
 ctest --test-dir build/native/standalone/windows-msvc -C Release `
-  -R "windows_d3d11_(color_layout_parity|fp16_scrgb|dcomp_flutter_composite)_smoke" `
+  -R "windows_d3d11_(color_layout_parity|fp16_scrgb)_smoke" `
   --output-on-failure
 ```
 

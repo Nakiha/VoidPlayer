@@ -110,7 +110,7 @@ path is fully promoted.
 
 The retained D3D11 source/Flutter graph is no longer a product path. Diagnostic
 fields with `windowsRetainedGraph*` names remain as compatibility evidence and
-should report inactive/zero unless a test explicitly exercises an old canary.
+should report inactive/zero.
 Projection performance should be proven through wgpu/D3D12 source consumption,
 Flutter surface generation consumption, present cadence, and hot-path
 diagnostics rather than DComp retained bake counts.

@@ -174,12 +174,13 @@ system-managed.
 For source projection, each active track is rendered with identity layout into
 its source-sized `R16G16B16A16_FLOAT` texture from the same
 `PreparedDrawResources` snapshot. The source pass does not bake analysis
-overlays. DComp samples up to four source textures, applies the Dart/macOS
-projection contract, fills missing/out-of-range UVs with the linearized
-viewport background, composites retained video-space overlay primitives, then
-composites the Flutter surface. Overlay colors are sRGB-decoded and scaled by
-the same SDR white contract on scRGB targets, while SDR targets keep the BGRA
-compatibility contract. This preserves the order
+overlays. The wgpu/D3D12 composite path imports the source textures, applies
+the Dart/macOS projection contract, fills missing/out-of-range UVs with the
+linearized viewport background, composites video-space overlay primitives, then
+composites the exported Flutter surface. Overlay colors are sRGB-decoded and
+scaled by the same SDR white contract on scRGB targets, while SDR targets keep
+the BGRA compatibility contract. The remaining DComp bridge presents the final
+target and does not own source/overlay/Flutter composition. This preserves the order
 `source video -> analysis overlay -> Flutter UI`.
 
 ## macOS wgpu-metal / CVPixelBuffer Path
@@ -268,15 +269,15 @@ Current Windows preservation evidence:
   same draw. It covers SDR white scaling, PQ/HLG, P010, BT.2020 conversion,
   values above `1.0`, odd/padded storage, background/split/order, overlay hook
   participation, and source-rerender SDR compatibility.
-- `windows_d3d11_source_projection_smoke` executes the DComp projection shader
-  against four FP16 source textures, verifies deterministic source order, and
-  proves values above `1.0` survive projection. `[windows_source_cache]` and
-  `[windows_source_projection]` tests cover bundle leases/generations, the
-  384 MiB policy, split/pan/zoom, missing sources, and background fallback.
-- `windows_d3d11_retained_overlay_layer_smoke` validates the Windows retained
-  overlay layer contract: dirty primitive packages rebuild once, projection
-  ticks reuse the GPU buffer, and high-refresh gates fail if overlay raster
-  occurs without reuse.
+- `[windows_source_cache]` and `[windows_source_projection]` tests cover bundle
+  leases/generations, the 384 MiB policy, split/pan/zoom, missing sources, and
+  background fallback. Rebuilt source-projection UI smoke proves the wgpu/D3D12
+  product path imports source/video/Flutter surfaces and preserves the same
+  visible ordering.
+- `[windows_high_refresh]`, `[windows_overlay_layer]`, and
+  `native_high_refresh_overlay_pan_zoom.csv` validate overlay reuse,
+  projection pacing, and high-refresh hot-path behavior without reviving the
+  removed D3D11 retained overlay graph.
 
 Current macOS release-readiness evidence:
 

@@ -50,8 +50,9 @@ DirectComposition、Flutter surface export 或共享 FP16 ring 改动还必须�
 不算上屏证据。
 Windows source cache/projection、bundle lease、projection shader 或 compositor
 overlay 改动还必须运行 `[windows_source_cache]`、
-`[windows_source_projection]`、`windows_d3d11_source_projection_smoke` 和
-rebuilt source-projection UI smoke。
+`[windows_source_projection]` 和 rebuilt source-projection UI smoke。D3D11
+DComp source shader 不是产品路径；source/video/overlay 合成证据应来自
+wgpu/D3D12 backend 与 UI smoke。
 Windows Auto policy、DXGI output refresh、SDR/scRGB swap-chain 切换或 white
 level 更新还必须运行默认 Auto SDR smoke、强制 scRGB smoke；具备 HDR 显示时
 再运行 `python dev.py gate windows-hdr-auto`。HDR target 失败必须先降级
@@ -70,9 +71,7 @@ debug recovery 注入改动还必须运行
 Windows high-refresh interaction、DComp present cadence、source projection
 pan/zoom/split/order 或 overlay compositor 热路径改动还必须运行
 `video_renderer_tests [windows_high_refresh]`、
-`video_renderer_tests [windows_overlay_layer]`、
-`windows_d3d11_high_refresh_projection_overlay_smoke` 和
-`windows_d3d11_retained_overlay_layer_smoke` 和
+`video_renderer_tests [windows_overlay_layer]` 和
 `python dev.py gate windows-high-refresh-local`。低刷机器只提供功能证据；
 高刷机器必须检查 `windowsHotPathGateResult=pass`，并保留
 present/composite/input-to-present/drop-rate、source reuse、overlay reuse 和

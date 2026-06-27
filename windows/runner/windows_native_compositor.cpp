@@ -24,23 +24,11 @@ constexpr auto kFlutterExportPacingSampleInterval =
 
 struct CompositeConstants {
     float viewport[4];
+    float background_color[4];
     float sdr_white_scale;
     float output_mode;
-    float source_projection_enabled;
-    float source_mode;
-    float source_split_pos;
-    float source_track_count;
-    float source_header_padding[2];
-    float source_present[4];
-    float source_order[4];
-    float source_transfer[4];
-    float source_display_offset_x[4];
-    float source_display_offset_y[4];
-    float source_inv_display_size_x[4];
-    float source_inv_display_size_y[4];
-    float source_view_offset_uv_x[4];
-    float source_view_offset_uv_y[4];
-    float background_color[4];
+    float sdr_video_is_scrgb;
+    float present_padding;
 };
 
 bool adapter_luid(IDXGIAdapter* adapter, int32_t& high, uint32_t& low) {
@@ -2286,16 +2274,11 @@ bool WindowsNativeCompositor::CompositeLatest() {
         context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
         ID3D11ShaderResourceView* srvs[] = {
             held_video_srv_.Get(),
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr,
             held_sdr_video_valid_
                 ? held_sdr_video_srv_.Get()
                 : held_video_srv_.Get(),
         };
-        context_->PSSetShaderResources(0, 7, srvs);
+        context_->PSSetShaderResources(0, 2, srvs);
         ID3D11SamplerState* sampler = sampler_.Get();
         context_->PSSetSamplers(0, 1, &sampler);
         CompositeConstants values = {};
@@ -2310,8 +2293,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
             sdr_white_scale_.load(std::memory_order_relaxed));
         values.output_mode =
             output->target == OutputTarget::ScRGB ? 1.0f : 0.0f;
-        values.source_projection_enabled = 0.0f;
-        values.source_header_padding[1] =
+        values.sdr_video_is_scrgb =
             output->target == OutputTarget::SDR && !held_sdr_video_valid_ &&
                     held_video_valid_
                 ? 1.0f
@@ -2322,7 +2304,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
         context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
         context_->PSSetShader(video_pixel_shader_.Get(), nullptr, 0);
         context_->Draw(4, 0);
-        std::array<ID3D11ShaderResourceView*, 7> null_srvs = {};
+        std::array<ID3D11ShaderResourceView*, 2> null_srvs = {};
         context_->PSSetShaderResources(
             0, static_cast<UINT>(null_srvs.size()), null_srvs.data());
         context_->Flush();

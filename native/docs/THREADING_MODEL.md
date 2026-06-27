@@ -91,10 +91,9 @@ NativePlayer / Renderer command surface
   lease, never mixes generations, retains the latest successful bundle for
   projection-only redraws, and treats keyed-mutex timeout as backpressure rather
   than a compositor-wide failure.
-- Windows retained overlay layers are rebuilt on the composition thread only
-  when the overlay primitive signature changes. Pan, zoom, split, and order
-  updates reuse the committed video-space GPU buffer and update only projection
-  constants on the DComp hot path.
+- Windows overlay composition is owned by the wgpu/D3D12 render core. Pan,
+  zoom, split, and order updates should reuse source/projection state in that
+  render domain; the runner DComp bridge only presents the final target.
 - macOS runner owns Cocoa, sandbox file access, platform channels, Flutter
   texture registration, `CVPixelBuffer` lifecycle, and frame notification.
 - macOS viewport pan/zoom submits only the latest layout intent. `CVDisplayLink`

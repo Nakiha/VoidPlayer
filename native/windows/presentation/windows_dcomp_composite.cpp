@@ -8,46 +8,17 @@ namespace {
 
 constexpr char kCompositeShader[] = R"(
 Texture2D<float4> video_texture : register(t0);
-Texture2D<float4> flutter_texture : register(t1);
-Texture2D<float4> source_texture_0 : register(t2);
-Texture2D<float4> source_texture_1 : register(t3);
-Texture2D<float4> source_texture_2 : register(t4);
-Texture2D<float4> source_texture_3 : register(t5);
-Texture2D<float4> sdr_video_texture : register(t6);
+Texture2D<float4> sdr_video_texture : register(t1);
 SamplerState linear_sampler : register(s0);
 cbuffer CompositeConstants : register(b0) {
   float4 viewport;
+  float4 background_color;
   float sdr_white_scale;
   float output_mode;
-  float source_projection_enabled;
-  float source_mode;
-  float source_split_pos;
-  float source_track_count;
-  float source_header_padding;
   float sdr_video_is_scrgb;
-  float4 source_present;
-  float4 source_order;
-  float4 source_transfer;
-  float4 source_display_offset_x;
-  float4 source_display_offset_y;
-  float4 source_inv_display_size_x;
-  float4 source_inv_display_size_y;
-  float4 source_view_offset_uv_x;
-  float4 source_view_offset_uv_y;
-  float4 background_color;
+  float present_padding;
 };
 struct VSOut { float4 position : SV_POSITION; float2 uv : TEXCOORD0; };
-struct OverlayIn {
-  float2 source_uv : TEXCOORD0;
-  float source_slot : TEXCOORD1;
-  float4 color : COLOR;
-};
-struct OverlayOut {
-  float4 position : SV_POSITION;
-  float2 global_uv : TEXCOORD0;
-  float4 clip_uv : TEXCOORD1;
-  float4 color : COLOR;
-};
 VSOut VSMain(uint id : SV_VertexID) {
   float2 positions[4] = {
     float2(-1.0, -1.0), float2(-1.0, 1.0),
@@ -60,71 +31,6 @@ VSOut VSMain(uint id : SV_VertexID) {
   VSOut output;
   output.position = float4(positions[id], 0.0, 1.0);
   output.uv = uvs[id];
-  return output;
-}
-float value_at(float4 values, int index);
-int display_count_for_mode(int mode, int count);
-int display_slot_for_source(int source_slot, int count);
-OverlayOut VSOverlay(OverlayIn input) {
-  OverlayOut output;
-  int mode = (int)round(source_mode);
-  int count = clamp((int)round(source_track_count), 1, 4);
-  int display_count = display_count_for_mode(mode, count);
-  int source_slot = clamp((int)round(input.source_slot), 0, 3);
-  int display_slot = display_slot_for_source(source_slot, display_count);
-  if (display_slot < 0 || value_at(source_present, source_slot) < 0.5) {
-    output.position = float4(-4.0, -4.0, 0.0, 1.0);
-    output.global_uv = 0.0;
-    output.clip_uv = 0.0;
-    output.color = 0.0;
-    return output;
-  }
-  float2 display_offset = float2(
-      value_at(source_display_offset_x, source_slot),
-      value_at(source_display_offset_y, source_slot));
-  float2 inv_display_size = float2(
-      value_at(source_inv_display_size_x, source_slot),
-      value_at(source_inv_display_size_y, source_slot));
-  float2 view_offset = float2(
-      value_at(source_view_offset_uv_x, source_slot),
-      value_at(source_view_offset_uv_y, source_slot));
-  if (abs(inv_display_size.x) < 0.00001 ||
-      abs(inv_display_size.y) < 0.00001) {
-    output.position = float4(-4.0, -4.0, 0.0, 1.0);
-    output.global_uv = 0.0;
-    output.clip_uv = 0.0;
-    output.color = 0.0;
-    return output;
-  }
-  float2 local_uv = display_offset +
-      (input.source_uv + view_offset) / inv_display_size;
-  float2 extent = max(viewport.zw - viewport.xy, float2(0.00001, 0.00001));
-  float2 clip_min = viewport.xy;
-  float2 clip_max = viewport.zw;
-  if (mode == 0 && display_count > 1) {
-    float slot_left = (float)display_slot / (float)display_count;
-    float slot_right = (float)(display_slot + 1) / (float)display_count;
-    local_uv.x = slot_left + local_uv.x / (float)display_count;
-    clip_min.x = viewport.x + slot_left * extent.x;
-    clip_max.x = viewport.x + slot_right * extent.x;
-  } else if (mode == 1 && display_count > 1) {
-    float split = clamp(source_split_pos, 0.0001, 0.9999);
-    float split_x = viewport.x + split * extent.x;
-    if (display_slot == 0) {
-      clip_max.x = split_x;
-    } else {
-      clip_min.x = split_x;
-    }
-  }
-  float2 global_uv = viewport.xy + local_uv * extent;
-  output.position = float4(
-      global_uv.x * 2.0 - 1.0,
-      1.0 - global_uv.y * 2.0,
-      0.0,
-      1.0);
-  output.global_uv = global_uv;
-  output.clip_uv = float4(clip_min, clip_max);
-  output.color = input.color;
   return output;
 }
 float3 srgb_to_linear(float3 value) {
@@ -148,30 +54,6 @@ float3 scrgb_to_sdr(float3 value, int transfer) {
   }
   return saturate(linear_to_srgb(scrgb));
 }
-float value_at(float4 values, int index) {
-  if (index == 0) return values.x;
-  if (index == 1) return values.y;
-  if (index == 2) return values.z;
-  return values.w;
-}
-int display_slot_for_source(int source_slot, int count) {
-  [unroll]
-  for (int i = 0; i < 4; ++i) {
-    if (i < count && (int)round(value_at(source_order, i)) == source_slot) {
-      return i;
-    }
-  }
-  return -1;
-}
-int display_count_for_mode(int mode, int count) {
-  return mode == 1 && count > 1 ? 2 : count;
-}
-float4 sample_source(int slot, float2 uv) {
-  if (slot == 0) return source_texture_0.Sample(linear_sampler, uv);
-  if (slot == 1) return source_texture_1.Sample(linear_sampler, uv);
-  if (slot == 2) return source_texture_2.Sample(linear_sampler, uv);
-  return source_texture_3.Sample(linear_sampler, uv);
-}
 float4 output_background() {
   if (output_mode < 0.5) {
     return saturate(background_color);
@@ -180,56 +62,13 @@ float4 output_background() {
       srgb_to_linear(saturate(background_color.rgb)) * sdr_white_scale,
       background_color.a);
 }
-float4 source_projected_video(float2 video_uv) {
-  int mode = (int)round(source_mode);
-  int count = clamp((int)round(source_track_count), 1, 4);
-  int display_count = display_count_for_mode(mode, count);
-  int display_slot = 0;
-  float2 local_uv = video_uv;
-  if (mode == 0 && display_count > 1) {
-    float scaled_x = clamp(video_uv.x, 0.0, 0.999999) * display_count;
-    display_slot = clamp((int)floor(scaled_x), 0, display_count - 1);
-    local_uv.x = scaled_x - display_slot;
-  } else if (mode == 1 && display_count > 1) {
-    display_slot = video_uv.x < clamp(source_split_pos, 0.0001, 0.9999)
-        ? 0 : 1;
-  }
-  int source_slot =
-      clamp((int)round(value_at(source_order, display_slot)), 0, 3);
-  if (value_at(source_present, source_slot) < 0.5) {
-    return output_background();
-  }
-  float2 display_offset = float2(
-      value_at(source_display_offset_x, source_slot),
-      value_at(source_display_offset_y, source_slot));
-  float2 inv_display_size = float2(
-      value_at(source_inv_display_size_x, source_slot),
-      value_at(source_inv_display_size_y, source_slot));
-  float2 view_offset = float2(
-      value_at(source_view_offset_uv_x, source_slot),
-      value_at(source_view_offset_uv_y, source_slot));
-  float2 source_uv =
-      (local_uv - display_offset) * inv_display_size - view_offset;
-  if (source_uv.x < 0.0 || source_uv.x > 1.0 ||
-      source_uv.y < 0.0 || source_uv.y > 1.0) {
-    return output_background();
-  }
-  float4 source = sample_source(source_slot, source_uv);
-  if (output_mode < 0.5) {
-    source.rgb = scrgb_to_sdr(
-        source.rgb, (int)round(value_at(source_transfer, source_slot)));
-  }
-  return source;
-}
 float4 PSVideo(VSOut input) : SV_TARGET {
   float4 video = output_background();
   if (input.uv.x >= viewport.x && input.uv.y >= viewport.y &&
       input.uv.x <= viewport.z && input.uv.y <= viewport.w) {
     float2 extent = max(viewport.zw - viewport.xy, float2(0.00001, 0.00001));
     float2 video_uv = (input.uv - viewport.xy) / extent;
-    if (source_projection_enabled > 0.5) {
-      video = source_projected_video(video_uv);
-    } else if (output_mode < 0.5) {
+    if (output_mode < 0.5) {
       if (sdr_video_is_scrgb > 0.5) {
         video = video_texture.Sample(linear_sampler, video_uv);
         video.rgb = scrgb_to_sdr(video.rgb, 0);
@@ -241,33 +80,6 @@ float4 PSVideo(VSOut input) : SV_TARGET {
     }
   }
   return video;
-}
-float4 PSFlutter(VSOut input) : SV_TARGET {
-  float4 flutter = flutter_texture.Sample(linear_sampler, input.uv);
-  if (output_mode < 0.5) {
-    return flutter;
-  }
-  float alpha = saturate(flutter.a);
-  float3 straight_srgb = alpha > 0.00001 ? flutter.rgb / alpha : 0.0;
-  float3 flutter_premul_linear =
-      srgb_to_linear(saturate(straight_srgb)) * alpha * sdr_white_scale;
-  return float4(flutter_premul_linear, alpha);
-}
-float4 PSMain(VSOut input) : SV_TARGET {
-  float4 video = PSVideo(input);
-  float4 flutter = PSFlutter(input);
-  return float4(
-      flutter.rgb + video.rgb * (1.0 - flutter.a),
-      flutter.a + video.a * (1.0 - flutter.a));
-}
-float4 PSOverlay(OverlayOut input) : SV_TARGET {
-  if (input.global_uv.x < input.clip_uv.x ||
-      input.global_uv.y < input.clip_uv.y ||
-      input.global_uv.x > input.clip_uv.z ||
-      input.global_uv.y > input.clip_uv.w) {
-    discard;
-  }
-  return input.color;
 }
 )";
 

@@ -177,6 +177,9 @@ public:
     bool update_external_flutter_surface(
         const PresentationExternalD3D12Surface& surface);
     void clear_external_flutter_surface();
+    bool draw_current_frame_to_external_d3d12_target(
+        const PresentationExternalD3D12RenderTarget& target,
+        const char* reason);
     bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors);
     void clear_source_cache(const char* reason);

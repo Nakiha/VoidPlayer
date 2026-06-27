@@ -40,6 +40,10 @@ public:
     bool update_external_flutter_surface(
         const PresentationExternalD3D12Surface& surface) override;
     void clear_external_flutter_surface() override;
+    bool draw_frame_to_external_d3d12_target(
+        const RendererDrawSnapshot& snapshot,
+        const PresentationBackendDrawHooks& hooks,
+        const PresentationExternalD3D12RenderTarget& target) override;
     bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors) override;
     void clear_source_cache(const char* reason) override;
@@ -79,6 +83,21 @@ private:
         uint64_t frame_generation = 0;
         bool valid = false;
     };
+
+    bool update_source_cache_from_snapshot(
+        const RendererDrawSnapshot& snapshot,
+        const PresentationBackendDrawHooks& hooks);
+    bool render_snapshot_to_d3d12_target(
+        const RendererDrawSnapshot& snapshot,
+        const PresentationBackendDrawHooks& hooks,
+        ID3D12Resource* target,
+        int32_t width,
+        int32_t height,
+        int32_t output_format,
+        int32_t output_color_mode,
+        const std::function<void()>& cancel_target,
+        const std::function<bool(uint64_t)>& publish_target,
+        const char* target_label);
 
     bool headless_ = false;
     VPWgpuD3D12Renderer* renderer_ = nullptr;

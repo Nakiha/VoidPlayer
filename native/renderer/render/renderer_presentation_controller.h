@@ -236,6 +236,12 @@ public:
     bool update_external_flutter_surface(
         const PresentationExternalD3D12Surface& surface);
     void clear_external_flutter_surface();
+    bool draw_frame_to_external_d3d12_target(
+        const RendererDrawSnapshot& snapshot,
+        const char* source,
+        PresentationMetricsStore& metrics,
+        const PresentationExternalD3D12RenderTarget& target,
+        RendererPresentationOverlayHooks overlay_hooks = {});
     bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors);
     void clear_source_cache(const char* reason);

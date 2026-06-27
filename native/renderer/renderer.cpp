@@ -269,6 +269,12 @@ void Renderer::clear_external_flutter_surface() {
     impl_->clear_external_flutter_surface();
 }
 
+bool Renderer::draw_current_frame_to_external_d3d12_target(
+    const PresentationExternalD3D12RenderTarget& target,
+    const char* reason) {
+    return impl_->draw_current_frame_to_external_d3d12_target(target, reason);
+}
+
 bool Renderer::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     return impl_->configure_source_cache(descriptors);

@@ -226,6 +226,10 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     }
     if (dcomp_target_) dcomp_target_->SetRoot(nullptr);
     if (dcomp_device_) dcomp_device_->Commit();
+    if (d3d12_present_target_) {
+        d3d12_present_target_->shutdown();
+        d3d12_present_target_.reset();
+    }
     pending_swap_chain_ = {};
     current_swap_chain_ = {};
     retained_graph_fallback_reason_ = "stop";
@@ -922,6 +926,10 @@ bool WindowsNativeCompositor::InitializeDeviceAndComposition(
 
     pending_swap_chain_ = {};
     current_swap_chain_ = {};
+    if (d3d12_present_target_) {
+        d3d12_present_target_->shutdown();
+        d3d12_present_target_.reset();
+    }
     dcomp_visual_.Reset();
     dcomp_target_.Reset();
     dcomp_device_.Reset();
@@ -2124,6 +2132,154 @@ bool WindowsNativeCompositor::CompositeLatest() {
     if (!held_flutter_valid_) {
         return false;
     }
+    {
+        const auto direct_started = std::chrono::steady_clock::now();
+        Microsoft::WRL::ComPtr<ID3D12Device> render_device;
+        Microsoft::WRL::ComPtr<ID3D12CommandQueue> render_queue;
+        if (auto* raw_device =
+                static_cast<ID3D12Device*>(player->native_render_device())) {
+            raw_device->QueryInterface(IID_PPV_ARGS(&render_device));
+        }
+        if (auto* raw_queue = static_cast<ID3D12CommandQueue*>(
+                player->native_render_command_queue())) {
+            raw_queue->QueryInterface(IID_PPV_ARGS(&render_queue));
+        }
+        OutputTarget direct_target = OutputTarget::SDR;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            direct_target = desired_output_target_;
+        }
+        if (direct_target != OutputTarget::SDR) {
+            if (d3d12_present_target_) {
+                d3d12_present_target_->shutdown();
+            }
+            goto d3d11_compositor_fallback;
+        }
+        const auto present_format =
+            direct_target == OutputTarget::ScRGB
+                ? vr::WindowsD3D12PresentTargetFormat::ScRGB
+                : vr::WindowsD3D12PresentTargetFormat::SDR;
+        if (render_device && render_queue) {
+            uint32_t direct_width =
+                static_cast<uint32_t>(std::max(1, player->texture_width()));
+            uint32_t direct_height =
+                static_cast<uint32_t>(std::max(1, player->texture_height()));
+            if (direct_width <= 1 || direct_height <= 1) {
+                direct_width = held_flutter_.width;
+                direct_height = held_flutter_.height;
+            }
+            if (!d3d12_present_target_) {
+                d3d12_present_target_ =
+                    std::make_unique<vr::WindowsD3D12PresentTarget>();
+            }
+            const bool target_matches =
+                d3d12_present_target_->active() &&
+                d3d12_present_target_->width() == direct_width &&
+                d3d12_present_target_->height() == direct_height &&
+                ((direct_target == OutputTarget::ScRGB &&
+                  d3d12_present_target_->dxgi_format() ==
+                      DXGI_FORMAT_R16G16B16A16_FLOAT) ||
+                 (direct_target == OutputTarget::SDR &&
+                  d3d12_present_target_->dxgi_format() ==
+                      DXGI_FORMAT_B8G8R8A8_UNORM));
+            if (!target_matches) {
+                d3d12_present_target_->shutdown();
+                (void)d3d12_present_target_->initialize(
+                    hwnd_,
+                    render_device.Get(),
+                    render_queue.Get(),
+                    direct_width,
+                    direct_height,
+                    present_format);
+            }
+            vr::WindowsD3D12PresentTargetFrame direct_frame;
+            if (d3d12_present_target_->active() &&
+                d3d12_present_target_->acquire_frame(direct_frame)) {
+                vr::PresentationExternalD3D12RenderTarget render_target;
+                render_target.resource = direct_frame.resource.Get();
+                render_target.width =
+                    static_cast<int32_t>(direct_frame.width);
+                render_target.height =
+                    static_cast<int32_t>(direct_frame.height);
+                render_target.format =
+                    static_cast<int32_t>(direct_frame.dxgi_format);
+                render_target.color_space =
+                    static_cast<int32_t>(direct_frame.color_space);
+                if (player->draw_current_frame_to_external_d3d12_target(
+                        render_target, "windows-d3d12-direct-present")) {
+                    const auto present_started =
+                        std::chrono::steady_clock::now();
+                    const bool presented =
+                        d3d12_present_target_->present(1);
+                    const auto present_finished =
+                        std::chrono::steady_clock::now();
+                    if (presented) {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        ++d3d12_direct_present_count_;
+                        if (d3d12_direct_present_count_ <= 8 ||
+                            d3d12_direct_present_count_ % 60 == 0) {
+                            spdlog::info(
+                                "[WindowsNativeCompositor] D3D12 direct "
+                                "present count={} target={} size={}x{} "
+                                "flutter={}x{}",
+                                d3d12_direct_present_count_,
+                                OutputTargetName(direct_target),
+                                direct_frame.width,
+                                direct_frame.height,
+                                held_flutter_.width,
+                                held_flutter_.height);
+                        }
+                        high_refresh_metrics_.record_draw_us(
+                            static_cast<int64_t>(
+                                std::chrono::duration_cast<
+                                    std::chrono::microseconds>(
+                                    present_started - direct_started)
+                                    .count()));
+                        high_refresh_metrics_.record_present_block_us(
+                            static_cast<int64_t>(
+                                std::chrono::duration_cast<
+                                    std::chrono::microseconds>(
+                                    present_finished - present_started)
+                                    .count()));
+                        diagnostics_.swap_chain_active = true;
+                        diagnostics_.swap_chain_width = direct_frame.width;
+                        diagnostics_.swap_chain_height = direct_frame.height;
+                        diagnostics_.output_target =
+                            OutputTargetName(direct_target);
+                        diagnostics_.swap_chain_format =
+                            direct_frame.dxgi_format ==
+                                    DXGI_FORMAT_R16G16B16A16_FLOAT
+                                ? "R16G16B16A16_FLOAT"
+                                : "B8G8R8A8_UNORM";
+                        diagnostics_.color_space =
+                            direct_frame.color_space ==
+                                    DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+                                ? "RGB_FULL_G10_NONE_P709"
+                                : "RGB_FULL_G22_NONE_P709";
+                        diagnostics_.color_space_supported = true;
+                        diagnostics_.sdr_tone_map_active =
+                            direct_frame.dxgi_format !=
+                            DXGI_FORMAT_R16G16B16A16_FLOAT;
+                        diagnostics_.retained_graph_mode =
+                            "d3d12-direct-present";
+                        ++diagnostics_.present_count;
+                        ++diagnostics_.composite_count;
+                        return true;
+                    }
+                    spdlog::warn(
+                        "[WindowsNativeCompositor] D3D12 direct present "
+                        "failed: {}",
+                        d3d12_present_target_->last_error());
+                    d3d12_present_target_->shutdown();
+                } else {
+                    spdlog::debug(
+                        "[WindowsNativeCompositor] D3D12 direct draw "
+                        "deferred: renderer rejected external target");
+                }
+            }
+        }
+    }
+d3d11_compositor_fallback:
     if (!EnsureSwapChain(
             held_flutter_.width, held_flutter_.height)) {
         EnterFailed("dcomp-swap-chain-create-or-resize-failed");

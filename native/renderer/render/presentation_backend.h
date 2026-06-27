@@ -92,6 +92,12 @@ public:
         return false;
     }
     virtual void clear_external_flutter_surface() {}
+    virtual bool draw_frame_to_external_d3d12_target(
+        const RendererDrawSnapshot&,
+        const PresentationBackendDrawHooks&,
+        const PresentationExternalD3D12RenderTarget&) {
+        return false;
+    }
 #endif
     virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual PresentationBackendDiagnostics diagnostics() const { return {}; }

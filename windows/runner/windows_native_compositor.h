@@ -2,6 +2,7 @@
 
 #include "windows/d3d11/cross_adapter_transport.h"
 #include "windows/presentation/windows_dcomp_composite.h"
+#include "windows/presentation/windows_d3d12_present_target.h"
 #include "windows/presentation/windows_device_recovery.h"
 #include "windows/presentation/windows_high_refresh_metrics.h"
 #include "windows/player/native_player.h"
@@ -450,6 +451,7 @@ private:
     Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device_;
     Microsoft::WRL::ComPtr<IDCompositionTarget> dcomp_target_;
     Microsoft::WRL::ComPtr<IDCompositionVisual> dcomp_visual_;
+    std::unique_ptr<vr::WindowsD3D12PresentTarget> d3d12_present_target_;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> video_pixel_shader_;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
@@ -473,6 +475,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> held_flutter_d3d12_resource_;
     uint64_t external_flutter_surface_submitted_generation_ = 0;
     uint64_t external_flutter_surface_refresh_generation_ = 0;
+    uint64_t d3d12_direct_present_count_ = 0;
 
     mutable std::mutex mutex_;
     std::condition_variable wake_;

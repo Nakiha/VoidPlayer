@@ -1937,122 +1937,136 @@ PresentationBackendDiagnostics WgpuD3D12PresentationBackend::diagnostics() const
     return diagnostics;
 }
 
-bool WgpuD3D12PresentationBackend::draw_frame(
+bool WgpuD3D12PresentationBackend::update_source_cache_from_snapshot(
     const RendererDrawSnapshot& snapshot,
     const PresentationBackendDrawHooks& hooks) {
 #if VOIDPLAYER_WGPU_RUST_LINKED
-    if (!renderer_ || !shared_fp16_ring_) {
-        last_error_ =
-            "wgpu-d3d12 draw requires renderer and shared FP16 output";
+    if (!renderer_ || !source_cache_ring_ ||
+        source_cache_descriptors_.empty()) {
+        return true;
+    }
+    std::array<ID3D12Resource*, 4> source_targets{};
+    size_t target_count = 0;
+    if (!source_cache_ring_->begin_bundle(source_targets, target_count)) {
         return false;
     }
-    if (source_cache_ring_ && !source_cache_descriptors_.empty()) {
-        std::array<ID3D12Resource*, 4> source_targets{};
-        size_t target_count = 0;
-        if (source_cache_ring_->begin_bundle(source_targets, target_count)) {
-            bool complete = target_count == source_cache_descriptors_.size();
-            std::string source_error = complete
-                ? "none"
-                : "source-cache-target-count-mismatch";
-            for (size_t target_index = 0;
-                 complete && target_index < target_count;
-                 ++target_index) {
-                const auto& descriptor =
-                    source_cache_descriptors_[target_index];
-                const size_t source_slot =
-                    static_cast<size_t>(descriptor.slot);
-                if (!source_targets[target_index] ||
-                    source_slot >= kWgpuD3D12MaxTracks ||
-                    !snapshot.decision.frames[source_slot].has_value() ||
-                    !snapshot.tracks[source_slot].active ||
-                    snapshot.decision.file_ids[source_slot] !=
-                        descriptor.file_id ||
-                    snapshot.tracks[source_slot].file_id !=
-                        descriptor.file_id ||
-                    snapshot.decision.frames[source_slot]->width !=
-                        descriptor.width ||
-                    snapshot.decision.frames[source_slot]->height !=
-                        descriptor.height) {
-                    source_error =
-                        "track-not-ready slot=" +
-                        std::to_string(descriptor.slot) +
-                        " file=" +
-                        std::to_string(descriptor.file_id);
-                    complete = false;
-                    break;
-                }
-                const auto source_snapshot = make_wgpu_source_snapshot(
-                    snapshot,
-                    source_slot,
-                    descriptor.width,
-                    descriptor.height);
-                VPWgpuD3D12CompositeRequest source_composite = {};
-                VPWgpuD3D12PresentDecisionInfo source_decision = {};
-                WgpuD3D12CpuUploadScratch source_scratch;
-                fill_wgpu_d3d12_decision_from_snapshot(
-                    source_snapshot,
-                    descriptor.width,
-                    descriptor.height,
-                    source_decision);
-                if (!fill_wgpu_d3d12_source_for_frame(
-                        0,
-                        *source_snapshot.decision.frames[0],
-                        source_composite,
-                        source_decision,
-                        source_scratch,
-                        source_error)) {
-                    complete = false;
-                    break;
-                }
-                std::array<char, 512> source_ffi_error{};
-                source_composite.destination_resource =
-                    source_targets[target_index];
-                source_composite.output_format =
-                    VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
-                source_composite.output_color_mode =
-                    VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
-                source_composite.decision = &source_decision;
-                source_composite.width = descriptor.width;
-                source_composite.height = descriptor.height;
-                source_composite.error = source_ffi_error.data();
-                source_composite.error_size = source_ffi_error.size();
-                if (VPWgpuD3D12RendererRenderComposite(
-                        renderer_, &source_composite) != 0) {
-                    source_error = source_ffi_error.data()[0] != '\0'
-                        ? source_ffi_error.data()
-                        : "wgpu-d3d12 source-cache composite failed";
-                    complete = false;
-                    break;
-                }
-            }
-            if (complete) {
-                std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay;
-                if (hooks.build_overlay_primitives) {
-                    overlay = hooks.build_overlay_primitives(snapshot);
-                }
-                SourceCachePublishInfo publish_info;
-                if (!source_cache_ring_->publish_bundle(
-                        std::move(overlay), &publish_info)) {
-                    source_cache_error_ = "source-cache-publish-failed";
-                } else {
-                    source_cache_error_ = "none";
-                }
-            } else {
-                source_cache_ring_->cancel_bundle();
-                if (source_cache_error_ != source_error) {
-                    source_cache_error_ = source_error;
-                    spdlog::warn("[WgpuD3D12SourceCache] {}", source_error);
-                }
-            }
+    bool complete = target_count == source_cache_descriptors_.size();
+    std::string source_error = complete
+        ? "none"
+        : "source-cache-target-count-mismatch";
+    for (size_t target_index = 0; complete && target_index < target_count;
+         ++target_index) {
+        const auto& descriptor = source_cache_descriptors_[target_index];
+        const size_t source_slot = static_cast<size_t>(descriptor.slot);
+        if (!source_targets[target_index] ||
+            source_slot >= kWgpuD3D12MaxTracks ||
+            !snapshot.decision.frames[source_slot].has_value() ||
+            !snapshot.tracks[source_slot].active ||
+            snapshot.decision.file_ids[source_slot] != descriptor.file_id ||
+            snapshot.tracks[source_slot].file_id != descriptor.file_id ||
+            snapshot.decision.frames[source_slot]->width != descriptor.width ||
+            snapshot.decision.frames[source_slot]->height !=
+                descriptor.height) {
+            source_error =
+                "track-not-ready slot=" + std::to_string(descriptor.slot) +
+                " file=" + std::to_string(descriptor.file_id);
+            complete = false;
+            break;
+        }
+        const auto source_snapshot = make_wgpu_source_snapshot(
+            snapshot, source_slot, descriptor.width, descriptor.height);
+        VPWgpuD3D12CompositeRequest source_composite = {};
+        VPWgpuD3D12PresentDecisionInfo source_decision = {};
+        WgpuD3D12CpuUploadScratch source_scratch;
+        fill_wgpu_d3d12_decision_from_snapshot(
+            source_snapshot,
+            descriptor.width,
+            descriptor.height,
+            source_decision);
+        if (!fill_wgpu_d3d12_source_for_frame(
+                0,
+                *source_snapshot.decision.frames[0],
+                source_composite,
+                source_decision,
+                source_scratch,
+                source_error)) {
+            complete = false;
+            break;
+        }
+        std::array<char, 512> source_ffi_error{};
+        source_composite.destination_resource = source_targets[target_index];
+        source_composite.output_format =
+            VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
+        source_composite.output_color_mode =
+            VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
+        source_composite.decision = &source_decision;
+        source_composite.width = descriptor.width;
+        source_composite.height = descriptor.height;
+        source_composite.error = source_ffi_error.data();
+        source_composite.error_size = source_ffi_error.size();
+        if (VPWgpuD3D12RendererRenderComposite(
+                renderer_, &source_composite) != 0) {
+            source_error = source_ffi_error.data()[0] != '\0'
+                ? source_ffi_error.data()
+                : "wgpu-d3d12 source-cache composite failed";
+            complete = false;
+            break;
         }
     }
-    ID3D12Resource* target = shared_fp16_ring_->begin_frame(
-        std::max(snapshot.target_width, 1),
-        std::max(snapshot.target_height, 1));
-    if (!target) {
-        last_error_ = "wgpu-d3d12 shared FP16 output has no free buffer";
+    if (complete) {
+        std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay;
+        if (hooks.build_overlay_primitives) {
+            overlay = hooks.build_overlay_primitives(snapshot);
+        }
+        SourceCachePublishInfo publish_info;
+        if (!source_cache_ring_->publish_bundle(
+                std::move(overlay), &publish_info)) {
+            source_cache_error_ = "source-cache-publish-failed";
+            return false;
+        }
+        source_cache_error_ = "none";
+        return true;
+    }
+    source_cache_ring_->cancel_bundle();
+    if (source_cache_error_ != source_error) {
+        source_cache_error_ = source_error;
+        spdlog::warn("[WgpuD3D12SourceCache] {}", source_error);
+    }
+    return false;
+#else
+    (void)snapshot;
+    (void)hooks;
+    return false;
+#endif
+}
+
+bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
+    const RendererDrawSnapshot& snapshot,
+    const PresentationBackendDrawHooks& hooks,
+    ID3D12Resource* target,
+    int32_t width,
+    int32_t height,
+    int32_t output_format,
+    int32_t output_color_mode,
+    const std::function<void()>& cancel_target,
+    const std::function<bool(uint64_t)>& publish_target,
+    const char* target_label) {
+#if VOIDPLAYER_WGPU_RUST_LINKED
+    if (!renderer_ || !target || width <= 0 || height <= 0) {
+        last_error_ = "wgpu-d3d12 draw requires renderer and D3D12 target";
         return false;
     }
+    const auto cancel = [&]() {
+        if (cancel_target) {
+            cancel_target();
+        }
+    };
+    const auto publish = [&](uint64_t consumed_flutter_generation) {
+        if (publish_target) {
+            return publish_target(consumed_flutter_generation);
+        }
+        return true;
+    };
     std::array<char, 512> error{};
     VPWgpuD3D12CompositeRequest composite = {};
     VPWgpuD3D12PresentDecisionInfo decision = {};
@@ -2063,10 +2077,7 @@ bool WgpuD3D12PresentationBackend::draw_frame(
         flutter_surface = external_flutter_;
     }
     fill_wgpu_d3d12_decision_from_snapshot(
-        snapshot,
-        std::max(snapshot.target_width, 1),
-        std::max(snapshot.target_height, 1),
-        decision);
+        snapshot, width, height, decision);
     {
         std::lock_guard<std::mutex> lock(source_projection_mutex_);
         if (source_projection_.enabled) {
@@ -2088,20 +2099,20 @@ bool WgpuD3D12PresentationBackend::draw_frame(
             has_composite_source = true;
             continue;
         }
-        shared_fp16_ring_->cancel_frame();
+        cancel();
         last_error_ = cpu_error;
         spdlog::error("[WgpuD3D12] {}", last_error_);
         return false;
     }
     if (has_present_frame && !has_composite_source) {
-        shared_fp16_ring_->cancel_frame();
+        cancel();
         last_error_ = "wgpu-d3d12 draw requires D3D12VA or CPU YUV source frames";
         return false;
     }
     if (has_composite_source) {
         composite.destination_resource = target;
-        composite.output_format = VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
-        composite.output_color_mode = VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
+        composite.output_format = output_format;
+        composite.output_color_mode = output_color_mode;
         uint64_t consumed_flutter_generation = 0;
         if (flutter_surface.valid && flutter_surface.resource &&
             flutter_surface.width > 0 && flutter_surface.height > 0 &&
@@ -2170,12 +2181,12 @@ bool WgpuD3D12PresentationBackend::draw_frame(
             overlay_primitives.motion_lines.size();
         composite.overlay_generation = overlay_primitives.generation;
         composite.decision = &decision;
-        composite.width = static_cast<int32_t>(std::max(snapshot.target_width, 1));
-        composite.height = static_cast<int32_t>(std::max(snapshot.target_height, 1));
+        composite.width = width;
+        composite.height = height;
         composite.error = error.data();
         composite.error_size = error.size();
         if (VPWgpuD3D12RendererRenderComposite(renderer_, &composite) != 0) {
-            shared_fp16_ring_->cancel_frame();
+            cancel();
             last_error_ = error.data()[0] != '\0'
                               ? error.data()
                               : "wgpu-d3d12 composite failed";
@@ -2210,8 +2221,10 @@ bool WgpuD3D12PresentationBackend::draw_frame(
             ++external_flutter_surface_consume_count_;
             external_flutter_surface_last_error_ = "none";
         }
-        if (!shared_fp16_ring_->publish_frame(consumed_flutter_generation)) {
-            last_error_ = "wgpu-d3d12 shared FP16 publish failed";
+        if (!publish(consumed_flutter_generation)) {
+            last_error_ = std::string("wgpu-d3d12 ") +
+                          (target_label ? target_label : "target") +
+                          " publish failed";
             return false;
         }
         last_error_.clear();
@@ -2226,9 +2239,9 @@ bool WgpuD3D12PresentationBackend::draw_frame(
     overlay_layer_motion_line_count_ = 0;
     overlay_layer_bytes_ = 0;
     request.d3d12_resource = target;
-    request.format = VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
-    request.width = static_cast<uint32_t>(std::max(snapshot.target_width, 1));
-    request.height = static_cast<uint32_t>(std::max(snapshot.target_height, 1));
+    request.format = output_format;
+    request.width = static_cast<uint32_t>(width);
+    request.height = static_cast<uint32_t>(height);
     request.color[0] = snapshot.background_color[0];
     request.color[1] = snapshot.background_color[1];
     request.color[2] = snapshot.background_color[2];
@@ -2236,19 +2249,119 @@ bool WgpuD3D12PresentationBackend::draw_frame(
     request.error = error.data();
     request.error_size = error.size();
     if (VPWgpuD3D12RendererClearRenderTargetForProbe(renderer_, &request) != 0) {
-        shared_fp16_ring_->cancel_frame();
+        cancel();
         last_error_ = error.data()[0] != '\0'
                           ? error.data()
-                          : "wgpu-d3d12 shared FP16 clear failed";
+                          : "wgpu-d3d12 target clear failed";
         spdlog::error("[WgpuD3D12] {}", last_error_);
         return false;
     }
-    if (!shared_fp16_ring_->publish_frame()) {
-        last_error_ = "wgpu-d3d12 shared FP16 publish failed";
+    if (!publish(0)) {
+        last_error_ = std::string("wgpu-d3d12 ") +
+                      (target_label ? target_label : "target") +
+                      " publish failed";
         return false;
     }
     last_error_.clear();
     return true;
+#else
+    (void)snapshot;
+    (void)hooks;
+    (void)target;
+    (void)width;
+    (void)height;
+    (void)output_format;
+    (void)output_color_mode;
+    (void)cancel_target;
+    (void)publish_target;
+    (void)target_label;
+    last_error_ =
+        "wgpu-d3d12 Rust FFI is not linked; D3D11 fallback is disabled";
+    return false;
+#endif
+}
+
+bool WgpuD3D12PresentationBackend::draw_frame_to_external_d3d12_target(
+    const RendererDrawSnapshot& snapshot,
+    const PresentationBackendDrawHooks& hooks,
+    const PresentationExternalD3D12RenderTarget& target) {
+#if VOIDPLAYER_WGPU_RUST_LINKED
+    if (!renderer_) {
+        last_error_ = "wgpu-d3d12 external target draw requires renderer";
+        return false;
+    }
+    if (!target.resource || target.width <= 0 || target.height <= 0) {
+        last_error_ = "wgpu-d3d12 external target draw requires a D3D12 target";
+        return false;
+    }
+    int32_t output_format = 0;
+    int32_t output_color_mode = 0;
+    switch (target.format) {
+    case DXGI_FORMAT_B8G8R8A8_UNORM:
+        output_format = VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
+        output_color_mode = VP_WGPU_D3D12_OUTPUT_COLOR_MODE_SDR;
+        break;
+    case DXGI_FORMAT_R16G16B16A16_FLOAT:
+        output_format = VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
+        output_color_mode = VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
+        break;
+    default:
+        last_error_ = "wgpu-d3d12 external target format is unsupported";
+        return false;
+    }
+    update_source_cache_from_snapshot(snapshot, hooks);
+    return render_snapshot_to_d3d12_target(
+        snapshot,
+        hooks,
+        static_cast<ID3D12Resource*>(target.resource),
+        target.width,
+        target.height,
+        output_format,
+        output_color_mode,
+        {},
+        {},
+        "external D3D12 target");
+#else
+    (void)snapshot;
+    (void)hooks;
+    (void)target;
+    last_error_ =
+        "wgpu-d3d12 Rust FFI is not linked; D3D11 fallback is disabled";
+    return false;
+#endif
+}
+
+bool WgpuD3D12PresentationBackend::draw_frame(
+    const RendererDrawSnapshot& snapshot,
+    const PresentationBackendDrawHooks& hooks) {
+#if VOIDPLAYER_WGPU_RUST_LINKED
+    if (!renderer_ || !shared_fp16_ring_) {
+        last_error_ =
+            "wgpu-d3d12 draw requires renderer and shared FP16 output";
+        return false;
+    }
+    update_source_cache_from_snapshot(snapshot, hooks);
+    ID3D12Resource* target = shared_fp16_ring_->begin_frame(
+        std::max(snapshot.target_width, 1),
+        std::max(snapshot.target_height, 1));
+    if (!target) {
+        last_error_ = "wgpu-d3d12 shared FP16 output has no free buffer";
+        return false;
+    }
+    return render_snapshot_to_d3d12_target(
+        snapshot,
+        hooks,
+        target,
+        static_cast<int32_t>(std::max(snapshot.target_width, 1)),
+        static_cast<int32_t>(std::max(snapshot.target_height, 1)),
+        VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT,
+        VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR,
+        [this]() { shared_fp16_ring_->cancel_frame(); },
+        [this](uint64_t consumed_flutter_generation) {
+            return shared_fp16_ring_->publish_frame(
+                consumed_flutter_generation);
+        },
+        "shared FP16");
 #else
     (void)snapshot;
     last_error_ =

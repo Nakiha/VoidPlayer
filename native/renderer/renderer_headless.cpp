@@ -183,6 +183,65 @@ void Renderer::Impl::clear_external_flutter_surface() {
 #endif
 }
 
+bool Renderer::Impl::draw_current_frame_to_external_d3d12_target(
+    const PresentationExternalD3D12RenderTarget& target,
+    const char* reason) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!initialized_.load(std::memory_order_acquire) ||
+        shutting_down_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    RendererDrawSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> state_lock(state_mutex_);
+        snapshot = RendererDrawSnapshotBuilder::build(
+            track_controller_,
+            layout_state_,
+            surface_state_,
+            present_history_.snapshot());
+    }
+    if (!target.resource || target.width <= 0 || target.height <= 0 ||
+        target.width != snapshot.target_width ||
+        target.height != snapshot.target_height) {
+        spdlog::warn(
+            "[Renderer] external D3D12 target rejected: target={}x{} snapshot={}x{} resource={}",
+            target.width,
+            target.height,
+            snapshot.target_width,
+            snapshot.target_height,
+            target.resource != nullptr);
+        return false;
+    }
+    const char* draw_reason =
+        reason && reason[0] != '\0' ? reason : "external-d3d12-present";
+    bool drew = false;
+    {
+        std::lock_guard<std::recursive_mutex> ctx_lock(
+            presentation_.device_mutex());
+        drew = presentation_.draw_frame_to_external_d3d12_target(
+            snapshot,
+            draw_reason,
+            presentation_metrics_,
+            target,
+            presentation_overlay_hooks());
+    }
+    if (drew) {
+        std::lock_guard<std::mutex> state_lock(state_mutex_);
+        if (layout_state_.mark_presented_if_newer(
+                layout_state_.current_revision())) {
+            presentation_metrics_.note_layout_presented();
+        }
+        loop_driver_.mark_preview_presented(true);
+    }
+    return drew;
+#else
+    (void)target;
+    (void)reason;
+    return false;
+#endif
+}
+
 bool Renderer::Impl::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
 #ifdef _WIN32

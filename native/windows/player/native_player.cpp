@@ -400,6 +400,15 @@ void NativePlayer::clear_external_flutter_surface() {
     }
 }
 
+bool NativePlayer::draw_current_frame_to_external_d3d12_target(
+    const PresentationExternalD3D12RenderTarget& target,
+    const char* reason) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.draw_current_frame_to_external_d3d12_target(
+               target, reason);
+}
+
 bool NativePlayer::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);

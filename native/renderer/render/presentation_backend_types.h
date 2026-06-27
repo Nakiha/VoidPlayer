@@ -36,6 +36,14 @@ struct PresentationExternalD3D12Surface {
     uint64_t frame_generation = 0;
 };
 
+struct PresentationExternalD3D12RenderTarget {
+    void* resource = nullptr;
+    int32_t width = 0;
+    int32_t height = 0;
+    int32_t format = 0;
+    int32_t color_space = 0;
+};
+
 struct PresentationBackendFrameInfo {
     int32_t width = 0;
     int32_t height = 0;

@@ -660,6 +660,33 @@ void RendererPresentationController::clear_external_flutter_surface() {
     }
 }
 
+bool RendererPresentationController::draw_frame_to_external_d3d12_target(
+    const RendererDrawSnapshot& snapshot,
+    const char* source,
+    PresentationMetricsStore& metrics,
+    const PresentationExternalD3D12RenderTarget& target,
+    RendererPresentationOverlayHooks overlay_hooks) {
+    if (!backend_) {
+        return false;
+    }
+    PresentationBackendDrawHooks hooks;
+    hooks.draw_source = source;
+    hooks.wait_gpu_idle = [this, &metrics](const char* label) {
+        wait_gpu_idle(label, metrics);
+    };
+    hooks.record_frame_copy_us = [&metrics](uint64_t elapsed_us) {
+        metrics.frame_copy_us.fetch_add(elapsed_us, std::memory_order_relaxed);
+        metrics.frame_copy_count.fetch_add(1, std::memory_order_relaxed);
+    };
+    hooks.draw_overlay = std::move(overlay_hooks.draw_overlay);
+    hooks.composite_bgra_overlay =
+        std::move(overlay_hooks.composite_bgra_overlay);
+    hooks.build_overlay_primitives =
+        std::move(overlay_hooks.build_overlay_primitives);
+    return backend_->draw_frame_to_external_d3d12_target(
+        snapshot, hooks, target);
+}
+
 bool RendererPresentationController::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);

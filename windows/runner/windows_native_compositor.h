@@ -249,7 +249,6 @@ public:
     void DisableRetainedSourceProjection(const std::string& reason);
     void ClearSourceProjection(const std::string& reason);
     void SetSourceCacheError(const std::string& error);
-    void NotifySourceCachePublished();
     void RequestOutputTarget(OutputTarget target,
                              IDXGIAdapter* output_adapter,
                              double sdr_white_level_nits,

@@ -1902,12 +1902,6 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
             }
             native_compositor_source_signature_ = signature;
             native_compositor_source_failure_signature_.clear();
-            player_->set_source_cache_frame_callback(
-                [compositor = native_compositor_.get()]() {
-                    if (compositor) {
-                        compositor->NotifySourceCachePublished();
-                    }
-                });
         }
         if (!player_->is_playing()) {
             const auto backend = player_->presentation_backend_diagnostics();

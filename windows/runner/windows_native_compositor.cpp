@@ -269,7 +269,6 @@ bool WindowsNativeCompositor::Start(
         return false;
     }
     player->set_shared_fp16_frame_callback([this]() { SignalWork(); });
-    player->set_source_cache_frame_callback([this]() { SignalWork(); });
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stop_ = false;
@@ -370,7 +369,6 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     if (auto player = player_.lock()) {
         ReleaseHeldInputs(player);
         player->set_shared_fp16_frame_callback({});
-        player->set_source_cache_frame_callback({});
         player->clear_source_cache(reason ? reason : "compositor-stop");
     }
     if (engine_api_.available() && flutter_view_) {
@@ -706,22 +704,6 @@ void WindowsNativeCompositor::SetSourceCacheError(
     diagnostics_.source_cache_last_error = source_cache_error_;
     ++diagnostics_.source_cache_fallback_count;
     work_pending_ = true;
-    wake_.notify_one();
-}
-
-void WindowsNativeCompositor::NotifySourceCachePublished() {
-    bool first_publish = false;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        ++source_cache_publish_count_;
-        first_publish = source_cache_publish_count_ == 1;
-        retained_source_content_dirty_ = true;
-        work_pending_ = true;
-    }
-    if (first_publish) {
-        spdlog::info(
-            "[WindowsNativeCompositor] first source-cache publish notified");
-    }
     wake_.notify_one();
 }
 

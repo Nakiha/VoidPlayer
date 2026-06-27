@@ -1825,7 +1825,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 surface.slot,
                 elapsed_ms);
         };
-    const auto acquire_legacy_video_inputs = [&]() {
+    [[maybe_unused]] const auto acquire_legacy_video_inputs = [&]() {
         vr::SharedFp16TextureSnapshot next_video;
         if (player->acquire_shared_fp16_texture(next_video)) {
             const bool unchanged =
@@ -1964,15 +1964,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
             }
         }
     };
-    bool legacy_inputs_preacquired = false;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        legacy_inputs_preacquired = desired_output_target_ != OutputTarget::SDR;
-    }
-    if (legacy_inputs_preacquired) {
-        acquire_legacy_video_inputs();
-    }
-
     FlutterSurface next_flutter;
     Microsoft::WRL::ComPtr<ID3D12Resource> next_flutter_d3d12_resource;
     const auto acquire_flutter_surface = [&]() -> bool {
@@ -2317,9 +2308,15 @@ bool WindowsNativeCompositor::CompositeLatest() {
             }
         }
     }
-    if (!legacy_inputs_preacquired) {
-        acquire_legacy_video_inputs();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        diagnostics_.retained_graph_fallback_reason =
+            d3d12_present_target_
+                ? d3d12_present_target_->last_error()
+                : "d3d12-direct-present-unavailable";
     }
+    EnterFailed("d3d12-direct-present-required");
+    return false;
     if (!EnsureSwapChain(
             held_flutter_.width, held_flutter_.height)) {
         EnterFailed("dcomp-swap-chain-create-or-resize-failed");

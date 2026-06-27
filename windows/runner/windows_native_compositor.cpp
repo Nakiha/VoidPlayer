@@ -4,7 +4,6 @@
 #include "renderer/overlay/analysis_overlay_primitives.h"
 
 #include <d3dcompiler.h>
-#include <d2d1_1.h>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -24,15 +23,8 @@ constexpr int kExportCompositorOwned = 2;
 constexpr auto kFlutterExportStaleTimeout = std::chrono::milliseconds(750);
 constexpr int64_t kMinUnrequestedFlutterExportSignalUs = 1000;
 constexpr int64_t kMaxUnrequestedFlutterExportSignalUs = 16667;
-constexpr int64_t kMinRetainedDeferredContentDelayUs = 1000;
-constexpr int64_t kMaxRetainedDeferredContentDelayUs = 16667;
-constexpr int64_t kMinRetainedGraphCommitIntervalUs = 1000;
-constexpr int64_t kMaxRetainedGraphCommitIntervalUs = 16667;
-constexpr auto kRetainedProjectionInteractionWindow =
-    std::chrono::milliseconds(50);
 constexpr auto kFlutterExportPacingSampleInterval =
     std::chrono::milliseconds(250);
-constexpr size_t kMaxRetainedGraphTimingSamples = 512;
 
 struct CompositeConstants {
     float viewport[4];
@@ -88,50 +80,6 @@ bool adapter_luid(IDXGIAdapter* adapter, int32_t& high, uint32_t& low) {
     return true;
 }
 
-DXGI_FORMAT retained_surface_format(
-    WindowsNativeCompositor::OutputTarget target) {
-    return target == WindowsNativeCompositor::OutputTarget::ScRGB
-        ? DXGI_FORMAT_R16G16B16A16_FLOAT
-        : DXGI_FORMAT_B8G8R8A8_UNORM;
-}
-
-void append_retained_graph_sample(std::vector<int64_t>& samples,
-                                  int64_t value) {
-    if (value < 0) {
-        return;
-    }
-    if (samples.size() >= kMaxRetainedGraphTimingSamples) {
-        samples.erase(samples.begin());
-    }
-    samples.push_back(value);
-}
-
-int64_t retained_graph_p95(std::vector<int64_t> samples) {
-    if (samples.empty()) {
-        return 0;
-    }
-    std::sort(samples.begin(), samples.end());
-    const auto index = static_cast<size_t>(
-        std::ceil(static_cast<double>(samples.size()) * 0.95) - 1.0);
-    return samples[std::min(index, samples.size() - 1)];
-}
-
-int64_t retained_graph_commit_interval_us(int64_t display_hz,
-                                          bool projection_only) {
-    display_hz = std::max<int64_t>(1, display_hz);
-    const int64_t full_frame_us = std::clamp<int64_t>(
-        1000000 / display_hz,
-        kMinRetainedGraphCommitIntervalUs,
-        kMaxRetainedGraphCommitIntervalUs);
-    if (!projection_only) {
-        return full_frame_us;
-    }
-    return std::clamp<int64_t>(
-        full_frame_us / 2,
-        kMinRetainedGraphCommitIntervalUs,
-        kMaxRetainedGraphCommitIntervalUs);
-}
-
 uint64_t steady_micros() {
     return static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -174,40 +122,6 @@ WindowsNativeCompositor::WindowsNativeCompositor() = default;
 
 WindowsNativeCompositor::~WindowsNativeCompositor() {
     Stop();
-}
-
-void WindowsNativeCompositor::ResetRetainedGraph(const std::string& reason) {
-    retained_background_ = {};
-    retained_flutter_ = {};
-    for (auto& source : retained_sources_) {
-        source = {};
-    }
-    retained_source_root_visual_.Reset();
-    retained_background_visual_.Reset();
-    retained_root_visual_.Reset();
-    retained_graph_active_ = false;
-    retained_graph_width_ = 0;
-    retained_graph_height_ = 0;
-    retained_projection_dirty_ = false;
-    retained_source_content_dirty_ = false;
-    retained_flutter_content_dirty_ = false;
-    retained_deferred_content_deadline_ = {};
-    retained_graph_commit_deadline_ = {};
-    last_retained_graph_commit_time_ = {};
-    last_retained_projection_update_ = {};
-    retained_graph_fallback_reason_ =
-        reason.empty() ? "reset" : reason;
-}
-
-bool WindowsNativeCompositor::CanUseRetainedGraph(
-    const SourceProjection& projection,
-    OutputTarget target) const {
-    return projection.enabled &&
-           (target == OutputTarget::SDR || target == OutputTarget::ScRGB) &&
-           !IsCrossAdapterActive() &&
-           dcomp_device_ &&
-           device_ &&
-           context_;
 }
 
 bool WindowsNativeCompositor::Start(
@@ -284,12 +198,6 @@ bool WindowsNativeCompositor::Start(
         last_unsolicited_flutter_export_signal_ = {};
         last_explicit_flutter_frame_request_time_ = {};
         high_refresh_metrics_.reset(diagnostics_.high_refresh_display_hz);
-        retained_graph_flutter_bake_us_.clear();
-        retained_graph_source_bake_us_.clear();
-        retained_graph_apply_us_.clear();
-        retained_graph_commit_us_.clear();
-        retained_graph_commit_deadline_ = {};
-        last_retained_graph_commit_time_ = {};
         last_present_time_ = {};
         interaction_sample_started_ = {};
         last_overlay_metrics_generation_ = 0;
@@ -379,7 +287,7 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     if (dcomp_device_) dcomp_device_->Commit();
     pending_swap_chain_ = {};
     current_swap_chain_ = {};
-    ResetRetainedGraph("stop");
+    retained_graph_fallback_reason_ = "stop";
     dcomp_visual_.Reset();
     dcomp_target_.Reset();
     dcomp_device_.Reset();
@@ -665,7 +573,6 @@ void WindowsNativeCompositor::BoostFlutterInteraction(
     }
     last_explicit_flutter_frame_request_time_ =
         std::chrono::steady_clock::now();
-    retained_flutter_content_dirty_ = true;
     work_pending_ = true;
     wake_.notify_one();
 }
@@ -675,9 +582,6 @@ void WindowsNativeCompositor::DisableRetainedSourceProjection(
     std::lock_guard<std::mutex> lock(mutex_);
     source_projection_ = {};
     diagnostics_.source_projection_enabled = false;
-    retained_projection_dirty_ = false;
-    last_retained_projection_update_ = {};
-    retained_deferred_content_deadline_ = {};
     retained_graph_fallback_reason_ =
         reason.empty() ? "backend-source-projection" : reason;
 }
@@ -690,9 +594,6 @@ void WindowsNativeCompositor::ClearSourceProjection(
     diagnostics_.source_cache_active = false;
     source_cache_error_ = reason.empty() ? "clear-requested" : reason;
     diagnostics_.source_cache_last_error = source_cache_error_;
-    retained_projection_dirty_ = false;
-    last_retained_projection_update_ = {};
-    retained_source_content_dirty_ = true;
     work_pending_ = true;
     wake_.notify_one();
 }
@@ -954,33 +855,21 @@ WindowsNativeCompositor::diagnostics() const {
     result.hot_path_gate_result = gate_result;
     result.hot_path_last_failure_reason =
         gate_result.rfind("fail-", 0) == 0 ? gate_result : "none";
-    result.retained_graph_active = retained_graph_active_;
-    result.retained_graph_mode =
-        retained_graph_active_ ? "active" : "inactive";
+    result.retained_graph_active = false;
+    result.retained_graph_mode = "inactive";
     result.retained_graph_fallback_reason =
         retained_graph_fallback_reason_;
-    result.retained_graph_commit_count =
-        retained_graph_commit_count_;
-    result.retained_graph_projection_commit_count =
-        retained_graph_projection_commit_count_;
-    result.retained_graph_source_bake_count =
-        retained_graph_source_bake_count_;
-    result.retained_graph_flutter_bake_count =
-        retained_graph_flutter_bake_count_;
-    result.retained_graph_projection_skip_present_count =
-        retained_graph_projection_skip_present_count_;
-    result.retained_graph_deferred_content_count =
-        retained_graph_deferred_content_count_;
-    result.retained_graph_commit_defer_count =
-        retained_graph_commit_defer_count_;
-    result.retained_graph_flutter_bake_p95_us =
-        retained_graph_p95(retained_graph_flutter_bake_us_);
-    result.retained_graph_source_bake_p95_us =
-        retained_graph_p95(retained_graph_source_bake_us_);
-    result.retained_graph_apply_p95_us =
-        retained_graph_p95(retained_graph_apply_us_);
-    result.retained_graph_commit_p95_us =
-        retained_graph_p95(retained_graph_commit_us_);
+    result.retained_graph_commit_count = 0;
+    result.retained_graph_projection_commit_count = 0;
+    result.retained_graph_source_bake_count = 0;
+    result.retained_graph_flutter_bake_count = 0;
+    result.retained_graph_projection_skip_present_count = 0;
+    result.retained_graph_deferred_content_count = 0;
+    result.retained_graph_commit_defer_count = 0;
+    result.retained_graph_flutter_bake_p95_us = 0;
+    result.retained_graph_source_bake_p95_us = 0;
+    result.retained_graph_apply_p95_us = 0;
+    result.retained_graph_commit_p95_us = 0;
     const double elapsed_seconds =
         std::chrono::duration<double>(
             std::chrono::steady_clock::now() - rate_start_time_).count();
@@ -1004,12 +893,6 @@ void WindowsNativeCompositor::SetHighRefreshDisplayHz(int64_t display_hz) {
 void WindowsNativeCompositor::ResetHighRefreshMetrics() {
     std::lock_guard<std::mutex> lock(mutex_);
     high_refresh_metrics_.reset(diagnostics_.high_refresh_display_hz);
-    retained_graph_flutter_bake_us_.clear();
-    retained_graph_source_bake_us_.clear();
-    retained_graph_apply_us_.clear();
-    retained_graph_commit_us_.clear();
-    retained_graph_commit_deadline_ = {};
-    last_retained_graph_commit_time_ = {};
     last_present_time_ = {};
     interaction_sample_started_ = {};
     last_overlay_metrics_generation_ = 0;
@@ -1072,12 +955,9 @@ void WindowsNativeCompositor::OnFlutterSurfacePublished(
                     .count());
             log_publish = true;
             signal_work = true;
-            compositor->retained_flutter_content_dirty_ = true;
         } else if (compositor->phase_ != Phase::Active) {
             signal_work = true;
-            compositor->retained_flutter_content_dirty_ = true;
         } else {
-            compositor->retained_flutter_content_dirty_ = true;
             const int64_t display_hz = std::max<int64_t>(
                 1, compositor->diagnostics_.high_refresh_display_hz);
             const int64_t signal_interval_us = std::clamp<int64_t>(
@@ -1195,7 +1075,7 @@ bool WindowsNativeCompositor::InitializeDeviceAndComposition(
     dcomp_visual_.Reset();
     dcomp_target_.Reset();
     dcomp_device_.Reset();
-    ResetRetainedGraph("device-rebuild");
+    retained_graph_fallback_reason_ = "device-rebuild";
     constants_.Reset();
     sampler_.Reset();
     pixel_shader_.Reset();
@@ -1629,475 +1509,6 @@ bool WindowsNativeCompositor::ActivatePendingSwapChain() {
     return true;
 }
 
-bool WindowsNativeCompositor::EnsureRetainedGraph(
-    uint32_t width, uint32_t height, OutputTarget target) {
-    if (!dcomp_device_) {
-        retained_graph_fallback_reason_ = "dcomp-device-unavailable";
-        return false;
-    }
-    if (retained_graph_target_ != target &&
-        (retained_root_visual_ || retained_background_.surface ||
-         retained_flutter_.surface)) {
-        ResetRetainedGraph("target-changed");
-    }
-    retained_graph_target_ = target;
-    const DXGI_FORMAT surface_format = retained_surface_format(target);
-    const auto log_failure = [&](const char* stage, HRESULT result) {
-        retained_graph_fallback_reason_ = stage;
-        spdlog::warn(
-            "[WindowsNativeCompositor] retained graph {} failed hr=0x{:08x}",
-            stage,
-            static_cast<uint32_t>(result));
-        return false;
-    };
-    HRESULT hr = S_OK;
-    if (!retained_root_visual_) {
-        hr = dcomp_device_->CreateVisual(&retained_root_visual_);
-        if (FAILED(hr)) return log_failure("create-root-visual", hr);
-    }
-    if (!retained_background_visual_) {
-        hr = dcomp_device_->CreateVisual(&retained_background_visual_);
-        if (FAILED(hr)) return log_failure("create-background-visual", hr);
-        hr = retained_root_visual_->AddVisual(
-            retained_background_visual_.Get(), FALSE, nullptr);
-        if (FAILED(hr)) return log_failure("add-background-visual", hr);
-    }
-    if (!retained_source_root_visual_) {
-        hr = dcomp_device_->CreateVisual(&retained_source_root_visual_);
-        if (FAILED(hr)) return log_failure("create-source-root-visual", hr);
-        hr = retained_root_visual_->AddVisual(
-            retained_source_root_visual_.Get(),
-            TRUE,
-            retained_background_visual_.Get());
-        if (FAILED(hr)) return log_failure("add-source-root-visual", hr);
-    }
-    if (!retained_flutter_.visual) {
-        hr = dcomp_device_->CreateVisual(&retained_flutter_.visual);
-        if (FAILED(hr)) return log_failure("create-flutter-visual", hr);
-        hr = retained_root_visual_->AddVisual(
-            retained_flutter_.visual.Get(),
-            TRUE,
-            retained_source_root_visual_.Get());
-        if (FAILED(hr)) return log_failure("add-flutter-visual", hr);
-    }
-    if (!retained_background_.surface) {
-        hr = dcomp_device_->CreateSurface(
-            1, 1, surface_format,
-            DXGI_ALPHA_MODE_IGNORE, &retained_background_.surface);
-        if (FAILED(hr)) return log_failure("create-background-surface", hr);
-        retained_background_.format = surface_format;
-        retained_background_.width = 1;
-        retained_background_.height = 1;
-        retained_background_.ready = true;
-        Microsoft::WRL::ComPtr<IDXGISurface> surface;
-        POINT offset = {};
-        RECT rect = {0, 0, 1, 1};
-        hr = retained_background_.surface->BeginDraw(
-            &rect, IID_PPV_ARGS(&surface), &offset);
-        if (FAILED(hr)) return log_failure("draw-background-begin", hr);
-        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
-        if (SUCCEEDED(surface.As(&texture)) &&
-            SUCCEEDED(device_->CreateRenderTargetView(
-                texture.Get(), nullptr, &rtv))) {
-            const float black[4] = {
-                viewport_background_[0],
-                viewport_background_[1],
-                viewport_background_[2],
-                1.0f};
-            context_->ClearRenderTargetView(rtv.Get(), black);
-            context_->Flush();
-        }
-        retained_background_.surface->EndDraw();
-        hr = retained_background_visual_->SetContent(
-            retained_background_.surface.Get());
-        if (FAILED(hr)) return log_failure("set-background-content", hr);
-    }
-    retained_background_visual_->SetOffsetX(0.0f);
-    retained_background_visual_->SetOffsetY(0.0f);
-    const D2D_MATRIX_3X2_F background_transform = {
-        static_cast<float>(std::max(width, 1u)), 0.0f,
-        0.0f, static_cast<float>(std::max(height, 1u)),
-        0.0f, 0.0f};
-    retained_background_visual_->SetTransform(background_transform);
-    retained_graph_fallback_reason_ = "none";
-    return true;
-}
-
-bool WindowsNativeCompositor::BakeRetainedSourceSurface(
-    size_t slot,
-    ID3D11ShaderResourceView* source_srv,
-    uint32_t width,
-    uint32_t height,
-    OutputTarget target,
-    int color_transfer,
-    uint64_t generation,
-    const std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage>& overlay) {
-    if (slot >= retained_sources_.size() || !source_srv ||
-        width == 0 || height == 0 ||
-        !EnsureRetainedGraph(width, height, target)) {
-        retained_graph_fallback_reason_ = "invalid-source-bake";
-        return false;
-    }
-    auto& layer = retained_sources_[slot];
-    const DXGI_FORMAT surface_format = retained_surface_format(target);
-    const auto log_failure = [&](const char* stage, HRESULT result) {
-        retained_graph_fallback_reason_ = stage;
-        spdlog::warn(
-            "[WindowsNativeCompositor] retained source {} {} failed hr=0x{:08x}",
-            slot,
-            stage,
-            static_cast<uint32_t>(result));
-        return false;
-    };
-    HRESULT hr = S_OK;
-    if (!layer.surface || layer.width != width || layer.height != height ||
-        layer.format != surface_format) {
-        layer = {};
-        hr = dcomp_device_->CreateSurface(
-            width, height, surface_format,
-            DXGI_ALPHA_MODE_IGNORE, &layer.surface);
-        if (FAILED(hr)) return log_failure("create-surface", hr);
-        hr = dcomp_device_->CreateVisual(&layer.visual);
-        if (FAILED(hr)) return log_failure("create-visual", hr);
-        hr = dcomp_device_->CreateRectangleClip(&layer.clip);
-        if (FAILED(hr)) return log_failure("create-clip", hr);
-        hr = layer.visual->SetContent(layer.surface.Get());
-        if (FAILED(hr)) return log_failure("set-content", hr);
-        hr = layer.visual->SetClip(layer.clip.Get());
-        if (FAILED(hr)) return log_failure("set-clip", hr);
-        hr = retained_source_root_visual_->AddVisual(
-            layer.visual.Get(), TRUE, nullptr);
-        if (FAILED(hr)) return log_failure("add-visual", hr);
-        layer.width = width;
-        layer.height = height;
-        layer.format = surface_format;
-    }
-
-    Microsoft::WRL::ComPtr<IDXGISurface> surface;
-    POINT offset = {};
-    RECT rect = {
-        0, 0,
-        static_cast<LONG>(width),
-        static_cast<LONG>(height)};
-    hr = layer.surface->BeginDraw(&rect, IID_PPV_ARGS(&surface), &offset);
-    if (FAILED(hr)) return log_failure("begin-draw", hr);
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
-    bool ok = SUCCEEDED(surface.As(&texture)) &&
-              SUCCEEDED(device_->CreateRenderTargetView(
-                  texture.Get(), nullptr, &rtv));
-    if (ok) {
-        D3D11_VIEWPORT viewport = {};
-        viewport.Width = static_cast<float>(width);
-        viewport.Height = static_cast<float>(height);
-        viewport.MaxDepth = 1.0f;
-        context_->RSSetViewports(1, &viewport);
-        ID3D11RenderTargetView* raw_rtv = rtv.Get();
-        context_->OMSetRenderTargets(1, &raw_rtv, nullptr);
-        context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-        context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
-        std::array<ID3D11ShaderResourceView*, 7> srvs = {};
-        srvs[2 + slot] = source_srv;
-        context_->PSSetShaderResources(
-            0, static_cast<UINT>(srvs.size()), srvs.data());
-        ID3D11SamplerState* sampler = sampler_.Get();
-        context_->PSSetSamplers(0, 1, &sampler);
-        CompositeConstants values = {};
-        values.viewport[0] = 0.0f;
-        values.viewport[1] = 0.0f;
-        values.viewport[2] = 1.0f;
-        values.viewport[3] = 1.0f;
-        values.sdr_white_scale = static_cast<float>(
-            sdr_white_scale_.load(std::memory_order_relaxed));
-        values.output_mode = target == OutputTarget::ScRGB ? 1.0f : 0.0f;
-        values.source_projection_enabled = 1.0f;
-        values.source_mode = 0.0f;
-        values.source_split_pos = 0.5f;
-        values.source_track_count = 1.0f;
-        values.source_present[slot] = 1.0f;
-        values.source_order[0] = static_cast<float>(slot);
-        values.source_transfer[slot] = static_cast<float>(color_transfer);
-        values.source_inv_display_size_x[slot] = 1.0f;
-        values.source_inv_display_size_y[slot] = 1.0f;
-        values.background_color[3] = 1.0f;
-        context_->UpdateSubresource(constants_.Get(), 0, nullptr, &values, 0, 0);
-        ID3D11Buffer* constants = constants_.Get();
-        context_->PSSetConstantBuffers(0, 1, &constants);
-        context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
-        context_->PSSetShader(video_pixel_shader_.Get(), nullptr, 0);
-        context_->Draw(4, 0);
-        if (overlay) {
-            D3D11_TEXTURE2D_DESC retained_desc = {};
-            retained_desc.Width = width;
-            retained_desc.Height = height;
-            retained_desc.Format = surface_format;
-            (void)DrawOverlay(overlay, SourceProjection{}, retained_desc);
-            context_->IASetInputLayout(nullptr);
-            context_->IASetPrimitiveTopology(
-                D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-            context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
-        }
-        std::array<ID3D11ShaderResourceView*, 7> null_srvs = {};
-        context_->PSSetShaderResources(
-            0, static_cast<UINT>(null_srvs.size()), null_srvs.data());
-    }
-    const HRESULT end_result = layer.surface->EndDraw();
-    if (!ok) return log_failure("render-target-view", E_FAIL);
-    if (FAILED(end_result)) return log_failure("end-draw", end_result);
-    layer.generation = generation;
-    layer.ready = true;
-    ++retained_graph_source_bake_count_;
-    retained_graph_fallback_reason_ = "none";
-    return true;
-}
-
-bool WindowsNativeCompositor::BakeRetainedFlutterSurface(
-    const FlutterSurface& surface_info,
-    OutputTarget target,
-    ID3D11ShaderResourceView* flutter_srv) {
-    if (!flutter_srv || surface_info.width == 0 ||
-        surface_info.height == 0 ||
-        !EnsureRetainedGraph(surface_info.width, surface_info.height, target)) {
-        retained_graph_fallback_reason_ = "invalid-flutter-bake";
-        return false;
-    }
-    auto& layer = retained_flutter_;
-    const DXGI_FORMAT surface_format = retained_surface_format(target);
-    const auto log_failure = [&](const char* stage, HRESULT result) {
-        retained_graph_fallback_reason_ = stage;
-        spdlog::warn(
-            "[WindowsNativeCompositor] retained flutter {} failed hr=0x{:08x}",
-            stage,
-            static_cast<uint32_t>(result));
-        return false;
-    };
-    HRESULT hr = S_OK;
-    if (!layer.surface || layer.width != surface_info.width ||
-        layer.height != surface_info.height ||
-        layer.format != surface_format) {
-        layer.surface.Reset();
-        layer.width = surface_info.width;
-        layer.height = surface_info.height;
-        layer.format = surface_format;
-        hr = dcomp_device_->CreateSurface(
-            layer.width, layer.height, surface_format,
-            DXGI_ALPHA_MODE_PREMULTIPLIED, &layer.surface);
-        if (FAILED(hr)) return log_failure("create-surface", hr);
-        hr = layer.visual->SetContent(layer.surface.Get());
-        if (FAILED(hr)) return log_failure("set-content", hr);
-    }
-
-    Microsoft::WRL::ComPtr<IDXGISurface> surface;
-    POINT offset = {};
-    RECT rect = {
-        0, 0,
-        static_cast<LONG>(layer.width),
-        static_cast<LONG>(layer.height)};
-    hr = layer.surface->BeginDraw(&rect, IID_PPV_ARGS(&surface), &offset);
-    if (FAILED(hr)) return log_failure("begin-draw", hr);
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
-    bool ok = SUCCEEDED(surface.As(&texture)) &&
-              SUCCEEDED(device_->CreateRenderTargetView(
-                  texture.Get(), nullptr, &rtv));
-    if (ok) {
-        D3D11_VIEWPORT viewport = {};
-        viewport.Width = static_cast<float>(layer.width);
-        viewport.Height = static_cast<float>(layer.height);
-        viewport.MaxDepth = 1.0f;
-        context_->RSSetViewports(1, &viewport);
-        ID3D11RenderTargetView* raw_rtv = rtv.Get();
-        context_->OMSetRenderTargets(1, &raw_rtv, nullptr);
-        context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-        context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
-        std::array<ID3D11ShaderResourceView*, 7> srvs = {};
-        srvs[1] = flutter_srv;
-        context_->PSSetShaderResources(
-            0, static_cast<UINT>(srvs.size()), srvs.data());
-        ID3D11SamplerState* sampler = sampler_.Get();
-        context_->PSSetSamplers(0, 1, &sampler);
-        CompositeConstants values = {};
-        values.sdr_white_scale = static_cast<float>(
-            sdr_white_scale_.load(std::memory_order_relaxed));
-        values.output_mode = target == OutputTarget::ScRGB ? 1.0f : 0.0f;
-        context_->UpdateSubresource(constants_.Get(), 0, nullptr, &values, 0, 0);
-        ID3D11Buffer* constants = constants_.Get();
-        context_->PSSetConstantBuffers(0, 1, &constants);
-        context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
-        context_->PSSetShader(flutter_pixel_shader_.Get(), nullptr, 0);
-        context_->Draw(4, 0);
-        std::array<ID3D11ShaderResourceView*, 7> null_srvs = {};
-        context_->PSSetShaderResources(
-            0, static_cast<UINT>(null_srvs.size()), null_srvs.data());
-    }
-    const HRESULT end_result = layer.surface->EndDraw();
-    if (!ok) return log_failure("render-target-view", E_FAIL);
-    if (FAILED(end_result)) return log_failure("end-draw", end_result);
-    layer.generation = surface_info.frame_generation;
-    layer.ready = true;
-    ++retained_graph_flutter_bake_count_;
-    retained_graph_fallback_reason_ = "none";
-    return true;
-}
-
-bool WindowsNativeCompositor::ApplyRetainedProjection(
-    uint32_t width,
-    uint32_t height,
-    OutputTarget target,
-    const SourceProjection& projection) {
-    if (!EnsureRetainedGraph(width, height, target)) {
-        return false;
-    }
-    if (retained_graph_width_ != width || retained_graph_height_ != height) {
-        const bool had_retained_size =
-            retained_graph_width_ != 0 && retained_graph_height_ != 0;
-        retained_graph_width_ = width;
-        retained_graph_height_ = height;
-        if (had_retained_size) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            ++diagnostics_.resize_count;
-        }
-    }
-    std::array<bool, 4> source_present{};
-    for (size_t i = 0; i < retained_sources_.size(); ++i) {
-        source_present[i] = retained_sources_[i].ready;
-    }
-    double viewport_values[4] = {};
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (int i = 0; i < 4; ++i) {
-            viewport_values[i] = viewport_[i];
-        }
-    }
-    const auto rects = vr::project_windows_retained_source_visuals(
-        static_cast<float>(viewport_values[0] * width),
-        static_cast<float>(viewport_values[1] * height),
-        static_cast<float>(viewport_values[2] * width),
-        static_cast<float>(viewport_values[3] * height),
-        projection,
-        source_present);
-    for (size_t slot = 0; slot < retained_sources_.size(); ++slot) {
-        auto& layer = retained_sources_[slot];
-        if (!layer.visual) {
-            continue;
-        }
-        const auto& rect = rects[slot];
-        if (!rect.present || !layer.ready ||
-            std::fabs(rect.right - rect.left) < 0.001f ||
-            std::fabs(rect.bottom - rect.top) < 0.001f) {
-            layer.visual->SetOffsetX(-100000.0f);
-            layer.visual->SetOffsetY(-100000.0f);
-            continue;
-        }
-        const float scale_x =
-            (rect.right - rect.left) / std::max(1.0f, static_cast<float>(layer.width));
-        const float scale_y =
-            (rect.bottom - rect.top) / std::max(1.0f, static_cast<float>(layer.height));
-        const D2D_MATRIX_3X2_F transform = {
-            scale_x, 0.0f,
-            0.0f, scale_y,
-            0.0f, 0.0f};
-        layer.visual->SetTransform(transform);
-        layer.visual->SetOffsetX(rect.left);
-        layer.visual->SetOffsetY(rect.top);
-        if (layer.clip) {
-            layer.clip->SetLeft((rect.clip_left - rect.left) / scale_x);
-            layer.clip->SetTop((rect.clip_top - rect.top) / scale_y);
-            layer.clip->SetRight((rect.clip_right - rect.left) / scale_x);
-            layer.clip->SetBottom((rect.clip_bottom - rect.top) / scale_y);
-        }
-    }
-    if (retained_flutter_.visual && retained_flutter_.ready) {
-        const float scale_x =
-            static_cast<float>(std::max(width, 1u)) /
-            std::max(1.0f, static_cast<float>(retained_flutter_.width));
-        const float scale_y =
-            static_cast<float>(std::max(height, 1u)) /
-            std::max(1.0f, static_cast<float>(retained_flutter_.height));
-        const D2D_MATRIX_3X2_F transform = {
-            scale_x, 0.0f,
-            0.0f, scale_y,
-            0.0f, 0.0f};
-        retained_flutter_.visual->SetTransform(transform);
-        retained_flutter_.visual->SetOffsetX(0.0f);
-        retained_flutter_.visual->SetOffsetY(0.0f);
-    }
-    retained_graph_fallback_reason_ = "none";
-    return true;
-}
-
-bool WindowsNativeCompositor::ShouldDeferRetainedGraphCommitLocked(
-    std::chrono::steady_clock::time_point now,
-    bool projection_only) {
-    if (last_retained_graph_commit_time_.time_since_epoch().count() == 0) {
-        retained_graph_commit_deadline_ = {};
-        return false;
-    }
-    const auto min_interval = std::chrono::microseconds(
-        retained_graph_commit_interval_us(
-            diagnostics_.high_refresh_display_hz,
-            projection_only));
-    const auto deadline = last_retained_graph_commit_time_ + min_interval;
-    if (now >= deadline) {
-        retained_graph_commit_deadline_ = {};
-        return false;
-    }
-    if (retained_graph_commit_deadline_ != deadline) {
-        retained_graph_commit_deadline_ = deadline;
-        ++retained_graph_commit_defer_count_;
-    }
-    return true;
-}
-
-void WindowsNativeCompositor::RecordInteractionCommitLatencyLocked(
-    std::chrono::steady_clock::time_point committed_at) {
-    if (!interaction_sample_active_ || !retained_projection_dirty_) {
-        return;
-    }
-    if (last_retained_projection_update_.time_since_epoch().count() == 0 ||
-        committed_at < last_retained_projection_update_) {
-        return;
-    }
-    high_refresh_metrics_.record_interaction_input_to_present_us(
-        static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                committed_at - last_retained_projection_update_)
-                .count()));
-}
-
-bool WindowsNativeCompositor::CommitRetainedGraph(const char* reason) {
-    if (!retained_root_visual_ || !dcomp_target_ || !dcomp_device_) {
-        retained_graph_fallback_reason_ = "retained-root-unavailable";
-        return false;
-    }
-    HRESULT hr = S_OK;
-    if (!retained_graph_active_) {
-        hr = dcomp_target_->SetRoot(retained_root_visual_.Get());
-    }
-    if (SUCCEEDED(hr)) {
-        hr = dcomp_device_->Commit();
-    }
-    if (FAILED(hr)) {
-        retained_graph_fallback_reason_ = "retained-commit-failed";
-        spdlog::warn(
-            "[WindowsNativeCompositor] retained commit failed reason={} hr=0x{:08x}",
-            reason ? reason : "unspecified",
-            static_cast<uint32_t>(hr));
-        return false;
-    }
-    retained_graph_active_ = true;
-    last_retained_graph_commit_time_ = std::chrono::steady_clock::now();
-    retained_graph_commit_deadline_ = {};
-    ++retained_graph_commit_count_;
-    if (reason && std::strcmp(reason, "projection-only") == 0) {
-        ++retained_graph_projection_commit_count_;
-        ++retained_graph_projection_skip_present_count_;
-    }
-    retained_graph_fallback_reason_ = "none";
-    return true;
-}
-
 bool WindowsNativeCompositor::CreatePipeline() {
     const auto log_failure = [](const char* stage, HRESULT result) {
         spdlog::error(
@@ -2258,23 +1669,6 @@ void WindowsNativeCompositor::ThreadMain() {
                     pending_flutter_frame_request_time_ +
                     kFlutterExportStaleTimeout;
                 wait_deadline = std::min(wait_deadline, export_deadline);
-            }
-            if (retained_deferred_content_deadline_
-                    .time_since_epoch()
-                    .count() != 0) {
-                wait_deadline = std::min(
-                    wait_deadline, retained_deferred_content_deadline_);
-            }
-            if (retained_graph_commit_deadline_
-                    .time_since_epoch()
-                    .count() != 0) {
-                const auto now = std::chrono::steady_clock::now();
-                if (now >= retained_graph_commit_deadline_) {
-                    retained_graph_commit_deadline_ = {};
-                } else {
-                    wait_deadline = std::min(
-                        wait_deadline, retained_graph_commit_deadline_);
-                }
             }
             if (wait_deadline !=
                 std::chrono::steady_clock::time_point::max()) {
@@ -2454,13 +1848,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 const uint64_t backpressure_delta = counter_delta(
                     export_state.backpressure_count,
                     last_flutter_export_pacing_backpressure_count_);
-                const uint64_t retained_delta = counter_delta(
-                    retained_graph_commit_count_,
-                    last_flutter_export_pacing_retained_commit_count_);
-                const uint64_t retained_projection_delta = counter_delta(
-                    retained_graph_projection_commit_count_,
-                    last_flutter_export_pacing_retained_projection_count_);
-
                 spdlog::debug(
                     "[WindowsCompositorDebug] flutter export pacing sample "
                     "requestDelta={} dispatchDelta={} scheduleDelta={} "
@@ -2486,8 +1873,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     release_delta,
                     begin_delta,
                     backpressure_delta,
-                    retained_delta,
-                    retained_projection_delta,
+                    0,
+                    0,
                     age_ms(now_us, export_state.last_request_time_us),
                     age_ms(now_us,
                            export_state.last_request_dispatch_time_us),
@@ -2542,10 +1929,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     export_state.export_begin_count;
                 last_flutter_export_pacing_backpressure_count_ =
                     export_state.backpressure_count;
-                last_flutter_export_pacing_retained_commit_count_ =
-                    retained_graph_commit_count_;
-                last_flutter_export_pacing_retained_projection_count_ =
-                    retained_graph_projection_commit_count_;
             }
         }
     }
@@ -2636,132 +2019,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
     }
 
     SourceProjection source_projection;
-    bool retained_projection_only = false;
-    bool retained_projection_deferred_content = false;
-    bool retained_projection_deferred_content_expired = false;
-    bool retained_commit_deferred = false;
-    bool retained_projection_follow_up_content = false;
     {
-        const auto now = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(mutex_);
         source_projection = source_projection_;
-        const bool retained_flutter_dirty = retained_flutter_content_dirty_;
-        retained_projection_deferred_content =
-            retained_source_content_dirty_ ||
-            retained_flutter_dirty;
-        retained_projection_deferred_content_expired =
-            retained_projection_deferred_content &&
-            retained_deferred_content_deadline_
-                    .time_since_epoch()
-                    .count() != 0 &&
-            now >= retained_deferred_content_deadline_;
-        retained_projection_only =
-            retained_graph_active_ &&
-            retained_projection_dirty_ &&
-            phase_ == Phase::Active &&
-            current_swap_chain_.swap_chain &&
-            CanUseRetainedGraph(source_projection, current_swap_chain_.target);
-        retained_projection_follow_up_content =
-            retained_projection_only &&
-            retained_projection_deferred_content_expired;
-        if (retained_projection_only) {
-            retained_commit_deferred =
-                ShouldDeferRetainedGraphCommitLocked(now, true);
-        }
-    }
-    if (retained_commit_deferred) {
-        return true;
-    }
-    int64_t retained_apply_us = 0;
-    int64_t retained_commit_us = 0;
-    if (retained_projection_only) {
-        const auto apply_started = std::chrono::steady_clock::now();
-        retained_projection_only = ApplyRetainedProjection(
-            current_swap_chain_.width,
-            current_swap_chain_.height,
-            current_swap_chain_.target,
-            source_projection);
-        const auto apply_finished = std::chrono::steady_clock::now();
-        retained_apply_us = static_cast<int64_t>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                apply_finished - apply_started)
-                .count());
-        if (retained_projection_only) {
-            const auto commit_started = std::chrono::steady_clock::now();
-            retained_projection_only = CommitRetainedGraph("projection-only");
-            const auto commit_finished = std::chrono::steady_clock::now();
-            retained_commit_us = static_cast<int64_t>(
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    commit_finished - commit_started)
-                    .count());
-        }
-    }
-    if (retained_projection_only) {
-        const auto committed_at = std::chrono::steady_clock::now();
-        std::lock_guard<std::mutex> lock(mutex_);
-        retained_projection_dirty_ = false;
-        if (retained_projection_deferred_content) {
-            const bool deferred_deadline_active =
-                retained_deferred_content_deadline_
-                    .time_since_epoch()
-                    .count() != 0;
-            const int64_t display_hz = std::max<int64_t>(
-                1, diagnostics_.high_refresh_display_hz);
-            if (!deferred_deadline_active) {
-                // Do not refresh this while dense pan/zoom projection commits
-                // continue; otherwise Flutter overlays can trail until input
-                // pauses even though their exported surfaces are available.
-                const auto defer_delay = std::chrono::microseconds(
-                    std::clamp<int64_t>(
-                        1000000 / display_hz,
-                        kMinRetainedDeferredContentDelayUs,
-                        kMaxRetainedDeferredContentDelayUs));
-                retained_deferred_content_deadline_ =
-                    committed_at + defer_delay;
-            }
-            ++retained_graph_deferred_content_count_;
-        } else {
-            retained_deferred_content_deadline_ = {};
-        }
-        append_retained_graph_sample(
-            retained_graph_apply_us_, retained_apply_us);
-        append_retained_graph_sample(
-            retained_graph_commit_us_, retained_commit_us);
-        high_refresh_metrics_.record_composite_us(
-            static_cast<int64_t>(
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    committed_at - composite_started)
-                    .count()));
-        high_refresh_metrics_.record_draw_us(0);
-        high_refresh_metrics_.record_present_block_us(0);
-        high_refresh_metrics_.record_source_projection_reuse();
-        if (overlay_layer_state_.snapshot().active) {
-            overlay_layer_state_.reuse();
-            overlay_layer_state_.composite();
-            high_refresh_metrics_.record_overlay_layer_reuse();
-            high_refresh_metrics_.record_overlay_composite_us(0);
-        }
-        RecordInteractionCommitLatencyLocked(committed_at);
-        diagnostics_.source_projection_enabled = source_projection.enabled;
-        diagnostics_.source_cache_active = true;
-        diagnostics_.retained_graph_active = true;
-        diagnostics_.retained_graph_mode = "projection-only";
-        diagnostics_.retained_graph_fallback_reason = "none";
-        diagnostics_.retained_graph_commit_count =
-            retained_graph_commit_count_;
-        diagnostics_.retained_graph_projection_commit_count =
-            retained_graph_projection_commit_count_;
-        diagnostics_.retained_graph_source_bake_count =
-            retained_graph_source_bake_count_;
-        diagnostics_.retained_graph_flutter_bake_count =
-            retained_graph_flutter_bake_count_;
-        diagnostics_.retained_graph_projection_skip_present_count =
-            retained_graph_projection_skip_present_count_;
-        diagnostics_.retained_graph_deferred_content_count =
-            retained_graph_deferred_content_count_;
-        if (!retained_projection_follow_up_content) {
-            return true;
-        }
     }
 
     const auto release_held_video = [&]() {
@@ -3428,254 +2688,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
     const bool source_bundle_active =
         source_projection.enabled && held_source_valid_;
     acquire_finished = std::chrono::steady_clock::now();
-    bool retained_graph_supported = false;
-    bool retained_graph_committed = false;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        retained_graph_supported =
-            phase_ == Phase::Active &&
-            !pending_swap_chain_.swap_chain &&
-            source_bundle_active &&
-            CanUseRetainedGraph(source_projection, composite_target);
-    }
-    bool retained_content_deferred = false;
-    bool retained_content_commit_deferred = false;
-    {
-        const auto now = std::chrono::steady_clock::now();
-        std::lock_guard<std::mutex> lock(mutex_);
-        const bool flutter_content_dirty = retained_flutter_content_dirty_;
-        const bool content_dirty =
-            retained_source_content_dirty_ ||
-            flutter_content_dirty;
-        const bool deferred_deadline_active =
-            retained_deferred_content_deadline_
-                    .time_since_epoch()
-                    .count() != 0;
-        const bool deferred_deadline_expired =
-            deferred_deadline_active &&
-            now >= retained_deferred_content_deadline_;
-        const bool projection_recent =
-            last_retained_projection_update_.time_since_epoch().count() != 0 &&
-            now - last_retained_projection_update_ <=
-                kRetainedProjectionInteractionWindow;
-        retained_content_deferred =
-            retained_graph_supported &&
-            retained_graph_active_ &&
-            content_dirty &&
-            !flutter_content_dirty &&
-            !retained_projection_dirty_ &&
-            projection_recent &&
-            pending_flutter_frame_request_sequence_ == 0 &&
-            !deferred_deadline_expired;
-        if (!retained_content_deferred && retained_graph_supported &&
-            retained_graph_active_) {
-            retained_content_commit_deferred =
-                !retained_projection_follow_up_content &&
-                ShouldDeferRetainedGraphCommitLocked(now, false);
-        }
-        if (retained_content_deferred) {
-            const int64_t display_hz = std::max<int64_t>(
-                1, diagnostics_.high_refresh_display_hz);
-            if (!deferred_deadline_active) {
-                const auto defer_delay = std::chrono::microseconds(
-                    std::clamp<int64_t>(
-                        1000000 / display_hz,
-                        kMinRetainedDeferredContentDelayUs,
-                        kMaxRetainedDeferredContentDelayUs));
-                retained_deferred_content_deadline_ = now + defer_delay;
-            }
-            ++retained_graph_deferred_content_count_;
-            append_retained_graph_sample(retained_graph_apply_us_, 0);
-            append_retained_graph_sample(retained_graph_commit_us_, 0);
-            high_refresh_metrics_.record_composite_us(0);
-            high_refresh_metrics_.record_draw_us(0);
-            high_refresh_metrics_.record_present_block_us(0);
-            high_refresh_metrics_.record_source_projection_reuse();
-            diagnostics_.flutter_generation = held_flutter_.frame_generation;
-            diagnostics_.video_generation = held_source_.frame_generation;
-            diagnostics_.source_projection_enabled = true;
-            diagnostics_.source_cache_active = true;
-            diagnostics_.source_cache_consumed_generation =
-                held_source_.frame_generation;
-            diagnostics_.retained_graph_active = true;
-            diagnostics_.retained_graph_mode = "content-deferred";
-            diagnostics_.retained_graph_fallback_reason = "none";
-            diagnostics_.retained_graph_commit_count =
-                retained_graph_commit_count_;
-            diagnostics_.retained_graph_projection_commit_count =
-                retained_graph_projection_commit_count_;
-            diagnostics_.retained_graph_source_bake_count =
-                retained_graph_source_bake_count_;
-            diagnostics_.retained_graph_flutter_bake_count =
-                retained_graph_flutter_bake_count_;
-            diagnostics_.retained_graph_projection_skip_present_count =
-                retained_graph_projection_skip_present_count_;
-            diagnostics_.retained_graph_deferred_content_count =
-                retained_graph_deferred_content_count_;
-            diagnostics_.retained_graph_commit_defer_count =
-                retained_graph_commit_defer_count_;
-        }
-    }
-    if (retained_content_deferred) {
-        return true;
-    }
-    if (retained_content_commit_deferred) {
-        return true;
-    }
-    if (retained_graph_supported) {
-        bool retained_ok = true;
-        bool retained_flutter_baked = false;
-        bool retained_source_baked = false;
-        int64_t retained_flutter_bake_us = 0;
-        int64_t retained_source_bake_us = 0;
-        int64_t retained_apply_us = 0;
-        int64_t retained_commit_us = 0;
-        auto retained_draw_finished = acquire_finished;
-        if (!retained_flutter_.ready ||
-            retained_flutter_.generation != held_flutter_.frame_generation ||
-            retained_flutter_.format != retained_surface_format(composite_target)) {
-            retained_flutter_baked = true;
-            const auto bake_started = std::chrono::steady_clock::now();
-            retained_ok = EnsureHeldFlutterSrv() &&
-                          BakeRetainedFlutterSurface(
-                              held_flutter_,
-                              composite_target,
-                              held_flutter_srv_.Get());
-            const auto bake_finished = std::chrono::steady_clock::now();
-            retained_flutter_bake_us = static_cast<int64_t>(
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    bake_finished - bake_started)
-                    .count());
-        }
-        for (size_t slot = 0; slot < retained_sources_.size(); ++slot) {
-            if (!held_source_present_[slot]) {
-                retained_sources_[slot].ready = false;
-                retained_sources_[slot].generation = 0;
-            }
-        }
-        for (size_t i = 0; retained_ok && i < held_source_.texture_count; ++i) {
-            const auto& source = held_source_.textures[i];
-            const int slot = source.source_slot;
-            if (slot < 0 || slot >= 4 || !held_source_present_[slot]) {
-                continue;
-            }
-            const auto& layer = retained_sources_[static_cast<size_t>(slot)];
-            if (!layer.ready ||
-                layer.generation != held_source_.frame_generation ||
-                layer.width != static_cast<uint32_t>(source.width) ||
-                layer.height != static_cast<uint32_t>(source.height) ||
-                layer.format != retained_surface_format(composite_target)) {
-                retained_source_baked = true;
-                const auto bake_started = std::chrono::steady_clock::now();
-                retained_ok = BakeRetainedSourceSurface(
-                    static_cast<size_t>(slot),
-                    held_source_srvs_[static_cast<size_t>(slot)].Get(),
-                    static_cast<uint32_t>(source.width),
-                    static_cast<uint32_t>(source.height),
-                    composite_target,
-                    source.color_transfer,
-                    held_source_.frame_generation,
-                    held_source_.overlay);
-                const auto bake_finished = std::chrono::steady_clock::now();
-                retained_source_bake_us += static_cast<int64_t>(
-                    std::chrono::duration_cast<std::chrono::microseconds>(
-                        bake_finished - bake_started)
-                        .count());
-            }
-        }
-        if (retained_ok) {
-            const auto apply_started = std::chrono::steady_clock::now();
-            retained_ok = ApplyRetainedProjection(
-                held_flutter_.width,
-                held_flutter_.height,
-                composite_target,
-                source_projection);
-            const auto apply_finished = std::chrono::steady_clock::now();
-            retained_apply_us = static_cast<int64_t>(
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    apply_finished - apply_started)
-                    .count());
-        }
-        if (retained_ok) {
-            const auto commit_started = std::chrono::steady_clock::now();
-            retained_draw_finished = commit_started;
-            retained_graph_committed = CommitRetainedGraph("content-update");
-            const auto commit_finished = std::chrono::steady_clock::now();
-            retained_commit_us = static_cast<int64_t>(
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    commit_finished - commit_started)
-                    .count());
-        }
-        if (retained_graph_committed) {
-            const auto committed_at = std::chrono::steady_clock::now();
-            std::lock_guard<std::mutex> lock(mutex_);
-            RecordInteractionCommitLatencyLocked(committed_at);
-            retained_projection_dirty_ = false;
-            retained_source_content_dirty_ = false;
-            retained_flutter_content_dirty_ = false;
-            retained_deferred_content_deadline_ = {};
-            if (retained_flutter_baked) {
-                append_retained_graph_sample(
-                    retained_graph_flutter_bake_us_,
-                    retained_flutter_bake_us);
-            }
-            if (retained_source_baked) {
-                append_retained_graph_sample(
-                    retained_graph_source_bake_us_,
-                    retained_source_bake_us);
-            }
-            append_retained_graph_sample(
-                retained_graph_apply_us_, retained_apply_us);
-            append_retained_graph_sample(
-                retained_graph_commit_us_, retained_commit_us);
-            high_refresh_metrics_.record_composite_us(
-                static_cast<int64_t>(
-                    std::chrono::duration_cast<std::chrono::microseconds>(
-                        committed_at - composite_started)
-                        .count()));
-            high_refresh_metrics_.record_draw_us(
-                static_cast<int64_t>(
-                    std::chrono::duration_cast<std::chrono::microseconds>(
-                        retained_draw_finished - acquire_finished)
-                        .count()));
-            high_refresh_metrics_.record_present_block_us(0);
-            high_refresh_metrics_.record_source_projection_reuse();
-            if (overlay_layer_state_.snapshot().active) {
-                overlay_layer_state_.reuse();
-                overlay_layer_state_.composite();
-                high_refresh_metrics_.record_overlay_layer_reuse();
-                high_refresh_metrics_.record_overlay_composite_us(0);
-            }
-            diagnostics_.flutter_generation = held_flutter_.frame_generation;
-            diagnostics_.video_generation = held_source_.frame_generation;
-            diagnostics_.source_projection_enabled = true;
-            diagnostics_.source_cache_active = true;
-            diagnostics_.source_cache_consumed_generation =
-                held_source_.frame_generation;
-            diagnostics_.retained_graph_active = true;
-            diagnostics_.retained_graph_mode = "content-update";
-            diagnostics_.retained_graph_fallback_reason = "none";
-            diagnostics_.retained_graph_commit_count =
-                retained_graph_commit_count_;
-            diagnostics_.retained_graph_projection_commit_count =
-                retained_graph_projection_commit_count_;
-            diagnostics_.retained_graph_source_bake_count =
-                retained_graph_source_bake_count_;
-            diagnostics_.retained_graph_flutter_bake_count =
-                retained_graph_flutter_bake_count_;
-            diagnostics_.retained_graph_projection_skip_present_count =
-                retained_graph_projection_skip_present_count_;
-            diagnostics_.retained_graph_deferred_content_count =
-                retained_graph_deferred_content_count_;
-            diagnostics_.retained_graph_commit_defer_count =
-                retained_graph_commit_defer_count_;
-            if (source_bundle_active) {
-                source_cache_error_ = "none";
-                diagnostics_.source_cache_last_error = "none";
-            }
-            return true;
-        }
-    }
     if (pending_swap_chain_.swap_chain) {
         uint64_t min_video_generation = 0;
         uint64_t min_source_generation = 0;
@@ -3889,20 +2901,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
             std::lock_guard<std::mutex> lock(mutex_);
             diagnostic_capture_pending_ = true;
         }
-        if (retained_graph_active_ || retained_root_visual_) {
-            HRESULT root_result = dcomp_target_
-                ? dcomp_target_->SetRoot(dcomp_visual_.Get())
-                : E_FAIL;
-            if (SUCCEEDED(root_result) && dcomp_device_) {
-                root_result = dcomp_device_->Commit();
-            }
-            if (FAILED(root_result)) {
-                retained_graph_fallback_reason_ = "restore-swapchain-root-failed";
-                ok = false;
-            } else {
-                ResetRetainedGraph("full-composite-fallback");
-            }
-        }
         const auto present_started = std::chrono::steady_clock::now();
         const UINT sync_interval =
             source_bundle_active && source_projection.enabled ? 0u : 1u;
@@ -3973,7 +2971,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 std::chrono::duration_cast<std::chrono::microseconds>(
                     acquire_finished - composite_started)
                     .count()));
-        RecordInteractionCommitLatencyLocked(presented_at);
         if (source_bundle_active) {
             high_refresh_metrics_.record_source_projection_reuse();
         }
@@ -3990,27 +2987,17 @@ bool WindowsNativeCompositor::CompositeLatest() {
         diagnostics_.source_cache_active =
             source_bundle_active &&
             (phase_ == Phase::Preparing || phase_ == Phase::Active);
-        diagnostics_.retained_graph_active = retained_graph_active_;
-        diagnostics_.retained_graph_mode =
-            retained_graph_active_
-                ? "active"
-                : (source_bundle_active ? "available" : "inactive");
+        diagnostics_.retained_graph_active = false;
+        diagnostics_.retained_graph_mode = "inactive";
         diagnostics_.retained_graph_fallback_reason =
             retained_graph_fallback_reason_;
-        diagnostics_.retained_graph_commit_count =
-            retained_graph_commit_count_;
-        diagnostics_.retained_graph_projection_commit_count =
-            retained_graph_projection_commit_count_;
-        diagnostics_.retained_graph_source_bake_count =
-            retained_graph_source_bake_count_;
-        diagnostics_.retained_graph_flutter_bake_count =
-            retained_graph_flutter_bake_count_;
-        diagnostics_.retained_graph_projection_skip_present_count =
-            retained_graph_projection_skip_present_count_;
-        diagnostics_.retained_graph_deferred_content_count =
-            retained_graph_deferred_content_count_;
-        diagnostics_.retained_graph_commit_defer_count =
-            retained_graph_commit_defer_count_;
+        diagnostics_.retained_graph_commit_count = 0;
+        diagnostics_.retained_graph_projection_commit_count = 0;
+        diagnostics_.retained_graph_source_bake_count = 0;
+        diagnostics_.retained_graph_flutter_bake_count = 0;
+        diagnostics_.retained_graph_projection_skip_present_count = 0;
+        diagnostics_.retained_graph_deferred_content_count = 0;
+        diagnostics_.retained_graph_commit_defer_count = 0;
         if (source_bundle_active) {
             diagnostics_.source_cache_consumed_generation =
                 held_source_.frame_generation;

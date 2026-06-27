@@ -42,6 +42,7 @@ target_link_libraries(video_renderer_lib PUBLIC
     dxgi
     d3d12
     d3d11
+    dcomp
     d3dcompiler
     winmm
 )

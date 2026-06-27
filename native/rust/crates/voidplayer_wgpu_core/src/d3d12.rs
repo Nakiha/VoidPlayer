@@ -540,7 +540,7 @@ impl WgpuD3D12Renderer {
         unsafe {
             self.queue
                 .as_hal::<wgpu_hal::api::Dx12>()
-                .map(|queue| queue.as_raw() as *const _ as *mut core::ffi::c_void)
+                .map(|queue| queue.as_raw().as_raw() as *mut core::ffi::c_void)
                 .unwrap_or(core::ptr::null_mut())
         }
     }

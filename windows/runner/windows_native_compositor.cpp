@@ -750,7 +750,6 @@ bool WindowsNativeCompositor::BeginDeviceRecovery(
             : 0;
     pending_output_adapter_ = output_adapter_ ? output_adapter_ : producer_adapter_;
     work_pending_ = true;
-    diagnostic_capture_pending_ = true;
     spdlog::warn(
         "[WindowsDeviceRecovery] compositor rebuild scheduled reason={} removed=0x{:08x}",
         diagnostics_.device_recovery_last_reason,
@@ -911,15 +910,6 @@ void WindowsNativeCompositor::EndInteractionSample(
     spdlog::info(
         "[WindowsHighRefresh] end interaction sample label={}",
         label.empty() ? "unnamed" : label);
-}
-
-void WindowsNativeCompositor::RequestDiagnosticCapture() {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        diagnostic_capture_pending_ = true;
-        work_pending_ = true;
-    }
-    wake_.notify_one();
 }
 
 void WindowsNativeCompositor::OnFlutterSurfacePublished(
@@ -2772,18 +2762,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
         context_->PSSetShaderResources(
             0, static_cast<UINT>(null_srvs.size()), null_srvs.data());
         context_->Flush();
-        bool capture = false;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            capture = diagnostic_capture_pending_;
-            diagnostic_capture_pending_ = false;
-        }
-        if (capture && !CaptureDiagnostics(
-                           back_buffer.Get(),
-                           held_flutter_texture_.Get())) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            diagnostic_capture_pending_ = true;
-        }
         const auto present_started = std::chrono::steady_clock::now();
         const UINT sync_interval =
             source_bundle_active && source_projection.enabled ? 0u : 1u;
@@ -3248,114 +3226,6 @@ bool WindowsNativeCompositor::DrawOverlay(
                     .count()));
     }
     return true;
-}
-
-bool WindowsNativeCompositor::CaptureDiagnostics(
-    ID3D11Texture2D* back_buffer,
-    ID3D11Texture2D* flutter_texture) {
-    if (!back_buffer || !flutter_texture) {
-        return false;
-    }
-    D3D11_TEXTURE2D_DESC final_desc = {};
-    D3D11_TEXTURE2D_DESC flutter_desc = {};
-    back_buffer->GetDesc(&final_desc);
-    flutter_texture->GetDesc(&flutter_desc);
-    final_desc.Usage = D3D11_USAGE_STAGING;
-    final_desc.BindFlags = 0;
-    final_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    final_desc.MiscFlags = 0;
-    flutter_desc.Usage = D3D11_USAGE_STAGING;
-    flutter_desc.BindFlags = 0;
-    flutter_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    flutter_desc.MiscFlags = 0;
-
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> final_staging;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> flutter_staging;
-    if (FAILED(device_->CreateTexture2D(
-            &final_desc, nullptr, &final_staging)) ||
-        FAILED(device_->CreateTexture2D(
-            &flutter_desc, nullptr, &flutter_staging))) {
-        return false;
-    }
-    context_->CopyResource(final_staging.Get(), back_buffer);
-    context_->CopyResource(flutter_staging.Get(), flutter_texture);
-
-    D3D11_MAPPED_SUBRESOURCE final_map = {};
-    D3D11_MAPPED_SUBRESOURCE flutter_map = {};
-    if (FAILED(context_->Map(
-            final_staging.Get(), 0, D3D11_MAP_READ, 0, &final_map))) {
-        return false;
-    }
-    if (FAILED(context_->Map(
-            flutter_staging.Get(), 0, D3D11_MAP_READ, 0, &flutter_map))) {
-        context_->Unmap(final_staging.Get(), 0);
-        return false;
-    }
-
-    double alpha_sum = 0.0;
-    uint64_t transparent_pixels = 0;
-    uint64_t pixels_over_1 = 0;
-    float max_rgb = 0.0f;
-    const uint64_t flutter_pixels =
-        static_cast<uint64_t>(flutter_desc.Width) * flutter_desc.Height;
-    for (UINT y = 0; y < flutter_desc.Height; ++y) {
-        const auto* row = static_cast<const uint8_t*>(flutter_map.pData) +
-                          static_cast<size_t>(y) * flutter_map.RowPitch;
-        for (UINT x = 0; x < flutter_desc.Width; ++x) {
-            const uint8_t alpha = row[x * 4u + 3u];
-            alpha_sum += static_cast<double>(alpha) / 255.0;
-            if (alpha == 0) {
-                ++transparent_pixels;
-            }
-        }
-    }
-    const uint64_t final_pixels =
-        static_cast<uint64_t>(final_desc.Width) * final_desc.Height;
-    for (UINT y = 0; y < final_desc.Height; ++y) {
-        const auto* bytes =
-            static_cast<const uint8_t*>(final_map.pData) +
-            static_cast<size_t>(y) * final_map.RowPitch;
-        for (UINT x = 0; x < final_desc.Width; ++x) {
-            float r = 0.0f;
-            float g = 0.0f;
-            float b = 0.0f;
-            if (final_desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT) {
-                const auto* row =
-                    reinterpret_cast<const uint16_t*>(bytes);
-                r = vr::half_to_float(row[x * 4u]);
-                g = vr::half_to_float(row[x * 4u + 1u]);
-                b = vr::half_to_float(row[x * 4u + 2u]);
-            } else {
-                b = static_cast<float>(bytes[x * 4u]) / 255.0f;
-                g = static_cast<float>(bytes[x * 4u + 1u]) / 255.0f;
-                r = static_cast<float>(bytes[x * 4u + 2u]) / 255.0f;
-            }
-            const float pixel_max = std::max({r, g, b});
-            max_rgb = std::max(max_rgb, pixel_max);
-            if (pixel_max > 1.0f) {
-                ++pixels_over_1;
-            }
-        }
-    }
-    context_->Unmap(flutter_staging.Get(), 0);
-    context_->Unmap(final_staging.Get(), 0);
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    diagnostics_.flutter_alpha_average_x1000 =
-        flutter_pixels == 0
-            ? 0
-            : static_cast<uint64_t>(
-                  std::llround(alpha_sum * 1000.0 / flutter_pixels));
-    diagnostics_.flutter_transparent_pixels_x1000 =
-        flutter_pixels == 0
-            ? 0
-            : transparent_pixels * 1000u / flutter_pixels;
-    diagnostics_.final_max_rgb_x1000 =
-        static_cast<uint64_t>(
-            std::llround(std::max(max_rgb, 0.0f) * 1000.0f));
-    diagnostics_.final_pixels_over_1 = pixels_over_1;
-    ++diagnostics_.diagnostic_capture_count;
-    return final_pixels != 0;
 }
 
 void WindowsNativeCompositor::SignalWork() {

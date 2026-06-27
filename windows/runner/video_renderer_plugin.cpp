@@ -2889,7 +2889,6 @@ void VideoRendererPlugin::GetDiagnostics(
     if (native_compositor_) {
         native_compositor_->SetHighRefreshDisplayHz(
             query_window_refresh_hz(window_handle_));
-        native_compositor_->RequestDiagnosticCapture();
         const auto compositor = native_compositor_->diagnostics();
         if (compositor.device_recovery_attempt_count > 0) {
             diagnostics[flutter::EncodableValue("windowsDeviceRecoveryState")] =
@@ -3243,18 +3242,6 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(compositor.retained_graph_commit_p95_us);
         diagnostics[flutter::EncodableValue("windowsDCompResizeCount")] =
             enc_i64(static_cast<int64_t>(compositor.resize_count));
-        diagnostics[flutter::EncodableValue("windowsDCompDiagnosticCaptureCount")] =
-            enc_i64(static_cast<int64_t>(compositor.diagnostic_capture_count));
-        diagnostics[flutter::EncodableValue("windowsFlutterAlphaAverageX1000")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_alpha_average_x1000));
-        diagnostics[flutter::EncodableValue("windowsFlutterTransparentPixelsX1000")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_transparent_pixels_x1000));
-        diagnostics[flutter::EncodableValue("windowsDCompFinalMaxRGBX1000")] =
-            enc_i64(static_cast<int64_t>(compositor.final_max_rgb_x1000));
-        diagnostics[flutter::EncodableValue("windowsDCompFinalPixelsOver1")] =
-            enc_i64(static_cast<int64_t>(compositor.final_pixels_over_1));
         diagnostics[flutter::EncodableValue("windowsDCompSwapChainWidth")] =
             enc_i64(static_cast<int64_t>(compositor.swap_chain_width));
         diagnostics[flutter::EncodableValue("windowsDCompSwapChainHeight")] =

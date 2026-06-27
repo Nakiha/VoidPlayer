@@ -124,11 +124,6 @@ public:
         uint64_t drop_count = 0;
         uint64_t failure_count = 0;
         uint64_t resize_count = 0;
-        uint64_t diagnostic_capture_count = 0;
-        uint64_t flutter_alpha_average_x1000 = 0;
-        uint64_t flutter_transparent_pixels_x1000 = 0;
-        uint64_t final_max_rgb_x1000 = 0;
-        uint64_t final_pixels_over_1 = 0;
         uint64_t source_cache_consumed_generation = 0;
         uint64_t source_cache_fallback_count = 0;
         uint64_t source_projection_update_count = 0;
@@ -255,7 +250,6 @@ public:
     void AcknowledgeFlutterState(uint64_t serial, bool transparent_viewport);
     void ForceFailureForTesting(const std::string& reason);
     bool BeginDeviceRecovery(const std::string& reason, long removed_reason);
-    void RequestDiagnosticCapture();
     void SetHighRefreshDisplayHz(int64_t display_hz);
     void ResetHighRefreshMetrics();
     void BeginInteractionSample(const std::string& label);
@@ -409,8 +403,6 @@ private:
     bool EnsureSwapChain(uint32_t width, uint32_t height);
     bool ActivatePendingSwapChain();
     bool CreatePipeline();
-    bool CaptureDiagnostics(ID3D11Texture2D* back_buffer,
-                            ID3D11Texture2D* flutter_texture);
     bool DrawOverlay(
         const std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage>& overlay,
         const SourceProjection& projection,
@@ -517,7 +509,6 @@ private:
     std::thread thread_;
     bool stop_ = false;
     bool work_pending_ = false;
-    bool diagnostic_capture_pending_ = true;
     bool terminal_inactive_ = false;
     OutputTarget desired_output_target_ = OutputTarget::SDR;
     uint64_t transition_min_video_generation_ = 0;

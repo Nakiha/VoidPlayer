@@ -1825,134 +1825,97 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 surface.slot,
                 elapsed_ms);
         };
-    vr::SharedFp16TextureSnapshot next_video;
-    if (player->acquire_shared_fp16_texture(next_video)) {
-        const bool unchanged =
-            held_video_valid_ &&
-            next_video.ring_generation == held_video_.ring_generation &&
-            next_video.frame_generation == held_video_.frame_generation;
-        if (unchanged) {
-            player->release_shared_fp16_texture(
-                next_video.buffer_index, next_video.ring_generation);
-        } else {
-            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-            Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
-            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-            bool acquired = next_video.sync_mode ==
-                vr::SharedFp16TextureSyncMode::PublishedAfterProducerWait;
-            const HRESULT open_result = OpenInputTexture(
-                device1.Get(), next_video.handle, &texture)
-                ? S_OK
-                : E_FAIL;
-            if (SUCCEEDED(open_result) &&
-                next_video.sync_mode ==
-                    vr::SharedFp16TextureSyncMode::KeyedMutex &&
-                SUCCEEDED(texture.As(&keyed_mutex))) {
-                acquired =
-                    keyed_mutex->AcquireSync(
-                        next_video.consumer_acquire_key, 8) == S_OK;
-            }
-            bool srv_ready = false;
-            if (acquired && IsCrossAdapterActive()) {
-                srv_ready = TransportInput(
-                    texture.Get(),
-                    DXGI_FORMAT_R16G16B16A16_FLOAT,
-                    static_cast<uint32_t>(next_video.width),
-                    static_cast<uint32_t>(next_video.height),
-                    video_transport_,
-                    srv);
-            } else if (acquired) {
-                srv_ready = SUCCEEDED(device_->CreateShaderResourceView(
-                    texture.Get(), nullptr, &srv));
-            }
-            if (srv_ready) {
-                release_held_video();
-                held_video_ = next_video;
-                held_video_texture_ = std::move(texture);
-                held_video_mutex_ = std::move(keyed_mutex);
-                held_video_srv_ = std::move(srv);
-                held_video_valid_ = true;
-                spdlog::debug(
-                    "[WindowsNativeCompositor] acquired shared FP16 video "
-                    "generation={} ring={} size={}x{} sync={}",
-                    held_video_.frame_generation,
-                    held_video_.ring_generation,
-                    held_video_.width,
-                    held_video_.height,
-                    static_cast<int>(held_video_.sync_mode));
-                if (IsCrossAdapterActive()) {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    diagnostics_.video_transport_generation =
-                        diagnostics_.transport_generation;
-                }
-            } else {
-                spdlog::debug(
-                    "[WindowsNativeCompositor] failed to acquire shared FP16 "
-                    "video generation={} ring={} size={}x{} open={} "
-                    "acquired={} crossAdapter={}",
-                    next_video.frame_generation,
-                    next_video.ring_generation,
-                    next_video.width,
-                    next_video.height,
-                    SUCCEEDED(open_result),
-                    acquired,
-                    IsCrossAdapterActive());
-                if (acquired && keyed_mutex) {
-                    keyed_mutex->ReleaseSync(
-                        next_video.producer_release_key);
-                }
+    const auto acquire_legacy_video_inputs = [&]() {
+        vr::SharedFp16TextureSnapshot next_video;
+        if (player->acquire_shared_fp16_texture(next_video)) {
+            const bool unchanged =
+                held_video_valid_ &&
+                next_video.ring_generation == held_video_.ring_generation &&
+                next_video.frame_generation == held_video_.frame_generation;
+            if (unchanged) {
                 player->release_shared_fp16_texture(
                     next_video.buffer_index, next_video.ring_generation);
+            } else {
+                Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+                Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
+                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+                bool acquired = next_video.sync_mode ==
+                    vr::SharedFp16TextureSyncMode::PublishedAfterProducerWait;
+                const HRESULT open_result = OpenInputTexture(
+                    device1.Get(), next_video.handle, &texture)
+                    ? S_OK
+                    : E_FAIL;
+                if (SUCCEEDED(open_result) &&
+                    next_video.sync_mode ==
+                        vr::SharedFp16TextureSyncMode::KeyedMutex &&
+                    SUCCEEDED(texture.As(&keyed_mutex))) {
+                    acquired = keyed_mutex->AcquireSync(
+                                   next_video.consumer_acquire_key, 8) == S_OK;
+                }
+                bool srv_ready = false;
+                if (acquired && IsCrossAdapterActive()) {
+                    srv_ready = TransportInput(
+                        texture.Get(),
+                        DXGI_FORMAT_R16G16B16A16_FLOAT,
+                        static_cast<uint32_t>(next_video.width),
+                        static_cast<uint32_t>(next_video.height),
+                        video_transport_,
+                        srv);
+                } else if (acquired) {
+                    srv_ready = SUCCEEDED(device_->CreateShaderResourceView(
+                        texture.Get(), nullptr, &srv));
+                }
+                if (srv_ready) {
+                    release_held_video();
+                    held_video_ = next_video;
+                    held_video_texture_ = std::move(texture);
+                    held_video_mutex_ = std::move(keyed_mutex);
+                    held_video_srv_ = std::move(srv);
+                    held_video_valid_ = true;
+                    spdlog::debug(
+                        "[WindowsNativeCompositor] acquired shared FP16 video "
+                        "generation={} ring={} size={}x{} sync={}",
+                        held_video_.frame_generation,
+                        held_video_.ring_generation,
+                        held_video_.width,
+                        held_video_.height,
+                        static_cast<int>(held_video_.sync_mode));
+                    if (IsCrossAdapterActive()) {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        diagnostics_.video_transport_generation =
+                            diagnostics_.transport_generation;
+                    }
+                } else {
+                    spdlog::debug(
+                        "[WindowsNativeCompositor] failed to acquire shared "
+                        "FP16 video generation={} ring={} size={}x{} open={} "
+                        "acquired={} crossAdapter={}",
+                        next_video.frame_generation,
+                        next_video.ring_generation,
+                        next_video.width,
+                        next_video.height,
+                        SUCCEEDED(open_result),
+                        acquired,
+                        IsCrossAdapterActive());
+                    if (acquired && keyed_mutex) {
+                        keyed_mutex->ReleaseSync(
+                            next_video.producer_release_key);
+                    }
+                    player->release_shared_fp16_texture(
+                        next_video.buffer_index, next_video.ring_generation);
+                }
             }
         }
-    }
 
-    vr::SharedTextureSnapshot next_sdr_video;
-    if (player->acquire_shared_texture(next_sdr_video)) {
-        const bool unchanged =
-            held_sdr_video_valid_ &&
-            next_sdr_video.buffer_generation ==
-                held_sdr_video_.buffer_generation &&
-            next_sdr_video.buffer_index ==
-                held_sdr_video_.buffer_index;
-        if (unchanged) {
-            player->release_shared_texture(
-                next_sdr_video.buffer_index,
-                next_sdr_video.buffer_generation);
-            if (next_sdr_video.texture) {
-                static_cast<ID3D11Texture2D*>(
-                    next_sdr_video.texture)->Release();
-            }
-        } else {
-            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-            Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-            const HRESULT open_result = IsCrossAdapterActive()
-                ? producer_device_->OpenSharedResource(
-                      next_sdr_video.handle, IID_PPV_ARGS(&texture))
-                : device_->OpenSharedResource(
-                      next_sdr_video.handle, IID_PPV_ARGS(&texture));
-            bool srv_ready = false;
-            if (SUCCEEDED(open_result) && IsCrossAdapterActive()) {
-                D3D11_TEXTURE2D_DESC desc = {};
-                texture->GetDesc(&desc);
-                srv_ready = TransportInput(
-                    texture.Get(),
-                    desc.Format,
-                    desc.Width,
-                    desc.Height,
-                    sdr_video_transport_,
-                    srv);
-            } else if (SUCCEEDED(open_result)) {
-                srv_ready = SUCCEEDED(device_->CreateShaderResourceView(
-                    texture.Get(), nullptr, &srv));
-            }
-            if (srv_ready) {
-                release_held_sdr_video();
-                held_sdr_video_ = next_sdr_video;
-                held_sdr_video_texture_ = std::move(texture);
-                held_sdr_video_srv_ = std::move(srv);
-                held_sdr_video_valid_ = true;
-            } else {
+        vr::SharedTextureSnapshot next_sdr_video;
+        if (player->acquire_shared_texture(next_sdr_video)) {
+            const bool unchanged =
+                held_sdr_video_valid_ &&
+                next_sdr_video.buffer_generation ==
+                    held_sdr_video_.buffer_generation &&
+                next_sdr_video.buffer_index ==
+                    held_sdr_video_.buffer_index;
+            if (unchanged) {
                 player->release_shared_texture(
                     next_sdr_video.buffer_index,
                     next_sdr_video.buffer_generation);
@@ -1960,8 +1923,54 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     static_cast<ID3D11Texture2D*>(
                         next_sdr_video.texture)->Release();
                 }
+            } else {
+                Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+                Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+                const HRESULT open_result = IsCrossAdapterActive()
+                    ? producer_device_->OpenSharedResource(
+                          next_sdr_video.handle, IID_PPV_ARGS(&texture))
+                    : device_->OpenSharedResource(
+                          next_sdr_video.handle, IID_PPV_ARGS(&texture));
+                bool srv_ready = false;
+                if (SUCCEEDED(open_result) && IsCrossAdapterActive()) {
+                    D3D11_TEXTURE2D_DESC desc = {};
+                    texture->GetDesc(&desc);
+                    srv_ready = TransportInput(
+                        texture.Get(),
+                        desc.Format,
+                        desc.Width,
+                        desc.Height,
+                        sdr_video_transport_,
+                        srv);
+                } else if (SUCCEEDED(open_result)) {
+                    srv_ready = SUCCEEDED(device_->CreateShaderResourceView(
+                        texture.Get(), nullptr, &srv));
+                }
+                if (srv_ready) {
+                    release_held_sdr_video();
+                    held_sdr_video_ = next_sdr_video;
+                    held_sdr_video_texture_ = std::move(texture);
+                    held_sdr_video_srv_ = std::move(srv);
+                    held_sdr_video_valid_ = true;
+                } else {
+                    player->release_shared_texture(
+                        next_sdr_video.buffer_index,
+                        next_sdr_video.buffer_generation);
+                    if (next_sdr_video.texture) {
+                        static_cast<ID3D11Texture2D*>(
+                            next_sdr_video.texture)->Release();
+                    }
+                }
             }
         }
+    };
+    bool legacy_inputs_preacquired = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        legacy_inputs_preacquired = desired_output_target_ != OutputTarget::SDR;
+    }
+    if (legacy_inputs_preacquired) {
+        acquire_legacy_video_inputs();
     }
 
     FlutterSurface next_flutter;
@@ -2214,56 +2223,61 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     const auto present_finished =
                         std::chrono::steady_clock::now();
                     if (presented) {
-                        std::lock_guard<std::mutex> lock(mutex_);
-                        ++d3d12_direct_present_count_;
-                        if (d3d12_direct_present_count_ <= 8 ||
-                            d3d12_direct_present_count_ % 60 == 0) {
-                            spdlog::info(
-                                "[WindowsNativeCompositor] D3D12 direct "
-                                "present count={} target={} size={}x{} "
-                                "flutter={}x{}",
-                                d3d12_direct_present_count_,
-                                OutputTargetName(direct_target),
-                                direct_frame.width,
-                                direct_frame.height,
-                                held_flutter_.width,
-                                held_flutter_.height);
+                        {
+                            std::lock_guard<std::mutex> lock(mutex_);
+                            ++d3d12_direct_present_count_;
+                            if (d3d12_direct_present_count_ <= 8 ||
+                                d3d12_direct_present_count_ % 60 == 0) {
+                                spdlog::info(
+                                    "[WindowsNativeCompositor] D3D12 direct "
+                                    "present count={} target={} size={}x{} "
+                                    "flutter={}x{}",
+                                    d3d12_direct_present_count_,
+                                    OutputTargetName(direct_target),
+                                    direct_frame.width,
+                                    direct_frame.height,
+                                    held_flutter_.width,
+                                    held_flutter_.height);
+                            }
+                            high_refresh_metrics_.record_draw_us(
+                                static_cast<int64_t>(
+                                    std::chrono::duration_cast<
+                                        std::chrono::microseconds>(
+                                        present_started - direct_started)
+                                        .count()));
+                            high_refresh_metrics_.record_present_block_us(
+                                static_cast<int64_t>(
+                                    std::chrono::duration_cast<
+                                        std::chrono::microseconds>(
+                                        present_finished - present_started)
+                                        .count()));
+                            diagnostics_.swap_chain_active = true;
+                            diagnostics_.swap_chain_width = direct_frame.width;
+                            diagnostics_.swap_chain_height =
+                                direct_frame.height;
+                            diagnostics_.output_target =
+                                OutputTargetName(direct_target);
+                            diagnostics_.swap_chain_format =
+                                direct_frame.dxgi_format ==
+                                        DXGI_FORMAT_R16G16B16A16_FLOAT
+                                    ? "R16G16B16A16_FLOAT"
+                                    : "B8G8R8A8_UNORM";
+                            diagnostics_.color_space =
+                                direct_frame.color_space ==
+                                        DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+                                    ? "RGB_FULL_G10_NONE_P709"
+                                    : "RGB_FULL_G22_NONE_P709";
+                            diagnostics_.color_space_supported = true;
+                            diagnostics_.sdr_tone_map_active =
+                                direct_frame.dxgi_format !=
+                                DXGI_FORMAT_R16G16B16A16_FLOAT;
+                            diagnostics_.retained_graph_mode =
+                                "d3d12-direct-present";
+                            ++diagnostics_.present_count;
+                            ++diagnostics_.composite_count;
                         }
-                        high_refresh_metrics_.record_draw_us(
-                            static_cast<int64_t>(
-                                std::chrono::duration_cast<
-                                    std::chrono::microseconds>(
-                                    present_started - direct_started)
-                                    .count()));
-                        high_refresh_metrics_.record_present_block_us(
-                            static_cast<int64_t>(
-                                std::chrono::duration_cast<
-                                    std::chrono::microseconds>(
-                                    present_finished - present_started)
-                                    .count()));
-                        diagnostics_.swap_chain_active = true;
-                        diagnostics_.swap_chain_width = direct_frame.width;
-                        diagnostics_.swap_chain_height = direct_frame.height;
-                        diagnostics_.output_target =
-                            OutputTargetName(direct_target);
-                        diagnostics_.swap_chain_format =
-                            direct_frame.dxgi_format ==
-                                    DXGI_FORMAT_R16G16B16A16_FLOAT
-                                ? "R16G16B16A16_FLOAT"
-                                : "B8G8R8A8_UNORM";
-                        diagnostics_.color_space =
-                            direct_frame.color_space ==
-                                    DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
-                                ? "RGB_FULL_G10_NONE_P709"
-                                : "RGB_FULL_G22_NONE_P709";
-                        diagnostics_.color_space_supported = true;
-                        diagnostics_.sdr_tone_map_active =
-                            direct_frame.dxgi_format !=
-                            DXGI_FORMAT_R16G16B16A16_FLOAT;
-                        diagnostics_.retained_graph_mode =
-                            "d3d12-direct-present";
-                        ++diagnostics_.present_count;
-                        ++diagnostics_.composite_count;
+                        release_held_video();
+                        release_held_sdr_video();
                         return true;
                     }
                     spdlog::warn(
@@ -2280,6 +2294,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
         }
     }
 d3d11_compositor_fallback:
+    if (!legacy_inputs_preacquired) {
+        acquire_legacy_video_inputs();
+    }
     if (!EnsureSwapChain(
             held_flutter_.width, held_flutter_.height)) {
         EnterFailed("dcomp-swap-chain-create-or-resize-failed");

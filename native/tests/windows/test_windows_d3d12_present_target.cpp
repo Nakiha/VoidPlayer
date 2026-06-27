@@ -67,6 +67,23 @@ TEST_CASE("Windows D3D12 present target exposes a DComp back buffer",
     REQUIRE(frame.dxgi_format == DXGI_FORMAT_B8G8R8A8_UNORM);
     REQUIRE(frame.color_space == DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
 
+    std::array<char, 512> clear_error{};
+    VPWgpuD3D12RenderTargetClearRequest clear_request = {};
+    clear_request.d3d12_resource = frame.resource.Get();
+    clear_request.format = VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
+    clear_request.width = frame.width;
+    clear_request.height = frame.height;
+    clear_request.color[0] = 0.05f;
+    clear_request.color[1] = 0.10f;
+    clear_request.color[2] = 0.20f;
+    clear_request.color[3] = 1.0f;
+    clear_request.error = clear_error.data();
+    clear_request.error_size = clear_error.size();
+    CAPTURE(clear_error.data());
+    REQUIRE(VPWgpuD3D12RendererClearRenderTargetForProbe(
+                renderer, &clear_request) == 0);
+    REQUIRE(target.present(0));
+
     const float color[4] = {0.05f, 0.10f, 0.20f, 1.0f};
     INFO(target.last_error());
     REQUIRE(target.clear_and_present(color, 0));

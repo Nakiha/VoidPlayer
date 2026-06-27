@@ -3,7 +3,7 @@
 #include "windows/player/native_player.h"
 
 #include <windows.h>
-#include <d3d11.h>
+#include <d3dcommon.h>
 #include <dxgi1_4.h>
 #include <psapi.h>
 #include <wrl/client.h>

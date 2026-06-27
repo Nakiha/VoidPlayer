@@ -47,8 +47,7 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
         ${SWRESAMPLE_LIBRARY}
         dxgi
         d3d12
-        d3d11
-        d3dcompiler
+        dcomp
         winmm
     )
     if(BUILD_ANALYSIS)

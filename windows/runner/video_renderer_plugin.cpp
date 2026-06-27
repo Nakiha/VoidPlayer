@@ -6,6 +6,8 @@
 
 #include "renderer/layout/layout_validation.h"
 #include "renderer/renderer_config_validation.h"
+#include "windows/presentation/windows_dcomp_composite.h"
+#include "windows/shared/shared_texture_ring_types.h"
 #include "utils.h"
 #include <flutter/event_channel.h>
 #include <flutter/event_stream_handler_functions.h>
@@ -122,33 +124,10 @@ std::string normalize_backend_request(std::string request) {
     return request;
 }
 
-bool env_flag_enabled(std::string value) {
-    value = normalize_backend_request(std::move(value));
-    return value == "1" || value == "true" || value == "yes" ||
-           value == "on";
-}
-
 WindowsRenderBackendSelection resolve_windows_render_backend(
-    const std::string& request,
-    bool disable_d3d11_renderer) {
+    const std::string& request) {
     const std::string normalized = normalize_backend_request(request);
-    if (disable_d3d11_renderer &&
-        (normalized.empty() || normalized == "auto" ||
-         normalized == "d3d11" || normalized == "dx11")) {
-        return {
-            vr::RendererBackendType::WgpuD3D12,
-            "wgpu-d3d12",
-            "d3d11-renderer-disabled",
-        };
-    }
     if (normalized.empty() || normalized == "auto") {
-        return {};
-    }
-    if (normalized == "d3d11" || normalized == "dx11") {
-        spdlog::warn(
-            "[WindowsRenderBackend] VOIDPLAYER_WINDOWS_RENDER_BACKEND='{}' "
-            "requests removed D3D11 renderer; using wgpu-d3d12",
-            request);
         return {};
     }
     if (normalized == "wgpu" || normalized == "wgpu-d3d12" ||
@@ -915,12 +894,8 @@ void VideoRendererPlugin::CreatePlayer(
     config.headless = true;
     const std::string render_backend_request =
         vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_RENDER_BACKEND");
-    const bool disable_d3d11_renderer = env_flag_enabled(
-        vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_DISABLE_D3D11_RENDERER"));
     const auto render_backend =
-        resolve_windows_render_backend(
-            render_backend_request,
-            disable_d3d11_renderer);
+        resolve_windows_render_backend(render_backend_request);
     const bool use_wgpu_d3d12_backend =
         render_backend.type == vr::RendererBackendType::WgpuD3D12;
     config.backend.type = render_backend.type;
@@ -935,7 +910,7 @@ void VideoRendererPlugin::CreatePlayer(
     if (!config.backend.adapter) {
         result->Error(
             "NO_DXGI_ADAPTER",
-            "Flutter DXGI adapter is unavailable; cannot create shared D3D11 texture");
+            "Flutter DXGI adapter is unavailable; cannot start wgpu-d3d12 renderer");
         return;
     }
 
@@ -974,9 +949,8 @@ void VideoRendererPlugin::CreatePlayer(
         presentation_policy_.fallback_reason,
         render_backend.name);
     spdlog::info(
-        "[WindowsRenderBackend] request='{}' disable_d3d11={} selected={} reason={}",
+        "[WindowsRenderBackend] request='{}' selected={} reason={}",
         render_backend_request,
-        disable_d3d11_renderer,
         render_backend.name,
         render_backend.reason);
 
@@ -1850,7 +1824,7 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
                     ? "wgpu-d3d12-source-projection-update-failed"
                     : "source-projection-backend-unavailable";
             spdlog::warn(
-                "[WindowsSourceProjection] backend projection update failed backend={} error={}; retained D3D11 fallback is disabled",
+                "[WindowsSourceProjection] backend projection update failed backend={} error={}; retained fallback is disabled",
                 backend.backend,
                 error);
             player_->clear_source_cache(error.c_str());

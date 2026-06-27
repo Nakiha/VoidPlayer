@@ -1575,7 +1575,7 @@ bool WgpuD3D12PresentationBackend::initialize(
     return true;
 #else
     last_error_ =
-        "wgpu-d3d12 Rust FFI is not linked; D3D11 fallback is disabled";
+        "wgpu-d3d12 Rust FFI is not linked; legacy fallback is disabled";
     spdlog::error("[WgpuD3D12] {}", last_error_);
     return false;
 #endif
@@ -2276,7 +2276,7 @@ bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
     (void)publish_target;
     (void)target_label;
     last_error_ =
-        "wgpu-d3d12 Rust FFI is not linked; D3D11 fallback is disabled";
+        "wgpu-d3d12 Rust FFI is not linked; legacy fallback is disabled";
     return false;
 #endif
 }
@@ -2326,7 +2326,7 @@ bool WgpuD3D12PresentationBackend::draw_frame_to_external_d3d12_target(
     (void)hooks;
     (void)target;
     last_error_ =
-        "wgpu-d3d12 Rust FFI is not linked; D3D11 fallback is disabled";
+        "wgpu-d3d12 Rust FFI is not linked; legacy fallback is disabled";
     return false;
 #endif
 }
@@ -2365,7 +2365,7 @@ bool WgpuD3D12PresentationBackend::draw_frame(
 #else
     (void)snapshot;
     last_error_ =
-        "wgpu-d3d12 Rust FFI is not linked; D3D11 fallback is disabled";
+        "wgpu-d3d12 Rust FFI is not linked; legacy fallback is disabled";
     return false;
 #endif
 }

@@ -1,15 +1,10 @@
 #pragma once
 
-#include "windows/d3d11/cross_adapter_transport.h"
-#include "windows/presentation/windows_dcomp_composite.h"
 #include "windows/presentation/windows_d3d12_present_target.h"
 #include "windows/presentation/windows_device_recovery.h"
 #include "windows/presentation/windows_high_refresh_metrics.h"
 #include "windows/player/native_player.h"
-#include "windows/shared/shared_texture_ring_types.h"
 
-#include <d3d11.h>
-#include <d3d11_1.h>
 #include <d3d12.h>
 #include <dcomp.h>
 #include <dxgi1_4.h>
@@ -25,6 +20,10 @@
 #include <mutex>
 #include <string>
 #include <thread>
+
+namespace vr {
+struct WindowsSourceProjection;
+} // namespace vr
 
 class WindowsNativeCompositor {
 public:
@@ -252,18 +251,8 @@ public:
     Diagnostics diagnostics() const;
 
 private:
-    struct SwapChainResources {
-        Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain;
-        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
-        OutputTarget target = OutputTarget::SDR;
-        uint32_t width = 0;
-        uint32_t height = 0;
-        bool color_space_supported = false;
-    };
-
     enum class FlutterSurfaceBackend : int {
         Unknown = 0,
-        D3D11 = 1,
         D3D12 = 2,
     };
 
@@ -275,7 +264,7 @@ private:
 
     struct FlutterSurface {
         size_t struct_size = sizeof(FlutterSurface);
-        FlutterSurfaceBackend backend = FlutterSurfaceBackend::D3D11;
+        FlutterSurfaceBackend backend = FlutterSurfaceBackend::Unknown;
         FlutterSurfaceSync sync = FlutterSurfaceSync::KeyedMutex;
         HANDLE shared_texture_handle = nullptr;
         HANDLE fence_handle = nullptr;
@@ -391,31 +380,13 @@ private:
     bool LoadEngineApi();
     bool InitializeDeviceAndComposition(IDXGIAdapter* producer_adapter,
                                         IDXGIAdapter* output_adapter);
-    bool CreateSwapChainCandidate(uint32_t width,
-                                  uint32_t height,
-                                  OutputTarget target,
-                                  SwapChainResources& resources);
-    bool EnsureSwapChain(uint32_t width, uint32_t height);
-    bool ActivatePendingSwapChain();
-    bool CreatePipeline();
     void ReleaseHeldInputs(const std::shared_ptr<vr::NativePlayer>& player);
     void ThreadMain();
     bool CompositeLatest();
     void SignalWork();
     void EnterFailed(const std::string& reason);
     void PublishState(Phase phase, const std::string& reason);
-    bool EnsureProducerDevice(IDXGIAdapter* producer_adapter);
     bool SetOutputAdapterLocked(IDXGIAdapter* output_adapter);
-    bool IsCrossAdapterActive() const;
-    bool OpenInputTexture(ID3D11Device1* device1,
-                          HANDLE handle,
-                          ID3D11Texture2D** texture) const;
-    bool TransportInput(ID3D11Texture2D* producer_texture,
-                        DXGI_FORMAT format,
-                        uint32_t width,
-                        uint32_t height,
-                        vr::D3D11CrossAdapterTextureTransport& transport,
-                        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv);
     void UpdateTransportDiagnosticsLocked();
     static const char* PhaseName(Phase phase);
     static const char* OutputTargetName(OutputTarget target);
@@ -436,39 +407,13 @@ private:
     EngineApi engine_api_;
     StateCallback state_callback_;
 
-    Microsoft::WRL::ComPtr<ID3D11Device> device_;
-    Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
-    Microsoft::WRL::ComPtr<ID3D11Device> producer_device_;
-    Microsoft::WRL::ComPtr<ID3D11DeviceContext> producer_context_;
     Microsoft::WRL::ComPtr<IDXGIAdapter> producer_adapter_;
     Microsoft::WRL::ComPtr<IDXGIAdapter> output_adapter_;
     Microsoft::WRL::ComPtr<IDXGIAdapter> pending_output_adapter_;
-    vr::WindowsCrossAdapterTransportSupport transport_support_;
-    vr::WindowsCrossAdapterSyncRequest cross_adapter_sync_request_ =
-        vr::WindowsCrossAdapterSyncRequest::Auto;
-    SwapChainResources current_swap_chain_;
-    SwapChainResources pending_swap_chain_;
     Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device_;
     Microsoft::WRL::ComPtr<IDCompositionTarget> dcomp_target_;
     Microsoft::WRL::ComPtr<IDCompositionVisual> dcomp_visual_;
     std::unique_ptr<vr::WindowsD3D12PresentTarget> d3d12_present_target_;
-    Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> video_pixel_shader_;
-    Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> constants_;
-
-    bool held_video_valid_ = false;
-    vr::SharedFp16TextureSnapshot held_video_;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> held_video_texture_;
-    Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_video_mutex_;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_video_srv_;
-    vr::D3D11CrossAdapterTextureTransport video_transport_;
-
-    bool held_sdr_video_valid_ = false;
-    vr::SharedTextureSnapshot held_sdr_video_;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> held_sdr_video_texture_;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_sdr_video_srv_;
-    vr::D3D11CrossAdapterTextureTransport sdr_video_transport_;
 
     bool held_flutter_valid_ = false;
     FlutterSurface held_flutter_;

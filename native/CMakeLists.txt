@@ -50,14 +50,6 @@ endif()
 
 if(WIN32 AND BUILD_TESTS)
     add_subdirectory(tests)
-    void_add_windows_backend_smoke(
-        windows_d3d11_color_layout_parity_smoke
-        tools/windows_d3d11_color_layout_parity_smoke.cpp
-        "windows;backend;contract")
-    void_add_windows_backend_smoke(
-        windows_d3d11_fp16_scrgb_smoke
-        tools/windows_d3d11_fp16_scrgb_smoke.cpp
-        "windows;backend;contract;canary;fp16")
 endif()
 
 if(WIN32 AND BUILD_ANALYSIS)

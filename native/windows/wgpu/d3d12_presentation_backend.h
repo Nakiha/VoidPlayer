@@ -32,6 +32,7 @@ public:
     void shutdown() override;
     bool headless() const override { return headless_; }
     void* native_render_device() const override;
+    void* native_render_command_queue() const override;
     bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) override;
     void release_shared_fp16_texture(int buffer_index,
                                      uint64_t ring_generation) override;

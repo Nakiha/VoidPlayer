@@ -508,6 +508,7 @@ TEST_CASE("Windows wgpu-d3d12 presentation backend initializes without D3D11 fal
     REQUIRE(diagnostics.backend == "wgpu-d3d12");
     if (initialized) {
         REQUIRE(backend->native_render_device() != nullptr);
+        REQUIRE(backend->native_render_command_queue() != nullptr);
         REQUIRE(diagnostics.fallback_reason == "none");
         REQUIRE_FALSE(backend->draw_frame(RendererDrawSnapshot{},
                                           PresentationBackendDrawHooks{}));
@@ -515,6 +516,7 @@ TEST_CASE("Windows wgpu-d3d12 presentation backend initializes without D3D11 fal
                 std::string::npos);
     } else {
         REQUIRE(backend->native_render_device() == nullptr);
+        REQUIRE(backend->native_render_command_queue() == nullptr);
         REQUIRE_FALSE(diagnostics.fallback_reason.empty());
     }
 #else
@@ -533,7 +535,10 @@ TEST_CASE("Windows wgpu-d3d12 imports and clears a D3D12 render target",
     }
     auto* device = static_cast<ID3D12Device*>(
         VPWgpuD3D12RendererD3D12Device(handle.renderer));
+    auto* queue = static_cast<ID3D12CommandQueue*>(
+        VPWgpuD3D12RendererD3D12CommandQueue(handle.renderer));
     REQUIRE(device != nullptr);
+    REQUIRE(queue != nullptr);
 
     constexpr UINT kWidth = 16;
     constexpr UINT kHeight = 16;

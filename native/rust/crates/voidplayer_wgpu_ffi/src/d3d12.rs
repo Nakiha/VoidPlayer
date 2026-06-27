@@ -185,6 +185,20 @@ pub extern "C" fn VPWgpuD3D12RendererD3D12Device(
 }
 
 #[no_mangle]
+pub extern "C" fn VPWgpuD3D12RendererD3D12CommandQueue(
+    renderer: *mut WgpuD3D12Renderer,
+) -> *mut core::ffi::c_void {
+    if renderer.is_null() {
+        return ptr::null_mut();
+    }
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let renderer_ref = unsafe { &mut *renderer };
+        renderer_ref.d3d12_command_queue_ptr()
+    }));
+    result.unwrap_or(ptr::null_mut())
+}
+
+#[no_mangle]
 pub extern "C" fn VPWgpuD3D12RendererImportTextureForProbe(
     renderer: *mut WgpuD3D12Renderer,
     request: *const WgpuD3D12TextureImportRequest,

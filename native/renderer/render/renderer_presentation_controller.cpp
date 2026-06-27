@@ -135,6 +135,11 @@ void* RendererPresentationController::native_render_device() const {
     return backend_ ? backend_->native_render_device() : nullptr;
 }
 
+void* RendererPresentationController::native_render_command_queue() const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ ? backend_->native_render_command_queue() : nullptr;
+}
+
 bool RendererPresentationController::poll_device_removed(const char* operation) const {
     return backend_ && backend_->poll_device_removed(operation);
 }

@@ -1539,8 +1539,9 @@ bool WgpuD3D12PresentationBackend::initialize(
         shutdown();
         return false;
     }
-    if (!VPWgpuD3D12RendererD3D12Device(renderer_)) {
-        last_error_ = "wgpu-d3d12 renderer did not expose an ID3D12Device";
+    if (!VPWgpuD3D12RendererD3D12Device(renderer_) ||
+        !VPWgpuD3D12RendererD3D12CommandQueue(renderer_)) {
+        last_error_ = "wgpu-d3d12 renderer did not expose D3D12 device/queue";
         spdlog::error("[WgpuD3D12] {}", last_error_);
         shutdown();
         return false;
@@ -1606,6 +1607,14 @@ void WgpuD3D12PresentationBackend::shutdown() {
 void* WgpuD3D12PresentationBackend::native_render_device() const {
 #if VOIDPLAYER_WGPU_RUST_LINKED
     return renderer_ ? VPWgpuD3D12RendererD3D12Device(renderer_) : nullptr;
+#else
+    return nullptr;
+#endif
+}
+
+void* WgpuD3D12PresentationBackend::native_render_command_queue() const {
+#if VOIDPLAYER_WGPU_RUST_LINKED
+    return renderer_ ? VPWgpuD3D12RendererD3D12CommandQueue(renderer_) : nullptr;
 #else
     return nullptr;
 #endif

@@ -354,6 +354,14 @@ void* NativePlayer::native_render_device() const {
     return renderer_.native_render_device();
 }
 
+void* NativePlayer::native_render_command_queue() const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (!renderer_ready_locked()) {
+        return nullptr;
+    }
+    return renderer_.native_render_command_queue();
+}
+
 bool NativePlayer::acquire_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);

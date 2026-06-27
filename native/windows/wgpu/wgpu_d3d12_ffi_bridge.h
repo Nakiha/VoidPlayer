@@ -10,7 +10,7 @@ extern "C" {
 typedef struct VPWgpuD3D12Renderer VPWgpuD3D12Renderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 13,
+  VP_WGPU_FFI_ABI_VERSION = 14,
 };
 
 enum {
@@ -188,6 +188,7 @@ int VPWgpuD3D12RendererGetProfilerSnapshot(
     VPWgpuD3D12Renderer* renderer,
     VPWgpuD3D12ProfilerSnapshot* snapshot);
 void* VPWgpuD3D12RendererD3D12Device(VPWgpuD3D12Renderer* renderer);
+void* VPWgpuD3D12RendererD3D12CommandQueue(VPWgpuD3D12Renderer* renderer);
 int VPWgpuD3D12RendererImportTextureForProbe(
     VPWgpuD3D12Renderer* renderer,
     const VPWgpuD3D12TextureImportRequest* request);

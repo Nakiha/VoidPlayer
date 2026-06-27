@@ -242,6 +242,10 @@ void* Renderer::native_render_device() const {
     return impl_->native_render_device();
 }
 
+void* Renderer::native_render_command_queue() const {
+    return impl_->native_render_command_queue();
+}
+
 bool Renderer::acquire_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
     return impl_->acquire_shared_fp16_texture(snapshot);

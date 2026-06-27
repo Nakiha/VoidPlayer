@@ -80,6 +80,7 @@ public:
     virtual void clear_headless_output() {}
     virtual bool update_sdr_white_level(double) { return false; }
     virtual void* native_render_device() const { return nullptr; }
+    virtual void* native_render_command_queue() const { return nullptr; }
 #ifdef _WIN32
     virtual bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot&) {
         return false;

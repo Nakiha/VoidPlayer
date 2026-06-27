@@ -123,6 +123,15 @@ void* Renderer::Impl::native_render_device() const {
 #endif
 }
 
+void* Renderer::Impl::native_render_command_queue() const {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.native_render_command_queue();
+#else
+    return nullptr;
+#endif
+}
+
 bool Renderer::Impl::acquire_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
 #ifdef _WIN32

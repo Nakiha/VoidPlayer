@@ -184,19 +184,17 @@ bool WindowsD3D12PresentTarget::clear_and_present(
         last_error_ = "d3d12-present-target-not-initialized";
         return false;
     }
-    const UINT index = swap_chain_->GetCurrentBackBufferIndex();
-    Microsoft::WRL::ComPtr<ID3D12Resource> back_buffer;
-    HRESULT hr = swap_chain_->GetBuffer(index, IID_PPV_ARGS(&back_buffer));
-    if (FAILED(hr) || !back_buffer) {
-        return fail("GetBuffer", hr);
+    WindowsD3D12PresentTargetFrame frame;
+    if (!acquire_frame(frame)) {
+        return false;
     }
 
     D3D12_CPU_DESCRIPTOR_HANDLE rtv =
         rtv_heap_->GetCPUDescriptorHandleForHeapStart();
-    rtv.ptr += static_cast<SIZE_T>(index) * rtv_descriptor_size_;
-    device_->CreateRenderTargetView(back_buffer.Get(), nullptr, rtv);
+    rtv.ptr += static_cast<SIZE_T>(frame.buffer_index) * rtv_descriptor_size_;
+    device_->CreateRenderTargetView(frame.resource.Get(), nullptr, rtv);
 
-    hr = command_allocator_->Reset();
+    HRESULT hr = command_allocator_->Reset();
     if (FAILED(hr)) {
         return fail("CommandAllocator::Reset", hr);
     }
@@ -207,7 +205,7 @@ bool WindowsD3D12PresentTarget::clear_and_present(
 
     D3D12_RESOURCE_BARRIER to_render = {};
     to_render.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    to_render.Transition.pResource = back_buffer.Get();
+    to_render.Transition.pResource = frame.resource.Get();
     to_render.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     to_render.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
     to_render.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -226,7 +224,38 @@ bool WindowsD3D12PresentTarget::clear_and_present(
     if (!wait_for_gpu()) {
         return false;
     }
-    hr = swap_chain_->Present(sync_interval, 0);
+    return present(sync_interval);
+}
+
+bool WindowsD3D12PresentTarget::acquire_frame(
+    WindowsD3D12PresentTargetFrame& frame) {
+    frame = {};
+    if (!swap_chain_) {
+        last_error_ = "d3d12-present-target-not-initialized";
+        return false;
+    }
+    const UINT index = swap_chain_->GetCurrentBackBufferIndex();
+    Microsoft::WRL::ComPtr<ID3D12Resource> back_buffer;
+    HRESULT hr = swap_chain_->GetBuffer(index, IID_PPV_ARGS(&back_buffer));
+    if (FAILED(hr) || !back_buffer) {
+        return fail("GetBuffer", hr);
+    }
+    frame.resource = std::move(back_buffer);
+    frame.buffer_index = index;
+    frame.width = width_;
+    frame.height = height_;
+    frame.dxgi_format = dxgi_format_;
+    frame.color_space = color_space_;
+    last_error_ = "none";
+    return true;
+}
+
+bool WindowsD3D12PresentTarget::present(UINT sync_interval) {
+    if (!swap_chain_) {
+        last_error_ = "d3d12-present-target-not-initialized";
+        return false;
+    }
+    const HRESULT hr = swap_chain_->Present(sync_interval, 0);
     if (FAILED(hr)) {
         return fail("Present(D3D12)", hr);
     }

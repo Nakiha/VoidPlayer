@@ -10,7 +10,7 @@
 #include <string>
 #endif
 
-TEST_CASE("Windows D3D12 present target can clear and present through DComp",
+TEST_CASE("Windows D3D12 present target exposes a DComp back buffer",
           "[windows][presentation][d3d12_present]") {
 #ifdef _WIN32
     std::array<char, 512> error{};
@@ -56,6 +56,16 @@ TEST_CASE("Windows D3D12 present target can clear and present through DComp",
     REQUIRE(target.width() == 320);
     REQUIRE(target.height() == 180);
     REQUIRE(target.dxgi_format() == DXGI_FORMAT_B8G8R8A8_UNORM);
+
+    vr::WindowsD3D12PresentTargetFrame frame;
+    INFO(target.last_error());
+    REQUIRE(target.acquire_frame(frame));
+    REQUIRE(frame.resource != nullptr);
+    REQUIRE(frame.buffer_index < 3);
+    REQUIRE(frame.width == 320);
+    REQUIRE(frame.height == 180);
+    REQUIRE(frame.dxgi_format == DXGI_FORMAT_B8G8R8A8_UNORM);
+    REQUIRE(frame.color_space == DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
 
     const float color[4] = {0.05f, 0.10f, 0.20f, 1.0f};
     INFO(target.last_error());

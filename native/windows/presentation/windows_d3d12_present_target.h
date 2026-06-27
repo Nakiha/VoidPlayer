@@ -16,6 +16,16 @@ enum class WindowsD3D12PresentTargetFormat {
     ScRGB,
 };
 
+struct WindowsD3D12PresentTargetFrame {
+    Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+    uint32_t buffer_index = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    DXGI_FORMAT dxgi_format = DXGI_FORMAT_UNKNOWN;
+    DXGI_COLOR_SPACE_TYPE color_space =
+        DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+};
+
 class WindowsD3D12PresentTarget {
 public:
     WindowsD3D12PresentTarget() = default;
@@ -33,6 +43,8 @@ public:
                     WindowsD3D12PresentTargetFormat format);
     void shutdown();
 
+    bool acquire_frame(WindowsD3D12PresentTargetFrame& frame);
+    bool present(UINT sync_interval);
     bool clear_and_present(const float color[4], UINT sync_interval);
 
     bool active() const { return swap_chain_ != nullptr; }

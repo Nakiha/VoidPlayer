@@ -1,7 +1,6 @@
 #include "windows_native_compositor.h"
 
 #include "windows/presentation/windows_dcomp_composite.h"
-#include "renderer/overlay/analysis_overlay_primitives.h"
 
 #include <d3dcompiler.h>
 #include <spdlog/spdlog.h>
@@ -9,10 +8,8 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cmath>
 #include <cstdlib>
 #include <sstream>
-#include <vector>
 
 namespace {
 
@@ -45,24 +42,6 @@ struct CompositeConstants {
     float source_view_offset_uv_y[4];
     float background_color[4];
 };
-
-struct OverlayVertex {
-    float u = 0.0f;
-    float v = 0.0f;
-    float source_slot = 0.0f;
-    float padding = 0.0f;
-    float r = 0.0f;
-    float g = 0.0f;
-    float b = 0.0f;
-    float a = 0.0f;
-};
-
-float srgb_to_linear(float value) {
-    value = std::clamp(value, 0.0f, 1.0f);
-    return value <= 0.04045f
-        ? value / 12.92f
-        : std::pow((value + 0.055f) / 1.055f, 2.4f);
-}
 
 bool adapter_luid(IDXGIAdapter* adapter, int32_t& high, uint32_t& low) {
     high = 0;
@@ -271,11 +250,6 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     constants_.Reset();
     sampler_.Reset();
     video_pixel_shader_.Reset();
-    overlay_blend_state_.Reset();
-    overlay_input_layout_.Reset();
-    overlay_pixel_shader_.Reset();
-    overlay_vertex_shader_.Reset();
-    ResetOverlayLayer(reason ? reason : "shutdown");
     vertex_shader_.Reset();
     context_.Reset();
     device_.Reset();
@@ -321,7 +295,6 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
     held_source_srvs_ = {};
     held_source_mutexes_ = {};
     held_source_textures_ = {};
-    ResetOverlayLayer("source-cache-release");
 
     if (held_flutter_valid_) {
         if (held_flutter_mutex_) {
@@ -378,31 +351,6 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
     held_sdr_video_ = {};
     held_sdr_video_srv_.Reset();
     held_sdr_video_texture_.Reset();
-}
-
-void WindowsNativeCompositor::ResetOverlayLayer(const std::string& reason) {
-    overlay_vertex_buffer_.Reset();
-    overlay_vertex_count_ = 0;
-    overlay_layer_signature_ = {};
-    std::lock_guard<std::mutex> lock(mutex_);
-    overlay_layer_state_.reset(reason);
-    const auto overlay_state = overlay_layer_state_.snapshot();
-    diagnostics_.overlay_retained_layer_active = overlay_state.active;
-    diagnostics_.overlay_layer_mode = overlay_state.mode;
-    diagnostics_.overlay_layer_texture_count = overlay_state.texture_count;
-    diagnostics_.overlay_layer_bytes = overlay_state.bytes;
-    diagnostics_.overlay_layer_generation = overlay_state.generation;
-    diagnostics_.overlay_layer_committed_generation =
-        overlay_state.committed_generation;
-    diagnostics_.overlay_layer_pending_generation =
-        overlay_state.pending_generation;
-    diagnostics_.overlay_layer_composite_count = overlay_state.composite_count;
-    diagnostics_.overlay_layer_miss_count = overlay_state.miss_count;
-    diagnostics_.overlay_layer_backpressure_count =
-        overlay_state.backpressure_count;
-    diagnostics_.overlay_layer_fallback_reason =
-        overlay_state.fallback_reason;
-    diagnostics_.overlay_layer_last_error = overlay_state.last_error;
 }
 
 void WindowsNativeCompositor::SetViewportRect(
@@ -770,22 +718,18 @@ WindowsNativeCompositor::diagnostics() const {
     result.overlay_composite_p95_us = high_refresh.overlay_composite_p95_us;
     result.overlay_raster_p95_us = high_refresh.overlay_raster_p95_us;
     result.overlay_upload_p95_us = high_refresh.overlay_upload_p95_us;
-    const auto overlay_state = overlay_layer_state_.snapshot();
-    result.overlay_retained_layer_active = overlay_state.active;
-    result.overlay_layer_mode = overlay_state.mode;
-    result.overlay_layer_texture_count = overlay_state.texture_count;
-    result.overlay_layer_bytes = overlay_state.bytes;
-    result.overlay_layer_generation = overlay_state.generation;
-    result.overlay_layer_committed_generation =
-        overlay_state.committed_generation;
-    result.overlay_layer_pending_generation =
-        overlay_state.pending_generation;
-    result.overlay_layer_composite_count = overlay_state.composite_count;
-    result.overlay_layer_miss_count = overlay_state.miss_count;
-    result.overlay_layer_backpressure_count =
-        overlay_state.backpressure_count;
-    result.overlay_layer_fallback_reason = overlay_state.fallback_reason;
-    result.overlay_layer_last_error = overlay_state.last_error;
+    result.overlay_retained_layer_active = false;
+    result.overlay_layer_mode = "inactive";
+    result.overlay_layer_texture_count = 0;
+    result.overlay_layer_bytes = 0;
+    result.overlay_layer_generation = 0;
+    result.overlay_layer_committed_generation = 0;
+    result.overlay_layer_pending_generation = 0;
+    result.overlay_layer_composite_count = 0;
+    result.overlay_layer_miss_count = 0;
+    result.overlay_layer_backpressure_count = 0;
+    result.overlay_layer_fallback_reason = "none";
+    result.overlay_layer_last_error = "none";
     result.flutter_export_unsolicited_signal_count =
         flutter_export_unsolicited_signal_count_;
     result.flutter_export_unsolicited_throttle_count =
@@ -793,7 +737,7 @@ WindowsNativeCompositor::diagnostics() const {
     const bool hot_path_active =
         phase_ == Phase::Active && result.source_projection_enabled;
     const auto gate_result = vr::evaluate_windows_high_refresh_gate(
-        high_refresh, hot_path_active, overlay_state.active);
+        high_refresh, hot_path_active, false);
     result.high_refresh_gate_last_result = gate_result;
     result.hot_path_active = hot_path_active;
     result.hot_path_mode =
@@ -1041,11 +985,6 @@ bool WindowsNativeCompositor::InitializeDeviceAndComposition(
     constants_.Reset();
     sampler_.Reset();
     video_pixel_shader_.Reset();
-    overlay_blend_state_.Reset();
-    overlay_input_layout_.Reset();
-    overlay_pixel_shader_.Reset();
-    overlay_vertex_shader_.Reset();
-    ResetOverlayLayer("device-rebuild");
     vertex_shader_.Reset();
     context_.Reset();
     device_.Reset();
@@ -1433,23 +1372,11 @@ bool WindowsNativeCompositor::CreatePipeline() {
     const size_t shader_size = std::strlen(shader);
     Microsoft::WRL::ComPtr<ID3DBlob> vs_blob;
     Microsoft::WRL::ComPtr<ID3DBlob> video_ps_blob;
-    Microsoft::WRL::ComPtr<ID3DBlob> overlay_vs_blob;
-    Microsoft::WRL::ComPtr<ID3DBlob> overlay_ps_blob;
     Microsoft::WRL::ComPtr<ID3DBlob> errors;
     HRESULT hr = D3DCompile(
         shader, shader_size, nullptr, nullptr, nullptr,
         "VSMain", "vs_5_0", 0, 0, &vs_blob, &errors);
     if (FAILED(hr)) return log_compile_failure("compile VSMain", hr, errors);
-    errors.Reset();
-    hr = D3DCompile(
-        shader, shader_size, nullptr, nullptr, nullptr,
-        "VSOverlay", "vs_5_0", 0, 0, &overlay_vs_blob, &errors);
-    if (FAILED(hr)) return log_compile_failure("compile VSOverlay", hr, errors);
-    errors.Reset();
-    hr = D3DCompile(
-        shader, shader_size, nullptr, nullptr, nullptr,
-        "PSOverlay", "ps_5_0", 0, 0, &overlay_ps_blob, &errors);
-    if (FAILED(hr)) return log_compile_failure("compile PSOverlay", hr, errors);
     errors.Reset();
     hr = D3DCompile(
         shader, shader_size, nullptr, nullptr, nullptr,
@@ -1466,34 +1393,6 @@ bool WindowsNativeCompositor::CreatePipeline() {
             nullptr,
             &video_pixel_shader_);
     if (FAILED(hr)) return log_failure("CreatePixelShader PSVideo", hr);
-    hr = device_->CreateVertexShader(
-            overlay_vs_blob->GetBufferPointer(),
-            overlay_vs_blob->GetBufferSize(),
-            nullptr,
-            &overlay_vertex_shader_);
-    if (FAILED(hr)) return log_failure("CreateVertexShader VSOverlay", hr);
-    hr = device_->CreatePixelShader(
-            overlay_ps_blob->GetBufferPointer(),
-            overlay_ps_blob->GetBufferSize(),
-            nullptr,
-            &overlay_pixel_shader_);
-    if (FAILED(hr)) return log_failure("CreatePixelShader PSOverlay", hr);
-    const D3D11_INPUT_ELEMENT_DESC overlay_elements[] = {
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
-         D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 1, DXGI_FORMAT_R32_FLOAT, 0, 8,
-         D3D11_INPUT_PER_VERTEX_DATA, 0},
-        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16,
-         D3D11_INPUT_PER_VERTEX_DATA, 0},
-    };
-    if (FAILED(device_->CreateInputLayout(
-            overlay_elements,
-            static_cast<UINT>(std::size(overlay_elements)),
-            overlay_vs_blob->GetBufferPointer(),
-            overlay_vs_blob->GetBufferSize(),
-            &overlay_input_layout_))) {
-        return false;
-    }
     D3D11_SAMPLER_DESC sampler_desc = {};
     sampler_desc.Filter = D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT;
     sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -1501,21 +1400,6 @@ bool WindowsNativeCompositor::CreatePipeline() {
     sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
     sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
     if (FAILED(device_->CreateSamplerState(&sampler_desc, &sampler_))) return false;
-    D3D11_BLEND_DESC blend_desc = {};
-    blend_desc.RenderTarget[0].BlendEnable = TRUE;
-    blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
-    blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-    blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-    blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-    blend_desc.RenderTarget[0].DestBlendAlpha =
-        D3D11_BLEND_INV_SRC_ALPHA;
-    blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-    blend_desc.RenderTarget[0].RenderTargetWriteMask =
-        D3D11_COLOR_WRITE_ENABLE_ALL;
-    if (FAILED(device_->CreateBlendState(
-            &blend_desc, &overlay_blend_state_))) {
-        return false;
-    }
     D3D11_BUFFER_DESC constants_desc = {};
     constants_desc.ByteWidth = sizeof(CompositeConstants);
     constants_desc.Usage = D3D11_USAGE_DEFAULT;
@@ -2727,30 +2611,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
         context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
         context_->PSSetShader(video_pixel_shader_.Get(), nullptr, 0);
         context_->Draw(4, 0);
-        bool overlay_consumed_by_backend = false;
-        if (source_bundle_active && held_source_.overlay) {
-            const auto backend = player->presentation_backend_diagnostics();
-            overlay_consumed_by_backend =
-                backend.overlay_layer_active &&
-                backend.overlay_layer_generation >=
-                    held_source_.overlay->cache_generation;
-        }
-        if (source_bundle_active && held_source_.overlay &&
-            !overlay_consumed_by_backend) {
-            (void)DrawOverlay(
-                held_source_.overlay, source_projection, back_desc);
-            context_->IASetInputLayout(nullptr);
-            context_->IASetPrimitiveTopology(
-                D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-            context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
-        } else if (overlay_consumed_by_backend) {
-            diagnostics_.overlay_retained_layer_active = true;
-            diagnostics_.overlay_layer_mode = "wgpu-d3d12-primitive-layer";
-            diagnostics_.overlay_layer_generation =
-                held_source_.overlay->cache_generation;
-            diagnostics_.overlay_layer_fallback_reason = "none";
-            diagnostics_.overlay_layer_last_error = "none";
-        }
         std::array<ID3D11ShaderResourceView*, 7> null_srvs = {};
         context_->PSSetShaderResources(
             0, static_cast<UINT>(null_srvs.size()), null_srvs.data());
@@ -2899,324 +2759,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
     if (phase == Phase::Inactive) {
         engine_api_.set_mode(flutter_view_, kExportCompositorOwned);
         PublishState(Phase::Preparing, "first-dcomp-present");
-    }
-    return true;
-}
-
-bool WindowsNativeCompositor::DrawOverlay(
-    const std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage>& overlay,
-    const SourceProjection& projection,
-    const D3D11_TEXTURE2D_DESC& back_desc) {
-    const auto overlay_started = std::chrono::steady_clock::now();
-    if (!overlay || overlay->empty() || back_desc.Width == 0 ||
-        back_desc.Height == 0) {
-        return true;
-    }
-    vr::WindowsOverlayLayerSignature signature;
-    signature.primitive_generation = overlay->cache_generation;
-    signature.target_class =
-        back_desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT ? 1u : 0u;
-    signature.sdr_white_scale_x1000 = static_cast<uint32_t>(
-        std::llround(
-            sdr_white_scale_.load(std::memory_order_relaxed) * 1000.0));
-    uint64_t track_signature = 1469598103934665603ull;
-    const auto mix = [&](uint64_t value) {
-        track_signature ^= value + 0x9e3779b97f4a7c15ull +
-                           (track_signature << 6) +
-                           (track_signature >> 2);
-    };
-    for (const auto& track : overlay->tracks) {
-        mix(static_cast<uint64_t>(track.slot + 17));
-        mix(static_cast<uint64_t>(track.track_file_id + 31));
-        mix(static_cast<uint64_t>(track.frame_index + 43));
-        mix(static_cast<uint64_t>(track.video_width));
-        mix(static_cast<uint64_t>(track.video_height));
-        mix(static_cast<uint64_t>(track.mode + 59));
-        mix(static_cast<uint64_t>(track.opacity_permille + 71));
-        mix(track.show_grid ? 1ull : 0ull);
-        mix(track.show_qp ? 1ull : 0ull);
-        mix(track.show_pred ? 1ull : 0ull);
-        mix(track.show_lines ? 1ull : 0ull);
-        mix(track.show_bit_cost ? 1ull : 0ull);
-        signature.source_width = std::max(
-            signature.source_width,
-            static_cast<uint32_t>(std::max(track.video_width, 0)));
-        signature.source_height = std::max(
-            signature.source_height,
-            static_cast<uint32_t>(std::max(track.video_height, 0)));
-        signature.fill_rect_count += static_cast<uint32_t>(
-            std::min<size_t>(track.fill_rects.size(), UINT32_MAX));
-        signature.outline_rect_count += static_cast<uint32_t>(
-            std::min<size_t>(track.outline_rects.size(), UINT32_MAX));
-        signature.motion_line_count += static_cast<uint32_t>(
-            std::min<size_t>(track.motion_lines.size(), UINT32_MAX));
-    }
-    signature.track_signature = track_signature;
-
-    const auto make_color = [&](vr::analysis::OverlayColor color) {
-        OverlayVertex vertex;
-        const bool scrgb =
-            back_desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT;
-        const auto channel = [&](uint8_t value) {
-            const float encoded = static_cast<float>(value) / 255.0f;
-            return scrgb
-                ? srgb_to_linear(encoded) *
-                      static_cast<float>(
-                          sdr_white_scale_.load(
-                              std::memory_order_relaxed))
-                : encoded;
-        };
-        vertex.r = channel(color.r);
-        vertex.g = channel(color.g);
-        vertex.b = channel(color.b);
-        vertex.a = static_cast<float>(color.a) / 255.0f;
-        vertex.r *= vertex.a;
-        vertex.g *= vertex.a;
-        vertex.b *= vertex.a;
-        return vertex;
-    };
-
-    const bool retained_layer_reusable =
-        overlay_vertex_buffer_ &&
-        overlay_vertex_count_ > 0 &&
-        overlay_layer_signature_ == signature;
-    if (retained_layer_reusable) {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            overlay_layer_state_.prepare(
-                signature,
-                static_cast<uint64_t>(overlay_vertex_count_) *
-                    sizeof(OverlayVertex));
-            high_refresh_metrics_.record_overlay_layer_reuse();
-        }
-    } else {
-        const auto raster_started = std::chrono::steady_clock::now();
-        std::vector<OverlayVertex> vertices;
-        const auto append_quad = [&](int source_slot,
-                                     float left,
-                                     float top,
-                                     float right,
-                                     float bottom,
-                                     vr::analysis::OverlayColor color) {
-            left = std::clamp(left, 0.0f, 1.0f);
-            right = std::clamp(right, 0.0f, 1.0f);
-            top = std::clamp(top, 0.0f, 1.0f);
-            bottom = std::clamp(bottom, 0.0f, 1.0f);
-            if (right <= left || bottom <= top || color.a == 0 ||
-                source_slot < 0 || source_slot >= 4) {
-                return;
-            }
-            const auto base = make_color(color);
-            const auto vertex = [&](float u, float v) {
-                OverlayVertex out = base;
-                out.u = u;
-                out.v = v;
-                out.source_slot = static_cast<float>(source_slot);
-                return out;
-            };
-            const auto p0 = vertex(left, top);
-            const auto p1 = vertex(right, top);
-            const auto p2 = vertex(left, bottom);
-            const auto p3 = vertex(right, bottom);
-            vertices.insert(vertices.end(), {p0, p2, p1, p1, p2, p3});
-        };
-        const auto append_rect =
-            [&](int source_slot,
-                int video_width,
-                int video_height,
-                const vr::AnalysisOverlayRectPrimitive& rect,
-                bool outline) {
-                if (video_width <= 0 || video_height <= 0) {
-                    return;
-                }
-                const float x0 = static_cast<float>(rect.x0) / video_width;
-                const float y0 = static_cast<float>(rect.y0) / video_height;
-                const float x1 = static_cast<float>(rect.x1) / video_width;
-                const float y1 = static_cast<float>(rect.y1) / video_height;
-                if (!outline) {
-                    append_quad(source_slot, x0, y0, x1, y1, rect.color);
-                    return;
-                }
-                const float px = 1.0f / std::max(video_width, 1);
-                const float py = 1.0f / std::max(video_height, 1);
-                append_quad(source_slot, x0, y0, x1, y0 + py, rect.color);
-                append_quad(source_slot, x0, y1 - py, x1, y1, rect.color);
-                append_quad(source_slot, x0, y0, x0 + px, y1, rect.color);
-                append_quad(source_slot, x1 - px, y0, x1, y1, rect.color);
-            };
-        const auto append_line =
-            [&](int source_slot,
-                int video_width,
-                int video_height,
-                const vr::AnalysisOverlayLinePrimitive& line) {
-                if (video_width <= 0 || video_height <= 0 ||
-                    source_slot < 0 || source_slot >= 4 ||
-                    line.color.a == 0) {
-                    return;
-                }
-                const float x0 =
-                    static_cast<float>(line.x0) / video_width;
-                const float y0 =
-                    static_cast<float>(line.y0) / video_height;
-                const float x1 =
-                    static_cast<float>(line.x1) / video_width;
-                const float y1 =
-                    static_cast<float>(line.y1) / video_height;
-                const float dx = x1 - x0;
-                const float dy = y1 - y0;
-                const float length =
-                    std::max(std::sqrt(dx * dx + dy * dy), 0.0001f);
-                const float nx =
-                    -dy / length * (0.5f / std::max(video_width, 1));
-                const float ny =
-                    dx / length * (0.5f / std::max(video_height, 1));
-                const auto base = make_color(line.color);
-                const auto vertex = [&](float u, float v) {
-                    OverlayVertex out = base;
-                    out.u = u;
-                    out.v = v;
-                    out.source_slot = static_cast<float>(source_slot);
-                    return out;
-                };
-                const auto p0 = vertex(x0 + nx, y0 + ny);
-                const auto p1 = vertex(x0 - nx, y0 - ny);
-                const auto p2 = vertex(x1 + nx, y1 + ny);
-                const auto p3 = vertex(x1 - nx, y1 - ny);
-                vertices.insert(vertices.end(), {p0, p1, p2, p2, p1, p3});
-            };
-
-        for (const auto& track : overlay->tracks) {
-            for (const auto& rect : track.fill_rects) {
-                append_rect(
-                    track.slot,
-                    track.video_width,
-                    track.video_height,
-                    rect,
-                    false);
-            }
-            for (const auto& rect : track.outline_rects) {
-                append_rect(
-                    track.slot,
-                    track.video_width,
-                    track.video_height,
-                    rect,
-                    true);
-            }
-            for (const auto& line : track.motion_lines) {
-                append_line(
-                    track.slot,
-                    track.video_width,
-                    track.video_height,
-                    line);
-            }
-        }
-        const auto raster_finished = std::chrono::steady_clock::now();
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            high_refresh_metrics_.record_overlay_raster_us(
-                static_cast<int64_t>(
-                    std::chrono::duration_cast<std::chrono::microseconds>(
-                        raster_finished - raster_started)
-                        .count()));
-        }
-        if (vertices.empty()) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            overlay_layer_state_.miss("overlay-layer-empty");
-            return true;
-        }
-
-        D3D11_BUFFER_DESC desc = {};
-        desc.ByteWidth = static_cast<UINT>(
-            vertices.size() * sizeof(OverlayVertex));
-        desc.Usage = D3D11_USAGE_IMMUTABLE;
-        desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-        D3D11_SUBRESOURCE_DATA data = {};
-        data.pSysMem = vertices.data();
-        Microsoft::WRL::ComPtr<ID3D11Buffer> buffer;
-        const auto upload_started = std::chrono::steady_clock::now();
-        if (FAILED(device_->CreateBuffer(&desc, &data, &buffer))) {
-            overlay_vertex_buffer_.Reset();
-            overlay_vertex_count_ = 0;
-            overlay_layer_signature_ = {};
-            std::lock_guard<std::mutex> lock(mutex_);
-            overlay_layer_state_.fail("overlay-layer-buffer-create-failed");
-            return true;
-        }
-        const auto upload_finished = std::chrono::steady_clock::now();
-        overlay_vertex_buffer_ = std::move(buffer);
-        overlay_vertex_count_ = static_cast<UINT>(vertices.size());
-        overlay_layer_signature_ = signature;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            overlay_layer_state_.prepare(
-                signature,
-                static_cast<uint64_t>(desc.ByteWidth));
-            high_refresh_metrics_.record_overlay_layer_raster();
-            high_refresh_metrics_.record_overlay_layer_upload();
-            high_refresh_metrics_.record_overlay_upload_us(
-                static_cast<int64_t>(
-                    std::chrono::duration_cast<std::chrono::microseconds>(
-                        upload_finished - upload_started)
-                        .count()));
-        }
-    }
-    if (!overlay_vertex_buffer_ || overlay_vertex_count_ == 0) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        overlay_layer_state_.miss("overlay-layer-buffer-missing");
-        return true;
-    }
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        diagnostics_.overlay_generation = overlay->cache_generation;
-        diagnostics_.overlay_fill_rect_count = 0;
-        diagnostics_.overlay_line_rect_count = 0;
-        diagnostics_.overlay_motion_line_count = 0;
-        for (const auto& track : overlay->tracks) {
-            diagnostics_.overlay_fill_rect_count += track.fill_rects.size();
-            diagnostics_.overlay_line_rect_count += track.outline_rects.size();
-            diagnostics_.overlay_motion_line_count +=
-                track.motion_lines.size();
-        }
-    }
-    UINT stride = sizeof(OverlayVertex);
-    UINT offset = 0;
-    ID3D11Buffer* raw_buffer = overlay_vertex_buffer_.Get();
-    context_->IASetVertexBuffers(0, 1, &raw_buffer, &stride, &offset);
-    context_->IASetInputLayout(overlay_input_layout_.Get());
-    context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    context_->VSSetShader(overlay_vertex_shader_.Get(), nullptr, 0);
-    context_->PSSetShader(overlay_pixel_shader_.Get(), nullptr, 0);
-    context_->OMSetBlendState(
-        overlay_blend_state_.Get(), nullptr, 0xffffffff);
-    context_->Draw(overlay_vertex_count_, 0);
-    context_->OMSetBlendState(nullptr, nullptr, 0xffffffff);
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        overlay_layer_state_.composite();
-        const auto overlay_state = overlay_layer_state_.snapshot();
-        diagnostics_.overlay_retained_layer_active = overlay_state.active;
-        diagnostics_.overlay_layer_mode = overlay_state.mode;
-        diagnostics_.overlay_layer_texture_count =
-            overlay_state.texture_count;
-        diagnostics_.overlay_layer_bytes = overlay_state.bytes;
-        diagnostics_.overlay_layer_generation = overlay_state.generation;
-        diagnostics_.overlay_layer_committed_generation =
-            overlay_state.committed_generation;
-        diagnostics_.overlay_layer_pending_generation =
-            overlay_state.pending_generation;
-        diagnostics_.overlay_layer_composite_count =
-            overlay_state.composite_count;
-        diagnostics_.overlay_layer_miss_count = overlay_state.miss_count;
-        diagnostics_.overlay_layer_backpressure_count =
-            overlay_state.backpressure_count;
-        diagnostics_.overlay_layer_fallback_reason =
-            overlay_state.fallback_reason;
-        diagnostics_.overlay_layer_last_error = overlay_state.last_error;
-        high_refresh_metrics_.record_overlay_composite_us(
-            static_cast<int64_t>(
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    std::chrono::steady_clock::now() - overlay_started)
-                    .count()));
     }
     return true;
 }

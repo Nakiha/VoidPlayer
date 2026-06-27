@@ -4,7 +4,6 @@
 #include "windows/presentation/windows_dcomp_composite.h"
 #include "windows/presentation/windows_device_recovery.h"
 #include "windows/presentation/windows_high_refresh_metrics.h"
-#include "windows/presentation/windows_overlay_layer_state.h"
 #include "windows/player/native_player.h"
 #include "windows/shared/shared_texture_ring_types.h"
 
@@ -398,11 +397,6 @@ private:
     bool EnsureSwapChain(uint32_t width, uint32_t height);
     bool ActivatePendingSwapChain();
     bool CreatePipeline();
-    bool DrawOverlay(
-        const std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage>& overlay,
-        const SourceProjection& projection,
-        const D3D11_TEXTURE2D_DESC& back_desc);
-    void ResetOverlayLayer(const std::string& reason);
     void ReleaseHeldInputs(const std::shared_ptr<vr::NativePlayer>& player);
     void ThreadMain();
     bool CompositeLatest();
@@ -458,10 +452,6 @@ private:
     Microsoft::WRL::ComPtr<IDCompositionVisual> dcomp_visual_;
     Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
     Microsoft::WRL::ComPtr<ID3D11PixelShader> video_pixel_shader_;
-    Microsoft::WRL::ComPtr<ID3D11VertexShader> overlay_vertex_shader_;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> overlay_pixel_shader_;
-    Microsoft::WRL::ComPtr<ID3D11InputLayout> overlay_input_layout_;
-    Microsoft::WRL::ComPtr<ID3D11BlendState> overlay_blend_state_;
     Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
     Microsoft::WRL::ComPtr<ID3D11Buffer> constants_;
 
@@ -562,9 +552,5 @@ private:
     bool pending_flutter_frame_request_acquire_logged_ = false;
     uint64_t flutter_export_stale_timeout_count_ = 0;
     double last_logged_viewport_[4] = {-1.0, -1.0, -1.0, -1.0};
-    Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_vertex_buffer_;
-    UINT overlay_vertex_count_ = 0;
-    vr::WindowsOverlayLayerCacheState overlay_layer_state_;
-    vr::WindowsOverlayLayerSignature overlay_layer_signature_;
     Diagnostics diagnostics_;
 };

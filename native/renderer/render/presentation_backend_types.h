@@ -42,6 +42,10 @@ struct PresentationExternalD3D12RenderTarget {
     int32_t height = 0;
     int32_t format = 0;
     int32_t color_space = 0;
+    float viewport_left = 0.0f;
+    float viewport_top = 0.0f;
+    float viewport_right = 1.0f;
+    float viewport_bottom = 1.0f;
 };
 
 struct PresentationBackendFrameInfo {

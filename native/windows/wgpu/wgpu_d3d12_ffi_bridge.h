@@ -10,7 +10,7 @@ extern "C" {
 typedef struct VPWgpuD3D12Renderer VPWgpuD3D12Renderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 14,
+  VP_WGPU_FFI_ABI_VERSION = 15,
 };
 
 enum {
@@ -159,6 +159,10 @@ typedef struct VPWgpuD3D12CompositeRequest {
   int32_t flutter_format;
   uint32_t flutter_width;
   uint32_t flutter_height;
+  float viewport_left;
+  float viewport_top;
+  float viewport_right;
+  float viewport_bottom;
   void* source_resources[4];
   int32_t source_formats[4];
   uint32_t source_array_layers[4];

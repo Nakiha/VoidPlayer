@@ -2048,6 +2048,10 @@ bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
     int32_t height,
     int32_t output_format,
     int32_t output_color_mode,
+    float viewport_left,
+    float viewport_top,
+    float viewport_right,
+    float viewport_bottom,
     const std::function<void()>& cancel_target,
     const std::function<bool(uint64_t)>& publish_target,
     const char* target_label) {
@@ -2076,8 +2080,22 @@ bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
         std::lock_guard<std::mutex> lock(external_flutter_mutex_);
         flutter_surface = external_flutter_;
     }
+    viewport_left = std::clamp(viewport_left, 0.0f, 1.0f);
+    viewport_top = std::clamp(viewport_top, 0.0f, 1.0f);
+    viewport_right = std::clamp(viewport_right, viewport_left, 1.0f);
+    viewport_bottom = std::clamp(viewport_bottom, viewport_top, 1.0f);
+    const int32_t layout_width = std::max(
+        1,
+        static_cast<int32_t>(
+            std::lround((viewport_right - viewport_left) *
+                        static_cast<float>(width))));
+    const int32_t layout_height = std::max(
+        1,
+        static_cast<int32_t>(
+            std::lround((viewport_bottom - viewport_top) *
+                        static_cast<float>(height))));
     fill_wgpu_d3d12_decision_from_snapshot(
-        snapshot, width, height, decision);
+        snapshot, layout_width, layout_height, decision);
     {
         std::lock_guard<std::mutex> lock(source_projection_mutex_);
         if (source_projection_.enabled) {
@@ -2113,6 +2131,10 @@ bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
         composite.destination_resource = target;
         composite.output_format = output_format;
         composite.output_color_mode = output_color_mode;
+        composite.viewport_left = viewport_left;
+        composite.viewport_top = viewport_top;
+        composite.viewport_right = viewport_right;
+        composite.viewport_bottom = viewport_bottom;
         uint64_t consumed_flutter_generation = 0;
         if (flutter_surface.valid && flutter_surface.resource &&
             flutter_surface.width > 0 && flutter_surface.height > 0 &&
@@ -2318,6 +2340,10 @@ bool WgpuD3D12PresentationBackend::draw_frame_to_external_d3d12_target(
         target.height,
         output_format,
         output_color_mode,
+        target.viewport_left,
+        target.viewport_top,
+        target.viewport_right,
+        target.viewport_bottom,
         {},
         {},
         "external D3D12 target");
@@ -2356,6 +2382,10 @@ bool WgpuD3D12PresentationBackend::draw_frame(
         static_cast<int32_t>(std::max(snapshot.target_height, 1)),
         VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT,
         VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR,
+        0.0f,
+        0.0f,
+        1.0f,
+        1.0f,
         [this]() { shared_fp16_ring_->cancel_frame(); },
         [this](uint64_t consumed_flutter_generation) {
             return shared_fp16_ring_->publish_frame(

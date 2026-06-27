@@ -95,6 +95,10 @@ private:
         int32_t height,
         int32_t output_format,
         int32_t output_color_mode,
+        float viewport_left,
+        float viewport_top,
+        float viewport_right,
+        float viewport_bottom,
         const std::function<void()>& cancel_target,
         const std::function<bool(uint64_t)>& publish_target,
         const char* target_label);

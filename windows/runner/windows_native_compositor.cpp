@@ -1461,13 +1461,13 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 ? vr::WindowsD3D12PresentTargetFormat::ScRGB
                 : vr::WindowsD3D12PresentTargetFormat::SDR;
         if (render_device && render_queue) {
-            uint32_t direct_width =
-                static_cast<uint32_t>(std::max(1, player->texture_width()));
-            uint32_t direct_height =
-                static_cast<uint32_t>(std::max(1, player->texture_height()));
+            uint32_t direct_width = held_flutter_.width;
+            uint32_t direct_height = held_flutter_.height;
             if (direct_width <= 1 || direct_height <= 1) {
-                direct_width = held_flutter_.width;
-                direct_height = held_flutter_.height;
+                direct_width =
+                    static_cast<uint32_t>(std::max(1, player->texture_width()));
+                direct_height =
+                    static_cast<uint32_t>(std::max(1, player->texture_height()));
             }
             if (!d3d12_present_target_) {
                 d3d12_present_target_ =
@@ -1509,6 +1509,14 @@ bool WindowsNativeCompositor::CompositeLatest() {
             vr::WindowsD3D12PresentTargetFrame direct_frame;
             if (d3d12_present_target_->active() &&
                 d3d12_present_target_->acquire_frame(direct_frame)) {
+                double viewport[4] = {0.0, 0.0, 1.0, 1.0};
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    viewport[0] = viewport_[0];
+                    viewport[1] = viewport_[1];
+                    viewport[2] = viewport_[2];
+                    viewport[3] = viewport_[3];
+                }
                 vr::PresentationExternalD3D12RenderTarget render_target;
                 render_target.resource = direct_frame.resource.Get();
                 render_target.width =
@@ -1519,6 +1527,14 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     static_cast<int32_t>(direct_frame.dxgi_format);
                 render_target.color_space =
                     static_cast<int32_t>(direct_frame.color_space);
+                render_target.viewport_left =
+                    static_cast<float>(viewport[0]);
+                render_target.viewport_top =
+                    static_cast<float>(viewport[1]);
+                render_target.viewport_right =
+                    static_cast<float>(viewport[2]);
+                render_target.viewport_bottom =
+                    static_cast<float>(viewport[3]);
                 if (player->draw_current_frame_to_external_d3d12_target(
                         render_target, "windows-d3d12-direct-present")) {
                     const auto present_started =
@@ -1537,13 +1553,18 @@ bool WindowsNativeCompositor::CompositeLatest() {
                                 spdlog::info(
                                     "[WindowsNativeCompositor] D3D12 direct "
                                     "present count={} target={} size={}x{} "
-                                    "flutter={}x{}",
+                                    "flutter={}x{} viewport=({:.4f},{:.4f})"
+                                    "-({:.4f},{:.4f})",
                                     d3d12_direct_present_count_,
                                     OutputTargetName(direct_target),
                                     direct_frame.width,
                                     direct_frame.height,
                                     held_flutter_.width,
-                                    held_flutter_.height);
+                                    held_flutter_.height,
+                                    viewport[0],
+                                    viewport[1],
+                                    viewport[2],
+                                    viewport[3]);
                             }
                             high_refresh_metrics_.record_draw_us(
                                 static_cast<int64_t>(

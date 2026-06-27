@@ -26,6 +26,8 @@ struct CompositeParams {
   color_transfer: vec4<i32>,
   color_primaries: vec4<i32>,
   output_mode: vec4<i32>,
+  output_size: vec4<f32>,
+  viewport_rect: vec4<f32>,
 };
 
 struct OverlayRect {
@@ -301,8 +303,8 @@ fn source_uv(track: i32, local_uv: vec2<f32>) -> vec2<f32> {
 
 fn source_pixel_footprint(track: i32) -> f32 {
   let mode = i32(round(params.target_mode.z));
-  let target_w = max(1.0, params.target_mode.x);
-  let target_h = max(1.0, params.target_mode.y);
+  let target_w = max(1.0, params.viewport_rect.z);
+  let target_h = max(1.0, params.viewport_rect.w);
   let track_count = max(1, min(i32(round(params.target_mode.w)), 4));
   let local_step_x = select(
     f32(track_count) / target_w,
@@ -327,7 +329,7 @@ fn apply_split_divider(color: vec4<f32>, tex_x: f32) -> vec4<f32> {
   if (mode != 1) {
     return color;
   }
-  let divider_x = clamp(params.split.x, 0.0, 1.0) * params.target_mode.x;
+  let divider_x = clamp(params.split.x, 0.0, 1.0) * max(1.0, params.viewport_rect.z);
   let dist = abs(tex_x - divider_x);
   let core_width = 1.25;
   let edge_width = 0.75;
@@ -831,29 +833,38 @@ fn sample_cv_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-  let target_size = vec2<f32>(params.target_mode.x, params.target_mode.y);
-  let tex_uv = position.xy / target_size;
-  let selection = select_track(tex_uv);
-  let track = clamp(selection.x, 0, 3);
-  let order_index = selection.y;
-  if (vec4_get_i(params.present, track) == 0) {
-    return map_sdr_ui_to_output(params.background);
+  let output_size = max(params.output_size.xy, vec2<f32>(1.0));
+  let viewport_min = params.viewport_rect.xy;
+  let viewport_size = max(params.viewport_rect.zw, vec2<f32>(1.0));
+  let viewport_max = viewport_min + viewport_size;
+  let tex_uv = position.xy / output_size;
+  var with_overlay = map_sdr_ui_to_output(params.background);
+
+  if (position.x >= viewport_min.x && position.y >= viewport_min.y &&
+      position.x < viewport_max.x && position.y < viewport_max.y) {
+    let viewport_uv = (position.xy - viewport_min) / viewport_size;
+    let selection = select_track(viewport_uv);
+    let track = clamp(selection.x, 0, 3);
+    let order_index = selection.y;
+    if (vec4_get_i(params.present, track) != 0) {
+      let uv = source_uv(track, track_local_uv(viewport_uv, order_index));
+      if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
+        let storage = i32(round(params.split.y));
+        var color = sample_bgra(track, uv);
+        if (storage == 1) {
+          color = sample_yuv(track, uv);
+        } else if (storage == 3) {
+          color = sample_cv_yuv(track, uv);
+        }
+        let divided = apply_split_divider(color, position.x - viewport_min.x);
+        let output_color = map_source_to_output(divided, track);
+        let overlay = map_sdr_ui_to_output(
+          textureSample(overlay_layer_texture, src_sampler, uv, track));
+        with_overlay = overlay_blend_over(output_color, overlay);
+      }
+    }
   }
-  let uv = source_uv(track, track_local_uv(tex_uv, order_index));
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-    return map_sdr_ui_to_output(params.background);
-  }
-  let storage = i32(round(params.split.y));
-  var color = sample_bgra(track, uv);
-  if (storage == 1) {
-    color = sample_yuv(track, uv);
-  } else if (storage == 3) {
-    color = sample_cv_yuv(track, uv);
-  }
-  let divided = apply_split_divider(color, position.x);
-  let output_color = map_source_to_output(divided, track);
-  let overlay = map_sdr_ui_to_output(textureSample(overlay_layer_texture, src_sampler, uv, track));
-  let with_overlay = overlay_blend_over(output_color, overlay);
+
   let flutter = map_premul_sdr_ui_to_output(
     textureSample(flutter_surface_texture, src_sampler, tex_uv));
   return premul_blend_over(with_overlay, flutter);

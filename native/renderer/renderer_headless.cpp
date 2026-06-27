@@ -2,6 +2,7 @@
 #include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/render/renderer_draw_snapshot_builder.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -201,15 +202,26 @@ bool Renderer::Impl::draw_current_frame_to_external_d3d12_target(
             surface_state_,
             present_history_.snapshot());
     }
+    const float viewport_left = std::clamp(target.viewport_left, 0.0f, 1.0f);
+    const float viewport_top = std::clamp(target.viewport_top, 0.0f, 1.0f);
+    const float viewport_right =
+        std::clamp(target.viewport_right, viewport_left, 1.0f);
+    const float viewport_bottom =
+        std::clamp(target.viewport_bottom, viewport_top, 1.0f);
+    const bool viewport_valid =
+        viewport_right > viewport_left && viewport_bottom > viewport_top;
     if (!target.resource || target.width <= 0 || target.height <= 0 ||
-        target.width != snapshot.target_width ||
-        target.height != snapshot.target_height) {
+        !viewport_valid) {
         spdlog::warn(
-            "[Renderer] external D3D12 target rejected: target={}x{} snapshot={}x{} resource={}",
+            "[Renderer] external D3D12 target rejected: target={}x{} snapshot={}x{} viewport=({:.4f},{:.4f})-({:.4f},{:.4f}) resource={}",
             target.width,
             target.height,
             snapshot.target_width,
             snapshot.target_height,
+            target.viewport_left,
+            target.viewport_top,
+            target.viewport_right,
+            target.viewport_bottom,
             target.resource != nullptr);
         return false;
     }

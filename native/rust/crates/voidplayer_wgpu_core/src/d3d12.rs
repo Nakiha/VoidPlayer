@@ -120,6 +120,10 @@ pub struct WgpuD3D12CompositeRequest {
     pub flutter_format: i32,
     pub flutter_width: u32,
     pub flutter_height: u32,
+    pub viewport_left: f32,
+    pub viewport_top: f32,
+    pub viewport_right: f32,
+    pub viewport_bottom: f32,
     pub source_resources: [*mut core::ffi::c_void; MAX_TRACKS],
     pub source_formats: [i32; MAX_TRACKS],
     pub source_array_layers: [u32; MAX_TRACKS],
@@ -868,13 +872,17 @@ impl WgpuD3D12Renderer {
         self.profiler.last_import_us = elapsed_us(import_start);
 
         let prepare_start = Instant::now();
-        let mut params = Vec::with_capacity(27 * 16);
+        let viewport = composite_viewport_rect(request);
+        let mut params = Vec::with_capacity(29 * 16);
         package_params(
             decision,
-            request.width,
-            request.height,
+            viewport[2].round().max(1.0) as i32,
+            viewport[3].round().max(1.0) as i32,
             STORAGE_CV_PIXEL_BUFFER,
             request.output_color_mode,
+            request.width,
+            request.height,
+            viewport,
             overlay_fill_rects,
             overlay_line_rects,
             overlay_motion_lines,
@@ -886,8 +894,11 @@ impl WgpuD3D12Renderer {
             overlay_motion_lines,
             &mut self.overlay_rects_scratch,
         );
-        let (overlay_width, overlay_height) =
-            overlay_layer_dimensions(&mut params, request.width as u32, request.height as u32);
+        let (overlay_width, overlay_height) = overlay_layer_dimensions(
+            &mut params,
+            viewport[2].ceil().max(1.0) as u32,
+            viewport[3].ceil().max(1.0) as u32,
+        );
         write_storage_buffer(
             &self.device,
             &self.queue,
@@ -1396,10 +1407,13 @@ fn push_vec4_i32(bytes: &mut Vec<u8>, values: [i32; 4]) {
 
 fn package_params(
     decision: &D3D12PresentDecisionInfo,
-    width: i32,
-    height: i32,
+    viewport_width: i32,
+    viewport_height: i32,
     storage: i32,
     output_color_mode: i32,
+    output_width: i32,
+    output_height: i32,
+    viewport_rect: [f32; 4],
     overlay_fill_rects: &[OverlayRect],
     overlay_line_rects: &[OverlayRect],
     overlay_motion_lines: &[OverlayRect],
@@ -1409,8 +1423,8 @@ fn package_params(
     push_vec4_f32(
         bytes,
         [
-            width as f32,
-            height as f32,
+            viewport_width as f32,
+            viewport_height as f32,
             decision.mode as f32,
             decision.track_count.max(1).min(MAX_TRACKS as i32) as f32,
         ],
@@ -1473,6 +1487,8 @@ fn package_params(
     push_vec4_i32(bytes, decision.color_transfer);
     push_vec4_i32(bytes, decision.color_primaries);
     push_vec4_i32(bytes, [output_color_mode, 1, 1, 0]);
+    push_vec4_f32(bytes, [output_width as f32, output_height as f32, 0.0, 0.0]);
+    push_vec4_f32(bytes, viewport_rect);
 }
 
 const PARAM_VEC4_BYTES: usize = 16;
@@ -1494,6 +1510,31 @@ fn overlay_rects_from_raw<'a>(
         return Err("wgpu-d3d12 overlay rect pointer is null");
     }
     Ok(unsafe { core::slice::from_raw_parts(ptr, count) })
+}
+
+fn normalized_viewport_component(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() {
+        value
+    } else {
+        fallback
+    }
+}
+
+fn composite_viewport_rect(request: &WgpuD3D12CompositeRequest) -> [f32; 4] {
+    let output_width = request.width.max(1) as f32;
+    let output_height = request.height.max(1) as f32;
+    let left = normalized_viewport_component(request.viewport_left, 0.0).clamp(0.0, 1.0);
+    let top = normalized_viewport_component(request.viewport_top, 0.0).clamp(0.0, 1.0);
+    let raw_right = normalized_viewport_component(request.viewport_right, 1.0);
+    let raw_bottom = normalized_viewport_component(request.viewport_bottom, 1.0);
+    if raw_right <= left || raw_bottom <= top {
+        return [0.0, 0.0, output_width, output_height];
+    }
+    let right = raw_right.clamp(left, 1.0);
+    let bottom = raw_bottom.clamp(top, 1.0);
+    let width = ((right - left) * output_width).max(1.0);
+    let height = ((bottom - top) * output_height).max(1.0);
+    [left * output_width, top * output_height, width, height]
 }
 
 fn combined_overlay_rects(

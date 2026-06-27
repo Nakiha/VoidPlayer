@@ -1,23 +1,17 @@
-# Windows Flutter D3D12 surface canary without the legacy D3D11 SRV.
-# Run with VOIDPLAYER_DISABLE_FLUTTER_D3D11_SRV=1. The env flag is now a
-# compatibility diagnostic echo; the runner no longer creates or skips a
-# Flutter D3D11 SRV, and Flutter UI must be consumed through the D3D12 backend.
+# Windows Flutter D3D12 surface canary. The runner no longer exposes a
+# Flutter D3D11 SRV path; Flutter UI must be consumed through the D3D12 backend.
 @WINDOW, 1280, 900
 0.0, GENERATE_TEST_VIDEO, build/generated/windows_flutter_d3d12_no_d3d11_srv.mp4, 120, 30, 640, 360
 0.3, ADD_MEDIA, build/generated/windows_flutter_d3d12_no_d3d11_srv.mp4
 2.8, ASSERT_TRACK_COUNT, 1
 2.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
 2.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
-2.92, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterD3D11SRVForcedDisabled, true
 3.0, CLEAR_MARKS
 3.1, ADD_QUICK_MARK, 0, 0.24, 0.43, 0.35, 0.035, overlay, 2
 3.3, ASSERT_MARK_COUNT, 1
 3.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationExternalFlutterSurfaceUpdateCount, 1
 3.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationExternalFlutterSurfaceConsumeCount, 1
 3.7, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsPresentationExternalFlutterSurfaceWaitFailureCount, 0, 0
-3.8, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterD3D11SRVAvailableCount, 0, 0
-3.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterD3D11SRVForcedSkipCount, 0, 0
-4.0, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterD3D11SRVLazyCreateCount, 0, 0
 4.1, CAPTURE_VIEWPORT, d3d12_no_d3d11_srv, build/d3d12_no_d3d11_srv.png
 4.2, ASSERT_CAPTURE_NOT_BLACK, d3d12_no_d3d11_srv, 0.01, 4.0
 4.3, ASSERT_CAPTURE_HAS_DETAIL, d3d12_no_d3d11_srv, 4.0

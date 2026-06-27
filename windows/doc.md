@@ -34,13 +34,14 @@
   present、HDR/SDR target 和 device-loss 边界
 - 通过既有 source-projection MethodChannel 校验 projection/signature，并让
   wgpu/D3D12 render core 对最多四轨 source-resolution bundle 实时执行
-  pan/zoom/split；DComp source/overlay bridge 只作为迁移期兼容层
+  pan/zoom/split；runner 不再通过 D3D11 source-cache bridge 消费 source
+  bundle，也不再通过 D3D11 overlay bridge 合成标注
 - retained D3D11 source/Flutter graph 不是产品路径；投影交互性能应通过
   wgpu source consume、Flutter surface consume、present cadence 和
   `windowsHotPath*` 诊断证明
-- source-projection overlay active 时仍可使用 DComp retained video-space
-  overlay primitive buffer 作为兼容桥；新增 overlay 能力应迁往 wgpu
-  composite pass，pan/zoom/split/order 不能在每次 tick 重建 CPU vertices
+- source-projection overlay 由 wgpu/D3D12 composite pass 消费 video-space
+  primitives；新增 overlay 能力应继续落在 wgpu renderer，pan/zoom/split/order
+  不能在每次 tick 重建 CPU vertices
 - 暴露 high-refresh interaction diagnostics，UI 自动化可用
   `RESET_NATIVE_PERF_COUNTERS`、`BEGIN_NATIVE_INTERACTION_SAMPLE` 和
   `END_NATIVE_INTERACTION_SAMPLE` 包住 pan/zoom/split/overlay 采样窗口
@@ -81,8 +82,8 @@ windows/
   target、颜色映射、Flutter UI 合成和 fallback 应收敛在
   `PresentationBackend` / wgpu D3D12 backend。
 - source cache 纹理创建、384 MiB budget、bundle generation/lease 和 source
-  pass 正在从 D3D11 backend 迁往 wgpu D3D12 backend；runner 只校验 wire
-  参数、维护 signature，并透出迁移期兼容诊断。
+  pass 由 wgpu D3D12 backend 承载；runner 只校验 wire 参数、维护 signature，
+  并透出迁移期兼容诊断。
 - source-projection 的 `currentPresentedFrame` anchor 由 renderer 在完整
   source-cache bundle 发布成功后更新；runner 只透出
   `nativeCompositorPresentedAnchor*` diagnostics，不从 compositor 消费状态反推帧。

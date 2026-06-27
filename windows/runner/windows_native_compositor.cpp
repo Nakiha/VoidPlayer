@@ -152,9 +152,6 @@ bool WindowsNativeCompositor::Start(
         terminal_inactive_ = false;
         rate_start_time_ = std::chrono::steady_clock::now();
         source_cache_publish_count_ = 0;
-        source_cache_base_lease_wait_logged_ = false;
-        source_cache_bundle_acquire_logged_ = false;
-        source_cache_consumed_logged_ = false;
         flutter_export_unsolicited_signal_count_ = 0;
         flutter_export_unsolicited_throttle_count_ = 0;
         last_unsolicited_flutter_export_signal_ = {};
@@ -260,9 +257,6 @@ void WindowsNativeCompositor::Stop(const char* reason) {
     pending_output_adapter_.Reset();
     video_transport_.reset();
     sdr_video_transport_.reset();
-    for (auto& transport : source_transports_) {
-        transport.reset();
-    }
     flutter_view_ = nullptr;
     hwnd_ = nullptr;
     player_.reset();
@@ -274,28 +268,6 @@ void WindowsNativeCompositor::Stop(const char* reason) {
 
 void WindowsNativeCompositor::ReleaseHeldInputs(
     const std::shared_ptr<vr::NativePlayer>& player) {
-    if (held_source_valid_) {
-        for (size_t slot = 0; slot < held_source_mutexes_.size(); ++slot) {
-            if (held_source_present_[slot] && held_source_mutexes_[slot] &&
-                held_source_.textures[slot].sync_mode ==
-                    vr::SharedSourceCacheTextureSyncMode::KeyedMutex) {
-                held_source_mutexes_[slot]->ReleaseSync(0);
-            }
-        }
-        if (player && held_source_.buffer_index >= 0) {
-            player->release_source_cache_bundle(
-                held_source_.buffer_index,
-                held_source_.ring_generation);
-        }
-    }
-    held_source_valid_ = false;
-    held_source_ = {};
-    held_source_present_.fill(false);
-    held_source_transfer_.fill(0);
-    held_source_srvs_ = {};
-    held_source_mutexes_ = {};
-    held_source_textures_ = {};
-
     if (held_flutter_valid_) {
         if (held_flutter_mutex_) {
             held_flutter_mutex_->ReleaseSync(
@@ -500,7 +472,6 @@ void WindowsNativeCompositor::BoostFlutterInteraction(
 void WindowsNativeCompositor::DisableRetainedSourceProjection(
     const std::string& reason) {
     std::lock_guard<std::mutex> lock(mutex_);
-    source_projection_ = {};
     diagnostics_.source_projection_enabled = false;
     retained_graph_fallback_reason_ =
         reason.empty() ? "backend-source-projection" : reason;
@@ -509,7 +480,6 @@ void WindowsNativeCompositor::DisableRetainedSourceProjection(
 void WindowsNativeCompositor::ClearSourceProjection(
     const std::string& reason) {
     std::lock_guard<std::mutex> lock(mutex_);
-    source_projection_ = {};
     diagnostics_.source_projection_enabled = false;
     diagnostics_.source_cache_active = false;
     source_cache_error_ = reason.empty() ? "clear-requested" : reason;
@@ -575,10 +545,6 @@ void WindowsNativeCompositor::RequestOutputTarget(
     diagnostics_.transition_serial++;
     transition_min_video_generation_ =
         target == OutputTarget::ScRGB ? diagnostics_.video_generation + 1 : 0;
-    transition_min_source_generation_ =
-        source_projection_.enabled
-            ? diagnostics_.source_cache_consumed_generation + 1
-            : 0;
     work_pending_ = true;
     wake_.notify_one();
 }
@@ -668,10 +634,6 @@ bool WindowsNativeCompositor::BeginDeviceRecovery(
     transition_min_video_generation_ =
         desired_output_target_ == OutputTarget::ScRGB
             ? diagnostics_.video_generation + 1
-            : 0;
-    transition_min_source_generation_ =
-        source_projection_.enabled
-            ? diagnostics_.source_cache_consumed_generation + 1
             : 0;
     pending_output_adapter_ = output_adapter_ ? output_adapter_ : producer_adapter_;
     work_pending_ = true;
@@ -990,9 +952,6 @@ bool WindowsNativeCompositor::InitializeDeviceAndComposition(
     device_.Reset();
     video_transport_.reset();
     sdr_video_transport_.reset();
-    for (auto& transport : source_transports_) {
-        transport.reset();
-    }
 
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
     D3D_FEATURE_LEVEL level = {};
@@ -1206,29 +1165,6 @@ bool WindowsNativeCompositor::TransportInput(
         diagnostics_.transport_shared_fence_open_succeeded =
             diagnostics_.transport_shared_fence_open_succeeded ||
             transport.shared_fence_open_succeeded();
-        for (const auto& source_transport : source_transports_) {
-            diagnostics_.transport_copy_count +=
-                source_transport.copy_count();
-            diagnostics_.transport_copy_bytes +=
-                source_transport.copy_count() *
-                source_transport.bytes_per_copy();
-            diagnostics_.transport_timeout_count +=
-                source_transport.timeout_count();
-            diagnostics_.transport_total_copy_us +=
-                source_transport.total_copy_us();
-            diagnostics_.shared_fence_signal_count +=
-                source_transport.shared_fence_signal_count();
-            diagnostics_.shared_fence_wait_count +=
-                source_transport.shared_fence_wait_count();
-            diagnostics_.shared_fence_timeout_count +=
-                source_transport.shared_fence_timeout_count();
-            diagnostics_.shared_fence_p95_wait_us = std::max(
-                diagnostics_.shared_fence_p95_wait_us,
-                source_transport.shared_fence_p95_wait_us());
-            diagnostics_.event_query_p95_wait_us = std::max(
-                diagnostics_.event_query_p95_wait_us,
-                source_transport.event_query_p95_wait_us());
-        }
     }
     return true;
 }
@@ -1774,12 +1710,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
         return false;
     }
 
-    SourceProjection source_projection;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        source_projection = source_projection_;
-    }
-
     const auto release_held_video = [&]() {
         if (!held_video_valid_) return;
         if (held_video_mutex_ &&
@@ -1822,25 +1752,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
         held_flutter_mutex_.Reset();
         held_flutter_d3d12_resource_.Reset();
         held_flutter_texture_.Reset();
-    };
-    const auto release_held_source = [&]() {
-        if (!held_source_valid_) return;
-        for (size_t slot = 0; slot < held_source_mutexes_.size(); ++slot) {
-            if (held_source_present_[slot] && held_source_mutexes_[slot] &&
-                held_source_.textures[slot].sync_mode ==
-                    vr::SharedSourceCacheTextureSyncMode::KeyedMutex) {
-                held_source_mutexes_[slot]->ReleaseSync(0);
-            }
-        }
-        player->release_source_cache_bundle(
-            held_source_.buffer_index, held_source_.ring_generation);
-        held_source_valid_ = false;
-        held_source_ = {};
-        held_source_present_.fill(false);
-        held_source_srvs_ = {};
-        held_source_mutexes_ = {};
-        held_source_textures_ = {};
-        held_source_transfer_.fill(0);
     };
     const auto log_pending_flutter_request_acquire =
         [&](const char* outcome, const FlutterSurface* surface) {
@@ -2252,15 +2163,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
     }
 
     if (!held_flutter_valid_) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (source_cache_publish_count_ > 0 &&
-            source_projection.enabled &&
-            !source_cache_base_lease_wait_logged_) {
-            source_cache_base_lease_wait_logged_ = true;
-            spdlog::info(
-                "[WindowsNativeCompositor] source cache waiting for "
-                "stable video/Flutter inputs");
-        }
         return false;
     }
     if (!EnsureSwapChain(
@@ -2278,174 +2180,14 @@ bool WindowsNativeCompositor::CompositeLatest() {
         !held_sdr_video_valid_;
     if ((needs_fp16_video && !held_video_valid_) ||
         (needs_sdr_video && !held_video_valid_)) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (source_cache_publish_count_ > 0 &&
-            source_projection.enabled &&
-            !source_cache_base_lease_wait_logged_) {
-            source_cache_base_lease_wait_logged_ = true;
-            spdlog::info(
-                "[WindowsNativeCompositor] source cache waiting for "
-                "stable video/Flutter inputs");
-        }
         return false;
     }
-
-    if (!source_projection.enabled) {
-        release_held_source();
-    } else {
-        vr::SharedSourceCacheBundleSnapshot next_source;
-        const bool acquired =
-            player->acquire_source_cache_bundle(next_source);
-        if (acquired) {
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                if (!source_cache_bundle_acquire_logged_) {
-                    source_cache_bundle_acquire_logged_ = true;
-                    spdlog::info(
-                        "[WindowsNativeCompositor] first source cache bundle "
-                        "acquired generation={} textures={}",
-                        next_source.frame_generation,
-                        next_source.texture_count);
-                }
-            }
-            const bool unchanged =
-                held_source_valid_ &&
-                next_source.ring_generation ==
-                    held_source_.ring_generation &&
-                next_source.frame_generation ==
-                    held_source_.frame_generation;
-            if (unchanged) {
-                player->release_source_cache_bundle(
-                    next_source.buffer_index,
-                    next_source.ring_generation);
-            } else {
-                std::array<
-                    Microsoft::WRL::ComPtr<ID3D11Texture2D>, 4>
-                    textures;
-                std::array<
-                    Microsoft::WRL::ComPtr<IDXGIKeyedMutex>, 4>
-                    mutexes;
-                std::array<
-                    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4>
-                    srvs;
-                std::array<bool, 4> present{};
-                std::array<int, 4> transfers{};
-                bool complete = next_source.texture_count > 0;
-                std::string error = "source-cache-invalid-texture-snapshot";
-                for (size_t i = 0;
-                     complete && i < next_source.texture_count;
-                     ++i) {
-                    const auto& source = next_source.textures[i];
-                    const int slot = source.source_slot;
-                    if (slot < 0 || slot >= 4 || !source.handle) {
-                        complete = false;
-                        break;
-                    }
-                    HRESULT result = OpenInputTexture(
-                        device1.Get(), source.handle, &textures[slot])
-                        ? S_OK
-                        : E_FAIL;
-                    if (FAILED(result)) {
-                        error =
-                            "source-cache-open-shared-resource-failed";
-                        complete = false;
-                        break;
-                    }
-                    if (source.sync_mode ==
-                        vr::SharedSourceCacheTextureSyncMode::KeyedMutex) {
-                        result = textures[slot].As(&mutexes[slot]);
-                        if (FAILED(result)) {
-                            error = "source-cache-keyed-mutex-query-failed";
-                            complete = false;
-                            break;
-                        }
-                        result = mutexes[slot]->AcquireSync(
-                            source.consumer_acquire_key, 8);
-                        if (result != S_OK) {
-                            error = "source-cache-keyed-mutex-timeout";
-                            complete = false;
-                            break;
-                        }
-                    }
-                    present[slot] = true;
-                    transfers[slot] = source.color_transfer;
-                    bool srv_ready = false;
-                    if (IsCrossAdapterActive()) {
-                        srv_ready = TransportInput(
-                            textures[slot].Get(),
-                            DXGI_FORMAT_R16G16B16A16_FLOAT,
-                            static_cast<uint32_t>(source.width),
-                            static_cast<uint32_t>(source.height),
-                            source_transports_[slot],
-                            srvs[slot]);
-                    } else {
-                        result = device_->CreateShaderResourceView(
-                            textures[slot].Get(), nullptr, &srvs[slot]);
-                        srv_ready = SUCCEEDED(result);
-                    }
-                    if (!srv_ready) {
-                        error = "source-cache-srv-creation-failed";
-                        complete = false;
-                        break;
-                    }
-                }
-                if (complete) {
-                    release_held_source();
-                    held_source_ = std::move(next_source);
-                    held_source_textures_ = std::move(textures);
-                    held_source_mutexes_ = std::move(mutexes);
-                    held_source_srvs_ = std::move(srvs);
-                    held_source_present_ = present;
-                    held_source_transfer_ = transfers;
-                    held_source_valid_ = true;
-                    if (IsCrossAdapterActive()) {
-                        std::lock_guard<std::mutex> lock(mutex_);
-                        diagnostics_.source_transport_generation =
-                            diagnostics_.transport_generation;
-                    }
-                } else {
-                    for (size_t slot = 0; slot < present.size(); ++slot) {
-                        if (present[slot] && mutexes[slot] &&
-                            next_source.textures[slot].sync_mode ==
-                                vr::SharedSourceCacheTextureSyncMode::KeyedMutex) {
-                            mutexes[slot]->ReleaseSync(0);
-                        }
-                    }
-                    player->release_source_cache_bundle(
-                        next_source.buffer_index,
-                        next_source.ring_generation);
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    source_cache_error_ = error;
-                    diagnostics_.source_cache_last_error =
-                        source_cache_error_;
-                    ++diagnostics_.source_cache_fallback_count;
-                }
-            }
-        } else {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (source_cache_publish_count_ > 0 &&
-                !held_source_valid_ &&
-                source_cache_error_ !=
-                    "source-cache-bundle-acquire-failed") {
-                source_cache_error_ =
-                    "source-cache-bundle-acquire-failed";
-                diagnostics_.source_cache_last_error =
-                    source_cache_error_;
-                ++diagnostics_.source_cache_fallback_count;
-            }
-        }
-    }
-
-    const bool source_bundle_active =
-        source_projection.enabled && held_source_valid_;
     acquire_finished = std::chrono::steady_clock::now();
     if (pending_swap_chain_.swap_chain) {
         uint64_t min_video_generation = 0;
-        uint64_t min_source_generation = 0;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             min_video_generation = transition_min_video_generation_;
-            min_source_generation = transition_min_source_generation_;
         }
         const uint64_t held_video_generation =
             composite_target == OutputTarget::ScRGB
@@ -2453,9 +2195,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 : (held_sdr_video_valid_
                        ? held_sdr_video_.buffer_generation
                        : held_video_.frame_generation);
-        if (held_video_generation < min_video_generation ||
-            (source_projection.enabled &&
-             held_source_.frame_generation < min_source_generation)) {
+        if (held_video_generation < min_video_generation) {
             const auto now = std::chrono::steady_clock::now();
             if (last_transition_guard_log_.time_since_epoch().count() == 0 ||
                 now - last_transition_guard_log_ >=
@@ -2463,14 +2203,10 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 last_transition_guard_log_ = now;
                 spdlog::info(
                     "[WindowsNativeCompositor] waiting for output target "
-                    "transition inputs target={} video={}/{} source={}/{} "
-                    "sourceProjection={}",
+                    "transition inputs target={} video={}/{}",
                     OutputTargetName(composite_target),
                     held_video_generation,
-                    min_video_generation,
-                    held_source_.frame_generation,
-                    min_source_generation,
-                    source_projection.enabled);
+                    min_video_generation);
             }
             return false;
         }
@@ -2551,10 +2287,10 @@ bool WindowsNativeCompositor::CompositeLatest() {
         ID3D11ShaderResourceView* srvs[] = {
             held_video_srv_.Get(),
             nullptr,
-            held_source_srvs_[0].Get(),
-            held_source_srvs_[1].Get(),
-            held_source_srvs_[2].Get(),
-            held_source_srvs_[3].Get(),
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
             held_sdr_video_valid_
                 ? held_sdr_video_srv_.Get()
                 : held_video_srv_.Get(),
@@ -2574,37 +2310,12 @@ bool WindowsNativeCompositor::CompositeLatest() {
             sdr_white_scale_.load(std::memory_order_relaxed));
         values.output_mode =
             output->target == OutputTarget::ScRGB ? 1.0f : 0.0f;
-        values.source_projection_enabled =
-            source_bundle_active ? 1.0f : 0.0f;
-        values.source_mode = static_cast<float>(source_projection.mode);
-        values.source_split_pos = source_projection.split_pos;
-        values.source_track_count =
-            static_cast<float>(source_projection.active_track_count);
+        values.source_projection_enabled = 0.0f;
         values.source_header_padding[1] =
             output->target == OutputTarget::SDR && !held_sdr_video_valid_ &&
                     held_video_valid_
                 ? 1.0f
                 : 0.0f;
-        for (size_t i = 0; i < 4; ++i) {
-            values.source_present[i] =
-                held_source_present_[i] ? 1.0f : 0.0f;
-            values.source_order[i] =
-                static_cast<float>(source_projection.source_order[i]);
-            values.source_transfer[i] =
-                static_cast<float>(held_source_transfer_[i]);
-            values.source_display_offset_x[i] =
-                source_projection.display_offset_x[i];
-            values.source_display_offset_y[i] =
-                source_projection.display_offset_y[i];
-            values.source_inv_display_size_x[i] =
-                source_projection.inv_display_size_x[i];
-            values.source_inv_display_size_y[i] =
-                source_projection.inv_display_size_y[i];
-            values.source_view_offset_uv_x[i] =
-                source_projection.view_offset_uv_x[i];
-            values.source_view_offset_uv_y[i] =
-                source_projection.view_offset_uv_y[i];
-        }
         context_->UpdateSubresource(constants_.Get(), 0, nullptr, &values, 0, 0);
         ID3D11Buffer* constants = constants_.Get();
         context_->PSSetConstantBuffers(0, 1, &constants);
@@ -2616,8 +2327,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
             0, static_cast<UINT>(null_srvs.size()), null_srvs.data());
         context_->Flush();
         const auto present_started = std::chrono::steady_clock::now();
-        const UINT sync_interval =
-            source_bundle_active && source_projection.enabled ? 0u : 1u;
+        const UINT sync_interval = 1u;
         const HRESULT present_result =
             ok ? output->swap_chain->Present(sync_interval, 0) : E_FAIL;
         const auto present_finished = std::chrono::steady_clock::now();
@@ -2685,9 +2395,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 std::chrono::duration_cast<std::chrono::microseconds>(
                     acquire_finished - composite_started)
                     .count()));
-        if (source_bundle_active) {
-            high_refresh_metrics_.record_source_projection_reuse();
-        }
         diagnostics_.flutter_generation =
             held_flutter_.frame_generation;
         diagnostics_.video_generation =
@@ -2696,11 +2403,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 : (held_sdr_video_valid_
                        ? held_sdr_video_.buffer_generation
                        : held_video_.frame_generation);
-        diagnostics_.source_projection_enabled =
-            source_projection.enabled;
-        diagnostics_.source_cache_active =
-            source_bundle_active &&
-            (phase_ == Phase::Preparing || phase_ == Phase::Active);
+        diagnostics_.source_projection_enabled = false;
+        diagnostics_.source_cache_active = false;
         diagnostics_.retained_graph_active = false;
         diagnostics_.retained_graph_mode = "inactive";
         diagnostics_.retained_graph_fallback_reason =
@@ -2712,25 +2416,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
         diagnostics_.retained_graph_projection_skip_present_count = 0;
         diagnostics_.retained_graph_deferred_content_count = 0;
         diagnostics_.retained_graph_commit_defer_count = 0;
-        if (source_bundle_active) {
-            diagnostics_.source_cache_consumed_generation =
-                held_source_.frame_generation;
-            source_cache_error_ = "none";
-            diagnostics_.source_cache_last_error = "none";
-            if (!source_cache_consumed_logged_) {
-                source_cache_consumed_logged_ = true;
-                spdlog::info(
-                    "[WindowsNativeCompositor] first source cache bundle "
-                    "consumed generation={}",
-                    held_source_.frame_generation);
-            }
-        }
         const bool transition_inputs_ready =
-            diagnostics_.video_generation >= transition_min_video_generation_ &&
-            (!source_projection.enabled ||
-             (source_bundle_active &&
-              held_source_.frame_generation >=
-                  transition_min_source_generation_));
+            diagnostics_.video_generation >= transition_min_video_generation_;
         if (!pending_swap_chain_.swap_chain &&
             diagnostics_.transition_state == "preparing" &&
             transition_inputs_ready) {
@@ -2788,7 +2475,6 @@ void WindowsNativeCompositor::EnterFailed(const std::string& reason) {
     }
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        source_projection_ = {};
         diagnostics_.source_projection_enabled = false;
         diagnostics_.source_cache_active = false;
         source_cache_error_ =

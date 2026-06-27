@@ -475,17 +475,6 @@ private:
     Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_flutter_mutex_;
     uint64_t external_flutter_surface_submitted_generation_ = 0;
     uint64_t external_flutter_surface_refresh_generation_ = 0;
-    bool held_source_valid_ = false;
-    vr::SharedSourceCacheBundleSnapshot held_source_;
-    std::array<Microsoft::WRL::ComPtr<ID3D11Texture2D>, 4>
-        held_source_textures_;
-    std::array<Microsoft::WRL::ComPtr<IDXGIKeyedMutex>, 4>
-        held_source_mutexes_;
-    std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4>
-        held_source_srvs_;
-    std::array<bool, 4> held_source_present_{};
-    std::array<int, 4> held_source_transfer_{};
-    std::array<vr::D3D11CrossAdapterTextureTransport, 4> source_transports_;
 
     mutable std::mutex mutex_;
     std::condition_variable wake_;
@@ -495,13 +484,11 @@ private:
     bool terminal_inactive_ = false;
     OutputTarget desired_output_target_ = OutputTarget::SDR;
     uint64_t transition_min_video_generation_ = 0;
-    uint64_t transition_min_source_generation_ = 0;
     Phase phase_ = Phase::Inactive;
     uint64_t state_serial_ = 0;
     uint64_t ack_serial_ = 0;
     double viewport_[4] = {0.0, 0.0, 1.0, 1.0};
     float viewport_background_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-    SourceProjection source_projection_;
     std::string source_cache_error_ = "none";
     std::string retained_graph_fallback_reason_ = "none";
     std::chrono::steady_clock::time_point
@@ -520,9 +507,6 @@ private:
     uint64_t last_flutter_export_pacing_backpressure_count_ = 0;
     std::chrono::steady_clock::time_point rate_start_time_{};
     uint64_t source_cache_publish_count_ = 0;
-    bool source_cache_base_lease_wait_logged_ = false;
-    bool source_cache_bundle_acquire_logged_ = false;
-    bool source_cache_consumed_logged_ = false;
     vr::WindowsHighRefreshMetrics high_refresh_metrics_;
     std::chrono::steady_clock::time_point last_present_time_{};
     std::chrono::steady_clock::time_point interaction_sample_started_{};

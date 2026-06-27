@@ -22,11 +22,12 @@ Windows runner / platform backend
   -> presents to the window
 ```
 
-The remaining D3D11/DComp present bridge and source-cache/overlay bridge are
-compatibility layers during the migration. The old Flutter D3D11 SRV
-composition pass, readback-only diagnostics, and retained D3D11
-source/Flutter graph have been removed from the product route. They must not
-be reintroduced as workarounds for Flutter pacing or projection issues.
+The remaining D3D11/DComp present bridge is a compatibility layer during the
+migration to a D3D12-owned present target. The old Flutter D3D11 SRV
+composition pass, readback-only diagnostics, retained D3D11 source/Flutter
+graph, runner source-cache bridge, and runner overlay bridge have been removed
+from the product route. They must not be reintroduced as workarounds for
+Flutter pacing or projection issues.
 
 ## Current Product And Experimental Routes
 
@@ -121,14 +122,13 @@ changes stop exposing the previous bundle, while leased old generations remain
 alive until release. A draw miss with an unchanged signature keeps the last
 complete bundle and never publishes partial track updates.
 
-Analysis overlay in source-projection mode is in migration. The retained DComp
-primitive-buffer bridge remains as a compatibility path while the same
-video-space primitives are moved into the wgpu/D3D12 composite pass. New overlay
-features should target the wgpu renderer. Pan, zoom, split, and order changes
-must still update projection constants without rebuilding CPU vertices.
-Rebuild failure drops only the overlay layer for that frame and reports a
-fallback reason. Device removal follows the normal presentation recovery
-contract and clears old overlay generations.
+Analysis overlay in source-projection mode is owned by the wgpu/D3D12 composite
+pass. The runner no longer rasterizes, uploads, or composites overlay
+primitives through D3D11. New overlay features should target the wgpu renderer.
+Pan, zoom, split, and order changes must still update projection constants
+without rebuilding CPU vertices. Rebuild failure drops only the overlay layer
+for that frame and reports a fallback reason. Device removal follows the normal
+presentation recovery contract and clears old overlay generations.
 
 The standalone native window path may use a double-buffered flip-discard swap
 chain. It is not the current Flutter product presentation route.

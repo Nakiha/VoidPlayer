@@ -279,6 +279,74 @@ bool WindowsD3D12PresentTarget::initialize_with_composition_visual(
     return true;
 }
 
+bool WindowsD3D12PresentTarget::resize(
+    uint32_t width,
+    uint32_t height,
+    WindowsD3D12PresentTargetFormat format) {
+    if (!device_ || !queue_ || !swap_chain_ || !command_allocator_ ||
+        !command_list_) {
+        last_error_ = "d3d12-present-target-not-initialized";
+        return false;
+    }
+    const uint32_t next_width = std::max(width, 1u);
+    const uint32_t next_height = std::max(height, 1u);
+    const DXGI_FORMAT next_format =
+        format == WindowsD3D12PresentTargetFormat::ScRGB
+            ? DXGI_FORMAT_R16G16B16A16_FLOAT
+            : DXGI_FORMAT_B8G8R8A8_UNORM;
+    const DXGI_COLOR_SPACE_TYPE next_color_space =
+        format == WindowsD3D12PresentTargetFormat::ScRGB
+            ? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+            : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    if (width_ == next_width && height_ == next_height &&
+        dxgi_format_ == next_format && color_space_ == next_color_space) {
+        last_error_ = "none";
+        return true;
+    }
+
+    if (!wait_for_gpu()) {
+        return false;
+    }
+
+    HRESULT hr = command_allocator_->Reset();
+    if (FAILED(hr)) {
+        return fail("CommandAllocator::Reset(resize)", hr);
+    }
+    hr = command_list_->Reset(command_allocator_.Get(), nullptr);
+    if (FAILED(hr)) {
+        return fail("CommandList::Reset(resize)", hr);
+    }
+    hr = command_list_->Close();
+    if (FAILED(hr)) {
+        return fail("CommandList::Close(resize)", hr);
+    }
+
+    hr = swap_chain_->ResizeBuffers(
+        kBufferCount, next_width, next_height, next_format, 0);
+    if (FAILED(hr)) {
+        return fail("ResizeBuffers(D3D12)", hr);
+    }
+    UINT color_support = 0;
+    hr = swap_chain_->CheckColorSpaceSupport(next_color_space, &color_support);
+    if (FAILED(hr) ||
+        (color_support &
+         DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT) == 0) {
+        return fail("CheckColorSpaceSupport(resize)",
+                    FAILED(hr) ? hr : E_FAIL);
+    }
+    hr = swap_chain_->SetColorSpace1(next_color_space);
+    if (FAILED(hr)) {
+        return fail("SetColorSpace1(resize)", hr);
+    }
+
+    width_ = next_width;
+    height_ = next_height;
+    dxgi_format_ = next_format;
+    color_space_ = next_color_space;
+    last_error_ = "none";
+    return true;
+}
+
 void WindowsD3D12PresentTarget::shutdown() {
     if (queue_ && fence_) {
         wait_for_gpu();

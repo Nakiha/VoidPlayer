@@ -51,6 +51,9 @@ public:
         uint32_t height,
         WindowsD3D12PresentTargetFormat format);
     void shutdown();
+    bool resize(uint32_t width,
+                uint32_t height,
+                WindowsD3D12PresentTargetFormat format);
 
     bool acquire_frame(WindowsD3D12PresentTargetFrame& frame);
     bool present(UINT sync_interval);

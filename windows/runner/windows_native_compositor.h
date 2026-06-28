@@ -421,6 +421,7 @@ private:
     uint64_t external_flutter_surface_submitted_generation_ = 0;
     uint64_t external_flutter_surface_refresh_generation_ = 0;
     uint64_t d3d12_direct_present_count_ = 0;
+    uint64_t d3d12_target_resize_count_ = 0;
 
     mutable std::mutex mutex_;
     std::condition_variable wake_;

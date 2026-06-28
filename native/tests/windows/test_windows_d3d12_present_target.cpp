@@ -149,6 +149,22 @@ TEST_CASE("Windows D3D12 present target exposes a DComp back buffer",
     CAPTURE(composite_error.data());
     REQUIRE(VPWgpuD3D12RendererRenderComposite(renderer, &composite) == 0);
     REQUIRE(target.present(0));
+    frame.resource.Reset();
+    composite_frame.resource.Reset();
+
+    REQUIRE(target.resize(
+        384, 216, vr::WindowsD3D12PresentTargetFormat::SDR));
+    REQUIRE(target.active());
+    REQUIRE(target.width() == 384);
+    REQUIRE(target.height() == 216);
+    REQUIRE(target.dxgi_format() == DXGI_FORMAT_B8G8R8A8_UNORM);
+    vr::WindowsD3D12PresentTargetFrame resized_frame;
+    REQUIRE(target.acquire_frame(resized_frame));
+    REQUIRE(resized_frame.resource != nullptr);
+    REQUIRE(resized_frame.width == 384);
+    REQUIRE(resized_frame.height == 216);
+    REQUIRE(resized_frame.dxgi_format == DXGI_FORMAT_B8G8R8A8_UNORM);
+    REQUIRE(target.present(0));
 
     const float color[4] = {0.05f, 0.10f, 0.20f, 1.0f};
     INFO(target.last_error());

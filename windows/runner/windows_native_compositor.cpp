@@ -1564,17 +1564,59 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 d3d12_present_target_ =
                     std::make_unique<vr::WindowsD3D12PresentTarget>();
             }
+            const DXGI_FORMAT direct_format =
+                direct_target == OutputTarget::ScRGB
+                    ? DXGI_FORMAT_R16G16B16A16_FLOAT
+                    : DXGI_FORMAT_B8G8R8A8_UNORM;
+            const bool active = d3d12_present_target_->active();
             const bool target_matches =
-                d3d12_present_target_->active() &&
-                d3d12_present_target_->width() == direct_width &&
+                active && d3d12_present_target_->width() == direct_width &&
                 d3d12_present_target_->height() == direct_height &&
-                ((direct_target == OutputTarget::ScRGB &&
-                  d3d12_present_target_->dxgi_format() ==
-                      DXGI_FORMAT_R16G16B16A16_FLOAT) ||
-                 (direct_target == OutputTarget::SDR &&
-                  d3d12_present_target_->dxgi_format() ==
-                      DXGI_FORMAT_B8G8R8A8_UNORM));
-            if (!target_matches) {
+                d3d12_present_target_->dxgi_format() == direct_format;
+            if (active && !target_matches) {
+                const uint32_t previous_width =
+                    d3d12_present_target_->width();
+                const uint32_t previous_height =
+                    d3d12_present_target_->height();
+                const DXGI_FORMAT previous_format =
+                    d3d12_present_target_->dxgi_format();
+                const bool resized =
+                    d3d12_present_target_->resize(direct_width,
+                                                  direct_height,
+                                                  present_format);
+                if (resized) {
+                    ++d3d12_target_resize_count_;
+                    if (d3d12_target_resize_count_ <= 8 ||
+                        d3d12_target_resize_count_ % 60 == 0) {
+                        spdlog::info(
+                            "[WindowsResizePacing] native d3d12TargetResize "
+                            "count={} previous={}x{} next={}x{} target={} "
+                            "heldFlutter={}x{} generation={}",
+                            d3d12_target_resize_count_,
+                            previous_width,
+                            previous_height,
+                            direct_width,
+                            direct_height,
+                            OutputTargetName(direct_target),
+                            held_flutter_.width,
+                            held_flutter_.height,
+                            held_flutter_.frame_generation);
+                    }
+                } else {
+                    spdlog::warn(
+                        "[WindowsNativeCompositor] D3D12 direct present "
+                        "target resize failed previous={}x{} next={}x{} "
+                        "formatChanged={} error={}; rebuilding target",
+                        previous_width,
+                        previous_height,
+                        direct_width,
+                        direct_height,
+                        previous_format != direct_format,
+                        d3d12_present_target_->last_error());
+                    d3d12_present_target_->shutdown();
+                }
+            }
+            if (!d3d12_present_target_->active()) {
                 const bool previous_active = d3d12_present_target_->active();
                 const uint32_t previous_width =
                     previous_active ? d3d12_present_target_->width() : 0;

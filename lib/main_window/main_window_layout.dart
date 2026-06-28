@@ -424,8 +424,16 @@ class MainWindowLayoutCoordinator {
     final viewportDelta = visible
         ? -_state.marksSidebarWidth
         : _state.marksSidebarWidth;
-    requestPreemptViewportLogicalSizeDelta(widthDelta: viewportDelta);
-    stateStore.setMarksSidebarVisible(visible);
+    if (visible) {
+      requestPreemptViewportLogicalSizeDelta(widthDelta: viewportDelta);
+      stateStore.setMarksSidebarVisible(true);
+    } else {
+      stateStore.setMarksSidebarVisible(false);
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (_disposed || !mounted() || _state.marksSidebarVisible) return;
+        requestPreemptViewportLogicalSizeDelta(widthDelta: viewportDelta);
+      });
+    }
   }
 
   void setMarksSidebarWidth(double width) {

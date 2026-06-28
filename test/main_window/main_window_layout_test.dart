@@ -235,6 +235,52 @@ void main() {
     expect(coordinator.viewportHeight, 500);
   });
 
+  testWidgets(
+    'hiding marks sidebar removes Flutter panel before native resize',
+    (tester) async {
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setMarksSidebarVisible(true)
+        ..setMarksSidebarWidth(320)
+        ..setLayout(const LayoutState());
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager();
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 1000;
+      coordinator.viewportHeight = 500;
+      coordinator.viewportDevicePixelRatio = 2;
+      controller.currentSize = const Size(1000, 500);
+
+      final visibleNotifications = <bool>[];
+      stateStore.addListener(() {
+        visibleNotifications.add(stateStore.value.marksSidebarVisible);
+      });
+
+      coordinator.setMarksSidebarVisible(false);
+
+      expect(visibleNotifications, isNotEmpty);
+      expect(visibleNotifications.first, isFalse);
+      expect(stateStore.value.marksSidebarVisible, isFalse);
+      expect(controller.resizes, isEmpty);
+
+      tester.binding.scheduleFrame();
+      await tester.pump();
+
+      expect(controller.resizes, const [Size(1640, 500)]);
+      expect(coordinator.viewportWidth, 1640);
+      expect(coordinator.viewportHeight, 500);
+    },
+  );
+
   test('zoom combo changes are clamped through shared zoom path', () {
     final stateStore = MainWindowStateStore()
       ..setTextureId(1)

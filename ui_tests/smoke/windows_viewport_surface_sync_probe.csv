@@ -12,15 +12,19 @@
 2.48, CAPTURE_WINDOW, viewport_sync_sidebar_immediate, build/windows_viewport_sync_sidebar_immediate.png
 2.58, ASSERT_CAPTURE_NOT_BLACK, viewport_sync_sidebar_immediate, 0.01, 4.0
 2.68, ASSERT_CAPTURE_REGION_NOT_BLACK, viewport_sync_sidebar_immediate, right, 0.01, 4.0
-3.0, TOGGLE_ANALYSIS_OVERLAY_PANEL
-3.08, CAPTURE_WINDOW, viewport_sync_overlay_panel_immediate, build/windows_viewport_sync_overlay_panel_immediate.png
-3.18, ASSERT_CAPTURE_NOT_BLACK, viewport_sync_overlay_panel_immediate, 0.01, 4.0
-3.28, ASSERT_CAPTURE_REGION_NOT_BLACK, viewport_sync_overlay_panel_immediate, right, 0.01, 4.0
-3.6, TOGGLE_FULL_SCREEN
-4.0, ASSERT_MAIN_WINDOW_BORDERLESS
-4.08, CAPTURE_WINDOW, viewport_sync_fullscreen, build/windows_viewport_sync_fullscreen.png
-4.18, ASSERT_CAPTURE_NOT_BLACK, viewport_sync_fullscreen, 0.01, 4.0
-4.3, EXIT_FULL_SCREEN
-4.9, CAPTURE_WINDOW, viewport_sync_restored, build/windows_viewport_sync_restored.png
-5.0, ASSERT_CAPTURE_NOT_BLACK, viewport_sync_restored, 0.01, 4.0
-5.2, QUIT, 0
+2.8, TOGGLE_MARKS_SIDEBAR
+2.98, CAPTURE_WINDOW, viewport_sync_sidebar_close_immediate, build/windows_viewport_sync_sidebar_close_immediate.png
+3.08, ASSERT_CAPTURE_NOT_BLACK, viewport_sync_sidebar_close_immediate, 0.01, 4.0
+3.18, ASSERT_CAPTURE_REGION_NOT_BLACK, viewport_sync_sidebar_close_immediate, right, 0.01, 4.0
+3.4, TOGGLE_ANALYSIS_OVERLAY_PANEL
+3.48, CAPTURE_WINDOW, viewport_sync_overlay_panel_immediate, build/windows_viewport_sync_overlay_panel_immediate.png
+3.58, ASSERT_CAPTURE_NOT_BLACK, viewport_sync_overlay_panel_immediate, 0.01, 4.0
+3.68, ASSERT_CAPTURE_REGION_NOT_BLACK, viewport_sync_overlay_panel_immediate, right, 0.01, 4.0
+4.0, TOGGLE_FULL_SCREEN
+4.4, ASSERT_MAIN_WINDOW_BORDERLESS
+4.48, CAPTURE_WINDOW, viewport_sync_fullscreen, build/windows_viewport_sync_fullscreen.png
+4.58, ASSERT_CAPTURE_NOT_BLACK, viewport_sync_fullscreen, 0.01, 4.0
+4.7, EXIT_FULL_SCREEN
+5.3, CAPTURE_WINDOW, viewport_sync_restored, build/windows_viewport_sync_restored.png
+5.4, ASSERT_CAPTURE_NOT_BLACK, viewport_sync_restored, 0.01, 4.0
+5.6, QUIT, 0

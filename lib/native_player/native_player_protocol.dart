@@ -23,6 +23,8 @@ class NativePlayerMethods {
       'setNativeCompositorViewportRect';
   static const requestNativeCompositorFlutterFrame =
       'requestNativeCompositorFlutterFrame';
+  static const boostNativeCompositorFlutterInteraction =
+      'boostNativeCompositorFlutterInteraction';
   static const ackNativeCompositorFlutterState =
       'ackNativeCompositorFlutterState';
   static const debugFailNativeCompositor = 'debugFailNativeCompositor';

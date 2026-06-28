@@ -2,7 +2,8 @@
 # Expected runtime: about 9 seconds.
 0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
 0.8, ADD_MEDIA, resources/video/mpeg2_10s_1280x720.ts
-2.5, ASSERT_TRACK_COUNT, 2
+2.5, WAIT_TRACK_COUNT, 2, 10000
+2.6, ASSERT_TRACK_COUNT, 2
 2.7, SET_LAYOUT_MODE, 1
 2.9, ASSERT_LAYOUT_MODE, 1
 3.1, SET_SPLIT_POS, 0.5

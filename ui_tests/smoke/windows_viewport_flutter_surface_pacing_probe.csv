@@ -1,0 +1,38 @@
+# Windows retained Flutter-surface pacing probe.
+# The failure this guards is not Flutter FrameTiming; it is Windows presentation
+# pacing while source projection is driven by the wgpu/D3D12 backend. The old
+# retained DComp graph must stay out of this hot path.
+@WINDOW, 1880, 1400
+0.0, GENERATE_TEST_VIDEO, build/generated/windows_viewport_flutter_surface_pacing.mp4, 240, 30, 1280, 720
+0.3, ADD_MEDIA, build/generated/windows_viewport_flutter_surface_pacing.mp4
+2.8, ASSERT_TRACK_COUNT, 1
+2.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
+2.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
+3.0, CLEAR_MARKS
+3.1, ADD_QUICK_MARK, 0, 0.24, 0.43, 0.35, 0.035, overlay, 2
+3.3, ASSERT_MARK_COUNT, 1
+3.4, SET_LAYOUT_MODE, 1
+3.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationExternalFlutterSurfaceUpdateCount, 1
+3.62, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationExternalFlutterSurfaceConsumeCount, 1
+3.8, RESET_NATIVE_PERF_COUNTERS
+3.9, DEBUG_FLUTTER_TIMING
+3.95, BEGIN_NATIVE_INTERACTION_SAMPLE, viewport-flutter-surface
+4.0, WHEEL_VIEWPORT_NATIVE, 36, 160, 2, 0.55, 0.48
+4.8, DRAG_VIEWPORT_NATIVE, 760, 260, 220, 3, secondary
+5.7, DRAG_VIEWPORT_NATIVE, -620, -220, 220, 3, secondary
+6.6, DRAG_SPLIT_HANDLE_NATIVE, 0.08, 160, 3
+7.3, DRAG_SPLIT_HANDLE_NATIVE, 0.86, 160, 3
+8.0, DRAG_SPLIT_HANDLE_NATIVE, 0.30, 160, 3
+8.7, DRAG_SPLIT_HANDLE_NATIVE, 0.72, 160, 3
+9.45, END_NATIVE_INTERACTION_SAMPLE, viewport-flutter-surface
+9.5, DEBUG_NATIVE_TIMING, viewport-flutter-surface
+9.6, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphProjectionCommitCount, 0, 0
+9.7, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphFlutterBakeCount, 0, 0
+9.72, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsBackendSourceProjectionActive, true
+9.74, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsBackendSourceProjectionUpdateCount, 1
+9.76, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsBackendSourceProjectionConsumeCount, 1
+9.8, ASSERT_FLUTTER_TIMING, 120, 24, 3, 12
+9.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
+10.0, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportBackpressureCount, 0, 20
+10.1, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathInputToPresentP95Us, 0, 5000
+10.2, QUIT, 0

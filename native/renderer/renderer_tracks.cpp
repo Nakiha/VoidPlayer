@@ -29,13 +29,14 @@ bool Renderer::Impl::recreate_pipeline_for_seek(std::unique_lock<std::mutex>& st
     spdlog::info("[Renderer] Recreating pipeline for {}", detached.file_path);
 
     present_history_.clear_slot(slot);
+    clear_present_decision_slot(external_d3d12_visible_decision_, slot);
     loop_driver_.force_preview_redraw();
 
     state_lock.unlock();
 
     track_controller_.stop_detached_pipeline(slot, detached.detached_track);
 
-    // Give the driver a brief moment to retire the previous D3D11VA decoder
+    // Give the driver a brief moment to retire the previous hardware decoder
     // objects before constructing a fresh hardware pipeline on the same file.
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
@@ -44,6 +45,8 @@ bool Renderer::Impl::recreate_pipeline_for_seek(std::unique_lock<std::mutex>& st
         detached.file_path,
         detached.use_hardware_decode,
         surface_state_.backend_kind(),
+        presentation_.native_render_device(),
+        &presentation_.device_mutex(),
         &initial_seek);
     if (!replacement) {
         spdlog::error("[Renderer] Failed to recreate pipeline for {}", detached.file_path);
@@ -142,7 +145,11 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
     }
 
     auto pipeline = track_controller_.create_pipeline(
-        video_path, use_hardware_decode, surface_state_.backend_kind());
+        video_path,
+        use_hardware_decode,
+        surface_state_.backend_kind(),
+        presentation_.native_render_device(),
+        &presentation_.device_mutex());
     if (!pipeline) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         rollback_track_mutation_playback(playback_state, playback_hooks);
@@ -219,6 +226,9 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
         // they remain visible while the new track is still buffering/soft-decoding.
         loop_driver_.force_preview_redraw();
         present_history_.clear_reserved_slot(static_cast<size_t>(reservation.slot));
+        clear_present_decision_slot(
+            external_d3d12_visible_decision_,
+            static_cast<size_t>(reservation.slot));
         loop_driver_.reset_presentation_scheduler();
     }
 
@@ -282,6 +292,9 @@ void Renderer::Impl::remove_track(int file_id) {
         slot = detach_result.slot;
         remaining = detach_result.remaining;
         present_history_.compact_from(static_cast<size_t>(slot));
+        compact_present_decision_frames(
+            external_d3d12_visible_decision_,
+            static_cast<size_t>(slot));
 
         layout_state_.remove_track(
             file_id, [this](int id) {

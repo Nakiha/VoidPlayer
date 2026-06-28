@@ -42,6 +42,12 @@ class ScriptWaitAnalysisProcessCount extends ScriptInstruction {
   const ScriptWaitAnalysisProcessCount(super.time, this.count, this.timeout);
 }
 
+class ScriptWaitTrackCount extends ScriptInstruction {
+  final int count;
+  final Duration timeout;
+  const ScriptWaitTrackCount(super.time, this.count, this.timeout);
+}
+
 class ScriptWaitPresentedFrameRange extends ScriptInstruction {
   final int fileId;
   final int minUs;
@@ -287,6 +293,7 @@ ScriptInstruction? _parseInstruction(
         DragSplitHandle(
           double.parse(args[0]),
           steps: args.length >= 2 ? int.parse(args[1]) : 12,
+          stepMs: args.length >= 3 ? int.parse(args[2]) : 16,
         ),
       );
 
@@ -336,6 +343,49 @@ ScriptInstruction? _parseInstruction(
           double.parse(args[1]),
           steps: args.length >= 3 ? int.parse(args[2]) : 24,
           stepMs: args.length >= 4 ? int.parse(args[3]) : 16,
+        ),
+      );
+    case 'DRAG_VIEWPORT_NATIVE':
+      if (args.length < 2) {
+        log.warning('DRAG_VIEWPORT_NATIVE needs dx and dy arguments: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        DragViewportNative(
+          double.parse(args[0]),
+          double.parse(args[1]),
+          steps: args.length >= 3 ? int.parse(args[2]) : 24,
+          stepMs: args.length >= 4 ? int.parse(args[3]) : 16,
+          button: args.length >= 5 ? args[4] : 'secondary',
+        ),
+      );
+    case 'DRAG_SPLIT_HANDLE_NATIVE':
+      if (args.isEmpty) {
+        log.warning('DRAG_SPLIT_HANDLE_NATIVE needs target fraction: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        DragSplitHandleNative(
+          double.parse(args[0]),
+          steps: args.length >= 2 ? int.parse(args[1]) : 12,
+          stepMs: args.length >= 3 ? int.parse(args[2]) : 16,
+        ),
+      );
+    case 'WHEEL_VIEWPORT_NATIVE':
+      if (args.isEmpty) {
+        log.warning('WHEEL_VIEWPORT_NATIVE needs wheel delta: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        WheelViewportNative(
+          int.parse(args[0]),
+          steps: args.length >= 2 ? int.parse(args[1]) : 1,
+          stepMs: args.length >= 3 ? int.parse(args[2]) : 16,
+          xFraction: args.length >= 4 ? double.parse(args[3]) : 0.5,
+          yFraction: args.length >= 5 ? double.parse(args[4]) : 0.5,
         ),
       );
     case 'DRAG_VIEWPORT_SAMPLE_OVERLAY':
@@ -516,6 +566,22 @@ ScriptInstruction? _parseInstruction(
       );
     case 'DEBUG_FLUTTER_TIMING':
       return ScriptAutomationAction(time, const DebugFlutterTimingAction());
+    case 'ASSERT_FLUTTER_TIMING':
+      if (args.length < 3) {
+        log.warning(
+          'ASSERT_FLUTTER_TIMING needs minFrames, maxTotalP95Ms, and maxOver33Ms: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        AssertFlutterTimingAction(
+          minFrames: int.parse(args[0]),
+          maxTotalP95Ms: int.parse(args[1]),
+          maxOver33Ms: int.parse(args[2]),
+          maxOver16Ms: args.length >= 4 ? int.parse(args[3]) : 1000000,
+        ),
+      );
     case 'WINDOW_MAXIMIZE':
       return ScriptAutomationAction(time, const WindowMaximize());
     case 'WINDOW_RESTORE':
@@ -548,6 +614,10 @@ ScriptInstruction? _parseInstruction(
         time,
         ClickFlutterPoint(double.parse(args[0]), double.parse(args[1])),
       );
+    case 'CLICK_CONTROLS_PLAY_BUTTON':
+      return ScriptAutomationAction(time, const ClickControlsPlayButton());
+    case 'CLICK_TOOLBAR_MEDIA_INFO_NATIVE':
+      return ScriptAutomationAction(time, const ClickToolbarMediaInfoNative());
     case 'HOVER_CONTROLS_BAR_BUTTONS':
       return ScriptAutomationAction(
         time,
@@ -560,6 +630,14 @@ ScriptInstruction? _parseInstruction(
         time,
         HoverControlsBarButtonsNative(
           steps: args.isNotEmpty ? int.parse(args[0]) : 24,
+        ),
+      );
+    case 'HOVER_TIMELINE':
+      return ScriptAutomationAction(
+        time,
+        HoverTimeline(
+          steps: args.isNotEmpty ? int.parse(args[0]) : 48,
+          stepMs: args.length >= 2 ? int.parse(args[1]) : 8,
         ),
       );
     case 'CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE':
@@ -725,6 +803,17 @@ ScriptInstruction? _parseInstruction(
       }
       final timeoutMs = args.length >= 2 ? int.parse(args[1]) : 10000;
       return ScriptWaitAnalysisProcessCount(
+        time,
+        int.parse(args[0]),
+        Duration(milliseconds: timeoutMs),
+      );
+    case 'WAIT_TRACK_COUNT':
+      if (args.isEmpty) {
+        log.warning('WAIT_TRACK_COUNT missing count argument: $rawLine');
+        return null;
+      }
+      final timeoutMs = args.length >= 2 ? int.parse(args[1]) : 10000;
+      return ScriptWaitTrackCount(
         time,
         int.parse(args[0]),
         Duration(milliseconds: timeoutMs),

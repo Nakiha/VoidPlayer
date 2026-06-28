@@ -17,7 +17,7 @@ constexpr int kCodecLoopSehCaught = AVERROR_EXTERNAL;
 
 #ifdef _WIN32
 
-// D3D11 internals can throw cross-module SEH exceptions through FFmpeg codec
+// Windows hardware decoder internals can throw cross-module SEH exceptions through FFmpeg codec
 // calls. Keep each __try/__except in a noinline function without C++ objects
 // with destructors so MSVC does not merge the SEH scope into a caller.
 __declspec(noinline)

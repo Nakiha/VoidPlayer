@@ -29,19 +29,4 @@ HWND create_hidden_window(int width, int height) {
     return hwnd;
 }
 
-std::pair<vr::D3D11Device*, HWND> create_test_device(int width, int height) {
-    vr::D3D11Device* dev = new vr::D3D11Device();
-    HWND hwnd = create_hidden_window(width, height);
-    dev->initialize(hwnd, width, height);
-    return {dev, hwnd};
-}
-
-void cleanup_test_device(vr::D3D11Device* dev, HWND hwnd) {
-    if (dev) {
-        dev->shutdown();
-        delete dev;
-    }
-    destroy_window(hwnd);
-}
-
 } // namespace vr::test

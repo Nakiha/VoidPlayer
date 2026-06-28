@@ -113,6 +113,20 @@ class DebugFlutterTimingAction extends AutomationAction {
   const DebugFlutterTimingAction() : super('DEBUG_FLUTTER_TIMING');
 }
 
+class AssertFlutterTimingAction extends AutomationAction {
+  final int minFrames;
+  final int maxTotalP95Ms;
+  final int maxOver33Ms;
+  final int maxOver16Ms;
+
+  const AssertFlutterTimingAction({
+    required this.minFrames,
+    required this.maxTotalP95Ms,
+    required this.maxOver33Ms,
+    this.maxOver16Ms = 1000000,
+  }) : super('ASSERT_FLUTTER_TIMING');
+}
+
 class WindowMaximize extends AutomationAction {
   const WindowMaximize() : super('WINDOW_MAXIMIZE');
 }
@@ -146,6 +160,15 @@ class ClickFlutterPoint extends AutomationAction {
   const ClickFlutterPoint(this.x, this.y) : super('CLICK_FLUTTER_POINT');
 }
 
+class ClickControlsPlayButton extends AutomationAction {
+  const ClickControlsPlayButton() : super('CLICK_CONTROLS_PLAY_BUTTON');
+}
+
+class ClickToolbarMediaInfoNative extends AutomationAction {
+  const ClickToolbarMediaInfoNative()
+    : super('CLICK_TOOLBAR_MEDIA_INFO_NATIVE');
+}
+
 class DragViewport extends AutomationAction {
   final double dx;
   final double dy;
@@ -154,6 +177,50 @@ class DragViewport extends AutomationAction {
 
   const DragViewport(this.dx, this.dy, {this.steps = 24, this.stepMs = 16})
     : super('DRAG_VIEWPORT');
+}
+
+class DragViewportNative extends AutomationAction {
+  final double dx;
+  final double dy;
+  final int steps;
+  final int stepMs;
+  final String button;
+
+  const DragViewportNative(
+    this.dx,
+    this.dy, {
+    this.steps = 24,
+    this.stepMs = 16,
+    this.button = 'secondary',
+  }) : super('DRAG_VIEWPORT_NATIVE');
+}
+
+class DragSplitHandleNative extends AutomationAction {
+  final double targetFraction;
+  final int steps;
+  final int stepMs;
+
+  const DragSplitHandleNative(
+    this.targetFraction, {
+    this.steps = 12,
+    this.stepMs = 16,
+  }) : super('DRAG_SPLIT_HANDLE_NATIVE');
+}
+
+class WheelViewportNative extends AutomationAction {
+  final int delta;
+  final int steps;
+  final int stepMs;
+  final double xFraction;
+  final double yFraction;
+
+  const WheelViewportNative(
+    this.delta, {
+    this.steps = 1,
+    this.stepMs = 16,
+    this.xFraction = 0.5,
+    this.yFraction = 0.5,
+  }) : super('WHEEL_VIEWPORT_NATIVE');
 }
 
 class DragViewportSampleOverlay extends AutomationAction {
@@ -216,6 +283,14 @@ class HoverControlsBarButtonsNative extends AutomationAction {
 
   const HoverControlsBarButtonsNative({this.steps = 24})
     : super('HOVER_CONTROLS_BAR_BUTTONS_NATIVE');
+}
+
+class HoverTimeline extends AutomationAction {
+  final int steps;
+  final int stepMs;
+
+  const HoverTimeline({this.steps = 48, this.stepMs = 8})
+    : super('HOVER_TIMELINE');
 }
 
 class ClickMediaHeaderOverlayButtonNative extends AutomationAction {

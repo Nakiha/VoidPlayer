@@ -15,11 +15,10 @@
 namespace vr {
 
 class PresentationMetricsStore;
-class D3D11Device;
-class D3D11RenderBackend;
 struct SharedFp16TextureSnapshot;
 struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
+struct WindowsSourceProjection;
 struct AnalysisOverlayPrimitivePackage;
 
 struct RendererPresentationOverlayHooks {
@@ -157,6 +156,8 @@ public:
     PresentationBackendStats backend_stats() const;
     PresentationBackendDiagnostics backend_diagnostics() const;
     bool copy_last_frame_info(PresentationBackendFrameInfo* out) const;
+    void* native_render_device() const;
+    void* native_render_command_queue() const;
     bool poll_device_removed(const char* operation) const;
     bool device_lost() const;
     long device_removed_reason() const;
@@ -216,6 +217,7 @@ public:
     bool resize_renderer_managed_headless_output(int width,
                                                  int height,
                                                  PresentationMetricsStore& metrics);
+    bool prewarm_renderer_managed_headless_output(int width, int height);
     void cleanup_renderer_managed_headless_pending_buffers();
     bool set_renderer_managed_headless_frame_callback(
         RendererFrameCallback callback);
@@ -229,17 +231,26 @@ public:
     void release_d3d_shared_fp16_texture(int buffer_index,
                                          uint64_t ring_generation) const;
     void set_d3d_shared_fp16_frame_callback(std::function<void()> callback);
-    bool configure_d3d_source_cache(
+    bool update_external_flutter_surface(
+        const PresentationExternalD3D12Surface& surface);
+    void clear_external_flutter_surface();
+    bool draw_frame_to_external_d3d12_target(
+        const RendererDrawSnapshot& snapshot,
+        const char* source,
+        PresentationMetricsStore& metrics,
+        const PresentationExternalD3D12RenderTarget& target,
+        RendererPresentationOverlayHooks overlay_hooks = {});
+    bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors);
-    void clear_d3d_source_cache(const char* reason);
-    bool acquire_d3d_source_cache_bundle(
+    void clear_source_cache(const char* reason);
+    bool update_source_projection(const WindowsSourceProjection& projection);
+    void clear_source_projection();
+    bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot& snapshot) const;
-    void release_d3d_source_cache_bundle(
+    void release_source_cache_bundle(
         int buffer_index, uint64_t ring_generation) const;
-    void set_d3d_source_cache_frame_callback(std::function<void()> callback);
+    void set_source_cache_frame_callback(std::function<void()> callback);
     bool recover_d3d_device_loss(const char* reason, long removed_reason);
-    D3D11RenderBackend* d3d_backend() const;
-    D3D11Device* d3d_device() const;
 #endif
 
 private:

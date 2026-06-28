@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -21,6 +22,8 @@ public:
         const std::string& path,
         bool hw_decode,
         RenderBackendKind render_backend,
+        void* render_device,
+        std::recursive_mutex* device_mutex,
         const SeekRequest* initial_seek) const;
 
     TrackPipelineManager& mutable_tracks_for_mutation();

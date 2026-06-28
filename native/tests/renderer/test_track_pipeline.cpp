@@ -1,8 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "test_utils.h"
-#include "renderer/overlay/analysis_overlay_renderer.h"
-#include "windows/d3d11/render_backend.h"
 #include "renderer/layout/layout_controller.h"
 #include "renderer/layout/layout_geometry.h"
 #include "renderer/track/track_lifecycle.h"
@@ -702,20 +700,6 @@ TEST_CASE("TrackSnapshot collects track GPU memory stats in slot order",
     REQUIRE(collection.packet_queue_bytes == packet_bytes);
     REQUIRE(collection.cpu_frame_bytes == buffer_bytes);
     REQUIRE(collection.total_estimated_bytes == 0);
-}
-
-TEST_CASE("AnalysisOverlayRenderer snapshots rect buffer memory stats",
-          "[analysis_overlay][memory]") {
-    D3D11RenderResources resources;
-    resources.overlay_rect_capacity[0] = 3;
-    resources.overlay_rect_capacity[2] = 5;
-
-    const auto stats = snapshot_analysis_overlay_memory_stats(resources);
-
-    REQUIRE(stats.estimated_bytes ==
-            (3 + 5) * AnalysisOverlayRenderer::gpu_rect_size());
-    REQUIRE(stats.width == 0);
-    REQUIRE(stats.height == 0);
 }
 
 TEST_CASE("TrackLifecycle compacts cached present decisions",

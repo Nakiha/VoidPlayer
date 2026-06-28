@@ -44,6 +44,7 @@ class ViewportPanel extends StatefulWidget {
   final bool nativeCompositorHole;
   final ValueChanged<Offset>? onQuickMarkStart;
   final ValueChanged<Offset>? onQuickMarkUpdate;
+  final VoidCallback? onQuickMarkInteraction;
   final VoidCallback? onQuickMarkEnd;
   final VoidCallback? onQuickMarkCancel;
   final ValueChanged<int?>? onQuickMarkSelect;
@@ -73,6 +74,7 @@ class ViewportPanel extends StatefulWidget {
     this.nativeCompositorHole = false,
     this.onQuickMarkStart,
     this.onQuickMarkUpdate,
+    this.onQuickMarkInteraction,
     this.onQuickMarkEnd,
     this.onQuickMarkCancel,
     this.onQuickMarkSelect,
@@ -97,6 +99,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
   static const double _quickMarkPanelWidth = 428.0;
   static const double _quickMarkPanelHeight = 36.0;
   static const double _quickMarkPanelGap = 10.0;
+  static const Duration _debugInteractionSampleInterval = Duration(
+    milliseconds: 250,
+  );
+  static const Duration _resizePacingLogInterval = Duration(milliseconds: 250);
 
   bool _panning = false;
   bool _splitting = false;
@@ -110,6 +116,51 @@ class _ViewportPanelState extends State<ViewportPanel> {
   Size _lastReportedSurfaceSize = Size.zero;
   double _lastReportedDevicePixelRatio = 0.0;
   double _lastPanZoomScale = 1.0;
+  DateTime? _lastDebugInteractionSampleAt;
+  DateTime? _lastResizePacingLogAt;
+  DateTime? _lastViewportRectPacingLogAt;
+  int _debugPointerMoveCount = 0;
+  int _debugPointerHoverCount = 0;
+  int _debugResizeReportCount = 0;
+  int _debugViewportRectReportCount = 0;
+
+  void _logDebugInteractionSample(
+    String stage,
+    PointerEvent event, {
+    Offset? logicalDelta,
+    Offset? physicalDelta,
+    double? scaleDelta,
+  }) {
+    final now = DateTime.now();
+    final last = _lastDebugInteractionSampleAt;
+    if (last != null &&
+        now.difference(last) < _debugInteractionSampleInterval) {
+      return;
+    }
+    _lastDebugInteractionSampleAt = now;
+    final message =
+        '[WindowsCompositorDebug] viewport interaction sample '
+        'stage=$stage moves=$_debugPointerMoveCount '
+        'hovers=$_debugPointerHoverCount buttons=${event.buttons} '
+        'local=(${event.localPosition.dx.toStringAsFixed(1)},'
+        '${event.localPosition.dy.toStringAsFixed(1)}) '
+        'panning=$_panning splitting=$_splitting '
+        'quickMark=$_quickMarkDragging splitHandle=$_splitHandleDragging '
+        'nativeHole=${widget.nativeCompositorHole} '
+        'mode=${widget.layout.mode} '
+        'zoom=${widget.layout.zoomRatio.toStringAsFixed(3)} '
+        'offset=(${widget.layout.viewOffsetX.toStringAsFixed(1)},'
+        '${widget.layout.viewOffsetY.toStringAsFixed(1)}) '
+        'logicalDelta=${_debugOffset(logicalDelta)} '
+        'physicalDelta=${_debugOffset(physicalDelta)} '
+        'scaleDelta=${scaleDelta?.toStringAsFixed(4) ?? ""}';
+    log.fine(message);
+  }
+
+  String _debugOffset(Offset? value) {
+    if (value == null) return '';
+    return '(${value.dx.toStringAsFixed(1)},${value.dy.toStringAsFixed(1)})';
+  }
 
   void _syncDragButtons(
     int buttons,
@@ -150,6 +201,15 @@ class _ViewportPanelState extends State<ViewportPanel> {
     final box = context.findRenderObject() as RenderBox;
     if (box.size.width <= 0) return;
     widget.onSplit(localX / box.size.width);
+  }
+
+  double? _viewportLocalXFromGlobal(
+    BuildContext context,
+    Offset globalPosition,
+  ) {
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+    return renderObject.globalToLocal(globalPosition).dx;
   }
 
   bool _isOnSplitHandle(BuildContext context, Offset localPosition) {
@@ -594,7 +654,27 @@ class _ViewportPanelState extends State<ViewportPanel> {
       _lastReportedDevicePixelRatio = devicePixelRatio;
       final physicalWidth = (logicalWidth * devicePixelRatio).round();
       final physicalHeight = (logicalHeight * devicePixelRatio).round();
-      log.info(
+      _debugResizeReportCount++;
+      final now = DateTime.now();
+      final lastResizeLog = _lastResizePacingLogAt;
+      final shouldLogResize =
+          _debugResizeReportCount <= 8 ||
+          lastResizeLog == null ||
+          now.difference(lastResizeLog) >= _resizePacingLogInterval;
+      if (shouldLogResize) {
+        _lastResizePacingLogAt = now;
+        log.info(
+          '[WindowsResizePacing] flutter viewportReport '
+          'count=$_debugResizeReportCount '
+          'logical=${logicalWidth.toStringAsFixed(1)}x'
+          '${logicalHeight.toStringAsFixed(1)} '
+          'physical=${physicalWidth}x$physicalHeight '
+          'dpr=${devicePixelRatio.toStringAsFixed(3)} '
+          'nativeHole=${widget.nativeCompositorHole} '
+          'texture=${widget.textureId}',
+        );
+      }
+      log.fine(
         '[WindowsCompositorDebug] viewport resize report '
         'logical=${logicalWidth.toStringAsFixed(1)}x'
         '${logicalHeight.toStringAsFixed(1)} '
@@ -646,7 +726,28 @@ class _ViewportPanelState extends State<ViewportPanel> {
     final height = (logicalSize.height * devicePixelRatio).round();
     final surfaceWidth = surfaceSize.width.round();
     final surfaceHeight = surfaceSize.height.round();
-    log.info(
+    _debugViewportRectReportCount++;
+    final now = DateTime.now();
+    final lastRectLog = _lastViewportRectPacingLogAt;
+    final shouldLogRect =
+        _debugViewportRectReportCount <= 8 ||
+        lastRectLog == null ||
+        now.difference(lastRectLog) >= _resizePacingLogInterval;
+    if (shouldLogRect) {
+      _lastViewportRectPacingLogAt = now;
+      log.info(
+        '[WindowsResizePacing] flutter viewportRect '
+        'count=$_debugViewportRectReportCount '
+        'physical=($left,$top ${width}x$height) '
+        'surface=${surfaceWidth}x$surfaceHeight '
+        'logicalOffset=(${globalOffset.dx.toStringAsFixed(1)},'
+        '${globalOffset.dy.toStringAsFixed(1)}) '
+        'logicalSize=${logicalSize.width.toStringAsFixed(1)}x'
+        '${logicalSize.height.toStringAsFixed(1)} '
+        'dpr=${devicePixelRatio.toStringAsFixed(3)}',
+      );
+    }
+    log.fine(
       '[WindowsCompositorDebug] native compositor viewport rect '
       'physical=($left,$top ${width}x$height) '
       'surface=${surfaceWidth}x$surfaceHeight '
@@ -780,16 +881,18 @@ class _ViewportPanelState extends State<ViewportPanel> {
         },
         onExit: (e) => _clampSplitOnExit(context, e.localPosition),
         onHover: (e) {
+          _debugPointerHoverCount++;
           if (!_panning && !_splitting) {
             _lastMouseLocalPos = e.localPosition;
           }
           _syncDragButtons(e.buttons, e.localPosition);
           _updateSplitFromLocalX(context, e.localPosition.dx);
+          _logDebugInteractionSample('hover', e);
         },
         child: Listener(
           behavior: HitTestBehavior.opaque,
           onPointerDown: (e) {
-            log.info(
+            log.fine(
               '[WindowsCompositorDebug] viewport pointerDown '
               'kind=${e.kind.name} buttons=${e.buttons} '
               'local=(${e.localPosition.dx.toStringAsFixed(1)},'
@@ -821,7 +924,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
             _updateSplitFromLocalX(context, e.localPosition.dx);
           },
           onPointerUp: (e) {
-            log.info(
+            log.fine(
               '[WindowsCompositorDebug] viewport pointerUp '
               'kind=${e.kind.name} buttons=${e.buttons} '
               'local=(${e.localPosition.dx.toStringAsFixed(1)},'
@@ -845,7 +948,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
             );
           },
           onPointerCancel: (_) {
-            log.info(
+            log.fine(
               '[WindowsCompositorDebug] viewport pointerCancel '
               'panning=$_panning splitting=$_splitting '
               'quickMark=$_quickMarkDragging splitHandle=$_splitHandleDragging',
@@ -861,11 +964,13 @@ class _ViewportPanelState extends State<ViewportPanel> {
             _syncDragButtons(0, _lastMouseLocalPos, allowWin32Recovery: true);
           },
           onPointerMove: (e) {
+            _debugPointerMoveCount++;
             if (_quickMarkDragging) {
               if (!widget.interactionPolicy.isPrimaryButtonDown(e.buttons)) {
                 _endQuickMarkDrag();
               } else {
                 _updateQuickMarkDrag(e.localPosition, devicePixelRatio);
+                _logDebugInteractionSample('quick-mark-drag', e);
               }
               return;
             }
@@ -874,6 +979,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                 _endSplitHandleDrag();
               } else {
                 _updateSplitHandleDrag(context, e.localPosition.dx);
+                _logDebugInteractionSample('split-handle-drag', e);
               }
               return;
             }
@@ -882,7 +988,10 @@ class _ViewportPanelState extends State<ViewportPanel> {
               e.localPosition,
               allowWin32Recovery: _panning || _splitting,
             );
-            if (!_panning && !_splitting) return;
+            if (!_panning && !_splitting) {
+              _logDebugInteractionSample('move-ignored', e);
+              return;
+            }
             final logicalDelta = e.localPosition - _lastMouseLocalPos;
             final physicalDelta = logicalDelta * devicePixelRatio;
             _lastMouseLocalPos = e.localPosition;
@@ -892,6 +1001,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
             }
 
             _updateSplitFromLocalX(context, e.localPosition.dx);
+            _logDebugInteractionSample(
+              _panning ? 'pan' : 'split',
+              e,
+              logicalDelta: logicalDelta,
+              physicalDelta: physicalDelta,
+            );
           },
           onPointerSignal: (e) {
             if (e is PointerScrollEvent) {
@@ -916,6 +1031,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
               if (scaleIntent && scaleDelta != 1.0) {
                 _panZoomScaling = true;
                 _zoomByFactor(scaleDelta, e.localPosition * devicePixelRatio);
+                _logDebugInteractionSample(
+                  'pan-zoom-scale',
+                  e,
+                  scaleDelta: scaleDelta,
+                );
                 return;
               }
             }
@@ -924,6 +1044,11 @@ class _ViewportPanelState extends State<ViewportPanel> {
             final physicalPanDelta = e.panDelta * devicePixelRatio;
             if (physicalPanDelta != Offset.zero) {
               widget.onPan(physicalPanDelta);
+              _logDebugInteractionSample(
+                'pan-zoom-pan',
+                e,
+                physicalDelta: physicalPanDelta,
+              );
             }
           },
           onPointerPanZoomEnd: (_) => _resetPanZoom(),
@@ -941,6 +1066,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                 devicePixelRatio: devicePixelRatio,
                 onSelectedMarkChanged: widget.onQuickMarkSelect,
                 onMarkChanged: widget.onQuickMarkChanged,
+                onInteraction: widget.onQuickMarkInteraction,
                 onMarkDeleted: widget.onQuickMarkDeleted,
                 onMarkFocus: widget.onQuickMarkFocus,
               ),
@@ -1016,23 +1142,18 @@ class _ViewportPanelState extends State<ViewportPanel> {
                   behavior: HitTestBehavior.translucent,
                   onPointerDown: (event) {
                     if ((event.buttons & kPrimaryButton) == 0) return;
-                    _startSplitHandleDrag(
+                    final localX = _viewportLocalXFromGlobal(
                       viewportContext,
-                      touchLeft + event.localPosition.dx,
+                      event.position,
                     );
+                    if (localX == null) return;
+                    _startSplitHandleDrag(viewportContext, localX);
                   },
                   onPointerMove: (event) {
                     if ((event.buttons & kPrimaryButton) == 0) {
                       _endSplitHandleDrag();
-                      return;
                     }
-                    _updateSplitHandleDrag(
-                      viewportContext,
-                      touchLeft + event.localPosition.dx,
-                    );
                   },
-                  onPointerUp: (_) => _endSplitHandleDrag(),
-                  onPointerCancel: (_) => _endSplitHandleDrag(),
                   child: Center(child: _SplitHandleGrip()),
                 ),
               ),

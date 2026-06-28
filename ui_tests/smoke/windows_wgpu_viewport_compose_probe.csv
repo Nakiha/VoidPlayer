@@ -1,0 +1,20 @@
+# Windows wgpu D3D12 compose regression: native video must be clipped to the
+# Flutter viewport hole while the full premultiplied Flutter surface remains
+# composited over the whole window.
+@WINDOW, 1280, 720
+0.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+2.8, WAIT_TRACK_COUNT, 1, 10000
+2.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-sdr
+2.91, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
+3.0, CAPTURE_WINDOW, wgpu_compose_single_window, build/wgpu_compose_single_window.png
+3.1, ASSERT_CAPTURE_REGION_NOT_BLACK, wgpu_compose_single_window, bottom, 0.01, 4.0
+3.2, ADD_MEDIA, resources/video/mpeg2_10s_1280x720.ts
+5.2, WAIT_TRACK_COUNT, 2, 10000
+5.3, SET_LAYOUT_MODE, 1
+5.8, CAPTURE_WINDOW, wgpu_compose_split_window, build/wgpu_compose_split_window.png
+5.9, ASSERT_CAPTURE_REGION_NOT_BLACK, wgpu_compose_split_window, bottom, 0.01, 4.0
+6.0, TOGGLE_MARKS_SIDEBAR
+6.8, CAPTURE_WINDOW, wgpu_compose_sidebar_window, build/wgpu_compose_sidebar_window.png
+6.9, ASSERT_CAPTURE_REGION_NOT_BLACK, wgpu_compose_sidebar_window, right, 0.01, 4.0
+7.0, ASSERT_CAPTURE_REGION_NOT_BLACK, wgpu_compose_sidebar_window, bottom, 0.01, 4.0
+7.1, QUIT, 0

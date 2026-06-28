@@ -48,7 +48,7 @@ REQUIRED_PATCH_MARKERS = {
         "FLUTTER_WINDOWS_SURFACE_EXPORT_API"
     ),
     "engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.cc": (
-        "D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX"
+        "kFlutterDesktopWindowsSurfaceBackendD3D12"
     ),
 }
 

@@ -148,7 +148,7 @@ PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
     return impl_->presentation_backend_metrics();
 }
 
-D3D11BackendMetrics Renderer::d3d_backend_metrics() const {
+PresentationBackendMetrics Renderer::d3d_backend_metrics() const {
     return impl_->d3d_backend_metrics();
 }
 
@@ -238,6 +238,14 @@ void Renderer::release_shared_texture(int buffer_index, uint64_t buffer_generati
     impl_->release_shared_texture(buffer_index, buffer_generation);
 }
 
+void* Renderer::native_render_device() const {
+    return impl_->native_render_device();
+}
+
+void* Renderer::native_render_command_queue() const {
+    return impl_->native_render_command_queue();
+}
+
 bool Renderer::acquire_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
     return impl_->acquire_shared_fp16_texture(snapshot);
@@ -252,6 +260,21 @@ void Renderer::set_shared_fp16_frame_callback(std::function<void()> cb) {
     impl_->set_shared_fp16_frame_callback(std::move(cb));
 }
 
+bool Renderer::update_external_flutter_surface(
+    const PresentationExternalD3D12Surface& surface) {
+    return impl_->update_external_flutter_surface(surface);
+}
+
+void Renderer::clear_external_flutter_surface() {
+    impl_->clear_external_flutter_surface();
+}
+
+bool Renderer::draw_current_frame_to_external_d3d12_target(
+    const PresentationExternalD3D12RenderTarget& target,
+    const char* reason) {
+    return impl_->draw_current_frame_to_external_d3d12_target(target, reason);
+}
+
 bool Renderer::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     return impl_->configure_source_cache(descriptors);
@@ -259,6 +282,15 @@ bool Renderer::configure_source_cache(
 
 void Renderer::clear_source_cache(const char* reason) {
     impl_->clear_source_cache(reason);
+}
+
+bool Renderer::update_source_projection(
+    const WindowsSourceProjection& projection) {
+    return impl_->update_source_projection(projection);
+}
+
+void Renderer::clear_source_projection() {
+    impl_->clear_source_projection();
 }
 
 bool Renderer::acquire_source_cache_bundle(
@@ -273,6 +305,10 @@ void Renderer::release_source_cache_bundle(
 
 void Renderer::set_source_cache_frame_callback(std::function<void()> cb) {
     impl_->set_source_cache_frame_callback(std::move(cb));
+}
+
+bool Renderer::prewarm_presentation_target(int width, int height) {
+    return impl_->prewarm_presentation_target(width, height);
 }
 
 void Renderer::resize(int width, int height) {

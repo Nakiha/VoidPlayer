@@ -24,6 +24,30 @@ struct PresentationBackendConfig {
     bool shared_fp16_output = false;
 };
 
+struct PresentationExternalD3D12Surface {
+    void* resource = nullptr;
+    void* fence_handle = nullptr;
+    int32_t width = 0;
+    int32_t height = 0;
+    int32_t format = 0;
+    int32_t sync = 0;
+    uint64_t fence_value = 0;
+    uint64_t ring_generation = 0;
+    uint64_t frame_generation = 0;
+};
+
+struct PresentationExternalD3D12RenderTarget {
+    void* resource = nullptr;
+    int32_t width = 0;
+    int32_t height = 0;
+    int32_t format = 0;
+    int32_t color_space = 0;
+    float viewport_left = 0.0f;
+    float viewport_top = 0.0f;
+    float viewport_right = 1.0f;
+    float viewport_bottom = 1.0f;
+};
+
 struct PresentationBackendFrameInfo {
     int32_t width = 0;
     int32_t height = 0;
@@ -133,8 +157,37 @@ struct PresentationBackendDiagnostics {
     uint64_t source_cache_presented_anchor_publish_count = 0;
     uint64_t source_cache_backpressure_count = 0;
     uint64_t source_cache_fallback_count = 0;
+    uint64_t source_projection_update_count = 0;
+    uint64_t source_projection_consume_count = 0;
+    bool source_projection_active = false;
+    uint64_t prewarm_request_count = 0;
+    uint64_t prewarm_ready_count = 0;
+    uint64_t prewarm_hit_count = 0;
+    uint64_t prewarm_dropped_count = 0;
+    uint64_t prewarm_consumed_count = 0;
     std::string source_cache_format = "R16G16B16A16_FLOAT";
     std::string source_cache_last_error = "none";
+    uint64_t external_flutter_surface_generation = 0;
+    uint64_t external_flutter_surface_consumed_generation = 0;
+    uint64_t external_flutter_surface_update_count = 0;
+    uint64_t external_flutter_surface_consume_count = 0;
+    uint64_t external_flutter_surface_wait_count = 0;
+    uint64_t external_flutter_surface_wait_failure_count = 0;
+    std::string external_flutter_surface_last_error = "none";
+    bool overlay_layer_active = false;
+    std::string overlay_layer_mode = "inactive";
+    uint64_t overlay_layer_generation = 0;
+    uint64_t overlay_layer_rebuild_count = 0;
+    uint64_t overlay_layer_reuse_count = 0;
+    uint64_t overlay_layer_upload_count = 0;
+    uint64_t overlay_layer_composite_count = 0;
+    uint64_t overlay_layer_bytes = 0;
+    uint64_t overlay_layer_fill_rect_count = 0;
+    uint64_t overlay_layer_line_rect_count = 0;
+    uint64_t overlay_layer_motion_line_count = 0;
+    uint64_t overlay_layer_last_encode_us = 0;
+    std::string overlay_layer_fallback_reason = "none";
+    std::string overlay_layer_last_error = "none";
 };
 
 inline bool is_transient_presentation_backpressure_error(const std::string& error) {

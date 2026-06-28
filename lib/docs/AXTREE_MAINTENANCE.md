@@ -12,7 +12,7 @@ AXTree，也不能整块 `ExcludeSemantics`。
 主窗口：
 
 - `Main toolbar`：打开媒体、视图模式、信息、性能、analysis、设置等真实控件。
-- `Video viewport`：DX11 Texture 上屏区，一个粗粒度 image 节点；分屏模式额外保留
+- `Video viewport`：native texture 上屏区，一个粗粒度 image 节点；分屏模式额外保留
   `Viewport split handle` slider 节点。
 - `Playback timeline`：媒体头、播放控制、seek slider、循环区间、track rows。
 - Track row：每条轨道一个稳定容器；文件名、音频、offset、移除按钮保留控件语义；

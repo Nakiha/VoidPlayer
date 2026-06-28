@@ -7,15 +7,17 @@
 VoidPlayer native 是一套共享媒体播放与渲染调度内核，加平台 presentation backend：
 
 - shared demux/decode/playback/seek/loop/track/layout/render scheduler
-- Windows presentation backend：D3D11 / shared texture / Flutter Texture
-- macOS presentation backend：Metal / CVPixelBuffer / IOSurface / Flutter Texture
+- Windows presentation backend：wgpu/D3D12 render core + DComp/DXGI present bridge
+- macOS presentation backend：wgpu/Metal / CVPixelBuffer / IOSurface target
 - shared audio engine：miniaudio 输出，Windows 与 macOS 使用各自系统设备后端
 - shared diagnostics / capture / UI automation hooks
 
-平台 runner 只负责 OS glue。Windows runner 负责 Win32/D3D11 texture bridge，macOS runner 负责
-Cocoa、sandbox file access、platform channel、FlutterTexture、CVPixelBuffer lifecycle 和 frame
-notification。播放策略、seek、loop、track lifecycle、layout、refresh completion 和 failure state 都属于
-shared native code。
+平台 runner 只负责 OS glue。Windows runner 负责 Win32、Flutter D3D12 surface
+acquisition、DComp/DXGI present target、HDR/SDR 与 device-loss 边界；macOS
+runner 负责 Cocoa、sandbox file access、platform channel、IOSurface /
+CVPixelBuffer lifecycle 和 frame notification。播放策略、seek、loop、track
+lifecycle、layout、refresh completion 和 failure state 都属于 shared native
+code。
 
 ## 当前架构
 
@@ -29,8 +31,8 @@ Dart UI / Actions
               -> RenderSink / PresentDecision
               -> RendererDrawSnapshot
               -> platform PresentationBackend
-                 -> D3D11 shared texture on Windows
-                 -> Metal / CVPixelBuffer / IOSurface on macOS
+                  -> wgpu/D3D12 + DComp/DXGI present bridge on Windows
+                  -> wgpu/Metal / CVPixelBuffer / IOSurface on macOS
 ```
 
 `Renderer` 拥有 playback/render cadence、track selection、carry-forward、layout constants 和 present
@@ -51,10 +53,11 @@ native/
 │   ├── sync/            # RenderSink and present scheduling
 │   └── exports/         # C FFI and pybind11 C++ binding surfaces
 ├── python/              # Python convenience package source for dist/python
-├── windows/             # Windows native facade, crash hooks, and D3D11 backend
+├── windows/             # Windows native facade, crash hooks, wgpu/D3D12, and legacy D3D11 backend
 │   ├── player/          # Windows NativePlayer facade
-│   ├── decode/          # Windows D3D11VA decode integration
-│   ├── d3d11/           # Windows D3D11 backend, overlay, capture, and renderer compatibility hooks
+│   ├── decode/          # Windows D3D12VA / legacy D3D11VA decode integration
+│   ├── wgpu/            # Windows wgpu/D3D12 backend and texture import bridge
+│   ├── d3d11/           # Legacy D3D11 backend, overlay, capture, and compatibility hooks
 │   └── common/          # Windows process-global helpers
 ├── macos/               # macOS native bridge and Metal presentation backend
 ├── examples/            # development-only demos and sample entrypoints
@@ -71,7 +74,7 @@ native/
 | `Renderer` | 共享 render scheduler，拥有 track lifecycle、seek/loop/layout command surface、present cadence |
 | `RenderSink` / `PresentDecision` | 平台无关的多轨 frame selection、identity、carry-forward、layout decision |
 | `RendererDrawSnapshot` | renderer 到 backend 的 immutable draw input |
-| `PresentationBackend` | 平台 presentation seam；Windows 实现 D3D11，macOS 实现 Metal/CVPixelBuffer |
+| `PresentationBackend` | 平台 presentation seam；Windows 目标实现 wgpu/D3D12，macOS 目标实现 wgpu/Metal/CVPixelBuffer |
 | `TrackPipeline` | 每轨 demux/decode/buffer state，使用 file id + generation 防止 remove/re-add 串帧 |
 | `FrameConverter` | AVFrame 到 `TextureFrame`；保留硬解 surface 或做确定性 CPU pack |
 
@@ -111,7 +114,7 @@ Media file
   -> PresentDecision
   -> RendererDrawSnapshot
   -> PresentationBackend::draw_frame()
-  -> Flutter Texture / native capture
+  -> platform final target / native capture
 ```
 
 Windows 和 macOS 共用从 demux 到 `RendererDrawSnapshot` 的主路径。差异从 hardware decode provider 和
@@ -119,12 +122,14 @@ presentation backend 开始：
 
 | 平台 | 硬解 provider | presentation backend |
 | --- | --- | --- |
-| Windows | D3D11VA | D3D11 shared texture / headless output / optional swap chain |
-| macOS | VideoToolbox | Metal target backed by CVPixelBuffer / IOSurface |
+| Windows | D3D12VA, legacy D3D11VA while compatibility remains | wgpu/D3D12 target + DComp/DXGI present bridge |
+| macOS | VideoToolbox | wgpu/Metal target backed by CVPixelBuffer / IOSurface |
 
 ## 当前播放路径状态
 
-- Windows D3D11 path 是原始产品路径，仍需在 Windows host 上做 preservation gate。
+- Windows 正从 D3D11 产品路径迁到 D3D12VA + wgpu/D3D12 render core；
+  D3D11/DComp present/source/overlay bridge 只作为迁移期兼容层，仍需在
+  Windows host 上做 preservation gate。
 - macOS native playback 已进入 stabilization / release-readiness：shared scheduling、renderer-owned Metal
   presentation、VideoToolbox zero-copy、software fallback、refresh completion、per-track diagnostics 都在 normal route。
 - macOS software decode fallback 是显式诊断路径，不是隐藏主路径。
@@ -149,7 +154,6 @@ presentation backend 开始：
 
 | 文档 | 内容 |
 | --- | --- |
-| [D3D11 后端](D3D11_BACKEND.md) | Windows D3D11 device、shared texture、capture、device-loss behavior |
 | [Windows Presentation Backend](WINDOWS_PRESENTATION_BACKEND.md) | Windows 产品上屏路线、资源所有权、fallback 与 diagnostics contract |
 | [macOS Readiness](MACOS_READINESS.md) | macOS readiness、runner 边界、remaining gates |
 | [macOS Presentation Backend](MACOS_PRESENTATION_BACKEND.md) | macOS renderer-owned Metal route, fallback adapter, refresh, and diagnostics contract |

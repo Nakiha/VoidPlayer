@@ -39,9 +39,9 @@ struct VSOutput {
 Texture2D u_textures[4] : register(t0);
 SamplerState u_sampler : register(s0);
 
-// NV12/P010 Y plane textures (software upload and D3D11VA decode paths)
+// NV12/P010 Y plane textures (software upload and hardware decode paths)
 Texture2D<float> u_textures_y[4] : register(t4);
-// NV12/P010 UV plane textures (software upload and D3D11VA decode paths)
+// NV12/P010 UV plane textures (software upload and hardware decode paths)
 Texture2D<float2> u_textures_uv[4] : register(t8);
 
 // Planar YUV software upload textures.

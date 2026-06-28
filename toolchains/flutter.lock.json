@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "name": "voidplayer-flutter",
   "upstreamFlutter": "3.44.1",
-  "flutterVersion": "3.44.2-0.0.pre-6",
+  "flutterVersion": "3.44.2-0.0.pre-12",
   "dartSdkVersion": "3.12.1",
-  "frameworkRevision": "cad896c21e492160c4e789b1beb2d463e7bd8a50",
+  "frameworkRevision": "dd94358590cf3de70bff7c60bfb7f41f33146b3b",
   "engineRevision": "c416acfeb8126e097f758c664aaa3da929e27da0",
   "forkRemote": "https://github.com/Nakiha/VoidPlayer-Flutter.git",
-  "forkRef": "codex/windows-surface-export",
-  "forkBranch": "codex/windows-surface-export",
-  "forkCommit": "cad896c21e492160c4e789b1beb2d463e7bd8a50",
+  "forkRef": "codex/windows-surface-export-pacing",
+  "forkBranch": "codex/windows-surface-export-pacing",
+  "forkCommit": "dd94358590cf3de70bff7c60bfb7f41f33146b3b",
   "defaultInstallPath": ".toolchains/flutter",
   "macosLocalEngineReleaseTag": "voidplayer-flutter-3.44.1-hdr.2",
-  "windowsEngineReleaseTag": "voidplayer-flutter-cad896c21e49-windows.1",
+  "windowsEngineReleaseTag": "voidplayer-flutter-dd94358590cf-windows.1",
   "macosLocalEngineArtifacts": {
     "debug": {
       "engine": "host_debug_unopt_arm64",
@@ -31,14 +31,14 @@
     "debug": {
       "engine": "host_debug_unopt",
       "host": "host_debug_unopt",
-      "asset": "voidplayer-flutter-cad896c21e49-windows-host_debug_unopt.zip",
-      "sha256": "8c8e99706b4ff816e5a158cfb03dc5f34772666ae5066742359ea6c5f9e8b261"
+      "asset": "voidplayer-flutter-dd94358590cf-windows-host_debug_unopt.zip",
+      "sha256": "e8dc97536fc3f90df00c0a17fa892f3fd58d47e1bb3c89fe2bfa2e588b79ecd2"
     },
     "release": {
       "engine": "host_release",
       "host": "host_release",
-      "asset": "voidplayer-flutter-cad896c21e49-windows-host_release.zip",
-      "sha256": "ba8488cabec685fc4b4021c0382c08d7a2faced51d1e937e4bc04dd251b767f3"
+      "asset": "voidplayer-flutter-dd94358590cf-windows-host_release.zip",
+      "sha256": "3d9f3fc57ee8a09e9d17ba1660da5c6d5155fb980b1c4bb3d7be4ee5097a25a9"
     }
   },
   "requiredPatchMarkers": [
@@ -56,7 +56,7 @@
     },
     {
       "path": "engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.cc",
-      "contains": "D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX"
+      "contains": "kFlutterDesktopWindowsSurfaceBackendD3D12"
     }
   ]
 }

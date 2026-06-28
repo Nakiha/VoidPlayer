@@ -13,9 +13,17 @@ std::unique_ptr<TrackPipeline> RendererTrackRegistry::create_pipeline(
     const std::string& path,
     bool hw_decode,
     RenderBackendKind render_backend,
+    void* render_device,
+    std::recursive_mutex* device_mutex,
     const SeekRequest* initial_seek) const {
     TrackPipelineOpenOptions options;
     options.render_backend = render_backend;
+    if (render_backend == RenderBackendKind::WgpuD3D12 && render_device) {
+        options.use_default_decode_device_mode = false;
+        options.decode_device_mode = DecodeDeviceMode::SharedRenderDevice;
+        options.render_device = render_device;
+        options.device_mutex = device_mutex;
+    }
     return factory_.create_opened_pipeline(
         path, hw_decode, initial_seek, options);
 }

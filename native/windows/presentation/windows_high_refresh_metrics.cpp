@@ -31,6 +31,8 @@ void WindowsHighRefreshMetrics::reset(int64_t display_hz) {
     overlay_layer_reuse_count_ = 0;
     present_interval_us_.clear();
     composite_us_.clear();
+    draw_us_.clear();
+    present_block_us_.clear();
     acquire_wait_us_.clear();
     interaction_input_to_present_us_.clear();
     overlay_composite_us_.clear();
@@ -51,6 +53,14 @@ void WindowsHighRefreshMetrics::record_present_interval_us(int64_t value) {
 
 void WindowsHighRefreshMetrics::record_composite_us(int64_t value) {
     append_bounded(composite_us_, value);
+}
+
+void WindowsHighRefreshMetrics::record_draw_us(int64_t value) {
+    append_bounded(draw_us_, value);
+}
+
+void WindowsHighRefreshMetrics::record_present_block_us(int64_t value) {
+    append_bounded(present_block_us_, value);
 }
 
 void WindowsHighRefreshMetrics::record_acquire_wait_us(int64_t value) {
@@ -104,6 +114,8 @@ WindowsHighRefreshMetricsSnapshot WindowsHighRefreshMetrics::snapshot() const {
     result.gate_supported = display_hz_ >= 100;
     result.present_interval_p95_us = percentile95(present_interval_us_);
     result.composite_p95_us = percentile95(composite_us_);
+    result.draw_p95_us = percentile95(draw_us_);
+    result.present_block_p95_us = percentile95(present_block_us_);
     result.acquire_wait_p95_us = percentile95(acquire_wait_us_);
     result.interaction_input_to_present_p95_us =
         percentile95(interaction_input_to_present_us_);

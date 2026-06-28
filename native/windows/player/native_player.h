@@ -13,6 +13,7 @@ namespace vr {
 struct SharedFp16TextureSnapshot;
 struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
+struct WindowsSourceProjection;
 
 /// Native player facade that owns playback control and the video renderer as
 /// peers. FFI can adopt this type without changing the renderer/video internals.
@@ -72,12 +73,23 @@ public:
     int texture_height() const;
     bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
     void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
+    void* native_render_device() const;
+    void* native_render_command_queue() const;
     bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
     void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
     void set_shared_fp16_frame_callback(std::function<void()> cb);
+    bool update_external_flutter_surface(
+        const PresentationExternalD3D12Surface& surface);
+    void clear_external_flutter_surface();
+    bool draw_current_frame_to_external_d3d12_target(
+        const PresentationExternalD3D12RenderTarget& target,
+        const char* reason);
+    std::string presentation_backend_last_error() const;
     bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors);
     void clear_source_cache(const char* reason);
+    bool update_source_projection(const WindowsSourceProjection& projection);
+    void clear_source_projection();
     bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot& snapshot) const;
     void release_source_cache_bundle(
@@ -87,6 +99,7 @@ public:
     bool update_presentation_sdr_white_level(double nits);
     std::shared_ptr<const AnalysisOverlayPrimitivePackage>
     current_overlay_primitives(std::string* error);
+    bool prewarm_presentation_target(int width, int height);
     void resize(int width, int height);
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
     bool capture_front_buffer_region(int x,

@@ -4,8 +4,8 @@
 # generations without restoring Flutter Texture video.
 @WINDOW, 1366, 768
 0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
-1.8, ASSERT_TRACK_COUNT, 1
-2.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+2.8, ASSERT_TRACK_COUNT, 1
+3.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
 4.0, ASSERT_TRACK_COUNT, 2
 4.1, ASSERT_PAUSED
 4.2, TOGGLE_ANALYSIS_OVERLAY, 0
@@ -26,7 +26,7 @@
 5.71, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceCacheConsumedGeneration, 1
 5.72, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorOverlayLineRectCount, 1
 5.73, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsOverlayRetainedLayerActive, true
-5.74, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsOverlayRetainedLayerMode, retained-primitive-buffer
+5.74, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsOverlayRetainedLayerMode, wgpu-d3d12-viewport-direct
 5.75, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsOverlayLayerFallbackReason, none
 5.8, SET_LAYOUT_MODE, 1
 5.9, SET_SPLIT_POS, 0.35
@@ -43,7 +43,7 @@
 9.8, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompResizeCount, 1
 9.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsSourceCacheBackpressureCount, 0, 100
 9.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsHotPathActive, true
-9.92, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-dcomp
+9.92, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-wgpu-d3d12
 9.93, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsHotPathSourceCacheReuseCount, 1
 9.94, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathViewportRedrawDuringProjectionCount, 0, 0
 10.0, DEBUG_FAIL_NATIVE_COMPOSITOR, source-projection-ui-failure

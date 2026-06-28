@@ -92,6 +92,9 @@ private:
     void Resize(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void PrewarmNativePresentationTargetSize(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void SetViewportBackgroundColor(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
@@ -99,6 +102,9 @@ private:
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void RequestNativeCompositorFlutterFrame(
+        const flutter::EncodableValue* arguments,
+        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+    void BoostNativeCompositorFlutterInteraction(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void PrepareNativeCompositorSourceCache(
@@ -195,6 +201,7 @@ private:
     vr::WindowsPresentationPolicy presentation_policy_;
     std::unique_ptr<WindowsNativeCompositor> native_compositor_;
     std::string native_compositor_source_signature_;
+    std::string native_compositor_source_failure_signature_;
     vr::WindowsDeviceRecoveryDiagnostics device_recovery_;
     void* flutter_view_handle_ = nullptr;
     std::string presentation_sdr_white_level_status_ = "nominal-default";

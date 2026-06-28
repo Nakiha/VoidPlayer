@@ -11,6 +11,7 @@ extension MainWindowComposition on MainWindowController {
       stateStore: stateStore,
       trackManager: trackManager,
       mounted: mounted,
+      onNativeResizeCommitted: _onNativeCompositorResizeCommitted,
     );
     stateStore.setLayout(
       _layout.copyWith(

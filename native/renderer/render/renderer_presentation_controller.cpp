@@ -3,10 +3,6 @@
 #include "renderer/metrics/presentation_metrics_store.h"
 #include "renderer/render/swap_chain_present_policy.h"
 
-#ifdef _WIN32
-#include "windows/d3d11/render_backend.h"
-#endif
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -128,6 +124,16 @@ bool RendererPresentationController::copy_last_frame_info(
     PresentationBackendFrameInfo* out) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     return backend_ && backend_->copy_last_frame_info(out);
+}
+
+void* RendererPresentationController::native_render_device() const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ ? backend_->native_render_device() : nullptr;
+}
+
+void* RendererPresentationController::native_render_command_queue() const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ ? backend_->native_render_command_queue() : nullptr;
 }
 
 bool RendererPresentationController::poll_device_removed(const char* operation) const {
@@ -528,16 +534,7 @@ bool RendererPresentationController::capture_backend_front_buffer_region(
 
 RendererPresentationD3DMemorySnapshot
 RendererPresentationController::d3d_memory_snapshot() const {
-    RendererPresentationD3DMemorySnapshot result;
-#ifdef _WIN32
-    std::lock_guard<std::recursive_mutex> device_lock(device_mutex_);
-    if (auto* backend = d3d_backend()) {
-        backend->snapshot_memory_stats(
-            result.stats,
-            result.presenter_copy_texture_bytes_by_slot);
-    }
-#endif
-    return result;
+    return {};
 }
 
 bool RendererPresentationController::resize_renderer_managed_headless_output(
@@ -551,6 +548,14 @@ bool RendererPresentationController::resize_renderer_managed_headless_output(
     }
     metrics.note_shared_texture_resize();
     return true;
+}
+
+bool RendererPresentationController::prewarm_renderer_managed_headless_output(
+    int width,
+    int height) {
+    std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
+    return backend_ &&
+           backend_->prewarm_renderer_managed_headless_output(width, height);
 }
 
 void RendererPresentationController::cleanup_renderer_managed_headless_pending_buffers() {
@@ -580,35 +585,28 @@ bool RendererPresentationController::acquire_d3d_shared_texture(
     SharedTextureSnapshot& snapshot,
     PresentationMetricsStore& metrics) const {
     snapshot = {};
-    auto* backend = d3d_backend();
-    if (!backend || !backend->acquire_shared_texture(snapshot)) {
-        metrics.note_texture_sharing_failure();
-        return false;
-    }
-    return true;
+    metrics.note_texture_sharing_failure();
+    return false;
 }
 
 void RendererPresentationController::release_d3d_shared_texture(
     int buffer_index,
     uint64_t buffer_generation) const {
-    if (auto* backend = d3d_backend()) {
-        backend->release_shared_texture(buffer_index, buffer_generation);
-    }
+    (void)buffer_index;
+    (void)buffer_generation;
 }
 
 bool RendererPresentationController::acquire_d3d_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    return backend && backend->acquire_shared_fp16_texture(snapshot);
+    return backend_ && backend_->acquire_shared_fp16_texture(snapshot);
 }
 
 void RendererPresentationController::release_d3d_shared_fp16_texture(
     int buffer_index, uint64_t ring_generation) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    if (backend) {
-        backend->release_shared_fp16_texture(
+    if (backend_) {
+        backend_->release_shared_fp16_texture(
             buffer_index, ring_generation);
     }
 }
@@ -616,48 +614,98 @@ void RendererPresentationController::release_d3d_shared_fp16_texture(
 void RendererPresentationController::set_d3d_shared_fp16_frame_callback(
     std::function<void()> callback) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    if (backend) {
-        backend->set_shared_fp16_frame_callback(std::move(callback));
+    if (backend_) {
+        backend_->set_shared_fp16_frame_callback(std::move(callback));
     }
 }
 
-bool RendererPresentationController::configure_d3d_source_cache(
+bool RendererPresentationController::update_external_flutter_surface(
+    const PresentationExternalD3D12Surface& surface) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ && backend_->update_external_flutter_surface(surface);
+}
+
+void RendererPresentationController::clear_external_flutter_surface() {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (backend_) {
+        backend_->clear_external_flutter_surface();
+    }
+}
+
+bool RendererPresentationController::draw_frame_to_external_d3d12_target(
+    const RendererDrawSnapshot& snapshot,
+    const char* source,
+    PresentationMetricsStore& metrics,
+    const PresentationExternalD3D12RenderTarget& target,
+    RendererPresentationOverlayHooks overlay_hooks) {
+    if (!backend_) {
+        return false;
+    }
+    PresentationBackendDrawHooks hooks;
+    hooks.draw_source = source;
+    hooks.wait_gpu_idle = [this, &metrics](const char* label) {
+        wait_gpu_idle(label, metrics);
+    };
+    hooks.record_frame_copy_us = [&metrics](uint64_t elapsed_us) {
+        metrics.frame_copy_us.fetch_add(elapsed_us, std::memory_order_relaxed);
+        metrics.frame_copy_count.fetch_add(1, std::memory_order_relaxed);
+    };
+    hooks.draw_overlay = std::move(overlay_hooks.draw_overlay);
+    hooks.composite_bgra_overlay =
+        std::move(overlay_hooks.composite_bgra_overlay);
+    hooks.build_overlay_primitives =
+        std::move(overlay_hooks.build_overlay_primitives);
+    return backend_->draw_frame_to_external_d3d12_target(
+        snapshot, hooks, target);
+}
+
+bool RendererPresentationController::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    return backend && backend->configure_source_cache(descriptors);
+    return backend_ && backend_->configure_source_cache(descriptors);
 }
 
-void RendererPresentationController::clear_d3d_source_cache(
+void RendererPresentationController::clear_source_cache(
     const char* reason) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (auto* backend = d3d_backend()) {
-        backend->clear_source_cache(reason);
+    if (backend_) {
+        backend_->clear_source_cache(reason);
     }
 }
 
-bool RendererPresentationController::acquire_d3d_source_cache_bundle(
-    SharedSourceCacheBundleSnapshot& snapshot) const {
+bool RendererPresentationController::update_source_projection(
+    const WindowsSourceProjection& projection) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    return backend && backend->acquire_source_cache_bundle(snapshot);
+    return backend_ && backend_->update_source_projection(projection);
 }
 
-void RendererPresentationController::release_d3d_source_cache_bundle(
+void RendererPresentationController::clear_source_projection() {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (backend_) {
+        backend_->clear_source_projection();
+    }
+}
+
+bool RendererPresentationController::acquire_source_cache_bundle(
+    SharedSourceCacheBundleSnapshot& snapshot) const {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ && backend_->acquire_source_cache_bundle(snapshot);
+}
+
+void RendererPresentationController::release_source_cache_bundle(
     int buffer_index, uint64_t ring_generation) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (auto* backend = d3d_backend()) {
-        backend->release_source_cache_bundle(
+    if (backend_) {
+        backend_->release_source_cache_bundle(
             buffer_index, ring_generation);
     }
 }
 
-void RendererPresentationController::set_d3d_source_cache_frame_callback(
+void RendererPresentationController::set_source_cache_frame_callback(
     std::function<void()> callback) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (auto* backend = d3d_backend()) {
-        backend->set_source_cache_frame_callback(std::move(callback));
+    if (backend_) {
+        backend_->set_source_cache_frame_callback(std::move(callback));
     }
 }
 
@@ -665,20 +713,9 @@ bool RendererPresentationController::recover_d3d_device_loss(
     const char* reason,
     long removed_reason) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    return backend && backend->recover_device_loss(reason, removed_reason);
-}
-
-D3D11RenderBackend* RendererPresentationController::d3d_backend() const {
-    if (!backend_ || backend_->kind() != PresentationBackendKind::D3D11) {
-        return nullptr;
-    }
-    return static_cast<D3D11RenderBackend*>(backend_.get());
-}
-
-D3D11Device* RendererPresentationController::d3d_device() const {
-    auto* backend = d3d_backend();
-    return backend ? backend->device() : nullptr;
+    (void)reason;
+    (void)removed_reason;
+    return false;
 }
 
 #endif

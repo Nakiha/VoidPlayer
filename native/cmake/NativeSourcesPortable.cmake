@@ -19,6 +19,7 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/media/seek_controller.cpp"
     "${VOID_NATIVE_DIR}/renderer/capture/bgra_capture_metrics.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/presentation_package.cpp"
+    "${VOID_NATIVE_DIR}/renderer/render/presentation_backend_factory.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/render_loop_controller.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/presentation_scheduler.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/presentation_snapshot.cpp"

@@ -5,12 +5,12 @@
 #include <mutex>
 #include <utility>
 #include <atomic>
-#include <d3d11.h>
-#include <wrl/client.h>
+#include <d3d12.h>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/buffer.h>
+#include <libavutil/hwcontext_d3d12va.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/mem.h>
 }
@@ -481,16 +481,16 @@ TEST_CASE("FrameConverter: YUVJ444P defaults to full range when metadata is abse
     av_frame_free(&frame);
 }
 
-TEST_CASE("FrameConverter: init_hardware sets hardware mode", "[frame_converter]") {
+TEST_CASE("FrameConverter: init_hardware sets D3D12 hardware mode", "[frame_converter]") {
     FrameConverter converter;
     std::recursive_mutex device_mutex;
-    // Pass null pointers since we are not creating a real D3D11 device in tests
+    // Pass null pointers because metadata-only initialization does not create a real device.
     bool ok = converter.init_hardware(
         nullptr,
         nullptr,
         1920,
         1080,
-        HwDecodeType::D3D11VA,
+        HwDecodeType::D3D12VA,
         false,
         &device_mutex);
     REQUIRE(ok == true);
@@ -535,55 +535,75 @@ TEST_CASE("FrameConverter: unsupported software format returns no frame",
     av_frame_free(&frame);
 }
 
-TEST_CASE("FrameConverter: direct D3D11 hardware frame keeps AVFrame ownership",
-          "[frame_converter][hw][av_frame_lifetime]") {
-    Microsoft::WRL::ComPtr<ID3D11Device> device;
-    D3D_FEATURE_LEVEL feature_level = D3D_FEATURE_LEVEL_11_0;
-    REQUIRE(SUCCEEDED(D3D11CreateDevice(
-        nullptr,
-        D3D_DRIVER_TYPE_HARDWARE,
-        nullptr,
-        0,
-        &feature_level,
-        1,
-        D3D11_SDK_VERSION,
-        &device,
-        nullptr,
-        nullptr)));
+TEST_CASE("TextureFrame: storage exposes D3D12 texture metadata", "[frame_storage]") {
+    TextureFrame frame;
+    auto* texture = reinterpret_cast<ID3D12Resource*>(0x1234);
+    auto* fence = reinterpret_cast<ID3D12Fence*>(0x5678);
+    void* event = reinterpret_cast<void*>(0x2468);
+    auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x1357), [](void*) {});
 
-    D3D11_TEXTURE2D_DESC desc = {};
-    desc.Width = 64;
-    desc.Height = 64;
-    desc.MipLevels = 1;
-    desc.ArraySize = 2;
-    desc.Format = DXGI_FORMAT_NV12;
-    desc.SampleDesc.Count = 1;
-    desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    frame.texture_handle = texture;
+    frame.is_ref = true;
+    frame.is_nv12 = true;
+    frame.texture_array_index = 3;
+    frame.hw_frame_ref = ref;
+    frame.storage = D3D12TextureFrameStorage{
+        texture,
+        3,
+        fence,
+        event,
+        42,
+        true,
+        true,
+        1920,
+        1080,
+        ref,
+    };
 
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-    REQUIRE(SUCCEEDED(device->CreateTexture2D(&desc, nullptr, &texture)));
+    REQUIRE(frame.storage_kind() == FrameStorageKind::D3D12Texture);
+    REQUIRE(frame.storage_class() == FrameStorageClass::HardwareTexture);
+    REQUIRE(frame.d3d12_texture_storage() != nullptr);
+    REQUIRE(frame.d3d12_texture_storage()->texture == texture);
+    REQUIRE(frame.d3d12_texture_storage()->subresource_index == 3);
+    REQUIRE(frame.d3d12_texture_storage()->fence == fence);
+    REQUIRE(frame.d3d12_texture_storage()->fence_event == event);
+    REQUIRE(frame.d3d12_texture_storage()->fence_value == 42);
+    REQUIRE(frame.d3d12_texture_storage()->is_texture_array);
+    REQUIRE(frame.d3d12_texture_storage()->is_p010);
+    REQUIRE(frame.d3d12_texture_storage()->coded_width == 1920);
+    REQUIRE(frame.d3d12_texture_storage()->coded_height == 1080);
+    REQUIRE(frame.d3d12_texture_storage()->frame_ref == ref);
+}
 
-    std::recursive_mutex device_mutex;
+TEST_CASE("FrameConverter retains D3D12VA frame metadata for wgpu import",
+          "[frame_converter][d3d12va]") {
     FrameConverter converter;
     REQUIRE(converter.init_hardware(
         nullptr,
         nullptr,
         64,
         64,
-        HwDecodeType::D3D11VA,
+        HwDecodeType::D3D12VA,
         false,
-        &device_mutex));
+        nullptr));
 
     std::atomic<int> free_count{0};
     AVFrame* frame = av_frame_alloc();
     REQUIRE(frame != nullptr);
-    frame->format = AV_PIX_FMT_D3D11;
+    frame->format = AV_PIX_FMT_D3D12;
     frame->width = 64;
     frame->height = 64;
-    frame->pts = 7000;
-    frame->data[0] = reinterpret_cast<uint8_t*>(texture.Get());
-    frame->data[1] = reinterpret_cast<uint8_t*>(intptr_t{1});
+    frame->pts = 9000;
+
+    AVD3D12VAFrame d3d12_frame = {};
+    d3d12_frame.texture = reinterpret_cast<ID3D12Resource*>(0x1234);
+    d3d12_frame.subresource_index = 2;
+    d3d12_frame.sync_ctx.fence = reinterpret_cast<ID3D12Fence*>(0x5678);
+    d3d12_frame.sync_ctx.event = reinterpret_cast<HANDLE>(0x2468);
+    d3d12_frame.sync_ctx.fence_value = 77;
+    d3d12_frame.flags = AV_D3D12VA_FRAME_FLAG_TEXTURE_ARRAY;
+    frame->data[0] = reinterpret_cast<uint8_t*>(&d3d12_frame);
+
     auto* token = static_cast<uint8_t*>(av_malloc(1));
     REQUIRE(token != nullptr);
     frame->buf[0] = av_buffer_create(
@@ -592,10 +612,15 @@ TEST_CASE("FrameConverter: direct D3D11 hardware frame keeps AVFrame ownership",
 
     auto converted = converter.convert(frame);
     REQUIRE(converted.has_value());
+    REQUIRE(converted->storage_kind() == FrameStorageKind::D3D12Texture);
+    REQUIRE(converted->texture_handle == d3d12_frame.texture);
+    REQUIRE(converted->texture_array_index == 2);
     REQUIRE(converted->hw_frame_ref != nullptr);
-    REQUIRE(converted->storage_kind() == FrameStorageKind::D3D11Nv12);
-    REQUIRE(converted->texture_handle == texture.Get());
-    REQUIRE(converted->texture_array_index == 1);
+    REQUIRE(converted->d3d12_texture_storage() != nullptr);
+    REQUIRE(converted->d3d12_texture_storage()->fence == d3d12_frame.sync_ctx.fence);
+    REQUIRE(converted->d3d12_texture_storage()->fence_event == d3d12_frame.sync_ctx.event);
+    REQUIRE(converted->d3d12_texture_storage()->fence_value == 77);
+    REQUIRE(converted->d3d12_texture_storage()->is_texture_array);
 
     av_frame_unref(frame);
     REQUIRE(free_count.load(std::memory_order_relaxed) == 0);
@@ -604,26 +629,6 @@ TEST_CASE("FrameConverter: direct D3D11 hardware frame keeps AVFrame ownership",
     REQUIRE(free_count.load(std::memory_order_relaxed) == 1);
 
     av_frame_free(&frame);
-}
-
-TEST_CASE("TextureFrame: storage exposes hardware NV12 texture metadata", "[frame_storage]") {
-    TextureFrame frame;
-    auto* texture = reinterpret_cast<ID3D11Texture2D*>(0x1234);
-    auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x5678), [](void*) {});
-
-    frame.texture_handle = texture;
-    frame.is_ref = true;
-    frame.is_nv12 = true;
-    frame.texture_array_index = 7;
-    frame.hw_frame_ref = ref;
-    frame.storage = D3D11Nv12FrameStorage{texture, 7, ref};
-
-    REQUIRE(frame.storage_kind() == FrameStorageKind::D3D11Nv12);
-    REQUIRE(frame.storage_class() == FrameStorageClass::HardwareTexture);
-    REQUIRE(frame.hardware_nv12_texture_storage() != nullptr);
-    REQUIRE(frame.hardware_nv12_texture_storage()->texture == texture);
-    REQUIRE(frame.hardware_nv12_texture_storage()->array_index == 7);
-    REQUIRE(frame.hardware_nv12_texture_storage()->frame_ref == ref);
 }
 
 TEST_CASE("TextureFrame: storage exposes CPU NV12 metadata", "[frame_storage]") {

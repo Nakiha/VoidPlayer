@@ -13,18 +13,18 @@ using RendererBackendType = RenderBackendKind;
 class PresentationBackendProvider;
 
 /// Platform-specific renderer interop values.
-/// D3D11 uses `adapter` as the Flutter Windows DXGI adapter pointer.
 /// Backends that present into a host-owned target, such as macOS Metal writing
-/// into a CVPixelBuffer, use `output`.
+/// into a CVPixelBuffer or Windows wgpu-d3d12 writing into an external target,
+/// use `output`.
 struct RendererBackendInterop {
-    RendererBackendType type = RendererBackendType::D3D11;
+    RendererBackendType type = default_render_backend_kind();
     void* adapter = nullptr;
     void* output = nullptr;
     int max_track_slots = 0;
     const PresentationBackendProvider* provider = nullptr;
     ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
-        double sdr_white_level_nits = 80.0;
-        bool shared_fp16_output = false;
+    double sdr_white_level_nits = 80.0;
+    bool shared_fp16_output = false;
 };
 
 struct RendererConfig {

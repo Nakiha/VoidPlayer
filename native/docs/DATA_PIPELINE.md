@@ -16,8 +16,8 @@ File
   -> PresentDecision
   -> RendererDrawSnapshot
   -> PresentationBackend
-     -> Windows: D3D11 shared texture / swap chain
-     -> macOS: Metal / CVPixelBuffer / IOSurface target
+     -> Windows: wgpu/D3D12 import + DComp/DXGI present bridge
+     -> macOS: wgpu/Metal import + CVPixelBuffer / IOSurface target
 ```
 
 `DemuxThread` 保留 packet stream time base。`DecodeThread` 输出 frame 时转成微秒，之后 renderer、seek、loop、
@@ -30,9 +30,10 @@ layout 和 diagnostics 都使用微秒时间戳。
 
 | Storage | 典型来源 | 消费方 |
 | --- | --- | --- |
-| `CpuNv12FrameStorage` / planar YUV | software decode、hwdownload fallback | D3D11 upload 或 wgpu-metal present package |
-| `CpuRgbaFrameStorage` | 旧测试、BGRA fallback、capture helpers | D3D11/wgpu-metal BGRA upload path |
-| `D3D11Nv12FrameStorage` / D3D11 texture | Windows D3D11VA renderer-owned path | D3D11 backend |
+| `CpuNv12FrameStorage` / planar YUV | software decode、hwdownload fallback | wgpu upload 或 legacy D3D11 upload |
+| `CpuRgbaFrameStorage` | 旧测试、BGRA fallback、capture helpers | wgpu BGRA upload path 或 legacy D3D11 BGRA upload path |
+| `D3D12TextureFrameStorage` / D3D12 texture | Windows D3D12VA renderer-owned path | wgpu/D3D12 backend |
+| `D3D11Nv12FrameStorage` / D3D11 texture | legacy Windows D3D11VA renderer-owned path | legacy D3D11 backend |
 | macOS CVPixelBuffer storage | VideoToolbox zero-copy path | wgpu-metal backend through CVMetalTextureCache / IOSurface |
 
 Frame storage 必须带足 lifetime 信息。D3D11VA 和 VideoToolbox 硬解 frame 都持有底层 FFmpeg/CVPixelBuffer 引用，避免
@@ -50,26 +51,27 @@ immutable `RendererDrawSnapshot`。
 - backend 不能选择播放时间，不能拥有 seek/loop/track lifecycle；
 - draw 成功/失败、last error、storage kind、upload counters 会进入 diagnostics。
 
-## Windows D3D11 输出路径
+## Windows wgpu/D3D12 输出路径
 
 ```text
 TextureFrame
-  -> D3D11 presentation backend
-  -> D3D11 SRV / renderer-owned texture preparation
-  -> HLSL layout/color shader
-  -> D3D11HeadlessOutput shared texture or swap chain
-  -> Flutter Texture
+  -> WgpuD3D12PresentationBackend
+  -> D3D12VA texture import or CPU upload
+  -> wgpu layout/color/source-projection/Flutter composition
+  -> final target handed to the Windows present bridge
+  -> DComp/DXGI window presentation
 ```
 
-Windows headless mode 使用 `D3D11HeadlessOutput` 管理 shared BGRA texture。renderer 绘制到非 front buffer，发布后通过
-callback 通知 Flutter texture。front-buffer capture 从当前 published buffer 读回 BGRA，用于 UI automation hash。
+Windows 迁移目标是 D3D12VA decode + wgpu/D3D12 render core + runner-owned
+DComp/DXGI present。D3D11 headless/shared BGRA texture path 只作为 legacy
+compatibility 和测试 canary 保留；产品视频上屏不得回到 Flutter Texture SDR。
 
 ## macOS Metal / CVPixelBuffer 输出路径
 
 ```text
 TextureFrame
   -> RendererDrawSnapshot
-  -> Metal PresentationBackend
+  -> wgpu/Metal PresentationBackend
      -> CVPixelBuffer fast path for VideoToolbox frames
      -> YUV/BGRA present package for software or fallback frames
   -> renderer-owned CVPixelBuffer / IOSurface

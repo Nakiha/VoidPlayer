@@ -6,6 +6,8 @@
 
 #include "renderer/layout/layout_validation.h"
 #include "renderer/renderer_config_validation.h"
+#include "windows/presentation/windows_dcomp_composite.h"
+#include "windows/shared/shared_texture_ring_types.h"
 #include "utils.h"
 #include <flutter/event_channel.h>
 #include <flutter/event_stream_handler_functions.h>
@@ -23,6 +25,8 @@
 #include <variant>
 #include <limits>
 #include <utility>
+#include <algorithm>
+#include <cctype>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -89,6 +93,56 @@ std::string presented_anchor_mode_name(vr::RendererPresentedAnchorMode mode) {
         default:
             return "none";
     }
+}
+
+struct WindowsRenderBackendSelection {
+    vr::RendererBackendType type = vr::RendererBackendType::WgpuD3D12;
+    std::string name = "wgpu-d3d12";
+    std::string reason = "default";
+};
+
+std::string normalize_backend_request(std::string request) {
+    request.erase(
+        request.begin(),
+        std::find_if(
+            request.begin(),
+            request.end(),
+            [](unsigned char ch) { return !std::isspace(ch); }));
+    request.erase(
+        std::find_if(
+            request.rbegin(),
+            request.rend(),
+            [](unsigned char ch) { return !std::isspace(ch); }).base(),
+        request.end());
+    std::transform(
+        request.begin(),
+        request.end(),
+        request.begin(),
+        [](unsigned char ch) {
+            return static_cast<char>(std::tolower(ch));
+        });
+    return request;
+}
+
+WindowsRenderBackendSelection resolve_windows_render_backend(
+    const std::string& request) {
+    const std::string normalized = normalize_backend_request(request);
+    if (normalized.empty() || normalized == "auto") {
+        return {};
+    }
+    if (normalized == "wgpu" || normalized == "wgpu-d3d12" ||
+        normalized == "d3d12") {
+        return {
+            vr::RendererBackendType::WgpuD3D12,
+            "wgpu-d3d12",
+            "env-override",
+        };
+    }
+    spdlog::warn(
+        "[WindowsRenderBackend] unsupported VOIDPLAYER_WINDOWS_RENDER_BACKEND='{}'; "
+        "using wgpu-d3d12",
+        request);
+    return {};
 }
 
 flutter::EncodableMap make_track_map(const vr::TrackInfo& info) {
@@ -418,21 +472,40 @@ VideoRendererPlugin::~VideoRendererPlugin() {
 }
 
 std::optional<LRESULT> VideoRendererPlugin::HandleTopLevelWindowProc(
-    HWND,
+    HWND hwnd,
     UINT message,
     WPARAM wparam,
-    LPARAM) {
+    LPARAM lparam) {
     if (message == kPlatformTaskMessage) {
         DrainPlatformTasks();
         return 0;
     }
 
     switch (message) {
+    case WM_SIZE:
+        if (wparam != SIZE_MINIMIZED && native_compositor_) {
+            const uint32_t width =
+                static_cast<uint32_t>(LOWORD(lparam));
+            const uint32_t height =
+                static_cast<uint32_t>(HIWORD(lparam));
+            native_compositor_->NotifyClientSizeChanged(width, height);
+        }
+        break;
     case WM_DISPLAYCHANGE:
     case WM_SETTINGCHANGE:
     case WM_MOVE:
     case WM_EXITSIZEMOVE:
     case WM_DPICHANGED:
+        if (native_compositor_) {
+            RECT client_rect = {};
+            if (GetClientRect(hwnd, &client_rect)) {
+                native_compositor_->NotifyClientSizeChanged(
+                    static_cast<uint32_t>(
+                        std::max<LONG>(1, client_rect.right - client_rect.left)),
+                    static_cast<uint32_t>(
+                        std::max<LONG>(1, client_rect.bottom - client_rect.top)));
+            }
+        }
         ScheduleDisplayPolicyRefresh();
         break;
     case WM_TIMER:
@@ -560,6 +633,12 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
             Resize(call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
+        "prewarmNativePresentationTargetSize",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            PrewarmNativePresentationTargetSize(
+                call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
         "setNativeCompositorViewportRect",
         [this](const MethodCall& call, MethodResultPtr result) {
             SetNativeCompositorViewportRect(
@@ -569,6 +648,12 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
         "requestNativeCompositorFlutterFrame",
         [this](const MethodCall& call, MethodResultPtr result) {
             RequestNativeCompositorFlutterFrame(
+                call.arguments(), std::move(result));
+        });
+    method_dispatcher_.Register(
+        "boostNativeCompositorFlutterInteraction",
+        [this](const MethodCall& call, MethodResultPtr result) {
+            BoostNativeCompositorFlutterInteraction(
                 call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
@@ -826,8 +911,17 @@ void VideoRendererPlugin::CreatePlayer(
     // Create player in headless mode
     vr::RendererConfig config;
     config.headless = true;
-    config.backend.type = vr::RendererBackendType::D3D11;
+    const std::string render_backend_request =
+        vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_RENDER_BACKEND");
+    const auto render_backend =
+        resolve_windows_render_backend(render_backend_request);
+    const bool use_wgpu_d3d12_backend =
+        render_backend.type == vr::RendererBackendType::WgpuD3D12;
+    config.backend.type = render_backend.type;
     config.backend.adapter = dxgi_adapter_.Get();
+    if (use_wgpu_d3d12_backend) {
+        config.backend.output = window_handle_;
+    }
     config.width = width;
     config.height = height;
     config.use_hardware_decode = use_hardware_decode;
@@ -835,7 +929,7 @@ void VideoRendererPlugin::CreatePlayer(
     if (!config.backend.adapter) {
         result->Error(
             "NO_DXGI_ADAPTER",
-            "Flutter DXGI adapter is unavailable; cannot create shared D3D11 texture");
+            "Flutter DXGI adapter is unavailable; cannot start wgpu-d3d12 renderer");
         return;
     }
 
@@ -865,13 +959,19 @@ void VideoRendererPlugin::CreatePlayer(
         locked_display.probe.sdr_white_level_status;
     spdlog::info(
         "[WindowsPresentation] request={} mode={} output_target={} "
-        "sdr_white_nits={:.3f} white_status={} fallback={}",
+        "sdr_white_nits={:.3f} white_status={} fallback={} render_backend={}",
         presentation_policy_.request,
         presentation_policy_.mode,
         presentation_policy_.fp16_scrgb_requested ? "fp16-scrgb" : "sdr",
         config.backend.sdr_white_level_nits,
         presentation_sdr_white_level_status_,
-        presentation_policy_.fallback_reason);
+        presentation_policy_.fallback_reason,
+        render_backend.name);
+    spdlog::info(
+        "[WindowsRenderBackend] request='{}' selected={} reason={}",
+        render_backend_request,
+        render_backend.name,
+        render_backend.reason);
 
     for (const auto& p : paths_list) {
         std::string path;
@@ -1054,6 +1154,7 @@ void VideoRendererPlugin::DestroyPlayer(
             player_->clear_source_cache("destroy-player");
         }
         native_compositor_source_signature_.clear();
+        native_compositor_source_failure_signature_.clear();
         native_compositor_->Stop("destroy-player");
         native_compositor_.reset();
     }
@@ -1183,6 +1284,7 @@ void VideoRendererPlugin::RemoveTrack(
     if (player_->track_count() == 0) {
         player_->clear_source_cache("all-tracks-removed");
         native_compositor_source_signature_.clear();
+        native_compositor_source_failure_signature_.clear();
     }
     (void)RefreshPresentationPolicy("track-removed", false);
     spdlog::info("[VideoRendererPlugin] Removed track: file_id={}", file_id);
@@ -1432,13 +1534,13 @@ void VideoRendererPlugin::Resize(
         result->Error("BAD_ARGS", validation.message);
         return;
     }
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCompositorDebug] method resize viewport={}x{} "
         "native_compositor={} player={}",
         w, h, native_compositor_ ? "yes" : "no",
         player_ ? "yes" : "no");
     player_->resize(w, h);
-    spdlog::info(
+    spdlog::debug(
         "[WindowsCompositorDebug] method resize complete viewport={}x{}",
         w, h);
     result->Success(flutter::EncodableValue(std::monostate{}));
@@ -1448,6 +1550,59 @@ void VideoRendererPlugin::Resize(
         ReportMethodException(result.get(), "resize", e);
     } catch (...) {
         ReportUnknownMethodException(result.get(), "resize");
+    }
+}
+
+void VideoRendererPlugin::PrewarmNativePresentationTargetSize(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        if (!arguments || !player_) {
+            result->Success();
+            return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+        if (!args) {
+            result->Error("INVALID_ARGS", "Arguments must be a map");
+            return;
+        }
+        int w = 0;
+        int h = 0;
+        auto it = args->find(flutter::EncodableValue("width"));
+        if (it != args->end() && !read_int_arg(it->second, w)) {
+            result->Error("BAD_ARGS", "width must be an integer");
+            return;
+        }
+        it = args->find(flutter::EncodableValue("height"));
+        if (it != args->end() && !read_int_arg(it->second, h)) {
+            result->Error("BAD_ARGS", "height must be an integer");
+            return;
+        }
+        if (auto validation = vr::validate_renderer_dimensions(w, h, "prewarm viewport size");
+            !validation.ok) {
+            result->Error("BAD_ARGS", validation.message);
+            return;
+        }
+        spdlog::debug(
+            "[WindowsCompositorDebug] prewarm native target hint {}x{} "
+            "native_compositor={} player={}",
+            w, h, native_compositor_ ? "yes" : "no",
+            player_ ? "yes" : "no");
+        if (!player_->prewarm_presentation_target(w, h)) {
+            spdlog::debug(
+                "[WindowsCompositorDebug] prewarm native target skipped {}x{}",
+                w, h);
+        }
+        result->Success(flutter::EncodableValue(std::monostate{}));
+    } catch (const std::bad_variant_access& e) {
+        ReportMethodException(
+            result.get(), "prewarmNativePresentationTargetSize", e);
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "prewarmNativePresentationTargetSize", e);
+    } catch (...) {
+        ReportUnknownMethodException(
+            result.get(), "prewarmNativePresentationTargetSize");
     }
 }
 
@@ -1482,7 +1637,7 @@ void VideoRendererPlugin::SetNativeCompositorViewportRect(
             result->Error("BAD_ARGS", "invalid viewport rect");
             return;
         }
-        spdlog::info(
+        spdlog::debug(
             "[WindowsCompositorDebug] method viewportRect "
             "physical=({},{} {}x{}) surface={}x{}",
             left, top, width, height, surface_width, surface_height);
@@ -1626,7 +1781,27 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
             }
         }
         if (descriptors.size() != source_slots.size()) {
-            result->Error("BAD_ARGS", "sourceSlots do not match native tracks");
+            const std::string error = "source-cache-track-mismatch";
+            std::string failure_signature = error + "|slots=";
+            for (const int slot : source_slots) {
+                failure_signature += std::to_string(slot) + ",";
+            }
+            failure_signature += "|tracks=" + std::to_string(infos.size());
+            if (failure_signature !=
+                native_compositor_source_failure_signature_) {
+                spdlog::warn(
+                    "[WindowsSourceCache] ignoring stale source slots after track change: requested={} available_tracks={}",
+                    source_slots.size(),
+                    infos.size());
+                native_compositor_source_failure_signature_ =
+                    failure_signature;
+            }
+            player_->clear_source_cache(error.c_str());
+            player_->clear_source_projection();
+            native_compositor_->ClearSourceProjection(error);
+            native_compositor_->SetSourceCacheError(error);
+            native_compositor_source_signature_.clear();
+            result->Success();
             return;
         }
         std::sort(
@@ -1656,7 +1831,29 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
             projection.view_offset_uv_y[i] =
                 static_cast<float>(view_offset_uv_y[i]);
         }
-        native_compositor_->SetSourceProjection(projection);
+        const bool backend_projection_ready =
+            player_->update_source_projection(projection);
+        if (backend_projection_ready) {
+            native_compositor_->DisableRetainedSourceProjection(
+                "wgpu-d3d12-backend-source-projection");
+        } else {
+            const auto backend = player_->presentation_backend_diagnostics();
+            const std::string error =
+                backend.backend == "wgpu-d3d12"
+                    ? "wgpu-d3d12-source-projection-update-failed"
+                    : "source-projection-backend-unavailable";
+            spdlog::warn(
+                "[WindowsSourceProjection] backend projection update failed backend={} error={}; retained fallback is disabled",
+                backend.backend,
+                error);
+            player_->clear_source_cache(error.c_str());
+            player_->clear_source_projection();
+            native_compositor_->ClearSourceProjection(error);
+            native_compositor_->SetSourceCacheError(error);
+            native_compositor_source_signature_.clear();
+            result->Success();
+            return;
+        }
 
         std::string signature = "R16G16B16A16_FLOAT|";
         for (const int slot : source_order) {
@@ -1671,9 +1868,25 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
         }
         if (signature != native_compositor_source_signature_) {
             if (!player_->configure_source_cache(descriptors)) {
+                const auto backend =
+                    player_->presentation_backend_diagnostics();
                 const std::string error =
-                    "source-cache-configuration-failed";
+                    backend.backend == "wgpu-d3d12"
+                        ? "wgpu-d3d12-source-cache-unimplemented"
+                        : "source-cache-configuration-failed";
+                const std::string failure_signature =
+                    backend.backend + "|" + error + "|" + signature;
+                if (failure_signature !=
+                    native_compositor_source_failure_signature_) {
+                    spdlog::warn(
+                        "[WindowsSourceCache] configure failed backend={} error={}",
+                        backend.backend,
+                        error);
+                    native_compositor_source_failure_signature_ =
+                        failure_signature;
+                }
                 player_->clear_source_cache(error.c_str());
+                player_->clear_source_projection();
                 native_compositor_->ClearSourceProjection(error);
                 native_compositor_->SetSourceCacheError(error);
                 native_compositor_source_signature_.clear();
@@ -1681,18 +1894,17 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
                 return;
             }
             native_compositor_source_signature_ = signature;
-            player_->set_source_cache_frame_callback(
-                [compositor = native_compositor_.get()]() {
-                    if (compositor) {
-                        compositor->NotifySourceCachePublished();
-                    }
-                });
+            native_compositor_source_failure_signature_.clear();
         }
         if (!player_->is_playing()) {
             const auto backend = player_->presentation_backend_diagnostics();
             if (backend.source_cache_publish_count == 0) {
                 (void)player_->request_frame_refresh(
                     "windows-source-cache-subscribe");
+            }
+            if (backend_projection_ready) {
+                (void)player_->request_frame_refresh(
+                    "windows-source-projection-refresh");
             }
         }
         result->Success();
@@ -1716,11 +1928,13 @@ void VideoRendererPlugin::ClearNativeCompositorSourceCache(
         }
         if (player_) {
             player_->clear_source_cache(reason.c_str());
+            player_->clear_source_projection();
         }
         if (native_compositor_) {
             native_compositor_->ClearSourceProjection(reason);
         }
         native_compositor_source_signature_.clear();
+        native_compositor_source_failure_signature_.clear();
         result->Success();
     } catch (const std::exception& e) {
         ReportMethodException(
@@ -1850,6 +2064,30 @@ void VideoRendererPlugin::RequestNativeCompositorFlutterFrame(
     } catch (const std::exception& e) {
         ReportMethodException(
             result.get(), "requestNativeCompositorFlutterFrame", e);
+    }
+}
+
+void VideoRendererPlugin::BoostNativeCompositorFlutterInteraction(
+    const flutter::EncodableValue* arguments,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    try {
+        std::string reason = "interaction";
+        if (arguments) {
+            const auto* args = std::get_if<flutter::EncodableMap>(arguments);
+            if (args) {
+                auto it = args->find(flutter::EncodableValue("reason"));
+                if (it != args->end()) {
+                    (void)read_string_arg(it->second, reason);
+                }
+            }
+        }
+        if (native_compositor_) {
+            native_compositor_->BoostFlutterInteraction(reason);
+        }
+        result->Success();
+    } catch (const std::exception& e) {
+        ReportMethodException(
+            result.get(), "boostNativeCompositorFlutterInteraction", e);
     }
 }
 
@@ -2559,7 +2797,10 @@ VideoRendererPlugin::RefreshPresentationPolicy(
             white_nits,
             display.generation,
             presentation_policy_.reason);
-        if (player_->update_presentation_sdr_white_level(white_nits)) {
+        const bool white_level_applied =
+            player_->update_presentation_sdr_white_level(white_nits);
+        if (policy_changed || white_changed || display_changed ||
+            white_level_applied) {
             (void)player_->request_frame_refresh(
                 "windows-presentation-policy-refresh");
         }
@@ -2580,6 +2821,14 @@ VideoRendererPlugin::RefreshPresentationPolicy(
             presentation_policy_.has_hdr_track,
             display.generation,
             white_nits);
+    }
+    if (native_compositor_) {
+        const auto compositor = native_compositor_->diagnostics();
+        if (compositor.transition_state == "preparing" &&
+            compositor.desired_output_target != compositor.output_target) {
+            (void)player_->request_frame_refresh(
+                "windows-presentation-transition-refresh");
+        }
     }
     return display;
 }
@@ -2633,7 +2882,6 @@ void VideoRendererPlugin::GetDiagnostics(
     if (native_compositor_) {
         native_compositor_->SetHighRefreshDisplayHz(
             query_window_refresh_hz(window_handle_));
-        native_compositor_->RequestDiagnosticCapture();
         const auto compositor = native_compositor_->diagnostics();
         if (compositor.device_recovery_attempt_count > 0) {
             diagnostics[flutter::EncodableValue("windowsDeviceRecoveryState")] =
@@ -2736,6 +2984,14 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(static_cast<int64_t>(
                 compositor.flutter_export_publish_fail_count));
         diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportFlushCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_flush_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportFinishCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_finish_count));
+        diagnostics[flutter::EncodableValue(
             "windowsFlutterExportBackpressureCount")] =
             enc_i64(static_cast<int64_t>(
                 compositor.flutter_export_backpressure_count));
@@ -2747,6 +3003,14 @@ void VideoRendererPlugin::GetDiagnostics(
             "windowsFlutterExportStaleTimeoutCount")] =
             enc_i64(static_cast<int64_t>(
                 compositor.flutter_export_stale_timeout_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportUnrequestedSignalCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_unsolicited_signal_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsFlutterExportUnrequestedThrottleCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.flutter_export_unsolicited_throttle_count));
         diagnostics[flutter::EncodableValue(
             "windowsFlutterExportLatestAvailable")] =
             flutter::EncodableValue(
@@ -2773,6 +3037,10 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(compositor.dcomp_present_interval_p95_us);
         diagnostics[flutter::EncodableValue("windowsDCompCompositeP95Us")] =
             enc_i64(compositor.dcomp_composite_p95_us);
+        diagnostics[flutter::EncodableValue("windowsDCompDrawP95Us")] =
+            enc_i64(compositor.dcomp_draw_p95_us);
+        diagnostics[flutter::EncodableValue("windowsDCompPresentBlockP95Us")] =
+            enc_i64(compositor.dcomp_present_block_p95_us);
         diagnostics[flutter::EncodableValue("windowsDCompAcquireWaitP95Us")] =
             enc_i64(compositor.dcomp_acquire_wait_p95_us);
         diagnostics[flutter::EncodableValue(
@@ -2856,6 +3124,10 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(compositor.hot_path_present_interval_p95_us);
         diagnostics[flutter::EncodableValue("windowsHotPathCompositeP95Us")] =
             enc_i64(compositor.hot_path_composite_p95_us);
+        diagnostics[flutter::EncodableValue("windowsHotPathDrawP95Us")] =
+            enc_i64(compositor.hot_path_draw_p95_us);
+        diagnostics[flutter::EncodableValue("windowsHotPathPresentBlockP95Us")] =
+            enc_i64(compositor.hot_path_present_block_p95_us);
         diagnostics[flutter::EncodableValue(
             "windowsHotPathAcquireWaitP95Us")] =
             enc_i64(compositor.hot_path_acquire_wait_p95_us);
@@ -2893,20 +3165,56 @@ void VideoRendererPlugin::GetDiagnostics(
             flutter::EncodableValue(compositor.hot_path_last_failure_reason);
         diagnostics[flutter::EncodableValue("windowsHotPathGateResult")] =
             flutter::EncodableValue(compositor.hot_path_gate_result);
+        diagnostics[flutter::EncodableValue("windowsRetainedGraphActive")] =
+            flutter::EncodableValue(compositor.retained_graph_active);
+        diagnostics[flutter::EncodableValue("windowsRetainedGraphMode")] =
+            flutter::EncodableValue(compositor.retained_graph_mode);
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphFallbackReason")] =
+            flutter::EncodableValue(
+                compositor.retained_graph_fallback_reason);
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphCommitCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_commit_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphProjectionCommitCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_projection_commit_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphSourceBakeCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_source_bake_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphFlutterBakeCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_flutter_bake_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphProjectionSkipPresentCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_projection_skip_present_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphDeferredContentCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_deferred_content_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphCommitDeferCount")] =
+            enc_i64(static_cast<int64_t>(
+                compositor.retained_graph_commit_defer_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphFlutterBakeP95Us")] =
+            enc_i64(compositor.retained_graph_flutter_bake_p95_us);
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphSourceBakeP95Us")] =
+            enc_i64(compositor.retained_graph_source_bake_p95_us);
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphApplyP95Us")] =
+            enc_i64(compositor.retained_graph_apply_p95_us);
+        diagnostics[flutter::EncodableValue(
+            "windowsRetainedGraphCommitP95Us")] =
+            enc_i64(compositor.retained_graph_commit_p95_us);
         diagnostics[flutter::EncodableValue("windowsDCompResizeCount")] =
             enc_i64(static_cast<int64_t>(compositor.resize_count));
-        diagnostics[flutter::EncodableValue("windowsDCompDiagnosticCaptureCount")] =
-            enc_i64(static_cast<int64_t>(compositor.diagnostic_capture_count));
-        diagnostics[flutter::EncodableValue("windowsFlutterAlphaAverageX1000")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_alpha_average_x1000));
-        diagnostics[flutter::EncodableValue("windowsFlutterTransparentPixelsX1000")] =
-            enc_i64(static_cast<int64_t>(
-                compositor.flutter_transparent_pixels_x1000));
-        diagnostics[flutter::EncodableValue("windowsDCompFinalMaxRGBX1000")] =
-            enc_i64(static_cast<int64_t>(compositor.final_max_rgb_x1000));
-        diagnostics[flutter::EncodableValue("windowsDCompFinalPixelsOver1")] =
-            enc_i64(static_cast<int64_t>(compositor.final_pixels_over_1));
         diagnostics[flutter::EncodableValue("windowsDCompSwapChainWidth")] =
             enc_i64(static_cast<int64_t>(compositor.swap_chain_width));
         diagnostics[flutter::EncodableValue("windowsDCompSwapChainHeight")] =
@@ -3049,6 +3357,29 @@ void VideoRendererPlugin::GetDiagnostics(
             "nativeCompositorSourceCacheActive")] =
             flutter::EncodableValue(compositor.source_cache_active);
         diagnostics[flutter::EncodableValue(
+            "windowsPresentationPrewarmRequestCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_request_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationPrewarmReadyCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_ready_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationPrewarmHitCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_hit_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationPrewarmDroppedCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_dropped_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationPrewarmConsumedCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_consumed_count));
+        diagnostics[flutter::EncodableValue("pixelBufferPrewarmRequestCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_request_count));
+        diagnostics[flutter::EncodableValue("pixelBufferPrewarmReadyCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_ready_count));
+        diagnostics[flutter::EncodableValue("pixelBufferPrewarmHitCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_hit_count));
+        diagnostics[flutter::EncodableValue("pixelBufferPrewarmDroppedCount")] =
+            enc_i64(static_cast<int64_t>(backend.prewarm_dropped_count));
+        diagnostics[flutter::EncodableValue(
             "nativeCompositorSourceCacheTextureCount")] =
             enc_i64(backend.source_cache_texture_count);
         diagnostics[flutter::EncodableValue(
@@ -3138,6 +3469,137 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(static_cast<int64_t>(
                 backend.source_cache_fallback_count +
                 compositor.source_cache_fallback_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendSourceProjectionActive")] =
+            flutter::EncodableValue(backend.source_projection_active);
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendSourceProjectionUpdateCount")] =
+            enc_i64(static_cast<int64_t>(
+                backend.source_projection_update_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendSourceProjectionConsumeCount")] =
+            enc_i64(static_cast<int64_t>(
+                backend.source_projection_consume_count));
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendOverlayLayerActive")] =
+            flutter::EncodableValue(backend.overlay_layer_active);
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendOverlayLayerMode")] =
+            flutter::EncodableValue(backend.overlay_layer_mode);
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendOverlayLayerGeneration")] =
+            enc_i64(static_cast<int64_t>(
+                backend.overlay_layer_generation));
+        diagnostics[flutter::EncodableValue(
+            "windowsBackendOverlayLayerCompositeCount")] =
+            enc_i64(static_cast<int64_t>(
+                backend.overlay_layer_composite_count));
+        if (backend.overlay_layer_active) {
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayRetainedLayerActive")] =
+                flutter::EncodableValue(true);
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayRetainedLayerMode")] =
+                flutter::EncodableValue(backend.overlay_layer_mode);
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerRasterCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_rebuild_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerUploadCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_upload_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerReuseCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_reuse_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerBytes")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_bytes));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerGeneration")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_generation));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerCompositeCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_composite_count));
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorOverlayGeneration")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_generation));
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorOverlayFillRectCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_fill_rect_count));
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorOverlayLineRectCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_line_rect_count));
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorOverlayMotionLineCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_motion_line_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerFallbackReason")] =
+                flutter::EncodableValue(
+                    backend.overlay_layer_fallback_reason);
+            diagnostics[flutter::EncodableValue(
+                "windowsOverlayLayerLastError")] =
+                flutter::EncodableValue(backend.overlay_layer_last_error);
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathOverlayReuseCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_reuse_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathOverlayRasterCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_rebuild_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathOverlayUploadCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.overlay_layer_upload_count));
+        }
+        const bool backend_source_projection_hot_path =
+            backend.source_projection_active &&
+            backend.source_projection_consume_count > 0;
+        if (backend_source_projection_hot_path) {
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorSourceProjectionEnabled")] =
+                flutter::EncodableValue(true);
+            diagnostics[flutter::EncodableValue(
+                "nativeCompositorSourceCacheActive")] =
+                flutter::EncodableValue(
+                    backend.source_cache_texture_count > 0 ||
+                    backend.source_cache_publish_count > 0);
+            diagnostics[flutter::EncodableValue(
+                "windowsSourceProjectionReuseCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.source_projection_consume_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsSourceCacheConsumedGeneration")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.source_cache_generation));
+            diagnostics[flutter::EncodableValue("windowsHotPathActive")] =
+                flutter::EncodableValue(true);
+            diagnostics[flutter::EncodableValue("windowsHotPathMode")] =
+                flutter::EncodableValue(
+                    "source-projection-wgpu-d3d12");
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathProjectionOnlyUpdateCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.source_projection_update_count));
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathSourceCacheReuseCount")] =
+                enc_i64(static_cast<int64_t>(
+                    backend.source_projection_consume_count));
+            diagnostics[flutter::EncodableValue("windowsHotPathGateResult")] =
+                flutter::EncodableValue("pass-wgpu-d3d12-source-projection");
+            diagnostics[flutter::EncodableValue(
+                "windowsHotPathLastFailureReason")] =
+                flutter::EncodableValue("none");
+        }
         const bool compositor_active =
             compositor.phase == "preparing" || compositor.phase == "active";
         diagnostics[flutter::EncodableValue("windowsPresentationCompositorActive")] =

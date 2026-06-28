@@ -10,9 +10,6 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 }
 
-struct ID3D11Device;
-struct ID3D11DeviceContext;
-
 namespace vr {
 
 class FrameConverter {
@@ -34,7 +31,7 @@ public:
     bool downloads_hardware_to_cpu() const {
         return hardware_converter_ && hardware_converter_->downloads_to_cpu();
     }
-    D3D11SnapshotPoolStats snapshot_pool_stats() const;
+    HardwareSnapshotPoolStats snapshot_pool_stats() const;
 
 private:
     int width_ = 0;

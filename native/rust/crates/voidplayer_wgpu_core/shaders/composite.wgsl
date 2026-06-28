@@ -26,6 +26,9 @@ struct CompositeParams {
   color_transfer: vec4<i32>,
   color_primaries: vec4<i32>,
   output_mode: vec4<i32>,
+  output_size: vec4<f32>,
+  viewport_rect: vec4<f32>,
+  flutter_size: vec4<f32>,
 };
 
 struct OverlayRect {
@@ -76,6 +79,9 @@ var cv_uv3: texture_2d<f32>;
 
 @group(0) @binding(13)
 var overlay_layer_texture: texture_2d_array<f32>;
+
+@group(0) @binding(14)
+var flutter_surface_texture: texture_2d<f32>;
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
@@ -298,8 +304,8 @@ fn source_uv(track: i32, local_uv: vec2<f32>) -> vec2<f32> {
 
 fn source_pixel_footprint(track: i32) -> f32 {
   let mode = i32(round(params.target_mode.z));
-  let target_w = max(1.0, params.target_mode.x);
-  let target_h = max(1.0, params.target_mode.y);
+  let target_w = max(1.0, params.viewport_rect.z);
+  let target_h = max(1.0, params.viewport_rect.w);
   let track_count = max(1, min(i32(round(params.target_mode.w)), 4));
   let local_step_x = select(
     f32(track_count) / target_w,
@@ -324,7 +330,7 @@ fn apply_split_divider(color: vec4<f32>, tex_x: f32) -> vec4<f32> {
   if (mode != 1) {
     return color;
   }
-  let divider_x = clamp(params.split.x, 0.0, 1.0) * params.target_mode.x;
+  let divider_x = clamp(params.split.x, 0.0, 1.0) * max(1.0, params.viewport_rect.z);
   let dist = abs(tex_x - divider_x);
   let core_width = 1.25;
   let edge_width = 0.75;
@@ -367,6 +373,27 @@ fn overlay_blend_over(dst: vec4<f32>, src: vec4<f32>) -> vec4<f32> {
   );
 }
 
+fn premul_blend_over(dst: vec4<f32>, src: vec4<f32>) -> vec4<f32> {
+  let alpha = clamp(src.a, 0.0, 1.0);
+  return vec4<f32>(
+    src.rgb + dst.rgb * (1.0 - alpha),
+    alpha + dst.a * (1.0 - alpha),
+  );
+}
+
+fn map_premul_sdr_ui_to_output(color: vec4<f32>) -> vec4<f32> {
+  let premul = clamp(color, vec4<f32>(0.0), vec4<f32>(1.0));
+  if (!output_is_edr()) {
+    return premul;
+  }
+  if (premul.a <= 0.00001) {
+    return vec4<f32>(0.0);
+  }
+  let straight = vec4<f32>(premul.rgb / premul.a, premul.a);
+  let mapped = map_sdr_ui_to_output(straight);
+  return vec4<f32>(mapped.rgb * premul.a, premul.a);
+}
+
 fn overlay_rect_matches_track(rect: OverlayRect, track: i32) -> bool {
   return overlay_track_index(rect) == track;
 }
@@ -388,6 +415,72 @@ fn overlay_position_from_px(px: vec2<f32>, layer_size: vec2<f32>) -> vec4<f32> {
   return vec4<f32>(
     px.x / layer_size.x * 2.0 - 1.0,
     1.0 - px.y / layer_size.y * 2.0,
+    0.0,
+    1.0,
+  );
+}
+
+fn display_slot_for_overlay_track(track: i32) -> i32 {
+  if (params.order.x == track) {
+    return 0;
+  }
+  if (params.order.y == track) {
+    return 1;
+  }
+  if (params.order.z == track) {
+    return 2;
+  }
+  return 3;
+}
+
+fn overlay_local_rect_from_video_rect(rect_min: vec2<f32>, rect_max: vec2<f32>, track: i32) -> vec4<f32> {
+  let display_offset = vec2<f32>(
+    vec4_get_f(params.display_offset_x, track),
+    vec4_get_f(params.display_offset_y, track));
+  let inv_display_size = vec2<f32>(
+    vec4_get_f(params.inv_display_size_x, track),
+    vec4_get_f(params.inv_display_size_y, track));
+  let view_offset = vec2<f32>(
+    vec4_get_f(params.view_offset_uv_x, track),
+    vec4_get_f(params.view_offset_uv_y, track));
+  let display_size = vec2<f32>(
+    select(0.0, 1.0 / inv_display_size.x, abs(inv_display_size.x) > 0.00001),
+    select(0.0, 1.0 / inv_display_size.y, abs(inv_display_size.y) > 0.00001));
+  let local_min = display_offset + (rect_min + view_offset) * display_size;
+  let local_max = display_offset + (rect_max + view_offset) * display_size;
+  return vec4<f32>(min(local_min, local_max), max(local_min, local_max));
+}
+
+fn overlay_visible_local_rect(track: i32) -> vec4<f32> {
+  var visible_min = vec2<f32>(0.0);
+  var visible_max = vec2<f32>(1.0);
+  if (i32(round(params.target_mode.z)) == 1) {
+    let slot = display_slot_for_overlay_track(track);
+    if (slot == 0) {
+      visible_max.x = clamp(params.split.x, 0.0, 1.0);
+    } else if (slot == 1) {
+      visible_min.x = clamp(params.split.x, 0.0, 1.0);
+    } else {
+      visible_max = visible_min;
+    }
+  }
+  return vec4<f32>(visible_min, visible_max);
+}
+
+fn overlay_global_uv_from_local_uv(local_uv: vec2<f32>, track: i32) -> vec2<f32> {
+  if (i32(round(params.target_mode.z)) == 1) {
+    return local_uv;
+  }
+  let track_count = max(1, min(i32(round(params.target_mode.w)), 4));
+  let slot = clamp(display_slot_for_overlay_track(track), 0, track_count - 1);
+  return vec2<f32>((f32(slot) + local_uv.x) / f32(track_count), local_uv.y);
+}
+
+fn overlay_viewport_position_from_px(px: vec2<f32>) -> vec4<f32> {
+  let output_size = max(params.output_size.xy, vec2<f32>(1.0));
+  return vec4<f32>(
+    px.x / output_size.x * 2.0 - 1.0,
+    1.0 - px.y / output_size.y * 2.0,
     0.0,
     1.0,
   );
@@ -431,9 +524,54 @@ fn overlay_fill_rect_vertex(vertex_index: u32) -> OverlayFillVertexOut {
   return out;
 }
 
+fn overlay_viewport_fill_rect_vertex(vertex_index: u32) -> OverlayFillVertexOut {
+  var out: OverlayFillVertexOut;
+  out.position = vec4<f32>(-2.0, -2.0, 0.0, 1.0);
+  out.color = vec4<f32>(0.0);
+
+  let rect_id = vertex_index / 6u;
+  let corner = vertex_index - rect_id * 6u;
+  if (rect_id >= u32(max(0, params.overlay_counts.x))) {
+    return out;
+  }
+  let rect = overlay_rects[rect_id];
+  let track = overlay_track_index(rect);
+  let color = overlay_color_from_bgra(rect.color_bgra);
+  if (color.a <= 0.0) {
+    return out;
+  }
+
+  let source_rect = overlay_layer_rect(rect);
+  let local_rect = overlay_local_rect_from_video_rect(source_rect.xy, source_rect.zw, track);
+  let visible_rect = overlay_visible_local_rect(track);
+  let clipped_min = max(local_rect.xy, visible_rect.xy);
+  let clipped_max = min(local_rect.zw, visible_rect.zw);
+  if (clipped_max.x <= clipped_min.x || clipped_max.y <= clipped_min.y) {
+    return out;
+  }
+
+  var local_uv = clipped_min;
+  if (corner == 1u || corner == 3u || corner == 4u) {
+    local_uv.x = clipped_max.x;
+  }
+  if (corner == 2u || corner == 4u || corner == 5u) {
+    local_uv.y = clipped_max.y;
+  }
+  let global_uv = overlay_global_uv_from_local_uv(local_uv, track);
+  let px = params.viewport_rect.xy + global_uv * params.viewport_rect.zw;
+  out.position = overlay_viewport_position_from_px(px);
+  out.color = color;
+  return out;
+}
+
 @fragment
 fn fs_overlay_primitive(in: OverlayFillVertexOut) -> @location(0) vec4<f32> {
   return in.color;
+}
+
+@fragment
+fn fs_overlay_viewport_primitive(in: OverlayFillVertexOut) -> @location(0) vec4<f32> {
+  return map_sdr_ui_to_output(in.color);
 }
 
 fn overlay_line_rect_vertex(
@@ -490,6 +628,93 @@ fn overlay_line_rect_vertex(
   return out;
 }
 
+fn overlay_viewport_line_rect_vertex(
+    vertex_index: u32,
+    thickness: f32,
+    color: vec4<f32>) -> OverlayFillVertexOut {
+  var out: OverlayFillVertexOut;
+  out.position = vec4<f32>(-2.0, -2.0, 0.0, 1.0);
+  out.color = vec4<f32>(0.0);
+
+  let line_count = max(0, params.overlay_counts.y);
+  if (line_count <= 0) {
+    return out;
+  }
+  let primitive_id = vertex_index / 6u;
+  let rect_id = primitive_id / 4u;
+  let side = primitive_id - rect_id * 4u;
+  let corner = vertex_index - primitive_id * 6u;
+  if (rect_id >= u32(line_count)) {
+    return out;
+  }
+  let rect = overlay_rects[u32(params.overlay_counts.x) + rect_id];
+  let track = overlay_track_index(rect);
+  if (overlay_line_strength(rect) <= 0.0) {
+    return out;
+  }
+
+  let source_rect = overlay_layer_rect(rect);
+  let local_rect = overlay_local_rect_from_video_rect(source_rect.xy, source_rect.zw, track);
+  let visible_rect = overlay_visible_local_rect(track);
+  let clipped_min = max(local_rect.xy, visible_rect.xy);
+  let clipped_max = min(local_rect.zw, visible_rect.zw);
+  if (clipped_max.x <= clipped_min.x || clipped_max.y <= clipped_min.y) {
+    return out;
+  }
+
+  let global_min = overlay_global_uv_from_local_uv(clipped_min, track);
+  let global_max = overlay_global_uv_from_local_uv(clipped_max, track);
+  let rect_global_min = overlay_global_uv_from_local_uv(local_rect.xy, track);
+  let rect_global_max = overlay_global_uv_from_local_uv(local_rect.zw, track);
+  let visible_global_min = overlay_global_uv_from_local_uv(visible_rect.xy, track);
+  let visible_global_max = overlay_global_uv_from_local_uv(visible_rect.zw, track);
+  let viewport_min = params.viewport_rect.xy;
+  let viewport_size = params.viewport_rect.zw;
+  let clipped_px_min = viewport_min + min(global_min, global_max) * viewport_size;
+  let clipped_px_max = viewport_min + max(global_min, global_max) * viewport_size;
+  let visible_px_min = viewport_min + min(visible_global_min, visible_global_max) * viewport_size;
+  let visible_px_max = viewport_min + max(visible_global_min, visible_global_max) * viewport_size;
+  let rect_min_px = viewport_min + min(rect_global_min, rect_global_max) * viewport_size;
+  let rect_max_px = viewport_min + max(rect_global_min, rect_global_max) * viewport_size;
+  let snapped_rect = vec4<f32>(
+    floor(rect_min_px.x + 0.5),
+    floor(rect_min_px.y + 0.5),
+    floor(rect_max_px.x + 0.5),
+    floor(rect_max_px.y + 0.5));
+
+  let draw_min = max(clipped_px_min - vec2<f32>(thickness), visible_px_min);
+  let draw_max = min(clipped_px_max + vec2<f32>(thickness), visible_px_max);
+  var strip_min = draw_min;
+  var strip_max = draw_max;
+  if (side == 0u) {
+    strip_min.y = snapped_rect.y;
+    strip_max.y = min(draw_max.y, snapped_rect.y + thickness);
+  } else if (side == 1u) {
+    strip_min.y = max(draw_min.y, snapped_rect.w - thickness);
+    strip_max.y = snapped_rect.w;
+  } else if (side == 2u) {
+    strip_min.x = snapped_rect.x;
+    strip_max.x = min(draw_max.x, snapped_rect.x + thickness);
+  } else {
+    strip_min.x = max(draw_min.x, snapped_rect.z - thickness);
+    strip_max.x = snapped_rect.z;
+  }
+  if (strip_max.x <= strip_min.x || strip_max.y <= strip_min.y) {
+    return out;
+  }
+
+  var px = strip_min;
+  if (corner == 1u || corner == 3u || corner == 4u) {
+    px.x = strip_max.x;
+  }
+  if (corner == 2u || corner == 4u || corner == 5u) {
+    px.y = strip_max.y;
+  }
+  out.position = overlay_viewport_position_from_px(px);
+  out.color = color;
+  return out;
+}
+
 fn overlay_motion_line_vertex(vertex_index: u32) -> OverlayFillVertexOut {
   var out: OverlayFillVertexOut;
   out.position = vec4<f32>(-2.0, -2.0, 0.0, 1.0);
@@ -536,6 +761,64 @@ fn overlay_motion_line_vertex(vertex_index: u32) -> OverlayFillVertexOut {
   return out;
 }
 
+fn overlay_viewport_motion_line_vertex(vertex_index: u32) -> OverlayFillVertexOut {
+  var out: OverlayFillVertexOut;
+  out.position = vec4<f32>(-2.0, -2.0, 0.0, 1.0);
+  out.color = vec4<f32>(0.0);
+
+  let motion_count = max(0, params.overlay_counts.z);
+  if (motion_count <= 0) {
+    return out;
+  }
+  let line_id = vertex_index / 6u;
+  let corner = vertex_index - line_id * 6u;
+  if (line_id >= u32(motion_count)) {
+    return out;
+  }
+  let rect = overlay_rects[u32(params.overlay_counts.x + params.overlay_counts.y) + line_id];
+  let track = overlay_track_index(rect);
+  let color = overlay_color_from_bgra(rect.color_bgra);
+  if (color.a <= 0.0) {
+    return out;
+  }
+
+  let a_uv = overlay_unpack_uv16(rect.rect_uv0);
+  let b_uv = overlay_unpack_uv16(rect.rect_uv1);
+  let local_a = overlay_local_rect_from_video_rect(a_uv, a_uv, track).xy;
+  let local_b = overlay_local_rect_from_video_rect(b_uv, b_uv, track).xy;
+  let visible_rect = overlay_visible_local_rect(track);
+  if (local_a.x < visible_rect.x || local_a.x > visible_rect.z ||
+      local_a.y < visible_rect.y || local_a.y > visible_rect.w ||
+      local_b.x < visible_rect.x || local_b.x > visible_rect.z ||
+      local_b.y < visible_rect.y || local_b.y > visible_rect.w) {
+    return out;
+  }
+
+  let a = params.viewport_rect.xy +
+      overlay_global_uv_from_local_uv(local_a, track) * params.viewport_rect.zw;
+  let b = params.viewport_rect.xy +
+      overlay_global_uv_from_local_uv(local_b, track) * params.viewport_rect.zw;
+  let delta = b - a;
+  let len = length(delta);
+  if (len <= 0.001) {
+    return out;
+  }
+  let normal = vec2<f32>(-delta.y, delta.x) / len;
+  let half_width = 1.0;
+
+  var px = a - normal * half_width;
+  if (corner == 1u || corner == 3u) {
+    px = b - normal * half_width;
+  } else if (corner == 2u || corner == 5u) {
+    px = a + normal * half_width;
+  } else if (corner == 4u) {
+    px = b + normal * half_width;
+  }
+  out.position = overlay_viewport_position_from_px(px);
+  out.color = color;
+  return out;
+}
+
 @vertex
 fn vs_overlay_primitive(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
   let fill_vertices = u32(max(0, params.overlay_counts.x)) * 6u;
@@ -555,6 +838,38 @@ fn vs_overlay_primitive(@builtin(vertex_index) vertex_index: u32) -> OverlayFill
   }
 
   return overlay_motion_line_vertex(after_line_black - line_vertices);
+}
+
+@vertex
+fn vs_overlay_viewport_primitive(@builtin(vertex_index) vertex_index: u32) -> OverlayFillVertexOut {
+  let fill_vertices = u32(max(0, params.overlay_counts.x)) * 6u;
+  if (vertex_index < fill_vertices) {
+    return overlay_viewport_fill_rect_vertex(vertex_index);
+  }
+
+  let after_fill = vertex_index - fill_vertices;
+  let line_vertices = u32(max(0, params.overlay_counts.y)) * 4u * 6u;
+  if (after_fill < line_vertices) {
+    return overlay_viewport_line_rect_vertex(after_fill, 2.0, vec4<f32>(0.0, 0.0, 0.0, 0.88));
+  }
+
+  let after_line_black = after_fill - line_vertices;
+  if (after_line_black < line_vertices) {
+    return overlay_viewport_line_rect_vertex(after_line_black, 1.0, vec4<f32>(1.0, 1.0, 1.0, 0.97));
+  }
+
+  return overlay_viewport_motion_line_vertex(after_line_black - line_vertices);
+}
+
+@fragment
+fn fs_flutter_surface(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+  let flutter_size = max(params.flutter_size.xy, vec2<f32>(1.0));
+  if (position.x < 0.0 || position.y < 0.0 ||
+      position.x >= flutter_size.x || position.y >= flutter_size.y) {
+    return vec4<f32>(0.0);
+  }
+  return map_premul_sdr_ui_to_output(
+    textureSample(flutter_surface_texture, src_sampler, position.xy / flutter_size));
 }
 
 fn read_u8(byte_offset: u32) -> u32 {
@@ -807,27 +1122,51 @@ fn sample_cv_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-  let target_size = vec2<f32>(params.target_mode.x, params.target_mode.y);
-  let tex_uv = position.xy / target_size;
-  let selection = select_track(tex_uv);
-  let track = clamp(selection.x, 0, 3);
-  let order_index = selection.y;
-  if (vec4_get_i(params.present, track) == 0) {
-    return map_sdr_ui_to_output(params.background);
+  let flutter_size = max(params.flutter_size.xy, vec2<f32>(1.0));
+  let direct_viewport_overlay = params.output_mode.w == 1;
+  let viewport_min = params.viewport_rect.xy;
+  let viewport_size = max(params.viewport_rect.zw, vec2<f32>(1.0));
+  let viewport_max = viewport_min + viewport_size;
+  var with_overlay = map_sdr_ui_to_output(params.background);
+
+  if (position.x >= viewport_min.x && position.y >= viewport_min.y &&
+      position.x < viewport_max.x && position.y < viewport_max.y) {
+    let viewport_uv = (position.xy - viewport_min) / viewport_size;
+    let selection = select_track(viewport_uv);
+    let track = clamp(selection.x, 0, 3);
+    let order_index = selection.y;
+    if (vec4_get_i(params.present, track) != 0) {
+      let uv = source_uv(track, track_local_uv(viewport_uv, order_index));
+      if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
+        let storage = i32(round(params.split.y));
+        var color = sample_bgra(track, uv);
+        if (storage == 1) {
+          color = sample_yuv(track, uv);
+        } else if (storage == 3) {
+          color = sample_cv_yuv(track, uv);
+        }
+        let divided = apply_split_divider(color, position.x - viewport_min.x);
+        let output_color = map_source_to_output(divided, track);
+        if (direct_viewport_overlay) {
+          with_overlay = output_color;
+        } else {
+          let overlay = map_sdr_ui_to_output(
+            textureSample(overlay_layer_texture, src_sampler, uv, track));
+          with_overlay = overlay_blend_over(output_color, overlay);
+        }
+      }
+    }
   }
-  let uv = source_uv(track, track_local_uv(tex_uv, order_index));
-  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-    return map_sdr_ui_to_output(params.background);
+
+  if (direct_viewport_overlay) {
+    return with_overlay;
   }
-  let storage = i32(round(params.split.y));
-  var color = sample_bgra(track, uv);
-  if (storage == 1) {
-    color = sample_yuv(track, uv);
-  } else if (storage == 3) {
-    color = sample_cv_yuv(track, uv);
+
+  if (position.x >= 0.0 && position.y >= 0.0 &&
+      position.x < flutter_size.x && position.y < flutter_size.y) {
+    let flutter = map_premul_sdr_ui_to_output(
+      textureSample(flutter_surface_texture, src_sampler, position.xy / flutter_size));
+    return premul_blend_over(with_overlay, flutter);
   }
-  let divided = apply_split_divider(color, position.x);
-  let output_color = map_source_to_output(divided, track);
-  let overlay = map_sdr_ui_to_output(textureSample(overlay_layer_texture, src_sampler, uv, track));
-  return overlay_blend_over(output_color, overlay);
+  return with_overlay;
 }

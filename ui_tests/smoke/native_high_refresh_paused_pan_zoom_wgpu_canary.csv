@@ -1,0 +1,27 @@
+# Windows default wgpu-d3d12 path should publish source-cache bundles and enter
+# retained source-projection DComp.
+@WINDOW, 1366, 768
+0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+3.0, ASSERT_TRACK_COUNT, 1
+3.2, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+6.0, ASSERT_TRACK_COUNT, 2
+6.1, ASSERT_PAUSED
+6.2, SET_ZOOM, 2.0
+6.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
+6.6, RESET_NATIVE_PERF_COUNTERS
+6.7, BEGIN_NATIVE_INTERACTION_SAMPLE, paused-pan-zoom-wgpu
+6.8, DRAG_VIEWPORT, 420, -160, 90, 4
+7.4, SET_ZOOM, 3.0
+7.5, DRAG_VIEWPORT, -300, 120, 90, 4
+8.2, END_NATIVE_INTERACTION_SAMPLE, paused-pan-zoom-wgpu
+8.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProjectionEnabled, true
+8.31, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, true
+8.32, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceProjectionReuseCount, 1
+8.33, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsViewportRedrawDuringProjectionCount, 0, 0
+8.34, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsHotPathActive, true
+8.35, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsHotPathMode, source-projection-wgpu-d3d12
+8.36, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsHotPathSourceCacheReuseCount, 1
+8.37, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsHotPathViewportRedrawDuringProjectionCount, 0, 0
+8.4, CAPTURE_VIEWPORT, high_refresh_paused_pan_zoom_wgpu
+8.5, ASSERT_CAPTURE_NOT_BLACK, high_refresh_paused_pan_zoom_wgpu, 0.01, 4.0
+8.6, QUIT, 0

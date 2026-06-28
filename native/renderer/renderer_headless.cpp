@@ -2,6 +2,7 @@
 #include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/render/renderer_draw_snapshot_builder.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -114,6 +115,24 @@ void Renderer::Impl::release_shared_texture(int buffer_index, uint64_t buffer_ge
 #endif
 }
 
+void* Renderer::Impl::native_render_device() const {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.native_render_device();
+#else
+    return nullptr;
+#endif
+}
+
+void* Renderer::Impl::native_render_command_queue() const {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.native_render_command_queue();
+#else
+    return nullptr;
+#endif
+}
+
 bool Renderer::Impl::acquire_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
 #ifdef _WIN32
@@ -147,11 +166,110 @@ void Renderer::Impl::set_shared_fp16_frame_callback(
 #endif
 }
 
+bool Renderer::Impl::update_external_flutter_surface(
+    const PresentationExternalD3D12Surface& surface) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.update_external_flutter_surface(surface);
+#else
+    (void)surface;
+    return false;
+#endif
+}
+
+void Renderer::Impl::clear_external_flutter_surface() {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    presentation_.clear_external_flutter_surface();
+#endif
+}
+
+bool Renderer::Impl::draw_current_frame_to_external_d3d12_target(
+    const PresentationExternalD3D12RenderTarget& target,
+    const char* reason) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!initialized_.load(std::memory_order_acquire) ||
+        shutting_down_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    RendererDrawSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> state_lock(state_mutex_);
+        snapshot = RendererDrawSnapshotBuilder::build(
+            track_controller_,
+            layout_state_,
+            surface_state_,
+            present_history_.snapshot());
+        if (!present_decision_has_frame(snapshot.decision) &&
+            present_decision_has_frame(external_d3d12_visible_decision_)) {
+            snapshot = RendererDrawSnapshotBuilder::build(
+                track_controller_,
+                layout_state_,
+                surface_state_,
+                external_d3d12_visible_decision_);
+        }
+    }
+    const float viewport_left = std::clamp(target.viewport_left, 0.0f, 1.0f);
+    const float viewport_top = std::clamp(target.viewport_top, 0.0f, 1.0f);
+    const float viewport_right =
+        std::clamp(target.viewport_right, viewport_left, 1.0f);
+    const float viewport_bottom =
+        std::clamp(target.viewport_bottom, viewport_top, 1.0f);
+    const bool viewport_valid =
+        viewport_right > viewport_left && viewport_bottom > viewport_top;
+    if (!target.resource || target.width <= 0 || target.height <= 0 ||
+        !viewport_valid) {
+        spdlog::warn(
+            "[Renderer] external D3D12 target rejected: target={}x{} snapshot={}x{} viewport=({:.4f},{:.4f})-({:.4f},{:.4f}) resource={}",
+            target.width,
+            target.height,
+            snapshot.target_width,
+            snapshot.target_height,
+            target.viewport_left,
+            target.viewport_top,
+            target.viewport_right,
+            target.viewport_bottom,
+            target.resource != nullptr);
+        return false;
+    }
+    const char* draw_reason =
+        reason && reason[0] != '\0' ? reason : "external-d3d12-present";
+    bool drew = false;
+    {
+        std::lock_guard<std::recursive_mutex> ctx_lock(
+            presentation_.device_mutex());
+        drew = presentation_.draw_frame_to_external_d3d12_target(
+            snapshot,
+            draw_reason,
+            presentation_metrics_,
+            target,
+            presentation_overlay_hooks());
+    }
+    if (drew) {
+        std::lock_guard<std::mutex> state_lock(state_mutex_);
+        if (present_decision_has_frame(snapshot.decision)) {
+            external_d3d12_visible_decision_ = snapshot.decision;
+        }
+        if (layout_state_.mark_presented_if_newer(
+                layout_state_.current_revision())) {
+            presentation_metrics_.note_layout_presented();
+        }
+        loop_driver_.mark_preview_presented(true);
+    }
+    return drew;
+#else
+    (void)target;
+    (void)reason;
+    return false;
+#endif
+}
+
 bool Renderer::Impl::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    return presentation_.configure_d3d_source_cache(descriptors);
+    return presentation_.configure_source_cache(descriptors);
 #else
     (void)descriptors;
     return false;
@@ -171,9 +289,27 @@ bool Renderer::Impl::update_presentation_sdr_white_level(double nits) {
 void Renderer::Impl::clear_source_cache(const char* reason) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    presentation_.clear_d3d_source_cache(reason);
+    presentation_.clear_source_cache(reason);
 #else
     (void)reason;
+#endif
+}
+
+bool Renderer::Impl::update_source_projection(
+    const WindowsSourceProjection& projection) {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.update_source_projection(projection);
+#else
+    (void)projection;
+    return false;
+#endif
+}
+
+void Renderer::Impl::clear_source_projection() {
+#ifdef _WIN32
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    presentation_.clear_source_projection();
 #endif
 }
 
@@ -181,7 +317,7 @@ bool Renderer::Impl::acquire_source_cache_bundle(
     SharedSourceCacheBundleSnapshot& snapshot) const {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    return presentation_.acquire_d3d_source_cache_bundle(snapshot);
+    return presentation_.acquire_source_cache_bundle(snapshot);
 #else
     (void)snapshot;
     return false;
@@ -192,7 +328,7 @@ void Renderer::Impl::release_source_cache_bundle(
     int buffer_index, uint64_t ring_generation) const {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    presentation_.release_d3d_source_cache_bundle(
+    presentation_.release_source_cache_bundle(
         buffer_index, ring_generation);
 #else
     (void)buffer_index;
@@ -204,19 +340,28 @@ void Renderer::Impl::set_source_cache_frame_callback(
     std::function<void()> cb) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    presentation_.set_d3d_source_cache_frame_callback(std::move(cb));
+    presentation_.set_source_cache_frame_callback(std::move(cb));
 #else
     (void)cb;
 #endif
 }
 
+bool Renderer::Impl::prewarm_presentation_target(int width, int height) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!surface_state_.headless() || !presentation_.has_backend()) return false;
+    const auto validation =
+        validate_renderer_dimensions(width, height, "prewarm dimensions");
+    if (!validation.ok) {
+        spdlog::warn("[Renderer] ignoring invalid prewarm: {}",
+                     validation.message);
+        return false;
+    }
+    return presentation_.prewarm_renderer_managed_headless_output(width, height);
+}
+
 void Renderer::Impl::resize(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-#ifdef _WIN32
-    if (!surface_state_.headless() || !presentation_.d3d_device()) return;
-#else
     if (!surface_state_.headless() || !presentation_.has_backend()) return;
-#endif
     const auto validation = validate_renderer_dimensions(width, height, "resize dimensions");
     if (!validation.ok) {
         spdlog::warn("[Renderer] ignoring invalid resize: {}", validation.message);

@@ -79,7 +79,9 @@ void main() {
     },
   );
 
-  test('native compositor viewport resize flushes without debounce', () async {
+  testWidgets('window resize debounces native compositor resize', (
+    tester,
+  ) async {
     final stateStore = MainWindowStateStore()
       ..setTextureId(1)
       ..setNativeCompositorActive(true)
@@ -100,10 +102,15 @@ void main() {
     coordinator.viewportHeight = 100;
 
     coordinator.onViewportResize(240, 180, 1.5);
+    coordinator.onViewportResize(300, 220, 1.5);
+
+    expect(controller.resizes, isEmpty);
+
+    await tester.pump(MainWindowLayoutCoordinator.viewportResizeDebounce);
     await coordinator.flushPendingLayout();
 
     expect(controller.calls, const ['resize', 'getLayout']);
-    expect(controller.resizes, const [Size(240, 180)]);
+    expect(controller.resizes, const [Size(300, 220)]);
   });
 
   test(
@@ -235,6 +242,52 @@ void main() {
     expect(coordinator.viewportHeight, 500);
   });
 
+  testWidgets(
+    'hiding marks sidebar removes Flutter panel before native resize',
+    (tester) async {
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setMarksSidebarVisible(true)
+        ..setMarksSidebarWidth(320)
+        ..setLayout(const LayoutState());
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager();
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 1000;
+      coordinator.viewportHeight = 500;
+      coordinator.viewportDevicePixelRatio = 2;
+      controller.currentSize = const Size(1000, 500);
+
+      final visibleNotifications = <bool>[];
+      stateStore.addListener(() {
+        visibleNotifications.add(stateStore.value.marksSidebarVisible);
+      });
+
+      coordinator.setMarksSidebarVisible(false);
+
+      expect(visibleNotifications, isNotEmpty);
+      expect(visibleNotifications.first, isFalse);
+      expect(stateStore.value.marksSidebarVisible, isFalse);
+      expect(controller.resizes, isEmpty);
+
+      tester.binding.scheduleFrame();
+      await tester.pump();
+
+      expect(controller.resizes, const [Size(1640, 500)]);
+      expect(coordinator.viewportWidth, 1640);
+      expect(coordinator.viewportHeight, 500);
+    },
+  );
+
   test('zoom combo changes are clamped through shared zoom path', () {
     final stateStore = MainWindowStateStore()
       ..setTextureId(1)
@@ -348,6 +401,53 @@ void main() {
       expect(controller.appliedLayouts, isEmpty);
       expect(controller.transforms, isEmpty);
       expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
+    },
+  );
+
+  test(
+    'native compositor split drag uses projection and defers full layout',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setNativeCompositorActive(true)
+        ..setPlaying(false)
+        ..setLayout(
+          const LayoutState(
+            mode: LayoutMode.splitScreen,
+            splitPos: 0.5,
+            order: [1, 2, -1, -1],
+          ),
+        );
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+        sourceProjectionEnabled: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 1600;
+      coordinator.viewportHeight = 900;
+
+      coordinator.onSplit(0.62);
+      await pumpEventQueue();
+
+      expect(stateStore.value.layout.splitPos, 0.62);
+      expect(controller.appliedLayouts, isEmpty);
+      expect(controller.transforms, isEmpty);
+      expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
+
+      coordinator.onPointerButton(false, false);
+      await coordinator.flushPendingLayout();
+
+      expect(controller.appliedLayouts, hasLength(1));
+      expect(controller.appliedLayouts.single.splitPos, 0.62);
+      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
     },
   );
 

@@ -59,7 +59,7 @@ const char* decode_device_mode_name(DecodeDeviceMode mode) {
     return "Unknown";
 }
 
-bool renderer_owned_d3d11_supports_stream_format(AVPixelFormat format) {
+bool renderer_owned_d3d12_supports_stream_format(AVPixelFormat format) {
     switch (format) {
     case AV_PIX_FMT_NONE:
     case AV_PIX_FMT_YUV420P:
@@ -104,12 +104,14 @@ static enum AVPixelFormat get_hw_format(AVCodecContext* ctx,
         if (preferred && *p == *preferred) {
             return *p;
         }
-        if (*p == AV_PIX_FMT_D3D11) {
+        if (*p == AV_PIX_FMT_D3D12 && fallback == AV_PIX_FMT_NONE) {
             fallback = *p;
         }
     }
     if (fallback != AV_PIX_FMT_NONE) {
-        spdlog::info("[DecodeThread] get_format: using D3D11 fallback");
+        const char* name = av_get_pix_fmt_name(fallback);
+        spdlog::info("[DecodeThread] get_format: using hardware fallback {}",
+                     name ? name : "unknown");
         return fallback;
     }
     spdlog::warn("[DecodeThread] HW pixel format not available in get_format, returning NONE");
@@ -178,12 +180,12 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
     device_mutex_ = device_mutex;
 
     const auto stream_format = static_cast<AVPixelFormat>(codec_params_->format);
-    if (backend == RenderBackendKind::D3D11 &&
+    if (backend == RenderBackendKind::WgpuD3D12 &&
         mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice &&
-        !renderer_owned_d3d11_supports_stream_format(stream_format)) {
+        !renderer_owned_d3d12_supports_stream_format(stream_format)) {
         const char* name = av_get_pix_fmt_name(stream_format);
         spdlog::info("[DecodeThread] Hardware decode disabled for stream pixel format {} ({}) "
-                     "because renderer-owned D3D11 path only supports NV12/P010-like 4:2:0 surfaces",
+                     "because renderer-owned wgpu-d3d12 path only supports NV12/P010-like 4:2:0 surfaces",
                      static_cast<int>(stream_format), name ? name : "unknown");
         hw_enabled_ = false;
         const AVCodec* sw_codec = preferred_software_decoder();
@@ -238,7 +240,7 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
 
     // Store hw device context and provider
     hw_device_ctx_.reset(result.hw_device_ctx);
-    hw_provider_ = std::move(result.provider);  // Must outlive hw_device_ctx (owns D3D11 mutex + context)
+    hw_provider_ = std::move(result.provider);  // Must outlive hw_device_ctx and provider locks.
     hw_type_ = result.type;
     hw_enabled_ = true;
     hw_pix_fmt_ = result.hw_pix_fmt;
@@ -248,8 +250,8 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
 
     // Increase the hw frame pool only when decoded hardware surfaces can be
     // held by the render queue. Hwdownload paths release decoder surfaces
-    // immediately after transfer; forcing a large D3D11VA pool there is both
-    // unnecessary and can produce black transfer frames on some AV1 drivers.
+    // immediately after transfer; forcing a large hardware pool there is both
+    // unnecessary and can produce black transfer frames on some drivers.
     if (hardware_surfaces_are_renderer_owned()) {
         codec_ctx_->extra_hw_frames = kRendererOwnedHwExtraFrames;
         spdlog::info("[DecodeThread] Renderer-owned hardware frame pool extra_hw_frames={}",

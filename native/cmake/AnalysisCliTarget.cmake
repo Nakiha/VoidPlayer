@@ -10,16 +10,9 @@ function(void_add_analysis_cli target_name)
         message(FATAL_ERROR "void_add_analysis_cli requires analysis_lib")
     endif()
 
-    set(_void_analysis_overlay_benchmark
-        "${VOID_NATIVE_DIR}/tools/analysis_overlay_gpu_benchmark_stub.cpp")
-    if(WIN32)
-        set(_void_analysis_overlay_benchmark
-            "${VOID_NATIVE_DIR}/tools/analysis_overlay_gpu_benchmark.cpp")
-    endif()
-
     add_executable(${target_name}
         "${VOID_NATIVE_DIR}/tools/void_player_cli.cpp"
-        "${_void_analysis_overlay_benchmark}"
+        "${VOID_NATIVE_DIR}/tools/analysis_overlay_gpu_benchmark_stub.cpp"
     )
     void_apply_native_compile_options(${target_name})
     target_include_directories(${target_name} PRIVATE
@@ -27,10 +20,4 @@ function(void_add_analysis_cli target_name)
         "${CMAKE_BINARY_DIR}/renderer"
         "${CMAKE_CURRENT_BINARY_DIR}")
     target_link_libraries(${target_name} PRIVATE analysis_lib)
-    if(WIN32)
-        target_link_libraries(${target_name} PRIVATE
-            d3d11
-            dxgi
-            d3dcompiler)
-    endif()
 endfunction()

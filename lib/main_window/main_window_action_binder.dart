@@ -20,7 +20,7 @@ extension MainWindowViewActionBinding on MainWindowController {
       ),
       toolbar: MainWindowToolbarActions(
         onViewModeChanged: (mode) {
-          log.info(
+          log.fine(
             '[WindowsCompositorDebug] toolbar viewMode click mode=$mode '
             'canChange=${_capabilities.canChangeViewMode}',
           );
@@ -28,7 +28,7 @@ extension MainWindowViewActionBinding on MainWindowController {
           layoutCoordinator.setLayoutMode(mode);
         },
         onOpenFile: () {
-          log.info(
+          log.fine(
             '[WindowsCompositorDebug] toolbar openFile click '
             'canOpen=${_capabilities.canOpenLocalMedia} '
             'canAdd=${_capabilities.canAddTrack} '
@@ -40,7 +40,7 @@ extension MainWindowViewActionBinding on MainWindowController {
           return _runUserAction('open file', mediaCoordinator.openFile);
         },
         onOpenNetworkMedia: (url) {
-          log.info(
+          log.fine(
             '[WindowsCompositorDebug] toolbar openNetwork click '
             'canOpen=${_capabilities.canOpenNetworkMedia} '
             'canAdd=${_capabilities.canAddTrack} '
@@ -65,7 +65,7 @@ extension MainWindowViewActionBinding on MainWindowController {
           );
         },
         onMediaInfo: () {
-          log.info(
+          log.fine(
             '[WindowsCompositorDebug] toolbar mediaInfo click '
             'canOpen=${_capabilities.canOpenMediaInfo} '
             'tracks=${trackManager.count} visible=$_mediaInfoVisible',
@@ -74,7 +74,7 @@ extension MainWindowViewActionBinding on MainWindowController {
           stateStore.setMediaInfoVisible(!_mediaInfoVisible);
         },
         onAnalysis: () {
-          log.info(
+          log.fine(
             '[WindowsCompositorDebug] toolbar analysis click '
             'canRun=${_capabilities.canRunAnalysis} '
             'tracks=${trackManager.count}',
@@ -95,7 +95,7 @@ extension MainWindowViewActionBinding on MainWindowController {
           return Future<void>.value();
         },
         onProfiler: () {
-          log.info(
+          log.fine(
             '[WindowsCompositorDebug] toolbar profiler click '
             'canOpen=${_capabilities.canOpenProfiler} '
             'visible=$_profilerVisible',
@@ -104,14 +104,14 @@ extension MainWindowViewActionBinding on MainWindowController {
           stateStore.setProfilerVisible(!_profilerVisible);
         },
         onSettings: () {
-          log.info(
+          log.fine(
             '[WindowsCompositorDebug] toolbar settings click '
             'visible=$_settingsVisible',
           );
           stateStore.setSettingsVisible(!_settingsVisible);
         },
         onMarksSidebarToggle: () {
-          log.info(
+          log.fine(
             '[WindowsCompositorDebug] toolbar marksSidebar click '
             'visible=$_marksSidebarVisible '
             'width=${_state.marksSidebarWidth}',
@@ -122,11 +122,16 @@ extension MainWindowViewActionBinding on MainWindowController {
       viewport: MainWindowViewportActions(
         onPan: (delta) {
           if (!_capabilities.canPanViewport) return;
+          _boostNativeCompositorFlutterInteraction(reason: 'viewport-pan');
           layoutCoordinator.onPan(delta);
         },
-        onSplit: layoutCoordinator.onSplit,
+        onSplit: (position) {
+          _boostNativeCompositorFlutterInteraction(reason: 'viewport-split');
+          layoutCoordinator.onSplit(position);
+        },
         onZoom: (factor, localPos) {
           if (!_capabilities.canZoomViewport) return;
+          _boostNativeCompositorFlutterInteraction(reason: 'viewport-zoom');
           layoutCoordinator.onZoom(factor, localPos);
         },
         onPointerButton: layoutCoordinator.onPointerButton,
@@ -151,12 +156,26 @@ extension MainWindowViewActionBinding on MainWindowController {
                 ),
               );
             },
-        onQuickMarkStart: quickMarkCoordinator.startDrag,
-        onQuickMarkUpdate: quickMarkCoordinator.updateDrag,
+        onQuickMarkStart: (position) {
+          _boostNativeCompositorFlutterInteraction(reason: 'quick-mark-start');
+          quickMarkCoordinator.startDrag(position);
+        },
+        onQuickMarkUpdate: (position) {
+          _boostNativeCompositorFlutterInteraction(reason: 'quick-mark-drag');
+          quickMarkCoordinator.updateDrag(position);
+        },
+        onQuickMarkInteraction: () {
+          _boostNativeCompositorFlutterInteraction(
+            reason: 'quick-mark-overlay',
+          );
+        },
         onQuickMarkEnd: quickMarkCoordinator.finishDrag,
         onQuickMarkCancel: quickMarkCoordinator.cancelDrag,
         onQuickMarkSelect: quickMarkCoordinator.select,
-        onQuickMarkChanged: quickMarkCoordinator.update,
+        onQuickMarkChanged: (mark) {
+          _boostNativeCompositorFlutterInteraction(reason: 'quick-mark-change');
+          quickMarkCoordinator.update(mark);
+        },
         onQuickMarkDeleted: quickMarkCoordinator.delete,
         onQuickMarkFocus: quickMarkCoordinator.focus,
       ),
@@ -191,16 +210,25 @@ extension MainWindowViewActionBinding on MainWindowController {
             _runUserAction('step backward', playbackCoordinator.stepBackward),
         onSeek: (ptsUs) {
           if (!_capabilities.canSeek) return;
+          _boostNativeCompositorFlutterInteraction(reason: 'timeline-seek');
           playbackCoordinator.seekTo(ptsUs);
         },
-        onSliderHover: playbackCoordinator.onSliderHover,
+        onSliderHover: (hoverUs, hovering) {
+          if (hovering) {
+            _boostNativeCompositorFlutterInteraction(reason: 'timeline-hover');
+          }
+          playbackCoordinator.onSliderHover(hoverUs, hovering);
+        },
         onLoopRangeEnabledChanged: (enabled) {
           return _runUserAction(
             'set loop range enabled',
             () => playbackCoordinator.setLoopRangeEnabled(enabled),
           );
         },
-        onLoopRangeChanged: playbackCoordinator.previewLoopRange,
+        onLoopRangeChanged: (startUs, endUs) {
+          _boostNativeCompositorFlutterInteraction(reason: 'loop-range-drag');
+          playbackCoordinator.previewLoopRange(startUs, endUs);
+        },
         onLoopRangeChangeEnd: (handle) {
           if (!_loopRangeEnabled) return Future<void>.value();
           return _runUserAction(
@@ -225,7 +253,12 @@ extension MainWindowViewActionBinding on MainWindowController {
           if (!_capabilities.canToggleTrackAudio) return;
           playbackCoordinator.toggleTrackAudio(fileId);
         },
-        onControlsWidthChanged: stateStore.setTimelineControlsWidth,
+        onControlsWidthChanged: (width) {
+          _boostNativeCompositorFlutterInteraction(
+            reason: 'timeline-controls-resize',
+          );
+          stateStore.setTimelineControlsWidth(width);
+        },
       ),
       analysisOverlay: MainWindowAnalysisOverlayActions(
         onTypeChanged: (type) {

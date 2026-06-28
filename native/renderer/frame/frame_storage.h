@@ -5,7 +5,8 @@
 #include <variant>
 #include <vector>
 
-struct ID3D11Texture2D;
+struct ID3D12Fence;
+struct ID3D12Resource;
 
 namespace vr {
 
@@ -67,14 +68,16 @@ struct CpuPlanarYuvFrameStorage {
     int bytes_per_sample = 1;
 };
 
-struct D3D11Nv12FrameStorage {
-    ID3D11Texture2D* texture = nullptr;
-    int array_index = 0;
-    std::shared_ptr<void> frame_ref;
-};
-
-struct D3D11TextureFrameStorage {
-    ID3D11Texture2D* texture = nullptr;
+struct D3D12TextureFrameStorage {
+    ID3D12Resource* texture = nullptr;
+    int subresource_index = 0;
+    ID3D12Fence* fence = nullptr;
+    void* fence_event = nullptr;
+    uint64_t fence_value = 0;
+    bool is_texture_array = false;
+    bool is_p010 = false;
+    int coded_width = 0;
+    int coded_height = 0;
     std::shared_ptr<void> frame_ref;
 };
 
@@ -93,8 +96,7 @@ using FrameStorage = std::variant<
     CpuRgbaFrameStorage,
     CpuNv12FrameStorage,
     CpuPlanarYuvFrameStorage,
-    D3D11Nv12FrameStorage,
-    D3D11TextureFrameStorage,
+    D3D12TextureFrameStorage,
     MacOSCVPixelBufferFrameStorage>;
 
 enum class FrameStorageKind {
@@ -102,8 +104,7 @@ enum class FrameStorageKind {
     CpuRgba,
     CpuNv12,
     CpuPlanarYuv,
-    D3D11Nv12,
-    D3D11Texture,
+    D3D12Texture,
     MacOSCVPixelBuffer,
 };
 
@@ -124,11 +125,8 @@ inline FrameStorageKind frame_storage_kind(const FrameStorage& storage) {
     if (std::holds_alternative<CpuPlanarYuvFrameStorage>(storage)) {
         return FrameStorageKind::CpuPlanarYuv;
     }
-    if (std::holds_alternative<D3D11Nv12FrameStorage>(storage)) {
-        return FrameStorageKind::D3D11Nv12;
-    }
-    if (std::holds_alternative<D3D11TextureFrameStorage>(storage)) {
-        return FrameStorageKind::D3D11Texture;
+    if (std::holds_alternative<D3D12TextureFrameStorage>(storage)) {
+        return FrameStorageKind::D3D12Texture;
     }
     if (std::holds_alternative<MacOSCVPixelBufferFrameStorage>(storage)) {
         return FrameStorageKind::MacOSCVPixelBuffer;
@@ -142,8 +140,7 @@ inline FrameStorageClass frame_storage_class(FrameStorageKind kind) {
     case FrameStorageKind::CpuNv12:
     case FrameStorageKind::CpuPlanarYuv:
         return FrameStorageClass::CpuPixels;
-    case FrameStorageKind::D3D11Nv12:
-    case FrameStorageKind::D3D11Texture:
+    case FrameStorageKind::D3D12Texture:
         return FrameStorageClass::HardwareTexture;
     case FrameStorageKind::MacOSCVPixelBuffer:
         return FrameStorageClass::CVPixelBuffer;

@@ -1,16 +1,11 @@
 #pragma once
 
-#include "windows/d3d11/shared_fp16_ring.h"
-#include "windows/d3d11/shared_source_cache_ring.h"
-#include "windows/d3d11/cross_adapter_transport.h"
-#include "windows/presentation/windows_dcomp_composite.h"
+#include "windows/presentation/windows_d3d12_present_target.h"
 #include "windows/presentation/windows_device_recovery.h"
 #include "windows/presentation/windows_high_refresh_metrics.h"
-#include "windows/presentation/windows_overlay_layer_state.h"
 #include "windows/player/native_player.h"
 
-#include <d3d11.h>
-#include <d3d11_1.h>
+#include <d3d12.h>
 #include <dcomp.h>
 #include <dxgi1_4.h>
 #include <windows.h>
@@ -25,6 +20,10 @@
 #include <mutex>
 #include <string>
 #include <thread>
+
+namespace vr {
+struct WindowsSourceProjection;
+} // namespace vr
 
 class WindowsNativeCompositor {
 public:
@@ -107,20 +106,19 @@ public:
         uint64_t flutter_export_begin_fail_count = 0;
         uint64_t flutter_export_make_current_fail_count = 0;
         uint64_t flutter_export_publish_fail_count = 0;
+        uint64_t flutter_export_flush_count = 0;
+        uint64_t flutter_export_finish_count = 0;
         uint64_t flutter_export_backpressure_count = 0;
         uint64_t flutter_export_pending_frame_pump_frames = 0;
         uint64_t flutter_export_stale_timeout_count = 0;
+        uint64_t flutter_export_unsolicited_signal_count = 0;
+        uint64_t flutter_export_unsolicited_throttle_count = 0;
         uint64_t video_generation = 0;
         uint64_t composite_count = 0;
         uint64_t present_count = 0;
         uint64_t drop_count = 0;
         uint64_t failure_count = 0;
         uint64_t resize_count = 0;
-        uint64_t diagnostic_capture_count = 0;
-        uint64_t flutter_alpha_average_x1000 = 0;
-        uint64_t flutter_transparent_pixels_x1000 = 0;
-        uint64_t final_max_rgb_x1000 = 0;
-        uint64_t final_pixels_over_1 = 0;
         uint64_t source_cache_consumed_generation = 0;
         uint64_t source_cache_fallback_count = 0;
         uint64_t source_projection_update_count = 0;
@@ -131,6 +129,8 @@ public:
         int64_t high_refresh_display_hz = 60;
         int64_t dcomp_present_interval_p95_us = 0;
         int64_t dcomp_composite_p95_us = 0;
+        int64_t dcomp_draw_p95_us = 0;
+        int64_t dcomp_present_block_p95_us = 0;
         int64_t dcomp_acquire_wait_p95_us = 0;
         int64_t interaction_input_to_present_p95_us = 0;
         int64_t dcomp_drop_rate_x1000 = 0;
@@ -154,6 +154,8 @@ public:
         int64_t hot_path_frame_budget_us = 16666;
         int64_t hot_path_present_interval_p95_us = 0;
         int64_t hot_path_composite_p95_us = 0;
+        int64_t hot_path_draw_p95_us = 0;
+        int64_t hot_path_present_block_p95_us = 0;
         int64_t hot_path_acquire_wait_p95_us = 0;
         int64_t hot_path_input_to_present_p95_us = 0;
         int64_t hot_path_drop_rate_x1000 = 0;
@@ -172,6 +174,8 @@ public:
         std::string hot_path_mode = "inactive";
         std::string hot_path_last_failure_reason = "none";
         std::string hot_path_gate_result = "not-run";
+        std::string retained_graph_mode = "inactive";
+        std::string retained_graph_fallback_reason = "none";
         uint32_t swap_chain_width = 0;
         uint32_t swap_chain_height = 0;
         bool engine_export_available = false;
@@ -196,6 +200,18 @@ public:
         bool high_refresh_gate_supported = false;
         bool overlay_retained_layer_active = false;
         bool hot_path_active = false;
+        bool retained_graph_active = false;
+        uint64_t retained_graph_commit_count = 0;
+        uint64_t retained_graph_projection_commit_count = 0;
+        uint64_t retained_graph_source_bake_count = 0;
+        uint64_t retained_graph_flutter_bake_count = 0;
+        uint64_t retained_graph_projection_skip_present_count = 0;
+        uint64_t retained_graph_deferred_content_count = 0;
+        uint64_t retained_graph_commit_defer_count = 0;
+        int64_t retained_graph_flutter_bake_p95_us = 0;
+        int64_t retained_graph_source_bake_p95_us = 0;
+        int64_t retained_graph_apply_p95_us = 0;
+        int64_t retained_graph_commit_p95_us = 0;
     };
 
     using StateCallback = std::function<void(Phase, uint64_t, const std::string&)>;
@@ -215,11 +231,12 @@ public:
     void Stop(const char* reason = "shutdown");
     void SetViewportRect(double left, double top, double right, double bottom);
     void SetViewportBackgroundColor(uint32_t argb);
+    void NotifyClientSizeChanged(uint32_t width, uint32_t height);
     bool RequestFlutterFrame(const std::string& reason);
-    void SetSourceProjection(const SourceProjection& projection);
+    void BoostFlutterInteraction(const std::string& reason);
+    void DisableRetainedSourceProjection(const std::string& reason);
     void ClearSourceProjection(const std::string& reason);
     void SetSourceCacheError(const std::string& error);
-    void NotifySourceCachePublished();
     void RequestOutputTarget(OutputTarget target,
                              IDXGIAdapter* output_adapter,
                              double sdr_white_level_nits,
@@ -228,7 +245,6 @@ public:
     void AcknowledgeFlutterState(uint64_t serial, bool transparent_viewport);
     void ForceFailureForTesting(const std::string& reason);
     bool BeginDeviceRecovery(const std::string& reason, long removed_reason);
-    void RequestDiagnosticCapture();
     void SetHighRefreshDisplayHz(int64_t display_hz);
     void ResetHighRefreshMetrics();
     void BeginInteractionSample(const std::string& label);
@@ -236,18 +252,48 @@ public:
     Diagnostics diagnostics() const;
 
 private:
-    struct SwapChainResources {
-        Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain;
-        Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
-        OutputTarget target = OutputTarget::SDR;
-        uint32_t width = 0;
-        uint32_t height = 0;
-        bool color_space_supported = false;
+    enum class FlutterSurfaceBackend : int {
+        Unknown = 0,
+        D3D12 = 2,
+    };
+
+    enum class FlutterSurfaceSync : int {
+        None = 0,
+        KeyedMutex = 1,
+        SharedFence = 2,
     };
 
     struct FlutterSurface {
         size_t struct_size = sizeof(FlutterSurface);
+        FlutterSurfaceBackend backend = FlutterSurfaceBackend::Unknown;
+        FlutterSurfaceSync sync = FlutterSurfaceSync::KeyedMutex;
         HANDLE shared_texture_handle = nullptr;
+        HANDLE fence_handle = nullptr;
+        uint64_t fence_value = 0;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+        int alpha_mode = 0;
+        uint64_t ring_generation = 0;
+        uint64_t frame_generation = 0;
+        uint32_t slot = 0;
+        uint64_t consumer_acquire_key = 1;
+        uint64_t producer_release_key = 0;
+        uint64_t lease_id = 0;
+    };
+
+    struct FlutterSurfaceAcquireOptions {
+        size_t struct_size = sizeof(FlutterSurfaceAcquireOptions);
+        FlutterSurfaceBackend requested_backend = FlutterSurfaceBackend::Unknown;
+    };
+
+    struct FlutterSurfaceV2 {
+        size_t struct_size = sizeof(FlutterSurfaceV2);
+        FlutterSurfaceBackend backend = FlutterSurfaceBackend::Unknown;
+        FlutterSurfaceSync sync = FlutterSurfaceSync::None;
+        HANDLE texture_handle = nullptr;
+        HANDLE fence_handle = nullptr;
+        uint64_t fence_value = 0;
         uint32_t width = 0;
         uint32_t height = 0;
         DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
@@ -275,6 +321,8 @@ private:
         uint64_t export_begin_fail_count = 0;
         uint64_t export_make_current_fail_count = 0;
         uint64_t export_publish_fail_count = 0;
+        uint64_t export_flush_count = 0;
+        uint64_t export_finish_count = 0;
         uint64_t backpressure_count = 0;
         uint64_t pending_frame_pump_frames = 0;
         uint32_t width = 0;
@@ -282,6 +330,25 @@ private:
         uint32_t latest_slot = 0;
         bool latest_available = false;
         bool shutdown = false;
+        uint64_t last_request_time_us = 0;
+        uint64_t last_request_dispatch_time_us = 0;
+        uint64_t last_schedule_frame_time_us = 0;
+        uint64_t last_vsync_time_us = 0;
+        uint64_t last_present_time_us = 0;
+        uint64_t last_begin_time_us = 0;
+        uint64_t last_begin_fail_time_us = 0;
+        uint64_t last_backpressure_time_us = 0;
+        uint64_t last_publish_time_us = 0;
+        uint64_t last_export_sync_time_us = 0;
+        uint64_t last_acquire_time_us = 0;
+        uint64_t last_release_time_us = 0;
+        uint32_t active_lease_count = 0;
+        uint32_t writing_slot_count = 0;
+        uint32_t leased_slot_count = 0;
+        uint32_t retired_ring_count = 0;
+        uint32_t latest_slot_lease_count = 0;
+        uint64_t acquire_count = 0;
+        uint64_t release_count = 0;
     };
 
     using SetExportModeFn = bool (*)(void*, int);
@@ -290,7 +357,8 @@ private:
         bool (*)(void*, FlutterSurfaceExportState*);
     using PublishedCallback = void (*)(void*, uint64_t, void*);
     using SetPublishedCallbackFn = void (*)(void*, PublishedCallback, void*);
-    using AcquireFlutterSurfaceFn = bool (*)(void*, FlutterSurface*);
+    using AcquireFlutterSurfaceV2Fn =
+        bool (*)(void*, const FlutterSurfaceAcquireOptions*, FlutterSurfaceV2*);
     using ReleaseFlutterSurfaceFn = bool (*)(void*, uint64_t);
 
     struct EngineApi {
@@ -298,10 +366,10 @@ private:
         RequestSurfaceExportFrameFn request_frame = nullptr;
         GetSurfaceExportStateFn get_state = nullptr;
         SetPublishedCallbackFn set_callback = nullptr;
-        AcquireFlutterSurfaceFn acquire = nullptr;
+        AcquireFlutterSurfaceV2Fn acquire_v2 = nullptr;
         ReleaseFlutterSurfaceFn release = nullptr;
         bool available() const {
-            return set_mode && set_callback && acquire && release;
+            return set_mode && set_callback && acquire_v2 && release;
         }
         bool frame_pump_available() const {
             return request_frame && get_state;
@@ -313,38 +381,13 @@ private:
     bool LoadEngineApi();
     bool InitializeDeviceAndComposition(IDXGIAdapter* producer_adapter,
                                         IDXGIAdapter* output_adapter);
-    bool CreateSwapChainCandidate(uint32_t width,
-                                  uint32_t height,
-                                  OutputTarget target,
-                                  SwapChainResources& resources);
-    bool EnsureSwapChain(uint32_t width, uint32_t height);
-    bool ActivatePendingSwapChain();
-    bool CreatePipeline();
-    bool CaptureDiagnostics(ID3D11Texture2D* back_buffer,
-                            ID3D11Texture2D* flutter_texture);
-    bool DrawOverlay(
-        const std::shared_ptr<const vr::AnalysisOverlayPrimitivePackage>& overlay,
-        const SourceProjection& projection,
-        const D3D11_TEXTURE2D_DESC& back_desc);
-    void ResetOverlayLayer(const std::string& reason);
     void ReleaseHeldInputs(const std::shared_ptr<vr::NativePlayer>& player);
     void ThreadMain();
     bool CompositeLatest();
     void SignalWork();
     void EnterFailed(const std::string& reason);
     void PublishState(Phase phase, const std::string& reason);
-    bool EnsureProducerDevice(IDXGIAdapter* producer_adapter);
     bool SetOutputAdapterLocked(IDXGIAdapter* output_adapter);
-    bool IsCrossAdapterActive() const;
-    bool OpenInputTexture(ID3D11Device1* device1,
-                          HANDLE handle,
-                          ID3D11Texture2D** texture) const;
-    bool TransportInput(ID3D11Texture2D* producer_texture,
-                        DXGI_FORMAT format,
-                        uint32_t width,
-                        uint32_t height,
-                        vr::D3D11CrossAdapterTextureTransport& transport,
-                        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& srv);
     void UpdateTransportDiagnosticsLocked();
     static const char* PhaseName(Phase phase);
     static const char* OutputTargetName(OutputTarget target);
@@ -365,87 +408,56 @@ private:
     EngineApi engine_api_;
     StateCallback state_callback_;
 
-    Microsoft::WRL::ComPtr<ID3D11Device> device_;
-    Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
-    Microsoft::WRL::ComPtr<ID3D11Device> producer_device_;
-    Microsoft::WRL::ComPtr<ID3D11DeviceContext> producer_context_;
     Microsoft::WRL::ComPtr<IDXGIAdapter> producer_adapter_;
     Microsoft::WRL::ComPtr<IDXGIAdapter> output_adapter_;
     Microsoft::WRL::ComPtr<IDXGIAdapter> pending_output_adapter_;
-    vr::WindowsCrossAdapterTransportSupport transport_support_;
-    vr::WindowsCrossAdapterSyncRequest cross_adapter_sync_request_ =
-        vr::WindowsCrossAdapterSyncRequest::Auto;
-    SwapChainResources current_swap_chain_;
-    SwapChainResources pending_swap_chain_;
     Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device_;
     Microsoft::WRL::ComPtr<IDCompositionTarget> dcomp_target_;
     Microsoft::WRL::ComPtr<IDCompositionVisual> dcomp_visual_;
-    Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel_shader_;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> video_pixel_shader_;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> flutter_pixel_shader_;
-    Microsoft::WRL::ComPtr<ID3D11BlendState> premultiplied_blend_state_;
-    Microsoft::WRL::ComPtr<ID3D11VertexShader> overlay_vertex_shader_;
-    Microsoft::WRL::ComPtr<ID3D11PixelShader> overlay_pixel_shader_;
-    Microsoft::WRL::ComPtr<ID3D11InputLayout> overlay_input_layout_;
-    Microsoft::WRL::ComPtr<ID3D11BlendState> overlay_blend_state_;
-    Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
-    Microsoft::WRL::ComPtr<ID3D11Buffer> constants_;
-
-    bool held_video_valid_ = false;
-    vr::SharedFp16TextureSnapshot held_video_;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> held_video_texture_;
-    Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_video_mutex_;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_video_srv_;
-    vr::D3D11CrossAdapterTextureTransport video_transport_;
-
-    bool held_sdr_video_valid_ = false;
-    vr::SharedTextureSnapshot held_sdr_video_;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> held_sdr_video_texture_;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_sdr_video_srv_;
-    vr::D3D11CrossAdapterTextureTransport sdr_video_transport_;
+    std::unique_ptr<vr::WindowsD3D12PresentTarget> d3d12_present_target_;
 
     bool held_flutter_valid_ = false;
     FlutterSurface held_flutter_;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> held_flutter_texture_;
-    Microsoft::WRL::ComPtr<IDXGIKeyedMutex> held_flutter_mutex_;
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> held_flutter_srv_;
-    vr::D3D11CrossAdapterTextureTransport flutter_transport_;
-
-    bool held_source_valid_ = false;
-    vr::SharedSourceCacheBundleSnapshot held_source_;
-    std::array<Microsoft::WRL::ComPtr<ID3D11Texture2D>, 4>
-        held_source_textures_;
-    std::array<Microsoft::WRL::ComPtr<IDXGIKeyedMutex>, 4>
-        held_source_mutexes_;
-    std::array<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>, 4>
-        held_source_srvs_;
-    std::array<bool, 4> held_source_present_{};
-    std::array<int, 4> held_source_transfer_{};
-    std::array<vr::D3D11CrossAdapterTextureTransport, 4> source_transports_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> held_flutter_d3d12_resource_;
+    uint64_t external_flutter_surface_submitted_generation_ = 0;
+    uint64_t external_flutter_surface_refresh_generation_ = 0;
+    uint64_t d3d12_direct_present_count_ = 0;
+    uint64_t d3d12_target_resize_count_ = 0;
 
     mutable std::mutex mutex_;
     std::condition_variable wake_;
     std::thread thread_;
     bool stop_ = false;
     bool work_pending_ = false;
-    bool diagnostic_capture_pending_ = true;
+    uint32_t pending_client_width_ = 0;
+    uint32_t pending_client_height_ = 0;
+    uint64_t client_resize_signal_count_ = 0;
     bool terminal_inactive_ = false;
     OutputTarget desired_output_target_ = OutputTarget::SDR;
     uint64_t transition_min_video_generation_ = 0;
-    uint64_t transition_min_source_generation_ = 0;
     Phase phase_ = Phase::Inactive;
     uint64_t state_serial_ = 0;
     uint64_t ack_serial_ = 0;
     double viewport_[4] = {0.0, 0.0, 1.0, 1.0};
     float viewport_background_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-    SourceProjection source_projection_;
     std::string source_cache_error_ = "none";
+    std::string retained_graph_fallback_reason_ = "none";
+    std::chrono::steady_clock::time_point
+        last_transition_guard_log_{};
+    std::chrono::steady_clock::time_point
+        last_flutter_export_pacing_log_{};
+    uint64_t last_flutter_export_pacing_request_count_ = 0;
+    uint64_t last_flutter_export_pacing_request_dispatch_count_ = 0;
+    uint64_t last_flutter_export_pacing_schedule_frame_count_ = 0;
+    uint64_t last_flutter_export_pacing_vsync_count_ = 0;
+    uint64_t last_flutter_export_pacing_publish_count_ = 0;
+    uint64_t last_flutter_export_pacing_present_count_ = 0;
+    uint64_t last_flutter_export_pacing_acquire_count_ = 0;
+    uint64_t last_flutter_export_pacing_release_count_ = 0;
+    uint64_t last_flutter_export_pacing_begin_count_ = 0;
+    uint64_t last_flutter_export_pacing_backpressure_count_ = 0;
     std::chrono::steady_clock::time_point rate_start_time_{};
     uint64_t source_cache_publish_count_ = 0;
-    bool source_cache_base_lease_wait_logged_ = false;
-    bool source_cache_bundle_acquire_logged_ = false;
-    bool source_cache_consumed_logged_ = false;
     vr::WindowsHighRefreshMetrics high_refresh_metrics_;
     std::chrono::steady_clock::time_point last_present_time_{};
     std::chrono::steady_clock::time_point interaction_sample_started_{};
@@ -460,18 +472,20 @@ private:
     uint64_t flutter_generation_log_count_ = 0;
     uint64_t flutter_publish_callback_count_ = 0;
     uint64_t last_flutter_publish_callback_generation_ = 0;
+    uint64_t flutter_export_unsolicited_signal_count_ = 0;
+    uint64_t flutter_export_unsolicited_throttle_count_ = 0;
+    std::chrono::steady_clock::time_point
+        last_unsolicited_flutter_export_signal_{};
     uint64_t flutter_frame_request_sequence_ = 0;
     uint64_t pending_flutter_frame_request_sequence_ = 0;
     uint64_t pending_flutter_frame_request_base_generation_ = 0;
     std::string pending_flutter_frame_request_reason_;
     std::chrono::steady_clock::time_point
         pending_flutter_frame_request_time_{};
+    std::chrono::steady_clock::time_point
+        last_explicit_flutter_frame_request_time_{};
     bool pending_flutter_frame_request_acquire_logged_ = false;
     uint64_t flutter_export_stale_timeout_count_ = 0;
     double last_logged_viewport_[4] = {-1.0, -1.0, -1.0, -1.0};
-    Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_vertex_buffer_;
-    UINT overlay_vertex_count_ = 0;
-    vr::WindowsOverlayLayerCacheState overlay_layer_state_;
-    vr::WindowsOverlayLayerSignature overlay_layer_signature_;
     Diagnostics diagnostics_;
 };

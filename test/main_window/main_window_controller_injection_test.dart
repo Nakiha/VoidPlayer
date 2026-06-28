@@ -19,7 +19,10 @@ import 'package:void_player/startup_options.dart';
 import 'package:void_player/video_renderer_controller.dart';
 
 class _FakeMainWindowPlatform implements MainWindowPlatform {
+  _FakeMainWindowPlatform({this.onSetFullScreen});
+
   final List<bool> fullScreenCalls = [];
+  final void Function(bool fullScreen)? onSetFullScreen;
 
   @override
   Future<Rect> getBounds() =>
@@ -27,6 +30,7 @@ class _FakeMainWindowPlatform implements MainWindowPlatform {
 
   @override
   Future<void> setFullScreen(bool fullScreen) async {
+    onSetFullScreen?.call(fullScreen);
     fullScreenCalls.add(fullScreen);
   }
 }
@@ -323,8 +327,14 @@ void main() {
   testWidgets(
     'fullscreen toggle delegates to platform and updates view model',
     (tester) async {
-      final platformWindow = _FakeMainWindowPlatform();
-      final controller = MainWindowController(
+      final platformObservedStates = <bool>[];
+      late final MainWindowController controller;
+      final platformWindow = _FakeMainWindowPlatform(
+        onSetFullScreen: (_) {
+          platformObservedStates.add(controller.viewModel.overlays.fullScreen);
+        },
+      );
+      controller = MainWindowController(
         actionRegistry: ActionRegistry(),
         vsync: const TestVSync(),
         startupOptions: const StartupOptions(),
@@ -342,6 +352,7 @@ void main() {
       await tester.pump();
 
       expect(platformWindow.fullScreenCalls, const [true]);
+      expect(platformObservedStates, const [true]);
       expect(controller.viewModel.overlays.fullScreen, isTrue);
       expect(controller.viewModel.overlays.fullScreenControlsVisible, isTrue);
 

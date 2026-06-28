@@ -3,7 +3,7 @@
 #include "windows/player/native_player.h"
 
 #include <windows.h>
-#include <d3d11.h>
+#include <d3dcommon.h>
 #include <dxgi1_4.h>
 #include <psapi.h>
 #include <wrl/client.h>
@@ -406,6 +406,53 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         "windowsPresentationSDRCompatibilityDrawCount")] =
         flutter::EncodableValue(static_cast<int64_t>(
             presentation.sdr_compatibility_draw_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceGeneration")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_generation));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceConsumedGeneration")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_consumed_generation));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceUpdateCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_update_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceConsumeCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_consume_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceWaitCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_wait_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceWaitFailureCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.external_flutter_surface_wait_failure_count));
+    map[flutter::EncodableValue(
+        "windowsPresentationExternalFlutterSurfaceLastError")] =
+        flutter::EncodableValue(
+            presentation.external_flutter_surface_last_error);
+    map[flutter::EncodableValue("windowsPresentationOverlayLayerActive")] =
+        flutter::EncodableValue(presentation.overlay_layer_active);
+    map[flutter::EncodableValue("windowsPresentationOverlayLayerMode")] =
+        flutter::EncodableValue(presentation.overlay_layer_mode);
+    map[flutter::EncodableValue(
+        "windowsPresentationOverlayLayerGeneration")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.overlay_layer_generation));
+    map[flutter::EncodableValue(
+        "windowsPresentationOverlayLayerCompositeCount")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.overlay_layer_composite_count));
+    map[flutter::EncodableValue("windowsPresentationOverlayLayerBytes")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.overlay_layer_bytes));
+    map[flutter::EncodableValue(
+        "windowsPresentationOverlayLayerLastEncodeUs")] =
+        flutter::EncodableValue(static_cast<int64_t>(
+            presentation.overlay_layer_last_encode_us));
     const std::string fallback_reason =
         presentation.fallback_reason != "none"
             ? presentation.fallback_reason
@@ -420,6 +467,33 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(presentation.buffer_count);
     map[flutter::EncodableValue("windowsPresentationHeadless")] =
         flutter::EncodableValue(presentation.headless);
+    map[flutter::EncodableValue("windowsPresentationPrewarmRequestCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_request_count));
+    map[flutter::EncodableValue("windowsPresentationPrewarmReadyCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_ready_count));
+    map[flutter::EncodableValue("windowsPresentationPrewarmHitCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_hit_count));
+    map[flutter::EncodableValue("windowsPresentationPrewarmDroppedCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_dropped_count));
+    map[flutter::EncodableValue("windowsPresentationPrewarmConsumedCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_consumed_count));
+    map[flutter::EncodableValue("pixelBufferPrewarmRequestCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_request_count));
+    map[flutter::EncodableValue("pixelBufferPrewarmReadyCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_ready_count));
+    map[flutter::EncodableValue("pixelBufferPrewarmHitCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_hit_count));
+    map[flutter::EncodableValue("pixelBufferPrewarmDroppedCount")] =
+        flutter::EncodableValue(
+            static_cast<int64_t>(presentation.prewarm_dropped_count));
     map[flutter::EncodableValue("windowsPresentationCompositorActive")] =
         flutter::EncodableValue(false);
     map[flutter::EncodableValue("windowsD3DAdapterDescription")] =

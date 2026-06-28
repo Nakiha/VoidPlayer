@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <utility>
 #include <string>
@@ -44,6 +45,8 @@ public:
         const std::string& path,
         bool hw_decode,
         RenderBackendKind render_backend,
+        void* render_device = nullptr,
+        std::recursive_mutex* device_mutex = nullptr,
         const SeekRequest* initial_seek = nullptr) const;
     bool configure_and_start_pipeline(TrackPipeline& pipeline,
                                       const TrackPipelineStartConfig& config,

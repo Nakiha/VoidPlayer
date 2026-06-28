@@ -10,10 +10,16 @@
 #ifdef __APPLE__
 #include <CoreVideo/CoreVideo.h>
 #endif
+#ifdef _WIN32
+#include <d3d12.h>
+#endif
 
 extern "C" {
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
+#ifdef _WIN32
+#include <libavutil/hwcontext_d3d12va.h>
+#endif
 }
 
 namespace vr {
@@ -105,6 +111,67 @@ std::optional<TextureFrame> populate_videotoolbox_frame(AVFrame* frame,
 }
 #endif
 
+#ifdef _WIN32
+bool av_pix_fmt_is_p010_like(AVPixelFormat format) {
+    return format == AV_PIX_FMT_P010LE || format == AV_PIX_FMT_P016LE ||
+           format == AV_PIX_FMT_YUV420P10LE || format == AV_PIX_FMT_YUV420P12LE;
+}
+
+std::optional<TextureFrame> populate_d3d12_hardware_texture_frame(
+    AVFrame* frame,
+    TextureFrame metadata) {
+    if (frame->format != AV_PIX_FMT_D3D12 || !frame->data[0]) {
+        spdlog::error("[HardwareFrameConverter] D3D12VA frame is missing AVD3D12VAFrame");
+        return std::nullopt;
+    }
+
+    auto* d3d12_frame = reinterpret_cast<AVD3D12VAFrame*>(frame->data[0]);
+    if (!d3d12_frame->texture) {
+        spdlog::error("[HardwareFrameConverter] D3D12VA frame is missing ID3D12Resource");
+        return std::nullopt;
+    }
+
+    auto frame_ref = clone_av_frame_ref(frame);
+    if (!frame_ref) {
+        spdlog::error("[HardwareFrameConverter] Failed to retain D3D12VA frame");
+        return std::nullopt;
+    }
+
+    int coded_width = frame->width;
+    int coded_height = frame->height;
+    AVPixelFormat sw_format = AV_PIX_FMT_NONE;
+    if (frame->hw_frames_ctx) {
+        auto* frames_ctx =
+            reinterpret_cast<AVHWFramesContext*>(frame->hw_frames_ctx->data);
+        if (frames_ctx) {
+            coded_width = frames_ctx->width > 0 ? frames_ctx->width : coded_width;
+            coded_height = frames_ctx->height > 0 ? frames_ctx->height : coded_height;
+            sw_format = static_cast<AVPixelFormat>(frames_ctx->sw_format);
+        }
+    }
+
+    metadata.texture_handle = d3d12_frame->texture;
+    metadata.is_ref = true;
+    metadata.is_nv12 = true;
+    metadata.is_p010 = av_pix_fmt_is_p010_like(sw_format);
+    metadata.texture_array_index = d3d12_frame->subresource_index;
+    metadata.hw_frame_ref = frame_ref;
+    metadata.storage = D3D12TextureFrameStorage{
+        d3d12_frame->texture,
+        d3d12_frame->subresource_index,
+        d3d12_frame->sync_ctx.fence,
+        d3d12_frame->sync_ctx.event,
+        d3d12_frame->sync_ctx.fence_value,
+        (d3d12_frame->flags & AV_D3D12VA_FRAME_FLAG_TEXTURE_ARRAY) != 0,
+        metadata.is_p010,
+        coded_width,
+        coded_height,
+        frame_ref,
+    };
+    return metadata;
+}
+#endif
+
 } // namespace
 
 bool HardwareFrameConverter::init(void* d3d_device, void* d3d_context,
@@ -121,13 +188,7 @@ bool HardwareFrameConverter::init(void* d3d_device, void* d3d_context,
     downloaded_format_ = AV_PIX_FMT_NONE;
     device_mutex_ = device_mutex;
 
-#ifdef _WIN32
-    d3d11_snapshot_pool_ =
-        (!download_to_cpu && hw_type == HwDecodeType::D3D11VA)
-        ? create_d3d11_snapshot_pool()
-        : nullptr;
-#else
-    d3d11_snapshot_pool_.reset();
+#ifndef _WIN32
     if (!download_to_cpu) {
 #ifdef __APPLE__
         if (hw_type != HwDecodeType::VideoToolbox) {
@@ -177,17 +238,11 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
     }
 
     TextureFrame result = make_texture_frame_metadata(frame);
-    if (hw_type_ == HwDecodeType::D3D11VA) {
 #ifdef _WIN32
-        if (!populate_d3d11_hardware_texture_frame(frame, result)) {
-            return std::nullopt;
-        }
-        return result;
-#else
-        spdlog::error("[HardwareFrameConverter] D3D11VA frames are Windows-only");
-        return std::nullopt;
-#endif
+    if (hw_type_ == HwDecodeType::D3D12VA) {
+        return populate_d3d12_hardware_texture_frame(frame, result);
     }
+#endif
 
 #ifdef __APPLE__
     if (hw_type_ == HwDecodeType::VideoToolbox) {
@@ -200,29 +255,12 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
 }
 
 std::optional<TextureFrame> HardwareFrameConverter::snapshot_frame(AVFrame* frame) {
-#ifdef _WIN32
-    if (download_to_cpu_ || hw_type_ != HwDecodeType::D3D11VA || !frame || !frame->data[0]) {
-        return std::nullopt;
-    }
-
-    TextureFrame metadata = make_texture_frame_metadata(frame);
-    return snapshot_d3d11_hardware_frame(
-        frame,
-        metadata,
-        device_mutex_,
-        d3d11_snapshot_pool_);
-#else
     (void)frame;
     return std::nullopt;
-#endif
 }
 
-D3D11SnapshotPoolStats HardwareFrameConverter::snapshot_pool_stats() const {
-#ifdef _WIN32
-    return d3d11_snapshot_pool_stats(d3d11_snapshot_pool_);
-#else
+HardwareSnapshotPoolStats HardwareFrameConverter::snapshot_pool_stats() const {
     return {};
-#endif
 }
 
 } // namespace vr

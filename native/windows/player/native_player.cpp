@@ -346,6 +346,22 @@ void NativePlayer::release_shared_texture(int buffer_index,
     renderer_.release_shared_texture(buffer_index, buffer_generation);
 }
 
+void* NativePlayer::native_render_device() const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (!renderer_ready_locked()) {
+        return nullptr;
+    }
+    return renderer_.native_render_device();
+}
+
+void* NativePlayer::native_render_command_queue() const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (!renderer_ready_locked()) {
+        return nullptr;
+    }
+    return renderer_.native_render_command_queue();
+}
+
 bool NativePlayer::acquire_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
@@ -370,6 +386,35 @@ void NativePlayer::set_shared_fp16_frame_callback(
     }
 }
 
+bool NativePlayer::update_external_flutter_surface(
+    const PresentationExternalD3D12Surface& surface) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.update_external_flutter_surface(surface);
+}
+
+void NativePlayer::clear_external_flutter_surface() {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (renderer_ready_locked()) {
+        renderer_.clear_external_flutter_surface();
+    }
+}
+
+bool NativePlayer::draw_current_frame_to_external_d3d12_target(
+    const PresentationExternalD3D12RenderTarget& target,
+    const char* reason) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.draw_current_frame_to_external_d3d12_target(
+               target, reason);
+}
+
+std::string NativePlayer::presentation_backend_last_error() const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() ? renderer_.presentation_backend_last_error()
+                                   : "renderer-not-ready";
+}
+
 bool NativePlayer::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
@@ -381,6 +426,20 @@ void NativePlayer::clear_source_cache(const char* reason) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     if (renderer_ready_locked()) {
         renderer_.clear_source_cache(reason);
+    }
+}
+
+bool NativePlayer::update_source_projection(
+    const WindowsSourceProjection& projection) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.update_source_projection(projection);
+}
+
+void NativePlayer::clear_source_projection() {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    if (renderer_ready_locked()) {
+        renderer_.clear_source_projection();
     }
 }
 
@@ -430,6 +489,12 @@ NativePlayer::current_overlay_primitives(std::string* error) {
         return {};
     }
     return renderer_.current_overlay_primitives(error);
+}
+
+bool NativePlayer::prewarm_presentation_target(int width, int height) {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() &&
+           renderer_.prewarm_presentation_target(width, height);
 }
 
 void NativePlayer::resize(int width, int height) {

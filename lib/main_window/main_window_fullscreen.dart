@@ -62,9 +62,11 @@ class MainWindowFullScreenCoordinator {
     try {
       if (fullScreen) {
         _rememberWindowedViewportSize();
+        _uiResizePending = true;
+        stateStore.setFullScreen(true);
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted() || serial != _serial) return;
       }
-      // Switch the native window first so the Flutter fullscreen chrome never
-      // renders inside the old, non-fullscreen bounds.
       await platformWindow.setFullScreen(fullScreen);
       if (!mounted() || serial != _serial) return;
       if (fullScreen) {
@@ -73,9 +75,11 @@ class MainWindowFullScreenCoordinator {
         await _preemptWindowedViewportResize();
       }
       if (!mounted() || serial != _serial) return;
-      _uiResizePending = true;
-      stateStore.setFullScreen(fullScreen);
-      await WidgetsBinding.instance.endOfFrame;
+      if (!fullScreen) {
+        _uiResizePending = true;
+        stateStore.setFullScreen(false);
+        await WidgetsBinding.instance.endOfFrame;
+      }
       if (!mounted() || serial != _serial) return;
       await _preemptMeasuredViewportResize();
       if (!mounted() || serial != _serial) return;

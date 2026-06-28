@@ -7,6 +7,9 @@ import 'dart:ffi';
 final _user32 = DynamicLibrary.open('user32.dll');
 const _mouseEventLeftDown = 0x0002;
 const _mouseEventLeftUp = 0x0004;
+const _mouseEventRightDown = 0x0008;
+const _mouseEventRightUp = 0x0010;
+const _mouseEventWheel = 0x0800;
 final _setCursorPos = _user32
     .lookupFunction<
       Int32 Function(Int32 x, Int32 y),
@@ -29,3 +32,10 @@ void nativeSetCursorPos(int x, int y) => _setCursorPos(x, y);
 void nativeMouseLeftDown() => _mouseEvent(_mouseEventLeftDown, 0, 0, 0, 0);
 
 void nativeMouseLeftUp() => _mouseEvent(_mouseEventLeftUp, 0, 0, 0, 0);
+
+void nativeMouseRightDown() => _mouseEvent(_mouseEventRightDown, 0, 0, 0, 0);
+
+void nativeMouseRightUp() => _mouseEvent(_mouseEventRightUp, 0, 0, 0, 0);
+
+void nativeMouseWheel(int delta) =>
+    _mouseEvent(_mouseEventWheel, 0, 0, delta & 0xffffffff, 0);

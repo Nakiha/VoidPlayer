@@ -1,0 +1,15 @@
+# Windows D3D12 direct-present window resize pacing probe.
+# Exercises OS window maximize/restore while native compositor is active.
+@WINDOW, 1280, 720
+0.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+2.0, WAIT_TRACK_COUNT, 1, 10000
+2.1, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-sdr
+2.2, CAPTURE_WINDOW, window_resize_baseline, build/windows_window_resize_baseline.png
+2.3, ASSERT_CAPTURE_NOT_BLACK, window_resize_baseline, 0.01, 4.0
+2.5, WINDOW_MAXIMIZE
+3.3, CAPTURE_WINDOW, window_resize_maximized, build/windows_window_resize_maximized.png
+3.4, ASSERT_CAPTURE_NOT_BLACK, window_resize_maximized, 0.01, 4.0
+3.6, WINDOW_RESTORE
+4.4, CAPTURE_WINDOW, window_resize_restored, build/windows_window_resize_restored.png
+4.5, ASSERT_CAPTURE_NOT_BLACK, window_resize_restored, 0.01, 4.0
+4.7, QUIT, 0

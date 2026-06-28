@@ -88,6 +88,7 @@ class MainWindowActionCoordinator {
       setZoom: layoutCoordinator.setZoom,
       setSplitPos: layoutCoordinator.setSplitPos,
       panByDelta: layoutCoordinator.panByDelta,
+      flushPendingLayout: layoutCoordinator.flushPendingLayout,
       toggleFullScreen: toggleFullScreen,
       exitFullScreen: exitFullScreen,
       openSettings: showSettingsDialog,
@@ -133,13 +134,15 @@ class MainWindowActionBinder {
   })
   setLoopRange;
   final void Function(String handle, int targetUs, {int steps}) dragLoopHandle;
-  final void Function(double targetFraction, {int steps}) dragSplitHandle;
+  final FutureOr<void> Function(double targetFraction, {int steps, int stepMs})
+  dragSplitHandle;
 
   final void Function() toggleLayoutMode;
   final void Function(int mode) setLayoutMode;
   final void Function(double ratio) setZoom;
   final void Function(double position) setSplitPos;
   final void Function(double dx, double dy) panByDelta;
+  final Future<void> Function() flushPendingLayout;
   final void Function() toggleFullScreen;
   final void Function() exitFullScreen;
 
@@ -179,6 +182,7 @@ class MainWindowActionBinder {
     required this.setZoom,
     required this.setSplitPos,
     required this.panByDelta,
+    required this.flushPendingLayout,
     required this.toggleFullScreen,
     required this.exitFullScreen,
     required this.openSettings,
@@ -274,31 +278,40 @@ class MainWindowActionBinder {
     });
     _bind(const DragSplitHandle(0.5), (action) {
       final a = action as DragSplitHandle;
-      dragSplitHandle(a.targetFraction, steps: a.steps);
+      return dragSplitHandle(
+        a.targetFraction,
+        steps: a.steps,
+        stepMs: a.stepMs,
+      );
     });
 
     _bind(const ToggleLayoutMode(), (_) {
-      if (!capabilities().canChangeViewMode) return;
+      if (!capabilities().canChangeViewMode) return Future<void>.value();
       toggleLayoutMode();
+      return flushPendingLayout();
     });
     _bind(const SetLayoutMode(0), (action) {
-      if (!capabilities().canChangeViewMode) return;
+      if (!capabilities().canChangeViewMode) return Future<void>.value();
       final a = action as SetLayoutMode;
       setLayoutMode(a.mode);
+      return flushPendingLayout();
     });
     _bind(const SetZoom(1.0), (action) {
-      if (!capabilities().canZoomViewport) return;
+      if (!capabilities().canZoomViewport) return Future<void>.value();
       final a = action as SetZoom;
       setZoom(a.ratio);
+      return flushPendingLayout();
     });
     _bind(const SetSplitPos(0.5), (action) {
       final a = action as SetSplitPos;
       setSplitPos(a.position);
+      return flushPendingLayout();
     });
     _bind(const Pan(0, 0), (action) {
-      if (!capabilities().canPanViewport) return;
+      if (!capabilities().canPanViewport) return Future<void>.value();
       final a = action as Pan;
       panByDelta(a.dx, a.dy);
+      return flushPendingLayout();
     });
     _bind(const ToggleFullScreen(), (_) => toggleFullScreen());
     _bind(const ExitFullScreen(), (_) => exitFullScreen());

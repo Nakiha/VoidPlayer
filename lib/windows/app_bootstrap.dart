@@ -185,8 +185,8 @@ class _CloseHandler with WindowListener {
 /// Runs the analysis window as a standalone process.
 ///
 /// Launched via `void_player.exe --standalone-analysis --hash=xxx ...`.
-/// This gives the analysis window its own D3D11 device and keeps it isolated
-/// from the main window renderer.
+/// This gives the analysis window its own process and keeps it isolated from
+/// the main window renderer.
 Future<void> _runStandaloneAnalysis(List<String> args) async {
   final hashes = <String>[];
   final fileNames = <String?>[];

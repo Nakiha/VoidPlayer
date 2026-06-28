@@ -305,11 +305,6 @@ uint32_t pack_overlay_uv16(int a, int a_extent, int b, int b_extent) {
     return pack_one(a, a_extent) | (pack_one(b, b_extent) << 16);
 }
 
-AnalysisOverlayMemoryStats snapshot_analysis_overlay_memory_stats(
-    const D3D11RenderResources&) {
-    return {};
-}
-
 void AnalysisOverlayRenderer::reset() {
     for (auto& pixels : overlay_pixels_) {
         pixels.clear();
@@ -321,12 +316,6 @@ void AnalysisOverlayRenderer::reset() {
         cache = {};
     }
 }
-
-void AnalysisOverlayRenderer::draw(const RendererDrawSnapshot&,
-                                   D3D11Device&,
-                                   D3D11RenderResources&,
-                                   int,
-                                   int) {}
 
 bool AnalysisOverlayRenderer::composite_bgra(const RendererDrawSnapshot& snapshot,
                                              uint8_t* target_bgra,

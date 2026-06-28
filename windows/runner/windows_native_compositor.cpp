@@ -678,6 +678,7 @@ WindowsNativeCompositor::diagnostics() const {
         flutter_export_unsolicited_signal_count_;
     result.flutter_export_unsolicited_throttle_count =
         flutter_export_unsolicited_throttle_count_;
+    result.resize_count = d3d12_target_resize_count_;
     const bool hot_path_active =
         phase_ == Phase::Active && result.source_projection_enabled;
     const auto gate_result = vr::evaluate_windows_high_refresh_gate(

@@ -2218,7 +2218,7 @@ bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
         const bool overlay_active = overlay_primitives_expected(
             overlay_primitives);
         overlay_layer_active_ = overlay_active;
-        overlay_layer_mode_ = overlay_active ? "wgpu-d3d12-primitive-layer"
+        overlay_layer_mode_ = overlay_active ? "wgpu-d3d12-viewport-direct"
                                              : "inactive";
         overlay_layer_generation_ = overlay_primitives.generation;
         overlay_layer_fill_rect_count_ =

@@ -241,6 +241,10 @@ pub struct WgpuD3D12Renderer {
     bgra8_pipeline: wgpu::RenderPipeline,
     rgba16_float_pipeline: wgpu::RenderPipeline,
     overlay_primitive_pipeline: wgpu::RenderPipeline,
+    overlay_direct_bgra8_pipeline: wgpu::RenderPipeline,
+    overlay_direct_rgba16_float_pipeline: wgpu::RenderPipeline,
+    flutter_bgra8_pipeline: wgpu::RenderPipeline,
+    flutter_rgba16_float_pipeline: wgpu::RenderPipeline,
     _dummy_bgra_array_texture: wgpu::Texture,
     dummy_bgra_array_view: wgpu::TextureView,
     _dummy_y_texture: wgpu::Texture,
@@ -345,6 +349,50 @@ impl WgpuD3D12Renderer {
         });
         let overlay_primitive_pipeline =
             create_overlay_primitive_pipeline(&device, &pipeline_layout, &shader, overlay_blend);
+        let overlay_direct_bgra8_pipeline = create_overlay_direct_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            wgpu::TextureFormat::Bgra8Unorm,
+            overlay_blend,
+            "VoidPlayer wgpu-d3d12 BGRA8 viewport overlay pipeline",
+        );
+        let overlay_direct_rgba16_float_pipeline = create_overlay_direct_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            wgpu::TextureFormat::Rgba16Float,
+            overlay_blend,
+            "VoidPlayer wgpu-d3d12 RGBA16F viewport overlay pipeline",
+        );
+        let flutter_blend = Some(wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        });
+        let flutter_bgra8_pipeline = create_flutter_surface_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            wgpu::TextureFormat::Bgra8Unorm,
+            flutter_blend,
+            "VoidPlayer wgpu-d3d12 BGRA8 Flutter surface pipeline",
+        );
+        let flutter_rgba16_float_pipeline = create_flutter_surface_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            wgpu::TextureFormat::Rgba16Float,
+            flutter_blend,
+            "VoidPlayer wgpu-d3d12 RGBA16F Flutter surface pipeline",
+        );
         let dummy_bgra_array_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("VoidPlayer wgpu-d3d12 dummy BGRA array"),
             size: wgpu::Extent3d {
@@ -485,6 +533,10 @@ impl WgpuD3D12Renderer {
             bgra8_pipeline,
             rgba16_float_pipeline,
             overlay_primitive_pipeline,
+            overlay_direct_bgra8_pipeline,
+            overlay_direct_rgba16_float_pipeline,
+            flutter_bgra8_pipeline,
+            flutter_rgba16_float_pipeline,
             _dummy_bgra_array_texture: dummy_bgra_array_texture,
             dummy_bgra_array_view,
             _dummy_y_texture: dummy_y_texture,
@@ -1016,6 +1068,79 @@ impl WgpuD3D12Renderer {
             );
             pass.draw(0..3, 0..1);
         }
+        let direct_overlay_vertices = overlay_primitive_vertex_count(
+            overlay_fill_rects.len(),
+            overlay_line_rects.len(),
+            overlay_motion_lines.len(),
+        )?;
+        if direct_overlay_vertices > 0 {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("VoidPlayer wgpu-d3d12 viewport overlay pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &destination_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            let pipeline = match output_format {
+                wgpu::TextureFormat::Rgba16Float => &self.overlay_direct_rgba16_float_pipeline,
+                wgpu::TextureFormat::Bgra8Unorm => &self.overlay_direct_bgra8_pipeline,
+                _ => return Err("wgpu-d3d12 viewport overlay pipeline format is unsupported"),
+            };
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_viewport(
+                0.0,
+                0.0,
+                request.width as f32,
+                request.height as f32,
+                0.0,
+                1.0,
+            );
+            pass.draw(0..direct_overlay_vertices, 0..1);
+        }
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("VoidPlayer wgpu-d3d12 Flutter surface pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &destination_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            let pipeline = match output_format {
+                wgpu::TextureFormat::Rgba16Float => &self.flutter_rgba16_float_pipeline,
+                wgpu::TextureFormat::Bgra8Unorm => &self.flutter_bgra8_pipeline,
+                _ => return Err("wgpu-d3d12 Flutter pipeline format is unsupported"),
+            };
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_viewport(
+                0.0,
+                0.0,
+                request.width as f32,
+                request.height as f32,
+                0.0,
+                1.0,
+            );
+            pass.draw(0..3, 0..1);
+        }
         self.profiler.last_pass_encode_us = elapsed_us(encode_start);
 
         let submit_start = Instant::now();
@@ -1383,6 +1508,76 @@ fn create_overlay_primitive_pipeline(
     })
 }
 
+fn create_overlay_direct_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    format: wgpu::TextureFormat,
+    blend: Option<wgpu::BlendState>,
+    label: &'static str,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_overlay_viewport_primitive"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_overlay_viewport_primitive"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn create_flutter_surface_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    format: wgpu::TextureFormat,
+    blend: Option<wgpu::BlendState>,
+    label: &'static str,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            buffers: &[],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_flutter_surface"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 fn cv_bind_entry<'a>(
     binding: u32,
     slot: usize,
@@ -1490,10 +1685,13 @@ fn package_params(
     );
     push_vec4_i32(bytes, decision.color_transfer);
     push_vec4_i32(bytes, decision.color_primaries);
-    push_vec4_i32(bytes, [output_color_mode, 1, 1, 0]);
+    push_vec4_i32(bytes, [output_color_mode, 1, 1, 1]);
     push_vec4_f32(bytes, [output_width as f32, output_height as f32, 0.0, 0.0]);
     push_vec4_f32(bytes, viewport_rect);
-    push_vec4_f32(bytes, [flutter_width as f32, flutter_height as f32, 0.0, 0.0]);
+    push_vec4_f32(
+        bytes,
+        [flutter_width as f32, flutter_height as f32, 0.0, 0.0],
+    );
 }
 
 const PARAM_VEC4_BYTES: usize = 16;

@@ -26,7 +26,7 @@
 5.71, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsSourceCacheConsumedGeneration, 1
 5.72, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorOverlayLineRectCount, 1
 5.73, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsOverlayRetainedLayerActive, true
-5.74, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsOverlayRetainedLayerMode, wgpu-d3d12-primitive-layer
+5.74, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsOverlayRetainedLayerMode, wgpu-d3d12-viewport-direct
 5.75, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsOverlayLayerFallbackReason, none
 5.8, SET_LAYOUT_MODE, 1
 5.9, SET_SPLIT_POS, 0.35

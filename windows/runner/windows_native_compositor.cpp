@@ -70,6 +70,17 @@ bool luid_equal(int32_t high_a,
     return high_a == high_b && low_a == low_b;
 }
 
+void client_pixel_size(HWND hwnd, uint32_t& width, uint32_t& height) {
+    RECT rect = {};
+    if (!hwnd || !GetClientRect(hwnd, &rect)) {
+        return;
+    }
+    width = static_cast<uint32_t>(
+        std::max<LONG>(1, rect.right - rect.left));
+    height = static_cast<uint32_t>(
+        std::max<LONG>(1, rect.bottom - rect.top));
+}
+
 } // namespace
 
 WindowsNativeCompositor::WindowsNativeCompositor() = default;
@@ -1554,6 +1565,11 @@ bool WindowsNativeCompositor::CompositeLatest() {
         if (render_device && render_queue) {
             uint32_t direct_width = held_flutter_.width;
             uint32_t direct_height = held_flutter_.height;
+            uint32_t client_width = 0;
+            uint32_t client_height = 0;
+            client_pixel_size(hwnd_, client_width, client_height);
+            direct_width = std::max(direct_width, client_width);
+            direct_height = std::max(direct_height, client_height);
             if (direct_width <= 1 || direct_height <= 1) {
                 direct_width =
                     static_cast<uint32_t>(std::max(1, player->texture_width()));
@@ -1591,7 +1607,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                         spdlog::info(
                             "[WindowsResizePacing] native d3d12TargetResize "
                             "count={} previous={}x{} next={}x{} target={} "
-                            "heldFlutter={}x{} generation={}",
+                            "heldFlutter={}x{} client={}x{} generation={}",
                             d3d12_target_resize_count_,
                             previous_width,
                             previous_height,
@@ -1600,6 +1616,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                             OutputTargetName(direct_target),
                             held_flutter_.width,
                             held_flutter_.height,
+                            client_width,
+                            client_height,
                             held_flutter_.frame_generation);
                     }
                 } else {
@@ -1625,7 +1643,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
                 spdlog::info(
                     "[WindowsResizePacing] native d3d12TargetRebuild "
                     "previousActive={} previous={}x{} next={}x{} "
-                    "target={} heldFlutter={}x{} generation={}",
+                    "target={} heldFlutter={}x{} client={}x{} generation={}",
                     previous_active,
                     previous_width,
                     previous_height,
@@ -1634,6 +1652,8 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     OutputTargetName(direct_target),
                     held_flutter_.width,
                     held_flutter_.height,
+                    client_width,
+                    client_height,
                     held_flutter_.frame_generation);
                 d3d12_present_target_->shutdown();
                 const bool initialized =
@@ -1704,14 +1724,16 @@ bool WindowsNativeCompositor::CompositeLatest() {
                                 spdlog::info(
                                     "[WindowsNativeCompositor] D3D12 direct "
                                     "present count={} target={} size={}x{} "
-                                    "flutter={}x{} viewport=({:.4f},{:.4f})"
-                                    "-({:.4f},{:.4f})",
+                                    "flutter={}x{} client={}x{} "
+                                    "viewport=({:.4f},{:.4f})-({:.4f},{:.4f})",
                                     d3d12_direct_present_count_,
                                     OutputTargetName(direct_target),
                                     direct_frame.width,
                                     direct_frame.height,
                                     held_flutter_.width,
                                     held_flutter_.height,
+                                    client_width,
+                                    client_height,
                                     viewport[0],
                                     viewport[1],
                                     viewport[2],

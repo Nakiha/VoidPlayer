@@ -28,6 +28,7 @@ struct CompositeParams {
   output_mode: vec4<i32>,
   output_size: vec4<f32>,
   viewport_rect: vec4<f32>,
+  flutter_size: vec4<f32>,
 };
 
 struct OverlayRect {
@@ -833,11 +834,10 @@ fn sample_cv_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-  let output_size = max(params.output_size.xy, vec2<f32>(1.0));
+  let flutter_size = max(params.flutter_size.xy, vec2<f32>(1.0));
   let viewport_min = params.viewport_rect.xy;
   let viewport_size = max(params.viewport_rect.zw, vec2<f32>(1.0));
   let viewport_max = viewport_min + viewport_size;
-  let tex_uv = position.xy / output_size;
   var with_overlay = map_sdr_ui_to_output(params.background);
 
   if (position.x >= viewport_min.x && position.y >= viewport_min.y &&
@@ -865,7 +865,11 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     }
   }
 
-  let flutter = map_premul_sdr_ui_to_output(
-    textureSample(flutter_surface_texture, src_sampler, tex_uv));
-  return premul_blend_over(with_overlay, flutter);
+  if (position.x >= 0.0 && position.y >= 0.0 &&
+      position.x < flutter_size.x && position.y < flutter_size.y) {
+    let flutter = map_premul_sdr_ui_to_output(
+      textureSample(flutter_surface_texture, src_sampler, position.xy / flutter_size));
+    return premul_blend_over(with_overlay, flutter);
+  }
+  return with_overlay;
 }

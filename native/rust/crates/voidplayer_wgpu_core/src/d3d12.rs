@@ -873,7 +873,7 @@ impl WgpuD3D12Renderer {
 
         let prepare_start = Instant::now();
         let viewport = composite_viewport_rect(request);
-        let mut params = Vec::with_capacity(29 * 16);
+        let mut params = Vec::with_capacity(30 * 16);
         package_params(
             decision,
             viewport[2].round().max(1.0) as i32,
@@ -883,6 +883,8 @@ impl WgpuD3D12Renderer {
             request.width,
             request.height,
             viewport,
+            request.flutter_width,
+            request.flutter_height,
             overlay_fill_rects,
             overlay_line_rects,
             overlay_motion_lines,
@@ -1414,6 +1416,8 @@ fn package_params(
     output_width: i32,
     output_height: i32,
     viewport_rect: [f32; 4],
+    flutter_width: u32,
+    flutter_height: u32,
     overlay_fill_rects: &[OverlayRect],
     overlay_line_rects: &[OverlayRect],
     overlay_motion_lines: &[OverlayRect],
@@ -1489,6 +1493,7 @@ fn package_params(
     push_vec4_i32(bytes, [output_color_mode, 1, 1, 0]);
     push_vec4_f32(bytes, [output_width as f32, output_height as f32, 0.0, 0.0]);
     push_vec4_f32(bytes, viewport_rect);
+    push_vec4_f32(bytes, [flutter_width as f32, flutter_height as f32, 0.0, 0.0]);
 }
 
 const PARAM_VEC4_BYTES: usize = 16;

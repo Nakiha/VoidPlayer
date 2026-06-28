@@ -1,8 +1,7 @@
 # Windows Presentation Backend
 
-This document defines the Windows presentation contract. Legacy D3D11
-implementation details remain in [D3D11_BACKEND.md](D3D11_BACKEND.md);
-shared renderer ownership and color rules remain in
+This document defines the Windows presentation contract. Shared renderer
+ownership and color rules remain in
 [ARCHITECTURE.md](ARCHITECTURE.md) and [COLOR_PIPELINE.md](COLOR_PIPELINE.md).
 
 The target architecture is runner-owned presentation with wgpu-owned
@@ -22,12 +21,10 @@ Windows runner / platform backend
   -> presents to the window
 ```
 
-The remaining D3D11/DComp present bridge is a compatibility layer during the
-migration to a D3D12-owned present target. The old Flutter D3D11 SRV
-composition pass, readback-only diagnostics, retained D3D11 source/Flutter
-graph, runner source-cache bridge, and runner overlay bridge have been removed
-from the product route. They must not be reintroduced as workarounds for
-Flutter pacing or projection issues.
+The old Flutter D3D11 SRV composition pass, readback-only diagnostics, retained
+D3D11 source/Flutter graph, runner source-cache bridge, and runner overlay
+bridge have been removed from the product route. They must not be reintroduced
+as workarounds for Flutter pacing or projection issues.
 
 ## Current Product And Experimental Routes
 

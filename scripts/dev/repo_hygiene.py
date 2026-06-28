@@ -72,6 +72,7 @@ def _check_markdown_links(errors: list[str]) -> None:
             ".git",
             ".toolchains",
             "build",
+            "experiments",
         }:
             continue
         if (

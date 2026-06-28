@@ -154,7 +154,6 @@ presentation backend 开始：
 
 | 文档 | 内容 |
 | --- | --- |
-| [D3D11 后端](D3D11_BACKEND.md) | Windows D3D11 device、shared texture、capture、device-loss behavior |
 | [Windows Presentation Backend](WINDOWS_PRESENTATION_BACKEND.md) | Windows 产品上屏路线、资源所有权、fallback 与 diagnostics contract |
 | [macOS Readiness](MACOS_READINESS.md) | macOS readiness、runner 边界、remaining gates |
 | [macOS Presentation Backend](MACOS_PRESENTATION_BACKEND.md) | macOS renderer-owned Metal route, fallback adapter, refresh, and diagnostics contract |

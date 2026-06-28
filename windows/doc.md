@@ -20,8 +20,8 @@
   `native-compositor-sdr` 和 `native-compositor-scrgb` 强制诊断模式，
   禁止回到 Flutter Texture SDR 视频上屏
 - 监听 display/settings/move/DPI 变化并刷新 output、SDR white level 与
-  DComp target，不重建 player
-- 在 D3D11/DComp/source-cache/transport device-loss 时通过 native
+  D3D12/DComp target，不重建 player
+- 在 D3D12/DComp/source-cache/transport device-loss 时通过 native
   presentation recovery 原地重建资源，保持 player、track、timeline 和最后
   成功帧；debug UI 自动化可用
   `debugSimulateWindowsDeviceLoss` / `DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS`
@@ -34,18 +34,15 @@
   present、HDR/SDR target 和 device-loss 边界
 - 通过既有 source-projection MethodChannel 校验 projection/signature，并让
   wgpu/D3D12 render core 对最多四轨 source-resolution bundle 实时执行
-  pan/zoom/split；runner 不再通过 D3D11 source-cache bridge 消费 source
-  bundle，也不再通过 D3D11 overlay bridge 合成标注
-- retained D3D11 source/Flutter graph 不是产品路径；投影交互性能应通过
-  wgpu source consume、Flutter surface consume、present cadence 和
-  `windowsHotPath*` 诊断证明
+  pan/zoom/split；source bundle、Flutter surface 和 overlay primitives 都由
+  wgpu/D3D12 路径消费
+- 投影交互性能应通过 wgpu source consume、Flutter surface consume、
+  present cadence 和 `windowsHotPath*` 诊断证明
 - source-projection overlay 由 wgpu/D3D12 composite pass 消费 video-space
   primitives；新增 overlay 能力应继续落在 wgpu renderer，pan/zoom/split/order
   不能在每次 tick 重建 CPU vertices
-- Flutter Windows runner 目标不再编译 `D3D11RenderBackend` / D3D11 overlay
-  renderer；这些只保留在 standalone native parity/test 构建中。runner 仍可在
-  DComp present bridge 内使用少量 D3D11 transport，直到 DX12 present target
-  接管。
+- Windows 产品路径使用 D3D12VA + wgpu/D3D12 render core + D3D12 present
+  target。
 - 暴露 high-refresh interaction diagnostics，UI 自动化可用
   `RESET_NATIVE_PERF_COUNTERS`、`BEGIN_NATIVE_INTERACTION_SAMPLE` 和
   `END_NATIVE_INTERACTION_SAMPLE` 包住 pan/zoom/split/overlay 采样窗口
@@ -57,7 +54,7 @@
 它不负责：
 
 - Flutter UI 状态和交互业务；这些在 [../lib/doc.md](../lib/doc.md)
-- C++ 解码、同步、D3D11 渲染器内部架构；这些在
+- C++ 解码、同步、wgpu/D3D12 渲染器内部架构；这些在
   [../native/docs/ARCHITECTURE.md](../native/docs/ARCHITECTURE.md)
 
 ## 目录结构
@@ -71,7 +68,7 @@ windows/
 │   ├── analysis_ffi.*             # VAC2/VACHUNK generation, cache publish, overlay state FFI
 │   ├── main.cpp                   # Windows app 入口
 │   ├── win32_window.*             # Win32 窗口包装
-│   ├── windows_native_compositor.* # DComp/DXGI present bridge + migration compatibility
+│   ├── windows_native_compositor.* # DComp/DXGI D3D12 present bridge
 │   └── video_renderer_plugin.*    # video_renderer MethodChannel + Texture bridge
 └── libs/ffmpeg/                   # Windows FFmpeg DLL bundle / import libs
 ```
@@ -124,7 +121,6 @@ windows/
 | [../lib/doc.md](../lib/doc.md) | Flutter / Dart UI 层入口 |
 | [../native/docs/ARCHITECTURE.md](../native/docs/ARCHITECTURE.md) | Native C++ 渲染引擎入口 |
 | [../native/docs/WINDOWS_PRESENTATION_BACKEND.md](../native/docs/WINDOWS_PRESENTATION_BACKEND.md) | Windows 产品上屏合同、诊断和追赶路线 |
-| [../native/docs/D3D11_BACKEND.md](../native/docs/D3D11_BACKEND.md) | D3D11 device/texture/shader 实现细节 |
 | [../native/docs/NATIVE_EVENT_PIPELINE.md](../native/docs/NATIVE_EVENT_PIPELINE.md) | native -> Dart EventChannel 事件通知合同 |
 | [../native/docs/FFI_AND_BINDINGS.md](../native/docs/FFI_AND_BINDINGS.md) | Native FFI / Python 绑定说明 |
 | [../native/docs/MAINTENANCE.md](../native/docs/MAINTENANCE.md) | Native 层维护规范 |

@@ -45,7 +45,7 @@ REQUIRED_CMAKE_TARGETS = [
     "videotoolbox_provider_smoke",
     "renderer_metal_headless_smoke",
     "macos_native_player_shared_renderer_smoke",
-    "voidplayer_wgpu_ffi_rust",
+    "voidplayer_wgpu_ffi_rust_macos",
 ]
 
 REQUIRED_SOURCE_MARKERS = {
@@ -211,6 +211,8 @@ def check_macos_platform_protection() -> list[str]:
         + _read("native/cmake/MacOSTests.cmake")
         + "\n"
         + _read("native/cmake/PortableTargets.cmake")
+        + "\n"
+        + _read("native/cmake/WgpuRustTarget.cmake")
     )
     for target in REQUIRED_CMAKE_TARGETS:
         if target not in cmake_text:

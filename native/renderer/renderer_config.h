@@ -13,9 +13,9 @@ using RendererBackendType = RenderBackendKind;
 class PresentationBackendProvider;
 
 /// Platform-specific renderer interop values.
-/// D3D11 uses `adapter` as the Flutter Windows DXGI adapter pointer.
 /// Backends that present into a host-owned target, such as macOS Metal writing
-/// into a CVPixelBuffer, use `output`.
+/// into a CVPixelBuffer or Windows wgpu-d3d12 writing into an external target,
+/// use `output`.
 struct RendererBackendInterop {
     RendererBackendType type = default_render_backend_kind();
     void* adapter = nullptr;

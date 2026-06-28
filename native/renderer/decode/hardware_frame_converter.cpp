@@ -238,11 +238,6 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
     }
 
     TextureFrame result = make_texture_frame_metadata(frame);
-    if (hw_type_ == HwDecodeType::D3D11VA) {
-        spdlog::error("[HardwareFrameConverter] D3D11VA frames are not supported in the D3D12 renderer path");
-        return std::nullopt;
-    }
-
 #ifdef _WIN32
     if (hw_type_ == HwDecodeType::D3D12VA) {
         return populate_d3d12_hardware_texture_frame(frame, result);

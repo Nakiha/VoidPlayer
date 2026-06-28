@@ -20,11 +20,6 @@ RendererConfigValidationResult validate_headless_backend(
     const RendererBackendInterop& backend) {
     const auto budget = default_native_resource_budget();
     switch (backend.type) {
-    case RendererBackendType::D3D11:
-        if (backend.adapter == nullptr) {
-            return invalid("headless d3d11 renderer requires a DXGI adapter");
-        }
-        return ok_result();
     case RendererBackendType::Metal:
         return invalid("macOS Metal renderer backend has been removed; use wgpu-metal");
     case RendererBackendType::WgpuMetal:

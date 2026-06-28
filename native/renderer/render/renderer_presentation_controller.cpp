@@ -3,10 +3,6 @@
 #include "renderer/metrics/presentation_metrics_store.h"
 #include "renderer/render/swap_chain_present_policy.h"
 
-#if defined(_WIN32) && (!defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND)
-#include "windows/d3d11/render_backend.h"
-#endif
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -538,16 +534,7 @@ bool RendererPresentationController::capture_backend_front_buffer_region(
 
 RendererPresentationD3DMemorySnapshot
 RendererPresentationController::d3d_memory_snapshot() const {
-    RendererPresentationD3DMemorySnapshot result;
-#if defined(_WIN32) && (!defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND)
-    std::lock_guard<std::recursive_mutex> device_lock(device_mutex_);
-    if (auto* backend = d3d_backend()) {
-        backend->snapshot_memory_stats(
-            result.stats,
-            result.presenter_copy_texture_bytes_by_slot);
-    }
-#endif
-    return result;
+    return {};
 }
 
 bool RendererPresentationController::resize_renderer_managed_headless_output(
@@ -598,30 +585,15 @@ bool RendererPresentationController::acquire_d3d_shared_texture(
     SharedTextureSnapshot& snapshot,
     PresentationMetricsStore& metrics) const {
     snapshot = {};
-#if !defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND
-    auto* backend = d3d_backend();
-    if (!backend || !backend->acquire_shared_texture(snapshot)) {
-        metrics.note_texture_sharing_failure();
-        return false;
-    }
-    return true;
-#else
     metrics.note_texture_sharing_failure();
     return false;
-#endif
 }
 
 void RendererPresentationController::release_d3d_shared_texture(
     int buffer_index,
     uint64_t buffer_generation) const {
-#if !defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND
-    if (auto* backend = d3d_backend()) {
-        backend->release_shared_texture(buffer_index, buffer_generation);
-    }
-#else
     (void)buffer_index;
     (void)buffer_generation;
-#endif
 }
 
 bool RendererPresentationController::acquire_d3d_shared_fp16_texture(
@@ -740,35 +712,10 @@ void RendererPresentationController::set_source_cache_frame_callback(
 bool RendererPresentationController::recover_d3d_device_loss(
     const char* reason,
     long removed_reason) {
-#if !defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    auto* backend = d3d_backend();
-    return backend && backend->recover_device_loss(reason, removed_reason);
-#else
     (void)reason;
     (void)removed_reason;
     return false;
-#endif
-}
-
-D3D11RenderBackend* RendererPresentationController::d3d_backend() const {
-#if !defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND
-    if (!backend_ || backend_->kind() != PresentationBackendKind::D3D11) {
-        return nullptr;
-    }
-    return static_cast<D3D11RenderBackend*>(backend_.get());
-#else
-    return nullptr;
-#endif
-}
-
-D3D11Device* RendererPresentationController::d3d_device() const {
-#if !defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND
-    auto* backend = d3d_backend();
-    return backend ? backend->device() : nullptr;
-#else
-    return nullptr;
-#endif
 }
 
 #endif

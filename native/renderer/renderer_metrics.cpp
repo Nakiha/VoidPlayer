@@ -17,7 +17,7 @@ PresentationBackendMetrics Renderer::Impl::presentation_backend_metrics() const 
     return presentation_metrics_.snapshot(layout_revision, last_presented_layout_revision);
 }
 
-D3D11BackendMetrics Renderer::Impl::d3d_backend_metrics() const {
+PresentationBackendMetrics Renderer::Impl::d3d_backend_metrics() const {
     return presentation_backend_metrics();
 }
 

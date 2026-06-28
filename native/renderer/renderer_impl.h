@@ -48,11 +48,6 @@
 
 namespace vr {
 
-class D3D11Device;
-class D3D11FramePresenter;
-class D3D11HeadlessOutput;
-class D3D11RenderBackend;
-struct D3D11RenderResources;
 class ShaderManager;
 class TextureManager;
 class AudioCoordinator;
@@ -124,7 +119,7 @@ public:
     std::vector<TrackPerfStats> track_perf_stats() const;
     RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
     PresentationBackendMetrics presentation_backend_metrics() const;
-    D3D11BackendMetrics d3d_backend_metrics() const;
+    PresentationBackendMetrics d3d_backend_metrics() const;
     PresentationBackendStats presentation_backend_stats() const;
     PresentationBackendDiagnostics presentation_backend_diagnostics() const;
     std::string presentation_backend_last_error() const;

@@ -358,7 +358,7 @@ TEST_CASE("Renderer: shutdown without play is safe", "[renderer]") {
     REQUIRE_FALSE(renderer.is_initialized());
 }
 
-TEST_CASE("Renderer: texture sharing failure increments D3D11 metrics", "[renderer][hw]") {
+TEST_CASE("Renderer: texture sharing failure increments presentation metrics", "[renderer][hw]") {
     Renderer renderer;
     SharedTextureSnapshot snapshot;
 

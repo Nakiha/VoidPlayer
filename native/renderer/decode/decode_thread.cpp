@@ -59,7 +59,7 @@ const char* decode_device_mode_name(DecodeDeviceMode mode) {
     return "Unknown";
 }
 
-bool renderer_owned_d3d11_supports_stream_format(AVPixelFormat format) {
+bool renderer_owned_d3d12_supports_stream_format(AVPixelFormat format) {
     switch (format) {
     case AV_PIX_FMT_NONE:
     case AV_PIX_FMT_YUV420P:
@@ -180,25 +180,9 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
     device_mutex_ = device_mutex;
 
     const auto stream_format = static_cast<AVPixelFormat>(codec_params_->format);
-    if (backend == RenderBackendKind::D3D11 &&
-        mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice &&
-        !renderer_owned_d3d11_supports_stream_format(stream_format)) {
-        const char* name = av_get_pix_fmt_name(stream_format);
-        spdlog::info("[DecodeThread] Hardware decode disabled for stream pixel format {} ({}) "
-                     "because renderer-owned D3D11 path only supports NV12/P010-like 4:2:0 surfaces",
-                     static_cast<int>(stream_format), name ? name : "unknown");
-        hw_enabled_ = false;
-        const AVCodec* sw_codec = preferred_software_decoder();
-        if (sw_codec && sw_codec != codec_) {
-            spdlog::info("[DecodeThread] Switching decoder to {} for software fallback",
-                         sw_codec->name);
-            reset_codec_context(sw_codec);
-        }
-        return false;
-    }
     if (backend == RenderBackendKind::WgpuD3D12 &&
         mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice &&
-        !renderer_owned_d3d11_supports_stream_format(stream_format)) {
+        !renderer_owned_d3d12_supports_stream_format(stream_format)) {
         const char* name = av_get_pix_fmt_name(stream_format);
         spdlog::info("[DecodeThread] Hardware decode disabled for stream pixel format {} ({}) "
                      "because renderer-owned wgpu-d3d12 path only supports NV12/P010-like 4:2:0 surfaces",

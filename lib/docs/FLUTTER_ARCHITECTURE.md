@@ -14,8 +14,8 @@ Flutter 层是 Windows 桌面播放器 UI 和 native 渲染引擎之间的编排
 
 Flutter 层不负责：
 
-- 解码、帧同步、D3D11 texture 创建和渲染
-- FFmpeg/D3D11 资源生命周期细节
+- 解码、帧同步、native texture 创建和渲染
+- FFmpeg/GPU 资源生命周期细节
 - analysis 数据计算本身
 
 ## 目录结构

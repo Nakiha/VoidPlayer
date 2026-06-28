@@ -264,102 +264,6 @@ def _run_windows_hdr_auto() -> None:
     )
 
 
-def _run_windows_d3d11_color_layout_parity_smoke() -> None:
-    run(
-        [
-            "ctest",
-            "--test-dir",
-            "build/native/standalone/windows-msvc",
-            "--build-config",
-            "Release",
-            "--output-on-failure",
-            "-R",
-            "^windows_d3d11_color_layout_parity_smoke$",
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_d3d11_fp16_scrgb_smoke() -> None:
-    run(
-        [
-            "ctest",
-            "--test-dir",
-            "build/native/standalone/windows-msvc",
-            "--build-config",
-            "Release",
-            "--output-on-failure",
-            "-R",
-            "^windows_d3d11_fp16_scrgb_smoke$",
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_d3d11_dcomp_flutter_composite_smoke() -> None:
-    run(
-        [
-            "ctest",
-            "--test-dir",
-            "build/native/standalone/windows-msvc",
-            "--build-config",
-            "Release",
-            "--output-on-failure",
-            "-R",
-            "^windows_d3d11_dcomp_flutter_composite_smoke$",
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_d3d11_source_projection_smoke() -> None:
-    run(
-        [
-            "ctest",
-            "--test-dir",
-            "build/native/standalone/windows-msvc",
-            "--build-config",
-            "Release",
-            "--output-on-failure",
-            "-R",
-            "^windows_d3d11_source_projection_smoke$",
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_d3d11_high_refresh_projection_overlay_smoke() -> None:
-    run(
-        [
-            "ctest",
-            "--test-dir",
-            "build/native/standalone/windows-msvc",
-            "--build-config",
-            "Release",
-            "--output-on-failure",
-            "-R",
-            "^windows_d3d11_high_refresh_projection_overlay_smoke$",
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_d3d11_retained_overlay_layer_smoke() -> None:
-    run(
-        [
-            "ctest",
-            "--test-dir",
-            "build/native/standalone/windows-msvc",
-            "--build-config",
-            "Release",
-            "--output-on-failure",
-            "-R",
-            "^windows_d3d11_retained_overlay_layer_smoke$",
-        ],
-        cwd=str(ROOT),
-    )
-
-
 def _run_windows_display_tests() -> None:
     run(
         [
@@ -369,20 +273,6 @@ def _run_windows_display_tests() -> None:
                 / "video_renderer_tests.exe"
             ),
             "[windows_display]",
-        ],
-        cwd=str(ROOT),
-    )
-
-
-def _run_windows_cross_adapter_tests() -> None:
-    run(
-        [
-            str(
-                ROOT
-                / "build/native/standalone/windows-msvc/Release"
-                / "video_renderer_tests.exe"
-            ),
-            "[windows_cross_adapter]",
         ],
         cwd=str(ROOT),
     )
@@ -431,7 +321,6 @@ def _run_windows_overlay_layer_tests() -> None:
 
 
 def _run_windows_cross_adapter_local() -> None:
-    _run_windows_cross_adapter_tests()
     local_engine_src = os.environ.get(
         "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
         str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
@@ -470,8 +359,6 @@ def _run_windows_cross_adapter_local() -> None:
 def _run_windows_high_refresh_local() -> None:
     _run_windows_high_refresh_tests()
     _run_windows_overlay_layer_tests()
-    _run_windows_d3d11_high_refresh_projection_overlay_smoke()
-    _run_windows_d3d11_retained_overlay_layer_smoke()
     local_engine_src = os.environ.get(
         "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
         str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
@@ -521,16 +408,9 @@ def cmd_gate(args: argparse.Namespace) -> None:
         elif _is_windows():
             _python_dev("test", "--native-only", "--github")
             _run_windows_display_tests()
-            _run_windows_cross_adapter_tests()
             _run_windows_device_recovery_tests()
             _run_windows_high_refresh_tests()
             _run_windows_overlay_layer_tests()
-            _run_windows_d3d11_color_layout_parity_smoke()
-            _run_windows_d3d11_fp16_scrgb_smoke()
-            _run_windows_d3d11_dcomp_flutter_composite_smoke()
-            _run_windows_d3d11_source_projection_smoke()
-            _run_windows_d3d11_high_refresh_projection_overlay_smoke()
-            _run_windows_d3d11_retained_overlay_layer_smoke()
             run([sys.executable, "scripts/dev/check_release_compliance.py"], cwd=str(ROOT))
         else:
             _python_dev("test", "--native-only")

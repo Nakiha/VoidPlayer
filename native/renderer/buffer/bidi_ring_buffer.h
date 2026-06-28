@@ -29,9 +29,9 @@ struct TextureFrame {
     std::shared_ptr<std::vector<uint8_t>> cpu_data;
     FrameStorage storage;
 
-    // Planar YUV metadata (software NV12/P010 upload or D3D11VA).
+    // Planar YUV metadata for software NV12/P010 upload.
     bool is_nv12 = false;               // true if frame uses Y + interleaved UV sampling
-    bool is_p010 = false;               // true for CPU P010 upload; D3D11 hw format is read from texture desc
+    bool is_p010 = false;               // true for CPU P010 upload
     int texture_array_index = 0;        // Texture2DArray slice index
     VideoColorInfo color;
 
@@ -52,12 +52,6 @@ struct TextureFrame {
     const CpuPlanarYuvFrameStorage* cpu_planar_yuv_storage() const {
         return std::get_if<CpuPlanarYuvFrameStorage>(&storage);
     }
-    const D3D11Nv12FrameStorage* hardware_nv12_texture_storage() const {
-        return std::get_if<D3D11Nv12FrameStorage>(&storage);
-    }
-    const D3D11TextureFrameStorage* hardware_texture_storage() const {
-        return std::get_if<D3D11TextureFrameStorage>(&storage);
-    }
     const D3D12TextureFrameStorage* d3d12_texture_storage() const {
         return std::get_if<D3D12TextureFrameStorage>(&storage);
     }
@@ -65,14 +59,6 @@ struct TextureFrame {
         return std::get_if<MacOSCVPixelBufferFrameStorage>(&storage);
     }
 
-    // Compatibility accessors. Prefer the backend-neutral names above at
-    // shared renderer and presentation-boundary call sites.
-    const D3D11Nv12FrameStorage* d3d11_nv12_storage() const {
-        return hardware_nv12_texture_storage();
-    }
-    const D3D11TextureFrameStorage* d3d11_texture_storage() const {
-        return hardware_texture_storage();
-    }
     const MacOSCVPixelBufferFrameStorage* macos_cv_pixel_buffer_storage() const {
         return cv_pixel_buffer_storage();
     }

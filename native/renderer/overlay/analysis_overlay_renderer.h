@@ -9,8 +9,6 @@
 
 namespace vr {
 
-class D3D11Device;
-struct D3D11RenderResources;
 struct AnalysisOverlayMemoryStats {
     uint64_t estimated_bytes = 0;
     int width = 0;
@@ -33,11 +31,6 @@ public:
     }
 
     void reset();
-    void draw(const RendererDrawSnapshot& snapshot,
-              D3D11Device& device,
-              D3D11RenderResources& resources,
-              int target_width,
-              int target_height);
     bool composite_bgra(const RendererDrawSnapshot& snapshot,
                         uint8_t* target_bgra,
                         int target_width,
@@ -65,30 +58,9 @@ private:
         bool show_bit_cost = false;
     };
 
-    bool ensure_overlay_texture(D3D11Device& device,
-                                D3D11RenderResources& resources,
-                                int slot,
-                                int width,
-                                int height,
-                                bool need_color,
-                                bool need_mask);
-    bool ensure_overlay_rect_buffer(D3D11Device& device,
-                                    D3D11RenderResources& resources,
-                                    int slot,
-                                    uint32_t rect_count);
-    bool render_overlay_mask(D3D11Device& device,
-                             D3D11RenderResources& resources,
-                             int slot,
-                             uint32_t rect_count,
-                             int target_width,
-                             int target_height);
-
     std::array<std::vector<uint8_t>, kMaxTracks> overlay_pixels_;
     std::array<std::vector<AnalysisOverlayGpuRect>, kMaxTracks> overlay_rects_;
     std::array<AnalysisOverlayCache, kMaxTracks> overlay_cache_;
 };
-
-AnalysisOverlayMemoryStats snapshot_analysis_overlay_memory_stats(
-    const D3D11RenderResources& resources);
 
 } // namespace vr

@@ -17,9 +17,6 @@ target_link_libraries(video_renderer_core PUBLIC
     ${SWRESAMPLE_LIBRARY}
 )
 
-target_compile_definitions(video_renderer_core PUBLIC
-    VOID_ENABLE_D3D11_BACKEND=0)
-
 add_library(video_renderer_lib STATIC
     ${VOID_RENDERER_WINDOWS_SOURCES}
 )
@@ -53,7 +50,6 @@ if(BUILD_ANALYSIS)
 endif()
 
 target_compile_definitions(video_renderer_lib PUBLIC
-    VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>
-    VOID_ENABLE_D3D11_BACKEND=0)
+    VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>)
 
 void_configure_renderer_shaders("${CMAKE_CURRENT_BINARY_DIR}")

@@ -148,7 +148,7 @@ PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
     return impl_->presentation_backend_metrics();
 }
 
-D3D11BackendMetrics Renderer::d3d_backend_metrics() const {
+PresentationBackendMetrics Renderer::d3d_backend_metrics() const {
     return impl_->d3d_backend_metrics();
 }
 

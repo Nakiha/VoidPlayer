@@ -26,17 +26,17 @@ int main() {
         return fail("valid windowed renderer config was rejected");
     }
 
-    auto d3d_headless = valid_windowed_config();
-    d3d_headless.headless = true;
-    d3d_headless.hwnd = nullptr;
-    d3d_headless.backend.type = vr::RendererBackendType::D3D11;
-    d3d_headless.backend.adapter = reinterpret_cast<void*>(0x5678);
-    if (!vr::validate_renderer_config(d3d_headless).ok) {
-        return fail("valid D3D11 headless renderer config was rejected");
+    auto d3d12_headless = valid_windowed_config();
+    d3d12_headless.headless = true;
+    d3d12_headless.hwnd = nullptr;
+    d3d12_headless.backend.type = vr::RendererBackendType::WgpuD3D12;
+    d3d12_headless.backend.output = reinterpret_cast<void*>(0x5678);
+    if (!vr::validate_renderer_config(d3d12_headless).ok) {
+        return fail("valid WgpuD3D12 headless renderer config was rejected");
     }
-    d3d_headless.backend.adapter = nullptr;
-    if (vr::validate_renderer_config(d3d_headless).ok) {
-        return fail("D3D11 headless renderer config without adapter was accepted");
+    d3d12_headless.backend.output = nullptr;
+    if (vr::validate_renderer_config(d3d12_headless).ok) {
+        return fail("WgpuD3D12 headless renderer config without output was accepted");
     }
 
     auto wgpu_metal_headless = valid_windowed_config();

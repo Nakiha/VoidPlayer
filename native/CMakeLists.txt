@@ -45,7 +45,7 @@ if(WIN32)
     add_subdirectory(renderer)
 else()
     include(cmake/PortableTargets.cmake)
-    message(STATUS "Windows D3D11 renderer targets disabled on this platform")
+    message(STATUS "Windows renderer targets disabled on this platform")
 endif()
 
 if(WIN32 AND BUILD_TESTS)

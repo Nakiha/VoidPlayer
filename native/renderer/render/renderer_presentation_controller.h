@@ -15,8 +15,6 @@
 namespace vr {
 
 class PresentationMetricsStore;
-class D3D11Device;
-class D3D11RenderBackend;
 struct SharedFp16TextureSnapshot;
 struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
@@ -253,8 +251,6 @@ public:
         int buffer_index, uint64_t ring_generation) const;
     void set_source_cache_frame_callback(std::function<void()> callback);
     bool recover_d3d_device_loss(const char* reason, long removed_reason);
-    D3D11RenderBackend* d3d_backend() const;
-    D3D11Device* d3d_device() const;
 #endif
 
 private:

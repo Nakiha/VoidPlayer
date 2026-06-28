@@ -11,10 +11,10 @@ int benchmark_analysis_overlay_gpu(const AnalysisOverlayGpuBenchmarkOptions& opt
             << "\"type\":\"overlayGpuBenchmark\","
             << "\"ok\":false,"
             << "\"deviceType\":\"unsupported\","
-            << "\"error\":\"analysis overlay GPU benchmark is Windows D3D11-only\""
+            << "\"error\":\"analysis overlay GPU benchmark has no active GPU backend\""
             << "}\n";
     } else {
-        std::cerr << "analysis overlay GPU benchmark is Windows D3D11-only\n";
+        std::cerr << "analysis overlay GPU benchmark has no active GPU backend\n";
     }
     return 2;
 }

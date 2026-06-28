@@ -58,7 +58,6 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
     target_compile_definitions(${target_name} PRIVATE
         _CRT_SECURE_NO_WARNINGS
         VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>
-        VOID_ENABLE_D3D11_BACKEND=0
     )
 
     void_configure_renderer_shaders("${generated_include_dir}")

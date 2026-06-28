@@ -14,14 +14,9 @@ except ImportError:
 
 REQUIRED_GATE_CALLS = [
     "_run_windows_display_tests()",
-    "_run_windows_cross_adapter_tests()",
     "_run_windows_device_recovery_tests()",
     "_run_windows_high_refresh_tests()",
     "_run_windows_overlay_layer_tests()",
-    "_run_windows_d3d11_dcomp_flutter_composite_smoke()",
-    "_run_windows_d3d11_source_projection_smoke()",
-    "_run_windows_d3d11_high_refresh_projection_overlay_smoke()",
-    "_run_windows_d3d11_retained_overlay_layer_smoke()",
 ]
 
 REQUIRED_UI_PROFILE_ENTRIES = {
@@ -51,15 +46,7 @@ REQUIRED_NATIVE_TAGS = {
     "[windows_device_recovery]": "native/tests/windows/test_windows_device_recovery.cpp",
     "[windows_high_refresh]": "native/tests/windows/test_windows_high_refresh_metrics.cpp",
     "[windows_overlay_layer]": "native/tests/windows/test_windows_overlay_layer_state.cpp",
-    "[windows_cross_adapter]": "native/tests/windows/test_cross_adapter_transport.cpp",
 }
-
-REQUIRED_D3D11_SMOKES = [
-    "windows_d3d11_dcomp_flutter_composite_smoke",
-    "windows_d3d11_source_projection_smoke",
-    "windows_d3d11_high_refresh_projection_overlay_smoke",
-    "windows_d3d11_retained_overlay_layer_smoke",
-]
 
 
 def _read(rel: str) -> str:
@@ -73,11 +60,6 @@ def check_windows_fork_protection() -> list[str]:
     for call in REQUIRED_GATE_CALLS:
         if call not in gate:
             errors.append(f"scripts/dev/gate.py is missing Windows protection call: {call}")
-
-    native_cmake = _read("native/CMakeLists.txt")
-    for smoke in REQUIRED_D3D11_SMOKES:
-        if smoke not in native_cmake:
-            errors.append(f"native/CMakeLists.txt is missing D3D11 smoke target: {smoke}")
 
     test_cmake = _read("native/tests/CMakeLists.txt")
     for tag, rel in REQUIRED_NATIVE_TAGS.items():

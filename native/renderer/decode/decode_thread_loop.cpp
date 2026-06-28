@@ -426,7 +426,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
 
     complete_preroll_if_ready();
 
-    // D3D11VA HEVC exact seek is sensitive to burst-feeding packets while
+    // Hardware HEVC exact seek is sensitive to burst-feeding packets while
     // paused. Playback naturally paces this path through render/clock
     // consumption; mirror a tiny amount of that pacing during drain mode.
     if (should_pace_hardware_exact_seek_decode(

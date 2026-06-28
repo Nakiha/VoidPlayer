@@ -115,8 +115,6 @@ const char* hw_decode_type_name(HwDecodeType type) {
     switch (type) {
     case HwDecodeType::None:
         return "none";
-    case HwDecodeType::D3D11VA:
-        return "D3D11VA";
     case HwDecodeType::D3D12VA:
         return "D3D12VA";
     case HwDecodeType::CUDA:

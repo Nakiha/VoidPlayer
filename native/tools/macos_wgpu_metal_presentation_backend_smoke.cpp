@@ -595,13 +595,13 @@ int main() {
   if (!default_provider ||
       default_provider->supports(vr::RenderBackendKind::Metal) ||
       !default_provider->supports(vr::RenderBackendKind::WgpuMetal) ||
-      default_provider->supports(vr::RenderBackendKind::D3D11)) {
+      default_provider->supports(vr::RenderBackendKind::WgpuD3D12)) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal presentation backend default provider support set is wrong");
   }
-  if (vr::create_presentation_backend(vr::RenderBackendKind::D3D11)) {
+  if (vr::create_presentation_backend(vr::RenderBackendKind::WgpuD3D12)) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal presentation backend factory created unsupported D3D11 backend");
+    return fail("WgpuMetal presentation backend factory created unsupported WgpuD3D12 backend");
   }
   if (vr::create_presentation_backend(vr::RenderBackendKind::Metal)) {
     CVPixelBufferRelease(pixel_buffer);

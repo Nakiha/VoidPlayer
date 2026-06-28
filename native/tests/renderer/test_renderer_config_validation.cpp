@@ -18,11 +18,9 @@
 #include <vector>
 
 #ifdef _WIN32
-#include "windows/d3d11/shared_fp16_ring.h"
-#include "windows/d3d11/shared_source_cache_ring.h"
+#include "windows/shared/shared_texture_ring_types.h"
 #include "windows/wgpu/wgpu_d3d12_ffi_bridge.h"
 
-#include <d3d11_1.h>
 #include <d3d12.h>
 #include <wrl/client.h>
 #endif
@@ -400,15 +398,12 @@ TEST_CASE("Renderer config validation enforces headless interop shape",
           "[renderer_config]") {
     auto config = valid_windowed_config();
     config.headless = true;
-    config.backend.type = RendererBackendType::D3D11;
-    config.backend.adapter = nullptr;
+    config.backend.type = RendererBackendType::WgpuD3D12;
+    config.backend.output = nullptr;
     REQUIRE_FALSE(validate_renderer_config(config).ok);
 
     config.hwnd = nullptr;
     REQUIRE_FALSE(validate_renderer_config(config).ok);
-
-    config.backend.adapter = reinterpret_cast<void*>(0x5678);
-    REQUIRE(validate_renderer_config(config).ok);
 }
 
 TEST_CASE("Renderer config validation accepts WgpuMetal headless output interop",
@@ -468,20 +463,14 @@ TEST_CASE("Renderer config validation rejects removed Metal headless backend",
 
 TEST_CASE("Hardware decode provider compatibility keeps Windows on D3D12VA",
           "[renderer_config][hw_decode]") {
-    auto d3d11_names = compatible_hw_decode_provider_names(
-        RenderBackendKind::D3D11,
-        DecodeDeviceMode::IndependentDevice);
     auto d3d12_names = compatible_hw_decode_provider_names(
         RenderBackendKind::WgpuD3D12,
         DecodeDeviceMode::IndependentDevice);
 
 #ifdef _WIN32
-    REQUIRE(d3d11_names.empty());
-
     bool has_d3d12va = false;
     for (const auto* name : d3d12_names) {
         has_d3d12va = has_d3d12va || std::string(name) == "D3D12VA";
-        REQUIRE(std::string(name) != "D3D11VA");
     }
     REQUIRE(has_d3d12va);
     REQUIRE(std::string(hw_decode_type_name(HwDecodeType::D3D12VA)) == "D3D12VA");
@@ -490,7 +479,7 @@ TEST_CASE("Hardware decode provider compatibility keeps Windows on D3D12VA",
 #endif
 }
 
-TEST_CASE("Windows wgpu-d3d12 presentation backend initializes without D3D11 fallback",
+TEST_CASE("Windows wgpu-d3d12 presentation backend initializes without legacy fallback",
           "[renderer_config][presentation_backend]") {
 #ifdef _WIN32
     auto backend = create_presentation_backend(RenderBackendKind::WgpuD3D12);
@@ -742,21 +731,12 @@ TEST_CASE("Windows wgpu-d3d12 backend publishes shared FP16 output",
     REQUIRE(shared.sync_mode ==
             SharedFp16TextureSyncMode::PublishedAfterProducerWait);
 
-    Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device;
-    Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3d11_context;
-    D3D_FEATURE_LEVEL level = {};
-    REQUIRE(SUCCEEDED(D3D11CreateDevice(
-        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-        D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION,
-        &d3d11_device, &level, &d3d11_context)));
-    Microsoft::WRL::ComPtr<ID3D11Device1> d3d11_device1;
-    REQUIRE(SUCCEEDED(d3d11_device.As(&d3d11_device1)));
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d11_texture;
-    REQUIRE(SUCCEEDED(d3d11_device1->OpenSharedResource1(
-        shared.handle, IID_PPV_ARGS(&d3d11_texture))));
-    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
-    REQUIRE(SUCCEEDED(d3d11_device->CreateShaderResourceView(
-        d3d11_texture.Get(), nullptr, &srv)));
+    auto* device = static_cast<ID3D12Device*>(backend->native_render_device());
+    REQUIRE(device != nullptr);
+    Microsoft::WRL::ComPtr<ID3D12Resource> opened;
+    REQUIRE(SUCCEEDED(device->OpenSharedHandle(
+        shared.handle, IID_PPV_ARGS(&opened))));
+    REQUIRE(opened != nullptr);
 
     backend->release_shared_fp16_texture(
         shared.buffer_index, shared.ring_generation);

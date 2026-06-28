@@ -5,9 +5,7 @@
 #include <mutex>
 #include <utility>
 #include <atomic>
-#include <d3d11.h>
 #include <d3d12.h>
-#include <wrl/client.h>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -483,16 +481,16 @@ TEST_CASE("FrameConverter: YUVJ444P defaults to full range when metadata is abse
     av_frame_free(&frame);
 }
 
-TEST_CASE("FrameConverter: init_hardware sets hardware mode", "[frame_converter]") {
+TEST_CASE("FrameConverter: init_hardware sets D3D12 hardware mode", "[frame_converter]") {
     FrameConverter converter;
     std::recursive_mutex device_mutex;
-    // Pass null pointers since we are not creating a real D3D11 device in tests
+    // Pass null pointers because metadata-only initialization does not create a real device.
     bool ok = converter.init_hardware(
         nullptr,
         nullptr,
         1920,
         1080,
-        HwDecodeType::D3D11VA,
+        HwDecodeType::D3D12VA,
         false,
         &device_mutex);
     REQUIRE(ok == true);
@@ -535,90 +533,6 @@ TEST_CASE("FrameConverter: unsupported software format returns no frame",
     REQUIRE(result.has_value() == false);
 
     av_frame_free(&frame);
-}
-
-TEST_CASE("FrameConverter: D3D12 renderer rejects direct D3D11 hardware frames",
-          "[frame_converter][hw][av_frame_lifetime]") {
-    Microsoft::WRL::ComPtr<ID3D11Device> device;
-    D3D_FEATURE_LEVEL feature_level = D3D_FEATURE_LEVEL_11_0;
-    REQUIRE(SUCCEEDED(D3D11CreateDevice(
-        nullptr,
-        D3D_DRIVER_TYPE_HARDWARE,
-        nullptr,
-        0,
-        &feature_level,
-        1,
-        D3D11_SDK_VERSION,
-        &device,
-        nullptr,
-        nullptr)));
-
-    D3D11_TEXTURE2D_DESC desc = {};
-    desc.Width = 64;
-    desc.Height = 64;
-    desc.MipLevels = 1;
-    desc.ArraySize = 2;
-    desc.Format = DXGI_FORMAT_NV12;
-    desc.SampleDesc.Count = 1;
-    desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
-    REQUIRE(SUCCEEDED(device->CreateTexture2D(&desc, nullptr, &texture)));
-
-    std::recursive_mutex device_mutex;
-    FrameConverter converter;
-    REQUIRE(converter.init_hardware(
-        nullptr,
-        nullptr,
-        64,
-        64,
-        HwDecodeType::D3D11VA,
-        false,
-        &device_mutex));
-
-    std::atomic<int> free_count{0};
-    AVFrame* frame = av_frame_alloc();
-    REQUIRE(frame != nullptr);
-    frame->format = AV_PIX_FMT_D3D11;
-    frame->width = 64;
-    frame->height = 64;
-    frame->pts = 7000;
-    frame->data[0] = reinterpret_cast<uint8_t*>(texture.Get());
-    frame->data[1] = reinterpret_cast<uint8_t*>(intptr_t{1});
-    auto* token = static_cast<uint8_t*>(av_malloc(1));
-    REQUIRE(token != nullptr);
-    frame->buf[0] = av_buffer_create(
-        token, 1, free_counted_buffer, &free_count, 0);
-    REQUIRE(frame->buf[0] != nullptr);
-
-    auto converted = converter.convert(frame);
-    REQUIRE_FALSE(converted.has_value());
-
-    av_frame_unref(frame);
-    REQUIRE(free_count.load(std::memory_order_relaxed) == 1);
-
-    av_frame_free(&frame);
-}
-
-TEST_CASE("TextureFrame: storage exposes hardware NV12 texture metadata", "[frame_storage]") {
-    TextureFrame frame;
-    auto* texture = reinterpret_cast<ID3D11Texture2D*>(0x1234);
-    auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x5678), [](void*) {});
-
-    frame.texture_handle = texture;
-    frame.is_ref = true;
-    frame.is_nv12 = true;
-    frame.texture_array_index = 7;
-    frame.hw_frame_ref = ref;
-    frame.storage = D3D11Nv12FrameStorage{texture, 7, ref};
-
-    REQUIRE(frame.storage_kind() == FrameStorageKind::D3D11Nv12);
-    REQUIRE(frame.storage_class() == FrameStorageClass::HardwareTexture);
-    REQUIRE(frame.hardware_nv12_texture_storage() != nullptr);
-    REQUIRE(frame.hardware_nv12_texture_storage()->texture == texture);
-    REQUIRE(frame.hardware_nv12_texture_storage()->array_index == 7);
-    REQUIRE(frame.hardware_nv12_texture_storage()->frame_ref == ref);
 }
 
 TEST_CASE("TextureFrame: storage exposes D3D12 texture metadata", "[frame_storage]") {

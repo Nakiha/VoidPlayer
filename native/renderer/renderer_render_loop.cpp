@@ -2,10 +2,6 @@
 #include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/render/renderer_draw_snapshot_builder.h"
 
-#if defined(_WIN32) && (!defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND)
-#include "windows/d3d11/render_backend.h"
-#endif
-
 namespace vr {
 
 void Renderer::Impl::do_resize(int width, int height) {
@@ -145,33 +141,11 @@ void Renderer::Impl::render_loop() noexcept {
 
 RendererPresentationOverlayHooks Renderer::Impl::presentation_overlay_hooks() {
     RendererPresentationOverlayHooks hooks;
-#if defined(_WIN32) && (!defined(VOID_ENABLE_D3D11_BACKEND) || VOID_ENABLE_D3D11_BACKEND)
-    hooks.draw_overlay = [this](PresentationBackend& backend,
-                                const RendererDrawSnapshot& draw_snapshot) {
-        if (!analysis_overlay_renderer_ ||
-            backend.kind() != PresentationBackendKind::D3D11) {
-            return;
-        }
-        auto* d3d = static_cast<D3D11RenderBackend*>(&backend);
-        auto* device = d3d->device();
-        auto* resources = d3d->resources();
-        if (!device || !resources) {
-            return;
-        }
-        analysis_overlay_renderer_->draw(
-            draw_snapshot,
-            *device,
-            *resources,
-            draw_snapshot.target_width,
-            draw_snapshot.target_height);
-    };
-#else
     hooks.draw_overlay = [](PresentationBackend& backend,
                             const RendererDrawSnapshot& draw_snapshot) {
         (void)backend;
         (void)draw_snapshot;
     };
-#endif
     hooks.composite_bgra_overlay =
         [this](const RendererDrawSnapshot& draw_snapshot,
                uint8_t* target_bgra,

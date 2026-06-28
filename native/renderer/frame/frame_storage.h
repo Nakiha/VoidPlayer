@@ -5,7 +5,6 @@
 #include <variant>
 #include <vector>
 
-struct ID3D11Texture2D;
 struct ID3D12Fence;
 struct ID3D12Resource;
 
@@ -69,17 +68,6 @@ struct CpuPlanarYuvFrameStorage {
     int bytes_per_sample = 1;
 };
 
-struct D3D11Nv12FrameStorage {
-    ID3D11Texture2D* texture = nullptr;
-    int array_index = 0;
-    std::shared_ptr<void> frame_ref;
-};
-
-struct D3D11TextureFrameStorage {
-    ID3D11Texture2D* texture = nullptr;
-    std::shared_ptr<void> frame_ref;
-};
-
 struct D3D12TextureFrameStorage {
     ID3D12Resource* texture = nullptr;
     int subresource_index = 0;
@@ -108,8 +96,6 @@ using FrameStorage = std::variant<
     CpuRgbaFrameStorage,
     CpuNv12FrameStorage,
     CpuPlanarYuvFrameStorage,
-    D3D11Nv12FrameStorage,
-    D3D11TextureFrameStorage,
     D3D12TextureFrameStorage,
     MacOSCVPixelBufferFrameStorage>;
 
@@ -118,8 +104,6 @@ enum class FrameStorageKind {
     CpuRgba,
     CpuNv12,
     CpuPlanarYuv,
-    D3D11Nv12,
-    D3D11Texture,
     D3D12Texture,
     MacOSCVPixelBuffer,
 };
@@ -141,12 +125,6 @@ inline FrameStorageKind frame_storage_kind(const FrameStorage& storage) {
     if (std::holds_alternative<CpuPlanarYuvFrameStorage>(storage)) {
         return FrameStorageKind::CpuPlanarYuv;
     }
-    if (std::holds_alternative<D3D11Nv12FrameStorage>(storage)) {
-        return FrameStorageKind::D3D11Nv12;
-    }
-    if (std::holds_alternative<D3D11TextureFrameStorage>(storage)) {
-        return FrameStorageKind::D3D11Texture;
-    }
     if (std::holds_alternative<D3D12TextureFrameStorage>(storage)) {
         return FrameStorageKind::D3D12Texture;
     }
@@ -162,8 +140,6 @@ inline FrameStorageClass frame_storage_class(FrameStorageKind kind) {
     case FrameStorageKind::CpuNv12:
     case FrameStorageKind::CpuPlanarYuv:
         return FrameStorageClass::CpuPixels;
-    case FrameStorageKind::D3D11Nv12:
-    case FrameStorageKind::D3D11Texture:
     case FrameStorageKind::D3D12Texture:
         return FrameStorageClass::HardwareTexture;
     case FrameStorageKind::MacOSCVPixelBuffer:

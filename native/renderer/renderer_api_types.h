@@ -35,8 +35,6 @@ using RendererEventCallback = std::function<void(const RendererEvent&)>;
 using RendererFrameCallback =
     std::function<void(const PresentationBackendFrameInfo*)>;
 
-using D3D11BackendMetrics = PresentationBackendMetrics;
-
 struct RendererGpuMemoryStats {
     uint64_t total_estimated_bytes = 0;
     uint64_t decoder_pool_bytes = 0;
@@ -61,7 +59,6 @@ struct RendererGpuMemoryStats {
 
 enum class SharedTextureHandleType {
     None = 0,
-    D3D11SharedHandle = 1,
 };
 
 struct SharedTextureSnapshot {

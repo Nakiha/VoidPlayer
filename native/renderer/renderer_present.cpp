@@ -121,7 +121,7 @@ bool Renderer::Impl::recover_presentation_device_loss(
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
     (void)request_frame_refresh("windows-device-recovery");
     spdlog::info(
-        "[Renderer] recovered D3D11 presentation device reason={} removed={:#x}",
+        "[Renderer] recovered presentation device reason={} removed={:#x}",
         recovery_reason,
         static_cast<unsigned long>(removed_reason));
     return true;
@@ -142,7 +142,7 @@ bool Renderer::Impl::recover_or_enter_terminal_device_lost_locked(
         loop_driver_.force_preview_redraw();
         device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
         spdlog::info(
-            "[Renderer] recovered D3D11 presentation device reason={} removed={:#x}",
+            "[Renderer] recovered presentation device reason={} removed={:#x}",
             operation ? operation : "device-loss",
             static_cast<unsigned long>(reason));
         return true;
@@ -165,7 +165,7 @@ void Renderer::Impl::enter_terminal_device_lost_locked(const char* operation) {
         presentation_metrics_.note_device_lost();
     }
     spdlog::error(
-        "[Renderer] D3D11 device lost during {}; entering terminal renderer state "
+        "[Renderer] presentation device lost during {}; entering terminal renderer state "
         "(reason={:#x})",
         operation,
         static_cast<unsigned long>(reason));

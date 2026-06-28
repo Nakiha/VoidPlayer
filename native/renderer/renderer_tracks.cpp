@@ -36,7 +36,7 @@ bool Renderer::Impl::recreate_pipeline_for_seek(std::unique_lock<std::mutex>& st
 
     track_controller_.stop_detached_pipeline(slot, detached.detached_track);
 
-    // Give the driver a brief moment to retire the previous D3D11VA decoder
+    // Give the driver a brief moment to retire the previous hardware decoder
     // objects before constructing a fresh hardware pipeline on the same file.
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 

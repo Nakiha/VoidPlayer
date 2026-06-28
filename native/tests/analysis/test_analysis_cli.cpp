@@ -236,6 +236,34 @@ bool run_cli(const std::string& cli_path,
     return true;
 }
 
+bool run_cli_expect_exit(const std::string& cli_path,
+                         const std::vector<std::string>& args,
+                         intptr_t expected_exit_code) {
+    std::vector<std::string> storage;
+    storage.reserve(args.size() + 1);
+    storage.push_back(cli_path);
+    storage.insert(storage.end(), args.begin(), args.end());
+
+    std::vector<const char*> argv;
+    argv.reserve(storage.size() + 1);
+    for (const auto& arg : storage) {
+        argv.push_back(arg.c_str());
+    }
+    argv.push_back(nullptr);
+
+    const intptr_t exit_code = _spawnv(_P_WAIT, cli_path.c_str(), argv.data());
+    if (exit_code != expected_exit_code) {
+        std::cerr << "CLI command exited " << exit_code
+                  << ", expected " << expected_exit_code << ":";
+        for (const auto& arg : args) {
+            std::cerr << " " << arg;
+        }
+        std::cerr << "\n";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -265,7 +293,7 @@ int main(int argc, char** argv) {
             "--with-grid",
             "--json",
         }) &&
-        run_cli(cli_path, {
+        run_cli_expect_exit(cli_path, {
             "benchmark-overlay-gpu",
             fixture.vck_path,
             "--frame", "1",
@@ -274,7 +302,7 @@ int main(int argc, char** argv) {
             "--iterations", "2",
             "--with-grid",
             "--json",
-        });
+        }, 2);
 
     bool generation_ok = true;
     if (!analyzer_path.empty() && !video_path.empty()) {

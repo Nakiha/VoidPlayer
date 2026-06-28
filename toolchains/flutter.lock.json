@@ -56,7 +56,7 @@
     },
     {
       "path": "engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.cc",
-      "contains": "D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX"
+      "contains": "kFlutterDesktopWindowsSurfaceBackendD3D12"
     }
   ]
 }

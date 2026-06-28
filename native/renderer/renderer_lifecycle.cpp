@@ -182,6 +182,7 @@ void Renderer::Impl::release_resources_locked() {
     // Must happen before decode_thread->stop() frees hw_device_ctx,
     // otherwise hw_frame_ref cleanup will access a freed device context.
     present_history_.reset();
+    external_d3d12_visible_decision_ = PresentDecision();
     loop_driver_.reset_presentation_scheduler();
 
     track_controller_.stop_all([this](size_t, TrackPipeline& track) {

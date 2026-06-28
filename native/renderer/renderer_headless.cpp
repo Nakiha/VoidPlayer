@@ -201,6 +201,14 @@ bool Renderer::Impl::draw_current_frame_to_external_d3d12_target(
             layout_state_,
             surface_state_,
             present_history_.snapshot());
+        if (!present_decision_has_frame(snapshot.decision) &&
+            present_decision_has_frame(external_d3d12_visible_decision_)) {
+            snapshot = RendererDrawSnapshotBuilder::build(
+                track_controller_,
+                layout_state_,
+                surface_state_,
+                external_d3d12_visible_decision_);
+        }
     }
     const float viewport_left = std::clamp(target.viewport_left, 0.0f, 1.0f);
     const float viewport_top = std::clamp(target.viewport_top, 0.0f, 1.0f);
@@ -240,6 +248,9 @@ bool Renderer::Impl::draw_current_frame_to_external_d3d12_target(
     }
     if (drew) {
         std::lock_guard<std::mutex> state_lock(state_mutex_);
+        if (present_decision_has_frame(snapshot.decision)) {
+            external_d3d12_visible_decision_ = snapshot.decision;
+        }
         if (layout_state_.mark_presented_if_newer(
                 layout_state_.current_revision())) {
             presentation_metrics_.note_layout_presented();

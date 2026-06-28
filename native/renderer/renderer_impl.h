@@ -331,6 +331,7 @@ private:
     mutable std::mutex state_mutex_;
     RendererEventBus event_bus_;
     RendererPresentHistory present_history_;
+    PresentDecision external_d3d12_visible_decision_;
     std::chrono::steady_clock::time_point last_playback_clock_event_time_{};
 
 };

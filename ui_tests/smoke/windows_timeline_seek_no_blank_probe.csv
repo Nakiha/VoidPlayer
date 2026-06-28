@@ -1,0 +1,18 @@
+# Regression probe for Windows wgpu/D3D12 direct present during timeline seek.
+# Captures immediately after the real timeline click so seek flush cannot blank
+# the viewport before the decoded seek preview arrives.
+0.0, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.8, WAIT_TRACK_COUNT, 1, 10000
+2.0, PAUSE
+2.2, WAIT_PAUSED, 3000
+2.3, CAPTURE_VIEWPORT, seek_no_blank_before, build/windows_seek_no_blank_before.png
+2.4, ASSERT_CAPTURE_NOT_BLACK, seek_no_blank_before, 0.01, 4.0
+2.5, CLICK_TIMELINE_FRACTION, 0.72
+2.52, CAPTURE_VIEWPORT, seek_no_blank_during, build/windows_seek_no_blank_during.png
+2.54, ASSERT_CAPTURE_NOT_BLACK, seek_no_blank_during, 0.01, 4.0
+2.56, ASSERT_CAPTURE_HAS_DETAIL, seek_no_blank_during, 4.0
+3.2, ASSERT_POSITION, 6500000, 800
+3.3, CAPTURE_VIEWPORT, seek_no_blank_after, build/windows_seek_no_blank_after.png
+3.4, ASSERT_CAPTURE_NOT_BLACK, seek_no_blank_after, 0.01, 4.0
+3.5, ASSERT_CAPTURE_HAS_DETAIL, seek_no_blank_after, 4.0
+4.0, QUIT, 0

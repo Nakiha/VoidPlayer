@@ -229,13 +229,13 @@ Flutter surfaces during startup remain
 diagnostic state, but stale or late surfaces must be visible through
 `windowsPresentationExternalFlutterSurface*` counters.
 
-`windows_d3d11_color_layout_parity_smoke` captures real D3D11 output and checks
-BGRA channel order, NV12, planar YUV420, P010, odd dimensions/padded stride,
-aspect fit/background bars, and split/order behavior against CPU expectations.
-`windows_d3d11_fp16_scrgb_smoke` additionally captures RGBA16F output and
-checks SDR 80/203-nit scaling, PQ/HLG, P010, BT.2020 to BT.709 conversion,
-unclipped highlights, overlay-pass participation, odd/padded input, layout,
-and unchanged BGRA compatibility output.
+The `wgpu_d3d12` native presentation backend tests in
+`test_renderer_config_validation.cpp` cover D3D12 render-target import,
+premultiplied Flutter BGRA overlay composition, shared FP16 publication,
+D3D12VA NV12 sampling, CPU planar YUV420 sampling, and retained source-cache
+bundles. The Windows preservation scRGB UI profile covers the real windowed
+path through seek preview, Flutter surface pumping, source projection, device
+recovery, and the forced scRGB compositor mode.
 
 ## Diagnostics Contract
 
@@ -256,7 +256,7 @@ and unchanged BGRA compatibility output.
 | `windowsPresentationCrossAdapterSupported/Active` | Cross-adapter transport availability and active route |
 | `windowsPresentationOutputMigrationCount/OutputMigrationFailureCount` | Runtime output-device migration evidence |
 | `windowsPresentationLockedDisplayGeneration/LockedSDRWhiteLevelMilliNits` | Inputs locked to the current target generation |
-| `windowsPresentationBackend` | Active backend identity, currently migrating from `d3d11` compatibility to `wgpu-d3d12` |
+| `windowsPresentationBackend` | Active backend identity, expected to be `wgpu-d3d12` on the Windows native compositor path |
 | `windowsPresentationTargetFormat` | `B8G8R8A8_UNORM` |
 | `windowsPresentationRenderTargetFormat/RenderColorSpace` | Actual internal render target and working color space |
 | `windowsPresentationFP16Target*` | Active state, dimensions, and single-buffer contract |

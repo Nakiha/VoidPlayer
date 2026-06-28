@@ -57,6 +57,10 @@ public:
     bool set_client_size(uint32_t width, uint32_t height);
 
     bool acquire_frame(WindowsD3D12PresentTargetFrame& frame);
+    bool prepare_for_external_render(
+        const WindowsD3D12PresentTargetFrame& frame);
+    bool cancel_external_render(
+        const WindowsD3D12PresentTargetFrame& frame);
     bool present(UINT sync_interval);
     bool present_after_external_render(
         const WindowsD3D12PresentTargetFrame& frame,

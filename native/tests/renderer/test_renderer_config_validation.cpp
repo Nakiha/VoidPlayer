@@ -581,6 +581,19 @@ TEST_CASE("Windows wgpu-d3d12 composites Flutter BGRA overlay input",
     REQUIRE(flutter != nullptr);
 
     VPWgpuD3D12RenderTargetClearRequest clear = {};
+    clear.d3d12_resource = destination.Get();
+    clear.format = VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
+    clear.width = kWidth;
+    clear.height = kHeight;
+    clear.color[3] = 1.0f;
+    clear.error = error.data();
+    clear.error_size = error.size();
+    INFO(error.data());
+    REQUIRE(VPWgpuD3D12RendererClearRenderTargetForProbe(
+                handle.renderer, &clear) == 0);
+    error.fill(0);
+
+    clear = {};
     clear.d3d12_resource = flutter.Get();
     clear.format = VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
     clear.width = kWidth;
@@ -636,8 +649,13 @@ TEST_CASE("Windows wgpu-d3d12 composites Flutter BGRA overlay input",
     request.destination_resource = destination.Get();
     request.output_format = VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
     request.output_color_mode = VP_WGPU_D3D12_OUTPUT_COLOR_MODE_SDR;
+    request.destination_state_before =
+        VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET;
+    request.destination_state_after =
+        VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET;
     request.flutter_resource = flutter.Get();
     request.flutter_format = VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
+    request.flutter_state_before = VP_WGPU_D3D12_RESOURCE_STATE_COMMON;
     request.flutter_width = kWidth;
     request.flutter_height = kHeight;
     request.source_formats[0] = VP_WGPU_D3D12_TEXTURE_FORMAT_NV12;
@@ -671,6 +689,15 @@ TEST_CASE("Windows wgpu-d3d12 composites Flutter BGRA overlay input",
     REQUIRE(after.destination_import_count > before.destination_import_count);
     REQUIRE(after.source_import_count >= before.source_import_count + 2);
     REQUIRE(after.submit_count > before.submit_count);
+
+    error.fill(0);
+    request.destination_state_before = 0;
+    REQUIRE(VPWgpuD3D12RendererRenderComposite(
+                handle.renderer, &request) != 0);
+    REQUIRE(std::string(error.data()).find("state contract") !=
+            std::string::npos);
+    request.destination_state_before =
+        VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET;
 
     std::vector<uint8_t> pixels;
     std::string readback_error;

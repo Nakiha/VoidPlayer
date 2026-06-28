@@ -31,6 +31,7 @@ int main() {
     d3d12_headless.hwnd = nullptr;
     d3d12_headless.backend.type = vr::RendererBackendType::WgpuD3D12;
     d3d12_headless.backend.output = reinterpret_cast<void*>(0x5678);
+#ifdef _WIN32
     if (!vr::validate_renderer_config(d3d12_headless).ok) {
         return fail("valid WgpuD3D12 headless renderer config was rejected");
     }
@@ -38,12 +39,18 @@ int main() {
     if (vr::validate_renderer_config(d3d12_headless).ok) {
         return fail("WgpuD3D12 headless renderer config without output was accepted");
     }
+#else
+    if (vr::validate_renderer_config(d3d12_headless).ok) {
+        return fail("non-Windows WgpuD3D12 headless renderer config was accepted");
+    }
+#endif
 
     auto wgpu_metal_headless = valid_windowed_config();
     wgpu_metal_headless.headless = true;
     wgpu_metal_headless.hwnd = nullptr;
     wgpu_metal_headless.backend.type = vr::RendererBackendType::WgpuMetal;
     wgpu_metal_headless.backend.output = reinterpret_cast<void*>(0x9abc);
+#ifdef __APPLE__
     if (!vr::validate_renderer_config(wgpu_metal_headless).ok) {
         return fail("valid WgpuMetal headless renderer config was rejected");
     }
@@ -51,6 +58,11 @@ int main() {
     if (vr::validate_renderer_config(wgpu_metal_headless).ok) {
         return fail("WgpuMetal headless renderer config without output was accepted");
     }
+#else
+    if (vr::validate_renderer_config(wgpu_metal_headless).ok) {
+        return fail("non-Apple WgpuMetal headless renderer config was accepted");
+    }
+#endif
 
     auto metal_headless = valid_windowed_config();
     metal_headless.headless = true;

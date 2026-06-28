@@ -746,6 +746,8 @@ bool fill_wgpu_d3d12_source_for_frame(int slot,
             : 0;
         composite.source_resources[slot] = storage->texture;
         composite.source_formats[slot] = d3d12_texture_format_for_storage(*storage);
+        composite.source_state_before[slot] =
+            VP_WGPU_D3D12_RESOURCE_STATE_COMMON;
         composite.source_array_layers[slot] = array_layers;
         composite.source_base_array_layers[slot] =
             std::min(base_layer, array_layers - 1);
@@ -825,18 +827,20 @@ public:
         return true;
     }
 
-    ID3D12Resource* begin_frame(int width, int height) {
+    ID3D12Resource* begin_frame(int width,
+                                int height,
+                                int32_t& resource_state_before) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (active_ && active_->width == width && active_->height == height) {
-                return begin_frame_locked();
+                return begin_frame_locked(resource_state_before);
             }
         }
         if (!resize(width, height)) {
             return nullptr;
         }
         std::lock_guard<std::mutex> lock(mutex_);
-        return begin_frame_locked();
+        return begin_frame_locked(resource_state_before);
     }
 
     bool publish_frame(uint64_t external_flutter_frame_generation = 0) {
@@ -849,6 +853,7 @@ public:
             }
             slot = writing_;
             slot->writing = false;
+            slot->resource_state = VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET;
             slot->frame_generation = next_frame_generation_++;
             slot->external_flutter_frame_generation =
                 external_flutter_frame_generation;
@@ -959,6 +964,7 @@ private:
         uint32_t leases = 0;
         uint64_t frame_generation = 0;
         uint64_t external_flutter_frame_generation = 0;
+        int32_t resource_state = VP_WGPU_D3D12_RESOURCE_STATE_COMMON;
         bool writing = false;
         ~Slot() {
             if (handle) {
@@ -974,7 +980,7 @@ private:
         std::array<std::unique_ptr<Slot>, kBufferCount> slots;
     };
 
-    ID3D12Resource* begin_frame_locked() {
+    ID3D12Resource* begin_frame_locked(int32_t& resource_state_before) {
         if (!active_ || writing_) {
             return nullptr;
         }
@@ -987,6 +993,7 @@ private:
             slot->writing = true;
             writing_ = slot;
             writing_index_ = i;
+            resource_state_before = slot->resource_state;
             return slot->texture.Get();
         }
         ++backpressure_count_;
@@ -1164,8 +1171,10 @@ public:
     }
 
     bool begin_bundle(std::array<ID3D12Resource*, 4>& targets,
+                      std::array<int32_t, 4>& target_states_before,
                       size_t& texture_count) {
         targets = {};
+        target_states_before = {};
         texture_count = 0;
         std::lock_guard<std::mutex> lock(mutex_);
         if (!active_ || writing_) {
@@ -1186,6 +1195,8 @@ public:
             texture_count = bundle->textures.size();
             for (size_t track = 0; track < texture_count; ++track) {
                 targets[track] = bundle->textures[track]->texture.Get();
+                target_states_before[track] =
+                    bundle->textures[track]->resource_state;
             }
             return texture_count > 0;
         }
@@ -1208,6 +1219,12 @@ public:
             writing_->writing = false;
             writing_->frame_generation = next_frame_generation_++;
             writing_->overlay = std::move(overlay);
+            for (auto& texture : writing_->textures) {
+                if (texture) {
+                    texture->resource_state =
+                        VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET;
+                }
+            }
             latest_ = writing_;
             latest_generation_ = active_;
             writing_ = nullptr;
@@ -1358,6 +1375,7 @@ private:
         SourceCacheTrackDescriptor descriptor;
         Microsoft::WRL::ComPtr<ID3D12Resource> texture;
         HANDLE handle = nullptr;
+        int32_t resource_state = VP_WGPU_D3D12_RESOURCE_STATE_COMMON;
         ~TrackTexture() {
             if (handle) {
                 CloseHandle(handle);
@@ -1946,8 +1964,10 @@ bool WgpuD3D12PresentationBackend::update_source_cache_from_snapshot(
         return true;
     }
     std::array<ID3D12Resource*, 4> source_targets{};
+    std::array<int32_t, 4> source_target_states{};
     size_t target_count = 0;
-    if (!source_cache_ring_->begin_bundle(source_targets, target_count)) {
+    if (!source_cache_ring_->begin_bundle(
+            source_targets, source_target_states, target_count)) {
         return false;
     }
     bool complete = target_count == source_cache_descriptors_.size();
@@ -1999,6 +2019,10 @@ bool WgpuD3D12PresentationBackend::update_source_cache_from_snapshot(
             VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
         source_composite.output_color_mode =
             VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
+        source_composite.destination_state_before =
+            source_target_states[target_index];
+        source_composite.destination_state_after =
+            VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET;
         source_composite.decision = &source_decision;
         source_composite.width = descriptor.width;
         source_composite.height = descriptor.height;
@@ -2048,6 +2072,7 @@ bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
     int32_t height,
     int32_t output_format,
     int32_t output_color_mode,
+    int32_t destination_state_before,
     float viewport_left,
     float viewport_top,
     float viewport_right,
@@ -2131,6 +2156,9 @@ bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
         composite.destination_resource = target;
         composite.output_format = output_format;
         composite.output_color_mode = output_color_mode;
+        composite.destination_state_before = destination_state_before;
+        composite.destination_state_after =
+            VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET;
         composite.viewport_left = viewport_left;
         composite.viewport_top = viewport_top;
         composite.viewport_right = viewport_right;
@@ -2168,13 +2196,22 @@ bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
                     std::lock_guard<std::mutex> lock(external_flutter_mutex_);
                     ++external_flutter_surface_wait_failure_count_;
                     external_flutter_surface_last_error_ =
-                        "external-flutter-surface-fence-wait-failed";
+                        "external-flutter-surface-fence-wait-defer-present";
                 }
+            }
+            if (!flutter_ready) {
+                cancel();
+                last_error_ =
+                    "external Flutter surface fence wait timed out; "
+                    "deferred present to preserve previous complete frame";
+                return false;
             }
             if (flutter_ready) {
                 composite.flutter_resource = flutter_surface.resource.Get();
                 composite.flutter_format =
                     VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
+                composite.flutter_state_before =
+                    VP_WGPU_D3D12_RESOURCE_STATE_COMMON;
                 composite.flutter_width =
                     static_cast<uint32_t>(flutter_surface.width);
                 composite.flutter_height =
@@ -2340,6 +2377,7 @@ bool WgpuD3D12PresentationBackend::draw_frame_to_external_d3d12_target(
         target.height,
         output_format,
         output_color_mode,
+        VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET,
         target.viewport_left,
         target.viewport_top,
         target.viewport_right,
@@ -2367,9 +2405,11 @@ bool WgpuD3D12PresentationBackend::draw_frame(
         return false;
     }
     update_source_cache_from_snapshot(snapshot, hooks);
+    int32_t target_state_before = VP_WGPU_D3D12_RESOURCE_STATE_COMMON;
     ID3D12Resource* target = shared_fp16_ring_->begin_frame(
         std::max(snapshot.target_width, 1),
-        std::max(snapshot.target_height, 1));
+        std::max(snapshot.target_height, 1),
+        target_state_before);
     if (!target) {
         last_error_ = "wgpu-d3d12 shared FP16 output has no free buffer";
         return false;
@@ -2382,6 +2422,7 @@ bool WgpuD3D12PresentationBackend::draw_frame(
         static_cast<int32_t>(std::max(snapshot.target_height, 1)),
         VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT,
         VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR,
+        target_state_before,
         0.0f,
         0.0f,
         1.0f,

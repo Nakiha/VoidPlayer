@@ -496,6 +496,8 @@ pub struct WgpuMetalRenderer {
     dummy_y_view: wgpu::TextureView,
     _dummy_uv_texture: wgpu::Texture,
     dummy_uv_view: wgpu::TextureView,
+    _dummy_flutter_texture: wgpu::Texture,
+    dummy_flutter_view: wgpu::TextureView,
     overlay_layer_texture: Option<CachedOverlayLayerTexture>,
     source_texture: Option<CachedSourceTexture>,
     params_buffer: Option<CachedStorageBuffer>,
@@ -1006,6 +1008,16 @@ impl WgpuMetalRenderer {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 14,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1093,6 +1105,41 @@ impl WgpuMetalRenderer {
             view_formats: &[],
         });
         let dummy_uv_view = dummy_uv_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let dummy_flutter_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("voidplayer-wgpu-dummy-flutter-surface"),
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bgra8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let dummy_flutter_view =
+            dummy_flutter_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &dummy_flutter_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &[0, 0, 0, 0],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
         let (completion_tx, completion_rx) = mpsc::channel::<CompletionJob>();
         let completion_device = device.clone();
         let completion_worker = thread::Builder::new()
@@ -1129,6 +1176,8 @@ impl WgpuMetalRenderer {
             dummy_y_view,
             _dummy_uv_texture: dummy_uv_texture,
             dummy_uv_view,
+            _dummy_flutter_texture: dummy_flutter_texture,
+            dummy_flutter_view,
             overlay_layer_texture: None,
             source_texture: None,
             params_buffer: None,
@@ -1856,6 +1905,18 @@ fn package_params(
     push_vec4_i32(bytes, decision.color_transfer);
     push_vec4_i32(bytes, decision.color_primaries);
     push_vec4_i32(bytes, [output_color_mode, 0, 0, 0]);
+    push_vec4_f32(
+        bytes,
+        [package.width as f32, package.height as f32, 0.0, 0.0],
+    );
+    push_vec4_f32(
+        bytes,
+        [0.0, 0.0, package.width as f32, package.height as f32],
+    );
+    push_vec4_f32(
+        bytes,
+        [package.width as f32, package.height as f32, 0.0, 0.0],
+    );
 }
 
 const PARAM_VEC4_BYTES: usize = 16;
@@ -2564,6 +2625,12 @@ fn encode_overlay_layer_texture(
                             binding: 13,
                             resource: wgpu::BindingResource::TextureView(source_view),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 14,
+                            resource: wgpu::BindingResource::TextureView(
+                                &renderer.dummy_flutter_view,
+                            ),
+                        },
                     ],
                 });
             renderer.overlay_layer_bind_groups[track] = Some(CachedOverlayLayerBindGroup {
@@ -2659,7 +2726,8 @@ fn composite_bind_group_entries<'a>(
     dummy_y_view: &'a wgpu::TextureView,
     dummy_uv_view: &'a wgpu::TextureView,
     overlay_layer_texture: &'a wgpu::TextureView,
-) -> [wgpu::BindGroupEntry<'a>; 14] {
+    dummy_flutter_view: &'a wgpu::TextureView,
+) -> [wgpu::BindGroupEntry<'a>; 15] {
     [
         wgpu::BindGroupEntry {
             binding: 0,
@@ -2716,6 +2784,10 @@ fn composite_bind_group_entries<'a>(
         wgpu::BindGroupEntry {
             binding: 13,
             resource: wgpu::BindingResource::TextureView(overlay_layer_texture),
+        },
+        wgpu::BindGroupEntry {
+            binding: 14,
+            resource: wgpu::BindingResource::TextureView(dummy_flutter_view),
         },
     ]
 }
@@ -2838,6 +2910,7 @@ fn render_bgra_atlas_with_wgsl(
                         dummy_y_view,
                         dummy_uv_view,
                         overlay_layer_texture,
+                        &renderer.dummy_flutter_view,
                     ),
                 });
             renderer.generic_bind_group = Some(CachedBindGroup {
@@ -2862,6 +2935,7 @@ fn render_bgra_atlas_with_wgsl(
                     dummy_y_view,
                     dummy_uv_view,
                     overlay_layer_texture,
+                    &renderer.dummy_flutter_view,
                 ),
             });
         renderer.generic_bind_group = Some(CachedBindGroup {
@@ -3063,6 +3137,10 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
                     wgpu::BindGroupEntry {
                         binding: 13,
                         resource: wgpu::BindingResource::TextureView(overlay_layer_texture),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 14,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_flutter_view),
                     },
                 ],
             });

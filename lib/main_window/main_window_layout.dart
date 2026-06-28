@@ -181,12 +181,12 @@ class MainWindowLayoutCoordinator {
     _debugSplitUpdates++;
     _updateLayout((layout) => layout.copyWith(splitPos: nextPos));
     final transformed = _updateNativeCompositorPanTransform();
-    markLayoutDirty(deferNativeCompositorFlush: transformed);
+    markLayoutDirty();
     _logDebugInteractionSample(
       'split',
       splitPos: nextPos,
       transformed: transformed,
-      deferred: transformed,
+      deferred: false,
     );
   }
 

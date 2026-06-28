@@ -84,6 +84,7 @@ public:
     bool draw_current_frame_to_external_d3d12_target(
         const PresentationExternalD3D12RenderTarget& target,
         const char* reason);
+    std::string presentation_backend_last_error() const;
     bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors);
     void clear_source_cache(const char* reason);

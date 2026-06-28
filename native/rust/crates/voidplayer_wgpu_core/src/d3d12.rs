@@ -10,6 +10,8 @@ pub const D3D12_TEXTURE_FORMAT_BGRA8_UNORM: i32 = 3;
 pub const D3D12_TEXTURE_FORMAT_RGBA16_FLOAT: i32 = 4;
 pub const OUTPUT_COLOR_MODE_SDR: i32 = 1;
 pub const OUTPUT_COLOR_MODE_EDR: i32 = 2;
+pub const D3D12_RESOURCE_STATE_COMMON: i32 = 1;
+pub const D3D12_RESOURCE_STATE_RENDER_TARGET: i32 = 2;
 const STORAGE_CV_PIXEL_BUFFER: i32 = 3;
 
 #[repr(C)]
@@ -116,8 +118,11 @@ pub struct WgpuD3D12CompositeRequest {
     pub destination_resource: *mut core::ffi::c_void,
     pub output_format: i32,
     pub output_color_mode: i32,
+    pub destination_state_before: i32,
+    pub destination_state_after: i32,
     pub flutter_resource: *mut core::ffi::c_void,
     pub flutter_format: i32,
+    pub flutter_state_before: i32,
     pub flutter_width: u32,
     pub flutter_height: u32,
     pub viewport_left: f32,
@@ -126,6 +131,7 @@ pub struct WgpuD3D12CompositeRequest {
     pub viewport_bottom: f32,
     pub source_resources: [*mut core::ffi::c_void; MAX_TRACKS],
     pub source_formats: [i32; MAX_TRACKS],
+    pub source_state_before: [i32; MAX_TRACKS],
     pub source_array_layers: [u32; MAX_TRACKS],
     pub source_base_array_layers: [u32; MAX_TRACKS],
     pub cpu_sources: [WgpuD3D12CpuSourceInfo; MAX_TRACKS],
@@ -748,6 +754,14 @@ impl WgpuD3D12Renderer {
         if request.width <= 0 || request.height <= 0 {
             return Err("wgpu-d3d12 composite target dimensions are invalid");
         }
+        if request.destination_state_before != D3D12_RESOURCE_STATE_COMMON
+            && request.destination_state_before != D3D12_RESOURCE_STATE_RENDER_TARGET
+        {
+            return Err("wgpu-d3d12 destination state contract has unsupported input state");
+        }
+        if request.destination_state_after != D3D12_RESOURCE_STATE_RENDER_TARGET {
+            return Err("wgpu-d3d12 destination state contract must leave render-target state");
+        }
         let output_format = d3d12_texture_format(request.output_format)?;
         if output_format != wgpu::TextureFormat::Rgba16Float
             && output_format != wgpu::TextureFormat::Bgra8Unorm
@@ -801,6 +815,9 @@ impl WgpuD3D12Renderer {
         let mut flutter_texture: Option<wgpu::Texture> = None;
         let mut flutter_view: Option<wgpu::TextureView> = None;
         if !request.flutter_resource.is_null() {
+            if request.flutter_state_before != D3D12_RESOURCE_STATE_COMMON {
+                return Err("wgpu-d3d12 Flutter import requires COMMON state");
+            }
             let flutter_format = d3d12_texture_format(request.flutter_format)?;
             if flutter_format != wgpu::TextureFormat::Bgra8Unorm {
                 return Err("wgpu-d3d12 Flutter composite source must be BGRA8");
@@ -860,6 +877,9 @@ impl WgpuD3D12Renderer {
                 self.profiler.source_import_count =
                     self.profiler.source_import_count.saturating_add(1);
                 continue;
+            }
+            if request.source_state_before[slot] != D3D12_RESOURCE_STATE_COMMON {
+                return Err("wgpu-d3d12 source import requires COMMON state");
             }
             let coded_width = decision.coded_width[slot]
                 .max(decision.source_width[slot])

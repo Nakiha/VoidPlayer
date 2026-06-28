@@ -504,6 +504,80 @@ bool WindowsD3D12PresentTarget::present(UINT sync_interval) {
     return true;
 }
 
+bool WindowsD3D12PresentTarget::prepare_for_external_render(
+    const WindowsD3D12PresentTargetFrame& frame) {
+    if (!device_ || !queue_ || !swap_chain_ || !command_allocator_ ||
+        !command_list_ || !frame.resource) {
+        last_error_ = "d3d12-present-target-not-initialized";
+        return false;
+    }
+    HRESULT hr = command_allocator_->Reset();
+    if (FAILED(hr)) {
+        return fail("CommandAllocator::Reset(prepare)", hr);
+    }
+    hr = command_list_->Reset(command_allocator_.Get(), nullptr);
+    if (FAILED(hr)) {
+        return fail("CommandList::Reset(prepare)", hr);
+    }
+
+    D3D12_RESOURCE_BARRIER to_render = {};
+    to_render.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    to_render.Transition.pResource = frame.resource.Get();
+    to_render.Transition.Subresource =
+        D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    to_render.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+    to_render.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    command_list_->ResourceBarrier(1, &to_render);
+    hr = command_list_->Close();
+    if (FAILED(hr)) {
+        return fail("CommandList::Close(prepare)", hr);
+    }
+    ID3D12CommandList* lists[] = {command_list_.Get()};
+    queue_->ExecuteCommandLists(1, lists);
+    last_error_ = "none";
+    return true;
+}
+
+bool WindowsD3D12PresentTarget::cancel_external_render(
+    const WindowsD3D12PresentTargetFrame& frame) {
+    if (!device_ || !queue_ || !swap_chain_ || !command_allocator_ ||
+        !command_list_ || !frame.resource) {
+        last_error_ = "d3d12-present-target-not-initialized";
+        return false;
+    }
+    if (!wait_for_gpu()) {
+        return false;
+    }
+    HRESULT hr = command_allocator_->Reset();
+    if (FAILED(hr)) {
+        return fail("CommandAllocator::Reset(cancel)", hr);
+    }
+    hr = command_list_->Reset(command_allocator_.Get(), nullptr);
+    if (FAILED(hr)) {
+        return fail("CommandList::Reset(cancel)", hr);
+    }
+
+    D3D12_RESOURCE_BARRIER to_present = {};
+    to_present.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    to_present.Transition.pResource = frame.resource.Get();
+    to_present.Transition.Subresource =
+        D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    to_present.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    to_present.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+    command_list_->ResourceBarrier(1, &to_present);
+    hr = command_list_->Close();
+    if (FAILED(hr)) {
+        return fail("CommandList::Close(cancel)", hr);
+    }
+    ID3D12CommandList* lists[] = {command_list_.Get()};
+    queue_->ExecuteCommandLists(1, lists);
+    if (!wait_for_gpu()) {
+        return false;
+    }
+    last_error_ = "none";
+    return true;
+}
+
 bool WindowsD3D12PresentTarget::present_after_external_render(
     const WindowsD3D12PresentTargetFrame& frame,
     UINT sync_interval) {

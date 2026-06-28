@@ -89,13 +89,13 @@ enters an explicit failed state and does not restore Flutter Texture SDR.
 
 If the active output belongs to a different adapter, the renderer and Flutter
 export remain on the producer adapter while `WindowsNativeCompositor` recreates
-its D3D/DComp device on the output adapter. `D3D11CrossAdapterTextureTransport`
-bridges immutable input leases through row-major shared NT-handle textures and
-GPU copies into output-local SRVs. The default synchronization path waits on a
-producer event query. `VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC=shared-fence`
-requests the optional shared-fence path for local evidence; initialization or
-capability failure falls back to event-query with diagnostics. The transport
-never reads pixels back to the CPU and does not change color transforms.
+its D3D12/DComp target on the output adapter. Cross-adapter support must remain
+an explicit D3D12 GPU-copy or shared-handle transport with diagnostics; it must
+not fall back to CPU readback, screenshots, or private color transforms. The
+default synchronization path waits on producer fence evidence.
+`VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC=shared-fence` requests the optional
+shared-fence path for local evidence; initialization or capability failure
+falls back to the diagnosed default path.
 
 Once Dart publishes a valid projection signature, the render path maintains an
 atomic source-resolution bundle with up to four FP16 scRGB textures. The
@@ -137,20 +137,13 @@ chain. It is not the current Flutter product presentation route.
 - `WgpuD3D12PresentationBackend` / Rust `WgpuRenderCore` owns the target
   composition path: video/source imports, projection, overlay, Flutter surface
   import, color, layout, and final-target rendering.
-- `D3D11RenderBackend` is no longer compiled into the Flutter Windows runner.
-  It remains in standalone/native parity builds for legacy color/layout and
-  FP16 evidence while the product path runs through wgpu/D3D12.
-- `D3D11HeadlessOutput` owns the shared BGRA texture ring, handles, front/back
-  selection, GPU fence, and capture.
-- `D3D11Fp16Target` owns the single-buffer renderer-only scRGB texture, RTV,
-  SRV, and test capture.
-- `D3D11SharedFp16Ring` owns the keyed-mutex FP16 video leases used only by
-  `native-compositor-scrgb`.
-- `D3D11SharedSourceCacheRing` owns atomic source-texture bundles, generation
+- `WindowsD3D12PresentTarget` owns swap-chain buffers, the DComp visual, the
+  explicit `PRESENT -> RENDER_TARGET -> PRESENT` transitions around external
+  Rust rendering, and the final DXGI present.
+- `WgpuD3D12SharedFp16Ring` owns renderer-local FP16 fallback buffers used only
+  before source-cache/direct-present is ready or after allocation failure.
+- `WgpuD3D12SourceCache` owns atomic source-texture bundles, generation
   retirement, the 384 MiB depth policy, and overlay-package attachment.
-- `D3D11CrossAdapterTextureTransport` owns row-major shared bridge textures,
-  producer-to-bridge and bridge-to-output GPU copies, capability reporting, and
-  copy/backpressure diagnostics for the remaining D3D11 DComp present bridge.
 - `FlutterTextureBridge` owns Flutter texture registration and lease release.
 - The engine fork owns immutable Flutter surface leases. Old resize
   generations remain alive until their leases are released. In active
@@ -165,7 +158,7 @@ chain. It is not the current Flutter product presentation route.
   Held inputs are replaced only after a newer generation is acquired
   successfully, then released during replacement, failed-state cleanup, or
   shutdown.
-- D3D11 immediate-context work is serialized by the presentation device mutex.
+- D3D12 decode/source work is synchronized by producer fences before import.
 - The lock order is `device_mutex -> texture_mutex`.
 - Host callbacks are invoked after presentation locks are released.
 
@@ -204,6 +197,37 @@ shared scheduler.
 - Windows display calibration is system-managed through Advanced Color. The
   player records the reported mode, primaries, white point, and SDR white level
   but does not apply custom ICC/LUT correction or subjective display tuning.
+
+## D3D12 Import And State Contract
+
+The Rust wgpu core imports raw D3D12 resources through `wgpu-hal`. Every import
+must carry an explicit state contract in `VPWgpuD3D12CompositeRequest`; the Rust
+side rejects mismatches before creating a `wgpu::Texture`.
+
+| Resource | Producer / owner | Required state when handed to Rust | State after Rust render |
+| --- | --- | --- | --- |
+| Direct-present destination | `WindowsD3D12PresentTarget` | `RENDER_TARGET`; the present target transitions the swap-chain buffer from `PRESENT` immediately before Rust render | `RENDER_TARGET`; the present target transitions it back to `PRESENT` before DXGI present |
+| Shared FP16/source-cache destination | `WgpuD3D12PresentationBackend` | Slot state tracked by the owning ring: newly allocated textures start in `COMMON`, reused textures re-enter Rust in the last published state (`RENDER_TARGET`) | `RENDER_TARGET`; the owning ring records this only after a successful publish |
+| D3D12VA source texture | FFmpeg D3D12VA / renderer frame storage | `COMMON` after the producer fence signals | `COMMON`; Rust samples it as an imported read-only texture |
+| Flutter UI surface | locked Flutter engine export | `COMMON` after the export fence signals | `COMMON`; Rust samples it as premultiplied BGRA |
+
+The D3D12 queue exposed by the Rust renderer is the queue used by the present
+target. Queue order therefore preserves the `PRESENT -> RENDER_TARGET`
+transition before the Rust submit, and the Rust submit before
+`RENDER_TARGET -> PRESENT`. `device.poll(PollType::Wait)` remains in the
+external-resource path until the present path grows an end-to-end asynchronous
+fence handoff; high-refresh gates must prove this wait has not regressed the
+hot path before merge.
+
+If a valid Flutter surface exists but its fence is not ready within the bounded
+wait, the draw fails and the compositor defers the present. It must not submit
+a new video-only frame that silently drops Flutter UI; the previous complete
+frame remains visible instead. The direct-present owner transitions the
+acquired back buffer back to `PRESENT` without flipping before returning to the
+composition loop, so the next acquire starts from a defined state. Missing
+Flutter surfaces during startup remain
+diagnostic state, but stale or late surfaces must be visible through
+`windowsPresentationExternalFlutterSurface*` counters.
 
 `windows_d3d11_color_layout_parity_smoke` captures real D3D11 output and checks
 BGRA channel order, NV12, planar YUV420, P010, odd dimensions/padded stride,

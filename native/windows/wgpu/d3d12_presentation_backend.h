@@ -95,6 +95,7 @@ private:
         int32_t height,
         int32_t output_format,
         int32_t output_color_mode,
+        int32_t destination_state_before,
         float viewport_left,
         float viewport_top,
         float viewport_right,

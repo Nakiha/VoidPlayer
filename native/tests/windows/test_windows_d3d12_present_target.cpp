@@ -83,7 +83,7 @@ TEST_CASE("Windows D3D12 present target exposes a DComp back buffer",
     CAPTURE(clear_error.data());
     REQUIRE(VPWgpuD3D12RendererClearRenderTargetForProbe(
                 renderer, &clear_request) == 0);
-    REQUIRE(target.present(0));
+    REQUIRE(target.present_after_external_render(frame, 0));
 
     constexpr uint32_t kSourceWidth = 64;
     constexpr uint32_t kSourceHeight = 64;
@@ -124,11 +124,16 @@ TEST_CASE("Windows D3D12 present target exposes a DComp back buffer",
 
     vr::WindowsD3D12PresentTargetFrame composite_frame;
     REQUIRE(target.acquire_frame(composite_frame));
+    REQUIRE(target.prepare_for_external_render(composite_frame));
     std::array<char, 512> composite_error{};
     VPWgpuD3D12CompositeRequest composite = {};
     composite.destination_resource = composite_frame.resource.Get();
     composite.output_format = VP_WGPU_D3D12_TEXTURE_FORMAT_BGRA8_UNORM;
     composite.output_color_mode = VP_WGPU_D3D12_OUTPUT_COLOR_MODE_SDR;
+    composite.destination_state_before =
+        VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET;
+    composite.destination_state_after =
+        VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET;
     composite.source_formats[0] = VP_WGPU_D3D12_TEXTURE_FORMAT_NV12;
     composite.cpu_sources[0].y_data = y_plane.data();
     composite.cpu_sources[0].y_size = y_plane.size();
@@ -148,7 +153,7 @@ TEST_CASE("Windows D3D12 present target exposes a DComp back buffer",
     composite.error_size = composite_error.size();
     CAPTURE(composite_error.data());
     REQUIRE(VPWgpuD3D12RendererRenderComposite(renderer, &composite) == 0);
-    REQUIRE(target.present(0));
+    REQUIRE(target.present_after_external_render(composite_frame, 0));
     frame.resource.Reset();
     composite_frame.resource.Reset();
 
@@ -166,7 +171,8 @@ TEST_CASE("Windows D3D12 present target exposes a DComp back buffer",
     REQUIRE(resized_frame.width == 384);
     REQUIRE(resized_frame.height == 216);
     REQUIRE(resized_frame.dxgi_format == DXGI_FORMAT_B8G8R8A8_UNORM);
-    REQUIRE(target.present(0));
+    REQUIRE(target.prepare_for_external_render(resized_frame));
+    REQUIRE(target.present_after_external_render(resized_frame, 0));
 
     const float color[4] = {0.05f, 0.10f, 0.20f, 1.0f};
     INFO(target.last_error());

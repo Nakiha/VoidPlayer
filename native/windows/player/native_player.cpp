@@ -409,6 +409,12 @@ bool NativePlayer::draw_current_frame_to_external_d3d12_target(
                target, reason);
 }
 
+std::string NativePlayer::presentation_backend_last_error() const {
+    std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
+    return renderer_ready_locked() ? renderer_.presentation_backend_last_error()
+                                   : "renderer-not-ready";
+}
+
 bool NativePlayer::configure_source_cache(
     const std::vector<SourceCacheTrackDescriptor>& descriptors) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);

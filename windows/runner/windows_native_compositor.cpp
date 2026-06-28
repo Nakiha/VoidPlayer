@@ -1735,7 +1735,9 @@ bool WindowsNativeCompositor::CompositeLatest() {
             }
             vr::WindowsD3D12PresentTargetFrame direct_frame;
             if (d3d12_present_target_->active() &&
-                d3d12_present_target_->acquire_frame(direct_frame)) {
+                d3d12_present_target_->acquire_frame(direct_frame) &&
+                d3d12_present_target_->prepare_for_external_render(
+                    direct_frame)) {
                 double viewport[4] = {0.0, 0.0, 1.0, 1.0};
                 {
                     std::lock_guard<std::mutex> lock(mutex_);
@@ -1856,9 +1858,30 @@ bool WindowsNativeCompositor::CompositeLatest() {
                         d3d12_present_target_->last_error());
                     d3d12_present_target_->shutdown();
                 } else {
-                    spdlog::debug(
-                        "[WindowsNativeCompositor] D3D12 direct draw "
-                        "deferred: renderer rejected external target");
+                    const std::string draw_error =
+                        player->presentation_backend_last_error();
+                    if (draw_error.find("deferred present") !=
+                        std::string::npos) {
+                        if (!d3d12_present_target_->cancel_external_render(
+                                direct_frame)) {
+                            spdlog::warn(
+                                "[WindowsNativeCompositor] D3D12 direct "
+                                "draw defer cleanup failed: {}",
+                                d3d12_present_target_->last_error());
+                            d3d12_present_target_->shutdown();
+                        } else {
+                            spdlog::debug(
+                                "[WindowsNativeCompositor] D3D12 direct draw "
+                                "deferred: {}",
+                                draw_error);
+                            return true;
+                        }
+                    } else {
+                        spdlog::debug(
+                            "[WindowsNativeCompositor] D3D12 direct draw "
+                            "rejected external target: {}",
+                            draw_error);
+                    }
                 }
             }
         }

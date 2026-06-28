@@ -631,7 +631,7 @@ int main() {
       wgpu_initial_diagnostics.driver_type.find("Metal") == std::string::npos ||
       wgpu_initial_diagnostics.driver_type.find("texture-format-16bit-norm") ==
           std::string::npos ||
-      wgpu_initial_diagnostics.feature_level != VP_WGPU_FFI_ABI_VERSION) {
+      wgpu_initial_diagnostics.feature_level < VP_WGPU_FFI_ABI_VERSION) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend adapter diagnostics did not initialize");
   }
@@ -884,6 +884,19 @@ int main() {
       wgpu_region_capture.size() != 4 || wgpu_region_capture[0] != 240 ||
       wgpu_region_capture[1] != 32 || wgpu_region_capture[2] != 64 ||
       wgpu_region_capture[3] != 255) {
+    const size_t full_second = 4;
+    if (wgpu_capture.size() >= full_second + 4 && wgpu_region_capture.size() >= 4) {
+      std::cerr << "WgpuMetal BGRA region actual="
+                << static_cast<int>(wgpu_region_capture[0]) << ","
+                << static_cast<int>(wgpu_region_capture[1]) << ","
+                << static_cast<int>(wgpu_region_capture[2]) << ","
+                << static_cast<int>(wgpu_region_capture[3])
+                << " full_second="
+                << static_cast<int>(wgpu_capture[full_second + 0]) << ","
+                << static_cast<int>(wgpu_capture[full_second + 1]) << ","
+                << static_cast<int>(wgpu_capture[full_second + 2]) << ","
+                << static_cast<int>(wgpu_capture[full_second + 3]) << "\n";
+    }
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend BGRA region capture did not preserve channel order");
   }

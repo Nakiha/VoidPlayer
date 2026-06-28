@@ -15,9 +15,9 @@ FrameConverter::FrameConverter() {}
 
 FrameConverter::~FrameConverter() = default;
 
-D3D11SnapshotPoolStats FrameConverter::snapshot_pool_stats() const {
+HardwareSnapshotPoolStats FrameConverter::snapshot_pool_stats() const {
     return hardware_converter_ ? hardware_converter_->snapshot_pool_stats()
-                               : D3D11SnapshotPoolStats{};
+                               : HardwareSnapshotPoolStats{};
 }
 
 bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat src_format) {
@@ -126,9 +126,6 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
         return std::nullopt;
     }
     if (hardware_converter_->hw_type() == HwDecodeType::D3D12VA) {
-        return hardware_converter_->convert(frame);
-    }
-    if (hardware_converter_->hw_type() != HwDecodeType::D3D11VA) {
         return hardware_converter_->convert(frame);
     }
     return hardware_converter_->snapshot_frame(frame);

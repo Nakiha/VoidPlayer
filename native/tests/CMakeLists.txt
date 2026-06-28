@@ -77,6 +77,7 @@ target_link_libraries(video_renderer_tests PRIVATE
     video_renderer_lib
     Catch2::Catch2
     spdlog::spdlog_header_only
+    d3d11
 )
 
 target_include_directories(video_renderer_tests PRIVATE

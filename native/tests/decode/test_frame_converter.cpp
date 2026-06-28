@@ -537,7 +537,7 @@ TEST_CASE("FrameConverter: unsupported software format returns no frame",
     av_frame_free(&frame);
 }
 
-TEST_CASE("FrameConverter: direct D3D11 hardware frame keeps AVFrame ownership",
+TEST_CASE("FrameConverter: D3D12 renderer rejects direct D3D11 hardware frames",
           "[frame_converter][hw][av_frame_lifetime]") {
     Microsoft::WRL::ComPtr<ID3D11Device> device;
     D3D_FEATURE_LEVEL feature_level = D3D_FEATURE_LEVEL_11_0;
@@ -593,16 +593,9 @@ TEST_CASE("FrameConverter: direct D3D11 hardware frame keeps AVFrame ownership",
     REQUIRE(frame->buf[0] != nullptr);
 
     auto converted = converter.convert(frame);
-    REQUIRE(converted.has_value());
-    REQUIRE(converted->hw_frame_ref != nullptr);
-    REQUIRE(converted->storage_kind() == FrameStorageKind::D3D11Nv12);
-    REQUIRE(converted->texture_handle == texture.Get());
-    REQUIRE(converted->texture_array_index == 1);
+    REQUIRE_FALSE(converted.has_value());
 
     av_frame_unref(frame);
-    REQUIRE(free_count.load(std::memory_order_relaxed) == 0);
-
-    converted.reset();
     REQUIRE(free_count.load(std::memory_order_relaxed) == 1);
 
     av_frame_free(&frame);

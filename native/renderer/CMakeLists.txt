@@ -43,7 +43,6 @@ target_link_libraries(video_renderer_lib PUBLIC
     ${SWRESAMPLE_LIBRARY}
     dxgi
     d3d12
-    d3d11
     dcomp
     winmm
 )

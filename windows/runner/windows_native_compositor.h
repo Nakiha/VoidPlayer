@@ -231,6 +231,7 @@ public:
     void Stop(const char* reason = "shutdown");
     void SetViewportRect(double left, double top, double right, double bottom);
     void SetViewportBackgroundColor(uint32_t argb);
+    void NotifyClientSizeChanged(uint32_t width, uint32_t height);
     bool RequestFlutterFrame(const std::string& reason);
     void BoostFlutterInteraction(const std::string& reason);
     void DisableRetainedSourceProjection(const std::string& reason);
@@ -428,6 +429,9 @@ private:
     std::thread thread_;
     bool stop_ = false;
     bool work_pending_ = false;
+    uint32_t pending_client_width_ = 0;
+    uint32_t pending_client_height_ = 0;
+    uint64_t client_resize_signal_count_ = 0;
     bool terminal_inactive_ = false;
     OutputTarget desired_output_target_ = OutputTarget::SDR;
     uint64_t transition_min_video_generation_ = 0;

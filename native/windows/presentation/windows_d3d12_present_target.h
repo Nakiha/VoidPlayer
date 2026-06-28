@@ -54,6 +54,7 @@ public:
     bool resize(uint32_t width,
                 uint32_t height,
                 WindowsD3D12PresentTargetFormat format);
+    bool set_client_size(uint32_t width, uint32_t height);
 
     bool acquire_frame(WindowsD3D12PresentTargetFrame& frame);
     bool present(UINT sync_interval);
@@ -90,6 +91,10 @@ private:
     uint32_t rtv_descriptor_size_ = 0;
     uint32_t width_ = 0;
     uint32_t height_ = 0;
+    uint32_t visual_client_width_ = 0;
+    uint32_t visual_client_height_ = 0;
+    uint32_t visual_target_width_ = 0;
+    uint32_t visual_target_height_ = 0;
     DXGI_FORMAT dxgi_format_ = DXGI_FORMAT_UNKNOWN;
     DXGI_COLOR_SPACE_TYPE color_space_ = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
     std::string last_error_ = "not-initialized";

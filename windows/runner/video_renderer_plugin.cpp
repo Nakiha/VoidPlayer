@@ -472,21 +472,40 @@ VideoRendererPlugin::~VideoRendererPlugin() {
 }
 
 std::optional<LRESULT> VideoRendererPlugin::HandleTopLevelWindowProc(
-    HWND,
+    HWND hwnd,
     UINT message,
     WPARAM wparam,
-    LPARAM) {
+    LPARAM lparam) {
     if (message == kPlatformTaskMessage) {
         DrainPlatformTasks();
         return 0;
     }
 
     switch (message) {
+    case WM_SIZE:
+        if (wparam != SIZE_MINIMIZED && native_compositor_) {
+            const uint32_t width =
+                static_cast<uint32_t>(LOWORD(lparam));
+            const uint32_t height =
+                static_cast<uint32_t>(HIWORD(lparam));
+            native_compositor_->NotifyClientSizeChanged(width, height);
+        }
+        break;
     case WM_DISPLAYCHANGE:
     case WM_SETTINGCHANGE:
     case WM_MOVE:
     case WM_EXITSIZEMOVE:
     case WM_DPICHANGED:
+        if (native_compositor_) {
+            RECT client_rect = {};
+            if (GetClientRect(hwnd, &client_rect)) {
+                native_compositor_->NotifyClientSizeChanged(
+                    static_cast<uint32_t>(
+                        std::max<LONG>(1, client_rect.right - client_rect.left)),
+                    static_cast<uint32_t>(
+                        std::max<LONG>(1, client_rect.bottom - client_rect.top)));
+            }
+        }
         ScheduleDisplayPolicyRefresh();
         break;
     case WM_TIMER:

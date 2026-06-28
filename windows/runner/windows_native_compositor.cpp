@@ -314,6 +314,38 @@ void WindowsNativeCompositor::SetViewportBackgroundColor(uint32_t argb) {
     wake_.notify_one();
 }
 
+void WindowsNativeCompositor::NotifyClientSizeChanged(uint32_t width,
+                                                      uint32_t height) {
+    const uint32_t client_width = std::max(width, 1u);
+    const uint32_t client_height = std::max(height, 1u);
+    bool changed = false;
+    uint64_t signal_count = 0;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (terminal_inactive_ || phase_ == Phase::Failed) {
+            return;
+        }
+        changed = pending_client_width_ != client_width ||
+                  pending_client_height_ != client_height;
+        pending_client_width_ = client_width;
+        pending_client_height_ = client_height;
+        signal_count = ++client_resize_signal_count_;
+        work_pending_ = true;
+    }
+    wake_.notify_one();
+    if (changed && (signal_count <= 8 || signal_count % 60 == 0)) {
+        spdlog::info(
+            "[WindowsResizePacing] window client resize signal count={} "
+            "client={}x{}",
+            signal_count,
+            client_width,
+            client_height);
+    }
+    if (changed) {
+        (void)RequestFlutterFrame("window-client-resize");
+    }
+}
+
 bool WindowsNativeCompositor::RequestFlutterFrame(const std::string& reason) {
     Phase phase;
     uint64_t request_sequence = 0;
@@ -1568,6 +1600,11 @@ bool WindowsNativeCompositor::CompositeLatest() {
             uint32_t client_width = 0;
             uint32_t client_height = 0;
             client_pixel_size(hwnd_, client_width, client_height);
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                client_width = std::max(client_width, pending_client_width_);
+                client_height = std::max(client_height, pending_client_height_);
+            }
             direct_width = std::max(direct_width, client_width);
             direct_height = std::max(direct_height, client_height);
             if (direct_width <= 1 || direct_height <= 1) {
@@ -1675,6 +1712,24 @@ bool WindowsNativeCompositor::CompositeLatest() {
                         direct_height,
                         d3d12_present_target_->last_error());
                     d3d12_present_target_->shutdown();
+                }
+            }
+            if (d3d12_present_target_->active()) {
+                const uint32_t visual_client_width =
+                    client_width > 0 ? client_width : direct_width;
+                const uint32_t visual_client_height =
+                    client_height > 0 ? client_height : direct_height;
+                if (!d3d12_present_target_->set_client_size(
+                        visual_client_width, visual_client_height)) {
+                    spdlog::warn(
+                        "[WindowsNativeCompositor] D3D12 direct present "
+                        "client visual resize failed client={}x{} "
+                        "target={}x{} error={}",
+                        visual_client_width,
+                        visual_client_height,
+                        d3d12_present_target_->width(),
+                        d3d12_present_target_->height(),
+                        d3d12_present_target_->last_error());
                 }
             }
             vr::WindowsD3D12PresentTargetFrame direct_frame;

@@ -347,6 +347,47 @@ bool WindowsD3D12PresentTarget::resize(
     return true;
 }
 
+bool WindowsD3D12PresentTarget::set_client_size(uint32_t width,
+                                                uint32_t height) {
+    if (!dcomp_device_ || !dcomp_visual_) {
+        last_error_ = "none";
+        return true;
+    }
+    const uint32_t client_width = std::max(width, 1u);
+    const uint32_t client_height = std::max(height, 1u);
+    const uint32_t target_width = std::max(width_, 1u);
+    const uint32_t target_height = std::max(height_, 1u);
+    if (visual_client_width_ == client_width &&
+        visual_client_height_ == client_height &&
+        visual_target_width_ == target_width &&
+        visual_target_height_ == target_height) {
+        last_error_ = "none";
+        return true;
+    }
+
+    const float scale_x = static_cast<float>(client_width) /
+                          static_cast<float>(target_width);
+    const float scale_y = static_cast<float>(client_height) /
+                          static_cast<float>(target_height);
+    D2D_MATRIX_3X2_F transform = {};
+    transform._11 = scale_x;
+    transform._22 = scale_y;
+    HRESULT hr = dcomp_visual_->SetTransform(transform);
+    if (FAILED(hr)) {
+        return fail("SetTransform(client-size)", hr);
+    }
+    hr = dcomp_device_->Commit();
+    if (FAILED(hr)) {
+        return fail("DComp Commit(client-size)", hr);
+    }
+    visual_client_width_ = client_width;
+    visual_client_height_ = client_height;
+    visual_target_width_ = target_width;
+    visual_target_height_ = target_height;
+    last_error_ = "none";
+    return true;
+}
+
 void WindowsD3D12PresentTarget::shutdown() {
     if (queue_ && fence_) {
         wait_for_gpu();
@@ -367,6 +408,10 @@ void WindowsD3D12PresentTarget::shutdown() {
     device_.Reset();
     width_ = 0;
     height_ = 0;
+    visual_client_width_ = 0;
+    visual_client_height_ = 0;
+    visual_target_width_ = 0;
+    visual_target_height_ = 0;
     dxgi_format_ = DXGI_FORMAT_UNKNOWN;
     color_space_ = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
     last_error_ = "not-initialized";

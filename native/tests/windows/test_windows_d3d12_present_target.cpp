@@ -158,6 +158,8 @@ TEST_CASE("Windows D3D12 present target exposes a DComp back buffer",
     REQUIRE(target.width() == 384);
     REQUIRE(target.height() == 216);
     REQUIRE(target.dxgi_format() == DXGI_FORMAT_B8G8R8A8_UNORM);
+    REQUIRE(target.set_client_size(320, 180));
+    REQUIRE(target.set_client_size(384, 216));
     vr::WindowsD3D12PresentTargetFrame resized_frame;
     REQUIRE(target.acquire_frame(resized_frame));
     REQUIRE(resized_frame.resource != nullptr);

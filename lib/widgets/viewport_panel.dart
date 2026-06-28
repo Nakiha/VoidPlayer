@@ -102,6 +102,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   static const Duration _debugInteractionSampleInterval = Duration(
     milliseconds: 250,
   );
+  static const Duration _resizePacingLogInterval = Duration(milliseconds: 250);
 
   bool _panning = false;
   bool _splitting = false;
@@ -116,8 +117,12 @@ class _ViewportPanelState extends State<ViewportPanel> {
   double _lastReportedDevicePixelRatio = 0.0;
   double _lastPanZoomScale = 1.0;
   DateTime? _lastDebugInteractionSampleAt;
+  DateTime? _lastResizePacingLogAt;
+  DateTime? _lastViewportRectPacingLogAt;
   int _debugPointerMoveCount = 0;
   int _debugPointerHoverCount = 0;
+  int _debugResizeReportCount = 0;
+  int _debugViewportRectReportCount = 0;
 
   void _logDebugInteractionSample(
     String stage,
@@ -649,6 +654,26 @@ class _ViewportPanelState extends State<ViewportPanel> {
       _lastReportedDevicePixelRatio = devicePixelRatio;
       final physicalWidth = (logicalWidth * devicePixelRatio).round();
       final physicalHeight = (logicalHeight * devicePixelRatio).round();
+      _debugResizeReportCount++;
+      final now = DateTime.now();
+      final lastResizeLog = _lastResizePacingLogAt;
+      final shouldLogResize =
+          _debugResizeReportCount <= 8 ||
+          lastResizeLog == null ||
+          now.difference(lastResizeLog) >= _resizePacingLogInterval;
+      if (shouldLogResize) {
+        _lastResizePacingLogAt = now;
+        log.info(
+          '[WindowsResizePacing] flutter viewportReport '
+          'count=$_debugResizeReportCount '
+          'logical=${logicalWidth.toStringAsFixed(1)}x'
+          '${logicalHeight.toStringAsFixed(1)} '
+          'physical=${physicalWidth}x$physicalHeight '
+          'dpr=${devicePixelRatio.toStringAsFixed(3)} '
+          'nativeHole=${widget.nativeCompositorHole} '
+          'texture=${widget.textureId}',
+        );
+      }
       log.fine(
         '[WindowsCompositorDebug] viewport resize report '
         'logical=${logicalWidth.toStringAsFixed(1)}x'
@@ -701,6 +726,27 @@ class _ViewportPanelState extends State<ViewportPanel> {
     final height = (logicalSize.height * devicePixelRatio).round();
     final surfaceWidth = surfaceSize.width.round();
     final surfaceHeight = surfaceSize.height.round();
+    _debugViewportRectReportCount++;
+    final now = DateTime.now();
+    final lastRectLog = _lastViewportRectPacingLogAt;
+    final shouldLogRect =
+        _debugViewportRectReportCount <= 8 ||
+        lastRectLog == null ||
+        now.difference(lastRectLog) >= _resizePacingLogInterval;
+    if (shouldLogRect) {
+      _lastViewportRectPacingLogAt = now;
+      log.info(
+        '[WindowsResizePacing] flutter viewportRect '
+        'count=$_debugViewportRectReportCount '
+        'physical=($left,$top ${width}x$height) '
+        'surface=${surfaceWidth}x$surfaceHeight '
+        'logicalOffset=(${globalOffset.dx.toStringAsFixed(1)},'
+        '${globalOffset.dy.toStringAsFixed(1)}) '
+        'logicalSize=${logicalSize.width.toStringAsFixed(1)}x'
+        '${logicalSize.height.toStringAsFixed(1)} '
+        'dpr=${devicePixelRatio.toStringAsFixed(3)}',
+      );
+    }
     log.fine(
       '[WindowsCompositorDebug] native compositor viewport rect '
       'physical=($left,$top ${width}x$height) '

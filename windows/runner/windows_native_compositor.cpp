@@ -1575,6 +1575,24 @@ bool WindowsNativeCompositor::CompositeLatest() {
                   d3d12_present_target_->dxgi_format() ==
                       DXGI_FORMAT_B8G8R8A8_UNORM));
             if (!target_matches) {
+                const bool previous_active = d3d12_present_target_->active();
+                const uint32_t previous_width =
+                    previous_active ? d3d12_present_target_->width() : 0;
+                const uint32_t previous_height =
+                    previous_active ? d3d12_present_target_->height() : 0;
+                spdlog::info(
+                    "[WindowsResizePacing] native d3d12TargetRebuild "
+                    "previousActive={} previous={}x{} next={}x{} "
+                    "target={} heldFlutter={}x{} generation={}",
+                    previous_active,
+                    previous_width,
+                    previous_height,
+                    direct_width,
+                    direct_height,
+                    OutputTargetName(direct_target),
+                    held_flutter_.width,
+                    held_flutter_.height,
+                    held_flutter_.frame_generation);
                 d3d12_present_target_->shutdown();
                 const bool initialized =
                     d3d12_present_target_->initialize_with_composition_visual(

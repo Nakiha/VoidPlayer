@@ -20,6 +20,7 @@ class MainWindowLayoutCoordinator {
   static const Duration _debugInteractionSampleInterval = Duration(
     milliseconds: 250,
   );
+  static const Duration _resizePacingLogInterval = Duration(milliseconds: 250);
 
   final TickerProvider vsync;
   final NativePlayerController controller;
@@ -41,11 +42,15 @@ class MainWindowLayoutCoordinator {
   bool _nativeCompositorTransformActive = false;
   String? _lastPrewarmedMarksSidebarTargetKey;
   DateTime? _lastDebugInteractionSampleAt;
+  DateTime? _lastViewportResizePacingLogAt;
+  DateTime? _lastNativeResizePacingLogAt;
   int _debugPanUpdates = 0;
   int _debugZoomUpdates = 0;
   int _debugSplitUpdates = 0;
   int _debugDeferredLayoutUpdates = 0;
   int _debugProjectionPublishes = 0;
+  int _debugViewportResizeReports = 0;
+  int _debugNativeResizeFlushes = 0;
 
   int viewportWidth = 0;
   int viewportHeight = 0;
@@ -338,6 +343,26 @@ class MainWindowLayoutCoordinator {
     viewportHeight = height;
     _prewarmNextMarksSidebarViewportTarget();
     _resizeDebounceTimer?.cancel();
+    _debugViewportResizeReports++;
+    final now = DateTime.now();
+    final lastResizeLog = _lastViewportResizePacingLogAt;
+    final shouldLogResize =
+        _debugViewportResizeReports <= 8 ||
+        lastResizeLog == null ||
+        now.difference(lastResizeLog) >= _resizePacingLogInterval;
+    if (shouldLogResize) {
+      _lastViewportResizePacingLogAt = now;
+      log.info(
+        '[WindowsResizePacing] dart viewportResize '
+        'count=$_debugViewportResizeReports '
+        'previous=${previousWidth}x$previousHeight next=${width}x$height '
+        'dpr=${devicePixelRatio.toStringAsFixed(3)} '
+        'immediate=$immediate schedule=${immediate ? 'immediate' : 'debounce'} '
+        'nativeActive=${_state.nativeCompositorActive} '
+        'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty '
+        'activeFlush=${_activeFlush != null}',
+      );
+    }
     if (immediate) {
       _resizeDebounceTimer = null;
       _markResizeDirty();
@@ -345,6 +370,13 @@ class MainWindowLayoutCoordinator {
     }
     _resizeDebounceTimer = Timer(viewportResizeDebounce, () {
       if (_disposed || !mounted()) return;
+      log.info(
+        '[WindowsResizePacing] dart viewportResize debounceFire '
+        'target=${viewportWidth}x$viewportHeight '
+        'reports=$_debugViewportResizeReports '
+        'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty '
+        'activeFlush=${_activeFlush != null}',
+      );
       _markResizeDirty();
     });
   }
@@ -724,6 +756,23 @@ class MainWindowLayoutCoordinator {
             if (_disposed || !mounted()) return;
           }
           await controller.resize(width, height);
+          _debugNativeResizeFlushes++;
+          final now = DateTime.now();
+          final lastNativeLog = _lastNativeResizePacingLogAt;
+          final shouldLogNative =
+              _debugNativeResizeFlushes <= 8 ||
+              lastNativeLog == null ||
+              now.difference(lastNativeLog) >= _resizePacingLogInterval;
+          if (shouldLogNative) {
+            _lastNativeResizePacingLogAt = now;
+            log.info(
+              '[WindowsResizePacing] dart nativeResizeFlush '
+              'count=$_debugNativeResizeFlushes '
+              'target=${width}x$height '
+              'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty '
+              'activeFlush=${_activeFlush != null}',
+            );
+          }
           log.fine(
             '[WindowsCompositorDebug] layout flush native resize complete '
             '${width}x$height layoutDirty=$_layoutDirty',

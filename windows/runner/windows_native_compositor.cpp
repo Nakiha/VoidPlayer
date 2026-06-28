@@ -18,6 +18,9 @@ constexpr int64_t kMinUnrequestedFlutterExportSignalUs = 1000;
 constexpr int64_t kMaxUnrequestedFlutterExportSignalUs = 16667;
 constexpr auto kFlutterExportPacingSampleInterval =
     std::chrono::milliseconds(250);
+constexpr auto kViewportSurfaceSyncTimeout =
+    std::chrono::milliseconds(24);
+constexpr const char* kViewportSurfaceSyncReason = "viewport-rect";
 
 bool adapter_luid(IDXGIAdapter* adapter, int32_t& high, uint32_t& low) {
     high = 0;
@@ -46,6 +49,10 @@ int64_t age_ms(uint64_t now_us, uint64_t then_us) {
         return -1;
     }
     return static_cast<int64_t>((now_us - then_us) / 1000);
+}
+
+bool IsViewportSurfaceSyncReason(const std::string& reason) {
+    return reason == kViewportSurfaceSyncReason;
 }
 
 uint64_t counter_delta(uint64_t current, uint64_t previous) {
@@ -245,28 +252,41 @@ void WindowsNativeCompositor::ReleaseHeldInputs(
 
 void WindowsNativeCompositor::SetViewportRect(
     double left, double top, double right, double bottom) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    viewport_[0] = std::clamp(left, 0.0, 1.0);
-    viewport_[1] = std::clamp(top, 0.0, 1.0);
-    viewport_[2] = std::clamp(right, viewport_[0], 1.0);
-    viewport_[3] = std::clamp(bottom, viewport_[1], 1.0);
-    const bool changed =
-        viewport_[0] != last_logged_viewport_[0] ||
-        viewport_[1] != last_logged_viewport_[1] ||
-        viewport_[2] != last_logged_viewport_[2] ||
-        viewport_[3] != last_logged_viewport_[3];
-    if (changed) {
-        last_logged_viewport_[0] = viewport_[0];
-        last_logged_viewport_[1] = viewport_[1];
-        last_logged_viewport_[2] = viewport_[2];
-        last_logged_viewport_[3] = viewport_[3];
-        spdlog::debug(
-            "[WindowsCompositorDebug] dcomp viewport rect normalized="
-            "({:.5f},{:.5f})-({:.5f},{:.5f})",
-            viewport_[0], viewport_[1], viewport_[2], viewport_[3]);
+    bool changed = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const double previous[4] = {
+            viewport_[0], viewport_[1], viewport_[2], viewport_[3]};
+        viewport_[0] = std::clamp(left, 0.0, 1.0);
+        viewport_[1] = std::clamp(top, 0.0, 1.0);
+        viewport_[2] = std::clamp(right, viewport_[0], 1.0);
+        viewport_[3] = std::clamp(bottom, viewport_[1], 1.0);
+        changed =
+            viewport_[0] != previous[0] ||
+            viewport_[1] != previous[1] ||
+            viewport_[2] != previous[2] ||
+            viewport_[3] != previous[3];
+        const bool should_log =
+            viewport_[0] != last_logged_viewport_[0] ||
+            viewport_[1] != last_logged_viewport_[1] ||
+            viewport_[2] != last_logged_viewport_[2] ||
+            viewport_[3] != last_logged_viewport_[3];
+        if (should_log) {
+            last_logged_viewport_[0] = viewport_[0];
+            last_logged_viewport_[1] = viewport_[1];
+            last_logged_viewport_[2] = viewport_[2];
+            last_logged_viewport_[3] = viewport_[3];
+            spdlog::debug(
+                "[WindowsCompositorDebug] dcomp viewport rect normalized="
+                "({:.5f},{:.5f})-({:.5f},{:.5f})",
+                viewport_[0], viewport_[1], viewport_[2], viewport_[3]);
+        }
+        work_pending_ = true;
     }
-    work_pending_ = true;
     wake_.notify_one();
+    if (changed) {
+        (void)RequestFlutterFrame(kViewportSurfaceSyncReason);
+    }
 }
 
 void WindowsNativeCompositor::SetViewportBackgroundColor(uint32_t argb) {
@@ -302,7 +322,8 @@ bool WindowsNativeCompositor::RequestFlutterFrame(const std::string& reason) {
         if (track_surface_update) {
             pending_flutter_frame_request_sequence_ = request_sequence;
             pending_flutter_frame_request_base_generation_ =
-                diagnostics_.flutter_generation;
+                std::max(diagnostics_.flutter_generation,
+                         held_flutter_.frame_generation);
             pending_flutter_frame_request_reason_ =
                 reason.empty() ? "unspecified" : reason;
             pending_flutter_frame_request_time_ =
@@ -852,7 +873,10 @@ void WindowsNativeCompositor::ThreadMain() {
             if (pending_flutter_frame_request_sequence_ > 0) {
                 const auto export_deadline =
                     pending_flutter_frame_request_time_ +
-                    kFlutterExportStaleTimeout;
+                    (IsViewportSurfaceSyncReason(
+                         pending_flutter_frame_request_reason_)
+                         ? kViewportSurfaceSyncTimeout
+                         : kFlutterExportStaleTimeout);
                 wait_deadline = std::min(wait_deadline, export_deadline);
             }
             if (wait_deadline !=
@@ -877,6 +901,8 @@ void WindowsNativeCompositor::ThreadMain() {
             flutter_export_stale_timed_out =
                 !first_present_timed_out &&
                 pending_flutter_frame_request_sequence_ > 0 &&
+                !IsViewportSurfaceSyncReason(
+                    pending_flutter_frame_request_reason_) &&
                 std::chrono::steady_clock::now() >=
                     pending_flutter_frame_request_time_ +
                     kFlutterExportStaleTimeout;
@@ -1397,6 +1423,13 @@ bool WindowsNativeCompositor::CompositeLatest() {
                     external_flutter_surface_submitted_generation_ =
                         held_flutter_.frame_generation;
                 }
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    diagnostics_.flutter_generation =
+                        held_flutter_.frame_generation;
+                    diagnostics_.flutter_transport_generation =
+                        held_flutter_.ring_generation;
+                }
                 if (external_surface_ready &&
                     submitted_new_external_surface &&
                     should_refresh_external_surface &&
@@ -1438,6 +1471,64 @@ bool WindowsNativeCompositor::CompositeLatest() {
 
     if (!held_flutter_valid_) {
         return false;
+    }
+    {
+        bool defer_for_viewport_surface = false;
+        bool expire_viewport_surface_sync = false;
+        uint64_t request_sequence = 0;
+        uint64_t base_generation = 0;
+        uint64_t held_generation = held_flutter_.frame_generation;
+        int64_t elapsed_ms = 0;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (pending_flutter_frame_request_sequence_ != 0 &&
+                IsViewportSurfaceSyncReason(
+                    pending_flutter_frame_request_reason_) &&
+                held_flutter_.frame_generation <=
+                    pending_flutter_frame_request_base_generation_) {
+                elapsed_ms = static_cast<int64_t>(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() -
+                        pending_flutter_frame_request_time_)
+                        .count());
+                defer_for_viewport_surface =
+                    elapsed_ms <
+                    static_cast<int64_t>(
+                        kViewportSurfaceSyncTimeout.count());
+                expire_viewport_surface_sync = !defer_for_viewport_surface;
+                request_sequence = pending_flutter_frame_request_sequence_;
+                base_generation =
+                    pending_flutter_frame_request_base_generation_;
+                if (expire_viewport_surface_sync) {
+                    pending_flutter_frame_request_sequence_ = 0;
+                    pending_flutter_frame_request_base_generation_ = 0;
+                    pending_flutter_frame_request_reason_.clear();
+                    pending_flutter_frame_request_time_ = {};
+                    pending_flutter_frame_request_acquire_logged_ = false;
+                }
+            }
+        }
+        if (defer_for_viewport_surface) {
+            spdlog::debug(
+                "[WindowsCompositorDebug] defer D3D12 direct present for "
+                "viewport surface sync seq={} baseGeneration={} "
+                "heldGeneration={} elapsedMs={}",
+                request_sequence,
+                base_generation,
+                held_generation,
+                elapsed_ms);
+            return true;
+        }
+        if (expire_viewport_surface_sync) {
+            spdlog::debug(
+                "[WindowsCompositorDebug] viewport surface sync budget "
+                "expired seq={} baseGeneration={} heldGeneration={} "
+                "elapsedMs={}; reusing held surface",
+                request_sequence,
+                base_generation,
+                held_generation,
+                elapsed_ms);
+        }
     }
     {
         const auto direct_started = std::chrono::steady_clock::now();

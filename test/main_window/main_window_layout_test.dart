@@ -79,7 +79,9 @@ void main() {
     },
   );
 
-  test('native compositor viewport resize flushes without debounce', () async {
+  testWidgets('window resize debounces native compositor resize', (
+    tester,
+  ) async {
     final stateStore = MainWindowStateStore()
       ..setTextureId(1)
       ..setNativeCompositorActive(true)
@@ -100,10 +102,15 @@ void main() {
     coordinator.viewportHeight = 100;
 
     coordinator.onViewportResize(240, 180, 1.5);
+    coordinator.onViewportResize(300, 220, 1.5);
+
+    expect(controller.resizes, isEmpty);
+
+    await tester.pump(MainWindowLayoutCoordinator.viewportResizeDebounce);
     await coordinator.flushPendingLayout();
 
     expect(controller.calls, const ['resize', 'getLayout']);
-    expect(controller.resizes, const [Size(240, 180)]);
+    expect(controller.resizes, const [Size(300, 220)]);
   });
 
   test(

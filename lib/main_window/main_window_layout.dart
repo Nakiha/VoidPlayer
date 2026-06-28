@@ -338,7 +338,7 @@ class MainWindowLayoutCoordinator {
     viewportHeight = height;
     _prewarmNextMarksSidebarViewportTarget();
     _resizeDebounceTimer?.cancel();
-    if (immediate || _state.nativeCompositorActive) {
+    if (immediate) {
       _resizeDebounceTimer = null;
       _markResizeDirty();
       return;

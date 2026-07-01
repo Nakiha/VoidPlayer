@@ -67,11 +67,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var rendererOwnedFlutterSurfaceDirty = true
   private var rendererOwnedFlutterSurfaceLastReason = "initial"
   private var rendererOwnedFlutterSurfaceLastGeneration: UInt64 = 0
+  private var rendererOwnedFlutterSurfaceContentGeneration: UInt64 = 1
+  private var rendererOwnedFlutterSurfaceLastSourceKey: UInt64 = 0
   private var rendererOwnedFlutterSurfaceWarmUntilNs: UInt64 = 0
   private var rendererOwnedFlutterSurfaceDirtyCount = 0
   private var rendererOwnedFlutterSurfaceSampleCount = 0
   private var rendererOwnedFlutterSurfacePublishCount = 0
   private var rendererOwnedFlutterSurfaceUnchangedCount = 0
+  private var rendererOwnedFlutterSurfaceSourceChangeCount = 0
+  private var rendererOwnedFlutterSurfaceAwaitFirstCount = 0
   private var rendererOwnedFlutterSurfaceWarmTickCount = 0
   private var rendererOwnedFlutterSurfaceWarmComposeCount = 0
   private var rendererOwnedFlutterSurfaceContinuousTickCount = 0
@@ -258,7 +262,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
       result(nil)
     case "requestRendererOwnedFlutterSurface":
-      markRendererOwnedFlutterSurfaceDirty(reason: "request-flutter-frame")
+      let reason = MacOSFlutterArguments.stringArg(call.arguments, "reason") ??
+        "request-flutter-frame"
+      markRendererOwnedFlutterSurfaceDirty(reason: "request-\(reason)")
       result(nil)
     case "boostRendererOwnedFlutterSurfaceInteraction":
       let reason = MacOSFlutterArguments.stringArg(call.arguments, "reason") ?? "boost"
@@ -478,6 +484,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         rendererOwnedFlutterSurfaceLastReason,
       "rendererOwnedFlutterSurfaceLastGeneration":
         rendererOwnedFlutterSurfaceLastGeneration,
+      "rendererOwnedFlutterSurfaceContentGeneration":
+        rendererOwnedFlutterSurfaceContentGeneration,
+      "rendererOwnedFlutterSurfaceLastSourceKey":
+        rendererOwnedFlutterSurfaceLastSourceKey,
+      "rendererOwnedFlutterSurfaceSourceChangeCount":
+        rendererOwnedFlutterSurfaceSourceChangeCount,
+      "rendererOwnedFlutterSurfaceAwaitFirstCount":
+        rendererOwnedFlutterSurfaceAwaitFirstCount,
       "rendererOwnedFlutterSurfaceWarmActive":
         rendererOwnedFlutterSurfaceWarmActive(),
       "rendererOwnedFlutterSurfaceWarmTickCount":
@@ -1127,6 +1141,23 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       reason: reason,
       sampleLatest: flutterSurfaceContinuousActive
     )
+    if rendererTarget.rendererOwnedRunnerLayerActive &&
+        rendererOwnedFlutterSurfaceLastGeneration == 0 {
+      rendererOwnedFlutterSurfaceAwaitFirstCount += 1
+      rendererOwnedFlutterSurfaceLastReason = "\(reason):awaiting-first-graph"
+      rendererOwnedCompositeRefreshInFlight = false
+      rendererOwnedCompositeRefreshCompletedGeneration = max(
+        rendererOwnedCompositeRefreshCompletedGeneration,
+        submittedGeneration
+      )
+      if rendererOwnedFlutterSurfaceWarmActive() {
+        rendererOwnedCompositeDisplayLink.start()
+      } else {
+        rendererOwnedCompositeRefreshPendingReason = nil
+        rendererOwnedCompositeDisplayLink.stop()
+      }
+      return
+    }
     let maxTrackSlots = tracks.activeSlotCapacity()
     rendererOwnedCompositeRefreshQueue.async { [weak self, weak player, weak rendererTarget] in
       guard let self,
@@ -1244,7 +1275,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         ? Double(nowNs - rendererOwnedCompositeRefreshLatestProjectionNs) / 1_000_000.0
         : 0.0
     NSLog(
-      "VoidPlayer renderer-owned compose summary reason=%@ requestHz=%.1f submitHz=%.1f presentHz=%.1f displayTickHz=%.1f sourceFrameHz=%.1f projectionUpdateHz=%.1f pending=%llu submitted=%llu completed=%llu inFlight=%@ skippedInFlight=%d failures=%d projectionLagMs=%.2f composeP95Ms=%.2f flutterSurfaceDirty=%d sample=%d publish=%d unchanged=%d warmActive=%@ warmTicks=%d warmComposes=%d continuousTicks=%d continuousComposes=%d sampleP95Ms=%.2f flutterReason=%@",
+      "VoidPlayer renderer-owned compose summary reason=%@ requestHz=%.1f submitHz=%.1f presentHz=%.1f displayTickHz=%.1f sourceFrameHz=%.1f projectionUpdateHz=%.1f pending=%llu submitted=%llu completed=%llu inFlight=%@ skippedInFlight=%d failures=%d projectionLagMs=%.2f composeP95Ms=%.2f flutterSurfaceDirty=%d sample=%d publish=%d unchanged=%d sourceChanges=%d awaitFirst=%d warmActive=%@ warmTicks=%d warmComposes=%d continuousTicks=%d continuousComposes=%d sampleP95Ms=%.2f flutterReason=%@",
       reason,
       requestHz,
       submitHz,
@@ -1264,6 +1295,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       rendererOwnedFlutterSurfaceSampleCount,
       rendererOwnedFlutterSurfacePublishCount,
       rendererOwnedFlutterSurfaceUnchangedCount,
+      rendererOwnedFlutterSurfaceSourceChangeCount,
+      rendererOwnedFlutterSurfaceAwaitFirstCount,
       rendererOwnedFlutterSurfaceWarmActive(nowNs: nowNs) ? "true" : "false",
       rendererOwnedFlutterSurfaceWarmTickCount,
       rendererOwnedFlutterSurfaceWarmComposeCount,
@@ -1283,6 +1316,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
     rendererOwnedFlutterSurfaceDirty = true
     rendererOwnedFlutterSurfaceDirtyCount += 1
+    rendererOwnedFlutterSurfaceContentGeneration =
+      rendererOwnedFlutterSurfaceContentGeneration == UInt64.max
+        ? 1
+        : rendererOwnedFlutterSurfaceContentGeneration + 1
     rendererOwnedFlutterSurfaceLastReason = reason
     rendererOwnedFlutterSurfaceWarmUntilNs =
       DispatchTime.now().uptimeNanoseconds + Self.rendererOwnedFlutterSurfaceWarmGraceNs
@@ -1313,10 +1350,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           let player = nativePlayer else {
       return false
     }
-    let warmActive = rendererOwnedFlutterSurfaceWarmActive()
-    guard force || rendererOwnedFlutterSurfaceDirty ||
-            rendererOwnedFlutterSurfaceLastGeneration == 0 ||
-            warmActive || sampleLatest else {
+    let needsInitialSurface = rendererOwnedFlutterSurfaceLastGeneration == 0
+    let shouldSample = force ||
+      rendererOwnedFlutterSurfaceDirty ||
+      needsInitialSurface ||
+      sampleLatest
+    guard shouldSample else {
       return false
     }
     rendererOwnedFlutterSurfaceSampleCount += 1
@@ -1326,11 +1365,13 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       rendererOwnedFlutterSurfaceSampleDuration.record(
         DispatchTime.now().uptimeNanoseconds - sampleStartNs
       )
-      if rendererOwnedFlutterSurfaceLastGeneration == 0 {
-        player.clearExternalFlutterSurface()
+      if needsInitialSurface {
+        rendererOwnedFlutterSurfaceAwaitFirstCount += 1
+        rendererOwnedFlutterSurfaceLastReason = "\(reason):awaiting-exporter"
+      } else {
+        rendererOwnedFlutterSurfaceDirty = false
+        rendererOwnedFlutterSurfaceLastReason = "\(reason):exporter-unavailable"
       }
-      rendererOwnedFlutterSurfaceDirty = false
-      rendererOwnedFlutterSurfaceLastReason = "\(reason):exporter-unavailable"
       return false
     }
     let infos = MacOSFlutterSurfaceExporter.currentSurfaceInfos(engine: engine)
@@ -1339,21 +1380,23 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     )
     guard let info = infos.first,
           let texture = info["texture"] as? MTLTexture else {
-      if rendererOwnedFlutterSurfaceLastGeneration == 0 {
-        player.clearExternalFlutterSurface()
+      if needsInitialSurface {
+        rendererOwnedFlutterSurfaceAwaitFirstCount += 1
+        rendererOwnedFlutterSurfaceLastReason = "\(reason):awaiting-surface"
+      } else {
+        rendererOwnedFlutterSurfaceDirty = false
+        rendererOwnedFlutterSurfaceLastReason = "\(reason):surface-unavailable"
       }
-      rendererOwnedFlutterSurfaceDirty = false
-      rendererOwnedFlutterSurfaceLastReason = "\(reason):surface-unavailable"
       return false
     }
-    let generation = flutterSurfaceSourceKey(info: info, texture: texture)
-    if generation == rendererOwnedFlutterSurfaceLastGeneration {
+    let sourceKey = flutterSurfaceSourceKey(info: info, texture: texture)
+    let generation = rendererOwnedFlutterSurfaceContentGeneration
+    let sourceChanged = sourceKey != rendererOwnedFlutterSurfaceLastSourceKey
+    if generation == rendererOwnedFlutterSurfaceLastGeneration && !sourceChanged {
       rendererOwnedFlutterSurfaceUnchangedCount += 1
       rendererOwnedFlutterSurfaceDirty = false
       if sampleLatest {
         rendererOwnedFlutterSurfaceLastReason = "\(reason):latest-unchanged"
-      } else if warmActive {
-        rendererOwnedFlutterSurfaceLastReason = "\(reason):warm-unchanged"
       } else {
         rendererOwnedFlutterSurfaceLastReason = "\(reason):unchanged"
       }
@@ -1368,21 +1411,28 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     guard updated else {
       return false
     }
+    if sourceChanged {
+      rendererOwnedFlutterSurfaceSourceChangeCount += 1
+    }
     rendererOwnedFlutterSurfaceLastGeneration = generation
+    rendererOwnedFlutterSurfaceLastSourceKey = sourceKey
     rendererOwnedFlutterSurfacePublishCount += 1
     let nowNs = DispatchTime.now().uptimeNanoseconds
     if nowNs > rendererOwnedFlutterSurfaceLastPublishLogNs + 1_000_000_000 {
       rendererOwnedFlutterSurfaceLastPublishLogNs = nowNs
       NSLog(
-        "VoidPlayer renderer-owned presentation: published Flutter surface reason=%@ generation=%llu size=%dx%d format=%llu sample=%d publish=%d unchanged=%d continuousComposes=%d sampleP95Ms=%.3f",
+        "VoidPlayer renderer-owned presentation: published Flutter surface reason=%@ generation=%llu sourceKey=%llu sourceChanged=%@ size=%dx%d format=%llu sample=%d publish=%d unchanged=%d sourceChanges=%d continuousComposes=%d sampleP95Ms=%.3f",
         reason,
         generation,
+        sourceKey,
+        sourceChanged ? "true" : "false",
         texture.width,
         texture.height,
         UInt64(texture.pixelFormat.rawValue),
         rendererOwnedFlutterSurfaceSampleCount,
         rendererOwnedFlutterSurfacePublishCount,
         rendererOwnedFlutterSurfaceUnchangedCount,
+        rendererOwnedFlutterSurfaceSourceChangeCount,
         rendererOwnedFlutterSurfaceContinuousComposeCount,
         rendererOwnedFlutterSurfaceSampleDuration.p95Ms()
       )

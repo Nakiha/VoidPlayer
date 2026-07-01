@@ -9,6 +9,7 @@ private final class MacOSRendererOwnedMetalLayerView: NSView {
   init(device: MTLDevice, pixelFormat: MTLPixelFormat) {
     super.init(frame: .zero)
     wantsLayer = true
+    isHidden = true
     layer = metalLayer
     metalLayer.device = device
     metalLayer.pixelFormat = pixelFormat
@@ -58,6 +59,7 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
   private var lastIgnoredNativeUploadCount = 0
   private var uploadCount = 0
   private var uploadFailureCount = 0
+  private var firstPresented = false
   private var pendingDrawables: [UInt: MacOSPendingRendererOwnedDrawable] = [:]
 
   var rendererOwnedRunnerLayerActive: Bool {
@@ -204,6 +206,10 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
       "rendererOwnedLayerPendingDrawableCount": pendingDrawables.count,
       "rendererOwnedLayerUploadCount": uploadCount,
       "rendererOwnedLayerUploadFailureCount": uploadFailureCount,
+      "rendererOwnedLayerTargetGeneration": targetGeneration,
+      "rendererOwnedLayerLastPublishedUploadCount": lastPublishedNativeUploadCount,
+      "rendererOwnedLayerLastIgnoredUploadCount": lastIgnoredNativeUploadCount,
+      "rendererOwnedLayerFirstPresented": firstPresented,
     ]
   }
 
@@ -348,7 +354,15 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     guard address != 0 else { return }
     lock.lock()
     let pending = pendingDrawables.removeValue(forKey: address)
+    if pending != nil {
+      firstPresented = true
+    }
     lock.unlock()
+    if pending != nil {
+      runOnMain {
+        self.view.isHidden = false
+      }
+    }
     pending?.drawable.present()
   }
 

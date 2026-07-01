@@ -40,8 +40,8 @@ macOS-specific native code owns the Metal presentation backend:
 ```text
 RendererDrawSnapshot
   -> WgpuMetalPresentationBackend::draw_frame()
-  -> renderer-owned BGRA CVPixelBuffer / IOSurface target
-  -> Flutter Texture
+  -> renderer-owned BGRA/FP16 CVPixelBuffer / IOSurface target
+  -> Flutter Texture (+ imported Flutter surface for final wgpu composition when available)
 ```
 
 Swift creates/registers the texture target, installs it into native, and
@@ -50,7 +50,11 @@ submits the latest layout intent; `CVDisplayLink` coalesces input, while native
 keeps video source updates tied to media PTS and lets display ticks re-composite
 the retained source cache for pan/zoom/split/overlay changes. Swift must not add
 a second frame pump, playback clock, seek policy, loop policy, or layout
-compositor.
+compositor. The default macOS path does not attach a Swift runner compositor;
+SDR and EDR composition both stay in the renderer-owned wgpu backend.
+When Dart changes source projection, analysis overlay, or the exported Flutter
+surface, Swift only coalesces a renderer-owned refresh request; the actual
+composition remains in the native wgpu backend.
 
 The detailed presentation contract is documented in
 `../native/docs/MACOS_PRESENTATION_BACKEND.md`. The gated HDR/EDR native

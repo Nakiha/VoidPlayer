@@ -34,19 +34,19 @@ enum MacOSPresentationDiagnostics {
   ) -> String {
     switch perfStats?["rendererOwnedPresentPackageStorage"] as? String {
     case "cvpixelbuffer":
-      return "metal-cvpixelbuffer-present-package"
+      return "renderer-owned-wgpu-metal-cvpixelbuffer-package"
     case "yuv":
-      return "metal-yuv-present-package"
+      return "renderer-owned-wgpu-metal-yuv-package"
     case "bgra":
-      return "metal-bgra-present-package"
+      return "renderer-owned-wgpu-metal-bgra-package"
     default:
       break
     }
     if targetReady && targetInstalled {
-      return "metal-presentation-target-ready"
+      return "renderer-owned-target-ready"
     }
     if textureRegistered {
-      return "metal-presentation-target-unavailable"
+      return "renderer-owned-target-unavailable"
     }
     return "unavailable"
   }

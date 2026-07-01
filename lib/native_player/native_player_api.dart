@@ -31,6 +31,14 @@ abstract interface class NativePlayerApi {
     required int width,
     required int height,
   });
+  Future<void> setRendererOwnedViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  });
   Future<void> setNativeCompositorViewportRect({
     required int left,
     required int top,
@@ -39,11 +47,11 @@ abstract interface class NativePlayerApi {
     required int surfaceWidth,
     required int surfaceHeight,
   });
-  Future<void> requestNativeCompositorFlutterFrame({required String reason});
-  Future<void> boostNativeCompositorFlutterInteraction({
+  Future<void> requestRendererOwnedFlutterSurface({required String reason});
+  Future<void> boostRendererOwnedFlutterSurfaceInteraction({
     required String reason,
   });
-  Future<void> ackNativeCompositorFlutterState({
+  Future<void> ackRendererOwnedFlutterSurfaceState({
     required int serial,
     required bool transparentViewport,
   });
@@ -55,17 +63,7 @@ abstract interface class NativePlayerApi {
   Future<void> resetNativePerfCounters();
   Future<void> beginNativeInteractionSample({required String label});
   Future<void> endNativeInteractionSample({required String label});
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  });
-  Future<void> prepareNativeCompositorSourceCache({
+  Future<void> prepareRendererOwnedSourceProjection({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
     required int mode,
@@ -79,7 +77,7 @@ abstract interface class NativePlayerApi {
     required List<double> viewOffsetUvY,
   });
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state);
-  Future<void> clearNativeCompositorSourceCache({required String reason});
+  Future<void> clearRendererOwnedSourceProjection({required String reason});
   Future<void> setViewportBackgroundColor(int colorValue);
   Future<ViewportCapture> captureViewport({String? outputPath});
   Future<ViewportCapture> captureViewportRegion({
@@ -91,7 +89,16 @@ abstract interface class NativePlayerApi {
     String? outputPath,
   });
   Future<ViewportCapture> captureWindow({String? outputPath});
+  Future<ViewportCapture> captureWindowRegion({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    required int maxSize,
+    String? outputPath,
+  });
   Future<Map<String, dynamic>> debugFlutterSurfaceInfo();
+  Future<Map<String, dynamic>> debugRendererOwnedPresentation();
   Future<Map<String, dynamic>> debugNativeCompositor();
   Future<void> stepForward();
   Future<void> stepBackward();
@@ -117,7 +124,7 @@ abstract interface class NativePlayerApi {
 class MethodChannelNativePlayerApi implements NativePlayerApi {
   final MethodChannel _channel;
   final NativePlayerEventStream _eventStream;
-  static int _nextCompositorTraceId = 1;
+  static int _nextRendererOwnedTraceId = 1;
 
   const MethodChannelNativePlayerApi([
     this._channel = const MethodChannel(NativePlayerChannel.name),
@@ -127,8 +134,10 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   @override
   Stream<NativePlayerEvent> get events => _eventStream.events;
 
-  static Map<String, dynamic> _withCompositorTrace(Map<String, dynamic> args) {
-    args[NativePlayerKeys.traceId] = _nextCompositorTraceId++;
+  static Map<String, dynamic> _withRendererOwnedTrace(
+    Map<String, dynamic> args,
+  ) {
+    args[NativePlayerKeys.traceId] = _nextRendererOwnedTraceId++;
     args[NativePlayerKeys.traceSentUs] = DateTime.now().microsecondsSinceEpoch;
     return args;
   }
@@ -249,7 +258,7 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> setNativeCompositorViewportRect({
+  Future<void> setRendererOwnedViewportRect({
     required int left,
     required int top,
     required int width,
@@ -258,8 +267,8 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     required int surfaceHeight,
   }) {
     return _invokeTimedVoid(
-      NativePlayerMethods.setNativeCompositorViewportRect,
-      _withCompositorTrace({
+      NativePlayerMethods.setRendererOwnedViewportRect,
+      _withRendererOwnedTrace({
         NativePlayerKeys.left: left,
         NativePlayerKeys.top: top,
         NativePlayerKeys.width: width,
@@ -271,30 +280,52 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> requestNativeCompositorFlutterFrame({required String reason}) {
+  Future<void> setNativeCompositorViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  }) {
+    return _invokeTimedVoid(
+      NativePlayerMethods.setNativeCompositorViewportRect,
+      _withRendererOwnedTrace({
+        NativePlayerKeys.left: left,
+        NativePlayerKeys.top: top,
+        NativePlayerKeys.width: width,
+        NativePlayerKeys.height: height,
+        NativePlayerKeys.surfaceWidth: surfaceWidth,
+        NativePlayerKeys.surfaceHeight: surfaceHeight,
+      }),
+    );
+  }
+
+  @override
+  Future<void> requestRendererOwnedFlutterSurface({required String reason}) {
     return _channel.invokeMethod<void>(
-      NativePlayerMethods.requestNativeCompositorFlutterFrame,
+      NativePlayerMethods.requestRendererOwnedFlutterSurface,
       {NativePlayerKeys.reason: reason},
     );
   }
 
   @override
-  Future<void> boostNativeCompositorFlutterInteraction({
+  Future<void> boostRendererOwnedFlutterSurfaceInteraction({
     required String reason,
   }) {
     return _channel.invokeMethod<void>(
-      NativePlayerMethods.boostNativeCompositorFlutterInteraction,
+      NativePlayerMethods.boostRendererOwnedFlutterSurfaceInteraction,
       {NativePlayerKeys.reason: reason},
     );
   }
 
   @override
-  Future<void> ackNativeCompositorFlutterState({
+  Future<void> ackRendererOwnedFlutterSurfaceState({
     required int serial,
     required bool transparentViewport,
   }) {
     return _channel.invokeMethod<void>(
-      NativePlayerMethods.ackNativeCompositorFlutterState,
+      NativePlayerMethods.ackRendererOwnedFlutterSurfaceState,
       {
         NativePlayerKeys.serial: serial,
         NativePlayerKeys.transparentViewport: transparentViewport,
@@ -345,33 +376,7 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) {
-    return _invokeTimedVoid(
-      NativePlayerMethods.setNativeCompositorViewportTransform,
-      _withCompositorTrace({
-        NativePlayerKeys.enabled: enabled,
-        NativePlayerKeys.scaleX: scaleX,
-        NativePlayerKeys.scaleY: scaleY,
-        NativePlayerKeys.translateX: translateX,
-        NativePlayerKeys.translateY: translateY,
-        NativePlayerKeys.mode: mode,
-        NativePlayerKeys.splitPos: splitPos,
-        NativePlayerKeys.activeTrackCount: activeTrackCount,
-      }),
-    );
-  }
-
-  @override
-  Future<void> prepareNativeCompositorSourceCache({
+  Future<void> prepareRendererOwnedSourceProjection({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
     required int mode,
@@ -385,8 +390,8 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     required List<double> viewOffsetUvY,
   }) {
     return _invokeTimedVoid(
-      NativePlayerMethods.prepareNativeCompositorSourceCache,
-      _withCompositorTrace({
+      NativePlayerMethods.prepareRendererOwnedSourceProjection,
+      _withRendererOwnedTrace({
         NativePlayerKeys.sourceSlots: sourceSlots,
         NativePlayerKeys.sourceOrder: sourceOrder,
         NativePlayerKeys.mode: mode,
@@ -403,10 +408,10 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> clearNativeCompositorSourceCache({required String reason}) {
+  Future<void> clearRendererOwnedSourceProjection({required String reason}) {
     return _invokeTimedVoid(
-      NativePlayerMethods.clearNativeCompositorSourceCache,
-      _withCompositorTrace({NativePlayerKeys.reason: reason}),
+      NativePlayerMethods.clearRendererOwnedSourceProjection,
+      _withRendererOwnedTrace({NativePlayerKeys.reason: reason}),
     );
   }
 
@@ -488,6 +493,37 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<ViewportCapture> captureWindowRegion({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    required int maxSize,
+    String? outputPath,
+  }) async {
+    final args = <String, dynamic>{
+      NativePlayerKeys.x: x,
+      NativePlayerKeys.y: y,
+      NativePlayerKeys.width: width,
+      NativePlayerKeys.height: height,
+      NativePlayerKeys.maxSize: maxSize,
+    };
+    if (outputPath != null) {
+      args[NativePlayerKeys.outputPath] = outputPath;
+    }
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      NativePlayerMethods.captureWindowRegion,
+      args,
+    );
+    return ViewportCapture.fromMap(
+      NativePlayerPayloads.requireMap(
+        map,
+        NativePlayerMethods.captureWindowRegion,
+      ),
+    );
+  }
+
+  @override
   Future<Map<String, dynamic>> debugFlutterSurfaceInfo() async {
     final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
       NativePlayerMethods.debugFlutterSurfaceInfo,
@@ -496,6 +532,19 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
       NativePlayerPayloads.requireMap(
         map,
         NativePlayerMethods.debugFlutterSurfaceInfo,
+      ),
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>> debugRendererOwnedPresentation() async {
+    final map = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      NativePlayerMethods.debugRendererOwnedPresentation,
+    );
+    return Map<String, dynamic>.from(
+      NativePlayerPayloads.requireMap(
+        map,
+        NativePlayerMethods.debugRendererOwnedPresentation,
       ),
     );
   }

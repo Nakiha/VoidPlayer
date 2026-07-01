@@ -191,6 +191,14 @@ bool RendererPresentationController::update_headless_output_ring(
                                                  max_track_slots);
 }
 
+#ifdef __APPLE__
+bool RendererPresentationController::update_headless_metal_texture_output(
+    const PresentationExternalMetalRenderTarget& target) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ && backend_->update_headless_metal_texture_output(target);
+}
+#endif
+
 void RendererPresentationController::mark_headless_output_displayed(
     void* pixel_buffer) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
@@ -674,7 +682,7 @@ void RendererPresentationController::clear_source_cache(
 }
 
 bool RendererPresentationController::update_source_projection(
-    const WindowsSourceProjection& projection) {
+    const PresentationSourceProjection& projection) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     return backend_ && backend_->update_source_projection(projection);
 }
@@ -718,6 +726,34 @@ bool RendererPresentationController::recover_d3d_device_loss(
     return false;
 }
 
+#endif
+
+#ifdef __APPLE__
+bool RendererPresentationController::update_source_projection(
+    const PresentationSourceProjection& projection) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ && backend_->update_source_projection(projection);
+}
+
+void RendererPresentationController::clear_source_projection() {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (backend_) {
+        backend_->clear_source_projection();
+    }
+}
+
+bool RendererPresentationController::update_external_flutter_metal_surface(
+    const PresentationExternalMetalSurface& surface) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    return backend_ && backend_->update_external_flutter_metal_surface(surface);
+}
+
+void RendererPresentationController::clear_external_flutter_metal_surface() {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (backend_) {
+        backend_->clear_external_flutter_metal_surface();
+    }
+}
 #endif
 
 } // namespace vr

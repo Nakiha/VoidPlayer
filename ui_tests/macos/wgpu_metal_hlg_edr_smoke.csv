@@ -10,15 +10,15 @@
 1.8, DEBUG_NATIVE_COMPOSITOR
 1.82, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationRequest, wgpu-metal
 1.84, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationReason, forced-wgpu-metal-edr
-1.86, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-edr
+1.86, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, renderer-owned-wgpu-edr
 1.88, ASSERT_NATIVE_DIAGNOSTIC_BOOL, macOSPresentationEDROutputEnabled, true
-1.9, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorEDREnabled, true
-1.92, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorVideoPixelFormat, 64RGBAHalf
+1.9, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedEDROutputEnabled, true
+1.92, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedTargetPixelFormat, CAMetalLayerRGBA16Float
 1.93, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
 1.98, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
-2.0, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoSampleCount, 1
-2.02, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoMaxRGBX1000, 1001
-2.04, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoPixelsOver1X1000, 1
+2.0, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedEDRTargetSampleCount, 1
+2.02, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedEDRTargetMaxRGBX1000, 1001
+2.04, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedEDRTargetPixelsOver1X1000, 1
 2.06, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 2.08, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 2.1, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,

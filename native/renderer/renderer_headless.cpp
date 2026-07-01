@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <mutex>
 
@@ -184,6 +185,19 @@ void Renderer::Impl::clear_external_flutter_surface() {
 #endif
 }
 
+#ifdef __APPLE__
+bool Renderer::Impl::update_external_flutter_metal_surface(
+    const PresentationExternalMetalSurface& surface) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    return presentation_.update_external_flutter_metal_surface(surface);
+}
+
+void Renderer::Impl::clear_external_flutter_metal_surface() {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    presentation_.clear_external_flutter_metal_surface();
+}
+#endif
+
 bool Renderer::Impl::draw_current_frame_to_external_d3d12_target(
     const PresentationExternalD3D12RenderTarget& target,
     const char* reason) {
@@ -296,8 +310,8 @@ void Renderer::Impl::clear_source_cache(const char* reason) {
 }
 
 bool Renderer::Impl::update_source_projection(
-    const WindowsSourceProjection& projection) {
-#ifdef _WIN32
+    const PresentationSourceProjection& projection) {
+#if defined(_WIN32) || defined(__APPLE__)
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     return presentation_.update_source_projection(projection);
 #else
@@ -307,7 +321,7 @@ bool Renderer::Impl::update_source_projection(
 }
 
 void Renderer::Impl::clear_source_projection() {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     presentation_.clear_source_projection();
 #endif
@@ -528,6 +542,68 @@ bool Renderer::Impl::install_headless_output_ring(const void* const* pixel_buffe
     }
     return true;
 }
+
+#ifdef __APPLE__
+bool Renderer::Impl::install_headless_metal_texture_output(
+    const PresentationExternalMetalRenderTarget& target) {
+    std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+    if (!surface_state_.headless() || !presentation_.has_backend()) {
+        return false;
+    }
+    const float viewport_left = std::clamp(target.viewport_left, 0.0f, 1.0f);
+    const float viewport_top = std::clamp(target.viewport_top, 0.0f, 1.0f);
+    const float viewport_right =
+        std::clamp(target.viewport_right, viewport_left, 1.0f);
+    const float viewport_bottom =
+        std::clamp(target.viewport_bottom, viewport_top, 1.0f);
+    const bool viewport_valid =
+        viewport_right > viewport_left && viewport_bottom > viewport_top;
+    if (!viewport_valid) {
+        spdlog::warn(
+            "[Renderer] ignoring invalid headless Metal texture output viewport: ({:.4f},{:.4f})-({:.4f},{:.4f})",
+            target.viewport_left,
+            target.viewport_top,
+            target.viewport_right,
+            target.viewport_bottom);
+        return false;
+    }
+    const auto validation = validate_renderer_dimensions(
+        target.width, target.height, "headless Metal texture output dimensions");
+    if (!validation.ok) {
+        spdlog::warn("[Renderer] ignoring invalid headless Metal texture output: {}",
+                     validation.message);
+        return false;
+    }
+    if (!presentation_.update_headless_metal_texture_output(target)) {
+        return false;
+    }
+    const int surface_width = std::max(
+        1,
+        static_cast<int>(std::lround((viewport_right - viewport_left) *
+                                     static_cast<float>(target.width))));
+    const int surface_height = std::max(
+        1,
+        static_cast<int>(std::lround((viewport_bottom - viewport_top) *
+                                     static_cast<float>(target.height))));
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        const auto resize =
+            surface_state_.resize_if_changed(surface_width, surface_height);
+        if (resize.changed) {
+            const auto layout_tracks = track_controller_.layout_track_geometry();
+            layout_state_.adjust_view_offset_for_resize(
+                resize.old_width,
+                resize.old_height,
+                resize.width,
+                resize.height,
+                layout_tracks);
+        }
+        loop_driver_.force_preview_redraw();
+        loop_driver_.reset_presentation_scheduler();
+    }
+    return true;
+}
+#endif
 
 void Renderer::Impl::mark_headless_output_displayed(void* pixel_buffer) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);

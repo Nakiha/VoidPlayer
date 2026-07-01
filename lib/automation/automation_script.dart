@@ -48,6 +48,12 @@ class ScriptWaitTrackCount extends ScriptInstruction {
   const ScriptWaitTrackCount(super.time, this.count, this.timeout);
 }
 
+class ScriptWaitLayoutMode extends ScriptInstruction {
+  final int mode;
+  final Duration timeout;
+  const ScriptWaitLayoutMode(super.time, this.mode, this.timeout);
+}
+
 class ScriptWaitPresentedFrameRange extends ScriptInstruction {
   final int fileId;
   final int minUs;
@@ -507,13 +513,31 @@ ScriptInstruction? _parseInstruction(
           outputPath: args.length >= 2 ? args[1] : null,
         ),
       );
+    case 'CAPTURE_WINDOW_REGION':
+      if (args.length < 6) {
+        log.warning(
+          'CAPTURE_WINDOW_REGION needs name, x, y, width, height and maxSize: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        CaptureWindowRegionAction(
+          args[0],
+          x: int.parse(args[1]),
+          y: int.parse(args[2]),
+          width: int.parse(args[3]),
+          height: int.parse(args[4]),
+          maxSize: int.parse(args[5]),
+          outputPath: args.length >= 7 ? args[6] : null,
+        ),
+      );
     case 'DEBUG_FLUTTER_SURFACE_INFO':
       return ScriptAutomationAction(
         time,
         const DebugFlutterSurfaceInfoAction(),
       );
     case 'DEBUG_NATIVE_COMPOSITOR':
-    case 'DEBUG_NATIVE_COMPOSITOR_SPIKE':
       return ScriptAutomationAction(time, const DebugNativeCompositorAction());
     case 'DEBUG_FAIL_NATIVE_COMPOSITOR':
       return ScriptAutomationAction(
@@ -684,6 +708,17 @@ ScriptInstruction? _parseInstruction(
           args[0] == '1' || args[0].toLowerCase() == 'true',
         ),
       );
+    case 'ASSERT_SETTINGS_VISIBLE':
+      if (args.isEmpty) {
+        log.warning('ASSERT_SETTINGS_VISIBLE needs visible flag: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        AssertSettingsVisible(
+          args[0] == '1' || args[0].toLowerCase() == 'true',
+        ),
+      );
     case 'TOGGLE_ANALYSIS_OVERLAY':
       if (args.isEmpty) {
         log.warning('TOGGLE_ANALYSIS_OVERLAY needs slot index: $rawLine');
@@ -814,6 +849,17 @@ ScriptInstruction? _parseInstruction(
       }
       final timeoutMs = args.length >= 2 ? int.parse(args[1]) : 10000;
       return ScriptWaitTrackCount(
+        time,
+        int.parse(args[0]),
+        Duration(milliseconds: timeoutMs),
+      );
+    case 'WAIT_LAYOUT_MODE':
+      if (args.isEmpty) {
+        log.warning('WAIT_LAYOUT_MODE missing mode argument: $rawLine');
+        return null;
+      }
+      final timeoutMs = args.length >= 2 ? int.parse(args[1]) : 3000;
+      return ScriptWaitLayoutMode(
         time,
         int.parse(args[0]),
         Duration(milliseconds: timeoutMs),

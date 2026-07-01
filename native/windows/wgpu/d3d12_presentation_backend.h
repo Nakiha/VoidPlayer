@@ -6,6 +6,7 @@
 #include "windows/wgpu/wgpu_d3d12_ffi_bridge.h"
 
 #include <functional>
+#include <atomic>
 #include <mutex>
 #include <memory>
 #include <string>
@@ -69,6 +70,7 @@ public:
     const char* last_error() const override { return last_error_.c_str(); }
     bool draw_frame(const RendererDrawSnapshot& snapshot,
                     const PresentationBackendDrawHooks& hooks) override;
+    bool update_sdr_white_level(double nits) override;
 
 private:
     struct ExternalFlutterSurface {
@@ -136,6 +138,7 @@ private:
     bool overlay_layer_active_ = false;
     std::string overlay_layer_mode_ = "inactive";
     std::string overlay_layer_last_error_ = "none";
+    std::atomic<double> sdr_white_level_nits_{80.0};
 };
 
 } // namespace vr

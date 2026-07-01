@@ -204,7 +204,7 @@ void main() {
     expect(controller.calls, const [
       'resize',
       'getLayout',
-      'prepareNativeCompositorSourceCache',
+      'prepareRendererOwnedSourceProjection',
     ]);
     expect(coordinator.viewportWidth, 1516);
     expect(coordinator.viewportHeight, 876);
@@ -337,8 +337,14 @@ void main() {
       await pumpEventQueue();
 
       expect(controller.appliedLayouts, isEmpty);
-      expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
-      expect(controller.transforms, isEmpty);
+      expect(
+        controller.calls,
+        contains('prepareRendererOwnedSourceProjection'),
+      );
+      expect(
+        controller.calls,
+        isNot(contains("setNativeCompositorViewportTransform")),
+      );
       expect(stateStore.value.layout.viewOffsetX, 160);
       expect(stateStore.value.layout.viewOffsetY, -90);
 
@@ -348,18 +354,21 @@ void main() {
       expect(controller.appliedLayouts, hasLength(1));
       expect(controller.appliedLayouts.single.viewOffsetX, 160);
       expect(controller.appliedLayouts.single.viewOffsetY, -90);
-      expect(controller.transforms, isEmpty);
+      expect(
+        controller.calls,
+        isNot(contains("setNativeCompositorViewportTransform")),
+      );
       expect(
         controller.calls,
         isNot(
           contains(
-            'clearNativeCompositorSourceCache:authoritative layout applied',
+            'clearRendererOwnedSourceProjection:authoritative layout applied',
           ),
         ),
       );
       expect(
         controller.calls.where(
-          (call) => call == 'prepareNativeCompositorSourceCache',
+          (call) => call == 'prepareRendererOwnedSourceProjection',
         ),
         hasLength(2),
       );
@@ -399,8 +408,14 @@ void main() {
       await pumpEventQueue();
 
       expect(controller.appliedLayouts, isEmpty);
-      expect(controller.transforms, isEmpty);
-      expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
+      expect(
+        controller.calls,
+        isNot(contains("setNativeCompositorViewportTransform")),
+      );
+      expect(
+        controller.calls,
+        contains('prepareRendererOwnedSourceProjection'),
+      );
     },
   );
 
@@ -434,20 +449,73 @@ void main() {
       coordinator.viewportWidth = 1600;
       coordinator.viewportHeight = 900;
 
+      coordinator.onPointerButton(false, true);
       coordinator.onSplit(0.62);
       await pumpEventQueue();
 
       expect(stateStore.value.layout.splitPos, 0.62);
       expect(controller.appliedLayouts, isEmpty);
-      expect(controller.transforms, isEmpty);
-      expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
+      expect(
+        controller.calls,
+        isNot(contains("setNativeCompositorViewportTransform")),
+      );
+      expect(
+        controller.calls,
+        contains('prepareRendererOwnedSourceProjection'),
+      );
+
+      coordinator.onSplit(0.68);
+      await pumpEventQueue();
+
+      expect(controller.appliedLayouts, isEmpty);
+      expect(
+        controller.calls.where(
+          (call) => call == 'prepareRendererOwnedSourceProjection',
+        ),
+        hasLength(2),
+      );
 
       coordinator.onPointerButton(false, false);
       await coordinator.flushPendingLayout();
 
       expect(controller.appliedLayouts, hasLength(1));
-      expect(controller.appliedLayouts.single.splitPos, 0.62);
-      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
+      expect(controller.appliedLayouts.single.splitPos, 0.68);
+      expect(controller.calls.last, 'prepareRendererOwnedSourceProjection');
+    },
+  );
+
+  test(
+    'renderer-owned layer projection does not require Flutter texture id',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setNativeCompositorActive(true)
+        ..setNativeCompositorRunnerLayerActive(true)
+        ..setPlaying(true)
+        ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()..setTracks([track(1), track(2)]);
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+        sourceProjectionEnabled: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 1600;
+      coordinator.viewportHeight = 900;
+
+      coordinator.onPan(const Offset(120, -60));
+      await pumpEventQueue();
+
+      expect(controller.appliedLayouts, isEmpty);
+      expect(
+        controller.calls,
+        contains('prepareRendererOwnedSourceProjection'),
+      );
     },
   );
 
@@ -475,11 +543,42 @@ void main() {
       coordinator.viewportWidth = 1600;
       coordinator.viewportHeight = 900;
 
-      coordinator.refreshNativeCompositorOverlay();
+      coordinator.refreshRendererOwnedOverlay();
       await pumpEventQueue();
 
       expect(controller.appliedLayouts, isEmpty);
-      expect(controller.calls, ['prepareNativeCompositorSourceCache']);
+      expect(controller.calls, ['prepareRendererOwnedSourceProjection']);
+    },
+  );
+
+  test(
+    'seek preview commit republishes renderer-owned source projection',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setNativeCompositorActive(true)
+        ..setLayout(const LayoutState(order: [1, -1, -1, -1]));
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()..setTracks([track(1)]);
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+        sourceProjectionEnabled: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 1600;
+      coordinator.viewportHeight = 900;
+
+      coordinator.refreshRendererOwnedProjectionAfterSeek();
+      await pumpEventQueue();
+
+      expect(controller.appliedLayouts, isEmpty);
+      expect(controller.calls, ['prepareRendererOwnedSourceProjection']);
     },
   );
 
@@ -506,11 +605,13 @@ void main() {
 
     expect(
       controller.calls,
-      contains('clearNativeCompositorSourceCache:native compositor inactive'),
+      contains(
+        'clearRendererOwnedSourceProjection:renderer-owned source projection inactive',
+      ),
     );
   });
 
-  test('zero tracks clear retained native compositor source cache', () async {
+  test('zero tracks clear retained renderer-owned source projection', () async {
     final stateStore = MainWindowStateStore()
       ..setTextureId(1)
       ..setNativeCompositorActive(true);
@@ -533,7 +634,7 @@ void main() {
 
     expect(
       controller.calls,
-      contains('clearNativeCompositorSourceCache:zero tracks'),
+      contains('clearRendererOwnedSourceProjection:zero tracks'),
     );
   });
 
@@ -567,8 +668,14 @@ void main() {
       // Playing pan subscribes the source cache too (native re-bakes the ring
       // per frame); projection updates immediately and the authoritative native
       // layout is deferred until pointer-up.
-      expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
-      expect(controller.transforms, isEmpty);
+      expect(
+        controller.calls,
+        contains('prepareRendererOwnedSourceProjection'),
+      );
+      expect(
+        controller.calls,
+        isNot(contains("setNativeCompositorViewportTransform")),
+      );
       expect(controller.appliedLayouts, isEmpty);
 
       // Continued panning still does not commit mid-interaction.
@@ -587,11 +694,11 @@ void main() {
         controller.calls,
         isNot(
           contains(
-            'clearNativeCompositorSourceCache:authoritative layout applied',
+            'clearRendererOwnedSourceProjection:authoritative layout applied',
           ),
         ),
       );
-      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
+      expect(controller.calls.last, 'prepareRendererOwnedSourceProjection');
     },
   );
 
@@ -634,17 +741,17 @@ void main() {
         controller.calls,
         isNot(
           contains(
-            'clearNativeCompositorSourceCache:authoritative layout applied',
+            'clearRendererOwnedSourceProjection:authoritative layout applied',
           ),
         ),
       );
-      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
+      expect(controller.calls.last, 'prepareRendererOwnedSourceProjection');
 
       // A pan right after the transition starts a fresh interaction.
       stateStore.setPlaying(true);
       coordinator.onPan(const Offset(20, 0));
       await pumpEventQueue();
-      expect(controller.calls.last, 'prepareNativeCompositorSourceCache');
+      expect(controller.calls.last, 'prepareRendererOwnedSourceProjection');
     },
   );
 
@@ -673,7 +780,10 @@ void main() {
     await coordinator.onPlaybackStateChanged(playing: false);
 
     expect(controller.appliedLayouts, isEmpty);
-    expect(controller.transforms, isEmpty);
+    expect(
+      controller.calls,
+      isNot(contains("setNativeCompositorViewportTransform")),
+    );
   });
 
   test('layout mode changes keep normalized view center stable', () {
@@ -852,7 +962,6 @@ class _FakeNativePlayerController extends NativePlayerController {
   final List<String> calls = [];
   final List<Size> resizes = [];
   final List<LayoutState> appliedLayouts = [];
-  final List<_NativeCompositorTransformCall> transforms = [];
   LayoutState nativeLayout;
   Size currentSize = const Size(100, 100);
   int getLayoutCalls = 0;
@@ -885,33 +994,7 @@ class _FakeNativePlayerController extends NativePlayerController {
   }
 
   @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) async {
-    calls.add('setNativeCompositorViewportTransform');
-    transforms.add(
-      _NativeCompositorTransformCall(
-        enabled: enabled,
-        scaleX: scaleX,
-        scaleY: scaleY,
-        translateX: translateX,
-        translateY: translateY,
-        mode: mode,
-        splitPos: splitPos,
-        activeTrackCount: activeTrackCount,
-      ),
-    );
-  }
-
-  @override
-  Future<void> prepareNativeCompositorSourceCache({
+  Future<void> prepareRendererOwnedSourceProjection({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
     required int mode,
@@ -924,17 +1007,17 @@ class _FakeNativePlayerController extends NativePlayerController {
     required List<double> viewOffsetUvX,
     required List<double> viewOffsetUvY,
   }) async {
-    calls.add('prepareNativeCompositorSourceCache');
+    calls.add('prepareRendererOwnedSourceProjection');
   }
 
   @override
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
 
   @override
-  Future<void> clearNativeCompositorSourceCache({
+  Future<void> clearRendererOwnedSourceProjection({
     required String reason,
   }) async {
-    calls.add('clearNativeCompositorSourceCache:$reason');
+    calls.add('clearRendererOwnedSourceProjection:$reason');
   }
 
   @override
@@ -943,26 +1026,4 @@ class _FakeNativePlayerController extends NativePlayerController {
     getLayoutCalls++;
     return nativeLayout;
   }
-}
-
-class _NativeCompositorTransformCall {
-  final bool enabled;
-  final double scaleX;
-  final double scaleY;
-  final double translateX;
-  final double translateY;
-  final int mode;
-  final double splitPos;
-  final int activeTrackCount;
-
-  const _NativeCompositorTransformCall({
-    required this.enabled,
-    required this.scaleX,
-    required this.scaleY,
-    required this.translateX,
-    required this.translateY,
-    required this.mode,
-    required this.splitPos,
-    required this.activeTrackCount,
-  });
 }

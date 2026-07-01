@@ -91,10 +91,15 @@ class MainWindowController {
   );
   Future<void>? _shutdownFuture;
   AgentProtocolServer? _agentServer;
-  bool _nativeCompositorFrameRequestQueued = false;
-  String? _lastNativeCompositorFrameRequestReason;
-  DateTime? _lastNativeCompositorInteractionBoostAt;
-  static const Duration _nativeCompositorInteractionBoostInterval = Duration(
+  bool _rendererOwnedFlutterSurfaceRequestQueued = false;
+  bool _rendererOwnedFlutterSurfacePostFrameQueued = false;
+  String? _lastRendererOwnedFlutterSurfaceRequestReason;
+  String? _lastRendererOwnedFlutterSurfaceUiSignature;
+  int _rendererOwnedFlutterSurfaceUiDirtyCount = 0;
+  int _rendererOwnedFlutterSurfaceRequestCount = 0;
+  int _rendererOwnedFlutterSurfaceSkippedClockStateCount = 0;
+  DateTime? _lastRendererOwnedFlutterSurfaceBoostAt;
+  static const Duration _rendererOwnedFlutterSurfaceBoostInterval = Duration(
     milliseconds: 100,
   );
 
@@ -236,80 +241,158 @@ class MainWindowController {
 
   void _onStateChanged() {
     quickMarkCoordinator.handleStateChanged();
-    _queueNativeCompositorFlutterFrameRequest(
-      reason: _nativeCompositorFrameRequestReason(),
+    _queueRendererOwnedFlutterSurfaceRequestIfUiChanged();
+  }
+
+  void _queueRendererOwnedFlutterSurfaceRequestIfUiChanged() {
+    if (!(Platform.isWindows || Platform.isMacOS) ||
+        !_nativeCompositorActive ||
+        !player.canAcceptCommands) {
+      _lastRendererOwnedFlutterSurfaceUiSignature = null;
+      return;
+    }
+    final signature = _rendererOwnedFlutterSurfaceUiSignature();
+    if (_lastRendererOwnedFlutterSurfaceUiSignature == signature) {
+      _rendererOwnedFlutterSurfaceSkippedClockStateCount += 1;
+      return;
+    }
+    _lastRendererOwnedFlutterSurfaceUiSignature = signature;
+    _rendererOwnedFlutterSurfaceUiDirtyCount += 1;
+    _queueRendererOwnedFlutterSurfaceRequest(
+      reason: _rendererOwnedFlutterSurfaceRequestReason(signature),
     );
   }
 
-  String _nativeCompositorFrameRequestReason() {
+  String _rendererOwnedFlutterSurfaceUiSignature() {
     final state = stateStore.value;
-    return 'state-changed '
-        'tracks=${trackManager.entries.length} '
-        'sidebar=${state.marksSidebarVisible} '
-        'mediaInfo=${state.mediaInfoVisible} '
-        'profiler=${state.profilerVisible} '
-        'settings=${state.settingsVisible} '
-        'fullscreen=${state.fullScreen} '
-        'viewport=${state.viewportState.status.name} '
-        'surface=${layoutCoordinator.viewportWidth}x'
-        '${layoutCoordinator.viewportHeight}';
+    final trackOrder = trackManager.entries
+        .map((entry) => '${entry.fileId}:${entry.slot}')
+        .join(',');
+    final quickMarks = state.quickMarks
+        .map((mark) => '${mark.id}:${mark.fileId}')
+        .join(',');
+    final quickMarkDraft = state.quickMarkDraft;
+    final thumbnailSignature = state.quickMarkThumbnails.entries
+        .map((entry) => '${entry.key}:${entry.value.status.name}')
+        .join(',');
+    return [
+      'tracks=$trackOrder',
+      'sidebar=${state.marksSidebarVisible}',
+      'sidebarWidth=${state.marksSidebarWidth.round()}',
+      'mediaInfo=${state.mediaInfoVisible}',
+      'profiler=${state.profilerVisible}',
+      'settings=${state.settingsVisible}',
+      'dragging=${state.dragging}',
+      'analysisOverlay=${state.analysisOverlayControlsVisible}',
+      'fullscreen=${state.fullScreen}',
+      'fullscreenControls=${state.fullScreenControlsVisible}',
+      'viewport=${state.viewportState.status.name}',
+      'surface=${layoutCoordinator.viewportWidth}x'
+          '${layoutCoordinator.viewportHeight}',
+      'texture=${state.textureId}',
+      'runnerLayer=${state.nativeCompositorRunnerLayerActive}',
+      'quickMarks=$quickMarks',
+      'quickMarkDraft=${quickMarkDraft == null ? 'none' : '${quickMarkDraft.id}:${quickMarkDraft.fileId}'}',
+      'quickMarkSelected=${state.selectedQuickMarkId}',
+      'quickMarkThumbs=$thumbnailSignature',
+      'timelineControls=${state.timelineControlsWidth.round()}',
+      'loop=${state.loopRangeEnabled}:${state.loopStartUs}:${state.loopEndUs}',
+    ].join('|');
   }
 
-  void _onNativeCompositorResizeCommitted(int width, int height) {
-    _queueNativeCompositorFlutterFrameRequest(
-      reason: 'resize ${width}x$height',
-    );
+  String _rendererOwnedFlutterSurfaceRequestReason(String signature) {
+    return 'ui-surface-changed ${signature.hashCode} '
+        'dirty=$_rendererOwnedFlutterSurfaceUiDirtyCount '
+        'requests=$_rendererOwnedFlutterSurfaceRequestCount '
+        'skippedClock=$_rendererOwnedFlutterSurfaceSkippedClockStateCount';
   }
 
-  void _queueNativeCompositorFlutterFrameRequest({required String reason}) {
-    if (_nativeCompositorFrameRequestQueued ||
-        !Platform.isWindows ||
+  void _onRendererOwnedPresentationResizeCommitted(int width, int height) {
+    _lastRendererOwnedFlutterSurfaceUiSignature = null;
+    _rendererOwnedFlutterSurfaceUiDirtyCount += 1;
+    _queueRendererOwnedFlutterSurfaceRequest(reason: 'resize ${width}x$height');
+  }
+
+  void _queueRendererOwnedFlutterSurfaceRequest({required String reason}) {
+    if (_rendererOwnedFlutterSurfaceRequestQueued ||
+        !(Platform.isWindows || Platform.isMacOS) ||
         !_nativeCompositorActive ||
         !player.canAcceptCommands) {
       if (!_nativeCompositorActive) {
-        _lastNativeCompositorFrameRequestReason = null;
+        _lastRendererOwnedFlutterSurfaceRequestReason = null;
       }
       return;
     }
-    if (_lastNativeCompositorFrameRequestReason == reason) {
+    if (_lastRendererOwnedFlutterSurfaceRequestReason == reason) {
       return;
     }
-    log.fine('[WindowsCompositorDebug] queue Flutter export frame: $reason');
-    _nativeCompositorFrameRequestQueued = true;
-    scheduleMicrotask(() {
-      _nativeCompositorFrameRequestQueued = false;
+    log.fine('[RendererOwnedFlutterSurface] queue export: $reason');
+    _rendererOwnedFlutterSurfaceRequestQueued = true;
+    void request() {
+      _rendererOwnedFlutterSurfaceRequestQueued = false;
       if (!_nativeCompositorActive || !player.canAcceptCommands) {
         if (!_nativeCompositorActive) {
-          _lastNativeCompositorFrameRequestReason = null;
+          _lastRendererOwnedFlutterSurfaceRequestReason = null;
         }
         return;
       }
-      _lastNativeCompositorFrameRequestReason = reason;
+      _lastRendererOwnedFlutterSurfaceRequestReason = reason;
+      _rendererOwnedFlutterSurfaceRequestCount += 1;
       fireAndLog(
-        'request native compositor Flutter frame',
-        player.requestNativeCompositorFlutterFrame(reason: reason),
+        'request renderer-owned Flutter surface',
+        player.requestRendererOwnedFlutterSurface(reason: reason),
       );
-    });
+    }
+
+    if (Platform.isMacOS) {
+      if (_rendererOwnedFlutterSurfacePostFrameQueued) {
+        WidgetsBinding.instance.ensureVisualUpdate();
+        return;
+      }
+      _rendererOwnedFlutterSurfacePostFrameQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _rendererOwnedFlutterSurfacePostFrameQueued = false;
+        request();
+      });
+      WidgetsBinding.instance.ensureVisualUpdate();
+    } else {
+      scheduleMicrotask(request);
+    }
   }
 
-  void _boostNativeCompositorFlutterInteraction({required String reason}) {
-    if (!Platform.isWindows ||
+  void _boostRendererOwnedFlutterSurfaceInteraction({required String reason}) {
+    if (!(Platform.isWindows || Platform.isMacOS) ||
         !_nativeCompositorActive ||
         !player.canAcceptCommands) {
       return;
     }
     final now = DateTime.now();
-    final last = _lastNativeCompositorInteractionBoostAt;
+    final last = _lastRendererOwnedFlutterSurfaceBoostAt;
     if (last != null &&
-        now.difference(last) < _nativeCompositorInteractionBoostInterval) {
+        now.difference(last) < _rendererOwnedFlutterSurfaceBoostInterval) {
       return;
     }
-    _lastNativeCompositorInteractionBoostAt = now;
+    _lastRendererOwnedFlutterSurfaceBoostAt = now;
     fireAndLogFine(
-      'boost native compositor Flutter interaction',
-      player.boostNativeCompositorFlutterInteraction(reason: reason),
+      'boost renderer-owned Flutter surface interaction',
+      player.boostRendererOwnedFlutterSurfaceInteraction(reason: reason),
     );
   }
+
+  Map<String, Object?> rendererOwnedFlutterSurfaceDartDiagnostics() => {
+    'rendererOwnedFlutterSurfaceUiDirtyCount':
+        _rendererOwnedFlutterSurfaceUiDirtyCount,
+    'rendererOwnedFlutterSurfaceRequestCount':
+        _rendererOwnedFlutterSurfaceRequestCount,
+    'rendererOwnedFlutterSurfaceSkippedClockStateCount':
+        _rendererOwnedFlutterSurfaceSkippedClockStateCount,
+    'rendererOwnedFlutterSurfaceRequestQueued':
+        _rendererOwnedFlutterSurfaceRequestQueued,
+    'rendererOwnedFlutterSurfacePostFrameQueued':
+        _rendererOwnedFlutterSurfacePostFrameQueued,
+    'rendererOwnedFlutterSurfaceLastRequestReason':
+        _lastRendererOwnedFlutterSurfaceRequestReason ?? '',
+  };
 
   MainWindowViewModel get viewModel {
     final markView = quickMarkCoordinator.view;
@@ -318,6 +401,8 @@ class MainWindowController {
       layout: _layout,
       textureId: _textureId,
       nativeCompositorActive: _nativeCompositorActive,
+      nativeCompositorRunnerLayerActive:
+          _state.nativeCompositorRunnerLayerActive,
       viewportState: _viewportState,
       tracks: trackManager.entries,
       markView: markView,
@@ -362,7 +447,7 @@ class MainWindowController {
     await player.setNativeAnalysisOverlay(
       analysisGeneration.nativeOverlayStatePayload(),
     );
-    layoutCoordinator.refreshNativeCompositorOverlay();
+    layoutCoordinator.refreshRendererOwnedOverlay();
     await player.applyLayout(_layout);
   }
 

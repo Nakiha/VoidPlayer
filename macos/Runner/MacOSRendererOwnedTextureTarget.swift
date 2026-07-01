@@ -2,80 +2,7 @@ import Cocoa
 import CoreVideo
 import FlutterMacOS
 
-typealias MacOSTextureDiagnostics = (
-  rebuildCount: Int,
-  reuseCount: Int,
-  allocationCount: Int,
-  rebuildReuseCount: Int,
-  rebuildLastAllocatedCount: Int,
-  rebuildLastReusedCount: Int,
-  rebuildLastDurationMs: Double,
-  retiredPixelBufferCount: Int,
-  retiredPixelBufferBytes: Int,
-  prewarmRequestCount: Int,
-  prewarmHitCount: Int,
-  prewarmReadyCount: Int,
-  prewarmDroppedCount: Int,
-  metalUploadCount: Int,
-  metalUploadFailureCount: Int,
-  metalAvailable: Bool,
-  metalTextureCacheAvailable: Bool,
-  metalTextureValid: Bool,
-  metalTextureCreationCount: Int,
-  metalTextureFailureCount: Int,
-  metalTextureLastError: String,
-  rendererOwnedPixelBufferBytes: Int,
-  rendererOwnedPixelBufferCount: Int,
-  inFlightMetalBufferCount: Int,
-  metalBufferExhaustionCount: Int,
-  stableDisplayFallbackActive: Bool,
-  stableDisplayFallbackCount: Int,
-  stableDisplayFallbackPtsUs: Int
-)
-
-struct MacOSTexturePresentationSnapshot {
-  let pixelBuffer: Unmanaged<CVPixelBuffer>
-  let generation: Int
-  let layoutRevision: UInt64
-}
-
-protocol MacOSVideoTexture: FlutterTexture {
-  func resize(width: Int, height: Int) -> Bool
-  func prewarmRendererTarget(width: Int, height: Int)
-  func dimensions() -> (width: Int, height: Int)
-  func presentationGeneration() -> Int
-  func presentationSnapshot() -> MacOSTexturePresentationSnapshot?
-  func clearStableDisplaySnapshot()
-  func captureMetrics() -> (
-    width: Int,
-    height: Int,
-    avgLuma: Double,
-    nonBlackRatio: Double,
-    hash: String,
-    regionAvgLuma: [String: Double],
-    regionNonBlackRatio: [String: Double],
-    overlayLinePairedCenters: Int,
-    overlayLineWeakWhiteCenters: Int,
-    overlayLineBlackOnlyCenters: Int
-  )
-  func diagnostics() -> MacOSTextureDiagnostics
-}
-
-private enum NativePixelBufferState: Equatable {
-  case available
-  // Installed as the native Metal target, but no command is currently writing it.
-  case targetInstalled
-  // A native/Metal command has accepted this buffer and may still complete.
-  case rendering
-  case displayed
-}
-
-enum MacOSNativeFramePublishOutcome: Equatable {
-  case published
-  case alreadyPublished
-}
-
-private struct MacOSStableDisplaySnapshot {
+private struct MacOSRendererTargetDisplaySnapshot {
   let pixelBuffer: CVPixelBuffer
   let width: Int
   let height: Int
@@ -84,7 +11,8 @@ private struct MacOSStableDisplaySnapshot {
   let ptsUs: Int
 }
 
-final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
+final class MacOSRendererOwnedTextureTarget: NSObject, MacOSVideoTexture,
+  MacOSRendererOwnedPresentationTarget {
   private static let rendererOwnedPixelBufferCount = 6
 
   private let lock = NSLock()
@@ -99,42 +27,44 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
   private let hashPrefix: String
   private var pixelBuffers: [CVPixelBuffer] = []
   private var retiredPixelBuffers: [CVPixelBuffer] = []
-  private var pixelBufferStates: [NativePixelBufferState] = []
   private var pixelBufferLayoutRevisions: [UInt64] = []
   private var pixelBufferGeneration = 0
-  private var stableDisplaySnapshot: MacOSStableDisplaySnapshot?
+  private var stableDisplaySnapshot: MacOSRendererTargetDisplaySnapshot?
   private var stableDisplayFallbackActive = false
   private var stableDisplayFallbackCount = 0
   private var displayBufferIndex = 0
-  private var drawBufferIndex = 0
   private var lastCopiedBufferIndex: Int?
   private var lastPublishedNativeUploadCount = 0
   private var lastIgnoredNativeUploadCount = 0
-  private var metalBufferExhaustionCount = 0
-  private var pixelBufferRebuildCount = 0
-  private var pixelBufferReuseCount = 0
-  private var pixelBufferAllocationCount = 0
-  private var pixelBufferRebuildReuseCount = 0
-  private var pixelBufferRebuildLastAllocatedCount = 0
-  private var pixelBufferRebuildLastReusedCount = 0
-  private var pixelBufferRebuildLastDurationNs: UInt64 = 0
-  private var pixelBufferPrewarmRequestCount = 0
-  private var pixelBufferPrewarmHitCount = 0
-  private var pixelBufferPrewarmReadyCount = 0
-  private var pixelBufferPrewarmDroppedCount = 0
-  private var pixelBufferPrewarmKeys: Set<String> = []
-  private var pixelBufferMetalUploadCount = 0
-  private var pixelBufferMetalUploadFailureCount = 0
+  private var rendererTargetRebuildCount = 0
+  private var rendererTargetReuseCount = 0
+  private var rendererTargetAllocationCount = 0
+  private var rendererTargetRebuildReuseCount = 0
+  private var rendererTargetRebuildLastAllocatedCount = 0
+  private var rendererTargetRebuildLastReusedCount = 0
+  private var rendererTargetRebuildLastDurationNs: UInt64 = 0
+  private var rendererTargetPrewarmRequestCount = 0
+  private var rendererTargetPrewarmHitCount = 0
+  private var rendererTargetPrewarmReadyCount = 0
+  private var rendererTargetPrewarmDroppedCount = 0
+  private var rendererTargetPrewarmKeys: Set<String> = []
+  private var rendererTargetUploadCount = 0
+  private var rendererTargetUploadFailureCount = 0
   private var metalTextureValid = false
   private var metalTextureCreationCount = 0
   private var metalTextureFailureCount = 0
   private var metalTextureLastError = ""
   private weak var nativeTargetPlayer: MacOSNativePlayerSession?
 
-  init(nativeWidth: Int, nativeHeight: Int) {
+  init(
+    nativeWidth: Int,
+    nativeHeight: Int,
+    pixelFormatOverride: OSType? = nil
+  ) {
     self.width = nativeWidth
     self.height = nativeHeight
-    self.pixelFormat = MacOSPresentationConfiguration.current.rendererTargetPixelFormat
+    self.pixelFormat =
+      pixelFormatOverride ?? MacOSPresentationConfiguration.current.rendererTargetPixelFormat
     self.presentationTarget = MacOSNativeMetalPresentationTarget(
       width: nativeWidth,
       height: nativeHeight
@@ -211,14 +141,10 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       lock.lock()
       defer { lock.unlock() }
       let completedAddress = info.targetPixelBufferAddress
-      guard let completedIndex = pixelBufferIndexLocked(address: completedAddress) else {
+      guard pixelBufferIndexLocked(address: completedAddress) != nil else {
         throw MacOSNativePlayerError.transientFrameUnavailable(
           "renderer-owned Metal presentation target changed during refresh"
         )
-      }
-      if pixelBufferStates.indices.contains(completedIndex),
-         pixelBufferStates[completedIndex] != .displayed {
-        pixelBufferStates[completedIndex] = .rendering
       }
       let totalEndNs = DispatchTime.now().uptimeNanoseconds
       logUpdateProfiler(
@@ -242,7 +168,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       let transient = (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true
       if !transient {
         lock.lock()
-        pixelBufferMetalUploadFailureCount += 1
+        rendererTargetUploadFailureCount += 1
         lock.unlock()
         NSLog("VoidPlayer macOS renderer-owned Metal refresh failed: \(error)")
       }
@@ -281,7 +207,6 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     let pendingBufferIndex = pixelBufferIndexLocked(
       address: pending.publishToken.pixelBufferAddress
     )
-    let pendingMatchesCurrentDraw = pendingBufferIndex == drawBufferIndex
     let pendingIsDisplayed = pendingBufferIndex == displayBufferIndex
 
     let callbackUploadFloor = max(
@@ -289,8 +214,12 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       lastIgnoredNativeUploadCount
     )
     guard pending.publishToken.nativeUploadCount > callbackUploadFloor ||
-          pendingMatchesCurrentDraw ||
           pendingIsDisplayed else {
+      releaseCompletedNativeTargetLocked(
+        player: player,
+        targetPixelBufferAddress: pending.publishToken.pixelBufferAddress
+      )
+      releaseReusableNativeTargetsLocked(player: player)
       let publishEndNs = DispatchTime.now().uptimeNanoseconds
       logUpdateProfiler(
         result: "already-published",
@@ -319,13 +248,10 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
           )
         }
       }
+      releaseReusableNativeTargetsLocked(player: player)
       return .alreadyPublished
     }
-    guard let publishBufferIndex = pendingBufferIndex,
-          pixelBufferStates.indices.contains(publishBufferIndex),
-          pixelBufferStates[publishBufferIndex] == .rendering ||
-          pixelBufferStates[publishBufferIndex] == .targetInstalled ||
-          pixelBufferStates[publishBufferIndex] == .available else {
+    guard let publishBufferIndex = pendingBufferIndex else {
       logTargetStateLocked(reason: "publish-state-mismatch")
       throw MacOSNativePlayerError.transientFrameUnavailable(
         "renderer-owned Metal presentation target changed before publish"
@@ -367,31 +293,30 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     ) else {
       return
     }
-    if pixelBufferStates.indices.contains(pendingBufferIndex),
-       pixelBufferStates[pendingBufferIndex] == .rendering {
-      pixelBufferStates[pendingBufferIndex] = .available
-      if let buffer = pixelBufferLocked(pendingBufferIndex) {
-        nativeTargetPlayer?.releaseMetalPresentationTarget(buffer)
-      }
+    if pendingBufferIndex != displayBufferIndex,
+       let buffer = pixelBufferLocked(pendingBufferIndex) {
+      nativeTargetPlayer?.releaseMetalPresentationTarget(buffer)
     }
     lastIgnoredNativeUploadCount = max(
       lastIgnoredNativeUploadCount,
       pending.publishToken.nativeUploadCount
     )
-    _ = chooseNextDrawBufferLocked()
+    if let player = nativeTargetPlayer {
+      releaseReusableNativeTargetsLocked(player: player)
+    }
   }
 
   func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>? {
     presentationSnapshot()?.pixelBuffer
   }
 
-  func presentationSnapshot() -> MacOSTexturePresentationSnapshot? {
+  func presentationSnapshot() -> MacOSRendererTargetSnapshot? {
     lock.lock()
     defer { lock.unlock() }
 
     if stableDisplayFallbackActive, let snapshot = stableDisplaySnapshot {
       lastCopiedBufferIndex = nil
-      return MacOSTexturePresentationSnapshot(
+      return MacOSRendererTargetSnapshot(
         pixelBuffer: Unmanaged.passRetained(snapshot.pixelBuffer),
         generation: snapshot.generation,
         layoutRevision: snapshot.layoutRevision
@@ -402,7 +327,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       guard let snapshot = stableDisplaySnapshot else { return nil }
       activateStableDisplayFallbackLocked()
       lastCopiedBufferIndex = nil
-      return MacOSTexturePresentationSnapshot(
+      return MacOSRendererTargetSnapshot(
         pixelBuffer: Unmanaged.passRetained(snapshot.pixelBuffer),
         generation: snapshot.generation,
         layoutRevision: snapshot.layoutRevision
@@ -411,7 +336,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     if lastPublishedNativeUploadCount <= 0, let snapshot = stableDisplaySnapshot {
       activateStableDisplayFallbackLocked()
       lastCopiedBufferIndex = nil
-      return MacOSTexturePresentationSnapshot(
+      return MacOSRendererTargetSnapshot(
         pixelBuffer: Unmanaged.passRetained(snapshot.pixelBuffer),
         generation: snapshot.generation,
         layoutRevision: snapshot.layoutRevision
@@ -423,7 +348,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       lastCopiedBufferIndex = displayBufferIndex
       nativeTargetPlayer?.protectMetalPresentationTarget(pixelBuffer)
     }
-    return MacOSTexturePresentationSnapshot(
+    return MacOSRendererTargetSnapshot(
       pixelBuffer: Unmanaged.passRetained(pixelBuffer),
       generation: lastPublishedNativeUploadCount,
       layoutRevision: layoutRevision
@@ -507,26 +432,26 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     )
   }
 
-  func diagnostics() -> MacOSTextureDiagnostics {
+  func diagnostics() -> MacOSRendererTargetDiagnostics {
     lock.lock()
     defer { lock.unlock() }
 
     return (
-      rebuildCount: pixelBufferRebuildCount,
-      reuseCount: pixelBufferReuseCount,
-      allocationCount: pixelBufferAllocationCount,
-      rebuildReuseCount: pixelBufferRebuildReuseCount,
-      rebuildLastAllocatedCount: pixelBufferRebuildLastAllocatedCount,
-      rebuildLastReusedCount: pixelBufferRebuildLastReusedCount,
-      rebuildLastDurationMs: Double(pixelBufferRebuildLastDurationNs) / 1_000_000.0,
-      retiredPixelBufferCount: retiredPixelBuffers.count,
-      retiredPixelBufferBytes: retiredPixelBufferBytesLocked(),
-      prewarmRequestCount: pixelBufferPrewarmRequestCount,
-      prewarmHitCount: pixelBufferPrewarmHitCount,
-      prewarmReadyCount: pixelBufferPrewarmReadyCount,
-      prewarmDroppedCount: pixelBufferPrewarmDroppedCount,
-      metalUploadCount: pixelBufferMetalUploadCount,
-      metalUploadFailureCount: pixelBufferMetalUploadFailureCount,
+      rebuildCount: rendererTargetRebuildCount,
+      reuseCount: rendererTargetReuseCount,
+      allocationCount: rendererTargetAllocationCount,
+      rebuildReuseCount: rendererTargetRebuildReuseCount,
+      rebuildLastAllocatedCount: rendererTargetRebuildLastAllocatedCount,
+      rebuildLastReusedCount: rendererTargetRebuildLastReusedCount,
+      rebuildLastDurationMs: Double(rendererTargetRebuildLastDurationNs) / 1_000_000.0,
+      retiredCount: retiredPixelBuffers.count,
+      retiredBytes: rendererTargetRetiredBytesLocked(),
+      prewarmRequestCount: rendererTargetPrewarmRequestCount,
+      prewarmHitCount: rendererTargetPrewarmHitCount,
+      prewarmReadyCount: rendererTargetPrewarmReadyCount,
+      prewarmDroppedCount: rendererTargetPrewarmDroppedCount,
+      metalUploadCount: rendererTargetUploadCount,
+      metalUploadFailureCount: rendererTargetUploadFailureCount,
       metalAvailable: presentationTarget.isAvailable(),
       metalTextureCacheAvailable: presentationTarget.isAvailable(),
       metalTextureValid: metalTextureValid,
@@ -535,12 +460,26 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       metalTextureLastError: metalTextureLastError,
       rendererOwnedPixelBufferBytes: rendererOwnedPixelBufferBytesLocked(),
       rendererOwnedPixelBufferCount: pixelBuffers.count,
-      inFlightMetalBufferCount: pixelBufferStates.filter { $0 == .rendering }.count,
-      metalBufferExhaustionCount: metalBufferExhaustionCount,
       stableDisplayFallbackActive: stableDisplayFallbackActive,
       stableDisplayFallbackCount: stableDisplayFallbackCount,
       stableDisplayFallbackPtsUs: stableDisplaySnapshot?.ptsUs ?? -1
     )
+  }
+
+  func rendererOwnedTargetDiagnostics() -> [String: Any] {
+    lock.lock()
+    defer { lock.unlock() }
+
+    let target = pixelBufferLocked(displayBufferIndex) ?? stableDisplaySnapshot?.pixelBuffer
+    let format = target.map { CVPixelBufferGetPixelFormatType($0) } ?? pixelFormat
+    let edrMetrics = Self.measureEDRTarget(pixelBuffer: target, format: format)
+    return [
+      "rendererOwnedTargetPixelFormat": Self.pixelFormatName(format),
+      "rendererOwnedEDROutputEnabled": format == kCVPixelFormatType_64RGBAHalf,
+      "rendererOwnedEDRTargetSampleCount": edrMetrics.sampleCount,
+      "rendererOwnedEDRTargetMaxRGBX1000": edrMetrics.maxRGBX1000,
+      "rendererOwnedEDRTargetPixelsOver1X1000": edrMetrics.pixelsOver1X1000,
+    ]
   }
 
   func clearStableDisplaySnapshot() {
@@ -580,11 +519,11 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     let nextWidth = max(16, targetWidth)
     let nextHeight = max(16, targetHeight)
     lock.lock()
-    pixelBufferPrewarmRequestCount += 1
+    rendererTargetPrewarmRequestCount += 1
     let format = pixelFormat
     let key = "\(nextWidth)x\(nextHeight):\(format)"
     if width == nextWidth && height == nextHeight {
-      pixelBufferPrewarmHitCount += 1
+      rendererTargetPrewarmHitCount += 1
       lock.unlock()
       return
     }
@@ -593,16 +532,16 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       height: nextHeight,
       pixelFormat: format
     ) >= Self.rendererOwnedPixelBufferCount {
-      pixelBufferPrewarmHitCount += 1
+      rendererTargetPrewarmHitCount += 1
       lock.unlock()
       return
     }
-    if pixelBufferPrewarmKeys.contains(key) {
-      pixelBufferPrewarmHitCount += 1
+    if rendererTargetPrewarmKeys.contains(key) {
+      rendererTargetPrewarmHitCount += 1
       lock.unlock()
       return
     }
-    pixelBufferPrewarmKeys.insert(key)
+    rendererTargetPrewarmKeys.insert(key)
     lock.unlock()
 
     prewarmQueue.async { [weak self] in
@@ -629,12 +568,11 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         player: player,
         targetPixelBufferAddress: frameInfo?.targetPixelBufferAddress ?? 0
       )
+      releaseReusableNativeTargetsLocked(player: player)
       return false
     }
     let completedAddress = frameInfo?.targetPixelBufferAddress ?? 0
-    let completedBufferIndex = completedAddress == 0
-      ? drawBufferIndex
-      : pixelBufferIndexLocked(address: completedAddress)
+    let completedBufferIndex = pixelBufferIndexLocked(address: completedAddress)
     guard let publishBufferIndex = completedBufferIndex,
           pixelBufferLocked(publishBufferIndex) != nil else {
       lastIgnoredNativeUploadCount = max(lastIgnoredNativeUploadCount, nativeUploadCount)
@@ -651,17 +589,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
           frameInfo: frameInfo
         )
       }
-      return false
-    }
-    guard pixelBufferStates.indices.contains(publishBufferIndex),
-          pixelBufferStates[publishBufferIndex] == .rendering ||
-          pixelBufferStates[publishBufferIndex] == .targetInstalled ||
-          pixelBufferStates[publishBufferIndex] == .available else {
-      releaseCompletedNativeTargetLocked(
-        player: player,
-        targetPixelBufferAddress: completedAddress
-      )
-      lastIgnoredNativeUploadCount = max(lastIgnoredNativeUploadCount, nativeUploadCount)
+      releaseReusableNativeTargetsLocked(player: player)
       return false
     }
     publishBufferLocked(
@@ -701,10 +629,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         attributes: attributes
       ) else {
         pixelBuffers = []
-        pixelBufferStates = []
         pixelBufferLayoutRevisions = []
         displayBufferIndex = 0
-        drawBufferIndex = 0
         lastCopiedBufferIndex = nil
         metalTextureValid = false
         metalTextureLastError = "failed to allocate renderer-owned CVPixelBuffer"
@@ -720,26 +646,23 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       activateStableDisplayFallbackLocked()
       return
     }
-    pixelBufferRebuildCount += 1
+    rendererTargetRebuildCount += 1
     pixelBufferGeneration &+= 1
-    pixelBufferAllocationCount += allocatedBufferCount
-    pixelBufferRebuildReuseCount += reusedBufferCount
-    pixelBufferRebuildLastAllocatedCount = allocatedBufferCount
-    pixelBufferRebuildLastReusedCount = reusedBufferCount
-    pixelBufferRebuildLastDurationNs = DispatchTime.now().uptimeNanoseconds - rebuildStartNs
+    rendererTargetAllocationCount += allocatedBufferCount
+    rendererTargetRebuildReuseCount += reusedBufferCount
+    rendererTargetRebuildLastAllocatedCount = allocatedBufferCount
+    rendererTargetRebuildLastReusedCount = reusedBufferCount
+    rendererTargetRebuildLastDurationNs = DispatchTime.now().uptimeNanoseconds - rebuildStartNs
 
     retireCurrentPixelBuffersLocked()
     pixelBuffers = nextBuffers
     displayBufferIndex = 0
-    drawBufferIndex = nextBuffers.count > 1 ? 1 : 0
-    pixelBufferStates = Array(repeating: .available, count: nextBuffers.count)
     pixelBufferLayoutRevisions = Array(repeating: 0, count: nextBuffers.count)
-    pixelBufferStates[displayBufferIndex] = .displayed
     lastCopiedBufferIndex = nil
     lastPublishedNativeUploadCount = 0
     lastIgnoredNativeUploadCount = 0
     nativeTargetPlayer = nil
-    validateMetalTextureLocked(buffer: nextBuffers[drawBufferIndex])
+    validateMetalTextureLocked(buffer: nextBuffers[displayBufferIndex])
     activateStableDisplayFallbackLocked()
   }
 
@@ -812,9 +735,9 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
 
     lock.lock()
     defer { lock.unlock() }
-    pixelBufferPrewarmKeys.remove(key)
+    rendererTargetPrewarmKeys.remove(key)
     guard buffers.count == Self.rendererOwnedPixelBufferCount else {
-      pixelBufferPrewarmDroppedCount += 1
+      rendererTargetPrewarmDroppedCount += 1
       return
     }
     if reusablePixelBufferCountLocked(
@@ -822,12 +745,12 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       height: targetHeight,
       pixelFormat: targetPixelFormat
     ) >= Self.rendererOwnedPixelBufferCount {
-      pixelBufferPrewarmHitCount += 1
+      rendererTargetPrewarmHitCount += 1
       return
     }
     appendRetiredPixelBuffersLocked(buffers)
-    pixelBufferAllocationCount += buffers.count
-    pixelBufferPrewarmReadyCount += buffers.count
+    rendererTargetAllocationCount += buffers.count
+    rendererTargetPrewarmReadyCount += buffers.count
   }
 
   private func validateMetalTextureLocked(buffer: CVPixelBuffer) {
@@ -873,7 +796,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
           lastPublishedNativeUploadCount > 0 else {
       return
     }
-    stableDisplaySnapshot = MacOSStableDisplaySnapshot(
+    stableDisplaySnapshot = MacOSRendererTargetDisplaySnapshot(
       pixelBuffer: buffer,
       width: CVPixelBufferGetWidth(buffer),
       height: CVPixelBufferGetHeight(buffer),
@@ -889,7 +812,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     layoutRevision: UInt64,
     frameInfo: MacOSNativeFrameInfo?
   ) {
-    stableDisplaySnapshot = MacOSStableDisplaySnapshot(
+    stableDisplaySnapshot = MacOSRendererTargetDisplaySnapshot(
       pixelBuffer: buffer,
       width: CVPixelBufferGetWidth(buffer),
       height: CVPixelBufferGetHeight(buffer),
@@ -911,28 +834,13 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     stableDisplayFallbackActive = true
   }
 
-  private func pixelBufferStateSummaryLocked() -> String {
-    pixelBufferStates.map { state in
-      switch state {
-      case .available:
-        return "a"
-      case .targetInstalled:
-        return "t"
-      case .rendering:
-        return "r"
-      case .displayed:
-        return "d"
-      }
-    }.joined()
-  }
-
   private func rendererOwnedPixelBufferBytesLocked() -> Int {
     pixelBuffers.reduce(0) { total, buffer in
       total + CVPixelBufferGetBytesPerRow(buffer) * CVPixelBufferGetHeight(buffer)
     }
   }
 
-  private func retiredPixelBufferBytesLocked() -> Int {
+  private func rendererTargetRetiredBytesLocked() -> Int {
     retiredPixelBuffers.reduce(0) { total, buffer in
       total + CVPixelBufferGetBytesPerRow(buffer) * CVPixelBufferGetHeight(buffer)
     }
@@ -945,17 +853,11 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     frameInfo: MacOSNativeFrameInfo?,
     player: MacOSNativePlayerSession
   ) {
-    if pixelBufferStates.indices.contains(displayBufferIndex) {
-      pixelBufferStates[displayBufferIndex] = .available
-    }
     displayBufferIndex = index
-    if pixelBufferStates.indices.contains(displayBufferIndex) {
-      pixelBufferStates[displayBufferIndex] = .displayed
-    }
     lastPublishedNativeUploadCount = max(lastPublishedNativeUploadCount, nativeUploadCount)
     setLayoutRevisionLocked(layoutRevision, for: displayBufferIndex)
-    pixelBufferMetalUploadCount += 1
-    pixelBufferReuseCount += 1
+    rendererTargetUploadCount += 1
+    rendererTargetReuseCount += 1
     if let displayBuffer = pixelBufferLocked(displayBufferIndex) {
       player.markMetalPresentationTargetDisplayed(displayBuffer)
       validateMetalTextureLocked(buffer: displayBuffer)
@@ -966,7 +868,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
         frameInfo: frameInfo
       )
     }
-    _ = chooseNextDrawBufferLocked()
+    releaseReusableNativeTargetsLocked(player: player)
   }
 
   @discardableResult
@@ -993,7 +895,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       maxTrackSlots: maxTrackSlots
     )
     if !installed {
-      pixelBufferMetalUploadFailureCount += 1
+      rendererTargetUploadFailureCount += 1
       logTargetStateLocked(reason: "native-install-ring-returned-false")
     }
     if refresh, installed {
@@ -1012,30 +914,18 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
           let buffer = pixelBufferLocked(index) else {
       return
     }
-    if pixelBufferStates.indices.contains(index),
-       pixelBufferStates[index] == .rendering {
-      pixelBufferStates[index] = .available
-    }
     player.releaseMetalPresentationTarget(buffer)
   }
 
-  @discardableResult
-  private func chooseNextDrawBufferLocked() -> Bool {
-    guard !pixelBuffers.isEmpty else {
-      drawBufferIndex = 0
-      return false
+  private func releaseReusableNativeTargetsLocked(player: MacOSNativePlayerSession) {
+    for index in pixelBuffers.indices {
+      guard index != displayBufferIndex,
+            index != lastCopiedBufferIndex,
+            let buffer = pixelBufferLocked(index) else {
+        continue
+      }
+      player.releaseMetalPresentationTarget(buffer)
     }
-    for index in pixelBuffers.indices
-      where index != displayBufferIndex &&
-        index != lastCopiedBufferIndex &&
-        pixelBufferStates.indices.contains(index) &&
-        pixelBufferStates[index] == .available {
-      drawBufferIndex = index
-      return true
-    }
-    metalBufferExhaustionCount += 1
-    logTargetStateLocked(reason: "buffer-exhausted")
-    return false
   }
 
   private func pixelBufferAddressLocked(_ index: Int) -> UInt {
@@ -1091,21 +981,18 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
 
   private func logTargetStateLocked(reason: String) {
     NSLog(
-      "VoidPlayer macOS renderer target state reason=%@ size=%dx%d format=%u display=%d draw=%d copied=%d states=%@ buffers=%@ published=%d ignored=%d failures=%d exhausted=%d metalValid=%@ metalError=%@",
+      "VoidPlayer macOS renderer target state reason=%@ size=%dx%d format=%u display=%d copied=%d buffers=%@ published=%d ignored=%d failures=%d metalValid=%@ metalError=%@",
       reason,
       width,
       height,
       pixelFormat,
       displayBufferIndex,
-      drawBufferIndex,
       lastCopiedBufferIndex ?? -1,
-      pixelBufferStateSummaryLocked(),
       pixelBuffers.indices.map { String(format: "0x%llx", UInt64(pixelBufferAddressLocked($0))) }
         .joined(separator: ","),
       lastPublishedNativeUploadCount,
       lastIgnoredNativeUploadCount,
-      pixelBufferMetalUploadFailureCount,
-      metalBufferExhaustionCount,
+      rendererTargetUploadFailureCount,
       metalTextureValid ? "true" : "false",
       metalTextureLastError
     )
@@ -1124,7 +1011,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
     let slow = totalNs >= 12_000_000 || requestNs >= 10_000_000 || isError
     guard slow else { return }
     MacOSProfilerLog.log(String(
-      format: "VoidPlayer macOS texture update profiler result=%@ totalMs=%.2f installMs=%.2f requestMs=%.2f publishMs=%.2f timeoutMs=%d ptsUs=%d display=%d draw=%d states=%@",
+      format: "VoidPlayer macOS texture update profiler result=%@ totalMs=%.2f installMs=%.2f requestMs=%.2f publishMs=%.2f timeoutMs=%d ptsUs=%d display=%d",
       result,
       Self.ms(totalNs),
       Self.ms(installNs),
@@ -1132,14 +1019,104 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
       Self.ms(publishNs),
       waitTimeoutMs,
       ptsUs,
-      displayBufferIndex,
-      drawBufferIndex,
-      pixelBufferStateSummaryLocked()
+      displayBufferIndex
     ))
   }
 
   private static func ms(_ ns: UInt64) -> Double {
     Double(ns) / 1_000_000.0
+  }
+
+  private static func pixelFormatName(_ format: OSType) -> String {
+    switch format {
+    case kCVPixelFormatType_32BGRA:
+      return "32BGRA"
+    case kCVPixelFormatType_64RGBAHalf:
+      return "64RGBAHalf"
+    default:
+      return String(format)
+    }
+  }
+
+  private static func measureEDRTarget(
+    pixelBuffer: CVPixelBuffer?,
+    format: OSType
+  ) -> (sampleCount: Int, maxRGBX1000: Int, pixelsOver1X1000: Int) {
+    guard format == kCVPixelFormatType_64RGBAHalf,
+          let pixelBuffer else {
+      return (sampleCount: 0, maxRGBX1000: 0, pixelsOver1X1000: 0)
+    }
+    guard CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else {
+      return (sampleCount: 0, maxRGBX1000: 0, pixelsOver1X1000: 0)
+    }
+    defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+    guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+      return (sampleCount: 0, maxRGBX1000: 0, pixelsOver1X1000: 0)
+    }
+    let width = CVPixelBufferGetWidth(pixelBuffer)
+    let height = CVPixelBufferGetHeight(pixelBuffer)
+    guard width > 0, height > 0 else {
+      return (sampleCount: 0, maxRGBX1000: 0, pixelsOver1X1000: 0)
+    }
+    let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+    let words = baseAddress.assumingMemoryBound(to: UInt16.self)
+    let sampleColumns = min(96, width)
+    let sampleRows = min(96, height)
+    var sampleCount = 0
+    var overOneCount = 0
+    var maxRGB: Float = 0.0
+    for row in 0..<sampleRows {
+      let y = sampleRows == 1 ? 0 : row * (height - 1) / (sampleRows - 1)
+      let rowOffset = y * bytesPerRow / MemoryLayout<UInt16>.stride
+      for column in 0..<sampleColumns {
+        let x = sampleColumns == 1 ? 0 : column * (width - 1) / (sampleColumns - 1)
+        let pixelOffset = rowOffset + x * 4
+        let r = Self.floatFromHalf(words[pixelOffset])
+        let g = Self.floatFromHalf(words[pixelOffset + 1])
+        let b = Self.floatFromHalf(words[pixelOffset + 2])
+        let pixelMax = max(r, max(g, b))
+        maxRGB = max(maxRGB, pixelMax)
+        if pixelMax > 1.0 {
+          overOneCount += 1
+        }
+        sampleCount += 1
+      }
+    }
+    return (
+      sampleCount: sampleCount,
+      maxRGBX1000: Int((maxRGB * 1000.0).rounded()),
+      pixelsOver1X1000: sampleCount > 0 ? overOneCount * 1000 / sampleCount : 0
+    )
+  }
+
+  private static func floatFromHalf(_ value: UInt16) -> Float {
+    let sign = (UInt32(value & 0x8000)) << 16
+    let exponent = Int((value & 0x7C00) >> 10)
+    let mantissa = UInt32(value & 0x03FF)
+    let bits: UInt32
+    if exponent == 0 {
+      if mantissa == 0 {
+        bits = sign
+      } else {
+        var normalizedMantissa = mantissa
+        var normalizedExponent = -14
+        while (normalizedMantissa & 0x0400) == 0 {
+          normalizedMantissa <<= 1
+          normalizedExponent -= 1
+        }
+        normalizedMantissa &= 0x03FF
+        bits = sign |
+          (UInt32(normalizedExponent + 127) << 23) |
+          (normalizedMantissa << 13)
+      }
+    } else if exponent == 0x1F {
+      bits = sign | 0x7F800000 | (mantissa << 13)
+    } else {
+      bits = sign |
+        (UInt32(exponent - 15 + 127) << 23) |
+        (mantissa << 13)
+    }
+    return Float(bitPattern: bits)
   }
 
 }

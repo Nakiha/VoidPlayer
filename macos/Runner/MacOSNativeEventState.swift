@@ -50,8 +50,10 @@ final class MacOSNativeEventState {
     }
   }
 
-  func emitNativeCompositorState(
+  func emitRendererOwnedPresentationState(
     active: Bool,
+    runnerLayerActive: Bool,
+    rendererOwnedActive: Bool,
     requested: Bool,
     edrEnabled: Bool,
     mode: String,
@@ -67,14 +69,16 @@ final class MacOSNativeEventState {
     let payload: [String: Any] = [
       "schemaVersion": 1,
       "sequence": sequence,
-      "type": "nativeCompositorState",
+      "type": "rendererOwnedPresentationState",
       "timestampUs": Int(Date().timeIntervalSince1970 * 1_000_000),
-      "nativeCompositorActive": active,
-      "nativeCompositorRequested": requested,
-      "nativeCompositorEDREnabled": edrEnabled,
-      "nativeCompositorMode": mode,
-      "nativeCompositorReason": reason,
-      "nativeCompositorFailure": failure,
+      "rendererOwnedPresentationActive": active,
+      "rendererOwnedRunnerLayerActive": runnerLayerActive,
+      "rendererOwnedRendererActive": rendererOwnedActive,
+      "rendererOwnedPresentationRequested": requested,
+      "rendererOwnedEDROutputEnabled": edrEnabled,
+      "rendererOwnedPresentationMode": mode,
+      "rendererOwnedPresentationReason": reason,
+      "rendererOwnedPresentationFailure": failure,
     ]
     DispatchQueue.main.async {
       eventSink(payload)

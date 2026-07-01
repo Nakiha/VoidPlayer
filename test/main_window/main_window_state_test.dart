@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:void_player/app_log.dart';
 import 'package:void_player/main_window/main_window_media.dart';
 import 'package:void_player/main_window/main_window_playback.dart';
 import 'package:void_player/main_window/main_window_state.dart';
@@ -17,6 +18,10 @@ import 'package:void_player/viewport/viewport_display_state.dart';
 import 'package:void_player/widgets/controls_bar.dart';
 
 void main() {
+  setUpAll(() async {
+    await initLogging(['--log-level=flutter=OFF']);
+  });
+
   test('MainWindowStateStore skips redundant notifications', () {
     final store = MainWindowStateStore();
     addTearDown(store.dispose);
@@ -116,6 +121,63 @@ void main() {
     expect(store.value.currentPtsUs, 1500000);
     expect(store.value.pendingSeekUs, 1500000);
     expect(store.value.presentedFrameAnchors, isEmpty);
+  });
+
+  test('renderer-owned not-ready presentation state is transient', () {
+    final fixture = _PlaybackFixture();
+    addTearDown(fixture.dispose);
+
+    fixture.store.setViewportState(const ViewportDisplayState.empty());
+
+    fixture.api.emitPresentationState(
+      type: NativePlayerEventType.rendererOwnedPresentationState,
+      requested: true,
+      active: false,
+      failure: 'renderer-owned presentation is not ready',
+      reason: 'auto-unresolved-sdr',
+    );
+
+    expect(fixture.store.value.nativeCompositorActive, isFalse);
+    expect(
+      fixture.store.value.viewportState,
+      const ViewportDisplayState.empty(),
+    );
+
+    fixture.api.emitPresentationState(
+      type: NativePlayerEventType.rendererOwnedPresentationState,
+      requested: true,
+      active: true,
+      rendererActive: true,
+      reason: 'auto-sdr-track',
+    );
+
+    expect(fixture.store.value.nativeCompositorActive, isTrue);
+    expect(
+      fixture.store.value.viewportState,
+      const ViewportDisplayState.empty(),
+    );
+  });
+
+  test('hard presentation failures still surface as viewport errors', () {
+    final fixture = _PlaybackFixture();
+    addTearDown(fixture.dispose);
+
+    fixture.api.emitPresentationState(
+      type: NativePlayerEventType.nativeCompositorState,
+      requested: true,
+      active: false,
+      failure: 'backend unavailable',
+      mode: 'dcomp-native-sdr',
+    );
+
+    expect(
+      fixture.store.value.viewportState.status,
+      ViewportDisplayStatus.error,
+    );
+    expect(
+      fixture.store.value.viewportState.errorText,
+      contains('Native compositor failed: backend unavailable'),
+    );
   });
 
   testWidgets('pending seek suppresses stale presented frame anchors', (
@@ -905,6 +967,47 @@ class _PlaybackApi implements NativePlayerApi {
     );
   }
 
+  void emitPresentationState({
+    required NativePlayerEventType type,
+    required bool requested,
+    required bool active,
+    bool runnerLayerActive = false,
+    bool rendererActive = false,
+    String mode = '',
+    String reason = '',
+    String failure = '',
+  }) {
+    _events.add(
+      NativePlayerEvent(
+        schemaVersion: 1,
+        sequence: 1,
+        rawType: switch (type) {
+          NativePlayerEventType.rendererOwnedPresentationState =>
+            'rendererOwnedPresentationState',
+          NativePlayerEventType.nativeCompositorState =>
+            'nativeCompositorState',
+          _ => '',
+        },
+        type: type,
+        timestampUs: 0,
+        rendererOwnedPresentationRequested: requested,
+        rendererOwnedPresentationActive: active,
+        rendererOwnedRunnerLayerActive: runnerLayerActive,
+        rendererOwnedRendererActive: rendererActive,
+        rendererOwnedPresentationMode: mode,
+        rendererOwnedPresentationReason: reason,
+        rendererOwnedPresentationFailure: failure,
+        nativeCompositorRequested: requested,
+        nativeCompositorActive: active,
+        nativeCompositorRunnerLayerActive: runnerLayerActive,
+        nativeCompositorRendererOwnedActive: rendererActive,
+        nativeCompositorMode: mode,
+        nativeCompositorReason: reason,
+        nativeCompositorFailure: failure,
+      ),
+    );
+  }
+
   void dispose() {
     unawaited(_events.close());
   }
@@ -985,6 +1088,16 @@ class _PlaybackApi implements NativePlayerApi {
   }) async {}
 
   @override
+  Future<void> setRendererOwnedViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  }) async {}
+
+  @override
   Future<void> setNativeCompositorViewportRect({
     required int left,
     required int top,
@@ -995,21 +1108,21 @@ class _PlaybackApi implements NativePlayerApi {
   }) async {}
 
   @override
-  Future<void> requestNativeCompositorFlutterFrame({
+  Future<void> requestRendererOwnedFlutterSurface({
     required String reason,
   }) async {
-    calls.add('requestNativeCompositorFlutterFrame:$reason');
+    calls.add('requestRendererOwnedFlutterSurface:$reason');
   }
 
   @override
-  Future<void> boostNativeCompositorFlutterInteraction({
+  Future<void> boostRendererOwnedFlutterSurfaceInteraction({
     required String reason,
   }) async {
-    calls.add('boostNativeCompositorFlutterInteraction:$reason');
+    calls.add('boostRendererOwnedFlutterSurfaceInteraction:$reason');
   }
 
   @override
-  Future<void> ackNativeCompositorFlutterState({
+  Future<void> ackRendererOwnedFlutterSurfaceState({
     required int serial,
     required bool transparentViewport,
   }) async {}
@@ -1043,19 +1156,7 @@ class _PlaybackApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) async {}
-
-  @override
-  Future<void> prepareNativeCompositorSourceCache({
+  Future<void> prepareRendererOwnedSourceProjection({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
     required int mode,
@@ -1073,7 +1174,7 @@ class _PlaybackApi implements NativePlayerApi {
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
 
   @override
-  Future<void> clearNativeCompositorSourceCache({
+  Future<void> clearRendererOwnedSourceProjection({
     required String reason,
   }) async {}
 
@@ -1122,7 +1223,30 @@ class _PlaybackApi implements NativePlayerApi {
   }
 
   @override
+  Future<ViewportCapture> captureWindowRegion({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    required int maxSize,
+    String? outputPath,
+  }) async {
+    return ViewportCapture(
+      hash: 'window-region-hash',
+      width: width,
+      height: height,
+      avgLuma: 1,
+      nonBlackRatio: 1,
+      outputPath: outputPath,
+    );
+  }
+
+  @override
   Future<Map<String, dynamic>> debugFlutterSurfaceInfo() async => const {};
+
+  @override
+  Future<Map<String, dynamic>> debugRendererOwnedPresentation() async =>
+      const {};
 
   @override
   Future<Map<String, dynamic>> debugNativeCompositor() async => const {};

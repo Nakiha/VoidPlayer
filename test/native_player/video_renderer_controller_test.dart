@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/video_renderer_controller.dart';
 
@@ -136,6 +138,31 @@ void main() {
       ]);
     });
 
+    test(
+      'routes renderer-owned viewport rect to platform presentation API',
+      () async {
+        final api = _FakeNativePlayerApi();
+        final controller = NativePlayerController(api: api);
+
+        await controller.createPlayer(['a.mp4'], width: 320, height: 180);
+        await controller.setRendererOwnedViewportRect(
+          left: 1,
+          top: 2,
+          width: 300,
+          height: 200,
+          surfaceWidth: 800,
+          surfaceHeight: 600,
+        );
+
+        expect(
+          api.calls.last,
+          Platform.isMacOS
+              ? 'setRendererOwnedViewportRect:1,2 300x200 surface=800x600'
+              : 'setNativeCompositorViewportRect:1,2 300x200 surface=800x600',
+        );
+      },
+    );
+
     test('keeps disposed playback commands as no-ops', () async {
       final api = _FakeNativePlayerApi();
       final controller = NativePlayerController(api: api);
@@ -228,6 +255,20 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<void> setRendererOwnedViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  }) async {
+    calls.add(
+      'setRendererOwnedViewportRect:$left,$top ${width}x$height surface=${surfaceWidth}x$surfaceHeight',
+    );
+  }
+
+  @override
   Future<void> setNativeCompositorViewportRect({
     required int left,
     required int top,
@@ -242,25 +283,27 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> requestNativeCompositorFlutterFrame({
+  Future<void> requestRendererOwnedFlutterSurface({
     required String reason,
   }) async {
-    calls.add('requestNativeCompositorFlutterFrame:$reason');
+    calls.add('requestRendererOwnedFlutterSurface:$reason');
   }
 
   @override
-  Future<void> boostNativeCompositorFlutterInteraction({
+  Future<void> boostRendererOwnedFlutterSurfaceInteraction({
     required String reason,
   }) async {
-    calls.add('boostNativeCompositorFlutterInteraction:$reason');
+    calls.add('boostRendererOwnedFlutterSurfaceInteraction:$reason');
   }
 
   @override
-  Future<void> ackNativeCompositorFlutterState({
+  Future<void> ackRendererOwnedFlutterSurfaceState({
     required int serial,
     required bool transparentViewport,
   }) async {
-    calls.add('ackNativeCompositorFlutterState:$serial:$transparentViewport');
+    calls.add(
+      'ackRendererOwnedFlutterSurfaceState:$serial:$transparentViewport',
+    );
   }
 
   @override
@@ -292,23 +335,7 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) async {
-    calls.add(
-      'setNativeCompositorViewportTransform:$enabled scale=$scaleX,$scaleY translate=$translateX,$translateY mode=$mode tracks=$activeTrackCount',
-    );
-  }
-
-  @override
-  Future<void> prepareNativeCompositorSourceCache({
+  Future<void> prepareRendererOwnedSourceProjection({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
     required int mode,
@@ -321,17 +348,17 @@ class _FakeNativePlayerApi implements NativePlayerApi {
     required List<double> viewOffsetUvX,
     required List<double> viewOffsetUvY,
   }) async {
-    calls.add('prepareNativeCompositorSourceCache:${sourceSlots.join('|')}');
+    calls.add('prepareRendererOwnedSourceProjection:${sourceSlots.join('|')}');
   }
 
   @override
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
 
   @override
-  Future<void> clearNativeCompositorSourceCache({
+  Future<void> clearRendererOwnedSourceProjection({
     required String reason,
   }) async {
-    calls.add('clearNativeCompositorSourceCache:$reason');
+    calls.add('clearRendererOwnedSourceProjection:$reason');
   }
 
   @override
@@ -386,8 +413,36 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
+  Future<ViewportCapture> captureWindowRegion({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    required int maxSize,
+    String? outputPath,
+  }) async {
+    calls.add(
+      'captureWindowRegion:$x,$y ${width}x$height max=$maxSize $outputPath',
+    );
+    return ViewportCapture(
+      hash: 'window-region-hash',
+      width: width,
+      height: height,
+      avgLuma: 1,
+      nonBlackRatio: 1,
+      outputPath: outputPath,
+    );
+  }
+
+  @override
   Future<Map<String, dynamic>> debugFlutterSurfaceInfo() async {
     calls.add('debugFlutterSurfaceInfo');
+    return const {};
+  }
+
+  @override
+  Future<Map<String, dynamic>> debugRendererOwnedPresentation() async {
+    calls.add('debugRendererOwnedPresentation');
     return const {};
   }
 

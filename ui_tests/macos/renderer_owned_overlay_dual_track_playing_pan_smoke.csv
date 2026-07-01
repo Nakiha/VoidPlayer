@@ -22,7 +22,7 @@
 7.85, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, drawsPerPresentedFrameRatioX1000, 500, 9000
 7.86, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, viewportCompositeCount, 5, 360
 7.87, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceFrameCacheHitCount, 1
-7.88, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
-7.89, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 2
+7.88, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererTargetExhaustionCount, 0, 0
+7.89, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererTargetInFlightCount, 0, 2
 7.9, ASSERT_CAPTURE_CHANGED, overlay_dual_track_pan_a, overlay_dual_track_pan_b
 8.0, QUIT, 0

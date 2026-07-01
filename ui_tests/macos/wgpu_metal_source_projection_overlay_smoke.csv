@@ -25,19 +25,19 @@
 7.1, DRAG_VIEWPORT, -520, 220, 80, 4
 7.9, CAPTURE_VIEWPORT, wgpu_source_projection_overlay_b
 8.0, ASSERT_CAPTURE_NOT_BLACK, wgpu_source_projection_overlay_b, 0.01, 4.0
-8.1, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProjectionEnabled, true
-8.11, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, true
-8.12, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheTextureCount, 2
-8.13, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheGeneration, 1
-8.14, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorOverlayLineRectCount, 1
-8.15, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceBakedOverlayDisabled, true
-8.16, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorOverlayMatchedTrackCount, 1
+8.1, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedSourceProjectionActive, true
+8.11, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedSourceCacheActive, true
+8.12, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedSourceCacheTextureCount, 2
+8.13, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedSourceCacheGeneration, 1
+8.14, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedOverlayLastLineRectCount, 1
+8.15, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedOverlayLastApplied, true
+8.16, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedOverlayExpectedCount, 1
 8.17, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 8.18, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
-8.19, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorLastCompositeSucceeded, true
-8.20, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorLastFailure,
-8.21, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
-8.22, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 2
-8.23, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorViewportTransformGeneration, 1
-8.24, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorDisplayedLayoutRevision, 1
+8.19, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+8.20, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+8.21, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererTargetExhaustionCount, 0, 0
+8.22, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererTargetInFlightCount, 0, 2
+8.23, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedSourceProjectionUpdateCount, 1
+8.24, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedSourceProjectionConsumeCount, 1
 8.4, QUIT, 0

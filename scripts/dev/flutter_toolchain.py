@@ -28,6 +28,17 @@ class MacOSLocalEngineArtifact:
 
 
 @dataclass(frozen=True)
+class FlutterPlatformProfile:
+    platform: str
+    flutter_version: str
+    framework_revision: str
+    fork_ref: str
+    fork_branch: str
+    fork_commit: str
+    required_patch_markers: tuple[dict[str, str], ...]
+
+
+@dataclass(frozen=True)
 class FlutterToolchainLock:
     name: str
     upstream_flutter: str
@@ -42,6 +53,7 @@ class FlutterToolchainLock:
     default_install_path: Path
     macos_local_engine_artifacts: dict[str, MacOSLocalEngineArtifact]
     required_patch_markers: tuple[dict[str, str], ...]
+    platform_profiles: dict[str, FlutterPlatformProfile]
 
 
 def load_flutter_toolchain_lock() -> FlutterToolchainLock:
@@ -57,18 +69,24 @@ def load_flutter_toolchain_lock() -> FlutterToolchainLock:
             raise RuntimeError(f"{LOCK_PATH}: missing string field {key!r}")
         return value
 
+    def checked_markers_from(value: Any, field: str) -> tuple[dict[str, str], ...]:
+        if not isinstance(value, list):
+            raise RuntimeError(f"{LOCK_PATH}: {field} must be a list")
+        checked_markers: list[dict[str, str]] = []
+        for marker in value:
+            if not isinstance(marker, dict):
+                raise RuntimeError(f"{LOCK_PATH}: {field} entries must be objects")
+            path = marker.get("path")
+            contains = marker.get("contains")
+            if not isinstance(path, str) or not isinstance(contains, str):
+                raise RuntimeError(f"{LOCK_PATH}: {field} path/contains must be strings")
+            checked_markers.append({"path": path, "contains": contains})
+        return tuple(checked_markers)
+
     markers = raw.get("requiredPatchMarkers", [])
     if not isinstance(markers, list):
         raise RuntimeError(f"{LOCK_PATH}: requiredPatchMarkers must be a list")
-    checked_markers: list[dict[str, str]] = []
-    for marker in markers:
-        if not isinstance(marker, dict):
-            raise RuntimeError(f"{LOCK_PATH}: marker entries must be objects")
-        path = marker.get("path")
-        contains = marker.get("contains")
-        if not isinstance(path, str) or not isinstance(contains, str):
-            raise RuntimeError(f"{LOCK_PATH}: marker path/contains must be strings")
-        checked_markers.append({"path": path, "contains": contains})
+    checked_markers = checked_markers_from(markers, "requiredPatchMarkers")
 
     raw_artifacts = raw.get("macosLocalEngineArtifacts", {})
     if raw_artifacts is None:
@@ -96,6 +114,40 @@ def load_flutter_toolchain_lock() -> FlutterToolchainLock:
             sha256=sha256,
         )
 
+    raw_profiles = raw.get("platformProfiles", {})
+    if raw_profiles is None:
+        raw_profiles = {}
+    if not isinstance(raw_profiles, dict):
+        raise RuntimeError(f"{LOCK_PATH}: platformProfiles must be an object")
+    platform_profiles: dict[str, FlutterPlatformProfile] = {}
+    for platform, spec in raw_profiles.items():
+        if not isinstance(platform, str) or not isinstance(spec, dict):
+            raise RuntimeError(f"{LOCK_PATH}: platformProfiles entries must be objects")
+
+        def profile_string(key: str, fallback: str) -> str:
+            value = spec.get(key, fallback)
+            if not isinstance(value, str) or not value:
+                raise RuntimeError(
+                    f"{LOCK_PATH}: platformProfiles.{platform}.{key} must be a string"
+                )
+            return value
+
+        platform_profiles[platform] = FlutterPlatformProfile(
+            platform=platform,
+            flutter_version=profile_string("flutterVersion", require_string("flutterVersion")),
+            framework_revision=profile_string(
+                "frameworkRevision",
+                require_string("frameworkRevision"),
+            ),
+            fork_ref=profile_string("forkRef", require_string("forkRef")),
+            fork_branch=profile_string("forkBranch", require_string("forkBranch")),
+            fork_commit=profile_string("forkCommit", require_string("forkCommit")),
+            required_patch_markers=checked_markers_from(
+                spec.get("requiredPatchMarkers", markers),
+                f"platformProfiles.{platform}.requiredPatchMarkers",
+            ),
+        )
+
     return FlutterToolchainLock(
         name=require_string("name"),
         upstream_flutter=require_string("upstreamFlutter"),
@@ -109,7 +161,8 @@ def load_flutter_toolchain_lock() -> FlutterToolchainLock:
         fork_commit=require_string("forkCommit"),
         default_install_path=ROOT / require_string("defaultInstallPath"),
         macos_local_engine_artifacts=macos_artifacts,
-        required_patch_markers=tuple(checked_markers),
+        required_patch_markers=checked_markers,
+        platform_profiles=platform_profiles,
     )
 
 
@@ -300,8 +353,9 @@ def ensure_flutter_toolchain() -> None:
     print("\nExpected:")
     print(f"  lock: {LOCK_PATH}")
     print(f"  fork: {result.lock.fork_remote}")
-    print(f"  ref:  {result.lock.fork_ref}")
-    print(f"  rev:  {result.lock.framework_revision}")
+    print(f"  platform: {result.profile.platform}")
+    print(f"  ref:  {result.profile.fork_ref}")
+    print(f"  rev:  {result.profile.framework_revision}")
     print("\nFix:")
     print("  python dev.py toolchain bootstrap-flutter")
     print("  python dev.py toolchain doctor")
@@ -317,6 +371,7 @@ def ensure_flutter_toolchain() -> None:
 class ToolchainCheckResult:
     ok: bool
     lock: FlutterToolchainLock
+    profile: FlutterPlatformProfile
     flutter_bin: str
     flutter_root: Path | None
     version: dict[str, Any]
@@ -325,6 +380,7 @@ class ToolchainCheckResult:
 
 def check_flutter_toolchain() -> ToolchainCheckResult:
     lock = load_flutter_toolchain_lock()
+    profile = flutter_platform_profile(lock)
     active_bin = flutter_bin()
     lines: list[str] = []
     version: dict[str, Any] = {}
@@ -333,7 +389,7 @@ def check_flutter_toolchain() -> ToolchainCheckResult:
     resolved_bin = shutil.which(active_bin) or active_bin
     if not Path(resolved_bin).exists() and shutil.which(active_bin) is None:
         lines.append(f"flutter executable not found: {active_bin}")
-        return ToolchainCheckResult(False, lock, active_bin, None, {}, tuple(lines))
+        return ToolchainCheckResult(False, lock, profile, active_bin, None, {}, tuple(lines))
 
     try:
         raw_version = subprocess.check_output(
@@ -345,7 +401,15 @@ def check_flutter_toolchain() -> ToolchainCheckResult:
         version = json.loads(raw_version)
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
         lines.append(f"cannot read flutter --version --machine: {exc}")
-        return ToolchainCheckResult(False, lock, active_bin, None, version, tuple(lines))
+        return ToolchainCheckResult(
+            False,
+            lock,
+            profile,
+            active_bin,
+            None,
+            version,
+            tuple(lines),
+        )
 
     root_value = version.get("flutterRoot")
     if isinstance(root_value, str) and root_value:
@@ -354,7 +418,7 @@ def check_flutter_toolchain() -> ToolchainCheckResult:
         lines.append("flutter --version did not report flutterRoot")
 
     expected_pairs = {
-        "frameworkRevision": lock.framework_revision,
+        "frameworkRevision": profile.framework_revision,
         "engineRevision": lock.engine_revision,
         "dartSdkVersion": lock.dart_sdk_version,
     }
@@ -364,12 +428,13 @@ def check_flutter_toolchain() -> ToolchainCheckResult:
             lines.append(f"{key} mismatch: expected {expected}, got {actual}")
 
     if flutter_root is not None:
-        _check_git_revision(lock, flutter_root, lines)
-        _check_patch_markers(lock, flutter_root, lines)
+        _check_git_revision(profile, flutter_root, lines)
+        _check_patch_markers(profile, flutter_root, lines)
 
     return ToolchainCheckResult(
         ok=not lines,
         lock=lock,
+        profile=profile,
         flutter_bin=active_bin,
         flutter_root=flutter_root,
         version=version,
@@ -383,8 +448,9 @@ def print_flutter_toolchain_doctor() -> None:
     print(f"Lock: {LOCK_PATH}")
     print(f"Flutter bin: {result.flutter_bin}")
     print(f"Flutter root: {result.flutter_root or '<unknown>'}")
+    print(f"Platform profile: {result.profile.platform}")
     print(f"Fork remote: {result.lock.fork_remote}")
-    print(f"Fork ref: {result.lock.fork_ref}")
+    print(f"Fork ref: {result.profile.fork_ref}")
     print(f"Framework revision: {result.version.get('frameworkRevision', '<unknown>')}")
     print(f"Engine revision: {result.version.get('engineRevision', '<unknown>')}")
     print(f"Dart SDK: {result.version.get('dartSdkVersion', '<unknown>')}")
@@ -454,6 +520,7 @@ def _print_ffmpeg_toolchain_doctor() -> None:
 
 def bootstrap_flutter_toolchain() -> None:
     lock = load_flutter_toolchain_lock()
+    profile = flutter_platform_profile(lock)
     target = Path(
         os.environ.get(
             "VOIDPLAYER_FLUTTER_TOOLCHAIN_PATH",
@@ -473,8 +540,8 @@ def bootstrap_flutter_toolchain() -> None:
                 "clone",
                 "--filter=blob:none",
                 "--no-checkout",
-                lock.fork_remote,
-                str(target),
+        lock.fork_remote,
+        str(target),
             ],
             cwd=str(ROOT),
         )
@@ -485,10 +552,10 @@ def bootstrap_flutter_toolchain() -> None:
         _ensure_origin_remote(target, lock.fork_remote)
 
     run(
-        ["git", "fetch", "--tags", "origin", lock.fork_ref, lock.fork_branch],
+        ["git", "fetch", "--tags", "origin", profile.fork_ref, profile.fork_branch],
         cwd=str(target),
     )
-    run(["git", "checkout", "--detach", lock.fork_commit], cwd=str(target))
+    run(["git", "checkout", "--detach", profile.fork_commit], cwd=str(target))
 
     flutter = target / "bin" / _flutter_executable_name()
     env = os.environ.copy()
@@ -507,7 +574,7 @@ def print_flutter_toolchain_lock() -> None:
 
 
 def _check_git_revision(
-    lock: FlutterToolchainLock,
+    profile: FlutterPlatformProfile,
     flutter_root: Path,
     lines: list[str],
 ) -> None:
@@ -521,8 +588,8 @@ def _check_git_revision(
         lines.append(f"cannot read Flutter checkout git revision: {exc}")
         return
 
-    if head != lock.fork_commit:
-        lines.append(f"git HEAD mismatch: expected {lock.fork_commit}, got {head}")
+    if head != profile.fork_commit:
+        lines.append(f"git HEAD mismatch: expected {profile.fork_commit}, got {head}")
 
     try:
         dirty = subprocess.check_output(
@@ -539,11 +606,11 @@ def _check_git_revision(
 
 
 def _check_patch_markers(
-    lock: FlutterToolchainLock,
+    profile: FlutterPlatformProfile,
     flutter_root: Path,
     lines: list[str],
 ) -> None:
-    for marker in lock.required_patch_markers:
+    for marker in profile.required_patch_markers:
         path = flutter_root / marker["path"]
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -575,3 +642,27 @@ def _ensure_origin_remote(target: Path, fork_remote: str) -> None:
 
 def _flutter_executable_name() -> str:
     return "flutter.bat" if sys.platform == "win32" else "flutter"
+
+
+def flutter_platform_name() -> str:
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform == "win32":
+        return "windows"
+    return sys.platform
+
+
+def flutter_platform_profile(lock: FlutterToolchainLock) -> FlutterPlatformProfile:
+    platform = flutter_platform_name()
+    profile = lock.platform_profiles.get(platform)
+    if profile is not None:
+        return profile
+    return FlutterPlatformProfile(
+        platform=platform,
+        flutter_version=lock.flutter_version,
+        framework_revision=lock.framework_revision,
+        fork_ref=lock.fork_ref,
+        fork_branch=lock.fork_branch,
+        fork_commit=lock.fork_commit,
+        required_patch_markers=lock.required_patch_markers,
+    )

@@ -269,6 +269,17 @@ void Renderer::clear_external_flutter_surface() {
     impl_->clear_external_flutter_surface();
 }
 
+#ifdef __APPLE__
+bool Renderer::update_external_flutter_metal_surface(
+    const PresentationExternalMetalSurface& surface) {
+    return impl_->update_external_flutter_metal_surface(surface);
+}
+
+void Renderer::clear_external_flutter_metal_surface() {
+    impl_->clear_external_flutter_metal_surface();
+}
+#endif
+
 bool Renderer::draw_current_frame_to_external_d3d12_target(
     const PresentationExternalD3D12RenderTarget& target,
     const char* reason) {
@@ -285,7 +296,7 @@ void Renderer::clear_source_cache(const char* reason) {
 }
 
 bool Renderer::update_source_projection(
-    const WindowsSourceProjection& projection) {
+    const PresentationSourceProjection& projection) {
     return impl_->update_source_projection(projection);
 }
 
@@ -344,6 +355,13 @@ bool Renderer::install_headless_output_ring(const void* const* pixel_buffers,
                                                height,
                                                max_track_slots);
 }
+
+#ifdef __APPLE__
+bool Renderer::install_headless_metal_texture_output(
+    const PresentationExternalMetalRenderTarget& target) {
+    return impl_->install_headless_metal_texture_output(target);
+}
+#endif
 
 void Renderer::mark_headless_output_displayed(void* pixel_buffer) {
     impl_->mark_headless_output_displayed(pixel_buffer);

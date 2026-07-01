@@ -1,4 +1,4 @@
-# Diagnostic probe for native compositor pacing while toggling the marks sidebar.
+# Diagnostic probe for renderer-owned presentation pacing while toggling the marks sidebar.
 # Prints DEBUG_NATIVE_TIMING around repeated sidebar-driven viewport resizes.
 @WINDOW, 1366, 768
 0.0, SET_DECODE_MODE, preferHardware

@@ -29,8 +29,6 @@ The shared renderer builds a `RendererDrawSnapshot` from the current
   per-track overlay layers during final composite; CU line layers retain
   direction markers and decode them to fixed screen-pixel black-edge/bright-center
   strokes at composite time, so zoom/pan does not re-raster target-size masks;
-  the immediate primitive overlay path is a compatibility/fallback path and must
-  not keep growing as the high-refresh solution;
 - records upload storage, frame PTS, cadence, and failure diagnostics;
 - wakes refresh waiters and asks Swift to mark the Flutter texture available.
 
@@ -39,27 +37,29 @@ The renderer-owned target is a Metal-compatible, IOSurface-backed BGRA
 short locked section. Native owns the wgpu/Metal device bridge,
 `CVMetalTextureCache`, validation, draw, and failure accounting.
 
-## Native Compositor Auto Policy
+## Renderer-Owned Auto Policy
 
-The HDR path uses a native `CAMetalLayer` compositor above Flutter. Flutter still
-owns controls, hit testing, and the transparent viewport hole; the native layer
-draws video underneath and composites the exported Flutter surface back on top.
+The normal macOS path is renderer-owned wgpu-metal presentation into the
+Flutter texture. When a locked Flutter fork exposes the engine surface, Swift
+passes that `MTLTexture` into the native renderer and the final Flutter/video
+composite runs in wgpu, matching the Windows direction of keeping policy out of
+the runner.
 
 On macOS the default request is Auto:
 
-- SDR-only media uses `native-compositor-sdr`: BGRA renderer-owned target,
-  `MTLPixelFormatBGRA8Unorm`, no EDR layer.
-- PQ/HLG media uses `native-compositor-edr` when the display reports potential
-  EDR headroom: `kCVPixelFormatType_64RGBAHalf`, `MTLPixelFormatRGBA16Float`,
-  `wantsExtendedDynamicRangeContent`, and extended linear Display P3.
+- SDR-only media uses the renderer-owned wgpu-metal BGRA target,
+  `MTLPixelFormatBGRA8Unorm`, with no Swift runner compositor layer.
+- PQ/HLG media uses the renderer-owned wgpu-metal EDR target when the display
+  reports potential EDR headroom: `kCVPixelFormatType_64RGBAHalf`,
+  `MTLPixelFormatRGBA16Float`, and extended linear Display P3.
 - If HDR media is opened on a display without EDR headroom, Auto remains on the
-  SDR compositor and reports `macOSPresentationReason=auto-hdr-display-unavailable`.
+  SDR renderer-owned route and reports
+  `macOSPresentationReason=auto-hdr-display-unavailable`.
 
-`VOIDPLAYER_MACOS_PRESENTATION_MODE` can force `flutter-texture-sdr`,
-`native-compositor-sdr`, `native-compositor-edr`, or `wgpu-metal` for diagnostics
-and bisecting. Product defaults should rely on Auto. The renderer-owned macOS
-default now uses the wgpu-metal presentation backend; the legacy Metal shader
-backend has been removed.
+`VOIDPLAYER_MACOS_PRESENTATION_MODE` can force `renderer-owned-wgpu-sdr`,
+`renderer-owned-wgpu-edr`, or `wgpu-metal` for diagnostics and bisecting.
+Product defaults should rely on Auto. The renderer-owned macOS default uses the wgpu-metal
+presentation backend; the legacy Metal shader backend has been removed.
 
 The renderer-owned wgpu/Metal presentation backend keeps the shared renderer,
 playback scheduler, target ring lifecycle, and software package inputs
@@ -165,30 +165,39 @@ Paused, EOF, startup, seek, and step refreshes use the same renderer-owned
 completion path; the renderer still decides whether a tick is skipped, drawn,
 failed, or merged into a newer layout intent.
 
-`VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(...)` and the older
-`VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(...)` compatibility path
-only expose the most recent successful renderer-owned frame information. They
-are not the normal active refresh command.
+`VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(...)` exposes the most
+recent successful renderer-owned frame for diagnostics. Active refresh uses
+`VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(...)`.
 
 ## Viewport Interaction Pipeline (Pan / Zoom)
 
-Interactive pan/zoom in native-compositor mode never waits on a renderer
+Interactive pan/zoom in renderer-owned presentation mode never waits on a renderer
 round-trip per input event. Dart updates the full current layout immediately,
-then pushes the complete source projection to the compositor. The compositor
-therefore has a single projection path: source-resolution RGB buffers plus the
-current layout projection. There is no residual transform, revision-anchored
-clear, or periodic flush loop.
+then pushes the complete source projection to the renderer-owned backend. The
+backend therefore has a single projection path: source-resolution RGB buffers
+plus the current layout projection. There is no residual transform,
+revision-anchored clear, or periodic flush loop.
 
 - **Source projection**: Dart computes per-slot projection values from the
   current `LayoutState` and sends them through
-  `prepareNativeCompositorSourceCache`. Repeated calls with the same track
-  signature update only projection; they do not reallocate source buffers.
-- **Paused sub-mode**: the source ring bakes each track's current frame once
-  into renderer-converted RGB/EDR buffers. Since frames do not advance, that
-  snapshot remains valid for the whole interaction.
-- **Playing sub-mode**: the source ring stays subscribed during interaction
-  and re-bakes from frame callbacks, so newly revealed pixels are available
-  without renderer layout flushes.
+  `prepareRendererOwnedSourceProjection`. The macOS bridge first forwards that
+  projection into the renderer-owned presentation backend. Frame callbacks keep
+  notifying the Flutter texture while source projection and Flutter-surface
+  composition stay in the renderer-owned backend.
+  Source-projection, analysis-overlay, and exported Flutter-surface updates
+  coalesce into renderer-owned refresh requests so paused/default playback does
+  not need a Swift compositor display link to reveal composition changes.
+  The cross-platform renderer boundary carries this as
+  `PresentationSourceProjection`; Windows keeps its older
+  `WindowsSourceProjection` name only as a compatibility alias around the same
+  shared data contract.
+- **Paused sub-mode**: the wgpu-metal backend composites from the retained
+  renderer-owned source package or imported VideoToolbox source planes with the
+  latest projection. The old Swift source ring has been removed.
+- **Playing sub-mode**: frame selection stays media-clock driven in the shared
+  renderer. The wgpu-metal backend retains the latest source inputs and applies
+  layout/projection changes in the final composite; Swift no longer re-bakes a
+  runner-side live source ring once renderer-owned presentation is available.
 - **Commit**: pointer-up applies the authoritative layout to the renderer once,
   then clears the source ring. The fallback renderer-owned viewport target now
   carries the same full layout the compositor was already projecting.
@@ -247,6 +256,13 @@ The macOS runner should report health from native state fields, including:
 - layout intent/present/deferred counters
 - source update, viewport composite, source-cache hit/miss, and ring-pressure
   counters
+- renderer-owned source-cache fields such as `rendererOwnedSourceCacheActive`,
+  `rendererOwnedSourceCacheGeneration`, and
+  `rendererOwnedSourceCacheTextureCount`; macOS UI canaries and performance
+  health should prefer these plus `rendererOwnedSourceCacheHz` /
+  `rendererOwnedSourceProjectionHz` on the default wgpu path
+- renderer-owned composite-refresh counters for source projection, analysis
+  overlay, and Flutter-surface driven redraws
 - async publish active state plus command completion p95/failure counters;
   wgpu-metal maps its waited wgpu queue work to the same diagnostic fields
 - cadence counters such as duplicate PTS, large PTS gaps, host interval samples,

@@ -8,6 +8,7 @@
 #include "renderer/overlay/analysis_overlay_renderer.h"
 #include "renderer/render/presentation_backend_factory.h"
 #include "renderer/render/presentation_package.h"
+#include "renderer/render/presentation_snapshot.h"
 
 #include <CoreVideo/CoreVideo.h>
 #include <Metal/Metal.h>
@@ -16,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -53,6 +55,167 @@ bool wgpu_profiler_enabled() {
            std::strcmp(value, "false") != 0;
   }();
   return enabled;
+}
+
+void log_wgpu_decision(const char* route,
+                       const VPMacOSNativePresentDecisionInfo& decision,
+                       const float* viewport_rect,
+                       int32_t storage,
+                       int32_t output_format,
+                       int32_t output_color_mode,
+                       void* destination_texture) {
+  if (!wgpu_profiler_enabled()) {
+    return;
+  }
+  spdlog::info(
+      "[WgpuMetalProfile] decision route={} dst=0x{:x} storage={} "
+      "output_format={} output_color_mode={} mode={} tracks={} split={:.4f} "
+      "present=[{},{},{},{}] order=[{},{},{},{}] "
+      "src_w=[{},{},{},{}] src_h=[{},{},{},{}] "
+      "transfer=[{},{},{},{}] primaries=[{},{},{},{}] "
+      "viewport=({:.1f},{:.1f},{:.1f},{:.1f}) "
+      "display_x=[{:.4f},{:.4f},{:.4f},{:.4f}] "
+      "display_y=[{:.4f},{:.4f},{:.4f},{:.4f}] "
+      "inv_x=[{:.4f},{:.4f},{:.4f},{:.4f}] "
+      "inv_y=[{:.4f},{:.4f},{:.4f},{:.4f}] "
+      "view_x=[{:.4f},{:.4f},{:.4f},{:.4f}] "
+      "view_y=[{:.4f},{:.4f},{:.4f},{:.4f}]",
+      route ? route : "",
+      pointer_bits(destination_texture),
+      storage,
+      output_format,
+      output_color_mode,
+      decision.mode,
+      decision.track_count,
+      decision.split_pos,
+      decision.frames[0].present,
+      decision.frames[1].present,
+      decision.frames[2].present,
+      decision.frames[3].present,
+      decision.order[0],
+      decision.order[1],
+      decision.order[2],
+      decision.order[3],
+      decision.source_width[0],
+      decision.source_width[1],
+      decision.source_width[2],
+      decision.source_width[3],
+      decision.source_height[0],
+      decision.source_height[1],
+      decision.source_height[2],
+      decision.source_height[3],
+      decision.color_transfer[0],
+      decision.color_transfer[1],
+      decision.color_transfer[2],
+      decision.color_transfer[3],
+      decision.color_primaries[0],
+      decision.color_primaries[1],
+      decision.color_primaries[2],
+      decision.color_primaries[3],
+      viewport_rect ? viewport_rect[0] : 0.0f,
+      viewport_rect ? viewport_rect[1] : 0.0f,
+      viewport_rect ? viewport_rect[2] : 0.0f,
+      viewport_rect ? viewport_rect[3] : 0.0f,
+      decision.display_offset_x[0],
+      decision.display_offset_x[1],
+      decision.display_offset_x[2],
+      decision.display_offset_x[3],
+      decision.display_offset_y[0],
+      decision.display_offset_y[1],
+      decision.display_offset_y[2],
+      decision.display_offset_y[3],
+      decision.inv_display_size_x[0],
+      decision.inv_display_size_x[1],
+      decision.inv_display_size_x[2],
+      decision.inv_display_size_x[3],
+      decision.inv_display_size_y[0],
+      decision.inv_display_size_y[1],
+      decision.inv_display_size_y[2],
+      decision.inv_display_size_y[3],
+      decision.view_offset_uv_x[0],
+      decision.view_offset_uv_x[1],
+      decision.view_offset_uv_x[2],
+      decision.view_offset_uv_x[3],
+      decision.view_offset_uv_y[0],
+      decision.view_offset_uv_y[1],
+      decision.view_offset_uv_y[2],
+      decision.view_offset_uv_y[3]);
+}
+
+void log_cv_pixel_buffer_sample(CVPixelBufferRef pixel_buffer,
+                                bool is_p010,
+                                size_t slot,
+                                const VPMacOSNativePresentDecisionInfo& decision) {
+  if (!wgpu_profiler_enabled() || !pixel_buffer) {
+    return;
+  }
+  static int sample_log_count = 0;
+  if (sample_log_count >= 12) {
+    return;
+  }
+  ++sample_log_count;
+  if (CVPixelBufferLockBaseAddress(pixel_buffer, kCVPixelBufferLock_ReadOnly) !=
+      kCVReturnSuccess) {
+    spdlog::info("[WgpuMetalProfile] cv_sample slot={} lock_failed=true", slot);
+    return;
+  }
+  const int width = static_cast<int>(CVPixelBufferGetWidth(pixel_buffer));
+  const int height = static_cast<int>(CVPixelBufferGetHeight(pixel_buffer));
+  const int y_stride =
+      static_cast<int>(CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 0));
+  const int uv_stride =
+      static_cast<int>(CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 1));
+  const int x = std::clamp(width / 2, 0, std::max(0, width - 1));
+  const int y = std::clamp(height / 2, 0, std::max(0, height - 1));
+  const int uv_x = x / 2;
+  const int uv_y = y / 2;
+  const auto* y_base = static_cast<const uint8_t*>(
+      CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 0));
+  const auto* uv_base = static_cast<const uint8_t*>(
+      CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, 1));
+  uint32_t y_raw = 0;
+  uint32_t u_raw = 0;
+  uint32_t v_raw = 0;
+  if (y_base && uv_base && is_p010) {
+    const auto* y_ptr =
+        reinterpret_cast<const uint16_t*>(y_base + y * y_stride) + x;
+    const auto* uv_ptr =
+        reinterpret_cast<const uint16_t*>(uv_base + uv_y * uv_stride) +
+        uv_x * 2;
+    y_raw = y_ptr[0];
+    u_raw = uv_ptr[0];
+    v_raw = uv_ptr[1];
+  } else if (y_base && uv_base) {
+    y_raw = y_base[y * y_stride + x];
+    u_raw = uv_base[uv_y * uv_stride + uv_x * 2];
+    v_raw = uv_base[uv_y * uv_stride + uv_x * 2 + 1];
+  }
+  CVPixelBufferUnlockBaseAddress(pixel_buffer, kCVPixelBufferLock_ReadOnly);
+  const uint32_t y_10 = is_p010 ? (y_raw >> 6) : y_raw;
+  const uint32_t u_10 = is_p010 ? (u_raw >> 6) : u_raw;
+  const uint32_t v_10 = is_p010 ? (v_raw >> 6) : v_raw;
+  spdlog::info(
+      "[WgpuMetalProfile] cv_sample slot={} p010={} size={}x{} stride={}/{} "
+      "xy={},{} raw_yuv=[{},{},{}] shifted_yuv=[{},{},{}] "
+      "range={} matrix={} transfer={} primaries={}",
+      slot,
+      is_p010,
+      width,
+      height,
+      y_stride,
+      uv_stride,
+      x,
+      y,
+      y_raw,
+      u_raw,
+      v_raw,
+      y_10,
+      u_10,
+      v_10,
+      decision.color_range[slot],
+      decision.color_matrix[slot],
+      decision.color_transfer[slot],
+      decision.color_primaries[slot]);
 }
 
 bool metal_texture_matches_device(id<MTLTexture> texture, void* metal_device) {
@@ -165,6 +328,27 @@ struct SnapshotStorageMix {
   bool any_non_cv_pixel_buffer = false;
 };
 
+struct ExternalFlutterSurfaceSnapshot {
+  void* texture_ref = nullptr;
+  int32_t width = 0;
+  int32_t height = 0;
+  uint64_t frame_generation = 0;
+
+  ExternalFlutterSurfaceSnapshot() = default;
+  ExternalFlutterSurfaceSnapshot(const ExternalFlutterSurfaceSnapshot&) = delete;
+  ExternalFlutterSurfaceSnapshot& operator=(
+      const ExternalFlutterSurfaceSnapshot&) = delete;
+  ~ExternalFlutterSurfaceSnapshot() {
+    if (texture_ref) {
+      CFRelease(texture_ref);
+    }
+  }
+
+  bool valid() const {
+    return texture_ref && width > 0 && height > 0;
+  }
+};
+
 SnapshotStorageMix snapshot_storage_mix(const vr::RendererDrawSnapshot& snapshot) {
   SnapshotStorageMix mix;
   for (const auto& frame : snapshot.decision.frames) {
@@ -251,6 +435,46 @@ struct WgpuOutputTargetDescriptor {
   bool render_supported = false;
 };
 
+bool resolve_metal_texture_target_descriptor(
+    id<MTLTexture> texture,
+    int32_t expected_width,
+    int32_t expected_height,
+    WgpuOutputTargetDescriptor& descriptor,
+    std::string& error) {
+  if (!texture) {
+    error = "wgpu-metal Metal texture target is unavailable";
+    return false;
+  }
+  if (static_cast<int32_t>(texture.width) != expected_width ||
+      static_cast<int32_t>(texture.height) != expected_height) {
+    error =
+        "wgpu-metal Metal texture target dimensions do not match the presentation surface";
+    return false;
+  }
+  switch (texture.pixelFormat) {
+    case MTLPixelFormatBGRA8Unorm:
+      descriptor.metal_pixel_format = MTLPixelFormatBGRA8Unorm;
+      descriptor.ffi_output_format = VP_WGPU_METAL_OUTPUT_FORMAT_BGRA8_UNORM;
+      descriptor.ffi_output_color_mode = VP_WGPU_METAL_OUTPUT_COLOR_MODE_SDR;
+      descriptor.render_target_format = "BGRA8";
+      descriptor.render_color_space = "wgpu-metal-sdr";
+      descriptor.render_supported = true;
+      return true;
+    case MTLPixelFormatRGBA16Float:
+      descriptor.metal_pixel_format = MTLPixelFormatRGBA16Float;
+      descriptor.ffi_output_format = VP_WGPU_METAL_OUTPUT_FORMAT_RGBA16_FLOAT;
+      descriptor.ffi_output_color_mode =
+          VP_WGPU_METAL_OUTPUT_COLOR_MODE_MACOS_EDR;
+      descriptor.render_target_format = "RGBA16Float";
+      descriptor.render_color_space = "wgpu-metal-edr";
+      descriptor.render_supported = true;
+      return true;
+    default:
+      error = "wgpu-metal Metal texture target format is unsupported";
+      return false;
+  }
+}
+
 bool resolve_output_format_descriptor(void* target,
                                       WgpuOutputTargetDescriptor& descriptor,
                                       std::string& error) {
@@ -271,7 +495,8 @@ bool resolve_output_format_descriptor(void* target,
     case kCVPixelFormatType_64RGBAHalf:
       descriptor.metal_pixel_format = MTLPixelFormatRGBA16Float;
       descriptor.ffi_output_format = VP_WGPU_METAL_OUTPUT_FORMAT_RGBA16_FLOAT;
-      descriptor.ffi_output_color_mode = VP_WGPU_METAL_OUTPUT_COLOR_MODE_EDR;
+      descriptor.ffi_output_color_mode =
+          VP_WGPU_METAL_OUTPUT_COLOR_MODE_MACOS_EDR;
       descriptor.render_target_format = "RGBA16Float";
       descriptor.render_color_space = "wgpu-metal-edr";
       descriptor.render_supported = true;
@@ -303,14 +528,12 @@ bool resolve_output_target_descriptor(void* target,
 }
 
 uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
-                                int32_t target_width,
-                                int32_t target_height,
-                                int32_t track_slots) {
+                                int32_t output_format,
+                                int32_t output_color_mode) {
   uint64_t hash = 1469598103934665603ull;
   hash_combine(hash, snapshot.decision.should_present ? 1u : 0u);
-  hash_combine(hash, static_cast<uint64_t>(target_width));
-  hash_combine(hash, static_cast<uint64_t>(target_height));
-  hash_combine(hash, static_cast<uint64_t>(track_slots));
+  hash_combine(hash, static_cast<uint64_t>(output_format));
+  hash_combine(hash, static_cast<uint64_t>(output_color_mode));
   for (size_t slot = 0; slot < snapshot.decision.frames.size(); ++slot) {
     const auto& frame = snapshot.decision.frames[slot];
     hash_combine(hash, static_cast<uint64_t>(slot));
@@ -325,14 +548,36 @@ uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
     hash_combine(hash, static_cast<uint64_t>(frame->pts_us));
     hash_combine(hash, static_cast<uint64_t>(frame->dts_us));
     hash_combine(hash, static_cast<uint64_t>(frame->duration_us));
+    hash_combine(hash, static_cast<uint64_t>(frame->analysis_frame_index));
+    hash_combine(hash, static_cast<uint64_t>(frame->frame_identity_mode));
+    hash_combine(hash, static_cast<uint64_t>(frame->source_packet_index));
+    hash_combine(hash, static_cast<uint64_t>(frame->source_packet_pos));
+    hash_combine(hash, static_cast<uint64_t>(frame->source_packet_pts));
+    hash_combine(hash, static_cast<uint64_t>(frame->source_packet_dts));
     hash_combine(hash, static_cast<uint64_t>(frame->width));
     hash_combine(hash, static_cast<uint64_t>(frame->height));
     hash_combine(hash, static_cast<uint64_t>(frame->storage_kind()));
+    const int color_range = frame->color.range != vr::VIDEO_COLOR_RANGE_UNKNOWN
+        ? frame->color.range
+        : vr::VIDEO_COLOR_RANGE_LIMITED;
+    const int color_matrix = frame->color.matrix != vr::VIDEO_COLOR_MATRIX_UNKNOWN
+        ? frame->color.matrix
+        : vr::default_presentation_color_matrix_for_size(frame->width, frame->height);
+    const int color_transfer =
+        frame->color.transfer != vr::VIDEO_COLOR_TRANSFER_UNKNOWN
+        ? frame->color.transfer
+        : vr::VIDEO_COLOR_TRANSFER_SDR;
+    const int color_primaries =
+        frame->color.primaries != vr::VIDEO_COLOR_PRIMARIES_UNKNOWN
+        ? frame->color.primaries
+        : vr::default_presentation_color_primaries_for_matrix(color_matrix);
+    hash_combine(hash, static_cast<uint64_t>(color_range));
+    hash_combine(hash, static_cast<uint64_t>(color_matrix));
+    hash_combine(hash, static_cast<uint64_t>(color_transfer));
+    hash_combine(hash, static_cast<uint64_t>(color_primaries));
     if (const auto* rgba = frame->cpu_rgba_storage()) {
-      hash_combine(hash, pointer_bits(rgba->data.get()));
       hash_combine(hash, static_cast<uint64_t>(rgba->stride));
     } else if (const auto* nv12 = frame->cpu_nv12_storage()) {
-      hash_combine(hash, pointer_bits(nv12->data.get()));
       hash_combine(hash, static_cast<uint64_t>(nv12->y_stride));
       hash_combine(hash, static_cast<uint64_t>(nv12->uv_stride));
       hash_combine(hash, nv12->is_p010 ? 1u : 0u);
@@ -340,14 +585,12 @@ uint64_t source_frame_signature(const vr::RendererDrawSnapshot& snapshot,
       hash_combine(hash, static_cast<uint64_t>(nv12->coded_height));
     } else if (const auto* planar = frame->cpu_planar_yuv_storage()) {
       for (int plane = 0; plane < 3; ++plane) {
-        hash_combine(hash, pointer_bits(planar->planes[plane]));
         hash_combine(hash, static_cast<uint64_t>(planar->strides[plane]));
         hash_combine(hash, static_cast<uint64_t>(planar->plane_widths[plane]));
         hash_combine(hash, static_cast<uint64_t>(planar->plane_heights[plane]));
       }
       hash_combine(hash, static_cast<uint64_t>(planar->bytes_per_sample));
     } else if (const auto* cv_pixel = frame->cv_pixel_buffer_storage()) {
-      hash_combine(hash, pointer_bits(cv_pixel->pixel_buffer));
       hash_combine(hash, static_cast<uint64_t>(cv_pixel->pixel_format));
       hash_combine(hash, static_cast<uint64_t>(cv_pixel->plane_count));
       hash_combine(hash, cv_pixel->is_p010 ? 1u : 0u);
@@ -424,6 +667,31 @@ void store_wgpu_overlay_primitives(
       WgpuOverlayPrimitiveCacheEntry{key, std::move(result), use_token});
 }
 
+void apply_source_projection_to_macos_decision(
+    const vr::PresentationSourceProjection& projection,
+    VPMacOSNativePresentDecisionInfo& decision) {
+  if (!projection.enabled) {
+    return;
+  }
+  decision.mode = projection.mode;
+  decision.split_pos = projection.split_pos;
+  decision.track_count = std::clamp(
+      projection.active_track_count, 1, static_cast<int>(VPMacOSNativeMaxTracks));
+  for (size_t i = 0; i < VPMacOSNativeMaxTracks; ++i) {
+    const int source_slot = projection.source_order[i];
+    decision.order[i] =
+        source_slot >= 0 && source_slot < static_cast<int>(VPMacOSNativeMaxTracks)
+            ? source_slot
+            : -1;
+    decision.display_offset_x[i] = projection.display_offset_x[i];
+    decision.display_offset_y[i] = projection.display_offset_y[i];
+    decision.inv_display_size_x[i] = projection.inv_display_size_x[i];
+    decision.inv_display_size_y[i] = projection.inv_display_size_y[i];
+    decision.view_offset_uv_x[i] = projection.view_offset_uv_x[i];
+    decision.view_offset_uv_y[i] = projection.view_offset_uv_y[i];
+  }
+}
+
 WgpuOverlayPrimitiveBuildResult build_overlay_primitives_for_wgpu(
     const vr::RendererDrawSnapshot& snapshot,
     const vr::PresentationBackendDrawHooks& hooks) {
@@ -494,6 +762,12 @@ WgpuMetalPresentationBackend::AsyncDrawPending::~AsyncDrawPending() {
   if (destination_texture_ref) {
     CFRelease(destination_texture_ref);
     destination_texture_ref = nullptr;
+  }
+  for (void*& pixel_buffer_ref : source_pixel_buffer_refs) {
+    if (pixel_buffer_ref) {
+      CFRelease(pixel_buffer_ref);
+      pixel_buffer_ref = nullptr;
+    }
   }
   for (void*& texture_ref : source_y_texture_refs) {
     if (texture_ref) {
@@ -590,10 +864,10 @@ bool WgpuMetalPresentationBackend::initialize(const vr::PresentationBackendConfi
     return false;
   }
   texture_cache_ = cache;
-  if (!update_headless_output(config.output,
-                              config.width,
-                              config.height,
-                              config.max_track_slots)) {
+  if (config.output && !update_headless_output(config.output,
+                                               config.width,
+                                               config.height,
+                                               config.max_track_slots)) {
     shutdown();
     return false;
   }
@@ -632,7 +906,16 @@ void WgpuMetalPresentationBackend::shutdown() {
     std::lock_guard<std::mutex> lock(mutex_);
     release_target_texture_cache_locked();
     release_source_texture_cache_locked();
+    if (external_flutter_texture_) {
+      CFRelease(external_flutter_texture_);
+      external_flutter_texture_ = nullptr;
+    }
+    external_flutter_width_ = 0;
+    external_flutter_height_ = 0;
+    external_flutter_pixel_format_ = 0;
+    external_flutter_surface_last_error_ = "cleared";
     draw_target_pixel_buffer_ = nullptr;
+    draw_target_is_metal_texture_ = false;
     target_ring_.clear();
     target_ring_enabled_ = false;
     in_flight_draws_ = 0;
@@ -654,6 +937,7 @@ void WgpuMetalPresentationBackend::shutdown() {
   draw_target_height_ = 0;
   draw_target_output_format_ = 0;
   draw_target_output_color_mode_ = 0;
+  draw_target_is_metal_texture_ = false;
   draw_target_render_format_ = "unknown";
   draw_target_color_space_ = "unknown";
   headless_ = true;
@@ -667,6 +951,7 @@ void WgpuMetalPresentationBackend::shutdown() {
   retained_source_available_ = false;
   retained_source_submitted_generation_ = 0;
   retained_source_committed_generation_ = 0;
+  last_source_signature_ = 0;
   retained_source_frame_info_available_ = false;
   retained_source_frame_info_ = {};
 }
@@ -895,11 +1180,71 @@ bool WgpuMetalPresentationBackend::update_headless_output(void* output,
   draw_target_render_format_ = descriptor.render_target_format;
   draw_target_color_space_ = descriptor.render_color_space;
   draw_target_pixel_buffer_ = output;
+  draw_target_is_metal_texture_ = false;
   width_ = width;
   height_ = height;
   draw_target_width_ = width;
   draw_target_height_ = height;
   draw_target_max_track_slots_ = std::max(1, max_track_slots);
+  last_error_.clear();
+  return metal_device_ && texture_cache_;
+}
+
+bool WgpuMetalPresentationBackend::update_headless_metal_texture_output(
+    const vr::PresentationExternalMetalRenderTarget& target) {
+  if (!target.texture || target.width <= 0 || target.height <= 0) {
+    clear_headless_output();
+    return false;
+  }
+  id<MTLTexture> texture = (__bridge id<MTLTexture>)target.texture;
+  WgpuOutputTargetDescriptor descriptor;
+  std::string target_error;
+  if (!resolve_metal_texture_target_descriptor(texture,
+                                               target.width,
+                                               target.height,
+                                               descriptor,
+                                               target_error)) {
+    set_last_error(target_error.empty()
+                       ? "wgpu-metal Metal texture presentation target is invalid"
+                       : target_error);
+    return false;
+  }
+  if (!metal_texture_matches_device(texture, metal_device_)) {
+    set_last_error(
+        "wgpu-metal Metal texture target device does not match wgpu Metal device");
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  release_target_texture_cache_locked();
+  target_ring_.clear();
+  target_ring_enabled_ = false;
+  displayed_target_address_ = 0;
+  protected_target_address_ = 0;
+  ++target_ring_generation_;
+  draw_target_output_format_ = descriptor.ffi_output_format;
+  draw_target_output_color_mode_ = descriptor.ffi_output_color_mode;
+  draw_target_render_format_ = descriptor.render_target_format;
+  draw_target_color_space_ = descriptor.render_color_space;
+  draw_target_pixel_buffer_ = target.texture;
+  draw_target_is_metal_texture_ = true;
+  width_ = target.width;
+  height_ = target.height;
+  draw_target_width_ = target.width;
+  draw_target_height_ = target.height;
+  draw_target_viewport_left_ = std::clamp(target.viewport_left, 0.0f, 1.0f);
+  draw_target_viewport_top_ = std::clamp(target.viewport_top, 0.0f, 1.0f);
+  draw_target_viewport_right_ =
+      std::clamp(target.viewport_right, draw_target_viewport_left_, 1.0f);
+  draw_target_viewport_bottom_ =
+      std::clamp(target.viewport_bottom, draw_target_viewport_top_, 1.0f);
+  if (draw_target_viewport_right_ <= draw_target_viewport_left_ ||
+      draw_target_viewport_bottom_ <= draw_target_viewport_top_) {
+    draw_target_viewport_left_ = 0.0f;
+    draw_target_viewport_top_ = 0.0f;
+    draw_target_viewport_right_ = 1.0f;
+    draw_target_viewport_bottom_ = 1.0f;
+  }
+  draw_target_max_track_slots_ = std::max(1, target.max_track_slots);
   last_error_.clear();
   return metal_device_ && texture_cache_;
 }
@@ -1002,12 +1347,9 @@ bool WgpuMetalPresentationBackend::update_headless_output_ring(
   if (same_ring) {
     displayed_target_address_ = displayed_address;
     protected_target_address_ = protected_address;
-    target_ring_enabled_ = target_ring_.size() >= 2;
-    draw_target_pixel_buffer_ = target_ring_enabled_
-                                    ? nullptr
-                                    : (target_ring_.empty()
-                                           ? nullptr
-                                           : target_ring_.front().pixel_buffer);
+    target_ring_enabled_ = !target_ring_.empty();
+    draw_target_pixel_buffer_ = nullptr;
+    draw_target_is_metal_texture_ = false;
     for (auto& slot : target_ring_) {
       if (slot.state == TargetState::InFlight) {
         continue;
@@ -1033,9 +1375,9 @@ bool WgpuMetalPresentationBackend::update_headless_output_ring(
   target_ring_ = std::move(next_ring);
   displayed_target_address_ = displayed_address;
   protected_target_address_ = protected_address;
-  target_ring_enabled_ = target_ring_.size() >= 2;
-  draw_target_pixel_buffer_ = target_ring_enabled_ ? nullptr
-                                                   : target_ring_.front().pixel_buffer;
+  target_ring_enabled_ = !target_ring_.empty();
+  draw_target_pixel_buffer_ = nullptr;
+  draw_target_is_metal_texture_ = false;
   draw_target_output_format_ = ring_descriptor.ffi_output_format;
   draw_target_output_color_mode_ = ring_descriptor.ffi_output_color_mode;
   draw_target_render_format_ = ring_descriptor.render_target_format;
@@ -1044,6 +1386,10 @@ bool WgpuMetalPresentationBackend::update_headless_output_ring(
   height_ = height;
   draw_target_width_ = width;
   draw_target_height_ = height;
+  draw_target_viewport_left_ = 0.0f;
+  draw_target_viewport_top_ = 0.0f;
+  draw_target_viewport_right_ = 1.0f;
+  draw_target_viewport_bottom_ = 1.0f;
   draw_target_max_track_slots_ = clamped_track_slots;
   last_error_.clear();
   return metal_device_ && texture_cache_;
@@ -1126,6 +1472,7 @@ void WgpuMetalPresentationBackend::clear_headless_output() {
   std::lock_guard<std::mutex> lock(mutex_);
   release_target_texture_cache_locked();
   draw_target_pixel_buffer_ = nullptr;
+  draw_target_is_metal_texture_ = false;
   target_ring_.clear();
   target_ring_enabled_ = false;
   in_flight_draws_ = 0;
@@ -1134,10 +1481,91 @@ void WgpuMetalPresentationBackend::clear_headless_output() {
   protected_target_address_ = 0;
   draw_target_width_ = 0;
   draw_target_height_ = 0;
+  draw_target_viewport_left_ = 0.0f;
+  draw_target_viewport_top_ = 0.0f;
+  draw_target_viewport_right_ = 1.0f;
+  draw_target_viewport_bottom_ = 1.0f;
   draw_target_output_format_ = 0;
   draw_target_output_color_mode_ = 0;
   draw_target_render_format_ = "unknown";
   draw_target_color_space_ = "unknown";
+}
+
+void* WgpuMetalPresentationBackend::native_render_device() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return metal_device_;
+}
+
+bool WgpuMetalPresentationBackend::update_external_flutter_metal_surface(
+    const vr::PresentationExternalMetalSurface& surface) {
+  if (!surface.texture || surface.width <= 0 || surface.height <= 0) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    external_flutter_surface_last_error_ = "invalid-arguments";
+    return false;
+  }
+  id<MTLTexture> texture = (__bridge id<MTLTexture>)surface.texture;
+  if (!texture) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    external_flutter_surface_last_error_ = "invalid-texture";
+    return false;
+  }
+  if (texture.pixelFormat != MTLPixelFormatBGRA8Unorm ||
+      surface.pixel_format != static_cast<uint64_t>(MTLPixelFormatBGRA8Unorm)) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    external_flutter_surface_last_error_ = "unsupported-format";
+    return false;
+  }
+  if (texture.width != static_cast<NSUInteger>(surface.width) ||
+      texture.height != static_cast<NSUInteger>(surface.height)) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    external_flutter_surface_last_error_ = "dimension-mismatch";
+    return false;
+  }
+  if (!metal_texture_matches_device(texture, metal_device_)) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    external_flutter_surface_last_error_ = "device-mismatch";
+    return false;
+  }
+
+  void* retained_texture = (__bridge_retained void*)texture;
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (external_flutter_texture_) {
+    CFRelease(external_flutter_texture_);
+  }
+  external_flutter_texture_ = retained_texture;
+  external_flutter_width_ = surface.width;
+  external_flutter_height_ = surface.height;
+  external_flutter_pixel_format_ = surface.pixel_format;
+  external_flutter_surface_generation_ = surface.frame_generation;
+  ++external_flutter_surface_update_count_;
+  external_flutter_surface_last_error_ = "none";
+  return true;
+}
+
+void WgpuMetalPresentationBackend::clear_external_flutter_metal_surface() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (external_flutter_texture_) {
+    CFRelease(external_flutter_texture_);
+    external_flutter_texture_ = nullptr;
+  }
+  external_flutter_width_ = 0;
+  external_flutter_height_ = 0;
+  external_flutter_pixel_format_ = 0;
+  external_flutter_surface_last_error_ = "cleared";
+}
+
+bool WgpuMetalPresentationBackend::update_source_projection(
+    const vr::PresentationSourceProjection& projection) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  source_projection_ = projection;
+  source_projection_.enabled = projection.enabled;
+  ++source_projection_update_count_;
+  return source_projection_.enabled;
+}
+
+void WgpuMetalPresentationBackend::clear_source_projection() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  source_projection_ = {};
 }
 
 vr::PresentationBackendStats WgpuMetalPresentationBackend::presentation_stats() const {
@@ -1167,6 +1595,16 @@ vr::PresentationBackendStats WgpuMetalPresentationBackend::presentation_stats() 
   stats.metal_buffer_exhaustion_count = target_ring_backpressure_count_;
   stats.metal_command_completion_p95_us = metal_command_completion_p95_us_;
   stats.metal_command_failure_count = metal_command_failure_count_;
+  stats.wgpu_compose_total_p95_us = wgpu_compose_total_p95_us_;
+  stats.wgpu_compose_pre_render_p95_us = wgpu_compose_pre_render_p95_us_;
+  stats.wgpu_compose_import_p95_us = wgpu_compose_import_p95_us_;
+  stats.wgpu_compose_prepare_p95_us = wgpu_compose_prepare_p95_us_;
+  stats.wgpu_compose_overlay_encode_p95_us =
+      wgpu_compose_overlay_encode_p95_us_;
+  stats.wgpu_compose_bind_group_p95_us = wgpu_compose_bind_group_p95_us_;
+  stats.wgpu_compose_pass_encode_p95_us = wgpu_compose_pass_encode_p95_us_;
+  stats.wgpu_compose_submit_p95_us = wgpu_compose_submit_p95_us_;
+  stats.wgpu_compose_cpu_render_p95_us = wgpu_compose_cpu_render_p95_us_;
   stats.async_metal_publish_active = 1;
   stats.overlay_last_expected = overlay_last_expected_ ? 1 : 0;
   stats.overlay_last_applied = overlay_last_applied_ ? 1 : 0;
@@ -1209,6 +1647,7 @@ vr::PresentationBackendDiagnostics WgpuMetalPresentationBackend::diagnostics() c
       ? static_cast<int32_t>(target_ring_.size())
       : (draw_target_pixel_buffer_ ? 1 : 0);
   diagnostics.source_cache_active = retained_source_available_;
+  diagnostics.source_cache_format = "wgpu-owned-ring";
   diagnostics.source_cache_texture_count =
       static_cast<int32_t>(profiler.imported_texture_cache_size);
   diagnostics.source_cache_generation =
@@ -1217,6 +1656,21 @@ vr::PresentationBackendDiagnostics WgpuMetalPresentationBackend::diagnostics() c
       profiler.destination_import_count + profiler.source_import_count;
   diagnostics.source_cache_backpressure_count =
       profiler.imported_texture_cache_eviction_count;
+  diagnostics.source_projection_active = source_projection_.enabled;
+  diagnostics.source_projection_update_count =
+      source_projection_update_count_;
+  diagnostics.source_projection_consume_count =
+      source_projection_consume_count_;
+  diagnostics.external_flutter_surface_generation =
+      external_flutter_surface_generation_;
+  diagnostics.external_flutter_surface_consumed_generation =
+      external_flutter_surface_consumed_generation_;
+  diagnostics.external_flutter_surface_update_count =
+      external_flutter_surface_update_count_;
+  diagnostics.external_flutter_surface_consume_count =
+      external_flutter_surface_consume_count_;
+  diagnostics.external_flutter_surface_last_error =
+      external_flutter_surface_last_error_;
   diagnostics.headless = headless_;
   return diagnostics;
 }
@@ -1235,9 +1689,18 @@ bool WgpuMetalPresentationBackend::capture_front_buffer(std::vector<uint8_t>& bg
                                                         int& width,
                                                         int& height) {
   void* target = nullptr;
+  bool target_is_metal_texture = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     target = capture_target_locked();
+    target_is_metal_texture = draw_target_is_metal_texture_;
+  }
+  if (target_is_metal_texture) {
+    set_last_error("wgpu-metal capture is unavailable for direct Metal texture targets");
+    bgra.clear();
+    width = 0;
+    height = 0;
+    return false;
   }
   auto* pixel_buffer = as_pixel_buffer(target);
   if (!pixel_buffer ||
@@ -1297,9 +1760,15 @@ bool WgpuMetalPresentationBackend::capture_front_buffer_region(
     return false;
   }
   void* target = nullptr;
+  bool target_is_metal_texture = false;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     target = capture_target_locked();
+    target_is_metal_texture = draw_target_is_metal_texture_;
+  }
+  if (target_is_metal_texture) {
+    set_last_error("wgpu-metal capture is unavailable for direct Metal texture targets");
+    return false;
   }
   auto* pixel_buffer = as_pixel_buffer(target);
   if (!pixel_buffer ||
@@ -1363,12 +1832,14 @@ bool WgpuMetalPresentationBackend::draw_frame(
   }
   TargetAcquireResult target_lease;
   void* target = nullptr;
+  bool target_is_metal_texture = false;
   bool target_acquired = false;
   std::string acquire_error;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     target_lease = acquire_draw_target_locked(hooks.draw_source);
     target = target_lease.pixel_buffer;
+    target_is_metal_texture = draw_target_is_metal_texture_;
     target_acquired = target != nullptr;
     acquire_error = last_error_;
   }
@@ -1398,12 +1869,27 @@ bool WgpuMetalPresentationBackend::draw_frame(
   }
   WgpuOutputTargetDescriptor output_target;
   std::string target_error;
-  if (!resolve_output_target_descriptor(target,
-                                        draw_target_width_,
-                                        draw_target_height_,
-                                        output_target,
-                                        target_error)) {
-    return fail_after_target_acquire(target_error);
+  if (target_is_metal_texture) {
+    id<MTLTexture> texture = (__bridge id<MTLTexture>)target;
+    if (!resolve_metal_texture_target_descriptor(texture,
+                                                 draw_target_width_,
+                                                 draw_target_height_,
+                                                 output_target,
+                                                 target_error) ||
+        !metal_texture_matches_device(texture, metal_device_)) {
+      return fail_after_target_acquire(
+          target_error.empty()
+              ? "wgpu-metal Metal texture presentation target is invalid"
+              : target_error);
+    }
+  } else {
+    if (!resolve_output_target_descriptor(target,
+                                          draw_target_width_,
+                                          draw_target_height_,
+                                          output_target,
+                                          target_error)) {
+      return fail_after_target_acquire(target_error);
+    }
   }
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -1412,12 +1898,125 @@ bool WgpuMetalPresentationBackend::draw_frame(
     draw_target_render_format_ = output_target.render_target_format;
     draw_target_color_space_ = output_target.render_color_space;
   }
+  const float viewport_left =
+      std::clamp(draw_target_viewport_left_, 0.0f, 1.0f);
+  const float viewport_top =
+      std::clamp(draw_target_viewport_top_, 0.0f, 1.0f);
+  const float viewport_right =
+      std::clamp(draw_target_viewport_right_, viewport_left, 1.0f);
+  const float viewport_bottom =
+      std::clamp(draw_target_viewport_bottom_, viewport_top, 1.0f);
+  const int32_t viewport_width = std::max(
+      1,
+      static_cast<int32_t>(std::lround(
+          (viewport_right - viewport_left) *
+          static_cast<float>(draw_target_width_))));
+  const int32_t viewport_height = std::max(
+      1,
+      static_cast<int32_t>(std::lround(
+          (viewport_bottom - viewport_top) *
+          static_cast<float>(draw_target_height_))));
+  const float viewport_rect_pixels[4] = {
+      viewport_left * static_cast<float>(draw_target_width_),
+      viewport_top * static_cast<float>(draw_target_height_),
+      static_cast<float>(viewport_width),
+      static_cast<float>(viewport_height),
+  };
+  auto apply_viewport_rect = [&](auto& request) {
+    request.viewport_left = viewport_left;
+    request.viewport_top = viewport_top;
+    request.viewport_right = viewport_right;
+    request.viewport_bottom = viewport_bottom;
+  };
+  auto resolve_destination_texture =
+      [&](CVMetalTextureRef& destination_ref,
+          void*& destination_texture,
+          std::string& destination_error) -> bool {
+    destination_ref = nullptr;
+    destination_texture = nullptr;
+    id<MTLTexture> metal_texture = nil;
+    if (target_is_metal_texture) {
+      metal_texture = (__bridge id<MTLTexture>)target;
+    } else {
+      destination_ref = static_cast<CVMetalTextureRef>(cached_target_texture_ref(
+          target,
+          static_cast<uint64_t>(output_target.metal_pixel_format),
+          draw_target_width_,
+          draw_target_height_,
+          destination_error));
+      if (!destination_ref) {
+        if (destination_error.empty()) {
+          destination_error = "wgpu-metal failed to wrap target CVPixelBuffer";
+        }
+        return false;
+      }
+      metal_texture = CVMetalTextureGetTexture(destination_ref);
+    }
+    if (!metal_texture_matches_device(metal_texture, metal_device_)) {
+      if (destination_ref) {
+        CFRelease(destination_ref);
+        destination_ref = nullptr;
+      }
+      destination_error =
+          "wgpu-metal destination texture device does not match wgpu Metal device";
+      return false;
+    }
+    destination_texture = (__bridge void*)metal_texture;
+    return true;
+  };
+  ExternalFlutterSurfaceSnapshot flutter_surface;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (external_flutter_texture_ &&
+        external_flutter_width_ > 0 &&
+        external_flutter_height_ > 0 &&
+        external_flutter_pixel_format_ ==
+            static_cast<uint64_t>(MTLPixelFormatBGRA8Unorm)) {
+      flutter_surface.texture_ref =
+          const_cast<void*>(CFRetain(external_flutter_texture_));
+      flutter_surface.width = external_flutter_width_;
+      flutter_surface.height = external_flutter_height_;
+      flutter_surface.frame_generation = external_flutter_surface_generation_;
+    }
+  }
+  auto apply_external_flutter_surface = [&](auto& request) {
+    if (!flutter_surface.valid()) {
+      return;
+    }
+    request.flutter_mtl_texture = flutter_surface.texture_ref;
+    request.flutter_width = flutter_surface.width;
+    request.flutter_height = flutter_surface.height;
+  };
+  auto mark_external_flutter_surface_consumed = [&]() {
+    if (!flutter_surface.valid()) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    external_flutter_surface_consumed_generation_ =
+        flutter_surface.frame_generation;
+    ++external_flutter_surface_consume_count_;
+    external_flutter_surface_last_error_ = "none";
+  };
+  auto apply_source_projection = [&](VPMacOSNativePresentDecisionInfo& decision) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!source_projection_.enabled) {
+      return;
+    }
+    apply_source_projection_to_macos_decision(source_projection_, decision);
+    ++source_projection_consume_count_;
+  };
 
   const int32_t track_slots = std::clamp(draw_target_max_track_slots_,
                                          1,
                                          static_cast<int>(VPMacOSNativeMaxTracks));
   const auto source_metrics = record_source_metrics(
-      snapshot, hooks, draw_target_width_, draw_target_height_, track_slots);
+      snapshot,
+      hooks,
+      viewport_width,
+      viewport_height,
+      track_slots,
+      output_target.ffi_output_format,
+      output_target.ffi_output_color_mode);
   bool retained_source_available = false;
   int32_t retained_source_storage = 0;
   bool retained_source_frame_info_available = false;
@@ -1437,6 +2036,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
                                 uint64_t package_copy_us,
                                 int32_t package_storage,
                                 uint64_t source_generation,
+                                uint64_t source_signature,
                                 bool source_upload) {
     auto pending = std::make_unique<AsyncDrawPending>();
     pending->state = async_state_;
@@ -1450,6 +2050,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
     pending->package_copy_us = package_copy_us;
     pending->package_storage = package_storage;
     pending->source_generation = source_generation;
+    pending->source_signature = source_signature;
     pending->source_upload = source_upload;
     pending->target_acquired = target_acquired;
     pending->overlay_expected = overlay_expected;
@@ -1462,33 +2063,24 @@ bool WgpuMetalPresentationBackend::draw_frame(
       retained_source_available) {
     VPMacOSNativePresentDecisionInfo retained_decision = {};
     fill_present_decision_info_from_snapshot(snapshot,
-                                             draw_target_width_,
-                                             draw_target_height_,
+                                             viewport_width,
+                                             viewport_height,
                                              &retained_decision);
+    apply_source_projection(retained_decision);
     std::string destination_error;
-    CVMetalTextureRef destination_ref =
-        static_cast<CVMetalTextureRef>(cached_target_texture_ref(
-            target,
-            static_cast<uint64_t>(output_target.metal_pixel_format),
-            draw_target_width_,
-            draw_target_height_,
-            destination_error));
-    if (!destination_ref) {
-      return fail_after_target_acquire(destination_error.empty()
-                                          ? "wgpu-metal failed to wrap target CVPixelBuffer"
-                                          : destination_error);
-    }
-    id<MTLTexture> destination_texture = CVMetalTextureGetTexture(destination_ref);
-    if (!metal_texture_matches_device(destination_texture, metal_device_)) {
-      CFRelease(destination_ref);
-      return fail_after_target_acquire(
-          "wgpu-metal destination texture device does not match wgpu Metal device");
+    CVMetalTextureRef destination_ref = nullptr;
+    void* destination_texture = nullptr;
+    if (!resolve_destination_texture(destination_ref,
+                                     destination_texture,
+                                     destination_error)) {
+      return fail_after_target_acquire(destination_error);
     }
     char ffi_error[256] = {};
     VPWgpuMetalRetainedCompositeRequest request = {};
-    request.destination_mtl_texture = (__bridge void*)destination_texture;
+    request.destination_mtl_texture = destination_texture;
     request.output_format = output_target.ffi_output_format;
     request.output_color_mode = output_target.ffi_output_color_mode;
+    request.sdr_white_scale = 1.0f;
     request.decision = &retained_decision;
     request.overlay_fill_rects = overlay_primitives.fill_rects.empty()
         ? nullptr
@@ -1505,14 +2097,23 @@ bool WgpuMetalPresentationBackend::draw_frame(
     request.overlay_generation = overlay_primitives.generation;
     request.width = draw_target_width_;
     request.height = draw_target_height_;
+    apply_viewport_rect(request);
     request.error = ffi_error;
     request.error_size = sizeof(ffi_error);
+    apply_external_flutter_surface(request);
+    log_wgpu_decision("retained",
+                      retained_decision,
+                      viewport_rect_pixels,
+                      retained_source_storage,
+                      output_target.ffi_output_format,
+                      output_target.ffi_output_color_mode,
+                      destination_texture);
     auto frame_info = retained_source_frame_info_available
         ? retained_source_frame_info
         : frame_info_from_decision(retained_decision, target);
     frame_info.target_pixel_buffer_address = pointer_bits(target);
     auto pending =
-        make_async_pending(frame_info, 0, retained_source_storage, 0, false);
+        make_async_pending(frame_info, 0, retained_source_storage, 0, 0, false);
     pending->destination_texture_ref = destination_ref;
     destination_ref = nullptr;
     pending->render_call_start = std::chrono::steady_clock::now();
@@ -1530,6 +2131,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
           ffi_error[0] ? ffi_error : "wgpu-metal retained composite failed";
       return fail_after_target_acquire(error);
     }
+    mark_external_flutter_surface_consumed();
     target_acquired = false;
     return true;
   }
@@ -1538,10 +2140,11 @@ bool WgpuMetalPresentationBackend::draw_frame(
   VPMacOSNativeCVPixelBufferPresentFrameSet frame_set = {};
   std::string cv_error;
   if (snapshot_cv_pixel_buffer_frame_set(snapshot,
-                                         draw_target_width_,
-                                         draw_target_height_,
+                                         viewport_width,
+                                         viewport_height,
                                          &frame_set,
                                          cv_error)) {
+    apply_source_projection(frame_set.decision);
     std::array<ScopedCVMetalTexture, VPMacOSNativeMaxTracks> source_y_refs;
     std::array<ScopedCVMetalTexture, VPMacOSNativeMaxTracks> source_uv_refs;
     VPWgpuMetalCVPixelBufferRenderRequest request = {};
@@ -1553,6 +2156,10 @@ bool WgpuMetalPresentationBackend::draw_frame(
       auto* source_pixel_buffer =
           static_cast<CVPixelBufferRef>(frame_set.pixel_buffers[slot]);
       const bool is_p010 = frame_set.is_p010[slot] != 0;
+      log_cv_pixel_buffer_sample(source_pixel_buffer,
+                                 is_p010,
+                                 slot,
+                                 frame_set.decision);
       const MTLPixelFormat y_format =
           is_p010 ? MTLPixelFormatR16Unorm : MTLPixelFormatR8Unorm;
       const MTLPixelFormat uv_format =
@@ -1590,28 +2197,18 @@ bool WgpuMetalPresentationBackend::draw_frame(
     }
 
     std::string destination_error;
-    CVMetalTextureRef destination_ref =
-        static_cast<CVMetalTextureRef>(cached_target_texture_ref(
-            target,
-            static_cast<uint64_t>(output_target.metal_pixel_format),
-            draw_target_width_,
-            draw_target_height_,
-            destination_error));
-    if (!destination_ref) {
-      return fail_after_target_acquire(destination_error.empty()
-                                          ? "wgpu-metal failed to wrap target CVPixelBuffer"
-                                          : destination_error);
-    }
-    id<MTLTexture> destination_texture = CVMetalTextureGetTexture(destination_ref);
-    if (!metal_texture_matches_device(destination_texture, metal_device_)) {
-      CFRelease(destination_ref);
-      return fail_after_target_acquire(
-          "wgpu-metal destination texture device does not match wgpu Metal device");
+    CVMetalTextureRef destination_ref = nullptr;
+    void* destination_texture = nullptr;
+    if (!resolve_destination_texture(destination_ref,
+                                     destination_texture,
+                                     destination_error)) {
+      return fail_after_target_acquire(destination_error);
     }
     char ffi_error[256] = {};
-    request.destination_mtl_texture = (__bridge void*)destination_texture;
+    request.destination_mtl_texture = destination_texture;
     request.output_format = output_target.ffi_output_format;
     request.output_color_mode = output_target.ffi_output_color_mode;
+    request.sdr_white_scale = 1.0f;
     request.overlay_fill_rects = overlay_primitives.fill_rects.empty()
         ? nullptr
         : overlay_primitives.fill_rects.data();
@@ -1627,25 +2224,37 @@ bool WgpuMetalPresentationBackend::draw_frame(
     request.overlay_generation = overlay_primitives.generation;
     request.width = draw_target_width_;
     request.height = draw_target_height_;
+    apply_viewport_rect(request);
     request.error = ffi_error;
     request.error_size = sizeof(ffi_error);
+    apply_external_flutter_surface(request);
+    log_wgpu_decision("cv-yuv",
+                      frame_set.decision,
+                      viewport_rect_pixels,
+                      VPMacOSNativePresentPackageStorageSourceOutputAtlas,
+                      output_target.ffi_output_format,
+                      output_target.ffi_output_color_mode,
+                      destination_texture);
     const auto frame_info = frame_info_from_decision(frame_set.decision, target);
     uint64_t source_generation = 0;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       source_generation = ++retained_source_submitted_generation_;
-      retained_source_available_ = false;
-      retained_source_frame_info_available_ = false;
     }
     auto pending = make_async_pending(
         frame_info,
         0,
-        VPMacOSNativePresentPackageStorageCVPixelBuffer,
+        VPMacOSNativePresentPackageStorageSourceOutputAtlas,
         source_generation,
+        source_metrics.signature,
         true);
     pending->destination_texture_ref = destination_ref;
     destination_ref = nullptr;
     for (size_t slot = 0; slot < VPMacOSNativeMaxTracks; ++slot) {
+      if (frame_set.pixel_buffers[slot]) {
+        pending->source_pixel_buffer_refs[slot] =
+            const_cast<void*>(CFRetain(frame_set.pixel_buffers[slot]));
+      }
       if (source_y_refs[slot].get()) {
         pending->source_y_texture_refs[slot] =
             const_cast<void*>(CFRetain(source_y_refs[slot].get()));
@@ -1670,6 +2279,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
           ffi_error[0] ? ffi_error : "wgpu-metal render CVPixelBuffer frame set failed";
       return fail_after_target_acquire(error);
     }
+    mark_external_flutter_surface_consumed();
     target_acquired = false;
     return true;
   }
@@ -1679,7 +2289,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
   }
 
   const auto package_layout = vr::describe_presentation_package_layout(
-      draw_target_width_, draw_target_height_, track_slots);
+      viewport_width, viewport_height, track_slots);
   const size_t bgra_fallback_package_bytes =
       snapshot_bgra_fallback_package_bytes(snapshot);
   const size_t required_package_bytes =
@@ -1698,61 +2308,45 @@ bool WgpuMetalPresentationBackend::draw_frame(
     ++staging_reuse_count_;
   }
   VPMacOSNativePresentFramePackageInfo package = {};
-  package.width = draw_target_width_;
-  package.height = draw_target_height_;
+  package.width = viewport_width;
+  package.height = viewport_height;
   package.max_track_slots = track_slots;
   std::string error;
   const auto package_copy_start = std::chrono::steady_clock::now();
-  if (copy_snapshot_yuv_package(snapshot,
-                                staging_buffer_.data(),
-                                staging_buffer_.size(),
-                                draw_target_width_,
-                                draw_target_height_,
-                                static_cast<size_t>(track_slots),
-                                &package,
-                                error)) {
-    package.storage = VPMacOSNativePresentPackageStorageYUV;
-  } else {
-    fill_present_decision_info_from_snapshot(
-        snapshot, draw_target_width_, draw_target_height_, &package.decision);
-    package.stride_bytes = static_cast<int32_t>(package_layout.bgra_row_bytes);
-    package.track_stride_bytes = package_layout.bgra_track_stride_bytes;
-    if (!copy_snapshot_bgra_source_package(snapshot,
-                                           staging_buffer_.data(),
-                                           staging_buffer_.size(),
-                                           draw_target_width_,
-                                           draw_target_height_,
-                                           &package,
-                                           error)) {
-      return fail_after_target_acquire(error);
-    }
-    package.storage = VPMacOSNativePresentPackageStorageBGRA;
+  // CPU/software snapshots are packed to deterministic BGRA before the wgpu
+  // composite pass. Hardware VideoToolbox CVPixelBuffers use the plane-import
+  // path above only to bake the current frame into the wgpu-owned source atlas;
+  // retained interaction composes sample that committed atlas, not CV planes.
+  fill_present_decision_info_from_snapshot(
+      snapshot, viewport_width, viewport_height, &package.decision);
+  apply_source_projection(package.decision);
+  package.stride_bytes = static_cast<int32_t>(package_layout.bgra_row_bytes);
+  package.track_stride_bytes = package_layout.bgra_track_stride_bytes;
+  if (!copy_snapshot_bgra_source_package(snapshot,
+                                         staging_buffer_.data(),
+                                         staging_buffer_.size(),
+                                         viewport_width,
+                                         viewport_height,
+                                         &package,
+                                         error)) {
+    return fail_after_target_acquire(error);
   }
+  package.storage = VPMacOSNativePresentPackageStorageBGRA;
   const uint64_t package_copy_us = elapsed_us_since(package_copy_start);
   std::string destination_error;
-  CVMetalTextureRef destination_ref =
-      static_cast<CVMetalTextureRef>(cached_target_texture_ref(
-          target,
-          static_cast<uint64_t>(output_target.metal_pixel_format),
-          draw_target_width_,
-          draw_target_height_,
-          destination_error));
-  if (!destination_ref) {
-    return fail_after_target_acquire(destination_error.empty()
-                                        ? "wgpu-metal failed to wrap target CVPixelBuffer"
-                                        : destination_error);
-  }
-  id<MTLTexture> destination_texture = CVMetalTextureGetTexture(destination_ref);
-  if (!metal_texture_matches_device(destination_texture, metal_device_)) {
-    CFRelease(destination_ref);
-    return fail_after_target_acquire(
-        "wgpu-metal destination texture device does not match wgpu Metal device");
+  CVMetalTextureRef destination_ref = nullptr;
+  void* destination_texture = nullptr;
+  if (!resolve_destination_texture(destination_ref,
+                                   destination_texture,
+                                   destination_error)) {
+    return fail_after_target_acquire(destination_error);
   }
   char ffi_error[256] = {};
   VPWgpuMetalRenderRequest request = {};
-  request.destination_mtl_texture = (__bridge void*)destination_texture;
+  request.destination_mtl_texture = destination_texture;
   request.output_format = output_target.ffi_output_format;
   request.output_color_mode = output_target.ffi_output_color_mode;
+  request.sdr_white_scale = 1.0f;
   request.package_data = staging_buffer_.data();
   request.package_data_size = package.used_bytes;
   request.package = &package;
@@ -1771,20 +2365,28 @@ bool WgpuMetalPresentationBackend::draw_frame(
   request.overlay_generation = overlay_primitives.generation;
   request.width = draw_target_width_;
   request.height = draw_target_height_;
+  apply_viewport_rect(request);
   request.error = ffi_error;
   request.error_size = sizeof(ffi_error);
+  apply_external_flutter_surface(request);
+  log_wgpu_decision("bgra-package",
+                    package.decision,
+                    viewport_rect_pixels,
+                    package.storage,
+                    output_target.ffi_output_format,
+                    output_target.ffi_output_color_mode,
+                    destination_texture);
   auto frame_info = frame_info_from_package(package, target);
   uint64_t source_generation = 0;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     source_generation = ++retained_source_submitted_generation_;
-    retained_source_available_ = false;
-    retained_source_frame_info_available_ = false;
   }
   auto pending = make_async_pending(frame_info,
                                     package_copy_us,
                                     package.storage,
                                     source_generation,
+                                    source_metrics.signature,
                                     true);
   pending->destination_texture_ref = destination_ref;
   destination_ref = nullptr;
@@ -1803,6 +2405,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
         ffi_error[0] ? ffi_error : "wgpu-metal render package failed";
     return fail_after_target_acquire(render_error);
   }
+  mark_external_flutter_surface_consumed();
   target_acquired = false;
   return true;
 }
@@ -1816,8 +2419,6 @@ void WgpuMetalPresentationBackend::mark_draw_failure(std::string error) {
   std::lock_guard<std::mutex> lock(mutex_);
   last_draw_succeeded_ = false;
   last_frame_info_available_ = false;
-  retained_source_available_ = false;
-  retained_source_frame_info_available_ = false;
   ++draw_failure_count_;
   ++consecutive_draw_failures_;
   last_error_ = std::move(error);
@@ -1827,6 +2428,7 @@ void WgpuMetalPresentationBackend::mark_draw_success(
     const vr::PresentationBackendFrameInfo& frame_info,
     int32_t package_storage,
     uint64_t source_generation,
+    uint64_t source_signature,
     bool source_upload) {
   std::lock_guard<std::mutex> lock(mutex_);
   last_draw_succeeded_ = true;
@@ -1841,10 +2443,12 @@ void WgpuMetalPresentationBackend::mark_draw_success(
     last_present_package_storage_ = package_storage;
     retained_source_available_ = true;
     retained_source_committed_generation_ = source_generation;
+    last_source_signature_ = source_signature;
   }
   consecutive_draw_failures_ = 0;
   if (source_upload) {
-    if (package_storage == VPMacOSNativePresentPackageStorageCVPixelBuffer) {
+    if (package_storage ==
+        VPMacOSNativePresentPackageStorageSourceOutputAtlas) {
       ++cvpixelbuffer_upload_count_;
     }
     ++present_package_upload_count_;
@@ -1912,15 +2516,28 @@ WgpuMetalPresentationBackend::acquire_draw_target_locked(
         target_ring_.size());
     return result;
   }
-  for (auto& slot : target_ring_) {
-    if (slot.state != TargetState::Available || !slot.pixel_buffer) {
-      continue;
-    }
+  const auto acquire_slot = [&](TargetSlot& slot) {
     slot.state = TargetState::InFlight;
     ++in_flight_draws_;
     result.pixel_buffer = slot.pixel_buffer;
     result.ring_generation = target_ring_generation_;
     result.slot_id = slot.slot_id;
+  };
+  for (auto& slot : target_ring_) {
+    if (slot.state != TargetState::Available || !slot.pixel_buffer) {
+      continue;
+    }
+    acquire_slot(slot);
+    return result;
+  }
+  for (auto& slot : target_ring_) {
+    if (slot.state != TargetState::Completed || !slot.pixel_buffer) {
+      continue;
+    }
+    // Drop stale completed targets when Flutter has not consumed them quickly
+    // enough during high-frequency viewport projection. Displayed/protected
+    // targets have distinct states and are never reclaimed here.
+    acquire_slot(slot);
     return result;
   }
   record_backpressure("renderer-owned wgpu-metal presentation target ring is busy",
@@ -2010,27 +2627,30 @@ WgpuMetalPresentationBackend::SourceMetricsResult
 WgpuMetalPresentationBackend::record_source_metrics(
     const vr::RendererDrawSnapshot& snapshot,
     const vr::PresentationBackendDrawHooks& hooks,
-    int32_t target_width,
-    int32_t target_height,
-    int32_t track_slots) {
+    int32_t /*target_width*/,
+    int32_t /*target_height*/,
+    int32_t /*track_slots*/,
+    int32_t output_format,
+    int32_t output_color_mode) {
   SourceMetricsResult result;
   const bool is_viewport_composite =
       hooks.draw_source && std::strcmp(hooks.draw_source, "viewport_composite") == 0;
   result.viewport_composite = is_viewport_composite;
   const uint64_t signature =
-      source_frame_signature(snapshot, target_width, target_height, track_slots);
+      source_frame_signature(snapshot, output_format, output_color_mode);
+  result.signature = signature;
   std::lock_guard<std::mutex> lock(mutex_);
   if (is_viewport_composite) {
     ++viewport_composite_count_;
   }
-  if (last_source_signature_ != 0 && last_source_signature_ == signature) {
+  if (retained_source_available_ && last_source_signature_ != 0 &&
+      last_source_signature_ == signature) {
     ++source_frame_cache_hit_count_;
     result.cache_hit = true;
     return result;
   }
   ++source_frame_cache_miss_count_;
   ++video_source_update_count_;
-  last_source_signature_ = signature;
   return result;
 }
 
@@ -2053,6 +2673,57 @@ void WgpuMetalPresentationBackend::record_wgpu_command_result(uint64_t elapsed_u
   }
   if (!success) {
     ++metal_command_failure_count_;
+  }
+}
+
+void WgpuMetalPresentationBackend::record_wgpu_phase_timings(
+    uint64_t total_us,
+    uint64_t pre_render_us,
+    const VPWgpuMetalProfilerSnapshot* profiler) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto append_sample = [](std::vector<uint64_t>& samples, uint64_t value) {
+    samples.push_back(value);
+    if (samples.size() > 512) {
+      samples.erase(samples.begin(),
+                    samples.begin() +
+                        static_cast<std::ptrdiff_t>(samples.size() - 512));
+    }
+  };
+  append_sample(wgpu_compose_total_samples_us_, total_us);
+  append_sample(wgpu_compose_pre_render_samples_us_, pre_render_us);
+  if (profiler) {
+    append_sample(wgpu_compose_import_samples_us_, profiler->last_import_us);
+    append_sample(wgpu_compose_prepare_samples_us_, profiler->last_prepare_us);
+    append_sample(wgpu_compose_overlay_encode_samples_us_,
+                  profiler->last_overlay_encode_us);
+    append_sample(wgpu_compose_bind_group_samples_us_,
+                  profiler->last_bind_group_us);
+    append_sample(wgpu_compose_pass_encode_samples_us_,
+                  profiler->last_pass_encode_us);
+    append_sample(wgpu_compose_submit_samples_us_, profiler->last_submit_us);
+    append_sample(wgpu_compose_cpu_render_samples_us_,
+                  profiler->last_cpu_render_us);
+  }
+  ++wgpu_phase_sample_count_;
+  if (wgpu_phase_sample_count_ <= 16 || (wgpu_phase_sample_count_ % 16) == 0) {
+    wgpu_compose_total_p95_us_ =
+        percentile_95_us(wgpu_compose_total_samples_us_);
+    wgpu_compose_pre_render_p95_us_ =
+        percentile_95_us(wgpu_compose_pre_render_samples_us_);
+    wgpu_compose_import_p95_us_ =
+        percentile_95_us(wgpu_compose_import_samples_us_);
+    wgpu_compose_prepare_p95_us_ =
+        percentile_95_us(wgpu_compose_prepare_samples_us_);
+    wgpu_compose_overlay_encode_p95_us_ =
+        percentile_95_us(wgpu_compose_overlay_encode_samples_us_);
+    wgpu_compose_bind_group_p95_us_ =
+        percentile_95_us(wgpu_compose_bind_group_samples_us_);
+    wgpu_compose_pass_encode_p95_us_ =
+        percentile_95_us(wgpu_compose_pass_encode_samples_us_);
+    wgpu_compose_submit_p95_us_ =
+        percentile_95_us(wgpu_compose_submit_samples_us_);
+    wgpu_compose_cpu_render_p95_us_ =
+        percentile_95_us(wgpu_compose_cpu_render_samples_us_);
   }
 }
 
@@ -2079,6 +2750,10 @@ void WgpuMetalPresentationBackend::complete_async_draw(
           .count());
   const uint64_t gpu_wait_us = elapsed_us_since(pending->render_call_start);
   record_wgpu_command_result(gpu_wait_us, success);
+  record_wgpu_phase_timings(
+      total_us,
+      pre_render_us,
+      pending->has_profiler_snapshot ? &pending->profiler_snapshot : nullptr);
   record_present_package_timing(pending->package_copy_us, gpu_wait_us, total_us);
   if (wgpu_profiler_enabled() && pending->has_profiler_snapshot) {
     const VPWgpuMetalProfilerSnapshot& profiler = pending->profiler_snapshot;
@@ -2136,6 +2811,7 @@ void WgpuMetalPresentationBackend::complete_async_draw(
     mark_draw_success(pending->frame_info,
                       pending->package_storage,
                       pending->source_generation,
+                      pending->source_signature,
                       pending->source_upload);
   } else {
     mark_draw_failure("wgpu-metal async GPU completion failed");

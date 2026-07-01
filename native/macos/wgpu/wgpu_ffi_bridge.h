@@ -13,7 +13,7 @@ extern "C" {
 typedef struct VPWgpuMetalRenderer VPWgpuMetalRenderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 10,
+  VP_WGPU_FFI_ABI_VERSION = 18,
 };
 
 enum {
@@ -23,7 +23,7 @@ enum {
 
 enum {
   VP_WGPU_METAL_OUTPUT_COLOR_MODE_SDR = 1,
-  VP_WGPU_METAL_OUTPUT_COLOR_MODE_EDR = 2,
+  VP_WGPU_METAL_OUTPUT_COLOR_MODE_MACOS_EDR = 2,
 };
 
 typedef struct VPWgpuMetalRendererInfo {
@@ -64,6 +64,7 @@ typedef struct VPWgpuMetalRenderRequest {
   void* destination_mtl_texture;
   int32_t output_format;
   int32_t output_color_mode;
+  float sdr_white_scale;
   const uint8_t* package_data;
   size_t package_data_size;
   const VPMacOSNativePresentFramePackageInfo* package;
@@ -76,14 +77,22 @@ typedef struct VPWgpuMetalRenderRequest {
   uint64_t overlay_generation;
   int32_t width;
   int32_t height;
+  float viewport_left;
+  float viewport_top;
+  float viewport_right;
+  float viewport_bottom;
   char* error;
   size_t error_size;
+  void* flutter_mtl_texture;
+  int32_t flutter_width;
+  int32_t flutter_height;
 } VPWgpuMetalRenderRequest;
 
 typedef struct VPWgpuMetalCVPixelBufferRenderRequest {
   void* destination_mtl_texture;
   int32_t output_format;
   int32_t output_color_mode;
+  float sdr_white_scale;
   void* source_y_mtl_textures[VPMacOSNativeMaxTracks];
   void* source_uv_mtl_textures[VPMacOSNativeMaxTracks];
   const VPMacOSNativeCVPixelBufferPresentFrameSet* frame_set;
@@ -96,14 +105,22 @@ typedef struct VPWgpuMetalCVPixelBufferRenderRequest {
   uint64_t overlay_generation;
   int32_t width;
   int32_t height;
+  float viewport_left;
+  float viewport_top;
+  float viewport_right;
+  float viewport_bottom;
   char* error;
   size_t error_size;
+  void* flutter_mtl_texture;
+  int32_t flutter_width;
+  int32_t flutter_height;
 } VPWgpuMetalCVPixelBufferRenderRequest;
 
 typedef struct VPWgpuMetalRetainedCompositeRequest {
   void* destination_mtl_texture;
   int32_t output_format;
   int32_t output_color_mode;
+  float sdr_white_scale;
   const VPMacOSNativePresentDecisionInfo* decision;
   const VPMacOSNativeOverlayGpuRect* overlay_fill_rects;
   size_t overlay_fill_rect_count;
@@ -114,8 +131,15 @@ typedef struct VPWgpuMetalRetainedCompositeRequest {
   uint64_t overlay_generation;
   int32_t width;
   int32_t height;
+  float viewport_left;
+  float viewport_top;
+  float viewport_right;
+  float viewport_bottom;
   char* error;
   size_t error_size;
+  void* flutter_mtl_texture;
+  int32_t flutter_width;
+  int32_t flutter_height;
 } VPWgpuMetalRetainedCompositeRequest;
 
 typedef void (*VPWgpuMetalAsyncCompletionCallback)(void* user_data,

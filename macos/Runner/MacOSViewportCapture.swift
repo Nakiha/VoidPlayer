@@ -10,7 +10,7 @@ enum MacOSViewportCapture {
     guard let texture else {
       return FlutterError(
         code: "NO_PLAYER",
-        message: "No macOS Flutter texture bridge is registered",
+        message: "No macOS renderer-owned texture target is registered",
         details: nil
       )
     }
@@ -33,7 +33,7 @@ enum MacOSViewportCapture {
     guard let texture else {
       return FlutterError(
         code: "NO_PLAYER",
-        message: "No macOS Flutter texture bridge is registered",
+        message: "No macOS renderer-owned texture target is registered",
         details: nil
       )
     }
@@ -163,6 +163,88 @@ enum MacOSViewportCapture {
     return map
   }
 
+  static func captureWindowRegion(arguments: Any?) -> Any {
+    guard let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first else {
+      return FlutterError(
+        code: "NO_WINDOW",
+        message: "No macOS window is available",
+        details: nil
+      )
+    }
+    let x = MacOSFlutterArguments.intArg(arguments, "x") ?? 0
+    let y = MacOSFlutterArguments.intArg(arguments, "y") ?? 0
+    let width = MacOSFlutterArguments.intArg(arguments, "width") ?? 0
+    let height = MacOSFlutterArguments.intArg(arguments, "height") ?? 0
+    let maxSize = MacOSFlutterArguments.intArg(arguments, "maxSize") ?? 0
+    guard width > 0, height > 0 else {
+      return FlutterError(
+        code: "BAD_ARGS",
+        message: "width and height must be positive",
+        details: nil
+      )
+    }
+    let windowId = CGWindowID(window.windowNumber)
+    guard let image = CGWindowListCreateImage(
+      .null,
+      .optionIncludingWindow,
+      windowId,
+      [.boundsIgnoreFraming]
+    ) else {
+      return FlutterError(
+        code: "CAPTURE_FAILED",
+        message: "Failed to capture macOS window",
+        details: nil
+      )
+    }
+    guard let bgra = bgraBytes(from: image),
+          let capture = captureBgraRegion(
+            bgra: bgra,
+            sourceWidth: image.width,
+            sourceHeight: image.height,
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            maxSize: maxSize
+          ) else {
+      return FlutterError(
+        code: "CAPTURE_FAILED",
+        message: "Failed to capture macOS window region",
+        details: nil
+      )
+    }
+
+    var outputPath: String?
+    if let path = MacOSFlutterArguments.stringArg(arguments, "outputPath"),
+       !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      guard let image = cgImage(
+        bgra: capture.bgra,
+        width: capture.width,
+        height: capture.height
+      ), savePng(image: image, path: path) else {
+        return FlutterError(
+          code: "CAPTURE_SAVE_FAILED",
+          message: "Failed to save macOS window region PNG",
+          details: nil
+        )
+      }
+      outputPath = path
+    }
+
+    let stats = captureStats(capture.bgra)
+    var map: [String: Any] = [
+      "hash": fnv1a64Hex(capture.bgra),
+      "width": capture.width,
+      "height": capture.height,
+      "avgLuma": stats.avgLuma,
+      "nonBlackRatio": stats.nonBlackRatio,
+    ]
+    if let outputPath {
+      map["outputPath"] = outputPath
+    }
+    return map
+  }
+
   private static func bgraBytes(from image: CGImage) -> [UInt8]? {
     let width = image.width
     let height = image.height
@@ -188,6 +270,52 @@ enum MacOSViewportCapture {
       return true
     }
     return ok ? bytes : nil
+  }
+
+  private static func captureBgraRegion(
+    bgra: [UInt8],
+    sourceWidth: Int,
+    sourceHeight: Int,
+    x: Int,
+    y: Int,
+    width: Int,
+    height: Int,
+    maxSize: Int
+  ) -> (bgra: [UInt8], width: Int, height: Int)? {
+    guard sourceWidth > 0,
+          sourceHeight > 0,
+          bgra.count >= sourceWidth * sourceHeight * 4 else {
+      return nil
+    }
+    let left = min(max(0, x), sourceWidth)
+    let top = min(max(0, y), sourceHeight)
+    let right = min(max(left, x + width), sourceWidth)
+    let bottom = min(max(top, y + height), sourceHeight)
+    let cropWidth = right - left
+    let cropHeight = bottom - top
+    guard cropWidth > 0, cropHeight > 0 else { return nil }
+
+    var scale = 1.0
+    if maxSize > 0 {
+      scale = min(1.0, Double(maxSize) / Double(max(cropWidth, cropHeight)))
+    }
+    let outputWidth = max(1, Int((Double(cropWidth) * scale).rounded()))
+    let outputHeight = max(1, Int((Double(cropHeight) * scale).rounded()))
+    var output = [UInt8](repeating: 0, count: outputWidth * outputHeight * 4)
+
+    for oy in 0..<outputHeight {
+      let sy = top + min(cropHeight - 1, oy * cropHeight / outputHeight)
+      for ox in 0..<outputWidth {
+        let sx = left + min(cropWidth - 1, ox * cropWidth / outputWidth)
+        let src = (sy * sourceWidth + sx) * 4
+        let dst = (oy * outputWidth + ox) * 4
+        output[dst + 0] = bgra[src + 0]
+        output[dst + 1] = bgra[src + 1]
+        output[dst + 2] = bgra[src + 2]
+        output[dst + 3] = bgra[src + 3]
+      }
+    }
+    return (bgra: output, width: outputWidth, height: outputHeight)
   }
 
   private static func captureBgraRegion(

@@ -81,16 +81,6 @@ bool videotoolbox_hwdownload_forced_by_env() {
   return env_enabled("VOIDPLAYER_FORCE_VIDEOTOOLBOX_HWDOWNLOAD");
 }
 
-bool legacy_metal_requested_by_env() {
-  const char* mode = std::getenv("VOIDPLAYER_MACOS_PRESENTATION_MODE");
-  if (!mode) {
-    return false;
-  }
-  const std::string normalized = lower_ascii(mode);
-  return normalized == "metal" || normalized == "legacy-metal" ||
-         normalized == "metal-cvpixelbuffer";
-}
-
 bool probe_videotoolbox_h264() {
   if (videotoolbox_disabled_by_env()) {
     return false;
@@ -190,12 +180,16 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   }
 
   void* output = nullptr;
+  bool output_is_metal_texture = false;
+  uint64_t output_pixel_format = 0;
   int32_t width = 0;
   int32_t height = 0;
   int32_t max_track_slots = 1;
   {
     std::lock_guard<std::mutex> callback_lock(callback_mutex);
     output = presentation_target_pixel_buffer;
+    output_is_metal_texture = presentation_target_is_metal_texture;
+    output_pixel_format = presentation_target_pixel_format;
     width = presentation_target_width;
     height = presentation_target_height;
     max_track_slots = presentation_target_max_track_slots;
@@ -211,17 +205,12 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   config.width = width;
   config.height = height;
   config.headless = true;
-  if (vp_macos::legacy_metal_requested_by_env()) {
-    spdlog::warn(
-        "[MacOSNativePlayer] legacy Metal renderer backend was removed; using "
-        "wgpu-metal");
-  }
   config.use_hardware_decode =
       use_hardware_decode &&
       !vp_macos::videotoolbox_disabled_by_env();
   config.initial_file_id = 0;
   config.backend.type = vr::RendererBackendType::WgpuMetal;
-  config.backend.output = output;
+  config.backend.output = output_is_metal_texture ? nullptr : output;
   config.backend.max_track_slots =
       std::clamp(max_track_slots,
                  static_cast<int32_t>(1),
@@ -229,6 +218,21 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   if (!next_renderer->initialize(config)) {
     error = "shared macOS renderer failed to initialize";
     return false;
+  }
+  if (output_is_metal_texture) {
+    vr::PresentationExternalMetalRenderTarget target;
+    target.texture = output;
+    target.width = width;
+    target.height = height;
+    target.pixel_format = output_pixel_format;
+    target.max_track_slots = max_track_slots;
+    if (!next_renderer->install_headless_metal_texture_output(target)) {
+      error = next_renderer->presentation_backend_last_error();
+      if (error.empty()) {
+        error = "failed to install renderer-owned Metal texture target";
+      }
+      return false;
+    }
   }
   next_renderer->set_background_color(background_color[0],
                                       background_color[1],
@@ -298,6 +302,21 @@ void VPMacOSNativePlayer::on_frame_available(
       last_renderer_owned_frame_info.layout_revision =
           completed_frame_info->layout_revision;
       last_renderer_owned_layout_revision = completed_frame_info->layout_revision;
+      if (renderer_owned_refresh_min_pts_us >= 0) {
+        constexpr int64_t kRefreshPtsLowerToleranceUs = 500'000;
+        constexpr int64_t kRefreshPtsUpperToleranceUs = 1'500'000;
+        const int64_t min_pts_us = renderer_owned_refresh_min_pts_us;
+        const int64_t completed_pts_us = completed_frame_info->pts_us;
+        if (completed_pts_us >= min_pts_us &&
+            completed_pts_us <= min_pts_us + kRefreshPtsLowerToleranceUs +
+                                    kRefreshPtsUpperToleranceUs) {
+          renderer_owned_refresh_min_pts_us = -1;
+          spdlog::info(
+              "[MacOSFrameRefresh] clear_seek_gate_from_frame_callback min_pts_us={} pts_us={}",
+              min_pts_us,
+              completed_pts_us);
+        }
+      }
     } else {
       last_renderer_owned_frame_info.width = presentation_target_width;
       last_renderer_owned_frame_info.height = presentation_target_height;

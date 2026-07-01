@@ -56,7 +56,7 @@ class AnalysisOverlayRenderer;
 struct SharedFp16TextureSnapshot;
 struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
-struct WindowsSourceProjection;
+struct PresentationSourceProjection;
 
 class Renderer::Impl {
 public:
@@ -172,13 +172,18 @@ public:
     bool update_external_flutter_surface(
         const PresentationExternalD3D12Surface& surface);
     void clear_external_flutter_surface();
+#ifdef __APPLE__
+    bool update_external_flutter_metal_surface(
+        const PresentationExternalMetalSurface& surface);
+    void clear_external_flutter_metal_surface();
+#endif
     bool draw_current_frame_to_external_d3d12_target(
         const PresentationExternalD3D12RenderTarget& target,
         const char* reason);
     bool configure_source_cache(
         const std::vector<SourceCacheTrackDescriptor>& descriptors);
     void clear_source_cache(const char* reason);
-    bool update_source_projection(const WindowsSourceProjection& projection);
+    bool update_source_projection(const PresentationSourceProjection& projection);
     void clear_source_projection();
     bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot& snapshot) const;
@@ -205,6 +210,10 @@ public:
                                       int width,
                                       int height,
                                       int max_track_slots);
+#ifdef __APPLE__
+    bool install_headless_metal_texture_output(
+        const PresentationExternalMetalRenderTarget& target);
+#endif
     void mark_headless_output_displayed(void* pixel_buffer);
     void protect_headless_output(void* pixel_buffer);
     void release_headless_output(void* pixel_buffer);

@@ -49,11 +49,20 @@ REQUIRED_CMAKE_TARGETS = [
 ]
 
 REQUIRED_SOURCE_MARKERS = {
-    "macos/Runner/MacOSFlutterTextureBridge.swift": [
+    "macos/Runner/MacOSRendererOwnedPresentationTarget.swift": [
         "protocol MacOSVideoTexture: FlutterTexture",
-        "rendererOwnedPixelBufferCount",
-        "installNativePresentationTarget",
+        "protocol MacOSRendererOwnedPresentationTarget",
+        "MacOSRendererTargetDiagnostics",
+        "MacOSRendererTargetSnapshot",
+        "publishPendingNativeFrame",
         "publishRenderedTargetAndInstallNext",
+    ],
+    "macos/Runner/MacOSRendererOwnedTextureTarget.swift": [
+        "rendererOwnedPixelBufferCount",
+        "installTargetRingLocked",
+        "presentationTarget.installRing",
+        "requestRendererOwnedFrameRefresh",
+        "markMetalPresentationTargetDisplayed",
         "kCVPixelBufferMetalCompatibilityKey",
         "kCVPixelBufferIOSurfacePropertiesKey",
         "Unmanaged.passRetained",
@@ -73,19 +82,19 @@ REQUIRED_SOURCE_MARKERS = {
     "macos/Runner/MacOSVideoRendererDiagnostics.swift": [
         '"presentationAdapterKind"',
         '"presentationBackend"',
-        "native-wgpu-metal-cvpixelbuffer-target",
-        "renderer-owned-metal",
+        "renderer-owned-wgpu-metal",
+        "renderer-owned-target-unavailable",
         '"nativePresentationTargetInstalled"',
         '"hardwareDecodeProvider"',
         '"presentationUploadMode"',
         '"presentationFallbackReason"',
     ],
-    "macos/Runner/MacOSNativeCompositorView.swift": [
-        "import IOSurface",
-        "currentFlutterMetalTexture",
-        "nativeCompositorFlutterTextureAvailable",
-        "Flutter surface missing IOSurface",
-        "IOSurfaceLock",
+    "macos/Runner/MacOSVideoRendererBridge.swift": [
+        "publishFlutterSurfaceToNativeRenderer",
+        "updateExternalFlutterSurface",
+        "prepareRendererOwnedSourceProjection",
+        "scheduleRendererOwnedCompositeRefresh",
+        "emitRendererOwnedPresentationState",
     ],
     "native/macos/player/native_player_state.cpp": [
         "RendererBackendType::WgpuMetal",
@@ -106,7 +115,7 @@ REQUIRED_UI_PROFILE_ENTRIES = {
         "ui_tests/macos/native_seek_frame_smoke.csv",
         "ui_tests/macos/native_layout_split_smoke.csv",
         "ui_tests/macos/native_controls_smoke.csv",
-        "ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv",
+        "ui_tests/macos/renderer_owned_auto_sdr_policy_smoke.csv",
     ],
     "ui_tests/profiles/macos-ui-nightly.txt": [
         "@macos-ui-smoke",
@@ -117,33 +126,33 @@ REQUIRED_UI_PROFILE_ENTRIES = {
         "ui_tests/macos/native_callback_stress_smoke.csv",
     ],
     "ui_tests/profiles/macos-hdr-edr-smoke.txt": [
-        "ui_tests/macos/native_compositor_auto_hlg_policy_smoke.csv",
-        "ui_tests/macos/native_compositor_add_hlg_promotes_edr_smoke.csv",
+        "ui_tests/macos/renderer_owned_auto_hlg_policy_smoke.csv",
+        "ui_tests/macos/renderer_owned_add_hlg_promotes_edr_smoke.csv",
     ],
 }
 
 REQUIRED_UI_SCRIPT_MARKERS = {
     "ui_tests/macos/native_facade_smoke.csv": [
-        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-metal",
-        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-cvpixelbuffer-target",
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-wgpu-metal",
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, renderer-owned-wgpu-metal",
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal",
         "ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true",
     ],
-    "ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv": [
+    "ui_tests/macos/renderer_owned_auto_sdr_policy_smoke.csv": [
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationRequest, auto",
-        "ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-sdr",
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, renderer-owned-wgpu-sdr",
         "ASSERT_NATIVE_DIAGNOSTIC_BOOL, macOSPresentationEDROutputEnabled, false",
     ],
     "ui_tests/macos/native_4k60_playback_smoke.csv": [
         "default wgpu-metal VideoToolbox CVPixelBuffer path",
-        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-cvpixelbuffer-target",
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, renderer-owned-wgpu-metal",
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal",
-        "ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount",
+        "ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeRendererOwnedUploadCount",
     ],
     "ui_tests/macos/native_p010_presentation_smoke.csv": [
         "VideoToolbox P010 renderer-owned presentation",
         "VideoToolbox / h264",
-        "ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount",
+        "ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererTargetCVPixelBufferUploadCount",
     ],
     "ui_tests/macos/native_h264_high422_fallback_smoke.csv": [
         "VideoToolbox direct path",

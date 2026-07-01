@@ -418,7 +418,7 @@ TEST_CASE("Renderer config validation accepts WgpuMetal headless output interop"
     REQUIRE(validate_renderer_config(config).ok);
 
     config.backend.output = nullptr;
-    REQUIRE_FALSE(validate_renderer_config(config).ok);
+    REQUIRE(validate_renderer_config(config).ok);
 
     config.backend.output = reinterpret_cast<void*>(0x9abc);
     config.backend.max_track_slots = kMaxRendererVideoPaths + 1;

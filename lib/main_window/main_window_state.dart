@@ -40,6 +40,7 @@ class MainWindowStateModel {
   final bool fullScreen;
   final bool fullScreenControlsVisible;
   final bool nativeCompositorActive;
+  final bool nativeCompositorRunnerLayerActive;
   final int? audibleTrackFileId;
   final PerformanceAlertPolicy performanceAlertPolicy;
   final Map<int, QuickMarkAnchor> presentedFrameAnchors;
@@ -75,6 +76,7 @@ class MainWindowStateModel {
     this.fullScreen = false,
     this.fullScreenControlsVisible = false,
     this.nativeCompositorActive = false,
+    this.nativeCompositorRunnerLayerActive = false,
     this.audibleTrackFileId,
     this.performanceAlertPolicy = PerformanceAlertPolicy.sustained,
     this.presentedFrameAnchors = const {},
@@ -111,6 +113,7 @@ class MainWindowStateModel {
     bool? fullScreen,
     bool? fullScreenControlsVisible,
     bool? nativeCompositorActive,
+    bool? nativeCompositorRunnerLayerActive,
     Object? audibleTrackFileId = _mainWindowStateUnset,
     PerformanceAlertPolicy? performanceAlertPolicy,
     Map<int, QuickMarkAnchor>? presentedFrameAnchors,
@@ -158,6 +161,9 @@ class MainWindowStateModel {
           fullScreenControlsVisible ?? this.fullScreenControlsVisible,
       nativeCompositorActive:
           nativeCompositorActive ?? this.nativeCompositorActive,
+      nativeCompositorRunnerLayerActive:
+          nativeCompositorRunnerLayerActive ??
+          this.nativeCompositorRunnerLayerActive,
       audibleTrackFileId: audibleTrackFileId == _mainWindowStateUnset
           ? this.audibleTrackFileId
           : audibleTrackFileId as int?,
@@ -238,6 +244,7 @@ class MainWindowStateStore extends ChangeNotifier {
         fullScreen: false,
         fullScreenControlsVisible: false,
         nativeCompositorActive: false,
+        nativeCompositorRunnerLayerActive: false,
         audibleTrackFileId: null,
         mediaInfoVisible: false,
         analysisOverlayControlsVisible: false,
@@ -383,6 +390,11 @@ class MainWindowStateStore extends ChangeNotifier {
   void setNativeCompositorActive(bool active) {
     if (_value.nativeCompositorActive == active) return;
     _set(_value.copyWith(nativeCompositorActive: active));
+  }
+
+  void setNativeCompositorRunnerLayerActive(bool active) {
+    if (_value.nativeCompositorRunnerLayerActive == active) return;
+    _set(_value.copyWith(nativeCompositorRunnerLayerActive: active));
   }
 
   void setAudibleTrackFileId(int? fileId) {

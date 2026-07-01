@@ -1,2 +1,2 @@
-ui_tests/macos/native_compositor_auto_hlg_policy_smoke.csv
-ui_tests/macos/native_compositor_add_hlg_promotes_edr_smoke.csv
+ui_tests/macos/renderer_owned_auto_hlg_policy_smoke.csv
+ui_tests/macos/renderer_owned_add_hlg_promotes_edr_smoke.csv

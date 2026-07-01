@@ -87,20 +87,6 @@ void VPMacOSNativePlayerSetFrameAvailableCallback(
     VPMacOSNativePlayer* player,
     VPMacOSFrameAvailableCallback callback,
     void* user_data);
-int VPMacOSNativePlayerSetMetalPresentationTarget(
-    VPMacOSNativePlayer* player,
-    VPMacOSMetalPresentationBackend* backend,
-    void* pixel_buffer,
-    int32_t width,
-    int32_t height,
-    int32_t max_track_slots);
-int VPMacOSNativePlayerInstallMetalPresentationTarget(
-    VPMacOSNativePlayer* player,
-    VPMacOSMetalPresentationBackend* backend,
-    void* pixel_buffer,
-    int32_t width,
-    int32_t height,
-    int32_t max_track_slots);
 int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
     VPMacOSNativePlayer* player,
     VPMacOSMetalPresentationBackend* backend,
@@ -111,6 +97,18 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
     int32_t width,
     int32_t height,
     int32_t max_track_slots);
+int VPMacOSNativePlayerInstallMetalDrawableTarget(
+    VPMacOSNativePlayer* player,
+    VPMacOSMetalPresentationBackend* backend,
+    void* mtl_texture,
+    int32_t width,
+    int32_t height,
+    uint64_t pixel_format,
+    int32_t max_track_slots,
+    float viewport_left,
+    float viewport_top,
+    float viewport_right,
+    float viewport_bottom);
 void VPMacOSNativePlayerMarkMetalPresentationTargetDisplayed(
     VPMacOSNativePlayer* player,
     void* pixel_buffer);
@@ -121,6 +119,29 @@ void VPMacOSNativePlayerReleaseMetalPresentationTarget(
     VPMacOSNativePlayer* player,
     void* pixel_buffer);
 void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player);
+int VPMacOSNativePlayerUpdateExternalFlutterSurface(
+    VPMacOSNativePlayer* player,
+    void* mtl_texture,
+    int32_t width,
+    int32_t height,
+    uint64_t pixel_format,
+    uint64_t frame_generation);
+void VPMacOSNativePlayerClearExternalFlutterSurface(
+    VPMacOSNativePlayer* player);
+int VPMacOSNativePlayerUpdateSourceProjection(
+    VPMacOSNativePlayer* player,
+    int32_t mode,
+    float split_pos,
+    int32_t active_track_count,
+    const int32_t* source_order,
+    const float* display_offset_x,
+    const float* display_offset_y,
+    const float* inv_display_size_x,
+    const float* inv_display_size_y,
+    const float* view_offset_uv_x,
+    const float* view_offset_uv_y,
+    size_t count);
+void VPMacOSNativePlayerClearSourceProjection(VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(
@@ -139,11 +160,6 @@ uint64_t VPMacOSNativePlayerRendererOwnedPresentationUploadCount(
     VPMacOSNativePlayer* player);
 uint64_t VPMacOSNativePlayerRendererOwnedPresentationFailureCount(
     VPMacOSNativePlayer* player);
-int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
-    VPMacOSNativePlayer* player,
-    VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size);
 enum {
   VPMacOSNativeFrameRefreshSuppressFrameCallback = 1u << 0,
 };

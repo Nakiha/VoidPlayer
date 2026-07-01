@@ -2,20 +2,86 @@ import Cocoa
 import FlutterMacOS
 import Metal
 
+enum MacOSFlutterSurfaceExporter {
+  private static let currentSurfaceInfosSelector =
+    NSSelectorFromString("voidPlayerHDRCurrentFlutterSurfaceInfos")
+
+  static func isAvailable(engine: FlutterEngine?) -> Bool {
+    engine?.responds(to: currentSurfaceInfosSelector) == true
+  }
+
+  static func currentSurfaceInfos(engine: FlutterEngine?) -> [[String: Any]] {
+    guard let engine,
+          engine.responds(to: currentSurfaceInfosSelector),
+          let raw = engine.perform(currentSurfaceInfosSelector)?.takeUnretainedValue() else {
+      return []
+    }
+    if let infos = raw as? [[String: Any]] {
+      return infos
+    }
+    if let infos = raw as? [Any] {
+      return infos.compactMap { $0 as? [String: Any] }
+    }
+    return []
+  }
+}
+
 final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private static let channelName = "video_renderer"
   private static let eventsChannelName = "video_renderer/events"
   private static weak var activeInstance: MacOSVideoRendererBridge?
+  private static let rendererOwnedProjectionOnlyBoostReasons: Set<String> = [
+    "viewport-pan",
+    "viewport-split",
+    "viewport-zoom",
+  ]
+  private static let rendererOwnedFlutterSurfaceWarmGraceNs: UInt64 = 250_000_000
 
   private var methodChannel: FlutterMethodChannel?
   private var eventChannel: FlutterEventChannel?
   private weak var flutterEngine: FlutterEngine?
   private weak var contentView: NSView?
-  private var nativeCompositor: MacOSNativeCompositorView?
-  private var nativeCompositorSourceRing: MacOSNativeCompositorSourceRing?
-  private var nativeCompositorSourceSignature = ""
+  private let rendererOwnedCompositeRefreshQueue = DispatchQueue(
+    label: "dev.nakiha.voidplayer.macos.renderer-owned-composite-refresh",
+    qos: .userInteractive
+  )
+  private lazy var rendererOwnedCompositeDisplayLink = MacOSViewportDisplayLink { [weak self] in
+    self?.processRendererOwnedCompositeRefreshTick()
+  }
+  private var rendererOwnedCompositeRefreshInFlight = false
+  private var rendererOwnedCompositeRefreshPendingReason: String?
+  private var rendererOwnedCompositeRefreshPendingGeneration: UInt64 = 0
+  private var rendererOwnedCompositeRefreshSubmittedGeneration: UInt64 = 0
+  private var rendererOwnedCompositeRefreshCompletedGeneration: UInt64 = 0
+  private var rendererOwnedCompositeRefreshRequestCount = 0
+  private var rendererOwnedCompositeRefreshSubmitCount = 0
+  private var rendererOwnedCompositeRefreshAppliedCount = 0
+  private var rendererOwnedCompositeRefreshCoalescedCount = 0
+  private var rendererOwnedCompositeRefreshFailureCount = 0
+  private let rendererOwnedCompositeRefreshRequestRate = MacOSRateWindow()
+  private let rendererOwnedCompositeRefreshSubmitRate = MacOSRateWindow()
+  private let rendererOwnedCompositeRefreshPresentRate = MacOSRateWindow()
+  private let rendererOwnedCompositeRefreshDuration = MacOSDurationWindow()
+  private var rendererOwnedCompositeRefreshLatestProjectionNs: UInt64 = 0
+  private var rendererOwnedCompositeRefreshLastSummaryLogNs: UInt64 = 0
+  private var rendererOwnedFlutterSurfaceDirty = true
+  private var rendererOwnedFlutterSurfaceLastReason = "initial"
+  private var rendererOwnedFlutterSurfaceLastGeneration: UInt64 = 0
+  private var rendererOwnedFlutterSurfaceWarmUntilNs: UInt64 = 0
+  private var rendererOwnedFlutterSurfaceDirtyCount = 0
+  private var rendererOwnedFlutterSurfaceSampleCount = 0
+  private var rendererOwnedFlutterSurfacePublishCount = 0
+  private var rendererOwnedFlutterSurfaceUnchangedCount = 0
+  private var rendererOwnedFlutterSurfaceWarmTickCount = 0
+  private var rendererOwnedFlutterSurfaceWarmComposeCount = 0
+  private var rendererOwnedFlutterSurfaceContinuousTickCount = 0
+  private var rendererOwnedFlutterSurfaceContinuousComposeCount = 0
+  private var rendererOwnedFlutterSurfaceLastPublishLogNs: UInt64 = 0
+  private let rendererOwnedFlutterSurfaceSampleDuration = MacOSDurationWindow()
+  private let rendererOwnedSourceCachePublishRate = MacOSRateWindow()
+  private let rendererOwnedSourceProjectionRate = MacOSRateWindow()
+  private var rendererOwnedSourceCacheLastPublishCount: Int64 = 0
   private var viewportBackgroundColor: UInt32?
-  private var lastNativeCompositorFailure = "not initialized"
   private let lifecycle: MacOSPlayerLifecycleController
   private let tracks = MacOSVideoTrackController()
   private let presentation = MacOSPresentationController()
@@ -42,7 +108,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     self.lifecycle = MacOSPlayerLifecycleController(textureRegistry: engine)
     super.init()
     installScreenChangeObserver()
-    ensureNativeCompositorMatchesCurrentConfiguration()
+    ensureRendererOwnedPresentationMatchesCurrentConfiguration()
   }
 
   deinit {
@@ -56,8 +122,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     lifecycle.texture
   }
 
-  private var nativeTexture: MacOSFlutterTextureBridge? {
-    lifecycle.nativeTexture
+  private var rendererTarget: MacOSRendererOwnedPresentationTarget? {
+    lifecycle.rendererTarget
   }
 
   private var textureId: Int64? {
@@ -138,7 +204,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       if let color = MacOSFlutterArguments.uint32Arg(call.arguments, "color") {
         viewportBackgroundColor = color
         nativePlayer?.setBackgroundColor(color)
-        nativeCompositor?.setViewportBackgroundColor(color)
         if backendName == MacOSVideoTrackPayload.nativeFormatName {
           presentation.refreshCurrentFrame(context: presentationContext())
         }
@@ -171,38 +236,60 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       result(nil)
     case "resize":
       presentation.resize(arguments: call.arguments, context: presentationContext())
+      scheduleRendererOwnedCompositeRefresh(reason: "resize")
       result(nil)
     case "prewarmNativePresentationTargetSize":
       prewarmNativePresentationTargetSize(arguments: call.arguments)
       result(nil)
-    case "setNativeCompositorViewportRect":
-      setNativeCompositorViewportRect(arguments: call.arguments)
+    case "setRendererOwnedViewportRect":
+      presentation.setRendererOwnedViewportRect(
+        arguments: call.arguments,
+        rendererTarget: rendererTarget
+      )
+      if backendName == MacOSVideoTrackPayload.nativeFormatName,
+         !playback.currentIsPlaying(player: nativePlayer) {
+        if presentation.refreshCurrentFrame(context: presentationContext()) {
+          scheduleRendererOwnedCompositeRefreshNextTick(
+            reason: "viewport-rect-followup"
+          )
+        }
+      } else {
+        scheduleRendererOwnedCompositeRefresh(reason: "viewport-rect")
+      }
       result(nil)
-    case "requestNativeCompositorFlutterFrame":
+    case "requestRendererOwnedFlutterSurface":
+      markRendererOwnedFlutterSurfaceDirty(reason: "request-flutter-frame")
       result(nil)
-    case "ackNativeCompositorFlutterState":
+    case "boostRendererOwnedFlutterSurfaceInteraction":
+      let reason = MacOSFlutterArguments.stringArg(call.arguments, "reason") ?? "boost"
+      if Self.rendererOwnedProjectionOnlyBoostReasons.contains(reason) {
+        scheduleRendererOwnedCompositeRefresh(reason: "boost-\(reason)")
+      } else {
+        markRendererOwnedFlutterSurfaceDirty(reason: "boost-\(reason)")
+      }
       result(nil)
-    case "setNativeCompositorViewportTransform":
-      setNativeCompositorViewportTransform(arguments: call.arguments)
+    case "ackRendererOwnedFlutterSurfaceState":
+      markRendererOwnedFlutterSurfaceDirty(reason: "ack-flutter-state")
       result(nil)
-    case "prepareNativeCompositorSourceCache":
-      prepareNativeCompositorSourceCache(arguments: call.arguments)
+    case "prepareRendererOwnedSourceProjection":
+      prepareRendererOwnedSourceProjection(arguments: call.arguments)
       result(nil)
     case "setNativeAnalysisOverlay":
       setNativeAnalysisOverlay(arguments: call.arguments)
       result(nil)
-    case "clearNativeCompositorSourceCache":
-      clearNativeCompositorSourceCache(arguments: call.arguments)
+    case "clearRendererOwnedSourceProjection":
+      clearRendererOwnedSourceProjection(arguments: call.arguments)
       result(nil)
     case "play":
       playback.play(
         player: nativePlayer,
-        texture: nativeTexture,
+        rendererTarget: rendererTarget,
         textureRegistered: textureId != nil,
         maxTrackSlots: tracks.activeSlotCapacity(),
         userData: Unmanaged.passUnretained(self).toOpaque(),
         presentationState: presentationState
       )
+      scheduleRendererOwnedCompositeRefresh(reason: "playback-flutter-surface")
       emitPlaybackClock(force: true)
       result(nil)
     case "pause":
@@ -288,37 +375,35 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         trackPayloads: tracks.tracks
       )
       diagnostics.merge(MacOSPresentationConfiguration.current.diagnostics) { _, next in next }
-      if let nativeCompositor {
-        diagnostics.merge(nativeCompositor.diagnostics()) { _, next in next }
-      }
-      if let nativeCompositorSourceRing {
-        diagnostics.merge(nativeCompositorSourceRing.diagnostics()) { _, next in next }
-      }
+      diagnostics.merge(rendererOwnedCompositorDiagnostics()) { _, next in next }
+      diagnostics["flutterSurfaceExporterAvailable"] =
+        MacOSFlutterSurfaceExporter.isAvailable(engine: flutterEngine)
       result(diagnostics)
     case "debugFlutterSurfaceInfo":
       result(debugFlutterSurfaceInfo())
-    case "debugNativeCompositor", "debugNativeCompositorSpike":
-      if let nativeCompositor {
-        var diagnostics = nativeCompositor.diagnostics()
-        if let state = nativePlayer?.rendererOwnedPresentationState() {
-          diagnostics.merge(Self.rendererOwnedColorDiagnostics(from: state)) { _, next in next }
-        }
-        result(diagnostics)
-      } else {
-        var diagnostics = MacOSPresentationConfiguration.current.diagnostics
-        diagnostics.merge([
-          "nativeCompositorEnabled": false,
-          "nativeCompositorSpikeEnabled": false,
-          "nativeCompositorLastFailure": "native compositor presentation mode is not enabled",
-        ]) { _, next in next }
-        result(diagnostics)
+    case "debugRendererOwnedPresentation":
+      var diagnostics = MacOSPresentationConfiguration.current.diagnostics
+      let rendererOwnedReady = rendererOwnedPresentationReady()
+      diagnostics.merge([
+        "rendererOwnedPresentationRequested":
+          MacOSPresentationConfiguration.current.rendererOwnedPresentationEnabled,
+        "rendererOwnedPresentationReady": rendererOwnedReady,
+        "rendererOwnedPresentationLastFailure":
+          rendererOwnedReady ? "" : "renderer-owned presentation is not ready",
+      ]) { _, next in next }
+      diagnostics.merge(rendererOwnedCompositorDiagnostics()) { _, next in next }
+      if let state = nativePlayer?.rendererOwnedPresentationState() {
+        diagnostics.merge(Self.rendererOwnedColorDiagnostics(from: state)) { _, next in next }
       }
+      result(diagnostics)
     case "captureViewport":
       result(MacOSViewportCapture.capture(texture: texture))
     case "captureViewportRegion":
       result(MacOSViewportCapture.captureRegion(texture: texture, arguments: call.arguments))
     case "captureWindow":
       result(MacOSViewportCapture.captureWindow(arguments: call.arguments))
+    case "captureWindowRegion":
+      result(MacOSViewportCapture.captureWindowRegion(arguments: call.arguments))
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -337,14 +422,227 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     ]
   }
 
+  private func rendererOwnedCompositorDiagnostics() -> [String: Any] {
+    let state = nativePlayer?.rendererOwnedPresentationState() ?? [:]
+    let perfStats = nativePlayer?.performanceStats() ?? [:]
+    let rendererOwnedActive = state["active"] as? Bool ?? false
+    let backend = state["backendName"] as? String ?? "unknown"
+    recordRendererOwnedSourceCachePublishCount(
+      int64DiagnosticValue(state["sourceCachePublishCount"])
+    )
+    let sourceCacheHz = rendererOwnedSourceCachePublishRate.rateHz()
+    let sourceCachePublishCount = int64DiagnosticValue(state["sourceCachePublishCount"])
+    let sourceCacheTextureCount = int64DiagnosticValue(state["sourceCacheTextureCount"])
+    let sourceProjectionHz = rendererOwnedSourceProjectionRate.rateHz()
+    let compositeRequestHz = rendererOwnedCompositeRefreshRequestRate.rateHz()
+    let compositeSubmitHz = rendererOwnedCompositeRefreshSubmitRate.rateHz()
+    let compositePresentHz = rendererOwnedCompositeRefreshPresentRate.rateHz()
+    let retainedComposeHitRatioX1000 = retainedComposeHitRatioX1000(
+      state: state,
+      perfStats: perfStats
+    )
+    let latestProjectionLagMs =
+      rendererOwnedCompositeRefreshLatestProjectionNs > 0
+        ? Double(
+          DispatchTime.now().uptimeNanoseconds - rendererOwnedCompositeRefreshLatestProjectionNs
+        ) / 1_000_000.0
+        : 0.0
+    let compositeClockDiagnostics = rendererOwnedCompositeDisplayLink.diagnosticMap()
+    let configuration = MacOSPresentationConfiguration.current
+    let mode = rendererOwnedActive
+      ? (backend.lowercased().contains("wgpu") ? "renderer-owned-wgpu-metal" : "renderer-owned-metal")
+      : "inactive"
+    var diagnostics: [String: Any] = [
+      "rendererOwnedPresentationActive": rendererOwnedActive,
+      "rendererOwnedPresentationMode": mode,
+      "rendererOwnedPresentationBackendName": backend,
+      "rendererOwnedExternalFlutterSurfaceUpdateCount":
+        state["externalFlutterSurfaceUpdateCount"] ?? 0,
+      "rendererOwnedExternalFlutterSurfaceConsumeCount":
+        state["externalFlutterSurfaceConsumeCount"] ?? 0,
+      "rendererOwnedFlutterSurfaceDirty":
+        rendererOwnedFlutterSurfaceDirty,
+      "rendererOwnedFlutterSurfaceDirtyCount":
+        rendererOwnedFlutterSurfaceDirtyCount,
+      "rendererOwnedFlutterSurfaceSampleCount":
+        rendererOwnedFlutterSurfaceSampleCount,
+      "rendererOwnedFlutterSurfacePublishCount":
+        rendererOwnedFlutterSurfacePublishCount,
+      "rendererOwnedFlutterSurfaceUnchangedCount":
+        rendererOwnedFlutterSurfaceUnchangedCount,
+      "rendererOwnedFlutterSurfaceSampleP95Ms":
+        rendererOwnedFlutterSurfaceSampleDuration.p95Ms(),
+      "rendererOwnedFlutterSurfaceSampleP95MsX1000":
+        Int(rendererOwnedFlutterSurfaceSampleDuration.p95Ms() * 1000.0),
+      "rendererOwnedFlutterSurfaceLastReason":
+        rendererOwnedFlutterSurfaceLastReason,
+      "rendererOwnedFlutterSurfaceLastGeneration":
+        rendererOwnedFlutterSurfaceLastGeneration,
+      "rendererOwnedFlutterSurfaceWarmActive":
+        rendererOwnedFlutterSurfaceWarmActive(),
+      "rendererOwnedFlutterSurfaceWarmTickCount":
+        rendererOwnedFlutterSurfaceWarmTickCount,
+      "rendererOwnedFlutterSurfaceWarmComposeCount":
+        rendererOwnedFlutterSurfaceWarmComposeCount,
+      "rendererOwnedFlutterSurfaceContinuousTickCount":
+        rendererOwnedFlutterSurfaceContinuousTickCount,
+      "rendererOwnedFlutterSurfaceContinuousComposeCount":
+        rendererOwnedFlutterSurfaceContinuousComposeCount,
+      "rendererOwnedSourceProjectionUpdateCount":
+        state["sourceProjectionUpdateCount"] ?? 0,
+      "rendererOwnedSourceProjectionConsumeCount":
+        state["sourceProjectionConsumeCount"] ?? 0,
+      "rendererOwnedCompositeRefreshInFlight":
+        rendererOwnedCompositeRefreshInFlight,
+      "rendererOwnedCompositeRefreshPendingGeneration":
+        rendererOwnedCompositeRefreshPendingGeneration,
+      "rendererOwnedCompositeRefreshSubmittedGeneration":
+        rendererOwnedCompositeRefreshSubmittedGeneration,
+      "rendererOwnedCompositeRefreshCompletedGeneration":
+        rendererOwnedCompositeRefreshCompletedGeneration,
+      "rendererOwnedCompositeRefreshRequestCount":
+        rendererOwnedCompositeRefreshRequestCount,
+      "rendererOwnedCompositeRefreshSubmitCount":
+        rendererOwnedCompositeRefreshSubmitCount,
+      "rendererOwnedCompositeRefreshAppliedCount":
+        rendererOwnedCompositeRefreshAppliedCount,
+      "rendererOwnedCompositeRefreshCoalescedCount":
+        rendererOwnedCompositeRefreshCoalescedCount,
+      "rendererOwnedCompositeRefreshFailureCount":
+        rendererOwnedCompositeRefreshFailureCount,
+      "rendererOwnedCompositeRequestHz": compositeRequestHz,
+      "rendererOwnedCompositeRequestHzX1000": Int(compositeRequestHz * 1000.0),
+      "rendererOwnedCompositeSubmitHz": compositeSubmitHz,
+      "rendererOwnedCompositeSubmitHzX1000": Int(compositeSubmitHz * 1000.0),
+      "rendererOwnedPresentHz": compositePresentHz,
+      "rendererOwnedPresentHzX1000": Int(compositePresentHz * 1000.0),
+      "rendererOwnedRetainedComposeHitRatioX1000":
+        retainedComposeHitRatioX1000,
+      "rendererOwnedComposeSkippedInFlight":
+        rendererOwnedCompositeRefreshCoalescedCount,
+      "rendererOwnedLatestProjectionLagMs": latestProjectionLagMs,
+      "rendererOwnedLatestProjectionLagMsX1000": Int(latestProjectionLagMs * 1000.0),
+      "rendererOwnedComposeDurationP95Ms":
+        rendererOwnedCompositeRefreshDuration.p95Ms(),
+      "rendererOwnedComposeDurationP95MsX1000":
+        Int(rendererOwnedCompositeRefreshDuration.p95Ms() * 1000.0),
+      "rendererOwnedComposeDisplayClockSource":
+        compositeClockDiagnostics["viewportClockSource"] ?? "unknown",
+      "rendererOwnedComposeDisplayClockRunning":
+        compositeClockDiagnostics["viewportClockRunning"] ?? false,
+      "rendererOwnedComposeDisplayTickHz":
+        compositeClockDiagnostics["displayTickHz"] ?? 0.0,
+      "rendererOwnedComposeDisplayTickHzX1000":
+        compositeClockDiagnostics["displayTickHzX1000"] ?? 0,
+      "rendererOwnedComposeDisplayDeliveredTickHz":
+        compositeClockDiagnostics["displayDeliveredTickHz"] ?? 0.0,
+      "rendererOwnedComposeDisplayDeliveredTickHzX1000":
+        compositeClockDiagnostics["displayDeliveredTickHzX1000"] ?? 0,
+      "rendererOwnedSourceCacheHz": sourceCacheHz,
+      "rendererOwnedSourceCacheHzX1000": Int(sourceCacheHz * 1000.0),
+      "rendererOwnedSourceProjectionHz": sourceProjectionHz,
+      "rendererOwnedSourceProjectionHzX1000": Int(sourceProjectionHz * 1000.0),
+      "sourceFrameHz": sourceCacheHz,
+      "sourcePublishHz": sourceCacheHz,
+      "sourceBakeHz": sourceCacheHz,
+      "sourceRingBakeCount": sourceCachePublishCount,
+      "sourceRingBakeHz": sourceCacheHz,
+      "sourceRingBakeP95Ms": 0.0,
+      "sourceRingBakeLastMs": 0.0,
+      "sourceRingPublishCount": sourceCachePublishCount,
+      "sourceRingPublishHz": sourceCacheHz,
+      "sourceRingDepth": sourceCacheTextureCount,
+      "sourceRetainMode": "wgpu-owned-ring",
+      "retainedComposeHitRatio":
+        Double(retainedComposeHitRatioX1000) / 1000.0,
+      "retainedComposeHitRatioX1000": retainedComposeHitRatioX1000,
+      "projectionUpdateHz": sourceProjectionHz,
+      "composeRequestHz": compositeRequestHz,
+      "composeSubmitHz": compositeSubmitHz,
+      "presentHz": compositePresentHz,
+      "composeSkippedInFlight": rendererOwnedCompositeRefreshCoalescedCount,
+      "latestProjectionLagMs": latestProjectionLagMs,
+    ]
+    if let targetDiagnostics = rendererTarget?.rendererOwnedTargetDiagnostics() {
+      diagnostics.merge(targetDiagnostics) { _, next in next }
+    } else {
+      diagnostics.merge([
+        "rendererOwnedTargetPixelFormat":
+          configuration.edrOutputEnabled ? "64RGBAHalf" : "32BGRA",
+        "rendererOwnedEDROutputEnabled": configuration.edrOutputEnabled,
+        "rendererOwnedEDRTargetSampleCount": 0,
+        "rendererOwnedEDRTargetMaxRGBX1000": 0,
+        "rendererOwnedEDRTargetPixelsOver1X1000": 0,
+      ]) { _, next in next }
+    }
+    return diagnostics
+  }
+
+  private func retainedComposeHitRatioX1000(
+    state: [String: Any],
+    perfStats: [String: Any]
+  ) -> Int {
+    if let direct = perfStats["sourceFrameCacheHitRatioX1000"] as? Int {
+      return direct
+    }
+    if let direct = state["sourceFrameCacheHitRatioX1000"] as? Int {
+      return direct
+    }
+    let hits = int64DiagnosticValue(
+      perfStats["sourceFrameCacheHitCount"] ?? state["sourceFrameCacheHitCount"]
+    )
+    let misses = int64DiagnosticValue(
+      perfStats["sourceFrameCacheMissCount"] ?? state["sourceFrameCacheMissCount"]
+    )
+    let total = hits + misses
+    guard total > 0 else { return 0 }
+    return Int((hits * 1000) / total)
+  }
+
+  private func int64DiagnosticValue(_ value: Any?) -> Int64 {
+    if let value = value as? Int64 {
+      return value
+    }
+    if let value = value as? Int {
+      return Int64(value)
+    }
+    if let value = value as? NSNumber {
+      return value.int64Value
+    }
+    return 0
+  }
+
+  private func recordRendererOwnedSourceCachePublishCount(_ count: Int64) {
+    if count < rendererOwnedSourceCacheLastPublishCount {
+      rendererOwnedSourceCachePublishRate.reset()
+      rendererOwnedSourceCacheLastPublishCount = count
+      return
+    }
+    let delta = count - rendererOwnedSourceCacheLastPublishCount
+    guard delta > 0 else { return }
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    for _ in 0..<min(delta, 8) {
+      rendererOwnedSourceCachePublishRate.record(nowNs: nowNs)
+    }
+    rendererOwnedSourceCacheLastPublishCount = count
+  }
+
   private func debugFlutterSurfaceInfo() -> Any {
     guard let engine = flutterEngine else {
       return FlutterError(code: "NO_ENGINE", message: "Flutter engine is unavailable", details: nil)
     }
 
-    let infos = engine.voidPlayerHDRCurrentFlutterSurfaceInfos()
+    guard MacOSFlutterSurfaceExporter.isAvailable(engine: engine) else {
+      NSLog("VoidPlayer HDR compositor: Flutter surface export API is unavailable")
+      return FlutterError(
+        code: "FLUTTER_SURFACE_EXPORT_UNAVAILABLE",
+        message: "Flutter surface export API is unavailable",
+        details: nil
+      )
+    }
+    let infos = MacOSFlutterSurfaceExporter.currentSurfaceInfos(engine: engine)
     guard let info = infos.first else {
-      NSLog("VoidPlayer HDR compositor: no Flutter front surface is currently available")
+      NSLog("VoidPlayer renderer-owned presentation: no Flutter front surface is currently available")
       return FlutterError(code: "NO_FLUTTER_SURFACE", message: "No Flutter front surface", details: nil)
     }
 
@@ -353,11 +651,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     var payload = info
     payload.removeValue(forKey: "texture")
     payload.removeValue(forKey: "ioSurface")
-    payload["nativeTextureObjectAvailable"] = texture != nil
-    payload["nativeIOSurfaceObjectAvailable"] = ioSurface != nil
+    payload["flutterTextureObjectAvailable"] = texture != nil
+    payload["flutterIOSurfaceObjectAvailable"] = ioSurface != nil
 
     NSLog(
-      "VoidPlayer HDR compositor: stole Flutter texture available=%@ ioSurface=%@ pointer=%@ format=%@ size=%@x%@ wideGamut=%@",
+      "VoidPlayer renderer-owned presentation: exported Flutter surface texture available=%@ ioSurface=%@ pointer=%@ format=%@ size=%@x%@ wideGamut=%@",
       texture != nil ? "true" : "false",
       ioSurface != nil ? "true" : "false",
       String(describing: payload["texturePointer"] ?? "nil"),
@@ -369,23 +667,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     return payload
   }
 
-  private func setNativeCompositorViewportRect(arguments: Any?) {
-    guard let nativeCompositor else { return }
-    let trace = compositorLatencyProfiler.receive(
-      route: "viewport-rect",
-      arguments: arguments
-    )
-    nativeCompositor.setViewportRect(
-      left: MacOSFlutterArguments.intArg(arguments, "left") ?? 0,
-      top: MacOSFlutterArguments.intArg(arguments, "top") ?? 0,
-      width: MacOSFlutterArguments.intArg(arguments, "width") ?? 0,
-      height: MacOSFlutterArguments.intArg(arguments, "height") ?? 0,
-      surfaceWidth: MacOSFlutterArguments.intArg(arguments, "surfaceWidth") ?? 0,
-      surfaceHeight: MacOSFlutterArguments.intArg(arguments, "surfaceHeight") ?? 0,
-      trace: trace
-    )
-  }
-
   private func prewarmNativePresentationTargetSize(arguments: Any?) {
     guard let texture else { return }
     texture.prewarmRendererTarget(
@@ -394,29 +675,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     )
   }
 
-  private func setNativeCompositorViewportTransform(arguments: Any?) {
-    _ = compositorLatencyProfiler.receive(route: "viewport-transform-noop", arguments: arguments)
-    // Kept as a no-op compatibility endpoint while Dart/native converge on
-    // full-layout source projection.
-  }
-
-  private func prepareNativeCompositorSourceCache(arguments: Any?) {
-    guard let nativeCompositor else { return }
+  private func prepareRendererOwnedSourceProjection(arguments: Any?) {
     let trace = compositorLatencyProfiler.receive(
       route: "source-projection",
       arguments: arguments
     )
     let sourceOrder = MacOSFlutterArguments.intListArg(arguments, "sourceOrder")
-    guard let player = nativePlayer else {
-      nativeCompositorSourceRing?.unsubscribe(reason: "native player unavailable")
-      nativeCompositorSourceSignature = ""
-      nativeCompositor.setSourceBuffers(
-        textures: [],
-        overlay: .empty,
-        error: "native player unavailable"
-      )
-      return
-    }
     let sourceSlots = MacOSFlutterArguments.intListArg(arguments, "sourceSlots")
     let displayOffsetX = MacOSFlutterArguments.doubleListArg(arguments, "displayOffsetX")
     let displayOffsetY = MacOSFlutterArguments.doubleListArg(arguments, "displayOffsetY")
@@ -424,78 +688,36 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let invDisplaySizeY = MacOSFlutterArguments.doubleListArg(arguments, "invDisplaySizeY")
     let viewOffsetUvX = MacOSFlutterArguments.doubleListArg(arguments, "viewOffsetUvX")
     let viewOffsetUvY = MacOSFlutterArguments.doubleListArg(arguments, "viewOffsetUvY")
-    nativeCompositor.setSourceProjection(
-      mode: MacOSFlutterArguments.intArg(arguments, "mode") ?? 0,
-      splitPos: MacOSFlutterArguments.doubleArg(arguments, "splitPos") ?? 0.5,
-      activeTrackCount: MacOSFlutterArguments.intArg(arguments, "activeTrackCount") ?? 1,
-      order: sourceOrder,
-      displayOffsetX: displayOffsetX,
-      displayOffsetY: displayOffsetY,
-      invDisplaySizeX: invDisplaySizeX,
-      invDisplaySizeY: invDisplaySizeY,
-      viewOffsetUvX: viewOffsetUvX,
-      viewOffsetUvY: viewOffsetUvY,
-      trace: trace
-    )
-    nativeCompositor.setOverlayPrimitives(player.currentOverlayPrimitives())
-    let trackPayloads = tracks.tracks
-    if trackPayloads.isEmpty || sourceSlots.isEmpty {
-      nativeCompositorSourceRing?.unsubscribe(reason: "no source tracks")
-      nativeCompositorSourceSignature = ""
-      nativeCompositor.setSourceBuffers(
-        textures: [],
-        overlay: .empty,
-        error: "no source tracks"
-      )
-      return
-    }
-
-    var descriptors: [MacOSCompositorSourceTrackDescriptor] = []
-    for payload in trackPayloads {
-      guard let slot = payload["slot"] as? Int,
-            sourceSlots.contains(slot),
-            let fileId = payload["fileId"] as? Int,
-            let width = payload["width"] as? Int,
-            let height = payload["height"] as? Int,
-            width > 0,
-            height > 0 else {
-        continue
+    let mode = MacOSFlutterArguments.intArg(arguments, "mode") ?? 0
+    let splitPos = MacOSFlutterArguments.doubleArg(arguments, "splitPos") ?? 0.5
+    let activeTrackCount = MacOSFlutterArguments.intArg(arguments, "activeTrackCount") ?? 1
+    if sourceSlots.isEmpty {
+      nativePlayer?.clearSourceProjection()
+    } else {
+      if nativePlayer?.updateSourceProjection(
+        mode: mode,
+        splitPos: splitPos,
+        activeTrackCount: activeTrackCount,
+        order: sourceOrder,
+        displayOffsetX: displayOffsetX,
+        displayOffsetY: displayOffsetY,
+        invDisplaySizeX: invDisplaySizeX,
+        invDisplaySizeY: invDisplaySizeY,
+        viewOffsetUvX: viewOffsetUvX,
+        viewOffsetUvY: viewOffsetUvY
+      ) == true {
+        rendererOwnedSourceProjectionRate.record()
+        rendererOwnedCompositeRefreshLatestProjectionNs =
+          DispatchTime.now().uptimeNanoseconds
       }
-      descriptors.append(MacOSCompositorSourceTrackDescriptor(
-        slot: slot,
-        fileId: fileId,
-        width: width,
-        height: height,
-        displayOffsetX: Float(doubleAt(displayOffsetX, slot)),
-        displayOffsetY: Float(doubleAt(displayOffsetY, slot)),
-        invDisplaySizeX: Float(doubleAt(invDisplaySizeX, slot)),
-        invDisplaySizeY: Float(doubleAt(invDisplaySizeY, slot)),
-        viewOffsetUvX: Float(doubleAt(viewOffsetUvX, slot)),
-        viewOffsetUvY: Float(doubleAt(viewOffsetUvY, slot))
-      ))
     }
-
-    let pixelFormat = MacOSPresentationConfiguration.current.edrOutputEnabled ? "edr" : "sdr"
-    let signature = ([pixelFormat, sourceOrder.map(String.init).joined(separator: ",")] +
-      descriptors.map { "\($0.slot):\($0.fileId):\($0.width)x\($0.height)" })
-      .joined(separator: "|")
-    if signature == nativeCompositorSourceSignature && nativeCompositorSourceRing != nil {
-      return
+    if let trace {
+      compositorLatencyProfiler.recordApplied(
+        trace,
+        applyNs: DispatchTime.now().uptimeNanoseconds
+      )
     }
-
-    let ring = nativeCompositorSourceRing
-      ?? MacOSNativeCompositorSourceRing(compositor: nativeCompositor)
-    nativeCompositorSourceRing = ring
-    nativeCompositorSourceSignature = signature
-    if !playback.currentIsPlaying(player: player) {
-      _ = presentation.refreshCurrentFrame(context: presentationContext())
-    }
-    ring.subscribe(
-      player: player,
-      descriptors: descriptors,
-      order: sourceOrder,
-      edrOutputEnabled: MacOSPresentationConfiguration.current.edrOutputEnabled
-    )
+    scheduleRendererOwnedCompositeRefresh(reason: "source-projection")
   }
 
   private func setNativeAnalysisOverlay(arguments: Any?) {
@@ -561,22 +783,30 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         VPMacOSLogProfilerSummary(pointer)
       }
     }
-    if let player = nativePlayer {
-      nativeCompositor?.setOverlayPrimitives(player.currentOverlayPrimitives())
+    scheduleRendererOwnedCompositeRefresh(reason: "analysis-overlay")
+  }
+
+  private func clearRendererOwnedSourceProjection(arguments: Any?) {
+    _ = compositorLatencyProfiler.receive(route: "source-clear", arguments: arguments)
+    nativePlayer?.clearSourceProjection()
+    if backendName == MacOSVideoTrackPayload.nativeFormatName,
+       !playback.currentIsPlaying(player: nativePlayer) {
+      if presentation.refreshCurrentFrame(context: presentationContext()) {
+        scheduleRendererOwnedCompositeRefreshNextTick(
+          reason: MacOSFlutterArguments.stringArg(arguments, "reason") ?? "source-clear-followup"
+        )
+      }
+    } else {
+      scheduleRendererOwnedCompositeRefresh(
+        reason: MacOSFlutterArguments.stringArg(arguments, "reason") ?? "source-clear"
+      )
     }
   }
 
-  private func clearNativeCompositorSourceCache(arguments: Any?) {
-    _ = compositorLatencyProfiler.receive(route: "source-clear", arguments: arguments)
-    nativeCompositorSourceSignature = ""
-    nativeCompositorSourceRing?.unsubscribe(
-      reason: MacOSFlutterArguments.stringArg(arguments, "reason") ?? "clear requested"
-    )
-  }
-
-  private func doubleAt(_ values: [Double], _ index: Int) -> Double {
-    guard values.indices.contains(index) else { return 0.0 }
-    return values[index]
+  private func scheduleRendererOwnedCompositeRefreshNextTick(reason: String) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
+      self?.scheduleRendererOwnedCompositeRefresh(reason: reason)
+    }
   }
 
   private func currentPresentedFrame(arguments: Any?) -> Any? {
@@ -716,6 +946,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     playbackSpeed = 1.0
     let result = lifecycle.create(
       arguments: arguments,
+      contentView: contentView,
       playback: playback,
       tracks: tracks,
       presentationState: presentationState,
@@ -724,11 +955,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
     )
     refreshPresentationPolicyForCurrentTracks()
-    ensureNativeCompositorMatchesCurrentConfiguration()
-    if let viewportBackgroundColor {
-      nativeCompositor?.setViewportBackgroundColor(viewportBackgroundColor)
-    }
-    nativeCompositor?.setVideoTexture(texture)
+    ensureRendererOwnedPresentationMatchesCurrentConfiguration()
     emitPlaybackClock(force: true)
     return result
   }
@@ -739,8 +966,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     presentation.resetLayout()
     lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
     MacOSPresentationConfiguration.resetForNoMedia()
-    nativeCompositor?.setVideoTexture(nil)
-    ensureNativeCompositorMatchesCurrentConfiguration()
+    ensureRendererOwnedPresentationMatchesCurrentConfiguration()
   }
 
   private func emitPlaybackClock(force: Bool = false) {
@@ -776,8 +1002,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nativePlayer: nativePlayer,
       textureDimensions: texture?.dimensions()
     )
-    nativeCompositorSourceRing?.unsubscribe(reason: "track topology changed")
-    nativeCompositorSourceSignature = ""
+    nativePlayer?.clearSourceProjection()
     refreshPresentationPolicyForCurrentTracks()
     if addResult.refreshCurrentFrame {
       presentation.refreshCurrentFrame(context: presentationContext())
@@ -794,8 +1019,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       backendName: backendName,
       nativePlayer: nativePlayer
     )
-    nativeCompositorSourceRing?.unsubscribe(reason: "track topology changed")
-    nativeCompositorSourceSignature = ""
+    nativePlayer?.clearSourceProjection()
     if removeResult.destroyPlayer {
       destroyPlayer()
     } else if removeResult.refreshCurrentFrame {
@@ -804,81 +1028,393 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func markFrameAvailable(refreshSourceRing: Bool = true) {
+  private func markFrameAvailable() {
     frameAvailableCount += 1
     frameAvailableRate.record()
-    let playingInNativeCompositor =
-      playback.isPlaying &&
-      nativeCompositor != nil &&
-      backendName == MacOSVideoTrackPayload.nativeFormatName
-    if playingInNativeCompositor {
+    let rendererOwnedReady = rendererOwnedPresentationReady()
+    compositorVideoTextureRefreshCount += 1
+    let rendererOwnedLayerActive =
+      rendererOwnedReady && (rendererTarget?.rendererOwnedRunnerLayerActive == true)
+    if rendererOwnedLayerActive && playback.isPlaying {
       flutterTextureFrameAvailableSkippedWhilePlayingCount += 1
       compositorVideoTextureRefreshSkippedWhilePlayingCount += 1
-    } else {
-      lifecycle.markFrameAvailable()
-      compositorVideoTextureRefreshCount += 1
-      nativeCompositor?.setVideoTexture(texture)
+      return
     }
-    // Keep the live source ring mirroring the just-presented frame so a
-    // playing-state pan reveals slid-to pixels immediately. No-op unless an
-    // interaction has subscribed; coalesced on the ring's own queue.
-    if refreshSourceRing, let player = nativePlayer {
-      nativeCompositorSourceRing?.requestRefresh(player: player)
+    lifecycle.markFrameAvailable()
+    if playback.isPlaying &&
+        !rendererOwnedReady &&
+        backendName == MacOSVideoTrackPayload.nativeFormatName {
+      compositorVideoTextureRefreshSkippedWhilePlayingCount += 1
     }
   }
 
-  private func ensureNativeCompositorMatchesCurrentConfiguration() {
-    let configuration = MacOSPresentationConfiguration.current
-    guard configuration.nativeCompositorEnabled,
-          textureId != nil,
-          texture != nil else {
-      nativeCompositorSourceRing?.unsubscribe(reason: "compositor disabled")
-      nativeCompositorSourceRing = nil
-      nativeCompositorSourceSignature = ""
-      nativeCompositor?.detach()
-      nativeCompositor = nil
-      lastNativeCompositorFailure = configuration.nativeCompositorEnabled
-        ? ""
-        : "native compositor presentation mode is not enabled"
-      emitNativeCompositorState()
+  private func scheduleRendererOwnedCompositeRefresh(reason: String) {
+    guard Thread.isMainThread else {
+      DispatchQueue.main.async { [weak self] in
+        self?.scheduleRendererOwnedCompositeRefresh(reason: reason)
+      }
       return
     }
-    let currentMode = nativeCompositor?.diagnostics()["macOSPresentationMode"] as? String
-    let currentReason =
-      nativeCompositor?.diagnostics()["macOSPresentationReason"] as? String
-    if currentMode == configuration.mode.rawValue &&
-        currentReason == configuration.reason {
-      emitNativeCompositorState()
+    guard rendererOwnedPresentationReady(),
+          let player = nativePlayer,
+          let rendererTarget = rendererTarget else {
       return
     }
-    nativeCompositorSourceRing?.unsubscribe(reason: "compositor reconfigured")
-    nativeCompositorSourceRing = nil
-    nativeCompositorSourceSignature = ""
-    nativeCompositor?.detach()
-    nativeCompositor = nil
+    _ = player
+    _ = rendererTarget
+    rendererOwnedCompositeRefreshPendingGeneration &+= 1
+    rendererOwnedCompositeRefreshPendingReason = reason
+    rendererOwnedCompositeRefreshRequestCount += 1
+    rendererOwnedCompositeRefreshRequestRate.record()
+    if rendererOwnedCompositeRefreshInFlight {
+      rendererOwnedCompositeRefreshCoalescedCount += 1
+      return
+    }
+    rendererOwnedCompositeDisplayLink.start()
+    logRendererOwnedCompositeSummaryIfNeeded(reason: reason)
+  }
+
+  private func processRendererOwnedCompositeRefreshTick() {
+    guard Thread.isMainThread else {
+      DispatchQueue.main.async { [weak self] in
+        self?.processRendererOwnedCompositeRefreshTick()
+      }
+      return
+    }
+    guard rendererOwnedPresentationReady(),
+          let player = nativePlayer,
+          let rendererTarget = rendererTarget else {
+      rendererOwnedCompositeDisplayLink.stop()
+      return
+    }
+    let tickNs = DispatchTime.now().uptimeNanoseconds
+    let hasPendingComposite =
+      rendererOwnedCompositeRefreshPendingGeneration >
+        rendererOwnedCompositeRefreshSubmittedGeneration
+    let flutterSurfaceWarmActive =
+      rendererOwnedFlutterSurfaceWarmActive(nowNs: tickNs)
+    let flutterSurfaceContinuousActive =
+      rendererOwnedFlutterSurfaceContinuousActive()
+    guard hasPendingComposite || flutterSurfaceWarmActive ||
+            flutterSurfaceContinuousActive else {
+      if !rendererOwnedCompositeRefreshInFlight {
+        rendererOwnedCompositeDisplayLink.stop()
+      }
+      return
+    }
+    if rendererOwnedCompositeRefreshInFlight {
+      rendererOwnedCompositeRefreshCoalescedCount += 1
+      return
+    }
+    if !hasPendingComposite {
+      rendererOwnedCompositeRefreshPendingGeneration &+= 1
+      if flutterSurfaceContinuousActive {
+        rendererOwnedCompositeRefreshPendingReason = "flutter-surface-continuous"
+        rendererOwnedFlutterSurfaceContinuousTickCount += 1
+      } else {
+        rendererOwnedCompositeRefreshPendingReason = "flutter-surface-warm"
+        rendererOwnedFlutterSurfaceWarmTickCount += 1
+      }
+    }
+    let submittedGeneration = rendererOwnedCompositeRefreshPendingGeneration
+    let reason = rendererOwnedCompositeRefreshPendingReason ?? "display-link"
+    let startNs = tickNs
+    rendererOwnedCompositeRefreshInFlight = true
+    rendererOwnedCompositeRefreshSubmittedGeneration = submittedGeneration
+    rendererOwnedCompositeRefreshSubmitCount += 1
+    rendererOwnedCompositeRefreshSubmitRate.record(nowNs: startNs)
+    refreshRendererOwnedFlutterSurfaceIfNeeded(
+      reason: reason,
+      sampleLatest: flutterSurfaceContinuousActive
+    )
+    let maxTrackSlots = tracks.activeSlotCapacity()
+    rendererOwnedCompositeRefreshQueue.async { [weak self, weak player, weak rendererTarget] in
+      guard let self,
+            let player,
+            let rendererTarget else {
+        DispatchQueue.main.async { [weak self] in
+          self?.finishRendererOwnedCompositeRefresh(
+            submittedGeneration: submittedGeneration,
+            startNs: startNs
+          )
+        }
+        return
+      }
+      let drawResult = MacOSNativeFrameRefresh.drawCurrentFrameForLayoutRefresh(
+        player: player,
+        rendererTarget: rendererTarget,
+        maxTrackSlots: maxTrackSlots,
+        waitTimeoutMs: 8
+      )
+      DispatchQueue.main.async { [weak self, weak player, weak rendererTarget] in
+        guard let self else { return }
+        defer {
+          self.finishRendererOwnedCompositeRefresh(
+            submittedGeneration: submittedGeneration,
+            startNs: startNs
+          )
+        }
+        guard let player,
+              let rendererTarget,
+              self.nativePlayer === player,
+              self.rendererTarget === rendererTarget else {
+          if case .ready(let pending) = drawResult {
+            rendererTarget?.discardPendingNativeFrame(pending)
+          }
+          self.rendererOwnedCompositeRefreshFailureCount += 1
+          return
+        }
+        switch drawResult {
+        case .ready(let pending):
+          if MacOSNativeFrameRefresh.publishLayoutRefreshFrame(
+            pending,
+            player: player,
+            rendererTarget: rendererTarget,
+            maxTrackSlots: self.tracks.activeSlotCapacity(),
+            presentationState: self.presentationState,
+            framePump: self.playback.framePumpForRefresh
+          ) {
+            self.rendererOwnedCompositeRefreshAppliedCount += 1
+            self.rendererOwnedCompositeRefreshPresentRate.record()
+            self.markFrameAvailable()
+          } else {
+            self.rendererOwnedCompositeRefreshFailureCount += 1
+          }
+        case .coalesced:
+          self.presentationState.recordMiss()
+          self.rendererOwnedCompositeRefreshCoalescedCount += 1
+        case .failed:
+          self.presentationState.recordMiss()
+          self.rendererOwnedCompositeRefreshFailureCount += 1
+        }
+        self.logRendererOwnedCompositeSummaryIfNeeded(reason: reason)
+      }
+    }
+  }
+
+  private func finishRendererOwnedCompositeRefresh(
+    submittedGeneration: UInt64,
+    startNs: UInt64
+  ) {
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    rendererOwnedCompositeRefreshDuration.record(nowNs - startNs)
+    rendererOwnedCompositeRefreshInFlight = false
+    rendererOwnedCompositeRefreshCompletedGeneration = max(
+      rendererOwnedCompositeRefreshCompletedGeneration,
+      submittedGeneration
+    )
+    guard rendererOwnedCompositeRefreshPendingGeneration > submittedGeneration else {
+      let flutterSurfaceContinuousActive =
+        rendererOwnedFlutterSurfaceContinuousActive()
+      if flutterSurfaceContinuousActive ||
+          rendererOwnedFlutterSurfaceWarmActive(nowNs: nowNs) {
+        rendererOwnedCompositeRefreshPendingGeneration &+= 1
+        if flutterSurfaceContinuousActive {
+          rendererOwnedCompositeRefreshPendingReason = "flutter-surface-continuous"
+          rendererOwnedFlutterSurfaceContinuousComposeCount += 1
+        } else {
+          rendererOwnedCompositeRefreshPendingReason = "flutter-surface-warm"
+          rendererOwnedFlutterSurfaceWarmComposeCount += 1
+        }
+        rendererOwnedCompositeDisplayLink.start()
+        return
+      }
+      rendererOwnedCompositeRefreshPendingReason = nil
+      rendererOwnedCompositeDisplayLink.stop()
+      return
+    }
+    rendererOwnedCompositeDisplayLink.start()
+  }
+
+  private func logRendererOwnedCompositeSummaryIfNeeded(reason: String) {
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    guard nowNs > rendererOwnedCompositeRefreshLastSummaryLogNs + 1_000_000_000 else {
+      return
+    }
+    rendererOwnedCompositeRefreshLastSummaryLogNs = nowNs
+    let requestHz = rendererOwnedCompositeRefreshRequestRate.rateHz(nowNs: nowNs)
+    let submitHz = rendererOwnedCompositeRefreshSubmitRate.rateHz(nowNs: nowNs)
+    let presentHz = rendererOwnedCompositeRefreshPresentRate.rateHz(nowNs: nowNs)
+    let projectionHz = rendererOwnedSourceProjectionRate.rateHz(nowNs: nowNs)
+    let sourceHz = rendererOwnedSourceCachePublishRate.rateHz(nowNs: nowNs)
+    let displayDiagnostics = rendererOwnedCompositeDisplayLink.diagnosticMap()
+    let displayHz = displayDiagnostics["displayDeliveredTickHz"] as? Double ?? 0.0
+    let projectionLagMs =
+      rendererOwnedCompositeRefreshLatestProjectionNs > 0
+        ? Double(nowNs - rendererOwnedCompositeRefreshLatestProjectionNs) / 1_000_000.0
+        : 0.0
+    NSLog(
+      "VoidPlayer renderer-owned compose summary reason=%@ requestHz=%.1f submitHz=%.1f presentHz=%.1f displayTickHz=%.1f sourceFrameHz=%.1f projectionUpdateHz=%.1f pending=%llu submitted=%llu completed=%llu inFlight=%@ skippedInFlight=%d failures=%d projectionLagMs=%.2f composeP95Ms=%.2f flutterSurfaceDirty=%d sample=%d publish=%d unchanged=%d warmActive=%@ warmTicks=%d warmComposes=%d continuousTicks=%d continuousComposes=%d sampleP95Ms=%.2f flutterReason=%@",
+      reason,
+      requestHz,
+      submitHz,
+      presentHz,
+      displayHz,
+      sourceHz,
+      projectionHz,
+      rendererOwnedCompositeRefreshPendingGeneration,
+      rendererOwnedCompositeRefreshSubmittedGeneration,
+      rendererOwnedCompositeRefreshCompletedGeneration,
+      rendererOwnedCompositeRefreshInFlight ? "true" : "false",
+      rendererOwnedCompositeRefreshCoalescedCount,
+      rendererOwnedCompositeRefreshFailureCount,
+      projectionLagMs,
+      rendererOwnedCompositeRefreshDuration.p95Ms(),
+      rendererOwnedFlutterSurfaceDirtyCount,
+      rendererOwnedFlutterSurfaceSampleCount,
+      rendererOwnedFlutterSurfacePublishCount,
+      rendererOwnedFlutterSurfaceUnchangedCount,
+      rendererOwnedFlutterSurfaceWarmActive(nowNs: nowNs) ? "true" : "false",
+      rendererOwnedFlutterSurfaceWarmTickCount,
+      rendererOwnedFlutterSurfaceWarmComposeCount,
+      rendererOwnedFlutterSurfaceContinuousTickCount,
+      rendererOwnedFlutterSurfaceContinuousComposeCount,
+      rendererOwnedFlutterSurfaceSampleDuration.p95Ms(),
+      rendererOwnedFlutterSurfaceLastReason
+    )
+  }
+
+  private func markRendererOwnedFlutterSurfaceDirty(reason: String) {
+    guard Thread.isMainThread else {
+      DispatchQueue.main.async { [weak self] in
+        self?.markRendererOwnedFlutterSurfaceDirty(reason: reason)
+      }
+      return
+    }
+    rendererOwnedFlutterSurfaceDirty = true
+    rendererOwnedFlutterSurfaceDirtyCount += 1
+    rendererOwnedFlutterSurfaceLastReason = reason
+    rendererOwnedFlutterSurfaceWarmUntilNs =
+      DispatchTime.now().uptimeNanoseconds + Self.rendererOwnedFlutterSurfaceWarmGraceNs
+    scheduleRendererOwnedCompositeRefresh(reason: "flutter-surface-\(reason)")
+  }
+
+  private func rendererOwnedFlutterSurfaceWarmActive(nowNs: UInt64 = DispatchTime.now().uptimeNanoseconds) -> Bool {
+    rendererOwnedFlutterSurfaceWarmUntilNs > 0 &&
+      nowNs < rendererOwnedFlutterSurfaceWarmUntilNs
+  }
+
+  private func rendererOwnedFlutterSurfaceContinuousActive() -> Bool {
+    rendererOwnedPresentationReady() &&
+      rendererTarget?.rendererOwnedRunnerLayerActive == true &&
+      playback.isPlaying
+  }
+
+  @discardableResult
+  private func refreshRendererOwnedFlutterSurfaceIfNeeded(
+    reason: String,
+    force: Bool = false,
+    sampleLatest: Bool = false
+  ) -> Bool {
+    guard Thread.isMainThread else { return false }
+    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
+          MacOSPresentationConfiguration.current.rendererOwnedPresentationEnabled,
+          rendererTarget?.rendererOwnedRunnerLayerActive == true,
+          let player = nativePlayer else {
+      return false
+    }
+    let warmActive = rendererOwnedFlutterSurfaceWarmActive()
+    guard force || rendererOwnedFlutterSurfaceDirty ||
+            rendererOwnedFlutterSurfaceLastGeneration == 0 ||
+            warmActive || sampleLatest else {
+      return false
+    }
+    rendererOwnedFlutterSurfaceSampleCount += 1
+    let sampleStartNs = DispatchTime.now().uptimeNanoseconds
     guard let engine = flutterEngine,
-          let contentView else {
-      lastNativeCompositorFailure = "Flutter engine or content view is unavailable"
-      emitNativeCompositorState()
+          MacOSFlutterSurfaceExporter.isAvailable(engine: engine) else {
+      rendererOwnedFlutterSurfaceSampleDuration.record(
+        DispatchTime.now().uptimeNanoseconds - sampleStartNs
+      )
+      if rendererOwnedFlutterSurfaceLastGeneration == 0 {
+        player.clearExternalFlutterSurface()
+      }
+      rendererOwnedFlutterSurfaceDirty = false
+      rendererOwnedFlutterSurfaceLastReason = "\(reason):exporter-unavailable"
+      return false
+    }
+    let infos = MacOSFlutterSurfaceExporter.currentSurfaceInfos(engine: engine)
+    rendererOwnedFlutterSurfaceSampleDuration.record(
+      DispatchTime.now().uptimeNanoseconds - sampleStartNs
+    )
+    guard let info = infos.first,
+          let texture = info["texture"] as? MTLTexture else {
+      if rendererOwnedFlutterSurfaceLastGeneration == 0 {
+        player.clearExternalFlutterSurface()
+      }
+      rendererOwnedFlutterSurfaceDirty = false
+      rendererOwnedFlutterSurfaceLastReason = "\(reason):surface-unavailable"
+      return false
+    }
+    let generation = flutterSurfaceSourceKey(info: info, texture: texture)
+    if generation == rendererOwnedFlutterSurfaceLastGeneration {
+      rendererOwnedFlutterSurfaceUnchangedCount += 1
+      rendererOwnedFlutterSurfaceDirty = false
+      if sampleLatest {
+        rendererOwnedFlutterSurfaceLastReason = "\(reason):latest-unchanged"
+      } else if warmActive {
+        rendererOwnedFlutterSurfaceLastReason = "\(reason):warm-unchanged"
+      } else {
+        rendererOwnedFlutterSurfaceLastReason = "\(reason):unchanged"
+      }
+      return false
+    }
+    let updated = player.updateExternalFlutterSurface(
+      texture: texture,
+      frameGeneration: generation
+    )
+    rendererOwnedFlutterSurfaceDirty = false
+    rendererOwnedFlutterSurfaceLastReason = reason
+    guard updated else {
+      return false
+    }
+    rendererOwnedFlutterSurfaceLastGeneration = generation
+    rendererOwnedFlutterSurfacePublishCount += 1
+    let nowNs = DispatchTime.now().uptimeNanoseconds
+    if nowNs > rendererOwnedFlutterSurfaceLastPublishLogNs + 1_000_000_000 {
+      rendererOwnedFlutterSurfaceLastPublishLogNs = nowNs
+      NSLog(
+        "VoidPlayer renderer-owned presentation: published Flutter surface reason=%@ generation=%llu size=%dx%d format=%llu sample=%d publish=%d unchanged=%d continuousComposes=%d sampleP95Ms=%.3f",
+        reason,
+        generation,
+        texture.width,
+        texture.height,
+        UInt64(texture.pixelFormat.rawValue),
+        rendererOwnedFlutterSurfaceSampleCount,
+        rendererOwnedFlutterSurfacePublishCount,
+        rendererOwnedFlutterSurfaceUnchangedCount,
+        rendererOwnedFlutterSurfaceContinuousComposeCount,
+        rendererOwnedFlutterSurfaceSampleDuration.p95Ms()
+      )
+    }
+    return true
+  }
+
+  private func flutterSurfaceSourceKey(info: [String: Any], texture: MTLTexture) -> UInt64 {
+    if let ioSurfaceId = info["ioSurfaceId"] as? UInt64 {
+      return ioSurfaceId
+    }
+    if let ioSurfaceId = info["ioSurfaceId"] as? Int {
+      return UInt64(max(0, ioSurfaceId))
+    }
+    if let texturePointer = info["texturePointer"] as? UInt64 {
+      return texturePointer
+    }
+    if let texturePointer = info["texturePointer"] as? Int {
+      return UInt64(max(0, texturePointer))
+    }
+    return UInt64(UInt(bitPattern: Unmanaged.passUnretained(texture as AnyObject).toOpaque()))
+  }
+
+  private func ensureRendererOwnedPresentationMatchesCurrentConfiguration() {
+    guard textureId != nil,
+          texture != nil else {
+      nativePlayer?.clearSourceProjection()
+      emitRendererOwnedPresentationState()
       return
     }
-    guard let compositor = MacOSNativeCompositorView(
-      engine: engine,
-      latencyProfiler: compositorLatencyProfiler
-    ) else {
-      lastNativeCompositorFailure = "native compositor initialization failed"
-      emitNativeCompositorState()
-      return
-    }
-    nativeCompositor = compositor
-    nativeCompositorSourceRing = MacOSNativeCompositorSourceRing(compositor: compositor)
-    if let viewportBackgroundColor {
-      compositor.setViewportBackgroundColor(viewportBackgroundColor)
-    }
-    compositor.attach(to: contentView)
-    lastNativeCompositorFailure = ""
-    nativeCompositor?.setVideoTexture(texture)
-    emitNativeCompositorState()
+    markRendererOwnedFlutterSurfaceDirty(reason: "renderer-owned-presentation-configured")
+    emitRendererOwnedPresentationState()
   }
 
   private func refreshPresentationPolicyForCurrentTracks() {
@@ -902,8 +1438,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nextConfiguration.reason,
       tracks.hasHDRTrack ? "true" : "false"
     )
-    if let nativeTexture {
-      let pixelFormatChanged = nativeTexture.setRendererTargetPixelFormat(
+    let targetWasRebuilt = rebuildRendererTargetIfNeeded(for: nextConfiguration)
+    if let rendererTarget, !targetWasRebuilt {
+      let pixelFormatChanged = rendererTarget.setRendererTargetPixelFormat(
         nextConfiguration.rendererTargetPixelFormat,
         player: nativePlayer
       )
@@ -911,18 +1448,61 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         playback.setTargetInstalled(false)
       }
     }
-    ensureNativeCompositorMatchesCurrentConfiguration()
+    if targetWasRebuilt {
+      playback.setTargetInstalled(false)
+      presentation.applyRendererOwnedViewportRect(to: rendererTarget)
+      _ = presentation.refreshCurrentFrame(context: presentationContext())
+    }
+    ensureRendererOwnedPresentationMatchesCurrentConfiguration()
   }
 
-  private func emitNativeCompositorState() {
+  @discardableResult
+  private func rebuildRendererTargetIfNeeded(
+    for configuration: MacOSPresentationConfiguration
+  ) -> Bool {
+    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
+          textureId != nil,
+          let texture else {
+      return false
+    }
+    let wantsLayer = configuration.edrOutputEnabled
+    let hasLayer = rendererTarget?.rendererOwnedRunnerLayerActive == true
+    guard wantsLayer != hasLayer else {
+      return false
+    }
+    if wantsLayer {
+      let dimensions = texture.dimensions()
+      guard let layerTarget = MacOSRendererOwnedLayerTarget(
+        nativeWidth: max(16, dimensions.width),
+        nativeHeight: max(16, dimensions.height),
+        contentView: contentView
+      ) else {
+        return false
+      }
+      lifecycle.replaceRendererTarget(layerTarget)
+      return true
+    }
+    lifecycle.replaceRendererTarget(texture as? MacOSRendererOwnedPresentationTarget)
+    nativePlayer?.clearExternalFlutterSurface()
+    return true
+  }
+
+  private func emitRendererOwnedPresentationState() {
     let configuration = MacOSPresentationConfiguration.current
-    nativeEvents.emitNativeCompositorState(
-      active: nativeCompositor != nil,
-      requested: configuration.nativeCompositorEnabled,
+    let rendererOwnedReady = rendererOwnedPresentationReady()
+    let active = rendererOwnedReady
+    let failure = active
+      ? ""
+      : "renderer-owned presentation is not ready"
+    nativeEvents.emitRendererOwnedPresentationState(
+      active: active,
+      runnerLayerActive: active && (rendererTarget?.rendererOwnedRunnerLayerActive == true),
+      rendererOwnedActive: rendererOwnedReady,
+      requested: configuration.rendererOwnedPresentationEnabled,
       edrEnabled: configuration.edrOutputEnabled,
       mode: configuration.mode.rawValue,
       reason: configuration.reason,
-      failure: nativeCompositor == nil ? lastNativeCompositorFailure : ""
+      failure: failure
     )
   }
 
@@ -940,6 +1520,13 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     diagnostics["compositorVideoTextureRefreshSkippedWhilePlayingCount"] =
       compositorVideoTextureRefreshSkippedWhilePlayingCount
     return diagnostics
+  }
+
+  private func rendererOwnedPresentationReady() -> Bool {
+    let state = nativePlayer?.rendererOwnedPresentationState() ?? [:]
+    return (state["rendererInitialized"] as? Bool ?? false) &&
+      (state["targetInstalled"] as? Bool ?? false) &&
+      (state["backendAvailable"] as? Bool ?? false)
   }
 
   private func activeDurationUs() -> Int {
@@ -965,7 +1552,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
       player: nativePlayer,
       texture: texture,
-      nativeTexture: nativeTexture,
+      rendererTarget: rendererTarget,
       maxTrackSlots: tracks.activeSlotCapacity(),
       playback: playback,
       presentationState: presentationState,
@@ -980,7 +1567,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     MacOSTransportContext(
       nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
       player: nativePlayer,
-      texture: nativeTexture,
+      rendererTarget: rendererTarget,
       textureRegistered: textureId != nil,
       playback: playback,
       presentationState: presentationState,
@@ -1002,9 +1589,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   ) {
     let cachedPlaying = playback.isPlaying
     let enqueueNs = DispatchTime.now().uptimeNanoseconds
-    let sourceRingRefreshRequested = requestSourceRingRefreshFromNativeCallback(
-      cachedPlaying: cachedPlaying
-    )
     guard frameCallbackProfiler.tryEnqueue(enqueueNs: enqueueNs) else {
       return
     }
@@ -1020,7 +1604,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         enqueueNs: enqueueNs,
         callbackGeneration: callbackGeneration,
         callbackContext: callbackContext,
-        sourceRingRefreshRequested: sourceRingRefreshRequested,
         immediateDepth: 0
       )
     }
@@ -1041,7 +1624,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     enqueueNs: UInt64,
     callbackGeneration: UInt64,
     callbackContext: MacOSNativeFrameCallbackContext?,
-    sourceRingRefreshRequested: Bool,
     immediateDepth: Int
   ) {
     guard callbackContext?.isCurrent(callbackGeneration) == true else {
@@ -1067,12 +1649,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     } else {
       playback.handleFrameCallback(
         player: nativePlayer,
-        texture: nativeTexture,
+        rendererTarget: rendererTarget,
         maxTrackSlots: tracks.activeSlotCapacity(),
         nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
         presentationState: presentationState,
         markFrameAvailable: {
-          self.markFrameAvailable(refreshSourceRing: !sourceRingRefreshRequested)
+          self.markFrameAvailable()
           self.transport.resolvePendingSeekPreviewIfPresented(
             presentationState: self.presentationState,
             emitSeekPreviewPresented: { [weak self] requestId, targetPtsUs in
@@ -1105,7 +1687,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           enqueueNs: nextEnqueueNs,
           callbackGeneration: callbackGeneration,
           callbackContext: callbackContext,
-          sourceRingRefreshRequested: sourceRingRefreshRequested,
           immediateDepth: immediateDepth + 1
         )
       }
@@ -1124,16 +1705,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         }
       }
     }
-  }
-
-  private func requestSourceRingRefreshFromNativeCallback(cachedPlaying: Bool) -> Bool {
-    guard cachedPlaying,
-          let player = nativePlayer,
-          let sourceRing = nativeCompositorSourceRing else {
-      return false
-    }
-    sourceRing.requestRefresh(player: player)
-    return true
   }
 
   private func currentRendererOwnedTargetGeneration() -> Int64? {
@@ -1197,25 +1768,20 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func logProfilerSummary() {
-    var compositorDiagnostics: [String: Any] = [:]
-    if let nativeCompositor {
-      compositorDiagnostics = nativeCompositor.diagnostics()
-    } else {
-      compositorDiagnostics = compositorLatencyProfiler.diagnosticMap()
-    }
+    let compositorDiagnostics = compositorLatencyProfiler.diagnosticMap()
     let textureStats = texture?.diagnostics()
     let textureDiagnostics: [String: Any] = [
-      "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
-      "pixelBufferAllocationCount": textureStats?.allocationCount ?? 0,
-      "pixelBufferRebuildReuseCount": textureStats?.rebuildReuseCount ?? 0,
-      "pixelBufferRebuildLastAllocatedCount": textureStats?.rebuildLastAllocatedCount ?? 0,
-      "pixelBufferRebuildLastReusedCount": textureStats?.rebuildLastReusedCount ?? 0,
-      "pixelBufferRebuildLastDurationMs": textureStats?.rebuildLastDurationMs ?? 0.0,
-      "retiredPixelBufferCount": textureStats?.retiredPixelBufferCount ?? 0,
-      "pixelBufferPrewarmRequestCount": textureStats?.prewarmRequestCount ?? 0,
-      "pixelBufferPrewarmHitCount": textureStats?.prewarmHitCount ?? 0,
-      "pixelBufferPrewarmReadyCount": textureStats?.prewarmReadyCount ?? 0,
-      "pixelBufferPrewarmDroppedCount": textureStats?.prewarmDroppedCount ?? 0,
+      "rendererTargetRebuildCount": textureStats?.rebuildCount ?? 0,
+      "rendererTargetAllocationCount": textureStats?.allocationCount ?? 0,
+      "rendererTargetRebuildReuseCount": textureStats?.rebuildReuseCount ?? 0,
+      "rendererTargetRebuildLastAllocatedCount": textureStats?.rebuildLastAllocatedCount ?? 0,
+      "rendererTargetRebuildLastReusedCount": textureStats?.rebuildLastReusedCount ?? 0,
+      "rendererTargetRebuildLastDurationMs": textureStats?.rebuildLastDurationMs ?? 0.0,
+      "rendererTargetRetiredCount": textureStats?.retiredCount ?? 0,
+      "rendererTargetPrewarmRequestCount": textureStats?.prewarmRequestCount ?? 0,
+      "rendererTargetPrewarmHitCount": textureStats?.prewarmHitCount ?? 0,
+      "rendererTargetPrewarmReadyCount": textureStats?.prewarmReadyCount ?? 0,
+      "rendererTargetPrewarmDroppedCount": textureStats?.prewarmDroppedCount ?? 0,
     ]
     MacOSRendererProfilerSummary.log(
       isPlaying: playback.isPlaying,
@@ -1232,7 +1798,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
 
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
     nativeEvents.onListen(events)
-    emitNativeCompositorState()
+    emitRendererOwnedPresentationState()
     return nil
   }
 

@@ -19,6 +19,7 @@ class MainWindowViewModelFactory {
     required LayoutState layout,
     required int? textureId,
     bool nativeCompositorActive = false,
+    bool nativeCompositorRunnerLayerActive = false,
     required ViewportDisplayState viewportState,
     required List<TrackEntry> tracks,
     required QuickMarkView markView,
@@ -57,6 +58,7 @@ class MainWindowViewModelFactory {
         viewModeEnabled: textureId != null,
         textureId: textureId,
         nativeCompositorActive: nativeCompositorActive,
+        nativeCompositorRunnerLayerActive: nativeCompositorRunnerLayerActive,
         viewportState: viewportState,
         layout: layout,
         tracks: tracks

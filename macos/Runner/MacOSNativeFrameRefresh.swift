@@ -26,7 +26,7 @@ enum MacOSNativeFrameRefresh {
 
   static func seekAndRefresh(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    rendererTarget: MacOSRendererOwnedPresentationTarget,
     targetPtsUs: Int,
     timeoutMs: Int = 3_000,
     maxTrackSlots: Int,
@@ -39,7 +39,7 @@ enum MacOSNativeFrameRefresh {
       let (frameInfo, attempts) = try updateFromNativePlayerWithTransientRetry(
         route: "seek",
         player,
-        texture: texture,
+        rendererTarget: rendererTarget,
         maxTrackSlots: maxTrackSlots,
         timeoutMs: timeoutMs,
         acceptFrame: { frameInfo in
@@ -79,7 +79,7 @@ enum MacOSNativeFrameRefresh {
   private static func updateFromNativePlayerWithTransientRetry(
     route: String,
     _ player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    rendererTarget: MacOSRendererOwnedPresentationTarget,
     maxTrackSlots: Int,
     timeoutMs: Int,
     acceptFrame: (MacOSNativeFrameInfo) -> Bool = { _ in true }
@@ -92,7 +92,7 @@ enum MacOSNativeFrameRefresh {
       let nowNs = DispatchTime.now().uptimeNanoseconds
       let remainingMs = max(1, Int((deadlineNs > nowNs ? deadlineNs - nowNs : 0) / 1_000_000))
       do {
-        let frameInfo = try texture.updateFromNativePlayer(
+        let frameInfo = try rendererTarget.updateFromNativePlayer(
           player,
           maxTrackSlots: maxTrackSlots,
           waitTimeoutMs: remainingMs
@@ -118,24 +118,25 @@ enum MacOSNativeFrameRefresh {
 
   static func refreshCurrentFrameAfterLayoutChange(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    rendererTarget: MacOSRendererOwnedPresentationTarget,
     maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
     framePump: MacOSNativeFramePump
   ) -> Bool {
     let startNs = DispatchTime.now().uptimeNanoseconds
+    let timeoutMs = rendererTarget.rendererOwnedRunnerLayerActive ? 500 : 100
     do {
-      let frameInfo = try texture.updateFromNativePlayer(
+      let frameInfo = try rendererTarget.updateFromNativePlayer(
         player,
         maxTrackSlots: maxTrackSlots,
-        waitTimeoutMs: 100
+        waitTimeoutMs: timeoutMs
       )
       framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
       presentationState.recordFrame(frameInfo)
       logRefreshProfiler(
         route: "layout",
         startNs: startNs,
-        timeoutMs: 100,
+        timeoutMs: timeoutMs,
         result: "ok",
         ptsUs: frameInfo.ptsUs
       )
@@ -149,7 +150,7 @@ enum MacOSNativeFrameRefresh {
       logRefreshProfiler(
         route: "layout",
         startNs: startNs,
-        timeoutMs: 100,
+        timeoutMs: timeoutMs,
         result: "error:\(error)",
         ptsUs: -1
       )
@@ -159,20 +160,22 @@ enum MacOSNativeFrameRefresh {
 
   static func drawCurrentFrameForLayoutRefresh(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
-    maxTrackSlots: Int
+    rendererTarget: MacOSRendererOwnedPresentationTarget,
+    maxTrackSlots: Int,
+    waitTimeoutMs overrideTimeoutMs: Int? = nil
   ) -> MacOSNativeLayoutDrawResult {
     let startNs = DispatchTime.now().uptimeNanoseconds
+    let timeoutMs = overrideTimeoutMs ?? (rendererTarget.rendererOwnedRunnerLayerActive ? 500 : 100)
     do {
-      let pending = try texture.drawFromNativePlayer(
+      let pending = try rendererTarget.drawFromNativePlayer(
         player,
         maxTrackSlots: maxTrackSlots,
-        waitTimeoutMs: 100
+        waitTimeoutMs: timeoutMs
       )
       logRefreshProfiler(
         route: "layout-draw",
         startNs: startNs,
-        timeoutMs: 100,
+        timeoutMs: timeoutMs,
         result: "ok",
         ptsUs: pending.info.ptsUs
       )
@@ -182,7 +185,7 @@ enum MacOSNativeFrameRefresh {
         logRefreshProfiler(
           route: "layout-draw",
           startNs: startNs,
-          timeoutMs: 100,
+          timeoutMs: timeoutMs,
           result: "coalesced:\(error)",
           ptsUs: -1
         )
@@ -191,7 +194,7 @@ enum MacOSNativeFrameRefresh {
       logRefreshProfiler(
         route: "layout-draw",
         startNs: startNs,
-        timeoutMs: 100,
+        timeoutMs: timeoutMs,
         result: "error:\(error)",
         ptsUs: -1
       )
@@ -202,14 +205,14 @@ enum MacOSNativeFrameRefresh {
   static func publishLayoutRefreshFrame(
     _ pending: MacOSPendingNativeFrame,
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    rendererTarget: MacOSRendererOwnedPresentationTarget,
     maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
     framePump: MacOSNativeFramePump
   ) -> Bool {
     let startNs = DispatchTime.now().uptimeNanoseconds
     do {
-      let outcome = try texture.publishPendingNativeFrame(
+      let outcome = try rendererTarget.publishPendingNativeFrame(
         pending,
         player: player,
         maxTrackSlots: maxTrackSlots
@@ -225,7 +228,7 @@ enum MacOSNativeFrameRefresh {
       )
       return true
     } catch {
-      texture.discardPendingNativeFrame(pending)
+      rendererTarget.discardPendingNativeFrame(pending)
       if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
         presentationState.recordMiss()
       } else {
@@ -244,7 +247,7 @@ enum MacOSNativeFrameRefresh {
 
   static func stepAndRefresh(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    rendererTarget: MacOSRendererOwnedPresentationTarget,
     forward: Bool,
     maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
@@ -268,7 +271,7 @@ enum MacOSNativeFrameRefresh {
       }
       if let frameInfo = player.lastRendererOwnedFrameInfo(),
          acceptStepFrame(frameInfo) {
-        _ = texture.publishRenderedTargetAndInstallNext(
+        _ = rendererTarget.publishRenderedTargetAndInstallNext(
           player,
           maxTrackSlots: maxTrackSlots,
           frameInfo: frameInfo
@@ -287,7 +290,7 @@ enum MacOSNativeFrameRefresh {
       let (frameInfo, attempts) = try updateFromNativePlayerWithTransientRetry(
         route: forward ? "step-forward" : "step-backward",
         player,
-        texture: texture,
+        rendererTarget: rendererTarget,
         maxTrackSlots: maxTrackSlots,
         timeoutMs: timeoutMs,
         acceptFrame: { frameInfo in

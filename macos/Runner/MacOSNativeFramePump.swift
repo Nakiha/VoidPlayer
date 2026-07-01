@@ -55,13 +55,13 @@ final class MacOSNativeFramePump {
 
   func ensure(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge?,
+    rendererTarget: MacOSRendererOwnedPresentationTarget?,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
     presentationState: MacOSFramePresentationState
   ) -> Bool {
-    if !targetInstalled, let texture {
-      targetInstalled = texture.installNativePresentationTarget(
+    if !targetInstalled, let rendererTarget {
+      targetInstalled = rendererTarget.installNativePresentationTarget(
         player,
         maxTrackSlots: maxTrackSlots
       )
@@ -89,7 +89,7 @@ final class MacOSNativeFramePump {
 
   func start(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge?,
+    rendererTarget: MacOSRendererOwnedPresentationTarget?,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
     presentationState: MacOSFramePresentationState
@@ -97,11 +97,11 @@ final class MacOSNativeFramePump {
     stop(player: player)
     presentationState.resetFrameCounters()
     player.resetRendererOwnedPresentationStats()
-    texture?.resetNativeUploadBaseline()
+    rendererTarget?.resetNativeUploadBaseline()
     targetInstalled = false
     if !ensure(
       player: player,
-      texture: texture,
+      rendererTarget: rendererTarget,
       maxTrackSlots: maxTrackSlots,
       userData: userData,
       presentationState: presentationState

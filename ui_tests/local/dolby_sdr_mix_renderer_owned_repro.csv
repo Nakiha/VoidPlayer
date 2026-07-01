@@ -1,0 +1,24 @@
+# Local macOS SDR/HDR mix repro using the user's Dolby Vision / HLG sample.
+# Run with:
+#   python dev.py mac-ui-test --build ui_tests/local/dolby_sdr_mix_renderer_owned_repro.csv
+@WINDOW, 1512, 760
+0.0, SET_DECODE_MODE, forceSoftware
+0.2, ADD_MEDIA, resources/video/mpeg2_10s_1280x720.ts
+1.4, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+5.4, ADD_MEDIA, /Users/zhuhongwei/Desktop/VID_20260605_212405_DOLBY.mp4
+8.2, ASSERT_TRACK_COUNT, 3
+8.3, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, renderer-owned-wgpu-edr
+8.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedEDROutputEnabled, true
+8.4, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedTargetPixelFormat, CAMetalLayerRGBA16Float
+8.45, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+8.5, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
+8.55, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceFrameCacheMissCount, 1
+8.6, CAPTURE_VIEWPORT, dolby_sdr_mix_arrange, build/dolby_sdr_mix_arrange.png
+8.7, ASSERT_CAPTURE_NOT_BLACK, dolby_sdr_mix_arrange, 0.01, 4.0
+8.9, SET_LAYOUT_MODE, 1
+9.6, WAIT_LAYOUT_MODE, 1, 3000
+9.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+9.8, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
+9.9, CAPTURE_VIEWPORT, dolby_sdr_mix_split, build/dolby_sdr_mix_split.png
+10.0, ASSERT_CAPTURE_NOT_BLACK, dolby_sdr_mix_split, 0.01, 4.0
+10.2, QUIT, 0

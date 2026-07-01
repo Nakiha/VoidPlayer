@@ -6,6 +6,7 @@
 
 #include <array>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <d3d12.h>
@@ -20,6 +21,12 @@ namespace vr {
 namespace {
 
 constexpr int kWgpuD3D12MaxTracks = 4;
+
+float sdr_white_scale_from_nits(double nits) {
+    return std::isfinite(nits) && nits > 0.0
+        ? static_cast<float>(nits / 80.0)
+        : 1.0f;
+}
 
 RendererDrawSnapshot make_wgpu_source_snapshot(
     const RendererDrawSnapshot& snapshot,
@@ -1536,6 +1543,12 @@ bool WgpuD3D12PresentationBackend::initialize(
     const PresentationBackendConfig& config) {
     shutdown();
     headless_ = config.headless;
+    sdr_white_level_nits_.store(
+        std::isfinite(config.sdr_white_level_nits) &&
+                config.sdr_white_level_nits > 0.0
+            ? config.sdr_white_level_nits
+            : 80.0,
+        std::memory_order_relaxed);
 #if VOIDPLAYER_WGPU_RUST_LINKED
     if (VPWgpuFfiVersion() != VP_WGPU_FFI_ABI_VERSION) {
         last_error_ = "wgpu-d3d12 Rust FFI ABI mismatch";
@@ -1614,12 +1627,21 @@ void WgpuD3D12PresentationBackend::shutdown() {
     }
     renderer_info_ = VPWgpuD3D12RendererInfo{};
     headless_ = false;
+    sdr_white_level_nits_.store(80.0, std::memory_order_relaxed);
     source_cache_descriptors_.clear();
     source_cache_error_ = "backend-shutdown";
     {
         std::lock_guard<std::mutex> lock(source_projection_mutex_);
         source_projection_ = {};
     }
+}
+
+bool WgpuD3D12PresentationBackend::update_sdr_white_level(double nits) {
+    if (!std::isfinite(nits) || nits <= 0.0) {
+        return false;
+    }
+    sdr_white_level_nits_.store(nits, std::memory_order_relaxed);
+    return true;
 }
 
 void* WgpuD3D12PresentationBackend::native_render_device() const {
@@ -1881,6 +1903,13 @@ PresentationBackendDiagnostics WgpuD3D12PresentationBackend::diagnostics() const
     diagnostics.driver_type = renderer_info_.driver_type;
     diagnostics.adapter_vendor_id = static_cast<int32_t>(renderer_info_.vendor_id);
     diagnostics.adapter_device_id = static_cast<int32_t>(renderer_info_.device_id);
+    const double sdr_white_level =
+        sdr_white_level_nits_.load(std::memory_order_relaxed);
+    diagnostics.sdr_white_level_milli_nits =
+        static_cast<int64_t>(std::llround(sdr_white_level * 1000.0));
+    diagnostics.sdr_white_scale_x1000 =
+        static_cast<int64_t>(std::llround(
+            sdr_white_scale_from_nits(sdr_white_level) * 1000.0f));
     {
         std::lock_guard<std::mutex> lock(external_flutter_mutex_);
         diagnostics.external_flutter_surface_generation =
@@ -2018,7 +2047,9 @@ bool WgpuD3D12PresentationBackend::update_source_cache_from_snapshot(
         source_composite.output_format =
             VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
         source_composite.output_color_mode =
-            VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
+            VP_WGPU_D3D12_OUTPUT_COLOR_MODE_WINDOWS_SCRGB;
+        source_composite.sdr_white_scale = sdr_white_scale_from_nits(
+            sdr_white_level_nits_.load(std::memory_order_relaxed));
         source_composite.destination_state_before =
             source_target_states[target_index];
         source_composite.destination_state_after =
@@ -2156,6 +2187,8 @@ bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
         composite.destination_resource = target;
         composite.output_format = output_format;
         composite.output_color_mode = output_color_mode;
+        composite.sdr_white_scale = sdr_white_scale_from_nits(
+            sdr_white_level_nits_.load(std::memory_order_relaxed));
         composite.destination_state_before = destination_state_before;
         composite.destination_state_after =
             VP_WGPU_D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -2362,7 +2395,7 @@ bool WgpuD3D12PresentationBackend::draw_frame_to_external_d3d12_target(
         break;
     case DXGI_FORMAT_R16G16B16A16_FLOAT:
         output_format = VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT;
-        output_color_mode = VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
+        output_color_mode = VP_WGPU_D3D12_OUTPUT_COLOR_MODE_WINDOWS_SCRGB;
         break;
     default:
         last_error_ = "wgpu-d3d12 external target format is unsupported";
@@ -2421,7 +2454,7 @@ bool WgpuD3D12PresentationBackend::draw_frame(
         static_cast<int32_t>(std::max(snapshot.target_width, 1)),
         static_cast<int32_t>(std::max(snapshot.target_height, 1)),
         VP_WGPU_D3D12_TEXTURE_FORMAT_RGBA16_FLOAT,
-        VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR,
+        VP_WGPU_D3D12_OUTPUT_COLOR_MODE_WINDOWS_SCRGB,
         target_state_before,
         0.0f,
         0.0f,

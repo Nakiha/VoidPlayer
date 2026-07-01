@@ -1,3 +1,4 @@
+import AppKit
 import FlutterMacOS
 import Foundation
 
@@ -5,7 +6,7 @@ final class MacOSPlayerLifecycleController {
   private let textureRegistry: FlutterTextureRegistry
 
   private(set) var texture: MacOSVideoTexture?
-  private(set) var nativeTexture: MacOSFlutterTextureBridge?
+  private(set) var rendererTarget: MacOSRendererOwnedPresentationTarget?
   private(set) var textureId: Int64?
   private(set) var backendName = "synthetic-texture"
   private(set) var nativePlayer: MacOSNativePlayerSession?
@@ -16,6 +17,7 @@ final class MacOSPlayerLifecycleController {
 
   func create(
     arguments: Any?,
+    contentView: NSView?,
     playback: MacOSPlaybackController,
     tracks: MacOSVideoTrackController,
     presentationState: MacOSFramePresentationState,
@@ -25,7 +27,10 @@ final class MacOSPlayerLifecycleController {
 
     let startup: MacOSVideoRendererStartup
     do {
-      startup = try MacOSVideoRendererStartupFactory.make(arguments: arguments)
+      startup = try MacOSVideoRendererStartupFactory.make(
+        arguments: arguments,
+        contentView: contentView
+      )
     } catch {
       return FlutterError(
         code: "DECODE_FAILED",
@@ -37,7 +42,7 @@ final class MacOSPlayerLifecycleController {
     let registeredTextureId = textureRegistry.register(startup.texture)
 
     texture = startup.texture
-    nativeTexture = startup.nativeTexture
+    rendererTarget = startup.rendererTarget
     textureId = registeredTextureId
     backendName = startup.backendName
     nativePlayer = startup.nativePlayer
@@ -66,7 +71,7 @@ final class MacOSPlayerLifecycleController {
       textureRegistry.unregisterTexture(id)
     }
     texture = nil
-    nativeTexture = nil
+    rendererTarget = nil
     textureId = nil
     tracks.reset()
     presentationState.resetAll()
@@ -80,5 +85,9 @@ final class MacOSPlayerLifecycleController {
     if let id = textureId {
       textureRegistry.textureFrameAvailable(id)
     }
+  }
+
+  func replaceRendererTarget(_ nextTarget: MacOSRendererOwnedPresentationTarget?) {
+    rendererTarget = nextTarget
   }
 }

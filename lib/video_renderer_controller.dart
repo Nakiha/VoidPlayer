@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'app_log.dart';
 import 'native_player/native_player_api.dart';
 import 'native_player/native_player_events.dart';
@@ -138,6 +140,9 @@ class NativePlayerController {
 
   Future<Map<String, dynamic>> debugNativeCompositor() {
     _ensureAlive();
+    if (Platform.isMacOS) {
+      return _api.debugRendererOwnedPresentation();
+    }
     return _api.debugNativeCompositor();
   }
 
@@ -209,32 +214,61 @@ class NativePlayerController {
     );
   }
 
-  Future<void> requestNativeCompositorFlutterFrame({required String reason}) {
+  Future<void> setRendererOwnedViewportRect({
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+    required int surfaceWidth,
+    required int surfaceHeight,
+  }) {
+    _ensureAlive();
+    if (Platform.isMacOS) {
+      return _api.setRendererOwnedViewportRect(
+        left: left,
+        top: top,
+        width: width,
+        height: height,
+        surfaceWidth: surfaceWidth,
+        surfaceHeight: surfaceHeight,
+      );
+    }
+    return _api.setNativeCompositorViewportRect(
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      surfaceWidth: surfaceWidth,
+      surfaceHeight: surfaceHeight,
+    );
+  }
+
+  Future<void> requestRendererOwnedFlutterSurface({required String reason}) {
     if (!_hasPlayerForCommand(
-      NativePlayerMethods.requestNativeCompositorFlutterFrame,
+      NativePlayerMethods.requestRendererOwnedFlutterSurface,
     )) {
       return Future.value();
     }
-    return _api.requestNativeCompositorFlutterFrame(reason: reason);
+    return _api.requestRendererOwnedFlutterSurface(reason: reason);
   }
 
-  Future<void> boostNativeCompositorFlutterInteraction({
+  Future<void> boostRendererOwnedFlutterSurfaceInteraction({
     required String reason,
   }) {
     if (!_hasPlayerForCommand(
-      NativePlayerMethods.boostNativeCompositorFlutterInteraction,
+      NativePlayerMethods.boostRendererOwnedFlutterSurfaceInteraction,
     )) {
       return Future.value();
     }
-    return _api.boostNativeCompositorFlutterInteraction(reason: reason);
+    return _api.boostRendererOwnedFlutterSurfaceInteraction(reason: reason);
   }
 
-  Future<void> ackNativeCompositorFlutterState({
+  Future<void> ackRendererOwnedFlutterSurfaceState({
     required int serial,
     required bool transparentViewport,
   }) {
     _ensureAlive();
-    return _api.ackNativeCompositorFlutterState(
+    return _api.ackRendererOwnedFlutterSurfaceState(
       serial: serial,
       transparentViewport: transparentViewport,
     );
@@ -270,30 +304,7 @@ class NativePlayerController {
     return _api.endNativeInteractionSample(label: label);
   }
 
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) {
-    _ensureAlive();
-    return _api.setNativeCompositorViewportTransform(
-      enabled: enabled,
-      scaleX: scaleX,
-      scaleY: scaleY,
-      translateX: translateX,
-      translateY: translateY,
-      mode: mode,
-      splitPos: splitPos,
-      activeTrackCount: activeTrackCount,
-    );
-  }
-
-  Future<void> prepareNativeCompositorSourceCache({
+  Future<void> prepareRendererOwnedSourceProjection({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
     required int mode,
@@ -307,7 +318,7 @@ class NativePlayerController {
     required List<double> viewOffsetUvY,
   }) {
     _ensureAlive();
-    return _api.prepareNativeCompositorSourceCache(
+    return _api.prepareRendererOwnedSourceProjection(
       sourceSlots: sourceSlots,
       sourceOrder: sourceOrder,
       mode: mode,
@@ -322,9 +333,9 @@ class NativePlayerController {
     );
   }
 
-  Future<void> clearNativeCompositorSourceCache({required String reason}) {
+  Future<void> clearRendererOwnedSourceProjection({required String reason}) {
     if (_disposed) return Future.value();
-    return _api.clearNativeCompositorSourceCache(reason: reason);
+    return _api.clearRendererOwnedSourceProjection(reason: reason);
   }
 
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) {
@@ -372,6 +383,24 @@ class NativePlayerController {
 
   Future<ViewportCapture> captureWindow({String? outputPath}) {
     return _api.captureWindow(outputPath: outputPath);
+  }
+
+  Future<ViewportCapture> captureWindowRegion({
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    required int maxSize,
+    String? outputPath,
+  }) {
+    return _api.captureWindowRegion(
+      x: x,
+      y: y,
+      width: width,
+      height: height,
+      maxSize: maxSize,
+      outputPath: outputPath,
+    );
   }
 
   Future<void> stepForward() {

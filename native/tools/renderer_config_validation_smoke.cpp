@@ -55,8 +55,8 @@ int main() {
         return fail("valid WgpuMetal headless renderer config was rejected");
     }
     wgpu_metal_headless.backend.output = nullptr;
-    if (vr::validate_renderer_config(wgpu_metal_headless).ok) {
-        return fail("WgpuMetal headless renderer config without output was accepted");
+    if (!vr::validate_renderer_config(wgpu_metal_headless).ok) {
+        return fail("WgpuMetal headless renderer config without initial output was rejected");
     }
 #else
     if (vr::validate_renderer_config(wgpu_metal_headless).ok) {

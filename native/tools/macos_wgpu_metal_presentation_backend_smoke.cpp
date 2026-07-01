@@ -635,6 +635,59 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend adapter diagnostics did not initialize");
   }
+  if (!wgpu_backend->native_render_device()) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend did not expose its native Metal device");
+  }
+  vr::PresentationExternalMetalSurface invalid_flutter_surface;
+  invalid_flutter_surface.width = kWidth;
+  invalid_flutter_surface.height = kHeight;
+  invalid_flutter_surface.pixel_format = 80;
+  invalid_flutter_surface.frame_generation = 42;
+  if (wgpu_backend->update_external_flutter_metal_surface(
+          invalid_flutter_surface)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend accepted a null external Flutter surface");
+  }
+  auto invalid_flutter_diagnostics = wgpu_backend->diagnostics();
+  if (invalid_flutter_diagnostics.external_flutter_surface_last_error !=
+      "invalid-arguments") {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend did not diagnose invalid Flutter surface");
+  }
+  wgpu_backend->clear_external_flutter_metal_surface();
+  auto cleared_flutter_diagnostics = wgpu_backend->diagnostics();
+  if (cleared_flutter_diagnostics.external_flutter_surface_last_error !=
+      "cleared") {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend did not clear external Flutter diagnostics");
+  }
+  vr::PresentationSourceProjection projection;
+  projection.enabled = true;
+  projection.mode = 1;
+  projection.split_pos = 0.4f;
+  projection.active_track_count = 2;
+  projection.source_order = {1, 0, 2, 3};
+  projection.inv_display_size_x[0] = 1.0f;
+  projection.inv_display_size_y[0] = 1.0f;
+  projection.inv_display_size_x[1] = 1.0f;
+  projection.inv_display_size_y[1] = 1.0f;
+  if (!wgpu_backend->update_source_projection(projection)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend rejected source projection");
+  }
+  auto projected_diagnostics = wgpu_backend->diagnostics();
+  if (!projected_diagnostics.source_projection_active ||
+      projected_diagnostics.source_projection_update_count != 1) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend did not publish source projection diagnostics");
+  }
+  wgpu_backend->clear_source_projection();
+  auto cleared_projection_diagnostics = wgpu_backend->diagnostics();
+  if (cleared_projection_diagnostics.source_projection_active) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend did not clear source projection state");
+  }
   if (wgpu_backend->draw_frame(vr::RendererDrawSnapshot{},
                                vr::PresentationBackendDrawHooks{})) {
     CVPixelBufferRelease(pixel_buffer);
@@ -849,13 +902,13 @@ int main() {
     return fail("WgpuMetal backend BGRA command timing diagnostics did not update");
   }
   if (wgpu_stats.video_source_update_count !=
-          wgpu_source_stats_base.video_source_update_count ||
+          wgpu_source_stats_base.video_source_update_count + 1 ||
       wgpu_stats.source_frame_cache_miss_count !=
-          wgpu_source_stats_base.source_frame_cache_miss_count ||
+          wgpu_source_stats_base.source_frame_cache_miss_count + 1 ||
       wgpu_stats.source_frame_cache_hit_count !=
-          wgpu_source_stats_base.source_frame_cache_hit_count + 1) {
+          wgpu_source_stats_base.source_frame_cache_hit_count) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend BGRA source-cache diagnostics did not update");
+    return fail("WgpuMetal backend did not invalidate source cache across output target switch");
   }
   std::vector<uint8_t> wgpu_capture;
   int wgpu_capture_width = 0;
@@ -940,11 +993,11 @@ int main() {
           wgpu_source_stats_base.present_package_upload_count + 2 ||
       wgpu_stats.last_draw_succeeded == 0 ||
       wgpu_stats.video_source_update_count !=
-          wgpu_source_stats_base.video_source_update_count + 1 ||
+          wgpu_source_stats_base.video_source_update_count + 2 ||
       wgpu_stats.source_frame_cache_miss_count !=
-          wgpu_source_stats_base.source_frame_cache_miss_count + 1 ||
+          wgpu_source_stats_base.source_frame_cache_miss_count + 2 ||
       wgpu_stats.source_frame_cache_hit_count !=
-          wgpu_source_stats_base.source_frame_cache_hit_count + 1) {
+          wgpu_source_stats_base.source_frame_cache_hit_count) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend cached BGRA diagnostics did not update");
   }
@@ -985,11 +1038,11 @@ int main() {
       wgpu_stats.present_package_upload_count !=
           wgpu_before_viewport_stats.present_package_upload_count ||
       wgpu_stats.source_frame_cache_hit_count !=
-          wgpu_source_stats_base.source_frame_cache_hit_count + 2 ||
+          wgpu_source_stats_base.source_frame_cache_hit_count + 1 ||
       wgpu_stats.video_source_update_count !=
-          wgpu_source_stats_base.video_source_update_count + 1 ||
+          wgpu_source_stats_base.video_source_update_count + 2 ||
       wgpu_stats.source_frame_cache_miss_count !=
-          wgpu_source_stats_base.source_frame_cache_miss_count + 1) {
+          wgpu_source_stats_base.source_frame_cache_miss_count + 2) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend source cache diagnostics did not update");
   }
@@ -1228,9 +1281,37 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend target ring draw did not avoid displayed/protected buffers");
   }
+  ring_completion_count = 0;
+  ring_completion_target = 0;
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend, snapshot, ring_hooks) ||
+      ring_completion_count != 1 ||
+      ring_completion_target !=
+          static_cast<uint64_t>(
+              reinterpret_cast<uintptr_t>(ring_available.buffer))) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend target ring did not reclaim stale completed buffer");
+  }
+  if (wgpu_backend->presentation_stats().metal_buffer_exhaustion_count != 0) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend counted completed-target reclaim as exhaustion");
+  }
+  const void* busy_ring_targets[] = {
+      ring_displayed.buffer,
+      ring_protected.buffer,
+  };
+  if (!wgpu_backend->update_headless_output_ring(busy_ring_targets,
+                                                 2,
+                                                 ring_displayed.buffer,
+                                                 ring_protected.buffer,
+                                                 kWidth,
+                                                 kHeight,
+                                                 3)) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend could not install busy target ring");
+  }
   if (wgpu_backend->draw_frame(snapshot, vr::PresentationBackendDrawHooks{})) {
     CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend target ring reused completed buffer before release");
+    return fail("WgpuMetal backend drew into displayed/protected-only target ring");
   }
   const std::string ring_busy_error = wgpu_backend->last_error();
   if (ring_busy_error.find("wgpu-metal presentation target ring is busy") ==
@@ -1254,17 +1335,6 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend could not reinstall identical target ring");
   }
-  if (wgpu_backend->draw_frame(snapshot, vr::PresentationBackendDrawHooks{})) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend identical ring reinstall released completed target");
-  }
-  if (std::string(wgpu_backend->last_error())
-          .find("wgpu-metal presentation target ring is busy") ==
-      std::string::npos) {
-    CVPixelBufferRelease(pixel_buffer);
-    return fail("WgpuMetal backend identical ring reinstall lost busy state");
-  }
-  wgpu_backend->release_headless_output(ring_available.buffer);
   ring_completion_count = 0;
   ring_completion_target = 0;
   if (!draw_wgpu_frame_and_wait(*wgpu_backend, snapshot, ring_hooks) ||
@@ -1510,7 +1580,7 @@ int main() {
   }
   wgpu_stats = wgpu_backend->presentation_stats();
   if (wgpu_stats.last_present_package_storage !=
-          VPMacOSNativePresentPackageStorageYUV ||
+          VPMacOSNativePresentPackageStorageBGRA ||
       wgpu_stats.last_draw_succeeded == 0) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend NV12 diagnostics did not update");
@@ -1988,7 +2058,7 @@ int main() {
   }
   wgpu_stats = wgpu_backend->presentation_stats();
   if (wgpu_stats.last_present_package_storage !=
-          VPMacOSNativePresentPackageStorageCVPixelBuffer ||
+          VPMacOSNativePresentPackageStorageSourceOutputAtlas ||
       wgpu_stats.last_draw_succeeded == 0 ||
       wgpu_stats.last_present_package_copy_us != 0 ||
       wgpu_stats.last_present_package_gpu_wait_us <= 0 ||
@@ -2071,7 +2141,7 @@ int main() {
   }
   wgpu_stats = wgpu_backend->presentation_stats();
   if (wgpu_stats.last_present_package_storage !=
-          VPMacOSNativePresentPackageStorageCVPixelBuffer ||
+          VPMacOSNativePresentPackageStorageSourceOutputAtlas ||
       wgpu_stats.cvpixelbuffer_upload_count == 0 ||
       wgpu_stats.last_draw_succeeded == 0) {
     CVPixelBufferRelease(pixel_buffer);

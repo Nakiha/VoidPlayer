@@ -3,7 +3,7 @@ import Foundation
 
 struct MacOSVideoRendererStartup {
   let texture: MacOSVideoTexture
-  let nativeTexture: MacOSFlutterTextureBridge?
+  let rendererTarget: MacOSRendererOwnedPresentationTarget?
   let backendName: String
   let nativePlayer: MacOSNativePlayerSession?
   let tracks: [[String: Any]]
@@ -14,7 +14,7 @@ struct MacOSVideoRendererStartup {
 }
 
 enum MacOSVideoRendererStartupFactory {
-  static func make(arguments: Any?) throws -> MacOSVideoRendererStartup {
+  static func make(arguments: Any?, contentView: NSView?) throws -> MacOSVideoRendererStartup {
     let paths = MacOSFlutterArguments.stringListArg(arguments, "videoPaths")
     let requestedWidth = max(16, MacOSFlutterArguments.intArg(arguments, "width") ?? 1920)
     let requestedHeight = max(16, MacOSFlutterArguments.intArg(arguments, "height") ?? 1080)
@@ -43,7 +43,8 @@ enum MacOSVideoRendererStartupFactory {
       requestedWidth: requestedWidth,
       requestedHeight: requestedHeight,
       useHardwareDecode: useHardwareDecode,
-      viewportBackgroundColor: viewportBackgroundColor
+      viewportBackgroundColor: viewportBackgroundColor,
+      contentView: contentView
     )
   }
 
@@ -68,7 +69,7 @@ enum MacOSVideoRendererStartupFactory {
     }
     return MacOSVideoRendererStartup(
       texture: texture,
-      nativeTexture: nil,
+      rendererTarget: nil,
       backendName: "synthetic-texture",
       nativePlayer: nil,
       tracks: tracks,
@@ -85,7 +86,8 @@ enum MacOSVideoRendererStartupFactory {
     requestedWidth: Int,
     requestedHeight: Int,
     useHardwareDecode: Bool,
-    viewportBackgroundColor: UInt32?
+    viewportBackgroundColor: UInt32?,
+    contentView: NSView?
   ) throws -> MacOSVideoRendererStartup {
     if let unsupported = paths.compactMap({ path -> (path: String, reason: String)? in
       guard let reason = MacOSMediaInputGuard.unsupportedReason(path: path) else {
@@ -120,11 +122,59 @@ enum MacOSVideoRendererStartupFactory {
       session.setBackgroundColor(viewportBackgroundColor)
     }
     try session.open(path: firstPath)
-    let texture = MacOSFlutterTextureBridge(
-      nativeWidth: requestedWidth,
-      nativeHeight: requestedHeight
-    )
-    let firstFrame = try texture.updateFromNativePlayer(
+    let rendererTarget: MacOSRendererOwnedPresentationTarget
+    if configuration.edrOutputEnabled,
+       let layerTarget = MacOSRendererOwnedLayerTarget(
+         nativeWidth: requestedWidth,
+         nativeHeight: requestedHeight,
+         contentView: contentView
+       ) {
+      let texture = MacOSRendererOwnedTextureTarget(
+        nativeWidth: requestedWidth,
+        nativeHeight: requestedHeight,
+        pixelFormatOverride: kCVPixelFormatType_32BGRA
+      )
+      rendererTarget = layerTarget
+      return try nativeStartupWithTarget(
+        session: session,
+        paths: paths,
+        firstPath: firstPath,
+        texture: texture,
+        rendererTarget: rendererTarget,
+        requestedWidth: requestedWidth,
+        requestedHeight: requestedHeight,
+        useHardwareDecode: useHardwareDecode
+      )
+    } else {
+      let texture = MacOSRendererOwnedTextureTarget(
+        nativeWidth: requestedWidth,
+        nativeHeight: requestedHeight
+      )
+      rendererTarget = texture
+      return try nativeStartupWithTarget(
+        session: session,
+        paths: paths,
+        firstPath: firstPath,
+        texture: texture,
+        rendererTarget: rendererTarget,
+        requestedWidth: requestedWidth,
+        requestedHeight: requestedHeight,
+        useHardwareDecode: useHardwareDecode
+      )
+    }
+  }
+
+  private static func nativeStartupWithTarget(
+    session: MacOSNativePlayerSession,
+    paths: [String],
+    firstPath: String,
+    texture: MacOSVideoTexture,
+    rendererTarget: MacOSRendererOwnedPresentationTarget,
+    requestedWidth: Int,
+    requestedHeight: Int,
+    useHardwareDecode: Bool
+  ) throws -> MacOSVideoRendererStartup {
+    let firstFrame = try rendererTarget.updateFromNativePlayer(
       session,
       maxTrackSlots: 1,
       waitTimeoutMs: 3_000
@@ -172,7 +222,7 @@ enum MacOSVideoRendererStartupFactory {
     }
     return MacOSVideoRendererStartup(
       texture: texture,
-      nativeTexture: texture,
+      rendererTarget: rendererTarget,
       backendName: MacOSVideoTrackPayload.nativeFormatName,
       nativePlayer: session,
       tracks: tracks,

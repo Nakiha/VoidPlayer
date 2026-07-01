@@ -8,7 +8,7 @@ struct MacOSPresentationContext {
   let nativeBackendActive: Bool
   let player: MacOSNativePlayerSession?
   let texture: MacOSVideoTexture?
-  let nativeTexture: MacOSFlutterTextureBridge?
+  let rendererTarget: MacOSRendererOwnedPresentationTarget?
   let maxTrackSlots: Int
   let playback: MacOSPlaybackController
   let presentationState: MacOSFramePresentationState
@@ -41,6 +41,15 @@ final class MacOSPresentationController {
   private var layoutRefreshSupersededCount = 0
   private var layoutCallbackPublicationSuppressedCount = 0
   private var layoutDeferredToPlaybackCount = 0
+  private var rendererOwnedViewportRect: [String: Int] = [
+    "left": 0,
+    "top": 0,
+    "width": 0,
+    "height": 0,
+    "surfaceWidth": 0,
+    "surfaceHeight": 0,
+  ]
+  private var rendererOwnedViewportRectUpdateCount = 0
   private var displayLinkIdleUntilNs: UInt64 = 0
   private let displayLinkIdleGraceNs: UInt64 = 250_000_000
   private let layoutIntentRate = MacOSRateWindow()
@@ -108,25 +117,66 @@ final class MacOSPresentationController {
     }
   }
 
+  func setRendererOwnedViewportRect(
+    arguments: Any?,
+    rendererTarget: MacOSRendererOwnedPresentationTarget?
+  ) {
+    let left = MacOSFlutterArguments.intArg(arguments, "left") ?? 0
+    let top = MacOSFlutterArguments.intArg(arguments, "top") ?? 0
+    let width = MacOSFlutterArguments.intArg(arguments, "width") ?? 0
+    let height = MacOSFlutterArguments.intArg(arguments, "height") ?? 0
+    let surfaceWidth = MacOSFlutterArguments.intArg(arguments, "surfaceWidth") ?? 0
+    let surfaceHeight = MacOSFlutterArguments.intArg(arguments, "surfaceHeight") ?? 0
+    rendererOwnedViewportRect = [
+      "left": left,
+      "top": top,
+      "width": width,
+      "height": height,
+      "surfaceWidth": surfaceWidth,
+      "surfaceHeight": surfaceHeight,
+    ]
+    rendererTarget?.setRendererOwnedViewportRect(
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      surfaceWidth: surfaceWidth,
+      surfaceHeight: surfaceHeight
+    )
+    rendererOwnedViewportRectUpdateCount += 1
+  }
+
+  func applyRendererOwnedViewportRect(to rendererTarget: MacOSRendererOwnedPresentationTarget?) {
+    guard let rendererTarget else { return }
+    rendererTarget.setRendererOwnedViewportRect(
+      left: rendererOwnedViewportRect["left"] ?? 0,
+      top: rendererOwnedViewportRect["top"] ?? 0,
+      width: rendererOwnedViewportRect["width"] ?? 0,
+      height: rendererOwnedViewportRect["height"] ?? 0,
+      surfaceWidth: rendererOwnedViewportRect["surfaceWidth"] ?? 0,
+      surfaceHeight: rendererOwnedViewportRect["surfaceHeight"] ?? 0
+    )
+  }
+
   @discardableResult
   func refreshCurrentFrame(context: MacOSPresentationContext) -> Bool {
     guard context.nativeBackendActive,
           let player = context.player,
-          let texture = context.nativeTexture else {
+          let rendererTarget = context.rendererTarget else {
       context.markFrameAvailable()
       return true
     }
     if context.playback.currentIsPlaying(player: player) {
       context.playback.reinstallPresentationTargetIfPlaying(
         player: player,
-        texture: texture,
+        rendererTarget: rendererTarget,
         maxTrackSlots: context.maxTrackSlots
       )
       return true
     }
     let refreshed = MacOSNativeFrameRefresh.refreshCurrentFrameAfterLayoutChange(
       player: player,
-      texture: texture,
+      rendererTarget: rendererTarget,
       maxTrackSlots: context.maxTrackSlots,
       presentationState: context.presentationState,
       framePump: context.playback.framePumpForRefresh
@@ -151,6 +201,20 @@ final class MacOSPresentationController {
       layoutCallbackPublicationSuppressedCount
     diagnostics["viewportLayoutDeferredToPlaybackCount"] = layoutDeferredToPlaybackCount
     diagnostics["viewportClockWarm"] = displayLink.isRunning
+    diagnostics["rendererOwnedViewportRectUpdateCount"] =
+      rendererOwnedViewportRectUpdateCount
+    diagnostics["rendererOwnedViewportRectLeft"] =
+      rendererOwnedViewportRect["left"] ?? 0
+    diagnostics["rendererOwnedViewportRectTop"] =
+      rendererOwnedViewportRect["top"] ?? 0
+    diagnostics["rendererOwnedViewportRectWidth"] =
+      rendererOwnedViewportRect["width"] ?? 0
+    diagnostics["rendererOwnedViewportRectHeight"] =
+      rendererOwnedViewportRect["height"] ?? 0
+    diagnostics["rendererOwnedViewportSurfaceWidth"] =
+      rendererOwnedViewportRect["surfaceWidth"] ?? 0
+    diagnostics["rendererOwnedViewportSurfaceHeight"] =
+      rendererOwnedViewportRect["surfaceHeight"] ?? 0
     diagnostics["displayIdleGraceMs"] = Int(displayLinkIdleGraceNs / 1_000_000)
     let intentHz = layoutIntentRate.rateHz()
     let submitHz = layoutSubmitRate.rateHz()
@@ -177,7 +241,7 @@ final class MacOSPresentationController {
     // Layout-owned refreshes are published through the revision gate. Native
     // callbacks that arrive while a layout refresh is active are only
     // diagnostic signals; publishing them here would bypass stale-revision
-    // checks and can double-drive Flutter texture notifications during pan/zoom.
+    // checks and can double-drive FlutterTexture notifications during pan/zoom.
     layoutRefreshRunning || latestLayoutRefreshRequest != nil
   }
 
@@ -213,7 +277,7 @@ final class MacOSPresentationController {
   ) {
     guard context.nativeBackendActive,
           context.player != nil,
-          context.nativeTexture != nil else {
+          context.rendererTarget != nil else {
       context.markFrameAvailable()
       completion?("flutter-texture")
       return
@@ -283,13 +347,13 @@ final class MacOSPresentationController {
         switch outcome {
         case .ready(let pending):
           guard self.isCurrentLayoutRequest(request) else {
-            request.context.nativeTexture?.discardPendingNativeFrame(pending)
+            request.context.rendererTarget?.discardPendingNativeFrame(pending)
             self.layoutStaleAfterDrawDropCount += 1
             finalOutcomeName = LayoutRefreshOutcome.staleAfterDraw.profilerName
             break
           }
           guard let player = request.context.player,
-                let texture = request.context.nativeTexture else {
+                let rendererTarget = request.context.rendererTarget else {
             request.context.presentationState.recordMiss()
             finalOutcomeName = LayoutRefreshOutcome.transientMiss.profilerName
             break
@@ -297,7 +361,7 @@ final class MacOSPresentationController {
           if MacOSNativeFrameRefresh.publishLayoutRefreshFrame(
             pending,
             player: player,
-            texture: texture,
+            rendererTarget: rendererTarget,
             maxTrackSlots: request.context.maxTrackSlots,
             presentationState: request.context.presentationState,
             framePump: request.context.playback.framePumpForRefresh
@@ -379,26 +443,16 @@ final class MacOSPresentationController {
     guard let player = context.player else {
       return .transientMiss
     }
-    let pumpReady = context.playback.ensurePresentationPump(
-      player: player,
-      texture: context.nativeTexture,
-      maxTrackSlots: context.maxTrackSlots,
-      userData: context.userData,
-      presentationState: context.presentationState
-    )
-    guard pumpReady else {
-      return .transientMiss
-    }
     guard isCurrentLayoutRequest(request) else {
       return .stale
     }
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
-    guard let texture = context.nativeTexture else {
+    guard let rendererTarget = context.rendererTarget else {
       return .transientMiss
     }
     let drawResult = MacOSNativeFrameRefresh.drawCurrentFrameForLayoutRefresh(
       player: player,
-      texture: texture,
+      rendererTarget: rendererTarget,
       maxTrackSlots: context.maxTrackSlots
     )
     let pendingFrame: MacOSPendingNativeFrame
@@ -411,7 +465,7 @@ final class MacOSPresentationController {
       return .transientMiss
     }
     guard isCurrentLayoutRequest(request) else {
-      texture.discardPendingNativeFrame(pendingFrame)
+      rendererTarget.discardPendingNativeFrame(pendingFrame)
       return .staleAfterDraw
     }
     return .ready(pendingFrame)

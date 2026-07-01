@@ -250,7 +250,7 @@ void main() {
           width: 560,
           child: StatsHealthSummarySection(
             health: _health(
-              presentationBackend: 'native-wgpu-metal-cvpixelbuffer-target',
+              presentationBackend: 'renderer-owned-wgpu-metal',
               metalP95Us: 2400,
             ),
           ),

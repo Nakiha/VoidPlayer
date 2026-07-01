@@ -1,0 +1,48 @@
+# Local macOS Dolby/HDR renderer-owned interaction pacing probe.
+@WINDOW, 1280, 720
+0.0, SET_DECODE_MODE, preferHardware
+0.3, ADD_MEDIA, /Users/zhuhongwei/Desktop/VID_20260605_212405_DOLBY.mp4
+1.4, ASSERT_TRACK_COUNT, 1
+1.5, DEBUG_NATIVE_COMPOSITOR
+1.6, DEBUG_NATIVE_TIMING, dolby-ready
+1.7, CAPTURE_WINDOW_REGION, dolby_interaction_ready_roi, 320, 200, 1600, 720, 320, build/test-output/macos/dolby_interaction_ready_roi.png
+1.8, ASSERT_CAPTURE_NOT_BLACK, dolby_interaction_ready_roi, 0.01, 4.0
+2.0, PLAY
+2.4, ASSERT_PLAYING
+2.5, DEBUG_NATIVE_TIMING, dolby-playing-warm
+2.6, SET_ZOOM, 1.9
+2.7, DRAG_VIEWPORT, 360, -120, 120, 4
+4.2, DEBUG_NATIVE_TIMING, dolby-drag-zoom
+4.22, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedCompositeSubmitHzX1000, 30000
+4.24, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedPresentHzX1000, 30000
+4.26, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedComposeDisplayDeliveredTickHzX1000, 45000
+4.28, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedSourceProjectionUpdateCount, 1
+4.29, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedSourceProjectionConsumeCount, 1
+4.30, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedRetainedComposeHitRatioX1000, 100
+4.4, CAPTURE_WINDOW_REGION, dolby_interaction_drag_roi, 320, 200, 1600, 720, 320, build/test-output/macos/dolby_interaction_drag_roi.png
+4.5, ASSERT_CAPTURE_NOT_BLACK, dolby_interaction_drag_roi, 0.01, 4.0
+4.6, ASSERT_CAPTURE_HAS_DETAIL, dolby_interaction_drag_roi, 8.0
+4.65, CAPTURE_FLUTTER, dolby_flutter_before_settings, build/test-output/macos/dolby_flutter_before_settings.png
+4.7, OPEN_SETTINGS
+4.75, ASSERT_SETTINGS_VISIBLE, true
+5.1, DEBUG_NATIVE_TIMING, dolby-settings-open
+5.15, CAPTURE_FLUTTER, dolby_flutter_settings, build/test-output/macos/dolby_flutter_settings.png
+5.16, ASSERT_CAPTURE_CHANGED, dolby_flutter_before_settings, dolby_flutter_settings
+5.2, CAPTURE_WINDOW, dolby_interaction_settings, build/test-output/macos/dolby_interaction_settings.png
+5.3, ASSERT_CAPTURE_NOT_BLACK, dolby_interaction_settings, 0.01, 4.0
+5.32, ASSERT_CAPTURE_HAS_DETAIL, dolby_interaction_settings, 8.0
+5.34, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceWarmComposeCount, 1
+5.36, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceSampleCount, 2
+5.38, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceContinuousComposeCount, 20
+5.4, OPEN_SETTINGS
+5.45, ASSERT_SETTINGS_VISIBLE, true
+5.7, DRAG_VIEWPORT, -420, 160, 120, 4
+7.2, DEBUG_NATIVE_TIMING, dolby-drag-after-settings
+7.22, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceSampleCount, 80
+7.24, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceContinuousComposeCount, 60
+7.3, CAPTURE_WINDOW_REGION, dolby_interaction_final_roi, 320, 200, 1600, 720, 320, build/test-output/macos/dolby_interaction_final_roi.png
+7.4, ASSERT_CAPTURE_NOT_BLACK, dolby_interaction_final_roi, 0.01, 4.0
+7.5, ASSERT_CAPTURE_HAS_DETAIL, dolby_interaction_final_roi, 8.0
+7.6, PAUSE
+7.9, DEBUG_NATIVE_TIMING, dolby-paused-final
+8.0, QUIT, 0

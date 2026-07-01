@@ -1,6 +1,6 @@
-# macOS HDR policy smoke: default Auto keeps SDR media on the SDR compositor.
+# macOS HDR policy smoke: default Auto keeps SDR media on the SDR renderer-owned target.
 # Run with:
-#   python dev.py mac-ui-test --build ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv
+#   python dev.py mac-ui-test --build ui_tests/macos/renderer_owned_auto_sdr_policy_smoke.csv
 @WINDOW, 960, 540
 0.0, SET_DECODE_MODE, forceSoftware
 0.0, GENERATE_TEST_VIDEO, build/generated/macos/native_auto_sdr_policy.mp4, 90, 30, 640, 360
@@ -10,10 +10,11 @@
 3.2, DEBUG_NATIVE_COMPOSITOR
 3.22, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationRequest, auto
 3.24, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationReason, auto-sdr-only
-3.26, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-sdr
+3.26, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, renderer-owned-wgpu-sdr
+3.265, ASSERT_NATIVE_DIAGNOSTIC_BOOL, macOSPresentationRendererOwnedEnabled, true
 3.28, ASSERT_NATIVE_DIAGNOSTIC_BOOL, macOSPresentationEDROutputEnabled, false
-3.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorEDREnabled, false
-3.32, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorVideoPixelFormat, 32BGRA
+3.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedEDROutputEnabled, false
+3.32, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedTargetPixelFormat, 32BGRA
 3.34, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, sdr
 3.4, CAPTURE_WINDOW, native_auto_sdr_policy
 3.5, ASSERT_CAPTURE_NOT_BLACK, native_auto_sdr_policy, 0.01, 4.0

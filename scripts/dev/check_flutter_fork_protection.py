@@ -35,6 +35,7 @@ REQUIRED_LOCK_FIELDS = [
     "macosLocalEngineArtifacts",
     "windowsLocalEngineArtifacts",
     "requiredPatchMarkers",
+    "platformProfiles",
 ]
 
 REQUIRED_PATCH_MARKERS = {
@@ -50,6 +51,25 @@ REQUIRED_PATCH_MARKERS = {
     "engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.cc": (
         "kFlutterDesktopWindowsSurfaceBackendD3D12"
     ),
+}
+
+REQUIRED_PLATFORM_PATCH_MARKERS = {
+    "macos": {
+        "engine/src/flutter/shell/platform/darwin/macos/framework/Headers/FlutterEngine.h": (
+            "voidPlayerHDRCurrentFlutterSurfaceInfos"
+        ),
+        "engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterEngine.mm": (
+            "VoidPlayerHDRSerializableSurfaceInfo"
+        ),
+    },
+    "windows": {
+        "engine/src/flutter/shell/platform/windows/public/flutter_windows.h": (
+            "FLUTTER_WINDOWS_SURFACE_EXPORT_API"
+        ),
+        "engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.cc": (
+            "kFlutterDesktopWindowsSurfaceBackendD3D12"
+        ),
+    },
 }
 
 REQUIRED_WORKFLOW_SNIPPETS = {
@@ -134,6 +154,7 @@ def _check_lock_shape(lock: dict[str, Any], errors: list[str]) -> None:
     _check_engine_artifacts(lock, "macosLocalEngineArtifacts", "macos", errors)
     _check_engine_artifacts(lock, "windowsLocalEngineArtifacts", "windows", errors)
     _check_patch_markers(lock, errors)
+    _check_platform_profiles(lock, errors)
 
 
 def _check_engine_artifacts(
@@ -206,6 +227,72 @@ def _check_patch_markers(lock: dict[str, Any], errors: list[str]) -> None:
     for path, contains in REQUIRED_PATCH_MARKERS.items():
         if marker_map.get(path) != contains:
             errors.append(f"toolchains/flutter.lock.json is missing required patch marker: {path}")
+
+
+def _check_platform_profiles(lock: dict[str, Any], errors: list[str]) -> None:
+    profiles = lock.get("platformProfiles")
+    if not isinstance(profiles, dict):
+        errors.append("toolchains/flutter.lock.json platformProfiles must be an object")
+        return
+    for platform, required_markers in REQUIRED_PLATFORM_PATCH_MARKERS.items():
+        profile = profiles.get(platform)
+        if not isinstance(profile, dict):
+            errors.append(
+                f"toolchains/flutter.lock.json platformProfiles.{platform} must be an object"
+            )
+            continue
+        for field in (
+            "flutterVersion",
+            "frameworkRevision",
+            "forkRef",
+            "forkBranch",
+            "forkCommit",
+        ):
+            value = profile.get(field)
+            if not isinstance(value, str) or not value:
+                errors.append(
+                    f"toolchains/flutter.lock.json platformProfiles.{platform}.{field} is missing"
+                )
+        revision = profile.get("frameworkRevision")
+        commit = profile.get("forkCommit")
+        for field, value in (
+            ("frameworkRevision", revision),
+            ("forkCommit", commit),
+        ):
+            if isinstance(value, str) and value and not GIT_SHA_RE.match(value):
+                errors.append(
+                    f"toolchains/flutter.lock.json platformProfiles.{platform}.{field} must be a full git SHA"
+                )
+        if isinstance(revision, str) and isinstance(commit, str) and revision != commit:
+            errors.append(
+                f"toolchains/flutter.lock.json platformProfiles.{platform}.frameworkRevision must match forkCommit"
+            )
+        markers = profile.get("requiredPatchMarkers")
+        if not isinstance(markers, list):
+            errors.append(
+                f"toolchains/flutter.lock.json platformProfiles.{platform}.requiredPatchMarkers must be a list"
+            )
+            continue
+        marker_map: dict[str, str] = {}
+        for item in markers:
+            if not isinstance(item, dict):
+                errors.append(
+                    f"toolchains/flutter.lock.json platformProfiles.{platform}.requiredPatchMarkers entries must be objects"
+                )
+                continue
+            path = item.get("path")
+            contains = item.get("contains")
+            if not isinstance(path, str) or not isinstance(contains, str):
+                errors.append(
+                    f"toolchains/flutter.lock.json platformProfiles.{platform} patch marker path/contains must be strings"
+                )
+                continue
+            marker_map[path] = contains
+        for path, contains in required_markers.items():
+            if marker_map.get(path) != contains:
+                errors.append(
+                    f"toolchains/flutter.lock.json platformProfiles.{platform} is missing patch marker: {path}"
+                )
 
 
 def _check_patch_doc(lock: dict[str, Any], errors: list[str]) -> None:

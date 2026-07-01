@@ -19,34 +19,35 @@ class NativePlayerMethods {
   static const resize = 'resize';
   static const prewarmNativePresentationTargetSize =
       'prewarmNativePresentationTargetSize';
+  static const setRendererOwnedViewportRect = 'setRendererOwnedViewportRect';
   static const setNativeCompositorViewportRect =
       'setNativeCompositorViewportRect';
-  static const requestNativeCompositorFlutterFrame =
-      'requestNativeCompositorFlutterFrame';
-  static const boostNativeCompositorFlutterInteraction =
-      'boostNativeCompositorFlutterInteraction';
-  static const ackNativeCompositorFlutterState =
-      'ackNativeCompositorFlutterState';
+  static const requestRendererOwnedFlutterSurface =
+      'requestRendererOwnedFlutterSurface';
+  static const boostRendererOwnedFlutterSurfaceInteraction =
+      'boostRendererOwnedFlutterSurfaceInteraction';
+  static const ackRendererOwnedFlutterSurfaceState =
+      'ackRendererOwnedFlutterSurfaceState';
   static const debugFailNativeCompositor = 'debugFailNativeCompositor';
   static const debugSimulateWindowsDeviceLoss =
       'debugSimulateWindowsDeviceLoss';
   static const resetNativePerfCounters = 'resetNativePerfCounters';
   static const beginNativeInteractionSample = 'beginNativeInteractionSample';
   static const endNativeInteractionSample = 'endNativeInteractionSample';
-  static const setNativeCompositorViewportTransform =
-      'setNativeCompositorViewportTransform';
-  static const prepareNativeCompositorSourceCache =
-      'prepareNativeCompositorSourceCache';
+  static const prepareRendererOwnedSourceProjection =
+      'prepareRendererOwnedSourceProjection';
   static const setNativeAnalysisOverlay = 'setNativeAnalysisOverlay';
-  static const clearNativeCompositorSourceCache =
-      'clearNativeCompositorSourceCache';
+  static const clearRendererOwnedSourceProjection =
+      'clearRendererOwnedSourceProjection';
   static const setViewportBackgroundColor = 'setViewportBackgroundColor';
   static const captureViewport = 'captureViewport';
   static const captureViewportRegion = 'captureViewportRegion';
   static const captureWindow = 'captureWindow';
+  static const captureWindowRegion = 'captureWindowRegion';
   static const debugFlutterSurfaceInfo = 'debugFlutterSurfaceInfo';
+  static const debugRendererOwnedPresentation =
+      'debugRendererOwnedPresentation';
   static const debugNativeCompositor = 'debugNativeCompositor';
-  static const debugNativeCompositorSpike = 'debugNativeCompositorSpike';
   static const stepForward = 'stepForward';
   static const stepBackward = 'stepBackward';
   static const currentPts = 'currentPts';
@@ -74,10 +75,6 @@ class NativePlayerKeys {
   static const maxSize = 'maxSize';
   static const surfaceWidth = 'surfaceWidth';
   static const surfaceHeight = 'surfaceHeight';
-  static const scaleX = 'scaleX';
-  static const scaleY = 'scaleY';
-  static const translateX = 'translateX';
-  static const translateY = 'translateY';
   static const activeTrackCount = 'activeTrackCount';
   static const sourceSlots = 'sourceSlots';
   static const sourceOrder = 'sourceOrder';

@@ -58,6 +58,32 @@ class CaptureWindowAction extends AutomationAction {
     : super('CAPTURE_WINDOW');
 }
 
+class CaptureWindowRegionAction extends AutomationAction {
+  final String nameId;
+  final int x;
+  final int y;
+  final int width;
+  final int height;
+  final int maxSize;
+  final String? outputPath;
+
+  const CaptureWindowRegionAction(
+    this.nameId, {
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.maxSize,
+    this.outputPath,
+  }) : super('CAPTURE_WINDOW_REGION');
+}
+
+class AssertSettingsVisible extends AutomationAction {
+  final bool visible;
+
+  const AssertSettingsVisible(this.visible) : super('ASSERT_SETTINGS_VISIBLE');
+}
+
 class DebugFlutterSurfaceInfoAction extends AutomationAction {
   const DebugFlutterSurfaceInfoAction() : super('DEBUG_FLUTTER_SURFACE_INFO');
 }

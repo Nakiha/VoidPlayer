@@ -175,6 +175,7 @@ void main() {
                 textureId: 7,
                 viewportState: const ViewportDisplayState.active(),
                 nativeCompositorActive: true,
+                nativeCompositorRunnerLayerActive: true,
               ),
               handles: _handles(),
               actions: _noop,
@@ -183,14 +184,17 @@ void main() {
         ),
       );
 
-      expect(find.byType(Texture), findsNothing);
+      expect(
+        find.byType(Texture),
+        Platform.isWindows ? findsNothing : findsOneWidget,
+      );
     },
   );
 
   testWidgets(
     'native compositor viewport rect follows sidebar and timeline layout',
     (tester) async {
-      if (!Platform.isMacOS && !Platform.isWindows) return;
+      if (!Platform.isWindows) return;
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
       final rects = <({int left, int top, int width, int height})>[];
@@ -223,6 +227,7 @@ void main() {
               textureId: 7,
               viewportState: const ViewportDisplayState.active(),
               nativeCompositorActive: true,
+              nativeCompositorRunnerLayerActive: true,
               marksSidebarVisible: sidebar,
               tracks: [mediaTrack],
             ),
@@ -517,6 +522,7 @@ MainWindowViewModel _model({
   int? textureId,
   ViewportDisplayState viewportState = const ViewportDisplayState.empty(),
   bool nativeCompositorActive = false,
+  bool nativeCompositorRunnerLayerActive = false,
   bool marksSidebarVisible = false,
   bool analysisOverlayControlsVisible = false,
   List<TrackEntry> tracks = const [],
@@ -530,6 +536,7 @@ MainWindowViewModel _model({
     viewModeEnabled: true,
     textureId: textureId,
     nativeCompositorActive: nativeCompositorActive,
+    nativeCompositorRunnerLayerActive: nativeCompositorRunnerLayerActive,
     viewportState: viewportState,
     layout: const LayoutState(),
     tracks: tracks

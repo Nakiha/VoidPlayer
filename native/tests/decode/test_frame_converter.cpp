@@ -71,6 +71,9 @@ TEST_CASE("FrameConverter: init_software common 4:2:2 and 4:4:4 formats succeeds
     REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_YUV444P));
     REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_YUV422P10LE));
     REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_YUV444P10LE));
+    REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_YUV420P12LE));
+    REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_P012LE));
+    REQUIRE(converter.init_software(1920, 1080, AV_PIX_FMT_P016LE));
 }
 
 TEST_CASE("FrameConverter: wraps YUV420P frame as planar YUV", "[frame_converter]") {
@@ -434,6 +437,53 @@ TEST_CASE("FrameConverter: preserves YUV420P10LE as CPU P010 before shader",
         for (int x = 0; x < 2; ++x) {
             u[x] = 256;
             v[x] = 768;
+        }
+    }
+
+    auto converted = converter.convert(frame);
+    REQUIRE(converted.has_value());
+    TextureFrame result = std::move(*converted);
+    REQUIRE(result.is_nv12);
+    REQUIRE(result.is_p010);
+    REQUIRE(result.cpu_nv12_storage() != nullptr);
+    REQUIRE(result.cpu_nv12_storage()->is_p010);
+    REQUIRE(result.cpu_nv12_storage()->y_stride == 8);
+    REQUIRE(result.cpu_nv12_storage()->uv_stride == 8);
+
+    const auto* p010 = reinterpret_cast<const uint16_t*>(result.texture_handle);
+    REQUIRE(p010[0] == static_cast<uint16_t>(512u << 6));
+    const size_t uv_offset_words =
+        static_cast<size_t>(result.cpu_nv12_storage()->y_stride) * 4 / sizeof(uint16_t);
+    REQUIRE(p010[uv_offset_words] == static_cast<uint16_t>(256u << 6));
+    REQUIRE(p010[uv_offset_words + 1] == static_cast<uint16_t>(768u << 6));
+
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: quantizes YUV420P12LE to CPU P010 before shader",
+          "[frame_converter][color]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_YUV420P12LE));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_YUV420P12LE;
+    frame->width = 4;
+    frame->height = 4;
+    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+
+    for (int y = 0; y < 4; ++y) {
+        auto* row = reinterpret_cast<uint16_t*>(frame->data[0] + y * frame->linesize[0]);
+        for (int x = 0; x < 4; ++x) {
+            row[x] = 2048;
+        }
+    }
+    for (int y = 0; y < 2; ++y) {
+        auto* u = reinterpret_cast<uint16_t*>(frame->data[1] + y * frame->linesize[1]);
+        auto* v = reinterpret_cast<uint16_t*>(frame->data[2] + y * frame->linesize[2]);
+        for (int x = 0; x < 2; ++x) {
+            u[x] = 1024;
+            v[x] = 3072;
         }
     }
 

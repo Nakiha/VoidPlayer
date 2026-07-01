@@ -9,7 +9,8 @@ pub const D3D12_TEXTURE_FORMAT_P010: i32 = 2;
 pub const D3D12_TEXTURE_FORMAT_BGRA8_UNORM: i32 = 3;
 pub const D3D12_TEXTURE_FORMAT_RGBA16_FLOAT: i32 = 4;
 pub const OUTPUT_COLOR_MODE_SDR: i32 = 1;
-pub const OUTPUT_COLOR_MODE_EDR: i32 = 2;
+pub const OUTPUT_COLOR_MODE_MACOS_EDR: i32 = 2;
+pub const OUTPUT_COLOR_MODE_WINDOWS_SCRGB: i32 = 3;
 pub const D3D12_RESOURCE_STATE_COMMON: i32 = 1;
 pub const D3D12_RESOURCE_STATE_RENDER_TARGET: i32 = 2;
 const STORAGE_CV_PIXEL_BUFFER: i32 = 3;
@@ -118,6 +119,7 @@ pub struct WgpuD3D12CompositeRequest {
     pub destination_resource: *mut core::ffi::c_void,
     pub output_format: i32,
     pub output_color_mode: i32,
+    pub sdr_white_scale: f32,
     pub destination_state_before: i32,
     pub destination_state_after: i32,
     pub flutter_resource: *mut core::ffi::c_void,
@@ -945,13 +947,14 @@ impl WgpuD3D12Renderer {
 
         let prepare_start = Instant::now();
         let viewport = composite_viewport_rect(request);
-        let mut params = Vec::with_capacity(30 * 16);
+        let mut params = Vec::with_capacity(31 * 16);
         package_params(
             decision,
             viewport[2].round().max(1.0) as i32,
             viewport[3].round().max(1.0) as i32,
             STORAGE_CV_PIXEL_BUFFER,
             request.output_color_mode,
+            request.sdr_white_scale,
             request.width,
             request.height,
             viewport,
@@ -1628,6 +1631,7 @@ fn package_params(
     viewport_height: i32,
     storage: i32,
     output_color_mode: i32,
+    sdr_white_scale: f32,
     output_width: i32,
     output_height: i32,
     viewport_rect: [f32; 4],
@@ -1712,6 +1716,7 @@ fn package_params(
         bytes,
         [flutter_width as f32, flutter_height as f32, 0.0, 0.0],
     );
+    push_vec4_f32(bytes, [sdr_white_scale.max(0.0001), 0.0, 0.0, 0.0]);
 }
 
 const PARAM_VEC4_BYTES: usize = 16;

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/actions/action_registry.dart';
@@ -321,6 +323,141 @@ void main() {
         controller.viewModel.media.networkMediaPlaybackCapability.detail,
         contains('network media playback'),
       );
+    },
+  );
+
+  testWidgets(
+    'renderer-owned Flutter surface requests ignore playback clock ticks',
+    (tester) async {
+      if (!Platform.isMacOS && !Platform.isWindows) return;
+      final requests = <String>[];
+      const channel = MethodChannel('video_renderer');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            switch (call.method) {
+              case 'createPlayer':
+                return {
+                  'textureId': 1,
+                  'tracks': const <Map<String, Object?>>[],
+                };
+              case 'requestRendererOwnedFlutterSurface':
+                final args = Map<dynamic, dynamic>.from(call.arguments as Map);
+                requests.add(args['reason'] as String? ?? '');
+                return null;
+              default:
+                return null;
+            }
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.player.createPlayer(const ['/tmp/video.mp4']);
+      controller.stateStore
+        ..setTextureId(1)
+        ..setNativeCompositorActive(true)
+        ..setNativeCompositorRunnerLayerActive(true);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      });
+      requests.clear();
+
+      controller.stateStore.setPolledPlaybackState(1000, 10000, true);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      });
+      controller.stateStore.setPolledPlaybackState(2000, 10000, true);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      });
+      controller.stateStore.setPolledPlaybackState(3000, 10000, true);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      });
+
+      expect(requests, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'renderer-owned Flutter surface requests follow UI overlay signature',
+    (tester) async {
+      if (!Platform.isMacOS && !Platform.isWindows) return;
+      final requests = <String>[];
+      const channel = MethodChannel('video_renderer');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            switch (call.method) {
+              case 'createPlayer':
+                return {
+                  'textureId': 1,
+                  'tracks': const <Map<String, Object?>>[],
+                };
+              case 'requestRendererOwnedFlutterSurface':
+                final args = Map<dynamic, dynamic>.from(call.arguments as Map);
+                requests.add(args['reason'] as String? ?? '');
+                return null;
+              default:
+                return null;
+            }
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+      final controller = MainWindowController(
+        actionRegistry: ActionRegistry(),
+        vsync: const TestVSync(),
+        startupOptions: const StartupOptions(),
+        mounted: () => true,
+        analysisGeneration: _FakeAnalysisGenerationService(),
+        analysisToolbarDataSource: _FakeAnalysisToolbarDataSource(),
+        appSettings: _FakeAppSettingsRepository(),
+        playbackPreferences: _FakePlaybackPreferences(),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.player.createPlayer(const ['/tmp/video.mp4']);
+      controller.stateStore
+        ..setTextureId(1)
+        ..setNativeCompositorActive(true)
+        ..setNativeCompositorRunnerLayerActive(true);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      });
+      requests.clear();
+
+      controller.stateStore.setLayout(const LayoutState(zoomRatio: 1.5));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      });
+      expect(requests, isEmpty);
+
+      controller.stateStore.setSettingsVisible(true);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      });
+      expect(requests, hasLength(1));
+      expect(requests.single, contains('ui-surface-changed'));
     },
   );
 

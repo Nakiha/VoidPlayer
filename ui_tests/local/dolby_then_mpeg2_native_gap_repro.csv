@@ -5,12 +5,12 @@
 0.0, SET_DECODE_MODE, preferHardware
 0.2, ADD_MEDIA, /Users/zhuhongwei/Desktop/VID_20260605_212405_DOLBY.mp4
 1.4, ASSERT_TRACK_COUNT, 1
-1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-edr
+1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, renderer-owned-wgpu-edr
 1.8, REMOVE_TRACK, 0
 2.8, ASSERT_TRACK_COUNT, 0
 3.0, ADD_MEDIA, resources/video/mpeg2_10s_1280x720.ts
 4.4, ASSERT_TRACK_COUNT, 1
-4.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-sdr
+4.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, renderer-owned-wgpu-sdr
 4.7, CAPTURE_WINDOW, dolby_then_mpeg2_window, build/dolby_then_mpeg2_window.png
 4.8, ASSERT_CAPTURE_NOT_BLACK, dolby_then_mpeg2_window, 0.01, 4.0
 5.0, QUIT, 0

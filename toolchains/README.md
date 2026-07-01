@@ -2,9 +2,11 @@
 
 VoidPlayer pins build-critical external tools with lock files in this directory.
 
-`flutter.lock.json` is the source of truth for the Flutter SDK fork required by
-HDR/native-compositor builds. Dev commands that invoke Flutter check
-the active SDK against this lock before building or testing.
+`flutter.lock.json` is the source of truth for the Flutter SDK forks required by
+renderer-owned desktop presentation. Dev commands that invoke Flutter check the
+active SDK against the current platform profile before building or testing.
+macOS and Windows may intentionally use different Flutter fork revisions and
+local-engine artifacts when their engine patches land at different times.
 
 `FLUTTER_FORK_PATCHES.md` records the fork patch inventory and upgrade flow.
 
@@ -27,14 +29,15 @@ python dev.py toolchain bootstrap-flutter
 ```
 
 `python dev.py toolchain bootstrap-flutter` installs the pinned Flutter checkout
-under `.toolchains/flutter` and downloads the locked debug/release local engine
-archives for platforms that need them. `dev_config.local.json` may still point
-to a custom SDK checkout, but the checkout must match the locked revision and
-patch markers.
+for the current platform under `.toolchains/flutter` and downloads the locked
+debug/release local engine archives for platforms that need them.
+`dev_config.local.json` may still point to a custom SDK checkout, but the
+checkout must match the active platform profile's revision and patch markers.
 
 The human-readable `flutterVersion` reported by Flutter can vary between an
-official checkout and a fork checkout. The hard lock is the framework revision,
-engine revision, Dart SDK version, clean git checkout, and patch markers.
+official checkout and a fork checkout. The hard lock is the active platform
+profile's framework revision, shared engine revision, Dart SDK version, clean
+git checkout, and platform patch markers.
 
 macOS Flutter runner builds also require the local engine archives listed in
 `flutter.lock.json` under `macosLocalEngineArtifacts`. Publish those archives as

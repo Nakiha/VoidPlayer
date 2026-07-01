@@ -1,9 +1,8 @@
 # VoidPlayer Flutter Fork Patch Inventory
 
-VoidPlayer pins a Flutter fork because the macOS HDR/native-compositor path
-needs access to Flutter's current rendered surface. The app does not rely on a
-developer's ambient Flutter SDK; `toolchains/flutter.lock.json` is the source of
-truth.
+VoidPlayer pins Flutter forks because renderer-owned desktop presentation needs
+private Flutter surface-export hooks. The app does not rely on a developer's
+ambient Flutter SDK; `toolchains/flutter.lock.json` is the source of truth.
 
 ## Pinned Ref
 
@@ -21,10 +20,20 @@ truth.
 | Engine revision | `c416acfeb8126e097f758c664aaa3da929e27da0` |
 | Dart SDK | `3.12.1` |
 
+The top-level fork fields describe the Windows/default profile. Platform
+profiles in `flutter.lock.json` may intentionally point at different Flutter
+framework revisions while sharing the same engine revision and Dart SDK:
+
+| Platform | Fork ref | Framework revision | Required patch line |
+| --- | --- | --- | --- |
+| macOS | `codex/windows-surface-export` | `cad896c21e492160c4e789b1beb2d463e7bd8a50` | macOS front-surface export |
+| Windows | `codex/windows-surface-export-pacing` | `dd94358590cf3de70bff7c60bfb7f41f33146b3b` | Windows D3D12 surface export |
+
 `flutter --version --machine` may report different human-readable
 `flutterVersion` values for official-checkout and fork-checkout shapes. Treat
-that field as informational. VoidPlayer's hard lock is the framework revision,
-engine revision, Dart SDK version, clean git checkout, and patch markers.
+that field as informational. VoidPlayer's hard lock is the active platform
+profile's framework revision, shared engine revision, Dart SDK version, clean
+git checkout, and platform patch markers.
 
 ## Patch Summary
 
@@ -75,7 +84,7 @@ python dev.py toolchain doctor
 
 Developers may point `dev_config.local.json` at an existing Flutter fork
 checkout, but every `dev.py` Flutter build/test path still verifies that the
-checkout matches `toolchains/flutter.lock.json`.
+checkout matches the active platform profile in `toolchains/flutter.lock.json`.
 
 ## Upgrade Procedure
 
@@ -100,9 +109,10 @@ scripts/ci/package_flutter_windows_engine.ps1 -Mode release
    `windowsLocalEngineArtifacts`. If the Windows engine artifacts change,
    update `windowsEngineReleaseTag` in the same lock change.
 7. Keep this patch inventory in sync with the lock:
-   `forkRef`, `forkBranch`, `forkCommit`, `frameworkRevision`,
-   `engineRevision`, `dartSdkVersion`, `macosLocalEngineReleaseTag`, and
-   `windowsEngineReleaseTag` must all match `toolchains/flutter.lock.json`.
+   platform profile `forkRef`, `forkBranch`, `forkCommit`,
+   `frameworkRevision`, plus shared `engineRevision`, `dartSdkVersion`,
+   `macosLocalEngineReleaseTag`, and `windowsEngineReleaseTag` must all match
+   `toolchains/flutter.lock.json`.
 8. Run:
 
 ```bash

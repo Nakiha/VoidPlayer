@@ -23,7 +23,7 @@
 6.5, ASSERT_POSITION_RANGE, 700000, 2900000
 6.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFramePresentationCount, 2
 6.65, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 2
-6.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount, 2
+6.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererTargetCVPixelBufferUploadCount, 2
 6.715, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, cvpixelbuffer
 6.716, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
 6.717, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentationPackageCopyUs, 0, 0
@@ -46,8 +46,8 @@
 6.785, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentedFramePtsMonotonicViolationCount, 0, 0
 6.786, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentedFramePtsLargeGapCount, 0, 0
 6.787, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentedFrameErrorCount, 0, 0
-6.788, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
-6.789, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 2
+6.788, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererTargetExhaustionCount, 0, 0
+6.789, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererTargetInFlightCount, 0, 2
 6.79, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedRatioX1000, 900
 6.9, CAPTURE_VIEWPORT, wgpu_metal_4k60_after_play
 7.0, ASSERT_CAPTURE_CHANGED, wgpu_metal_4k60_start, wgpu_metal_4k60_after_play

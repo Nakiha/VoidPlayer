@@ -1,5 +1,6 @@
 import CoreVideo
 import Foundation
+import Metal
 
 final class MacOSNativeMetalPresentationTarget {
   private var backend: OpaquePointer?
@@ -23,25 +24,6 @@ final class MacOSNativeMetalPresentationTarget {
     return VPMacOSMetalPresentationBackendIsAvailable(backend) != 0
   }
 
-  func install(
-    player: MacOSNativePlayerSession,
-    pixelBuffer: CVPixelBuffer,
-    width: Int,
-    height: Int,
-    maxTrackSlots: Int,
-    refresh: Bool = true
-  ) -> Bool {
-    guard let backend, isAvailable() else { return false }
-    return player.setMetalPresentationTarget(
-      backend: backend,
-      pixelBuffer: pixelBuffer,
-      width: width,
-      height: height,
-      maxTrackSlots: maxTrackSlots,
-      refresh: refresh
-    )
-  }
-
   func installRing(
     player: MacOSNativePlayerSession,
     pixelBuffers: [CVPixelBuffer],
@@ -60,6 +42,33 @@ final class MacOSNativeMetalPresentationTarget {
       width: width,
       height: height,
       maxTrackSlots: maxTrackSlots
+    )
+  }
+
+  func installDrawable(
+    player: MacOSNativePlayerSession,
+    texture: MTLTexture,
+    texturePointer: UnsafeMutableRawPointer,
+    width: Int,
+    height: Int,
+    maxTrackSlots: Int,
+    viewportLeft: Float = 0.0,
+    viewportTop: Float = 0.0,
+    viewportRight: Float = 1.0,
+    viewportBottom: Float = 1.0
+  ) -> Bool {
+    guard let backend, isAvailable() else { return false }
+    return player.installMetalDrawableTarget(
+      backend: backend,
+      texture: texture,
+      texturePointer: texturePointer,
+      width: width,
+      height: height,
+      maxTrackSlots: maxTrackSlots,
+      viewportLeft: viewportLeft,
+      viewportTop: viewportTop,
+      viewportRight: viewportRight,
+      viewportBottom: viewportBottom
     )
   }
 

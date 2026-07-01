@@ -11,7 +11,7 @@ extension MainWindowComposition on MainWindowController {
       stateStore: stateStore,
       trackManager: trackManager,
       mounted: mounted,
-      onNativeResizeCommitted: _onNativeCompositorResizeCommitted,
+      onNativeResizeCommitted: _onRendererOwnedPresentationResizeCommitted,
     );
     stateStore.setLayout(
       _layout.copyWith(
@@ -51,14 +51,19 @@ extension MainWindowComposition on MainWindowController {
           layoutCoordinator.onNativeCompositorAvailabilityChanged(
             active: active,
           ),
-      onSeekSettled: (_) => analysisCoordinator.refreshOverlayForCurrentFrame(),
+      onSeekSettled: (_) {
+        layoutCoordinator.refreshRendererOwnedProjectionAfterSeek();
+        return analysisCoordinator.refreshOverlayForCurrentFrame();
+      },
       onSeekPreviewPresented:
-          ({required trackFileId, required ptsUs, required dtsUs}) =>
-              analysisCoordinator.refreshOverlayForPresentedFrame(
-                trackFileId: trackFileId,
-                ptsUs: ptsUs,
-                dtsUs: dtsUs,
-              ),
+          ({required trackFileId, required ptsUs, required dtsUs}) {
+            layoutCoordinator.refreshRendererOwnedProjectionAfterSeek();
+            return analysisCoordinator.refreshOverlayForPresentedFrame(
+              trackFileId: trackFileId,
+              ptsUs: ptsUs,
+              dtsUs: dtsUs,
+            );
+          },
     );
     quickMarkCoordinator = MainWindowQuickMarkCoordinator(
       player: player,
@@ -192,6 +197,8 @@ extension MainWindowComposition on MainWindowController {
               analysisGeneration.overlayConfig.copyWith(opacity: opacity),
             );
           },
+          settingsVisible: () => stateStore.value.settingsVisible,
+          dartDiagnostics: rendererOwnedFlutterSurfaceDartDiagnostics,
           actionRegistry: actionRegistry,
         ),
       ).run();

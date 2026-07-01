@@ -47,10 +47,19 @@ public:
                                    int width,
                                    int height,
                                    int max_track_slots) override;
+  bool update_headless_metal_texture_output(
+      const vr::PresentationExternalMetalRenderTarget& target) override;
   void mark_headless_output_displayed(void* pixel_buffer) override;
   void protect_headless_output(void* pixel_buffer) override;
   void release_headless_output(void* pixel_buffer) override;
   void clear_headless_output() override;
+  void* native_render_device() const override;
+  bool update_external_flutter_metal_surface(
+      const vr::PresentationExternalMetalSurface& surface) override;
+  void clear_external_flutter_metal_surface() override;
+  bool update_source_projection(
+      const vr::PresentationSourceProjection& projection) override;
+  void clear_source_projection() override;
   vr::PresentationBackendStats presentation_stats() const override;
   vr::PresentationBackendDiagnostics diagnostics() const override;
   bool copy_last_frame_info(vr::PresentationBackendFrameInfo* out) const override;
@@ -100,6 +109,7 @@ private:
   struct SourceMetricsResult {
     bool viewport_composite = false;
     bool cache_hit = false;
+    uint64_t signature = 0;
   };
   struct AsyncState {
     std::mutex mutex;
@@ -122,6 +132,7 @@ private:
     uint64_t package_copy_us = 0;
     int32_t package_storage = 0;
     uint64_t source_generation = 0;
+    uint64_t source_signature = 0;
     bool source_upload = true;
     bool target_acquired = false;
     bool overlay_expected = false;
@@ -130,6 +141,7 @@ private:
     bool has_profiler_snapshot = false;
     VPWgpuMetalProfilerSnapshot profiler_snapshot{};
     void* destination_texture_ref = nullptr;
+    std::array<void*, 4> source_pixel_buffer_refs{};
     std::array<void*, 4> source_y_texture_refs{};
     std::array<void*, 4> source_uv_texture_refs{};
   };
@@ -141,6 +153,7 @@ private:
   void mark_draw_success(const vr::PresentationBackendFrameInfo& frame_info,
                          int32_t package_storage,
                          uint64_t source_generation,
+                         uint64_t source_signature,
                          bool source_upload = true);
   bool target_installed_locked() const;
   TargetAcquireResult acquire_draw_target_locked(const char* draw_source);
@@ -169,8 +182,13 @@ private:
       const vr::PresentationBackendDrawHooks& hooks,
       int32_t target_width,
       int32_t target_height,
-      int32_t track_slots);
+      int32_t track_slots,
+      int32_t output_format,
+      int32_t output_color_mode);
   void record_wgpu_command_result(uint64_t elapsed_us, bool success);
+  void record_wgpu_phase_timings(uint64_t total_us,
+                                 uint64_t pre_render_us,
+                                 const VPWgpuMetalProfilerSnapshot* profiler);
   void record_present_package_timing(uint64_t copy_us,
                                      uint64_t gpu_wait_us,
                                      uint64_t total_us);
@@ -182,6 +200,7 @@ private:
   void* texture_cache_ = nullptr;
   VPWgpuMetalRenderer* wgpu_renderer_ = nullptr;
   void* draw_target_pixel_buffer_ = nullptr;
+  bool draw_target_is_metal_texture_ = false;
   void* single_target_texture_ref_ = nullptr;
   int32_t single_target_texture_width_ = 0;
   int32_t single_target_texture_height_ = 0;
@@ -190,6 +209,10 @@ private:
   int height_ = 0;
   int draw_target_width_ = 0;
   int draw_target_height_ = 0;
+  float draw_target_viewport_left_ = 0.0f;
+  float draw_target_viewport_top_ = 0.0f;
+  float draw_target_viewport_right_ = 1.0f;
+  float draw_target_viewport_bottom_ = 1.0f;
   int draw_target_max_track_slots_ = 1;
   int32_t draw_target_output_format_ = 0;
   int32_t draw_target_output_color_mode_ = 0;
@@ -249,6 +272,37 @@ private:
   uint64_t metal_command_completion_sample_count_ = 0;
   uint64_t metal_command_completion_p95_us_ = 0;
   std::vector<uint64_t> metal_command_completion_samples_us_;
+  uint64_t wgpu_phase_sample_count_ = 0;
+  uint64_t wgpu_compose_total_p95_us_ = 0;
+  uint64_t wgpu_compose_pre_render_p95_us_ = 0;
+  uint64_t wgpu_compose_import_p95_us_ = 0;
+  uint64_t wgpu_compose_prepare_p95_us_ = 0;
+  uint64_t wgpu_compose_overlay_encode_p95_us_ = 0;
+  uint64_t wgpu_compose_bind_group_p95_us_ = 0;
+  uint64_t wgpu_compose_pass_encode_p95_us_ = 0;
+  uint64_t wgpu_compose_submit_p95_us_ = 0;
+  uint64_t wgpu_compose_cpu_render_p95_us_ = 0;
+  std::vector<uint64_t> wgpu_compose_total_samples_us_;
+  std::vector<uint64_t> wgpu_compose_pre_render_samples_us_;
+  std::vector<uint64_t> wgpu_compose_import_samples_us_;
+  std::vector<uint64_t> wgpu_compose_prepare_samples_us_;
+  std::vector<uint64_t> wgpu_compose_overlay_encode_samples_us_;
+  std::vector<uint64_t> wgpu_compose_bind_group_samples_us_;
+  std::vector<uint64_t> wgpu_compose_pass_encode_samples_us_;
+  std::vector<uint64_t> wgpu_compose_submit_samples_us_;
+  std::vector<uint64_t> wgpu_compose_cpu_render_samples_us_;
+  void* external_flutter_texture_ = nullptr;
+  int32_t external_flutter_width_ = 0;
+  int32_t external_flutter_height_ = 0;
+  uint64_t external_flutter_pixel_format_ = 0;
+  uint64_t external_flutter_surface_generation_ = 0;
+  uint64_t external_flutter_surface_consumed_generation_ = 0;
+  uint64_t external_flutter_surface_update_count_ = 0;
+  uint64_t external_flutter_surface_consume_count_ = 0;
+  std::string external_flutter_surface_last_error_ = "none";
+  vr::PresentationSourceProjection source_projection_;
+  uint64_t source_projection_update_count_ = 0;
+  uint64_t source_projection_consume_count_ = 0;
   std::vector<uint8_t> staging_buffer_;
   bool last_frame_info_available_ = false;
   vr::PresentationBackendFrameInfo last_frame_info_{};

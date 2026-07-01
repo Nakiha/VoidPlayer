@@ -121,6 +121,12 @@ class TestRunner {
         );
         await _executeWaitTrackCount(count, timeout);
 
+      case ScriptWaitLayoutMode(:final mode, :final timeout):
+        log.info(
+          'TestRunner ${instr.time}: WAIT_LAYOUT_MODE $mode ${timeout.inMilliseconds}ms',
+        );
+        await _executeWaitLayoutMode(mode, timeout);
+
       case ScriptWaitPresentedFrameRange(
         :final fileId,
         :final minUs,
@@ -284,6 +290,32 @@ class TestRunner {
           ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
           '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
         );
+      case CaptureWindowRegionAction(
+        :final nameId,
+        :final x,
+        :final y,
+        :final width,
+        :final height,
+        :final maxSize,
+        :final outputPath,
+      ):
+        final capture = await controller.captureWindowRegion(
+          x: x,
+          y: y,
+          width: width,
+          height: height,
+          maxSize: maxSize,
+          outputPath: _resolveCaptureOutputPath(outputPath),
+        );
+        _state.captures[nameId] = capture;
+        log.info(
+          'TestRunner: CAPTURE_WINDOW_REGION $nameId '
+          'roi=$x,$y ${width}x$height max=$maxSize '
+          'hash=${capture.hash} ${capture.width}x${capture.height}'
+          ' avgLuma=${capture.avgLuma.toStringAsFixed(2)}'
+          ' nonBlack=${capture.nonBlackRatio.toStringAsFixed(4)}'
+          '${capture.outputPath != null ? ' -> ${capture.outputPath}' : ''}',
+        );
       case DebugFlutterSurfaceInfoAction():
         final info = await controller.debugFlutterSurfaceInfo();
         log.info(
@@ -293,34 +325,66 @@ class TestRunner {
           'textureSize=${info['textureWidth']}x${info['textureHeight']} '
           'ioSurfaceId=${info['ioSurfaceId']} '
           'wideGamut=${info['wideGamut']} '
-          'nativeTextureObjectAvailable=${info['nativeTextureObjectAvailable']} '
-          'nativeIOSurfaceObjectAvailable=${info['nativeIOSurfaceObjectAvailable']}',
+          'flutterTextureObjectAvailable=${info['flutterTextureObjectAvailable']} '
+          'flutterIOSurfaceObjectAvailable=${info['flutterIOSurfaceObjectAvailable']}',
         );
       case DebugNativeCompositorAction():
         final info = await controller.debugNativeCompositor();
-        log.info(
-          'TestRunner: DEBUG_NATIVE_COMPOSITOR '
-          'enabled=${info['nativeCompositorEnabled']} '
-          'frames=${info['nativeCompositorFrames']} '
-          'succeeded=${info['nativeCompositorLastCompositeSucceeded']} '
-          'mode=${info['nativeCompositorOutputMode']} '
-          'pixelFormat=${info['nativeCompositorOutputPixelFormat']} '
-          'edr=${info['nativeCompositorEDREnabled']} '
-          'edrMaxRGBX1000=${info['nativeCompositorEDRVideoMaxRGBX1000']} '
-          'edrOver1X1000=${info['nativeCompositorEDRVideoPixelsOver1X1000']} '
-          'videoSRGBToLinear=${info['nativeCompositorVideoSRGBToLinearEnabled']} '
-          'flutterSRGBToLinear=${info['nativeCompositorFlutterSRGBToLinearEnabled']} '
-          'skippedInFlight=${info['nativeCompositorSkippedInFlightFrames']} '
-          'skippedStatic=${info['nativeCompositorSkippedStaticFrames']} '
-          'video=${info['nativeCompositorVideoTextureAvailable']} '
-          'flutter=${info['nativeCompositorFlutterTextureAvailable']} '
-          'flutterAlphaX1000=${info['nativeCompositorFlutterAlphaAverageX1000']} '
-          'flutterTransparentX1000=${info['nativeCompositorFlutterTransparentRatioX1000']} '
-          'hole=${info['nativeCompositorHoleLeftX1000']},${info['nativeCompositorHoleTopX1000']}-'
-          '${info['nativeCompositorHoleRightX1000']},${info['nativeCompositorHoleBottomX1000']} '
-          'drawable=${info['nativeCompositorDrawableWidth']}x${info['nativeCompositorDrawableHeight']} '
-          'failure=${info['nativeCompositorLastFailure']}',
-        );
+        if (info.containsKey('rendererOwnedPresentationRequested')) {
+          log.info(
+            'TestRunner: DEBUG_RENDERER_OWNED_PRESENTATION '
+            'requested=${info['rendererOwnedPresentationRequested']} '
+            'ready=${info['rendererOwnedPresentationReady']} '
+            'active=${info['rendererOwnedPresentationActive']} '
+            'mode=${info['rendererOwnedPresentationMode']} '
+            'backend=${info['rendererOwnedPresentationBackendName']} '
+            'target=${info['rendererOwnedTargetPixelFormat']} '
+            'edr=${info['rendererOwnedEDROutputEnabled']} '
+            'edrMaxRGBX1000=${info['rendererOwnedEDRTargetMaxRGBX1000']} '
+            'edrOver1X1000=${info['rendererOwnedEDRTargetPixelsOver1X1000']} '
+            'sourceCacheHz=${info['rendererOwnedSourceCacheHz']} '
+            'sourceProjectionHz=${info['rendererOwnedSourceProjectionHz']} '
+            'composeRequestHz=${info['rendererOwnedCompositeRequestHz']} '
+            'composeSubmitHz=${info['rendererOwnedCompositeSubmitHz']} '
+            'presentHz=${info['rendererOwnedPresentHz']} '
+            'flutterSurfaceDirty=${info['rendererOwnedFlutterSurfaceDirtyCount']} '
+            'flutterSurfaceSample=${info['rendererOwnedFlutterSurfaceSampleCount']} '
+            'flutterSurfacePublish=${info['rendererOwnedFlutterSurfacePublishCount']} '
+            'flutterSurfaceUnchanged=${info['rendererOwnedFlutterSurfaceUnchangedCount']} '
+            'flutterSurfaceWarm=${info['rendererOwnedFlutterSurfaceWarmActive']} '
+            'flutterSurfaceWarmTicks=${info['rendererOwnedFlutterSurfaceWarmTickCount']} '
+            'flutterSurfaceWarmComposes=${info['rendererOwnedFlutterSurfaceWarmComposeCount']} '
+            'flutterSurfaceSampleP95Ms=${info['rendererOwnedFlutterSurfaceSampleP95Ms']} '
+            'retainedHitX1000=${info['rendererOwnedRetainedComposeHitRatioX1000']} '
+            'skippedInFlight=${info['rendererOwnedComposeSkippedInFlight']} '
+            'projectionLagMs=${info['rendererOwnedLatestProjectionLagMs']} '
+            'failure=${info['rendererOwnedPresentationLastFailure']}',
+          );
+        } else {
+          log.info(
+            'TestRunner: DEBUG_NATIVE_COMPOSITOR '
+            'enabled=${info['nativeCompositorEnabled']} '
+            'frames=${info['nativeCompositorFrames']} '
+            'succeeded=${info['nativeCompositorLastCompositeSucceeded']} '
+            'mode=${info['nativeCompositorOutputMode']} '
+            'pixelFormat=${info['nativeCompositorOutputPixelFormat']} '
+            'edr=${info['nativeCompositorEDREnabled']} '
+            'edrMaxRGBX1000=${info['nativeCompositorEDRVideoMaxRGBX1000']} '
+            'edrOver1X1000=${info['nativeCompositorEDRVideoPixelsOver1X1000']} '
+            'videoSRGBToLinear=${info['nativeCompositorVideoSRGBToLinearEnabled']} '
+            'flutterSRGBToLinear=${info['nativeCompositorFlutterSRGBToLinearEnabled']} '
+            'skippedInFlight=${info['nativeCompositorSkippedInFlightFrames']} '
+            'skippedStatic=${info['nativeCompositorSkippedStaticFrames']} '
+            'video=${info['nativeCompositorVideoTextureAvailable']} '
+            'flutter=${info['nativeCompositorFlutterTextureAvailable']} '
+            'flutterAlphaX1000=${info['nativeCompositorFlutterAlphaAverageX1000']} '
+            'flutterTransparentX1000=${info['nativeCompositorFlutterTransparentRatioX1000']} '
+            'hole=${info['nativeCompositorHoleLeftX1000']},${info['nativeCompositorHoleTopX1000']}-'
+            '${info['nativeCompositorHoleRightX1000']},${info['nativeCompositorHoleBottomX1000']} '
+            'drawable=${info['nativeCompositorDrawableWidth']}x${info['nativeCompositorDrawableHeight']} '
+            'failure=${info['nativeCompositorLastFailure']}',
+          );
+        }
       case DebugFailNativeCompositorAction(:final reason):
         log.info('TestRunner: DEBUG_FAIL_NATIVE_COMPOSITOR reason=$reason');
         await controller.debugFailNativeCompositor(reason: reason);
@@ -344,7 +408,9 @@ class TestRunner {
         await controller.endNativeInteractionSample(label: label);
       case DebugNativeTimingAction():
         final info = await controller.getDiagnostics();
+        final dartInfo = automation.dartDiagnostics();
         String value(String key) => '${info[key] ?? ''}';
+        String dartValue(String key) => '${dartInfo[key] ?? ''}';
         final label = action.label.isEmpty ? '' : 'stage=${action.label} ';
         log.info(
           'TestRunner: DEBUG_NATIVE_TIMING '
@@ -378,6 +444,31 @@ class TestRunner {
           'errors=${value('presentedFrameErrorCount')} '
           'compositorFrames=${value('nativeCompositorFrames')} '
           'compositorHz=${value('nativeCompositorCompositeHz')} '
+          'rendererOwnedSourceCacheHz=${value('rendererOwnedSourceCacheHz')} '
+          'rendererOwnedSourceProjectionHz=${value('rendererOwnedSourceProjectionHz')} '
+          'composeRequestHz=${value('rendererOwnedCompositeRequestHz')} '
+          'composeSubmitHz=${value('rendererOwnedCompositeSubmitHz')} '
+          'presentHz=${value('rendererOwnedPresentHz')} '
+          'retainedHitX1000=${value('rendererOwnedRetainedComposeHitRatioX1000')} '
+          'composeSkippedInFlight=${value('rendererOwnedComposeSkippedInFlight')} '
+          'latestProjectionLagMs=${value('rendererOwnedLatestProjectionLagMs')} '
+          'composeP95Ms=${value('rendererOwnedComposeDurationP95Ms')} '
+          'composeDisplayTickHz=${value('rendererOwnedComposeDisplayTickHz')} '
+          'composeDisplayDeliveredTickHz=${value('rendererOwnedComposeDisplayDeliveredTickHz')} '
+          'flutterSurfaceDirty=${value('rendererOwnedFlutterSurfaceDirtyCount')} '
+          'flutterSurfaceSample=${value('rendererOwnedFlutterSurfaceSampleCount')} '
+          'flutterSurfacePublish=${value('rendererOwnedFlutterSurfacePublishCount')} '
+          'flutterSurfaceUnchanged=${value('rendererOwnedFlutterSurfaceUnchangedCount')} '
+          'flutterSurfaceWarm=${value('rendererOwnedFlutterSurfaceWarmActive')} '
+          'flutterSurfaceWarmTicks=${value('rendererOwnedFlutterSurfaceWarmTickCount')} '
+          'flutterSurfaceWarmComposes=${value('rendererOwnedFlutterSurfaceWarmComposeCount')} '
+          'flutterSurfaceSampleP95Ms=${value('rendererOwnedFlutterSurfaceSampleP95Ms')} '
+          'flutterSurfaceReason=${value('rendererOwnedFlutterSurfaceLastReason')} '
+          'dartFlutterSurfaceUiDirty=${dartValue('rendererOwnedFlutterSurfaceUiDirtyCount')} '
+          'dartFlutterSurfaceRequest=${dartValue('rendererOwnedFlutterSurfaceRequestCount')} '
+          'dartFlutterSurfaceSkippedClock=${dartValue('rendererOwnedFlutterSurfaceSkippedClockStateCount')} '
+          'dartFlutterSurfaceQueued=${dartValue('rendererOwnedFlutterSurfaceRequestQueued')} '
+          'dartFlutterSurfacePostFrameQueued=${dartValue('rendererOwnedFlutterSurfacePostFrameQueued')} '
           'sourceCacheHz=${value('nativeCompositorSourceCacheHz')} '
           'sourceProjectionHz=${value('nativeCompositorSourceProjectionHz')} '
           'windowsPhase=${value('windowsNativeCompositorPhase')} '
@@ -452,25 +543,39 @@ class TestRunner {
           'layoutSubmit=${value('layoutSubmitCount')} '
           'layoutDraw=${value('layoutDrawCount')} '
           'layoutPublished=${value('layoutPublishedCount')} '
+          'displayClock=${value('viewportClockSource')} '
+          'displayRefreshHz=${value('displayRefreshHzEstimate')} '
+          'displayTickHz=${value('displayTickHz')} '
+          'displayDeliveredTickHz=${value('displayDeliveredTickHz')} '
           'displayTicks=${value('displayDeliveredTickCount')} '
           'viewportComposite=${value('viewportCompositeCount')} '
           'sourceHits=${value('sourceFrameCacheHitCount')} '
           'flutterTextureFrameSkippedPlaying=${value('flutterTextureFrameAvailableSkippedWhilePlayingCount')} '
           'compositorVideoRefresh=${value('compositorVideoTextureRefreshCount')} '
           'compositorVideoRefreshSkippedPlaying=${value('compositorVideoTextureRefreshSkippedWhilePlayingCount')} '
-          'targetRebuild=${value('pixelBufferRebuildCount')} '
-          'targetAlloc=${value('pixelBufferAllocationCount')} '
-          'targetRebuildReuse=${value('pixelBufferRebuildReuseCount')} '
-          'targetLastAlloc=${value('pixelBufferRebuildLastAllocatedCount')} '
-          'targetLastReuse=${value('pixelBufferRebuildLastReusedCount')} '
-          'targetLastMs=${value('pixelBufferRebuildLastDurationMs')} '
-          'retiredBuffers=${value('retiredPixelBufferCount')} '
-          'prewarm=${value('pixelBufferPrewarmRequestCount')}/'
-          '${value('pixelBufferPrewarmReadyCount')}/'
-          '${value('pixelBufferPrewarmHitCount')}/'
-          '${value('pixelBufferPrewarmDroppedCount')} '
-          'metalExhaustion=${value('textureMetalBufferExhaustionCount')} '
-          'inFlightMetal=${value('textureInFlightMetalBufferCount')}',
+          'targetRebuild=${value('rendererTargetRebuildCount')} '
+          'targetAlloc=${value('rendererTargetAllocationCount')} '
+          'targetRebuildReuse=${value('rendererTargetRebuildReuseCount')} '
+          'targetLastAlloc=${value('rendererTargetRebuildLastAllocatedCount')} '
+          'targetLastReuse=${value('rendererTargetRebuildLastReusedCount')} '
+          'targetLastMs=${value('rendererTargetRebuildLastDurationMs')} '
+          'retiredBuffers=${value('rendererTargetRetiredCount')} '
+          'prewarm=${value('rendererTargetPrewarmRequestCount')}/'
+          '${value('rendererTargetPrewarmReadyCount')}/'
+          '${value('rendererTargetPrewarmHitCount')}/'
+          '${value('rendererTargetPrewarmDroppedCount')} '
+          'metalExhaustion=${value('rendererTargetExhaustionCount')} '
+          'inFlightMetal=${value('rendererTargetInFlightCount')} '
+          'wgpuTotalP95Us=${value('wgpuComposeTotalP95Us')} '
+          'wgpuPreRenderP95Us=${value('wgpuComposePreRenderP95Us')} '
+          'wgpuImportP95Us=${value('wgpuComposeImportP95Us')} '
+          'wgpuPrepareP95Us=${value('wgpuComposePrepareP95Us')} '
+          'wgpuOverlayP95Us=${value('wgpuComposeOverlayEncodeP95Us')} '
+          'wgpuBindP95Us=${value('wgpuComposeBindGroupP95Us')} '
+          'wgpuPassP95Us=${value('wgpuComposePassEncodeP95Us')} '
+          'wgpuSubmitP95Us=${value('wgpuComposeSubmitP95Us')} '
+          'wgpuCpuP95Us=${value('wgpuComposeCpuRenderP95Us')} '
+          'wgpuCompletionP95Us=${value('metalCommandCompletionP95Us')}',
         );
       case DebugFlutterTimingAction():
         final summary = await _flutterTimingProbe.collectAndReset();
@@ -740,6 +845,16 @@ class TestRunner {
           'TestRunner: ASSERT_MEDIA_HEADER_OVERLAY_PANEL_VISIBLE $visible',
         );
         testHarness.assertAnalysisOverlayPanelVisible(visible);
+      case AssertSettingsVisible(:final visible):
+        final actual = automation.settingsVisible();
+        log.info(
+          'TestRunner: ASSERT_SETTINGS_VISIBLE expected=$visible actual=$actual',
+        );
+        if (actual != visible) {
+          throw AssertionError(
+            'Expected settingsVisible=$visible, got $actual',
+          );
+        }
       case ToggleAnalysisOverlay(:final slotIndex):
         log.info('TestRunner: TOGGLE_ANALYSIS_OVERLAY slot=$slotIndex');
         await automation.toggleAnalysisOverlayForSlot(slotIndex);
@@ -845,6 +960,21 @@ class TestRunner {
     throw AssertionError(
       'WAIT_TRACK_COUNT timed out after ${timeout.inMilliseconds}ms: '
       'expected $count, got $lastCount',
+    );
+  }
+
+  Future<void> _executeWaitLayoutMode(int mode, Duration timeout) async {
+    final sw = Stopwatch()..start();
+    var lastMode = -1;
+    while (sw.elapsed < timeout) {
+      final layout = await controller.getLayout();
+      lastMode = layout.mode;
+      if (lastMode == mode) return;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    throw AssertionError(
+      'WAIT_LAYOUT_MODE timed out after ${timeout.inMilliseconds}ms: '
+      'expected $mode, got $lastMode',
     );
   }
 

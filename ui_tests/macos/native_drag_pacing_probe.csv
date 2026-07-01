@@ -1,4 +1,4 @@
-# Diagnostic probe for paused native compositor drag pacing.
+# Diagnostic probe for paused renderer-owned presentation drag pacing.
 # Prints DEBUG_NATIVE_TIMING before and after high-frequency viewport drag bursts.
 @WINDOW, 1366, 768
 0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4

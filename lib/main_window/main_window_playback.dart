@@ -27,6 +27,8 @@ const int _playbackClockFallbackAnchorDurationUs = 33334;
 const int _presentedFrameAnchorToleranceUs = 50000;
 const int _maxPresentedFrameDurationUs = 250000;
 const Duration _pendingSeekTimeout = Duration(milliseconds: 1500);
+const String _rendererOwnedPresentationNotReadyFailure =
+    'renderer-owned presentation is not ready';
 
 class MainWindowPlaybackCoordinator {
   static const double trackDragHandleWidth = 28.0;
@@ -451,18 +453,26 @@ class MainWindowPlaybackCoordinator {
 
   void _handleNativePlayerEvent(NativePlayerEvent event) {
     if (_disposed || !mounted()) return;
-    if (event.type == NativePlayerEventType.nativeCompositorState) {
+    if (event.type == NativePlayerEventType.rendererOwnedPresentationState ||
+        event.type == NativePlayerEventType.nativeCompositorState) {
       log.info(
-        'Native compositor state: phase=${event.nativeCompositorPhase} '
+        'Renderer-owned presentation state: phase=${event.nativeCompositorPhase} '
         'serial=${event.nativeCompositorSerial} '
-        'active=${event.nativeCompositorActive} '
-        'reason=${event.nativeCompositorReason}',
+        'active=${event.rendererOwnedPresentationActive} '
+        'runnerLayer=${event.rendererOwnedRunnerLayerActive} '
+        'rendererActive=${event.rendererOwnedRendererActive} '
+        'reason=${event.rendererOwnedPresentationReason}',
       );
       final wasActive = stateStore.value.nativeCompositorActive;
-      stateStore.setNativeCompositorActive(event.nativeCompositorActive);
-      if (wasActive != event.nativeCompositorActive) {
+      stateStore.setNativeCompositorActive(
+        event.rendererOwnedPresentationActive,
+      );
+      stateStore.setNativeCompositorRunnerLayerActive(
+        event.rendererOwnedRunnerLayerActive,
+      );
+      if (wasActive != event.rendererOwnedPresentationActive) {
         onNativeCompositorAvailabilityChanged?.call(
-          active: event.nativeCompositorActive,
+          active: event.rendererOwnedPresentationActive,
         );
       }
       if (event.nativeCompositorSerial > 0 &&
@@ -470,19 +480,19 @@ class MainWindowPlaybackCoordinator {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_disposed || !mounted()) return;
           log.info(
-            'Native compositor Flutter-state ACK: '
+            'Renderer-owned Flutter-surface ACK: '
             'serial=${event.nativeCompositorSerial} '
             'transparent=true',
           );
           unawaited(
             () async {
-              await controller.ackNativeCompositorFlutterState(
+              await controller.ackRendererOwnedFlutterSurfaceState(
                 serial: event.nativeCompositorSerial,
                 transparentViewport: true,
               );
             }().catchError((Object error, StackTrace stack) {
               log.warning(
-                'native compositor Flutter-state ACK failed',
+                'renderer-owned Flutter-surface ACK failed',
                 error,
                 stack,
               );
@@ -490,18 +500,14 @@ class MainWindowPlaybackCoordinator {
           );
         });
       }
-      if (event.nativeCompositorRequested &&
-          !event.nativeCompositorActive &&
-          event.nativeCompositorFailure.isNotEmpty) {
+      if (_isFatalPresentationFailure(event)) {
         log.warning(
-          'Native compositor unavailable; Flutter texture fallback is disabled: '
+          'Renderer-owned presentation unavailable; Flutter texture fallback '
+          'is disabled: '
           '${event.nativeCompositorFailure}',
         );
         stateStore.setViewportState(
-          ViewportDisplayState.error(
-            'Windows native compositor failed: '
-            '${event.nativeCompositorFailure}',
-          ),
+          ViewportDisplayState.error(_presentationFailureMessage(event)),
         );
       }
       return;
@@ -512,6 +518,31 @@ class MainWindowPlaybackCoordinator {
     }
     if (event.type != NativePlayerEventType.seekPreviewPresented) return;
     unawaited(_handleSeekPreviewPresentedEvent(event));
+  }
+
+  bool _isFatalPresentationFailure(NativePlayerEvent event) {
+    if (!event.nativeCompositorRequested ||
+        event.nativeCompositorActive ||
+        event.nativeCompositorFailure.isEmpty) {
+      return false;
+    }
+    if (event.type == NativePlayerEventType.rendererOwnedPresentationState &&
+        event.nativeCompositorFailure ==
+            _rendererOwnedPresentationNotReadyFailure) {
+      return false;
+    }
+    return true;
+  }
+
+  String _presentationFailureMessage(NativePlayerEvent event) {
+    final failure = event.nativeCompositorFailure;
+    if (event.type == NativePlayerEventType.rendererOwnedPresentationState) {
+      return 'Renderer-owned presentation failed: $failure';
+    }
+    final prefix = Platform.isWindows
+        ? 'Windows native compositor failed'
+        : 'Native compositor failed';
+    return '$prefix: $failure';
   }
 
   Future<void> _handleSeekPreviewPresentedEvent(NativePlayerEvent event) async {

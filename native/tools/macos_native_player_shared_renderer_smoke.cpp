@@ -35,6 +35,23 @@ struct MetalBackendDeleter {
 struct PixelBufferHolder {
     CVPixelBufferRef buffer = nullptr;
 
+    PixelBufferHolder() = default;
+    PixelBufferHolder(const PixelBufferHolder&) = delete;
+    PixelBufferHolder& operator=(const PixelBufferHolder&) = delete;
+    PixelBufferHolder(PixelBufferHolder&& other) noexcept : buffer(other.buffer) {
+        other.buffer = nullptr;
+    }
+    PixelBufferHolder& operator=(PixelBufferHolder&& other) noexcept {
+        if (this != &other) {
+            if (buffer) {
+                CVPixelBufferRelease(buffer);
+            }
+            buffer = other.buffer;
+            other.buffer = nullptr;
+        }
+        return *this;
+    }
+
     ~PixelBufferHolder() {
         if (buffer) {
             CVPixelBufferRelease(buffer);
@@ -66,6 +83,33 @@ PixelBufferHolder make_bgra_pixel_buffer(int width, int height) {
     return holder;
 }
 
+std::vector<PixelBufferHolder> make_bgra_pixel_buffer_ring(size_t count,
+                                                           int width,
+                                                           int height) {
+    std::vector<PixelBufferHolder> holders;
+    holders.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        auto holder = make_bgra_pixel_buffer(width, height);
+        if (!holder.buffer) {
+            return {};
+        }
+        holders.push_back(std::move(holder));
+    }
+    return holders;
+}
+
+std::vector<CVPixelBufferRef> pixel_buffer_refs(
+    const std::vector<PixelBufferHolder>& holders) {
+    std::vector<CVPixelBufferRef> refs;
+    refs.reserve(holders.size());
+    for (const auto& holder : holders) {
+        if (holder.buffer) {
+            refs.push_back(holder.buffer);
+        }
+    }
+    return refs;
+}
+
 double non_black_ratio_pixel_buffer(CVPixelBufferRef buffer) {
     if (!buffer ||
         CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
@@ -93,6 +137,35 @@ double non_black_ratio_pixel_buffer(CVPixelBufferRef buffer) {
     return pixels == 0 ? 0.0 : static_cast<double>(non_black) / static_cast<double>(pixels);
 }
 
+CVPixelBufferRef frame_target_pixel_buffer(const std::vector<CVPixelBufferRef>& targets,
+                                           const VPMacOSNativeFrameInfo& info) {
+    if (targets.empty()) {
+        return nullptr;
+    }
+    for (auto* target : targets) {
+        if (static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target)) ==
+            info.target_pixel_buffer_address) {
+            return target;
+        }
+    }
+    return targets.front();
+}
+
+void publish_presented_frame(VPMacOSNativePlayer* player,
+                             const std::vector<CVPixelBufferRef>& targets,
+                             const VPMacOSNativeFrameInfo& info) {
+    auto* displayed = frame_target_pixel_buffer(targets, info);
+    if (!player || !displayed) {
+        return;
+    }
+    VPMacOSNativePlayerMarkMetalPresentationTargetDisplayed(player, displayed);
+    for (auto* target : targets) {
+        if (target && target != displayed) {
+            VPMacOSNativePlayerReleaseMetalPresentationTarget(player, target);
+        }
+    }
+}
+
 void count_frame_available(void* user_data) {
     if (!user_data) {
         return;
@@ -102,7 +175,7 @@ void count_frame_available(void* user_data) {
 }
 
 bool wait_for_presented_frame(VPMacOSNativePlayer* player,
-                              CVPixelBufferRef target,
+                              const std::vector<CVPixelBufferRef>& targets,
                               VPMacOSNativeFrameInfo& info,
                               double& non_black,
                               std::chrono::milliseconds timeout) {
@@ -119,8 +192,10 @@ bool wait_for_presented_frame(VPMacOSNativePlayer* player,
     }
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     do {
-        non_black = non_black_ratio_pixel_buffer(target);
+        non_black = non_black_ratio_pixel_buffer(
+            frame_target_pixel_buffer(targets, info));
         if (non_black > 0.5) {
+            publish_presented_frame(player, targets, info);
             return true;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -130,7 +205,7 @@ bool wait_for_presented_frame(VPMacOSNativePlayer* player,
 }
 
 bool wait_for_playback_presented_frame(VPMacOSNativePlayer* player,
-                                       CVPixelBufferRef target,
+                                       const std::vector<CVPixelBufferRef>& targets,
                                        int64_t min_pts_us,
                                        VPMacOSNativeFrameInfo& info,
                                        double& non_black,
@@ -139,8 +214,10 @@ bool wait_for_playback_presented_frame(VPMacOSNativePlayer* player,
     do {
         if (VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(player, &info) == 0 &&
             info.pts_us > min_pts_us) {
-            non_black = non_black_ratio_pixel_buffer(target);
+            non_black = non_black_ratio_pixel_buffer(
+                frame_target_pixel_buffer(targets, info));
             if (non_black > 0.5) {
+                publish_presented_frame(player, targets, info);
                 return true;
             }
         }
@@ -152,9 +229,14 @@ bool wait_for_playback_presented_frame(VPMacOSNativePlayer* player,
 }
 
 bool request_refresh_expect_success(VPMacOSNativePlayer* player,
+                                    const std::vector<CVPixelBufferRef>& targets,
                                     VPMacOSNativeFrameInfo& info,
                                     std::chrono::milliseconds timeout) {
     info = {};
+    VPMacOSNativeFrameInfo latest = {};
+    if (VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(player, &latest) == 0) {
+        publish_presented_frame(player, targets, latest);
+    }
     char error[1024] = {};
     const int ret = VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
         player, static_cast<int>(timeout.count()), &info, error, sizeof(error));
@@ -163,6 +245,7 @@ bool request_refresh_expect_success(VPMacOSNativePlayer* player,
                   << error << "\n";
         return false;
     }
+    publish_presented_frame(player, targets, info);
     return true;
 }
 
@@ -170,6 +253,29 @@ bool copy_presentation_state(VPMacOSNativePlayer* player,
                              VPMacOSNativeRendererOwnedPresentationState& state) {
     state = {};
     return VPMacOSNativePlayerCopyRendererOwnedPresentationState(player, &state) == 0;
+}
+
+bool install_target_ring(VPMacOSNativePlayer* player,
+                         VPMacOSMetalPresentationBackend* backend,
+                         const std::vector<CVPixelBufferRef>& targets,
+                         int width,
+                         int height,
+                         int max_track_slots) {
+    std::vector<const void*> target_ptrs;
+    target_ptrs.reserve(targets.size());
+    for (auto* target : targets) {
+        target_ptrs.push_back(target);
+    }
+    return VPMacOSNativePlayerInstallMetalPresentationTargetRing(
+               player,
+               backend,
+               target_ptrs.data(),
+               target_ptrs.size(),
+               nullptr,
+               nullptr,
+               width,
+               height,
+               max_track_slots) == 0;
 }
 
 bool copy_track_diagnostics(VPMacOSNativePlayer* player,
@@ -205,8 +311,10 @@ int main() {
     std::unique_ptr<VPMacOSNativePlayer, PlayerDeleter> player(VPMacOSNativePlayerCreate());
     std::unique_ptr<VPMacOSMetalPresentationBackend, MetalBackendDeleter> backend(
         VPMacOSMetalPresentationBackendCreate(target_width, target_height));
-    PixelBufferHolder target = make_bgra_pixel_buffer(target_width, target_height);
-    if (!player || !backend || !target.buffer) {
+    auto target_ring = make_bgra_pixel_buffer_ring(3, target_width, target_height);
+    const auto target_refs = pixel_buffer_refs(target_ring);
+    if (!player || !backend || target_refs.size() != target_ring.size() ||
+        target_refs.empty()) {
         std::cerr << "failed to create shared renderer smoke fixtures\n";
         return 1;
     }
@@ -214,8 +322,8 @@ int main() {
     std::atomic<int> callbacks{0};
     VPMacOSNativePlayerSetFrameAvailableCallback(
         player.get(), count_frame_available, &callbacks);
-    if (VPMacOSNativePlayerSetMetalPresentationTarget(
-            player.get(), backend.get(), target.buffer, target_width, target_height, 2) != 0) {
+    if (!install_target_ring(
+            player.get(), backend.get(), target_refs, target_width, target_height, 2)) {
         std::cerr << "failed to install shared renderer Metal target\n";
         return 1;
     }
@@ -256,7 +364,7 @@ int main() {
     VPMacOSNativeFrameInfo first = {};
     double first_non_black = 0.0;
     if (!wait_for_presented_frame(
-            player.get(), target.buffer, first, first_non_black, std::chrono::seconds(3))) {
+            player.get(), target_refs, first, first_non_black, std::chrono::seconds(3))) {
         return 1;
     }
     if (!copy_presentation_state(player.get(), state) ||
@@ -277,26 +385,27 @@ int main() {
         return 1;
     }
 
-    PixelBufferHolder replacement_target =
-        make_bgra_pixel_buffer(target_width, target_height);
-    if (!replacement_target.buffer) {
+    auto replacement_ring = make_bgra_pixel_buffer_ring(3, target_width, target_height);
+    const auto replacement_refs = pixel_buffer_refs(replacement_ring);
+    if (replacement_refs.size() != replacement_ring.size() ||
+        replacement_refs.empty()) {
         std::cerr << "failed to create replacement presentation target fixture\n";
         return 1;
     }
-    if (VPMacOSNativePlayerSetMetalPresentationTarget(
+    if (!install_target_ring(
             player.get(),
             backend.get(),
-            replacement_target.buffer,
+            replacement_refs,
             target_width,
             target_height,
-            2) != 0) {
+            2)) {
         std::cerr << "active renderer valid target reinstall unexpectedly failed\n";
         return 1;
     }
     VPMacOSNativeFrameInfo replacement = {};
     double replacement_non_black = 0.0;
     if (!wait_for_presented_frame(player.get(),
-                                  replacement_target.buffer,
+                                  replacement_refs,
                                   replacement,
                                   replacement_non_black,
                                   std::chrono::seconds(2)) ||
@@ -307,15 +416,15 @@ int main() {
         std::cerr << "shared renderer bridge did not present after valid target reinstall\n";
         return 1;
     }
-    if (VPMacOSNativePlayerSetMetalPresentationTarget(
-            player.get(), backend.get(), target.buffer, target_width, target_height, 2) != 0) {
+    if (!install_target_ring(
+            player.get(), backend.get(), target_refs, target_width, target_height, 2)) {
         std::cerr << "active renderer original target reinstall unexpectedly failed\n";
         return 1;
     }
     VPMacOSNativeFrameInfo original_restored = {};
     double original_restored_non_black = 0.0;
     if (!wait_for_presented_frame(player.get(),
-                                  target.buffer,
+                                  target_refs,
                                   original_restored,
                                   original_restored_non_black,
                                   std::chrono::seconds(2)) ||
@@ -327,15 +436,16 @@ int main() {
         return 1;
     }
 
-    PixelBufferHolder invalid_target =
-        make_bgra_pixel_buffer(target_width / 2, target_height / 2);
-    if (!invalid_target.buffer) {
+    auto invalid_ring =
+        make_bgra_pixel_buffer_ring(3, target_width / 2, target_height / 2);
+    const auto invalid_refs = pixel_buffer_refs(invalid_ring);
+    if (invalid_refs.size() != invalid_ring.size() || invalid_refs.empty()) {
         std::cerr << "failed to create invalid presentation target fixture\n";
         return 1;
     }
     const uint64_t failure_count_before = state.draw_failure_count;
-    if (VPMacOSNativePlayerSetMetalPresentationTarget(
-            player.get(), backend.get(), invalid_target.buffer, target_width, target_height, 2) == 0) {
+    if (install_target_ring(
+            player.get(), backend.get(), invalid_refs, target_width, target_height, 2)) {
         std::cerr << "invalid-size target install unexpectedly succeeded\n";
         return 1;
     }
@@ -360,7 +470,7 @@ int main() {
     VPMacOSNativeFrameInfo recovered = {};
     double recovered_non_black = 0.0;
     if (!wait_for_presented_frame(player.get(),
-                                  target.buffer,
+                                  target_refs,
                                   recovered,
                                   recovered_non_black,
                                   std::chrono::seconds(2)) ||
@@ -424,7 +534,7 @@ int main() {
     VPMacOSNativePlayerApplyLayout(player.get(), &requested_layout);
     VPMacOSNativeFrameInfo layout_refresh = {};
     if (!request_refresh_expect_success(
-            player.get(), layout_refresh, std::chrono::milliseconds(500))) {
+            player.get(), target_refs, layout_refresh, std::chrono::milliseconds(500))) {
         std::cerr << "playing refresh should composite the cached source frame\n";
         return 1;
     }
@@ -447,7 +557,7 @@ int main() {
     VPMacOSNativeFrameInfo playing = {};
     double playing_non_black = 0.0;
     if (!wait_for_playback_presented_frame(player.get(),
-                                           target.buffer,
+                                           target_refs,
                                            first.pts_us,
                                            playing,
                                            playing_non_black,
@@ -463,7 +573,7 @@ int main() {
     VPMacOSNativeFrameInfo seeked = {};
     double seeked_non_black = 0.0;
     if (!wait_for_presented_frame(
-            player.get(), target.buffer, seeked, seeked_non_black, std::chrono::seconds(3)) ||
+            player.get(), target_refs, seeked, seeked_non_black, std::chrono::seconds(3)) ||
         seeked.pts_us < 1'500'000) {
         std::cerr << "shared renderer bridge seek did not reach requested region: "
                   << seeked.pts_us << "\n";

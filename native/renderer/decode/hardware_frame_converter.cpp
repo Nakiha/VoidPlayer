@@ -255,7 +255,11 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
 }
 
 std::optional<TextureFrame> HardwareFrameConverter::snapshot_frame(AVFrame* frame) {
-    (void)frame;
+    if (hw_type_ == HwDecodeType::VideoToolbox) {
+        return convert(frame);
+    }
+    spdlog::error("[HardwareFrameConverter] Snapshot is not supported for hw_type={}",
+                  hw_decode_type_name(hw_type_));
     return std::nullopt;
 }
 

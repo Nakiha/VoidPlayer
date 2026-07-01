@@ -151,6 +151,35 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
       out->overlay_gpu_success_count = backend_stats.overlay_gpu_success_count;
       out->overlay_gpu_failure_count = backend_stats.overlay_gpu_failure_count;
       out->overlay_cpu_fallback_count = backend_stats.overlay_cpu_fallback_count;
+      out->external_flutter_surface_generation =
+          backend_diagnostics.external_flutter_surface_generation;
+      out->external_flutter_surface_consumed_generation =
+          backend_diagnostics.external_flutter_surface_consumed_generation;
+      out->external_flutter_surface_update_count =
+          backend_diagnostics.external_flutter_surface_update_count;
+      out->external_flutter_surface_consume_count =
+          backend_diagnostics.external_flutter_surface_consume_count;
+      out->external_flutter_surface_wait_count =
+          backend_diagnostics.external_flutter_surface_wait_count;
+      out->external_flutter_surface_wait_failure_count =
+          backend_diagnostics.external_flutter_surface_wait_failure_count;
+      out->source_cache_active =
+          backend_diagnostics.source_cache_active ? 1 : 0;
+      out->source_cache_texture_count =
+          backend_diagnostics.source_cache_texture_count;
+      out->source_cache_generation =
+          backend_diagnostics.source_cache_generation;
+      out->source_cache_publish_count =
+          backend_diagnostics.source_cache_publish_count;
+      out->source_projection_active =
+          backend_diagnostics.source_projection_active ? 1 : 0;
+      out->source_projection_update_count =
+          backend_diagnostics.source_projection_update_count;
+      out->source_projection_consume_count =
+          backend_diagnostics.source_projection_consume_count;
+      write_c_string(out->external_flutter_surface_last_error,
+                     sizeof(out->external_flutter_surface_last_error),
+                     backend_diagnostics.external_flutter_surface_last_error);
       if (backend_stats.last_successful_frame_pts_us != 0) {
         out->last_successful_frame_pts_us =
             backend_stats.last_successful_frame_pts_us;
@@ -445,6 +474,24 @@ int VPMacOSNativePlayerCopyPerfStats(
           backend_stats.metal_command_completion_p95_us;
       out->metal_command_failure_count =
           backend_stats.metal_command_failure_count;
+      out->wgpu_compose_total_p95_us =
+          backend_stats.wgpu_compose_total_p95_us;
+      out->wgpu_compose_pre_render_p95_us =
+          backend_stats.wgpu_compose_pre_render_p95_us;
+      out->wgpu_compose_import_p95_us =
+          backend_stats.wgpu_compose_import_p95_us;
+      out->wgpu_compose_prepare_p95_us =
+          backend_stats.wgpu_compose_prepare_p95_us;
+      out->wgpu_compose_overlay_encode_p95_us =
+          backend_stats.wgpu_compose_overlay_encode_p95_us;
+      out->wgpu_compose_bind_group_p95_us =
+          backend_stats.wgpu_compose_bind_group_p95_us;
+      out->wgpu_compose_pass_encode_p95_us =
+          backend_stats.wgpu_compose_pass_encode_p95_us;
+      out->wgpu_compose_submit_p95_us =
+          backend_stats.wgpu_compose_submit_p95_us;
+      out->wgpu_compose_cpu_render_p95_us =
+          backend_stats.wgpu_compose_cpu_render_p95_us;
       out->async_metal_publish_active =
           backend_stats.async_metal_publish_active;
       out->video_source_update_count =

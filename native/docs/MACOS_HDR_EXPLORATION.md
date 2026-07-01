@@ -50,9 +50,9 @@ scripts/ci/package_flutter_macos_engine.sh release
 Upload the generated archives to the immutable `VoidPlayer-Flutter` release and
 update the lock with the printed hashes.
 
-`voidplayer-flutter-3.44.1-hdr.2` fixes the first native-compositor stability
+`voidplayer-flutter-3.44.1-hdr.2` fixes the first renderer-owned presentation stability
 issue found in this path: Flutter's macOS front-surface list is now exported as
-a locked immutable snapshot, so the native compositor can read Flutter's current
+a locked immutable snapshot, so the native renderer can read Flutter's current
 texture while Flutter presents the next surface without hitting a mutable-array
 enumeration exception.
 
@@ -79,22 +79,19 @@ binary.
 ## Presentation Policy
 
 macOS defaults to `VOIDPLAYER_MACOS_PRESENTATION_MODE=auto`. Auto uses the
-native compositor but keeps SDR media on the SDR BGRA target, so simply opening
-an SDR video does not create an EDR layer or reserve display headroom. PQ/HLG
-tracks are promoted to the EDR compositor when the display reports potential EDR
-headroom.
+renderer-owned wgpu path but keeps SDR media on the SDR BGRA target, so simply
+opening an SDR video does not create an EDR layer or reserve display headroom.
+PQ/HLG tracks are promoted to the EDR compositor when the display reports
+potential EDR headroom.
 
 | Request | Behavior |
 | --- | --- |
-| unset / `auto` | SDR media -> `native-compositor-sdr`; PQ/HLG media on an EDR-capable display -> `native-compositor-edr`. |
-| `flutter-texture-sdr` | Existing FlutterTexture / BGRA path for compatibility and bisecting. |
-| `native-compositor-sdr` | Force native window compositor with a BGRA native video target. |
-| `native-compositor-edr` | Force `CAMetalLayer.rgba16Float`, `wantsExtendedDynamicRangeContent`, and an RGBA half renderer-owned target when EDR headroom is available. |
+| unset / `auto` | SDR media -> `renderer-owned-wgpu-sdr`; PQ/HLG media on an EDR-capable display -> `renderer-owned-wgpu-edr`. |
+| `renderer-owned-wgpu-sdr` | Force renderer-owned wgpu SDR with a BGRA native video target. |
+| `renderer-owned-wgpu-edr` | Force renderer-owned wgpu EDR with an RGBA half native video target when EDR headroom is available. |
 
-The old spike variables `VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE`,
-`VOIDPLAYER_NATIVE_COMPOSITOR_EDR`, and `VOIDPLAYER_FLUTTER_HDR_SPIKE` remain
-accepted as compatibility aliases. Prefer `VOIDPLAYER_MACOS_PRESENTATION_MODE`
-or `VOIDPLAYER_NATIVE_COMPOSITOR=1` for new local runs.
+The old runner-compositor spike variables are no longer part of the macOS
+presentation contract.
 
 Diagnostics expose the decision:
 
@@ -110,16 +107,14 @@ The current evidence proves the pipeline shape, not final visual calibration:
 
 - Flutter engine patch exposes a Metal texture and IOSurface for the presented
   Flutter surface.
-- The app can leave a transparent viewport hole while keeping controls and side
-  panels opaque.
-- The macOS runner can composite a native video texture and the Flutter alpha
-  texture in a native `CAMetalLayer`.
+- Default macOS playback no longer needs a transparent viewport hole; the
+  runner exports Flutter's surface and the renderer-owned wgpu path consumes it.
 - The EDR route allocates a renderer-owned `kCVPixelFormatType_64RGBAHalf`
-  target and presents through `MTLPixelFormatRGBA16Float`.
+  target and composites through wgpu/Metal.
 - `DEBUG_NATIVE_COMPOSITOR` reports direct half-float video target
   diagnostics:
-  - `nativeCompositorEDRVideoMaxRGBX1000`
-  - `nativeCompositorEDRVideoPixelsOver1X1000`
+  - `rendererOwnedEDRTargetMaxRGBX1000`
+  - `rendererOwnedEDRTargetPixelsOver1X1000`
   - `macOSDisplayEDRHeadroomX1000`
 
 Screenshots remain useful for "not black / UI overlay exists" checks, but they
@@ -133,8 +128,8 @@ remaining work is therefore tracked as merge evidence and operational guardrails
 | Stage | Requirement | Status |
 | --- | --- | --- |
 | Flutter fork pin | VoidPlayer builds must use `toolchains/flutter.lock.json`, the locked `VoidPlayer-Flutter` ref, and matching macOS local-engine archives instead of an ambient developer SDK. | Implemented; keep the fork release tag immutable and update the lock only with a new fork release. |
-| Default policy | `auto` must be the default macOS presentation request. SDR media must stay on the SDR compositor, while PQ/HLG media promotes to EDR only when display headroom is available. | Implemented. |
-| SDR/HDR composition | Flutter UI, viewport background color, SDR video, and HDR video must be composited in their own color domains; SDR Flutter/background content must not be tone-mapped as HDR. | Implemented for the current native compositor path. |
+| Default policy | `auto` must be the default macOS presentation request. SDR media must stay on the SDR renderer-owned target, while PQ/HLG media promotes to EDR only when display headroom is available. | Implemented. |
+| SDR/HDR composition | Flutter UI, viewport background color, SDR video, and HDR video must be composited in their own color domains; SDR Flutter/background content must not be tone-mapped as HDR. | Implemented for the current renderer-owned presentation path. |
 | Interaction parity | Viewport pan/zoom/split, annotation overlays, timeline controls, resize, seek, EOF, and track removal must behave like the pre-HDR route. | Covered by macOS smoke and targeted local validation; keep adding targeted tests for regressions. |
 | Performance | Display-link rendering must avoid hot-path CPU readback and drawable starvation. External CPU pressure should degrade by dropping compositor ticks, not by blocking the UI thread. | Implemented in the compositor refresh path; re-run perf smoke before merge. |
 | Color correctness baseline | CPU reference tests and Metal shader tests must agree on range, matrix, transfer, primaries, SDR fallback, and EDR output thresholds. | Implemented as deterministic baseline; subjective tone calibration remains future work. |
@@ -172,10 +167,10 @@ Default SDR Auto policy:
 python dev.py gate macos-ui-smoke
 ```
 
-The smoke gate includes `native_compositor_auto_sdr_policy_smoke.csv`, which
+The smoke gate includes `renderer_owned_auto_sdr_policy_smoke.csv`, which
 asserts `macOSPresentationReason=auto-sdr-only`,
-`macOSPresentationMode=native-compositor-sdr`, and
-`nativeCompositorVideoPixelFormat=32BGRA`.
+`macOSPresentationMode=renderer-owned-wgpu-sdr`, and
+`rendererOwnedTargetPixelFormat=32BGRA`.
 
 Portable HLG Auto policy on an EDR-capable display:
 
@@ -185,33 +180,33 @@ python dev.py gate macos-hdr-edr-smoke
 
 This generates a small 10-bit HEVC/HLG fixture and asserts
 `macOSPresentationReason=auto-hdr-track`,
-`macOSPresentationMode=native-compositor-edr`,
-`nativeCompositorVideoPixelFormat=64RGBAHalf`, and
-`nativeCompositorEDRVideoMaxRGBX1000 >= 1001`.
+`macOSPresentationMode=renderer-owned-wgpu-edr`,
+`rendererOwnedTargetPixelFormat=64RGBAHalf`, and
+`rendererOwnedEDRTargetMaxRGBX1000 >= 1001`.
 
 SDR content through EDR compositor:
 
 ```bash
-VOIDPLAYER_MACOS_PRESENTATION_MODE=native-compositor-edr \
-  python dev.py mac-ui-test ui_tests/macos/native_compositor_flutter_overlay_smoke.csv
+VOIDPLAYER_MACOS_PRESENTATION_MODE=renderer-owned-wgpu-edr \
+  python dev.py mac-ui-test ui_tests/macos/renderer_owned_flutter_overlay_smoke.csv
 ```
 
 This script asserts that SDR remains within reference white while using an EDR
-target: `nativeCompositorEDRVideoMaxRGBX1000 == 1000` and
-`nativeCompositorEDRVideoPixelsOver1X1000 == 0`.
+target: `rendererOwnedEDRTargetMaxRGBX1000 == 1000` and
+`rendererOwnedEDRTargetPixelsOver1X1000 == 0`.
 
 Local Dolby/HLG sample:
 
 ```bash
-VOIDPLAYER_MACOS_PRESENTATION_MODE=native-compositor-edr \
+VOIDPLAYER_MACOS_PRESENTATION_MODE=renderer-owned-wgpu-edr \
   python dev.py mac-ui-test ui_tests/local/dolby_hlg_edr_compositor.csv
 ```
 
 The local Dolby/HLG CSV asserts that the half-float target contains values
 above SDR reference white:
 
-- `nativeCompositorEDRVideoMaxRGBX1000 >= 1001`
-- `nativeCompositorEDRVideoPixelsOver1X1000 >= 1`
+- `rendererOwnedEDRTargetMaxRGBX1000 >= 1001`
+- `rendererOwnedEDRTargetPixelsOver1X1000 >= 1`
 
 It references:
 
@@ -232,5 +227,5 @@ should stay visible:
   current simple HDR constants.
 - Treat Dolby Vision RPU metadata as later color-quality work; the current path
   uses the base HLG/PQ layer.
-- Rename compatibility aliases and any remaining spike terminology after one
-  mainline soak window.
+- Remove remaining legacy diagnostic naming after renderer-owned macOS UI
+  coverage has soaked.

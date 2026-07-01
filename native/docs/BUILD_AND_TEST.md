@@ -155,7 +155,7 @@ python3.12 dev.py gate macos-ui-smoke
 | --- | --- |
 | `native_facade_smoke.csv` | channel、metadata、diagnostics、首帧健康 |
 | `native_controls_smoke.csv` | basic play/pause/seek/step commands |
-| `native_compositor_auto_sdr_policy_smoke.csv` | default Auto policy keeps SDR media on the SDR native-compositor target |
+| `renderer_owned_auto_sdr_policy_smoke.csv` | default Auto policy keeps SDR media on the SDR renderer-owned target |
 | `native_seek_frame_smoke.csv` | seek preview / renderer-owned refresh |
 | `native_loop_range_smoke.csv` | loop policy |
 | `native_audio_play_seek_smoke.csv` | miniaudio/CoreAudio playback、seek、audible-track diagnostics |
@@ -178,8 +178,9 @@ python3.12 dev.py gate macos-hdr-edr-smoke
 ```
 
 This gate generates a portable 10-bit HEVC/HLG fixture and asserts that Auto
-selects `native-compositor-edr`, uses the `64RGBAHalf` target, and produces
-values above SDR reference white.
+selects `renderer-owned-wgpu-edr`, uses the `64RGBAHalf` target, and produces
+values above SDR reference white without attaching the Swift runner compositor
+layer by default.
 
 The default wgpu-metal backend has explicit local gates. The baseline gate
 covers software packages, retained source-projection/overlay composition,

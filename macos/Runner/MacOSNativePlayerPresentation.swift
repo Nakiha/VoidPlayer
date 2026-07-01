@@ -1,5 +1,6 @@
 import CoreVideo
 import Foundation
+import Metal
 
 extension MacOSNativePlayerSession {
   func setFrameAvailableCallback(
@@ -7,37 +8,6 @@ extension MacOSNativePlayerSession {
     userData: UnsafeMutableRawPointer?
   ) {
     VPMacOSNativePlayerSetFrameAvailableCallback(handle, callback, userData)
-  }
-
-  func setMetalPresentationTarget(
-    backend: OpaquePointer,
-    pixelBuffer: CVPixelBuffer,
-    width: Int,
-    height: Int,
-    maxTrackSlots: Int,
-    refresh: Bool = true
-  ) -> Bool {
-    let pixelBufferPointer =
-      UnsafeMutableRawPointer(Unmanaged.passUnretained(pixelBuffer).toOpaque())
-    let clampedTrackSlots = Int32(max(1, min(4, maxTrackSlots)))
-    if refresh {
-      return VPMacOSNativePlayerSetMetalPresentationTarget(
-        handle,
-        backend,
-        pixelBufferPointer,
-        Int32(width),
-        Int32(height),
-        clampedTrackSlots
-      ) == 0
-    }
-    return VPMacOSNativePlayerInstallMetalPresentationTarget(
-      handle,
-      backend,
-      pixelBufferPointer,
-      Int32(width),
-      Int32(height),
-      clampedTrackSlots
-    ) == 0
   }
 
   func installMetalPresentationTargetRing(
@@ -75,6 +45,34 @@ extension MacOSNativePlayerSession {
     }
   }
 
+  func installMetalDrawableTarget(
+    backend: OpaquePointer,
+    texture: MTLTexture,
+    texturePointer: UnsafeMutableRawPointer,
+    width: Int,
+    height: Int,
+    maxTrackSlots: Int,
+    viewportLeft: Float = 0.0,
+    viewportTop: Float = 0.0,
+    viewportRight: Float = 1.0,
+    viewportBottom: Float = 1.0
+  ) -> Bool {
+    let clampedTrackSlots = Int32(max(1, min(4, maxTrackSlots)))
+    return VPMacOSNativePlayerInstallMetalDrawableTarget(
+      handle,
+      backend,
+      texturePointer,
+      Int32(width),
+      Int32(height),
+      UInt64(texture.pixelFormat.rawValue),
+      clampedTrackSlots,
+      viewportLeft,
+      viewportTop,
+      viewportRight,
+      viewportBottom
+    ) == 0
+  }
+
   func markMetalPresentationTargetDisplayed(_ pixelBuffer: CVPixelBuffer) {
     VPMacOSNativePlayerMarkMetalPresentationTargetDisplayed(
       handle,
@@ -100,6 +98,83 @@ extension MacOSNativePlayerSession {
     VPMacOSNativePlayerClearMetalPresentationTarget(handle)
   }
 
+  func updateExternalFlutterSurface(
+    texture: MTLTexture,
+    frameGeneration: UInt64
+  ) -> Bool {
+    VPMacOSNativePlayerUpdateExternalFlutterSurface(
+      handle,
+      Unmanaged.passUnretained(texture as AnyObject).toOpaque(),
+      Int32(texture.width),
+      Int32(texture.height),
+      UInt64(texture.pixelFormat.rawValue),
+      frameGeneration
+    ) == 0
+  }
+
+  func clearExternalFlutterSurface() {
+    VPMacOSNativePlayerClearExternalFlutterSurface(handle)
+  }
+
+  func updateSourceProjection(
+    mode: Int,
+    splitPos: Double,
+    activeTrackCount: Int,
+    order: [Int],
+    displayOffsetX: [Double],
+    displayOffsetY: [Double],
+    invDisplaySizeX: [Double],
+    invDisplaySizeY: [Double],
+    viewOffsetUvX: [Double],
+    viewOffsetUvY: [Double]
+  ) -> Bool {
+    func orderValue(_ index: Int) -> Int32 {
+      Int32(order.indices.contains(index) ? order[index] : index)
+    }
+    func floatValue(_ values: [Double], _ index: Int) -> Float {
+      Float(values.indices.contains(index) && values[index].isFinite ? values[index] : 0.0)
+    }
+    let sourceOrder = (0..<4).map(orderValue)
+    let displayOffsetXValues = (0..<4).map { floatValue(displayOffsetX, $0) }
+    let displayOffsetYValues = (0..<4).map { floatValue(displayOffsetY, $0) }
+    let invDisplaySizeXValues = (0..<4).map { floatValue(invDisplaySizeX, $0) }
+    let invDisplaySizeYValues = (0..<4).map { floatValue(invDisplaySizeY, $0) }
+    let viewOffsetUvXValues = (0..<4).map { floatValue(viewOffsetUvX, $0) }
+    let viewOffsetUvYValues = (0..<4).map { floatValue(viewOffsetUvY, $0) }
+    return sourceOrder.withUnsafeBufferPointer { sourceOrderPointer in
+      displayOffsetXValues.withUnsafeBufferPointer { displayOffsetXPointer in
+        displayOffsetYValues.withUnsafeBufferPointer { displayOffsetYPointer in
+          invDisplaySizeXValues.withUnsafeBufferPointer { invDisplaySizeXPointer in
+            invDisplaySizeYValues.withUnsafeBufferPointer { invDisplaySizeYPointer in
+              viewOffsetUvXValues.withUnsafeBufferPointer { viewOffsetUvXPointer in
+                viewOffsetUvYValues.withUnsafeBufferPointer { viewOffsetUvYPointer in
+                  VPMacOSNativePlayerUpdateSourceProjection(
+                    handle,
+                    Int32(mode),
+                    Float(splitPos.isFinite ? min(1.0, max(0.0, splitPos)) : 0.5),
+                    Int32(max(1, min(4, activeTrackCount))),
+                    sourceOrderPointer.baseAddress,
+                    displayOffsetXPointer.baseAddress,
+                    displayOffsetYPointer.baseAddress,
+                    invDisplaySizeXPointer.baseAddress,
+                    invDisplaySizeYPointer.baseAddress,
+                    viewOffsetUvXPointer.baseAddress,
+                    viewOffsetUvYPointer.baseAddress,
+                    4
+                  ) == 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  func clearSourceProjection() {
+    VPMacOSNativePlayerClearSourceProjection(handle)
+  }
+
   func rendererOwnedPresentationActive() -> Bool {
     VPMacOSNativePlayerRendererOwnedPresentationActive(handle) != 0
   }
@@ -112,29 +187,6 @@ extension MacOSNativePlayerSession {
     var info = VPMacOSNativeFrameInfo()
     guard VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(handle, &info) == 0 else {
       return nil
-    }
-    return MacOSNativeFrameInfo(native: info)
-  }
-
-  func copyLastRendererOwnedFrameInfo() throws -> MacOSNativeFrameInfo {
-    var info = VPMacOSNativeFrameInfo()
-    var error = [CChar](repeating: 0, count: 1024)
-    let ret = VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
-      handle,
-      &info,
-      &error,
-      error.count
-    )
-    if ret != 0 {
-      let message = String(cString: error)
-      throw MacOSNativePlayerError.failed(
-        message.isEmpty
-          ? "macOS renderer-owned presentation failed with code \(ret)"
-          : message
-      )
-    }
-    guard info.width > 0, info.height > 0 else {
-      throw MacOSNativePlayerError.invalidPayload
     }
     return MacOSNativeFrameInfo(native: info)
   }

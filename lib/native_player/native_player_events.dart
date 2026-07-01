@@ -8,6 +8,7 @@ import 'native_player_protocol.dart';
 enum NativePlayerEventType {
   seekPreviewPresented,
   trackError,
+  rendererOwnedPresentationState,
   nativeCompositorState,
   playbackClock,
   unknown,
@@ -28,7 +29,17 @@ class NativePlayerEvent {
   final bool isPlaying;
   final double playbackSpeed;
   final int? errorCode;
+  final bool rendererOwnedPresentationActive;
+  final bool rendererOwnedRunnerLayerActive;
+  final bool rendererOwnedRendererActive;
+  final bool rendererOwnedPresentationRequested;
+  final bool rendererOwnedEDROutputEnabled;
+  final String rendererOwnedPresentationMode;
+  final String rendererOwnedPresentationReason;
+  final String rendererOwnedPresentationFailure;
   final bool nativeCompositorActive;
+  final bool nativeCompositorRunnerLayerActive;
+  final bool nativeCompositorRendererOwnedActive;
   final bool nativeCompositorRequested;
   final bool nativeCompositorEDREnabled;
   final String nativeCompositorMode;
@@ -52,7 +63,17 @@ class NativePlayerEvent {
     this.isPlaying = false,
     this.playbackSpeed = 1.0,
     this.errorCode,
+    this.rendererOwnedPresentationActive = false,
+    this.rendererOwnedRunnerLayerActive = false,
+    this.rendererOwnedRendererActive = false,
+    this.rendererOwnedPresentationRequested = false,
+    this.rendererOwnedEDROutputEnabled = false,
+    this.rendererOwnedPresentationMode = '',
+    this.rendererOwnedPresentationReason = '',
+    this.rendererOwnedPresentationFailure = '',
     this.nativeCompositorActive = false,
+    this.nativeCompositorRunnerLayerActive = false,
+    this.nativeCompositorRendererOwnedActive = false,
     this.nativeCompositorRequested = false,
     this.nativeCompositorEDREnabled = false,
     this.nativeCompositorMode = '',
@@ -79,6 +100,8 @@ class NativePlayerEvent {
       type: switch (rawType) {
         'seekPreviewPresented' => NativePlayerEventType.seekPreviewPresented,
         'trackError' => NativePlayerEventType.trackError,
+        'rendererOwnedPresentationState' =>
+          NativePlayerEventType.rendererOwnedPresentationState,
         'nativeCompositorState' => NativePlayerEventType.nativeCompositorState,
         'playbackClock' => NativePlayerEventType.playbackClock,
         _ => NativePlayerEventType.unknown,
@@ -93,12 +116,86 @@ class NativePlayerEvent {
       isPlaying: _asBool(map['isPlaying']),
       playbackSpeed: _asDouble(map['playbackSpeed']) ?? 1.0,
       errorCode: _asInt(map['errorCode']),
-      nativeCompositorActive: _asBool(map['nativeCompositorActive']),
-      nativeCompositorRequested: _asBool(map['nativeCompositorRequested']),
-      nativeCompositorEDREnabled: _asBool(map['nativeCompositorEDREnabled']),
-      nativeCompositorMode: _asString(map['nativeCompositorMode']),
-      nativeCompositorReason: _asString(map['nativeCompositorReason']),
-      nativeCompositorFailure: _asString(map['nativeCompositorFailure']),
+      rendererOwnedPresentationActive: _boolValue(
+        map,
+        'rendererOwnedPresentationActive',
+        fallbackKey: 'nativeCompositorActive',
+      ),
+      rendererOwnedRunnerLayerActive: _boolValue(
+        map,
+        'rendererOwnedRunnerLayerActive',
+        fallbackKey: 'nativeCompositorRunnerLayerActive',
+      ),
+      rendererOwnedRendererActive: _boolValue(
+        map,
+        'rendererOwnedRendererActive',
+        fallbackKey: 'nativeCompositorRendererOwnedActive',
+      ),
+      rendererOwnedPresentationRequested: _boolValue(
+        map,
+        'rendererOwnedPresentationRequested',
+        fallbackKey: 'nativeCompositorRequested',
+      ),
+      rendererOwnedEDROutputEnabled: _boolValue(
+        map,
+        'rendererOwnedEDROutputEnabled',
+        fallbackKey: 'nativeCompositorEDREnabled',
+      ),
+      rendererOwnedPresentationMode: _stringValue(
+        map,
+        'rendererOwnedPresentationMode',
+        fallbackKey: 'nativeCompositorMode',
+      ),
+      rendererOwnedPresentationReason: _stringValue(
+        map,
+        'rendererOwnedPresentationReason',
+        fallbackKey: 'nativeCompositorReason',
+      ),
+      rendererOwnedPresentationFailure: _stringValue(
+        map,
+        'rendererOwnedPresentationFailure',
+        fallbackKey: 'nativeCompositorFailure',
+      ),
+      nativeCompositorActive: _boolValue(
+        map,
+        'rendererOwnedPresentationActive',
+        fallbackKey: 'nativeCompositorActive',
+      ),
+      nativeCompositorRunnerLayerActive: _boolValue(
+        map,
+        'rendererOwnedRunnerLayerActive',
+        fallbackKey: 'nativeCompositorRunnerLayerActive',
+      ),
+      nativeCompositorRendererOwnedActive: _boolValue(
+        map,
+        'rendererOwnedRendererActive',
+        fallbackKey: 'nativeCompositorRendererOwnedActive',
+      ),
+      nativeCompositorRequested: _boolValue(
+        map,
+        'rendererOwnedPresentationRequested',
+        fallbackKey: 'nativeCompositorRequested',
+      ),
+      nativeCompositorEDREnabled: _boolValue(
+        map,
+        'rendererOwnedEDROutputEnabled',
+        fallbackKey: 'nativeCompositorEDREnabled',
+      ),
+      nativeCompositorMode: _stringValue(
+        map,
+        'rendererOwnedPresentationMode',
+        fallbackKey: 'nativeCompositorMode',
+      ),
+      nativeCompositorReason: _stringValue(
+        map,
+        'rendererOwnedPresentationReason',
+        fallbackKey: 'nativeCompositorReason',
+      ),
+      nativeCompositorFailure: _stringValue(
+        map,
+        'rendererOwnedPresentationFailure',
+        fallbackKey: 'nativeCompositorFailure',
+      ),
       nativeCompositorPhase: _asString(map['nativeCompositorPhase']),
       nativeCompositorSerial: _asInt(map['nativeCompositorSerial']) ?? 0,
     );
@@ -124,6 +221,24 @@ class NativePlayerEvent {
 
   static String _asString(Object? value) {
     return value is String ? value : '';
+  }
+
+  static bool _boolValue(
+    Map<dynamic, dynamic> map,
+    String key, {
+    required String fallbackKey,
+  }) {
+    if (map.containsKey(key)) return _asBool(map[key]);
+    return _asBool(map[fallbackKey]);
+  }
+
+  static String _stringValue(
+    Map<dynamic, dynamic> map,
+    String key, {
+    required String fallbackKey,
+  }) {
+    if (map.containsKey(key)) return _asString(map[key]);
+    return _asString(map[fallbackKey]);
   }
 }
 

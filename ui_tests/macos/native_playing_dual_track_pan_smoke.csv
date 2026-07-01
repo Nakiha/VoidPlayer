@@ -22,7 +22,7 @@
 6.09, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, viewportCompositeCount, 5, 2000
 6.095, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, videoSourceUpdateCount, 1
 6.096, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceFrameCacheHitCount, 1
-6.097, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
-6.098, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 1
+6.097, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererTargetExhaustionCount, 0, 0
+6.098, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererTargetInFlightCount, 0, 1
 6.1, ASSERT_CAPTURE_CHANGED, playing_dual_track_pan_a, playing_dual_track_pan_b
 6.2, QUIT, 0

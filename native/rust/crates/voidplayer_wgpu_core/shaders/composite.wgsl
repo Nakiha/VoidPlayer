@@ -29,6 +29,7 @@ struct CompositeParams {
   output_size: vec4<f32>,
   viewport_rect: vec4<f32>,
   flutter_size: vec4<f32>,
+  sdr_white: vec4<f32>,
 };
 
 struct OverlayRect {
@@ -125,14 +126,29 @@ fn vec4_get_f(values: vec4<f32>, index: i32) -> f32 {
 const COLOR_TRANSFER_SDR: i32 = 1;
 const COLOR_TRANSFER_PQ: i32 = 2;
 const COLOR_TRANSFER_HLG: i32 = 3;
+const STORAGE_YUV: i32 = 1;
+const STORAGE_BGRA: i32 = 2;
+const STORAGE_CV_PIXEL_BUFFER: i32 = 3;
+const STORAGE_OUTPUT_ATLAS: i32 = 4;
 const COLOR_PRIMARIES_BT601: i32 = 1;
 const COLOR_PRIMARIES_BT2020: i32 = 3;
-const OUTPUT_COLOR_MODE_EDR: i32 = 2;
+const OUTPUT_COLOR_MODE_MACOS_EDR: i32 = 2;
+const OUTPUT_COLOR_MODE_WINDOWS_SCRGB: i32 = 3;
 const HDR_REFERENCE_WHITE_NITS: f32 = 203.0;
+const WINDOWS_SCRGB_REFERENCE_WHITE_NITS: f32 = 80.0;
 const HLG_EDR_HEADROOM_SCALE: f32 = 4.0;
 
-fn output_is_edr() -> bool {
-  return params.output_mode.x == OUTPUT_COLOR_MODE_EDR;
+fn output_is_hdr() -> bool {
+  return params.output_mode.x == OUTPUT_COLOR_MODE_MACOS_EDR ||
+      params.output_mode.x == OUTPUT_COLOR_MODE_WINDOWS_SCRGB;
+}
+
+fn output_is_macos_edr() -> bool {
+  return params.output_mode.x == OUTPUT_COLOR_MODE_MACOS_EDR;
+}
+
+fn output_is_windows_scrgb() -> bool {
+  return params.output_mode.x == OUTPUT_COLOR_MODE_WINDOWS_SCRGB;
 }
 
 fn color_transfer_at(track: i32) -> i32 {
@@ -239,7 +255,7 @@ fn tone_map_to_sdr(rgb: vec3<f32>, transfer: i32, primaries: i32) -> vec3<f32> {
   return clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
-fn map_to_edr(rgb: vec3<f32>, transfer: i32, primaries: i32) -> vec3<f32> {
+fn map_to_macos_edr(rgb: vec3<f32>, transfer: i32, primaries: i32) -> vec3<f32> {
   if (transfer == COLOR_TRANSFER_PQ) {
     let lin = pq_to_linear_nits(rgb) / HDR_REFERENCE_WHITE_NITS;
     return max(convert_linear_primaries_to_display_p3(lin, primaries), vec3<f32>(0.0));
@@ -251,21 +267,54 @@ fn map_to_edr(rgb: vec3<f32>, transfer: i32, primaries: i32) -> vec3<f32> {
   return max(convert_linear_primaries_to_display_p3(srgb_to_linear(rgb), primaries), vec3<f32>(0.0));
 }
 
+fn map_to_windows_scrgb(rgb: vec3<f32>, transfer: i32, primaries: i32) -> vec3<f32> {
+  if (transfer == COLOR_TRANSFER_PQ) {
+    return max(
+        convert_linear_primaries_to_bt709(
+            pq_to_linear_nits(rgb) / WINDOWS_SCRGB_REFERENCE_WHITE_NITS,
+            primaries),
+        vec3<f32>(0.0));
+  }
+  if (transfer == COLOR_TRANSFER_HLG) {
+    return max(
+        convert_linear_primaries_to_bt709(
+            hlg_to_linear(rgb) *
+                (HLG_EDR_HEADROOM_SCALE * HDR_REFERENCE_WHITE_NITS /
+                 WINDOWS_SCRGB_REFERENCE_WHITE_NITS),
+            primaries),
+        vec3<f32>(0.0));
+  }
+  let white_scale = max(params.sdr_white.x, 0.0001);
+  return max(
+      convert_linear_primaries_to_bt709(srgb_to_linear(rgb), primaries) *
+          white_scale,
+      vec3<f32>(0.0));
+}
+
 fn map_source_to_output(color: vec4<f32>, track: i32) -> vec4<f32> {
   let transfer = color_transfer_at(track);
   let primaries = color_primaries_at(track);
-  if (output_is_edr()) {
-    return vec4<f32>(map_to_edr(color.rgb, transfer, primaries), color.a);
+  if (output_is_macos_edr()) {
+    return vec4<f32>(map_to_macos_edr(color.rgb, transfer, primaries), color.a);
+  }
+  if (output_is_windows_scrgb()) {
+    return vec4<f32>(map_to_windows_scrgb(color.rgb, transfer, primaries), color.a);
   }
   return vec4<f32>(tone_map_to_sdr(color.rgb, transfer, primaries), color.a);
 }
 
 fn map_sdr_ui_to_output(color: vec4<f32>) -> vec4<f32> {
   let ui = clamp(color, vec4<f32>(0.0), vec4<f32>(1.0));
-  if (!output_is_edr()) {
+  if (!output_is_hdr()) {
     return ui;
   }
-  return vec4<f32>(convert_linear_bt709_to_display_p3(srgb_to_linear(ui.rgb)), ui.a);
+  let white_scale = max(params.sdr_white.x, 0.0001);
+  if (output_is_windows_scrgb()) {
+    return vec4<f32>(srgb_to_linear(ui.rgb) * white_scale, ui.a);
+  }
+  return vec4<f32>(
+      convert_linear_bt709_to_display_p3(srgb_to_linear(ui.rgb)) * white_scale,
+      ui.a);
 }
 
 fn select_track(tex_uv: vec2<f32>) -> vec2<i32> {
@@ -383,7 +432,7 @@ fn premul_blend_over(dst: vec4<f32>, src: vec4<f32>) -> vec4<f32> {
 
 fn map_premul_sdr_ui_to_output(color: vec4<f32>) -> vec4<f32> {
   let premul = clamp(color, vec4<f32>(0.0), vec4<f32>(1.0));
-  if (!output_is_edr()) {
+  if (!output_is_hdr()) {
     return premul;
   }
   if (premul.a <= 0.00001) {
@@ -868,8 +917,8 @@ fn fs_flutter_surface(@builtin(position) position: vec4<f32>) -> @location(0) ve
       position.x >= flutter_size.x || position.y >= flutter_size.y) {
     return vec4<f32>(0.0);
   }
-  return map_premul_sdr_ui_to_output(
-    textureSample(flutter_surface_texture, src_sampler, position.xy / flutter_size));
+  let sample = textureSample(flutter_surface_texture, src_sampler, position.xy / flutter_size);
+  return map_premul_sdr_ui_to_output(sample);
 }
 
 fn read_u8(byte_offset: u32) -> u32 {
@@ -1122,7 +1171,6 @@ fn sample_cv_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
 
 @fragment
 fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-  let flutter_size = max(params.flutter_size.xy, vec2<f32>(1.0));
   let direct_viewport_overlay = params.output_mode.w == 1;
   let viewport_min = params.viewport_rect.xy;
   let viewport_size = max(params.viewport_rect.zw, vec2<f32>(1.0));
@@ -1140,13 +1188,16 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
       if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
         let storage = i32(round(params.split.y));
         var color = sample_bgra(track, uv);
-        if (storage == 1) {
+        if (storage == STORAGE_YUV) {
           color = sample_yuv(track, uv);
-        } else if (storage == 3) {
+        } else if (storage == STORAGE_CV_PIXEL_BUFFER) {
           color = sample_cv_yuv(track, uv);
         }
         let divided = apply_split_divider(color, position.x - viewport_min.x);
-        let output_color = map_source_to_output(divided, track);
+        let output_color = select(
+          map_source_to_output(divided, track),
+          divided,
+          storage == STORAGE_OUTPUT_ATLAS);
         if (direct_viewport_overlay) {
           with_overlay = output_color;
         } else {
@@ -1158,15 +1209,5 @@ fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     }
   }
 
-  if (direct_viewport_overlay) {
-    return with_overlay;
-  }
-
-  if (position.x >= 0.0 && position.y >= 0.0 &&
-      position.x < flutter_size.x && position.y < flutter_size.y) {
-    let flutter = map_premul_sdr_ui_to_output(
-      textureSample(flutter_surface_texture, src_sampler, position.xy / flutter_size));
-    return premul_blend_over(with_overlay, flutter);
-  }
   return with_overlay;
 }

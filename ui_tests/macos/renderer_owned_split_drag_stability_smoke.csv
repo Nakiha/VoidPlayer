@@ -1,0 +1,27 @@
+# macOS renderer-owned split drag should not exhaust the native target ring.
+# Reproduces the paused high-zoom split handle drag path that previously left
+# completed wgpu targets unreleased and froze the native texture.
+@WINDOW, 1008, 720
+0.0, SET_DECODE_MODE, forceSoftware
+0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+1.8, ASSERT_TRACK_COUNT, 1
+2.0, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+5.5, ASSERT_TRACK_COUNT, 2
+5.6, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
+5.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
+5.8, TOGGLE_LAYOUT_MODE
+6.8, WAIT_LAYOUT_MODE, 1, 3000
+6.9, SET_ZOOM, 2.6
+7.1, DRAG_SPLIT_HANDLE, 0.72, 32, 4
+7.9, DRAG_SPLIT_HANDLE, 0.28, 32, 4
+8.7, DRAG_SPLIT_HANDLE, 0.66, 32, 4
+11.1, CAPTURE_VIEWPORT_REGION, split_drag_stable, 0, 0, 1920, 900, 1920, build/test-output/macos/split_drag_stable.png
+11.2, ASSERT_CAPTURE_NOT_BLACK, split_drag_stable, 0.01, 4.0
+11.3, ASSERT_CAPTURE_HAS_DETAIL, split_drag_stable, 12.0
+11.4, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+11.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+11.6, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
+11.7, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererTargetExhaustionCount, 0, 0
+11.8, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererTargetInFlightCount, 0, 2
+11.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
+12.1, QUIT, 0

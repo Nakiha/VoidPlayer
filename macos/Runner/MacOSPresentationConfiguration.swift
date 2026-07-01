@@ -3,9 +3,8 @@ import CoreVideo
 import Metal
 
 enum MacOSPresentationMode: String {
-  case flutterTextureSDR = "flutter-texture-sdr"
-  case nativeCompositorSDR = "native-compositor-sdr"
-  case nativeCompositorEDR = "native-compositor-edr"
+  case rendererOwnedWgpuSDR = "renderer-owned-wgpu-sdr"
+  case rendererOwnedWgpuEDR = "renderer-owned-wgpu-edr"
 }
 
 struct MacOSPresentationConfiguration {
@@ -14,12 +13,10 @@ struct MacOSPresentationConfiguration {
   let reason: String
   let displayEDRHeadroomX1000: Int
 
-  var nativeCompositorEnabled: Bool {
-    mode == .nativeCompositorSDR || mode == .nativeCompositorEDR
-  }
+  var rendererOwnedPresentationEnabled: Bool { true }
 
   var edrOutputEnabled: Bool {
-    mode == .nativeCompositorEDR
+    mode == .rendererOwnedWgpuEDR
   }
 
   var rendererTargetPixelFormat: OSType {
@@ -39,7 +36,7 @@ struct MacOSPresentationConfiguration {
       "macOSPresentationMode": mode.rawValue,
       "macOSPresentationRequest": request,
       "macOSPresentationReason": reason,
-      "macOSPresentationNativeCompositorEnabled": nativeCompositorEnabled,
+      "macOSPresentationRendererOwnedEnabled": rendererOwnedPresentationEnabled,
       "macOSPresentationEDROutputEnabled": edrOutputEnabled,
       "macOSDisplayEDRHeadroomX1000": displayEDRHeadroomX1000,
     ]
@@ -51,7 +48,7 @@ struct MacOSPresentationConfiguration {
 
   private static let lock = NSLock()
   private static var resolvedCurrent = MacOSPresentationConfiguration(
-    mode: .nativeCompositorSDR,
+    mode: .rendererOwnedWgpuSDR,
     request: environment.request,
     reason: "auto-unresolved-sdr",
     displayEDRHeadroomX1000: 1000
@@ -72,54 +69,47 @@ struct MacOSPresentationConfiguration {
     let headroomX1000 = displayEDRHeadroomX1000(screen: screen)
     let supportsEDR = headroomX1000 > 1000
     switch environment.overrideMode {
-    case .flutterTextureSDR:
-      return MacOSPresentationConfiguration(
-        mode: .flutterTextureSDR,
-        request: environment.request,
-        reason: "forced-flutter-texture-sdr",
-        displayEDRHeadroomX1000: headroomX1000
-      )
-    case .nativeCompositorSDR:
+    case .rendererOwnedWgpuSDR:
       if environment.isWgpuMetalRequest {
         if hasHDRTrack && supportsEDR {
           return MacOSPresentationConfiguration(
-            mode: .nativeCompositorEDR,
+            mode: .rendererOwnedWgpuEDR,
             request: environment.request,
             reason: "forced-wgpu-metal-edr",
             displayEDRHeadroomX1000: headroomX1000
           )
         }
         return MacOSPresentationConfiguration(
-          mode: .nativeCompositorSDR,
+          mode: .rendererOwnedWgpuSDR,
           request: environment.request,
           reason: hasHDRTrack ? "wgpu-metal-edr-display-unavailable" : "forced-wgpu-metal-sdr",
           displayEDRHeadroomX1000: headroomX1000
         )
       }
       return MacOSPresentationConfiguration(
-        mode: .nativeCompositorSDR,
+        mode: .rendererOwnedWgpuSDR,
         request: environment.request,
-        reason: "forced-native-compositor-sdr",
+        reason: "forced-renderer-owned-wgpu-sdr",
         displayEDRHeadroomX1000: headroomX1000
       )
-    case .nativeCompositorEDR:
+    case .rendererOwnedWgpuEDR:
       return MacOSPresentationConfiguration(
-        mode: supportsEDR ? .nativeCompositorEDR : .nativeCompositorSDR,
+        mode: supportsEDR ? .rendererOwnedWgpuEDR : .rendererOwnedWgpuSDR,
         request: environment.request,
-        reason: supportsEDR ? "forced-native-compositor-edr" : "edr-display-unavailable",
+        reason: supportsEDR ? "forced-renderer-owned-wgpu-edr" : "edr-display-unavailable",
         displayEDRHeadroomX1000: headroomX1000
       )
     case nil:
       if hasHDRTrack && supportsEDR {
         return MacOSPresentationConfiguration(
-          mode: .nativeCompositorEDR,
+          mode: .rendererOwnedWgpuEDR,
           request: environment.request,
-          reason: "auto-hdr-track",
+          reason: "auto-hdr-renderer-owned-metal-layer-edr",
           displayEDRHeadroomX1000: headroomX1000
         )
       }
       return MacOSPresentationConfiguration(
-        mode: .nativeCompositorSDR,
+        mode: .rendererOwnedWgpuSDR,
         request: environment.request,
         reason: hasHDRTrack ? "auto-hdr-display-unavailable" : "auto-sdr-only",
         displayEDRHeadroomX1000: headroomX1000
@@ -164,21 +154,21 @@ struct MacOSPresentationEnvironment {
   init(environment: [String: String]) {
     if let rawMode = environment["VOIDPLAYER_MACOS_PRESENTATION_MODE"]?.lowercased() {
       switch rawMode {
-      case "native-compositor-edr", "edr", "hdr":
+      case "renderer-owned-wgpu-edr", "edr", "hdr":
         request = rawMode
-        overrideMode = .nativeCompositorEDR
+        overrideMode = .rendererOwnedWgpuEDR
         return
-      case "native-compositor-sdr", "native", "compositor":
+      case "renderer-owned-wgpu-sdr", "native", "compositor":
         request = rawMode
-        overrideMode = .nativeCompositorSDR
+        overrideMode = .rendererOwnedWgpuSDR
         return
-      case "flutter-texture-sdr", "flutter", "sdr":
+      case "sdr":
         request = rawMode
-        overrideMode = .flutterTextureSDR
+        overrideMode = .rendererOwnedWgpuSDR
         return
       case "wgpu-metal", "wgpu":
         request = rawMode
-        overrideMode = .nativeCompositorSDR
+        overrideMode = .rendererOwnedWgpuSDR
         return
       case "auto":
         request = "auto"
@@ -187,27 +177,6 @@ struct MacOSPresentationEnvironment {
       default:
         break
       }
-    }
-    if environment["VOIDPLAYER_NATIVE_COMPOSITOR"] == "1" ||
-        environment["VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE"] == "1" {
-      let isCurrentAlias = environment["VOIDPLAYER_NATIVE_COMPOSITOR"] == "1"
-      if environment["VOIDPLAYER_NATIVE_COMPOSITOR_EDR"] == "1" ||
-        environment["VOIDPLAYER_FLUTTER_HDR_SPIKE"] == "1" {
-        if isCurrentAlias {
-          request = "native-compositor-edr-env"
-        } else {
-          request = "legacy-native-compositor-edr"
-        }
-        overrideMode = .nativeCompositorEDR
-        return
-      }
-      if isCurrentAlias {
-        request = "native-compositor-sdr-env"
-      } else {
-        request = "legacy-native-compositor-sdr"
-      }
-      overrideMode = .nativeCompositorSDR
-      return
     }
     request = "auto"
     overrideMode = nil

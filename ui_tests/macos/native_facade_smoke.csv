@@ -7,15 +7,17 @@
 0.3, ADD_MEDIA, build/generated/macos/native_facade_h264.mp4
 3.0, ASSERT_TRACK_COUNT, 1
 3.1, ASSERT_NATIVE_BACKEND, macos-native-player, true
-3.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-metal
+3.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-wgpu-metal
 3.21, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 3.211, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedRendererInitialized, true
 3.2115, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedTargetInstalled, true
 3.212, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedBackendAvailable, true
 3.2125, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+3.2126, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedExternalFlutterSurfaceUpdateCount, 0, 0
+3.2127, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedExternalFlutterSurfaceConsumeCount, 0, 0
 3.213, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 3.2135, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-renderer
-3.214, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-cvpixelbuffer-target
+3.214, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, renderer-owned-wgpu-metal
 3.2145, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
 3.26, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, false
 3.27, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, true

@@ -4,7 +4,7 @@ import Foundation
 struct MacOSTransportContext {
   let nativeBackendActive: Bool
   let player: MacOSNativePlayerSession?
-  let texture: MacOSFlutterTextureBridge?
+  let rendererTarget: MacOSRendererOwnedPresentationTarget?
   let textureRegistered: Bool
   let playback: MacOSPlaybackController
   let presentationState: MacOSFramePresentationState
@@ -93,7 +93,7 @@ final class MacOSTransportController {
       context.playback.resumeIfNeeded(
         true,
         player: context.player,
-        texture: context.texture,
+        rendererTarget: context.rendererTarget,
         textureRegistered: context.textureRegistered,
         maxTrackSlots: context.maxTrackSlots,
         userData: context.userData,
@@ -111,7 +111,7 @@ final class MacOSTransportController {
   ) {
     let pumpReady = context.playback.ensurePresentationPump(
       player: context.player,
-      texture: context.texture,
+      rendererTarget: context.rendererTarget,
       maxTrackSlots: context.maxTrackSlots,
       userData: context.userData,
       presentationState: context.presentationState
@@ -167,12 +167,12 @@ final class MacOSTransportController {
     context.playback.stopForBlockingCommand(player: context.player, pausePlayer: false)
     guard context.nativeBackendActive,
           let player = context.player,
-          let texture = context.texture else {
+          let rendererTarget = context.rendererTarget else {
       return nil
     }
     if let error = MacOSNativeFrameRefresh.stepAndRefresh(
       player: player,
-      texture: texture,
+      rendererTarget: rendererTarget,
       forward: forward,
       maxTrackSlots: context.maxTrackSlots,
       presentationState: context.presentationState,
@@ -191,13 +191,13 @@ final class MacOSTransportController {
   ) -> MacOSNativeSeekRefreshResult {
     guard context.nativeBackendActive,
           let player = context.player,
-          let texture = context.texture else {
+          let rendererTarget = context.rendererTarget else {
       return .presented
     }
 
     return MacOSNativeFrameRefresh.seekAndRefresh(
       player: player,
-      texture: texture,
+      rendererTarget: rendererTarget,
       targetPtsUs: targetPtsUs,
       timeoutMs: timeoutMs,
       maxTrackSlots: context.maxTrackSlots,

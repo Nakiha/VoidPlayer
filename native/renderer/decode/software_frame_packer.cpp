@@ -86,7 +86,10 @@ bool supported_software_format(AVPixelFormat format) {
     case AV_PIX_FMT_NV12:
     case AV_PIX_FMT_NV21:
     case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_YUV420P12LE:
     case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_P012LE:
+    case AV_PIX_FMT_P016LE:
     case AV_PIX_FMT_YUV422P:
     case AV_PIX_FMT_YUVJ422P:
     case AV_PIX_FMT_YUV444P:
@@ -102,7 +105,10 @@ bool supported_software_format(AVPixelFormat format) {
 bool software_format_uses_p010(AVPixelFormat format) {
     switch (format) {
     case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_YUV420P12LE:
     case AV_PIX_FMT_P010LE:
+    case AV_PIX_FMT_P012LE:
+    case AV_PIX_FMT_P016LE:
     case AV_PIX_FMT_YUV422P10LE:
     case AV_PIX_FMT_YUV444P10LE:
         return true;
@@ -137,6 +143,23 @@ uint16_t clamp_10(uint16_t value) {
 
 uint16_t yuv10_to_p010(uint16_t value) {
     return static_cast<uint16_t>(clamp_10(value) << 6);
+}
+
+uint16_t yuv12_to_p010(uint16_t value) {
+    const uint16_t quantized = static_cast<uint16_t>(
+        std::min<unsigned>((static_cast<unsigned>(value) + 2u) >> 2, 1023u));
+    return static_cast<uint16_t>(quantized << 6);
+}
+
+uint16_t high_bits_to_p010(uint16_t value, int source_bits) {
+    if (source_bits <= 10) {
+        return yuv10_to_p010(value >> std::max(0, 10 - source_bits));
+    }
+    const int shift = source_bits - 10;
+    const unsigned rounding = shift > 0 ? (1u << (shift - 1)) : 0u;
+    const uint16_t quantized = static_cast<uint16_t>(
+        std::min<unsigned>((static_cast<unsigned>(value) + rounding) >> shift, 1023u));
+    return static_cast<uint16_t>(quantized << 6);
 }
 
 uint8_t avg2_u8(uint8_t a, uint8_t b) {
@@ -387,6 +410,52 @@ bool pack_yuv420p_10_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
     return true;
 }
 
+bool pack_yuv420p_12_to_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
+                             int width, int height, int y_stride, int uv_stride) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int chroma_width = ceil_div2(width);
+    const int chroma_height = ceil_div2(height);
+    const int coded_chroma_width = coded_width / 2;
+    if (!frame->data[0] || !frame->data[1] || !frame->data[2] ||
+        frame->linesize[0] < width * 2 ||
+        frame->linesize[1] < chroma_width * 2 ||
+        frame->linesize[2] < chroma_width * 2) {
+        return false;
+    }
+    auto* dst_y = reinterpret_cast<uint16_t*>(dst.data());
+    auto* dst_uv = reinterpret_cast<uint16_t*>(
+        dst.data() + static_cast<size_t>(y_stride) * coded_height);
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
+        const auto* src_y = reinterpret_cast<const uint16_t*>(
+            frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0]);
+        auto* row = reinterpret_cast<uint16_t*>(
+            reinterpret_cast<uint8_t*>(dst_y) + static_cast<size_t>(y) * y_stride);
+        for (int x = 0; x < width; ++x) {
+            row[x] = yuv12_to_p010(src_y[x]);
+        }
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
+    }
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy = std::min(y, chroma_height - 1);
+        const auto* src_u = reinterpret_cast<const uint16_t*>(
+            frame->data[1] + static_cast<size_t>(sy) * frame->linesize[1]);
+        const auto* src_v = reinterpret_cast<const uint16_t*>(
+            frame->data[2] + static_cast<size_t>(sy) * frame->linesize[2]);
+        auto* row = reinterpret_cast<uint16_t*>(
+            reinterpret_cast<uint8_t*>(dst_uv) + static_cast<size_t>(y) * uv_stride);
+        for (int x = 0; x < coded_chroma_width; ++x) {
+            const int sx = std::min(x, chroma_width - 1);
+            row[x * 2] = yuv12_to_p010(src_u[sx]);
+            row[x * 2 + 1] = yuv12_to_p010(src_v[sx]);
+        }
+    }
+    return true;
+}
+
 bool copy_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
                int width, int height, int y_stride, int uv_stride) {
     const int coded_width = round_up_even(width);
@@ -424,6 +493,54 @@ bool copy_p010(const AVFrame* frame, std::vector<uint8_t>& dst,
             const int sx = std::min(x, chroma_width - 1);
             row[x * 2] = src_uv[sx * 2];
             row[x * 2 + 1] = src_uv[sx * 2 + 1];
+        }
+    }
+    return true;
+}
+
+bool copy_high_bit_biplanar_as_p010(const AVFrame* frame,
+                                    std::vector<uint8_t>& dst,
+                                    int width,
+                                    int height,
+                                    int y_stride,
+                                    int uv_stride,
+                                    int source_bits) {
+    const int coded_width = round_up_even(width);
+    const int coded_height = round_up_even(height);
+    const int chroma_width = ceil_div2(width);
+    const int chroma_height = ceil_div2(height);
+    const int coded_chroma_width = coded_width / 2;
+    if (!frame->data[0] || !frame->data[1] ||
+        frame->linesize[0] < width * 2 ||
+        frame->linesize[1] < chroma_width * 4) {
+        return false;
+    }
+    auto* dst_y = reinterpret_cast<uint16_t*>(dst.data());
+    auto* dst_uv = reinterpret_cast<uint16_t*>(
+        dst.data() + static_cast<size_t>(y_stride) * coded_height);
+    for (int y = 0; y < coded_height; ++y) {
+        const int sy = std::min(y, height - 1);
+        const auto* src_y = reinterpret_cast<const uint16_t*>(
+            frame->data[0] + static_cast<size_t>(sy) * frame->linesize[0]);
+        auto* row = reinterpret_cast<uint16_t*>(
+            reinterpret_cast<uint8_t*>(dst_y) + static_cast<size_t>(y) * y_stride);
+        for (int x = 0; x < width; ++x) {
+            row[x] = high_bits_to_p010(src_y[x], source_bits);
+        }
+        if (coded_width > width) {
+            row[width] = row[width - 1];
+        }
+    }
+    for (int y = 0; y < coded_height / 2; ++y) {
+        const int sy = std::min(y, chroma_height - 1);
+        const auto* src_uv = reinterpret_cast<const uint16_t*>(
+            frame->data[1] + static_cast<size_t>(sy) * frame->linesize[1]);
+        auto* row = reinterpret_cast<uint16_t*>(
+            reinterpret_cast<uint8_t*>(dst_uv) + static_cast<size_t>(y) * uv_stride);
+        for (int x = 0; x < coded_chroma_width; ++x) {
+            const int sx = std::min(x, chroma_width - 1);
+            row[x * 2] = high_bits_to_p010(src_uv[sx * 2], source_bits);
+            row[x * 2 + 1] = high_bits_to_p010(src_uv[sx * 2 + 1], source_bits);
         }
     }
     return true;
@@ -640,9 +757,25 @@ bool convert_frame_to_cpu_nv12(const AVFrame* frame,
         ok = pack_yuv420p_10_to_p010(frame, *buffer, width, height,
                                      static_cast<int>(y_stride), static_cast<int>(uv_stride));
         break;
+    case AV_PIX_FMT_YUV420P12LE:
+        ok = pack_yuv420p_12_to_p010(frame, *buffer, width, height,
+                                     static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
     case AV_PIX_FMT_P010LE:
         ok = copy_p010(frame, *buffer, width, height,
                        static_cast<int>(y_stride), static_cast<int>(uv_stride));
+        break;
+    case AV_PIX_FMT_P012LE:
+        ok = copy_high_bit_biplanar_as_p010(frame, *buffer, width, height,
+                                            static_cast<int>(y_stride),
+                                            static_cast<int>(uv_stride),
+                                            12);
+        break;
+    case AV_PIX_FMT_P016LE:
+        ok = copy_high_bit_biplanar_as_p010(frame, *buffer, width, height,
+                                            static_cast<int>(y_stride),
+                                            static_cast<int>(uv_stride),
+                                            16);
         break;
     case AV_PIX_FMT_YUV422P10LE:
         ok = pack_yuv422p_10_to_p010(frame, *buffer, width, height,

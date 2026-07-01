@@ -246,10 +246,6 @@ interface. Platform-specific ownership is split as follows:
   count, failure count, and last error. Success and failure callbacks wake
   waiters after renderer locks are released.
 
-`VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(...)` is a compatibility
-entry for copying information about the most recent renderer-owned frame. It is
-not the normal active refresh command.
-
 ## Renderer Component Boundaries
 
 `Renderer` remains the public facade and lifecycle owner. `Renderer::Impl` is

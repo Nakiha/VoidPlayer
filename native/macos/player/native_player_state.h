@@ -18,7 +18,6 @@ namespace vp_macos {
 void write_error(char* error, size_t error_size, const std::string& message);
 bool videotoolbox_disabled_by_env();
 bool videotoolbox_hwdownload_forced_by_env();
-bool legacy_metal_requested_by_env();
 bool probe_videotoolbox_h264();
 bool decoder_name_is_videotoolbox(const std::string& decoder_name);
 vr::LayoutState to_layout_state(const VPMacOSNativeLayoutState& state);
@@ -70,9 +69,15 @@ struct VPMacOSNativePlayer {
   VPMacOSMetalPresentationBackend* presentation_target_backend = nullptr;
   void* presentation_target_pixel_buffer = nullptr;
   std::vector<void*> presentation_target_pixel_buffers;
+  bool presentation_target_is_metal_texture = false;
+  uint64_t presentation_target_pixel_format = 0;
   int32_t presentation_target_width = 0;
   int32_t presentation_target_height = 0;
   int32_t presentation_target_max_track_slots = 1;
+  float presentation_target_viewport_left = 0.0f;
+  float presentation_target_viewport_top = 0.0f;
+  float presentation_target_viewport_right = 1.0f;
+  float presentation_target_viewport_bottom = 1.0f;
   uint64_t presentation_target_generation = 0;
   bool last_renderer_owned_presentation_succeeded = false;
   bool last_renderer_owned_frame_info_available = false;

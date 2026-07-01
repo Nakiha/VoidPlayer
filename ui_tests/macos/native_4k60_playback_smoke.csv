@@ -9,7 +9,7 @@
 2.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
 2.36, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-videotoolbox
 2.42, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-renderer
-2.44, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-cvpixelbuffer-target
+2.44, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, renderer-owned-wgpu-metal
 2.441, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
 2.445, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 2.4455, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
@@ -24,7 +24,7 @@
 6.5, ASSERT_POSITION_RANGE, 700000, 2900000
 6.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFramePresentationCount, 2
 6.65, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 2
-6.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount, 2
+6.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererTargetCVPixelBufferUploadCount, 2
 6.715, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, cvpixelbuffer
 6.7155, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
 6.716, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentationPackageCopyUs, 0, 0
@@ -36,7 +36,7 @@
 6.755, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 6.756, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 6.757, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
-6.76, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-cvpixelbuffer-target
+6.76, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, renderer-owned-wgpu-metal
 6.7605, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
 6.761, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationFallbackReason, none
 6.7615, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackDiagnosticCount, 1

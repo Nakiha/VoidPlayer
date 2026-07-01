@@ -122,16 +122,18 @@ extension MainWindowViewActionBinding on MainWindowController {
       viewport: MainWindowViewportActions(
         onPan: (delta) {
           if (!_capabilities.canPanViewport) return;
-          _boostNativeCompositorFlutterInteraction(reason: 'viewport-pan');
+          _boostRendererOwnedFlutterSurfaceInteraction(reason: 'viewport-pan');
           layoutCoordinator.onPan(delta);
         },
         onSplit: (position) {
-          _boostNativeCompositorFlutterInteraction(reason: 'viewport-split');
+          _boostRendererOwnedFlutterSurfaceInteraction(
+            reason: 'viewport-split',
+          );
           layoutCoordinator.onSplit(position);
         },
         onZoom: (factor, localPos) {
           if (!_capabilities.canZoomViewport) return;
-          _boostNativeCompositorFlutterInteraction(reason: 'viewport-zoom');
+          _boostRendererOwnedFlutterSurfaceInteraction(reason: 'viewport-zoom');
           layoutCoordinator.onZoom(factor, localPos);
         },
         onPointerButton: layoutCoordinator.onPointerButton,
@@ -145,8 +147,8 @@ extension MainWindowViewActionBinding on MainWindowController {
         onNativeCompositorViewportRect:
             (left, top, width, height, surfaceWidth, surfaceHeight) {
               fireAndLog(
-                'set native compositor viewport rect',
-                player.setNativeCompositorViewportRect(
+                'set renderer-owned viewport rect',
+                player.setRendererOwnedViewportRect(
                   left: left,
                   top: top,
                   width: width,
@@ -157,15 +159,19 @@ extension MainWindowViewActionBinding on MainWindowController {
               );
             },
         onQuickMarkStart: (position) {
-          _boostNativeCompositorFlutterInteraction(reason: 'quick-mark-start');
+          _boostRendererOwnedFlutterSurfaceInteraction(
+            reason: 'quick-mark-start',
+          );
           quickMarkCoordinator.startDrag(position);
         },
         onQuickMarkUpdate: (position) {
-          _boostNativeCompositorFlutterInteraction(reason: 'quick-mark-drag');
+          _boostRendererOwnedFlutterSurfaceInteraction(
+            reason: 'quick-mark-drag',
+          );
           quickMarkCoordinator.updateDrag(position);
         },
         onQuickMarkInteraction: () {
-          _boostNativeCompositorFlutterInteraction(
+          _boostRendererOwnedFlutterSurfaceInteraction(
             reason: 'quick-mark-overlay',
           );
         },
@@ -173,7 +179,9 @@ extension MainWindowViewActionBinding on MainWindowController {
         onQuickMarkCancel: quickMarkCoordinator.cancelDrag,
         onQuickMarkSelect: quickMarkCoordinator.select,
         onQuickMarkChanged: (mark) {
-          _boostNativeCompositorFlutterInteraction(reason: 'quick-mark-change');
+          _boostRendererOwnedFlutterSurfaceInteraction(
+            reason: 'quick-mark-change',
+          );
           quickMarkCoordinator.update(mark);
         },
         onQuickMarkDeleted: quickMarkCoordinator.delete,
@@ -210,12 +218,14 @@ extension MainWindowViewActionBinding on MainWindowController {
             _runUserAction('step backward', playbackCoordinator.stepBackward),
         onSeek: (ptsUs) {
           if (!_capabilities.canSeek) return;
-          _boostNativeCompositorFlutterInteraction(reason: 'timeline-seek');
+          _boostRendererOwnedFlutterSurfaceInteraction(reason: 'timeline-seek');
           playbackCoordinator.seekTo(ptsUs);
         },
         onSliderHover: (hoverUs, hovering) {
           if (hovering) {
-            _boostNativeCompositorFlutterInteraction(reason: 'timeline-hover');
+            _boostRendererOwnedFlutterSurfaceInteraction(
+              reason: 'timeline-hover',
+            );
           }
           playbackCoordinator.onSliderHover(hoverUs, hovering);
         },
@@ -226,7 +236,9 @@ extension MainWindowViewActionBinding on MainWindowController {
           );
         },
         onLoopRangeChanged: (startUs, endUs) {
-          _boostNativeCompositorFlutterInteraction(reason: 'loop-range-drag');
+          _boostRendererOwnedFlutterSurfaceInteraction(
+            reason: 'loop-range-drag',
+          );
           playbackCoordinator.previewLoopRange(startUs, endUs);
         },
         onLoopRangeChangeEnd: (handle) {
@@ -254,7 +266,7 @@ extension MainWindowViewActionBinding on MainWindowController {
           playbackCoordinator.toggleTrackAudio(fileId);
         },
         onControlsWidthChanged: (width) {
-          _boostNativeCompositorFlutterInteraction(
+          _boostRendererOwnedFlutterSurfaceInteraction(
             reason: 'timeline-controls-resize',
           );
           stateStore.setTimelineControlsWidth(width);

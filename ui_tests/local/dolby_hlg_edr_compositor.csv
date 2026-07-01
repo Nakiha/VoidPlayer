@@ -1,25 +1,26 @@
 # Local macOS HDR exploration smoke. This references a user-local Dolby Vision
 # profile 8 / HLG sample and is not suitable for CI.
 # Run with:
-#   VOIDPLAYER_MACOS_PRESENTATION_MODE=native-compositor-edr python dev.py mac-ui-test ui_tests/local/dolby_hlg_edr_compositor.csv
+#   VOIDPLAYER_MACOS_PRESENTATION_MODE=renderer-owned-wgpu-edr python dev.py mac-ui-test ui_tests/local/dolby_hlg_edr_compositor.csv
 @WINDOW, 1280, 720
 0.3, ADD_MEDIA, /Users/zhuhongwei/Desktop/VID_20260605_212405_DOLBY.mp4
 2.2, ASSERT_TRACK_COUNT, 1
 2.3, ASSERT_NATIVE_BACKEND, macos-native-player, true
 2.4, DEBUG_FLUTTER_SURFACE_INFO
 2.5, DEBUG_NATIVE_COMPOSITOR
-2.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-edr
-2.53, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorEDREnabled, true
-2.54, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorVideoPixelFormat, 64RGBAHalf
-2.55, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoSampleCount, 1
-2.56, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoMaxRGBX1000, 1001
-2.57, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoPixelsOver1X1000, 1
-2.575, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorVideoSRGBToLinearEnabled, false
-2.576, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorFlutterSRGBToLinearEnabled, true
+2.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, renderer-owned-wgpu-edr
+2.53, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedEDROutputEnabled, true
+2.54, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedTargetPixelFormat, CAMetalLayerRGBA16Float
+2.55, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLayerTargetActive, true
 2.58, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorRange, limited
 2.59, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorMatrix, bt2020-ncl
 2.60, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, hlg
 2.61, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorPrimaries, bt2020
-2.7, CAPTURE_WINDOW, dolby_hlg_edr_compositor
-2.8, ASSERT_CAPTURE_NOT_BLACK, dolby_hlg_edr_compositor, 0.01, 4.0
-3.0, QUIT, 0
+2.65, SEEK_TO, 1000000
+4.2, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+4.24, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedSourceProjectionUpdateCount, 1
+4.26, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedSourceProjectionConsumeCount, 1
+4.3, CAPTURE_WINDOW_REGION, dolby_hlg_edr_viewport_roi, 360, 260, 1840, 660, 320, build/test-output/macos/dolby_hlg_edr_viewport_roi.png
+4.4, ASSERT_CAPTURE_NOT_BLACK, dolby_hlg_edr_viewport_roi, 0.01, 4.0
+4.5, ASSERT_CAPTURE_HAS_DETAIL, dolby_hlg_edr_viewport_roi, 8.0
+4.6, QUIT, 0

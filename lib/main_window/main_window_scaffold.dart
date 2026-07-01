@@ -46,9 +46,10 @@ class MainWindowScaffold extends StatelessWidget {
     final nativeCompositor = NativeCompositorFlags.nativeCompositor;
     final nativeCompositorViewportActive =
         nativeCompositor &&
-        (Platform.isWindows || viewport.nativeCompositorActive) &&
         viewport.textureId != null &&
-        viewport.viewportState.status == ViewportDisplayStatus.active;
+        viewport.viewportState.status == ViewportDisplayStatus.active &&
+        (Platform.isWindows ||
+            (Platform.isMacOS && viewport.nativeCompositorRunnerLayerActive));
     if (overlays.settingsVisible ||
         overlays.mediaInfoVisible ||
         overlays.profilerVisible ||

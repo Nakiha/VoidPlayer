@@ -62,6 +62,15 @@ extension MacOSNativePlayerSession {
       let value = String(cString: base)
       return value.isEmpty ? "unknown" : value
     }
+    let externalFlutterSurfaceLastError = withUnsafeBytes(
+      of: &state.external_flutter_surface_last_error
+    ) { rawBuffer -> String in
+      guard let base = rawBuffer.bindMemory(to: CChar.self).baseAddress else {
+        return "none"
+      }
+      let value = String(cString: base)
+      return value.isEmpty ? "none" : value
+    }
     let active = state.renderer_initialized != 0 &&
       state.target_installed != 0 &&
       state.backend_available != 0 &&
@@ -117,6 +126,40 @@ extension MacOSNativePlayerSession {
       ),
       "overlayCpuFallbackCount": Int64(
         min(state.overlay_cpu_fallback_count, UInt64(Int64.max))
+      ),
+      "externalFlutterSurfaceGeneration": Int64(
+        min(state.external_flutter_surface_generation, UInt64(Int64.max))
+      ),
+      "externalFlutterSurfaceConsumedGeneration": Int64(
+        min(state.external_flutter_surface_consumed_generation, UInt64(Int64.max))
+      ),
+      "externalFlutterSurfaceUpdateCount": Int64(
+        min(state.external_flutter_surface_update_count, UInt64(Int64.max))
+      ),
+      "externalFlutterSurfaceConsumeCount": Int64(
+        min(state.external_flutter_surface_consume_count, UInt64(Int64.max))
+      ),
+      "externalFlutterSurfaceWaitCount": Int64(
+        min(state.external_flutter_surface_wait_count, UInt64(Int64.max))
+      ),
+      "externalFlutterSurfaceWaitFailureCount": Int64(
+        min(state.external_flutter_surface_wait_failure_count, UInt64(Int64.max))
+      ),
+      "externalFlutterSurfaceLastError": externalFlutterSurfaceLastError,
+      "sourceCacheActive": state.source_cache_active != 0,
+      "sourceCacheTextureCount": Int(state.source_cache_texture_count),
+      "sourceCacheGeneration": Int64(
+        min(state.source_cache_generation, UInt64(Int64.max))
+      ),
+      "sourceCachePublishCount": Int64(
+        min(state.source_cache_publish_count, UInt64(Int64.max))
+      ),
+      "sourceProjectionActive": state.source_projection_active != 0,
+      "sourceProjectionUpdateCount": Int64(
+        min(state.source_projection_update_count, UInt64(Int64.max))
+      ),
+      "sourceProjectionConsumeCount": Int64(
+        min(state.source_projection_consume_count, UInt64(Int64.max))
       ),
       "lastDrawError": lastError,
     ]
@@ -226,6 +269,15 @@ extension MacOSNativePlayerSession {
         "metalBufferExhaustionCount": 0,
         "metalCommandCompletionP95Us": 0,
         "metalCommandFailureCount": 0,
+        "wgpuComposeTotalP95Us": 0,
+        "wgpuComposePreRenderP95Us": 0,
+        "wgpuComposeImportP95Us": 0,
+        "wgpuComposePrepareP95Us": 0,
+        "wgpuComposeOverlayEncodeP95Us": 0,
+        "wgpuComposeBindGroupP95Us": 0,
+        "wgpuComposePassEncodeP95Us": 0,
+        "wgpuComposeSubmitP95Us": 0,
+        "wgpuComposeCpuRenderP95Us": 0,
         "asyncMetalPublishActive": false,
         "videoSourceUpdateCount": 0,
         "viewportCompositeCount": 0,
@@ -339,6 +391,33 @@ extension MacOSNativePlayerSession {
       ),
       "metalCommandFailureCount": Int64(
         min(UInt64(stats.metal_command_failure_count), maxInt64)
+      ),
+      "wgpuComposeTotalP95Us": Int64(
+        min(UInt64(stats.wgpu_compose_total_p95_us), maxInt64)
+      ),
+      "wgpuComposePreRenderP95Us": Int64(
+        min(UInt64(stats.wgpu_compose_pre_render_p95_us), maxInt64)
+      ),
+      "wgpuComposeImportP95Us": Int64(
+        min(UInt64(stats.wgpu_compose_import_p95_us), maxInt64)
+      ),
+      "wgpuComposePrepareP95Us": Int64(
+        min(UInt64(stats.wgpu_compose_prepare_p95_us), maxInt64)
+      ),
+      "wgpuComposeOverlayEncodeP95Us": Int64(
+        min(UInt64(stats.wgpu_compose_overlay_encode_p95_us), maxInt64)
+      ),
+      "wgpuComposeBindGroupP95Us": Int64(
+        min(UInt64(stats.wgpu_compose_bind_group_p95_us), maxInt64)
+      ),
+      "wgpuComposePassEncodeP95Us": Int64(
+        min(UInt64(stats.wgpu_compose_pass_encode_p95_us), maxInt64)
+      ),
+      "wgpuComposeSubmitP95Us": Int64(
+        min(UInt64(stats.wgpu_compose_submit_p95_us), maxInt64)
+      ),
+      "wgpuComposeCpuRenderP95Us": Int64(
+        min(UInt64(stats.wgpu_compose_cpu_render_p95_us), maxInt64)
       ),
       "asyncMetalPublishActive": stats.async_metal_publish_active != 0,
       "videoSourceUpdateCount": Int64(
@@ -458,6 +537,8 @@ extension MacOSNativePlayerSession {
       return "bgra"
     case Int32(VPMacOSNativePresentPackageStorageCVPixelBuffer):
       return "cvpixelbuffer"
+    case Int32(VPMacOSNativePresentPackageStorageSourceOutputAtlas):
+      return "source-output-atlas"
     default:
       return "unavailable"
     }
@@ -562,6 +643,20 @@ extension MacOSNativePlayerSession {
       "overlayGpuSuccessCount": 0,
       "overlayGpuFailureCount": 0,
       "overlayCpuFallbackCount": 0,
+      "externalFlutterSurfaceGeneration": 0,
+      "externalFlutterSurfaceConsumedGeneration": 0,
+      "externalFlutterSurfaceUpdateCount": 0,
+      "externalFlutterSurfaceConsumeCount": 0,
+      "externalFlutterSurfaceWaitCount": 0,
+      "externalFlutterSurfaceWaitFailureCount": 0,
+      "externalFlutterSurfaceLastError": "none",
+      "sourceCacheActive": false,
+      "sourceCacheTextureCount": 0,
+      "sourceCacheGeneration": 0,
+      "sourceCachePublishCount": 0,
+      "sourceProjectionActive": false,
+      "sourceProjectionUpdateCount": 0,
+      "sourceProjectionConsumeCount": 0,
       "backendName": "unknown",
       "lastDrawError": "",
     ]

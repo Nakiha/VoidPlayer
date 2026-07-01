@@ -37,7 +37,7 @@ final class MacOSPlaybackController {
 
   func play(
     player: MacOSNativePlayerSession?,
-    texture: MacOSFlutterTextureBridge?,
+    rendererTarget: MacOSRendererOwnedPresentationTarget?,
     textureRegistered: Bool,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
@@ -47,7 +47,7 @@ final class MacOSPlaybackController {
     player?.play()
     startFramePump(
       player: player,
-      texture: texture,
+      rendererTarget: rendererTarget,
       maxTrackSlots: maxTrackSlots,
       userData: userData,
       presentationState: presentationState
@@ -77,7 +77,7 @@ final class MacOSPlaybackController {
   func resumeIfNeeded(
     _ shouldResume: Bool,
     player: MacOSNativePlayerSession?,
-    texture: MacOSFlutterTextureBridge?,
+    rendererTarget: MacOSRendererOwnedPresentationTarget?,
     textureRegistered: Bool,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
@@ -86,7 +86,7 @@ final class MacOSPlaybackController {
     guard shouldResume else { return }
     play(
       player: player,
-      texture: texture,
+      rendererTarget: rendererTarget,
       textureRegistered: textureRegistered,
       maxTrackSlots: maxTrackSlots,
       userData: userData,
@@ -96,15 +96,15 @@ final class MacOSPlaybackController {
 
   func reinstallPresentationTargetIfPlaying(
     player: MacOSNativePlayerSession?,
-    texture: MacOSFlutterTextureBridge?,
+    rendererTarget: MacOSRendererOwnedPresentationTarget?,
     maxTrackSlots: Int
   ) {
     guard isPlaying,
           let player,
-          let texture else {
+          let rendererTarget else {
       return
     }
-    setTargetInstalled(texture.installNativePresentationTarget(
+    setTargetInstalled(rendererTarget.installNativePresentationTarget(
       player,
       maxTrackSlots: maxTrackSlots,
       refresh: false
@@ -113,7 +113,7 @@ final class MacOSPlaybackController {
 
   func handleFrameCallback(
     player: MacOSNativePlayerSession?,
-    texture: MacOSFlutterTextureBridge?,
+    rendererTarget: MacOSRendererOwnedPresentationTarget?,
     maxTrackSlots: Int,
     nativeBackendActive: Bool,
     presentationState: MacOSFramePresentationState,
@@ -129,8 +129,8 @@ final class MacOSPlaybackController {
       if let frameInfo {
         presentationState.recordFrame(frameInfo)
       }
-      if let player, let texture {
-        guard texture.publishRenderedTargetAndInstallNext(
+      if let player, let rendererTarget {
+        guard rendererTarget.publishRenderedTargetAndInstallNext(
           player,
           maxTrackSlots: maxTrackSlots,
           frameInfo: frameInfo
@@ -154,7 +154,7 @@ final class MacOSPlaybackController {
   @discardableResult
   func ensurePresentationPump(
     player: MacOSNativePlayerSession?,
-    texture: MacOSFlutterTextureBridge?,
+    rendererTarget: MacOSRendererOwnedPresentationTarget?,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
     presentationState: MacOSFramePresentationState
@@ -162,7 +162,7 @@ final class MacOSPlaybackController {
     guard let player else { return false }
     return framePump.ensure(
       player: player,
-      texture: texture,
+      rendererTarget: rendererTarget,
       maxTrackSlots: maxTrackSlots,
       userData: userData,
       presentationState: presentationState
@@ -171,7 +171,7 @@ final class MacOSPlaybackController {
 
   private func startFramePump(
     player: MacOSNativePlayerSession?,
-    texture: MacOSFlutterTextureBridge?,
+    rendererTarget: MacOSRendererOwnedPresentationTarget?,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
     presentationState: MacOSFramePresentationState
@@ -180,7 +180,7 @@ final class MacOSPlaybackController {
     guard let player else { return }
     let started = framePump.start(
       player: player,
-      texture: texture,
+      rendererTarget: rendererTarget,
       maxTrackSlots: maxTrackSlots,
       userData: userData,
       presentationState: presentationState

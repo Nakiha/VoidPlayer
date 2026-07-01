@@ -1,0 +1,20 @@
+# macOS renderer-owned FlutterTexture carrier should keep the native video
+# frame stable after the post-load viewport resize.
+# Run with:
+#   python dev.py mac-ui-test ui_tests/macos/renderer_owned_texture_carrier_stability_smoke.csv
+@WINDOW, 960, 540
+0.0, SET_DECODE_MODE, forceSoftware
+0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+2.0, ASSERT_NATIVE_BACKEND, macos-native-player, true
+2.05, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
+2.06, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+2.07, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedExternalFlutterSurfaceUpdateCount, 0, 0
+2.08, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedExternalFlutterSurfaceConsumeCount, 0, 0
+2.1, CAPTURE_VIEWPORT_REGION, carrier_first, 0, 0, 1920, 664, 1920, build/test-output/macos/carrier_first.png
+2.2, ASSERT_CAPTURE_NOT_BLACK, carrier_first, 0.01, 4.0
+2.3, ASSERT_CAPTURE_HAS_DETAIL, carrier_first, 12.0
+6.0, CAPTURE_VIEWPORT_REGION, carrier_later, 0, 0, 1920, 664, 1920, build/test-output/macos/carrier_later.png
+6.1, ASSERT_CAPTURE_NOT_BLACK, carrier_later, 0.01, 4.0
+6.2, ASSERT_CAPTURE_HAS_DETAIL, carrier_later, 12.0
+6.3, ASSERT_CAPTURE_EQUALS, carrier_first, carrier_later
+6.4, QUIT, 0

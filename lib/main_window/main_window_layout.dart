@@ -39,7 +39,8 @@ class MainWindowLayoutCoordinator {
   Future<void>? _preemptResizeFuture;
   int? _queuedPreemptWidth;
   int? _queuedPreemptHeight;
-  bool _nativeCompositorTransformActive = false;
+  bool _nativeCompositorProjectionActive = false;
+  bool _nativeCompositorProjectionClearPending = false;
   String? _lastPrewarmedMarksSidebarTargetKey;
   DateTime? _lastDebugInteractionSampleAt;
   DateTime? _lastViewportResizePacingLogAt;
@@ -86,8 +87,10 @@ class MainWindowLayoutCoordinator {
       'split=$_debugSplitUpdates deferred=$_debugDeferredLayoutUpdates '
       'projection=$_debugProjectionPublishes transformed=$transformed '
       'deferredThis=$deferred nativeActive=${_state.nativeCompositorActive} '
+      'runnerLayer=${_state.nativeCompositorRunnerLayerActive} '
+      'texture=${textureId()} '
       'sourceProjection=${sourceProjectionEnabled()} '
-      'nativeTransform=$_nativeCompositorTransformActive '
+      'nativeProjection=$_nativeCompositorProjectionActive '
       'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty '
       'activeFlush=${_activeFlush != null} viewport=${viewportWidth}x$viewportHeight '
       'tracks=${trackCount()} mode=${current.mode} '
@@ -139,7 +142,7 @@ class MainWindowLayoutCoordinator {
 
   void setLayoutMode(int mode) {
     if (_disposed) return;
-    _cancelNativeCompositorViewportTransform();
+    _cancelRendererOwnedSourceProjection();
     final current = layout();
     if (current.mode == mode) return;
     final next = _rescaleViewOffsetForLayoutChange(
@@ -152,7 +155,7 @@ class MainWindowLayoutCoordinator {
 
   void setPixelSizeMode(int mode) {
     if (_disposed) return;
-    _cancelNativeCompositorViewportTransform();
+    _cancelRendererOwnedSourceProjection();
     final current = layout();
     if (current.pixelSizeMode == mode) return;
     final next = _rescaleViewOffsetForLayoutChange(
@@ -165,7 +168,7 @@ class MainWindowLayoutCoordinator {
 
   void setZoom(double ratio) {
     if (_disposed) return;
-    _cancelNativeCompositorViewportTransform();
+    _cancelRendererOwnedSourceProjection(clearNativeAfterLayout: true);
     _updateLayout(
       (layout) => layout.copyWith(
         zoomRatio: ratio.clamp(LayoutState.zoomMin, LayoutState.zoomMax),
@@ -180,8 +183,8 @@ class MainWindowLayoutCoordinator {
     if (layout().splitPos == nextPos) return;
     _debugSplitUpdates++;
     _updateLayout((layout) => layout.copyWith(splitPos: nextPos));
-    final transformed = _updateNativeCompositorPanTransform();
-    markLayoutDirty();
+    final transformed = _updateNativeCompositorPanProjection();
+    markLayoutDirty(deferNativeCompositorFlush: transformed);
     _logDebugInteractionSample(
       'split',
       splitPos: nextPos,
@@ -199,7 +202,7 @@ class MainWindowLayoutCoordinator {
       (layout) =>
           layout.copyWith(viewOffsetX: nextOffsetX, viewOffsetY: nextOffsetY),
     );
-    final transformed = _updateNativeCompositorPanTransform();
+    final transformed = _updateNativeCompositorPanProjection();
     markLayoutDirty(deferNativeCompositorFlush: transformed);
     _logDebugInteractionSample(
       'pan',
@@ -233,7 +236,7 @@ class MainWindowLayoutCoordinator {
         (layout) =>
             layout.copyWith(zoomRatio: newZoom, viewOffsetX: 0, viewOffsetY: 0),
       );
-      final transformed = _updateNativeCompositorZoomTransform(
+      final transformed = _updateNativeCompositorZoomProjection(
         actualFactor: newZoom / currentLayout.zoomRatio,
       );
       markLayoutDirty(deferNativeCompositorFlush: transformed);
@@ -291,7 +294,7 @@ class MainWindowLayoutCoordinator {
         viewOffsetY: nextOffsetY,
       ),
     );
-    final transformed = _updateNativeCompositorZoomTransform(
+    final transformed = _updateNativeCompositorZoomProjection(
       actualFactor: actualFactor,
     );
     markLayoutDirty(deferNativeCompositorFlush: transformed);
@@ -305,12 +308,8 @@ class MainWindowLayoutCoordinator {
 
   void onPointerButton(bool panning, bool splitting) {
     if (_disposed) return;
-    if (splitting) {
-      _cancelNativeCompositorViewportTransform();
-      return;
-    }
-    if (!panning) {
-      _finishNativeCompositorViewportTransformInteraction();
+    if (!panning && !splitting) {
+      _finishRendererOwnedSourceProjectionInteraction();
     }
   }
 
@@ -321,7 +320,7 @@ class MainWindowLayoutCoordinator {
     bool immediate = false,
   }) {
     if (_disposed) return;
-    _cancelNativeCompositorViewportTransform();
+    _cancelRendererOwnedSourceProjection();
     if (devicePixelRatio > 0) {
       viewportDevicePixelRatio = devicePixelRatio;
     }
@@ -443,7 +442,7 @@ class MainWindowLayoutCoordinator {
     final nextLayout = await controller.getLayout();
     if (_disposed || !mounted()) return;
     setLayout(nextLayout);
-    _prepareNativeCompositorSourceCache(nextLayout);
+    _prepareRendererOwnedSourceProjection(nextLayout);
     _prewarmNextMarksSidebarViewportTarget();
   }
 
@@ -672,7 +671,7 @@ class MainWindowLayoutCoordinator {
         viewOffsetY: nextOffsetY,
       ),
     );
-    _cancelNativeCompositorViewportTransform();
+    _cancelRendererOwnedSourceProjection();
     markLayoutDirty();
   }
 
@@ -782,7 +781,7 @@ class MainWindowLayoutCoordinator {
           final nextLayout = await controller.getLayout();
           if (_disposed || !mounted()) return;
           setLayout(nextLayout);
-          _prepareNativeCompositorSourceCache(nextLayout);
+          _prepareRendererOwnedSourceProjection(nextLayout);
         } else if (_resizeDirty) {
           _resizeDirty = false;
         }
@@ -809,10 +808,10 @@ class MainWindowLayoutCoordinator {
     setLayout(update(layout()));
   }
 
-  bool get _canUseNativeCompositorViewportTransform {
+  bool get _canUseNativeCompositorSourceProjection {
     return sourceProjectionEnabled() &&
         _state.nativeCompositorActive &&
-        textureId() != null &&
+        (textureId() != null || _state.nativeCompositorRunnerLayerActive) &&
         viewportWidth > 0 &&
         viewportHeight > 0 &&
         trackCount() > 0 &&
@@ -820,42 +819,42 @@ class MainWindowLayoutCoordinator {
             layout().mode == LayoutMode.splitScreen);
   }
 
-  void _ensureNativeCompositorViewportTransform() {
-    if (_nativeCompositorTransformActive) return;
-    _nativeCompositorTransformActive = true;
+  void _ensureNativeCompositorSourceProjection() {
+    if (_nativeCompositorProjectionActive) return;
+    _nativeCompositorProjectionActive = true;
     // The first projection publish subscribes the source cache. Paused keeps a
     // frozen bake; playing refreshes the ring from native frame callbacks.
-    // This flag is now only an interaction marker; the compositor no longer has
-    // a residual transform layer that needs to be cleared at pointer-up.
+    // This flag is now only an interaction marker; projection state is updated
+    // through the source-cache endpoint instead of a separate transform API.
   }
 
-  bool _updateNativeCompositorPanTransform() {
-    if (!_canUseNativeCompositorViewportTransform) {
-      _cancelNativeCompositorViewportTransform();
+  bool _updateNativeCompositorPanProjection() {
+    if (!_canUseNativeCompositorSourceProjection) {
+      _cancelRendererOwnedSourceProjection();
       return false;
     }
-    _ensureNativeCompositorViewportTransform();
-    _publishNativeCompositorViewportTransform();
+    _ensureNativeCompositorSourceProjection();
+    _publishRendererOwnedSourceProjection();
     return true;
   }
 
-  bool _updateNativeCompositorZoomTransform({required double actualFactor}) {
-    if (!_canUseNativeCompositorViewportTransform ||
+  bool _updateNativeCompositorZoomProjection({required double actualFactor}) {
+    if (!_canUseNativeCompositorSourceProjection ||
         actualFactor <= 0 ||
         !actualFactor.isFinite ||
         actualFactor == 1.0) {
-      if (!_canUseNativeCompositorViewportTransform) {
-        _cancelNativeCompositorViewportTransform();
+      if (!_canUseNativeCompositorSourceProjection) {
+        _cancelRendererOwnedSourceProjection();
       }
       return false;
     }
-    _ensureNativeCompositorViewportTransform();
-    _publishNativeCompositorViewportTransform();
+    _ensureNativeCompositorSourceProjection();
+    _publishRendererOwnedSourceProjection();
     return true;
   }
 
-  void _prepareNativeCompositorSourceCache(LayoutState baseLayout) {
-    if (!_canUseNativeCompositorViewportTransform) return;
+  void _prepareRendererOwnedSourceProjection(LayoutState baseLayout) {
+    if (!_canUseNativeCompositorSourceProjection) return;
     final entries = tracks();
     if (entries.isEmpty) return;
     final trackGeometry = entries
@@ -901,9 +900,10 @@ class MainWindowLayoutCoordinator {
       }
     }
     if (sourceSlots.isEmpty) return;
+    _nativeCompositorProjectionActive = true;
     fireAndLog(
-      'prepare native compositor source cache',
-      controller.prepareNativeCompositorSourceCache(
+      'prepare renderer-owned source projection',
+      controller.prepareRendererOwnedSourceProjection(
         sourceSlots: sourceSlots,
         sourceOrder: sourceOrder,
         mode: baseLayout.mode,
@@ -919,18 +919,23 @@ class MainWindowLayoutCoordinator {
     );
   }
 
-  void refreshNativeCompositorOverlay() {
+  void refreshRendererOwnedOverlay() {
     if (_disposed) return;
-    _prepareNativeCompositorSourceCache(layout());
+    _prepareRendererOwnedSourceProjection(layout());
+  }
+
+  void refreshRendererOwnedProjectionAfterSeek() {
+    if (_disposed) return;
+    _prepareRendererOwnedSourceProjection(layout());
   }
 
   void onNativeCompositorAvailabilityChanged({required bool active}) {
     if (_disposed || active) return;
-    _cancelNativeCompositorViewportTransform();
+    _cancelRendererOwnedSourceProjection();
     fireAndLog(
-      'clear inactive native compositor source cache',
-      controller.clearNativeCompositorSourceCache(
-        reason: 'native compositor inactive',
+      'clear inactive renderer-owned source projection',
+      controller.clearRendererOwnedSourceProjection(
+        reason: 'renderer-owned source projection inactive',
       ),
     );
   }
@@ -938,49 +943,68 @@ class MainWindowLayoutCoordinator {
   void onTrackSetChanged() {
     if (_disposed) return;
     if (trackCount() == 0) {
-      _cancelNativeCompositorViewportTransform();
+      _cancelRendererOwnedSourceProjection();
       if (_state.nativeCompositorActive ||
           NativeCompositorFlags.sourceProjection) {
         fireAndLog(
-          'clear zero-track native compositor source cache',
-          controller.clearNativeCompositorSourceCache(reason: 'zero tracks'),
+          'clear zero-track renderer-owned source projection',
+          controller.clearRendererOwnedSourceProjection(reason: 'zero tracks'),
         );
       }
       return;
     }
-    _prepareNativeCompositorSourceCache(layout());
+    _prepareRendererOwnedSourceProjection(layout());
   }
 
-  void _publishNativeCompositorViewportTransform() {
-    if (!_nativeCompositorTransformActive || _disposed) return;
+  void _publishRendererOwnedSourceProjection() {
+    if (!_nativeCompositorProjectionActive || _disposed) return;
     _debugProjectionPublishes++;
-    _prepareNativeCompositorSourceCache(layout());
+    _prepareRendererOwnedSourceProjection(layout());
   }
 
-  void _finishNativeCompositorViewportTransformInteraction() {
-    if (_nativeCompositorTransformActive && _layoutDirty) {
+  void _finishRendererOwnedSourceProjectionInteraction() {
+    if (_nativeCompositorProjectionActive && _layoutDirty) {
       _startTicker();
     }
   }
 
-  void _cancelNativeCompositorViewportTransform() {
-    if (!_nativeCompositorTransformActive) return;
-    _nativeCompositorTransformActive = false;
+  void _cancelRendererOwnedSourceProjection({
+    bool clearNativeAfterLayout = false,
+  }) {
+    if (!_nativeCompositorProjectionActive) return;
+    _nativeCompositorProjectionActive = false;
+    if (clearNativeAfterLayout) {
+      _nativeCompositorProjectionClearPending = true;
+    }
   }
 
   Future<void> _applyLayoutToNative(LayoutState nextLayout) async {
-    final hadTransform = _nativeCompositorTransformActive;
+    final hadProjection = _nativeCompositorProjectionActive;
     await controller.applyLayout(nextLayout);
-    _prepareNativeCompositorSourceCache(nextLayout);
-    if (!hadTransform || _disposed || !_nativeCompositorTransformActive) {
+    if (_disposed) return;
+    if (_nativeCompositorProjectionClearPending) {
+      _nativeCompositorProjectionClearPending = false;
+      fireAndLog(
+        'clear renderer-owned source projection after explicit layout reset',
+        controller.clearRendererOwnedSourceProjection(
+          reason: 'explicit-layout-reset',
+        ),
+      );
       return;
     }
-    _resetNativeCompositorViewportTransformAfterAuthoritativeLayout();
+    if (!hadProjection) return;
+    _resetNativeCompositorSourceProjectionAfterAuthoritativeLayout();
   }
 
-  void _resetNativeCompositorViewportTransformAfterAuthoritativeLayout() {
-    if (!_nativeCompositorTransformActive) return;
-    _nativeCompositorTransformActive = false;
+  void _resetNativeCompositorSourceProjectionAfterAuthoritativeLayout() {
+    if (!_nativeCompositorProjectionActive) return;
+    _nativeCompositorProjectionActive = false;
+    fireAndLog(
+      'clear renderer-owned source projection after authoritative layout',
+      controller.clearRendererOwnedSourceProjection(
+        reason: 'authoritative-layout',
+      ),
+    );
   }
 
   List<DisplayTrackGeometry> _orderedTracksForFocus(

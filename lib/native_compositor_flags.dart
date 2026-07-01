@@ -20,16 +20,14 @@ class NativeCompositorFlags {
         ?.toLowerCase();
     return mode == null ||
         mode == 'auto' ||
-        mode == 'native-compositor-sdr' ||
-        mode == 'native-compositor-edr' ||
+        mode == 'renderer-owned-wgpu-sdr' ||
+        mode == 'renderer-owned-wgpu-edr' ||
         mode == 'wgpu-metal' ||
         mode == 'wgpu' ||
         mode == 'native' ||
         mode == 'compositor' ||
         mode == 'edr' ||
-        mode == 'hdr' ||
-        Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR'] == '1' ||
-        Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE'] == '1';
+        mode == 'hdr';
   }
 
   static bool get sourceProjection =>

@@ -4,6 +4,7 @@
 #include "renderer/decode/frame_identity_types.h"
 #include "renderer/render/backend_type.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -36,6 +37,26 @@ struct PresentationExternalD3D12Surface {
     uint64_t frame_generation = 0;
 };
 
+struct PresentationExternalMetalSurface {
+    void* texture = nullptr;
+    int32_t width = 0;
+    int32_t height = 0;
+    uint64_t pixel_format = 0;
+    uint64_t frame_generation = 0;
+};
+
+struct PresentationExternalMetalRenderTarget {
+    void* texture = nullptr;
+    int32_t width = 0;
+    int32_t height = 0;
+    uint64_t pixel_format = 0;
+    int32_t max_track_slots = 1;
+    float viewport_left = 0.0f;
+    float viewport_top = 0.0f;
+    float viewport_right = 1.0f;
+    float viewport_bottom = 1.0f;
+};
+
 struct PresentationExternalD3D12RenderTarget {
     void* resource = nullptr;
     int32_t width = 0;
@@ -46,6 +67,20 @@ struct PresentationExternalD3D12RenderTarget {
     float viewport_top = 0.0f;
     float viewport_right = 1.0f;
     float viewport_bottom = 1.0f;
+};
+
+struct PresentationSourceProjection {
+    bool enabled = false;
+    int mode = 0;
+    float split_pos = 0.5f;
+    int active_track_count = 1;
+    std::array<int, 4> source_order = {0, 1, 2, 3};
+    std::array<float, 4> display_offset_x{};
+    std::array<float, 4> display_offset_y{};
+    std::array<float, 4> inv_display_size_x{};
+    std::array<float, 4> inv_display_size_y{};
+    std::array<float, 4> view_offset_uv_x{};
+    std::array<float, 4> view_offset_uv_y{};
 };
 
 struct PresentationBackendFrameInfo {
@@ -110,6 +145,15 @@ struct PresentationBackendStats {
     uint64_t metal_buffer_exhaustion_count = 0;
     uint64_t metal_command_completion_p95_us = 0;
     uint64_t metal_command_failure_count = 0;
+    uint64_t wgpu_compose_total_p95_us = 0;
+    uint64_t wgpu_compose_pre_render_p95_us = 0;
+    uint64_t wgpu_compose_import_p95_us = 0;
+    uint64_t wgpu_compose_prepare_p95_us = 0;
+    uint64_t wgpu_compose_overlay_encode_p95_us = 0;
+    uint64_t wgpu_compose_bind_group_p95_us = 0;
+    uint64_t wgpu_compose_pass_encode_p95_us = 0;
+    uint64_t wgpu_compose_submit_p95_us = 0;
+    uint64_t wgpu_compose_cpu_render_p95_us = 0;
     int32_t async_metal_publish_active = 0;
     uint64_t video_source_update_count = 0;
     uint64_t viewport_composite_count = 0;

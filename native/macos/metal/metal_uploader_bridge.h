@@ -34,6 +34,7 @@ enum {
   VPMacOSNativePresentPackageStorageYUV = 1,
   VPMacOSNativePresentPackageStorageBGRA = 2,
   VPMacOSNativePresentPackageStorageCVPixelBuffer = 3,
+  VPMacOSNativePresentPackageStorageSourceOutputAtlas = 4,
 };
 
 typedef struct VPMacOSNativePresentFrameInfo {

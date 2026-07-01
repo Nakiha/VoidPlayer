@@ -123,9 +123,9 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `ui_tests/macos/native_seek_frame_smoke.csv` | Renderer-owned refresh after seek. | macOS stabilization. |
 | `ui_tests/macos/native_layout_split_smoke.csv` | Shared layout through Metal presentation. | macOS stabilization. |
 | `ui_tests/macos/native_controls_smoke.csv` | Basic native play/pause/seek/step command smoke. | macOS stabilization. |
-| `ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv` | Default Auto policy keeps SDR media on the SDR native-compositor target and avoids EDR layer promotion. | macOS stabilization. |
-| `ui_tests/macos/native_compositor_auto_hlg_policy_smoke.csv` | Portable HLG fixture promotes Auto to the EDR compositor and verifies `64RGBAHalf` output above SDR reference white. | Local `macos-hdr-edr-smoke`; requires an EDR-capable display. |
-| `ui_tests/macos/native_compositor_add_hlg_promotes_edr_smoke.csv` | Starts with SDR media, adds an HLG track at runtime, and verifies Auto policy rebuilds the compositor/renderer target as EDR `64RGBAHalf`. | Local `macos-hdr-edr-smoke`; requires an EDR-capable display. |
+| `ui_tests/macos/renderer_owned_auto_sdr_policy_smoke.csv` | Default Auto policy keeps SDR media on the SDR renderer-owned target and avoids EDR layer promotion. | macOS stabilization. |
+| `ui_tests/macos/renderer_owned_auto_hlg_policy_smoke.csv` | Portable HLG fixture promotes Auto to the renderer-owned EDR target and verifies `64RGBAHalf` output above SDR reference white. | Local `macos-hdr-edr-smoke`; requires an EDR-capable display. |
+| `ui_tests/macos/renderer_owned_add_hlg_promotes_edr_smoke.csv` | Starts with SDR media, adds an HLG track at runtime, and verifies Auto policy rebuilds the renderer-owned target as EDR `64RGBAHalf`. | Local `macos-hdr-edr-smoke`; requires an EDR-capable display. |
 | `ui_tests/macos/native_remove_hlg_paused_pan_smoke.csv` | Removes an HLG track from a mixed SDR+HLG session while playing, then verifies the remaining SDR track still responds to paused source-projection pan. | Targeted HDR policy / source-ring / track removal regressions. |
 | `ui_tests/macos/native_remove_first_hlg_paused_pan_smoke.csv` | Removes the first HLG track from a mixed HLG+SDR session, leaving the SDR track in its original native slot and verifying paused source projection stays active. | Targeted source-ring slot/fileId regressions after track removal. |
 | `ui_tests/macos/native_media_header_remove_smoke.csv` | Real media-header remove button path for native fileId 0 and remaining-track presentation. | Targeted track/header changes; candidate for stabilization smoke after the layout smoke gate is stable. |
@@ -141,11 +141,11 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `ui_tests/macos/native_audio_play_seek_smoke.csv` | Native audio play/seek and audible-track diagnostics. | Nightly/headed; manual audible check remains separate. |
 | `ui_tests/macos/native_callback_stress_smoke.csv` | Callback lifecycle stress. | Nightly/headed. |
 | `ui_tests/macos/native_quit_while_playing_smoke.csv` / `native_user_window_close_smoke.csv` | Teardown and crash-report regression. | Nightly/headed or targeted runner changes. |
-| `ui_tests/macos/wgpu_metal_default_software_smoke.csv` | Experimental wgpu-metal software/package presentation canary; asserts backend selection, software fallback, YUV upload, and non-black capture. | Local `macos-wgpu-metal-smoke`. |
-| `ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv` | Experimental wgpu-metal VideoToolbox CVPixelBuffer source import canary. | Local `macos-wgpu-metal-smoke`; uses normal `preferHardware` decode preference. |
-| `ui_tests/macos/wgpu_metal_source_projection_overlay_smoke.csv` | Experimental wgpu-metal retained source-projection and overlay composite canary through split/pan/zoom. | Local `macos-wgpu-metal-smoke`. |
-| `ui_tests/macos/wgpu_metal_4k60_videotoolbox_smoke.csv` | Experimental wgpu-metal 4K60 VideoToolbox/cadence pressure canary. | Local `macos-wgpu-metal-smoke`; uses normal `preferHardware` decode preference. |
-| `ui_tests/macos/wgpu_metal_hlg_edr_smoke.csv` | Experimental wgpu-metal HLG/BT.2020 EDR canary with RGBA16F target and renderer-owned color diagnostics. | Local `macos-wgpu-metal-edr-smoke`; requires an EDR-capable display. |
+| `ui_tests/macos/wgpu_metal_default_software_smoke.csv` | Default renderer-owned wgpu-metal software/package presentation canary; asserts backend selection, software fallback, YUV upload, and non-black capture. | Local `macos-wgpu-metal-smoke`. |
+| `ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv` | Default renderer-owned wgpu-metal VideoToolbox CVPixelBuffer source import canary. | Local `macos-wgpu-metal-smoke`; uses normal `preferHardware` decode preference. |
+| `ui_tests/macos/wgpu_metal_source_projection_overlay_smoke.csv` | Default renderer-owned wgpu-metal retained source-projection and overlay composite canary through split/pan/zoom. | Local `macos-wgpu-metal-smoke`. |
+| `ui_tests/macos/wgpu_metal_4k60_videotoolbox_smoke.csv` | Default renderer-owned wgpu-metal 4K60 VideoToolbox/cadence pressure canary. | Local `macos-wgpu-metal-smoke`; uses normal `preferHardware` decode preference. |
+| `ui_tests/macos/wgpu_metal_hlg_edr_smoke.csv` | Default renderer-owned wgpu-metal HLG/BT.2020 EDR canary with RGBA16F target and renderer-owned color diagnostics. | Local `macos-wgpu-metal-edr-smoke`; requires an EDR-capable display. |
 | `ui_tests/local/**` | Developer-specific absolute-path regressions. | Manual/local only; never CI. |
 
 ## Workflow Mapping
@@ -158,7 +158,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `.github/workflows/macos-ui.yml` | weekly | `python3.12 dev.py gate macos-ui-smoke` |
 | `.github/workflows/macos-ui.yml` | manual `profile=macos-ui-smoke` or `macos-ui-nightly` | headed macOS UI smoke/nightly gate |
 | Local HDR EDR gate | manual on EDR-capable macOS display before merging HDR compositor changes | `python3.12 dev.py gate macos-hdr-edr-smoke` |
-| Local wgpu-metal gate | manual before promoting the experimental wgpu backend | `python3.12 dev.py gate macos-wgpu-metal-smoke` |
+| Local wgpu-metal gate | manual before merging renderer-owned wgpu-metal backend changes | `python3.12 dev.py gate macos-wgpu-metal-smoke` |
 | Local wgpu-metal EDR gate | manual on EDR-capable macOS display before promoting wgpu-metal HDR/EDR | `python3.12 dev.py gate macos-wgpu-metal-edr-smoke` |
 | Local Windows cross-adapter gate | manual on multi-adapter Windows desktop before merging output migration or shared-fence sync changes; runs event-query and shared-fence A/B evidence | `python dev.py gate windows-cross-adapter-local` |
 | Local macOS package gate | manual before release candidate | `python3.12 dev.py gate macos-release-readiness` |
@@ -167,7 +167,7 @@ The local `release-candidate` gate and the GitHub full native config matrix are
 separate pieces of release evidence: run both when preparing a release
 candidate.
 
-For the macOS HDR/native-compositor merge, treat these as the minimum merge
+For the macOS HDR/renderer-owned presentation merge, treat these as the minimum merge
 evidence set: `toolchain doctor`, macOS local-engine bootstrap, `pr-fast`,
 `macos-ui-smoke`, local `macos-hdr-edr-smoke` on an EDR-capable display,
 `macos-release-readiness`, Windows preservation, and green GitHub Flutter/Native
@@ -176,8 +176,8 @@ CI-only adapter fallbacks; do not treat that fallback as release coverage for a
 real Windows desktop GPU.
 
 For wgpu-metal backend changes, add local `macos-wgpu-metal-smoke` and, on an
-EDR-capable display, `macos-wgpu-metal-edr-smoke` before removing more legacy
-Metal fallback code.
+EDR-capable display, `macos-wgpu-metal-edr-smoke` before removing more runner
+compatibility or EDR fallback code.
 
 ## Rules
 

@@ -10,7 +10,7 @@ extern "C" {
 typedef struct VPWgpuD3D12Renderer VPWgpuD3D12Renderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 16,
+  VP_WGPU_FFI_ABI_VERSION = 18,
 };
 
 enum {
@@ -22,7 +22,8 @@ enum {
 
 enum {
   VP_WGPU_D3D12_OUTPUT_COLOR_MODE_SDR = 1,
-  VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR = 2,
+  VP_WGPU_D3D12_OUTPUT_COLOR_MODE_MACOS_EDR = 2,
+  VP_WGPU_D3D12_OUTPUT_COLOR_MODE_WINDOWS_SCRGB = 3,
 };
 
 enum {
@@ -160,6 +161,7 @@ typedef struct VPWgpuD3D12CompositeRequest {
   void* destination_resource;
   int32_t output_format;
   int32_t output_color_mode;
+  float sdr_white_scale;
   int32_t destination_state_before;
   int32_t destination_state_after;
   void* flutter_resource;

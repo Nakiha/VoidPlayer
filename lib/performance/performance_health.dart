@@ -141,12 +141,14 @@ class PerformanceHealthSnapshot {
     final nativeCompositorCompositeHz = _doubleValue(
       diagnostics['nativeCompositorCompositeHz'],
     );
-    final nativeCompositorSourceCacheHz = _doubleValue(
+    final nativeCompositorSourceCacheHz = _firstPositiveDouble([
+      diagnostics['rendererOwnedSourceCacheHz'],
       diagnostics['nativeCompositorSourceCacheHz'],
-    );
-    final nativeCompositorSourceProjectionHz = _doubleValue(
+    ]);
+    final nativeCompositorSourceProjectionHz = _firstPositiveDouble([
+      diagnostics['rendererOwnedSourceProjectionHz'],
       diagnostics['nativeCompositorSourceProjectionHz'],
-    );
+    ]);
     final presentationBackend = _stringValue(
       diagnostics['presentationBackend'] ??
           diagnostics['rendererOwnedBackendName'] ??
@@ -752,6 +754,14 @@ class PerformanceHealthSnapshot {
   static double _doubleValue(Object? value) {
     if (value is double) return value;
     if (value is num) return value.toDouble();
+    return 0.0;
+  }
+
+  static double _firstPositiveDouble(Iterable<Object?> values) {
+    for (final value in values) {
+      final parsed = _doubleValue(value);
+      if (parsed > 0) return parsed;
+    }
     return 0.0;
   }
 

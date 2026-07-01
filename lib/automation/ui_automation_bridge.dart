@@ -32,6 +32,8 @@ class UiAutomationBridge {
   final void Function(Set<AnalysisOverlayLayer> layers)
   setAnalysisOverlayLayers;
   final void Function(double opacity) setAnalysisOverlayOpacity;
+  final bool Function() settingsVisible;
+  final Map<String, Object?> Function() dartDiagnostics;
   final ActionRegistry _actionRegistry;
 
   const UiAutomationBridge({
@@ -52,6 +54,8 @@ class UiAutomationBridge {
     required this.setAnalysisOverlayType,
     required this.setAnalysisOverlayLayers,
     required this.setAnalysisOverlayOpacity,
+    this.settingsVisible = _false,
+    this.dartDiagnostics = _emptyDartDiagnostics,
     required ActionRegistry actionRegistry,
   }) : _actionRegistry = actionRegistry;
 
@@ -73,3 +77,7 @@ class UiAutomationBridge {
   Future<void> closeAllAnalysisWindows() =>
       analysisProcesses.closeAllAnalysisWindows();
 }
+
+bool _false() => false;
+
+Map<String, Object?> _emptyDartDiagnostics() => const {};

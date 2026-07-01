@@ -33,13 +33,13 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
     presentationSnapshot()?.pixelBuffer
   }
 
-  func presentationSnapshot() -> MacOSTexturePresentationSnapshot? {
+  func presentationSnapshot() -> MacOSRendererTargetSnapshot? {
     lock.lock()
     defer { lock.unlock() }
 
     guard let pixelBuffer else { return nil }
     reuseCount += 1
-    return MacOSTexturePresentationSnapshot(
+    return MacOSRendererTargetSnapshot(
       pixelBuffer: Unmanaged.passRetained(pixelBuffer),
       generation: rebuildCount,
       layoutRevision: 0
@@ -97,7 +97,7 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
     )
   }
 
-  func diagnostics() -> MacOSTextureDiagnostics {
+  func diagnostics() -> MacOSRendererTargetDiagnostics {
     lock.lock()
     defer { lock.unlock() }
 
@@ -109,8 +109,8 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
       rebuildLastAllocatedCount: 0,
       rebuildLastReusedCount: 0,
       rebuildLastDurationMs: 0.0,
-      retiredPixelBufferCount: 0,
-      retiredPixelBufferBytes: 0,
+      retiredCount: 0,
+      retiredBytes: 0,
       prewarmRequestCount: 0,
       prewarmHitCount: 0,
       prewarmReadyCount: 0,
@@ -125,8 +125,6 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
       metalTextureLastError: "",
       rendererOwnedPixelBufferBytes: 0,
       rendererOwnedPixelBufferCount: 0,
-      inFlightMetalBufferCount: 0,
-      metalBufferExhaustionCount: 0,
       stableDisplayFallbackActive: false,
       stableDisplayFallbackCount: 0,
       stableDisplayFallbackPtsUs: -1

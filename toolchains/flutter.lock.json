@@ -58,5 +58,41 @@
       "path": "engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.cc",
       "contains": "kFlutterDesktopWindowsSurfaceBackendD3D12"
     }
-  ]
+  ],
+  "platformProfiles": {
+    "macos": {
+      "flutterVersion": "3.44.2-0.0.pre-6",
+      "frameworkRevision": "cad896c21e492160c4e789b1beb2d463e7bd8a50",
+      "forkRef": "codex/windows-surface-export",
+      "forkBranch": "codex/windows-surface-export",
+      "forkCommit": "cad896c21e492160c4e789b1beb2d463e7bd8a50",
+      "requiredPatchMarkers": [
+        {
+          "path": "engine/src/flutter/shell/platform/darwin/macos/framework/Headers/FlutterEngine.h",
+          "contains": "voidPlayerHDRCurrentFlutterSurfaceInfos"
+        },
+        {
+          "path": "engine/src/flutter/shell/platform/darwin/macos/framework/Source/FlutterEngine.mm",
+          "contains": "VoidPlayerHDRSerializableSurfaceInfo"
+        }
+      ]
+    },
+    "windows": {
+      "flutterVersion": "3.44.2-0.0.pre-12",
+      "frameworkRevision": "dd94358590cf3de70bff7c60bfb7f41f33146b3b",
+      "forkRef": "codex/windows-surface-export-pacing",
+      "forkBranch": "codex/windows-surface-export-pacing",
+      "forkCommit": "dd94358590cf3de70bff7c60bfb7f41f33146b3b",
+      "requiredPatchMarkers": [
+        {
+          "path": "engine/src/flutter/shell/platform/windows/public/flutter_windows.h",
+          "contains": "FLUTTER_WINDOWS_SURFACE_EXPORT_API"
+        },
+        {
+          "path": "engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.cc",
+          "contains": "kFlutterDesktopWindowsSurfaceBackendD3D12"
+        }
+      ]
+    }
+  }
 }

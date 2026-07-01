@@ -60,6 +60,7 @@ class MainWindowViewportVm {
   final bool viewModeEnabled;
   final int? textureId;
   final bool nativeCompositorActive;
+  final bool nativeCompositorRunnerLayerActive;
   final ViewportDisplayState viewportState;
   final LayoutState layout;
   final List<DisplayTrackGeometry> tracks;
@@ -72,6 +73,7 @@ class MainWindowViewportVm {
     required this.viewModeEnabled,
     required this.textureId,
     this.nativeCompositorActive = false,
+    this.nativeCompositorRunnerLayerActive = false,
     required this.viewportState,
     required this.layout,
     required this.tracks,

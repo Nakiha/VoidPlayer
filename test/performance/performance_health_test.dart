@@ -424,8 +424,8 @@ void main() {
       'displayRefreshHzEstimate': 120.0,
       'displayTickHz': 0.0,
       'nativeCompositorCompositeHz': 86.4,
-      'nativeCompositorSourceCacheHz': 29.7,
-      'nativeCompositorSourceProjectionHz': 119.1,
+      'rendererOwnedSourceCacheHz': 29.7,
+      'rendererOwnedSourceProjectionHz': 119.1,
     });
     late String detail;
 
@@ -445,6 +445,33 @@ void main() {
     expect(detail, contains('source 30Hz'));
     expect(detail, contains('projection 119Hz'));
     expect(detail, contains('display-link idle/120Hz'));
+  });
+
+  testWidgets('falls back to runner-layer compositor cadence diagnostics', (
+    tester,
+  ) async {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'displayRefreshHzEstimate': 120.0,
+      'nativeCompositorSourceCacheHz': 24.0,
+      'nativeCompositorSourceProjectionHz': 60.0,
+    });
+    late String detail;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        home: Builder(
+          builder: (context) {
+            detail = snapshot.localizedDetail(context);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(detail, contains('source 24Hz'));
+    expect(detail, contains('projection 60Hz'));
   });
 
   testWidgets('display pressure feedback avoids environment-specific advice', (

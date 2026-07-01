@@ -1,4 +1,4 @@
-# Diagnostic probe for native compositor frame pacing and dropped-frame signals.
+# Diagnostic probe for renderer-owned presentation frame pacing and dropped-frame signals.
 # Prints DEBUG_NATIVE_TIMING snapshots around playback and high-frequency viewport drags.
 @WINDOW, 960, 540
 0.0, SET_DECODE_MODE, preferHardware

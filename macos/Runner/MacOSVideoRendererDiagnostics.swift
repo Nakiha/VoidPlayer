@@ -13,8 +13,8 @@ enum MacOSVideoRendererDiagnostics {
       rebuildLastAllocatedCount: Int,
       rebuildLastReusedCount: Int,
       rebuildLastDurationMs: Double,
-      retiredPixelBufferCount: Int,
-      retiredPixelBufferBytes: Int,
+      retiredCount: Int,
+      retiredBytes: Int,
       prewarmRequestCount: Int,
       prewarmHitCount: Int,
       prewarmReadyCount: Int,
@@ -29,8 +29,6 @@ enum MacOSVideoRendererDiagnostics {
       metalTextureLastError: String,
       rendererOwnedPixelBufferBytes: Int,
       rendererOwnedPixelBufferCount: Int,
-      inFlightMetalBufferCount: Int,
-      metalBufferExhaustionCount: Int,
       stableDisplayFallbackActive: Bool,
       stableDisplayFallbackCount: Int,
       stableDisplayFallbackPtsUs: Int
@@ -88,12 +86,10 @@ enum MacOSVideoRendererDiagnostics {
       : int64Diagnostic(perfStats?["rendererDrawsPerPresentedLayoutX1000"])
     let nativeInFlightMetalBufferCount =
       int64Diagnostic(perfStats?["inFlightMetalBufferCount"])
-    let textureInFlightMetalBufferCount =
-      Int64(textureStats?.inFlightMetalBufferCount ?? 0)
+    let rendererTargetInFlightCount = nativeInFlightMetalBufferCount
     let nativeMetalBufferExhaustionCount =
       int64Diagnostic(perfStats?["metalBufferExhaustionCount"])
-    let textureMetalBufferExhaustionCount =
-      Int64(textureStats?.metalBufferExhaustionCount ?? 0)
+    let rendererTargetExhaustionCount = nativeMetalBufferExhaustionCount
     let nativeDedicatedGpuUsageBytes = int64Diagnostic(perfStats?["dedicatedGpuUsageBytes"])
     let rendererOwnedPixelBufferBytes =
       Int64(textureStats?.rendererOwnedPixelBufferBytes ?? 0)
@@ -165,6 +161,34 @@ enum MacOSVideoRendererDiagnostics {
         rendererOwnedState["overlayGpuFailureCount"] ?? 0,
       "rendererOwnedOverlayCpuFallbackCount":
         rendererOwnedState["overlayCpuFallbackCount"] ?? 0,
+      "rendererOwnedExternalFlutterSurfaceGeneration":
+        rendererOwnedState["externalFlutterSurfaceGeneration"] ?? 0,
+      "rendererOwnedExternalFlutterSurfaceConsumedGeneration":
+        rendererOwnedState["externalFlutterSurfaceConsumedGeneration"] ?? 0,
+      "rendererOwnedExternalFlutterSurfaceUpdateCount":
+        rendererOwnedState["externalFlutterSurfaceUpdateCount"] ?? 0,
+      "rendererOwnedExternalFlutterSurfaceConsumeCount":
+        rendererOwnedState["externalFlutterSurfaceConsumeCount"] ?? 0,
+      "rendererOwnedExternalFlutterSurfaceWaitCount":
+        rendererOwnedState["externalFlutterSurfaceWaitCount"] ?? 0,
+      "rendererOwnedExternalFlutterSurfaceWaitFailureCount":
+        rendererOwnedState["externalFlutterSurfaceWaitFailureCount"] ?? 0,
+      "rendererOwnedExternalFlutterSurfaceLastError":
+        rendererOwnedState["externalFlutterSurfaceLastError"] ?? "none",
+      "rendererOwnedSourceCacheActive":
+        rendererOwnedState["sourceCacheActive"] ?? false,
+      "rendererOwnedSourceCacheTextureCount":
+        rendererOwnedState["sourceCacheTextureCount"] ?? 0,
+      "rendererOwnedSourceCacheGeneration":
+        rendererOwnedState["sourceCacheGeneration"] ?? 0,
+      "rendererOwnedSourceCachePublishCount":
+        rendererOwnedState["sourceCachePublishCount"] ?? 0,
+      "rendererOwnedSourceProjectionActive":
+        rendererOwnedState["sourceProjectionActive"] ?? false,
+      "rendererOwnedSourceProjectionUpdateCount":
+        rendererOwnedState["sourceProjectionUpdateCount"] ?? 0,
+      "rendererOwnedSourceProjectionConsumeCount":
+        rendererOwnedState["sourceProjectionConsumeCount"] ?? 0,
       "rendererOwnedLastDrawError": rendererOwnedState["lastDrawError"] ?? "",
       "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
       "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
@@ -230,25 +254,25 @@ enum MacOSVideoRendererDiagnostics {
       "nativeLayoutMode": layoutSnapshot?["mode"] ?? -1,
       "nativeLayoutZoomRatio": layoutSnapshot?["zoomRatio"] ?? 0.0,
       "nativeLayoutPixelSizeMode": layoutSnapshot?["pixelSizeMode"] ?? -1,
-      "pixelBufferRebuildCount": textureStats?.rebuildCount ?? 0,
-      "pixelBufferReuseCount": textureStats?.reuseCount ?? 0,
-      "pixelBufferAllocationCount": textureStats?.allocationCount ?? 0,
-      "pixelBufferRebuildReuseCount": textureStats?.rebuildReuseCount ?? 0,
-      "pixelBufferRebuildLastAllocatedCount": textureStats?.rebuildLastAllocatedCount ?? 0,
-      "pixelBufferRebuildLastReusedCount": textureStats?.rebuildLastReusedCount ?? 0,
-      "pixelBufferRebuildLastDurationMs": textureStats?.rebuildLastDurationMs ?? 0.0,
-      "retiredPixelBufferCount": textureStats?.retiredPixelBufferCount ?? 0,
-      "retiredPixelBufferBytes": textureStats?.retiredPixelBufferBytes ?? 0,
-      "pixelBufferPrewarmRequestCount": textureStats?.prewarmRequestCount ?? 0,
-      "pixelBufferPrewarmHitCount": textureStats?.prewarmHitCount ?? 0,
-      "pixelBufferPrewarmReadyCount": textureStats?.prewarmReadyCount ?? 0,
-      "pixelBufferPrewarmDroppedCount": textureStats?.prewarmDroppedCount ?? 0,
-      "pixelBufferMetalUploadCount": textureStats?.metalUploadCount ?? 0,
-      "pixelBufferMetalYuvUploadCount":
+      "rendererTargetRebuildCount": textureStats?.rebuildCount ?? 0,
+      "rendererTargetReuseCount": textureStats?.reuseCount ?? 0,
+      "rendererTargetAllocationCount": textureStats?.allocationCount ?? 0,
+      "rendererTargetRebuildReuseCount": textureStats?.rebuildReuseCount ?? 0,
+      "rendererTargetRebuildLastAllocatedCount": textureStats?.rebuildLastAllocatedCount ?? 0,
+      "rendererTargetRebuildLastReusedCount": textureStats?.rebuildLastReusedCount ?? 0,
+      "rendererTargetRebuildLastDurationMs": textureStats?.rebuildLastDurationMs ?? 0.0,
+      "rendererTargetRetiredCount": textureStats?.retiredCount ?? 0,
+      "rendererTargetRetiredBytes": textureStats?.retiredBytes ?? 0,
+      "rendererTargetPrewarmRequestCount": textureStats?.prewarmRequestCount ?? 0,
+      "rendererTargetPrewarmHitCount": textureStats?.prewarmHitCount ?? 0,
+      "rendererTargetPrewarmReadyCount": textureStats?.prewarmReadyCount ?? 0,
+      "rendererTargetPrewarmDroppedCount": textureStats?.prewarmDroppedCount ?? 0,
+      "rendererTargetUploadCount": textureStats?.metalUploadCount ?? 0,
+      "rendererTargetDirectYuvUploadCount":
         perfStats?["rendererOwnedDirectYuvUploadCount"] ?? 0,
-      "pixelBufferMetalCVPixelBufferUploadCount":
+      "rendererTargetCVPixelBufferUploadCount":
         perfStats?["rendererOwnedCVPixelBufferUploadCount"] ?? 0,
-      "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
+      "rendererTargetUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
       "presentationUploadMode": MacOSPresentationDiagnostics.uploadMode(
         perfStats: perfStats,
         targetReady: textureStats?.metalTextureValid ?? false,
@@ -276,8 +300,8 @@ enum MacOSVideoRendererDiagnostics {
       "metalTextureCreationCount": textureStats?.metalTextureCreationCount ?? 0,
       "metalTextureFailureCount": textureStats?.metalTextureFailureCount ?? 0,
       "metalTextureLastError": textureStats?.metalTextureLastError ?? "",
-      "textureInFlightMetalBufferCount": textureStats?.inFlightMetalBufferCount ?? 0,
-      "textureMetalBufferExhaustionCount": textureStats?.metalBufferExhaustionCount ?? 0,
+      "rendererTargetInFlightCount": rendererTargetInFlightCount,
+      "rendererTargetExhaustionCount": rendererTargetExhaustionCount,
       "nativeStableDisplayFallbackActive":
         textureStats?.stableDisplayFallbackActive ?? false,
       "nativeStableDisplayFallbackCount": textureStats?.stableDisplayFallbackCount ?? 0,
@@ -308,14 +332,28 @@ enum MacOSVideoRendererDiagnostics {
       "drawsPerPresentedFrameRatioX1000": drawsPerPresentedFrameRatioX1000,
       "inFlightMetalBufferCount": max(
         nativeInFlightMetalBufferCount,
-        textureInFlightMetalBufferCount
+        rendererTargetInFlightCount
       ),
       "metalBufferExhaustionCount": max(
         nativeMetalBufferExhaustionCount,
-        textureMetalBufferExhaustionCount
+        rendererTargetExhaustionCount
       ),
       "metalCommandCompletionP95Us": perfStats?["metalCommandCompletionP95Us"] ?? 0,
       "metalCommandFailureCount": perfStats?["metalCommandFailureCount"] ?? 0,
+      "wgpuComposeTotalP95Us": perfStats?["wgpuComposeTotalP95Us"] ?? 0,
+      "wgpuComposePreRenderP95Us":
+        perfStats?["wgpuComposePreRenderP95Us"] ?? 0,
+      "wgpuComposeImportP95Us": perfStats?["wgpuComposeImportP95Us"] ?? 0,
+      "wgpuComposePrepareP95Us": perfStats?["wgpuComposePrepareP95Us"] ?? 0,
+      "wgpuComposeOverlayEncodeP95Us":
+        perfStats?["wgpuComposeOverlayEncodeP95Us"] ?? 0,
+      "wgpuComposeBindGroupP95Us":
+        perfStats?["wgpuComposeBindGroupP95Us"] ?? 0,
+      "wgpuComposePassEncodeP95Us":
+        perfStats?["wgpuComposePassEncodeP95Us"] ?? 0,
+      "wgpuComposeSubmitP95Us": perfStats?["wgpuComposeSubmitP95Us"] ?? 0,
+      "wgpuComposeCpuRenderP95Us":
+        perfStats?["wgpuComposeCpuRenderP95Us"] ?? 0,
       "asyncMetalPublishActive": perfStats?["asyncMetalPublishActive"] ?? false,
       "videoSourceUpdateCount": perfStats?["videoSourceUpdateCount"] ?? 0,
       "viewportCompositeCount": perfStats?["viewportCompositeCount"] ?? 0,
@@ -367,11 +405,11 @@ enum MacOSVideoRendererDiagnostics {
     if state["active"] as? Bool == true {
       let backendName = state["backendName"] as? String ?? "unknown"
       if backendName.lowercased().contains("wgpu") {
-        return "native-wgpu-metal-cvpixelbuffer-target"
+        return "renderer-owned-wgpu-metal"
       }
-      return "native-metal-cvpixelbuffer-target"
+      return "renderer-owned-metal"
     }
-    return "native-metal-target-unavailable"
+    return "renderer-owned-target-unavailable"
   }
 
   private static func presentationAdapterKind(
@@ -382,6 +420,10 @@ enum MacOSVideoRendererDiagnostics {
       return "explicit-synthetic"
     }
     if state["active"] as? Bool == true {
+      let backendName = state["backendName"] as? String ?? "unknown"
+      if backendName.lowercased().contains("wgpu") {
+        return "renderer-owned-wgpu-metal"
+      }
       return "renderer-owned-metal"
     }
     return "unavailable"
@@ -439,6 +481,20 @@ enum MacOSVideoRendererDiagnostics {
       "overlayGpuSuccessCount": 0,
       "overlayGpuFailureCount": 0,
       "overlayCpuFallbackCount": 0,
+      "externalFlutterSurfaceGeneration": 0,
+      "externalFlutterSurfaceConsumedGeneration": 0,
+      "externalFlutterSurfaceUpdateCount": 0,
+      "externalFlutterSurfaceConsumeCount": 0,
+      "externalFlutterSurfaceWaitCount": 0,
+      "externalFlutterSurfaceWaitFailureCount": 0,
+      "externalFlutterSurfaceLastError": "none",
+      "sourceProjectionActive": false,
+      "sourceCacheActive": false,
+      "sourceCacheTextureCount": 0,
+      "sourceCacheGeneration": 0,
+      "sourceCachePublishCount": 0,
+      "sourceProjectionUpdateCount": 0,
+      "sourceProjectionConsumeCount": 0,
       "lastDrawError": "",
     ]
   }

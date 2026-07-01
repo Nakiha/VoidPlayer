@@ -29,9 +29,9 @@ bool require_c_abi_struct(const char* name) {
 }  // namespace
 
 int main() {
-  static_assert(VP_MACOS_NATIVE_API_VERSION == 7u,
+  static_assert(VP_MACOS_NATIVE_API_VERSION == 9u,
                 "bump this smoke when the macOS native ABI version changes");
-  static_assert(VP_WGPU_FFI_ABI_VERSION == 10,
+  static_assert(VP_WGPU_FFI_ABI_VERSION == 18,
                 "bump this smoke when the wgpu FFI ABI version changes");
   static_assert(offsetof(VPMacOSNativeFrameInfo, struct_size) == 0,
                 "versioned ABI structs must start with struct_size");
@@ -64,7 +64,13 @@ int main() {
       !require_c_abi_struct<VPWgpuMetalRendererInfo>(
           "VPWgpuMetalRendererInfo") ||
       !require_c_abi_struct<VPWgpuMetalProfilerSnapshot>(
-          "VPWgpuMetalProfilerSnapshot")) {
+          "VPWgpuMetalProfilerSnapshot") ||
+      !require_c_abi_struct<VPWgpuMetalRenderRequest>(
+          "VPWgpuMetalRenderRequest") ||
+      !require_c_abi_struct<VPWgpuMetalCVPixelBufferRenderRequest>(
+          "VPWgpuMetalCVPixelBufferRenderRequest") ||
+      !require_c_abi_struct<VPWgpuMetalRetainedCompositeRequest>(
+          "VPWgpuMetalRetainedCompositeRequest")) {
     return 1;
   }
   if (VPWgpuMetalRendererMetalDevice(nullptr) != nullptr) {

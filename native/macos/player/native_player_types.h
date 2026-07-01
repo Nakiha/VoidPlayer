@@ -12,7 +12,7 @@ extern "C" {
 typedef struct VPMacOSNativePlayer VPMacOSNativePlayer;
 typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
 
-#define VP_MACOS_NATIVE_API_VERSION 7u
+#define VP_MACOS_NATIVE_API_VERSION 9u
 
 typedef enum VPMacOSNativeStatus {
   VPMacOSNativeStatusOk = 0,
@@ -179,7 +179,21 @@ typedef struct VPMacOSNativeRendererOwnedPresentationState {
   uint64_t overlay_gpu_success_count;
   uint64_t overlay_gpu_failure_count;
   uint64_t overlay_cpu_fallback_count;
+  uint64_t external_flutter_surface_generation;
+  uint64_t external_flutter_surface_consumed_generation;
+  uint64_t external_flutter_surface_update_count;
+  uint64_t external_flutter_surface_consume_count;
+  uint64_t external_flutter_surface_wait_count;
+  uint64_t external_flutter_surface_wait_failure_count;
+  int32_t source_cache_active;
+  int32_t source_cache_texture_count;
+  uint64_t source_cache_generation;
+  uint64_t source_cache_publish_count;
+  int32_t source_projection_active;
+  uint64_t source_projection_update_count;
+  uint64_t source_projection_consume_count;
   char backend_name[64];
+  char external_flutter_surface_last_error[128];
   char last_draw_error[256];
 } VPMacOSNativeRendererOwnedPresentationState;
 
@@ -267,6 +281,15 @@ typedef struct VPMacOSNativePlayerPerfStats {
   uint64_t metal_buffer_exhaustion_count;
   uint64_t metal_command_completion_p95_us;
   uint64_t metal_command_failure_count;
+  uint64_t wgpu_compose_total_p95_us;
+  uint64_t wgpu_compose_pre_render_p95_us;
+  uint64_t wgpu_compose_import_p95_us;
+  uint64_t wgpu_compose_prepare_p95_us;
+  uint64_t wgpu_compose_overlay_encode_p95_us;
+  uint64_t wgpu_compose_bind_group_p95_us;
+  uint64_t wgpu_compose_pass_encode_p95_us;
+  uint64_t wgpu_compose_submit_p95_us;
+  uint64_t wgpu_compose_cpu_render_p95_us;
   int32_t async_metal_publish_active;
   uint64_t video_source_update_count;
   uint64_t viewport_composite_count;

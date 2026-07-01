@@ -1,4 +1,4 @@
-# Diagnostic probe for native compositor pacing during playback plus UI interaction.
+# Diagnostic probe for renderer-owned presentation pacing during playback plus UI interaction.
 # Exercises playing drag and marks-sidebar resize without introducing a second render path.
 @WINDOW, 1366, 768
 0.0, SET_DECODE_MODE, preferHardware
@@ -21,6 +21,11 @@
 7.7, DEBUG_NATIVE_TIMING, sidebar-closed-400ms
 7.8, DRAG_VIEWPORT, -420, 180, 120, 4
 9.4, DEBUG_NATIVE_TIMING, drag-sidebar-closed
-9.5, PAUSE
-9.8, DEBUG_NATIVE_TIMING, paused-final
-9.9, QUIT, 0
+9.42, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedCompositeSubmitHzX1000, 45000
+9.44, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedPresentHzX1000, 45000
+9.46, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedComposeDisplayDeliveredTickHzX1000, 45000
+9.48, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedSourceProjectionHzX1000, 60000
+9.50, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedRetainedComposeHitRatioX1000, 100
+9.6, PAUSE
+9.9, DEBUG_NATIVE_TIMING, paused-final
+10.0, QUIT, 0

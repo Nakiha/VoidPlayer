@@ -31,7 +31,7 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		A12F01022C08FF0100000001 /* MacOSNativePlayerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01002C08FF0100000001 /* MacOSNativePlayerSession.swift */; };
-		A12F01032C08FF0100000001 /* MacOSFlutterTextureBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01012C08FF0100000001 /* MacOSFlutterTextureBridge.swift */; };
+		A12F01032C08FF0100000001 /* MacOSRendererOwnedTextureTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01012C08FF0100000001 /* MacOSRendererOwnedTextureTarget.swift */; };
 		A12F01042C08FF0100000001 /* MacOSFlutterArguments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01052C08FF0100000001 /* MacOSFlutterArguments.swift */; };
 		A12F01062C08FF0100000001 /* MacOSPresentationDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */; };
 		A12F01082C08FF0100000001 /* MacOSVideoTrackPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */; };
@@ -62,11 +62,10 @@
 		A12F013A2C08FF0100000001 /* MacOSViewportDisplayLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F013B2C08FF0100000001 /* MacOSViewportDisplayLink.swift */; };
 		A12F013C2C08FF0100000001 /* MacOSNativeMetalPresentationTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F013D2C08FF0100000001 /* MacOSNativeMetalPresentationTarget.swift */; };
 		A12F013E2C08FF0100000001 /* MacOSRendererProfilerSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F013F2C08FF0100000001 /* MacOSRendererProfilerSummary.swift */; };
-		A12F01402C08FF0100000001 /* MacOSNativeCompositorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01412C08FF0100000001 /* MacOSNativeCompositorView.swift */; };
-		A12F01502C08FF0100000001 /* MacOSNativeCompositorSourceRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01512C08FF0100000001 /* MacOSNativeCompositorSourceRing.swift */; };
-		A12F01542C08FF0100000001 /* MacOSNativeOverlayPrimitives.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01552C08FF0100000001 /* MacOSNativeOverlayPrimitives.swift */; };
 		A12F01522C08FF0100000001 /* MacOSMediaInputGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01532C08FF0100000001 /* MacOSMediaInputGuard.swift */; };
 		A12F01422C08FF0100000001 /* MacOSPresentationConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01432C08FF0100000001 /* MacOSPresentationConfiguration.swift */; };
+		A12F01542C08FF0100000001 /* MacOSRendererOwnedPresentationTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01552C08FF0100000001 /* MacOSRendererOwnedPresentationTarget.swift */; };
+		A12F01562C08FF0100000001 /* MacOSRendererOwnedLayerTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01572C08FF0100000001 /* MacOSRendererOwnedLayerTarget.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -126,7 +125,7 @@
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		A12F00052C06FF0100000001 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		A12F01002C08FF0100000001 /* MacOSNativePlayerSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativePlayerSession.swift; sourceTree = "<group>"; };
-		A12F01012C08FF0100000001 /* MacOSFlutterTextureBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSFlutterTextureBridge.swift; sourceTree = "<group>"; };
+		A12F01012C08FF0100000001 /* MacOSRendererOwnedTextureTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSRendererOwnedTextureTarget.swift; sourceTree = "<group>"; };
 		A12F01052C08FF0100000001 /* MacOSFlutterArguments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSFlutterArguments.swift; sourceTree = "<group>"; };
 		A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSPresentationDiagnostics.swift; sourceTree = "<group>"; };
 		A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVideoTrackPayload.swift; sourceTree = "<group>"; };
@@ -157,11 +156,10 @@
 		A12F013B2C08FF0100000001 /* MacOSViewportDisplayLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSViewportDisplayLink.swift; sourceTree = "<group>"; };
 		A12F013D2C08FF0100000001 /* MacOSNativeMetalPresentationTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeMetalPresentationTarget.swift; sourceTree = "<group>"; };
 		A12F013F2C08FF0100000001 /* MacOSRendererProfilerSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSRendererProfilerSummary.swift; sourceTree = "<group>"; };
-		A12F01412C08FF0100000001 /* MacOSNativeCompositorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeCompositorView.swift; sourceTree = "<group>"; };
-		A12F01512C08FF0100000001 /* MacOSNativeCompositorSourceRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeCompositorSourceRing.swift; sourceTree = "<group>"; };
-		A12F01552C08FF0100000001 /* MacOSNativeOverlayPrimitives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeOverlayPrimitives.swift; sourceTree = "<group>"; };
 		A12F01532C08FF0100000001 /* MacOSMediaInputGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSMediaInputGuard.swift; sourceTree = "<group>"; };
 		A12F01432C08FF0100000001 /* MacOSPresentationConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSPresentationConfiguration.swift; sourceTree = "<group>"; };
+		A12F01552C08FF0100000001 /* MacOSRendererOwnedPresentationTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSRendererOwnedPresentationTarget.swift; sourceTree = "<group>"; };
+		A12F01572C08FF0100000001 /* MacOSRendererOwnedLayerTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSRendererOwnedLayerTarget.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -266,13 +264,12 @@
 				A12F01312C08FF0100000001 /* MacOSPresentationController.swift */,
 				A12F01432C08FF0100000001 /* MacOSPresentationConfiguration.swift */,
 				A12F013B2C08FF0100000001 /* MacOSViewportDisplayLink.swift */,
-				A12F01412C08FF0100000001 /* MacOSNativeCompositorView.swift */,
-				A12F01512C08FF0100000001 /* MacOSNativeCompositorSourceRing.swift */,
-				A12F01552C08FF0100000001 /* MacOSNativeOverlayPrimitives.swift */,
 				A12F01332C08FF0100000001 /* MacOSNativePlayerLayout.swift */,
 				A12F01352C08FF0100000001 /* MacOSNativePlayerPresentation.swift */,
 				A12F01372C08FF0100000001 /* MacOSNativePlayerTransport.swift */,
 				A12F01152C08FF0100000001 /* MacOSPixelBufferMetrics.swift */,
+				A12F01552C08FF0100000001 /* MacOSRendererOwnedPresentationTarget.swift */,
+				A12F01572C08FF0100000001 /* MacOSRendererOwnedLayerTarget.swift */,
 				A12F011B2C08FF0100000001 /* MacOSVideoRendererBridge.swift */,
 				A12F013F2C08FF0100000001 /* MacOSRendererProfilerSummary.swift */,
 				A12F010F2C08FF0100000001 /* MacOSNativeFramePump.swift */,
@@ -287,7 +284,7 @@
 				A12F01172C08FF0100000001 /* MacOSSyntheticTexturePattern.swift */,
 				A12F01002C08FF0100000001 /* MacOSNativePlayerSession.swift */,
 				A12F013D2C08FF0100000001 /* MacOSNativeMetalPresentationTarget.swift */,
-				A12F01012C08FF0100000001 /* MacOSFlutterTextureBridge.swift */,
+				A12F01012C08FF0100000001 /* MacOSRendererOwnedTextureTarget.swift */,
 				A12F00052C06FF0100000001 /* Runner-Bridging-Header.h */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
@@ -594,13 +591,12 @@
 				A12F01302C08FF0100000001 /* MacOSPresentationController.swift in Sources */,
 				A12F01422C08FF0100000001 /* MacOSPresentationConfiguration.swift in Sources */,
 				A12F013A2C08FF0100000001 /* MacOSViewportDisplayLink.swift in Sources */,
-				A12F01402C08FF0100000001 /* MacOSNativeCompositorView.swift in Sources */,
-				A12F01502C08FF0100000001 /* MacOSNativeCompositorSourceRing.swift in Sources */,
-				A12F01542C08FF0100000001 /* MacOSNativeOverlayPrimitives.swift in Sources */,
 				A12F01322C08FF0100000001 /* MacOSNativePlayerLayout.swift in Sources */,
 				A12F01342C08FF0100000001 /* MacOSNativePlayerPresentation.swift in Sources */,
 				A12F01362C08FF0100000001 /* MacOSNativePlayerTransport.swift in Sources */,
 				A12F01142C08FF0100000001 /* MacOSPixelBufferMetrics.swift in Sources */,
+				A12F01542C08FF0100000001 /* MacOSRendererOwnedPresentationTarget.swift in Sources */,
+				A12F01562C08FF0100000001 /* MacOSRendererOwnedLayerTarget.swift in Sources */,
 				A12F011A2C08FF0100000001 /* MacOSVideoRendererBridge.swift in Sources */,
 				A12F013E2C08FF0100000001 /* MacOSRendererProfilerSummary.swift in Sources */,
 				A12F010E2C08FF0100000001 /* MacOSNativeFramePump.swift in Sources */,
@@ -615,7 +611,7 @@
 				A12F01162C08FF0100000001 /* MacOSSyntheticTexturePattern.swift in Sources */,
 				A12F01022C08FF0100000001 /* MacOSNativePlayerSession.swift in Sources */,
 				A12F013C2C08FF0100000001 /* MacOSNativeMetalPresentationTarget.swift in Sources */,
-				A12F01032C08FF0100000001 /* MacOSFlutterTextureBridge.swift in Sources */,
+				A12F01032C08FF0100000001 /* MacOSRendererOwnedTextureTarget.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 			);

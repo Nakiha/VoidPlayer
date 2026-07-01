@@ -164,23 +164,37 @@ final class MacOSTransportController {
     forward: Bool,
     context: MacOSTransportContext
   ) -> FlutterError? {
+    seekRefreshSerial &+= 1
+    let stepSerial = seekRefreshSerial
+    pendingSeekPreview = nil
     context.playback.stopForBlockingCommand(player: context.player, pausePlayer: false)
     guard context.nativeBackendActive,
           let player = context.player,
           let rendererTarget = context.rendererTarget else {
       return nil
     }
-    if let error = MacOSNativeFrameRefresh.stepAndRefresh(
+    let refreshResult = MacOSNativeFrameRefresh.stepAndRefresh(
       player: player,
       rendererTarget: rendererTarget,
       forward: forward,
       maxTrackSlots: context.maxTrackSlots,
       presentationState: context.presentationState,
       framePump: context.playback.framePumpForRefresh
-    ) {
+    )
+    if case .failed(let error) = refreshResult {
       return error
     }
-    context.markFrameAvailable()
+    if case .presented = refreshResult {
+      context.markFrameAvailable()
+    }
+    if case .pending(let targetPtsUs) = refreshResult {
+      schedulePausedSeekLateFrameDelivery(
+        targetPtsUs: targetPtsUs,
+        requestId: nil,
+        seekSerial: stepSerial,
+        context: context
+      )
+    }
     return nil
   }
 

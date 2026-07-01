@@ -13,6 +13,12 @@ enum MacOSNativeSeekRefreshResult {
   case failed(FlutterError)
 }
 
+enum MacOSNativeStepRefreshResult {
+  case presented
+  case pending(targetPtsUs: Int)
+  case failed(FlutterError)
+}
+
 enum MacOSNativeFrameRefresh {
   static func acceptsSeekFrame(_ frameInfo: MacOSNativeFrameInfo, targetPtsUs: Int) -> Bool {
     frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
@@ -265,16 +271,17 @@ enum MacOSNativeFrameRefresh {
     maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
     framePump: MacOSNativeFramePump
-  ) -> FlutterError? {
+  ) -> MacOSNativeStepRefreshResult {
     let startNs = DispatchTime.now().uptimeNanoseconds
-    let timeoutMs = 3_000
+    let timeoutMs = 360
+    var targetPtsUs = -1
     do {
       if forward {
         try player.stepForward()
       } else {
         try player.stepBackward()
       }
-      let targetPtsUs = player.currentPtsUs()
+      targetPtsUs = player.currentPtsUs()
       let acceptStepFrame: (MacOSNativeFrameInfo) -> Bool = { frameInfo in
         let nearStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 100_000) &&
           frameInfo.ptsUs <= targetPtsUs + 100_000
@@ -298,7 +305,7 @@ enum MacOSNativeFrameRefresh {
           result: "ok immediate",
           ptsUs: frameInfo.ptsUs
         )
-        return nil
+        return .presented
       }
       let (frameInfo, attempts) = try updateFromNativePlayerWithTransientRetry(
         route: forward ? "step-forward" : "step-backward",
@@ -319,21 +326,25 @@ enum MacOSNativeFrameRefresh {
         result: attempts > 1 ? "ok attempts=\(attempts)" : "ok",
         ptsUs: frameInfo.ptsUs
       )
+      return .presented
     } catch {
+      let transient = (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true
       logRefreshProfiler(
         route: forward ? "step-forward" : "step-backward",
         startNs: startNs,
         timeoutMs: timeoutMs,
-        result: "error:\(error)",
+        result: transient ? "pending:\(error)" : "error:\(error)",
         ptsUs: -1
       )
-      return FlutterError(
+      if transient, targetPtsUs >= 0 {
+        return .pending(targetPtsUs: targetPtsUs)
+      }
+      return .failed(FlutterError(
         code: "STEP_FAILED",
         message: "Failed to step macOS native playback",
         details: "\(error)"
-      )
+      ))
     }
-    return nil
   }
 
   private static func logRefreshProfiler(

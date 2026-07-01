@@ -141,18 +141,23 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
         timeoutMs: waitTimeoutMs,
         suppressFrameCallback: true
       )
-      guard info.targetPixelBufferAddress == token.pixelBufferAddress else {
+      let publishAddress = info.targetPixelBufferAddress
+      guard publishAddress == token.pixelBufferAddress ||
+              hasPendingDrawable(address: publishAddress) else {
         discardDrawable(address: token.pixelBufferAddress)
         throw MacOSNativePlayerError.transientFrameUnavailable(
           "renderer-owned Metal presentation target changed during refresh"
         )
       }
+      if publishAddress != token.pixelBufferAddress {
+        discardDrawable(address: token.pixelBufferAddress)
+      }
       return MacOSPendingNativeFrame(
         info: info,
         publishToken: MacOSNativeFramePublishToken(
-          pixelBufferAddress: info.targetPixelBufferAddress,
+          pixelBufferAddress: publishAddress,
           nativeUploadCount: player.rendererOwnedPresentationUploadCount(),
-          pixelBufferGeneration: token.pixelBufferGeneration
+          pixelBufferGeneration: currentTargetGeneration()
         )
       )
     } catch {
@@ -422,6 +427,21 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     lock.lock()
     pendingDrawables.removeValue(forKey: address)
     lock.unlock()
+  }
+
+  private func hasPendingDrawable(address: UInt) -> Bool {
+    guard address != 0 else { return false }
+    lock.lock()
+    let exists = pendingDrawables[address] != nil
+    lock.unlock()
+    return exists
+  }
+
+  private func currentTargetGeneration() -> Int {
+    lock.lock()
+    let generation = targetGeneration
+    lock.unlock()
+    return generation
   }
 
   private func nextDrawableOnMain() -> CAMetalDrawable? {

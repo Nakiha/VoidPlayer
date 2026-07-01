@@ -875,6 +875,9 @@ int request_renderer_owned_frame_refresh(
     const uint64_t frame_target =
         player->last_renderer_owned_frame_info.target_pixel_buffer_address;
     if (baseline_target_is_metal_texture) {
+      if (refresh_min_pts_us >= 0 && frame_matches_source_commit_request()) {
+        return true;
+      }
       return frame_target == baseline_target_address;
     }
     if (!baseline_target_addresses.empty()) {

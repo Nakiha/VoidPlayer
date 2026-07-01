@@ -269,53 +269,57 @@ enum MacOSNativeFrameRefresh {
     let startNs = DispatchTime.now().uptimeNanoseconds
     let timeoutMs = 3_000
     do {
-      if rendererTarget.rendererOwnedRunnerLayerActive {
-        try stepAndRefreshCommandTarget(
-          player: player,
-          rendererTarget: rendererTarget,
-          forward: forward,
-          maxTrackSlots: maxTrackSlots,
-          timeoutMs: timeoutMs,
-          startNs: startNs,
-          presentationState: presentationState,
-          framePump: framePump
-        )
+      if forward {
+        try player.stepForward()
       } else {
-        try stepAndRefreshReusableTarget(
-          player: player,
-          rendererTarget: rendererTarget,
-          forward: forward,
-          maxTrackSlots: maxTrackSlots,
-          timeoutMs: timeoutMs,
-          startNs: startNs,
-          presentationState: presentationState,
-          framePump: framePump
-        )
+        try player.stepBackward()
       }
-    } catch {
+      let targetPtsUs = player.currentPtsUs()
+      let acceptStepFrame: (MacOSNativeFrameInfo) -> Bool = { frameInfo in
+        let nearStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 100_000) &&
+          frameInfo.ptsUs <= targetPtsUs + 100_000
+        let nearBackwardStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
+          frameInfo.ptsUs <= targetPtsUs + 100_000
+        return forward ? nearStepTarget : nearBackwardStepTarget
+      }
       if let frameInfo = player.lastRendererOwnedFrameInfo(),
-         acceptStepFrameAfterFailedCommand(
-          frameInfo,
-          forward: forward,
-          targetPtsUs: player.currentPtsUs()
-         ) {
-        if rendererTarget.publishRenderedTargetAndInstallNext(
+         acceptStepFrame(frameInfo) {
+        _ = rendererTarget.publishRenderedTargetAndInstallNext(
           player,
           maxTrackSlots: maxTrackSlots,
           frameInfo: frameInfo
-        ) {
-          framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
-          presentationState.recordFrame(frameInfo)
-          logRefreshProfiler(
-            route: forward ? "step-forward" : "step-backward",
-            startNs: startNs,
-            timeoutMs: timeoutMs,
-            result: "ok command-fallback",
-            ptsUs: frameInfo.ptsUs
-          )
-          return nil
-        }
+        )
+        framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
+        presentationState.recordFrame(frameInfo)
+        logRefreshProfiler(
+          route: forward ? "step-forward" : "step-backward",
+          startNs: startNs,
+          timeoutMs: timeoutMs,
+          result: "ok immediate",
+          ptsUs: frameInfo.ptsUs
+        )
+        return nil
       }
+      let (frameInfo, attempts) = try updateFromNativePlayerWithTransientRetry(
+        route: forward ? "step-forward" : "step-backward",
+        player,
+        rendererTarget: rendererTarget,
+        maxTrackSlots: maxTrackSlots,
+        timeoutMs: timeoutMs,
+        acceptFrame: { frameInfo in
+          acceptStepFrame(frameInfo)
+        }
+      )
+      framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
+      presentationState.recordFrame(frameInfo)
+      logRefreshProfiler(
+        route: forward ? "step-forward" : "step-backward",
+        startNs: startNs,
+        timeoutMs: timeoutMs,
+        result: attempts > 1 ? "ok attempts=\(attempts)" : "ok",
+        ptsUs: frameInfo.ptsUs
+      )
+    } catch {
       logRefreshProfiler(
         route: forward ? "step-forward" : "step-backward",
         startNs: startNs,
@@ -330,133 +334,6 @@ enum MacOSNativeFrameRefresh {
       )
     }
     return nil
-  }
-
-  private static func stepAndRefreshReusableTarget(
-    player: MacOSNativePlayerSession,
-    rendererTarget: MacOSRendererOwnedPresentationTarget,
-    forward: Bool,
-    maxTrackSlots: Int,
-    timeoutMs: Int,
-    startNs: UInt64,
-    presentationState: MacOSFramePresentationState,
-    framePump: MacOSNativeFramePump
-  ) throws {
-    if forward {
-      try player.stepForward()
-    } else {
-      try player.stepBackward()
-    }
-    let targetPtsUs = player.currentPtsUs()
-    let acceptStepFrame: (MacOSNativeFrameInfo) -> Bool = { frameInfo in
-      let nearStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 100_000) &&
-        frameInfo.ptsUs <= targetPtsUs + 100_000
-      let nearBackwardStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
-        frameInfo.ptsUs <= targetPtsUs + 100_000
-      return forward ? nearStepTarget : nearBackwardStepTarget
-    }
-    if let frameInfo = player.lastRendererOwnedFrameInfo(),
-       acceptStepFrame(frameInfo) {
-      _ = rendererTarget.publishRenderedTargetAndInstallNext(
-        player,
-        maxTrackSlots: maxTrackSlots,
-        frameInfo: frameInfo
-      )
-      framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
-      presentationState.recordFrame(frameInfo)
-      logRefreshProfiler(
-        route: forward ? "step-forward" : "step-backward",
-        startNs: startNs,
-        timeoutMs: timeoutMs,
-        result: "ok immediate",
-        ptsUs: frameInfo.ptsUs
-      )
-      return
-    }
-    let (frameInfo, attempts) = try updateFromNativePlayerWithTransientRetry(
-      route: forward ? "step-forward" : "step-backward",
-      player,
-      rendererTarget: rendererTarget,
-      maxTrackSlots: maxTrackSlots,
-      timeoutMs: timeoutMs,
-      acceptFrame: { frameInfo in
-        acceptStepFrame(frameInfo)
-      }
-    )
-    framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
-    presentationState.recordFrame(frameInfo)
-    logRefreshProfiler(
-      route: forward ? "step-forward" : "step-backward",
-      startNs: startNs,
-      timeoutMs: timeoutMs,
-      result: attempts > 1 ? "ok attempts=\(attempts)" : "ok",
-      ptsUs: frameInfo.ptsUs
-    )
-  }
-
-  private static func stepAndRefreshCommandTarget(
-    player: MacOSNativePlayerSession,
-    rendererTarget: MacOSRendererOwnedPresentationTarget,
-    forward: Bool,
-    maxTrackSlots: Int,
-    timeoutMs: Int,
-    startNs: UInt64,
-    presentationState: MacOSFramePresentationState,
-    framePump: MacOSNativeFramePump
-  ) throws {
-    var targetPtsUs = player.currentPtsUs()
-    let acceptStepFrame: (MacOSNativeFrameInfo) -> Bool = { frameInfo in
-      let nearStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 100_000) &&
-        frameInfo.ptsUs <= targetPtsUs + 100_000
-      let nearBackwardStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
-        frameInfo.ptsUs <= targetPtsUs + 100_000
-      return forward ? nearStepTarget : nearBackwardStepTarget
-    }
-    let pending = try rendererTarget.drawCommandFrameFromNativePlayer(
-      player,
-      maxTrackSlots: maxTrackSlots,
-      waitTimeoutMs: timeoutMs,
-      command: {
-        if forward {
-          try player.stepForward()
-        } else {
-          try player.stepBackward()
-        }
-        targetPtsUs = player.currentPtsUs()
-      },
-      acceptFrame: { frameInfo in acceptStepFrame(frameInfo) }
-    )
-    let outcome = try rendererTarget.publishPendingNativeFrame(
-      pending,
-      player: player,
-      maxTrackSlots: maxTrackSlots
-    )
-    guard outcome != .notReady else {
-      throw MacOSNativePlayerError.transientFrameUnavailable(
-        "renderer-owned command frame was not ready to publish"
-      )
-    }
-    framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
-    presentationState.recordFrame(pending.info)
-    logRefreshProfiler(
-      route: forward ? "step-forward" : "step-backward",
-      startNs: startNs,
-      timeoutMs: timeoutMs,
-      result: outcome == .published ? "ok command" : "ok command already-published",
-      ptsUs: pending.info.ptsUs
-    )
-  }
-
-  private static func acceptStepFrameAfterFailedCommand(
-    _ frameInfo: MacOSNativeFrameInfo,
-    forward: Bool,
-    targetPtsUs: Int
-  ) -> Bool {
-    let nearStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 100_000) &&
-      frameInfo.ptsUs <= targetPtsUs + 100_000
-    let nearBackwardStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
-      frameInfo.ptsUs <= targetPtsUs + 100_000
-    return forward ? nearStepTarget : nearBackwardStepTarget
   }
 
   private static func logRefreshProfiler(

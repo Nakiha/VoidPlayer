@@ -76,13 +76,6 @@ protocol MacOSRendererOwnedPresentationTarget: AnyObject {
     maxTrackSlots: Int,
     waitTimeoutMs: Int
   ) throws -> MacOSPendingNativeFrame
-  func drawCommandFrameFromNativePlayer(
-    _ player: MacOSNativePlayerSession,
-    maxTrackSlots: Int,
-    waitTimeoutMs: Int,
-    command: () throws -> Void,
-    acceptFrame: (MacOSNativeFrameInfo) -> Bool
-  ) throws -> MacOSPendingNativeFrame
   func publishPendingNativeFrame(
     _ pending: MacOSPendingNativeFrame,
     player: MacOSNativePlayerSession,
@@ -130,28 +123,6 @@ extension MacOSRendererOwnedPresentationTarget {
     maxTrackSlots: Int
   ) -> Bool {
     installNativePresentationTarget(player, maxTrackSlots: maxTrackSlots, refresh: false)
-  }
-
-  func drawCommandFrameFromNativePlayer(
-    _ player: MacOSNativePlayerSession,
-    maxTrackSlots: Int,
-    waitTimeoutMs: Int,
-    command: () throws -> Void,
-    acceptFrame: (MacOSNativeFrameInfo) -> Bool
-  ) throws -> MacOSPendingNativeFrame {
-    try command()
-    let pending = try drawFromNativePlayer(
-      player,
-      maxTrackSlots: maxTrackSlots,
-      waitTimeoutMs: waitTimeoutMs
-    )
-    guard acceptFrame(pending.info) else {
-      discardPendingNativeFrame(pending)
-      throw MacOSNativePlayerError.transientFrameUnavailable(
-        "renderer-owned command refresh returned a stale frame pts=\(pending.info.ptsUs)"
-      )
-    }
-    return pending
   }
 }
 

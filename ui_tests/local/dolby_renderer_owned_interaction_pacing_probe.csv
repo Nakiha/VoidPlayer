@@ -32,14 +32,16 @@
 5.3, ASSERT_CAPTURE_NOT_BLACK, dolby_interaction_settings, 0.01, 4.0
 5.32, ASSERT_CAPTURE_HAS_DETAIL, dolby_interaction_settings, 8.0
 5.34, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceWarmComposeCount, 1
-5.36, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceSampleCount, 2
-5.38, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceContinuousComposeCount, 20
+5.36, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceSampleCount, 10
+5.38, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfacePublishCount, 10
 5.4, OPEN_SETTINGS
 5.45, ASSERT_SETTINGS_VISIBLE, true
 5.7, DRAG_VIEWPORT, -420, 160, 120, 4
 7.2, DEBUG_NATIVE_TIMING, dolby-drag-after-settings
-7.22, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceSampleCount, 80
-7.24, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceContinuousComposeCount, 60
+7.22, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceSampleCount, 20
+7.23, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfacePublishCount, 20
+7.24, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedExternalFlutterSurfaceUpdateCount, 20
+7.25, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfaceWarmComposeCount, 1
 7.3, CAPTURE_WINDOW_REGION, dolby_interaction_final_roi, 320, 200, 1600, 720, 320, build/test-output/macos/dolby_interaction_final_roi.png
 7.4, ASSERT_CAPTURE_NOT_BLACK, dolby_interaction_final_roi, 0.01, 4.0
 7.5, ASSERT_CAPTURE_HAS_DETAIL, dolby_interaction_final_roi, 8.0

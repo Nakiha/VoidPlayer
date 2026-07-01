@@ -68,6 +68,7 @@ class MainWindowPlaybackCoordinator {
   StreamSubscription<NativePlayerEvent>? _nativeEventSubscription;
   bool _disposed = false;
   bool _resumeAfterSeek = false;
+  Future<void> _stepChain = Future<void>.value();
   int _pollSerial = 0;
   int _seekSerial = 0;
   int _seekPreviewEventSerial = 0;
@@ -235,11 +236,22 @@ class MainWindowPlaybackCoordinator {
   }
 
   Future<void> stepForward() {
-    return _step(forward: true);
+    return _enqueueStep(forward: true);
   }
 
   Future<void> stepBackward() {
-    return _step(forward: false);
+    return _enqueueStep(forward: false);
+  }
+
+  Future<void> _enqueueStep({required bool forward}) {
+    final scheduled = _stepChain.then((_) async {
+      if (_disposed || !mounted()) return;
+      await _step(forward: forward);
+    });
+    _stepChain = scheduled.catchError((Object error, StackTrace stack) {
+      log.warning('step queue command failed: forward=$forward', error, stack);
+    });
+    return scheduled;
   }
 
   Future<void> _step({required bool forward}) async {

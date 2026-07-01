@@ -35,7 +35,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     "viewport-split",
     "viewport-zoom",
   ]
-  private static let rendererOwnedFlutterSurfaceWarmGraceNs: UInt64 = 250_000_000
+  private static let rendererOwnedFlutterSurfaceWarmGraceNs: UInt64 = 500_000_000
 
   private var methodChannel: FlutterMethodChannel?
   private var eventChannel: FlutterEventChannel?
@@ -1127,6 +1127,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       rendererOwnedFlutterSurfaceWarmActive(nowNs: tickNs)
     let flutterSurfaceContinuousActive =
       rendererOwnedFlutterSurfaceContinuousActive()
+    let flutterSurfaceSampleLatestActive =
+      flutterSurfaceWarmActive || flutterSurfaceContinuousActive
     guard hasPendingComposite || flutterSurfaceWarmActive ||
             flutterSurfaceContinuousActive else {
       if !rendererOwnedCompositeRefreshInFlight {
@@ -1157,7 +1159,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     rendererOwnedCompositeRefreshSubmitRate.record(nowNs: startNs)
     refreshRendererOwnedFlutterSurfaceIfNeeded(
       reason: reason,
-      sampleLatest: flutterSurfaceContinuousActive
+      sampleLatest: flutterSurfaceSampleLatestActive
     )
     if rendererTarget.rendererOwnedRunnerLayerActive &&
         rendererOwnedFlutterSurfaceLastGeneration == 0 {
@@ -1358,8 +1360,13 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         ? 1
         : rendererOwnedFlutterSurfaceContentGeneration + 1
     rendererOwnedFlutterSurfaceLastReason = reason
-    rendererOwnedFlutterSurfaceWarmUntilNs =
-      DispatchTime.now().uptimeNanoseconds + Self.rendererOwnedFlutterSurfaceWarmGraceNs
+    let shouldWarmSample =
+      !reason.contains("request-ui-surface-changed") ||
+        reason.contains("warm=1")
+    if shouldWarmSample {
+      rendererOwnedFlutterSurfaceWarmUntilNs =
+        DispatchTime.now().uptimeNanoseconds + Self.rendererOwnedFlutterSurfaceWarmGraceNs
+    }
     scheduleRendererOwnedCompositeRefresh(reason: "flutter-surface-\(reason)")
   }
 
@@ -1369,9 +1376,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func rendererOwnedFlutterSurfaceContinuousActive() -> Bool {
-    rendererOwnedPresentationReady() &&
-      rendererTarget?.rendererOwnedRunnerLayerActive == true &&
-      playback.isPlaying
+    false
   }
 
   @discardableResult
@@ -1427,6 +1432,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       return false
     }
     let sourceKey = flutterSurfaceSourceKey(info: info, texture: texture)
+    if sampleLatest && !rendererOwnedFlutterSurfaceDirty && !needsInitialSurface {
+      rendererOwnedFlutterSurfaceContentGeneration =
+        rendererOwnedFlutterSurfaceContentGeneration == UInt64.max
+          ? 1
+          : rendererOwnedFlutterSurfaceContentGeneration + 1
+    }
     let generation = rendererOwnedFlutterSurfaceContentGeneration
     let sourceChanged = sourceKey != rendererOwnedFlutterSurfaceLastSourceKey
     if generation == rendererOwnedFlutterSurfaceLastGeneration && !sourceChanged {

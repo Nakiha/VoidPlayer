@@ -342,6 +342,9 @@ class MainWindowController {
 
   String _rendererOwnedFlutterSurfaceUiSignature() {
     final state = stateStore.value;
+    final clockSignature = state.isPlaying
+        ? state.currentPtsUs ~/ 100000
+        : state.currentPtsUs;
     final trackOrder = trackManager.entries
         .map((entry) => '${entry.fileId}:${entry.slot}')
         .join(',');
@@ -360,6 +363,9 @@ class MainWindowController {
       'profiler=${state.profilerVisible}',
       'settings=${state.settingsVisible}',
       'dragging=${state.dragging}',
+      'playing=${state.isPlaying}',
+      'clock=$clockSignature',
+      'duration=${state.durationUs}',
       'analysisOverlay=${state.analysisOverlayControlsVisible}',
       'fullscreen=${state.fullScreen}',
       'fullscreenControls=${state.fullScreenControlsVisible}',
@@ -378,7 +384,17 @@ class MainWindowController {
   }
 
   String _rendererOwnedFlutterSurfaceRequestReason(String signature) {
+    final state = stateStore.value;
+    final warmSampling =
+        state.settingsVisible ||
+        state.mediaInfoVisible ||
+        state.profilerVisible ||
+        state.marksSidebarVisible ||
+        state.analysisOverlayControlsVisible ||
+        state.fullScreenControlsVisible ||
+        state.quickMarkDraft != null;
     return 'ui-surface-changed ${signature.hashCode} '
+        'warm=${warmSampling ? 1 : 0} '
         'dirty=$_rendererOwnedFlutterSurfaceUiDirtyCount '
         'requests=$_rendererOwnedFlutterSurfaceRequestCount '
         'skippedClock=$_rendererOwnedFlutterSurfaceSkippedClockStateCount';

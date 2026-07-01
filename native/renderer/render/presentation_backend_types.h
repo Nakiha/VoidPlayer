@@ -102,6 +102,9 @@ struct PresentationBackendFrameInfo {
     int32_t color_primaries = 0;
     uint64_t target_pixel_buffer_address = 0;
     uint64_t layout_revision = 0;
+    uint64_t source_generation = 0;
+    uint64_t source_signature = 0;
+    bool source_upload = false;
 };
 
 struct PresentationSourceFrameTarget {

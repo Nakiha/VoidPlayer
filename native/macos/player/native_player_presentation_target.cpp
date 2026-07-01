@@ -714,6 +714,8 @@ int request_renderer_owned_frame_refresh(
   uint64_t baseline_draw_failure_count = 0;
   uint64_t baseline_target_generation = 0;
   uint64_t baseline_target_address = 0;
+  uint64_t baseline_source_commit_generation = 0;
+  bool baseline_source_generation_supported = false;
   std::vector<uint64_t> baseline_target_addresses;
   bool baseline_target_is_metal_texture = false;
   bool baseline_frame_available = false;
@@ -752,6 +754,10 @@ int request_renderer_owned_frame_refresh(
     baseline_draw_failure_count =
         player->renderer_owned_presentation_draw_failure_count;
     baseline_target_generation = player->presentation_target_generation;
+    baseline_source_commit_generation =
+        player->renderer_owned_source_commit_generation;
+    baseline_source_generation_supported =
+        player->renderer_owned_source_generation_supported;
     baseline_target_is_metal_texture = player->presentation_target_is_metal_texture;
     baseline_target_address = pointer_address(player->presentation_target_pixel_buffer);
     baseline_target_addresses.clear();
@@ -769,12 +775,15 @@ int request_renderer_owned_frame_refresh(
   if (log_manual_refresh) {
     spdlog::info(
         "[MacOSFrameRefresh] begin min_pts_us={} timeout_ms={} baseline_upload={} "
-        "target_generation={} suppress_callback={}",
+        "target_generation={} suppress_callback={} source_generation_supported={} "
+        "baseline_source_generation={}",
         refresh_min_pts_us,
         bounded_timeout_ms,
         baseline_upload_count,
         baseline_target_generation,
-        suppress_frame_callback);
+        suppress_frame_callback,
+        baseline_source_generation_supported,
+        baseline_source_commit_generation);
   }
 
   auto trigger_renderer_refresh = [&]() -> bool {
@@ -847,6 +856,17 @@ int request_renderer_owned_frame_refresh(
            player->last_renderer_owned_layout_revision >=
                expected_layout_revision;
   };
+  const auto frame_matches_source_commit_request = [&]() {
+    if (refresh_min_pts_us < 0) {
+      return true;
+    }
+    if (!baseline_source_generation_supported &&
+        !player->renderer_owned_source_generation_supported) {
+      return true;
+    }
+    return player->renderer_owned_source_commit_generation >
+           baseline_source_commit_generation;
+  };
   const auto frame_matches_target_request = [&]() {
     if (!player->last_renderer_owned_frame_info_available ||
         (baseline_target_address == 0 && baseline_target_addresses.empty())) {
@@ -870,6 +890,7 @@ int request_renderer_owned_frame_refresh(
                 baseline_upload_count &&
             frame_matches_target_request() &&
             frame_matches_layout_request() &&
+            frame_matches_source_commit_request() &&
             frame_matches_refresh_request()) ||
            player->renderer_owned_presentation_draw_failure_count >
                baseline_draw_failure_count;
@@ -928,6 +949,7 @@ int request_renderer_owned_frame_refresh(
   if (player->renderer_owned_presentation_upload_count > baseline_upload_count &&
       frame_matches_target_request() &&
       frame_matches_layout_request() &&
+      frame_matches_source_commit_request() &&
       frame_matches_refresh_request()) {
     *out = player->last_renderer_owned_frame_info;
     if (refresh_min_pts_us >= 0) {
@@ -950,7 +972,8 @@ int request_renderer_owned_frame_refresh(
     if (log_manual_refresh) {
       spdlog::info(
           "[MacOSFrameRefresh] presented pts_us={} dts_us={} duration_us={} "
-          "clock_us={} min_pts_us={} elapsed_ms={} attempts={} upload={}->{}",
+          "clock_us={} min_pts_us={} elapsed_ms={} attempts={} upload={}->{} "
+          "source_generation={}->{} last_source_upload={}",
           out->pts_us,
           out->dts_us,
           out->duration_us,
@@ -959,7 +982,10 @@ int request_renderer_owned_frame_refresh(
           elapsed_ms,
           refresh_attempts,
           baseline_upload_count,
-          player->renderer_owned_presentation_upload_count);
+          player->renderer_owned_presentation_upload_count,
+          baseline_source_commit_generation,
+          player->renderer_owned_source_commit_generation,
+          player->last_renderer_owned_source_upload);
     }
     write_error(error, error_size, "");
     return 0;
@@ -1013,7 +1039,9 @@ int request_renderer_owned_frame_refresh(
       "min_pts_us={} clock_us={} baseline_upload={} upload={} baseline_failure={} "
       "failures={} deferred_by_backpressure={} last_backpressure_error={} "
       "last_renderer_error={} baseline_target=0x{:x} last_frame_target=0x{:x} "
-      "baseline_target_is_metal={} baseline_target_generation={} current_target_generation={}",
+      "baseline_target_is_metal={} baseline_target_generation={} current_target_generation={} "
+      "source_generation_supported={} baseline_source_generation={} current_source_generation={} "
+      "last_source_generation={} last_source_upload={}",
       elapsed_ms,
       bounded_timeout_ms,
       refresh_attempts,
@@ -1032,7 +1060,12 @@ int request_renderer_owned_frame_refresh(
           : 0,
       baseline_target_is_metal_texture,
       baseline_target_generation,
-      player->presentation_target_generation);
+      player->presentation_target_generation,
+      player->renderer_owned_source_generation_supported,
+      baseline_source_commit_generation,
+      player->renderer_owned_source_commit_generation,
+      player->last_renderer_owned_source_generation,
+      player->last_renderer_owned_source_upload);
   if (refresh_deferred_by_backpressure &&
       !last_refresh_backpressure_error.empty()) {
     write_error(error, error_size, last_refresh_backpressure_error);

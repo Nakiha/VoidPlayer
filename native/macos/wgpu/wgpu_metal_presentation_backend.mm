@@ -2021,12 +2021,16 @@ bool WgpuMetalPresentationBackend::draw_frame(
   int32_t retained_source_storage = 0;
   bool retained_source_frame_info_available = false;
   vr::PresentationBackendFrameInfo retained_source_frame_info;
+  uint64_t retained_source_generation = 0;
+  uint64_t retained_source_signature = 0;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     retained_source_available = retained_source_available_;
     retained_source_storage = last_present_package_storage_;
     retained_source_frame_info_available = retained_source_frame_info_available_;
     retained_source_frame_info = retained_source_frame_info_;
+    retained_source_generation = retained_source_committed_generation_;
+    retained_source_signature = last_source_signature_;
   }
 
   const auto overlay_primitives =
@@ -2039,6 +2043,9 @@ bool WgpuMetalPresentationBackend::draw_frame(
                                 uint64_t source_signature,
                                 bool source_upload) {
     auto pending = std::make_unique<AsyncDrawPending>();
+    frame_info.source_generation = source_generation;
+    frame_info.source_signature = source_signature;
+    frame_info.source_upload = source_upload;
     pending->state = async_state_;
     pending->hooks = hooks;
     pending->frame_info = frame_info;
@@ -2113,7 +2120,12 @@ bool WgpuMetalPresentationBackend::draw_frame(
         : frame_info_from_decision(retained_decision, target);
     frame_info.target_pixel_buffer_address = pointer_bits(target);
     auto pending =
-        make_async_pending(frame_info, 0, retained_source_storage, 0, 0, false);
+        make_async_pending(frame_info,
+                           0,
+                           retained_source_storage,
+                           retained_source_generation,
+                           retained_source_signature,
+                           false);
     pending->destination_texture_ref = destination_ref;
     destination_ref = nullptr;
     pending->render_call_start = std::chrono::steady_clock::now();

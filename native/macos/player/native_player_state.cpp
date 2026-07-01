@@ -159,6 +159,13 @@ void VPMacOSNativePlayer::shutdown_renderer_locked() {
   decoder_name = "none";
   renderer_active.store(false, std::memory_order_release);
   clear_last_frame_locked();
+  {
+    std::lock_guard<std::mutex> callback_lock(callback_mutex);
+    renderer_owned_source_generation_supported = false;
+    last_renderer_owned_source_upload = false;
+    last_renderer_owned_source_generation = 0;
+    renderer_owned_source_commit_generation = 0;
+  }
 }
 
 void VPMacOSNativePlayer::clear_last_frame_locked() {
@@ -302,19 +309,42 @@ void VPMacOSNativePlayer::on_frame_available(
       last_renderer_owned_frame_info.layout_revision =
           completed_frame_info->layout_revision;
       last_renderer_owned_layout_revision = completed_frame_info->layout_revision;
+      const bool has_source_generation =
+          completed_frame_info->source_generation != 0;
+      if (has_source_generation || completed_frame_info->source_upload) {
+        renderer_owned_source_generation_supported = true;
+        last_renderer_owned_source_upload = completed_frame_info->source_upload;
+        last_renderer_owned_source_generation =
+            completed_frame_info->source_generation;
+        if (completed_frame_info->source_upload &&
+            completed_frame_info->source_generation >
+                renderer_owned_source_commit_generation) {
+          renderer_owned_source_commit_generation =
+              completed_frame_info->source_generation;
+        }
+      } else {
+        last_renderer_owned_source_upload = false;
+        last_renderer_owned_source_generation = 0;
+      }
       if (renderer_owned_refresh_min_pts_us >= 0) {
         constexpr int64_t kRefreshPtsLowerToleranceUs = 500'000;
         constexpr int64_t kRefreshPtsUpperToleranceUs = 1'500'000;
         const int64_t min_pts_us = renderer_owned_refresh_min_pts_us;
         const int64_t completed_pts_us = completed_frame_info->pts_us;
+        const bool source_upload_or_legacy =
+            !renderer_owned_source_generation_supported ||
+            completed_frame_info->source_upload;
         if (completed_pts_us >= min_pts_us &&
             completed_pts_us <= min_pts_us + kRefreshPtsLowerToleranceUs +
-                                    kRefreshPtsUpperToleranceUs) {
+                                    kRefreshPtsUpperToleranceUs &&
+            source_upload_or_legacy) {
           renderer_owned_refresh_min_pts_us = -1;
           spdlog::info(
-              "[MacOSFrameRefresh] clear_seek_gate_from_frame_callback min_pts_us={} pts_us={}",
+              "[MacOSFrameRefresh] clear_seek_gate_from_frame_callback min_pts_us={} pts_us={} source_upload={} source_generation={}",
               min_pts_us,
-              completed_pts_us);
+              completed_pts_us,
+              completed_frame_info->source_upload,
+              completed_frame_info->source_generation);
         }
       }
     } else {

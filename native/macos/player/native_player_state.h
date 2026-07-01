@@ -83,6 +83,10 @@ struct VPMacOSNativePlayer {
   bool last_renderer_owned_frame_info_available = false;
   VPMacOSNativeFrameInfo last_renderer_owned_frame_info = {};
   uint64_t last_renderer_owned_layout_revision = 0;
+  bool renderer_owned_source_generation_supported = false;
+  bool last_renderer_owned_source_upload = false;
+  uint64_t last_renderer_owned_source_generation = 0;
+  uint64_t renderer_owned_source_commit_generation = 0;
   uint64_t renderer_owned_presentation_upload_count = 0;
   uint64_t renderer_owned_presentation_failure_count = 0;
   uint64_t renderer_owned_presentation_draw_failure_count = 0;

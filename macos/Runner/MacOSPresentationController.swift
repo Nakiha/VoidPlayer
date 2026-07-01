@@ -106,9 +106,11 @@ final class MacOSPresentationController {
       _ = context.texture?.resize(width: nextWidth, height: nextHeight) ?? false
       if context.nativeBackendActive {
         nativeRefreshAttempted = true
-        let refreshed = refreshCurrentFrame(context: context)
-        if !refreshed {
-          return
+        if context.rendererTarget?.rendererOwnedRunnerLayerActive != true {
+          let refreshed = refreshCurrentFrame(context: context)
+          if !refreshed {
+            return
+          }
         }
       }
     }
@@ -158,6 +160,14 @@ final class MacOSPresentationController {
     )
   }
 
+  func rendererOwnedViewportRectReady() -> Bool {
+    rendererOwnedViewportRectUpdateCount > 0 &&
+      (rendererOwnedViewportRect["width"] ?? 0) > 0 &&
+      (rendererOwnedViewportRect["height"] ?? 0) > 0 &&
+      (rendererOwnedViewportRect["surfaceWidth"] ?? 0) > 0 &&
+      (rendererOwnedViewportRect["surfaceHeight"] ?? 0) > 0
+  }
+
   @discardableResult
   func refreshCurrentFrame(context: MacOSPresentationContext) -> Bool {
     guard context.nativeBackendActive,
@@ -165,6 +175,9 @@ final class MacOSPresentationController {
           let rendererTarget = context.rendererTarget else {
       context.markFrameAvailable()
       return true
+    }
+    if rendererTarget.rendererOwnedRunnerLayerActive {
+      return false
     }
     if context.playback.currentIsPlaying(player: player) {
       context.playback.reinstallPresentationTargetIfPlaying(

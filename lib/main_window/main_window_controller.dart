@@ -168,6 +168,83 @@ class MainWindowController {
     _maybeStartTestRunner(testScriptPath);
   }
 
+  void _scheduleRendererOwnedViewportRectReport() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted()) return;
+      _reportRendererOwnedViewportRect(reason: 'runner-layer-active-postframe');
+    });
+    WidgetsBinding.instance.scheduleFrame();
+    Timer(const Duration(milliseconds: 50), () {
+      if (!mounted() || !stateStore.value.nativeCompositorRunnerLayerActive) {
+        return;
+      }
+      _reportRendererOwnedViewportRect(reason: 'runner-layer-active-deferred');
+    });
+  }
+
+  void _reportRendererOwnedViewportRect({required String reason}) {
+    final context = viewportKey.currentContext;
+    if (context == null) {
+      log.fine(
+        '[WindowsResizePacing] renderer-owned viewportRect skipped '
+        'reason=$reason missingContext=true',
+      );
+      return;
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      log.fine(
+        '[WindowsResizePacing] renderer-owned viewportRect skipped '
+        'reason=$reason hasRenderBox=${renderObject is RenderBox} '
+        'hasSize=${renderObject is RenderBox && renderObject.hasSize}',
+      );
+      return;
+    }
+    final view = View.of(context);
+    final devicePixelRatio = view.devicePixelRatio;
+    final surfaceSize = view.physicalSize;
+    final logicalSize = renderObject.size;
+    if (devicePixelRatio <= 0 ||
+        logicalSize.width <= 0 ||
+        logicalSize.height <= 0 ||
+        surfaceSize.width <= 0 ||
+        surfaceSize.height <= 0) {
+      log.fine(
+        '[WindowsResizePacing] renderer-owned viewportRect skipped '
+        'reason=$reason invalidSize=true',
+      );
+      return;
+    }
+    final globalOffset = renderObject.localToGlobal(Offset.zero);
+    final left = (globalOffset.dx * devicePixelRatio).round();
+    final top = (globalOffset.dy * devicePixelRatio).round();
+    final width = (logicalSize.width * devicePixelRatio).round();
+    final height = (logicalSize.height * devicePixelRatio).round();
+    final surfaceWidth = surfaceSize.width.round();
+    final surfaceHeight = surfaceSize.height.round();
+    log.info(
+      '[WindowsResizePacing] renderer-owned viewportRect '
+      'reason=$reason physical=($left,$top ${width}x$height) '
+      'surface=${surfaceWidth}x$surfaceHeight '
+      'logicalOffset=(${globalOffset.dx.toStringAsFixed(1)},'
+      '${globalOffset.dy.toStringAsFixed(1)}) '
+      'logicalSize=${logicalSize.width.toStringAsFixed(1)}x'
+      '${logicalSize.height.toStringAsFixed(1)} '
+      'dpr=${devicePixelRatio.toStringAsFixed(3)}',
+    );
+    fireAndLog(
+      'set renderer-owned viewport rect ($reason)',
+      player.setRendererOwnedViewportRect(
+        left: left,
+        top: top,
+        width: width,
+        height: height,
+        surfaceWidth: surfaceWidth,
+        surfaceHeight: surfaceHeight,
+      ),
+    );
+  }
+
   void dispose() {
     fireAndLog('dispose main window controller', closeGracefully());
   }

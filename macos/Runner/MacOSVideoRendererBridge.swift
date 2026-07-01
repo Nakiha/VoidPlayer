@@ -76,6 +76,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var rendererOwnedFlutterSurfaceUnchangedCount = 0
   private var rendererOwnedFlutterSurfaceSourceChangeCount = 0
   private var rendererOwnedFlutterSurfaceAwaitFirstCount = 0
+  private var rendererOwnedViewportAwaitFirstCount = 0
   private var rendererOwnedFlutterSurfaceWarmTickCount = 0
   private var rendererOwnedFlutterSurfaceWarmComposeCount = 0
   private var rendererOwnedFlutterSurfaceContinuousTickCount = 0
@@ -209,7 +210,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         viewportBackgroundColor = color
         nativePlayer?.setBackgroundColor(color)
         if backendName == MacOSVideoTrackPayload.nativeFormatName {
-          presentation.refreshCurrentFrame(context: presentationContext())
+          if rendererTarget?.rendererOwnedRunnerLayerActive == true {
+            scheduleRendererOwnedCompositeRefresh(reason: "background-color")
+          } else {
+            presentation.refreshCurrentFrame(context: presentationContext())
+          }
         }
       }
       result(nil)
@@ -250,7 +255,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         arguments: call.arguments,
         rendererTarget: rendererTarget
       )
-      if backendName == MacOSVideoTrackPayload.nativeFormatName,
+      if rendererTarget?.rendererOwnedRunnerLayerActive == true {
+        scheduleRendererOwnedCompositeRefresh(reason: "viewport-rect")
+      } else if backendName == MacOSVideoTrackPayload.nativeFormatName,
          !playback.currentIsPlaying(player: nativePlayer) {
         if presentation.refreshCurrentFrame(context: presentationContext()) {
           scheduleRendererOwnedCompositeRefreshNextTick(
@@ -492,6 +499,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         rendererOwnedFlutterSurfaceSourceChangeCount,
       "rendererOwnedFlutterSurfaceAwaitFirstCount":
         rendererOwnedFlutterSurfaceAwaitFirstCount,
+      "rendererOwnedViewportAwaitFirstCount":
+        rendererOwnedViewportAwaitFirstCount,
       "rendererOwnedFlutterSurfaceWarmActive":
         rendererOwnedFlutterSurfaceWarmActive(),
       "rendererOwnedFlutterSurfaceWarmTickCount":
@@ -803,17 +812,18 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func clearRendererOwnedSourceProjection(arguments: Any?) {
     _ = compositorLatencyProfiler.receive(route: "source-clear", arguments: arguments)
     nativePlayer?.clearSourceProjection()
-    if backendName == MacOSVideoTrackPayload.nativeFormatName,
+    let reason = MacOSFlutterArguments.stringArg(arguments, "reason") ?? "source-clear"
+    if rendererTarget?.rendererOwnedRunnerLayerActive == true {
+      scheduleRendererOwnedCompositeRefresh(reason: reason)
+    } else if backendName == MacOSVideoTrackPayload.nativeFormatName,
        !playback.currentIsPlaying(player: nativePlayer) {
       if presentation.refreshCurrentFrame(context: presentationContext()) {
         scheduleRendererOwnedCompositeRefreshNextTick(
-          reason: MacOSFlutterArguments.stringArg(arguments, "reason") ?? "source-clear-followup"
+          reason: "\(reason)-followup"
         )
       }
     } else {
-      scheduleRendererOwnedCompositeRefresh(
-        reason: MacOSFlutterArguments.stringArg(arguments, "reason") ?? "source-clear"
-      )
+      scheduleRendererOwnedCompositeRefresh(reason: reason)
     }
   }
 
@@ -1019,7 +1029,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     nativePlayer?.clearSourceProjection()
     refreshPresentationPolicyForCurrentTracks()
     if addResult.refreshCurrentFrame {
-      presentation.refreshCurrentFrame(context: presentationContext())
+      if rendererTarget?.rendererOwnedRunnerLayerActive == true {
+        scheduleRendererOwnedCompositeRefresh(reason: "add-track")
+      } else {
+        presentation.refreshCurrentFrame(context: presentationContext())
+      }
     }
     if addResult.markFrameAvailable {
       markFrameAvailable()
@@ -1038,7 +1052,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       destroyPlayer()
     } else if removeResult.refreshCurrentFrame {
       refreshPresentationPolicyForCurrentTracks()
-      presentation.refreshCurrentFrame(context: presentationContext())
+      if rendererTarget?.rendererOwnedRunnerLayerActive == true {
+        scheduleRendererOwnedCompositeRefresh(reason: "remove-track")
+      } else {
+        presentation.refreshCurrentFrame(context: presentationContext())
+      }
     }
   }
 
@@ -1151,6 +1169,24 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         submittedGeneration
       )
       if rendererOwnedFlutterSurfaceWarmActive() {
+        rendererOwnedCompositeDisplayLink.start()
+      } else {
+        rendererOwnedCompositeRefreshPendingReason = nil
+        rendererOwnedCompositeDisplayLink.stop()
+      }
+      return
+    }
+    if rendererTarget.rendererOwnedRunnerLayerActive &&
+        !presentation.rendererOwnedViewportRectReady() {
+      rendererOwnedViewportAwaitFirstCount += 1
+      rendererOwnedFlutterSurfaceLastReason = "\(reason):awaiting-viewport"
+      rendererOwnedCompositeRefreshInFlight = false
+      rendererOwnedCompositeRefreshCompletedGeneration = max(
+        rendererOwnedCompositeRefreshCompletedGeneration,
+        submittedGeneration
+      )
+      if flutterSurfaceContinuousActive ||
+          rendererOwnedFlutterSurfaceWarmActive() {
         rendererOwnedCompositeDisplayLink.start()
       } else {
         rendererOwnedCompositeRefreshPendingReason = nil
@@ -1275,7 +1311,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         ? Double(nowNs - rendererOwnedCompositeRefreshLatestProjectionNs) / 1_000_000.0
         : 0.0
     NSLog(
-      "VoidPlayer renderer-owned compose summary reason=%@ requestHz=%.1f submitHz=%.1f presentHz=%.1f displayTickHz=%.1f sourceFrameHz=%.1f projectionUpdateHz=%.1f pending=%llu submitted=%llu completed=%llu inFlight=%@ skippedInFlight=%d failures=%d projectionLagMs=%.2f composeP95Ms=%.2f flutterSurfaceDirty=%d sample=%d publish=%d unchanged=%d sourceChanges=%d awaitFirst=%d warmActive=%@ warmTicks=%d warmComposes=%d continuousTicks=%d continuousComposes=%d sampleP95Ms=%.2f flutterReason=%@",
+      "VoidPlayer renderer-owned compose summary reason=%@ requestHz=%.1f submitHz=%.1f presentHz=%.1f displayTickHz=%.1f sourceFrameHz=%.1f projectionUpdateHz=%.1f pending=%llu submitted=%llu completed=%llu inFlight=%@ skippedInFlight=%d failures=%d projectionLagMs=%.2f composeP95Ms=%.2f flutterSurfaceDirty=%d sample=%d publish=%d unchanged=%d sourceChanges=%d awaitFirst=%d viewportAwait=%d warmActive=%@ warmTicks=%d warmComposes=%d continuousTicks=%d continuousComposes=%d sampleP95Ms=%.2f flutterReason=%@",
       reason,
       requestHz,
       submitHz,
@@ -1297,6 +1333,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       rendererOwnedFlutterSurfaceUnchangedCount,
       rendererOwnedFlutterSurfaceSourceChangeCount,
       rendererOwnedFlutterSurfaceAwaitFirstCount,
+      rendererOwnedViewportAwaitFirstCount,
       rendererOwnedFlutterSurfaceWarmActive(nowNs: nowNs) ? "true" : "false",
       rendererOwnedFlutterSurfaceWarmTickCount,
       rendererOwnedFlutterSurfaceWarmComposeCount,
@@ -1501,7 +1538,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     if targetWasRebuilt {
       playback.setTargetInstalled(false)
       presentation.applyRendererOwnedViewportRect(to: rendererTarget)
-      _ = presentation.refreshCurrentFrame(context: presentationContext())
+      if rendererTarget?.rendererOwnedRunnerLayerActive != true {
+        _ = presentation.refreshCurrentFrame(context: presentationContext())
+      }
     }
     ensureRendererOwnedPresentationMatchesCurrentConfiguration()
   }

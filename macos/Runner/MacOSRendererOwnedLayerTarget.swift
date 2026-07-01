@@ -59,7 +59,13 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
   private var lastIgnoredNativeUploadCount = 0
   private var uploadCount = 0
   private var uploadFailureCount = 0
+  private var viewportRectReady = false
+  private var firstPresentBlockedUntilViewportCount = 0
   private var firstPresented = false
+  private var firstPresentViewportLeft: Float = -1.0
+  private var firstPresentViewportTop: Float = -1.0
+  private var firstPresentViewportRight: Float = -1.0
+  private var firstPresentViewportBottom: Float = -1.0
   private var pendingDrawables: [UInt: MacOSPendingRendererOwnedDrawable] = [:]
 
   var rendererOwnedRunnerLayerActive: Bool {
@@ -182,10 +188,20 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
       discardDrawable(address: pending.publishToken.pixelBufferAddress)
       return .alreadyPublished
     }
+    lock.unlock()
+    guard presentDrawable(address: pending.publishToken.pixelBufferAddress) else {
+      lock.lock()
+      lastIgnoredNativeUploadCount = max(
+        lastIgnoredNativeUploadCount,
+        pending.publishToken.nativeUploadCount
+      )
+      lock.unlock()
+      return .notReady
+    }
+    lock.lock()
     lastPublishedNativeUploadCount = pending.publishToken.nativeUploadCount
     uploadCount += 1
     lock.unlock()
-    presentDrawable(address: pending.publishToken.pixelBufferAddress)
     return .published
   }
 
@@ -207,9 +223,20 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
       "rendererOwnedLayerUploadCount": uploadCount,
       "rendererOwnedLayerUploadFailureCount": uploadFailureCount,
       "rendererOwnedLayerTargetGeneration": targetGeneration,
+      "rendererOwnedLayerViewportRectReady": viewportRectReady,
+      "rendererOwnedLayerFirstPresentBlockedUntilViewportCount":
+        firstPresentBlockedUntilViewportCount,
       "rendererOwnedLayerLastPublishedUploadCount": lastPublishedNativeUploadCount,
       "rendererOwnedLayerLastIgnoredUploadCount": lastIgnoredNativeUploadCount,
       "rendererOwnedLayerFirstPresented": firstPresented,
+      "rendererOwnedLayerFirstPresentViewportLeftPermille":
+        Int(firstPresentViewportLeft * 1000.0),
+      "rendererOwnedLayerFirstPresentViewportTopPermille":
+        Int(firstPresentViewportTop * 1000.0),
+      "rendererOwnedLayerFirstPresentViewportRightPermille":
+        Int(firstPresentViewportRight * 1000.0),
+      "rendererOwnedLayerFirstPresentViewportBottomPermille":
+        Int(firstPresentViewportBottom * 1000.0),
     ]
   }
 
@@ -221,7 +248,9 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     surfaceWidth: Int,
     surfaceHeight: Int
   ) {
-    guard width > 0, height > 0 else { return }
+    guard width > 0, height > 0, surfaceWidth > 0, surfaceHeight > 0 else {
+      return
+    }
     let nextSurfaceWidth = max(16, surfaceWidth)
     let nextSurfaceHeight = max(16, surfaceHeight)
     let nextLeft = Float(max(0, min(left, surfaceWidth))) / Float(max(1, surfaceWidth))
@@ -229,12 +258,14 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     let nextRight = Float(max(0, min(left + width, surfaceWidth))) / Float(max(1, surfaceWidth))
     let nextBottom = Float(max(0, min(top + height, surfaceHeight))) / Float(max(1, surfaceHeight))
     lock.lock()
-    let changed = nextSurfaceWidth != self.width ||
+    let changed = !viewportRectReady ||
+      nextSurfaceWidth != self.width ||
       nextSurfaceHeight != self.height ||
       nextLeft != viewportLeft ||
       nextTop != viewportTop ||
       nextRight != viewportRight ||
       nextBottom != viewportBottom
+    viewportRectReady = true
     if changed {
       self.width = nextSurfaceWidth
       self.height = nextSurfaceHeight
@@ -288,10 +319,17 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
       lock.unlock()
       return false
     }
+    lock.unlock()
+    guard presentDrawable(address: frameInfo?.targetPixelBufferAddress ?? 0) else {
+      lock.lock()
+      lastIgnoredNativeUploadCount = max(lastIgnoredNativeUploadCount, nativeUploadCount)
+      lock.unlock()
+      return false
+    }
+    lock.lock()
     lastPublishedNativeUploadCount = nativeUploadCount
     uploadCount += 1
     lock.unlock()
-    presentDrawable(address: frameInfo?.targetPixelBufferAddress ?? 0)
     return true
   }
 
@@ -350,20 +388,33 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     )
   }
 
-  private func presentDrawable(address: UInt) {
-    guard address != 0 else { return }
+  @discardableResult
+  private func presentDrawable(address: UInt) -> Bool {
+    guard address != 0 else { return false }
     lock.lock()
     let pending = pendingDrawables.removeValue(forKey: address)
-    if pending != nil {
+    guard let pending else {
+      lock.unlock()
+      return false
+    }
+    if !firstPresented && !viewportRectReady {
+      firstPresentBlockedUntilViewportCount += 1
+      lock.unlock()
+      return false
+    }
+    if !firstPresented {
+      firstPresentViewportLeft = viewportLeft
+      firstPresentViewportTop = viewportTop
+      firstPresentViewportRight = viewportRight
+      firstPresentViewportBottom = viewportBottom
       firstPresented = true
     }
     lock.unlock()
-    if pending != nil {
-      runOnMain {
-        self.view.isHidden = false
-      }
+    runOnMain {
+      self.view.isHidden = false
     }
-    pending?.drawable.present()
+    pending.drawable.present()
+    return true
   }
 
   private func discardDrawable(address: UInt) {

@@ -51,6 +51,8 @@ extension MainWindowComposition on MainWindowController {
           layoutCoordinator.onNativeCompositorAvailabilityChanged(
             active: active,
           ),
+      onRendererOwnedRunnerLayerActivated:
+          _scheduleRendererOwnedViewportRectReport,
       onSeekSettled: (_) {
         layoutCoordinator.refreshRendererOwnedProjectionAfterSeek();
         return analysisCoordinator.refreshOverlayForCurrentFrame();

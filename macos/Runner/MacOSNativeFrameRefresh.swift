@@ -218,14 +218,27 @@ enum MacOSNativeFrameRefresh {
         maxTrackSlots: maxTrackSlots
       )
       framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
-      presentationState.recordFrame(pending.info)
+      let publishResult: String
+      switch outcome {
+      case .published:
+        publishResult = "ok"
+      case .alreadyPublished:
+        publishResult = "already-published"
+      case .notReady:
+        publishResult = "not-ready"
+      }
       logRefreshProfiler(
         route: "layout-publish",
         startNs: startNs,
         timeoutMs: 0,
-        result: outcome == .published ? "ok" : "already-published",
+        result: publishResult,
         ptsUs: pending.info.ptsUs
       )
+      guard outcome != .notReady else {
+        presentationState.recordMiss()
+        return false
+      }
+      presentationState.recordFrame(pending.info)
       return true
     } catch {
       rendererTarget.discardPendingNativeFrame(pending)

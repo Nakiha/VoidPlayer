@@ -169,6 +169,7 @@ class MainWindowMediaCoordinator {
         );
         layoutCoordinator.markLayoutDirty();
         lifecycle.applyStartupLoopRangeIfReady();
+        WidgetsBinding.instance.scheduleFrame();
         await WidgetsBinding.instance.endOfFrame;
         if (!_alive) return;
         if (layoutCoordinator.viewportWidth > 0 &&

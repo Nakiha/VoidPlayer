@@ -58,6 +58,7 @@ class MainWindowPlaybackCoordinator {
   final Future<void> Function({required bool playing})? onPlaybackTransition;
   final void Function({required bool active})?
   onNativeCompositorAvailabilityChanged;
+  final VoidCallback? onRendererOwnedRunnerLayerActivated;
 
   Timer? _loopBoundaryTimer;
   Timer? _seekSettledTimer;
@@ -86,6 +87,7 @@ class MainWindowPlaybackCoordinator {
     this.onSeekPreviewPresented,
     this.onPlaybackTransition,
     this.onNativeCompositorAvailabilityChanged,
+    this.onRendererOwnedRunnerLayerActivated,
   }) {
     _nativeEventSubscription = controller.events.listen(
       _handleNativePlayerEvent,
@@ -470,6 +472,9 @@ class MainWindowPlaybackCoordinator {
       stateStore.setNativeCompositorRunnerLayerActive(
         event.rendererOwnedRunnerLayerActive,
       );
+      if (event.rendererOwnedRunnerLayerActive) {
+        onRendererOwnedRunnerLayerActivated?.call();
+      }
       if (wasActive != event.rendererOwnedPresentationActive) {
         onNativeCompositorAvailabilityChanged?.call(
           active: event.rendererOwnedPresentationActive,

@@ -42,6 +42,7 @@ class ViewportPanel extends StatefulWidget {
   final QuickMark? quickMarkDraft;
   final int? selectedQuickMarkId;
   final bool nativeCompositorHole;
+  final bool reportNativeCompositorViewportRect;
   final ValueChanged<Offset>? onQuickMarkStart;
   final ValueChanged<Offset>? onQuickMarkUpdate;
   final VoidCallback? onQuickMarkInteraction;
@@ -72,6 +73,7 @@ class ViewportPanel extends StatefulWidget {
     this.quickMarkDraft,
     this.selectedQuickMarkId,
     this.nativeCompositorHole = false,
+    this.reportNativeCompositorViewportRect = false,
     this.onQuickMarkStart,
     this.onQuickMarkUpdate,
     this.onQuickMarkInteraction,
@@ -671,6 +673,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           'physical=${physicalWidth}x$physicalHeight '
           'dpr=${devicePixelRatio.toStringAsFixed(3)} '
           'nativeHole=${widget.nativeCompositorHole} '
+          'reportNativeRect=${widget.reportNativeCompositorViewportRect} '
           'texture=${widget.textureId}',
         );
       }
@@ -681,6 +684,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
         'physical=${physicalWidth}x$physicalHeight '
         'dpr=${devicePixelRatio.toStringAsFixed(3)} '
         'nativeHole=${widget.nativeCompositorHole} '
+        'reportNativeRect=${widget.reportNativeCompositorViewportRect} '
         'texture=${widget.textureId}',
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -688,7 +692,8 @@ class _ViewportPanelState extends State<ViewportPanel> {
         widget.onResize?.call(physicalWidth, physicalHeight, devicePixelRatio);
       });
     }
-    if (widget.nativeCompositorHole) {
+    if (widget.nativeCompositorHole ||
+        widget.reportNativeCompositorViewportRect) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _maybeReportNativeCompositorViewportRect(context);

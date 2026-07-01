@@ -129,4 +129,5 @@ extension MacOSRendererOwnedPresentationTarget {
 enum MacOSNativeFramePublishOutcome: Equatable {
   case published
   case alreadyPublished
+  case notReady
 }

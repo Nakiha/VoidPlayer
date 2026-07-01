@@ -50,6 +50,10 @@ class MainWindowScaffold extends StatelessWidget {
         viewport.viewportState.status == ViewportDisplayStatus.active &&
         (Platform.isWindows ||
             (Platform.isMacOS && viewport.nativeCompositorRunnerLayerActive));
+    final reportNativeCompositorViewportRect =
+        nativeCompositor &&
+        (nativeCompositorViewportActive ||
+            (Platform.isMacOS && viewport.nativeCompositorRunnerLayerActive));
     if (overlays.settingsVisible ||
         overlays.mediaInfoVisible ||
         overlays.profilerVisible ||
@@ -193,6 +197,8 @@ class MainWindowScaffold extends StatelessWidget {
                                         media.nativePlaybackAvailable,
                                     nativeCompositorHole:
                                         nativeCompositorViewportActive,
+                                    reportNativeCompositorViewportRect:
+                                        reportNativeCompositorViewportRect,
                                   ),
                                 ),
                                 if (!overlays.fullScreen &&

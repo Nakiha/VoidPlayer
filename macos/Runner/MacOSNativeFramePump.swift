@@ -96,8 +96,6 @@ final class MacOSNativeFramePump {
   ) -> Bool {
     stop(player: player)
     presentationState.resetFrameCounters()
-    player.resetRendererOwnedPresentationStats()
-    rendererTarget?.resetNativeUploadBaseline()
     targetInstalled = false
     if !ensure(
       player: player,

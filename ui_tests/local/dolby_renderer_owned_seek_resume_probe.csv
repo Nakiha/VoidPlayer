@@ -1,0 +1,29 @@
+# Local macOS Dolby/HDR renderer-owned seek resume probe.
+# Run with:
+#   python dev.py mac-ui-test --build ui_tests/local/dolby_renderer_owned_seek_resume_probe.csv
+@WINDOW, 1280, 720
+0.0, SET_DECODE_MODE, preferHardware
+0.0, SET_SEEK_AFTER_JUMP_BEHAVIOR, keepPreviousState
+0.3, ADD_MEDIA, /Users/zhuhongwei/Desktop/VID_20260605_212405_DOLBY.mp4
+3.2, ASSERT_TRACK_COUNT, 1
+3.3, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, renderer-owned-wgpu-edr
+3.35, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedTargetPixelFormat, CAMetalLayerRGBA16Float
+3.4, PLAY
+3.9, WAIT_PLAYING, 2000
+4.1, SEEK_TO, 3000000
+4.7, WAIT_PLAYING, 2000
+4.9, ASSERT_POSITION_RANGE, 3000000, 4300000
+5.0, ASSERT_PRESENTED_FRAME_RANGE, 0, 3000000, 4300000
+5.1, CAPTURE_WINDOW_REGION, dolby_seek_resume_viewport, 360, 260, 1840, 660, 320, build/test-output/macos/dolby_seek_resume_viewport.png
+5.2, ASSERT_CAPTURE_NOT_BLACK, dolby_seek_resume_viewport, 0.01, 4.0
+5.3, ASSERT_CAPTURE_HAS_DETAIL, dolby_seek_resume_viewport, 8.0
+5.4, SEEK_TO, 6000000
+6.0, WAIT_PLAYING, 2000
+6.2, ASSERT_POSITION_RANGE, 6000000, 7600000
+6.3, ASSERT_PRESENTED_FRAME_RANGE, 0, 6000000, 7600000
+6.4, CAPTURE_WINDOW_REGION, dolby_seek_resume_viewport_late, 360, 260, 1840, 660, 320, build/test-output/macos/dolby_seek_resume_viewport_late.png
+6.5, ASSERT_CAPTURE_NOT_BLACK, dolby_seek_resume_viewport_late, 0.01, 4.0
+6.6, ASSERT_CAPTURE_HAS_DETAIL, dolby_seek_resume_viewport_late, 8.0
+6.8, PAUSE
+7.1, ASSERT_PAUSED
+7.2, QUIT, 0

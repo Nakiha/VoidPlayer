@@ -162,6 +162,65 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     }
   }
 
+  func drawCommandFrameFromNativePlayer(
+    _ player: MacOSNativePlayerSession,
+    maxTrackSlots: Int,
+    waitTimeoutMs: Int,
+    command: () throws -> Void,
+    acceptFrame: (MacOSNativeFrameInfo) -> Bool
+  ) throws -> MacOSPendingNativeFrame {
+    let token = try installNextDrawable(player: player, maxTrackSlots: maxTrackSlots)
+    let baselineUpload = token.nativeUploadCount
+    let deadlineNs = DispatchTime.now().uptimeNanoseconds +
+      UInt64(max(1, waitTimeoutMs)) * 1_000_000
+    var lastUpload = baselineUpload
+    var lastFrameTarget: UInt = 0
+    do {
+      try command()
+      while true {
+        lastUpload = player.rendererOwnedPresentationUploadCount()
+        if lastUpload > baselineUpload,
+           let info = player.lastRendererOwnedFrameInfo() {
+          lastFrameTarget = info.targetPixelBufferAddress
+          if info.targetPixelBufferAddress == token.pixelBufferAddress,
+             acceptFrame(info) {
+            return MacOSPendingNativeFrame(
+              info: info,
+              publishToken: MacOSNativeFramePublishToken(
+                pixelBufferAddress: info.targetPixelBufferAddress,
+                nativeUploadCount: lastUpload,
+                pixelBufferGeneration: token.pixelBufferGeneration
+              )
+            )
+          }
+        }
+        lock.lock()
+        let generationChanged = token.pixelBufferGeneration != targetGeneration
+        lock.unlock()
+        if generationChanged {
+          throw MacOSNativePlayerError.transientFrameUnavailable(
+            "renderer-owned Metal presentation target generation changed during command frame"
+          )
+        }
+        guard DispatchTime.now().uptimeNanoseconds < deadlineNs else {
+          throw MacOSNativePlayerError.transientFrameUnavailable(String(
+            format:
+              "renderer-owned Metal command frame timed out target=0x%llx last=0x%llx upload=%d baseline=%d",
+            UInt64(token.pixelBufferAddress),
+            UInt64(lastFrameTarget),
+            lastUpload,
+            baselineUpload
+          ))
+        }
+        Thread.sleep(forTimeInterval: 0.002)
+      }
+    } catch {
+      discardDrawable(address: token.pixelBufferAddress)
+      uploadFailureCount += 1
+      throw error
+    }
+  }
+
   func publishPendingNativeFrame(
     _ pending: MacOSPendingNativeFrame,
     player: MacOSNativePlayerSession,

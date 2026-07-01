@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show FrameTiming;
 
 import 'package:flutter/material.dart';
 
@@ -95,8 +96,10 @@ class MainWindowController {
   bool _rendererOwnedFlutterSurfacePostFrameQueued = false;
   String? _lastRendererOwnedFlutterSurfaceRequestReason;
   String? _lastRendererOwnedFlutterSurfaceUiSignature;
+  bool _rendererOwnedFlutterFrameTimingInstalled = false;
   int _rendererOwnedFlutterSurfaceUiDirtyCount = 0;
   int _rendererOwnedFlutterSurfaceRequestCount = 0;
+  int _rendererOwnedFlutterSurfaceFrameTimingCount = 0;
   int _rendererOwnedFlutterSurfaceSkippedClockStateCount = 0;
   DateTime? _lastRendererOwnedFlutterSurfaceBoostAt;
   static const Duration _rendererOwnedFlutterSurfaceBoostInterval = Duration(
@@ -156,6 +159,7 @@ class MainWindowController {
            quickMarkRepository ?? const NoopQuickMarkRepository() {
     _initCoordinators();
     stateStore.addListener(_onStateChanged);
+    _installRendererOwnedFlutterFrameTimingPulse();
   }
 
   Listenable get listenable => _listenable;
@@ -259,6 +263,7 @@ class MainWindowController {
 
   Future<void> _closeGracefullyImpl() async {
     stateStore.removeListener(_onStateChanged);
+    _uninstallRendererOwnedFlutterFrameTimingPulse();
     final agentServer = _agentServer;
     _agentServer = null;
     if (agentServer != null) await agentServer.dispose();
@@ -321,6 +326,41 @@ class MainWindowController {
     _queueRendererOwnedFlutterSurfaceRequestIfUiChanged();
   }
 
+  void _installRendererOwnedFlutterFrameTimingPulse() {
+    if (!Platform.isMacOS || _rendererOwnedFlutterFrameTimingInstalled) {
+      return;
+    }
+    WidgetsBinding.instance.addTimingsCallback(
+      _onRendererOwnedFlutterFrameTimings,
+    );
+    _rendererOwnedFlutterFrameTimingInstalled = true;
+  }
+
+  void _uninstallRendererOwnedFlutterFrameTimingPulse() {
+    if (!_rendererOwnedFlutterFrameTimingInstalled) return;
+    WidgetsBinding.instance.removeTimingsCallback(
+      _onRendererOwnedFlutterFrameTimings,
+    );
+    _rendererOwnedFlutterFrameTimingInstalled = false;
+  }
+
+  void _onRendererOwnedFlutterFrameTimings(List<FrameTiming> timings) {
+    if (timings.isEmpty ||
+        !Platform.isMacOS ||
+        !_nativeCompositorActive ||
+        !stateStore.value.nativeCompositorRunnerLayerActive ||
+        !player.canAcceptCommands) {
+      return;
+    }
+    _rendererOwnedFlutterSurfaceFrameTimingCount += timings.length;
+    _queueRendererOwnedFlutterSurfaceRequest(
+      reason:
+          'flutter-frame '
+          'frames=$_rendererOwnedFlutterSurfaceFrameTimingCount',
+      afterCurrentFlutterFrame: true,
+    );
+  }
+
   void _queueRendererOwnedFlutterSurfaceRequestIfUiChanged() {
     if (!(Platform.isWindows || Platform.isMacOS) ||
         !_nativeCompositorActive ||
@@ -355,8 +395,10 @@ class MainWindowController {
     final thumbnailSignature = state.quickMarkThumbnails.entries
         .map((entry) => '${entry.key}:${entry.value.status.name}')
         .join(',');
+    final layout = state.layout;
     return [
       'tracks=$trackOrder',
+      'layoutMode=${layout.mode}',
       'sidebar=${state.marksSidebarVisible}',
       'sidebarWidth=${state.marksSidebarWidth.round()}',
       'mediaInfo=${state.mediaInfoVisible}',
@@ -406,7 +448,10 @@ class MainWindowController {
     _queueRendererOwnedFlutterSurfaceRequest(reason: 'resize ${width}x$height');
   }
 
-  void _queueRendererOwnedFlutterSurfaceRequest({required String reason}) {
+  void _queueRendererOwnedFlutterSurfaceRequest({
+    required String reason,
+    bool afterCurrentFlutterFrame = false,
+  }) {
     if (_rendererOwnedFlutterSurfaceRequestQueued ||
         !(Platform.isWindows || Platform.isMacOS) ||
         !_nativeCompositorActive ||
@@ -437,7 +482,7 @@ class MainWindowController {
       );
     }
 
-    if (Platform.isMacOS) {
+    if (Platform.isMacOS && !afterCurrentFlutterFrame) {
       if (_rendererOwnedFlutterSurfacePostFrameQueued) {
         WidgetsBinding.instance.ensureVisualUpdate();
         return;
@@ -477,6 +522,8 @@ class MainWindowController {
         _rendererOwnedFlutterSurfaceUiDirtyCount,
     'rendererOwnedFlutterSurfaceRequestCount':
         _rendererOwnedFlutterSurfaceRequestCount,
+    'rendererOwnedFlutterSurfaceFrameTimingCount':
+        _rendererOwnedFlutterSurfaceFrameTimingCount,
     'rendererOwnedFlutterSurfaceSkippedClockStateCount':
         _rendererOwnedFlutterSurfaceSkippedClockStateCount,
     'rendererOwnedFlutterSurfaceRequestQueued':

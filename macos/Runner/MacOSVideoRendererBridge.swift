@@ -1360,9 +1360,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         ? 1
         : rendererOwnedFlutterSurfaceContentGeneration + 1
     rendererOwnedFlutterSurfaceLastReason = reason
-    let shouldWarmSample =
-      !reason.contains("request-ui-surface-changed") ||
-        reason.contains("warm=1")
+    let shouldWarmSample = reason.contains("warm=1")
     if shouldWarmSample {
       rendererOwnedFlutterSurfaceWarmUntilNs =
         DispatchTime.now().uptimeNanoseconds + Self.rendererOwnedFlutterSurfaceWarmGraceNs
@@ -1432,14 +1430,21 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       return false
     }
     let sourceKey = flutterSurfaceSourceKey(info: info, texture: texture)
-    if sampleLatest && !rendererOwnedFlutterSurfaceDirty && !needsInitialSurface {
+    let sourceChanged = sourceKey != rendererOwnedFlutterSurfaceLastSourceKey
+    if sampleLatest && !rendererOwnedFlutterSurfaceDirty &&
+        !needsInitialSurface && !sourceChanged {
+      rendererOwnedFlutterSurfaceUnchangedCount += 1
+      rendererOwnedFlutterSurfaceLastReason = "\(reason):latest-unchanged"
+      return false
+    }
+    if sourceChanged && !rendererOwnedFlutterSurfaceDirty &&
+        !needsInitialSurface {
       rendererOwnedFlutterSurfaceContentGeneration =
         rendererOwnedFlutterSurfaceContentGeneration == UInt64.max
           ? 1
           : rendererOwnedFlutterSurfaceContentGeneration + 1
     }
     let generation = rendererOwnedFlutterSurfaceContentGeneration
-    let sourceChanged = sourceKey != rendererOwnedFlutterSurfaceLastSourceKey
     if generation == rendererOwnedFlutterSurfaceLastGeneration && !sourceChanged {
       rendererOwnedFlutterSurfaceUnchangedCount += 1
       rendererOwnedFlutterSurfaceDirty = false

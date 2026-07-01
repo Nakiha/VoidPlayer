@@ -1,0 +1,22 @@
+# Local macOS Dolby/HDR toolbar Flutter surface refresh probe.
+# The renderer-owned full-window Flutter surface must refresh for generic
+# Flutter raster frames, not only for hand-written control hooks.
+@WINDOW, 1280, 720
+0.0, SET_DECODE_MODE, preferHardware
+0.3, ADD_MEDIA, /Users/zhuhongwei/Desktop/VID_20260605_212405_DOLBY.mp4
+1.5, ASSERT_TRACK_COUNT, 1
+1.6, DEBUG_NATIVE_TIMING, toolbar-ready
+1.7, CAPTURE_WINDOW_REGION, dolby_toolbar_side_by_side, 0, 40, 620, 96, 620, build/test-output/macos/dolby_toolbar_side_by_side.png
+1.8, SET_LAYOUT_MODE, 1
+2.2, WAIT_LAYOUT_MODE, 1, 3000
+2.3, DEBUG_NATIVE_TIMING, toolbar-split
+2.4, CAPTURE_WINDOW_REGION, dolby_toolbar_split, 0, 40, 620, 96, 620, build/test-output/macos/dolby_toolbar_split.png
+2.5, ASSERT_CAPTURE_CHANGED, dolby_toolbar_side_by_side, dolby_toolbar_split
+2.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfacePublishCount, 2
+2.7, SET_LAYOUT_MODE, 0
+3.1, WAIT_LAYOUT_MODE, 0, 3000
+3.2, DEBUG_NATIVE_TIMING, toolbar-side-by-side-again
+3.3, CAPTURE_WINDOW_REGION, dolby_toolbar_side_by_side_again, 0, 40, 620, 96, 620, build/test-output/macos/dolby_toolbar_side_by_side_again.png
+3.4, ASSERT_CAPTURE_CHANGED, dolby_toolbar_split, dolby_toolbar_side_by_side_again
+3.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedFlutterSurfacePublishCount, 3
+3.8, QUIT, 0

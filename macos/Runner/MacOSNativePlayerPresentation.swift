@@ -222,6 +222,26 @@ extension MacOSNativePlayerSession {
     return MacOSNativeFrameInfo(native: info)
   }
 
+  func submitRendererOwnedFrameRefresh() throws {
+    var error = [CChar](repeating: 0, count: 1024)
+    let ret = VPMacOSNativePlayerSubmitRendererOwnedFrameRefresh(
+      handle,
+      &error,
+      error.count
+    )
+    guard ret == 0 else {
+      let message = String(cString: error)
+      let fallback = ret == -2
+        ? "renderer-owned Metal frame refresh deferred by backpressure"
+        : "macOS renderer-owned presentation submit failed with code \(ret)"
+      let finalMessage = message.isEmpty ? fallback : message
+      if ret == -2 {
+        throw MacOSNativePlayerError.transientFrameUnavailable(finalMessage)
+      }
+      throw MacOSNativePlayerError.failed(finalMessage)
+    }
+  }
+
   func resetRendererOwnedPresentationStats() {
     VPMacOSNativePlayerResetRendererOwnedPresentationStats(handle)
   }

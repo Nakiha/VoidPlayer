@@ -2,6 +2,12 @@ import Cocoa
 import FlutterMacOS
 import Metal
 
+private enum MacOSRendererOwnedCompositeSubmitOutcome {
+  case submitted
+  case coalesced
+  case failed
+}
+
 enum MacOSFlutterSurfaceExporter {
   private static let currentSurfaceInfosSelector =
     NSSelectorFromString("voidPlayerHDRCurrentFlutterSurfaceInfos")
@@ -53,6 +59,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var rendererOwnedCompositeRefreshPendingGeneration: UInt64 = 0
   private var rendererOwnedCompositeRefreshSubmittedGeneration: UInt64 = 0
   private var rendererOwnedCompositeRefreshCompletedGeneration: UInt64 = 0
+  private var rendererOwnedCompositeRefreshAsyncSubmittedGeneration: UInt64 = 0
+  private var rendererOwnedCompositeRefreshAsyncStartNs: UInt64 = 0
   private var rendererOwnedCompositeRefreshRequestCount = 0
   private var rendererOwnedCompositeRefreshSubmitCount = 0
   private var rendererOwnedCompositeRefreshAppliedCount = 0
@@ -1197,6 +1205,94 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       return
     }
     let maxTrackSlots = tracks.activeSlotCapacity()
+    if rendererTarget.rendererOwnedRunnerLayerActive {
+      guard playback.ensurePresentationPump(
+        player: player,
+        rendererTarget: rendererTarget,
+        maxTrackSlots: maxTrackSlots,
+        userData: Unmanaged.passUnretained(self).toOpaque(),
+        presentationState: presentationState
+      ) else {
+        rendererOwnedCompositeRefreshFailureCount += 1
+        finishRendererOwnedCompositeRefresh(
+          submittedGeneration: submittedGeneration,
+          startNs: startNs
+        )
+        return
+      }
+      rendererOwnedCompositeRefreshAsyncSubmittedGeneration = submittedGeneration
+      rendererOwnedCompositeRefreshAsyncStartNs = startNs
+      rendererOwnedCompositeRefreshQueue.async { [weak self, weak player, weak rendererTarget] in
+        let submitOutcome: MacOSRendererOwnedCompositeSubmitOutcome
+        if let player, let rendererTarget {
+          do {
+            try rendererTarget.submitFromNativePlayer(
+              player,
+              maxTrackSlots: maxTrackSlots
+            )
+            submitOutcome = .submitted
+          } catch {
+            submitOutcome =
+              (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true
+              ? .coalesced
+              : .failed
+          }
+        } else {
+          submitOutcome = .failed
+        }
+        DispatchQueue.main.async { [weak self, weak player, weak rendererTarget] in
+          guard let self else { return }
+          guard self.rendererOwnedCompositeRefreshAsyncSubmittedGeneration ==
+                  submittedGeneration else {
+            return
+          }
+          guard let player,
+                let rendererTarget,
+                self.nativePlayer === player,
+                self.rendererTarget === rendererTarget else {
+            self.rendererOwnedCompositeRefreshAsyncSubmittedGeneration = 0
+            self.rendererOwnedCompositeRefreshAsyncStartNs = 0
+            self.rendererOwnedCompositeRefreshFailureCount += 1
+            self.finishRendererOwnedCompositeRefresh(
+              submittedGeneration: submittedGeneration,
+              startNs: startNs
+            )
+            return
+          }
+          switch submitOutcome {
+          case .submitted:
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(64)) {
+              [weak self] in
+              self?.timeoutRendererOwnedCompositeRefreshIfStillPending(
+                submittedGeneration: submittedGeneration
+              )
+            }
+          case .coalesced:
+            self.presentationState.recordMiss()
+            self.rendererOwnedCompositeRefreshCoalescedCount += 1
+            self.rendererOwnedCompositeRefreshPendingGeneration &+= 1
+            self.rendererOwnedCompositeRefreshPendingReason = "\(reason)-retry"
+            self.rendererOwnedCompositeRefreshAsyncSubmittedGeneration = 0
+            self.rendererOwnedCompositeRefreshAsyncStartNs = 0
+            self.finishRendererOwnedCompositeRefresh(
+              submittedGeneration: submittedGeneration,
+              startNs: startNs
+            )
+          case .failed:
+            self.presentationState.recordMiss()
+            self.rendererOwnedCompositeRefreshFailureCount += 1
+            self.rendererOwnedCompositeRefreshAsyncSubmittedGeneration = 0
+            self.rendererOwnedCompositeRefreshAsyncStartNs = 0
+            self.finishRendererOwnedCompositeRefresh(
+              submittedGeneration: submittedGeneration,
+              startNs: startNs
+            )
+          }
+          self.logRendererOwnedCompositeSummaryIfNeeded(reason: reason)
+        }
+      }
+      return
+    }
     rendererOwnedCompositeRefreshQueue.async { [weak self, weak player, weak rendererTarget] in
       guard let self,
             let player,
@@ -1295,6 +1391,41 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       return
     }
     rendererOwnedCompositeDisplayLink.start()
+  }
+
+  private func finishRendererOwnedCompositeRefreshFromCallback() {
+    guard rendererOwnedCompositeRefreshInFlight,
+          rendererOwnedCompositeRefreshAsyncSubmittedGeneration > 0 else {
+      return
+    }
+    let submittedGeneration = rendererOwnedCompositeRefreshAsyncSubmittedGeneration
+    let startNs = rendererOwnedCompositeRefreshAsyncStartNs
+    rendererOwnedCompositeRefreshAsyncSubmittedGeneration = 0
+    rendererOwnedCompositeRefreshAsyncStartNs = 0
+    rendererOwnedCompositeRefreshAppliedCount += 1
+    rendererOwnedCompositeRefreshPresentRate.record()
+    finishRendererOwnedCompositeRefresh(
+      submittedGeneration: submittedGeneration,
+      startNs: startNs
+    )
+  }
+
+  private func timeoutRendererOwnedCompositeRefreshIfStillPending(
+    submittedGeneration: UInt64
+  ) {
+    guard rendererOwnedCompositeRefreshInFlight,
+          rendererOwnedCompositeRefreshAsyncSubmittedGeneration == submittedGeneration else {
+      return
+    }
+    let startNs = rendererOwnedCompositeRefreshAsyncStartNs
+    rendererOwnedCompositeRefreshAsyncSubmittedGeneration = 0
+    rendererOwnedCompositeRefreshAsyncStartNs = 0
+    rendererOwnedCompositeRefreshCoalescedCount += 1
+    presentationState.recordMiss()
+    finishRendererOwnedCompositeRefresh(
+      submittedGeneration: submittedGeneration,
+      startNs: startNs
+    )
   }
 
   private func logRendererOwnedCompositeSummaryIfNeeded(reason: String) {
@@ -1751,10 +1882,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let suppressLayoutPublication =
       backendName == MacOSVideoTrackPayload.nativeFormatName &&
       presentation.shouldSuppressNativeCallbackPublicationDuringLayout()
+    var publishedFromCallback = false
     if suppressLayoutPublication {
       presentation.recordLayoutCallbackPublicationSuppressed()
     } else {
-      playback.handleFrameCallback(
+      publishedFromCallback = playback.handleFrameCallback(
         player: nativePlayer,
         rendererTarget: rendererTarget,
         maxTrackSlots: tracks.activeSlotCapacity(),
@@ -1770,6 +1902,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           )
         }
       )
+    }
+    if publishedFromCallback {
+      finishRendererOwnedCompositeRefreshFromCallback()
     }
     let endNs = DispatchTime.now().uptimeNanoseconds
     logFrameCallbackProfiler(

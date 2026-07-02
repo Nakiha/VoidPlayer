@@ -1103,6 +1103,54 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
                                               error, error_size);
 }
 
+int VPMacOSNativePlayerSubmitRendererOwnedFrameRefresh(
+    VPMacOSNativePlayer* player,
+    char* error,
+    size_t error_size) {
+  if (!player) {
+    write_error(error, error_size, "player is null");
+    return -1;
+  }
+  {
+    std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+    if (!player->presentation_target_pixel_buffer ||
+        player->presentation_target_width <= 0 ||
+        player->presentation_target_height <= 0) {
+      write_error(error, error_size,
+                  "renderer-owned Metal presentation target is not installed");
+      return -1;
+    }
+  }
+
+  std::string message;
+  std::lock_guard<std::mutex> lock(player->mutex);
+  if (!player->ensure_renderer_locked(message)) {
+    write_error(error, error_size, message);
+    return -1;
+  }
+  if (!player->renderer) {
+    write_error(error, error_size, "shared macOS renderer is not available");
+    return -1;
+  }
+  if (player->renderer->request_frame_refresh(
+          "macos-renderer-owned-refresh")) {
+    write_error(error, error_size, "");
+    return 0;
+  }
+  const auto renderer_error =
+      player->renderer->presentation_backend_last_error();
+  if (vr::is_transient_presentation_backpressure_error(renderer_error)) {
+    write_error(error, error_size, renderer_error);
+    return -2;
+  }
+  write_error(error,
+              error_size,
+              renderer_error.empty()
+                  ? "renderer-owned Metal frame refresh was not submitted"
+                  : renderer_error);
+  return -1;
+}
+
 int VPMacOSNativePlayerBakeCurrentFrameSources(
     VPMacOSNativePlayer* player,
     VPMacOSMetalPresentationBackend* backend,

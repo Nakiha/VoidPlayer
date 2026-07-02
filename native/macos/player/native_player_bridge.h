@@ -176,6 +176,10 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSNativePlayerSubmitRendererOwnedFrameRefresh(
+    VPMacOSNativePlayer* player,
+    char* error,
+    size_t error_size);
 int VPMacOSNativePlayerBakeCurrentFrameSources(
     VPMacOSNativePlayer* player,
     VPMacOSMetalPresentationBackend* backend,

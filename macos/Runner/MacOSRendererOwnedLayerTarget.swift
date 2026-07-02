@@ -167,6 +167,20 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     }
   }
 
+  func submitFromNativePlayer(
+    _ player: MacOSNativePlayerSession,
+    maxTrackSlots: Int
+  ) throws {
+    let token = try installNextDrawable(player: player, maxTrackSlots: maxTrackSlots)
+    do {
+      try player.submitRendererOwnedFrameRefresh()
+    } catch {
+      discardDrawable(address: token.pixelBufferAddress)
+      uploadFailureCount += 1
+      throw error
+    }
+  }
+
   func publishPendingNativeFrame(
     _ pending: MacOSPendingNativeFrame,
     player: MacOSNativePlayerSession,
@@ -380,6 +394,9 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     }
     let address = UInt(bitPattern: texturePointer)
     lock.lock()
+    if pendingDrawables.count >= 3 {
+      pendingDrawables.removeAll()
+    }
     pendingDrawables[address] = MacOSPendingRendererOwnedDrawable(
       drawable: drawable,
       textureObject: textureObject

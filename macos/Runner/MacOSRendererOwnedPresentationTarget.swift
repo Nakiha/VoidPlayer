@@ -76,6 +76,10 @@ protocol MacOSRendererOwnedPresentationTarget: AnyObject {
     maxTrackSlots: Int,
     waitTimeoutMs: Int
   ) throws -> MacOSPendingNativeFrame
+  func submitFromNativePlayer(
+    _ player: MacOSNativePlayerSession,
+    maxTrackSlots: Int
+  ) throws
   func publishPendingNativeFrame(
     _ pending: MacOSPendingNativeFrame,
     player: MacOSNativePlayerSession,
@@ -123,6 +127,22 @@ extension MacOSRendererOwnedPresentationTarget {
     maxTrackSlots: Int
   ) -> Bool {
     installNativePresentationTarget(player, maxTrackSlots: maxTrackSlots, refresh: false)
+  }
+
+  func submitFromNativePlayer(
+    _ player: MacOSNativePlayerSession,
+    maxTrackSlots: Int
+  ) throws {
+    let pending = try drawFromNativePlayer(
+      player,
+      maxTrackSlots: maxTrackSlots,
+      waitTimeoutMs: 8
+    )
+    _ = try publishPendingNativeFrame(
+      pending,
+      player: player,
+      maxTrackSlots: maxTrackSlots
+    )
   }
 }
 

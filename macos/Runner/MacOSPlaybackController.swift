@@ -118,10 +118,10 @@ final class MacOSPlaybackController {
     nativeBackendActive: Bool,
     presentationState: MacOSFramePresentationState,
     markFrameAvailable: () -> Void
-  ) {
+  ) -> Bool {
     presentationState.recordCallback()
     guard nativeBackendActive else {
-      return
+      return false
     }
     if player?.lastRendererOwnedPresentationSucceeded() == true {
       presentationState.recordPresentation(rendererOwned: true)
@@ -136,20 +136,21 @@ final class MacOSPlaybackController {
           frameInfo: frameInfo
         )
         guard publishOutcome != .notReady else {
-          return
+          return false
         }
       }
       markFrameAvailable()
-      return
+      return true
     }
     if targetInstalled {
-      return
+      return false
     }
     presentationState.recordError()
     NSLog("VoidPlayer macOS renderer-owned Metal presentation failed")
     isPlaying = false
     player?.pause()
     stopFramePump(player: player)
+    return false
   }
 
   @discardableResult

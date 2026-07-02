@@ -16,15 +16,20 @@ RendererPresentationCompletionDecision plan_presentation_completion(
 
     decision.callback_published =
         input.frame_callback_available &&
+        input.drew &&
         !input.stale_layout_after_draw &&
         !input.shutting_down;
     decision.transient_backpressure =
         input.frame_failure_error &&
         is_transient_presentation_backpressure_error(input.frame_failure_error);
+    const bool nonfatal_drop =
+        input.frame_failure_error &&
+        is_nonfatal_presentation_drop_error(input.frame_failure_error);
     decision.notify_frame_failure =
         input.attempted_draw &&
         !input.drew &&
         !decision.transient_backpressure &&
+        !nonfatal_drop &&
         input.frame_failure_callback_available &&
         !input.shutting_down;
     decision.frame_failure_error = input.frame_failure_error

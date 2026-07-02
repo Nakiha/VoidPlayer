@@ -280,6 +280,18 @@ target_link_libraries(presentation_snapshot_smoke PRIVATE
 add_test(NAME presentation_snapshot_smoke COMMAND presentation_snapshot_smoke)
 void_label_test(presentation_snapshot_smoke "contract;portable")
 
+add_executable(renderer_presentation_completion_smoke
+    "${VOID_NATIVE_DIR}/tools/renderer_presentation_completion_smoke.cpp"
+    "${VOID_NATIVE_DIR}/renderer/render/renderer_presentation_completion.cpp"
+)
+void_apply_native_compile_options(renderer_presentation_completion_smoke)
+target_link_libraries(renderer_presentation_completion_smoke PRIVATE
+    void_player_portable_core
+)
+add_test(NAME renderer_presentation_completion_smoke
+    COMMAND renderer_presentation_completion_smoke)
+void_label_test(renderer_presentation_completion_smoke "contract;portable")
+
 add_executable(presentation_carry_forward_smoke
     "${VOID_NATIVE_DIR}/tools/presentation_carry_forward_smoke.cpp"
 )

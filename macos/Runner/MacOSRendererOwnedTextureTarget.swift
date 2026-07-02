@@ -558,7 +558,7 @@ final class MacOSRendererOwnedTextureTarget: NSObject, MacOSVideoTexture,
     _ player: MacOSNativePlayerSession,
     maxTrackSlots: Int,
     frameInfo: MacOSNativeFrameInfo?
-  ) -> Bool {
+  ) -> MacOSNativeFramePublishOutcome {
     let nativeUploadCount = player.rendererOwnedPresentationUploadCount()
     lock.lock()
     defer { lock.unlock() }
@@ -569,14 +569,14 @@ final class MacOSRendererOwnedTextureTarget: NSObject, MacOSVideoTexture,
         targetPixelBufferAddress: frameInfo?.targetPixelBufferAddress ?? 0
       )
       releaseReusableNativeTargetsLocked(player: player)
-      return false
+      return .notReady
     }
     let completedAddress = frameInfo?.targetPixelBufferAddress ?? 0
     let completedBufferIndex = pixelBufferIndexLocked(address: completedAddress)
     guard let publishBufferIndex = completedBufferIndex,
           pixelBufferLocked(publishBufferIndex) != nil else {
       lastIgnoredNativeUploadCount = max(lastIgnoredNativeUploadCount, nativeUploadCount)
-      return false
+      return .notReady
     }
     if publishBufferIndex == displayBufferIndex {
       lastPublishedNativeUploadCount = max(lastPublishedNativeUploadCount, nativeUploadCount)
@@ -590,7 +590,7 @@ final class MacOSRendererOwnedTextureTarget: NSObject, MacOSVideoTexture,
         )
       }
       releaseReusableNativeTargetsLocked(player: player)
-      return false
+      return .alreadyPublished
     }
     publishBufferLocked(
       publishBufferIndex,
@@ -599,7 +599,7 @@ final class MacOSRendererOwnedTextureTarget: NSObject, MacOSVideoTexture,
       frameInfo: frameInfo,
       player: player
     )
-    return true
+    return .published
   }
 
   private func rebuildPixelBuffer() {

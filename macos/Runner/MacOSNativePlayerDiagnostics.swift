@@ -283,6 +283,7 @@ extension MacOSNativePlayerSession {
         "viewportCompositeCount": 0,
         "sourceFrameCacheHitCount": 0,
         "sourceFrameCacheMissCount": 0,
+        "sourceFrameStaleCompletionDropCount": 0,
         "sourceFrameCacheHitRatioX1000": 0,
       ]
     }
@@ -431,6 +432,9 @@ extension MacOSNativePlayerSession {
       ),
       "sourceFrameCacheMissCount": Int64(
         min(UInt64(stats.source_frame_cache_miss_count), maxInt64)
+      ),
+      "sourceFrameStaleCompletionDropCount": Int64(
+        min(UInt64(stats.source_frame_stale_completion_drop_count), maxInt64)
       ),
       "sourceFrameCacheHitRatioX1000": Self.ratioX1000(
         numerator: stats.source_frame_cache_hit_count,

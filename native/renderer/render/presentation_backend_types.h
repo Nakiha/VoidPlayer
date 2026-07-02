@@ -162,6 +162,7 @@ struct PresentationBackendStats {
     uint64_t viewport_composite_count = 0;
     uint64_t source_frame_cache_hit_count = 0;
     uint64_t source_frame_cache_miss_count = 0;
+    uint64_t source_frame_stale_completion_drop_count = 0;
 };
 
 struct PresentationBackendDiagnostics {
@@ -245,6 +246,10 @@ inline bool is_transient_presentation_backpressure_error(const std::string& erro
            error == "renderer-owned Metal presentation target ring is busy" ||
            error == "renderer-owned wgpu-metal async draw deferred by backpressure" ||
            error == "renderer-owned wgpu-metal presentation target ring is busy";
+}
+
+inline bool is_nonfatal_presentation_drop_error(const std::string& error) {
+    return error == "renderer-owned wgpu-metal stale async draw dropped";
 }
 
 struct PresentationBackendMetrics {

@@ -506,6 +506,8 @@ int VPMacOSNativePlayerCopyPerfStats(
           backend_stats.source_frame_cache_hit_count;
       out->source_frame_cache_miss_count =
           backend_stats.source_frame_cache_miss_count;
+      out->source_frame_stale_completion_drop_count =
+          backend_stats.source_frame_stale_completion_drop_count;
     }
   }
   {

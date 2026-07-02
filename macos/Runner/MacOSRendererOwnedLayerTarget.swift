@@ -317,25 +317,25 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     _ player: MacOSNativePlayerSession,
     maxTrackSlots: Int,
     frameInfo: MacOSNativeFrameInfo?
-  ) -> Bool {
+  ) -> MacOSNativeFramePublishOutcome {
     let nativeUploadCount = player.rendererOwnedPresentationUploadCount()
     lock.lock()
     if nativeUploadCount <= max(lastPublishedNativeUploadCount, lastIgnoredNativeUploadCount) {
       lock.unlock()
-      return false
+      return .notReady
     }
     lock.unlock()
     guard presentDrawable(address: frameInfo?.targetPixelBufferAddress ?? 0) else {
       lock.lock()
       lastIgnoredNativeUploadCount = max(lastIgnoredNativeUploadCount, nativeUploadCount)
       lock.unlock()
-      return false
+      return .notReady
     }
     lock.lock()
     lastPublishedNativeUploadCount = nativeUploadCount
     uploadCount += 1
     lock.unlock()
-    return true
+    return .published
   }
 
   private func installNextDrawable(

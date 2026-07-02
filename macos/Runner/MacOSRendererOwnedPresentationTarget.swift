@@ -101,7 +101,7 @@ protocol MacOSRendererOwnedPresentationTarget: AnyObject {
     _ player: MacOSNativePlayerSession,
     maxTrackSlots: Int,
     frameInfo: MacOSNativeFrameInfo?
-  ) -> Bool
+  ) -> MacOSNativeFramePublishOutcome
 }
 
 extension MacOSRendererOwnedPresentationTarget {

@@ -97,15 +97,6 @@ private:
     uint64_t ring_generation = 0;
     uint64_t slot_id = 0;
   };
-  struct SourceTextureCacheEntry {
-    void* pixel_buffer = nullptr;
-    CFTypeRef texture_ref = nullptr;
-    uint64_t pixel_format = 0;
-    int32_t width = 0;
-    int32_t height = 0;
-    size_t plane = 0;
-    uint64_t last_used = 0;
-  };
   struct SourceMetricsResult {
     bool viewport_composite = false;
     bool cache_hit = false;
@@ -150,16 +141,18 @@ private:
   bool available_locked() const;
   void set_last_error(std::string error);
   void mark_draw_failure(std::string error);
-  void mark_draw_success(const vr::PresentationBackendFrameInfo& frame_info,
+  bool mark_draw_success(const vr::PresentationBackendFrameInfo& frame_info,
                          int32_t package_storage,
                          uint64_t source_generation,
                          uint64_t source_signature,
-                         bool source_upload = true);
+                         bool source_upload,
+                         uint64_t* stale_drop_count,
+                         uint64_t* current_submitted_generation,
+                         uint64_t* current_committed_generation);
   bool target_installed_locked() const;
   TargetAcquireResult acquire_draw_target_locked(const char* draw_source);
   void release_target_texture_cache_locked();
   void release_target_texture_cache_for_slot(TargetSlot& slot);
-  void release_source_texture_cache_locked();
   void* cached_target_texture_ref(void* pixel_buffer,
                                   uint64_t metal_pixel_format,
                                   int32_t width,
@@ -192,6 +185,11 @@ private:
   void record_present_package_timing(uint64_t copy_us,
                                      uint64_t gpu_wait_us,
                                      uint64_t total_us);
+  bool should_drop_stale_async_completion_locked(
+      uint64_t source_generation,
+      bool source_upload,
+      uint64_t& current_submitted_generation,
+      uint64_t& current_committed_generation) const;
   void complete_async_draw(std::unique_ptr<AsyncDrawPending> pending,
                            bool success);
 
@@ -235,8 +233,6 @@ private:
   uint64_t retained_source_submitted_generation_ = 0;
   uint64_t retained_source_committed_generation_ = 0;
   std::vector<TargetSlot> target_ring_;
-  std::vector<SourceTextureCacheEntry> source_texture_cache_;
-  uint64_t source_texture_cache_clock_ = 0;
   mutable std::mutex mutex_;
 
   std::string last_error_;
@@ -267,6 +263,7 @@ private:
   uint64_t viewport_composite_count_ = 0;
   uint64_t source_frame_cache_hit_count_ = 0;
   uint64_t source_frame_cache_miss_count_ = 0;
+  uint64_t source_frame_stale_completion_drop_count_ = 0;
   uint64_t last_source_signature_ = 0;
   uint64_t metal_command_failure_count_ = 0;
   uint64_t metal_command_completion_sample_count_ = 0;

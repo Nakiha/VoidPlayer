@@ -554,6 +554,7 @@ class TestRunner {
           'viewportRectUpdates=${value('rendererOwnedViewportRectUpdateCount')} '
           'viewportComposite=${value('viewportCompositeCount')} '
           'sourceHits=${value('sourceFrameCacheHitCount')} '
+          'sourceStaleDrops=${value('sourceFrameStaleCompletionDropCount')} '
           'flutterTextureFrameSkippedPlaying=${value('flutterTextureFrameAvailableSkippedWhilePlayingCount')} '
           'compositorVideoRefresh=${value('compositorVideoTextureRefreshCount')} '
           'compositorVideoRefreshSkippedPlaying=${value('compositorVideoTextureRefreshSkippedWhilePlayingCount')} '

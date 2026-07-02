@@ -295,6 +295,7 @@ typedef struct VPMacOSNativePlayerPerfStats {
   uint64_t viewport_composite_count;
   uint64_t source_frame_cache_hit_count;
   uint64_t source_frame_cache_miss_count;
+  uint64_t source_frame_stale_completion_drop_count;
 } VPMacOSNativePlayerPerfStats;
 
 typedef struct VPMacOSNativeAudioDiagnostics {

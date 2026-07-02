@@ -276,6 +276,8 @@ enum MacOSNativeFrameRefresh {
     let timeoutMs = 360
     var targetPtsUs = -1
     do {
+      let baselineFrameInfo = player.lastRendererOwnedFrameInfo()
+      let baselinePtsUs = baselineFrameInfo?.ptsUs
       if forward {
         try player.stepForward()
       } else {
@@ -287,25 +289,37 @@ enum MacOSNativeFrameRefresh {
           frameInfo.ptsUs <= targetPtsUs + 100_000
         let nearBackwardStepTarget = frameInfo.ptsUs >= max(0, targetPtsUs - 500_000) &&
           frameInfo.ptsUs <= targetPtsUs + 100_000
-        return forward ? nearStepTarget : nearBackwardStepTarget
+        if forward {
+          guard nearStepTarget else { return false }
+          guard let baselinePtsUs else { return true }
+          return frameInfo.ptsUs > baselinePtsUs
+        }
+        guard nearBackwardStepTarget else { return false }
+        guard let baselinePtsUs else { return true }
+        return frameInfo.ptsUs < baselinePtsUs
       }
       if let frameInfo = player.lastRendererOwnedFrameInfo(),
          acceptStepFrame(frameInfo) {
-        _ = rendererTarget.publishRenderedTargetAndInstallNext(
+        let publishOutcome = rendererTarget.publishRenderedTargetAndInstallNext(
           player,
           maxTrackSlots: maxTrackSlots,
           frameInfo: frameInfo
         )
-        framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
-        presentationState.recordFrame(frameInfo)
-        logRefreshProfiler(
-          route: forward ? "step-forward" : "step-backward",
-          startNs: startNs,
-          timeoutMs: timeoutMs,
-          result: "ok immediate",
-          ptsUs: frameInfo.ptsUs
-        )
-        return .presented
+        if publishOutcome != .notReady {
+          let publishResult = publishOutcome == .alreadyPublished
+            ? "ok immediate already-published"
+            : "ok immediate"
+          framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
+          presentationState.recordFrame(frameInfo)
+          logRefreshProfiler(
+            route: forward ? "step-forward" : "step-backward",
+            startNs: startNs,
+            timeoutMs: timeoutMs,
+            result: publishResult,
+            ptsUs: frameInfo.ptsUs
+          )
+          return .presented
+        }
       }
       let (frameInfo, attempts) = try updateFromNativePlayerWithTransientRetry(
         route: forward ? "step-forward" : "step-backward",

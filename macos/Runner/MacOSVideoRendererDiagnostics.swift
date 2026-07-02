@@ -359,6 +359,8 @@ enum MacOSVideoRendererDiagnostics {
       "viewportCompositeCount": perfStats?["viewportCompositeCount"] ?? 0,
       "sourceFrameCacheHitCount": perfStats?["sourceFrameCacheHitCount"] ?? 0,
       "sourceFrameCacheMissCount": perfStats?["sourceFrameCacheMissCount"] ?? 0,
+      "sourceFrameStaleCompletionDropCount":
+        perfStats?["sourceFrameStaleCompletionDropCount"] ?? 0,
       "sourceFrameCacheHitRatioX1000":
         perfStats?["sourceFrameCacheHitRatioX1000"] ?? 0,
       "processRssBytes": perfStats?["processRssBytes"] ?? 0,

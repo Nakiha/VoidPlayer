@@ -58,6 +58,7 @@ add_executable(video_renderer_tests
     windows/test_windows_device_recovery.cpp
     windows/test_windows_high_refresh_metrics.cpp
     windows/test_windows_overlay_layer_state.cpp
+    renderer/test_renderer_presentation_completion.cpp
     renderer/test_renderer_present_history.cpp
     renderer/test_render_sink.cpp
     renderer/test_track_buffer_budget.cpp

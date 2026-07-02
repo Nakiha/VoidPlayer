@@ -130,11 +130,12 @@ final class MacOSPlaybackController {
         presentationState.recordFrame(frameInfo)
       }
       if let player, let rendererTarget {
-        guard rendererTarget.publishRenderedTargetAndInstallNext(
+        let publishOutcome = rendererTarget.publishRenderedTargetAndInstallNext(
           player,
           maxTrackSlots: maxTrackSlots,
           frameInfo: frameInfo
-        ) else {
+        )
+        guard publishOutcome != .notReady else {
           return
         }
       }

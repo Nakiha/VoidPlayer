@@ -66,7 +66,7 @@ final class MacOSPlayerLifecycleController {
     tracks: MacOSVideoTrackController,
     presentationState: MacOSFramePresentationState
   ) {
-    playback.stopFramePump(player: nativePlayer, clearPresentationTarget: true)
+    playback.stopFramePump(player: nativePlayer, clearPresentationTarget: false)
     if let id = textureId {
       textureRegistry.unregisterTexture(id)
     }

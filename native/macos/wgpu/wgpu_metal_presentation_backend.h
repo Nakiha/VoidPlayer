@@ -96,6 +96,7 @@ private:
     void* pixel_buffer = nullptr;
     uint64_t ring_generation = 0;
     uint64_t slot_id = 0;
+    uint64_t output_generation = 0;
   };
   struct SourceMetricsResult {
     bool viewport_composite = false;
@@ -120,6 +121,7 @@ private:
     uint64_t target_pixel_buffer_address = 0;
     uint64_t target_ring_generation = 0;
     uint64_t target_slot_id = 0;
+    uint64_t output_generation = 0;
     uint64_t package_copy_us = 0;
     int32_t package_storage = 0;
     uint64_t source_generation = 0;
@@ -146,9 +148,14 @@ private:
                          uint64_t source_generation,
                          uint64_t source_signature,
                          bool source_upload,
+                         uint64_t output_generation,
+                         uint64_t target_ring_generation,
                          uint64_t* stale_drop_count,
+                         bool* stale_output_drop,
                          uint64_t* current_submitted_generation,
-                         uint64_t* current_committed_generation);
+                         uint64_t* current_committed_generation,
+                         uint64_t* current_target_ring_generation,
+                         uint64_t* current_completed_output_generation);
   bool target_installed_locked() const;
   TargetAcquireResult acquire_draw_target_locked(const char* draw_source);
   void release_target_texture_cache_locked();
@@ -190,6 +197,11 @@ private:
       bool source_upload,
       uint64_t& current_submitted_generation,
       uint64_t& current_committed_generation) const;
+  bool should_drop_stale_output_completion_locked(
+      uint64_t output_generation,
+      uint64_t target_ring_generation,
+      uint64_t& current_target_ring_generation,
+      uint64_t& current_completed_output_generation) const;
   void complete_async_draw(std::unique_ptr<AsyncDrawPending> pending,
                            bool success);
 
@@ -232,6 +244,9 @@ private:
   bool retained_source_available_ = false;
   uint64_t retained_source_submitted_generation_ = 0;
   uint64_t retained_source_committed_generation_ = 0;
+  uint64_t output_submitted_generation_ = 0;
+  uint64_t output_completed_generation_ = 0;
+  uint64_t retained_source_submitted_signature_ = 0;
   std::vector<TargetSlot> target_ring_;
   mutable std::mutex mutex_;
 
@@ -264,6 +279,7 @@ private:
   uint64_t source_frame_cache_hit_count_ = 0;
   uint64_t source_frame_cache_miss_count_ = 0;
   uint64_t source_frame_stale_completion_drop_count_ = 0;
+  uint64_t output_stale_completion_drop_count_ = 0;
   uint64_t last_source_signature_ = 0;
   uint64_t metal_command_failure_count_ = 0;
   uint64_t metal_command_completion_sample_count_ = 0;

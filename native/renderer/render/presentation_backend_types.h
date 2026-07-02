@@ -249,7 +249,8 @@ inline bool is_transient_presentation_backpressure_error(const std::string& erro
 }
 
 inline bool is_nonfatal_presentation_drop_error(const std::string& error) {
-    return error == "renderer-owned wgpu-metal stale async draw dropped";
+    return error == "renderer-owned wgpu-metal stale async draw dropped" ||
+           error == "renderer-owned wgpu-metal stale output draw dropped";
 }
 
 struct PresentationBackendMetrics {

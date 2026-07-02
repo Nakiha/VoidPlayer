@@ -1252,6 +1252,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         case .coalesced:
           self.presentationState.recordMiss()
           self.rendererOwnedCompositeRefreshCoalescedCount += 1
+          self.rendererOwnedCompositeRefreshPendingGeneration &+= 1
+          self.rendererOwnedCompositeRefreshPendingReason = "\(reason)-retry"
         case .failed:
           self.presentationState.recordMiss()
           self.rendererOwnedCompositeRefreshFailureCount += 1

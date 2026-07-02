@@ -30,6 +30,8 @@ namespace {
 
 constexpr const char* kWgpuMetalStaleAsyncDrawDroppedError =
     "renderer-owned wgpu-metal stale async draw dropped";
+constexpr const char* kWgpuMetalStaleOutputDrawDroppedError =
+    "renderer-owned wgpu-metal stale output draw dropped";
 
 uint64_t pointer_bits(const void* pointer) {
   return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(pointer));
@@ -953,7 +955,11 @@ void WgpuMetalPresentationBackend::shutdown() {
   retained_source_available_ = false;
   retained_source_submitted_generation_ = 0;
   retained_source_committed_generation_ = 0;
+  output_submitted_generation_ = 0;
+  output_completed_generation_ = 0;
+  retained_source_submitted_signature_ = 0;
   source_frame_stale_completion_drop_count_ = 0;
+  output_stale_completion_drop_count_ = 0;
   last_source_signature_ = 0;
   retained_source_frame_info_available_ = false;
   retained_source_frame_info_ = {};
@@ -2010,6 +2016,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
     pending->target_pixel_buffer_address = acquired_target_address;
     pending->target_ring_generation = target_lease.ring_generation;
     pending->target_slot_id = target_lease.slot_id;
+    pending->output_generation = target_lease.output_generation;
     pending->package_copy_us = package_copy_us;
     pending->package_storage = package_storage;
     pending->source_generation = source_generation;
@@ -2208,6 +2215,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
     {
       std::lock_guard<std::mutex> lock(mutex_);
       source_generation = ++retained_source_submitted_generation_;
+      retained_source_submitted_signature_ = source_metrics.signature;
     }
     auto pending = make_async_pending(
         frame_info,
@@ -2349,6 +2357,7 @@ bool WgpuMetalPresentationBackend::draw_frame(
   {
     std::lock_guard<std::mutex> lock(mutex_);
     source_generation = ++retained_source_submitted_generation_;
+    retained_source_submitted_signature_ = source_metrics.signature;
   }
   auto pending = make_async_pending(frame_info,
                                     package_copy_us,
@@ -2398,10 +2407,43 @@ bool WgpuMetalPresentationBackend::mark_draw_success(
     uint64_t source_generation,
     uint64_t source_signature,
     bool source_upload,
+    uint64_t output_generation,
+    uint64_t target_ring_generation,
     uint64_t* stale_drop_count,
+    bool* stale_output_drop,
     uint64_t* current_submitted_generation,
-    uint64_t* current_committed_generation) {
+    uint64_t* current_committed_generation,
+    uint64_t* current_target_ring_generation,
+    uint64_t* current_completed_output_generation) {
   std::lock_guard<std::mutex> lock(mutex_);
+  uint64_t target_generation = 0;
+  uint64_t completed_output_generation = 0;
+  if (should_drop_stale_output_completion_locked(
+          output_generation,
+          target_ring_generation,
+          target_generation,
+          completed_output_generation)) {
+    const uint64_t count = ++output_stale_completion_drop_count_;
+    if (stale_output_drop) {
+      *stale_output_drop = true;
+    }
+    if (stale_drop_count) {
+      *stale_drop_count = count;
+    }
+    if (current_completed_output_generation) {
+      *current_completed_output_generation = completed_output_generation;
+    }
+    if (current_target_ring_generation) {
+      *current_target_ring_generation = target_generation;
+    }
+    return false;
+  }
+  if (current_target_ring_generation) {
+    *current_target_ring_generation = target_generation;
+  }
+  if (stale_output_drop) {
+    *stale_output_drop = false;
+  }
   uint64_t submitted_generation = 0;
   uint64_t committed_generation = 0;
   if (should_drop_stale_async_completion_locked(
@@ -2443,6 +2485,8 @@ bool WgpuMetalPresentationBackend::mark_draw_success(
     }
     ++present_package_upload_count_;
   }
+  output_completed_generation_ =
+      std::max(output_completed_generation_, output_generation);
   last_error_.clear();
   return true;
 }
@@ -2484,16 +2528,20 @@ WgpuMetalPresentationBackend::acquire_draw_target_locked(
     if (!draw_target_pixel_buffer_) {
       return result;
     }
-    const uint64_t limit =
-        vp_macos::kMetalPresentConcurrencyPolicy.max_single_target_in_flight;
+    const uint64_t limit = draw_target_is_metal_texture_
+        ? vp_macos::kMetalPresentConcurrencyPolicy.max_ring_in_flight
+        : vp_macos::kMetalPresentConcurrencyPolicy.max_single_target_in_flight;
     if (in_flight_draws_ >= limit) {
       record_backpressure(
           "renderer-owned wgpu-metal async draw deferred by backpressure",
           limit,
-          draw_target_pixel_buffer_ ? 1u : 0u);
+          draw_target_is_metal_texture_
+              ? vp_macos::kMetalPresentConcurrencyPolicy.max_ring_in_flight
+              : (draw_target_pixel_buffer_ ? 1u : 0u));
       return result;
     }
     ++in_flight_draws_;
+    result.output_generation = ++output_submitted_generation_;
     result.pixel_buffer = draw_target_pixel_buffer_;
     result.ring_generation = target_ring_generation_;
     return result;
@@ -2510,6 +2558,7 @@ WgpuMetalPresentationBackend::acquire_draw_target_locked(
   const auto acquire_slot = [&](TargetSlot& slot) {
     slot.state = TargetState::InFlight;
     ++in_flight_draws_;
+    result.output_generation = ++output_submitted_generation_;
     result.pixel_buffer = slot.pixel_buffer;
     result.ring_generation = target_ring_generation_;
     result.slot_id = slot.slot_id;
@@ -2553,8 +2602,7 @@ void WgpuMetalPresentationBackend::complete_draw_target(
     return;
   }
   if (!target_ring_enabled_) {
-    if (pointer_bits(draw_target_pixel_buffer_) == target_pixel_buffer_address &&
-        in_flight_draws_ > 0) {
+    if (in_flight_draws_ > 0) {
       --in_flight_draws_;
     }
     return;
@@ -2636,6 +2684,16 @@ WgpuMetalPresentationBackend::record_source_metrics(
   }
   if (retained_source_available_ && last_source_signature_ != 0 &&
       last_source_signature_ == signature) {
+    ++source_frame_cache_hit_count_;
+    result.cache_hit = true;
+    return result;
+  }
+  if (is_viewport_composite &&
+      retained_source_available_ &&
+      retained_source_submitted_signature_ != 0 &&
+      retained_source_submitted_signature_ == signature &&
+      retained_source_submitted_generation_ !=
+          retained_source_committed_generation_) {
     ++source_frame_cache_hit_count_;
     result.cache_hit = true;
     return result;
@@ -2738,11 +2796,24 @@ bool WgpuMetalPresentationBackend::should_drop_stale_async_completion_locked(
   if (source_generation == 0) {
     return false;
   }
-  if (source_upload) {
-    return source_generation != current_submitted_generation;
+  return source_upload && source_generation != current_submitted_generation;
+}
+
+bool WgpuMetalPresentationBackend::should_drop_stale_output_completion_locked(
+    uint64_t output_generation,
+    uint64_t target_ring_generation,
+    uint64_t& current_target_ring_generation,
+    uint64_t& current_completed_output_generation) const {
+  current_target_ring_generation = target_ring_generation_;
+  current_completed_output_generation = output_completed_generation_;
+  if (output_generation == 0) {
+    return false;
   }
-  return current_committed_generation != 0 &&
-         source_generation < current_committed_generation;
+  if (target_ring_enabled_ &&
+      target_ring_generation != current_target_ring_generation) {
+    return true;
+  }
+  return output_generation < current_completed_output_generation;
 }
 
 void WgpuMetalPresentationBackend::complete_async_draw(
@@ -2764,18 +2835,30 @@ void WgpuMetalPresentationBackend::complete_async_draw(
       pending->has_profiler_snapshot ? &pending->profiler_snapshot : nullptr);
   record_present_package_timing(pending->package_copy_us, gpu_wait_us, total_us);
   bool drop_stale_completion = false;
+  bool drop_stale_output_completion = false;
   uint64_t current_submitted_generation = 0;
   uint64_t current_committed_generation = 0;
+  uint64_t current_target_ring_generation = 0;
+  uint64_t current_completed_output_generation = 0;
   uint64_t stale_drop_count = 0;
   if (success) {
     std::lock_guard<std::mutex> lock(mutex_);
-    drop_stale_completion = should_drop_stale_async_completion_locked(
-        pending->source_generation,
-        pending->source_upload,
-        current_submitted_generation,
-        current_committed_generation);
+    drop_stale_output_completion = should_drop_stale_output_completion_locked(
+        pending->output_generation,
+        pending->target_ring_generation,
+        current_target_ring_generation,
+        current_completed_output_generation);
+    if (!drop_stale_output_completion) {
+      drop_stale_completion = should_drop_stale_async_completion_locked(
+          pending->source_generation,
+          pending->source_upload,
+          current_submitted_generation,
+          current_committed_generation);
+    }
     if (drop_stale_completion) {
       stale_drop_count = ++source_frame_stale_completion_drop_count_;
+    } else if (drop_stale_output_completion) {
+      stale_drop_count = ++output_stale_completion_drop_count_;
     }
   }
   if (wgpu_profiler_enabled() && pending->has_profiler_snapshot) {
@@ -2813,19 +2896,35 @@ void WgpuMetalPresentationBackend::complete_async_draw(
         profiler.last_cpu_render_us,
         gpu_wait_us);
   }
-  if (drop_stale_completion) {
+  if (drop_stale_output_completion || drop_stale_completion) {
     if (stale_drop_count <= 8 || (stale_drop_count % 60) == 0) {
-      spdlog::info(
-          "[WgpuMetalProfile] drop_stale_async_completion count={} "
-          "source_upload={} source_generation={} submitted_generation={} "
-          "committed_generation={} pts_us={} target=0x{:x}",
-          stale_drop_count,
-          pending->source_upload,
-          pending->source_generation,
-          current_submitted_generation,
-          current_committed_generation,
-          pending->frame_info.pts_us,
-          pending->target_pixel_buffer_address);
+      if (drop_stale_output_completion) {
+        spdlog::info(
+            "[WgpuMetalProfile] drop_stale_output_completion "
+            "output_generation={} completed_output_generation={} "
+            "target_generation={}/{} source_upload={} source_generation={} "
+            "pts_us={} target=0x{:x}",
+            pending->output_generation,
+            current_completed_output_generation,
+            pending->target_ring_generation,
+            current_target_ring_generation,
+            pending->source_upload,
+            pending->source_generation,
+            pending->frame_info.pts_us,
+            pending->target_pixel_buffer_address);
+      } else {
+        spdlog::info(
+            "[WgpuMetalProfile] drop_stale_async_completion count={} "
+            "source_upload={} source_generation={} submitted_generation={} "
+            "committed_generation={} pts_us={} target=0x{:x}",
+            stale_drop_count,
+            pending->source_upload,
+            pending->source_generation,
+            current_submitted_generation,
+            current_committed_generation,
+            pending->frame_info.pts_us,
+            pending->target_pixel_buffer_address);
+      }
     }
     if (pending->target_acquired) {
       complete_draw_target(pending->target_pixel_buffer_address,
@@ -2840,7 +2939,8 @@ void WgpuMetalPresentationBackend::complete_async_draw(
     if (pending->hooks.async_draw_completed) {
       pending->hooks.async_draw_completed(
           false,
-          kWgpuMetalStaleAsyncDrawDroppedError,
+          drop_stale_output_completion ? kWgpuMetalStaleOutputDrawDroppedError
+                                       : kWgpuMetalStaleAsyncDrawDroppedError,
           total_us,
           nullptr);
     }
@@ -2869,21 +2969,42 @@ void WgpuMetalPresentationBackend::complete_async_draw(
                            pending->source_generation,
                            pending->source_signature,
                            pending->source_upload,
+                           pending->output_generation,
+                           pending->target_ring_generation,
                            &stale_drop_count,
+                           &drop_stale_output_completion,
                            &current_submitted_generation,
-                           &current_committed_generation)) {
+                           &current_committed_generation,
+                           &current_target_ring_generation,
+                           &current_completed_output_generation)) {
       if (stale_drop_count <= 8 || (stale_drop_count % 60) == 0) {
-        spdlog::info(
-            "[WgpuMetalProfile] drop_stale_async_completion count={} "
-            "source_upload={} source_generation={} submitted_generation={} "
-            "committed_generation={} pts_us={} target=0x{:x}",
-            stale_drop_count,
-            pending->source_upload,
-            pending->source_generation,
-            current_submitted_generation,
-            current_committed_generation,
-            pending->frame_info.pts_us,
-            pending->target_pixel_buffer_address);
+        if (drop_stale_output_completion) {
+          spdlog::info(
+              "[WgpuMetalProfile] drop_stale_output_completion "
+              "output_generation={} completed_output_generation={} "
+              "target_generation={}/{} source_upload={} source_generation={} "
+              "pts_us={} target=0x{:x}",
+              pending->output_generation,
+              current_completed_output_generation,
+              pending->target_ring_generation,
+              current_target_ring_generation,
+              pending->source_upload,
+              pending->source_generation,
+              pending->frame_info.pts_us,
+              pending->target_pixel_buffer_address);
+        } else {
+          spdlog::info(
+              "[WgpuMetalProfile] drop_stale_async_completion count={} "
+              "source_upload={} source_generation={} submitted_generation={} "
+              "committed_generation={} pts_us={} target=0x{:x}",
+              stale_drop_count,
+              pending->source_upload,
+              pending->source_generation,
+              current_submitted_generation,
+              current_committed_generation,
+              pending->frame_info.pts_us,
+              pending->target_pixel_buffer_address);
+        }
       }
       if (pending->target_acquired) {
         complete_draw_target(pending->target_pixel_buffer_address,
@@ -2898,13 +3019,20 @@ void WgpuMetalPresentationBackend::complete_async_draw(
       if (pending->hooks.async_draw_completed) {
         pending->hooks.async_draw_completed(
             false,
-            kWgpuMetalStaleAsyncDrawDroppedError,
+            drop_stale_output_completion ? kWgpuMetalStaleOutputDrawDroppedError
+                                         : kWgpuMetalStaleAsyncDrawDroppedError,
             total_us,
             nullptr);
       }
       return;
     }
   } else {
+    if (pending->source_upload) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (retained_source_submitted_generation_ == pending->source_generation) {
+        retained_source_submitted_signature_ = 0;
+      }
+    }
     mark_draw_failure("wgpu-metal async GPU completion failed");
   }
   if (pending->target_acquired) {

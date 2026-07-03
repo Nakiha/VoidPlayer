@@ -1154,6 +1154,16 @@ void* WgpuMetalPresentationBackend::cached_source_texture_ref(
   return texture_ref;
 }
 
+void WgpuMetalPresentationBackend::invalidate_retained_source_cache_locked() {
+  retained_source_available_ = false;
+  retained_source_frame_info_available_ = false;
+  retained_source_frame_info_ = {};
+  retained_source_committed_generation_ = 0;
+  last_source_signature_ = 0;
+  retained_source_submitted_signature_ = 0;
+  ++retained_source_submitted_generation_;
+}
+
 bool WgpuMetalPresentationBackend::update_headless_output(void* output,
                                                           int width,
                                                           int height,
@@ -1186,7 +1196,19 @@ bool WgpuMetalPresentationBackend::update_headless_output(void* output,
                        : target_error);
     return false;
   }
+  const int clamped_track_slots = std::max(1, max_track_slots);
   std::lock_guard<std::mutex> lock(mutex_);
+  const bool target_changed =
+      target_ring_enabled_ ||
+      draw_target_pixel_buffer_ != output ||
+      draw_target_is_metal_texture_ ||
+      draw_target_width_ != width ||
+      draw_target_height_ != height ||
+      draw_target_max_track_slots_ != clamped_track_slots ||
+      draw_target_output_format_ != descriptor.ffi_output_format ||
+      draw_target_output_color_mode_ != descriptor.ffi_output_color_mode ||
+      draw_target_render_format_ != descriptor.render_target_format ||
+      draw_target_color_space_ != descriptor.render_color_space;
   release_target_texture_cache_locked();
   target_ring_.clear();
   target_ring_enabled_ = false;
@@ -1203,7 +1225,10 @@ bool WgpuMetalPresentationBackend::update_headless_output(void* output,
   height_ = height;
   draw_target_width_ = width;
   draw_target_height_ = height;
-  draw_target_max_track_slots_ = std::max(1, max_track_slots);
+  draw_target_max_track_slots_ = clamped_track_slots;
+  if (target_changed) {
+    invalidate_retained_source_cache_locked();
+  }
   last_error_.clear();
   return metal_device_ && texture_cache_;
 }
@@ -2959,6 +2984,11 @@ WgpuMetalPresentationBackend::record_source_metrics(
           retained_source_committed_generation_) {
     ++source_frame_cache_hit_count_;
     result.cache_hit = true;
+    return result;
+  }
+  if (source_bake_in_flight_ &&
+      source_bake_in_flight_signature_ != 0 &&
+      source_bake_in_flight_signature_ == signature) {
     return result;
   }
   ++source_frame_cache_miss_count_;

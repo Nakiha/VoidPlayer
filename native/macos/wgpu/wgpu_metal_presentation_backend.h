@@ -170,6 +170,7 @@ private:
   TargetAcquireResult acquire_draw_target_locked(const char* draw_source);
   void release_target_texture_cache_locked();
   void release_target_texture_cache_for_slot(TargetSlot& slot);
+  void invalidate_retained_source_cache_locked();
   void* cached_target_texture_ref(void* pixel_buffer,
                                   uint64_t metal_pixel_format,
                                   int32_t width,

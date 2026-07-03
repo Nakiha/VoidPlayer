@@ -1710,7 +1710,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       }
       return false
     }
-    let updated = player.updateExternalFlutterSurface(
+    let updated = publishFlutterSurfaceToNativeRenderer(
+      player: player,
       texture: texture,
       frameGeneration: generation
     )
@@ -1746,6 +1747,17 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       )
     }
     return true
+  }
+
+  private func publishFlutterSurfaceToNativeRenderer(
+    player: MacOSNativePlayerSession,
+    texture: MTLTexture,
+    frameGeneration: UInt64
+  ) -> Bool {
+    player.updateExternalFlutterSurface(
+      texture: texture,
+      frameGeneration: frameGeneration
+    )
   }
 
   private func flutterSurfaceSourceKey(info: [String: Any], texture: MTLTexture) -> UInt64 {

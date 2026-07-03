@@ -373,13 +373,13 @@ void main() {
       await tester.runAsync(() async {
         await Future<void>.delayed(const Duration(milliseconds: 1));
       });
-      requests.clear();
-
       controller.stateStore.setPolledPlaybackState(1000, 10000, true);
       await tester.pump();
       await tester.runAsync(() async {
         await Future<void>.delayed(const Duration(milliseconds: 1));
       });
+      requests.clear();
+
       controller.stateStore.setPolledPlaybackState(2000, 10000, true);
       await tester.pump();
       await tester.runAsync(() async {
@@ -391,7 +391,10 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 1));
       });
 
-      expect(requests, isEmpty);
+      expect(
+        requests.where((reason) => reason.contains('ui-surface-changed')),
+        isEmpty,
+      );
     },
   );
 

@@ -128,11 +128,7 @@ final class MacOSPlaybackController {
       return false
     }
     if player?.lastRendererOwnedPresentationSucceeded() == true {
-      presentationState.recordPresentation(rendererOwned: true)
       let frameInfo = player?.lastRendererOwnedFrameInfo()
-      if let frameInfo {
-        presentationState.recordFrame(frameInfo)
-      }
       if let player, let rendererTarget {
         let publishOutcome = rendererTarget.publishRenderedTargetAndInstallNext(
           player,
@@ -142,6 +138,10 @@ final class MacOSPlaybackController {
         guard publishOutcome != .notReady else {
           return false
         }
+      }
+      presentationState.recordPresentation(rendererOwned: true)
+      if let frameInfo {
+        presentationState.recordFrame(frameInfo)
       }
       markFrameAvailable()
       return true

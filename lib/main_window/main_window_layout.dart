@@ -979,7 +979,6 @@ class MainWindowLayoutCoordinator {
   }
 
   Future<void> _applyLayoutToNative(LayoutState nextLayout) async {
-    final hadProjection = _nativeCompositorProjectionActive;
     await controller.applyLayout(nextLayout);
     if (_disposed) return;
     if (_nativeCompositorProjectionClearPending) {
@@ -992,19 +991,7 @@ class MainWindowLayoutCoordinator {
       );
       return;
     }
-    if (!hadProjection) return;
-    _resetNativeCompositorSourceProjectionAfterAuthoritativeLayout();
-  }
-
-  void _resetNativeCompositorSourceProjectionAfterAuthoritativeLayout() {
-    if (!_nativeCompositorProjectionActive) return;
-    _nativeCompositorProjectionActive = false;
-    fireAndLog(
-      'clear renderer-owned source projection after authoritative layout',
-      controller.clearRendererOwnedSourceProjection(
-        reason: 'authoritative-layout',
-      ),
-    );
+    _publishRendererOwnedSourceProjection();
   }
 
   List<DisplayTrackGeometry> _orderedTracksForFocus(

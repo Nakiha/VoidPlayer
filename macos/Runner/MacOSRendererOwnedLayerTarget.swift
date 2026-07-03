@@ -118,6 +118,8 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
   private var retainedCompositeInFlightCount = 0
   private var retainedCompositeSubmitCount = 0
   private var retainedCompositePresentCount = 0
+  private var retainedCompositeCompletionSuccessCount = 0
+  private var retainedCompositeCompletionFailureCount = 0
   private var retainedCompositeFailureCount = 0
   private var drawableAcquireFailureCount = 0
   private var drawableSizeUpdateCount = 0
@@ -308,7 +310,6 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
         completion: macOSRendererOwnedCompositeCompleted,
         userData: contextPointer
       )
-      presentSubmittedRetainedDrawable(drawable: drawable, textureObject: textureObject)
     } catch {
       Unmanaged<MacOSRendererOwnedCompositeCallbackContext>
         .fromOpaque(contextPointer)
@@ -394,6 +395,12 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
         Int(drawableAcquireP95.p95Ms() * 1000.0),
       "rendererOwnedLayerRetainedCompositeSubmitCount": retainedCompositeSubmitCount,
       "rendererOwnedLayerRetainedCompositePresentCount": retainedCompositePresentCount,
+      "rendererOwnedLayerRetainedCompositeCompletionSuccessCount":
+        retainedCompositeCompletionSuccessCount,
+      "rendererOwnedLayerRetainedCompositeCompletionFailureCount":
+        retainedCompositeCompletionFailureCount,
+      "rendererOwnedLayerRetainedCompositePresentAfterCompletion":
+        retainedCompositePresentCount <= retainedCompositeCompletionSuccessCount,
       "rendererOwnedLayerRetainedCompositeFailureCount": retainedCompositeFailureCount,
       "rendererOwnedLayerLastCoalescedReason": lastRetainedCompositeCoalescedReason,
       "rendererOwnedLayerViewportRectReady": viewportRectReady,
@@ -594,11 +601,12 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     return true
   }
 
-  private func presentSubmittedRetainedDrawable(
+  private func presentCompletedRetainedDrawable(
     drawable: CAMetalDrawable,
     textureObject: AnyObject
   ) {
     lock.lock()
+    retainedCompositeCompletionSuccessCount += 1
     retainedCompositePresentCount += 1
     uploadCount += 1
     if !firstPresented {
@@ -609,11 +617,11 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
       firstPresented = true
     }
     lock.unlock()
-    _ = textureObject
-    DispatchQueue.main.async { [weak self] in
-      self?.view.isHidden = false
+    DispatchQueue.main.async {
+      _ = textureObject
+      self.view.isHidden = false
+      drawable.present()
     }
-    drawable.present()
   }
 
   private func discardDrawable(address: UInt) {
@@ -700,15 +708,20 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     lock.lock()
     retainedCompositeInFlightCount = max(0, retainedCompositeInFlightCount - 1)
     if result != 0 {
+      retainedCompositeCompletionFailureCount += 1
       retainedCompositeFailureCount += 1
       uploadFailureCount += 1
     }
     lock.unlock()
-    _ = drawable
-    _ = textureObject
     if result == 0 {
+      presentCompletedRetainedDrawable(
+        drawable: drawable,
+        textureObject: textureObject
+      )
       completion(.presented(frameInfo))
     } else {
+      _ = drawable
+      _ = textureObject
       completion(.failed(error.isEmpty
         ? "renderer-owned retained composite failed"
         : error))

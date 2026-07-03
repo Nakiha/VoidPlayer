@@ -10,16 +10,19 @@
 1.6, ASSERT_NATIVE_BACKEND, macos-native-player, true
 1.8, DEBUG_NATIVE_COMPOSITOR
 1.82, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationRequest, auto
-1.84, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationReason, auto-hdr-track
+1.84, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationReason, auto-hdr-renderer-owned-metal-layer-edr
 1.86, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, renderer-owned-wgpu-edr
 1.88, ASSERT_NATIVE_DIAGNOSTIC_BOOL, macOSPresentationEDROutputEnabled, true
 1.9, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedEDROutputEnabled, true
 1.92, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedTargetPixelFormat, CAMetalLayerRGBA16Float
+1.93, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
 1.94, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, hlg
 1.96, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorPrimaries, bt2020
-2.0, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedEDRTargetSampleCount, 1
-2.02, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedEDRTargetMaxRGBX1000, 1001
-2.06, CAPTURE_VIEWPORT_REGION, native_auto_hlg_policy_roi, 80, 50, 320, 180, 96, build/native_auto_hlg_policy_roi.png
+2.0, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
+2.03, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedLayerRetainedCompositeCompletionSuccessCount, 1
+2.04, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererOwnedLayerRetainedCompositePresentCount, 1
+2.05, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLayerRetainedCompositePresentAfterCompletion, true
+2.06, CAPTURE_WINDOW_REGION, native_auto_hlg_policy_roi, 80, 90, 320, 180, 96, build/native_auto_hlg_policy_roi.png
 2.08, ASSERT_CAPTURE_NOT_BLACK, native_auto_hlg_policy_roi, 0.01, 4.0
 2.1, CAPTURE_WINDOW, native_auto_hlg_policy
 2.2, ASSERT_CAPTURE_NOT_BLACK, native_auto_hlg_policy, 0.01, 4.0

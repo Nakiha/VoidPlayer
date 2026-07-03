@@ -136,7 +136,7 @@ void main() {
   });
 
   testWidgets(
-    'Windows native compositor never exposes Flutter texture fallback',
+    'native compositor runner layer never exposes Flutter texture fallback',
     (tester) async {
       if (!Platform.isMacOS && !Platform.isWindows) return;
       final feedback = AppFeedbackController();
@@ -186,7 +186,7 @@ void main() {
 
       expect(
         find.byType(Texture),
-        Platform.isWindows ? findsNothing : findsOneWidget,
+        Platform.isWindows || Platform.isMacOS ? findsNothing : findsOneWidget,
       );
     },
   );

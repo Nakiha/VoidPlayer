@@ -2,6 +2,7 @@
 
 #include "playback/playback_controller.h"
 #include "renderer/renderer.h"
+#include "renderer/render/presentation_backend_types.h"
 #include <functional>
 #include <shared_mutex>
 #include <string>
@@ -13,7 +14,7 @@ namespace vr {
 struct SharedFp16TextureSnapshot;
 struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
-struct WindowsSourceProjection;
+using WindowsSourceProjection = PresentationSourceProjection;
 
 /// Native player facade that owns playback control and the video renderer as
 /// peers. FFI can adopt this type without changing the renderer/video internals.

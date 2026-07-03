@@ -21,10 +21,6 @@
 #include <string>
 #include <thread>
 
-namespace vr {
-struct WindowsSourceProjection;
-} // namespace vr
-
 class WindowsNativeCompositor {
 public:
     enum class OutputTarget {

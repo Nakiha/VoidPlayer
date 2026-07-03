@@ -712,8 +712,11 @@ int main() {
           sizeof(async_error_busy),
           async_upload_completed,
           &async_context_busy);
-  if (async_ret_busy != -2 ||
-      std::strcmp(async_error_busy, "native Metal uploader frame resource pool is busy") != 0) {
+  const bool async_busy_rejected =
+      async_ret_busy == -2 &&
+      std::strcmp(async_error_busy, "native Metal uploader frame resource pool is busy") == 0;
+  const bool async_busy_accepted = async_ret_busy == 0;
+  if (!async_busy_rejected && !async_busy_accepted) {
     for (auto& context : async_contexts) {
       wait_for_async_upload(context);
     }
@@ -747,6 +750,23 @@ int main() {
           static_cast<long long>(async_contexts[i].frame_info.pts_us));
       return 1;
     }
+  }
+
+  if (async_busy_accepted &&
+      (!wait_for_async_upload(async_context_busy) ||
+       async_context_busy.ret != 0 ||
+       async_context_busy.frame_info.pts_us != 2001)) {
+    release_async_buffers();
+    CFRelease(argb);
+    CFRelease(bgra);
+    VPMacOSMetalUploaderDestroy(uploader);
+    std::fprintf(
+        stderr,
+        "async Metal upload accepted after resource reuse did not complete cleanly: ret=%d error=%s pts=%lld\n",
+        async_context_busy.ret,
+        async_context_busy.error.c_str(),
+        static_cast<long long>(async_context_busy.frame_info.pts_us));
+    return 1;
   }
 
   async_package.decision.frames[0].pts_us = 3001;

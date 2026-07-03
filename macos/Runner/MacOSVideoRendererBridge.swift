@@ -66,6 +66,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var rendererOwnedCompositeRefreshSubmittedGeneration: UInt64 = 0
   private var rendererOwnedCompositeRefreshCompletedGeneration: UInt64 = 0
   private var rendererOwnedCompositeRefreshAsyncStartNsByGeneration: [UInt64: UInt64] = [:]
+  private var rendererOwnedCompositeRefreshTimedOutGenerations = Set<UInt64>()
   private var rendererOwnedCompositeRefreshRequestCount = 0
   private var rendererOwnedCompositeRefreshSubmitCount = 0
   private var rendererOwnedCompositeRefreshAppliedCount = 0
@@ -1246,19 +1247,27 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
               DispatchQueue.main.async { [weak self, weak player, weak rendererTarget] in
                 guard let self else { return }
                 guard let submissionStartNs =
-                        self.rendererOwnedCompositeRefreshAsyncStartNsByGeneration
-                          .removeValue(forKey: submittedGeneration) else {
+                        self.rendererOwnedCompositeRefreshAsyncStartNsByGeneration[
+                          submittedGeneration
+                        ] else {
                   return
                 }
+                self.rendererOwnedCompositeRefreshAsyncStartNsByGeneration
+                  .removeValue(forKey: submittedGeneration)
+                let completionWasTimedOut =
+                  self.rendererOwnedCompositeRefreshTimedOutGenerations
+                    .remove(submittedGeneration) != nil
                 guard let player,
                       let rendererTarget,
                       self.nativePlayer === player,
                       self.rendererTarget === rendererTarget else {
                   self.rendererOwnedCompositeRefreshFailureCount += 1
-                  self.finishRendererOwnedCompositeRefresh(
-                    submittedGeneration: submittedGeneration,
-                    startNs: submissionStartNs
-                  )
+                  if !completionWasTimedOut {
+                    self.finishRendererOwnedCompositeRefresh(
+                      submittedGeneration: submittedGeneration,
+                      startNs: submissionStartNs
+                    )
+                  }
                   return
                 }
                 switch result {
@@ -1288,10 +1297,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
                   self.presentationState.recordMiss()
                   self.rendererOwnedCompositeRefreshFailureCount += 1
                 }
-                self.finishRendererOwnedCompositeRefresh(
-                  submittedGeneration: submittedGeneration,
-                  startNs: submissionStartNs
-                )
+                if !completionWasTimedOut {
+                  self.finishRendererOwnedCompositeRefresh(
+                    submittedGeneration: submittedGeneration,
+                    startNs: submissionStartNs
+                  )
+                }
                 self.logRendererOwnedCompositeSummaryIfNeeded(reason: reason)
               }
             }
@@ -1488,10 +1499,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   ) {
     guard rendererOwnedCompositeRefreshInFlight,
           let startNs =
-            rendererOwnedCompositeRefreshAsyncStartNsByGeneration
-              .removeValue(forKey: submittedGeneration) else {
+            rendererOwnedCompositeRefreshAsyncStartNsByGeneration[submittedGeneration],
+          !rendererOwnedCompositeRefreshTimedOutGenerations.contains(submittedGeneration) else {
       return
     }
+    rendererOwnedCompositeRefreshTimedOutGenerations.insert(submittedGeneration)
     rendererOwnedCompositeRefreshCoalescedCount += 1
     presentationState.recordMiss()
     finishRendererOwnedCompositeRefresh(
@@ -1837,7 +1849,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           let texture else {
       return false
     }
-    let wantsLayer = configuration.edrOutputEnabled
+    let exporterAvailable = MacOSFlutterSurfaceExporter.isAvailable(engine: flutterEngine)
+    let wantsLayer = configuration.edrOutputEnabled && exporterAvailable
     let hasLayer = rendererTarget?.rendererOwnedRunnerLayerActive == true
     guard wantsLayer != hasLayer else {
       return false
@@ -1897,7 +1910,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func rendererOwnedPresentationReady() -> Bool {
     if rendererTarget?.rendererOwnedRunnerLayerActive == true {
       return nativePlayer != nil &&
-        MacOSPresentationConfiguration.current.rendererOwnedPresentationEnabled
+        MacOSPresentationConfiguration.current.rendererOwnedPresentationEnabled &&
+        MacOSFlutterSurfaceExporter.isAvailable(engine: flutterEngine)
     }
     let state = nativePlayer?.rendererOwnedPresentationState() ?? [:]
     return (state["rendererInitialized"] as? Bool ?? false) &&

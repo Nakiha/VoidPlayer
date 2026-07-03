@@ -847,6 +847,16 @@ void wgpu_async_draw_completed(void* user_data, int32_t result) {
     }
   }
   if (!backend) {
+    if (pending->hooks.record_frame_copy_us) {
+      pending->hooks.record_frame_copy_us(pending->package_copy_us);
+    }
+    if (pending->hooks.async_draw_completed) {
+      pending->hooks.async_draw_completed(
+          false,
+          "wgpu-metal async draw cancelled by shutdown",
+          0,
+          nullptr);
+    }
     return;
   }
   g_in_wgpu_async_completion_callback = true;

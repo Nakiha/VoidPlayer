@@ -275,7 +275,7 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
         "renderer-owned Metal drawable queue is busy"
       )
     }
-    guard let drawable = nextDrawableOnMain() else {
+    guard let drawable = nextDrawableForRenderQueue() else {
       lock.lock()
       drawableAcquireFailureCount += 1
       lastRetainedCompositeCoalescedReason = "drawable-unavailable"
@@ -526,7 +526,7 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
         "renderer-owned Metal drawable queue is busy"
       )
     }
-    guard let drawable = nextDrawableOnMain() else {
+    guard let drawable = nextDrawableForRenderQueue() else {
       throw MacOSNativePlayerError.transientFrameUnavailable(
         "renderer-owned Metal drawable is unavailable"
       )
@@ -646,7 +646,9 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     return generation
   }
 
-  private func nextDrawableOnMain() -> CAMetalDrawable? {
+  // CAMetalLayer.nextDrawable() is acquired on the renderer-owned composite
+  // queue. View/layer geometry mutations stay on the main queue.
+  private func nextDrawableForRenderQueue() -> CAMetalDrawable? {
     let startNs = DispatchTime.now().uptimeNanoseconds
     let drawable = view.metalLayer.nextDrawable()
     let elapsedNs = DispatchTime.now().uptimeNanoseconds - startNs

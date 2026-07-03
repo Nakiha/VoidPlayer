@@ -12,6 +12,7 @@ final class MacOSNativePlayerSession {
 
   deinit {
     setFrameAvailableCallback(nil, userData: nil)
+    setSourceCacheFrameAvailableCallback(nil, userData: nil)
     clearMetalPresentationTarget()
     VPMacOSNativePlayerDestroy(handle)
   }

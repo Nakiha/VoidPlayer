@@ -279,14 +279,26 @@ pub fn render_metal_package_with_renderer(
     wait_for_submission(&renderer.device, submission, "wgpu-metal queue wait failed")
 }
 
-pub fn render_metal_package_with_renderer_async(
+pub fn bake_metal_package_source_with_renderer(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalRenderRequest,
+) -> Result<(), &'static str> {
+    let submission = submit_metal_package_source_with_renderer(renderer, request)?;
+    wait_for_submission(
+        &renderer.device,
+        submission,
+        "wgpu-metal package source bake wait failed",
+    )
+}
+
+pub fn bake_metal_package_source_with_renderer_async(
     renderer: &mut WgpuMetalRenderer,
     request: &WgpuMetalRenderRequest,
     completion: WgpuMetalAsyncCompletion,
 ) -> Result<(), &'static str> {
     renderer.begin_profile_frame();
     let profile_start = Instant::now();
-    let submission = match submit_metal_package_with_renderer(renderer, request) {
+    let submission = match submit_metal_package_source_with_renderer(renderer, request) {
         Ok(submission) => submission,
         Err(error) => {
             renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
@@ -295,6 +307,37 @@ pub fn render_metal_package_with_renderer_async(
     };
     renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
     renderer.submit_completion(submission, completion)
+}
+
+fn submit_metal_package_source_with_renderer(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalRenderRequest,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
+    if request.package.is_null() {
+        return Err("wgpu-metal package metadata is null");
+    }
+    if request.package_data.is_null() || request.package_data_size == 0 {
+        return Err("wgpu-metal package data is empty");
+    }
+    if request.width <= 0 || request.height <= 0 {
+        return Err("wgpu-metal package source bake dimensions are invalid");
+    }
+    let output = output_target_from_request(
+        request.output_format,
+        request.output_color_mode,
+        request.width,
+        request.height,
+    )?;
+    let package = unsafe { &*(request.package.cast::<PresentFramePackageInfo>()) };
+    if package.width <= 0 || package.height <= 0 {
+        return Err("wgpu-metal package dimensions are invalid");
+    }
+    if package.storage != STORAGE_BGRA {
+        return Err("wgpu-metal package source bake only supports BGRA source atlas");
+    }
+    let source =
+        unsafe { core::slice::from_raw_parts(request.package_data, request.package_data_size) };
+    bake_bgra_package_source_atlas(renderer, source, package, output, request.sdr_white_scale)
 }
 
 fn submit_metal_package_with_renderer(
@@ -374,22 +417,72 @@ pub fn render_metal_cv_pixel_buffer_frame_set_with_renderer(
     wait_for_submission(&renderer.device, submission, "wgpu-metal queue wait failed")
 }
 
-pub fn render_metal_cv_pixel_buffer_frame_set_with_renderer_async(
+pub fn bake_metal_cv_pixel_buffer_frame_set_source_with_renderer(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalCVPixelBufferRenderRequest,
+) -> Result<(), &'static str> {
+    let submission =
+        submit_metal_cv_pixel_buffer_frame_set_source_with_renderer(renderer, request)?;
+    wait_for_submission(
+        &renderer.device,
+        submission,
+        "wgpu-metal CVPixelBuffer source bake wait failed",
+    )
+}
+
+pub fn bake_metal_cv_pixel_buffer_frame_set_source_with_renderer_async(
     renderer: &mut WgpuMetalRenderer,
     request: &WgpuMetalCVPixelBufferRenderRequest,
     completion: WgpuMetalAsyncCompletion,
 ) -> Result<(), &'static str> {
     renderer.begin_profile_frame();
     let profile_start = Instant::now();
-    let submission = match submit_metal_cv_pixel_buffer_frame_set_with_renderer(renderer, request) {
-        Ok(submission) => submission,
-        Err(error) => {
-            renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
-            return Err(error);
-        }
-    };
+    let submission =
+        match submit_metal_cv_pixel_buffer_frame_set_source_with_renderer(renderer, request) {
+            Ok(submission) => submission,
+            Err(error) => {
+                renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
+                return Err(error);
+            }
+        };
     renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
     renderer.submit_completion(submission, completion)
+}
+
+fn submit_metal_cv_pixel_buffer_frame_set_source_with_renderer(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalCVPixelBufferRenderRequest,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
+    if request.frame_set.is_null() {
+        return Err("wgpu-metal CVPixelBuffer frame set metadata is null");
+    }
+    if request.width <= 0 || request.height <= 0 {
+        return Err("wgpu-metal CVPixelBuffer source bake dimensions are invalid");
+    }
+    let output = output_target_from_request(
+        request.output_format,
+        request.output_color_mode,
+        request.width,
+        request.height,
+    )?;
+    let frame_set = unsafe { &*(request.frame_set.cast::<CVPixelBufferPresentFrameSet>()) };
+    let viewport_rect = composite_viewport_rect(
+        request.width,
+        request.height,
+        request.viewport_left,
+        request.viewport_top,
+        request.viewport_right,
+        request.viewport_bottom,
+    );
+    bake_cv_pixel_buffer_frame_set_source_atlas(
+        renderer,
+        &request.source_y_mtl_textures,
+        &request.source_uv_mtl_textures,
+        frame_set,
+        output,
+        viewport_rect,
+        request.sdr_white_scale,
+    )
 }
 
 fn submit_metal_cv_pixel_buffer_frame_set_with_renderer(
@@ -1515,6 +1608,63 @@ fn composite_viewport_rect(
     [left * output_width, top * output_height, width, height]
 }
 
+fn bake_bgra_package_source_atlas(
+    renderer: &mut WgpuMetalRenderer,
+    source: &[u8],
+    package: &PresentFramePackageInfo,
+    output: OutputTarget,
+    sdr_white_scale: f32,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
+    let prepare_start = Instant::now();
+    let (bgra_atlas_width, bgra_atlas_height) =
+        bgra_atlas_for_wgsl(source, package, &mut renderer.source_bgra_scratch)?;
+    renderer.params_scratch.clear();
+    package_params(
+        package,
+        STORAGE_BGRA,
+        output.color_mode,
+        sdr_white_scale,
+        output.width as i32,
+        output.height as i32,
+        [
+            0.0,
+            0.0,
+            output.width.max(1) as f32,
+            output.height.max(1) as f32,
+        ],
+        0,
+        0,
+        &[],
+        &[],
+        &[],
+        0.0,
+        &mut renderer.params_scratch,
+    );
+    renderer.package_buffer_dirty |=
+        set_dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
+    renderer.overlay_rects_scratch.clear();
+    write_source_bgra_atlas(
+        &renderer.device,
+        &renderer.queue,
+        &mut renderer.source_texture,
+        &mut renderer.resource_generation,
+        bgra_atlas_width,
+        bgra_atlas_height,
+        &renderer.source_bgra_scratch,
+    )?;
+    renderer.retained_storage = STORAGE_BGRA;
+    renderer.retained_cv_y_textures = std::array::from_fn(|_| None);
+    renderer.retained_cv_uv_textures = std::array::from_fn(|_| None);
+    renderer.profiler.last_prepare_us += profile_elapsed_us(prepare_start);
+    let submit_start = Instant::now();
+    let submission = renderer
+        .queue
+        .submit(std::iter::empty::<wgpu::CommandBuffer>());
+    renderer.profiler.last_submit_us += profile_elapsed_us(submit_start);
+    renderer.profiler.submit_count += 1;
+    Ok(submission)
+}
+
 fn render_package_to_metal_destination(
     renderer: &mut WgpuMetalRenderer,
     destination_mtl_texture: *mut core::ffi::c_void,
@@ -1782,6 +1932,147 @@ fn render_cv_pixel_buffer_frame_set_to_metal_destination(
     renderer.retained_storage = STORAGE_OUTPUT_ATLAS;
     renderer.retained_cv_y_textures = std::array::from_fn(|_| None);
     renderer.retained_cv_uv_textures = std::array::from_fn(|_| None);
+    Ok(submission)
+}
+
+fn bake_cv_pixel_buffer_frame_set_source_atlas(
+    renderer: &mut WgpuMetalRenderer,
+    source_y_mtl_textures: &[*mut core::ffi::c_void; MAX_TRACKS],
+    source_uv_mtl_textures: &[*mut core::ffi::c_void; MAX_TRACKS],
+    frame_set: &CVPixelBufferPresentFrameSet,
+    output: OutputTarget,
+    viewport_rect: [f32; 4],
+    sdr_white_scale: f32,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
+    if frame_set.decision.should_present == 0 || frame_set.decision.frame_count <= 0 {
+        return Err("wgpu-metal CVPixelBuffer frame set has no presentable frame");
+    }
+    let mut source_y_textures: [Option<wgpu::TextureView>; MAX_TRACKS] =
+        std::array::from_fn(|_| None);
+    let mut source_uv_textures: [Option<wgpu::TextureView>; MAX_TRACKS] =
+        std::array::from_fn(|_| None);
+    let mut source_generation = 0x9e3779b97f4a7c15u64;
+    for slot in 0..MAX_TRACKS {
+        if frame_set.decision.frames[slot].present == 0 {
+            continue;
+        }
+        if source_y_mtl_textures[slot].is_null() || source_uv_mtl_textures[slot].is_null() {
+            return Err("wgpu-metal CVPixelBuffer source plane texture is null");
+        }
+        if frame_set.plane_counts[slot] < 2
+            || frame_set.coded_widths[slot] <= 0
+            || frame_set.coded_heights[slot] <= 0
+        {
+            return Err("wgpu-metal CVPixelBuffer frame set metadata is invalid");
+        }
+        let coded_width = frame_set.coded_widths[slot] as u32;
+        let coded_height = frame_set.coded_heights[slot] as u32;
+        let chroma_width = coded_width.div_ceil(2).max(1);
+        let chroma_height = coded_height.div_ceil(2).max(1);
+        let is_p010 = frame_set.is_p010[slot] != 0;
+        source_generation = source_generation
+            .wrapping_mul(1099511628211)
+            .wrapping_add(((slot as u64) + 1) << 56)
+            .wrapping_add(source_y_mtl_textures[slot] as usize as u64)
+            .wrapping_mul(1099511628211)
+            .wrapping_add(source_uv_mtl_textures[slot] as usize as u64)
+            .wrapping_mul(1099511628211)
+            .wrapping_add((coded_width as u64) << 32)
+            .wrapping_add(coded_height as u64)
+            .wrapping_mul(1099511628211)
+            .wrapping_add(if is_p010 { 1 } else { 0 });
+        source_y_textures[slot] = Some(
+            renderer
+                .import_metal_texture_2d_cached(
+                    source_y_mtl_textures[slot],
+                    if is_p010 {
+                        wgpu::TextureFormat::R16Unorm
+                    } else {
+                        wgpu::TextureFormat::R8Unorm
+                    },
+                    coded_width,
+                    coded_height,
+                    wgpu::TextureUsages::TEXTURE_BINDING,
+                    "voidplayer-imported-cvpixelbuffer-source-y",
+                    ImportedTextureClass::Source,
+                )?
+                .1,
+        );
+        source_uv_textures[slot] = Some(
+            renderer
+                .import_metal_texture_2d_cached(
+                    source_uv_mtl_textures[slot],
+                    if is_p010 {
+                        wgpu::TextureFormat::Rg16Unorm
+                    } else {
+                        wgpu::TextureFormat::Rg8Unorm
+                    },
+                    chroma_width,
+                    chroma_height,
+                    wgpu::TextureUsages::TEXTURE_BINDING,
+                    "voidplayer-imported-cvpixelbuffer-source-uv",
+                    ImportedTextureClass::Source,
+                )?
+                .1,
+        );
+    }
+
+    let prepare_start = Instant::now();
+    let viewport_width = viewport_rect[2].round().max(1.0) as i32;
+    let viewport_height = viewport_rect[3].round().max(1.0) as i32;
+    let package = PresentFramePackageInfo {
+        storage: STORAGE_CV_PIXEL_BUFFER,
+        width: viewport_width,
+        height: viewport_height,
+        max_track_slots: MAX_TRACKS as i32,
+        stride_bytes: 0,
+        track_stride_bytes: 0,
+        used_bytes: 4,
+        decision: frame_set.decision,
+    };
+    renderer.params_scratch.clear();
+    package_params(
+        &package,
+        STORAGE_OUTPUT_ATLAS,
+        output.color_mode,
+        sdr_white_scale,
+        output.width as i32,
+        output.height as i32,
+        viewport_rect,
+        0,
+        0,
+        &[],
+        &[],
+        &[],
+        0.0,
+        &mut renderer.params_scratch,
+    );
+    renderer.package_buffer_dirty |=
+        set_dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
+    renderer.overlay_rects_scratch.clear();
+    renderer.retained_source_generation = source_generation.max(1);
+    renderer.profiler.last_prepare_us += profile_elapsed_us(prepare_start);
+    let mut encoder = renderer
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("voidplayer-wgpu-cvpixelbuffer-source-only-bake-encoder"),
+        });
+    encode_cv_source_output_atlas(
+        renderer,
+        &mut encoder,
+        &source_y_textures,
+        &source_uv_textures,
+        frame_set,
+        output,
+        sdr_white_scale,
+    )?;
+    renderer.retained_storage = STORAGE_OUTPUT_ATLAS;
+    renderer.retained_cv_y_textures = std::array::from_fn(|_| None);
+    renderer.retained_cv_uv_textures = std::array::from_fn(|_| None);
+    let submit_start = Instant::now();
+    let submission = renderer.queue.submit(std::iter::once(encoder.finish()));
+    renderer.profiler.last_submit_us += profile_elapsed_us(submit_start);
+    renderer.profiler.submit_count += 1;
     Ok(submission)
 }
 

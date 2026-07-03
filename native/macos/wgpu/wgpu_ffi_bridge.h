@@ -162,14 +162,14 @@ int VPWgpuMetalRendererGetProfilerSnapshot(
 void* VPWgpuMetalRendererMetalDevice(VPWgpuMetalRenderer* renderer);
 int VPWgpuMetalRendererRenderPackage(VPWgpuMetalRenderer* renderer,
                                      const VPWgpuMetalRenderRequest* request);
-int VPWgpuMetalRendererRenderPackageAsync(
+int VPWgpuMetalRendererBakePackageSourceAsync(
     VPWgpuMetalRenderer* renderer,
     const VPWgpuMetalRenderRequest* request,
     VPWgpuMetalAsyncCompletion completion);
 int VPWgpuMetalRendererRenderCVPixelBufferFrameSet(
     VPWgpuMetalRenderer* renderer,
     const VPWgpuMetalCVPixelBufferRenderRequest* request);
-int VPWgpuMetalRendererRenderCVPixelBufferFrameSetAsync(
+int VPWgpuMetalRendererBakeCVPixelBufferFrameSetSourceAsync(
     VPWgpuMetalRenderer* renderer,
     const VPWgpuMetalCVPixelBufferRenderRequest* request,
     VPWgpuMetalAsyncCompletion completion);

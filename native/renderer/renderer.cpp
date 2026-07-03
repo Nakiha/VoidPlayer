@@ -278,6 +278,14 @@ bool Renderer::update_external_flutter_metal_surface(
 void Renderer::clear_external_flutter_metal_surface() {
     impl_->clear_external_flutter_metal_surface();
 }
+
+bool Renderer::draw_current_frame_to_external_metal_target(
+    const PresentationExternalMetalRenderTarget& target,
+    const char* reason,
+    PresentationBackendAsyncDrawCompleted async_completion) {
+    return impl_->draw_current_frame_to_external_metal_target(
+        target, reason, std::move(async_completion));
+}
 #endif
 
 bool Renderer::draw_current_frame_to_external_d3d12_target(

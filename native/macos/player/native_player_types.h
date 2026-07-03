@@ -11,6 +11,7 @@ extern "C" {
 
 typedef struct VPMacOSNativePlayer VPMacOSNativePlayer;
 typedef void (*VPMacOSFrameAvailableCallback)(void* user_data);
+typedef void (*VPMacOSSourceCacheFrameAvailableCallback)(void* user_data);
 
 #define VP_MACOS_NATIVE_API_VERSION 9u
 

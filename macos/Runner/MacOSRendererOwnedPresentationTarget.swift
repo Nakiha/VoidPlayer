@@ -106,6 +106,11 @@ protocol MacOSRendererOwnedPresentationTarget: AnyObject {
     maxTrackSlots: Int,
     frameInfo: MacOSNativeFrameInfo?
   ) -> MacOSNativeFramePublishOutcome
+  func submitRetainedCompositeFromNativePlayer(
+    _ player: MacOSNativePlayerSession,
+    maxTrackSlots: Int,
+    completion: @escaping MacOSRendererOwnedCompositeCompletion
+  ) throws
 }
 
 extension MacOSRendererOwnedPresentationTarget {
@@ -150,4 +155,34 @@ enum MacOSNativeFramePublishOutcome: Equatable {
   case published
   case alreadyPublished
   case notReady
+}
+
+enum MacOSRendererOwnedCompositeResult {
+  case presented(MacOSNativeFrameInfo?)
+  case coalesced(String)
+  case failed(String)
+}
+
+typealias MacOSRendererOwnedCompositeCompletion =
+  (MacOSRendererOwnedCompositeResult) -> Void
+
+extension MacOSRendererOwnedPresentationTarget {
+  func submitRetainedCompositeFromNativePlayer(
+    _ player: MacOSNativePlayerSession,
+    maxTrackSlots: Int,
+    completion: @escaping MacOSRendererOwnedCompositeCompletion
+  ) throws {
+    do {
+      try submitFromNativePlayer(player, maxTrackSlots: maxTrackSlots)
+      completion(.presented(player.lastRendererOwnedFrameInfo()))
+    } catch {
+      let message = String(describing: error)
+      if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
+        completion(.coalesced(message))
+      } else {
+        completion(.failed(message))
+      }
+      throw error
+    }
+  }
 }

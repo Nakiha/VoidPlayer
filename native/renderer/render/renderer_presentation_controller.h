@@ -177,6 +177,13 @@ public:
 #ifdef __APPLE__
     bool update_headless_metal_texture_output(
         const PresentationExternalMetalRenderTarget& target);
+    bool draw_frame_to_external_metal_target(
+        const RendererDrawSnapshot& snapshot,
+        const char* source,
+        PresentationMetricsStore& metrics,
+        const PresentationExternalMetalRenderTarget& target,
+        RendererPresentationOverlayHooks overlay_hooks = {},
+        PresentationBackendAsyncDrawCompleted async_completion = {});
 #endif
     void mark_headless_output_displayed(void* pixel_buffer);
     void protect_headless_output(void* pixel_buffer);
@@ -253,9 +260,9 @@ public:
         SharedSourceCacheBundleSnapshot& snapshot) const;
     void release_source_cache_bundle(
         int buffer_index, uint64_t ring_generation) const;
-    void set_source_cache_frame_callback(std::function<void()> callback);
     bool recover_d3d_device_loss(const char* reason, long removed_reason);
 #endif
+    void set_source_cache_frame_callback(std::function<void()> callback);
 #ifdef __APPLE__
     bool update_external_flutter_metal_surface(
         const PresentationExternalMetalSurface& surface);

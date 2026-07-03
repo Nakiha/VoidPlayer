@@ -3,7 +3,7 @@
 #include "audio/audio_output_stats.h"
 #include "media/seek_controller.h"
 #include "renderer/layout/layout_state.h"
-#include "renderer/render/presentation_backend_types.h"
+#include "renderer/render/presentation_backend.h"
 #include "renderer/render/renderer_present_history.h"
 #include "renderer/render/renderer_device_state.h"
 #include "renderer/renderer_api_types.h"
@@ -120,6 +120,10 @@ public:
     bool update_external_flutter_metal_surface(
         const PresentationExternalMetalSurface& surface);
     void clear_external_flutter_metal_surface();
+    bool draw_current_frame_to_external_metal_target(
+        const PresentationExternalMetalRenderTarget& target,
+        const char* reason,
+        PresentationBackendAsyncDrawCompleted async_completion = {});
 #endif
     bool draw_current_frame_to_external_d3d12_target(
         const PresentationExternalD3D12RenderTarget& target,

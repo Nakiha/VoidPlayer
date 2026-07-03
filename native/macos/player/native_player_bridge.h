@@ -87,6 +87,10 @@ void VPMacOSNativePlayerSetFrameAvailableCallback(
     VPMacOSNativePlayer* player,
     VPMacOSFrameAvailableCallback callback,
     void* user_data);
+void VPMacOSNativePlayerSetSourceCacheFrameAvailableCallback(
+    VPMacOSNativePlayer* player,
+    VPMacOSSourceCacheFrameAvailableCallback callback,
+    void* user_data);
 int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
     VPMacOSNativePlayer* player,
     VPMacOSMetalPresentationBackend* backend,
@@ -142,6 +146,26 @@ int VPMacOSNativePlayerUpdateSourceProjection(
     const float* view_offset_uv_y,
     size_t count);
 void VPMacOSNativePlayerClearSourceProjection(VPMacOSNativePlayer* player);
+typedef void (*VPMacOSRendererOwnedCompositeCompletion)(
+    void* user_data,
+    int32_t result,
+    const VPMacOSNativeFrameInfo* frame_info,
+    const char* error);
+int VPMacOSNativePlayerSubmitRetainedCompositeToMetalDrawable(
+    VPMacOSNativePlayer* player,
+    void* mtl_texture,
+    int32_t width,
+    int32_t height,
+    uint64_t pixel_format,
+    int32_t max_track_slots,
+    float viewport_left,
+    float viewport_top,
+    float viewport_right,
+    float viewport_bottom,
+    VPMacOSRendererOwnedCompositeCompletion completion,
+    void* user_data,
+    char* error,
+    size_t error_size);
 int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(

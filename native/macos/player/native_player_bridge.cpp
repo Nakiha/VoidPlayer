@@ -93,6 +93,8 @@ void VPMacOSNativePlayerDestroy(VPMacOSNativePlayer* player) {
     return;
   }
   VPMacOSNativePlayerSetFrameAvailableCallback(player, nullptr, nullptr);
+  VPMacOSNativePlayerSetSourceCacheFrameAvailableCallback(
+      player, nullptr, nullptr);
   delete player;
 }
 

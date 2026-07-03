@@ -40,7 +40,12 @@ struct VPMacOSNativePlayer {
   void shutdown_renderer_locked();
   void clear_last_frame_locked();
   bool ensure_renderer_locked(std::string& error);
+  bool ensure_renderer_for_external_metal_target_locked(int32_t width,
+                                                        int32_t height,
+                                                        int32_t max_track_slots,
+                                                        std::string& error);
   void on_frame_available(const vr::PresentationBackendFrameInfo* frame_info);
+  void on_source_cache_frame_available();
   void on_frame_failed(const char* error);
   void record_presentation_failure_locked(const std::string& error,
                                           bool upload_failure);
@@ -63,13 +68,19 @@ struct VPMacOSNativePlayer {
   std::condition_variable callback_condition;
   VPMacOSFrameAvailableCallback frame_available_callback = nullptr;
   void* frame_available_user_data = nullptr;
+  VPMacOSSourceCacheFrameAvailableCallback source_cache_frame_available_callback =
+      nullptr;
+  void* source_cache_frame_available_user_data = nullptr;
   uint64_t frame_available_callback_generation = 0;
   uint64_t frame_available_callback_in_flight = 0;
+  uint64_t source_cache_frame_available_callback_generation = 0;
+  uint64_t source_cache_frame_available_callback_in_flight = 0;
   uint64_t manual_refresh_callback_suppression_count = 0;
   VPMacOSMetalPresentationBackend* presentation_target_backend = nullptr;
   void* presentation_target_pixel_buffer = nullptr;
   std::vector<void*> presentation_target_pixel_buffers;
   bool presentation_target_is_metal_texture = false;
+  bool presentation_external_metal_target_active = false;
   uint64_t presentation_target_pixel_format = 0;
   int32_t presentation_target_width = 0;
   int32_t presentation_target_height = 0;

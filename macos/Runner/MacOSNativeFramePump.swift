@@ -34,6 +34,17 @@ final class MacOSNativeFrameCallbackContext {
       callbackContext: self
     )
   }
+
+  func scheduleSourceCacheFrameAvailable() {
+    lock.lock()
+    let currentBridge = alive ? bridge : nil
+    let currentGeneration = generation
+    lock.unlock()
+    currentBridge?.scheduleNativeSourceCacheFrameAvailableFromCallback(
+      callbackGeneration: currentGeneration,
+      callbackContext: self
+    )
+  }
 }
 
 func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
@@ -42,6 +53,14 @@ func macOSNativeFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
     .fromOpaque(userData)
     .takeUnretainedValue()
   context.scheduleFrameAvailable()
+}
+
+func macOSNativeSourceCacheFrameAvailable(_ userData: UnsafeMutableRawPointer?) {
+  guard let userData else { return }
+  let context = Unmanaged<MacOSNativeFrameCallbackContext>
+    .fromOpaque(userData)
+    .takeUnretainedValue()
+  context.scheduleSourceCacheFrameAvailable()
 }
 
 final class MacOSNativeFramePump {
@@ -61,10 +80,14 @@ final class MacOSNativeFramePump {
     presentationState: MacOSFramePresentationState
   ) -> Bool {
     if !targetInstalled, let rendererTarget {
-      targetInstalled = rendererTarget.installNativePresentationTarget(
-        player,
-        maxTrackSlots: maxTrackSlots
-      )
+      if rendererTarget.rendererOwnedRunnerLayerActive {
+        targetInstalled = true
+      } else {
+        targetInstalled = rendererTarget.installNativePresentationTarget(
+          player,
+          maxTrackSlots: maxTrackSlots
+        )
+      }
     }
     if !callbackRegistered {
       let bridge = Unmanaged<MacOSVideoRendererBridge>
@@ -75,6 +98,10 @@ final class MacOSNativeFramePump {
       callbackContextUserData = retainedUserData
       player.setFrameAvailableCallback(
         macOSNativeFrameAvailable,
+        userData: retainedUserData
+      )
+      player.setSourceCacheFrameAvailableCallback(
+        macOSNativeSourceCacheFrameAvailable,
         userData: retainedUserData
       )
       callbackRegistered = true
@@ -123,6 +150,7 @@ final class MacOSNativeFramePump {
     if callbackRegistered {
       if let player {
         player.setFrameAvailableCallback(nil, userData: nil)
+        player.setSourceCacheFrameAvailableCallback(nil, userData: nil)
         callbackRegistered = false
       } else {
         NSLog("VoidPlayer macOS native frame callback stop skipped: player unavailable")

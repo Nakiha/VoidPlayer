@@ -14,6 +14,11 @@ private final class MacOSRendererOwnedMetalLayerView: NSView {
     metalLayer.device = device
     metalLayer.pixelFormat = pixelFormat
     metalLayer.framebufferOnly = false
+    metalLayer.presentsWithTransaction = false
+    if #available(macOS 10.13, *) {
+      metalLayer.displaySyncEnabled = true
+      metalLayer.allowsNextDrawableTimeout = true
+    }
     if #available(macOS 10.13.2, *) {
       metalLayer.maximumDrawableCount = 3
     }
@@ -42,7 +47,50 @@ private struct MacOSPendingRendererOwnedDrawable {
   let textureObject: AnyObject
 }
 
+private final class MacOSRendererOwnedCompositeCallbackContext {
+  let target: MacOSRendererOwnedLayerTarget
+  let drawable: CAMetalDrawable
+  let textureObject: AnyObject
+  let completion: MacOSRendererOwnedCompositeCompletion
+
+  init(
+    target: MacOSRendererOwnedLayerTarget,
+    drawable: CAMetalDrawable,
+    textureObject: AnyObject,
+    completion: @escaping MacOSRendererOwnedCompositeCompletion
+  ) {
+    self.target = target
+    self.drawable = drawable
+    self.textureObject = textureObject
+    self.completion = completion
+  }
+}
+
+private func macOSRendererOwnedCompositeCompleted(
+  userData: UnsafeMutableRawPointer?,
+  result: Int32,
+  frameInfo: UnsafePointer<VPMacOSNativeFrameInfo>?,
+  error: UnsafePointer<CChar>?
+) {
+  guard let userData else { return }
+  let context = Unmanaged<MacOSRendererOwnedCompositeCallbackContext>
+    .fromOpaque(userData)
+    .takeRetainedValue()
+  let info = frameInfo.map { MacOSNativeFrameInfo(native: $0.pointee) }
+  let message = error.map { String(cString: $0) } ?? ""
+  context.target.completeRetainedComposite(
+    drawable: context.drawable,
+    textureObject: context.textureObject,
+    result: result,
+    frameInfo: info,
+    error: message,
+    completion: context.completion
+  )
+}
+
 final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget {
+  private static let maxPendingDrawableLeases = 2
+
   private let lock = NSLock()
   private weak var contentView: NSView?
   private let presentationTarget: MacOSNativeMetalPresentationTarget
@@ -67,6 +115,15 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
   private var firstPresentViewportRight: Float = -1.0
   private var firstPresentViewportBottom: Float = -1.0
   private var pendingDrawables: [UInt: MacOSPendingRendererOwnedDrawable] = [:]
+  private var retainedCompositeInFlightCount = 0
+  private var retainedCompositeSubmitCount = 0
+  private var retainedCompositePresentCount = 0
+  private var retainedCompositeFailureCount = 0
+  private var drawableAcquireFailureCount = 0
+  private var drawableSizeUpdateCount = 0
+  private var drawableAcquireCount = 0
+  private var drawableAcquireP95 = MacOSDurationWindow()
+  private var lastRetainedCompositeCoalescedReason = "none"
 
   var rendererOwnedRunnerLayerActive: Bool {
     true
@@ -93,8 +150,13 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
   }
 
   deinit {
-    runOnMain {
-      self.view.removeFromSuperview()
+    let view = self.view
+    if Thread.isMainThread {
+      view.removeFromSuperview()
+    } else {
+      DispatchQueue.main.async {
+        view.removeFromSuperview()
+      }
     }
   }
 
@@ -181,6 +243,86 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     }
   }
 
+  func submitRetainedCompositeFromNativePlayer(
+    _ player: MacOSNativePlayerSession,
+    maxTrackSlots: Int,
+    completion: @escaping MacOSRendererOwnedCompositeCompletion
+  ) throws {
+    guard presentationTarget.isAvailable() else {
+      throw MacOSNativePlayerError.failed(
+        "renderer-owned Metal presentation backend is unavailable"
+      )
+    }
+    lock.lock()
+    let ready = viewportRectReady
+    let currentViewportLeft = viewportLeft
+    let currentViewportTop = viewportTop
+    let currentViewportRight = viewportRight
+    let currentViewportBottom = viewportBottom
+    let currentInFlight = retainedCompositeInFlightCount
+    lock.unlock()
+    guard ready else {
+      recordRetainedCompositeCoalesced(reason: "viewport-not-ready")
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        "renderer-owned Metal viewport is not ready"
+      )
+    }
+    guard currentInFlight < Self.maxPendingDrawableLeases else {
+      recordRetainedCompositeCoalesced(reason: "drawable-queue-busy")
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        "renderer-owned Metal drawable queue is busy"
+      )
+    }
+    guard let drawable = nextDrawableOnMain() else {
+      lock.lock()
+      drawableAcquireFailureCount += 1
+      lastRetainedCompositeCoalescedReason = "drawable-unavailable"
+      lock.unlock()
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        "renderer-owned Metal drawable is unavailable"
+      )
+    }
+    let texture = drawable.texture
+    let textureObject = texture as AnyObject
+    let context = MacOSRendererOwnedCompositeCallbackContext(
+      target: self,
+      drawable: drawable,
+      textureObject: textureObject,
+      completion: completion
+    )
+    let contextPointer = Unmanaged.passRetained(context).toOpaque()
+    lock.lock()
+    retainedCompositeInFlightCount += 1
+    retainedCompositeSubmitCount += 1
+    lock.unlock()
+    do {
+      try player.submitRetainedCompositeToMetalDrawable(
+        texture: texture,
+        width: texture.width,
+        height: texture.height,
+        maxTrackSlots: maxTrackSlots,
+        viewportLeft: currentViewportLeft,
+        viewportTop: currentViewportTop,
+        viewportRight: currentViewportRight,
+        viewportBottom: currentViewportBottom,
+        completion: macOSRendererOwnedCompositeCompleted,
+        userData: contextPointer
+      )
+      presentSubmittedRetainedDrawable(drawable: drawable, textureObject: textureObject)
+    } catch {
+      Unmanaged<MacOSRendererOwnedCompositeCallbackContext>
+        .fromOpaque(contextPointer)
+        .release()
+      lock.lock()
+      retainedCompositeInFlightCount = max(0, retainedCompositeInFlightCount - 1)
+      retainedCompositeFailureCount += 1
+      uploadFailureCount += 1
+      lastRetainedCompositeCoalescedReason = "submit-error"
+      lock.unlock()
+      throw error
+    }
+  }
+
   func publishPendingNativeFrame(
     _ pending: MacOSPendingNativeFrame,
     player: MacOSNativePlayerSession,
@@ -239,9 +381,21 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
       "rendererOwnedEDRTargetPixelsOver1X1000": 0,
       "rendererOwnedLayerTargetActive": true,
       "rendererOwnedLayerPendingDrawableCount": pendingDrawables.count,
+      "rendererOwnedLayerInFlightDrawableCount": retainedCompositeInFlightCount,
       "rendererOwnedLayerUploadCount": uploadCount,
       "rendererOwnedLayerUploadFailureCount": uploadFailureCount,
       "rendererOwnedLayerTargetGeneration": targetGeneration,
+      "rendererOwnedLayerTargetReinstallCount": 0,
+      "rendererOwnedLayerDrawableSizeUpdateCount": drawableSizeUpdateCount,
+      "rendererOwnedLayerDrawableAcquireCount": drawableAcquireCount,
+      "rendererOwnedLayerDrawableAcquireFailureCount": drawableAcquireFailureCount,
+      "rendererOwnedLayerDrawableAcquireP95Ms": drawableAcquireP95.p95Ms(),
+      "rendererOwnedLayerDrawableAcquireP95MsX1000":
+        Int(drawableAcquireP95.p95Ms() * 1000.0),
+      "rendererOwnedLayerRetainedCompositeSubmitCount": retainedCompositeSubmitCount,
+      "rendererOwnedLayerRetainedCompositePresentCount": retainedCompositePresentCount,
+      "rendererOwnedLayerRetainedCompositeFailureCount": retainedCompositeFailureCount,
+      "rendererOwnedLayerLastCoalescedReason": lastRetainedCompositeCoalescedReason,
       "rendererOwnedLayerViewportRectReady": viewportRectReady,
       "rendererOwnedLayerFirstPresentBlockedUntilViewportCount":
         firstPresentBlockedUntilViewportCount,
@@ -292,17 +446,13 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
       viewportTop = nextTop
       viewportRight = max(nextLeft, nextRight)
       viewportBottom = max(nextTop, nextBottom)
-      targetGeneration &+= 1
-      lastPublishedNativeUploadCount = 0
-      lastIgnoredNativeUploadCount = 0
-      pendingDrawables.removeAll()
+      drawableSizeUpdateCount += 1
     }
     lock.unlock()
     guard changed else {
       updateFullSurfaceOnMain()
       return
     }
-    presentationTarget.resize(width: nextSurfaceWidth, height: nextSurfaceHeight)
     updateFullSurfaceOnMain()
   }
 
@@ -361,6 +511,14 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
         "renderer-owned Metal presentation backend is unavailable"
       )
     }
+    lock.lock()
+    let pendingCount = pendingDrawables.count
+    lock.unlock()
+    guard pendingCount < Self.maxPendingDrawableLeases else {
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        "renderer-owned Metal drawable queue is busy"
+      )
+    }
     guard let drawable = nextDrawableOnMain() else {
       throw MacOSNativePlayerError.transientFrameUnavailable(
         "renderer-owned Metal drawable is unavailable"
@@ -394,9 +552,6 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     }
     let address = UInt(bitPattern: texturePointer)
     lock.lock()
-    if pendingDrawables.count >= 3 {
-      pendingDrawables.removeAll()
-    }
     pendingDrawables[address] = MacOSPendingRendererOwnedDrawable(
       drawable: drawable,
       textureObject: textureObject
@@ -439,6 +594,28 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
     return true
   }
 
+  private func presentSubmittedRetainedDrawable(
+    drawable: CAMetalDrawable,
+    textureObject: AnyObject
+  ) {
+    lock.lock()
+    retainedCompositePresentCount += 1
+    uploadCount += 1
+    if !firstPresented {
+      firstPresentViewportLeft = viewportLeft
+      firstPresentViewportTop = viewportTop
+      firstPresentViewportRight = viewportRight
+      firstPresentViewportBottom = viewportBottom
+      firstPresented = true
+    }
+    lock.unlock()
+    _ = textureObject
+    DispatchQueue.main.async { [weak self] in
+      self?.view.isHidden = false
+    }
+    drawable.present()
+  }
+
   private func discardDrawable(address: UInt) {
     guard address != 0 else { return }
     lock.lock()
@@ -462,9 +639,23 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
   }
 
   private func nextDrawableOnMain() -> CAMetalDrawable? {
-    runOnMain {
-      view.metalLayer.nextDrawable()
+    let startNs = DispatchTime.now().uptimeNanoseconds
+    let drawable = view.metalLayer.nextDrawable()
+    let elapsedNs = DispatchTime.now().uptimeNanoseconds - startNs
+    lock.lock()
+    drawableAcquireCount += 1
+    drawableAcquireP95.record(elapsedNs)
+    if drawable != nil {
+      lastRetainedCompositeCoalescedReason = "none"
     }
+    lock.unlock()
+    return drawable
+  }
+
+  private func recordRetainedCompositeCoalesced(reason: String) {
+    lock.lock()
+    lastRetainedCompositeCoalescedReason = reason
+    lock.unlock()
   }
 
   private func installView(into contentView: NSView) {
@@ -496,6 +687,32 @@ final class MacOSRendererOwnedLayerTarget: MacOSRendererOwnedPresentationTarget 
       width: max(16.0, CGFloat(width)),
       height: max(16.0, CGFloat(height))
     )
+  }
+
+  fileprivate func completeRetainedComposite(
+    drawable: CAMetalDrawable,
+    textureObject: AnyObject,
+    result: Int32,
+    frameInfo: MacOSNativeFrameInfo?,
+    error: String,
+    completion: @escaping MacOSRendererOwnedCompositeCompletion
+  ) {
+    lock.lock()
+    retainedCompositeInFlightCount = max(0, retainedCompositeInFlightCount - 1)
+    if result != 0 {
+      retainedCompositeFailureCount += 1
+      uploadFailureCount += 1
+    }
+    lock.unlock()
+    _ = drawable
+    _ = textureObject
+    if result == 0 {
+      completion(.presented(frameInfo))
+    } else {
+      completion(.failed(error.isEmpty
+        ? "renderer-owned retained composite failed"
+        : error))
+    }
   }
 
   private func runOnMain<T>(_ body: () -> T) -> T {

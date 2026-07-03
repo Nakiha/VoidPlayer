@@ -709,14 +709,6 @@ void RendererPresentationController::release_source_cache_bundle(
     }
 }
 
-void RendererPresentationController::set_source_cache_frame_callback(
-    std::function<void()> callback) {
-    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (backend_) {
-        backend_->set_source_cache_frame_callback(std::move(callback));
-    }
-}
-
 bool RendererPresentationController::recover_d3d_device_loss(
     const char* reason,
     long removed_reason) {
@@ -727,6 +719,14 @@ bool RendererPresentationController::recover_d3d_device_loss(
 }
 
 #endif
+
+void RendererPresentationController::set_source_cache_frame_callback(
+    std::function<void()> callback) {
+    std::lock_guard<std::recursive_mutex> lock(device_mutex_);
+    if (backend_) {
+        backend_->set_source_cache_frame_callback(std::move(callback));
+    }
+}
 
 #ifdef __APPLE__
 bool RendererPresentationController::update_source_projection(
@@ -753,6 +753,35 @@ void RendererPresentationController::clear_external_flutter_metal_surface() {
     if (backend_) {
         backend_->clear_external_flutter_metal_surface();
     }
+}
+
+bool RendererPresentationController::draw_frame_to_external_metal_target(
+    const RendererDrawSnapshot& snapshot,
+    const char* source,
+    PresentationMetricsStore& metrics,
+    const PresentationExternalMetalRenderTarget& target,
+    RendererPresentationOverlayHooks overlay_hooks,
+    PresentationBackendAsyncDrawCompleted async_completion) {
+    if (!backend_) {
+        return false;
+    }
+    PresentationBackendDrawHooks hooks;
+    hooks.draw_source = source;
+    hooks.wait_gpu_idle = [this, &metrics](const char* label) {
+        wait_gpu_idle(label, metrics);
+    };
+    hooks.record_frame_copy_us = [&metrics](uint64_t elapsed_us) {
+        metrics.frame_copy_us.fetch_add(elapsed_us, std::memory_order_relaxed);
+        metrics.frame_copy_count.fetch_add(1, std::memory_order_relaxed);
+    };
+    hooks.draw_overlay = std::move(overlay_hooks.draw_overlay);
+    hooks.composite_bgra_overlay =
+        std::move(overlay_hooks.composite_bgra_overlay);
+    hooks.build_overlay_primitives =
+        std::move(overlay_hooks.build_overlay_primitives);
+    hooks.async_draw_completed = std::move(async_completion);
+    return backend_->draw_frame_to_external_metal_target(
+        snapshot, hooks, target);
 }
 #endif
 

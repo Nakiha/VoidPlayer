@@ -278,6 +278,24 @@ void VPMacOSNativePlayerSetFrameAvailableCallback(
   }
 }
 
+void VPMacOSNativePlayerSetSourceCacheFrameAvailableCallback(
+    VPMacOSNativePlayer* player,
+    VPMacOSSourceCacheFrameAvailableCallback callback,
+    void* user_data) {
+  if (!player) {
+    return;
+  }
+  std::unique_lock<std::mutex> lock(player->callback_mutex);
+  ++player->source_cache_frame_available_callback_generation;
+  player->source_cache_frame_available_callback = callback;
+  player->source_cache_frame_available_user_data = user_data;
+  if (!callback) {
+    player->callback_condition.wait(lock, [player] {
+      return player->source_cache_frame_available_callback_in_flight == 0;
+    });
+  }
+}
+
 int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
     VPMacOSNativePlayer* player,
     VPMacOSMetalPresentationBackend* backend,
@@ -581,6 +599,7 @@ void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player
     player->presentation_target_pixel_buffer = nullptr;
     player->presentation_target_pixel_buffers.clear();
     player->presentation_target_is_metal_texture = false;
+    player->presentation_external_metal_target_active = false;
     player->presentation_target_pixel_format = 0;
     player->presentation_target_width = 0;
     player->presentation_target_height = 0;
@@ -691,6 +710,121 @@ void VPMacOSNativePlayerClearSourceProjection(VPMacOSNativePlayer* player) {
   if (player->renderer_active_locked()) {
     player->renderer->clear_source_projection();
   }
+}
+
+int VPMacOSNativePlayerSubmitRetainedCompositeToMetalDrawable(
+    VPMacOSNativePlayer* player,
+    void* mtl_texture,
+    int32_t width,
+    int32_t height,
+    uint64_t pixel_format,
+    int32_t max_track_slots,
+    float viewport_left,
+    float viewport_top,
+    float viewport_right,
+    float viewport_bottom,
+    VPMacOSRendererOwnedCompositeCompletion completion,
+    void* user_data,
+    char* error,
+    size_t error_size) {
+  if (!player || !mtl_texture || width <= 0 || height <= 0) {
+    write_error(error, error_size,
+                "invalid renderer-owned retained composite arguments");
+    return -1;
+  }
+  viewport_left = std::clamp(viewport_left, 0.0f, 1.0f);
+  viewport_top = std::clamp(viewport_top, 0.0f, 1.0f);
+  viewport_right = std::clamp(viewport_right, viewport_left, 1.0f);
+  viewport_bottom = std::clamp(viewport_bottom, viewport_top, 1.0f);
+  if (viewport_right <= viewport_left || viewport_bottom <= viewport_top) {
+    write_error(error, error_size,
+                "renderer-owned retained composite viewport is invalid");
+    return -1;
+  }
+
+  vr::PresentationExternalMetalRenderTarget target;
+  target.texture = mtl_texture;
+  target.width = width;
+  target.height = height;
+  target.pixel_format = pixel_format;
+  target.max_track_slots =
+      std::clamp(max_track_slots,
+                 static_cast<int32_t>(1),
+                 static_cast<int32_t>(VPMacOSNativeMaxTracks));
+  target.viewport_left = viewport_left;
+  target.viewport_top = viewport_top;
+  target.viewport_right = viewport_right;
+  target.viewport_bottom = viewport_bottom;
+
+  std::string message;
+  bool submitted = false;
+  {
+    std::lock_guard<std::mutex> player_lock(player->mutex);
+    if (!player->ensure_renderer_for_external_metal_target_locked(
+            width, height, target.max_track_slots, message)) {
+      write_error(error, error_size, message);
+      return -1;
+    }
+    {
+      std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+      player->presentation_external_metal_target_active = true;
+      player->presentation_target_width = width;
+      player->presentation_target_height = height;
+      player->presentation_target_max_track_slots = target.max_track_slots;
+      player->presentation_target_pixel_format = pixel_format;
+      player->presentation_target_viewport_left = viewport_left;
+      player->presentation_target_viewport_top = viewport_top;
+      player->presentation_target_viewport_right = viewport_right;
+      player->presentation_target_viewport_bottom = viewport_bottom;
+    }
+    if (!player->renderer) {
+      write_error(error, error_size, "shared macOS renderer is not available");
+      return -1;
+    }
+    submitted = player->renderer->draw_current_frame_to_external_metal_target(
+        target,
+        "viewport_composite",
+        [player, completion, user_data](
+            bool success,
+            const char* draw_error,
+            uint64_t,
+            const vr::PresentationBackendFrameInfo* frame_info) {
+          VPMacOSNativeFrameInfo native_info;
+          VPMacOSNativeFrameInfoInit(&native_info);
+          const VPMacOSNativeFrameInfo* callback_info = nullptr;
+          if (frame_info) {
+            copy_frame_info(*frame_info, &native_info);
+            callback_info = &native_info;
+          }
+          {
+            std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+            ++player->manual_refresh_callback_suppression_count;
+          }
+          if (success) {
+            player->on_frame_available(frame_info);
+          } else {
+            player->on_frame_failed(draw_error);
+          }
+          if (completion) {
+            completion(user_data,
+                       success ? 0 : -1,
+                       success ? callback_info : nullptr,
+                       success ? "" : (draw_error ? draw_error : ""));
+          }
+        });
+    if (!submitted) {
+      message = player->renderer->presentation_backend_last_error();
+    }
+  }
+  if (!submitted) {
+    if (message.empty()) {
+      message = "renderer-owned retained composite was not submitted";
+    }
+    write_error(error, error_size, message);
+    return vr::is_transient_presentation_backpressure_error(message) ? -2 : -1;
+  }
+  write_error(error, error_size, "");
+  return 0;
 }
 
 namespace {

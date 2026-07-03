@@ -42,6 +42,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     "viewport-zoom",
   ]
   private static let rendererOwnedFlutterSurfaceWarmGraceNs: UInt64 = 500_000_000
+  private static let rendererOwnedFlutterSurfaceContinuousComposeIntervalNs: UInt64 =
+    16_000_000
+  private static let rendererOwnedFlutterSurfaceContinuousSampleIntervalNs: UInt64 =
+    33_000_000
+  private static let rendererOwnedCompositeRefreshMaxInFlight = 2
 
   private var methodChannel: FlutterMethodChannel?
   private var eventChannel: FlutterEventChannel?
@@ -55,12 +60,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     self?.processRendererOwnedCompositeRefreshTick()
   }
   private var rendererOwnedCompositeRefreshInFlight = false
+  private var rendererOwnedCompositeRefreshInFlightCount = 0
   private var rendererOwnedCompositeRefreshPendingReason: String?
   private var rendererOwnedCompositeRefreshPendingGeneration: UInt64 = 0
   private var rendererOwnedCompositeRefreshSubmittedGeneration: UInt64 = 0
   private var rendererOwnedCompositeRefreshCompletedGeneration: UInt64 = 0
-  private var rendererOwnedCompositeRefreshAsyncSubmittedGeneration: UInt64 = 0
-  private var rendererOwnedCompositeRefreshAsyncStartNs: UInt64 = 0
+  private var rendererOwnedCompositeRefreshAsyncStartNsByGeneration: [UInt64: UInt64] = [:]
   private var rendererOwnedCompositeRefreshRequestCount = 0
   private var rendererOwnedCompositeRefreshSubmitCount = 0
   private var rendererOwnedCompositeRefreshAppliedCount = 0
@@ -89,6 +94,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var rendererOwnedFlutterSurfaceWarmComposeCount = 0
   private var rendererOwnedFlutterSurfaceContinuousTickCount = 0
   private var rendererOwnedFlutterSurfaceContinuousComposeCount = 0
+  private var rendererOwnedFlutterSurfaceLastContinuousComposeNs: UInt64 = 0
+  private var rendererOwnedFlutterSurfaceLastContinuousSampleNs: UInt64 = 0
   private var rendererOwnedFlutterSurfaceLastPublishLogNs: UInt64 = 0
   private let rendererOwnedFlutterSurfaceSampleDuration = MacOSDurationWindow()
   private let rendererOwnedSourceCachePublishRate = MacOSRateWindow()
@@ -525,6 +532,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         state["sourceProjectionConsumeCount"] ?? 0,
       "rendererOwnedCompositeRefreshInFlight":
         rendererOwnedCompositeRefreshInFlight,
+      "rendererOwnedCompositeRefreshInFlightCount":
+        rendererOwnedCompositeRefreshInFlightCount,
+      "rendererOwnedCompositeRefreshMaxInFlight":
+        Self.rendererOwnedCompositeRefreshMaxInFlight,
       "rendererOwnedCompositeRefreshPendingGeneration":
         rendererOwnedCompositeRefreshPendingGeneration,
       "rendererOwnedCompositeRefreshSubmittedGeneration":
@@ -1106,7 +1117,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     rendererOwnedCompositeRefreshPendingReason = reason
     rendererOwnedCompositeRefreshRequestCount += 1
     rendererOwnedCompositeRefreshRequestRate.record()
-    if rendererOwnedCompositeRefreshInFlight {
+    if rendererOwnedCompositeRefreshInFlightCount >=
+        Self.rendererOwnedCompositeRefreshMaxInFlight {
       rendererOwnedCompositeRefreshCoalescedCount += 1
       return
     }
@@ -1135,22 +1147,31 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       rendererOwnedFlutterSurfaceWarmActive(nowNs: tickNs)
     let flutterSurfaceContinuousActive =
       rendererOwnedFlutterSurfaceContinuousActive()
+    let flutterSurfaceContinuousComposeDue =
+      rendererOwnedFlutterSurfaceContinuousComposeDue(nowNs: tickNs)
+    let flutterSurfaceContinuousSampleDue =
+      rendererOwnedFlutterSurfaceContinuousSampleDue(nowNs: tickNs)
     let flutterSurfaceSampleLatestActive =
-      flutterSurfaceWarmActive || flutterSurfaceContinuousActive
+      flutterSurfaceWarmActive || flutterSurfaceContinuousSampleDue
     guard hasPendingComposite || flutterSurfaceWarmActive ||
-            flutterSurfaceContinuousActive else {
-      if !rendererOwnedCompositeRefreshInFlight {
-        rendererOwnedCompositeDisplayLink.stop()
+            flutterSurfaceContinuousComposeDue else {
+      if rendererOwnedCompositeRefreshInFlightCount == 0 {
+        if flutterSurfaceContinuousActive {
+          rendererOwnedCompositeDisplayLink.start()
+        } else {
+          rendererOwnedCompositeDisplayLink.stop()
+        }
       }
       return
     }
-    if rendererOwnedCompositeRefreshInFlight {
+    if rendererOwnedCompositeRefreshInFlightCount >=
+        Self.rendererOwnedCompositeRefreshMaxInFlight {
       rendererOwnedCompositeRefreshCoalescedCount += 1
       return
     }
     if !hasPendingComposite {
       rendererOwnedCompositeRefreshPendingGeneration &+= 1
-      if flutterSurfaceContinuousActive {
+      if flutterSurfaceContinuousComposeDue {
         rendererOwnedCompositeRefreshPendingReason = "flutter-surface-continuous"
         rendererOwnedFlutterSurfaceContinuousTickCount += 1
       } else {
@@ -1161,10 +1182,17 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let submittedGeneration = rendererOwnedCompositeRefreshPendingGeneration
     let reason = rendererOwnedCompositeRefreshPendingReason ?? "display-link"
     let startNs = tickNs
+    rendererOwnedCompositeRefreshInFlightCount += 1
     rendererOwnedCompositeRefreshInFlight = true
     rendererOwnedCompositeRefreshSubmittedGeneration = submittedGeneration
     rendererOwnedCompositeRefreshSubmitCount += 1
     rendererOwnedCompositeRefreshSubmitRate.record(nowNs: startNs)
+    if flutterSurfaceContinuousComposeDue {
+      rendererOwnedFlutterSurfaceLastContinuousComposeNs = tickNs
+    }
+    if flutterSurfaceContinuousSampleDue {
+      rendererOwnedFlutterSurfaceLastContinuousSampleNs = tickNs
+    }
     refreshRendererOwnedFlutterSurfaceIfNeeded(
       reason: reason,
       sampleLatest: flutterSurfaceSampleLatestActive
@@ -1173,35 +1201,20 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         rendererOwnedFlutterSurfaceLastGeneration == 0 {
       rendererOwnedFlutterSurfaceAwaitFirstCount += 1
       rendererOwnedFlutterSurfaceLastReason = "\(reason):awaiting-first-graph"
-      rendererOwnedCompositeRefreshInFlight = false
-      rendererOwnedCompositeRefreshCompletedGeneration = max(
-        rendererOwnedCompositeRefreshCompletedGeneration,
-        submittedGeneration
+      finishRendererOwnedCompositeRefresh(
+        submittedGeneration: submittedGeneration,
+        startNs: startNs
       )
-      if rendererOwnedFlutterSurfaceWarmActive() {
-        rendererOwnedCompositeDisplayLink.start()
-      } else {
-        rendererOwnedCompositeRefreshPendingReason = nil
-        rendererOwnedCompositeDisplayLink.stop()
-      }
       return
     }
     if rendererTarget.rendererOwnedRunnerLayerActive &&
         !presentation.rendererOwnedViewportRectReady() {
       rendererOwnedViewportAwaitFirstCount += 1
       rendererOwnedFlutterSurfaceLastReason = "\(reason):awaiting-viewport"
-      rendererOwnedCompositeRefreshInFlight = false
-      rendererOwnedCompositeRefreshCompletedGeneration = max(
-        rendererOwnedCompositeRefreshCompletedGeneration,
-        submittedGeneration
+      finishRendererOwnedCompositeRefresh(
+        submittedGeneration: submittedGeneration,
+        startNs: startNs
       )
-      if flutterSurfaceContinuousActive ||
-          rendererOwnedFlutterSurfaceWarmActive() {
-        rendererOwnedCompositeDisplayLink.start()
-      } else {
-        rendererOwnedCompositeRefreshPendingReason = nil
-        rendererOwnedCompositeDisplayLink.stop()
-      }
       return
     }
     let maxTrackSlots = tracks.activeSlotCapacity()
@@ -1220,16 +1233,68 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         )
         return
       }
-      rendererOwnedCompositeRefreshAsyncSubmittedGeneration = submittedGeneration
-      rendererOwnedCompositeRefreshAsyncStartNs = startNs
+      rendererOwnedCompositeRefreshAsyncStartNsByGeneration[submittedGeneration] =
+        startNs
       rendererOwnedCompositeRefreshQueue.async { [weak self, weak player, weak rendererTarget] in
         let submitOutcome: MacOSRendererOwnedCompositeSubmitOutcome
         if let player, let rendererTarget {
           do {
-            try rendererTarget.submitFromNativePlayer(
+            try rendererTarget.submitRetainedCompositeFromNativePlayer(
               player,
               maxTrackSlots: maxTrackSlots
-            )
+            ) { [weak self, weak player, weak rendererTarget] result in
+              DispatchQueue.main.async { [weak self, weak player, weak rendererTarget] in
+                guard let self else { return }
+                guard let submissionStartNs =
+                        self.rendererOwnedCompositeRefreshAsyncStartNsByGeneration
+                          .removeValue(forKey: submittedGeneration) else {
+                  return
+                }
+                guard let player,
+                      let rendererTarget,
+                      self.nativePlayer === player,
+                      self.rendererTarget === rendererTarget else {
+                  self.rendererOwnedCompositeRefreshFailureCount += 1
+                  self.finishRendererOwnedCompositeRefresh(
+                    submittedGeneration: submittedGeneration,
+                    startNs: submissionStartNs
+                  )
+                  return
+                }
+                switch result {
+                case .presented(let frameInfo):
+                  self.presentationState.recordPresentation(rendererOwned: true)
+                  if let frameInfo {
+                    self.presentationState.recordFrame(frameInfo)
+                    self.transport.resolvePendingSeekPreviewIfPresented(
+                      presentationState: self.presentationState,
+                      emitSeekPreviewPresented: { [weak self] requestId, targetPtsUs in
+                        self?.emitSeekPreviewPresented(
+                          requestId: requestId,
+                          targetPtsUs: targetPtsUs
+                        )
+                      }
+                    )
+                  }
+                  self.rendererOwnedCompositeRefreshAppliedCount += 1
+                  self.rendererOwnedCompositeRefreshPresentRate.record()
+                  self.markFrameAvailable()
+                case .coalesced(_):
+                  self.presentationState.recordMiss()
+                  self.rendererOwnedCompositeRefreshCoalescedCount += 1
+                  self.rendererOwnedCompositeRefreshPendingGeneration &+= 1
+                  self.rendererOwnedCompositeRefreshPendingReason = "\(reason)-retry"
+                case .failed(_):
+                  self.presentationState.recordMiss()
+                  self.rendererOwnedCompositeRefreshFailureCount += 1
+                }
+                self.finishRendererOwnedCompositeRefresh(
+                  submittedGeneration: submittedGeneration,
+                  startNs: submissionStartNs
+                )
+                self.logRendererOwnedCompositeSummaryIfNeeded(reason: reason)
+              }
+            }
             submitOutcome = .submitted
           } catch {
             submitOutcome =
@@ -1242,50 +1307,54 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         }
         DispatchQueue.main.async { [weak self, weak player, weak rendererTarget] in
           guard let self else { return }
-          guard self.rendererOwnedCompositeRefreshAsyncSubmittedGeneration ==
-                  submittedGeneration else {
+          guard self.rendererOwnedCompositeRefreshAsyncStartNsByGeneration[
+            submittedGeneration
+          ] != nil else {
             return
           }
           guard let player,
                 let rendererTarget,
                 self.nativePlayer === player,
                 self.rendererTarget === rendererTarget else {
-            self.rendererOwnedCompositeRefreshAsyncSubmittedGeneration = 0
-            self.rendererOwnedCompositeRefreshAsyncStartNs = 0
+            let submissionStartNs =
+              self.rendererOwnedCompositeRefreshAsyncStartNsByGeneration
+                .removeValue(forKey: submittedGeneration) ?? startNs
             self.rendererOwnedCompositeRefreshFailureCount += 1
             self.finishRendererOwnedCompositeRefresh(
               submittedGeneration: submittedGeneration,
-              startNs: startNs
+              startNs: submissionStartNs
             )
             return
           }
           switch submitOutcome {
           case .submitted:
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(64)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(500)) {
               [weak self] in
               self?.timeoutRendererOwnedCompositeRefreshIfStillPending(
                 submittedGeneration: submittedGeneration
               )
             }
           case .coalesced:
+            let submissionStartNs =
+              self.rendererOwnedCompositeRefreshAsyncStartNsByGeneration
+                .removeValue(forKey: submittedGeneration) ?? startNs
             self.presentationState.recordMiss()
             self.rendererOwnedCompositeRefreshCoalescedCount += 1
             self.rendererOwnedCompositeRefreshPendingGeneration &+= 1
             self.rendererOwnedCompositeRefreshPendingReason = "\(reason)-retry"
-            self.rendererOwnedCompositeRefreshAsyncSubmittedGeneration = 0
-            self.rendererOwnedCompositeRefreshAsyncStartNs = 0
             self.finishRendererOwnedCompositeRefresh(
               submittedGeneration: submittedGeneration,
-              startNs: startNs
+              startNs: submissionStartNs
             )
           case .failed:
+            let submissionStartNs =
+              self.rendererOwnedCompositeRefreshAsyncStartNsByGeneration
+                .removeValue(forKey: submittedGeneration) ?? startNs
             self.presentationState.recordMiss()
             self.rendererOwnedCompositeRefreshFailureCount += 1
-            self.rendererOwnedCompositeRefreshAsyncSubmittedGeneration = 0
-            self.rendererOwnedCompositeRefreshAsyncStartNs = 0
             self.finishRendererOwnedCompositeRefresh(
               submittedGeneration: submittedGeneration,
-              startNs: startNs
+              startNs: submissionStartNs
             )
           }
           self.logRendererOwnedCompositeSummaryIfNeeded(reason: reason)
@@ -1365,7 +1434,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   ) {
     let nowNs = DispatchTime.now().uptimeNanoseconds
     rendererOwnedCompositeRefreshDuration.record(nowNs - startNs)
-    rendererOwnedCompositeRefreshInFlight = false
+    rendererOwnedCompositeRefreshInFlightCount = max(
+      0,
+      rendererOwnedCompositeRefreshInFlightCount - 1
+    )
+    rendererOwnedCompositeRefreshInFlight =
+      rendererOwnedCompositeRefreshInFlightCount > 0
     rendererOwnedCompositeRefreshCompletedGeneration = max(
       rendererOwnedCompositeRefreshCompletedGeneration,
       submittedGeneration
@@ -1373,16 +1447,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     guard rendererOwnedCompositeRefreshPendingGeneration > submittedGeneration else {
       let flutterSurfaceContinuousActive =
         rendererOwnedFlutterSurfaceContinuousActive()
-      if flutterSurfaceContinuousActive ||
-          rendererOwnedFlutterSurfaceWarmActive(nowNs: nowNs) {
+      if rendererOwnedFlutterSurfaceWarmActive(nowNs: nowNs) {
         rendererOwnedCompositeRefreshPendingGeneration &+= 1
-        if flutterSurfaceContinuousActive {
-          rendererOwnedCompositeRefreshPendingReason = "flutter-surface-continuous"
-          rendererOwnedFlutterSurfaceContinuousComposeCount += 1
-        } else {
-          rendererOwnedCompositeRefreshPendingReason = "flutter-surface-warm"
-          rendererOwnedFlutterSurfaceWarmComposeCount += 1
-        }
+        rendererOwnedCompositeRefreshPendingReason = "flutter-surface-warm"
+        rendererOwnedFlutterSurfaceWarmComposeCount += 1
+        rendererOwnedCompositeDisplayLink.start()
+        return
+      }
+      if flutterSurfaceContinuousActive {
         rendererOwnedCompositeDisplayLink.start()
         return
       }
@@ -1394,14 +1466,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func finishRendererOwnedCompositeRefreshFromCallback() {
-    guard rendererOwnedCompositeRefreshInFlight,
-          rendererOwnedCompositeRefreshAsyncSubmittedGeneration > 0 else {
+    guard rendererTarget?.rendererOwnedRunnerLayerActive != true,
+          rendererOwnedCompositeRefreshInFlight,
+          let submittedGeneration =
+            rendererOwnedCompositeRefreshAsyncStartNsByGeneration.keys.min(),
+          let startNs =
+            rendererOwnedCompositeRefreshAsyncStartNsByGeneration
+              .removeValue(forKey: submittedGeneration) else {
       return
     }
-    let submittedGeneration = rendererOwnedCompositeRefreshAsyncSubmittedGeneration
-    let startNs = rendererOwnedCompositeRefreshAsyncStartNs
-    rendererOwnedCompositeRefreshAsyncSubmittedGeneration = 0
-    rendererOwnedCompositeRefreshAsyncStartNs = 0
     rendererOwnedCompositeRefreshAppliedCount += 1
     rendererOwnedCompositeRefreshPresentRate.record()
     finishRendererOwnedCompositeRefresh(
@@ -1414,12 +1487,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     submittedGeneration: UInt64
   ) {
     guard rendererOwnedCompositeRefreshInFlight,
-          rendererOwnedCompositeRefreshAsyncSubmittedGeneration == submittedGeneration else {
+          let startNs =
+            rendererOwnedCompositeRefreshAsyncStartNsByGeneration
+              .removeValue(forKey: submittedGeneration) else {
       return
     }
-    let startNs = rendererOwnedCompositeRefreshAsyncStartNs
-    rendererOwnedCompositeRefreshAsyncSubmittedGeneration = 0
-    rendererOwnedCompositeRefreshAsyncStartNs = 0
     rendererOwnedCompositeRefreshCoalescedCount += 1
     presentationState.recordMiss()
     finishRendererOwnedCompositeRefresh(
@@ -1445,8 +1517,31 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       rendererOwnedCompositeRefreshLatestProjectionNs > 0
         ? Double(nowNs - rendererOwnedCompositeRefreshLatestProjectionNs) / 1_000_000.0
         : 0.0
-    NSLog(
-      "VoidPlayer renderer-owned compose summary reason=%@ requestHz=%.1f submitHz=%.1f presentHz=%.1f displayTickHz=%.1f sourceFrameHz=%.1f projectionUpdateHz=%.1f pending=%llu submitted=%llu completed=%llu inFlight=%@ skippedInFlight=%d failures=%d projectionLagMs=%.2f composeP95Ms=%.2f flutterSurfaceDirty=%d sample=%d publish=%d unchanged=%d sourceChanges=%d awaitFirst=%d viewportAwait=%d warmActive=%@ warmTicks=%d warmComposes=%d continuousTicks=%d continuousComposes=%d sampleP95Ms=%.2f flutterReason=%@",
+    let targetDiagnostics = rendererTarget?.rendererOwnedTargetDiagnostics() ?? [:]
+    let layerSubmit = int64DiagnosticValue(
+      targetDiagnostics["rendererOwnedLayerRetainedCompositeSubmitCount"]
+    )
+    let layerPresent = int64DiagnosticValue(
+      targetDiagnostics["rendererOwnedLayerRetainedCompositePresentCount"]
+    )
+    let layerFailure = int64DiagnosticValue(
+      targetDiagnostics["rendererOwnedLayerRetainedCompositeFailureCount"]
+    )
+    let layerInFlight = int64DiagnosticValue(
+      targetDiagnostics["rendererOwnedLayerInFlightDrawableCount"]
+    )
+    let drawableAcquire = int64DiagnosticValue(
+      targetDiagnostics["rendererOwnedLayerDrawableAcquireCount"]
+    )
+    let drawableAcquireFailure = int64DiagnosticValue(
+      targetDiagnostics["rendererOwnedLayerDrawableAcquireFailureCount"]
+    )
+    let drawableAcquireP95Ms =
+      targetDiagnostics["rendererOwnedLayerDrawableAcquireP95Ms"] as? Double ?? 0.0
+    let layerCoalescedReason =
+      targetDiagnostics["rendererOwnedLayerLastCoalescedReason"] as? String ?? "n/a"
+    let summary = String(
+      format: "VoidPlayer renderer-owned compose summary reason=%@ requestHz=%.1f submitHz=%.1f presentHz=%.1f displayTickHz=%.1f sourceFrameHz=%.1f projectionUpdateHz=%.1f pending=%llu submitted=%llu completed=%llu inFlight=%@ skippedInFlight=%d failures=%d projectionLagMs=%.2f composeP95Ms=%.2f flutterSurfaceDirty=%d sample=%d publish=%d unchanged=%d sourceChanges=%d awaitFirst=%d viewportAwait=%d warmActive=%@ warmTicks=%d warmComposes=%d continuousTicks=%d continuousComposes=%d sampleP95Ms=%.2f flutterReason=%@ layerSubmit=%lld layerPresent=%lld layerFailure=%lld layerInFlight=%lld drawableAcquire=%lld drawableAcquireFailure=%lld drawableAcquireP95Ms=%.2f layerCoalescedReason=%@",
       reason,
       requestHz,
       submitHz,
@@ -1475,8 +1570,20 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       rendererOwnedFlutterSurfaceContinuousTickCount,
       rendererOwnedFlutterSurfaceContinuousComposeCount,
       rendererOwnedFlutterSurfaceSampleDuration.p95Ms(),
-      rendererOwnedFlutterSurfaceLastReason
+      rendererOwnedFlutterSurfaceLastReason,
+      layerSubmit,
+      layerPresent,
+      layerFailure,
+      layerInFlight,
+      drawableAcquire,
+      drawableAcquireFailure,
+      drawableAcquireP95Ms,
+      layerCoalescedReason
     )
+    NSLog("%@", summary)
+    summary.withCString { pointer in
+      VPMacOSLogProfilerSummary(pointer)
+    }
   }
 
   private func markRendererOwnedFlutterSurfaceDirty(reason: String) {
@@ -1507,7 +1614,22 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func rendererOwnedFlutterSurfaceContinuousActive() -> Bool {
-    false
+    rendererOwnedPresentationReady() &&
+      rendererTarget?.rendererOwnedRunnerLayerActive == true
+  }
+
+  private func rendererOwnedFlutterSurfaceContinuousComposeDue(nowNs: UInt64) -> Bool {
+    guard rendererOwnedFlutterSurfaceContinuousActive() else { return false }
+    let lastNs = rendererOwnedFlutterSurfaceLastContinuousComposeNs
+    return lastNs == 0 ||
+      nowNs >= lastNs + Self.rendererOwnedFlutterSurfaceContinuousComposeIntervalNs
+  }
+
+  private func rendererOwnedFlutterSurfaceContinuousSampleDue(nowNs: UInt64) -> Bool {
+    guard rendererOwnedFlutterSurfaceContinuousActive() else { return false }
+    let lastNs = rendererOwnedFlutterSurfaceLastContinuousSampleNs
+    return lastNs == 0 ||
+      nowNs >= lastNs + Self.rendererOwnedFlutterSurfaceContinuousSampleIntervalNs
   }
 
   @discardableResult
@@ -1761,6 +1883,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func rendererOwnedPresentationReady() -> Bool {
+    if rendererTarget?.rendererOwnedRunnerLayerActive == true {
+      return nativePlayer != nil &&
+        MacOSPresentationConfiguration.current.rendererOwnedPresentationEnabled
+    }
     let state = nativePlayer?.rendererOwnedPresentationState() ?? [:]
     return (state["rendererInitialized"] as? Bool ?? false) &&
       (state["targetInstalled"] as? Bool ?? false) &&
@@ -1855,6 +1981,20 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       ) {
         schedule()
       }
+    }
+  }
+
+  func scheduleNativeSourceCacheFrameAvailableFromCallback(
+    callbackGeneration: UInt64,
+    callbackContext: MacOSNativeFrameCallbackContext
+  ) {
+    DispatchQueue.main.async { [weak self, weak callbackContext] in
+      guard let self else { return }
+      guard callbackContext?.isCurrent(callbackGeneration) == true else {
+        return
+      }
+      self.rendererOwnedSourceCachePublishRate.record()
+      self.scheduleRendererOwnedCompositeRefresh(reason: "source-cache-publish")
     }
   }
 

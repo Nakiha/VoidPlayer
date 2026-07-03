@@ -73,7 +73,8 @@ extern "C" __attribute__((weak)) int VPWgpuMetalRendererRenderPackage(
   return -1;
 }
 
-extern "C" __attribute__((weak)) int VPWgpuMetalRendererRenderPackageAsync(
+extern "C" __attribute__((weak)) int
+VPWgpuMetalRendererBakePackageSourceAsync(
     VPWgpuMetalRenderer*,
     const VPWgpuMetalRenderRequest* request,
     VPWgpuMetalAsyncCompletion) {
@@ -98,7 +99,7 @@ VPWgpuMetalRendererRenderCVPixelBufferFrameSet(
 }
 
 extern "C" __attribute__((weak)) int
-VPWgpuMetalRendererRenderCVPixelBufferFrameSetAsync(
+VPWgpuMetalRendererBakeCVPixelBufferFrameSetSourceAsync(
     VPWgpuMetalRenderer*,
     const VPWgpuMetalCVPixelBufferRenderRequest* request,
     VPWgpuMetalAsyncCompletion) {

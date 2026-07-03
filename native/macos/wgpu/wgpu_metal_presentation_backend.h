@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -49,6 +50,10 @@ public:
                                    int max_track_slots) override;
   bool update_headless_metal_texture_output(
       const vr::PresentationExternalMetalRenderTarget& target) override;
+  bool draw_frame_to_external_metal_target(
+      const vr::RendererDrawSnapshot& snapshot,
+      const vr::PresentationBackendDrawHooks& hooks,
+      const vr::PresentationExternalMetalRenderTarget& target) override;
   void mark_headless_output_displayed(void* pixel_buffer) override;
   void protect_headless_output(void* pixel_buffer) override;
   void release_headless_output(void* pixel_buffer) override;
@@ -60,6 +65,7 @@ public:
   bool update_source_projection(
       const vr::PresentationSourceProjection& projection) override;
   void clear_source_projection() override;
+  void set_source_cache_frame_callback(std::function<void()> callback) override;
   vr::PresentationBackendStats presentation_stats() const override;
   vr::PresentationBackendDiagnostics diagnostics() const override;
   bool copy_last_frame_info(vr::PresentationBackendFrameInfo* out) const override;
@@ -97,6 +103,7 @@ private:
     uint64_t ring_generation = 0;
     uint64_t slot_id = 0;
     uint64_t output_generation = 0;
+    bool target_ring_enabled = false;
   };
   struct SourceMetricsResult {
     bool viewport_composite = false;
@@ -122,11 +129,13 @@ private:
     uint64_t target_ring_generation = 0;
     uint64_t target_slot_id = 0;
     uint64_t output_generation = 0;
+    bool target_ring_enabled_at_acquire = false;
     uint64_t package_copy_us = 0;
     int32_t package_storage = 0;
     uint64_t source_generation = 0;
     uint64_t source_signature = 0;
     bool source_upload = true;
+    bool source_bake_only = false;
     bool target_acquired = false;
     bool overlay_expected = false;
     uint64_t overlay_fill_rect_count = 0;
@@ -150,6 +159,7 @@ private:
                          bool source_upload,
                          uint64_t output_generation,
                          uint64_t target_ring_generation,
+                         bool target_ring_enabled_at_acquire,
                          uint64_t* stale_drop_count,
                          bool* stale_output_drop,
                          uint64_t* current_submitted_generation,
@@ -174,6 +184,7 @@ private:
   void complete_draw_target(uint64_t target_pixel_buffer_address,
                             uint64_t target_ring_generation,
                             uint64_t target_slot_id,
+                            bool target_ring_enabled_at_acquire,
                             bool success);
   void* capture_target_locked() const;
   void* current_draw_target_locked() const;
@@ -200,10 +211,15 @@ private:
   bool should_drop_stale_output_completion_locked(
       uint64_t output_generation,
       uint64_t target_ring_generation,
+      bool target_ring_enabled_at_acquire,
       uint64_t& current_target_ring_generation,
       uint64_t& current_completed_output_generation) const;
   void complete_async_draw(std::unique_ptr<AsyncDrawPending> pending,
                            bool success);
+  void complete_source_bake(std::unique_ptr<AsyncDrawPending> pending,
+                            bool success,
+                            uint64_t total_us,
+                            uint64_t gpu_wait_us);
 
   std::shared_ptr<AsyncState> async_state_;
   void* metal_device_ = nullptr;
@@ -247,6 +263,9 @@ private:
   uint64_t output_submitted_generation_ = 0;
   uint64_t output_completed_generation_ = 0;
   uint64_t retained_source_submitted_signature_ = 0;
+  bool source_bake_in_flight_ = false;
+  uint64_t source_bake_in_flight_generation_ = 0;
+  uint64_t source_bake_in_flight_signature_ = 0;
   std::vector<TargetSlot> target_ring_;
   mutable std::mutex mutex_;
 
@@ -279,6 +298,9 @@ private:
   uint64_t source_frame_cache_hit_count_ = 0;
   uint64_t source_frame_cache_miss_count_ = 0;
   uint64_t source_frame_stale_completion_drop_count_ = 0;
+  uint64_t source_bake_submit_count_ = 0;
+  uint64_t source_bake_commit_count_ = 0;
+  uint64_t source_bake_drop_count_ = 0;
   uint64_t output_stale_completion_drop_count_ = 0;
   uint64_t last_source_signature_ = 0;
   uint64_t metal_command_failure_count_ = 0;
@@ -316,6 +338,7 @@ private:
   vr::PresentationSourceProjection source_projection_;
   uint64_t source_projection_update_count_ = 0;
   uint64_t source_projection_consume_count_ = 0;
+  std::function<void()> source_cache_frame_callback_;
   std::vector<uint8_t> staging_buffer_;
   bool last_frame_info_available_ = false;
   vr::PresentationBackendFrameInfo last_frame_info_{};

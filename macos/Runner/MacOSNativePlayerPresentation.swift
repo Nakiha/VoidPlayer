@@ -10,6 +10,13 @@ extension MacOSNativePlayerSession {
     VPMacOSNativePlayerSetFrameAvailableCallback(handle, callback, userData)
   }
 
+  func setSourceCacheFrameAvailableCallback(
+    _ callback: VPMacOSSourceCacheFrameAvailableCallback?,
+    userData: UnsafeMutableRawPointer?
+  ) {
+    VPMacOSNativePlayerSetSourceCacheFrameAvailableCallback(handle, callback, userData)
+  }
+
   func installMetalPresentationTargetRing(
     backend: OpaquePointer,
     pixelBuffers: [CVPixelBuffer],
@@ -173,6 +180,48 @@ extension MacOSNativePlayerSession {
 
   func clearSourceProjection() {
     VPMacOSNativePlayerClearSourceProjection(handle)
+  }
+
+  func submitRetainedCompositeToMetalDrawable(
+    texture: MTLTexture,
+    width: Int,
+    height: Int,
+    maxTrackSlots: Int,
+    viewportLeft: Float,
+    viewportTop: Float,
+    viewportRight: Float,
+    viewportBottom: Float,
+    completion: VPMacOSRendererOwnedCompositeCompletion?,
+    userData: UnsafeMutableRawPointer?
+  ) throws {
+    var error = [CChar](repeating: 0, count: 1024)
+    let ret = VPMacOSNativePlayerSubmitRetainedCompositeToMetalDrawable(
+      handle,
+      Unmanaged.passUnretained(texture as AnyObject).toOpaque(),
+      Int32(width),
+      Int32(height),
+      UInt64(texture.pixelFormat.rawValue),
+      Int32(max(1, min(4, maxTrackSlots))),
+      viewportLeft,
+      viewportTop,
+      viewportRight,
+      viewportBottom,
+      completion,
+      userData,
+      &error,
+      error.count
+    )
+    guard ret == 0 else {
+      let message = String(cString: error)
+      let fallback = ret == -2
+        ? "renderer-owned retained composite deferred by backpressure"
+        : "renderer-owned retained composite failed with code \(ret)"
+      let finalMessage = message.isEmpty ? fallback : message
+      if ret == -2 {
+        throw MacOSNativePlayerError.transientFrameUnavailable(finalMessage)
+      }
+      throw MacOSNativePlayerError.failed(finalMessage)
+    }
   }
 
   func rendererOwnedPresentationActive() -> Bool {

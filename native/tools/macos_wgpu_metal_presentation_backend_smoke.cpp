@@ -19,6 +19,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -32,6 +33,7 @@ bool draw_wgpu_frame_and_wait(vr::PresentationBackend& backend,
                               const vr::RendererDrawSnapshot& snapshot,
                               vr::PresentationBackendDrawHooks hooks = {},
                               std::string* error = nullptr) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
   std::mutex mutex;
   std::condition_variable cv;
   bool completed = false;
@@ -54,14 +56,19 @@ bool draw_wgpu_frame_and_wait(vr::PresentationBackend& backend,
         }
         cv.notify_one();
       };
-  if (!backend.draw_frame(snapshot, hooks)) {
-    if (error) {
-      *error = backend.last_error();
+  while (!backend.draw_frame(snapshot, hooks)) {
+    const std::string backend_error = backend.last_error();
+    if (!vr::is_transient_presentation_backpressure_error(backend_error) ||
+        std::chrono::steady_clock::now() >= deadline) {
+      if (error) {
+        *error = backend_error;
+      }
+      return false;
     }
-    return false;
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   std::unique_lock<std::mutex> lock(mutex);
-  if (!cv.wait_for(lock, std::chrono::seconds(5), [&] { return completed; })) {
+  if (!cv.wait_until(lock, deadline, [&] { return completed; })) {
     if (error) {
       *error = "wgpu-metal async draw timed out";
     }
@@ -860,8 +867,9 @@ int main() {
         if (frame_info) {
           async_completion_frame_info = *frame_info;
         }
-      };
+  };
   const auto wgpu_source_stats_base = wgpu_backend->presentation_stats();
+  const auto wgpu_source_diagnostics_base = wgpu_backend->diagnostics();
   if (!draw_wgpu_frame_and_wait(*wgpu_backend, snapshot, wgpu_async_hooks)) {
     std::cerr << "WgpuMetal backend rejected BGRA snapshot: "
               << wgpu_backend->last_error() << "\n";
@@ -882,8 +890,9 @@ int main() {
     return fail("WgpuMetal backend BGRA draw did not record package copy metrics");
   }
   auto wgpu_stats = wgpu_backend->presentation_stats();
-  if (wgpu_stats.present_package_upload_count !=
-          wgpu_source_stats_base.present_package_upload_count + 1 ||
+  auto wgpu_diagnostics = wgpu_backend->diagnostics();
+  if (wgpu_diagnostics.source_cache_publish_count !=
+          wgpu_source_diagnostics_base.source_cache_publish_count + 1 ||
       wgpu_stats.last_present_package_storage !=
           VPMacOSNativePresentPackageStorageBGRA ||
       wgpu_stats.last_draw_succeeded == 0 ||
@@ -906,7 +915,7 @@ int main() {
       wgpu_stats.source_frame_cache_miss_count !=
           wgpu_source_stats_base.source_frame_cache_miss_count + 1 ||
       wgpu_stats.source_frame_cache_hit_count !=
-          wgpu_source_stats_base.source_frame_cache_hit_count) {
+          wgpu_source_stats_base.source_frame_cache_hit_count + 1) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend did not invalidate source cache across output target switch");
   }
@@ -989,15 +998,16 @@ int main() {
     return 1;
   }
   wgpu_stats = wgpu_backend->presentation_stats();
-  if (wgpu_stats.present_package_upload_count !=
-          wgpu_source_stats_base.present_package_upload_count + 2 ||
+  wgpu_diagnostics = wgpu_backend->diagnostics();
+  if (wgpu_diagnostics.source_cache_publish_count !=
+          wgpu_source_diagnostics_base.source_cache_publish_count + 2 ||
       wgpu_stats.last_draw_succeeded == 0 ||
       wgpu_stats.video_source_update_count !=
           wgpu_source_stats_base.video_source_update_count + 2 ||
       wgpu_stats.source_frame_cache_miss_count !=
           wgpu_source_stats_base.source_frame_cache_miss_count + 2 ||
       wgpu_stats.source_frame_cache_hit_count !=
-          wgpu_source_stats_base.source_frame_cache_hit_count) {
+          wgpu_source_stats_base.source_frame_cache_hit_count + 2) {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend cached BGRA diagnostics did not update");
   }
@@ -1038,7 +1048,7 @@ int main() {
       wgpu_stats.present_package_upload_count !=
           wgpu_before_viewport_stats.present_package_upload_count ||
       wgpu_stats.source_frame_cache_hit_count !=
-          wgpu_source_stats_base.source_frame_cache_hit_count + 1 ||
+          wgpu_source_stats_base.source_frame_cache_hit_count + 3 ||
       wgpu_stats.video_source_update_count !=
           wgpu_source_stats_base.video_source_update_count + 2 ||
       wgpu_stats.source_frame_cache_miss_count !=

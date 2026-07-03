@@ -94,7 +94,8 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
   {
     std::lock_guard<std::mutex> lock(player->callback_mutex);
     out->target_installed =
-        player->presentation_target_pixel_buffer &&
+        (player->presentation_target_pixel_buffer ||
+         player->presentation_external_metal_target_active) &&
                 player->presentation_target_width > 0 &&
                 player->presentation_target_height > 0
             ? 1
@@ -138,7 +139,11 @@ int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
       }
       out->backend_available = backend_stats.backend_available;
       out->target_installed =
-          out->target_installed != 0 && backend_stats.target_installed != 0 ? 1 : 0;
+          out->target_installed != 0 &&
+                  (backend_stats.target_installed != 0 ||
+                   player->presentation_external_metal_target_active)
+              ? 1
+              : 0;
       out->last_draw_succeeded = backend_stats.last_draw_succeeded;
       out->upload_storage_kind = backend_stats.last_present_package_storage;
       out->overlay_last_expected = backend_stats.overlay_last_expected;

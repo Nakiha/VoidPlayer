@@ -4,13 +4,13 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
 use voidplayer_wgpu_core::{
-    composite_metal_retained_source_with_renderer,
+    bake_metal_cv_pixel_buffer_frame_set_source_with_renderer_async,
+    bake_metal_package_source_with_renderer_async, composite_metal_retained_source_with_renderer,
     composite_metal_retained_source_with_renderer_async,
-    render_metal_cv_pixel_buffer_frame_set_with_renderer,
-    render_metal_cv_pixel_buffer_frame_set_with_renderer_async, render_metal_package,
-    render_metal_package_with_renderer, render_metal_package_with_renderer_async,
-    WgpuMetalAsyncCompletion, WgpuMetalCVPixelBufferRenderRequest, WgpuMetalProfilerSnapshot,
-    WgpuMetalRenderRequest, WgpuMetalRenderer, WgpuMetalRetainedCompositeRequest,
+    render_metal_cv_pixel_buffer_frame_set_with_renderer, render_metal_package,
+    render_metal_package_with_renderer, WgpuMetalAsyncCompletion,
+    WgpuMetalCVPixelBufferRenderRequest, WgpuMetalProfilerSnapshot, WgpuMetalRenderRequest,
+    WgpuMetalRenderer, WgpuMetalRetainedCompositeRequest,
 };
 
 #[repr(C)]
@@ -248,7 +248,7 @@ pub extern "C" fn VPWgpuMetalRendererRenderPackage(
 }
 
 #[no_mangle]
-pub extern "C" fn VPWgpuMetalRendererRenderPackageAsync(
+pub extern "C" fn VPWgpuMetalRendererBakePackageSourceAsync(
     renderer: *mut WgpuMetalRenderer,
     request: *const WgpuMetalRenderRequest,
     completion: WgpuMetalAsyncCompletion,
@@ -259,14 +259,14 @@ pub extern "C" fn VPWgpuMetalRendererRenderPackageAsync(
     let renderer_ref = unsafe { &mut *renderer };
     let request_ref = unsafe { &*request };
     let result = catch_unwind(AssertUnwindSafe(|| {
-        render_metal_package_with_renderer_async(renderer_ref, request_ref, completion)
+        bake_metal_package_source_with_renderer_async(renderer_ref, request_ref, completion)
     }));
     match result {
         Err(_) => {
             write_error(
                 request_ref.error,
                 request_ref.error_size,
-                "wgpu-metal async render panicked",
+                "wgpu-metal async package source bake panicked",
             );
             -1
         }
@@ -315,7 +315,7 @@ pub extern "C" fn VPWgpuMetalRendererRenderCVPixelBufferFrameSet(
 }
 
 #[no_mangle]
-pub extern "C" fn VPWgpuMetalRendererRenderCVPixelBufferFrameSetAsync(
+pub extern "C" fn VPWgpuMetalRendererBakeCVPixelBufferFrameSetSourceAsync(
     renderer: *mut WgpuMetalRenderer,
     request: *const WgpuMetalCVPixelBufferRenderRequest,
     completion: WgpuMetalAsyncCompletion,
@@ -326,7 +326,7 @@ pub extern "C" fn VPWgpuMetalRendererRenderCVPixelBufferFrameSetAsync(
     let renderer_ref = unsafe { &mut *renderer };
     let request_ref = unsafe { &*request };
     let result = catch_unwind(AssertUnwindSafe(|| {
-        render_metal_cv_pixel_buffer_frame_set_with_renderer_async(
+        bake_metal_cv_pixel_buffer_frame_set_source_with_renderer_async(
             renderer_ref,
             request_ref,
             completion,
@@ -337,7 +337,7 @@ pub extern "C" fn VPWgpuMetalRendererRenderCVPixelBufferFrameSetAsync(
             write_error(
                 request_ref.error,
                 request_ref.error_size,
-                "wgpu-metal async CVPixelBuffer render panicked",
+                "wgpu-metal async CVPixelBuffer source bake panicked",
             );
             -1
         }

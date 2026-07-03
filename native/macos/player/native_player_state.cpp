@@ -165,6 +165,7 @@ void VPMacOSNativePlayer::shutdown_renderer_locked() {
     last_renderer_owned_source_upload = false;
     last_renderer_owned_source_generation = 0;
     renderer_owned_source_commit_generation = 0;
+    presentation_external_metal_target_active = false;
   }
 }
 
@@ -251,6 +252,65 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
       [this](const vr::PresentationBackendFrameInfo* frame_info) {
         on_frame_available(frame_info);
       });
+  renderer->set_source_cache_frame_callback(
+      [this]() { on_source_cache_frame_available(); });
+  renderer->set_frame_failure_callback(
+      [this](const char* message) { on_frame_failed(message); });
+  renderer_active.store(true, std::memory_order_release);
+  perf_start_time = std::chrono::steady_clock::now();
+  update_decode_names_locked();
+  return true;
+}
+
+bool VPMacOSNativePlayer::ensure_renderer_for_external_metal_target_locked(
+    int32_t width,
+    int32_t height,
+    int32_t max_track_slots,
+    std::string& error) {
+  if (renderer_active_locked()) {
+    return true;
+  }
+  if (opened_path.empty()) {
+    error = "path is empty";
+    return false;
+  }
+  if (width <= 0 || height <= 0) {
+    error = "renderer-owned external Metal target dimensions are invalid";
+    return false;
+  }
+
+  auto next_renderer = std::make_unique<vr::Renderer>();
+  vr::RendererConfig config;
+  config.video_paths = {opened_path};
+  config.width = width;
+  config.height = height;
+  config.headless = true;
+  config.use_hardware_decode =
+      use_hardware_decode &&
+      !vp_macos::videotoolbox_disabled_by_env();
+  config.initial_file_id = 0;
+  config.backend.type = vr::RendererBackendType::WgpuMetal;
+  config.backend.output = nullptr;
+  config.backend.max_track_slots =
+      std::clamp(max_track_slots,
+                 static_cast<int32_t>(1),
+                 static_cast<int32_t>(VPMacOSNativeMaxTracks));
+  if (!next_renderer->initialize(config)) {
+    error = "shared macOS renderer failed to initialize";
+    return false;
+  }
+  next_renderer->set_background_color(background_color[0],
+                                      background_color[1],
+                                      background_color[2],
+                                      background_color[3]);
+
+  renderer = std::move(next_renderer);
+  renderer->set_frame_callback(
+      [this](const vr::PresentationBackendFrameInfo* frame_info) {
+        on_frame_available(frame_info);
+      });
+  renderer->set_source_cache_frame_callback(
+      [this]() { on_source_cache_frame_available(); });
   renderer->set_frame_failure_callback(
       [this](const char* message) { on_frame_failed(message); });
   renderer_active.store(true, std::memory_order_release);
@@ -316,9 +376,8 @@ void VPMacOSNativePlayer::on_frame_available(
         last_renderer_owned_source_upload = completed_frame_info->source_upload;
         last_renderer_owned_source_generation =
             completed_frame_info->source_generation;
-        if (completed_frame_info->source_upload &&
-            completed_frame_info->source_generation >
-                renderer_owned_source_commit_generation) {
+        if (completed_frame_info->source_generation >
+            renderer_owned_source_commit_generation) {
           renderer_owned_source_commit_generation =
               completed_frame_info->source_generation;
         }
@@ -331,13 +390,14 @@ void VPMacOSNativePlayer::on_frame_available(
         constexpr int64_t kRefreshPtsUpperToleranceUs = 1'500'000;
         const int64_t min_pts_us = renderer_owned_refresh_min_pts_us;
         const int64_t completed_pts_us = completed_frame_info->pts_us;
-        const bool source_upload_or_legacy =
+        const bool source_generation_current =
             !renderer_owned_source_generation_supported ||
-            completed_frame_info->source_upload;
+            completed_frame_info->source_generation >=
+                renderer_owned_source_commit_generation;
         if (completed_pts_us >= min_pts_us &&
             completed_pts_us <= min_pts_us + kRefreshPtsLowerToleranceUs +
                                     kRefreshPtsUpperToleranceUs &&
-            source_upload_or_legacy) {
+            source_generation_current) {
           renderer_owned_refresh_min_pts_us = -1;
           spdlog::info(
               "[MacOSFrameRefresh] clear_seek_gate_from_frame_callback min_pts_us={} pts_us={} source_upload={} source_generation={}",
@@ -430,6 +490,34 @@ void VPMacOSNativePlayer::on_frame_available(
         pts_us,
         callback != nullptr,
         suppress_external_callback);
+  }
+}
+
+void VPMacOSNativePlayer::on_source_cache_frame_available() {
+  VPMacOSSourceCacheFrameAvailableCallback callback = nullptr;
+  void* user_data = nullptr;
+  bool callback_in_flight = false;
+  {
+    std::lock_guard<std::mutex> callback_lock(callback_mutex);
+    callback = source_cache_frame_available_callback;
+    user_data = source_cache_frame_available_user_data;
+    if (callback) {
+      ++source_cache_frame_available_callback_in_flight;
+      callback_in_flight = true;
+    }
+  }
+  presentation_condition.notify_all();
+  if (callback) {
+    callback(user_data);
+  }
+  if (callback_in_flight) {
+    {
+      std::lock_guard<std::mutex> callback_lock(callback_mutex);
+      if (source_cache_frame_available_callback_in_flight > 0) {
+        --source_cache_frame_available_callback_in_flight;
+      }
+    }
+    callback_condition.notify_all();
   }
 }
 

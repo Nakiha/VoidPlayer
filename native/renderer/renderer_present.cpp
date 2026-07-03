@@ -67,7 +67,7 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
         preview_draw_pending = loop_driver_.preview_pending();
     }
     if (renderer_owned_refresh) {
-        if (preview_draw_pending) {
+        if (preview_draw_pending && !viewport_compositor_refresh) {
             return true;
         }
         auto present_context = present_command_context();

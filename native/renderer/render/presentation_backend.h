@@ -106,6 +106,12 @@ public:
         const PresentationExternalMetalRenderTarget&) {
         return false;
     }
+    virtual bool draw_frame_to_external_metal_target(
+        const RendererDrawSnapshot&,
+        const PresentationBackendDrawHooks&,
+        const PresentationExternalMetalRenderTarget&) {
+        return false;
+    }
     virtual bool update_external_flutter_metal_surface(
         const PresentationExternalMetalSurface&) {
         return false;
@@ -130,8 +136,8 @@ public:
     virtual bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot&) { return false; }
     virtual void release_source_cache_bundle(int, uint64_t) {}
-    virtual void set_source_cache_frame_callback(std::function<void()>) {}
 #endif
+    virtual void set_source_cache_frame_callback(std::function<void()>) {}
     virtual bool update_source_projection(const PresentationSourceProjection&) {
         return false;
     }

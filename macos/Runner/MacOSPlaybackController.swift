@@ -104,6 +104,10 @@ final class MacOSPlaybackController {
           let rendererTarget else {
       return
     }
+    if rendererTarget.rendererOwnedRunnerLayerActive {
+      setTargetInstalled(true)
+      return
+    }
     setTargetInstalled(rendererTarget.installNativePresentationTarget(
       player,
       maxTrackSlots: maxTrackSlots,

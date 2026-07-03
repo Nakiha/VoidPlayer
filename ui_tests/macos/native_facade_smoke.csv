@@ -5,7 +5,7 @@
 0.0, SET_DECODE_MODE, forceSoftware
 0.0, GENERATE_TEST_VIDEO, build/generated/macos/native_facade_h264.mp4, 270, 30, 1920, 1080
 0.3, ADD_MEDIA, build/generated/macos/native_facade_h264.mp4
-3.0, ASSERT_TRACK_COUNT, 1
+3.0, WAIT_TRACK_COUNT, 1, 5000
 3.1, ASSERT_NATIVE_BACKEND, macos-native-player, true
 3.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-wgpu-metal
 3.21, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true

@@ -18,7 +18,7 @@ enum MacOSRendererProfilerSummary {
       ? drawCount * 1000 / presentedCount
       : 0
     let summary = String(
-      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutDeferred=%lld layoutPublished=%lld layoutStaleAfterDraw=%lld layoutSuperseded=%lld layoutCallbackSuppressed=%lld nativeLayoutPresented=%lld drawPerFrameX1000=%lld layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld videoSourceUpdates=%lld viewportComposites=%lld sourceCacheHits=%lld sourceCacheMisses=%lld sourceCacheHitRatioX1000=%lld targetRebuild=%lld targetAlloc=%lld targetRebuildReuse=%lld targetLastAlloc=%lld targetLastReuse=%lld targetLastMs=%.2f retiredBuffers=%lld prewarm=%lld/%lld/%lld/%lld inFlightMetal=%lld metalBufferExhaustion=%lld asyncMetal=%d metalCompletionP95Us=%lld metalFailures=%lld staleCompletionDrops=%lld compositorTraceHz=%.1f compositorTraceReceived=%lld compositorTraceComposited=%lld compositorTraceCoalesced=%lld compositorDartToSwiftP95Ms=%.2f compositorSwiftQueueP95Ms=%.2f compositorReceiveToCompositeP95Ms=%.2f",
+      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutDeferred=%lld layoutPublished=%lld layoutStaleAfterDraw=%lld layoutSuperseded=%lld layoutCallbackSuppressed=%lld nativeLayoutPresented=%lld drawPerFrameX1000=%lld layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld videoSourceUpdates=%lld viewportComposites=%lld sourceCacheHits=%lld sourceCacheMisses=%lld sourceCacheHitRatioX1000=%lld targetRebuild=%lld targetAlloc=%lld targetRebuildReuse=%lld targetLastAlloc=%lld targetLastReuse=%lld targetLastMs=%.2f retiredBuffers=%lld prewarm=%lld/%lld/%lld/%lld inFlightMetal=%lld metalBufferExhaustion=%lld asyncMetal=%d metalCompletionP95Us=%lld metalFailures=%lld staleCompletionDrops=%lld compositorTraceHz=%.1f compositorTraceReceived=%lld compositorTraceComposited=%lld compositorTraceCoalesced=%lld compositorDartToSwiftP95Ms=%.2f compositorSwiftQueueP95Ms=%.2f compositorReceiveToCompositeP95Ms=%.2f compositorBackend=%@ compositorHz=%.1f compositorTickHz=%.1f compositorTickP95Ms=%.2f compositorFrameP95Ms=%.2f videoAcquireP95Ms=%.2f flutterAcquireP95Ms=%.2f sourceAcquireP95Ms=%.2f drawableAcquireP95Ms=%.2f wgpuSubmitP95Ms=%.2f wgpuCompletionP95Ms=%.2f inFlightSkipHz=%.1f staticSkipHz=%.1f sourceChangeHz=%.1f videoChangeHz=%.1f flutterChangeHz=%.1f wgpuImportUs=%lld wgpuPrepareUs=%lld wgpuBindGroupUs=%lld wgpuPassUs=%lld wgpuSubmitUs=%lld wgpuCpuUs=%lld wgpuDestImport=%lld/%lld wgpuSourceImport=%lld/%lld wgpuCache=%lld evict=%lld wgpuFinalBindGroups=%lld overlayBindGroups=%lld overlayLayer=%lld/%lld",
       isPlaying ? 1 : 0,
       trackCount,
       stringValue(viewport, "viewportClockSource", defaultValue: "unknown"),
@@ -85,7 +85,39 @@ enum MacOSRendererProfilerSummary {
       int64Value(compositor, "nativeCompositorTraceCoalescedBeforeCompositeCount"),
       doubleValue(compositor, "nativeCompositorDartToSwiftP95Ms"),
       doubleValue(compositor, "nativeCompositorSwiftQueueP95Ms"),
-      doubleValue(compositor, "nativeCompositorReceiveToCompositeP95Ms")
+      doubleValue(compositor, "nativeCompositorReceiveToCompositeP95Ms"),
+      stringValue(compositor, "nativeCompositorBackend", defaultValue: "unknown"),
+      doubleValue(compositor, "nativeCompositorCompositeHz"),
+      doubleValue(compositor, "nativeCompositorDisplayTickHz"),
+      doubleValue(compositor, "nativeCompositorDisplayTickIntervalP95Ms"),
+      doubleValue(compositor, "nativeCompositorFrameCpuP95Ms"),
+      doubleValue(compositor, "nativeCompositorVideoAcquireP95Ms"),
+      doubleValue(compositor, "nativeCompositorFlutterAcquireP95Ms"),
+      doubleValue(compositor, "nativeCompositorSourceAcquireP95Ms"),
+      doubleValue(compositor, "nativeCompositorDrawableAcquireP95Ms"),
+      doubleValue(compositor, "nativeCompositorWgpuSubmitCpuP95Ms"),
+      doubleValue(compositor, "nativeCompositorWgpuCompletionP95Ms"),
+      doubleValue(compositor, "nativeCompositorInFlightSkipHz"),
+      doubleValue(compositor, "nativeCompositorStaticSkipHz"),
+      doubleValue(compositor, "nativeCompositorSourceChangeHz"),
+      doubleValue(compositor, "nativeCompositorVideoSourceChangeHz"),
+      doubleValue(compositor, "nativeCompositorFlutterSourceChangeHz"),
+      int64Value(compositor, "nativeCompositorWgpuLastImportUs"),
+      int64Value(compositor, "nativeCompositorWgpuLastPrepareUs"),
+      int64Value(compositor, "nativeCompositorWgpuLastBindGroupUs"),
+      int64Value(compositor, "nativeCompositorWgpuLastPassEncodeUs"),
+      int64Value(compositor, "nativeCompositorWgpuLastSubmitUs"),
+      int64Value(compositor, "nativeCompositorWgpuLastCpuRenderUs"),
+      int64Value(compositor, "nativeCompositorWgpuDestinationImportCount"),
+      int64Value(compositor, "nativeCompositorWgpuDestinationImportReuseCount"),
+      int64Value(compositor, "nativeCompositorWgpuSourceImportCount"),
+      int64Value(compositor, "nativeCompositorWgpuSourceImportReuseCount"),
+      int64Value(compositor, "nativeCompositorWgpuImportedTextureCacheSize"),
+      int64Value(compositor, "nativeCompositorWgpuImportedTextureCacheEvictionCount"),
+      int64Value(compositor, "nativeCompositorWgpuFinalBindGroupCreateCount"),
+      int64Value(compositor, "nativeCompositorWgpuOverlayBindGroupCreateCount"),
+      int64Value(compositor, "nativeCompositorWgpuOverlayLayerRebuildCount"),
+      int64Value(compositor, "nativeCompositorWgpuOverlayLayerReuseCount")
     )
     summary.withCString { pointer in
       VPMacOSLogProfilerSummary(pointer)

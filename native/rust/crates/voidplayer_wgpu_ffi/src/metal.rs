@@ -5,12 +5,14 @@ use std::ptr;
 
 use voidplayer_wgpu_core::{
     composite_metal_retained_source_with_renderer,
-    composite_metal_retained_source_with_renderer_async,
+    composite_metal_retained_source_with_renderer_async, composite_metal_runner_with_renderer,
+    composite_metal_runner_with_renderer_async,
     render_metal_cv_pixel_buffer_frame_set_with_renderer,
     render_metal_cv_pixel_buffer_frame_set_with_renderer_async, render_metal_package,
     render_metal_package_with_renderer, render_metal_package_with_renderer_async,
     WgpuMetalAsyncCompletion, WgpuMetalCVPixelBufferRenderRequest, WgpuMetalProfilerSnapshot,
     WgpuMetalRenderRequest, WgpuMetalRenderer, WgpuMetalRetainedCompositeRequest,
+    WgpuMetalRunnerCompositeRequest,
 };
 
 #[repr(C)]
@@ -405,6 +407,73 @@ pub extern "C" fn VPWgpuMetalRendererCompositeRetainedSourceAsync(
                 request_ref.error,
                 request_ref.error_size,
                 "wgpu-metal async retained composite panicked",
+            );
+            -1
+        }
+        Ok(Ok(())) => {
+            write_error(request_ref.error, request_ref.error_size, "");
+            0
+        }
+        Ok(Err(message)) => {
+            write_error(request_ref.error, request_ref.error_size, message);
+            -1
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn VPWgpuMetalRendererCompositeRunner(
+    renderer: *mut WgpuMetalRenderer,
+    request: *const WgpuMetalRunnerCompositeRequest,
+) -> c_int {
+    if renderer.is_null() || request.is_null() {
+        return -1;
+    }
+    let renderer_ref = unsafe { &mut *renderer };
+    let request_ref = unsafe { &*request };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        composite_metal_runner_with_renderer(renderer_ref, request_ref)
+    }));
+    match result {
+        Err(_) => {
+            write_error(
+                request_ref.error,
+                request_ref.error_size,
+                "wgpu-metal runner composite panicked",
+            );
+            -1
+        }
+        Ok(Ok(())) => {
+            write_error(request_ref.error, request_ref.error_size, "");
+            0
+        }
+        Ok(Err(message)) => {
+            write_error(request_ref.error, request_ref.error_size, message);
+            -1
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn VPWgpuMetalRendererCompositeRunnerAsync(
+    renderer: *mut WgpuMetalRenderer,
+    request: *const WgpuMetalRunnerCompositeRequest,
+    completion: WgpuMetalAsyncCompletion,
+) -> c_int {
+    if renderer.is_null() || request.is_null() {
+        return -1;
+    }
+    let renderer_ref = unsafe { &mut *renderer };
+    let request_ref = unsafe { &*request };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        composite_metal_runner_with_renderer_async(renderer_ref, request_ref, completion)
+    }));
+    match result {
+        Err(_) => {
+            write_error(
+                request_ref.error,
+                request_ref.error_size,
+                "wgpu-metal async runner composite panicked",
             );
             -1
         }

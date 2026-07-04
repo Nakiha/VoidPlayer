@@ -135,6 +135,29 @@ VPWgpuMetalRendererCompositeRetainedSourceAsync(
   return -1;
 }
 
+extern "C" __attribute__((weak)) int VPWgpuMetalRendererCompositeRunner(
+    VPWgpuMetalRenderer*,
+    const VPWgpuMetalRunnerCompositeRequest* request) {
+  if (request) {
+    write_error(request->error,
+                request->error_size,
+                "wgpu-metal Rust FFI is not linked");
+  }
+  return -1;
+}
+
+extern "C" __attribute__((weak)) int VPWgpuMetalRendererCompositeRunnerAsync(
+    VPWgpuMetalRenderer*,
+    const VPWgpuMetalRunnerCompositeRequest* request,
+    VPWgpuMetalAsyncCompletion) {
+  if (request) {
+    write_error(request->error,
+                request->error_size,
+                "wgpu-metal Rust FFI is not linked");
+  }
+  return -1;
+}
+
 extern "C" __attribute__((weak)) int VPWgpuMetalRenderPackage(
     const VPWgpuMetalRenderRequest* request) {
   if (request) {

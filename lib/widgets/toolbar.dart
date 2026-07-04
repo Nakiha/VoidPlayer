@@ -581,7 +581,7 @@ class _AnalysisButtonState extends State<_AnalysisButton>
       _lastButtonSignature = _buttonSignature();
     }
     if (_overlayEntry != null && oldWidget.tracks != widget.tracks) {
-      _overlayEntry!.markNeedsBuild();
+      _markOverlayNeedsBuildAfterFrame();
     }
   }
 
@@ -720,6 +720,15 @@ class _AnalysisButtonState extends State<_AnalysisButton>
     );
     overlay.insert(_overlayEntry!);
     _panelAnimationController.forward(from: 0);
+  }
+
+  void _markOverlayNeedsBuildAfterFrame() {
+    final entry = _overlayEntry;
+    if (entry == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _overlayEntry != entry) return;
+      entry.markNeedsBuild();
+    });
   }
 
   void _scheduleHidePanel() {

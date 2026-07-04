@@ -8,6 +8,7 @@
 1.8, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
 3.8, ASSERT_TRACK_COUNT, 2
 3.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
+3.905, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorBackend, wgpu-metal-thin-runner
 3.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 3.92, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 3.93, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0

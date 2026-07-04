@@ -26,6 +26,19 @@ enum {
   VP_WGPU_METAL_OUTPUT_COLOR_MODE_EDR = 2,
 };
 
+enum {
+  VP_WGPU_METAL_TEXTURE_FORMAT_BGRA8_UNORM = 1,
+  VP_WGPU_METAL_TEXTURE_FORMAT_RGBA16_FLOAT = 2,
+};
+
+typedef struct VPWgpuMetalRunnerTexture {
+  void* mtl_texture;
+  int32_t width;
+  int32_t height;
+  int32_t format;
+  int32_t present;
+} VPWgpuMetalRunnerTexture;
+
 typedef struct VPWgpuMetalRendererInfo {
   char adapter_description[128];
   char driver_type[64];
@@ -118,6 +131,32 @@ typedef struct VPWgpuMetalRetainedCompositeRequest {
   size_t error_size;
 } VPWgpuMetalRetainedCompositeRequest;
 
+typedef struct VPWgpuMetalRunnerCompositeRequest {
+  void* destination_mtl_texture;
+  int32_t output_format;
+  int32_t output_color_mode;
+  VPWgpuMetalRunnerTexture video;
+  VPWgpuMetalRunnerTexture flutter;
+  VPWgpuMetalRunnerTexture sources[VPMacOSNativeMaxTracks];
+  const VPMacOSNativePresentDecisionInfo* decision;
+  float viewport_rect[4];
+  int32_t source_cache_active;
+  int32_t video_srgb_to_linear;
+  int32_t flutter_srgb_to_linear;
+  int32_t source_srgb_to_linear;
+  const VPMacOSNativeOverlayGpuRect* overlay_fill_rects;
+  size_t overlay_fill_rect_count;
+  const VPMacOSNativeOverlayGpuRect* overlay_line_rects;
+  size_t overlay_line_rect_count;
+  const VPMacOSNativeOverlayGpuRect* overlay_motion_lines;
+  size_t overlay_motion_line_count;
+  uint64_t overlay_generation;
+  int32_t width;
+  int32_t height;
+  char* error;
+  size_t error_size;
+} VPWgpuMetalRunnerCompositeRequest;
+
 typedef void (*VPWgpuMetalAsyncCompletionCallback)(void* user_data,
                                                    int32_t result);
 
@@ -155,6 +194,13 @@ int VPWgpuMetalRendererCompositeRetainedSource(
 int VPWgpuMetalRendererCompositeRetainedSourceAsync(
     VPWgpuMetalRenderer* renderer,
     const VPWgpuMetalRetainedCompositeRequest* request,
+    VPWgpuMetalAsyncCompletion completion);
+int VPWgpuMetalRendererCompositeRunner(
+    VPWgpuMetalRenderer* renderer,
+    const VPWgpuMetalRunnerCompositeRequest* request);
+int VPWgpuMetalRendererCompositeRunnerAsync(
+    VPWgpuMetalRenderer* renderer,
+    const VPWgpuMetalRunnerCompositeRequest* request,
     VPWgpuMetalAsyncCompletion completion);
 int VPWgpuMetalRenderPackage(const VPWgpuMetalRenderRequest* request);
 

@@ -83,6 +83,21 @@ var overlay_layer_texture: texture_2d_array<f32>;
 @group(0) @binding(14)
 var flutter_surface_texture: texture_2d<f32>;
 
+@group(0) @binding(15)
+var runner_video_texture: texture_2d<f32>;
+
+@group(0) @binding(16)
+var runner_source0_texture: texture_2d<f32>;
+
+@group(0) @binding(17)
+var runner_source1_texture: texture_2d<f32>;
+
+@group(0) @binding(18)
+var runner_source2_texture: texture_2d<f32>;
+
+@group(0) @binding(19)
+var runner_source3_texture: texture_2d<f32>;
+
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
 };
@@ -1025,6 +1040,52 @@ fn sample_bgra(track: i32, uv: vec2<f32>) -> vec4<f32> {
   return sample_bgra_nearest(track, uv);
 }
 
+fn runner_flags() -> i32 {
+  return i32(round(params.split.w));
+}
+
+fn runner_source_cache_active() -> bool {
+  return (runner_flags() & 1) != 0;
+}
+
+fn runner_video_srgb_to_linear() -> bool {
+  return (runner_flags() & 2) != 0;
+}
+
+fn runner_flutter_srgb_to_linear() -> bool {
+  return (runner_flags() & 4) != 0;
+}
+
+fn runner_source_srgb_to_linear() -> bool {
+  return (runner_flags() & 8) != 0;
+}
+
+fn map_runner_texture_to_output(color: vec4<f32>, srgb_to_linear_when_edr: bool) -> vec4<f32> {
+  if (output_is_edr() && srgb_to_linear_when_edr) {
+    return vec4<f32>(srgb_to_linear(color.rgb), color.a);
+  }
+  return color;
+}
+
+fn sample_runner_source_texture(track: i32, uv: vec2<f32>) -> vec4<f32> {
+  if (track == 0) {
+    return textureSample(runner_source0_texture, src_sampler, uv);
+  }
+  if (track == 1) {
+    return textureSample(runner_source1_texture, src_sampler, uv);
+  }
+  if (track == 2) {
+    return textureSample(runner_source2_texture, src_sampler, uv);
+  }
+  return textureSample(runner_source3_texture, src_sampler, uv);
+}
+
+fn sample_runner_source(track: i32, uv: vec2<f32>) -> vec4<f32> {
+  return map_runner_texture_to_output(
+    sample_runner_source_texture(track, uv),
+    runner_source_srgb_to_linear());
+}
+
 fn cv_yuv_to_rgb(track: i32, y_norm: f32, uv_norm: vec2<f32>) -> vec4<f32> {
   let format = vec4_get_i(params.yuv_format, track);
   let high_bit = format == 2;
@@ -1118,6 +1179,50 @@ fn sample_cv_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
     return sample_cv_yuv_track_bilinear(cv_y3, cv_uv3, track, uv);
   }
   return sample_cv_yuv_track_nearest(cv_y3, cv_uv3, track, uv);
+}
+
+@fragment
+fn fs_runner_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+  let flutter_size = max(params.flutter_size.xy, vec2<f32>(1.0));
+  let viewport_min = params.viewport_rect.xy;
+  let viewport_size = max(params.viewport_rect.zw, vec2<f32>(1.0));
+  let viewport_max = viewport_min + viewport_size;
+  var base = map_sdr_ui_to_output(params.background);
+
+  if (position.x >= viewport_min.x && position.y >= viewport_min.y &&
+      position.x < viewport_max.x && position.y < viewport_max.y) {
+    let viewport_uv = (position.xy - viewport_min) / viewport_size;
+    if (runner_source_cache_active()) {
+      let selection = select_track(viewport_uv);
+      let track = clamp(selection.x, 0, 3);
+      let order_index = selection.y;
+      if (vec4_get_i(params.present, track) != 0) {
+        let uv = source_uv(track, track_local_uv(viewport_uv, order_index));
+        if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
+          base = apply_split_divider(
+            sample_runner_source(track, uv),
+            position.x - viewport_min.x);
+        }
+      }
+    } else {
+      base = map_runner_texture_to_output(
+        textureSample(runner_video_texture, src_sampler, viewport_uv),
+        runner_video_srgb_to_linear());
+    }
+  }
+
+  if (position.x >= 0.0 && position.y >= 0.0 &&
+      position.x < flutter_size.x && position.y < flutter_size.y) {
+    var flutter = textureSample(
+      flutter_surface_texture,
+      src_sampler,
+      position.xy / flutter_size);
+    if (runner_flutter_srgb_to_linear()) {
+      flutter = map_premul_sdr_ui_to_output(flutter);
+    }
+    return premul_blend_over(base, flutter);
+  }
+  return base;
 }
 
 @fragment

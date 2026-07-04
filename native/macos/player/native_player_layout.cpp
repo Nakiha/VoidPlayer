@@ -63,6 +63,16 @@ void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
   }
 }
 
+void VPMacOSNativePlayerNoteViewportCompositorActivity(VPMacOSNativePlayer* player) {
+  if (!player) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(player->mutex);
+  if (player->renderer_active_locked()) {
+    player->renderer->note_viewport_compositor_activity();
+  }
+}
+
 int VPMacOSNativePlayerCopyLayout(VPMacOSNativePlayer* player,
                                   VPMacOSNativeLayoutState* out) {
   if (!player || !out) {

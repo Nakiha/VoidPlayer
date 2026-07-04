@@ -27,6 +27,8 @@ struct RendererPresentCommandHooks {
     std::function<void(const char* operation)> enter_terminal_device_lost_locked;
     // Called with state_mutex held.
     std::function<bool()> playback_inactive_or_paused;
+    // Must not take renderer state/device locks through this context.
+    std::function<void()> playback_frame_ready_for_viewport_compositor;
 };
 
 struct RendererPresentCommandContext {

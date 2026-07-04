@@ -1,0 +1,39 @@
+# macOS WGPU thin-runner playback source-projection pacing canary.
+# Run with:
+#   VOIDPLAYER_MACOS_PRESENTATION_MODE=wgpu-metal python dev.py mac-ui-test --build ui_tests/macos/wgpu_metal_playback_source_projection_pacing_regression.csv
+@WINDOW, 1366, 768
+0.0, SET_DECODE_MODE, forceSoftware
+0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+1.6, ASSERT_TRACK_COUNT, 1
+1.8, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+3.8, ASSERT_TRACK_COUNT, 2
+3.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
+3.91, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorBackend, wgpu-metal-thin-runner
+3.92, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
+4.0, SET_ZOOM, 3.0
+4.1, SET_LAYOUT_MODE, 1
+4.2, SET_SPLIT_POS, 0.38
+4.25, SET_LOOP_RANGE, 1000000, 8000000
+4.3, SET_LOOP_ENABLED, 1
+4.4, PLAY
+4.6, ASSERT_PLAYING
+4.7, DRAG_VIEWPORT, 420, -160, 40, 2
+5.2, DEBUG_NATIVE_TIMING, playback-source-projection-a
+5.3, SET_SPLIT_POS, 0.62
+5.4, DRAG_VIEWPORT, -520, 220, 40, 2
+6.0, DEBUG_NATIVE_TIMING, playback-source-projection-b
+6.2, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProjectionEnabled, true
+6.21, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, true
+6.22, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingLive, true
+6.23, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceRingRefreshRequestCount, 1
+6.24, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceRingPublishCount, 1
+6.25, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererPlayingLayoutRedrawSuppressedCount, 1
+6.26, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
+6.27, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 2
+6.28, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
+6.29, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+6.30, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedCompositeProducerSubmitCount, 0, 0
+6.31, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorLastCompositeSucceeded, true
+6.32, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorLastFailure,
+6.33, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorWgpuCompletionP95Ms, 0, 20
+6.5, QUIT, 0

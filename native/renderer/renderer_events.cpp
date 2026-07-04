@@ -76,4 +76,17 @@ void Renderer::Impl::emit_playback_clock_event(bool force) {
     emit_event(event);
 }
 
+void Renderer::Impl::emit_playback_frame_ready_event() {
+    RendererEvent event;
+    event.type = RendererEvent::Type::PlaybackFrameReady;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        event.pts_us = timeline_.playback().clock().current_pts_us();
+        event.duration_us = track_controller_.effective_duration_us();
+        event.playing = timeline_.playing();
+        event.playback_speed = timeline_.playback().clock().speed();
+    }
+    emit_event(event);
+}
+
 } // namespace vr

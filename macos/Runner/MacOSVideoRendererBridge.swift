@@ -375,6 +375,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       route: "viewport-rect",
       arguments: arguments
     )
+    nativePlayer?.noteViewportCompositorActivity()
     nativeCompositor.setViewportRect(
       left: MacOSFlutterArguments.intArg(arguments, "left") ?? 0,
       top: MacOSFlutterArguments.intArg(arguments, "top") ?? 0,
@@ -438,6 +439,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       trace: trace
     )
     nativeCompositor.setOverlayPrimitives(player.currentOverlayPrimitives())
+    player.noteViewportCompositorActivity()
     let trackPayloads = tracks.tracks
     if trackPayloads.isEmpty || sourceSlots.isEmpty {
       nativeCompositorSourceRing?.unsubscribe(reason: "no source tracks")
@@ -963,6 +965,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func presentationContext() -> MacOSPresentationContext {
     MacOSPresentationContext(
       nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
+      nativeCompositorSourceProjectionActive: shouldUseNativeCompositorSourceProjectionLayout(),
       player: nativePlayer,
       texture: texture,
       nativeTexture: nativeTexture,
@@ -974,6 +977,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         self?.markFrameAvailable()
       }
     )
+  }
+
+  private func shouldUseNativeCompositorSourceProjectionLayout() -> Bool {
+    playback.isPlaying &&
+      backendName == MacOSVideoTrackPayload.nativeFormatName &&
+      nativeCompositor != nil &&
+      nativeCompositorSourceRing != nil &&
+      !nativeCompositorSourceSignature.isEmpty
   }
 
   private func transportContext() -> MacOSTransportContext {
@@ -1020,6 +1031,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         enqueueNs: enqueueNs,
         callbackGeneration: callbackGeneration,
         callbackContext: callbackContext,
+        cachedPlaying: cachedPlaying,
         sourceRingRefreshRequested: sourceRingRefreshRequested,
         immediateDepth: 0
       )
@@ -1041,6 +1053,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     enqueueNs: UInt64,
     callbackGeneration: UInt64,
     callbackContext: MacOSNativeFrameCallbackContext?,
+    cachedPlaying: Bool,
     sourceRingRefreshRequested: Bool,
     immediateDepth: Int
   ) {
@@ -1051,12 +1064,17 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       return
     }
     let startNs = DispatchTime.now().uptimeNanoseconds
-    let nativePlaying = playback.syncPlayingState(player: nativePlayer)
-    if nativePlaying {
+    let sourceTick = shouldHandleFrameCallbackAsNativeCompositorSourceTick(
+      cachedPlaying: cachedPlaying
+    )
+    let nativePlaying = sourceTick
+      ? true
+      : playback.syncPlayingState(player: nativePlayer)
+    if nativePlaying && !sourceTick {
       emitPlaybackClock()
     }
     frameCallbackProfiler.recordMainStart(enqueueNs: enqueueNs, startNs: startNs)
-    if let generation = currentRendererOwnedTargetGeneration() {
+    if !sourceTick, let generation = currentRendererOwnedTargetGeneration() {
       frameCallbackProfiler.recordTargetGeneration(generation, nowNs: startNs)
     }
     let suppressLayoutPublication =
@@ -1064,6 +1082,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       presentation.shouldSuppressNativeCallbackPublicationDuringLayout()
     if suppressLayoutPublication {
       presentation.recordLayoutCallbackPublicationSuppressed()
+    } else if sourceTick {
+      presentationState.recordCallback()
+      markFrameAvailable(refreshSourceRing: !sourceRingRefreshRequested)
+      transport.resolvePendingSeekPreviewIfPresented(
+        presentationState: presentationState,
+        emitSeekPreviewPresented: { [weak self] requestId, targetPtsUs in
+          self?.emitSeekPreviewPresented(requestId: requestId, targetPtsUs: targetPtsUs)
+        }
+      )
     } else {
       playback.handleFrameCallback(
         player: nativePlayer,
@@ -1098,13 +1125,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
           )
           return
         }
-        if !nativePlaying {
+        if !nativePlaying && !sourceTick {
           _ = self.playback.syncPlayingState(player: self.nativePlayer)
         }
         self.processNativeFrameCallback(
           enqueueNs: nextEnqueueNs,
           callbackGeneration: callbackGeneration,
           callbackContext: callbackContext,
+          cachedPlaying: nativePlaying,
           sourceRingRefreshRequested: sourceRingRefreshRequested,
           immediateDepth: immediateDepth + 1
         )
@@ -1126,12 +1154,24 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
   }
 
+  private func shouldHandleFrameCallbackAsNativeCompositorSourceTick(
+    cachedPlaying: Bool
+  ) -> Bool {
+    cachedPlaying &&
+      backendName == MacOSVideoTrackPayload.nativeFormatName &&
+      nativeCompositor != nil &&
+      nativeCompositorSourceRing != nil &&
+      !nativeCompositorSourceSignature.isEmpty
+  }
+
   private func requestSourceRingRefreshFromNativeCallback(cachedPlaying: Bool) -> Bool {
     guard cachedPlaying,
           let player = nativePlayer,
-          let sourceRing = nativeCompositorSourceRing else {
+          let sourceRing = nativeCompositorSourceRing,
+          !nativeCompositorSourceSignature.isEmpty else {
       return false
     }
+    player.noteViewportCompositorActivity()
     sourceRing.requestRefresh(player: player)
     return true
   }

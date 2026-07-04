@@ -446,6 +446,7 @@ class TestRunner {
           'dartToSwiftP95Ms=${value('nativeCompositorDartToSwiftP95Ms')} '
           'swiftQueueP95Ms=${value('nativeCompositorSwiftQueueP95Ms')} '
           'receiveToCompositeP95Ms=${value('nativeCompositorReceiveToCompositeP95Ms')} '
+          'producerSubmit=${value('rendererOwnedCompositeProducerSubmitCount')} '
           'skippedInFlight=${value('nativeCompositorSkippedInFlightFrames')} '
           'skippedStatic=${value('nativeCompositorSkippedStaticFrames')} '
           'layoutIntent=${value('layoutIntentCount')} '

@@ -96,6 +96,7 @@ public:
     int64_t track_offset_us(int file_id) const;
 
     void apply_layout(const LayoutState& state);
+    void note_viewport_compositor_activity();
     void set_background_color(float r, float g, float b, float a);
     LayoutState layout() const;
 

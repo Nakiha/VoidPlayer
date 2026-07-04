@@ -290,6 +290,9 @@ void RendererPresentCommandProcessor::present_frame(
                 suppressed,
                 present_decision_frame_count(snapshot.decision));
         }
+        if (context.hooks.playback_frame_ready_for_viewport_compositor) {
+            context.hooks.playback_frame_ready_for_viewport_compositor();
+        }
         return;
     }
 

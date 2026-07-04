@@ -242,6 +242,8 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
       });
   renderer->set_frame_failure_callback(
       [this](const char* message) { on_frame_failed(message); });
+  renderer->set_event_callback(
+      [this](const vr::RendererEvent& event) { on_renderer_event(event); });
   renderer_active.store(true, std::memory_order_release);
   perf_start_time = std::chrono::steady_clock::now();
   update_decode_names_locked();
@@ -419,6 +421,47 @@ void VPMacOSNativePlayer::on_frame_failed(const char* error) {
       suppressed_refresh_count,
       message);
   presentation_condition.notify_all();
+}
+
+void VPMacOSNativePlayer::on_renderer_event(const vr::RendererEvent& event) {
+  if (event.type == vr::RendererEvent::Type::PlaybackFrameReady) {
+    on_playback_frame_ready(event);
+  }
+}
+
+void VPMacOSNativePlayer::on_playback_frame_ready(
+    const vr::RendererEvent& event) {
+  VPMacOSFrameAvailableCallback callback = nullptr;
+  void* user_data = nullptr;
+  bool callback_in_flight = false;
+  {
+    std::lock_guard<std::mutex> callback_lock(callback_mutex);
+    callback = frame_available_callback;
+    user_data = frame_available_user_data;
+    if (callback) {
+      ++frame_available_callback_in_flight;
+      callback_in_flight = true;
+    }
+  }
+  if (callback) {
+    callback(user_data);
+  }
+  if (callback_in_flight) {
+    {
+      std::lock_guard<std::mutex> callback_lock(callback_mutex);
+      if (frame_available_callback_in_flight > 0) {
+        --frame_available_callback_in_flight;
+      }
+    }
+    callback_condition.notify_all();
+  }
+  if (vp_macos::env_enabled("VOIDPLAYER_MACOS_PROFILER") &&
+      callback != nullptr) {
+    spdlog::trace(
+        "[MacOSFrameRefresh] playback_frame_ready pts_us={} playing={}",
+        event.pts_us,
+        event.playing);
+  }
 }
 
 void VPMacOSNativePlayer::update_decode_names_locked() {

@@ -54,6 +54,10 @@ void RendererEventBus::emit(const RendererEvent& event,
                       event.duration_us / 1e6,
                       event.playing,
                       event.playback_speed);
+    } else if (event.type == RendererEvent::Type::PlaybackFrameReady) {
+        spdlog::trace("[Renderer] emit playbackFrameReady pts={:.3f}s playing={}",
+                      event.pts_us / 1e6,
+                      event.playing);
     }
     callback(event);
 }

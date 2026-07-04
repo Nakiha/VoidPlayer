@@ -300,6 +300,8 @@ enum MacOSVideoRendererDiagnostics {
         perfStats?["rendererLayoutDeferredToPlaybackCount"] ?? 0,
       "playingLayoutRedrawSuppressedCount":
         perfStats?["rendererPlayingLayoutRedrawSuppressedCount"] ?? 0,
+      "rendererPlayingLayoutRedrawSuppressedCount":
+        perfStats?["rendererPlayingLayoutRedrawSuppressedCount"] ?? 0,
       "layoutStaleCompletionDropCount":
         perfStats?["rendererLayoutStaleCompletionDropCount"] ?? 0,
       "rendererLastLayoutRevision": perfStats?["rendererLastLayoutRevision"] ?? 0,

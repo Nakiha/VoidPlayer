@@ -174,6 +174,10 @@ extension MacOSNativePlayerSession {
     VPMacOSNativePlayerResetRendererOwnedPresentationStats(handle)
   }
 
+  func noteViewportCompositorActivity() {
+    VPMacOSNativePlayerNoteViewportCompositorActivity(handle)
+  }
+
   func rendererOwnedPresentationUploadCount() -> Int {
     Int(VPMacOSNativePlayerRendererOwnedPresentationUploadCount(handle))
   }

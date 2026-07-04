@@ -6,6 +6,7 @@ typealias LayoutRefreshCompletion = (String) -> Void
 
 struct MacOSPresentationContext {
   let nativeBackendActive: Bool
+  let nativeCompositorSourceProjectionActive: Bool
   let player: MacOSNativePlayerSession?
   let texture: MacOSVideoTexture?
   let nativeTexture: MacOSFlutterTextureBridge?
@@ -313,6 +314,10 @@ final class MacOSPresentationController {
           }
         case .deferredToPlayback:
           self.layoutDeferredToPlaybackCount += 1
+        case .appliedWithoutDraw:
+          request.context.markFrameAvailable()
+          self.layoutPublishedCount += 1
+          finalOutcomeName = "applied"
         case .stale:
           self.layoutStaleDropCount += 1
         case .staleAfterDraw:
@@ -393,6 +398,10 @@ final class MacOSPresentationController {
       return .stale
     }
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
+    if context.nativeCompositorSourceProjectionActive {
+      player.noteViewportCompositorActivity()
+      return .appliedWithoutDraw
+    }
     guard let texture = context.nativeTexture else {
       return .transientMiss
     }
@@ -546,6 +555,7 @@ private final class LayoutRefreshRequest {
 private enum LayoutRefreshOutcome {
   case ready(MacOSPendingNativeFrame)
   case deferredToPlayback
+  case appliedWithoutDraw
   case stale
   case staleAfterDraw
   case transientMiss
@@ -557,6 +567,8 @@ private enum LayoutRefreshOutcome {
       return "ready"
     case .deferredToPlayback:
       return "deferred-to-playback"
+    case .appliedWithoutDraw:
+      return "applied-without-draw"
     case .stale:
       return "stale"
     case .staleAfterDraw:

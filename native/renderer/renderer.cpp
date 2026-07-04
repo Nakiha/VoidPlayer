@@ -202,6 +202,10 @@ void Renderer::apply_layout(const LayoutState& state) {
     impl_->apply_layout(state);
 }
 
+void Renderer::note_viewport_compositor_activity() {
+    impl_->note_viewport_compositor_activity();
+}
+
 void Renderer::set_background_color(float r, float g, float b, float a) {
     impl_->set_background_color(r, g, b, a);
 }

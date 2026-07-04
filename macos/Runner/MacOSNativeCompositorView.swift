@@ -499,6 +499,8 @@ final class MacOSNativeCompositorView: NSView {
       lastFlutterSRGBToLinearEnabled
     result["nativeCompositorSkippedInFlightFrames"] = skippedInFlightFrames
     result["nativeCompositorSkippedStaticFrames"] = skippedStaticFrames
+    result["rendererOwnedCompositeProducerSubmitCount"] = 0
+    result["rendererOwnedCompositeSkippedWhileInFlight"] = skippedInFlightFrames
     result["nativeCompositorViewportTransformEnabled"] = false
     result["nativeCompositorViewportTransformRequestedEnabled"] = false
     result["nativeCompositorViewportTransformGeneration"] = Int(

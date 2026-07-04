@@ -34,6 +34,9 @@ RendererPresentCommandContext Renderer::Impl::present_command_context() {
                 return !timeline_.playing() ||
                        timeline_.playback().clock().is_paused();
             },
+            [this]() {
+                emit_playback_frame_ready_event();
+            },
         },
     };
 }

@@ -235,6 +235,7 @@ public:
     // through render-thread or host-callback timing.
     bool has_event_callback_for_test() const;
     void enter_terminal_render_loop_error_for_test(const char* reason);
+    void note_viewport_compositor_activity();
 
 private:
     class SeekCommandProcessor {
@@ -261,12 +262,12 @@ private:
     void emit_event(const RendererEvent& event);
     void emit_seek_preview_presented_events(const PresentDecision& decision);
     void emit_playback_clock_event(bool force);
+    void emit_playback_frame_ready_event();
     void clear_event_callback();
     void apply_layout_locked(const LayoutState& state, uint64_t revision);
     bool consume_pending_layout_locked();
     void clear_pending_layout_intent();
     bool should_present_frame_consume_pending_layout() const;
-    void note_viewport_compositor_activity();
     bool should_suppress_playback_present_for_viewport_compositor() const;
     RendererPresentCommandContext present_command_context();
 

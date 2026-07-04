@@ -17,6 +17,7 @@ struct RendererEvent {
         SeekPreviewPresented,
         TrackError,
         PlaybackClock,
+        PlaybackFrameReady,
     };
 
     Type type = Type::SeekPreviewPresented;

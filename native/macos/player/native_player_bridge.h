@@ -195,6 +195,7 @@ int64_t VPMacOSNativePlayerTrackOffsetUs(VPMacOSNativePlayer* player,
                                          int32_t file_id);
 void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
                                     const VPMacOSNativeLayoutState* state);
+void VPMacOSNativePlayerNoteViewportCompositorActivity(VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerCopyLayout(VPMacOSNativePlayer* player,
                                   VPMacOSNativeLayoutState* out);
 int VPMacOSNativePlayerCopyLayoutPresentationParams(

@@ -579,6 +579,16 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorSourceCacheActive"] =
       sourceProjectionSet && sourceCacheTextureCount > 0
     result["nativeCompositorSourceCacheTextureCount"] = sourceCacheTextureCount
+    result["nativeCompositorSourceSlotSignature"] =
+      sourceReadyState?.slotSignature ?? ""
+    result["nativeCompositorSourceFileIdSignature"] =
+      sourceReadyState?.fileIdSignature ?? ""
+    result["nativeCompositorSourceTextureSignature"] =
+      sourceReadyState?.textureSignature ?? ""
+    result["nativeCompositorSourceDuplicateFileIdCount"] =
+      sourceReadyState?.duplicateFileIdCount ?? 0
+    result["nativeCompositorSourceDuplicateTextureCount"] =
+      sourceReadyState?.duplicateTextureCount ?? 0
     result["nativeCompositorSourceCacheGeneration"] = Int(
       min(sourceCacheGeneration, UInt64(Int.max))
     )
@@ -1145,6 +1155,9 @@ final class MacOSNativeCompositorView: NSView {
     var cvTextures: [CVMetalTexture] = []
     var presentFlags = SIMD4<Float>(0, 0, 0, 0)
     var bytes = 0
+    var fileIds: [Int] = []
+    var textureIds: [UInt] = []
+    var slotParts: [String] = []
 
     for entry in entries {
       let slot = entry.sourceSlot
@@ -1173,6 +1186,10 @@ final class MacOSNativeCompositorView: NSView {
         continue
       }
       textures[slot] = texture
+      let textureId = UInt(bitPattern: Unmanaged.passUnretained(texture as AnyObject).toOpaque())
+      fileIds.append(entry.fileId)
+      textureIds.append(textureId)
+      slotParts.append("s\(slot):f\(entry.fileId):t\(String(textureId, radix: 16))")
       pixelBuffers.append(pixelBuffer)
       cvTextures.append(cvTexture)
       bytes += CVPixelBufferGetBytesPerRow(pixelBuffer) * CVPixelBufferGetHeight(pixelBuffer)
@@ -1189,13 +1206,19 @@ final class MacOSNativeCompositorView: NSView {
     }
 
     guard !textures.isEmpty else { return nil }
+    let sortedSlotParts = slotParts.sorted()
     return SourceCacheReadyState(
       textures: textures,
       pixelBuffers: pixelBuffers,
       cvTextures: cvTextures,
       presentFlags: presentFlags,
       generation: generation,
-      bytes: bytes
+      bytes: bytes,
+      slotSignature: sortedSlotParts.joined(separator: "|"),
+      fileIdSignature: fileIds.map(String.init).joined(separator: ","),
+      textureSignature: textureIds.map { String($0, radix: 16) }.joined(separator: ","),
+      duplicateFileIdCount: max(0, fileIds.count - Set(fileIds).count),
+      duplicateTextureCount: max(0, textureIds.count - Set(textureIds).count)
     )
   }
 
@@ -1674,6 +1697,11 @@ final class MacOSNativeCompositorView: NSView {
     let presentFlags: SIMD4<Float>
     let generation: UInt64
     let bytes: Int
+    let slotSignature: String
+    let fileIdSignature: String
+    let textureSignature: String
+    let duplicateFileIdCount: Int
+    let duplicateTextureCount: Int
   }
 
   private struct OverlayVertex {

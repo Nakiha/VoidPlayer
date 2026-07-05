@@ -102,6 +102,13 @@ final class MacOSNativeCompositorSourceRing {
   private var reusedPublishedSlotCount = 0
   private var incompletePublishSuppressedCount = 0
   private var lastIncompleteReason = ""
+  private var lastPublishedSlotSignature = ""
+  private var lastPublishedFileIdSignature = ""
+  private var lastPublishedActualFileIdSignature = ""
+  private var lastPublishedBufferSignature = ""
+  private var lastPublishedDuplicateFileIdCount = 0
+  private var lastPublishedDuplicateActualFileIdCount = 0
+  private var lastPublishedDuplicateBufferCount = 0
   private var lastPublishedPtsUs: Int64 = -1
   private var lastPublishedDurationUs: Int64 = 0
   private var publishedPtsDuplicateCount = 0
@@ -273,6 +280,13 @@ final class MacOSNativeCompositorSourceRing {
         "sourceRingReusedPublishedSlotCount": reusedPublishedSlotCount,
         "sourceRingIncompletePublishSuppressedCount": incompletePublishSuppressedCount,
         "sourceRingLastIncompleteReason": lastIncompleteReason,
+        "sourceRingPublishedSlotSignature": lastPublishedSlotSignature,
+        "sourceRingPublishedFileIdSignature": lastPublishedFileIdSignature,
+        "sourceRingPublishedActualFileIdSignature": lastPublishedActualFileIdSignature,
+        "sourceRingPublishedBufferSignature": lastPublishedBufferSignature,
+        "sourceRingPublishedDuplicateFileIdCount": lastPublishedDuplicateFileIdCount,
+        "sourceRingPublishedDuplicateActualFileIdCount": lastPublishedDuplicateActualFileIdCount,
+        "sourceRingPublishedDuplicateBufferCount": lastPublishedDuplicateBufferCount,
         "sourceRingPublishCount": publishCount,
         "sourceRingPublishHz": publishRate.rateHz(),
         "sourceRingRequestToPublishP95Ms": requestToPublishDuration.p95Ms(),
@@ -522,6 +536,7 @@ final class MacOSNativeCompositorSourceRing {
 
     var published: [MacOSNativeCompositorSourceTexture] = []
     published.reserveCapacity(rings.count)
+    var actualFileIds: [Int] = []
     var publishPtsUs: Int64 = -1
     var publishDurationUs: Int64 = 0
     for i in rings.indices {
@@ -534,6 +549,7 @@ final class MacOSNativeCompositorSourceRing {
         }
       }
       let ring = rings[i]
+      actualFileIds.append(Int(targets[i].source_file_id))
       published.append(MacOSNativeCompositorSourceTexture(
         pixelBuffer: ring.buffers[ring.publishedIndex],
         sourceSlot: ring.slot,
@@ -543,6 +559,14 @@ final class MacOSNativeCompositorSourceRing {
       ))
     }
     hasPublished = true
+    let publishedIdentity = sourceIdentity(from: published)
+    lastPublishedSlotSignature = publishedIdentity.slotSignature
+    lastPublishedFileIdSignature = publishedIdentity.fileIdSignature
+    lastPublishedActualFileIdSignature = actualFileIds.map(String.init).joined(separator: ",")
+    lastPublishedBufferSignature = publishedIdentity.bufferSignature
+    lastPublishedDuplicateFileIdCount = publishedIdentity.duplicateFileIdCount
+    lastPublishedDuplicateActualFileIdCount = max(0, actualFileIds.count - Set(actualFileIds).count)
+    lastPublishedDuplicateBufferCount = publishedIdentity.duplicateBufferCount
     publishCount += 1
     let publishNs = DispatchTime.now().uptimeNanoseconds
     publishRate.record(nowNs: publishNs)
@@ -585,5 +609,42 @@ final class MacOSNativeCompositorSourceRing {
     guard count > 0 else { return 0 }
     let clamped = min(count, 63)
     return (UInt64(1) << UInt64(clamped)) - 1
+  }
+
+  private func sourceIdentity(
+    from textures: [MacOSNativeCompositorSourceTexture]
+  ) -> (
+    slotSignature: String,
+    fileIdSignature: String,
+    bufferSignature: String,
+    duplicateFileIdCount: Int,
+    duplicateBufferCount: Int
+  ) {
+    let sorted = textures.sorted { lhs, rhs in
+      if lhs.sourceSlot != rhs.sourceSlot {
+        return lhs.sourceSlot < rhs.sourceSlot
+      }
+      return lhs.fileId < rhs.fileId
+    }
+    var fileIds: [Int] = []
+    var bufferIds: [UInt] = []
+    var slotParts: [String] = []
+    for texture in sorted {
+      let bufferId = UInt(bitPattern: Unmanaged.passUnretained(texture.pixelBuffer).toOpaque())
+      fileIds.append(texture.fileId)
+      bufferIds.append(bufferId)
+      slotParts.append(
+        "s\(texture.sourceSlot):f\(texture.fileId):b\(String(bufferId, radix: 16))"
+      )
+    }
+    let duplicateFileIdCount = max(0, fileIds.count - Set(fileIds).count)
+    let duplicateBufferCount = max(0, bufferIds.count - Set(bufferIds).count)
+    return (
+      slotSignature: slotParts.joined(separator: "|"),
+      fileIdSignature: fileIds.map(String.init).joined(separator: ","),
+      bufferSignature: bufferIds.map { String($0, radix: 16) }.joined(separator: ","),
+      duplicateFileIdCount: duplicateFileIdCount,
+      duplicateBufferCount: duplicateBufferCount
+    )
   }
 }

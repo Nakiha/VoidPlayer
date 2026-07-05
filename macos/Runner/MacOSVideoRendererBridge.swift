@@ -1146,6 +1146,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func setNativeCompositorSourceProviderActive(_ active: Bool) {
+    guard active || nativeCompositorSourceProviderReady() else {
+      return
+    }
     nativePlayer?.setViewportCompositorActive(active)
   }
 
@@ -1237,7 +1240,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func transportContext() -> MacOSTransportContext {
-    MacOSTransportContext(
+    let sourceProviderReady = nativeCompositorSourceProviderReady()
+    return MacOSTransportContext(
       nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
       player: nativePlayer,
       texture: nativeTexture,
@@ -1247,8 +1251,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       activeDurationUs: activeDurationUs(),
       maxTrackSlots: tracks.activeSlotCapacity(),
       userData: Unmanaged.passUnretained(self).toOpaque(),
-      requiresPresentationTarget: !nativeCompositorSourceProviderReady(),
+      requiresPresentationTarget: !sourceProviderReady,
       setSourceProviderActive: { [weak self] active in
+        guard active || sourceProviderReady else {
+          return
+        }
         self?.setNativeCompositorSourceProviderActive(active)
       },
       sourceProviderExpectedFileIdsForPts: { [weak self] ptsUs in

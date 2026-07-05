@@ -126,9 +126,12 @@ REQUIRED_UI_PROFILE_ENTRIES = {
 
 REQUIRED_UI_SCRIPT_MARKERS = {
     "ui_tests/macos/native_facade_smoke.csv": [
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal",
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-renderer",
+    ],
+    "ui_tests/macos/wgpu_metal_default_software_smoke.csv": [
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-source-provider",
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-source-provider",
-        "ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal",
         "ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderActive, true",
         "ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderPresenting, true",
     ],

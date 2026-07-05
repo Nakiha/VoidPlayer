@@ -405,6 +405,43 @@ void main() {
   );
 
   test(
+    'single source projection uses viewport geometry, not surface geometry',
+    () async {
+      final stateStore = MainWindowStateStore()
+        ..setTextureId(1)
+        ..setNativeCompositorActive(true)
+        ..setPlaying(true)
+        ..setLayout(const LayoutState(order: [1, -1, -1, -1]));
+      addTearDown(stateStore.dispose);
+      final trackManager = TrackManager()..setTracks([track(1)]);
+      addTearDown(trackManager.dispose);
+      final controller = _FakeNativePlayerController();
+      final coordinator = MainWindowLayoutCoordinator(
+        vsync: const TestVSync(),
+        controller: controller,
+        stateStore: stateStore,
+        trackManager: trackManager,
+        mounted: () => true,
+        sourceProjectionEnabled: () => true,
+      );
+      addTearDown(coordinator.dispose);
+      coordinator.viewportWidth = 1880;
+      coordinator.viewportHeight = 920;
+
+      coordinator.refreshNativeCompositorOverlay();
+      await pumpEventQueue();
+
+      final projection = controller.sourceCacheProjections.single;
+      expect(projection.sourceSlots, const [0]);
+      expect(projection.activeTrackCount, 1);
+      expect(projection.displayOffsetY[0], closeTo(0.0, 1e-6));
+      expect(projection.invDisplaySizeY[0], closeTo(1.0, 1e-6));
+      expect(projection.displayOffsetX[0], closeTo(0.065, 0.001));
+      expect(projection.invDisplaySizeX[0], closeTo(1.149, 0.001));
+    },
+  );
+
+  test(
     'native compositor split drag uses projection and defers full layout',
     () async {
       final stateStore = MainWindowStateStore()
@@ -853,6 +890,7 @@ class _FakeNativePlayerController extends NativePlayerController {
   final List<Size> resizes = [];
   final List<LayoutState> appliedLayouts = [];
   final List<_NativeCompositorTransformCall> transforms = [];
+  final List<_NativeCompositorSourceCacheCall> sourceCacheProjections = [];
   LayoutState nativeLayout;
   Size currentSize = const Size(100, 100);
   int getLayoutCalls = 0;
@@ -925,6 +963,17 @@ class _FakeNativePlayerController extends NativePlayerController {
     required List<double> viewOffsetUvY,
   }) async {
     calls.add('prepareNativeCompositorSourceCache');
+    sourceCacheProjections.add(
+      _NativeCompositorSourceCacheCall(
+        sourceSlots: List<int>.of(sourceSlots),
+        sourceOrder: List<int>.of(sourceOrder),
+        activeTrackCount: activeTrackCount,
+        displayOffsetX: List<double>.of(displayOffsetX),
+        displayOffsetY: List<double>.of(displayOffsetY),
+        invDisplaySizeX: List<double>.of(invDisplaySizeX),
+        invDisplaySizeY: List<double>.of(invDisplaySizeY),
+      ),
+    );
   }
 
   @override
@@ -964,5 +1013,25 @@ class _NativeCompositorTransformCall {
     required this.mode,
     required this.splitPos,
     required this.activeTrackCount,
+  });
+}
+
+class _NativeCompositorSourceCacheCall {
+  final List<int> sourceSlots;
+  final List<int> sourceOrder;
+  final int activeTrackCount;
+  final List<double> displayOffsetX;
+  final List<double> displayOffsetY;
+  final List<double> invDisplaySizeX;
+  final List<double> invDisplaySizeY;
+
+  const _NativeCompositorSourceCacheCall({
+    required this.sourceSlots,
+    required this.sourceOrder,
+    required this.activeTrackCount,
+    required this.displayOffsetX,
+    required this.displayOffsetY,
+    required this.invDisplaySizeX,
+    required this.invDisplaySizeY,
   });
 }

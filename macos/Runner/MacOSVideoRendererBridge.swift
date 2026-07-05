@@ -40,12 +40,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var profilerSummaryTimer: DispatchSourceTimer?
   private var screenChangeObserver: NSObjectProtocol?
 
-  private struct NativeCompositorSourceDescription {
-    let descriptors: [MacOSCompositorSourceTrackDescriptor]
-    let sourceOrder: [Int]
-    let projection: MacOSNativeCompositorSourceProjection
-  }
-
   init(engine: FlutterEngine, contentView: NSView) {
     self.flutterEngine = engine
     self.contentView = contentView
@@ -205,9 +199,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       clearNativeCompositorSourceCache(arguments: call.arguments)
       result(nil)
     case "play":
-      let useNativeCompositorSourceProvider =
-        ensureNativeCompositorSourceProvider(reason: "play") ||
-        nativeCompositorSourceProviderReady()
+      let useNativeCompositorSourceProvider = nativeCompositorSourceProviderReady()
       setNativeCompositorSourceProviderActive(useNativeCompositorSourceProvider)
       playback.play(
         player: nativePlayer,
@@ -620,109 +612,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         viewOffsetUvY: Float(doubleAt(viewOffsetUvY, slot))
       )
     }
-  }
-
-  private func automaticNativeCompositorSourceDescription()
-    -> NativeCompositorSourceDescription? {
-    let payloads = tracks.tracks
-      .compactMap { payload -> (slot: Int, fileId: Int, width: Int, height: Int)? in
-        guard let slot = payload["slot"] as? Int,
-              slot >= 0,
-              slot < 4,
-              let fileId = payload["fileId"] as? Int,
-              let width = payload["width"] as? Int,
-              let height = payload["height"] as? Int,
-              width > 0,
-              height > 0 else {
-          return nil
-        }
-        return (slot, fileId, width, height)
-      }
-      .sorted { lhs, rhs in lhs.slot < rhs.slot }
-    guard !payloads.isEmpty else { return nil }
-
-    let sourceSlots = payloads.map { $0.slot }
-    var sourceOrder = [0, 1, 2, 3]
-    for (index, payload) in payloads.prefix(4).enumerated() {
-      sourceOrder[index] = payload.slot
-    }
-
-    var displayOffsetX = [Double](repeating: 0.0, count: 4)
-    var displayOffsetY = [Double](repeating: 0.0, count: 4)
-    var invDisplaySizeX = [Double](repeating: 1.0, count: 4)
-    var invDisplaySizeY = [Double](repeating: 1.0, count: 4)
-    let viewOffsetUvX = [Double](repeating: 0.0, count: 4)
-    let viewOffsetUvY = [Double](repeating: 0.0, count: 4)
-
-    let viewportSize = contentView?.bounds.size ?? .zero
-    let viewportWidth = max(1.0, Double(viewportSize.width))
-    let viewportHeight = max(1.0, Double(viewportSize.height))
-    let activeCount = max(1, payloads.count)
-    let slotWidth = viewportWidth / Double(activeCount)
-    let slotAspect = viewportHeight > 0 ? slotWidth / viewportHeight : 1.0
-
-    for payload in payloads {
-      let videoAspect = Double(payload.height) > 0
-        ? Double(payload.width) / Double(payload.height)
-        : slotAspect
-      let fitScale = videoAspect > slotAspect && videoAspect > 0
-        ? slotAspect / videoAspect
-        : 1.0
-      let dsX = slotAspect > 0 ? videoAspect * fitScale / slotAspect : fitScale
-      let dsY = fitScale
-      let slot = payload.slot
-      displayOffsetX[slot] = (1.0 - dsX) * 0.5
-      displayOffsetY[slot] = (1.0 - dsY) * 0.5
-      invDisplaySizeX[slot] = abs(dsX) > 0.0001 ? 1.0 / dsX : 0.0
-      invDisplaySizeY[slot] = abs(dsY) > 0.0001 ? 1.0 / dsY : 0.0
-    }
-
-    let projection = MacOSNativeCompositorSourceProjection(
-      mode: 0,
-      splitPos: 0.5,
-      activeTrackCount: payloads.count,
-      order: sourceOrder,
-      displayOffsetX: displayOffsetX,
-      displayOffsetY: displayOffsetY,
-      invDisplaySizeX: invDisplaySizeX,
-      invDisplaySizeY: invDisplaySizeY,
-      viewOffsetUvX: viewOffsetUvX,
-      viewOffsetUvY: viewOffsetUvY,
-      trace: nil
-    )
-
-    return NativeCompositorSourceDescription(
-      descriptors: nativeCompositorSourceDescriptors(
-        sourceSlots: sourceSlots,
-        displayOffsetX: displayOffsetX,
-        displayOffsetY: displayOffsetY,
-        invDisplaySizeX: invDisplaySizeX,
-        invDisplaySizeY: invDisplaySizeY,
-        viewOffsetUvX: viewOffsetUvX,
-        viewOffsetUvY: viewOffsetUvY
-      ),
-      sourceOrder: sourceOrder,
-      projection: projection
-    )
-  }
-
-  @discardableResult
-  private func ensureNativeCompositorSourceProvider(
-    reason: String
-  ) -> Bool {
-    guard nativeCompositor != nil,
-          let player = nativePlayer,
-          let description = automaticNativeCompositorSourceDescription(),
-          !description.descriptors.isEmpty else {
-      return false
-    }
-    return subscribeNativeCompositorSourceProvider(
-      player: player,
-      descriptors: description.descriptors,
-      order: description.sourceOrder,
-      projection: description.projection,
-      reason: reason
-    )
   }
 
   @discardableResult

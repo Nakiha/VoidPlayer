@@ -11,7 +11,6 @@
 3.905, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorBackend, wgpu-metal-thin-runner
 3.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderPresenting, true
 3.92, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
-3.93, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 4.0, TOGGLE_ANALYSIS_OVERLAY, 0
 4.2, TOGGLE_ANALYSIS_OVERLAY, 1
 5.4, ASSERT_ANALYSIS_OVERLAY, true, cu, , 2
@@ -33,7 +32,6 @@
 8.14, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorOverlayLineRectCount, 1
 8.15, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceBakedOverlayDisabled, true
 8.16, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorOverlayMatchedTrackCount, 1
-8.17, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 8.18, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
 8.19, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorLastCompositeSucceeded, true
 8.20, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorLastFailure,

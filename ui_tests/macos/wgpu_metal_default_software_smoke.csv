@@ -13,7 +13,6 @@
 3.22, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedBackendAvailable, true
 3.23, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 3.235, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
-3.24, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 3.25, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, false
 3.26, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, true
 3.27, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-software

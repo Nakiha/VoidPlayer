@@ -10,7 +10,6 @@ import '../platform/native_file_picker.dart';
 import '../preferences/playback_preferences.dart';
 import '../remote/ssh_remote_media.dart';
 import '../track_manager.dart';
-import '../utils/async_guard.dart';
 import '../utils/media_source.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/viewport_display_state.dart';

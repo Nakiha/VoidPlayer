@@ -13,6 +13,20 @@ struct MacOSNativeCompositorSourceTexture {
   let height: Int
 }
 
+struct MacOSNativeCompositorSourceProjection {
+  let mode: Int
+  let splitPos: Double
+  let activeTrackCount: Int
+  let order: [Int]
+  let displayOffsetX: [Double]
+  let displayOffsetY: [Double]
+  let invDisplaySizeX: [Double]
+  let invDisplaySizeY: [Double]
+  let viewOffsetUvX: [Double]
+  let viewOffsetUvY: [Double]
+  let trace: MacOSCompositorLatencyTrace?
+}
+
 private final class MacOSNativeCompositorWgpuCallbackContext {
   let view: MacOSNativeCompositorView
   let frame: Int
@@ -348,9 +362,9 @@ final class MacOSNativeCompositorView: NSView {
     }
   }
 
-  /// Publishes the latest live source buffers (from the source ring). Projection
-  /// is set separately via `setSourceProjection`; buffers and projection update
-  /// independently (buffers per frame, projection per layout change).
+  /// Publishes the latest live source buffers (from the source ring). Same-topology
+  /// projection updates may arrive separately; topology-changing packages install
+  /// projection and buffers atomically through `setSourcePackage`.
   func setSourceBuffers(
     textures: [MacOSNativeCompositorSourceTexture],
     overlay: MacOSNativeOverlayPrimitives? = nil,
@@ -377,7 +391,41 @@ final class MacOSNativeCompositorView: NSView {
         textures: textures,
         token: token,
         generation: sourceCacheGeneration,
-        error: error
+        error: error,
+        projection: nil
+      )
+    }
+  }
+
+  func setSourcePackage(
+    textures: [MacOSNativeCompositorSourceTexture],
+    projection: MacOSNativeCompositorSourceProjection,
+    overlay: MacOSNativeOverlayPrimitives? = nil,
+    error: String = ""
+  ) {
+    compositorQueue.async { [weak self] in
+      guard let self else { return }
+      if let overlay {
+        overlayPrimitives = overlay
+      }
+      sourceCacheLastError = error
+      sourceCacheGeneration &+= 1
+      sourceReadyToken &+= 1
+      let token = sourceReadyToken
+      sourceCachePublishRate.record()
+      logOverlayPrimitivesIfChanged(reason: "source-package")
+      guard !textures.isEmpty else {
+        sourceReadyState = nil
+        sourceReadyLastError = error
+        markCompositorDirty()
+        return
+      }
+      publishSourceReadyState(
+        textures: textures,
+        token: token,
+        generation: sourceCacheGeneration,
+        error: error,
+        projection: projection
       )
     }
   }
@@ -431,43 +479,22 @@ final class MacOSNativeCompositorView: NSView {
     viewOffsetUvY: [Double],
     trace: MacOSCompositorLatencyTrace? = nil
   ) {
-    let safeSplit = splitPos.isFinite ? Float(min(1.0, max(0.0, splitPos))) : 0.5
-    let flags = SIMD4<Float>(0, Float(mode), safeSplit, Float(max(1, activeTrackCount)))
-    let orderVec = SIMD4<Float>(
-      Float(order.indices.contains(0) ? order[0] : 0),
-      Float(order.indices.contains(1) ? order[1] : 1),
-      Float(order.indices.contains(2) ? order[2] : 2),
-      Float(order.indices.contains(3) ? order[3] : 3)
+    let projection = MacOSNativeCompositorSourceProjection(
+      mode: mode,
+      splitPos: splitPos,
+      activeTrackCount: activeTrackCount,
+      order: order,
+      displayOffsetX: displayOffsetX,
+      displayOffsetY: displayOffsetY,
+      invDisplaySizeX: invDisplaySizeX,
+      invDisplaySizeY: invDisplaySizeY,
+      viewOffsetUvX: viewOffsetUvX,
+      viewOffsetUvY: viewOffsetUvY,
+      trace: trace
     )
-    func vec(_ values: [Double]) -> SIMD4<Float> {
-      SIMD4<Float>(
-        Float(values.indices.contains(0) ? values[0] : 0),
-        Float(values.indices.contains(1) ? values[1] : 0),
-        Float(values.indices.contains(2) ? values[2] : 0),
-        Float(values.indices.contains(3) ? values[3] : 0)
-      )
-    }
-    let dox = vec(displayOffsetX)
-    let doy = vec(displayOffsetY)
-    let idsx = vec(invDisplaySizeX)
-    let idsy = vec(invDisplaySizeY)
-    let voux = vec(viewOffsetUvX)
-    let vouy = vec(viewOffsetUvY)
     compositorQueue.async { [weak self] in
       guard let self else { return }
-      sourceLayoutFlags = flags
-      sourceOrder = orderVec
-      sourceProjDisplayOffsetX = dox
-      sourceProjDisplayOffsetY = doy
-      sourceProjInvDisplaySizeX = idsx
-      sourceProjInvDisplaySizeY = idsy
-      sourceProjViewOffsetUvX = voux
-      sourceProjViewOffsetUvY = vouy
-      sourceProjectionSet = true
-      sourceProjectionRate.record()
-      if let trace {
-        recordPendingCompositeTrace(trace)
-      }
+      applySourceProjectionOnCompositorQueue(projection)
       markCompositorDirty()
     }
   }
@@ -585,6 +612,8 @@ final class MacOSNativeCompositorView: NSView {
       sourceReadyState?.fileIdSignature ?? ""
     result["nativeCompositorSourceTextureSignature"] =
       sourceReadyState?.textureSignature ?? ""
+    result["nativeCompositorSourceDuplicateSlotCount"] =
+      sourceReadyState?.duplicateSlotCount ?? 0
     result["nativeCompositorSourceDuplicateFileIdCount"] =
       sourceReadyState?.duplicateFileIdCount ?? 0
     result["nativeCompositorSourceDuplicateTextureCount"] =
@@ -1080,7 +1109,8 @@ final class MacOSNativeCompositorView: NSView {
     textures: [MacOSNativeCompositorSourceTexture],
     token: UInt64,
     generation: UInt64,
-    error: String
+    error: String,
+    projection: MacOSNativeCompositorSourceProjection?
   ) {
     readyStateQueue.async { [weak self] in
       guard let self else { return }
@@ -1098,11 +1128,53 @@ final class MacOSNativeCompositorView: NSView {
           markCompositorDirty()
           return
         }
+        if let projection {
+          applySourceProjectionOnCompositorQueue(projection)
+        }
         sourceReadyState = state
         sourceReadyLastError = error
         producerSourcePublishRate.record()
         markCompositorDirty()
       }
+    }
+  }
+
+  private func applySourceProjectionOnCompositorQueue(
+    _ projection: MacOSNativeCompositorSourceProjection
+  ) {
+    let safeSplit = projection.splitPos.isFinite
+      ? Float(min(1.0, max(0.0, projection.splitPos)))
+      : 0.5
+    sourceLayoutFlags = SIMD4<Float>(
+      0,
+      Float(projection.mode),
+      safeSplit,
+      Float(max(1, projection.activeTrackCount))
+    )
+    sourceOrder = SIMD4<Float>(
+      Float(projection.order.indices.contains(0) ? projection.order[0] : 0),
+      Float(projection.order.indices.contains(1) ? projection.order[1] : 1),
+      Float(projection.order.indices.contains(2) ? projection.order[2] : 2),
+      Float(projection.order.indices.contains(3) ? projection.order[3] : 3)
+    )
+    func vec(_ values: [Double]) -> SIMD4<Float> {
+      SIMD4<Float>(
+        Float(values.indices.contains(0) ? values[0] : 0),
+        Float(values.indices.contains(1) ? values[1] : 0),
+        Float(values.indices.contains(2) ? values[2] : 0),
+        Float(values.indices.contains(3) ? values[3] : 0)
+      )
+    }
+    sourceProjDisplayOffsetX = vec(projection.displayOffsetX)
+    sourceProjDisplayOffsetY = vec(projection.displayOffsetY)
+    sourceProjInvDisplaySizeX = vec(projection.invDisplaySizeX)
+    sourceProjInvDisplaySizeY = vec(projection.invDisplaySizeY)
+    sourceProjViewOffsetUvX = vec(projection.viewOffsetUvX)
+    sourceProjViewOffsetUvY = vec(projection.viewOffsetUvY)
+    sourceProjectionSet = true
+    sourceProjectionRate.record()
+    if let trace = projection.trace {
+      recordPendingCompositeTrace(trace)
     }
   }
 
@@ -1155,6 +1227,7 @@ final class MacOSNativeCompositorView: NSView {
     var cvTextures: [CVMetalTexture] = []
     var presentFlags = SIMD4<Float>(0, 0, 0, 0)
     var bytes = 0
+    var slots: [Int] = []
     var fileIds: [Int] = []
     var textureIds: [UInt] = []
     var slotParts: [String] = []
@@ -1187,6 +1260,7 @@ final class MacOSNativeCompositorView: NSView {
       }
       textures[slot] = texture
       let textureId = UInt(bitPattern: Unmanaged.passUnretained(texture as AnyObject).toOpaque())
+      slots.append(slot)
       fileIds.append(entry.fileId)
       textureIds.append(textureId)
       slotParts.append("s\(slot):f\(entry.fileId):t\(String(textureId, radix: 16))")
@@ -1217,6 +1291,7 @@ final class MacOSNativeCompositorView: NSView {
       slotSignature: sortedSlotParts.joined(separator: "|"),
       fileIdSignature: fileIds.map(String.init).joined(separator: ","),
       textureSignature: textureIds.map { String($0, radix: 16) }.joined(separator: ","),
+      duplicateSlotCount: max(0, slots.count - Set(slots).count),
       duplicateFileIdCount: max(0, fileIds.count - Set(fileIds).count),
       duplicateTextureCount: max(0, textureIds.count - Set(textureIds).count)
     )
@@ -1700,6 +1775,7 @@ final class MacOSNativeCompositorView: NSView {
     let slotSignature: String
     let fileIdSignature: String
     let textureSignature: String
+    let duplicateSlotCount: Int
     let duplicateFileIdCount: Int
     let duplicateTextureCount: Int
   }

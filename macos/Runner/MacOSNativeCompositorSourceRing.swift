@@ -74,6 +74,7 @@ final class MacOSNativeCompositorSourceRing {
   // All of the following are confined to `ringQueue`.
   private var rings: [TrackRing] = []
   private var order: [Int] = []
+  private var projection: MacOSNativeCompositorSourceProjection?
   private var bakeTarget: MacOSNativeMetalPresentationTarget?
   private var live = false
   private var baking = false
@@ -106,6 +107,7 @@ final class MacOSNativeCompositorSourceRing {
   private var lastPublishedFileIdSignature = ""
   private var lastPublishedActualFileIdSignature = ""
   private var lastPublishedBufferSignature = ""
+  private var lastPublishedDuplicateSlotCount = 0
   private var lastPublishedDuplicateFileIdCount = 0
   private var lastPublishedDuplicateActualFileIdCount = 0
   private var lastPublishedDuplicateBufferCount = 0
@@ -126,15 +128,25 @@ final class MacOSNativeCompositorSourceRing {
     player: MacOSNativePlayerSession,
     descriptors: [MacOSCompositorSourceTrackDescriptor],
     order: [Int],
-    edrOutputEnabled: Bool
+    edrOutputEnabled: Bool,
+    topologyRevision: UInt64,
+    projection: MacOSNativeCompositorSourceProjection
   ) {
     ringQueue.async { [weak self] in
       self?.subscribeOnQueue(
         player: player,
         descriptors: descriptors,
         order: order,
-        edrOutputEnabled: edrOutputEnabled
+        edrOutputEnabled: edrOutputEnabled,
+        topologyRevision: topologyRevision,
+        projection: projection
       )
+    }
+  }
+
+  func updateProjection(_ projection: MacOSNativeCompositorSourceProjection) {
+    ringQueue.async { [weak self] in
+      self?.projection = projection
     }
   }
 
@@ -248,6 +260,7 @@ final class MacOSNativeCompositorSourceRing {
       self.live = false
       self.rings = []
       self.order = []
+      self.projection = nil
       self.bakeTarget = nil
       self.compositor?.clearSource(reason: reason)
     }
@@ -284,6 +297,7 @@ final class MacOSNativeCompositorSourceRing {
         "sourceRingPublishedFileIdSignature": lastPublishedFileIdSignature,
         "sourceRingPublishedActualFileIdSignature": lastPublishedActualFileIdSignature,
         "sourceRingPublishedBufferSignature": lastPublishedBufferSignature,
+        "sourceRingPublishedDuplicateSlotCount": lastPublishedDuplicateSlotCount,
         "sourceRingPublishedDuplicateFileIdCount": lastPublishedDuplicateFileIdCount,
         "sourceRingPublishedDuplicateActualFileIdCount": lastPublishedDuplicateActualFileIdCount,
         "sourceRingPublishedDuplicateBufferCount": lastPublishedDuplicateBufferCount,
@@ -309,11 +323,15 @@ final class MacOSNativeCompositorSourceRing {
     player: MacOSNativePlayerSession,
     descriptors: [MacOSCompositorSourceTrackDescriptor],
     order: [Int],
-    edrOutputEnabled: Bool
+    edrOutputEnabled: Bool,
+    topologyRevision: UInt64,
+    projection: MacOSNativeCompositorSourceProjection
   ) {
     live = false
     rings = []
     self.order = order
+    self.topologyRevision = topologyRevision
+    self.projection = projection
 
     guard !descriptors.isEmpty else {
       compositor?.setSourceBuffers(textures: [], overlay: .empty, error: "no source tracks")
@@ -413,6 +431,7 @@ final class MacOSNativeCompositorSourceRing {
     baking = false
     pending = false
     hasPublished = false
+    lastReusedMask = 0
 
     // Initial bake into buffer 0 of each ring; publishes on success.
     _ = bakeAndPublishOnQueue(player: player, requestNs: nil)
@@ -505,11 +524,10 @@ final class MacOSNativeCompositorSourceRing {
       drawnMask |= UInt64(1) << UInt64(i)
     }
     let missingMask = requiredMask & ~drawnMask
-    let reusedMask = hasPublished ? missingMask : 0
     lastRequiredMask = requiredMask
     lastDrawnMask = drawnMask
-    lastReusedMask = reusedMask
-    guard missingMask == 0 || hasPublished else {
+    lastReusedMask = 0
+    guard missingMask == 0 else {
       lastMissingMask = missingMask
       incompletePublishSuppressedCount += 1
       lastIncompleteReason =
@@ -524,14 +542,19 @@ final class MacOSNativeCompositorSourceRing {
         error: lastIncompleteReason
       )
     }
-    if reusedMask != 0 {
-      reusedPublishedSlotCount += reusedMask.nonzeroBitCount
-      lastMissingMask = 0
-      lastIncompleteReason =
-        "source package reused published slots mask=\(reusedMask)"
-    } else {
-      lastMissingMask = 0
-      lastIncompleteReason = ""
+    lastMissingMask = 0
+    lastIncompleteReason = ""
+    guard let projection else {
+      lastIncompleteReason = "source package projection is not ready"
+      return MacOSNativeCompositorSourceRefreshResult(
+        published: false,
+        publishCount: publishCount,
+        drawnMask: drawnMask,
+        reusedMask: 0,
+        missingMask: 0,
+        ptsUs: lastPublishedPtsUs,
+        error: lastIncompleteReason
+      )
     }
 
     var published: [MacOSNativeCompositorSourceTexture] = []
@@ -564,6 +587,7 @@ final class MacOSNativeCompositorSourceRing {
     lastPublishedFileIdSignature = publishedIdentity.fileIdSignature
     lastPublishedActualFileIdSignature = actualFileIds.map(String.init).joined(separator: ",")
     lastPublishedBufferSignature = publishedIdentity.bufferSignature
+    lastPublishedDuplicateSlotCount = publishedIdentity.duplicateSlotCount
     lastPublishedDuplicateFileIdCount = publishedIdentity.duplicateFileIdCount
     lastPublishedDuplicateActualFileIdCount = max(0, actualFileIds.count - Set(actualFileIds).count)
     lastPublishedDuplicateBufferCount = publishedIdentity.duplicateBufferCount
@@ -590,15 +614,16 @@ final class MacOSNativeCompositorSourceRing {
       lastPublishedPtsUs = publishPtsUs
       lastPublishedDurationUs = publishDurationUs
     }
-    compositor?.setSourceBuffers(
+    compositor?.setSourcePackage(
       textures: published,
+      projection: projection,
       overlay: player.currentOverlayPrimitives()
     )
     return MacOSNativeCompositorSourceRefreshResult(
       published: true,
       publishCount: publishCount,
       drawnMask: drawnMask,
-      reusedMask: reusedMask,
+      reusedMask: 0,
       missingMask: 0,
       ptsUs: lastPublishedPtsUs,
       error: ""
@@ -617,6 +642,7 @@ final class MacOSNativeCompositorSourceRing {
     slotSignature: String,
     fileIdSignature: String,
     bufferSignature: String,
+    duplicateSlotCount: Int,
     duplicateFileIdCount: Int,
     duplicateBufferCount: Int
   ) {
@@ -627,22 +653,26 @@ final class MacOSNativeCompositorSourceRing {
       return lhs.fileId < rhs.fileId
     }
     var fileIds: [Int] = []
+    var slots: [Int] = []
     var bufferIds: [UInt] = []
     var slotParts: [String] = []
     for texture in sorted {
       let bufferId = UInt(bitPattern: Unmanaged.passUnretained(texture.pixelBuffer).toOpaque())
+      slots.append(texture.sourceSlot)
       fileIds.append(texture.fileId)
       bufferIds.append(bufferId)
       slotParts.append(
         "s\(texture.sourceSlot):f\(texture.fileId):b\(String(bufferId, radix: 16))"
       )
     }
+    let duplicateSlotCount = max(0, slots.count - Set(slots).count)
     let duplicateFileIdCount = max(0, fileIds.count - Set(fileIds).count)
     let duplicateBufferCount = max(0, bufferIds.count - Set(bufferIds).count)
     return (
       slotSignature: slotParts.joined(separator: "|"),
       fileIdSignature: fileIds.map(String.init).joined(separator: ","),
       bufferSignature: bufferIds.map { String($0, radix: 16) }.joined(separator: ","),
+      duplicateSlotCount: duplicateSlotCount,
       duplicateFileIdCount: duplicateFileIdCount,
       duplicateBufferCount: duplicateBufferCount
     )

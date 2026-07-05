@@ -14,6 +14,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var nativeCompositor: MacOSNativeCompositorView?
   private var nativeCompositorSourceRing: MacOSNativeCompositorSourceRing?
   private var nativeCompositorSourceSignature = ""
+  private var nativeCompositorSourceExpectedFileIds: [Int] = []
   private var nativeCompositorSourceTopologyRevision: UInt64 = 0
   private var viewportBackgroundColor: UInt32?
   private var lastNativeCompositorFailure = "not initialized"
@@ -42,12 +43,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private struct NativeCompositorSourceDescription {
     let descriptors: [MacOSCompositorSourceTrackDescriptor]
     let sourceOrder: [Int]
-    let displayOffsetX: [Double]
-    let displayOffsetY: [Double]
-    let invDisplaySizeX: [Double]
-    let invDisplaySizeY: [Double]
-    let viewOffsetUvX: [Double]
-    let viewOffsetUvY: [Double]
+    let projection: MacOSNativeCompositorSourceProjection
   }
 
   init(engine: FlutterEngine, contentView: NSView) {
@@ -462,7 +458,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let invDisplaySizeY = MacOSFlutterArguments.doubleListArg(arguments, "invDisplaySizeY")
     let viewOffsetUvX = MacOSFlutterArguments.doubleListArg(arguments, "viewOffsetUvX")
     let viewOffsetUvY = MacOSFlutterArguments.doubleListArg(arguments, "viewOffsetUvY")
-    nativeCompositor.setSourceProjection(
+    let projection = MacOSNativeCompositorSourceProjection(
       mode: MacOSFlutterArguments.intArg(arguments, "mode") ?? 0,
       splitPos: MacOSFlutterArguments.doubleArg(arguments, "splitPos") ?? 0.5,
       activeTrackCount: MacOSFlutterArguments.intArg(arguments, "activeTrackCount") ?? 1,
@@ -475,7 +471,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       viewOffsetUvY: viewOffsetUvY,
       trace: trace
     )
-    nativeCompositor.setOverlayPrimitives(player.currentOverlayPrimitives())
     player.noteViewportCompositorActivity()
     if tracks.tracks.isEmpty || sourceSlots.isEmpty {
       clearNativeCompositorSourceProvider(reason: "no source tracks")
@@ -509,6 +504,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       player: player,
       descriptors: descriptors,
       order: sourceOrder,
+      projection: projection,
       reason: "source projection"
     )
     if playback.currentIsPlaying(player: player),
@@ -681,6 +677,20 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       invDisplaySizeY[slot] = abs(dsY) > 0.0001 ? 1.0 / dsY : 0.0
     }
 
+    let projection = MacOSNativeCompositorSourceProjection(
+      mode: 0,
+      splitPos: 0.5,
+      activeTrackCount: payloads.count,
+      order: sourceOrder,
+      displayOffsetX: displayOffsetX,
+      displayOffsetY: displayOffsetY,
+      invDisplaySizeX: invDisplaySizeX,
+      invDisplaySizeY: invDisplaySizeY,
+      viewOffsetUvX: viewOffsetUvX,
+      viewOffsetUvY: viewOffsetUvY,
+      trace: nil
+    )
+
     return NativeCompositorSourceDescription(
       descriptors: nativeCompositorSourceDescriptors(
         sourceSlots: sourceSlots,
@@ -692,12 +702,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         viewOffsetUvY: viewOffsetUvY
       ),
       sourceOrder: sourceOrder,
-      displayOffsetX: displayOffsetX,
-      displayOffsetY: displayOffsetY,
-      invDisplaySizeX: invDisplaySizeX,
-      invDisplaySizeY: invDisplaySizeY,
-      viewOffsetUvX: viewOffsetUvX,
-      viewOffsetUvY: viewOffsetUvY
+      projection: projection
     )
   }
 
@@ -705,31 +710,17 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func ensureNativeCompositorSourceProvider(
     reason: String
   ) -> Bool {
-    guard let nativeCompositor,
+    guard nativeCompositor != nil,
           let player = nativePlayer,
           let description = automaticNativeCompositorSourceDescription(),
           !description.descriptors.isEmpty else {
       return false
     }
-    let shouldSeedProjection = nativeCompositorSourceSignature.isEmpty
-    if shouldSeedProjection {
-      nativeCompositor.setSourceProjection(
-        mode: 0,
-        splitPos: 0.5,
-        activeTrackCount: description.descriptors.count,
-        order: description.sourceOrder,
-        displayOffsetX: description.displayOffsetX,
-        displayOffsetY: description.displayOffsetY,
-        invDisplaySizeX: description.invDisplaySizeX,
-        invDisplaySizeY: description.invDisplaySizeY,
-        viewOffsetUvX: description.viewOffsetUvX,
-        viewOffsetUvY: description.viewOffsetUvY
-      )
-    }
     return subscribeNativeCompositorSourceProvider(
       player: player,
       descriptors: description.descriptors,
       order: description.sourceOrder,
+      projection: description.projection,
       reason: reason
     )
   }
@@ -739,6 +730,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     player: MacOSNativePlayerSession,
     descriptors: [MacOSCompositorSourceTrackDescriptor],
     order: [Int],
+    projection: MacOSNativeCompositorSourceProjection,
     reason: String
   ) -> Bool {
     guard let nativeCompositor, !descriptors.isEmpty else { return false }
@@ -746,7 +738,23 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let signature = ([pixelFormat] +
       descriptors.map { "\($0.slot):\($0.fileId):\($0.width)x\($0.height)" })
       .joined(separator: "|")
-    if signature == nativeCompositorSourceSignature && nativeCompositorSourceRing != nil {
+    if signature == nativeCompositorSourceSignature,
+       let existingRing = nativeCompositorSourceRing {
+      nativeCompositor.setSourceProjection(
+        mode: projection.mode,
+        splitPos: projection.splitPos,
+        activeTrackCount: projection.activeTrackCount,
+        order: projection.order,
+        displayOffsetX: projection.displayOffsetX,
+        displayOffsetY: projection.displayOffsetY,
+        invDisplaySizeX: projection.invDisplaySizeX,
+        invDisplaySizeY: projection.invDisplaySizeY,
+        viewOffsetUvX: projection.viewOffsetUvX,
+        viewOffsetUvY: projection.viewOffsetUvY,
+        trace: projection.trace
+      )
+      existingRing.updateProjection(projection)
+      nativeCompositor.setOverlayPrimitives(player.currentOverlayPrimitives())
       setNativeCompositorSourceProviderActive(true)
       return true
     }
@@ -755,6 +763,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       ?? MacOSNativeCompositorSourceRing(compositor: nativeCompositor)
     nativeCompositorSourceRing = ring
     nativeCompositorSourceSignature = signature
+    nativeCompositorSourceExpectedFileIds = descriptors.map { $0.fileId }
     setNativeCompositorSourceProviderActive(true)
     if !playback.currentIsPlaying(player: player) {
       let previewReady = commitNativeCompositorSourceProviderPreview(
@@ -771,7 +780,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       player: player,
       descriptors: descriptors,
       order: order,
-      edrOutputEnabled: MacOSPresentationConfiguration.current.edrOutputEnabled
+      edrOutputEnabled: MacOSPresentationConfiguration.current.edrOutputEnabled,
+      topologyRevision: nativeCompositorSourceTopologyRevision,
+      projection: projection
     )
     if MacOSProfilerLog.enabled {
       NSLog("VoidPlayer WGPU source provider subscribed reason=\(reason)")
@@ -1253,6 +1264,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     setNativeCompositorSourceProviderActive(false)
     nativeCompositorSourceRing?.unsubscribe(reason: reason)
     nativeCompositorSourceSignature = ""
+    nativeCompositorSourceExpectedFileIds = []
   }
 
   private func primeNativeCompositorPlaybackSource(reason: String) {
@@ -1316,6 +1328,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func sourceProviderExpectedFileIdsForPts(_ ptsUs: Int) -> [Int] {
+    if nativeCompositorSourceProviderReady(),
+       !nativeCompositorSourceExpectedFileIds.isEmpty {
+      return nativeCompositorSourceExpectedFileIds
+    }
     let player = nativePlayer
     return tracks.tracks.compactMap { track in
       guard let fileId = MacOSFlutterArguments.intValue(track["fileId"]) else {

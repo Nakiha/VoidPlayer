@@ -90,7 +90,7 @@ final class MacOSTransportController {
       context.player?.seek(settledPtsUs)
       if let player = context.player {
         do {
-          let timeoutMs = resumeAfterSeek ? 3_000 : 1_000
+          let timeoutMs = 3_000
           let frame = try player.commitSourceProviderPreview(
             timeoutMs: timeoutMs,
             expectedFileIds: context.sourceProviderExpectedFileIdsForPts(settledPtsUs)
@@ -240,6 +240,7 @@ final class MacOSTransportController {
       return nil
     }
     if sourceProviderStep {
+      let timeoutMs = 3_000
       do {
         if forward {
           try player.stepForward()
@@ -247,7 +248,7 @@ final class MacOSTransportController {
           try player.stepBackward()
         }
         let frame = try player.commitSourceProviderPreview(
-          timeoutMs: 1_000,
+          timeoutMs: timeoutMs,
           expectedFileIds: context.sourceProviderExpectedFileIdsForPts(
             player.currentPtsUs()
           )
@@ -261,7 +262,7 @@ final class MacOSTransportController {
         )
       }
       context.setSourceProviderActive(true)
-      if let error = context.publishSourceProviderReadyFrame(1_000, "step") {
+      if let error = context.publishSourceProviderReadyFrame(timeoutMs, "step") {
         return FlutterError(
           code: "DECODE_FAILED",
           message: "Failed to publish macOS source-provider step frame",

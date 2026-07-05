@@ -13,10 +13,12 @@
 2.5, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
 4.0, ASSERT_TRACK_COUNT, 2
 4.1, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingTrackCount, 2, 2
+4.105, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateSlotCount, 0, 0
 4.11, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateFileIdCount, 0, 0
 4.12, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateActualFileIdCount, 0, 0
 4.13, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateBufferCount, 0, 0
 4.14, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSourceDuplicateTextureCount, 0, 0
+4.15, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingReusedPublishedSlotCount, 0, 0
 4.2, SEEK_TO, 6200000
 5.0, DEBUG_NATIVE_TIMING, source-provider-slot-identity-after-short-eof-seek
 5.1, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingTrackCount, 2, 2
@@ -24,10 +26,12 @@
 5.12, SEEK_TO, 2400000
 6.0, DEBUG_NATIVE_TIMING, source-provider-slot-identity-after-valid-seek
 6.1, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingTrackCount, 2, 2
+6.105, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateSlotCount, 0, 0
 6.11, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateFileIdCount, 0, 0
 6.12, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateActualFileIdCount, 0, 0
 6.13, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateBufferCount, 0, 0
 6.14, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSourceDuplicateTextureCount, 0, 0
+6.15, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingReusedPublishedSlotCount, 0, 0
 6.3, REMOVE_TRACK, 0
 7.2, ASSERT_TRACK_COUNT, 1
 7.4, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
@@ -36,11 +40,14 @@
 9.8, DEBUG_NATIVE_TIMING, source-provider-slot-identity-after-readd
 9.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingTrackCount, 2, 2
 9.91, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingMissingMask, 0, 0
+9.915, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateSlotCount, 0, 0
 9.92, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateFileIdCount, 0, 0
 9.93, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateActualFileIdCount, 0, 0
 9.94, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingPublishedDuplicateBufferCount, 0, 0
 9.95, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSourceDuplicateFileIdCount, 0, 0
 9.96, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSourceDuplicateTextureCount, 0, 0
+9.965, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSourceDuplicateSlotCount, 0, 0
+9.97, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingReusedPublishedSlotCount, 0, 0
 10.0, CAPTURE_VIEWPORT, wgpu_slot_identity_after_readd
 10.1, ASSERT_CAPTURE_NOT_BLACK, wgpu_slot_identity_after_readd, 0.01, 4.0
 10.4, QUIT, 0

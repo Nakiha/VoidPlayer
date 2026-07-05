@@ -12,7 +12,6 @@ class NativePlayerController {
   final bool strictCommandOrder;
   final void Function(String method, String reason)? onNoopCommand;
   int? _textureId;
-  bool _hasPlayer = false;
   bool _disposed = false;
   Future<CreatePlayerResult>? _createInFlight;
   Future<void>? _destroyInFlight;
@@ -27,8 +26,8 @@ class NativePlayerController {
 
   int? get textureId => _textureId;
   bool get isDisposed => _disposed;
-  bool get hasPlayer => _hasPlayer;
-  bool get canAcceptCommands => !_disposed && _hasPlayer;
+  bool get hasPlayer => _textureId != null;
+  bool get canAcceptCommands => !_disposed && _textureId != null;
   Stream<NativePlayerEvent> get events => _api.events;
 
   void _ensureAlive() {
@@ -39,7 +38,7 @@ class NativePlayerController {
 
   void _ensurePlayer(String method) {
     _ensureAlive();
-    if (!_hasPlayer) {
+    if (_textureId == null) {
       throw StateError('$method called before createPlayer');
     }
   }
@@ -68,7 +67,7 @@ class NativePlayerController {
     bool useHardwareDecode = true,
   }) {
     _ensureAlive();
-    if (_hasPlayer) {
+    if (_textureId != null) {
       throw StateError('Player already created');
     }
     final existing = _createInFlight;
@@ -109,10 +108,8 @@ class NativePlayerController {
       viewportBackgroundColor: _viewportBackgroundColor,
     );
     _textureId = result.textureId;
-    _hasPlayer = true;
     if (_disposed) {
       _textureId = null;
-      _hasPlayer = false;
       await _api.destroyPlayer();
       throw StateError('NativePlayerController is disposed');
     }
@@ -523,10 +520,9 @@ class NativePlayerController {
         log.fine('createPlayer failed before destroy completed', error, stack);
       }
     }
-    final hadPlayer = _hasPlayer;
+    final textureId = _textureId;
     _textureId = null;
-    _hasPlayer = false;
-    if (hadPlayer) {
+    if (textureId != null) {
       await _api.destroyPlayer();
     }
   }

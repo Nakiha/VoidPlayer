@@ -1025,10 +1025,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
     refreshPresentationPolicyForCurrentTracks()
     if addResult.refreshCurrentFrame {
-      if sourceProviderWasReady,
-         ensureNativeCompositorSourceProvider(reason: "track added") {
-        markFrameAvailable()
-      } else {
+      if !sourceProviderWasReady {
         presentation.refreshCurrentFrame(context: presentationContext())
       }
     }
@@ -1054,10 +1051,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       destroyPlayer()
     } else if removeResult.refreshCurrentFrame {
       refreshPresentationPolicyForCurrentTracks()
-      if sourceProviderWasReady,
-         ensureNativeCompositorSourceProvider(reason: "track removed") {
-        markFrameAvailable()
-      } else {
+      if !sourceProviderWasReady {
         presentation.refreshCurrentFrame(context: presentationContext())
       }
     }

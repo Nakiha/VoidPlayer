@@ -625,6 +625,14 @@ final class MacOSNativeCompositorView: NSView {
       sourceProjectionRate.rateHz() * 1000.0
     )
     result["nativeCompositorSourceProjectionApplyCount"] = sourceProjectionRate.total()
+    result["nativeCompositorSource0DisplayOffsetXX1000"] = Int(sourceProjDisplayOffsetX.x * 1000.0)
+    result["nativeCompositorSource0DisplayOffsetYX1000"] = Int(sourceProjDisplayOffsetY.x * 1000.0)
+    result["nativeCompositorSource0InvDisplaySizeXX1000"] = Int(sourceProjInvDisplaySizeX.x * 1000.0)
+    result["nativeCompositorSource0InvDisplaySizeYX1000"] = Int(sourceProjInvDisplaySizeY.x * 1000.0)
+    result["nativeCompositorSource1DisplayOffsetXX1000"] = Int(sourceProjDisplayOffsetX.y * 1000.0)
+    result["nativeCompositorSource1DisplayOffsetYX1000"] = Int(sourceProjDisplayOffsetY.y * 1000.0)
+    result["nativeCompositorSource1InvDisplaySizeXX1000"] = Int(sourceProjInvDisplaySizeX.y * 1000.0)
+    result["nativeCompositorSource1InvDisplaySizeYX1000"] = Int(sourceProjInvDisplaySizeY.y * 1000.0)
     result["nativeCompositorWgpuLastCompletionResult"] = Int(lastWgpuCompletionResult)
     result["nativeCompositorWgpuDestinationImportCount"] =
       Int(min(lastWgpuProfilerSnapshot.destination_import_count, UInt64(Int.max)))

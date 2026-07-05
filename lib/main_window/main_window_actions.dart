@@ -224,7 +224,7 @@ class MainWindowActionBinder {
       final caps = capabilities();
       if (!caps.canOpenLocalMedia || !caps.canAddTrack) return;
       final a = action as AddMedia;
-      addMediaByPath(a.path);
+      return addMediaByPath(a.path);
     });
     _bind(const AddNetworkMedia(''), (action) {
       final caps = capabilities();

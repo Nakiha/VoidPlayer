@@ -9,7 +9,7 @@
 3.8, ASSERT_TRACK_COUNT, 2
 3.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
 3.905, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorBackend, wgpu-metal-thin-runner
-3.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
+3.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderPresenting, true
 3.92, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 3.93, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 4.0, TOGGLE_ANALYSIS_OVERLAY, 0
@@ -40,5 +40,5 @@
 8.21, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
 8.22, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 2
 8.23, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorViewportTransformGeneration, 1
-8.24, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorDisplayedLayoutRevision, 1
+8.24, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingMissingMask, 0, 0
 8.4, QUIT, 0

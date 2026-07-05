@@ -73,7 +73,9 @@ REQUIRED_SOURCE_MARKERS = {
     "macos/Runner/MacOSVideoRendererDiagnostics.swift": [
         '"presentationAdapterKind"',
         '"presentationBackend"',
+        "native-wgpu-metal-source-provider",
         "native-wgpu-metal-cvpixelbuffer-target",
+        "renderer-owned-source-provider",
         "renderer-owned-metal",
         '"nativePresentationTargetInstalled"',
         '"hardwareDecodeProvider"',
@@ -124,8 +126,8 @@ REQUIRED_UI_PROFILE_ENTRIES = {
 
 REQUIRED_UI_SCRIPT_MARKERS = {
     "ui_tests/macos/native_facade_smoke.csv": [
-        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-metal",
-        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-cvpixelbuffer-target",
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-source-provider",
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-source-provider",
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal",
         "ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true",
     ],

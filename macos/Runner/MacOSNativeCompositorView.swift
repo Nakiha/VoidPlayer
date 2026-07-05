@@ -63,6 +63,10 @@ final class MacOSNativeCompositorView: NSView {
     label: "dev.nakiha.voidplayer.macos.native-compositor",
     qos: .userInteractive
   )
+  private let readyStateQueue = DispatchQueue(
+    label: "dev.nakiha.voidplayer.macos.native-compositor.ready-state",
+    qos: .userInteractive
+  )
   private let compositorQueueKey = DispatchSpecificKey<Bool>()
   private var displayLink: MacOSViewportDisplayLink?
   private var frameCount = 0
@@ -94,7 +98,22 @@ final class MacOSNativeCompositorView: NSView {
   // viewport onto those source textures comes from Dart (the full current
   // layout, recomputed per layout change). One projection path: no residual
   // transform, no revision anchoring, no subscribe/unsubscribe handoff.
-  private var sourceCacheTextures: [MacOSNativeCompositorSourceTexture] = []
+  private var videoReadySnapshot: VideoTextureSnapshot?
+  private var sourceReadyState: SourceCacheReadyState?
+  private var videoReadyPublishInFlight = false
+  private var videoReadyPublishPending = false
+  private var videoReadyToken: UInt64 = 0
+  private var sourceReadyToken: UInt64 = 0
+  private var videoReadyLastError = ""
+  private var sourceReadyLastError = ""
+  private var displayTickReuseVideoCount = 0
+  private var displayTickReuseSourceCount = 0
+  private var displayTickBlockedProducerCount = 0
+  private var lastPresentedSourceCacheGeneration: UInt64 = 0
+  private let readyVideoAcquireDuration = MacOSDurationWindow()
+  private let readySourceAcquireDuration = MacOSDurationWindow()
+  private let producerVideoPublishRate = MacOSRateWindow()
+  private let producerSourcePublishRate = MacOSRateWindow()
   private var overlayPrimitives = MacOSNativeOverlayPrimitives.empty
   private var lastOverlayDiagnosticSignature = ""
   private var sourceCacheGeneration: UInt64 = 0
@@ -255,8 +274,23 @@ final class MacOSNativeCompositorView: NSView {
 
   func setVideoTexture(_ texture: MacOSVideoTexture?) {
     compositorQueue.async { [weak self] in
-      self?.videoTexture = texture
-      self?.markCompositorDirty()
+      guard let self else { return }
+      videoTexture = texture
+      videoReadyToken &+= 1
+      videoReadySnapshot = nil
+      videoReadyLastError = texture == nil ? "no video texture" : ""
+      if texture == nil {
+        lastVideoTextureAvailable = false
+        markCompositorDirty()
+        return
+      }
+      requestVideoReadyPublishOnCompositorQueue(reason: "set-video-texture")
+    }
+  }
+
+  func requestVideoReadyFrame(reason: String) {
+    compositorQueue.async { [weak self] in
+      self?.requestVideoReadyPublishOnCompositorQueue(reason: reason)
     }
   }
 
@@ -324,15 +358,27 @@ final class MacOSNativeCompositorView: NSView {
   ) {
     compositorQueue.async { [weak self] in
       guard let self else { return }
-      sourceCacheTextures = textures
       if let overlay {
         overlayPrimitives = overlay
       }
       sourceCacheLastError = error
       sourceCacheGeneration &+= 1
+      sourceReadyToken &+= 1
+      let token = sourceReadyToken
       sourceCachePublishRate.record()
       logOverlayPrimitivesIfChanged(reason: "source-buffers")
-      markCompositorDirty()
+      guard !textures.isEmpty else {
+        sourceReadyState = nil
+        sourceReadyLastError = error
+        markCompositorDirty()
+        return
+      }
+      publishSourceReadyState(
+        textures: textures,
+        token: token,
+        generation: sourceCacheGeneration,
+        error: error
+      )
     }
   }
 
@@ -348,13 +394,15 @@ final class MacOSNativeCompositorView: NSView {
   func clearSource(reason: String) {
     compositorQueue.async { [weak self] in
       guard let self else { return }
-      if sourceCacheTextures.isEmpty && !sourceProjectionSet {
+      if sourceReadyState == nil && !sourceProjectionSet {
         return
       }
-      sourceCacheTextures = []
+      sourceReadyState = nil
+      sourceReadyToken &+= 1
       overlayPrimitives = .empty
       sourceProjectionSet = false
       sourceCacheLastError = reason
+      sourceReadyLastError = reason
       sourceCacheGeneration &+= 1
       logOverlayPrimitivesIfChanged(reason: "source-clear")
       markCompositorDirty()
@@ -436,10 +484,8 @@ final class MacOSNativeCompositorView: NSView {
   private func diagnosticsOnCompositorQueue() -> [String: Any] {
     var result = configuration.diagnostics
     let compositeHz = compositeRate.rateHz()
-    let sourceCacheBytes = sourceCacheTextures.reduce(0) { total, entry in
-      total + CVPixelBufferGetBytesPerRow(entry.pixelBuffer) *
-        CVPixelBufferGetHeight(entry.pixelBuffer)
-    }
+    let sourceCacheBytes = sourceReadyState?.bytes ?? 0
+    let sourceCacheTextureCount = sourceReadyState?.textures.count ?? 0
     result["nativeCompositorEnabled"] = true
     result["nativeCompositorSpikeEnabled"] = true
     result["nativeCompositorFrames"] = frameCount
@@ -453,10 +499,14 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorFrameCpuP95Ms"] = frameCpuDuration.p95Ms()
     result["nativeCompositorVideoAcquireLastMs"] = videoAcquireDuration.lastMs()
     result["nativeCompositorVideoAcquireP95Ms"] = videoAcquireDuration.p95Ms()
+    result["readyVideoAcquireLastMs"] = readyVideoAcquireDuration.lastMs()
+    result["readyVideoAcquireP95Ms"] = readyVideoAcquireDuration.p95Ms()
     result["nativeCompositorFlutterAcquireLastMs"] = flutterAcquireDuration.lastMs()
     result["nativeCompositorFlutterAcquireP95Ms"] = flutterAcquireDuration.p95Ms()
     result["nativeCompositorSourceAcquireLastMs"] = sourceAcquireDuration.lastMs()
     result["nativeCompositorSourceAcquireP95Ms"] = sourceAcquireDuration.p95Ms()
+    result["readySourceAcquireLastMs"] = readySourceAcquireDuration.lastMs()
+    result["readySourceAcquireP95Ms"] = readySourceAcquireDuration.p95Ms()
     result["nativeCompositorInFlightWaitLastMs"] = inFlightWaitDuration.lastMs()
     result["nativeCompositorInFlightWaitP95Ms"] = inFlightWaitDuration.p95Ms()
     result["nativeCompositorDrawableAcquireLastMs"] = drawableAcquireDuration.lastMs()
@@ -499,6 +549,15 @@ final class MacOSNativeCompositorView: NSView {
       lastFlutterSRGBToLinearEnabled
     result["nativeCompositorSkippedInFlightFrames"] = skippedInFlightFrames
     result["nativeCompositorSkippedStaticFrames"] = skippedStaticFrames
+    result["producerVideoPublishHz"] = producerVideoPublishRate.rateHz()
+    result["producerVideoPublishHzX1000"] = Int(producerVideoPublishRate.rateHz() * 1000.0)
+    result["producerSourcePublishHz"] = producerSourcePublishRate.rateHz()
+    result["producerSourcePublishHzX1000"] = Int(producerSourcePublishRate.rateHz() * 1000.0)
+    result["displayTickReuseVideoCount"] = displayTickReuseVideoCount
+    result["displayTickReuseSourceCount"] = displayTickReuseSourceCount
+    result["displayTickBlockedProducerCount"] = displayTickBlockedProducerCount
+    result["nativeCompositorVideoReadyLastError"] = videoReadyLastError
+    result["nativeCompositorSourceReadyLastError"] = sourceReadyLastError
     result["rendererOwnedCompositeProducerSubmitCount"] = 0
     result["rendererOwnedCompositeSkippedWhileInFlight"] = skippedInFlightFrames
     result["nativeCompositorViewportTransformEnabled"] = false
@@ -518,8 +577,8 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorViewportTransformTranslateYX1000"] = 0
     result["nativeCompositorSourceProjectionEnabled"] = sourceProjectionSet
     result["nativeCompositorSourceCacheActive"] =
-      sourceProjectionSet && !sourceCacheTextures.isEmpty
-    result["nativeCompositorSourceCacheTextureCount"] = sourceCacheTextures.count
+      sourceProjectionSet && sourceCacheTextureCount > 0
+    result["nativeCompositorSourceCacheTextureCount"] = sourceCacheTextureCount
     result["nativeCompositorSourceCacheGeneration"] = Int(
       min(sourceCacheGeneration, UInt64(Int.max))
     )
@@ -565,6 +624,7 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorSourceProjectionHzX1000"] = Int(
       sourceProjectionRate.rateHz() * 1000.0
     )
+    result["nativeCompositorSourceProjectionApplyCount"] = sourceProjectionRate.total()
     result["nativeCompositorWgpuLastCompletionResult"] = Int(lastWgpuCompletionResult)
     result["nativeCompositorWgpuDestinationImportCount"] =
       Int(min(lastWgpuProfilerSnapshot.destination_import_count, UInt64(Int.max)))
@@ -642,11 +702,11 @@ final class MacOSNativeCompositorView: NSView {
       lastDisplayTickNs = tickStartNs
 
       let videoAcquireStartNs = DispatchTime.now().uptimeNanoseconds
-      guard let videoSnapshot = currentVideoMetalTexture() else {
+      guard let videoSnapshot = videoReadySnapshot else {
         videoAcquireDuration.record(Self.elapsedNs(from: videoAcquireStartNs))
         setHiddenOnMain(true)
         if videoTexture != nil {
-          recordFailure("no video texture")
+          recordFailure(videoReadyLastError.isEmpty ? "no video ready texture" : videoReadyLastError)
         }
         return
       }
@@ -672,6 +732,9 @@ final class MacOSNativeCompositorView: NSView {
       if flutterSnapshot.sourceKey != lastPresentedFlutterSourceKey {
         flutterSourceChangeRate.record(nowNs: nowNs)
       }
+      if frameCount > 0 && videoSnapshot.sourceKey == lastPresentedVideoSourceKey {
+        displayTickReuseVideoCount += 1
+      }
       if !compositorDirty && !sourceChanged && nowNs >= displayLinkWarmUntilNs {
         skippedStaticFrames += 1
         staticSkipRate.record(nowNs: nowNs)
@@ -682,6 +745,11 @@ final class MacOSNativeCompositorView: NSView {
       let sourceAcquireStartNs = DispatchTime.now().uptimeNanoseconds
       let sourceCache = currentSourceCacheMetalTextures()
       sourceAcquireDuration.record(Self.elapsedNs(from: sourceAcquireStartNs))
+      if sourceProjectionSet &&
+         sourceCache.generation > 0 &&
+         sourceCache.generation == lastPresentedSourceCacheGeneration {
+        displayTickReuseSourceCount += 1
+      }
       displayedLayoutRevision = max(displayedLayoutRevision, videoSnapshot.layoutRevision)
       let sourceCacheActive = sourceProjectionSet && !sourceCache.textures.isEmpty
       var holeRect = explicitHoleRect ?? lastHoleRect
@@ -760,6 +828,7 @@ final class MacOSNativeCompositorView: NSView {
         lastFlutterSRGBToLinearEnabled = colorFlags.z > 0.5
         lastPresentedVideoSourceKey = videoSnapshot.sourceKey
         lastPresentedFlutterSourceKey = flutterSnapshot.sourceKey
+        lastPresentedSourceCacheGeneration = sourceCache.generation
         compositorDirty = false
         frameCpuDuration.record(Self.elapsedNs(from: tickStartNs))
         logCompositeFrameSummary(
@@ -914,6 +983,7 @@ final class MacOSNativeCompositorView: NSView {
       lastFlutterSRGBToLinearEnabled = colorFlags.z > 0.5
       lastPresentedVideoSourceKey = videoSnapshot.sourceKey
       lastPresentedFlutterSourceKey = flutterSnapshot.sourceKey
+      lastPresentedSourceCacheGeneration = sourceCache.generation
       compositorDirty = false
       frameCpuDuration.record(Self.elapsedNs(from: tickStartNs))
       logCompositeFrameSummary(
@@ -935,6 +1005,190 @@ final class MacOSNativeCompositorView: NSView {
   private func markCompositorDirty() {
     compositorDirty = true
     displayLinkWarmUntilNs = DispatchTime.now().uptimeNanoseconds + Self.displayLinkWarmGraceNs
+  }
+
+  private func requestVideoReadyPublishOnCompositorQueue(reason _: String) {
+    guard let videoTexture else {
+      videoReadyLastError = "no video texture"
+      lastVideoTextureAvailable = false
+      return
+    }
+    if videoReadyPublishInFlight {
+      videoReadyPublishPending = true
+      return
+    }
+    videoReadyPublishInFlight = true
+    videoReadyPublishPending = false
+    let token = videoReadyToken
+    readyStateQueue.async { [weak self] in
+      guard let self else { return }
+      let startNs = DispatchTime.now().uptimeNanoseconds
+      let snapshot = self.makeVideoReadySnapshot(videoTexture: videoTexture)
+      let elapsedNs = Self.elapsedNs(from: startNs)
+      self.compositorQueue.async { [weak self] in
+        guard let self else { return }
+        let shouldRetry = videoReadyPublishPending || token != videoReadyToken
+        videoReadyPublishInFlight = false
+        videoReadyPublishPending = false
+        guard token == videoReadyToken else {
+          if shouldRetry {
+            requestVideoReadyPublishOnCompositorQueue(reason: "video-ready-token-advanced")
+          }
+          return
+        }
+        readyVideoAcquireDuration.record(elapsedNs)
+        guard let snapshot else {
+          videoReadyLastError = "video ready snapshot unavailable"
+          lastVideoTextureAvailable = false
+          if shouldRetry {
+            requestVideoReadyPublishOnCompositorQueue(reason: "video-ready-retry")
+          }
+          return
+        }
+        videoReadySnapshot = snapshot
+        videoReadyLastError = ""
+        lastVideoTextureAvailable = true
+        maybeUpdateVideoEDRMetrics(pixelBuffer: snapshot.pixelBuffer)
+        producerVideoPublishRate.record()
+        markCompositorDirty()
+        if shouldRetry {
+          requestVideoReadyPublishOnCompositorQueue(reason: "video-ready-pending")
+        }
+      }
+    }
+  }
+
+  private func publishSourceReadyState(
+    textures: [MacOSNativeCompositorSourceTexture],
+    token: UInt64,
+    generation: UInt64,
+    error: String
+  ) {
+    readyStateQueue.async { [weak self] in
+      guard let self else { return }
+      let startNs = DispatchTime.now().uptimeNanoseconds
+      let state = self.makeSourceReadyState(textures: textures, generation: generation)
+      let elapsedNs = Self.elapsedNs(from: startNs)
+      self.compositorQueue.async { [weak self] in
+        guard let self, token == sourceReadyToken else { return }
+        readySourceAcquireDuration.record(elapsedNs)
+        guard let state else {
+          sourceReadyState = nil
+          sourceReadyLastError = error.isEmpty
+            ? "source ready texture import failed"
+            : error
+          markCompositorDirty()
+          return
+        }
+        sourceReadyState = state
+        sourceReadyLastError = error
+        producerSourcePublishRate.record()
+        markCompositorDirty()
+      }
+    }
+  }
+
+  private func makeVideoReadySnapshot(videoTexture: MacOSVideoTexture) -> VideoTextureSnapshot? {
+    guard let presentationSnapshot = videoTexture.presentationSnapshot() else {
+      return nil
+    }
+    let pixelBuffer = presentationSnapshot.pixelBuffer.takeRetainedValue()
+    let generation = presentationSnapshot.generation
+    let sourceKey = generation > 0
+      ? UInt64(generation)
+      : UInt64(UInt(bitPattern: Unmanaged.passUnretained(pixelBuffer).toOpaque()))
+    let width = CVPixelBufferGetWidth(pixelBuffer)
+    let height = CVPixelBufferGetHeight(pixelBuffer)
+    let metalPixelFormat: MTLPixelFormat =
+      CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_64RGBAHalf
+      ? .rgba16Float
+      : .bgra8Unorm
+    var cvTexture: CVMetalTexture?
+    let status = CVMetalTextureCacheCreateTextureFromImage(
+      kCFAllocatorDefault,
+      textureCache,
+      pixelBuffer,
+      nil,
+      metalPixelFormat,
+      width,
+      height,
+      0,
+      &cvTexture
+    )
+    guard status == kCVReturnSuccess, let cvTexture,
+          let texture = CVMetalTextureGetTexture(cvTexture) else {
+      return nil
+    }
+    return VideoTextureSnapshot(
+      texture: texture,
+      pixelBuffer: pixelBuffer,
+      cvTexture: cvTexture,
+      sourceKey: sourceKey,
+      layoutRevision: presentationSnapshot.layoutRevision
+    )
+  }
+
+  private func makeSourceReadyState(
+    textures entries: [MacOSNativeCompositorSourceTexture],
+    generation: UInt64
+  ) -> SourceCacheReadyState? {
+    var textures: [Int: MTLTexture] = [:]
+    var pixelBuffers: [CVPixelBuffer] = []
+    var cvTextures: [CVMetalTexture] = []
+    var presentFlags = SIMD4<Float>(0, 0, 0, 0)
+    var bytes = 0
+
+    for entry in entries {
+      let slot = entry.sourceSlot
+      guard slot >= 0 && slot < 4 else { continue }
+      let pixelBuffer = entry.pixelBuffer
+      let width = CVPixelBufferGetWidth(pixelBuffer)
+      let height = CVPixelBufferGetHeight(pixelBuffer)
+      let metalPixelFormat: MTLPixelFormat =
+        CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_64RGBAHalf
+        ? .rgba16Float
+        : .bgra8Unorm
+      var cvTexture: CVMetalTexture?
+      let status = CVMetalTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault,
+        textureCache,
+        pixelBuffer,
+        nil,
+        metalPixelFormat,
+        width,
+        height,
+        0,
+        &cvTexture
+      )
+      guard status == kCVReturnSuccess, let cvTexture,
+            let texture = CVMetalTextureGetTexture(cvTexture) else {
+        continue
+      }
+      textures[slot] = texture
+      pixelBuffers.append(pixelBuffer)
+      cvTextures.append(cvTexture)
+      bytes += CVPixelBufferGetBytesPerRow(pixelBuffer) * CVPixelBufferGetHeight(pixelBuffer)
+      switch slot {
+      case 0:
+        presentFlags.x = 1
+      case 1:
+        presentFlags.y = 1
+      case 2:
+        presentFlags.z = 1
+      default:
+        presentFlags.w = 1
+      }
+    }
+
+    guard !textures.isEmpty else { return nil }
+    return SourceCacheReadyState(
+      textures: textures,
+      pixelBuffers: pixelBuffers,
+      cvTextures: cvTextures,
+      presentFlags: presentFlags,
+      generation: generation,
+      bytes: bytes
+    )
   }
 
   private func logCompositeFrameSummary(
@@ -1381,6 +1635,8 @@ final class MacOSNativeCompositorView: NSView {
 
   private struct VideoTextureSnapshot {
     let texture: MTLTexture
+    let pixelBuffer: CVPixelBuffer
+    let cvTexture: CVMetalTexture
     let sourceKey: UInt64
     let layoutRevision: UInt64
   }
@@ -1393,6 +1649,7 @@ final class MacOSNativeCompositorView: NSView {
   private struct SourceCacheTextureSnapshot {
     let textures: [Int: MTLTexture]
     let presentFlags: SIMD4<Float>
+    let generation: UInt64
     let order: SIMD4<Float>
     let displayOffsetX: SIMD4<Float>
     let displayOffsetY: SIMD4<Float>
@@ -1402,98 +1659,26 @@ final class MacOSNativeCompositorView: NSView {
     let viewOffsetUvY: SIMD4<Float>
   }
 
+  private struct SourceCacheReadyState {
+    let textures: [Int: MTLTexture]
+    let pixelBuffers: [CVPixelBuffer]
+    let cvTextures: [CVMetalTexture]
+    let presentFlags: SIMD4<Float>
+    let generation: UInt64
+    let bytes: Int
+  }
+
   private struct OverlayVertex {
     var position: SIMD2<Float>
     var color: SIMD4<Float>
   }
 
-  private func currentVideoMetalTexture() -> VideoTextureSnapshot? {
-    guard let videoTexture,
-          let presentationSnapshot = videoTexture.presentationSnapshot() else {
-      lastVideoTextureAvailable = false
-      return nil
-    }
-    let pixelBuffer = presentationSnapshot.pixelBuffer.takeRetainedValue()
-    let generation = presentationSnapshot.generation
-    let sourceKey = generation > 0
-      ? UInt64(generation)
-      : UInt64(UInt(bitPattern: Unmanaged.passUnretained(pixelBuffer).toOpaque()))
-    let width = CVPixelBufferGetWidth(pixelBuffer)
-    let height = CVPixelBufferGetHeight(pixelBuffer)
-    maybeUpdateVideoEDRMetrics(pixelBuffer: pixelBuffer)
-    let metalPixelFormat: MTLPixelFormat =
-      CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_64RGBAHalf
-      ? .rgba16Float
-      : .bgra8Unorm
-    var cvTexture: CVMetalTexture?
-    let status = CVMetalTextureCacheCreateTextureFromImage(
-      kCFAllocatorDefault,
-      textureCache,
-      pixelBuffer,
-      nil,
-      metalPixelFormat,
-      width,
-      height,
-      0,
-      &cvTexture
-    )
-    guard status == kCVReturnSuccess, let cvTexture,
-          let texture = CVMetalTextureGetTexture(cvTexture) else {
-      lastVideoTextureAvailable = false
-      return nil
-    }
-    return VideoTextureSnapshot(
-      texture: texture,
-      sourceKey: sourceKey,
-      layoutRevision: presentationSnapshot.layoutRevision
-    )
-  }
-
   private func currentSourceCacheMetalTextures() -> SourceCacheTextureSnapshot {
-    var textures: [Int: MTLTexture] = [:]
-    var presentFlags = SIMD4<Float>(0, 0, 0, 0)
-
-    for entry in sourceCacheTextures {
-      let slot = entry.sourceSlot
-      guard slot >= 0 && slot < 4 else { continue }
-      let pixelBuffer = entry.pixelBuffer
-      let width = CVPixelBufferGetWidth(pixelBuffer)
-      let height = CVPixelBufferGetHeight(pixelBuffer)
-      let metalPixelFormat: MTLPixelFormat =
-        CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_64RGBAHalf
-        ? .rgba16Float
-        : .bgra8Unorm
-      var cvTexture: CVMetalTexture?
-      let status = CVMetalTextureCacheCreateTextureFromImage(
-        kCFAllocatorDefault,
-        textureCache,
-        pixelBuffer,
-        nil,
-        metalPixelFormat,
-        width,
-        height,
-        0,
-        &cvTexture
-      )
-      guard status == kCVReturnSuccess, let cvTexture,
-            let texture = CVMetalTextureGetTexture(cvTexture) else {
-        continue
-      }
-      textures[slot] = texture
-      switch slot {
-      case 0:
-        presentFlags.x = 1
-      case 1:
-        presentFlags.y = 1
-      case 2:
-        presentFlags.z = 1
-      default:
-        presentFlags.w = 1
-      }
-    }
+    let ready = sourceReadyState
     return SourceCacheTextureSnapshot(
-      textures: textures,
-      presentFlags: presentFlags,
+      textures: ready?.textures ?? [:],
+      presentFlags: ready?.presentFlags ?? SIMD4<Float>(0, 0, 0, 0),
+      generation: ready?.generation ?? 0,
       order: sourceOrder,
       displayOffsetX: sourceProjDisplayOffsetX,
       displayOffsetY: sourceProjDisplayOffsetY,

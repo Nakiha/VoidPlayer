@@ -97,6 +97,7 @@ public:
 
     void apply_layout(const LayoutState& state);
     void note_viewport_compositor_activity();
+    void set_viewport_compositor_active(bool active);
     void set_background_color(float r, float g, float b, float a);
     LayoutState layout() const;
 
@@ -154,6 +155,14 @@ public:
 
     bool request_frame_refresh(const char* reason);
     bool update_presentation_sdr_white_level(double nits);
+    bool commit_paused_preview_frame(int timeout_ms,
+                                     PresentationBackendFrameInfo* out,
+                                     std::string* error);
+    bool commit_source_provider_preview_frame(int timeout_ms,
+                                              const int* expected_file_ids,
+                                              size_t expected_file_id_count,
+                                              PresentationBackendFrameInfo* out,
+                                              std::string* error);
     bool draw_current_frame_sources(PresentationBackend& backend,
                                     PresentationSourceFrameTarget* targets,
                                     size_t target_count,

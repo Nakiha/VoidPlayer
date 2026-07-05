@@ -58,6 +58,8 @@ public:
     void copy_background_color(float out[4]) const;
 
     void note_viewport_compositor_activity(int64_t active_until_us);
+    void set_viewport_compositor_active(bool active);
+    bool viewport_compositor_persistent_active() const;
     bool viewport_compositor_active(int64_t now_us) const;
 
 private:
@@ -71,6 +73,7 @@ private:
     uint64_t last_presented_revision_ = 0;
     float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     std::atomic<int64_t> viewport_compositor_active_until_us_{0};
+    std::atomic<bool> viewport_compositor_active_{false};
 };
 
 } // namespace vr

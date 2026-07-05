@@ -26,6 +26,7 @@ import '../track_manager.dart';
 import '../utils/async_guard.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/viewport_display_state.dart';
+import '../viewport/viewport_projection_diagnostics.dart';
 import '../widgets/loop_range_bar.dart';
 import 'main_window_actions.dart';
 import 'main_window_agent.dart';

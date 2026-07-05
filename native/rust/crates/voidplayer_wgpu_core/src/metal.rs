@@ -6,7 +6,9 @@ use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
-use crate::{MAX_TRACKS, YUV_FORMAT_P010, YUV_FORMAT_YUV420P};
+use crate::{
+    MAX_TRACKS, YUV_FORMAT_NV12, YUV_FORMAT_P010, YUV_FORMAT_YUV420P, YUV_FORMAT_YUV420P10LE,
+};
 
 const STORAGE_NONE: i32 = 0;
 const STORAGE_YUV: i32 = 1;
@@ -2699,11 +2701,20 @@ fn upload_cpu_yuv_package_textures(
             continue;
         }
         let format = package.decision.yuv_format[slot];
-        let high_bit = format == YUV_FORMAT_P010;
-        if high_bit && !renderer.supports_texture_format_16bit_norm() {
-            return Err("wgpu-metal P010 package requires 16-bit normalized texture support");
+        if format != YUV_FORMAT_NV12
+            && format != YUV_FORMAT_P010
+            && format != YUV_FORMAT_YUV420P
+            && format != YUV_FORMAT_YUV420P10LE
+        {
+            return Err("wgpu-metal CPU YUV package format is unsupported");
         }
-        let bytes_per_sample = if high_bit { 2usize } else { 1usize };
+        let uses_16bit = format == YUV_FORMAT_P010 || format == YUV_FORMAT_YUV420P10LE;
+        if uses_16bit && !renderer.supports_texture_format_16bit_norm() {
+            return Err(
+                "wgpu-metal 10-bit CPU YUV package requires 16-bit normalized texture support",
+            );
+        }
+        let bytes_per_sample = if uses_16bit { 2usize } else { 1usize };
         let coded_width = package.decision.coded_width[slot];
         let coded_height = package.decision.coded_height[slot];
         let y_stride = package.decision.y_stride[slot];
@@ -2730,7 +2741,7 @@ fn upload_cpu_yuv_package_textures(
             &mut renderer.resource_generation,
             coded_width,
             coded_height,
-            if high_bit {
+            if uses_16bit {
                 wgpu::TextureFormat::R16Unorm
             } else {
                 wgpu::TextureFormat::R8Unorm
@@ -2754,7 +2765,7 @@ fn upload_cpu_yuv_package_textures(
             &mut renderer.resource_generation,
             chroma_width,
             chroma_height,
-            if high_bit {
+            if uses_16bit {
                 wgpu::TextureFormat::Rg16Unorm
             } else {
                 wgpu::TextureFormat::Rg8Unorm
@@ -2768,23 +2779,30 @@ fn upload_cpu_yuv_package_textures(
             .wrapping_mul(1099511628211)
             .wrapping_add(uv_generation)
             .max(1);
-        if format == YUV_FORMAT_YUV420P {
+        if format == YUV_FORMAT_YUV420P || format == YUV_FORMAT_YUV420P10LE {
             let u_plane = source_range(
                 source,
                 package.decision.uv_offset[slot],
                 uv_stride,
-                chroma_width as usize,
+                (chroma_width as usize)
+                    .checked_mul(bytes_per_sample)
+                    .ok_or("wgpu-metal CPU YUV package metadata overflow")?,
                 chroma_height,
             )?;
             let v_plane = source_range(
                 source,
                 package.decision.v_offset[slot],
                 uv_stride,
-                chroma_width as usize,
+                (chroma_width as usize)
+                    .checked_mul(bytes_per_sample)
+                    .ok_or("wgpu-metal CPU YUV package metadata overflow")?,
                 chroma_height,
             )?;
             let scratch = &mut renderer.cpu_yuv_uv_scratch[slot];
-            let row_bytes = chroma_width as usize * 2;
+            let row_bytes = (chroma_width as usize)
+                .checked_mul(bytes_per_sample)
+                .and_then(|bytes| bytes.checked_mul(2))
+                .ok_or("wgpu-metal CPU YUV UV scratch overflow")?;
             scratch.clear();
             scratch.resize(
                 row_bytes
@@ -2793,12 +2811,24 @@ fn upload_cpu_yuv_package_textures(
                 0,
             );
             for y in 0..chroma_height as usize {
-                let u_row = &u_plane[y * uv_stride as usize..][..chroma_width as usize];
-                let v_row = &v_plane[y * uv_stride as usize..][..chroma_width as usize];
+                let source_row_bytes = (chroma_width as usize)
+                    .checked_mul(bytes_per_sample)
+                    .ok_or("wgpu-metal CPU YUV package metadata overflow")?;
+                let u_row = &u_plane[y * uv_stride as usize..][..source_row_bytes];
+                let v_row = &v_plane[y * uv_stride as usize..][..source_row_bytes];
                 let dst_row = &mut scratch[y * row_bytes..][..row_bytes];
                 for x in 0..chroma_width as usize {
-                    dst_row[x * 2] = u_row[x];
-                    dst_row[x * 2 + 1] = v_row[x];
+                    let src = x
+                        .checked_mul(bytes_per_sample)
+                        .ok_or("wgpu-metal CPU YUV UV scratch overflow")?;
+                    let dst = x
+                        .checked_mul(bytes_per_sample)
+                        .and_then(|offset| offset.checked_mul(2))
+                        .ok_or("wgpu-metal CPU YUV UV scratch overflow")?;
+                    dst_row[dst..dst + bytes_per_sample]
+                        .copy_from_slice(&u_row[src..src + bytes_per_sample]);
+                    dst_row[dst + bytes_per_sample..dst + bytes_per_sample * 2]
+                        .copy_from_slice(&v_row[src..src + bytes_per_sample]);
                 }
             }
             upload_cpu_yuv_plane(

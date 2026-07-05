@@ -34,20 +34,66 @@ void fill_frame_storage_snapshot(const TextureFrame& frame,
     out.is_nv12 = frame.is_nv12;
     out.is_p010 = frame.is_p010;
 
-    if (const auto* storage = frame.cpu_nv12_storage()) {
+    if (const auto* nv12_storage = frame.cpu_nv12_storage()) {
         out.is_nv12 = true;
-        out.is_p010 = storage->is_p010;
-        out.y_stride = storage->y_stride;
-        out.uv_stride = storage->uv_stride;
-        out.coded_width = storage->coded_width;
-        out.coded_height = storage->coded_height;
-        if (storage->coded_width > 0) {
+        out.is_p010 = nv12_storage->is_p010;
+        out.yuv_format = nv12_storage->is_p010
+            ? PRESENTATION_YUV_FORMAT_P010
+            : PRESENTATION_YUV_FORMAT_NV12;
+        out.y_stride = nv12_storage->y_stride;
+        out.uv_stride = nv12_storage->uv_stride;
+        out.coded_width = nv12_storage->coded_width;
+        out.coded_height = nv12_storage->coded_height;
+        if (nv12_storage->coded_width > 0) {
             out.nv12_uv_scale_x =
-                static_cast<float>(frame.width) / static_cast<float>(storage->coded_width);
+                static_cast<float>(frame.width) / static_cast<float>(nv12_storage->coded_width);
         }
-        if (storage->coded_height > 0) {
+        if (nv12_storage->coded_height > 0) {
             out.nv12_uv_scale_y =
-                static_cast<float>(frame.height) / static_cast<float>(storage->coded_height);
+                static_cast<float>(frame.height) / static_cast<float>(nv12_storage->coded_height);
+        }
+    } else if (const auto* planar_storage = frame.cpu_planar_yuv_storage()) {
+        const bool semiplanar =
+            planar_storage->plane_layout == CpuYuvPlaneLayout::SemiPlanarYuv420;
+        out.is_nv12 = semiplanar;
+        out.is_p010 = semiplanar &&
+            planar_storage->sample_alignment == CpuYuvSampleAlignment::MsbAligned;
+        if (semiplanar) {
+            out.yuv_format = out.is_p010
+                ? PRESENTATION_YUV_FORMAT_P010
+                : PRESENTATION_YUV_FORMAT_NV12;
+        } else {
+            out.yuv_format = planar_storage->bit_depth >= 10
+                ? PRESENTATION_YUV_FORMAT_YUV420P10LE
+                : PRESENTATION_YUV_FORMAT_YUV420P;
+        }
+        out.y_stride = planar_storage->strides[0];
+        out.uv_stride = planar_storage->strides[1];
+        out.coded_width = planar_storage->plane_widths[0];
+        out.coded_height = planar_storage->plane_heights[0];
+        if (out.coded_width > 0) {
+            out.nv12_uv_scale_x =
+                static_cast<float>(frame.width) / static_cast<float>(out.coded_width);
+        }
+        if (out.coded_height > 0) {
+            out.nv12_uv_scale_y =
+                static_cast<float>(frame.height) / static_cast<float>(out.coded_height);
+        }
+    } else if (const auto* cv_storage = frame.cv_pixel_buffer_storage()) {
+        out.is_nv12 = true;
+        out.is_p010 = cv_storage->is_p010;
+        out.yuv_format = cv_storage->is_p010
+            ? PRESENTATION_YUV_FORMAT_P010
+            : PRESENTATION_YUV_FORMAT_NV12;
+        out.coded_width = cv_storage->coded_width;
+        out.coded_height = cv_storage->coded_height;
+        if (cv_storage->coded_width > 0) {
+            out.nv12_uv_scale_x =
+                static_cast<float>(frame.width) / static_cast<float>(cv_storage->coded_width);
+        }
+        if (cv_storage->coded_height > 0) {
+            out.nv12_uv_scale_y =
+                static_cast<float>(frame.height) / static_cast<float>(cv_storage->coded_height);
         }
     }
 }

@@ -7,6 +7,7 @@ typealias LayoutRefreshCompletion = (String) -> Void
 struct MacOSPresentationContext {
   let nativeBackendActive: Bool
   let nativeCompositorSourceProjectionActive: Bool
+  let nativeCompositorSourceProviderActive: Bool
   let player: MacOSNativePlayerSession?
   let texture: MacOSVideoTexture?
   let nativeTexture: MacOSFlutterTextureBridge?
@@ -114,6 +115,11 @@ final class MacOSPresentationController {
     guard context.nativeBackendActive,
           let player = context.player,
           let texture = context.nativeTexture else {
+      context.markFrameAvailable()
+      return true
+    }
+    if context.nativeCompositorSourceProviderActive {
+      player.noteViewportCompositorActivity()
       context.markFrameAvailable()
       return true
     }
@@ -384,12 +390,14 @@ final class MacOSPresentationController {
     guard let player = context.player else {
       return .transientMiss
     }
+    let sourceProviderLayout = context.nativeCompositorSourceProviderActive
     let pumpReady = context.playback.ensurePresentationPump(
       player: player,
       texture: context.nativeTexture,
       maxTrackSlots: context.maxTrackSlots,
       userData: context.userData,
-      presentationState: context.presentationState
+      presentationState: context.presentationState,
+      requiresPresentationTarget: !sourceProviderLayout
     )
     guard pumpReady else {
       return .transientMiss
@@ -398,7 +406,7 @@ final class MacOSPresentationController {
       return .stale
     }
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
-    if context.nativeCompositorSourceProjectionActive {
+    if sourceProviderLayout {
       player.noteViewportCompositorActivity()
       return .appliedWithoutDraw
     }

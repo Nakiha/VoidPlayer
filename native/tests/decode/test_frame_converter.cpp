@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include "renderer/decode/decode_stage_perf.h"
 #include "renderer/decode/frame_converter.h"
 #include <cstdint>
 #include <cstring>
@@ -146,6 +147,102 @@ TEST_CASE("FrameConverter: wraps odd YUV420P frame with ceil chroma planes",
     REQUIRE(planar->plane_heights[1] == 32);
     REQUIRE(planar->plane_widths[2] == 33);
     REQUIRE(planar->plane_heights[2] == 32);
+
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: wraps NV12 frame as semiplanar YUV ref",
+          "[frame_converter][color]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_NV12));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_NV12;
+    frame->width = 4;
+    frame->height = 4;
+    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+    for (int y = 0; y < 4; ++y) {
+        memset(frame->data[0] + y * frame->linesize[0], 64, 4);
+    }
+    for (int y = 0; y < 2; ++y) {
+        for (int x = 0; x < 4; x += 2) {
+            frame->data[1][y * frame->linesize[1] + x] = 96;
+            frame->data[1][y * frame->linesize[1] + x + 1] = 160;
+        }
+    }
+
+    DecodeStagePerfCounters perf;
+    auto converted = converter.convert(frame, &perf);
+    REQUIRE(converted.has_value());
+    const auto snapshot = perf.snapshot();
+    REQUIRE(snapshot.convert_direct_planar_count == 1);
+    REQUIRE(snapshot.convert_nv12_pack_count == 0);
+
+    TextureFrame result = std::move(*converted);
+    REQUIRE(result.is_nv12);
+    REQUIRE_FALSE(result.is_p010);
+    REQUIRE(result.cpu_nv12_storage() == nullptr);
+    REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
+    const auto* yuv = result.cpu_planar_yuv_storage();
+    REQUIRE(yuv->plane_layout == CpuYuvPlaneLayout::SemiPlanarYuv420);
+    REQUIRE(yuv->sample_alignment == CpuYuvSampleAlignment::Packed);
+    REQUIRE(yuv->bit_depth == 8);
+    REQUIRE(yuv->bytes_per_sample == 1);
+    REQUIRE(yuv->planes[0] == frame->data[0]);
+    REQUIRE(yuv->planes[1] == frame->data[1]);
+    REQUIRE(yuv->planes[2] == nullptr);
+    REQUIRE(yuv->plane_widths[1] == 2);
+    REQUIRE(yuv->plane_heights[1] == 2);
+
+    av_frame_free(&frame);
+}
+
+TEST_CASE("FrameConverter: wraps P010 frame as semiplanar YUV ref",
+          "[frame_converter][color]") {
+    FrameConverter converter;
+    REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_P010LE));
+
+    AVFrame* frame = av_frame_alloc();
+    REQUIRE(frame != nullptr);
+    frame->format = AV_PIX_FMT_P010LE;
+    frame->width = 4;
+    frame->height = 4;
+    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
+    for (int y = 0; y < 4; ++y) {
+        auto* row = reinterpret_cast<uint16_t*>(frame->data[0] + y * frame->linesize[0]);
+        for (int x = 0; x < 4; ++x) {
+            row[x] = static_cast<uint16_t>(512u << 6);
+        }
+    }
+    for (int y = 0; y < 2; ++y) {
+        auto* row = reinterpret_cast<uint16_t*>(frame->data[1] + y * frame->linesize[1]);
+        for (int x = 0; x < 4; x += 2) {
+            row[x] = static_cast<uint16_t>(256u << 6);
+            row[x + 1] = static_cast<uint16_t>(768u << 6);
+        }
+    }
+
+    DecodeStagePerfCounters perf;
+    auto converted = converter.convert(frame, &perf);
+    REQUIRE(converted.has_value());
+    const auto snapshot = perf.snapshot();
+    REQUIRE(snapshot.convert_direct_planar_count == 1);
+    REQUIRE(snapshot.convert_nv12_pack_count == 0);
+
+    TextureFrame result = std::move(*converted);
+    REQUIRE(result.is_nv12);
+    REQUIRE(result.is_p010);
+    REQUIRE(result.cpu_nv12_storage() == nullptr);
+    REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
+    const auto* yuv = result.cpu_planar_yuv_storage();
+    REQUIRE(yuv->plane_layout == CpuYuvPlaneLayout::SemiPlanarYuv420);
+    REQUIRE(yuv->sample_alignment == CpuYuvSampleAlignment::MsbAligned);
+    REQUIRE(yuv->bit_depth == 10);
+    REQUIRE(yuv->bytes_per_sample == 2);
+    REQUIRE(yuv->planes[0] == frame->data[0]);
+    REQUIRE(yuv->planes[1] == frame->data[1]);
+    REQUIRE(yuv->planes[2] == nullptr);
 
     av_frame_free(&frame);
 }
@@ -397,11 +494,15 @@ TEST_CASE("FrameConverter: maps HDR transfer metadata", "[frame_converter][color
     REQUIRE(converted.has_value());
     TextureFrame result = std::move(*converted);
     REQUIRE(result.texture_handle != nullptr);
-    REQUIRE(result.is_p010);
-    REQUIRE(result.cpu_nv12_storage() != nullptr);
-    REQUIRE(result.cpu_nv12_storage()->is_p010);
-    REQUIRE(result.cpu_nv12_storage()->y_stride == 128);
-    REQUIRE(result.cpu_nv12_storage()->uv_stride == 128);
+    REQUIRE_FALSE(result.is_p010);
+    REQUIRE(result.cpu_nv12_storage() == nullptr);
+    REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
+    REQUIRE(result.cpu_planar_yuv_storage()->bit_depth == 10);
+    REQUIRE(result.cpu_planar_yuv_storage()->bytes_per_sample == 2);
+    REQUIRE(result.cpu_planar_yuv_storage()->plane_layout ==
+            CpuYuvPlaneLayout::PlanarYuv420);
+    REQUIRE(result.cpu_planar_yuv_storage()->sample_alignment ==
+            CpuYuvSampleAlignment::Packed);
     REQUIRE(result.color.range == VIDEO_COLOR_RANGE_LIMITED);
     REQUIRE(result.color.matrix == VIDEO_COLOR_MATRIX_BT2020_NCL);
     REQUIRE(result.color.transfer == VIDEO_COLOR_TRANSFER_PQ);
@@ -410,7 +511,7 @@ TEST_CASE("FrameConverter: maps HDR transfer metadata", "[frame_converter][color
     av_frame_free(&frame);
 }
 
-TEST_CASE("FrameConverter: preserves YUV420P10LE as CPU P010 before shader",
+TEST_CASE("FrameConverter: preserves YUV420P10LE as direct planar storage",
           "[frame_converter][color]") {
     FrameConverter converter;
     REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_YUV420P10LE));
@@ -437,22 +538,31 @@ TEST_CASE("FrameConverter: preserves YUV420P10LE as CPU P010 before shader",
         }
     }
 
-    auto converted = converter.convert(frame);
+    DecodeStagePerfCounters perf;
+    auto converted = converter.convert(frame, &perf);
     REQUIRE(converted.has_value());
-    TextureFrame result = std::move(*converted);
-    REQUIRE(result.is_nv12);
-    REQUIRE(result.is_p010);
-    REQUIRE(result.cpu_nv12_storage() != nullptr);
-    REQUIRE(result.cpu_nv12_storage()->is_p010);
-    REQUIRE(result.cpu_nv12_storage()->y_stride == 8);
-    REQUIRE(result.cpu_nv12_storage()->uv_stride == 8);
+    const auto snapshot = perf.snapshot();
+    REQUIRE(snapshot.convert_direct_planar_count == 1);
+    REQUIRE(snapshot.convert_nv12_pack_count == 0);
 
-    const auto* p010 = reinterpret_cast<const uint16_t*>(result.texture_handle);
-    REQUIRE(p010[0] == static_cast<uint16_t>(512u << 6));
-    const size_t uv_offset_words =
-        static_cast<size_t>(result.cpu_nv12_storage()->y_stride) * 4 / sizeof(uint16_t);
-    REQUIRE(p010[uv_offset_words] == static_cast<uint16_t>(256u << 6));
-    REQUIRE(p010[uv_offset_words + 1] == static_cast<uint16_t>(768u << 6));
+    TextureFrame result = std::move(*converted);
+    REQUIRE_FALSE(result.is_nv12);
+    REQUIRE_FALSE(result.is_p010);
+    REQUIRE(result.cpu_nv12_storage() == nullptr);
+    REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
+
+    const auto* planar = result.cpu_planar_yuv_storage();
+    REQUIRE(planar->bit_depth == 10);
+    REQUIRE(planar->bytes_per_sample == 2);
+    REQUIRE(planar->plane_layout == CpuYuvPlaneLayout::PlanarYuv420);
+    REQUIRE(planar->sample_alignment == CpuYuvSampleAlignment::Packed);
+    REQUIRE(planar->plane_widths[0] == 4);
+    REQUIRE(planar->plane_heights[0] == 4);
+    REQUIRE(planar->plane_widths[1] == 2);
+    REQUIRE(planar->plane_heights[1] == 2);
+    REQUIRE(reinterpret_cast<const uint16_t*>(planar->planes[0])[0] == 512);
+    REQUIRE(reinterpret_cast<const uint16_t*>(planar->planes[1])[0] == 256);
+    REQUIRE(reinterpret_cast<const uint16_t*>(planar->planes[2])[0] == 768);
 
     av_frame_free(&frame);
 }

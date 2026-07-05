@@ -388,6 +388,23 @@ ScriptInstruction? _parseInstruction(
           yFraction: args.length >= 5 ? double.parse(args[4]) : 0.5,
         ),
       );
+    case 'PAN_ZOOM_VIEWPORT':
+      if (args.length < 2) {
+        log.warning('PAN_ZOOM_VIEWPORT needs panDx and panDy: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        PanZoomViewport(
+          double.parse(args[0]),
+          double.parse(args[1]),
+          scale: args.length >= 3 ? double.parse(args[2]) : 1.0,
+          steps: args.length >= 4 ? int.parse(args[3]) : 24,
+          stepMs: args.length >= 5 ? int.parse(args[4]) : 8,
+          xFraction: args.length >= 6 ? double.parse(args[5]) : 0.5,
+          yFraction: args.length >= 7 ? double.parse(args[6]) : 0.5,
+        ),
+      );
     case 'DRAG_VIEWPORT_SAMPLE_OVERLAY':
       if (args.length < 2) {
         log.warning(
@@ -544,6 +561,11 @@ ScriptInstruction? _parseInstruction(
       return ScriptAutomationAction(
         time,
         const ResetNativePerfCountersAction(),
+      );
+    case 'RESET_DART_VIEWPORT_DIAGNOSTICS':
+      return ScriptAutomationAction(
+        time,
+        const ResetDartViewportDiagnosticsAction(),
       );
     case 'BEGIN_NATIVE_INTERACTION_SAMPLE':
       return ScriptAutomationAction(
@@ -1009,6 +1031,17 @@ ScriptInstruction? _parseInstruction(
       return ScriptAssert(
         time,
         AssertNativeDiagnosticIntAtLeast(args[0], int.parse(args[1])),
+      );
+    case 'ASSERT_DART_VIEWPORT_DIAGNOSTIC_INT_AT_LEAST':
+      if (args.length < 2) {
+        log.warning(
+          'ASSERT_DART_VIEWPORT_DIAGNOSTIC_INT_AT_LEAST needs key and minValue: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAssert(
+        time,
+        AssertDartViewportDiagnosticIntAtLeast(args[0], int.parse(args[1])),
       );
     case 'ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE':
       if (args.length < 3) {

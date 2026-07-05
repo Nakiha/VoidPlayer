@@ -59,6 +59,16 @@ struct CpuNv12FrameStorage {
     int coded_height = 0;
 };
 
+enum class CpuYuvPlaneLayout : int {
+    PlanarYuv420 = 0,
+    SemiPlanarYuv420 = 1,
+};
+
+enum class CpuYuvSampleAlignment : int {
+    Packed = 0,
+    MsbAligned = 1,
+};
+
 struct CpuPlanarYuvFrameStorage {
     std::shared_ptr<void> frame_ref;
     const uint8_t* planes[3] = {};
@@ -66,6 +76,9 @@ struct CpuPlanarYuvFrameStorage {
     int plane_widths[3] = {};
     int plane_heights[3] = {};
     int bytes_per_sample = 1;
+    int bit_depth = 8;
+    CpuYuvPlaneLayout plane_layout = CpuYuvPlaneLayout::PlanarYuv420;
+    CpuYuvSampleAlignment sample_alignment = CpuYuvSampleAlignment::Packed;
 };
 
 struct D3D12TextureFrameStorage {

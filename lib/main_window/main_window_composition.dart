@@ -192,6 +192,8 @@ extension MainWindowComposition on MainWindowController {
               analysisGeneration.overlayConfig.copyWith(opacity: opacity),
             );
           },
+          dartViewportDiagnostics: () =>
+              ViewportProjectionDiagnostics.instance.snapshot(),
           actionRegistry: actionRegistry,
         ),
       ).run();

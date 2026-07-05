@@ -3,6 +3,7 @@
 #include "renderer/renderer_limits.h"
 #include <spdlog/spdlog.h>
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <limits>
 #include <memory>
@@ -17,6 +18,12 @@ extern "C" {
 namespace vr {
 
 namespace {
+uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start).count());
+}
+
 int ceil_div2(int value) {
     return (value + 1) / 2;
 }
@@ -115,6 +122,20 @@ bool software_format_uses_direct_planar_yuv420(AVPixelFormat format) {
     switch (format) {
     case AV_PIX_FMT_YUV420P:
     case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_YUV420P10LE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool software_format_uses_direct_yuv420_storage(AVPixelFormat format) {
+    switch (format) {
+    case AV_PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_NV12:
+    case AV_PIX_FMT_P010LE:
         return true;
     default:
         return false;
@@ -534,15 +555,17 @@ bool wrap_frame_as_cpu_planar_yuv420(const AVFrame* frame,
     const int width = frame->width;
     const int height = frame->height;
     const auto format = static_cast<AVPixelFormat>(frame->format);
+    const int bytes_per_sample = format == AV_PIX_FMT_YUV420P10LE ? 2 : 1;
+    const int bit_depth = format == AV_PIX_FMT_YUV420P10LE ? 10 : 8;
     const int chroma_width = ceil_div2(width);
     const int chroma_height = ceil_div2(height);
     if (!software_format_uses_direct_planar_yuv420(format) ||
         width <= 0 || height <= 0 ||
         width > kMaxRendererDimension || height > kMaxRendererDimension ||
         !frame->data[0] || !frame->data[1] || !frame->data[2] ||
-        frame->linesize[0] < width ||
-        frame->linesize[1] < chroma_width ||
-        frame->linesize[2] < chroma_width) {
+        frame->linesize[0] < width * bytes_per_sample ||
+        frame->linesize[1] < chroma_width * bytes_per_sample ||
+        frame->linesize[2] < chroma_width * bytes_per_sample) {
         return false;
     }
 
@@ -574,17 +597,87 @@ bool wrap_frame_as_cpu_planar_yuv420(const AVFrame* frame,
         {ref_frame->linesize[0], ref_frame->linesize[1], ref_frame->linesize[2]},
         {width, chroma_width, chroma_width},
         {height, chroma_height, chroma_height},
-        1,
+        bytes_per_sample,
+        bit_depth,
+        CpuYuvPlaneLayout::PlanarYuv420,
+        CpuYuvSampleAlignment::Packed,
+    };
+    return true;
+}
+
+bool wrap_frame_as_cpu_yuv420_storage(const AVFrame* frame,
+                                      TextureFrame& result) {
+    if (!frame) {
+        return false;
+    }
+    const auto format = static_cast<AVPixelFormat>(frame->format);
+    if (software_format_uses_direct_planar_yuv420(format)) {
+        return wrap_frame_as_cpu_planar_yuv420(frame, result);
+    }
+    if (format != AV_PIX_FMT_NV12 && format != AV_PIX_FMT_P010LE) {
+        return false;
+    }
+
+    const int width = frame->width;
+    const int height = frame->height;
+    const int bytes_per_sample = format == AV_PIX_FMT_P010LE ? 2 : 1;
+    const int bit_depth = format == AV_PIX_FMT_P010LE ? 10 : 8;
+    const int chroma_width = ceil_div2(width);
+    const int chroma_height = ceil_div2(height);
+    if (width <= 0 || height <= 0 ||
+        width > kMaxRendererDimension || height > kMaxRendererDimension ||
+        !frame->data[0] || !frame->data[1] ||
+        frame->linesize[0] < width * bytes_per_sample ||
+        frame->linesize[1] < chroma_width * 2 * bytes_per_sample) {
+        return false;
+    }
+
+    auto ref_frame_owner = AvFrameOwner::allocate();
+    AVFrame* ref_frame = ref_frame_owner.get();
+    if (!ref_frame) {
+        spdlog::error("[FrameConverter] Failed to allocate software semiplanar frame ref");
+        return false;
+    }
+    if (av_frame_ref(ref_frame, frame) < 0) {
+        spdlog::error("[FrameConverter] Failed to ref software semiplanar frame");
+        return false;
+    }
+
+    auto frame_ref = std::shared_ptr<void>(ref_frame_owner.release(), [](void* p) {
+        AVFrame* f = static_cast<AVFrame*>(p);
+        av_frame_free(&f);
+    });
+
+    result.width = width;
+    result.height = height;
+    result.texture_handle = ref_frame->data[0];
+    result.is_ref = false;
+    result.is_nv12 = true;
+    result.is_p010 = format == AV_PIX_FMT_P010LE;
+    result.storage = CpuPlanarYuvFrameStorage{
+        frame_ref,
+        {ref_frame->data[0], ref_frame->data[1], nullptr},
+        {ref_frame->linesize[0], ref_frame->linesize[1], 0},
+        {width, chroma_width, 0},
+        {height, chroma_height, 0},
+        bytes_per_sample,
+        bit_depth,
+        CpuYuvPlaneLayout::SemiPlanarYuv420,
+        format == AV_PIX_FMT_P010LE
+            ? CpuYuvSampleAlignment::MsbAligned
+            : CpuYuvSampleAlignment::Packed,
     };
     return true;
 }
 
 bool convert_frame_to_cpu_nv12(const AVFrame* frame,
                                const char* context,
-                               TextureFrame& result) {
+                               TextureFrame& result,
+                               SoftwareFramePackTiming* timing) {
     if (!frame) {
         return false;
     }
+    const auto layout_start = std::chrono::steady_clock::now();
     const int width = frame->width;
     const int height = frame->height;
     const auto format = static_cast<AVPixelFormat>(frame->format);
@@ -605,12 +698,20 @@ bool convert_frame_to_cpu_nv12(const AVFrame* frame,
                       static_cast<int>(format), name ? name : "unknown");
         return false;
     }
+    if (timing) {
+        timing->layout_us = elapsed_us_since(layout_start);
+    }
 
+    const auto alloc_start = std::chrono::steady_clock::now();
     auto buffer = allocate_cpu_frame_buffer(bytes, context);
     if (!buffer || buffer->empty()) {
         return false;
     }
+    if (timing) {
+        timing->alloc_us = elapsed_us_since(alloc_start);
+    }
 
+    const auto pack_start = std::chrono::steady_clock::now();
     bool ok = false;
     switch (format) {
     case AV_PIX_FMT_NV12:
@@ -660,7 +761,11 @@ bool convert_frame_to_cpu_nv12(const AVFrame* frame,
                       context, width, height, static_cast<int>(format));
         return false;
     }
+    if (timing) {
+        timing->pack_us = elapsed_us_since(pack_start);
+    }
 
+    const auto commit_start = std::chrono::steady_clock::now();
     result.width = width;
     result.height = height;
     result.cpu_data = buffer;
@@ -678,6 +783,9 @@ bool convert_frame_to_cpu_nv12(const AVFrame* frame,
         coded_width,
         coded_height,
     };
+    if (timing) {
+        timing->commit_us = elapsed_us_since(commit_start);
+    }
     return true;
 }
 

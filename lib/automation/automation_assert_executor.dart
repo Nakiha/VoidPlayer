@@ -24,6 +24,7 @@ class AutomationAssertExecutor {
   final int Function() effectiveDurationUs;
   final int Function() timelinePtsUs;
   final int Function() quickMarkCount;
+  final Map<String, Object> Function() dartViewportDiagnostics;
 
   const AutomationAssertExecutor({
     required this.probe,
@@ -32,6 +33,7 @@ class AutomationAssertExecutor {
     required this.effectiveDurationUs,
     required this.timelinePtsUs,
     required this.quickMarkCount,
+    required this.dartViewportDiagnostics,
   });
 
   Future<void> execute(PlayerAssert assertion) async {
@@ -158,6 +160,19 @@ class AutomationAssertExecutor {
         if (actual == null || actual < minValue) {
           throw AssertionError(
             'Expected native diagnostic $key >= $minValue, got $rawValue',
+          );
+        }
+      case AssertDartViewportDiagnosticIntAtLeast(:final key, :final minValue):
+        final diagnostics = dartViewportDiagnostics();
+        final rawValue = diagnostics[key];
+        final actual = rawValue is int
+            ? rawValue
+            : rawValue is num
+            ? rawValue.toInt()
+            : null;
+        if (actual == null || actual < minValue) {
+          throw AssertionError(
+            'Expected Dart viewport diagnostic $key >= $minValue, got $rawValue',
           );
         }
       case AssertNativeDiagnosticIntRange(

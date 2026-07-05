@@ -1016,6 +1016,67 @@ class MainWindowTestHarness {
     await Future<void>.delayed(stepDelay);
   }
 
+  Future<void> panZoomViewport({
+    required Offset panDelta,
+    required double scale,
+    int steps = 24,
+    Duration stepDelay = const Duration(milliseconds: 8),
+    double xFraction = 0.5,
+    double yFraction = 0.5,
+  }) async {
+    final context = viewportKey.currentContext;
+    if (context == null) {
+      throw StateError('Viewport is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Viewport has no render box');
+    }
+
+    final count = steps <= 0 ? 1 : steps;
+    final local = Offset(
+      renderObject.size.width * xFraction.clamp(0.0, 1.0),
+      renderObject.size.height * yFraction.clamp(0.0, 1.0),
+    );
+    final position = renderObject.localToGlobal(local);
+    final pointer = _pointerId++;
+    final safeScale = scale > 0 && scale.isFinite ? scale : 1.0;
+
+    log.info(
+      'Test action: PAN_ZOOM_VIEWPORT '
+      'pan=(${panDelta.dx.toStringAsFixed(1)}, ${panDelta.dy.toStringAsFixed(1)}) '
+      'scale=${safeScale.toStringAsFixed(4)} steps=$count '
+      'stepMs=${stepDelay.inMilliseconds} '
+      'global=(${position.dx.toStringAsFixed(1)}, ${position.dy.toStringAsFixed(1)})',
+    );
+
+    GestureBinding.instance.handlePointerEvent(
+      PointerPanZoomStartEvent(pointer: pointer, position: position),
+    );
+    await Future<void>.delayed(stepDelay);
+    for (var i = 1; i <= count; i++) {
+      final t = i / count;
+      final stepPan = Offset(panDelta.dx / count, panDelta.dy / count);
+      final cumulativePan = Offset(panDelta.dx * t, panDelta.dy * t);
+      final cumulativeScale = safeScale == 1.0
+          ? 1.0
+          : math.exp(math.log(safeScale) * t);
+      GestureBinding.instance.handlePointerEvent(
+        PointerPanZoomUpdateEvent(
+          pointer: pointer,
+          position: position,
+          pan: cumulativePan,
+          panDelta: stepPan,
+          scale: cumulativeScale,
+        ),
+      );
+      await Future<void>.delayed(stepDelay);
+    }
+    GestureBinding.instance.handlePointerEvent(
+      PointerPanZoomEndEvent(pointer: pointer, position: position),
+    );
+  }
+
   Future<void> dragViewportNative(
     Offset delta, {
     int steps = 24,

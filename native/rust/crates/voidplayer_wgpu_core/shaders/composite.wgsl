@@ -38,6 +38,10 @@ struct OverlayRect {
   track_idx: u32,
 };
 
+const YUV_FORMAT_P010: i32 = 2;
+const YUV_FORMAT_YUV420P: i32 = 3;
+const YUV_FORMAT_YUV420P10LE: i32 = 4;
+
 @group(0) @binding(0)
 var<storage, read> params: CompositeParams;
 
@@ -897,9 +901,25 @@ fn read_u16_le(byte_offset: u32) -> u32 {
   return read_u8(byte_offset) | (read_u8(byte_offset + 1u) << 8u);
 }
 
-fn sample_code(byte_offset: u32, high_bit: bool) -> f32 {
-  if (high_bit) {
-    return f32(read_u16_le(byte_offset) >> 6u);
+fn yuv_uses_16bit_storage(format: i32) -> bool {
+  return format == YUV_FORMAT_P010 || format == YUV_FORMAT_YUV420P10LE;
+}
+
+fn yuv_sample_is_msb_aligned(format: i32) -> bool {
+  return format == YUV_FORMAT_P010;
+}
+
+fn yuv_is_planar_420(format: i32) -> bool {
+  return format == YUV_FORMAT_YUV420P || format == YUV_FORMAT_YUV420P10LE;
+}
+
+fn sample_code(byte_offset: u32, format: i32) -> f32 {
+  if (yuv_uses_16bit_storage(format)) {
+    let sample = read_u16_le(byte_offset);
+    if (yuv_sample_is_msb_aligned(format)) {
+      return f32(sample >> 6u);
+    }
+    return f32(sample & 1023u);
   }
   return f32(read_u8(byte_offset));
 }
@@ -928,8 +948,9 @@ fn matrix_rgb(y: f32, cb: f32, cr: f32, matrix: i32) -> vec3<f32> {
 
 fn sample_yuv_pixel(track: i32, sx: i32, sy: i32) -> vec4<f32> {
   let format = vec4_get_i(params.yuv_format, track);
-  let high_bit = format == 2;
-  let bytes_per_sample = select(1u, 2u, high_bit);
+  let uses_16bit = yuv_uses_16bit_storage(format);
+  let planar = yuv_is_planar_420(format);
+  let bytes_per_sample = select(1u, 2u, uses_16bit);
   let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
   let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
   let clamped_x = clamp(sx, 0, source_w - 1);
@@ -939,28 +960,30 @@ fn sample_yuv_pixel(track: i32, sx: i32, sy: i32) -> vec4<f32> {
   let y_index = u32(vec4_get_i(params.y_offset, track) +
       clamped_y * vec4_get_i(params.y_stride, track) +
       clamped_x * i32(bytes_per_sample));
-  let y_code = sample_code(y_index, high_bit);
+  let y_code = sample_code(y_index, format);
   var u_code = 128.0;
   var v_code = 128.0;
-  if (format == 3) {
+  if (planar) {
     let u_index = u32(vec4_get_i(params.uv_offset, track) +
-        chroma_y * vec4_get_i(params.uv_stride, track) + chroma_x);
+        chroma_y * vec4_get_i(params.uv_stride, track)) +
+        u32(chroma_x) * bytes_per_sample;
     let v_index = u32(vec4_get_i(params.v_offset, track) +
-        chroma_y * vec4_get_i(params.uv_stride, track) + chroma_x);
-    u_code = sample_code(u_index, false);
-    v_code = sample_code(v_index, false);
+        chroma_y * vec4_get_i(params.uv_stride, track)) +
+        u32(chroma_x) * bytes_per_sample;
+    u_code = sample_code(u_index, format);
+    v_code = sample_code(v_index, format);
   } else {
     let pair_bytes = bytes_per_sample * 2u;
     let uv_index = u32(vec4_get_i(params.uv_offset, track) +
         chroma_y * vec4_get_i(params.uv_stride, track)) +
         u32(chroma_x) * pair_bytes;
-    u_code = sample_code(uv_index, high_bit);
-    v_code = sample_code(uv_index + bytes_per_sample, high_bit);
+    u_code = sample_code(uv_index, format);
+    v_code = sample_code(uv_index + bytes_per_sample, format);
   }
   let range = vec4_get_i(params.color_range, track);
   let matrix = vec4_get_i(params.color_matrix, track);
-  let scale = select(1.0, 4.0, high_bit);
-  let max_code = select(255.0, 1023.0, high_bit);
+  let scale = select(1.0, 4.0, uses_16bit);
+  let max_code = select(255.0, 1023.0, uses_16bit);
   var y = y_code / max_code;
   var cb = u_code / max_code - 0.5;
   var cr = v_code / max_code - 0.5;
@@ -1088,14 +1111,19 @@ fn sample_runner_source(track: i32, uv: vec2<f32>) -> vec4<f32> {
 
 fn cv_yuv_to_rgb(track: i32, y_norm: f32, uv_norm: vec2<f32>) -> vec4<f32> {
   let format = vec4_get_i(params.yuv_format, track);
-  let high_bit = format == 2;
+  let uses_16bit = yuv_uses_16bit_storage(format);
+  let msb_aligned = yuv_sample_is_msb_aligned(format);
   let range = vec4_get_i(params.color_range, track);
   let matrix = vec4_get_i(params.color_matrix, track);
-  let scale = select(1.0, 4.0, high_bit);
-  let max_code = select(255.0, 1023.0, high_bit);
-  let y_code = y_norm * max_code;
-  let u_code = uv_norm.x * max_code;
-  let v_code = uv_norm.y * max_code;
+  let scale = select(1.0, 4.0, uses_16bit);
+  let max_code = select(255.0, 1023.0, uses_16bit);
+  let texture_code_scale = select(
+      max_code,
+      select(65535.0, 1023.0, msb_aligned),
+      uses_16bit);
+  let y_code = y_norm * texture_code_scale;
+  let u_code = uv_norm.x * texture_code_scale;
+  let v_code = uv_norm.y * texture_code_scale;
   var y = y_code / max_code;
   var cb = u_code / max_code - 0.5;
   var cr = v_code / max_code - 0.5;

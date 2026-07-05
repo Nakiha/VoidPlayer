@@ -10,6 +10,14 @@
 
 namespace vr {
 
+enum PresentationYuvFormat : int {
+    PRESENTATION_YUV_FORMAT_BGRA = 0,
+    PRESENTATION_YUV_FORMAT_NV12 = 1,
+    PRESENTATION_YUV_FORMAT_P010 = 2,
+    PRESENTATION_YUV_FORMAT_YUV420P = 3,
+    PRESENTATION_YUV_FORMAT_YUV420P10LE = 4,
+};
+
 struct PresentationFrameSnapshot {
     bool present = false;
     int file_id = -1;
@@ -30,6 +38,7 @@ struct PresentationFrameSnapshot {
     int64_t source_packet_dts = kNoTimestampUs;
     bool is_nv12 = false;
     bool is_p010 = false;
+    int yuv_format = PRESENTATION_YUV_FORMAT_BGRA;
     int y_stride = 0;
     int uv_stride = 0;
     int coded_width = 0;

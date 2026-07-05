@@ -10,7 +10,8 @@ enum MacOSRendererProfilerSummary {
     perf: [String: Any],
     texture: [String: Any],
     scheduler: [String: Any],
-    compositor: [String: Any]
+    compositor: [String: Any],
+    sourceRing: [String: Any]
   ) {
     let presentedCount = int64Value(presentationFrames, "nativeFramePresentationCount")
     let drawCount = int64Value(perf, "rendererDrawCount")
@@ -18,7 +19,7 @@ enum MacOSRendererProfilerSummary {
       ? drawCount * 1000 / presentedCount
       : 0
     let summary = String(
-      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutDeferred=%lld layoutPublished=%lld layoutStaleAfterDraw=%lld layoutSuperseded=%lld layoutCallbackSuppressed=%lld nativeLayoutPresented=%lld drawPerFrameX1000=%lld layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld videoSourceUpdates=%lld viewportComposites=%lld sourceCacheHits=%lld sourceCacheMisses=%lld sourceCacheHitRatioX1000=%lld targetRebuild=%lld targetAlloc=%lld targetRebuildReuse=%lld targetLastAlloc=%lld targetLastReuse=%lld targetLastMs=%.2f retiredBuffers=%lld prewarm=%lld/%lld/%lld/%lld inFlightMetal=%lld metalBufferExhaustion=%lld asyncMetal=%d metalCompletionP95Us=%lld metalFailures=%lld staleCompletionDrops=%lld compositorTraceHz=%.1f compositorTraceReceived=%lld compositorTraceComposited=%lld compositorTraceCoalesced=%lld compositorDartToSwiftP95Ms=%.2f compositorSwiftQueueP95Ms=%.2f compositorReceiveToCompositeP95Ms=%.2f compositorBackend=%@ compositorHz=%.1f compositorTickHz=%.1f compositorTickP95Ms=%.2f compositorFrameP95Ms=%.2f videoAcquireP95Ms=%.2f flutterAcquireP95Ms=%.2f sourceAcquireP95Ms=%.2f drawableAcquireP95Ms=%.2f wgpuSubmitP95Ms=%.2f wgpuCompletionP95Ms=%.2f inFlightSkipHz=%.1f staticSkipHz=%.1f sourceChangeHz=%.1f videoChangeHz=%.1f flutterChangeHz=%.1f wgpuImportUs=%lld wgpuPrepareUs=%lld wgpuBindGroupUs=%lld wgpuPassUs=%lld wgpuSubmitUs=%lld wgpuCpuUs=%lld wgpuDestImport=%lld/%lld wgpuSourceImport=%lld/%lld wgpuCache=%lld evict=%lld wgpuFinalBindGroups=%lld overlayBindGroups=%lld overlayLayer=%lld/%lld",
+      format: "playing=%d tracks=%d clock=%@ refreshHz=%.1f displayTickHz=%.1f deliveredTickHz=%.1f layoutIntentHz=%.1f layoutSubmitHz=%.1f layoutDrawHz=%.1f layoutSkipHz=%.1f layoutDeferred=%lld layoutPublished=%lld layoutStaleAfterDraw=%lld layoutSuperseded=%lld layoutCallbackSuppressed=%lld nativeLayoutPresented=%lld drawPerFrameX1000=%lld layoutTotalP95Ms=%.2f layoutTotalLastMs=%.2f frameAvailableHz=%.1f callbackQueuedHz=%.1f callbackProcessedHz=%.1f callbackCoalescedHz=%.1f callbackWaitLastMs=%.2f callbackHandleLastMs=%.2f sourceRingLive=%d sourceRingDepth=%lld sourceRingTracks=%lld sourceRingReq=%lld@%.1fHz sourceRingQueueP95Ms=%.2f sourceRingQueueLastMs=%.2f sourceRingCoalesced=%lld sourceRingBaking=%d sourceRingPending=%d sourceRingBake=%lld@%.1fHz sourceRingBakeP95Ms=%.2f sourceRingBakeLastMs=%.2f sourceRingDrawnLast=%lld sourceRingPublish=%lld@%.1fHz sourceRingReqToPubP95Ms=%.2f sourceRingReqToPubLastMs=%.2f sourceRingMiss=%lld sourceRingPtsUs=%lld sourceRingPtsStepP95Ms=%.2f sourceRingPtsStepLastMs=%.2f sourceRingError=%@ presentedCount=%lld duplicatePts=%lld largeGap=%lld rendererRatioX1000=%lld drawCount=%lld drawAvgUs=%lld drawP95Us=%lld drawBackendAvgUs=%lld drawBackendP95Us=%lld uploadFps=%.1f schedulerTicks=%lld presentableTicks=%lld lastPtsUs=%lld videoSourceUpdates=%lld viewportComposites=%lld sourceCacheHits=%lld sourceCacheMisses=%lld sourceCacheHitRatioX1000=%lld targetRebuild=%lld targetAlloc=%lld targetRebuildReuse=%lld targetLastAlloc=%lld targetLastReuse=%lld targetLastMs=%.2f retiredBuffers=%lld prewarm=%lld/%lld/%lld/%lld inFlightMetal=%lld metalBufferExhaustion=%lld asyncMetal=%d metalCompletionP95Us=%lld metalFailures=%lld staleCompletionDrops=%lld compositorTraceHz=%.1f compositorTraceReceived=%lld compositorTraceComposited=%lld compositorTraceCoalesced=%lld compositorDartToSwiftP95Ms=%.2f compositorSwiftQueueP95Ms=%.2f compositorReceiveToCompositeP95Ms=%.2f compositorBackend=%@ compositorHz=%.1f compositorTickHz=%.1f compositorTickP95Ms=%.2f compositorFrameP95Ms=%.2f videoAcquireP95Ms=%.2f flutterAcquireP95Ms=%.2f sourceAcquireP95Ms=%.2f drawableAcquireP95Ms=%.2f wgpuSubmitP95Ms=%.2f wgpuCompletionP95Ms=%.2f inFlightSkipHz=%.1f staticSkipHz=%.1f sourceChangeHz=%.1f videoChangeHz=%.1f flutterChangeHz=%.1f wgpuImportUs=%lld wgpuPrepareUs=%lld wgpuBindGroupUs=%lld wgpuPassUs=%lld wgpuSubmitUs=%lld wgpuCpuUs=%lld wgpuDestImport=%lld/%lld wgpuSourceImport=%lld/%lld wgpuCache=%lld evict=%lld wgpuFinalBindGroups=%lld overlayBindGroups=%lld overlayLayer=%lld/%lld",
       isPlaying ? 1 : 0,
       trackCount,
       stringValue(viewport, "viewportClockSource", defaultValue: "unknown"),
@@ -44,6 +45,30 @@ enum MacOSRendererProfilerSummary {
       doubleValue(callbacks, "macosFrameCallbackCoalescedHz"),
       doubleValue(callbacks, "macosFrameCallbackMainWaitLastMs"),
       doubleValue(callbacks, "macosFrameCallbackHandleLastMs"),
+      boolValue(sourceRing, "sourceRingLive") ? 1 : 0,
+      int64Value(sourceRing, "sourceRingDepth"),
+      int64Value(sourceRing, "sourceRingTrackCount"),
+      int64Value(sourceRing, "sourceRingRefreshRequestCount"),
+      doubleValue(sourceRing, "sourceRingRefreshRequestHz"),
+      doubleValue(sourceRing, "sourceRingRefreshQueueWaitP95Ms"),
+      doubleValue(sourceRing, "sourceRingRefreshQueueWaitLastMs"),
+      int64Value(sourceRing, "sourceRingRefreshCoalescedCount"),
+      boolValue(sourceRing, "sourceRingBaking") ? 1 : 0,
+      boolValue(sourceRing, "sourceRingPending") ? 1 : 0,
+      int64Value(sourceRing, "sourceRingBakeCount"),
+      doubleValue(sourceRing, "sourceRingBakeHz"),
+      doubleValue(sourceRing, "sourceRingBakeP95Ms"),
+      doubleValue(sourceRing, "sourceRingBakeLastMs"),
+      int64Value(sourceRing, "sourceRingLastBakeDrawnCount"),
+      int64Value(sourceRing, "sourceRingPublishCount"),
+      doubleValue(sourceRing, "sourceRingPublishHz"),
+      doubleValue(sourceRing, "sourceRingRequestToPublishP95Ms"),
+      doubleValue(sourceRing, "sourceRingRequestToPublishLastMs"),
+      int64Value(sourceRing, "sourceRingPublishMissCount"),
+      int64Value(sourceRing, "sourceRingLastPublishedPtsUs"),
+      doubleValue(sourceRing, "sourceRingPublishedPtsStepP95Ms"),
+      doubleValue(sourceRing, "sourceRingPublishedPtsStepLastMs"),
+      stringValue(sourceRing, "sourceRingLastBakeError", defaultValue: ""),
       presentedCount,
       int64Value(presentationFrames, "presentedFramePtsDuplicateCount"),
       int64Value(presentationFrames, "presentedFramePtsLargeGapCount"),
@@ -120,6 +145,40 @@ enum MacOSRendererProfilerSummary {
       int64Value(compositor, "nativeCompositorWgpuOverlayLayerReuseCount")
     )
     summary.withCString { pointer in
+      VPMacOSLogProfilerSummary(pointer)
+    }
+    let readySummary = String(
+      format: "readyState readyVideoP95Ms=%.2f readySourceP95Ms=%.2f producerVideoHz=%.1f producerSourceHz=%.1f reuseVideo=%lld reuseSource=%lld blockedProducer=%lld",
+      doubleValue(compositor, "readyVideoAcquireP95Ms"),
+      doubleValue(compositor, "readySourceAcquireP95Ms"),
+      doubleValue(compositor, "producerVideoPublishHz"),
+      doubleValue(compositor, "producerSourcePublishHz"),
+      int64Value(compositor, "displayTickReuseVideoCount"),
+      int64Value(compositor, "displayTickReuseSourceCount"),
+      int64Value(compositor, "displayTickBlockedProducerCount")
+    )
+    readySummary.withCString { pointer in
+      VPMacOSLogProfilerSummary(pointer)
+    }
+    let decodeSummary =
+      "DecodeStage decodeAvgMs=\(doubleValue(perf, "decodeAvgMs")) " +
+      "decodeMaxMs=\(doubleValue(perf, "decodeMaxMs")) " +
+      "recvAvgMs=\(doubleValue(perf, "decodeStageReceiveAvgMs")) " +
+      "recvMaxMs=\(doubleValue(perf, "decodeStageReceiveMaxMs")) " +
+      "convertAvgMs=\(doubleValue(perf, "decodeStageConvertAvgMs")) " +
+      "convertMaxMs=\(doubleValue(perf, "decodeStageConvertMaxMs")) " +
+      "softwareFrameStorage=\(stringValue(perf, "softwareFrameStorageKind", defaultValue: "empty")) " +
+      "softwareFramePackFallback=\(int64Value(perf, "softwareFramePackFallbackCount")) " +
+      "convertNv12PackAvgMs=\(doubleValue(perf, "decodeStageConvertNv12PackAvgMs")) " +
+      "convertNv12PackMaxMs=\(doubleValue(perf, "decodeStageConvertNv12PackMaxMs")) " +
+      "publishAvgMs=\(doubleValue(perf, "decodeStagePublishAvgMs")) " +
+      "publishMaxMs=\(doubleValue(perf, "decodeStagePublishMaxMs")) " +
+      "publishWaitAvgMs=\(doubleValue(perf, "decodeStagePublishWaitAvgMs")) " +
+      "publishWaitMaxMs=\(doubleValue(perf, "decodeStagePublishWaitMaxMs")) " +
+      "publishRingPushAvgMs=\(doubleValue(perf, "decodeStagePublishRingPushAvgMs")) " +
+      "publishRingAssignAvgMs=\(doubleValue(perf, "decodeStagePublishRingAssignAvgMs")) " +
+      "publishRingOverwriteAvgBytes=\(doubleValue(perf, "decodeStagePublishRingOverwriteAvgBytes"))"
+    decodeSummary.withCString { pointer in
       VPMacOSLogProfilerSummary(pointer)
     }
   }

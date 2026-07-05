@@ -1,8 +1,10 @@
 #include "renderer/decode/frame_converter.h"
+#include "renderer/decode/decode_stage_perf.h"
 #include "renderer/decode/frame_color_metadata.h"
 #include "renderer/decode/frame_identity.h"
 #include "renderer/decode/software_frame_packer.h"
 #include <spdlog/spdlog.h>
+#include <chrono>
 
 extern "C" {
 #include <libavutil/frame.h>
@@ -10,6 +12,15 @@ extern "C" {
 }
 
 namespace vr {
+namespace {
+
+uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start).count());
+}
+
+} // namespace
 
 FrameConverter::FrameConverter() {}
 
@@ -81,7 +92,8 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
     return true;
 }
 
-std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame) {
+std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame,
+                                                    DecodeStagePerfCounters* stage_perf) {
     if (!frame) {
         spdlog::error("[FrameConverter] convert called with null AVFrame");
         return std::nullopt;
@@ -104,15 +116,27 @@ std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame) {
     result.color = color_info_from_av_frame(frame);
     populate_frame_identity_from_av_frame(frame, result);
 
-    // Software 8-bit 4:2:0 can be uploaded as its original Y/U/V planes.
-    // Other supported software formats still use the deterministic packer.
-    if (software_format_uses_direct_planar_yuv420(
+    // Software 4:2:0 frames can be uploaded from their original planes. Keep
+    // the deterministic packer only for formats that need chroma resampling.
+    if (software_format_uses_direct_yuv420_storage(
             static_cast<AVPixelFormat>(frame->format))) {
-        if (!wrap_frame_as_cpu_planar_yuv420(frame, result)) {
+        const auto direct_start = std::chrono::steady_clock::now();
+        if (!wrap_frame_as_cpu_yuv420_storage(frame, result)) {
             return std::nullopt;
         }
-    } else if (!convert_frame_to_cpu_nv12(frame, "software", result)) {
-        return std::nullopt;
+        if (stage_perf) {
+            stage_perf->record_convert_direct_planar(elapsed_us_since(direct_start));
+        }
+    } else {
+        SoftwareFramePackTiming timing;
+        if (!convert_frame_to_cpu_nv12(frame, "software", result, &timing)) {
+            return std::nullopt;
+        }
+        if (stage_perf) {
+            stage_perf->record_convert_nv12_layout(timing.layout_us);
+            stage_perf->record_convert_nv12_alloc(timing.alloc_us);
+            stage_perf->record_convert_nv12_pack(timing.pack_us);
+        }
     }
     width_ = frame->width;
     height_ = frame->height;

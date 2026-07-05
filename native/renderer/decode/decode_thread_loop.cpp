@@ -125,7 +125,8 @@ DecodedFramePublisher DecodeThread::make_frame_publisher() {
                                  hw_provider_,
                                  hw_visibility_flush_pending_,
                                  decode_paused_,
-                                 running_);
+                                 running_,
+                                 &stage_perf_);
 }
 
 struct DecodeThread::DecodeLoopScratch {
@@ -280,6 +281,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
     auto& rescale_ts = scratch.rescale_timestamps;
 
     auto batch_t0 = std::chrono::steady_clock::now();
+    const auto packet_send_t0 = std::chrono::steady_clock::now();
     const auto packet_send_result = send_decode_packet(
         packet,
         DecodePacketSendCallbacks{
@@ -307,6 +309,9 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                               static_cast<unsigned>(send_ret));
             },
         });
+    stage_perf_.record_packet_send(static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - packet_send_t0).count()));
     if (packet_send_result.stop_with_error) {
         return stop_decode_loop_with_error();
     }
@@ -314,6 +319,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
         return DecodeLoopStepResult::Continue;
     }
 
+    const auto receive_loop_t0 = std::chrono::steady_clock::now();
     const auto receive_result = receive_decode_frames_for_packet(
         frame,
         DecodeFrameReceiveLoopOptions{
@@ -373,10 +379,18 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                               static_cast<unsigned>(receive_ret));
             },
         });
+    const auto receive_loop_us = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - receive_loop_t0).count());
     if (receive_result.stop_with_error) {
         return stop_decode_loop_with_error();
     }
     const int frames_produced = receive_result.frames_produced;
+    if (frames_produced > 0) {
+        stage_perf_.record_receive_loop(
+            receive_loop_us,
+            static_cast<uint64_t>(frames_produced));
+    }
 
     // Exact seek B-frame reordering fallback. The receive loop normally
     // publishes once enough frames are collected, but EOF/drain can also

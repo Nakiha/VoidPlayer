@@ -186,6 +186,61 @@ extension MacOSNativePlayerSession {
         "decodeFpsX1000": 0,
         "decodeAvgMs": 0.0,
         "decodeMaxMs": 0.0,
+        "decodeStagePacketSendCount": 0,
+        "decodeStagePacketSendAvgMs": 0.0,
+        "decodeStagePacketSendMaxMs": 0.0,
+        "decodeStageReceiveLoopCount": 0,
+        "decodeStageReceiveFrameCount": 0,
+        "decodeStageReceiveAvgMs": 0.0,
+        "decodeStageReceiveMaxMs": 0.0,
+        "decodeStageConvertCount": 0,
+        "decodeStageConvertAvgMs": 0.0,
+        "decodeStageConvertMaxMs": 0.0,
+        "decodeStageConvertDirectPlanarCount": 0,
+        "decodeStageConvertDirectPlanarAvgMs": 0.0,
+        "decodeStageConvertDirectPlanarMaxMs": 0.0,
+        "decodeStageConvertNv12LayoutCount": 0,
+        "decodeStageConvertNv12LayoutAvgMs": 0.0,
+        "decodeStageConvertNv12LayoutMaxMs": 0.0,
+        "decodeStageConvertNv12AllocCount": 0,
+        "decodeStageConvertNv12AllocAvgMs": 0.0,
+        "decodeStageConvertNv12AllocMaxMs": 0.0,
+        "decodeStageConvertNv12PackCount": 0,
+        "decodeStageConvertNv12PackAvgMs": 0.0,
+        "decodeStageConvertNv12PackMaxMs": 0.0,
+        "decodeStagePublishCount": 0,
+        "decodeStagePublishAvgMs": 0.0,
+        "decodeStagePublishMaxMs": 0.0,
+        "decodeStagePublishLockCount": 0,
+        "decodeStagePublishLockAvgMs": 0.0,
+        "decodeStagePublishLockMaxMs": 0.0,
+        "decodeStagePublishWaitCount": 0,
+        "decodeStagePublishWaitAvgMs": 0.0,
+        "decodeStagePublishWaitMaxMs": 0.0,
+        "decodeStagePublishRingPushCount": 0,
+        "decodeStagePublishRingPushAvgMs": 0.0,
+        "decodeStagePublishRingPushMaxMs": 0.0,
+        "decodeStagePublishRingLockCount": 0,
+        "decodeStagePublishRingLockAvgMs": 0.0,
+        "decodeStagePublishRingLockMaxMs": 0.0,
+        "decodeStagePublishRingAssignCount": 0,
+        "decodeStagePublishRingAssignAvgMs": 0.0,
+        "decodeStagePublishRingAssignMaxMs": 0.0,
+        "decodeStagePublishRingAdvanceCount": 0,
+        "decodeStagePublishRingAdvanceAvgMs": 0.0,
+        "decodeStagePublishRingAdvanceMaxMs": 0.0,
+        "decodeStagePublishRingOverwriteCount": 0,
+        "decodeStagePublishRingOverwriteAvgBytes": 0.0,
+        "decodeStagePublishRingOverwriteMaxBytes": 0,
+        "decodeStageFlushCount": 0,
+        "decodeStageFlushAvgMs": 0.0,
+        "decodeStageFlushMaxMs": 0.0,
+        "softwareFrameStorageKind": "empty",
+        "softwareFrameStorageKindCode": 0,
+        "softwareFrameYuvBitDepth": 0,
+        "softwareFrameYuvPlaneLayout": 0,
+        "softwareFrameYuvSampleAlignment": 0,
+        "softwareFramePackFallbackCount": 0,
         "rendererOwnedUploadCount": 0,
         "rendererOwnedUploadFailureCount": 0,
         "rendererOwnedUploadElapsedMs": 0,
@@ -248,6 +303,119 @@ extension MacOSNativePlayerSession {
       "decodeFpsX1000": Self.finiteNonNegativeX1000(stats.decode_fps),
       "decodeAvgMs": stats.decode_avg_ms,
       "decodeMaxMs": stats.decode_max_ms,
+      "decodeStagePacketSendCount": Int64(
+        min(stats.decode_stage_packet_send_count, maxInt64)
+      ),
+      "decodeStagePacketSendAvgMs": stats.decode_stage_packet_send_avg_ms,
+      "decodeStagePacketSendMaxMs": stats.decode_stage_packet_send_max_ms,
+      "decodeStageReceiveLoopCount": Int64(
+        min(stats.decode_stage_receive_loop_count, maxInt64)
+      ),
+      "decodeStageReceiveFrameCount": Int64(
+        min(stats.decode_stage_receive_frame_count, maxInt64)
+      ),
+      "decodeStageReceiveAvgMs": stats.decode_stage_receive_avg_ms,
+      "decodeStageReceiveMaxMs": stats.decode_stage_receive_max_ms,
+      "decodeStageConvertCount": Int64(
+        min(stats.decode_stage_convert_count, maxInt64)
+      ),
+      "decodeStageConvertAvgMs": stats.decode_stage_convert_avg_ms,
+      "decodeStageConvertMaxMs": stats.decode_stage_convert_max_ms,
+      "decodeStageConvertDirectPlanarCount": Int64(
+        min(stats.decode_stage_convert_direct_planar_count, maxInt64)
+      ),
+      "decodeStageConvertDirectPlanarAvgMs":
+        stats.decode_stage_convert_direct_planar_avg_ms,
+      "decodeStageConvertDirectPlanarMaxMs":
+        stats.decode_stage_convert_direct_planar_max_ms,
+      "decodeStageConvertNv12LayoutCount": Int64(
+        min(stats.decode_stage_convert_nv12_layout_count, maxInt64)
+      ),
+      "decodeStageConvertNv12LayoutAvgMs":
+        stats.decode_stage_convert_nv12_layout_avg_ms,
+      "decodeStageConvertNv12LayoutMaxMs":
+        stats.decode_stage_convert_nv12_layout_max_ms,
+      "decodeStageConvertNv12AllocCount": Int64(
+        min(stats.decode_stage_convert_nv12_alloc_count, maxInt64)
+      ),
+      "decodeStageConvertNv12AllocAvgMs":
+        stats.decode_stage_convert_nv12_alloc_avg_ms,
+      "decodeStageConvertNv12AllocMaxMs":
+        stats.decode_stage_convert_nv12_alloc_max_ms,
+      "decodeStageConvertNv12PackCount": Int64(
+        min(stats.decode_stage_convert_nv12_pack_count, maxInt64)
+      ),
+      "decodeStageConvertNv12PackAvgMs":
+        stats.decode_stage_convert_nv12_pack_avg_ms,
+      "decodeStageConvertNv12PackMaxMs":
+        stats.decode_stage_convert_nv12_pack_max_ms,
+      "decodeStagePublishCount": Int64(
+        min(stats.decode_stage_publish_count, maxInt64)
+      ),
+      "decodeStagePublishAvgMs": stats.decode_stage_publish_avg_ms,
+      "decodeStagePublishMaxMs": stats.decode_stage_publish_max_ms,
+      "decodeStagePublishLockCount": Int64(
+        min(stats.decode_stage_publish_lock_count, maxInt64)
+      ),
+      "decodeStagePublishLockAvgMs": stats.decode_stage_publish_lock_avg_ms,
+      "decodeStagePublishLockMaxMs": stats.decode_stage_publish_lock_max_ms,
+      "decodeStagePublishWaitCount": Int64(
+        min(stats.decode_stage_publish_wait_count, maxInt64)
+      ),
+      "decodeStagePublishWaitAvgMs": stats.decode_stage_publish_wait_avg_ms,
+      "decodeStagePublishWaitMaxMs": stats.decode_stage_publish_wait_max_ms,
+      "decodeStagePublishRingPushCount": Int64(
+        min(stats.decode_stage_publish_ring_push_count, maxInt64)
+      ),
+      "decodeStagePublishRingPushAvgMs":
+        stats.decode_stage_publish_ring_push_avg_ms,
+      "decodeStagePublishRingPushMaxMs":
+        stats.decode_stage_publish_ring_push_max_ms,
+      "decodeStagePublishRingLockCount": Int64(
+        min(stats.decode_stage_publish_ring_lock_count, maxInt64)
+      ),
+      "decodeStagePublishRingLockAvgMs": stats.decode_stage_publish_ring_lock_avg_ms,
+      "decodeStagePublishRingLockMaxMs": stats.decode_stage_publish_ring_lock_max_ms,
+      "decodeStagePublishRingAssignCount": Int64(
+        min(stats.decode_stage_publish_ring_assign_count, maxInt64)
+      ),
+      "decodeStagePublishRingAssignAvgMs":
+        stats.decode_stage_publish_ring_assign_avg_ms,
+      "decodeStagePublishRingAssignMaxMs":
+        stats.decode_stage_publish_ring_assign_max_ms,
+      "decodeStagePublishRingAdvanceCount": Int64(
+        min(stats.decode_stage_publish_ring_advance_count, maxInt64)
+      ),
+      "decodeStagePublishRingAdvanceAvgMs":
+        stats.decode_stage_publish_ring_advance_avg_ms,
+      "decodeStagePublishRingAdvanceMaxMs":
+        stats.decode_stage_publish_ring_advance_max_ms,
+      "decodeStagePublishRingOverwriteCount": Int64(
+        min(stats.decode_stage_publish_ring_overwrite_count, maxInt64)
+      ),
+      "decodeStagePublishRingOverwriteAvgBytes":
+        stats.decode_stage_publish_ring_overwrite_avg_bytes,
+      "decodeStagePublishRingOverwriteMaxBytes": Int64(
+        min(stats.decode_stage_publish_ring_overwrite_max_bytes, maxInt64)
+      ),
+      "decodeStageFlushCount": Int64(
+        min(stats.decode_stage_flush_count, maxInt64)
+      ),
+      "decodeStageFlushAvgMs": stats.decode_stage_flush_avg_ms,
+      "decodeStageFlushMaxMs": stats.decode_stage_flush_max_ms,
+      "softwareFrameStorageKind": Self.softwareFrameStorageKind(
+        storageKind: stats.software_frame_storage_kind,
+        bitDepth: stats.software_frame_yuv_bit_depth,
+        planeLayout: stats.software_frame_yuv_plane_layout,
+        sampleAlignment: stats.software_frame_yuv_sample_alignment
+      ),
+      "softwareFrameStorageKindCode": Int(stats.software_frame_storage_kind),
+      "softwareFrameYuvBitDepth": Int(stats.software_frame_yuv_bit_depth),
+      "softwareFrameYuvPlaneLayout": Int(stats.software_frame_yuv_plane_layout),
+      "softwareFrameYuvSampleAlignment": Int(stats.software_frame_yuv_sample_alignment),
+      "softwareFramePackFallbackCount": Int64(
+        min(stats.software_frame_pack_fallback_count, maxInt64)
+      ),
       "rendererOwnedUploadCount": Int64(
         min(UInt64(stats.renderer_owned_upload_count), maxInt64)
       ),
@@ -424,6 +592,108 @@ extension MacOSNativePlayerSession {
         "decodeFpsX1000": Self.finiteNonNegativeX1000(track.decode_fps),
         "decodeAvgMs": track.decode_avg_ms,
         "decodeMaxMs": track.decode_max_ms,
+        "decodeStagePacketSendCount": Int64(
+          min(track.decode_stage_packet_send_count, UInt64(Int64.max))
+        ),
+        "decodeStagePacketSendAvgMs": track.decode_stage_packet_send_avg_ms,
+        "decodeStagePacketSendMaxMs": track.decode_stage_packet_send_max_ms,
+        "decodeStageReceiveLoopCount": Int64(
+          min(track.decode_stage_receive_loop_count, UInt64(Int64.max))
+        ),
+        "decodeStageReceiveFrameCount": Int64(
+          min(track.decode_stage_receive_frame_count, UInt64(Int64.max))
+        ),
+        "decodeStageReceiveAvgMs": track.decode_stage_receive_avg_ms,
+        "decodeStageReceiveMaxMs": track.decode_stage_receive_max_ms,
+        "decodeStageConvertCount": Int64(
+          min(track.decode_stage_convert_count, UInt64(Int64.max))
+        ),
+        "decodeStageConvertAvgMs": track.decode_stage_convert_avg_ms,
+        "decodeStageConvertMaxMs": track.decode_stage_convert_max_ms,
+        "decodeStageConvertDirectPlanarCount": Int64(
+          min(track.decode_stage_convert_direct_planar_count, UInt64(Int64.max))
+        ),
+        "decodeStageConvertDirectPlanarAvgMs":
+          track.decode_stage_convert_direct_planar_avg_ms,
+        "decodeStageConvertDirectPlanarMaxMs":
+          track.decode_stage_convert_direct_planar_max_ms,
+        "decodeStageConvertNv12LayoutCount": Int64(
+          min(track.decode_stage_convert_nv12_layout_count, UInt64(Int64.max))
+        ),
+        "decodeStageConvertNv12LayoutAvgMs":
+          track.decode_stage_convert_nv12_layout_avg_ms,
+        "decodeStageConvertNv12LayoutMaxMs":
+          track.decode_stage_convert_nv12_layout_max_ms,
+        "decodeStageConvertNv12AllocCount": Int64(
+          min(track.decode_stage_convert_nv12_alloc_count, UInt64(Int64.max))
+        ),
+        "decodeStageConvertNv12AllocAvgMs":
+          track.decode_stage_convert_nv12_alloc_avg_ms,
+        "decodeStageConvertNv12AllocMaxMs":
+          track.decode_stage_convert_nv12_alloc_max_ms,
+        "decodeStageConvertNv12PackCount": Int64(
+          min(track.decode_stage_convert_nv12_pack_count, UInt64(Int64.max))
+        ),
+        "decodeStageConvertNv12PackAvgMs":
+          track.decode_stage_convert_nv12_pack_avg_ms,
+        "decodeStageConvertNv12PackMaxMs":
+          track.decode_stage_convert_nv12_pack_max_ms,
+        "decodeStagePublishCount": Int64(
+          min(track.decode_stage_publish_count, UInt64(Int64.max))
+        ),
+        "decodeStagePublishAvgMs": track.decode_stage_publish_avg_ms,
+        "decodeStagePublishMaxMs": track.decode_stage_publish_max_ms,
+        "decodeStagePublishLockCount": Int64(
+          min(track.decode_stage_publish_lock_count, UInt64(Int64.max))
+        ),
+        "decodeStagePublishLockAvgMs": track.decode_stage_publish_lock_avg_ms,
+        "decodeStagePublishLockMaxMs": track.decode_stage_publish_lock_max_ms,
+        "decodeStagePublishWaitCount": Int64(
+          min(track.decode_stage_publish_wait_count, UInt64(Int64.max))
+        ),
+        "decodeStagePublishWaitAvgMs": track.decode_stage_publish_wait_avg_ms,
+        "decodeStagePublishWaitMaxMs": track.decode_stage_publish_wait_max_ms,
+        "decodeStagePublishRingPushCount": Int64(
+          min(track.decode_stage_publish_ring_push_count, UInt64(Int64.max))
+        ),
+        "decodeStagePublishRingPushAvgMs":
+          track.decode_stage_publish_ring_push_avg_ms,
+        "decodeStagePublishRingPushMaxMs":
+          track.decode_stage_publish_ring_push_max_ms,
+        "decodeStagePublishRingLockCount": Int64(
+          min(track.decode_stage_publish_ring_lock_count, UInt64(Int64.max))
+        ),
+        "decodeStagePublishRingLockAvgMs":
+          track.decode_stage_publish_ring_lock_avg_ms,
+        "decodeStagePublishRingLockMaxMs":
+          track.decode_stage_publish_ring_lock_max_ms,
+        "decodeStagePublishRingAssignCount": Int64(
+          min(track.decode_stage_publish_ring_assign_count, UInt64(Int64.max))
+        ),
+        "decodeStagePublishRingAssignAvgMs":
+          track.decode_stage_publish_ring_assign_avg_ms,
+        "decodeStagePublishRingAssignMaxMs":
+          track.decode_stage_publish_ring_assign_max_ms,
+        "decodeStagePublishRingAdvanceCount": Int64(
+          min(track.decode_stage_publish_ring_advance_count, UInt64(Int64.max))
+        ),
+        "decodeStagePublishRingAdvanceAvgMs":
+          track.decode_stage_publish_ring_advance_avg_ms,
+        "decodeStagePublishRingAdvanceMaxMs":
+          track.decode_stage_publish_ring_advance_max_ms,
+        "decodeStagePublishRingOverwriteCount": Int64(
+          min(track.decode_stage_publish_ring_overwrite_count, UInt64(Int64.max))
+        ),
+        "decodeStagePublishRingOverwriteAvgBytes":
+          track.decode_stage_publish_ring_overwrite_avg_bytes,
+        "decodeStagePublishRingOverwriteMaxBytes": Int64(
+          min(track.decode_stage_publish_ring_overwrite_max_bytes, UInt64(Int64.max))
+        ),
+        "decodeStageFlushCount": Int64(
+          min(track.decode_stage_flush_count, UInt64(Int64.max))
+        ),
+        "decodeStageFlushAvgMs": track.decode_stage_flush_avg_ms,
+        "decodeStageFlushMaxMs": track.decode_stage_flush_max_ms,
         "currentPtsUs": Int64(track.current_pts_us),
         "currentDtsUs": Int64(track.current_dts_us),
         "ptsUs": Int64(track.current_pts_us),
@@ -443,6 +713,19 @@ extension MacOSNativePlayerSession {
         "colorTransfer": Self.colorTransferName(track.color_transfer),
         "colorPrimariesCode": Int(track.color_primaries),
         "colorPrimaries": Self.colorPrimariesName(track.color_primaries),
+        "softwareFrameStorageKind": Self.softwareFrameStorageKind(
+          storageKind: track.current_frame_storage_kind,
+          bitDepth: track.current_frame_yuv_bit_depth,
+          planeLayout: track.current_frame_yuv_plane_layout,
+          sampleAlignment: track.current_frame_yuv_sample_alignment
+        ),
+        "softwareFrameStorageKindCode": Int(track.current_frame_storage_kind),
+        "softwareFrameYuvBitDepth": Int(track.current_frame_yuv_bit_depth),
+        "softwareFrameYuvPlaneLayout": Int(track.current_frame_yuv_plane_layout),
+        "softwareFrameYuvSampleAlignment": Int(track.current_frame_yuv_sample_alignment),
+        "softwareFramePackFallbackCount": Int64(
+          min(track.decode_stage_convert_nv12_pack_count, UInt64(Int64.max))
+        ),
         "codecName": Self.cString(track.codec_name),
         "decoderName": Self.cString(track.decoder_name),
         "decodeMode": Self.cString(track.decode_mode),
@@ -460,6 +743,31 @@ extension MacOSNativePlayerSession {
       return "cvpixelbuffer"
     default:
       return "unavailable"
+    }
+  }
+
+  private static func softwareFrameStorageKind(
+    storageKind: Int32,
+    bitDepth: Int32,
+    planeLayout: Int32,
+    sampleAlignment: Int32
+  ) -> String {
+    switch storageKind {
+    case 2:
+      return bitDepth >= 10 ? "packed-p010-fallback" : "packed-nv12-fallback"
+    case 3:
+      if planeLayout == 1 {
+        return sampleAlignment == 1 ? "semiplanar-p010-ref" : "semiplanar-nv12-ref"
+      }
+      return bitDepth >= 10 ? "planar-yuv420p10-ref" : "planar-yuv420-ref"
+    case 1:
+      return "rgba"
+    case 5:
+      return "cvpixelbuffer"
+    case 4:
+      return "d3d12-texture"
+    default:
+      return "empty"
     }
   }
 

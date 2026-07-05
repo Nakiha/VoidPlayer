@@ -53,7 +53,8 @@
 		  float4 color = viewport_background_output_color(params);
 	  if (yuv_format_at(params, track_slot) == kPresentFormatNV12 ||
 	      yuv_format_at(params, track_slot) == kPresentFormatP010 ||
-	      yuv_format_at(params, track_slot) == kPresentFormatYUV420P) {
+	      yuv_format_at(params, track_slot) == kPresentFormatYUV420P ||
+	      yuv_format_at(params, track_slot) == kPresentFormatYUV420P10LE) {
 	    color = sample_yuv_track(source, params, track_slot, source_x, source_y);
 	  } else {
 	    const uint track_offset = track_slot * params.width * params.height * 4u;

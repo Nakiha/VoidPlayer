@@ -1,6 +1,7 @@
 #pragma once
 
 #include "renderer/decode/decoded_frame_sink.h"
+#include "renderer/decode/decode_stage_perf.h"
 #include "renderer/decode/frame_converter.h"
 #include "renderer/decode/hw/hw_decode_provider.h"
 
@@ -20,12 +21,14 @@ public:
                           std::unique_ptr<HwDecodeProvider>& hw_provider,
                           bool& hw_visibility_flush_pending,
                           std::atomic<bool>& decode_paused,
-                          std::atomic<bool>& running);
+                          std::atomic<bool>& running,
+                          DecodeStagePerfCounters* stage_perf = nullptr);
     DecodedFramePublisher(DecodedFrameSink& sink,
                           FrameConverter& converter,
                           bool& hw_enabled,
                           std::unique_ptr<HwDecodeProvider>& hw_provider,
-                          bool& hw_visibility_flush_pending);
+                          bool& hw_visibility_flush_pending,
+                          DecodeStagePerfCounters* stage_perf = nullptr);
 
     void flush_visibility_if_needed();
     void flush_before_publish_if_needed(bool force_for_shared_surface = false);
@@ -40,6 +43,7 @@ private:
     bool& hw_enabled_;
     std::unique_ptr<HwDecodeProvider>& hw_provider_;
     bool& hw_visibility_flush_pending_;
+    DecodeStagePerfCounters* stage_perf_ = nullptr;
 };
 
 } // namespace vr

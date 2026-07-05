@@ -74,11 +74,27 @@ final class MacOSNativeCompositorSourceRing {
   private let bakeRate = MacOSRateWindow()
   private let publishRate = MacOSRateWindow()
   private let bakeDuration = MacOSDurationWindow()
+  private let refreshQueueWaitDuration = MacOSDurationWindow()
+  private let requestToPublishDuration = MacOSDurationWindow()
+  private let publishedPtsStepDuration = MacOSDurationWindow()
   private var refreshRequestCount = 0
   private var refreshCoalescedCount = 0
   private var bakeCount = 0
   private var publishCount = 0
   private var publishMissCount = 0
+  private var lastBakeDrawnCount = 0
+  private var lastBakeError = ""
+  private var topologyRevision: UInt64 = 0
+  private var lastRequiredMask: UInt64 = 0
+  private var lastDrawnMask: UInt64 = 0
+  private var lastMissingMask: UInt64 = 0
+  private var incompletePublishSuppressedCount = 0
+  private var lastIncompleteReason = ""
+  private var lastPublishedPtsUs: Int64 = -1
+  private var lastPublishedDurationUs: Int64 = 0
+  private var publishedPtsDuplicateCount = 0
+  private var publishedPtsLargeStepCount = 0
+  private var publishedPtsRegressionCount = 0
 
   init(compositor: MacOSNativeCompositorView) {
     self.compositor = compositor
@@ -107,10 +123,15 @@ final class MacOSNativeCompositorSourceRing {
   /// on the ring queue: a burst of frame callbacks collapses into baking the
   /// latest available frame. No-op when not subscribed.
   func requestRefresh(player: MacOSNativePlayerSession) {
+    let requestedNs = DispatchTime.now().uptimeNanoseconds
     ringQueue.async { [weak self] in
       guard let self, self.live, !self.rings.isEmpty else { return }
+      let queueStartNs = DispatchTime.now().uptimeNanoseconds
+      self.refreshQueueWaitDuration.record(
+        queueStartNs >= requestedNs ? queueStartNs - requestedNs : 0
+      )
       self.refreshRequestCount += 1
-      self.refreshRequestRate.record()
+      self.refreshRequestRate.record(nowNs: queueStartNs)
       // Frozen-snapshot fallback (depth == 1) never refreshes: the source is too
       // large for a live ring, so it intentionally behaves like the old paused
       // one-shot.
@@ -123,7 +144,7 @@ final class MacOSNativeCompositorSourceRing {
       self.baking = true
       repeat {
         self.pending = false
-        self.bakeAndPublishOnQueue(player: player)
+        self.bakeAndPublishOnQueue(player: player, requestNs: requestedNs)
       } while self.pending && self.live
       self.baking = false
     }
@@ -149,14 +170,35 @@ final class MacOSNativeCompositorSourceRing {
         "sourceRingTrackCount": rings.count,
         "sourceRingRefreshRequestCount": refreshRequestCount,
         "sourceRingRefreshRequestHz": refreshRequestRate.rateHz(),
+        "sourceRingRefreshQueueWaitP95Ms": refreshQueueWaitDuration.p95Ms(),
+        "sourceRingRefreshQueueWaitLastMs": refreshQueueWaitDuration.lastMs(),
         "sourceRingRefreshCoalescedCount": refreshCoalescedCount,
+        "sourceRingBaking": baking,
+        "sourceRingPending": pending,
         "sourceRingBakeCount": bakeCount,
         "sourceRingBakeHz": bakeRate.rateHz(),
         "sourceRingBakeP95Ms": bakeDuration.p95Ms(),
         "sourceRingBakeLastMs": bakeDuration.lastMs(),
+        "sourceRingLastBakeDrawnCount": lastBakeDrawnCount,
+        "sourceRingLastBakeError": lastBakeError,
+        "sourceRingTopologyRevision": Int64(min(topologyRevision, UInt64(Int64.max))),
+        "sourceRingRequiredMask": Int64(min(lastRequiredMask, UInt64(Int64.max))),
+        "sourceRingDrawnMask": Int64(min(lastDrawnMask, UInt64(Int64.max))),
+        "sourceRingMissingMask": Int64(min(lastMissingMask, UInt64(Int64.max))),
+        "sourceRingIncompletePublishSuppressedCount": incompletePublishSuppressedCount,
+        "sourceRingLastIncompleteReason": lastIncompleteReason,
         "sourceRingPublishCount": publishCount,
         "sourceRingPublishHz": publishRate.rateHz(),
+        "sourceRingRequestToPublishP95Ms": requestToPublishDuration.p95Ms(),
+        "sourceRingRequestToPublishLastMs": requestToPublishDuration.lastMs(),
         "sourceRingPublishMissCount": publishMissCount,
+        "sourceRingLastPublishedPtsUs": lastPublishedPtsUs,
+        "sourceRingLastPublishedDurationUs": lastPublishedDurationUs,
+        "sourceRingPublishedPtsStepP95Ms": publishedPtsStepDuration.p95Ms(),
+        "sourceRingPublishedPtsStepLastMs": publishedPtsStepDuration.lastMs(),
+        "sourceRingPublishedPtsDuplicateCount": publishedPtsDuplicateCount,
+        "sourceRingPublishedPtsLargeStepCount": publishedPtsLargeStepCount,
+        "sourceRingPublishedPtsRegressionCount": publishedPtsRegressionCount,
       ]
     }
   }
@@ -265,6 +307,7 @@ final class MacOSNativeCompositorSourceRing {
     }
 
     rings = built
+    self.order = order
     bakeTarget = MacOSNativeMetalPresentationTarget(width: maxWidth, height: maxHeight)
     live = true
     baking = false
@@ -272,15 +315,20 @@ final class MacOSNativeCompositorSourceRing {
     hasPublished = false
 
     // Initial bake into buffer 0 of each ring; publishes on success.
-    bakeAndPublishOnQueue(player: player)
+    bakeAndPublishOnQueue(player: player, requestNs: nil)
   }
 
   /// Bakes the current frame into each track's next write buffer and, if any
   /// track drew, publishes the just-baked buffers to the compositor. Runs on the
   /// ring queue. The bake is synchronous (waits for GPU completion), so the buffer
   /// is fully written before it is published.
-  private func bakeAndPublishOnQueue(player: MacOSNativePlayerSession) {
-    guard live, let bakeTarget, !rings.isEmpty else { return }
+  private func bakeAndPublishOnQueue(
+    player: MacOSNativePlayerSession,
+    requestNs: UInt64?
+  ) {
+    guard live, let bakeTarget, !rings.isEmpty else {
+      return
+    }
     let startNs = DispatchTime.now().uptimeNanoseconds
 
     // Advance each ring to the next write buffer (away from the published one).
@@ -312,22 +360,48 @@ final class MacOSNativeCompositorSourceRing {
     bakeCount += 1
     bakeRate.record(nowNs: finishNs)
     bakeDuration.record(finishNs >= startNs ? finishNs - startNs : 0)
+    lastBakeDrawnCount = result.drawnCount
+    lastBakeError = result.error
     guard result.drawnCount > 0 else {
       publishMissCount += 1
-      // A transient bake miss (e.g. between seeks) should not blank the viewport
-      // once we have a good frame to hold. Only surface the error before the very
-      // first successful publish.
-      if !hasPublished {
-        compositor?.setSourceBuffers(textures: [], overlay: .empty, error: result.error)
-      }
+      lastRequiredMask = requiredMask(for: targets.count)
+      lastDrawnMask = 0
+      lastMissingMask = lastRequiredMask
+      lastIncompleteReason = result.error.isEmpty
+        ? "source frame bake produced no frames"
+        : result.error
       return
     }
 
+    let requiredMask = requiredMask(for: targets.count)
+    var drawnMask: UInt64 = 0
+    for i in targets.indices where targets[i].drawn != 0 {
+      drawnMask |= UInt64(1) << UInt64(i)
+    }
+    let missingMask = requiredMask & ~drawnMask
+    lastRequiredMask = requiredMask
+    lastDrawnMask = drawnMask
+    lastMissingMask = missingMask
+    guard missingMask == 0 else {
+      incompletePublishSuppressedCount += 1
+      lastIncompleteReason =
+        "source package incomplete requiredMask=\(requiredMask) drawnMask=\(drawnMask) missingMask=\(missingMask)"
+      return
+    }
+    lastIncompleteReason = ""
+
     var published: [MacOSNativeCompositorSourceTexture] = []
+    published.reserveCapacity(rings.count)
+    var publishPtsUs: Int64 = -1
+    var publishDurationUs: Int64 = 0
     for i in rings.indices {
       // A target is at the same array order as `rings`; mark drawn ones published.
       if targets[i].drawn != 0 {
         rings[i].publishedIndex = rings[i].writeIndex
+        if publishPtsUs < 0 {
+          publishPtsUs = Int64(targets[i].frame_info.pts_us)
+          publishDurationUs = Int64(targets[i].frame_info.duration_us)
+        }
       }
       let ring = rings[i]
       published.append(MacOSNativeCompositorSourceTexture(
@@ -340,10 +414,37 @@ final class MacOSNativeCompositorSourceRing {
     }
     hasPublished = true
     publishCount += 1
-    publishRate.record()
+    let publishNs = DispatchTime.now().uptimeNanoseconds
+    publishRate.record(nowNs: publishNs)
+    if let requestNs {
+      requestToPublishDuration.record(publishNs >= requestNs ? publishNs - requestNs : 0)
+    }
+    if publishPtsUs >= 0 {
+      if lastPublishedPtsUs >= 0 {
+        let stepUs = publishPtsUs - lastPublishedPtsUs
+        if stepUs < 0 {
+          publishedPtsRegressionCount += 1
+        } else {
+          if stepUs == 0 {
+            publishedPtsDuplicateCount += 1
+          } else if stepUs > 50_000 {
+            publishedPtsLargeStepCount += 1
+          }
+          publishedPtsStepDuration.record(UInt64(stepUs) * 1_000)
+        }
+      }
+      lastPublishedPtsUs = publishPtsUs
+      lastPublishedDurationUs = publishDurationUs
+    }
     compositor?.setSourceBuffers(
       textures: published,
       overlay: player.currentOverlayPrimitives()
     )
+  }
+
+  private func requiredMask(for count: Int) -> UInt64 {
+    guard count > 0 else { return 0 }
+    let clamped = min(count, 63)
+    return (UInt64(1) << UInt64(clamped)) - 1
   }
 }

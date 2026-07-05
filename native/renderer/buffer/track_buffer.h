@@ -1,8 +1,9 @@
 #pragma once
 #include "renderer/buffer/bidi_ring_buffer.h"
 #include <atomic>
-#include <mutex>
 #include <condition_variable>
+#include <cstdint>
+#include <mutex>
 
 namespace vr {
 
@@ -14,12 +15,24 @@ enum class TrackState {
     Error
 };
 
+struct TrackBufferPushTiming {
+    uint64_t lock_us = 0;
+    uint64_t wait_us = 0;
+    uint64_t push_us = 0;
+    uint64_t ring_lock_us = 0;
+    uint64_t ring_assign_us = 0;
+    uint64_t ring_advance_us = 0;
+    uint64_t ring_overwritten_cpu_bytes = 0;
+    bool aborted = false;
+    bool flushing = false;
+};
+
 class TrackBuffer {
 public:
     explicit TrackBuffer(size_t forward_depth = 4, size_t backward_depth = 2);
 
     // Decode thread writes frames (blocks when buffer is full)
-    void push_frame(TextureFrame frame);
+    void push_frame(TextureFrame frame, TrackBufferPushTiming* timing = nullptr);
     void set_state(TrackState state);
 
     // Abort: unblock any waiting push (called on shutdown/seek)

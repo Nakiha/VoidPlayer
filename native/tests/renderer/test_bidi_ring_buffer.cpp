@@ -1,7 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include "renderer/buffer/bidi_ring_buffer.h"
+#include <atomic>
+#include <chrono>
 #include <deque>
 #include <random>
+#include <thread>
 
 using namespace vr;
 
@@ -11,6 +14,20 @@ TextureFrame make_frame(int64_t pts) {
     TextureFrame frame;
     frame.pts_us = pts;
     frame.duration_us = 33'333;
+    return frame;
+}
+
+TextureFrame make_sleepy_cpu_frame(int64_t pts,
+                                   std::atomic<int>& retired_count,
+                                   std::chrono::milliseconds delay) {
+    TextureFrame frame = make_frame(pts);
+    frame.cpu_data = std::shared_ptr<std::vector<uint8_t>>(
+        new std::vector<uint8_t>(4096),
+        [&retired_count, delay](std::vector<uint8_t>* data) {
+            retired_count.fetch_add(1, std::memory_order_relaxed);
+            std::this_thread::sleep_for(delay);
+            delete data;
+        });
     return frame;
 }
 
@@ -127,6 +144,28 @@ TEST_CASE("BidiRingBuffer: capacity limit", "[bidi_ring_buffer]") {
     REQUIRE(brb.push({2, 0, 0, 0, false, nullptr}));
     REQUIRE(brb.push({3, 0, 0, 0, false, nullptr}));
     REQUIRE_FALSE(brb.push({4, 0, 0, 0, false, nullptr}));  // full (backward slots reserved)
+}
+
+TEST_CASE("BidiRingBuffer: overwritten frame retires outside assign timing",
+          "[bidi_ring_buffer][perf]") {
+    BidiRingBuffer brb(1, 0);
+    std::atomic<int> retired_count{0};
+
+    REQUIRE(brb.push(make_sleepy_cpu_frame(
+        1, retired_count, std::chrono::milliseconds(20))));
+    REQUIRE(brb.advance());
+    REQUIRE(brb.push(make_frame(2)));
+
+    BidiRingBuffer::PushTiming timing;
+    const auto start = std::chrono::steady_clock::now();
+    REQUIRE(brb.push(make_frame(3), &timing));
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+
+    REQUIRE(retired_count.load(std::memory_order_relaxed) == 1);
+    REQUIRE(timing.overwritten_cpu_bytes >= 4096);
+    REQUIRE(timing.assign_us < 5'000);
+    REQUIRE(elapsed >= std::chrono::milliseconds(15));
 }
 
 TEST_CASE("BidiRingBuffer: forward count", "[bidi_ring_buffer]") {

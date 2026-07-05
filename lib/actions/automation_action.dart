@@ -88,6 +88,11 @@ class ResetNativePerfCountersAction extends AutomationAction {
   const ResetNativePerfCountersAction() : super('RESET_NATIVE_PERF_COUNTERS');
 }
 
+class ResetDartViewportDiagnosticsAction extends AutomationAction {
+  const ResetDartViewportDiagnosticsAction()
+    : super('RESET_DART_VIEWPORT_DIAGNOSTICS');
+}
+
 class BeginNativeInteractionSampleAction extends AutomationAction {
   final String label;
 
@@ -221,6 +226,26 @@ class WheelViewportNative extends AutomationAction {
     this.xFraction = 0.5,
     this.yFraction = 0.5,
   }) : super('WHEEL_VIEWPORT_NATIVE');
+}
+
+class PanZoomViewport extends AutomationAction {
+  final double panDx;
+  final double panDy;
+  final double scale;
+  final int steps;
+  final int stepMs;
+  final double xFraction;
+  final double yFraction;
+
+  const PanZoomViewport(
+    this.panDx,
+    this.panDy, {
+    this.scale = 1.0,
+    this.steps = 24,
+    this.stepMs = 8,
+    this.xFraction = 0.5,
+    this.yFraction = 0.5,
+  }) : super('PAN_ZOOM_VIEWPORT');
 }
 
 class DragViewportSampleOverlay extends AutomationAction {

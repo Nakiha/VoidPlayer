@@ -90,6 +90,7 @@ void fill_present_decision_info_from_snapshot(
     out->color_matrix[slot] = frame.color_matrix;
     out->color_transfer[slot] = frame.color_transfer;
     out->color_primaries[slot] = frame.color_primaries;
+    out->yuv_format[slot] = frame.yuv_format;
     out->y_stride[slot] = frame.y_stride;
     out->uv_stride[slot] = frame.uv_stride;
     out->coded_width[slot] = frame.coded_width;
@@ -169,6 +170,8 @@ bool copy_snapshot_yuv_package(const vr::RendererDrawSnapshot& snapshot,
     int chroma_height = 0;
     bool is_p010 = false;
     bool is_planar_yuv420 = false;
+    int bytes_per_sample = 1;
+    int yuv_format = VPMacOSNativePresentFormatNV12;
     std::unique_ptr<ScopedCVPixelBufferLock> cv_lock;
     if (nv12_storage) {
       if (!nv12_storage->data || nv12_storage->y_stride <= 0 ||
@@ -185,15 +188,24 @@ bool copy_snapshot_yuv_package(const vr::RendererDrawSnapshot& snapshot,
       coded_width = nv12_storage->coded_width;
       coded_height = nv12_storage->coded_height;
       is_p010 = nv12_storage->is_p010;
+      bytes_per_sample = is_p010 ? 2 : 1;
+      yuv_format = is_p010 ? VPMacOSNativePresentFormatP010
+                            : VPMacOSNativePresentFormatNV12;
       uv_source = y_source + static_cast<size_t>(y_stride) * coded_height;
       chroma_width = (coded_width + 1) / 2;
       chroma_height = (coded_height + 1) / 2;
     } else if (planar_storage) {
-      if (planar_storage->bytes_per_sample != 1) {
-        error = "planar 10-bit YUV is not supported by Metal presentation yet";
+      if ((planar_storage->bytes_per_sample != 1 &&
+           planar_storage->bytes_per_sample != 2) ||
+          (planar_storage->bit_depth != 8 &&
+           planar_storage->bit_depth != 10)) {
+        error = "snapshot contains unsupported CPU YUV frame storage";
         return false;
       }
-      for (int plane = 0; plane < 3; ++plane) {
+      const bool semiplanar =
+          planar_storage->plane_layout == vr::CpuYuvPlaneLayout::SemiPlanarYuv420;
+      const int required_planes = semiplanar ? 2 : 3;
+      for (int plane = 0; plane < required_planes; ++plane) {
         if (!planar_storage->planes[plane] ||
             planar_storage->plane_widths[plane] <= 0 ||
             planar_storage->plane_heights[plane] <= 0 ||
@@ -211,24 +223,42 @@ bool copy_snapshot_yuv_package(const vr::RendererDrawSnapshot& snapshot,
       if (planar_storage->plane_widths[0] < frame.width ||
           planar_storage->plane_heights[0] < frame.height ||
           planar_storage->plane_widths[1] != expected_chroma_width ||
-          planar_storage->plane_widths[2] != expected_chroma_width ||
           planar_storage->plane_heights[1] != expected_chroma_height ||
-          planar_storage->plane_heights[2] != expected_chroma_height ||
-          planar_storage->strides[1] != planar_storage->strides[2]) {
+          (!semiplanar &&
+           (planar_storage->plane_widths[2] != expected_chroma_width ||
+            planar_storage->plane_heights[2] != expected_chroma_height ||
+            planar_storage->strides[1] != planar_storage->strides[2]))) {
         error = "snapshot planar YUV storage is not YUV420-compatible";
+        return false;
+      }
+      if (semiplanar &&
+          planar_storage->bit_depth == 10 &&
+          planar_storage->sample_alignment != vr::CpuYuvSampleAlignment::MsbAligned) {
+        error = "10-bit semiplanar CPU YUV storage must be P010-aligned";
         return false;
       }
       y_source = planar_storage->planes[0];
       uv_source = planar_storage->planes[1];
-      v_source = planar_storage->planes[2];
+      v_source = semiplanar ? nullptr : planar_storage->planes[2];
       y_stride = planar_storage->strides[0];
       uv_stride = planar_storage->strides[1];
-      v_stride = planar_storage->strides[2];
+      v_stride = semiplanar ? 0 : planar_storage->strides[2];
       coded_width = planar_storage->plane_widths[0];
       coded_height = planar_storage->plane_heights[0];
       chroma_width = planar_storage->plane_widths[1];
       chroma_height = planar_storage->plane_heights[1];
-      is_planar_yuv420 = true;
+      bytes_per_sample = planar_storage->bytes_per_sample;
+      is_p010 = semiplanar &&
+          planar_storage->sample_alignment == vr::CpuYuvSampleAlignment::MsbAligned;
+      is_planar_yuv420 = !semiplanar;
+      if (semiplanar) {
+        yuv_format = is_p010 ? VPMacOSNativePresentFormatP010
+                             : VPMacOSNativePresentFormatNV12;
+      } else {
+        yuv_format = planar_storage->bit_depth == 10
+            ? VPMacOSNativePresentFormatYUV420P10LE
+            : VPMacOSNativePresentFormatYUV420P;
+      }
     } else if (cv_storage) {
       auto* pixel_buffer = static_cast<CVPixelBufferRef>(cv_storage->pixel_buffer);
       cv_lock = std::make_unique<ScopedCVPixelBufferLock>(pixel_buffer);
@@ -248,6 +278,9 @@ bool copy_snapshot_yuv_package(const vr::RendererDrawSnapshot& snapshot,
       coded_width = cv_storage->coded_width;
       coded_height = cv_storage->coded_height;
       is_p010 = cv_storage->is_p010;
+      bytes_per_sample = is_p010 ? 2 : 1;
+      yuv_format = is_p010 ? VPMacOSNativePresentFormatP010
+                            : VPMacOSNativePresentFormatNV12;
       chroma_width = (coded_width + 1) / 2;
       chroma_height = (coded_height + 1) / 2;
     } else {
@@ -259,10 +292,9 @@ bool copy_snapshot_yuv_package(const vr::RendererDrawSnapshot& snapshot,
       return false;
     }
 
-    const int bytes_per_sample = is_p010 ? 2 : 1;
     if (!is_planar_yuv420 &&
         (y_stride < coded_width * bytes_per_sample ||
-         uv_stride < coded_width * bytes_per_sample)) {
+         uv_stride < chroma_width * 2 * bytes_per_sample)) {
       error = "invalid NV12/P010 frame storage for Metal presentation";
       return false;
     }
@@ -304,11 +336,10 @@ bool copy_snapshot_yuv_package(const vr::RendererDrawSnapshot& snapshot,
       std::memcpy(dst + cursor, v_source, v_bytes);
       out->decision.v_offset[slot] = static_cast<int32_t>(cursor);
       cursor += v_bytes;
+    } else {
+      out->decision.v_offset[slot] = 0;
     }
-    out->decision.yuv_format[slot] = is_planar_yuv420
-        ? VPMacOSNativePresentFormatYUV420P
-        : (is_p010 ? VPMacOSNativePresentFormatP010
-                   : VPMacOSNativePresentFormatNV12);
+    out->decision.yuv_format[slot] = yuv_format;
     out->decision.y_stride[slot] = y_stride;
     out->decision.uv_stride[slot] = uv_stride;
     out->decision.coded_width[slot] = coded_width;

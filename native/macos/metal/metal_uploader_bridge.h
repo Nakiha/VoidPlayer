@@ -30,6 +30,7 @@ enum {
   VPMacOSNativePresentFormatNV12 = 1,
   VPMacOSNativePresentFormatP010 = 2,
   VPMacOSNativePresentFormatYUV420P = 3,
+  VPMacOSNativePresentFormatYUV420P10LE = 4,
   VPMacOSNativePresentPackageStorageUnavailable = 0,
   VPMacOSNativePresentPackageStorageYUV = 1,
   VPMacOSNativePresentPackageStorageBGRA = 2,

@@ -11,6 +11,7 @@ import '../track_manager.dart';
 import '../utils/async_guard.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/display_geometry.dart';
+import '../viewport/viewport_projection_diagnostics.dart';
 import '../widgets/analysis_overlay_controls.dart';
 import 'main_window_state.dart';
 
@@ -192,6 +193,7 @@ class MainWindowLayoutCoordinator {
 
   void panByDelta(double dx, double dy) {
     if (_disposed) return;
+    ViewportProjectionDiagnostics.instance.record('layoutPan');
     _debugPanUpdates++;
     final nextOffsetX = layout().viewOffsetX + dx;
     final nextOffsetY = layout().viewOffsetY + dy;
@@ -220,6 +222,7 @@ class MainWindowLayoutCoordinator {
   void onZoom(double factor, Offset localPos) {
     if (_disposed) return;
     if (factor <= 0 || !factor.isFinite || factor == 1.0) return;
+    ViewportProjectionDiagnostics.instance.record('layoutZoom');
     _debugZoomUpdates++;
     final currentLayout = layout();
     final newZoom = (currentLayout.zoomRatio * factor).clamp(
@@ -855,9 +858,15 @@ class MainWindowLayoutCoordinator {
   }
 
   void _prepareNativeCompositorSourceCache(LayoutState baseLayout) {
-    if (!_canUseNativeCompositorViewportTransform) return;
+    if (!_canUseNativeCompositorViewportTransform) {
+      ViewportProjectionDiagnostics.instance.record(
+        'projectionPrepareSkippedIneligible',
+      );
+      return;
+    }
     final entries = tracks();
     if (entries.isEmpty) return;
+    ViewportProjectionDiagnostics.instance.record('projectionPrepare');
     final trackGeometry = entries
         .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
         .toList();
@@ -954,6 +963,7 @@ class MainWindowLayoutCoordinator {
   void _publishNativeCompositorViewportTransform() {
     if (!_nativeCompositorTransformActive || _disposed) return;
     _debugProjectionPublishes++;
+    ViewportProjectionDiagnostics.instance.record('projectionPublishAttempt');
     _prepareNativeCompositorSourceCache(layout());
   }
 

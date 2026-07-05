@@ -3,6 +3,7 @@
 #include "media/packet_queue.h"
 #include "renderer/decode/codec_loop.h"
 #include "renderer/buffer/track_buffer.h"
+#include "renderer/decode/decode_stage_perf.h"
 #include "renderer/decode/decoded_frame_publisher.h"
 #include "renderer/decode/decode_seek_epoch.h"
 #include "renderer/decode/exact_seek_candidate_store.h"
@@ -105,6 +106,7 @@ public:
 
     /// Read-only access to performance counters.
     const DecodePerfCounters& perf_counters() const { return perf_; }
+    const DecodeStagePerfCounters& stage_perf_counters() const { return stage_perf_; }
     DecodeMemoryStats memory_stats() const;
 
     bool is_hardware_decode_enabled() const { return hw_enabled_; }
@@ -247,6 +249,7 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
     DecodePerfCounters perf_;
+    DecodeStagePerfCounters stage_perf_;
 };
 
 } // namespace vr

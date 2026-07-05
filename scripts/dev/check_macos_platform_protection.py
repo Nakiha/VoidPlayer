@@ -129,7 +129,8 @@ REQUIRED_UI_SCRIPT_MARKERS = {
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-source-provider",
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-source-provider",
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal",
-        "ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true",
+        "ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderActive, true",
+        "ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderPresenting, true",
     ],
     "ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv": [
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationRequest, auto",

@@ -10,7 +10,7 @@
 3.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-source-provider
 3.21, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderPresenting, true
 3.211, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedRendererInitialized, true
-3.2115, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedTargetInstalled, true
+3.2115, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderActive, true
 3.212, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedBackendAvailable, true
 3.2125, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 3.213, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
@@ -27,7 +27,7 @@
 3.28, ASSERT_NATIVE_DIAGNOSTIC_BOOL, primaryTrackHardwareDecodeActive, false
 3.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalAvailable, true
 3.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, metalTextureCacheAvailable, true
-3.482, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
+3.482, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderPresenting, true
 3.485, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureWidth, 320, 1920
 3.486, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureHeight, 180, 1080
 3.5, CAPTURE_VIEWPORT, native_facade_first_frame

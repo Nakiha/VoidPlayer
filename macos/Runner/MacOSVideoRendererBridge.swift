@@ -16,6 +16,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler,
   private var nativeCompositorSourceRing: MacOSNativeCompositorSourceRing?
   private var nativeCompositorSourceSignature = ""
   private var nativeCompositorSourcePendingSignature = ""
+  private var nativeCompositorSourcePendingResults: [String: [FlutterResult]] = [:]
   private var nativeCompositorSourceTopologyRevision: UInt64 = 0
   private var viewportBackgroundColor: UInt32?
   private var lastNativeCompositorFailure = "not initialized"
@@ -202,8 +203,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler,
       setNativeCompositorViewportTransform(arguments: call.arguments)
       result(nil)
     case "prepareNativeCompositorSourceCache":
-      prepareNativeCompositorSourceCache(arguments: call.arguments)
-      result(nil)
+      prepareNativeCompositorSourceCache(arguments: call.arguments, result: result)
     case "setNativeAnalysisOverlay":
       setNativeAnalysisOverlay(arguments: call.arguments)
       result(nil)
@@ -441,8 +441,15 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler,
     // full-layout source projection.
   }
 
-  private func prepareNativeCompositorSourceCache(arguments: Any?) {
-    guard let nativeCompositor else { return }
+  private func prepareNativeCompositorSourceCache(arguments: Any?, result: @escaping FlutterResult) {
+    guard let nativeCompositor else {
+      result(FlutterError(
+        code: "NO_NATIVE_COMPOSITOR",
+        message: "Native compositor is unavailable",
+        details: nil
+      ))
+      return
+    }
     sourceProjectionMethodReceiveCount += 1
     sourceProjectionMethodReceiveRate.record()
     let trace = compositorLatencyProfiler.receive(
@@ -457,6 +464,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler,
         overlay: .empty,
         error: "native player unavailable"
       )
+      result(FlutterError(
+        code: "NO_PLAYER",
+        message: "Native player is unavailable",
+        details: nil
+      ))
       return
     }
     let sourceSlots = MacOSFlutterArguments.intListArg(arguments, "sourceSlots")
@@ -488,6 +500,11 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler,
         overlay: .empty,
         error: "no source tracks"
       )
+      result(FlutterError(
+        code: "SOURCE_PROVIDER_NO_TRACKS",
+        message: "No source tracks are available",
+        details: nil
+      ))
       return
     }
 
@@ -507,15 +524,41 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler,
         overlay: .empty,
         error: "no matching source tracks"
       )
+      result(FlutterError(
+        code: "SOURCE_PROVIDER_NO_MATCHING_TRACKS",
+        message: "No matching source tracks are available",
+        details: nil
+      ))
       return
     }
-    _ = subscribeNativeCompositorSourceProvider(
+    let signature = nativeCompositorSourceSignature(for: descriptors)
+    if signature == nativeCompositorSourceSignature && nativeCompositorSourceRing != nil {
+      _ = subscribeNativeCompositorSourceProvider(
+        player: player,
+        descriptors: descriptors,
+        order: sourceOrder,
+        reason: "source projection",
+        projection: sourceProjection
+      )
+      result(nil)
+      if playback.currentIsPlaying(player: player),
+         !playback.sourceProviderFramePumpActive {
+        primeNativeCompositorPlaybackSource(reason: "source cache subscribed")
+      }
+      return
+    }
+
+    nativeCompositorSourcePendingResults[signature, default: []].append(result)
+    let subscribed = subscribeNativeCompositorSourceProvider(
       player: player,
       descriptors: descriptors,
       order: sourceOrder,
       reason: "source projection",
       projection: sourceProjection
     )
+    if !subscribed {
+      completeNativeCompositorSourcePrepare(signature: signature, success: false)
+    }
     if playback.currentIsPlaying(player: player),
        !playback.sourceProviderFramePumpActive {
       primeNativeCompositorPlaybackSource(reason: "source cache subscribed")
@@ -767,6 +810,13 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler,
       ?? MacOSNativeCompositorSourceRing(compositor: nativeCompositor, delegate: self)
     ring.delegate = self
     nativeCompositorSourceRing = ring
+    if !nativeCompositorSourcePendingSignature.isEmpty &&
+       nativeCompositorSourcePendingSignature != signature {
+      completeNativeCompositorSourcePrepare(
+        signature: nativeCompositorSourcePendingSignature,
+        success: false
+      )
+    }
     nativeCompositorSourcePendingSignature = signature
     setNativeCompositorSourceProviderActive(true)
     if !playback.currentIsPlaying(player: player) {
@@ -803,8 +853,39 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler,
       nativeCompositorSourceSignature = signature
     }
     nativeCompositorSourcePendingSignature = ""
+    completeNativeCompositorSourcePrepare(signature: signature, success: success)
     if MacOSProfilerLog.enabled {
       NSLog("VoidPlayer WGPU source provider initial publish success=\(success)")
+    }
+  }
+
+  private func completeNativeCompositorSourcePrepare(signature: String, success: Bool) {
+    let results = nativeCompositorSourcePendingResults.removeValue(forKey: signature) ?? []
+    guard !results.isEmpty else { return }
+    for result in results {
+      if success {
+        result(nil)
+      } else {
+        result(FlutterError(
+          code: "SOURCE_PROVIDER_TOPOLOGY_NOT_READY",
+          message: "Source provider topology was not ready",
+          details: ["signature": signature]
+        ))
+      }
+    }
+  }
+
+  private func failAllNativeCompositorSourcePrepareResults(reason: String) {
+    let pending = nativeCompositorSourcePendingResults
+    nativeCompositorSourcePendingResults = [:]
+    for (signature, results) in pending {
+      for result in results {
+        result(FlutterError(
+          code: "SOURCE_PROVIDER_TOPOLOGY_CANCELLED",
+          message: reason,
+          details: ["signature": signature]
+        ))
+      }
     }
   }
 
@@ -1013,6 +1094,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler,
     playbackSpeed = 1.0
     texture?.clearStableDisplaySnapshot()
     presentation.resetLayout()
+    clearNativeCompositorSourceProvider(reason: "player destroyed")
     lifecycle.destroy(playback: playback, tracks: tracks, presentationState: presentationState)
     MacOSPresentationConfiguration.resetForNoMedia()
     nativeCompositor?.setVideoTexture(nil)
@@ -1301,6 +1383,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler,
     nativeCompositorSourceRing?.unsubscribe(reason: reason)
     nativeCompositorSourceSignature = ""
     nativeCompositorSourcePendingSignature = ""
+    failAllNativeCompositorSourcePrepareResults(reason: reason)
   }
 
   private func primeNativeCompositorPlaybackSource(reason: String) {

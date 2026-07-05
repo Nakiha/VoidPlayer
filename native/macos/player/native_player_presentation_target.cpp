@@ -938,50 +938,6 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
                                               error, error_size);
 }
 
-int VPMacOSNativePlayerCommitSourceProviderSeekPreview(
-    VPMacOSNativePlayer* player,
-    int32_t timeout_ms,
-    VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size) {
-  if (!player || !out) {
-    write_error(error, error_size, "player or preview frame output is null");
-    return -1;
-  }
-  VPMacOSNativeFrameInfoInit(out);
-  std::string message;
-  vr::PresentationBackendFrameInfo frame_info;
-  bool ok = false;
-  {
-    std::lock_guard<std::mutex> lock(player->mutex);
-    if (!player->renderer_active_locked()) {
-      write_error(error, error_size, "renderer is not active");
-      return -1;
-    }
-    ok = player->renderer->commit_paused_preview_frame(
-        timeout_ms, &frame_info, &message);
-  }
-  if (!ok) {
-    write_error(error, error_size,
-                message.empty() ? "source-provider seek preview is not ready"
-                                : message);
-    return -1;
-  }
-  copy_frame_info(frame_info, out);
-  {
-    std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
-    player->last_renderer_owned_presentation_succeeded = true;
-    player->last_renderer_owned_frame_info_available = true;
-    player->last_renderer_owned_frame_info = *out;
-    player->renderer_owned_presentation_consecutive_failures = 0;
-    player->renderer_owned_presentation_last_error.clear();
-    ++player->renderer_owned_presentation_event_sequence;
-  }
-  player->presentation_condition.notify_all();
-  write_error(error, error_size, "");
-  return 0;
-}
-
 int VPMacOSNativePlayerCommitSourceProviderPreview(
     VPMacOSNativePlayer* player,
     int32_t timeout_ms,

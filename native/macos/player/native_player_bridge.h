@@ -160,12 +160,6 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
-int VPMacOSNativePlayerCommitSourceProviderSeekPreview(
-    VPMacOSNativePlayer* player,
-    int32_t timeout_ms,
-    VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size);
 int VPMacOSNativePlayerCommitSourceProviderPreview(
     VPMacOSNativePlayer* player,
     int32_t timeout_ms,

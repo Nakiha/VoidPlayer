@@ -13,7 +13,8 @@ struct MacOSTransportContext {
   let userData: UnsafeMutableRawPointer
   let requiresPresentationTarget: Bool
   let setSourceProviderActive: (Bool) -> Void
-  let sourceProviderExpectedFileIds: () -> [Int]
+  let sourceProviderExpectedFileIdsForPts: (_ ptsUs: Int) -> [Int]
+  let publishSourceProviderReadyFrame: (_ timeoutMs: Int, _ reason: String) -> String?
   let markFrameAvailable: () -> Void
   let emitSeekPreviewPresented: (Int?, Int) -> Void
 }
@@ -89,12 +90,19 @@ final class MacOSTransportController {
       context.player?.seek(settledPtsUs)
       if let player = context.player {
         do {
+          let timeoutMs = resumeAfterSeek ? 3_000 : 1_000
           let frame = try player.commitSourceProviderPreview(
-            timeoutMs: resumeAfterSeek ? 3_000 : 1_000,
-            expectedFileIds: context.sourceProviderExpectedFileIds()
+            timeoutMs: timeoutMs,
+            expectedFileIds: context.sourceProviderExpectedFileIdsForPts(settledPtsUs)
           )
           context.presentationState.recordDiscontinuityFrame(frame)
-          context.markFrameAvailable()
+          if let error = context.publishSourceProviderReadyFrame(timeoutMs, "seek") {
+            return FlutterError(
+              code: "DECODE_FAILED",
+              message: "Failed to publish macOS source-provider seek frame",
+              details: error
+            )
+          }
         } catch {
           return FlutterError(
             code: "DECODE_FAILED",
@@ -240,7 +248,9 @@ final class MacOSTransportController {
         }
         let frame = try player.commitSourceProviderPreview(
           timeoutMs: 1_000,
-          expectedFileIds: context.sourceProviderExpectedFileIds()
+          expectedFileIds: context.sourceProviderExpectedFileIdsForPts(
+            player.currentPtsUs()
+          )
         )
         context.presentationState.recordDiscontinuityFrame(frame)
       } catch {
@@ -251,7 +261,13 @@ final class MacOSTransportController {
         )
       }
       context.setSourceProviderActive(true)
-      context.markFrameAvailable()
+      if let error = context.publishSourceProviderReadyFrame(1_000, "step") {
+        return FlutterError(
+          code: "DECODE_FAILED",
+          message: "Failed to publish macOS source-provider step frame",
+          details: error
+        )
+      }
       return nil
     }
     guard let texture = context.texture else {

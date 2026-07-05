@@ -1280,6 +1280,57 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
   }
 
+  private func publishNativeCompositorSourceProviderReadyFrame(
+    timeoutMs: Int,
+    reason: String
+  ) -> String? {
+    guard let player = nativePlayer,
+          let sourceRing = nativeCompositorSourceRing,
+          nativeCompositorSourceProviderReady() else {
+      return "source provider is not ready"
+    }
+    setNativeCompositorSourceProviderActive(true)
+    player.noteViewportCompositorActivity()
+    let result = sourceRing.refreshAndWait(player: player, timeoutMs: timeoutMs)
+    if result.published {
+      if MacOSProfilerLog.enabled {
+        NSLog(
+          "VoidPlayer WGPU source provider published reason=\(reason) " +
+            "publish=\(result.publishCount) ptsUs=\(result.ptsUs) " +
+            "drawnMask=\(result.drawnMask) reusedMask=\(result.reusedMask)"
+        )
+      }
+      return nil
+    }
+    let error = result.error.isEmpty
+      ? "source provider did not publish a ready source package"
+      : result.error
+    if MacOSProfilerLog.enabled {
+      NSLog(
+        "VoidPlayer WGPU source provider publish failed reason=\(reason) " +
+          "publish=\(result.publishCount) drawnMask=\(result.drawnMask) " +
+          "missingMask=\(result.missingMask) error=\(error)"
+      )
+    }
+    return error
+  }
+
+  private func sourceProviderExpectedFileIdsForPts(_ ptsUs: Int) -> [Int] {
+    let player = nativePlayer
+    return tracks.tracks.compactMap { track in
+      guard let fileId = MacOSFlutterArguments.intValue(track["fileId"]) else {
+        return nil
+      }
+      let durationUs = MacOSFlutterArguments.intValue(track["durationUs"]) ?? 0
+      if durationUs <= 0 {
+        return fileId
+      }
+      let offsetUs = player?.trackOffsetUs(fileId: fileId) ?? 0
+      let localPtsUs = ptsUs - offsetUs
+      return (localPtsUs >= 0 && localPtsUs < durationUs) ? fileId : nil
+    }
+  }
+
   private func transportContext() -> MacOSTransportContext {
     MacOSTransportContext(
       nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
@@ -1295,8 +1346,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       setSourceProviderActive: { [weak self] active in
         self?.setNativeCompositorSourceProviderActive(active)
       },
-      sourceProviderExpectedFileIds: { [weak self] in
-        self?.automaticNativeCompositorSourceDescription()?.descriptors.map { $0.fileId } ?? []
+      sourceProviderExpectedFileIdsForPts: { [weak self] ptsUs in
+        self?.sourceProviderExpectedFileIdsForPts(ptsUs) ?? []
+      },
+      publishSourceProviderReadyFrame: { [weak self] timeoutMs, reason in
+        self?.publishNativeCompositorSourceProviderReadyFrame(
+          timeoutMs: timeoutMs,
+          reason: reason
+        )
       },
       markFrameAvailable: { [weak self] in
         self?.markFrameAvailable()

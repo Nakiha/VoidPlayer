@@ -17,6 +17,16 @@ struct MacOSCompositorSourceTrackDescriptor {
   let viewOffsetUvY: Float
 }
 
+struct MacOSNativeCompositorSourceRefreshResult {
+  let published: Bool
+  let publishCount: Int
+  let drawnMask: UInt64
+  let reusedMask: UInt64
+  let missingMask: UInt64
+  let ptsUs: Int64
+  let error: String
+}
+
 /// Owns the live source-cache ring used during a viewport pan/zoom interaction.
 ///
 /// Paused and playing share one mechanism: at interaction start the bridge
@@ -88,6 +98,8 @@ final class MacOSNativeCompositorSourceRing {
   private var lastRequiredMask: UInt64 = 0
   private var lastDrawnMask: UInt64 = 0
   private var lastMissingMask: UInt64 = 0
+  private var lastReusedMask: UInt64 = 0
+  private var reusedPublishedSlotCount = 0
   private var incompletePublishSuppressedCount = 0
   private var lastIncompleteReason = ""
   private var lastPublishedPtsUs: Int64 = -1
@@ -126,12 +138,7 @@ final class MacOSNativeCompositorSourceRing {
     let requestedNs = DispatchTime.now().uptimeNanoseconds
     ringQueue.async { [weak self] in
       guard let self, self.live, !self.rings.isEmpty else { return }
-      let queueStartNs = DispatchTime.now().uptimeNanoseconds
-      self.refreshQueueWaitDuration.record(
-        queueStartNs >= requestedNs ? queueStartNs - requestedNs : 0
-      )
-      self.refreshRequestCount += 1
-      self.refreshRequestRate.record(nowNs: queueStartNs)
+      self.recordRefreshRequest(requestedNs: requestedNs)
       // Frozen-snapshot fallback (depth == 1) never refreshes: the source is too
       // large for a live ring, so it intentionally behaves like the old paused
       // one-shot.
@@ -144,10 +151,87 @@ final class MacOSNativeCompositorSourceRing {
       self.baking = true
       repeat {
         self.pending = false
-        self.bakeAndPublishOnQueue(player: player, requestNs: requestedNs)
+        _ = self.bakeAndPublishOnQueue(player: player, requestNs: requestedNs)
       } while self.pending && self.live
       self.baking = false
     }
+  }
+
+  func refreshAndWait(
+    player: MacOSNativePlayerSession,
+    timeoutMs: Int
+  ) -> MacOSNativeCompositorSourceRefreshResult {
+    let requestedNs = DispatchTime.now().uptimeNanoseconds
+    let timeout = DispatchTimeInterval.milliseconds(max(0, timeoutMs))
+    let semaphore = DispatchSemaphore(value: 0)
+    var result = MacOSNativeCompositorSourceRefreshResult(
+      published: false,
+      publishCount: 0,
+      drawnMask: 0,
+      reusedMask: 0,
+      missingMask: 0,
+      ptsUs: -1,
+      error: "source ring refresh timed out"
+    )
+
+    ringQueue.async { [weak self] in
+      guard let self else {
+        semaphore.signal()
+        return
+      }
+      guard self.live, !self.rings.isEmpty else {
+        result = MacOSNativeCompositorSourceRefreshResult(
+          published: false,
+          publishCount: self.publishCount,
+          drawnMask: 0,
+          reusedMask: 0,
+          missingMask: self.lastRequiredMask,
+          ptsUs: self.lastPublishedPtsUs,
+          error: "source ring is not live"
+        )
+        semaphore.signal()
+        return
+      }
+      self.recordRefreshRequest(requestedNs: requestedNs)
+      if self.depth <= 1 {
+        result = MacOSNativeCompositorSourceRefreshResult(
+          published: false,
+          publishCount: self.publishCount,
+          drawnMask: 0,
+          reusedMask: 0,
+          missingMask: self.lastRequiredMask,
+          ptsUs: self.lastPublishedPtsUs,
+          error: "source ring is frozen"
+        )
+        semaphore.signal()
+        return
+      }
+      if self.baking {
+        self.refreshCoalescedCount += 1
+        self.pending = true
+        result = MacOSNativeCompositorSourceRefreshResult(
+          published: false,
+          publishCount: self.publishCount,
+          drawnMask: self.lastDrawnMask,
+          reusedMask: self.lastReusedMask,
+          missingMask: self.lastMissingMask,
+          ptsUs: self.lastPublishedPtsUs,
+          error: "source ring is already baking"
+        )
+        semaphore.signal()
+        return
+      }
+      self.baking = true
+      self.pending = false
+      result = self.bakeAndPublishOnQueue(player: player, requestNs: requestedNs)
+      self.baking = false
+      semaphore.signal()
+    }
+
+    if semaphore.wait(timeout: DispatchTime.now() + timeout) == .timedOut {
+      return result
+    }
+    return result
   }
 
   /// Tears down the ring and clears the compositor source cache.
@@ -185,6 +269,8 @@ final class MacOSNativeCompositorSourceRing {
         "sourceRingRequiredMask": Int64(min(lastRequiredMask, UInt64(Int64.max))),
         "sourceRingDrawnMask": Int64(min(lastDrawnMask, UInt64(Int64.max))),
         "sourceRingMissingMask": Int64(min(lastMissingMask, UInt64(Int64.max))),
+        "sourceRingReusedMask": Int64(min(lastReusedMask, UInt64(Int64.max))),
+        "sourceRingReusedPublishedSlotCount": reusedPublishedSlotCount,
         "sourceRingIncompletePublishSuppressedCount": incompletePublishSuppressedCount,
         "sourceRingLastIncompleteReason": lastIncompleteReason,
         "sourceRingPublishCount": publishCount,
@@ -315,19 +401,36 @@ final class MacOSNativeCompositorSourceRing {
     hasPublished = false
 
     // Initial bake into buffer 0 of each ring; publishes on success.
-    bakeAndPublishOnQueue(player: player, requestNs: nil)
+    _ = bakeAndPublishOnQueue(player: player, requestNs: nil)
   }
 
   /// Bakes the current frame into each track's next write buffer and, if any
   /// track drew, publishes the just-baked buffers to the compositor. Runs on the
   /// ring queue. The bake is synchronous (waits for GPU completion), so the buffer
   /// is fully written before it is published.
+  private func recordRefreshRequest(requestedNs: UInt64) {
+    let queueStartNs = DispatchTime.now().uptimeNanoseconds
+    refreshQueueWaitDuration.record(
+      queueStartNs >= requestedNs ? queueStartNs - requestedNs : 0
+    )
+    refreshRequestCount += 1
+    refreshRequestRate.record(nowNs: queueStartNs)
+  }
+
   private func bakeAndPublishOnQueue(
     player: MacOSNativePlayerSession,
     requestNs: UInt64?
-  ) {
+  ) -> MacOSNativeCompositorSourceRefreshResult {
     guard live, let bakeTarget, !rings.isEmpty else {
-      return
+      return MacOSNativeCompositorSourceRefreshResult(
+        published: false,
+        publishCount: publishCount,
+        drawnMask: 0,
+        reusedMask: 0,
+        missingMask: lastRequiredMask,
+        ptsUs: lastPublishedPtsUs,
+        error: "source ring is not ready"
+      )
     }
     let startNs = DispatchTime.now().uptimeNanoseconds
 
@@ -366,11 +469,20 @@ final class MacOSNativeCompositorSourceRing {
       publishMissCount += 1
       lastRequiredMask = requiredMask(for: targets.count)
       lastDrawnMask = 0
+      lastReusedMask = 0
       lastMissingMask = lastRequiredMask
       lastIncompleteReason = result.error.isEmpty
         ? "source frame bake produced no frames"
         : result.error
-      return
+      return MacOSNativeCompositorSourceRefreshResult(
+        published: false,
+        publishCount: publishCount,
+        drawnMask: 0,
+        reusedMask: 0,
+        missingMask: lastMissingMask,
+        ptsUs: lastPublishedPtsUs,
+        error: lastIncompleteReason
+      )
     }
 
     let requiredMask = requiredMask(for: targets.count)
@@ -379,16 +491,34 @@ final class MacOSNativeCompositorSourceRing {
       drawnMask |= UInt64(1) << UInt64(i)
     }
     let missingMask = requiredMask & ~drawnMask
+    let reusedMask = hasPublished ? missingMask : 0
     lastRequiredMask = requiredMask
     lastDrawnMask = drawnMask
-    lastMissingMask = missingMask
-    guard missingMask == 0 else {
+    lastReusedMask = reusedMask
+    guard missingMask == 0 || hasPublished else {
+      lastMissingMask = missingMask
       incompletePublishSuppressedCount += 1
       lastIncompleteReason =
         "source package incomplete requiredMask=\(requiredMask) drawnMask=\(drawnMask) missingMask=\(missingMask)"
-      return
+      return MacOSNativeCompositorSourceRefreshResult(
+        published: false,
+        publishCount: publishCount,
+        drawnMask: drawnMask,
+        reusedMask: 0,
+        missingMask: missingMask,
+        ptsUs: lastPublishedPtsUs,
+        error: lastIncompleteReason
+      )
     }
-    lastIncompleteReason = ""
+    if reusedMask != 0 {
+      reusedPublishedSlotCount += reusedMask.nonzeroBitCount
+      lastMissingMask = 0
+      lastIncompleteReason =
+        "source package reused published slots mask=\(reusedMask)"
+    } else {
+      lastMissingMask = 0
+      lastIncompleteReason = ""
+    }
 
     var published: [MacOSNativeCompositorSourceTexture] = []
     published.reserveCapacity(rings.count)
@@ -439,6 +569,15 @@ final class MacOSNativeCompositorSourceRing {
     compositor?.setSourceBuffers(
       textures: published,
       overlay: player.currentOverlayPrimitives()
+    )
+    return MacOSNativeCompositorSourceRefreshResult(
+      published: true,
+      publishCount: publishCount,
+      drawnMask: drawnMask,
+      reusedMask: reusedMask,
+      missingMask: 0,
+      ptsUs: lastPublishedPtsUs,
+      error: ""
     )
   }
 

@@ -243,44 +243,14 @@ class MainWindowMediaCoordinator {
             'slot=${track.slot}',
           );
           if (!_alive) return;
-          var visualTopologyPrepared = false;
-          try {
-            visualTopologyPrepared = await layoutCoordinator
-                .preparePendingTrackAddVisualTopology(track);
-            log.info(
-              '[MediaLoad] addTrack visual topology prepared='
-              '$visualTopologyPrepared',
-            );
-          } catch (error, stack) {
-            log.warning(
-              '[MediaLoad] addTrack visual topology failed; rolling back '
-              'fileId=${track.fileId}',
-              error,
-              stack,
-            );
-            try {
-              await controller.removeTrack(track.fileId);
-            } catch (rollbackError, rollbackStack) {
-              log.warning(
-                '[MediaLoad] addTrack rollback failed fileId=${track.fileId}',
-                rollbackError,
-                rollbackStack,
-              );
-            }
-            rethrow;
-          }
-          if (!_alive) return;
-          trackManager.addTrack(track);
-          log.info('[MediaLoad] addTrack track model committed');
           await layoutCoordinator.preemptTimelineTrackCountChange(
             previousCount: previousTrackCount,
             nextCount: previousTrackCount + 1,
           );
-          log.info(
-            '[MediaLoad] addTrack post-commit preempt resize done '
-            'visualTopologyPrepared=$visualTopologyPrepared',
-          );
+          log.info('[MediaLoad] addTrack preempt resize done');
           if (!_alive) return;
+          trackManager.addTrack(track);
+          log.info('[MediaLoad] addTrack track model committed');
           await _syncDefaultAudioPolicy([track]);
           log.info('[MediaLoad] addTrack audio policy synced');
           if (!_alive) return;

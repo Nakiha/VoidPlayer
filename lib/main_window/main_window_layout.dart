@@ -64,15 +64,6 @@ class MainWindowLayoutCoordinator {
   void setLayout(LayoutState layout) => stateStore.setLayout(layout);
   int trackCount() => trackManager.count;
   List<TrackEntry> tracks() => trackManager.entries;
-  bool get _hasNativePlayer => controller.hasPlayer || textureId() != null;
-
-  List<int> _orderForTrackInfos(List<TrackInfo> entries) {
-    final result = List<int>.filled(4, -1);
-    for (var i = 0; i < entries.length && i < result.length; i++) {
-      result[i] = entries[i].fileId;
-    }
-    return result;
-  }
 
   void _logDebugInteractionSample(
     String event, {
@@ -397,7 +388,7 @@ class MainWindowLayoutCoordinator {
     required int previousCount,
     required int nextCount,
   }) async {
-    if (_disposed || !_hasNativePlayer) return;
+    if (_disposed || textureId() == null) return;
     if (previousCount <= 0 || nextCount <= 0 || previousCount == nextCount) {
       return;
     }
@@ -419,7 +410,7 @@ class MainWindowLayoutCoordinator {
     required int width,
     required int height,
   }) async {
-    if (_disposed || !_hasNativePlayer) return;
+    if (_disposed || textureId() == null) return;
     if (width <= 0 || height <= 0) return;
     if (width == viewportWidth && height == viewportHeight) return;
 
@@ -824,28 +815,12 @@ class MainWindowLayoutCoordinator {
   bool get _canUseNativeCompositorViewportTransform {
     return sourceProjectionEnabled() &&
         _state.nativeCompositorActive &&
-        _hasNativePlayer &&
+        textureId() != null &&
         viewportWidth > 0 &&
         viewportHeight > 0 &&
         trackCount() > 0 &&
         (layout().mode == LayoutMode.sideBySide ||
             layout().mode == LayoutMode.splitScreen);
-  }
-
-  bool _canPrepareNativeCompositorSourceProjection({
-    required int candidateTrackCount,
-    required int candidateViewportWidth,
-    required int candidateViewportHeight,
-    required LayoutState candidateLayout,
-  }) {
-    return sourceProjectionEnabled() &&
-        _state.nativeCompositorActive &&
-        _hasNativePlayer &&
-        candidateViewportWidth > 0 &&
-        candidateViewportHeight > 0 &&
-        candidateTrackCount > 0 &&
-        (candidateLayout.mode == LayoutMode.sideBySide ||
-            candidateLayout.mode == LayoutMode.splitScreen);
   }
 
   void _ensureNativeCompositorViewportTransform() {
@@ -882,79 +857,22 @@ class MainWindowLayoutCoordinator {
     return true;
   }
 
-  Future<bool> preparePendingTrackAddVisualTopology(TrackInfo pendingTrack) {
-    final current = tracks().map((entry) => entry.info).toList(growable: true);
-    current.add(pendingTrack);
-    final pendingLayout = layout().copyWith(
-      order: _orderForTrackInfos(current),
-    );
-    final pendingHeight = _viewportHeightAfterTimelineTrackCountChange(
-      previousCount: trackCount(),
-      nextCount: current.length,
-    );
-    return _prepareNativeCompositorSourceCacheForTracks(
-      current,
-      pendingLayout,
-      viewportWidthOverride: viewportWidth,
-      viewportHeightOverride: pendingHeight,
-    );
-  }
-
-  int _viewportHeightAfterTimelineTrackCountChange({
-    required int previousCount,
-    required int nextCount,
-  }) {
-    if (previousCount <= 0 ||
-        nextCount <= 0 ||
-        previousCount == nextCount ||
-        viewportHeight <= 0) {
-      return viewportHeight;
-    }
-    final rowDelta = nextCount - previousCount;
-    final heightDelta =
-        (rowDelta * timelineTrackRowLogicalHeight * viewportDevicePixelRatio)
-            .round();
-    if (heightDelta == 0) return viewportHeight;
-    return (viewportHeight - heightDelta).clamp(1, 1 << 30).toInt();
-  }
-
   void _prepareNativeCompositorSourceCache(LayoutState baseLayout) {
-    fireAndLog(
-      'prepare native compositor source cache',
-      _prepareNativeCompositorSourceCacheForTracks(
-        tracks().map((entry) => entry.info).toList(growable: false),
-        baseLayout,
-      ),
-    );
-  }
-
-  Future<bool> _prepareNativeCompositorSourceCacheForTracks(
-    List<TrackInfo> trackInfos,
-    LayoutState baseLayout, {
-    int? viewportWidthOverride,
-    int? viewportHeightOverride,
-  }) async {
-    final candidateViewportWidth = viewportWidthOverride ?? viewportWidth;
-    final candidateViewportHeight = viewportHeightOverride ?? viewportHeight;
-    if (!_canPrepareNativeCompositorSourceProjection(
-      candidateTrackCount: trackInfos.length,
-      candidateViewportWidth: candidateViewportWidth,
-      candidateViewportHeight: candidateViewportHeight,
-      candidateLayout: baseLayout,
-    )) {
+    if (!_canUseNativeCompositorViewportTransform) {
       ViewportProjectionDiagnostics.instance.record(
         'projectionPrepareSkippedIneligible',
       );
-      return false;
+      return;
     }
-    if (trackInfos.isEmpty) return false;
+    final entries = tracks();
+    if (entries.isEmpty) return;
     ViewportProjectionDiagnostics.instance.record('projectionPrepare');
-    final trackGeometry = trackInfos
-        .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry))
+    final trackGeometry = entries
+        .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
         .toList();
     final projection = computeViewportLayoutProjection(
-      viewportWidth: candidateViewportWidth,
-      viewportHeight: candidateViewportHeight,
+      viewportWidth: viewportWidth,
+      viewportHeight: viewportHeight,
       layout: baseLayout,
       tracks: trackGeometry,
     );
@@ -966,11 +884,9 @@ class MainWindowLayoutCoordinator {
     final invDisplaySizeY = List<double>.filled(4, 0.0);
     final viewOffsetUvX = List<double>.filled(4, 0.0);
     final viewOffsetUvY = List<double>.filled(4, 0.0);
-    final entriesByFileId = {
-      for (final entry in trackInfos) entry.fileId: entry,
-    };
+    final entriesByFileId = {for (final entry in entries) entry.fileId: entry};
 
-    for (final entry in trackInfos) {
+    for (final entry in entries) {
       final slot = entry.slot;
       if (slot < 0 || slot >= 4) continue;
       final trackProjection = projection.projectionForFileId(entry.fileId);
@@ -993,21 +909,23 @@ class MainWindowLayoutCoordinator {
         sourceOrder[index] = entry.slot;
       }
     }
-    if (sourceSlots.isEmpty) return false;
-    await controller.prepareNativeCompositorSourceCache(
-      sourceSlots: sourceSlots,
-      sourceOrder: sourceOrder,
-      mode: baseLayout.mode,
-      splitPos: baseLayout.splitPos,
-      activeTrackCount: trackInfos.length,
-      displayOffsetX: displayOffsetX,
-      displayOffsetY: displayOffsetY,
-      invDisplaySizeX: invDisplaySizeX,
-      invDisplaySizeY: invDisplaySizeY,
-      viewOffsetUvX: viewOffsetUvX,
-      viewOffsetUvY: viewOffsetUvY,
+    if (sourceSlots.isEmpty) return;
+    fireAndLog(
+      'prepare native compositor source cache',
+      controller.prepareNativeCompositorSourceCache(
+        sourceSlots: sourceSlots,
+        sourceOrder: sourceOrder,
+        mode: baseLayout.mode,
+        splitPos: baseLayout.splitPos,
+        activeTrackCount: trackCount(),
+        displayOffsetX: displayOffsetX,
+        displayOffsetY: displayOffsetY,
+        invDisplaySizeX: invDisplaySizeX,
+        invDisplaySizeY: invDisplaySizeY,
+        viewOffsetUvX: viewOffsetUvX,
+        viewOffsetUvY: viewOffsetUvY,
+      ),
     );
-    return true;
   }
 
   void refreshNativeCompositorOverlay() {

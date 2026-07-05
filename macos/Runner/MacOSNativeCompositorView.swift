@@ -13,6 +13,22 @@ struct MacOSNativeCompositorSourceTexture {
   let height: Int
 }
 
+struct MacOSNativeCompositorSourceProjection {
+  let layoutFlags: SIMD4<Float>
+  let order: SIMD4<Float>
+  let displayOffsetX: SIMD4<Float>
+  let displayOffsetY: SIMD4<Float>
+  let invDisplaySizeX: SIMD4<Float>
+  let invDisplaySizeY: SIMD4<Float>
+  let viewOffsetUvX: SIMD4<Float>
+  let viewOffsetUvY: SIMD4<Float>
+  let trace: MacOSCompositorLatencyTrace?
+}
+
+protocol MacOSNativeCompositorSourceReadyCompletionTarget: AnyObject {
+  func nativeCompositorSourceReadyCompletion(success: Bool)
+}
+
 private final class MacOSNativeCompositorWgpuCallbackContext {
   let view: MacOSNativeCompositorView
   let frame: Int
@@ -348,13 +364,15 @@ final class MacOSNativeCompositorView: NSView {
     }
   }
 
-  /// Publishes the latest live source buffers (from the source ring). Projection
-  /// is set separately via `setSourceProjection`; buffers and projection update
-  /// independently (buffers per frame, projection per layout change).
+  /// Publishes the latest live source buffers (from the source ring). Topology
+  /// changes may carry a projection; in that case the buffers and projection are
+  /// committed together after the Metal texture imports succeed.
   func setSourceBuffers(
     textures: [MacOSNativeCompositorSourceTexture],
     overlay: MacOSNativeOverlayPrimitives? = nil,
-    error: String = ""
+    error: String = "",
+    projection: MacOSNativeCompositorSourceProjection? = nil,
+    completionTarget: MacOSNativeCompositorSourceReadyCompletionTarget? = nil
   ) {
     compositorQueue.async { [weak self] in
       guard let self else { return }
@@ -371,13 +389,16 @@ final class MacOSNativeCompositorView: NSView {
         sourceReadyState = nil
         sourceReadyLastError = error
         markCompositorDirty()
+        completionTarget?.nativeCompositorSourceReadyCompletion(success: false)
         return
       }
       publishSourceReadyState(
         textures: textures,
         token: token,
         generation: sourceCacheGeneration,
-        error: error
+        error: error,
+        projection: projection,
+        completionTarget: completionTarget
       )
     }
   }
@@ -414,11 +435,7 @@ final class MacOSNativeCompositorView: NSView {
     }
   }
 
-  /// Updates the full-layout projection the compositor applies to the source
-  /// textures. Called by Dart on every layout change (pan/zoom/split/mode/resize)
-  /// with the current layout's per-slot projection params. This is the single
-  /// projection path — the source view always reflects the current layout.
-  func setSourceProjection(
+  func makeSourceProjection(
     mode: Int,
     splitPos: Double,
     activeTrackCount: Int,
@@ -430,7 +447,7 @@ final class MacOSNativeCompositorView: NSView {
     viewOffsetUvX: [Double],
     viewOffsetUvY: [Double],
     trace: MacOSCompositorLatencyTrace? = nil
-  ) {
+  ) -> MacOSNativeCompositorSourceProjection {
     let safeSplit = splitPos.isFinite ? Float(min(1.0, max(0.0, splitPos))) : 0.5
     let flags = SIMD4<Float>(0, Float(mode), safeSplit, Float(max(1, activeTrackCount)))
     let orderVec = SIMD4<Float>(
@@ -453,23 +470,59 @@ final class MacOSNativeCompositorView: NSView {
     let idsy = vec(invDisplaySizeY)
     let voux = vec(viewOffsetUvX)
     let vouy = vec(viewOffsetUvY)
+    return MacOSNativeCompositorSourceProjection(
+      layoutFlags: flags,
+      order: orderVec,
+      displayOffsetX: dox,
+      displayOffsetY: doy,
+      invDisplaySizeX: idsx,
+      invDisplaySizeY: idsy,
+      viewOffsetUvX: voux,
+      viewOffsetUvY: vouy,
+      trace: trace
+    )
+  }
+
+  /// Updates the full-layout projection the compositor applies to the source
+  /// textures. Called by Dart on every layout change (pan/zoom/split/mode/resize)
+  /// with the current layout's per-slot projection params. This is the single
+  /// projection path — the source view always reflects the current layout.
+  func setSourceProjection(
+    _ projection: MacOSNativeCompositorSourceProjection
+  ) {
     compositorQueue.async { [weak self] in
       guard let self else { return }
-      sourceLayoutFlags = flags
-      sourceOrder = orderVec
-      sourceProjDisplayOffsetX = dox
-      sourceProjDisplayOffsetY = doy
-      sourceProjInvDisplaySizeX = idsx
-      sourceProjInvDisplaySizeY = idsy
-      sourceProjViewOffsetUvX = voux
-      sourceProjViewOffsetUvY = vouy
-      sourceProjectionSet = true
-      sourceProjectionRate.record()
-      if let trace {
-        recordPendingCompositeTrace(trace)
-      }
+      applySourceProjectionOnCompositorQueue(projection)
       markCompositorDirty()
     }
+  }
+
+  func setSourceProjection(
+    mode: Int,
+    splitPos: Double,
+    activeTrackCount: Int,
+    order: [Int],
+    displayOffsetX: [Double],
+    displayOffsetY: [Double],
+    invDisplaySizeX: [Double],
+    invDisplaySizeY: [Double],
+    viewOffsetUvX: [Double],
+    viewOffsetUvY: [Double],
+    trace: MacOSCompositorLatencyTrace? = nil
+  ) {
+    setSourceProjection(makeSourceProjection(
+      mode: mode,
+      splitPos: splitPos,
+      activeTrackCount: activeTrackCount,
+      order: order,
+      displayOffsetX: displayOffsetX,
+      displayOffsetY: displayOffsetY,
+      invDisplaySizeX: invDisplaySizeX,
+      invDisplaySizeY: invDisplaySizeY,
+      viewOffsetUvX: viewOffsetUvX,
+      viewOffsetUvY: viewOffsetUvY,
+      trace: trace
+    ))
   }
 
   func diagnostics() -> [String: Any] {
@@ -576,6 +629,7 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorViewportTransformTranslateXX1000"] = 0
     result["nativeCompositorViewportTransformTranslateYX1000"] = 0
     result["nativeCompositorSourceProjectionEnabled"] = sourceProjectionSet
+    result["nativeCompositorSourceProjectionTrackCount"] = Int(sourceLayoutFlags.w)
     result["nativeCompositorSourceCacheActive"] =
       sourceProjectionSet && sourceCacheTextureCount > 0
     result["nativeCompositorSourceCacheTextureCount"] = sourceCacheTextureCount
@@ -1007,6 +1061,24 @@ final class MacOSNativeCompositorView: NSView {
     displayLinkWarmUntilNs = DispatchTime.now().uptimeNanoseconds + Self.displayLinkWarmGraceNs
   }
 
+  private func applySourceProjectionOnCompositorQueue(
+    _ projection: MacOSNativeCompositorSourceProjection
+  ) {
+    sourceLayoutFlags = projection.layoutFlags
+    sourceOrder = projection.order
+    sourceProjDisplayOffsetX = projection.displayOffsetX
+    sourceProjDisplayOffsetY = projection.displayOffsetY
+    sourceProjInvDisplaySizeX = projection.invDisplaySizeX
+    sourceProjInvDisplaySizeY = projection.invDisplaySizeY
+    sourceProjViewOffsetUvX = projection.viewOffsetUvX
+    sourceProjViewOffsetUvY = projection.viewOffsetUvY
+    sourceProjectionSet = true
+    sourceProjectionRate.record()
+    if let trace = projection.trace {
+      recordPendingCompositeTrace(trace)
+    }
+  }
+
   private func requestVideoReadyPublishOnCompositorQueue(reason _: String) {
     guard let videoTexture else {
       videoReadyLastError = "no video texture"
@@ -1062,7 +1134,9 @@ final class MacOSNativeCompositorView: NSView {
     textures: [MacOSNativeCompositorSourceTexture],
     token: UInt64,
     generation: UInt64,
-    error: String
+    error: String,
+    projection: MacOSNativeCompositorSourceProjection?,
+    completionTarget: MacOSNativeCompositorSourceReadyCompletionTarget?
   ) {
     readyStateQueue.async { [weak self] in
       guard let self else { return }
@@ -1078,12 +1152,17 @@ final class MacOSNativeCompositorView: NSView {
             ? "source ready texture import failed"
             : error
           markCompositorDirty()
+          completionTarget?.nativeCompositorSourceReadyCompletion(success: false)
           return
+        }
+        if let projection {
+          applySourceProjectionOnCompositorQueue(projection)
         }
         sourceReadyState = state
         sourceReadyLastError = error
         producerSourcePublishRate.record()
         markCompositorDirty()
+        completionTarget?.nativeCompositorSourceReadyCompletion(success: true)
       }
     }
   }

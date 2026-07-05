@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../app_log.dart';
@@ -104,6 +104,11 @@ class MainWindowMediaCoordinator {
     if (_disposed) return Future<void>.value();
 
     final previous = _loadInFlight;
+    log.info(
+      '[MediaLoad] enqueue count=${paths.length} queued=${previous != null} '
+      'hasPlayer=${controller.hasPlayer} texture=${textureId()} '
+      'tracks=${trackManager.count}',
+    );
     late final Future<void> next;
     next =
         (previous == null
@@ -120,6 +125,11 @@ class MainWindowMediaCoordinator {
               if (identical(_loadInFlight, next)) {
                 _loadInFlight = null;
               }
+              log.info(
+                '[MediaLoad] complete count=${paths.length} '
+                'hasPlayer=${controller.hasPlayer} texture=${textureId()} '
+                'tracks=${trackManager.count}',
+              );
             });
     _loadInFlight = next;
     return next;
@@ -132,7 +142,12 @@ class MainWindowMediaCoordinator {
     final uniquePaths = await _filterDuplicateMedia(paths);
     if (!_alive || uniquePaths.isEmpty) return;
 
-    if (textureId() == null) {
+    log.info(
+      '[MediaLoad] begin unique=${uniquePaths.length} '
+      'hasPlayer=${controller.hasPlayer} texture=${textureId()} '
+      'tracks=${trackManager.count}',
+    );
+    if (!controller.hasPlayer || trackManager.isEmpty) {
       if (uniquePaths.length > TrackManager.maxTracks) {
         _rejectTrackLimit(requestedCount: uniquePaths.length);
         return;
@@ -145,20 +160,32 @@ class MainWindowMediaCoordinator {
         final initialHeight = layoutCoordinator.viewportHeight > 0
             ? layoutCoordinator.viewportHeight
             : 1080;
+        log.info(
+          '[MediaLoad] createPlayer start count=${uniquePaths.length} '
+          'size=${initialWidth}x$initialHeight',
+        );
         final res = await controller.createPlayer(
           uniquePaths,
           width: initialWidth,
           height: initialHeight,
           useHardwareDecode: playbackPreferences.useHardwareDecode,
         );
+        log.info(
+          '[MediaLoad] createPlayer native done texture=${res.textureId} '
+          'tracks=${res.tracks.length}',
+        );
         if (!_alive) return;
         setTextureId(res.textureId);
         trackManager.setTracks(res.tracks);
+        log.info('[MediaLoad] createPlayer tracks committed');
         await _syncDefaultAudioPolicy(res.tracks);
+        log.info('[MediaLoad] createPlayer audio policy synced');
         if (!_alive) return;
         await _applyInitialPtsOffsets(res.tracks);
+        log.info('[MediaLoad] createPlayer pts offsets applied');
         if (!_alive) return;
         final nativeLayout = await controller.getLayout();
+        log.info('[MediaLoad] createPlayer layout fetched');
         if (!_alive) return;
         setLayout(
           nativeLayout.copyWith(
@@ -169,17 +196,22 @@ class MainWindowMediaCoordinator {
         );
         layoutCoordinator.markLayoutDirty();
         lifecycle.applyStartupLoopRangeIfReady();
-        await WidgetsBinding.instance.endOfFrame;
         if (!_alive) return;
         if (layoutCoordinator.viewportWidth > 0 &&
             layoutCoordinator.viewportHeight > 0) {
+          log.info(
+            '[MediaLoad] createPlayer resize start '
+            '${layoutCoordinator.viewportWidth}x${layoutCoordinator.viewportHeight}',
+          );
           await controller.resize(
             layoutCoordinator.viewportWidth,
             layoutCoordinator.viewportHeight,
           );
+          log.info('[MediaLoad] createPlayer resize done');
         }
         if (!_alive) return;
         setViewportState(const ViewportDisplayState.active());
+        log.info('[MediaLoad] createPlayer active');
       } catch (e) {
         log.severe("createPlayer failed: $e");
         if (_alive) {
@@ -198,22 +230,35 @@ class MainWindowMediaCoordinator {
         if (!_alive) return;
         try {
           final previousTrackCount = trackManager.count;
+          log.info(
+            '[MediaLoad] addTrack start previousTracks=$previousTrackCount '
+            'path=$path',
+          );
           final track = await controller.addTrack(
             path,
             useHardwareDecode: playbackPreferences.useHardwareDecode,
+          );
+          log.info(
+            '[MediaLoad] addTrack native done fileId=${track.fileId} '
+            'slot=${track.slot}',
           );
           if (!_alive) return;
           await layoutCoordinator.preemptTimelineTrackCountChange(
             previousCount: previousTrackCount,
             nextCount: previousTrackCount + 1,
           );
+          log.info('[MediaLoad] addTrack preempt resize done');
           if (!_alive) return;
           trackManager.addTrack(track);
+          log.info('[MediaLoad] addTrack track model committed');
           await _syncDefaultAudioPolicy([track]);
+          log.info('[MediaLoad] addTrack audio policy synced');
           if (!_alive) return;
           await _applyInitialPtsOffsets([track]);
+          log.info('[MediaLoad] addTrack pts offsets applied');
           if (!_alive) return;
           lifecycle.applyStartupLoopRangeIfReady();
+          log.info('[MediaLoad] addTrack done fileId=${track.fileId}');
         } catch (e) {
           log.severe("addTrack failed: $e");
         }
@@ -227,7 +272,7 @@ class MainWindowMediaCoordinator {
         'Requested $requestedCount.';
     log.warning(message);
     onMediaLoadRejected?.call(message);
-    if (textureId() == null) {
+    if (!controller.hasPlayer) {
       setViewportState(ViewportDisplayState.error(message));
     }
   }
@@ -261,7 +306,7 @@ class MainWindowMediaCoordinator {
       await loadMediaPaths([playableInput]);
     } catch (e) {
       log.severe("SSH remote media failed: $e");
-      if (_alive && textureId() == null) {
+      if (_alive && !controller.hasPlayer) {
         setViewportState(ViewportDisplayState.error('Failed to load: $e'));
       }
       rethrow;

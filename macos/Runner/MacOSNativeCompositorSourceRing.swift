@@ -1,6 +1,10 @@
 import CoreVideo
 import Foundation
 
+protocol MacOSNativeCompositorSourceRingDelegate: AnyObject {
+  func sourceRingInitialPublishCompleted(signature: String, success: Bool)
+}
+
 /// Per-track projection metadata + dimensions for a source-cache subscription.
 /// Parsed by `MacOSVideoRendererBridge` from the Dart `prepareNativeCompositorSourceCache`
 /// arguments and handed to the ring, which owns allocation and baking.
@@ -32,7 +36,7 @@ struct MacOSCompositorSourceTrackDescriptor {
 /// freshly-baked published buffer each frame. Triple-buffering plus the ring
 /// holding strong refs means the compositor never reads a buffer the ring is
 /// mid-writing and buffers are never freed mid-read.
-final class MacOSNativeCompositorSourceRing {
+final class MacOSNativeCompositorSourceRing: MacOSNativeCompositorSourceReadyCompletionTarget {
   private struct TrackRing {
     let slot: Int
     let fileId: Int
@@ -56,6 +60,7 @@ final class MacOSNativeCompositorSourceRing {
   private static let ringBudgetBytes = 384 * 1024 * 1024
 
   private weak var compositor: MacOSNativeCompositorView?
+  weak var delegate: MacOSNativeCompositorSourceRingDelegate?
   private let ringQueue = DispatchQueue(
     label: "dev.nakiha.voidplayer.macos.source-ring",
     qos: .userInteractive
@@ -69,6 +74,8 @@ final class MacOSNativeCompositorSourceRing {
   private var baking = false
   private var pending = false
   private var hasPublished = false
+  private var pendingInitialProjection: MacOSNativeCompositorSourceProjection?
+  private var pendingInitialSignature = ""
   private var depth = MacOSNativeCompositorSourceRing.ringDepth
   private let refreshRequestRate = MacOSRateWindow()
   private let bakeRate = MacOSRateWindow()
@@ -96,8 +103,12 @@ final class MacOSNativeCompositorSourceRing {
   private var publishedPtsLargeStepCount = 0
   private var publishedPtsRegressionCount = 0
 
-  init(compositor: MacOSNativeCompositorView) {
+  init(
+    compositor: MacOSNativeCompositorView,
+    delegate: MacOSNativeCompositorSourceRingDelegate? = nil
+  ) {
     self.compositor = compositor
+    self.delegate = delegate
   }
 
   /// Sets up the ring for an interaction. Allocates per-track buffers, bakes the
@@ -107,15 +118,50 @@ final class MacOSNativeCompositorSourceRing {
     player: MacOSNativePlayerSession,
     descriptors: [MacOSCompositorSourceTrackDescriptor],
     order: [Int],
-    edrOutputEnabled: Bool
+    edrOutputEnabled: Bool,
+    projection: MacOSNativeCompositorSourceProjection? = nil,
+    topologySignature: String = ""
   ) {
     ringQueue.async { [weak self] in
       self?.subscribeOnQueue(
         player: player,
         descriptors: descriptors,
         order: order,
-        edrOutputEnabled: edrOutputEnabled
+        edrOutputEnabled: edrOutputEnabled,
+        projection: projection,
+        topologySignature: topologySignature
       )
+    }
+  }
+
+  func nativeCompositorSourceReadyCompletion(success: Bool) {
+    ringQueue.async { [weak self] in
+      guard let self else { return }
+      let signature = self.pendingInitialSignature
+      guard !signature.isEmpty else {
+        if success {
+          self.hasPublished = true
+        }
+        return
+      }
+      if success {
+        self.hasPublished = true
+      }
+      self.pendingInitialProjection = nil
+      self.pendingInitialSignature = ""
+      DispatchQueue.main.async { [weak self] in
+        self?.delegate?.sourceRingInitialPublishCompleted(
+          signature: signature,
+          success: success
+        )
+      }
+    }
+  }
+
+  func updatePendingInitialProjection(_ projection: MacOSNativeCompositorSourceProjection) {
+    ringQueue.async { [weak self] in
+      guard let self, self.live, !self.hasPublished else { return }
+      self.pendingInitialProjection = projection
     }
   }
 
@@ -144,7 +190,11 @@ final class MacOSNativeCompositorSourceRing {
       self.baking = true
       repeat {
         self.pending = false
-        self.bakeAndPublishOnQueue(player: player, requestNs: requestedNs)
+        self.bakeAndPublishOnQueue(
+          player: player,
+          requestNs: requestedNs,
+          projection: self.hasPublished ? nil : self.pendingInitialProjection
+        )
       } while self.pending && self.live
       self.baking = false
     }
@@ -158,6 +208,8 @@ final class MacOSNativeCompositorSourceRing {
       self.rings = []
       self.order = []
       self.bakeTarget = nil
+      self.pendingInitialProjection = nil
+      self.pendingInitialSignature = ""
       self.compositor?.clearSource(reason: reason)
     }
   }
@@ -209,14 +261,19 @@ final class MacOSNativeCompositorSourceRing {
     player: MacOSNativePlayerSession,
     descriptors: [MacOSCompositorSourceTrackDescriptor],
     order: [Int],
-    edrOutputEnabled: Bool
+    edrOutputEnabled: Bool,
+    projection: MacOSNativeCompositorSourceProjection?,
+    topologySignature: String
   ) {
     live = false
     rings = []
     self.order = order
+    pendingInitialProjection = projection
+    pendingInitialSignature = topologySignature
 
     guard !descriptors.isEmpty else {
       compositor?.setSourceBuffers(textures: [], overlay: .empty, error: "no source tracks")
+      completeInitialPublishOnQueue(success: false)
       return
     }
 
@@ -233,6 +290,7 @@ final class MacOSNativeCompositorSourceRing {
     }
     if perFrameBytes <= 0 {
       compositor?.setSourceBuffers(textures: [], overlay: .empty, error: "no source cache targets")
+      completeInitialPublishOnQueue(success: false)
       return
     }
     var chosenDepth = Self.ringDepth
@@ -245,6 +303,7 @@ final class MacOSNativeCompositorSourceRing {
         overlay: .empty,
         error: "source cache memory cap exceeded"
       )
+      completeInitialPublishOnQueue(success: false)
       return
     }
     depth = chosenDepth
@@ -280,6 +339,7 @@ final class MacOSNativeCompositorSourceRing {
           overlay: .empty,
           error: "failed to allocate source cache pixel buffer"
         )
+        completeInitialPublishOnQueue(success: false)
         return
       }
       maxWidth = max(maxWidth, d.width)
@@ -303,6 +363,7 @@ final class MacOSNativeCompositorSourceRing {
 
     guard !built.isEmpty else {
       compositor?.setSourceBuffers(textures: [], overlay: .empty, error: "no source cache targets")
+      completeInitialPublishOnQueue(success: false)
       return
     }
 
@@ -315,7 +376,11 @@ final class MacOSNativeCompositorSourceRing {
     hasPublished = false
 
     // Initial bake into buffer 0 of each ring; publishes on success.
-    bakeAndPublishOnQueue(player: player, requestNs: nil)
+    bakeAndPublishOnQueue(
+      player: player,
+      requestNs: nil,
+      projection: pendingInitialProjection
+    )
   }
 
   /// Bakes the current frame into each track's next write buffer and, if any
@@ -324,9 +389,11 @@ final class MacOSNativeCompositorSourceRing {
   /// is fully written before it is published.
   private func bakeAndPublishOnQueue(
     player: MacOSNativePlayerSession,
-    requestNs: UInt64?
+    requestNs: UInt64?,
+    projection: MacOSNativeCompositorSourceProjection? = nil
   ) {
     guard live, let bakeTarget, !rings.isEmpty else {
+      completeInitialPublishOnQueue(success: false)
       return
     }
     let startNs = DispatchTime.now().uptimeNanoseconds
@@ -412,7 +479,6 @@ final class MacOSNativeCompositorSourceRing {
         height: ring.height
       ))
     }
-    hasPublished = true
     publishCount += 1
     let publishNs = DispatchTime.now().uptimeNanoseconds
     publishRate.record(nowNs: publishNs)
@@ -438,13 +504,31 @@ final class MacOSNativeCompositorSourceRing {
     }
     compositor?.setSourceBuffers(
       textures: published,
-      overlay: player.currentOverlayPrimitives()
+      overlay: player.currentOverlayPrimitives(),
+      projection: projection,
+      completionTarget: pendingInitialSignature.isEmpty ? nil : self
     )
+    if pendingInitialSignature.isEmpty {
+      hasPublished = true
+    }
   }
 
   private func requiredMask(for count: Int) -> UInt64 {
     guard count > 0 else { return 0 }
     let clamped = min(count, 63)
     return (UInt64(1) << UInt64(clamped)) - 1
+  }
+
+  private func completeInitialPublishOnQueue(success: Bool) {
+    let signature = pendingInitialSignature
+    guard !signature.isEmpty else { return }
+    pendingInitialProjection = nil
+    pendingInitialSignature = ""
+    DispatchQueue.main.async { [weak self] in
+      self?.delegate?.sourceRingInitialPublishCompleted(
+        signature: signature,
+        success: success
+      )
+    }
   }
 }

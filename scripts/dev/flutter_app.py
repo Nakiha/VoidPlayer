@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .flutter_toolchain import (
     flutter_cmd,
+    flutter_env,
     ensure_macos_local_engine_for_mode,
     local_engine_args_for_mode,
     local_engine_name_for_mode,
@@ -49,6 +50,10 @@ def _unsupported_on_current_platform(command: str, replacement: str | None = Non
 
 def _flutter_cmd(*args: str, local_engine: bool = False) -> list[str]:
     return flutter_cmd(*args, local_engine=local_engine)
+
+
+def _run_flutter(cmd: list[str]) -> None:
+    run(cmd, cwd=str(ROOT), env=flutter_env())
 
 
 def _macos_local_engine_args(debug: bool) -> list[str]:
@@ -159,7 +164,7 @@ def flutter_build(debug: bool) -> None:
         cmd.extend(_windows_local_engine_args(debug))
     cmd.append("--debug" if debug else "--release")
 
-    run(cmd, cwd=str(ROOT))
+    _run_flutter(cmd)
     marker = _windows_engine_marker_path(debug)
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(
@@ -182,7 +187,7 @@ def flutter_build_macos(debug: bool) -> None:
     cmd.extend(_macos_local_engine_args(debug))
     cmd.append("--debug" if debug else "--release")
 
-    run(cmd, cwd=str(ROOT))
+    _run_flutter(cmd)
     _install_macos_ffmpeg_analyzer(macos_app_bundle_path(debug))
     _codesign_macos_app_bundle(macos_app_bundle_path(debug))
     _register_macos_app_bundle(macos_app_bundle_path(debug))
@@ -281,10 +286,10 @@ def _codesign_macos_app_bundle(app_bundle: Path) -> None:
 def flutter_unit_test() -> None:
     """Run Flutter/Dart unit tests that do not launch the Windows app."""
     header("Analyze Flutter")
-    run(_flutter_cmd("analyze"), cwd=str(ROOT))
+    _run_flutter(_flutter_cmd("analyze"))
 
     header("Test Flutter unit")
-    run(_flutter_cmd("test", "test"), cwd=str(ROOT))
+    _run_flutter(_flutter_cmd("test", "test"))
 
 
 def _is_macos_launch_source(path: Path) -> bool:
@@ -409,7 +414,7 @@ def cmd_run(args) -> None:
         flutter_args.extend(["--", f"--log-level={args.log_level}"])
 
     header(f"Run Flutter ({'debug' if debug else 'release'})")
-    run(flutter_args, cwd=str(ROOT))
+    _run_flutter(flutter_args)
 
 
 def cmd_launch(args) -> None:
@@ -543,22 +548,26 @@ def cmd_ui_test(args) -> None:
         sys.exit(1)
 
 
-def _script_app_args(script_path: Path) -> list[str]:
-    """Read app startup arguments declared by CSV test headers."""
+def _script_headers(script_path: Path) -> tuple[list[str], dict[str, str]]:
+    """Read app startup arguments and environment declared by CSV test headers."""
     app_args: list[str] = []
+    environment: dict[str, str] = {}
     try:
         with script_path.open("r", encoding="utf-8-sig", newline="") as file:
             for row in csv.reader(file):
                 if not row:
                     continue
                 key = row[0].strip().upper()
-                if key not in ("@APP_ARG", "@APP_ARGS"):
-                    continue
-                app_args.extend(value.strip() for value in row[1:] if value.strip())
+                if key in ("@APP_ARG", "@APP_ARGS"):
+                    app_args.extend(value.strip() for value in row[1:] if value.strip())
+                elif key == "@ENV" and len(row) >= 3:
+                    name = row[1].strip()
+                    if name:
+                        environment[name] = row[2].strip()
     except OSError as exc:
         raise RuntimeError(f"cannot read UI test headers from {script_path}: {exc}") from exc
 
-    return app_args
+    return app_args, environment
 
 
 def _cmd_ui_test(args) -> None:
@@ -584,7 +593,8 @@ def _cmd_ui_test(args) -> None:
     total = len(script_paths)
     for index, script_path in enumerate(script_paths, start=1):
         cmd = [str(exe), "--test-script", str(script_path)]
-        cmd.extend(_script_app_args(script_path))
+        app_args, script_env = _script_headers(script_path)
+        cmd.extend(app_args)
         if not args.visible:
             cmd.append("--silent-ui-test")
         if args.log_level:
@@ -592,7 +602,7 @@ def _cmd_ui_test(args) -> None:
 
         label = script_path.relative_to(ROOT) if script_path.is_relative_to(ROOT) else script_path
         header(f"UI test {index}/{total} {label}")
-        result, ax_tree_error = _run_ui_test_process(cmd)
+        result, ax_tree_error = _run_ui_test_process(cmd, script_env)
         if ax_tree_error:
             print(f"\nUI test failed: Flutter AXTree error detected: {label}")
             sys.exit(1)
@@ -982,13 +992,20 @@ def _macos_sandbox_media_path(media_path: str, container_media_dir: Path) -> str
     return str(dest)
 
 
-def _run_ui_test_process(cmd: list[str]) -> tuple[int, bool]:
+def _run_ui_test_process(
+    cmd: list[str],
+    script_env: dict[str, str] | None = None,
+) -> tuple[int, bool]:
     ax_tree_error = False
     test_runner_failed = False
     test_runner_quit = False
+    env = os.environ.copy()
+    if script_env:
+        env.update(script_env)
     process = subprocess.Popen(
         cmd,
         cwd=str(ROOT),
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

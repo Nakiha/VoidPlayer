@@ -3,6 +3,7 @@
 
 #include "renderer/color/color_reference.h"
 #include "renderer/frame/frame_storage.h"
+#include "renderer/render/presentation_backend_types.h"
 #include "renderer/track/track_info.h"
 #include "windows/presentation/windows_presentation_policy.h"
 
@@ -19,6 +20,17 @@ TEST_CASE("Windows presentation policy defaults to native compositor Auto",
     REQUIRE(empty.output_target == vr::ColorOutputTarget::kSDRToneMappedBT709);
     REQUIRE_FALSE(empty.fp16_scrgb_requested);
     REQUIRE(empty.native_compositor_requested);
+}
+
+TEST_CASE("Presentation diagnostics default to no Flutter UI composition",
+          "[windows_presentation][diagnostics]") {
+    const vr::PresentationBackendDiagnostics diagnostics;
+
+    REQUIRE(diagnostics.external_flutter_surface_color_domain == "none");
+    REQUIRE(diagnostics.external_flutter_surface_composition_owner == "none");
+    REQUIRE(diagnostics.external_flutter_surface_target_domain == "none");
+    REQUIRE_FALSE(
+        diagnostics.external_flutter_surface_composited_into_hdr_target);
 }
 
 TEST_CASE("Windows presentation policy maps explicit SDR to native compositor",
@@ -64,7 +76,7 @@ TEST_CASE("Windows presentation policy fail-closes legacy texture modes",
     REQUIRE_FALSE(unknown.supported);
 }
 
-TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
+TEST_CASE("Windows Auto keeps HDR tracks on SDR until UI composition is owned",
           "[windows_presentation][windows_display]") {
     vr::WindowsDisplayProbeResult display;
     display.output_resolved = true;
@@ -72,11 +84,15 @@ TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
     display.hdr_active = true;
     display.matches_presentation_adapter = true;
 
-    const auto promoted =
+    const auto fallback =
         vr::resolve_windows_presentation_policy("auto", true, display);
-    REQUIRE(promoted.mode == "native-compositor-scrgb");
-    REQUIRE(promoted.reason == "auto-hdr-track");
-    REQUIRE(promoted.hdr_output_requested);
+    REQUIRE(fallback.mode == "native-compositor-sdr");
+    REQUIRE(fallback.desired_mode == "native-compositor-scrgb");
+    REQUIRE(fallback.reason == "auto-hdr-ui-composition-unsupported");
+    REQUIRE(fallback.fallback_reason == "hdr-ui-composition-unsupported");
+    REQUIRE(fallback.output_target == vr::ColorOutputTarget::kSDRToneMappedBT709);
+    REQUIRE_FALSE(fallback.fp16_scrgb_requested);
+    REQUIRE_FALSE(fallback.hdr_output_requested);
 
     display.hdr_active = false;
     const auto unavailable =
@@ -92,13 +108,14 @@ TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
     display.matches_presentation_adapter = false;
     const auto mismatch =
         vr::resolve_windows_presentation_policy("auto", true, display);
-    REQUIRE(mismatch.mode == "native-compositor-scrgb");
-    REQUIRE(mismatch.reason == "auto-hdr-cross-adapter");
-    REQUIRE(mismatch.output_target == vr::ColorOutputTarget::kWindowsLinearScRGB);
-    REQUIRE(mismatch.fp16_scrgb_requested);
-    REQUIRE(mismatch.hdr_output_requested);
-    REQUIRE(mismatch.cross_adapter_required);
-    REQUIRE(mismatch.cross_adapter_migration_requested);
+    REQUIRE(mismatch.mode == "native-compositor-sdr");
+    REQUIRE(mismatch.desired_mode == "native-compositor-scrgb");
+    REQUIRE(mismatch.reason == "auto-hdr-ui-composition-unsupported");
+    REQUIRE(mismatch.fallback_reason == "hdr-ui-composition-unsupported");
+    REQUIRE_FALSE(mismatch.fp16_scrgb_requested);
+    REQUIRE_FALSE(mismatch.hdr_output_requested);
+    REQUIRE_FALSE(mismatch.cross_adapter_required);
+    REQUIRE_FALSE(mismatch.cross_adapter_migration_requested);
 
     display.output_resolved = false;
     const auto transient =

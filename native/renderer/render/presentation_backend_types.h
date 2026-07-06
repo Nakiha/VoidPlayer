@@ -174,6 +174,10 @@ struct PresentationBackendDiagnostics {
     uint64_t external_flutter_surface_wait_count = 0;
     uint64_t external_flutter_surface_wait_failure_count = 0;
     std::string external_flutter_surface_last_error = "none";
+    std::string external_flutter_surface_color_domain = "none";
+    std::string external_flutter_surface_composition_owner = "none";
+    std::string external_flutter_surface_target_domain = "none";
+    bool external_flutter_surface_composited_into_hdr_target = false;
     bool overlay_layer_active = false;
     std::string overlay_layer_mode = "inactive";
     uint64_t overlay_layer_generation = 0;

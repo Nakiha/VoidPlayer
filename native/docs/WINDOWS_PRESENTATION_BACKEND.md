@@ -4,8 +4,10 @@ This document defines the Windows presentation contract. Shared renderer
 ownership and color rules remain in
 [ARCHITECTURE.md](ARCHITECTURE.md) and [COLOR_PIPELINE.md](COLOR_PIPELINE.md).
 
-The target architecture is runner-owned presentation with wgpu-owned
-composition:
+The current Windows route is runner-owned presentation with wgpu-owned
+composition. SDR is the product route; forced scRGB is retained as a diagnostic
+route until Flutter's SDR UI can remain system-managed while HDR video/source
+content is presented separately:
 
 ```text
 Flutter engine fork
@@ -14,7 +16,7 @@ Windows runner / platform backend
   -> D3D12 shared texture/fence/generation acquisition
   -> HWND, DirectComposition/DXGI target, HDR/SDR policy, device recovery
 WgpuD3D12PresentationBackend / Rust WgpuRenderCore
-  -> imports Flutter UI + video/source textures
+  -> imports Flutter UI + video/source textures on SDR or diagnostic scRGB paths
   -> performs color/layout/split/pan/zoom/overlay/Flutter composition
   -> outputs the final target
 Windows runner / platform backend
@@ -39,19 +41,19 @@ VoidPlayer Flutter engine:
 shared RendererDrawSnapshot
   -> WgpuD3D12PresentationBackend / Rust WgpuRenderCore
   -> D3D12 video/source imports + D3D12 Flutter UI surface import
-  -> final BGRA8 SDR or FP16 scRGB output resource
+  -> final BGRA8 SDR output resource
   -> WindowsNativeCompositor present bridge
   -> DComp/DXGI presentation to the Flutter HWND
 ```
 
 SDR-only sessions use `native-compositor-sdr`. A session containing an active
-PQ/HLG track promotes to `native-compositor-scrgb` when the selected DXGI output
-explicitly reports HDR. Matching adapters stay on the producer device. Adapter
-mismatch requests an output-device migration; if cross-adapter BGRA transport is
-not available the policy falls back to native SDR, and if FP16 transport is not
-available the migrated output also stays SDR. The runner obtains Flutter's DXGI
-adapter and the resolved output adapter and passes both into the native
-compositor. Hosted CI may
+PQ/HLG track on an HDR output keeps `windowsPresentationDesiredMode` at
+`native-compositor-scrgb`, but currently stays on `native-compositor-sdr` with
+`windowsPresentationFallbackReason=hdr-ui-composition-unsupported`. This avoids
+shipping the known-wrong path where the full Flutter SDR UI is shader-composited
+into an HDR/scRGB target instead of receiving the system-managed SDR role. The
+runner obtains Flutter's DXGI adapter and the resolved output adapter and passes
+both into the native compositor. Hosted CI may
 explicitly enable
 `VOIDPLAYER_ALLOW_D3D11_HEADLESS_WARP_FALLBACK=1`; that is launch/contract
 coverage, not release evidence for a desktop GPU.
@@ -170,8 +172,10 @@ shared scheduler.
 
 - Auto SDR presents `B8G8R8A8_UNORM` in
   `RGB_FULL_G22_NONE_P709`.
-- Auto HDR presents `R16G16B16A16_FLOAT`, linear BT.709 scRGB, in
-  `RGB_FULL_G10_NONE_P709`.
+- Auto HDR currently falls back to the Auto SDR target and records
+  `hdr-ui-composition-unsupported`; forced `native-compositor-scrgb` presents
+  `R16G16B16A16_FLOAT`, linear BT.709 scRGB, in
+  `RGB_FULL_G10_NONE_P709` for diagnostics.
 - The wgpu render core keeps FP16 video/source resources as the common
   compositor input.
 - SDR final composition samples the source-rerendered BGRA compatibility
@@ -183,9 +187,11 @@ shared scheduler.
 - PQ is decoded to absolute nits then divided by 80. HLG keeps the shared
   reference policy and is converted to the same 80-nit scale.
 - Valid FP16 values above `1.0` and below `0.0` are not clamped.
-- Flutter export is BGRA premultiplied sRGB. The wgpu final composition shader
-  recovers straight RGB, decodes sRGB to linear, re-premultiplies, applies
-  `SDRWhiteLevel / 80`, and performs standard premultiplied source-over.
+- Flutter export is BGRA premultiplied sRGB. On the forced scRGB diagnostic
+  path, the wgpu final composition shader recovers straight RGB, decodes sRGB
+  to linear, re-premultiplies, applies `SDRWhiteLevel / 80`, and performs
+  standard premultiplied source-over. This is not yet the Windows Auto HDR
+  product path because it bypasses system-managed SDR UI composition.
 - CPU fallback packages are BGRA byte streams. The Windows upload texture is
   also `B8G8R8A8_UNORM`; treating that storage as RGBA swaps red and blue.
 - NV12, planar YUV420, and P010 are sampled by the shared HLSL color pipeline.
@@ -333,9 +339,17 @@ method `debugSimulateWindowsDeviceLoss`. Valid targets are `presentation`,
 `compositor`, `transport`, and `source-cache`. Synthetic injection is gate
 evidence; real TDR/device-reset validation is supplemental local evidence.
 
-HDR target creation or Present failure first attempts the native SDR target.
-Unknown requests, missing engine export, or SDR compositor failure fail closed
-and expose the selected request, actual mode, transition, and failure reason.
+Auto HDR currently keeps the product route on the native SDR target when the
+session contains HDR media. Diagnostics preserve the intended
+`windowsPresentationDesiredMode=native-compositor-scrgb`, but report
+`windowsPresentationMode=native-compositor-sdr` and
+`windowsPresentationFallbackReason=hdr-ui-composition-unsupported`. The forced
+`native-compositor-scrgb` mode remains a diagnostic path until Windows can keep
+Flutter's SDR UI as a system-managed surface while presenting HDR video/source
+content. HDR target creation or Present failure first attempts the native SDR
+target. Unknown requests, missing engine export, or SDR compositor failure fail
+closed and expose the selected request, actual mode, transition, and failure
+reason.
 
 ## High Refresh Interaction Diagnostics
 

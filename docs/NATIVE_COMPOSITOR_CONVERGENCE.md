@@ -109,6 +109,35 @@ native compositor 每次 compose 只读取 ready state：
 没有任何可用状态的情况，display tick 不应 blank、不应等待 decode/source bake/player
 lock，也不应调用旧 frame refresh。
 
+### Color Domain Ownership
+
+每个 compositor input 必须声明自己的颜色域和合成归属：
+
+- video/source texture: SDR BT.709、PQ/HLG HDR、platform linear scRGB/EDR 等。
+- Flutter UI export surface: SDR sRGB premultiplied alpha，除非 Flutter engine 明确
+  导出其它颜色域。
+- native overlay / analysis overlay: SDR UI domain 或显式 video domain，不能隐式继承
+  present target。
+
+HDR/EDR target active 时，compositor 必须可诊断 Flutter UI 的处理方式：
+
+- `system-managed`: Flutter UI 保持独立 SDR surface/layer，由 OS window compositor
+  完成 SDR/HDR composition 和 SDR white/system calibration。
+- `native-shader`: Flutter UI 被 native compositor shader sample 后写入 HDR/EDR target；
+  此时应用必须承担 SDR reference white、transfer、premultiplied alpha 和 clamp 行为的
+  验证责任。
+
+Windows 的长期目标应优先让 HDR video/source 与 SDR Flutter UI 作为独立 DComp visual
+参与系统合成；如果某阶段仍使用 `native-shader` 路径，必须通过 diagnostics 明确暴露
+`FlutterSurfaceColorDomain`、`FlutterSurfaceCompositionOwner`、`FlutterSurfaceTargetDomain`
+和是否 `CompositedIntoHDRTarget`。macOS EDR 路径当前属于 app-owned compositor，
+因此必须继续保留 SDR UI/background/reference-white 的确定性验证。
+
+当前 Windows Auto 产品策略在缺少 system-managed SDR Flutter UI + HDR video visual
+拓扑前，必须把 HDR track on HDR output 降级到 native SDR，并用
+`hdr-ui-composition-unsupported` 诊断说明。强制 `native-compositor-scrgb` 只能作为
+诊断/实验路径保留，不能作为 Auto HDR 正确性证据。
+
 ### Single Compose Entry
 
 唯一允许提交 retained/native composite 的入口是平台 display cadence：
@@ -228,6 +257,8 @@ questions:
 | Is source ready complete? | `sourceTopologyRevision`, `sourceRequiredMask`, `sourceDrawnMask`, `sourceMissingMask` |
 | Is source publish consumed? | `sourcePublishConsumeRatioX1000` |
 | Is Flutter UI consumed? | `flutterPublishAcquireRatioX1000`, `flutterAcquireConsumeRatioX1000` |
+| Who owns Flutter UI SDR/HDR composition? | `flutterSurfaceColorDomain`, `flutterSurfaceCompositionOwner`, `flutterSurfaceTargetDomain`, `flutterSurfaceCompositedIntoHDRTarget` |
+| Where did SDR white come from? | `sdrWhiteLevelSource`, `sdrWhiteLevelMilliNits`, `sdrWhiteScaleX1000` |
 
 Platform-prefixed fields such as `windowsDComp*` and `rendererOwned*` can remain,
 but tests should prefer cross-platform aliases once they exist.
@@ -240,6 +271,8 @@ but tests should prefer cross-platform aliases once they exist.
 - Do not reintroduce old FlutterTexture/ring presentation as a normal native
   compositor fallback.
 - Do not make runner compute source geometry from platform window/surface size.
+- Do not treat thin runner as permission to bake SDR Flutter UI into an HDR/EDR
+  video target without an explicit color-domain contract and diagnostics.
 - Do not force Windows and macOS to share platform glue code where APIs differ
   naturally.
 
@@ -251,6 +284,8 @@ For any future native compositor PR:
 - Can every producer path be described as latest ready state plus dirty bit?
 - Can display tick compose without waiting on decode, source bake, Flutter export,
   player locks, or old frame refresh?
+- Does every input declare its color domain, and is Flutter UI composition
+  system-managed or explicitly app-mapped with validation?
 - Are seek and topology changes transactional rather than half-published?
 - Are diagnostics sufficient to identify producer, acquire, consume, compose, and
   present stages?

@@ -282,6 +282,12 @@ def flutter_cmd(*args: str, local_engine: bool = False) -> list[str]:
     return cmd
 
 
+def flutter_env() -> dict[str, str]:
+    env = os.environ.copy()
+    _sanitize_empty_flutter_mirror_env(env)
+    return env
+
+
 def ensure_flutter_toolchain() -> None:
     if os.environ.get("VOIDPLAYER_FLUTTER_TOOLCHAIN_CHECK") == "0":
         print(
@@ -432,13 +438,7 @@ def _print_ffmpeg_toolchain_doctor() -> None:
     for platform in ("windows-x64", "macos-arm64"):
         artifact = artifacts.get(platform, {})
         root = default_install / platform
-        header_path = root / "include" / "libavcodec" / "avcodec.h"
-        manifest_path = root / "voidplayer-ffmpeg-manifest.json"
-        status = (
-            "ready"
-            if header_path.is_file() and manifest_path.is_file()
-            else "missing"
-        )
+        status = _ffmpeg_toolchain_status(root)
         print(f"  {platform}: {artifact.get('name', '<unknown>')} ({status})")
         print(f"    {root}")
 
@@ -491,7 +491,7 @@ def bootstrap_flutter_toolchain() -> None:
     run(["git", "checkout", "--detach", lock.fork_commit], cwd=str(target))
 
     flutter = target / "bin" / _flutter_executable_name()
-    env = os.environ.copy()
+    env = flutter_env()
     env["VOIDPLAYER_FLUTTER_BIN"] = str(flutter)
     run([str(flutter), "--version"], cwd=str(ROOT), env=env)
     bootstrap_macos_local_engines(
@@ -504,6 +504,34 @@ def bootstrap_flutter_toolchain() -> None:
 
 def print_flutter_toolchain_lock() -> None:
     print(LOCK_PATH.read_text(encoding="utf-8"))
+
+
+def _sanitize_empty_flutter_mirror_env(env: dict[str, str]) -> None:
+    empty_names = [
+        name
+        for name in ("PUB_HOSTED_URL", "FLUTTER_STORAGE_BASE_URL")
+        if env.get(name) == ""
+    ]
+    for name in empty_names:
+        env.pop(name, None)
+    if empty_names:
+        print(
+            "Ignoring empty Flutter mirror environment variables: "
+            + ", ".join(empty_names)
+        )
+
+
+def _ffmpeg_toolchain_status(root: Path) -> str:
+    header_path = root / "include" / "libavcodec" / "avcodec.h"
+    manifest_paths = (
+        root / "voidplayer-ffmpeg-manifest.json",
+        root / "bin" / "voidplayer-ffmpeg-manifest.json",
+    )
+    if header_path.is_file() and any(path.is_file() for path in manifest_paths):
+        return "ready"
+    if root.exists():
+        return "incomplete"
+    return "missing"
 
 
 def _check_git_revision(

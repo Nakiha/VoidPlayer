@@ -1024,6 +1024,8 @@ void VideoRendererPlugin::CreatePlayer(
         resolved_white_nits);
     presentation_locked_display_generation_ =
         locked_display.generation;
+    presentation_locked_output_identity_ =
+        locked_display.probe.output_identity;
     presentation_locked_sdr_white_level_milli_nits_ =
         static_cast<int64_t>(
             std::llround(resolved_white_nits * 1000.0));
@@ -2781,30 +2783,48 @@ VideoRendererPlugin::RefreshPresentationPolicy(
     const bool white_changed =
         white_milli_nits !=
         presentation_locked_sdr_white_level_milli_nits_;
-    const bool display_changed =
+    const bool display_generation_changed =
         display.generation != presentation_locked_display_generation_;
-    if (policy_changed || white_changed || display_changed) {
+    const auto requested_output_target =
+        presentation_policy_.hdr_output_requested
+            ? WindowsNativeCompositor::OutputTarget::ScRGB
+            : WindowsNativeCompositor::OutputTarget::SDR;
+    const auto compositor = native_compositor_->diagnostics();
+    const char* requested_output_target_name =
+        requested_output_target == WindowsNativeCompositor::OutputTarget::ScRGB
+            ? "scrgb"
+            : "sdr";
+    const bool target_changed =
+        compositor.desired_output_target !=
+        requested_output_target_name;
+    const bool output_identity_changed =
+        display_generation_changed &&
+        display.probe.output_resolved &&
+        display.probe.output_identity !=
+            presentation_locked_output_identity_;
+    if (target_changed || white_changed || output_identity_changed) {
         Microsoft::WRL::ComPtr<IDXGIAdapter> output_adapter;
         if (!display_resolver_.OpenAdapterForProbe(
                 display.probe, &output_adapter)) {
             output_adapter = dxgi_adapter_;
         }
         native_compositor_->RequestOutputTarget(
-            presentation_policy_.hdr_output_requested
-                ? WindowsNativeCompositor::OutputTarget::ScRGB
-                : WindowsNativeCompositor::OutputTarget::SDR,
+            requested_output_target,
             output_adapter.Get(),
             white_nits,
             display.generation,
             presentation_policy_.reason);
+    }
+    if (policy_changed || white_changed || display_generation_changed) {
         const bool white_level_applied =
             player_->update_presentation_sdr_white_level(white_nits);
-        if (policy_changed || white_changed || display_changed ||
+        if (policy_changed || white_changed || display_generation_changed ||
             white_level_applied) {
             (void)player_->request_frame_refresh(
                 "windows-presentation-policy-refresh");
         }
         presentation_locked_display_generation_ = display.generation;
+        presentation_locked_output_identity_ = display.probe.output_identity;
         presentation_locked_sdr_white_level_milli_nits_ =
             white_milli_nits;
         presentation_sdr_white_level_status_ =
@@ -3345,11 +3365,30 @@ void VideoRendererPlugin::GetDiagnostics(
             "windowsPresentationLockedSDRWhiteLevelMilliNits")] =
             enc_i64(
                 presentation_locked_sdr_white_level_milli_nits_);
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationSDRWhiteLevelSource")] =
+            flutter::EncodableValue(presentation_sdr_white_level_status_);
         diagnostics[flutter::EncodableValue("windowsNativeCompositorFallbackReason")] =
             flutter::EncodableValue(compositor.fallback_reason);
         const auto backend =
             player_ ? player_->presentation_backend_diagnostics()
                     : vr::PresentationBackendDiagnostics{};
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationFlutterSurfaceColorDomain")] =
+            flutter::EncodableValue(
+                backend.external_flutter_surface_color_domain);
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationFlutterSurfaceCompositionOwner")] =
+            flutter::EncodableValue(
+                backend.external_flutter_surface_composition_owner);
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationFlutterSurfaceTargetDomain")] =
+            flutter::EncodableValue(
+                backend.external_flutter_surface_target_domain);
+        diagnostics[flutter::EncodableValue(
+            "windowsPresentationFlutterSurfaceCompositedIntoHDRTarget")] =
+            flutter::EncodableValue(
+                backend.external_flutter_surface_composited_into_hdr_target);
         diagnostics[flutter::EncodableValue(
             "nativeCompositorSourceProjectionEnabled")] =
             flutter::EncodableValue(compositor.source_projection_enabled);

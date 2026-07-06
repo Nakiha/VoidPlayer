@@ -8,11 +8,10 @@ selected platform presentation target.
 The historical production target is SDR BGRA/RGB for a Flutter texture. The
 macOS HDR exploration path adds a native compositor target that outputs extended
 linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows Auto presents
-SDR media through a BGRA8 DComp target and promotes PQ/HLG sessions on an HDR
-output to an FP16/scRGB target using linear BT.709 through the locked-engine
-DirectComposition route. If that HDR output lives on a different adapter, the
-renderer stays on the producer adapter and the compositor migrates only the
-output device through the diagnosed cross-adapter transport.
+SDR media through a BGRA8 DComp target. PQ/HLG sessions on an HDR output keep
+`native-compositor-scrgb` as the desired mode, but currently fall back to native
+SDR because Windows does not yet keep Flutter's SDR UI as a separate
+system-managed surface while presenting HDR video.
 
 ## Shared Output Contract
 
@@ -34,7 +33,7 @@ Concrete presentation targets are platform-specific:
 
 | Platform | Backend target | Notes |
 | --- | --- | --- |
-| Windows | wgpu/D3D12 render target with D3D12 Flutter surface import, D3D12 video/source imports, and locked-engine DComp/DXGI present bridge | Auto selects BGRA8 SDR or FP16 scRGB native compositor targets; Flutter Texture SDR is not an allowed fallback. |
+| Windows | wgpu/D3D12 render target with D3D12 Flutter surface import, D3D12 video/source imports, and locked-engine DComp/DXGI present bridge | Auto selects BGRA8 SDR; HDR media records a desired scRGB mode but falls back to native SDR until SDR Flutter UI composition is system-managed. Forced scRGB remains diagnostic; Flutter Texture SDR is not an allowed fallback. |
 | macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
 | macOS EDR | Native compositor `RGBA16Float` `CAMetalLayer` | Uses `extendedLinearDisplayP3` and composites native video with the exported Flutter texture. |
 
@@ -154,21 +153,19 @@ prepared source snapshot is first rendered to
 The BGRA compatibility pass rerenders from source rather than tone-mapping the
 mixed FP16 texture. This keeps existing SDR layout/color canaries stable.
 
-In native-compositor mode, the renderer publishes the same linear BT.709 scRGB
-video contract through D3D12 resources. The wgpu final composition shader
+In forced scRGB native-compositor mode, the renderer publishes the same linear
+BT.709 scRGB video contract through D3D12 resources. The wgpu final composition shader
 samples the locked engine's full-window premultiplied BGRA Flutter surface,
 restores straight sRGB for transfer decoding, re-premultiplies in linear light,
 applies `SDRWhiteLevel / 80`, and composites it source-over the video.
 Transparent viewport pixels reveal video without color keys or a rectangular
-native hole. The final target capture must preserve video values above `1.0`
-and Flutter alpha-edge behavior. Auto SDR instead samples the source-rerendered
-BGRA compatibility texture into a BGRA8/G22 target where the compatibility
-bridge still requires it.
-Auto HDR uses FP16/G10 scRGB for PQ/HLG media on a resolved HDR output. Matching
-adapters consume the producer leases directly; mismatched adapters bridge the
-same BGRA/scRGB inputs through row-major shared textures and GPU copies without
-changing the color math. Windows does not submit HDR10 metadata, custom ICC
-curves, or LUT corrections; Advanced Color and calibration remain
+native hole. This path is diagnostic rather than the Windows Auto HDR product
+route because it bakes SDR Flutter UI into an HDR target. Auto SDR instead
+samples the source-rerendered BGRA compatibility texture into a BGRA8/G22
+target where the compatibility bridge still requires it. Auto HDR currently
+stays on that native SDR route and reports
+`hdr-ui-composition-unsupported`. Windows does not submit HDR10 metadata,
+custom ICC curves, or LUT corrections; Advanced Color and calibration remain
 system-managed.
 
 For source projection, each active track is rendered with identity layout into

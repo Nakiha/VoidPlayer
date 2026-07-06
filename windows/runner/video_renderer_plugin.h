@@ -207,5 +207,6 @@ private:
     std::string presentation_sdr_white_level_status_ = "nominal-default";
     std::string presentation_request_;
     uint64_t presentation_locked_display_generation_ = 0;
+    std::string presentation_locked_output_identity_;
     int64_t presentation_locked_sdr_white_level_milli_nits_ = 80000;
 };

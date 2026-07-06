@@ -12,16 +12,16 @@
 3.0, ADD_MEDIA, build/generated/windows/hdr_auto_hlg.mp4
 6.5, ASSERT_TRACK_COUNT, 2
 6.51, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsPresentationHasHDRTrack, true
-6.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationReason, auto-hdr-track
+6.52, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationReason, auto-hdr-ui-composition-unsupported
 6.53, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationDesiredMode, native-compositor-scrgb
-6.54, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-scrgb
+6.54, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-sdr
 6.55, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationTransitionState, stable
-6.56, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsDCompSwapChainFormat, R16G16B16A16_FLOAT
-6.57, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsDCompColorSpace, RGB_FULL_G10_NONE_P709
-6.58, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDCompSDRToneMapActive, false
-6.59, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationHDRPromotionCount, 1
-6.60, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationOutputGeneration, 2
-6.61, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationLockedSDRWhiteLevelMilliNits, 80001
+6.56, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationFallbackReason, hdr-ui-composition-unsupported
+6.57, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsDCompSwapChainFormat, B8G8R8A8_UNORM
+6.58, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsDCompColorSpace, RGB_FULL_G22_NONE_P709
+6.59, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDCompSDRToneMapActive, true
+6.60, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsPresentationHDRPromotionCount, 0, 0
+6.61, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsPresentationLockedSDRWhiteLevelMilliNits, 80000, 80000
 6.7, PLAY
 7.2, ASSERT_PLAYING
 7.4, REMOVE_TRACK, 2
@@ -31,8 +31,8 @@
 9.03, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-sdr
 9.04, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsDCompSwapChainFormat, B8G8R8A8_UNORM
 9.05, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDCompSDRToneMapActive, true
-9.06, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationHDRDemotionCount, 1
-9.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationOutputGeneration, 3
+9.06, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsPresentationHDRDemotionCount, 0, 0
+9.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompPresentCount, 1
 9.08, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsPresentationLockedSDRWhiteLevelMilliNits, 80000, 80000
 9.1, ASSERT_PLAYING
 9.2, QUIT, 0

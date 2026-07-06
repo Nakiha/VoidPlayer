@@ -45,23 +45,9 @@ WindowsPresentationPolicy resolve_windows_presentation_policy(
             policy.reason = "auto-hdr-display-unavailable";
             return policy;
         }
-        if (!display.matches_presentation_adapter) {
-            policy.mode = "native-compositor-scrgb";
-            policy.desired_mode = policy.mode;
-            policy.reason = "auto-hdr-cross-adapter";
-            policy.output_target = ColorOutputTarget::kWindowsLinearScRGB;
-            policy.fp16_scrgb_requested = true;
-            policy.hdr_output_requested = true;
-            policy.cross_adapter_required = true;
-            policy.cross_adapter_migration_requested = true;
-            return policy;
-        }
-        policy.mode = "native-compositor-scrgb";
-        policy.desired_mode = policy.mode;
-        policy.reason = "auto-hdr-track";
-        policy.output_target = ColorOutputTarget::kWindowsLinearScRGB;
-        policy.fp16_scrgb_requested = true;
-        policy.hdr_output_requested = true;
+        policy.desired_mode = "native-compositor-scrgb";
+        policy.reason = "auto-hdr-ui-composition-unsupported";
+        policy.fallback_reason = "hdr-ui-composition-unsupported";
         return policy;
     }
     if (request == "sdr") {

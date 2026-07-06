@@ -395,6 +395,8 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         flutter::EncodableValue(presentation.sdr_compatibility_pass);
     map[flutter::EncodableValue("windowsPresentationSDRWhiteLevelStatus")] =
         flutter::EncodableValue(presentation_sdr_white_level_status);
+    map[flutter::EncodableValue("windowsPresentationSDRWhiteLevelSource")] =
+        flutter::EncodableValue(presentation_sdr_white_level_status);
     map[flutter::EncodableValue("windowsPresentationSDRWhiteLevelMilliNits")] =
         flutter::EncodableValue(presentation.sdr_white_level_milli_nits);
     map[flutter::EncodableValue("windowsPresentationSDRWhiteScaleX1000")] =
@@ -434,6 +436,22 @@ flutter::EncodableMap NativeDiagnosticsProvider::BuildMethodChannelDiagnostics(
         "windowsPresentationExternalFlutterSurfaceLastError")] =
         flutter::EncodableValue(
             presentation.external_flutter_surface_last_error);
+    map[flutter::EncodableValue(
+        "windowsPresentationFlutterSurfaceColorDomain")] =
+        flutter::EncodableValue(
+            presentation.external_flutter_surface_color_domain);
+    map[flutter::EncodableValue(
+        "windowsPresentationFlutterSurfaceCompositionOwner")] =
+        flutter::EncodableValue(
+            presentation.external_flutter_surface_composition_owner);
+    map[flutter::EncodableValue(
+        "windowsPresentationFlutterSurfaceTargetDomain")] =
+        flutter::EncodableValue(
+            presentation.external_flutter_surface_target_domain);
+    map[flutter::EncodableValue(
+        "windowsPresentationFlutterSurfaceCompositedIntoHDRTarget")] =
+        flutter::EncodableValue(
+            presentation.external_flutter_surface_composited_into_hdr_target);
     map[flutter::EncodableValue("windowsPresentationOverlayLayerActive")] =
         flutter::EncodableValue(presentation.overlay_layer_active);
     map[flutter::EncodableValue("windowsPresentationOverlayLayerMode")] =

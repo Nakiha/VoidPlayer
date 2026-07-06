@@ -127,6 +127,10 @@ private:
     uint64_t external_flutter_surface_wait_count_ = 0;
     uint64_t external_flutter_surface_wait_failure_count_ = 0;
     std::string external_flutter_surface_last_error_ = "none";
+    std::string external_flutter_surface_color_domain_ = "none";
+    std::string external_flutter_surface_composition_owner_ = "none";
+    std::string external_flutter_surface_target_domain_ = "none";
+    bool external_flutter_surface_composited_into_hdr_target_ = false;
     uint64_t overlay_layer_generation_ = 0;
     uint64_t overlay_layer_fill_rect_count_ = 0;
     uint64_t overlay_layer_line_rect_count_ = 0;

@@ -1668,6 +1668,10 @@ bool WgpuD3D12PresentationBackend::update_external_flutter_surface(
         external_flutter_ = {};
         external_flutter_surface_last_error_ =
             "external-flutter-surface-invalid";
+        external_flutter_surface_color_domain_ = "none";
+        external_flutter_surface_composition_owner_ = "none";
+        external_flutter_surface_target_domain_ = "none";
+        external_flutter_surface_composited_into_hdr_target_ = false;
         return false;
     }
 
@@ -1707,6 +1711,11 @@ bool WgpuD3D12PresentationBackend::update_external_flutter_surface(
     external_flutter_surface_generation_ = surface.frame_generation;
     ++external_flutter_surface_update_count_;
     external_flutter_surface_last_error_ = "none";
+    external_flutter_surface_color_domain_ =
+        "sdr-srgb-premultiplied-bgra8";
+    external_flutter_surface_composition_owner_ = "pending-native-shader";
+    external_flutter_surface_target_domain_ = "pending";
+    external_flutter_surface_composited_into_hdr_target_ = false;
     return true;
 #else
     (void)surface;
@@ -1718,6 +1727,10 @@ void WgpuD3D12PresentationBackend::clear_external_flutter_surface() {
     std::lock_guard<std::mutex> lock(external_flutter_mutex_);
     external_flutter_ = {};
     external_flutter_surface_last_error_ = "cleared";
+    external_flutter_surface_color_domain_ = "none";
+    external_flutter_surface_composition_owner_ = "none";
+    external_flutter_surface_target_domain_ = "none";
+    external_flutter_surface_composited_into_hdr_target_ = false;
 }
 
 bool WgpuD3D12PresentationBackend::configure_source_cache(
@@ -1897,6 +1910,14 @@ PresentationBackendDiagnostics WgpuD3D12PresentationBackend::diagnostics() const
             external_flutter_surface_wait_failure_count_;
         diagnostics.external_flutter_surface_last_error =
             external_flutter_surface_last_error_;
+        diagnostics.external_flutter_surface_color_domain =
+            external_flutter_surface_color_domain_;
+        diagnostics.external_flutter_surface_composition_owner =
+            external_flutter_surface_composition_owner_;
+        diagnostics.external_flutter_surface_target_domain =
+            external_flutter_surface_target_domain_;
+        diagnostics.external_flutter_surface_composited_into_hdr_target =
+            external_flutter_surface_composited_into_hdr_target_;
     }
     if (source_cache_ring_) {
         diagnostics.source_cache_active =
@@ -2279,6 +2300,15 @@ bool WgpuD3D12PresentationBackend::render_snapshot_to_d3d12_target(
                 consumed_flutter_generation;
             ++external_flutter_surface_consume_count_;
             external_flutter_surface_last_error_ = "none";
+            external_flutter_surface_color_domain_ =
+                "sdr-srgb-premultiplied-bgra8";
+            external_flutter_surface_composition_owner_ = "native-shader";
+            external_flutter_surface_target_domain_ =
+                output_color_mode == VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR
+                    ? "windows-linear-scrgb"
+                    : "sdr-bgra8";
+            external_flutter_surface_composited_into_hdr_target_ =
+                output_color_mode == VP_WGPU_D3D12_OUTPUT_COLOR_MODE_EDR;
         }
         if (!publish(consumed_flutter_generation)) {
             last_error_ = std::string("wgpu-d3d12 ") +

@@ -2949,7 +2949,25 @@ void VideoRendererPlugin::GetDiagnostics(
         }
         diagnostics[flutter::EncodableValue("windowsNativeCompositorPhase")] =
             flutter::EncodableValue(compositor.phase);
+        diagnostics[flutter::EncodableValue("nativeCompositorActive")] =
+            flutter::EncodableValue(compositor.phase == "active");
+        diagnostics[flutter::EncodableValue("nativeCompositorRequested")] =
+            flutter::EncodableValue(
+                presentation_policy_.native_compositor_requested);
+        diagnostics[flutter::EncodableValue("nativeCompositorEDREnabled")] =
+            flutter::EncodableValue(
+                presentation_policy_.hdr_output_requested);
+        diagnostics[flutter::EncodableValue("nativeCompositorMode")] =
+            flutter::EncodableValue(presentation_policy_.mode);
+        diagnostics[flutter::EncodableValue("nativeCompositorReason")] =
+            flutter::EncodableValue(presentation_policy_.reason);
+        diagnostics[flutter::EncodableValue("nativeCompositorFailure")] =
+            flutter::EncodableValue(compositor.fallback_reason);
+        diagnostics[flutter::EncodableValue("nativeCompositorPhase")] =
+            flutter::EncodableValue(compositor.phase);
         diagnostics[flutter::EncodableValue("windowsNativeCompositorStateSerial")] =
+            enc_i64(static_cast<int64_t>(compositor.state_serial));
+        diagnostics[flutter::EncodableValue("nativeCompositorSerial")] =
             enc_i64(static_cast<int64_t>(compositor.state_serial));
         diagnostics[flutter::EncodableValue("windowsNativeCompositorAckSerial")] =
             enc_i64(static_cast<int64_t>(compositor.ack_serial));
@@ -3045,6 +3063,23 @@ void VideoRendererPlugin::GetDiagnostics(
             enc_i64(static_cast<int64_t>(compositor.composite_count));
         diagnostics[flutter::EncodableValue("windowsDCompPresentCount")] =
             enc_i64(static_cast<int64_t>(compositor.present_count));
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorRunnerLayerActive")] =
+            flutter::EncodableValue(compositor.swap_chain_active);
+        diagnostics[flutter::EncodableValue("nativeCompositorPresentHz")] =
+            enc_i64(compositor.high_refresh_display_hz);
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorHostIntervalP95Ms")] =
+            flutter::EncodableValue(
+                static_cast<double>(compositor.dcomp_present_interval_p95_us) /
+                1000.0);
+        diagnostics[flutter::EncodableValue("nativeCompositorComposeP95Ms")] =
+            flutter::EncodableValue(
+                static_cast<double>(compositor.dcomp_composite_p95_us) /
+                1000.0);
+        diagnostics[flutter::EncodableValue(
+            "nativeCompositorProducerSubmitCount")] =
+            enc_i64(0);
         diagnostics[flutter::EncodableValue("windowsDCompDropCount")] =
             enc_i64(static_cast<int64_t>(compositor.drop_count));
         diagnostics[flutter::EncodableValue("windowsDCompFailureCount")] =
@@ -3377,16 +3412,30 @@ void VideoRendererPlugin::GetDiagnostics(
             "windowsPresentationFlutterSurfaceColorDomain")] =
             flutter::EncodableValue(
                 backend.external_flutter_surface_color_domain);
+        diagnostics[flutter::EncodableValue("flutterSurfaceColorDomain")] =
+            flutter::EncodableValue(
+                backend.external_flutter_surface_color_domain);
         diagnostics[flutter::EncodableValue(
             "windowsPresentationFlutterSurfaceCompositionOwner")] =
+            flutter::EncodableValue(
+                backend.external_flutter_surface_composition_owner);
+        diagnostics[flutter::EncodableValue(
+            "flutterSurfaceCompositionOwner")] =
             flutter::EncodableValue(
                 backend.external_flutter_surface_composition_owner);
         diagnostics[flutter::EncodableValue(
             "windowsPresentationFlutterSurfaceTargetDomain")] =
             flutter::EncodableValue(
                 backend.external_flutter_surface_target_domain);
+        diagnostics[flutter::EncodableValue("flutterSurfaceTargetDomain")] =
+            flutter::EncodableValue(
+                backend.external_flutter_surface_target_domain);
         diagnostics[flutter::EncodableValue(
             "windowsPresentationFlutterSurfaceCompositedIntoHDRTarget")] =
+            flutter::EncodableValue(
+                backend.external_flutter_surface_composited_into_hdr_target);
+        diagnostics[flutter::EncodableValue(
+            "flutterSurfaceCompositedIntoHDRTarget")] =
             flutter::EncodableValue(
                 backend.external_flutter_surface_composited_into_hdr_target);
         diagnostics[flutter::EncodableValue(

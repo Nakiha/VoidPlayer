@@ -570,7 +570,21 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorOutputMode"] = outputMode
     result["nativeCompositorBackend"] = useWgpuCompositor ? "wgpu-metal-thin-runner" : "metal"
     result["nativeCompositorOutputPixelFormat"] = String(describing: outputPixelFormat)
-    result["nativeCompositorEDREnabled"] = outputPixelFormat == .rgba16Float
+    let edrOutputActive = outputPixelFormat == .rgba16Float
+    result["nativeCompositorActive"] = true
+    result["nativeCompositorRequested"] = true
+    result["nativeCompositorEDREnabled"] = edrOutputActive
+    result["nativeCompositorMode"] = MacOSPresentationConfiguration.current.mode.rawValue
+    result["nativeCompositorRunnerLayerActive"] = true
+    result["nativeCompositorPresentHz"] = displayTickRate.rateHz()
+    result["nativeCompositorHostIntervalP95Ms"] = displayTickIntervalDuration.p95Ms()
+    result["nativeCompositorComposeP95Ms"] = frameCpuDuration.p95Ms()
+    result["nativeCompositorProducerSubmitCount"] = 0
+    result["flutterSurfaceColorDomain"] = "sdr-srgb-premultiplied-bgra8"
+    result["flutterSurfaceCompositionOwner"] = "native-shader"
+    result["flutterSurfaceTargetDomain"] =
+      edrOutputActive ? "extended-linear-display-p3" : "sdr-bgra8"
+    result["flutterSurfaceCompositedIntoHDRTarget"] = edrOutputActive
     result["nativeCompositorEDRWantsExtendedDynamicRangeContent"] =
       metalLayer.wantsExtendedDynamicRangeContent
     result["nativeCompositorVideoPixelFormat"] = lastVideoPixelFormat

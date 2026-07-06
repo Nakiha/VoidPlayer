@@ -258,6 +258,12 @@ questions:
 | Is source publish consumed? | `sourcePublishConsumeRatioX1000` |
 | Is Flutter UI consumed? | `flutterPublishAcquireRatioX1000`, `flutterAcquireConsumeRatioX1000` |
 | Who owns Flutter UI SDR/HDR composition? | `flutterSurfaceColorDomain`, `flutterSurfaceCompositionOwner`, `flutterSurfaceTargetDomain`, `flutterSurfaceCompositedIntoHDRTarget` |
+
+Windows `getDiagnostics()` and macOS native compositor diagnostics now expose the
+core compositor activity, cadence, producer-submit, and Flutter-surface color
+ownership aliases above. Platform-prefixed fields remain the source of detailed
+backend evidence; new tests should prefer neutral aliases when the assertion is
+about shared compositor semantics rather than platform mechanics.
 | Where did SDR white come from? | `sdrWhiteLevelSource`, `sdrWhiteLevelMilliNits`, `sdrWhiteScaleX1000` |
 
 Platform-prefixed fields such as `windowsDComp*` and `rendererOwned*` can remain,

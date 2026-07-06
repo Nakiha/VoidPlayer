@@ -3,6 +3,23 @@
 #include <utility>
 
 namespace vr {
+namespace {
+
+double avg_ms(uint64_t total_us, uint64_t count) {
+    if (count == 0) {
+        return 0.0;
+    }
+    return static_cast<double>(total_us) / static_cast<double>(count) / 1000.0;
+}
+
+double avg_value(uint64_t total, uint64_t count) {
+    if (count == 0) {
+        return 0.0;
+    }
+    return static_cast<double>(total) / static_cast<double>(count);
+}
+
+} // namespace
 
 std::vector<TrackInfo> snapshot_track_infos(const TrackPipelineManager& tracks) {
     std::vector<TrackInfo> infos;
@@ -62,6 +79,7 @@ TrackPerfSnapshotResult snapshot_track_perf_stats(
     size_t slot,
     const TrackPipeline& track,
     const DecodePerfCounters::Snapshot& decode_perf,
+    const DecodeStagePerfCounters::Snapshot& decode_stage_perf,
     const std::optional<TextureFrame>& current_frame,
     uint64_t baseline_frames,
     double elapsed_s) {
@@ -84,6 +102,22 @@ TrackPerfSnapshotResult snapshot_track_perf_stats(
         stats.source_packet_pts = current_frame->source_packet_pts;
         stats.source_packet_dts = current_frame->source_packet_dts;
         stats.frame_identity_mode = current_frame->frame_identity_mode;
+        stats.current_frame_storage_kind = current_frame->storage_kind();
+        if (const auto* yuv = current_frame->cpu_planar_yuv_storage()) {
+            stats.current_frame_yuv_bit_depth = yuv->bit_depth;
+            stats.current_frame_yuv_plane_layout =
+                static_cast<int>(yuv->plane_layout);
+            stats.current_frame_yuv_sample_alignment =
+                static_cast<int>(yuv->sample_alignment);
+        } else if (const auto* nv12 = current_frame->cpu_nv12_storage()) {
+            stats.current_frame_yuv_bit_depth = nv12->is_p010 ? 10 : 8;
+            stats.current_frame_yuv_plane_layout =
+                static_cast<int>(CpuYuvPlaneLayout::SemiPlanarYuv420);
+            stats.current_frame_yuv_sample_alignment =
+                nv12->is_p010
+                    ? static_cast<int>(CpuYuvSampleAlignment::MsbAligned)
+                    : static_cast<int>(CpuYuvSampleAlignment::Packed);
+        }
     }
 
     if (decode_perf.frames_decoded > 0) {
@@ -92,6 +126,124 @@ TrackPerfSnapshotResult snapshot_track_perf_stats(
                               1000.0;
     }
     stats.max_decode_ms = static_cast<double>(decode_perf.max_decode_us) / 1000.0;
+    stats.decode_stage_packet_send_count = decode_stage_perf.packet_send_count;
+    stats.decode_stage_packet_send_avg_ms =
+        avg_ms(decode_stage_perf.packet_send_total_us,
+               decode_stage_perf.packet_send_count);
+    stats.decode_stage_packet_send_max_ms =
+        static_cast<double>(decode_stage_perf.packet_send_max_us) / 1000.0;
+    stats.decode_stage_receive_loop_count =
+        decode_stage_perf.receive_loop_count;
+    stats.decode_stage_receive_frame_count =
+        decode_stage_perf.receive_loop_frame_count;
+    stats.decode_stage_receive_avg_ms =
+        avg_ms(decode_stage_perf.receive_loop_total_us,
+               decode_stage_perf.receive_loop_frame_count);
+    stats.decode_stage_receive_max_ms =
+        static_cast<double>(decode_stage_perf.receive_loop_max_us) / 1000.0;
+    stats.decode_stage_convert_count = decode_stage_perf.convert_count;
+    stats.decode_stage_convert_avg_ms =
+        avg_ms(decode_stage_perf.convert_total_us,
+               decode_stage_perf.convert_count);
+    stats.decode_stage_convert_max_ms =
+        static_cast<double>(decode_stage_perf.convert_max_us) / 1000.0;
+    stats.decode_stage_convert_direct_planar_count =
+        decode_stage_perf.convert_direct_planar_count;
+    stats.decode_stage_convert_direct_planar_avg_ms =
+        avg_ms(decode_stage_perf.convert_direct_planar_total_us,
+               decode_stage_perf.convert_direct_planar_count);
+    stats.decode_stage_convert_direct_planar_max_ms =
+        static_cast<double>(
+            decode_stage_perf.convert_direct_planar_max_us) / 1000.0;
+    stats.decode_stage_convert_nv12_layout_count =
+        decode_stage_perf.convert_nv12_layout_count;
+    stats.decode_stage_convert_nv12_layout_avg_ms =
+        avg_ms(decode_stage_perf.convert_nv12_layout_total_us,
+               decode_stage_perf.convert_nv12_layout_count);
+    stats.decode_stage_convert_nv12_layout_max_ms =
+        static_cast<double>(
+            decode_stage_perf.convert_nv12_layout_max_us) / 1000.0;
+    stats.decode_stage_convert_nv12_alloc_count =
+        decode_stage_perf.convert_nv12_alloc_count;
+    stats.decode_stage_convert_nv12_alloc_avg_ms =
+        avg_ms(decode_stage_perf.convert_nv12_alloc_total_us,
+               decode_stage_perf.convert_nv12_alloc_count);
+    stats.decode_stage_convert_nv12_alloc_max_ms =
+        static_cast<double>(
+            decode_stage_perf.convert_nv12_alloc_max_us) / 1000.0;
+    stats.decode_stage_convert_nv12_pack_count =
+        decode_stage_perf.convert_nv12_pack_count;
+    stats.decode_stage_convert_nv12_pack_avg_ms =
+        avg_ms(decode_stage_perf.convert_nv12_pack_total_us,
+               decode_stage_perf.convert_nv12_pack_count);
+    stats.decode_stage_convert_nv12_pack_max_ms =
+        static_cast<double>(
+            decode_stage_perf.convert_nv12_pack_max_us) / 1000.0;
+    stats.decode_stage_publish_count = decode_stage_perf.publish_count;
+    stats.decode_stage_publish_avg_ms =
+        avg_ms(decode_stage_perf.publish_total_us,
+               decode_stage_perf.publish_count);
+    stats.decode_stage_publish_max_ms =
+        static_cast<double>(decode_stage_perf.publish_max_us) / 1000.0;
+    stats.decode_stage_publish_lock_count =
+        decode_stage_perf.publish_lock_count;
+    stats.decode_stage_publish_lock_avg_ms =
+        avg_ms(decode_stage_perf.publish_lock_total_us,
+               decode_stage_perf.publish_lock_count);
+    stats.decode_stage_publish_lock_max_ms =
+        static_cast<double>(decode_stage_perf.publish_lock_max_us) / 1000.0;
+    stats.decode_stage_publish_wait_count =
+        decode_stage_perf.publish_wait_count;
+    stats.decode_stage_publish_wait_avg_ms =
+        avg_ms(decode_stage_perf.publish_wait_total_us,
+               decode_stage_perf.publish_wait_count);
+    stats.decode_stage_publish_wait_max_ms =
+        static_cast<double>(decode_stage_perf.publish_wait_max_us) / 1000.0;
+    stats.decode_stage_publish_ring_push_count =
+        decode_stage_perf.publish_ring_push_count;
+    stats.decode_stage_publish_ring_push_avg_ms =
+        avg_ms(decode_stage_perf.publish_ring_push_total_us,
+               decode_stage_perf.publish_ring_push_count);
+    stats.decode_stage_publish_ring_push_max_ms =
+        static_cast<double>(
+            decode_stage_perf.publish_ring_push_max_us) / 1000.0;
+    stats.decode_stage_publish_ring_lock_count =
+        decode_stage_perf.publish_ring_lock_count;
+    stats.decode_stage_publish_ring_lock_avg_ms =
+        avg_ms(decode_stage_perf.publish_ring_lock_total_us,
+               decode_stage_perf.publish_ring_lock_count);
+    stats.decode_stage_publish_ring_lock_max_ms =
+        static_cast<double>(
+            decode_stage_perf.publish_ring_lock_max_us) / 1000.0;
+    stats.decode_stage_publish_ring_assign_count =
+        decode_stage_perf.publish_ring_assign_count;
+    stats.decode_stage_publish_ring_assign_avg_ms =
+        avg_ms(decode_stage_perf.publish_ring_assign_total_us,
+               decode_stage_perf.publish_ring_assign_count);
+    stats.decode_stage_publish_ring_assign_max_ms =
+        static_cast<double>(
+            decode_stage_perf.publish_ring_assign_max_us) / 1000.0;
+    stats.decode_stage_publish_ring_advance_count =
+        decode_stage_perf.publish_ring_advance_count;
+    stats.decode_stage_publish_ring_advance_avg_ms =
+        avg_ms(decode_stage_perf.publish_ring_advance_total_us,
+               decode_stage_perf.publish_ring_advance_count);
+    stats.decode_stage_publish_ring_advance_max_ms =
+        static_cast<double>(
+            decode_stage_perf.publish_ring_advance_max_us) / 1000.0;
+    stats.decode_stage_publish_ring_overwrite_count =
+        decode_stage_perf.publish_ring_overwrite_count;
+    stats.decode_stage_publish_ring_overwrite_avg_bytes =
+        avg_value(decode_stage_perf.publish_ring_overwrite_total_bytes,
+                  decode_stage_perf.publish_ring_overwrite_count);
+    stats.decode_stage_publish_ring_overwrite_max_bytes =
+        decode_stage_perf.publish_ring_overwrite_max_bytes;
+    stats.decode_stage_flush_count = decode_stage_perf.flush_count;
+    stats.decode_stage_flush_avg_ms =
+        avg_ms(decode_stage_perf.flush_total_us,
+               decode_stage_perf.flush_count);
+    stats.decode_stage_flush_max_ms =
+        static_cast<double>(decode_stage_perf.flush_max_us) / 1000.0;
 
     const uint64_t delta_frames = decode_perf.frames_decoded - baseline_frames;
     if (elapsed_s > 0.5) {
@@ -114,11 +266,14 @@ TrackPerfStatsCollectionResult snapshot_track_perf_stats_collection(
 
         const auto& track = *tracks[i];
         DecodePerfCounters::Snapshot decode_perf{};
+        DecodeStagePerfCounters::Snapshot decode_stage_perf{};
         if (track.decode_thread) {
             decode_perf = track.decode_thread->perf_counters().snapshot();
+            decode_stage_perf =
+                track.decode_thread->stage_perf_counters().snapshot();
         }
         const auto snapshot = snapshot_track_perf_stats(
-            i, track, decode_perf, last_decision.frames[i],
+            i, track, decode_perf, decode_stage_perf, last_decision.frames[i],
             baseline_tracker.baseline_frames(i), elapsed_s);
         result.frames_decoded_by_slot[i] = snapshot.frames_decoded;
         result.stats.push_back(snapshot.stats);

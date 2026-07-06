@@ -30,13 +30,15 @@ void Renderer::Impl::note_viewport_compositor_activity() {
     layout_state_.note_viewport_compositor_activity(active_until);
 }
 
+void Renderer::Impl::set_viewport_compositor_active(bool active) {
+    layout_state_.set_viewport_compositor_active(active);
+}
+
 bool Renderer::Impl::should_suppress_playback_present_for_viewport_compositor() const {
-    if (!timeline_.playing() ||
-        timeline_.playback().clock().is_paused() ||
-        !presentation_.uses_macos_native_compositor_scheduling()) {
+    if (!presentation_.uses_macos_native_compositor_scheduling()) {
         return false;
     }
-    return layout_state_.viewport_compositor_active(steady_clock_us_now());
+    return layout_state_.viewport_compositor_persistent_active();
 }
 
 bool Renderer::Impl::consume_pending_layout_locked() {

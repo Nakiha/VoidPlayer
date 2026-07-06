@@ -11,12 +11,12 @@ import '../track_manager.dart';
 import '../utils/async_guard.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/display_geometry.dart';
+import '../viewport/viewport_projection_diagnostics.dart';
 import '../widgets/analysis_overlay_controls.dart';
 import 'main_window_state.dart';
 
 class MainWindowLayoutCoordinator {
   static const Duration viewportResizeDebounce = Duration(milliseconds: 80);
-  static const double timelineTrackRowLogicalHeight = 40.0;
   static const Duration _debugInteractionSampleInterval = Duration(
     milliseconds: 250,
   );
@@ -40,6 +40,9 @@ class MainWindowLayoutCoordinator {
   int? _queuedPreemptWidth;
   int? _queuedPreemptHeight;
   bool _nativeCompositorTransformActive = false;
+  bool _measuredSourceCacheRefreshScheduled = false;
+  int _measuredSourceCacheRefreshGeneration = 0;
+  String _measuredSourceCacheRefreshReason = '';
   String? _lastPrewarmedMarksSidebarTargetKey;
   DateTime? _lastDebugInteractionSampleAt;
   DateTime? _lastViewportResizePacingLogAt;
@@ -192,6 +195,7 @@ class MainWindowLayoutCoordinator {
 
   void panByDelta(double dx, double dy) {
     if (_disposed) return;
+    ViewportProjectionDiagnostics.instance.record('layoutPan');
     _debugPanUpdates++;
     final nextOffsetX = layout().viewOffsetX + dx;
     final nextOffsetY = layout().viewOffsetY + dy;
@@ -220,6 +224,7 @@ class MainWindowLayoutCoordinator {
   void onZoom(double factor, Offset localPos) {
     if (_disposed) return;
     if (factor <= 0 || !factor.isFinite || factor == 1.0) return;
+    ViewportProjectionDiagnostics.instance.record('layoutZoom');
     _debugZoomUpdates++;
     final currentLayout = layout();
     final newZoom = (currentLayout.zoomRatio * factor).clamp(
@@ -379,28 +384,6 @@ class MainWindowLayoutCoordinator {
       );
       _markResizeDirty();
     });
-  }
-
-  Future<void> preemptTimelineTrackCountChange({
-    required int previousCount,
-    required int nextCount,
-  }) async {
-    if (_disposed || textureId() == null) return;
-    if (previousCount <= 0 || nextCount <= 0 || previousCount == nextCount) {
-      return;
-    }
-    if (viewportWidth <= 0 || viewportHeight <= 0) return;
-
-    final rowDelta = nextCount - previousCount;
-    final heightDelta =
-        (rowDelta * timelineTrackRowLogicalHeight * viewportDevicePixelRatio)
-            .round();
-    if (heightDelta == 0) return;
-
-    final nextHeight = (viewportHeight - heightDelta).clamp(1, 1 << 30).toInt();
-    if (nextHeight == viewportHeight) return;
-
-    await preemptViewportResize(width: viewportWidth, height: nextHeight);
   }
 
   Future<void> preemptViewportResize({
@@ -855,9 +838,15 @@ class MainWindowLayoutCoordinator {
   }
 
   void _prepareNativeCompositorSourceCache(LayoutState baseLayout) {
-    if (!_canUseNativeCompositorViewportTransform) return;
+    if (!_canUseNativeCompositorViewportTransform) {
+      ViewportProjectionDiagnostics.instance.record(
+        'projectionPrepareSkippedIneligible',
+      );
+      return;
+    }
     final entries = tracks();
     if (entries.isEmpty) return;
+    ViewportProjectionDiagnostics.instance.record('projectionPrepare');
     final trackGeometry = entries
         .map((entry) => DisplayTrackGeometry.fromTrackInfo(entry.info))
         .toList();
@@ -948,12 +937,40 @@ class MainWindowLayoutCoordinator {
       }
       return;
     }
-    _prepareNativeCompositorSourceCache(layout());
+    _scheduleMeasuredSourceCacheRefresh(reason: 'track set changed');
+  }
+
+  void _scheduleMeasuredSourceCacheRefresh({required String reason}) {
+    if (_disposed) return;
+    if (!_canUseNativeCompositorViewportTransform) return;
+    _measuredSourceCacheRefreshGeneration++;
+    _measuredSourceCacheRefreshReason = reason;
+    if (_measuredSourceCacheRefreshScheduled) return;
+    _measuredSourceCacheRefreshScheduled = true;
+    SchedulerBinding.instance.ensureVisualUpdate();
+    WidgetsBinding.instance.endOfFrame.then((_) {
+      _measuredSourceCacheRefreshScheduled = false;
+      if (_disposed || !mounted()) return;
+      if (trackCount() == 0 || viewportWidth <= 0 || viewportHeight <= 0) {
+        return;
+      }
+      log.info(
+        '[WindowsResizePacing] dart measuredSourceCacheRefresh '
+        'generation=$_measuredSourceCacheRefreshGeneration '
+        'reason=$_measuredSourceCacheRefreshReason '
+        'viewport=${viewportWidth}x$viewportHeight '
+        'tracks=${trackCount()} '
+        'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty '
+        'activeFlush=${_activeFlush != null}',
+      );
+      _prepareNativeCompositorSourceCache(layout());
+    });
   }
 
   void _publishNativeCompositorViewportTransform() {
     if (!_nativeCompositorTransformActive || _disposed) return;
     _debugProjectionPublishes++;
+    ViewportProjectionDiagnostics.instance.record('projectionPublishAttempt');
     _prepareNativeCompositorSourceCache(layout());
   }
 

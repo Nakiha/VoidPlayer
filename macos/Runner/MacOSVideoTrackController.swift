@@ -156,7 +156,7 @@ final class MacOSVideoTrackController {
 
     store.remove(
       fileId: fileId,
-      compactSlots: backendName != MacOSVideoTrackPayload.nativeFormatName
+      compactSlots: true
     )
     return MacOSVideoTrackRemoveResult(
       destroyPlayer: store.isEmpty,

@@ -38,6 +38,10 @@ struct OverlayRect {
   track_idx: u32,
 };
 
+const YUV_FORMAT_P010: i32 = 2;
+const YUV_FORMAT_YUV420P: i32 = 3;
+const YUV_FORMAT_YUV420P10LE: i32 = 4;
+
 @group(0) @binding(0)
 var<storage, read> params: CompositeParams;
 
@@ -82,6 +86,21 @@ var overlay_layer_texture: texture_2d_array<f32>;
 
 @group(0) @binding(14)
 var flutter_surface_texture: texture_2d<f32>;
+
+@group(0) @binding(15)
+var runner_video_texture: texture_2d<f32>;
+
+@group(0) @binding(16)
+var runner_source0_texture: texture_2d<f32>;
+
+@group(0) @binding(17)
+var runner_source1_texture: texture_2d<f32>;
+
+@group(0) @binding(18)
+var runner_source2_texture: texture_2d<f32>;
+
+@group(0) @binding(19)
+var runner_source3_texture: texture_2d<f32>;
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
@@ -882,9 +901,25 @@ fn read_u16_le(byte_offset: u32) -> u32 {
   return read_u8(byte_offset) | (read_u8(byte_offset + 1u) << 8u);
 }
 
-fn sample_code(byte_offset: u32, high_bit: bool) -> f32 {
-  if (high_bit) {
-    return f32(read_u16_le(byte_offset) >> 6u);
+fn yuv_uses_16bit_storage(format: i32) -> bool {
+  return format == YUV_FORMAT_P010 || format == YUV_FORMAT_YUV420P10LE;
+}
+
+fn yuv_sample_is_msb_aligned(format: i32) -> bool {
+  return format == YUV_FORMAT_P010;
+}
+
+fn yuv_is_planar_420(format: i32) -> bool {
+  return format == YUV_FORMAT_YUV420P || format == YUV_FORMAT_YUV420P10LE;
+}
+
+fn sample_code(byte_offset: u32, format: i32) -> f32 {
+  if (yuv_uses_16bit_storage(format)) {
+    let sample = read_u16_le(byte_offset);
+    if (yuv_sample_is_msb_aligned(format)) {
+      return f32(sample >> 6u);
+    }
+    return f32(sample & 1023u);
   }
   return f32(read_u8(byte_offset));
 }
@@ -913,8 +948,9 @@ fn matrix_rgb(y: f32, cb: f32, cr: f32, matrix: i32) -> vec3<f32> {
 
 fn sample_yuv_pixel(track: i32, sx: i32, sy: i32) -> vec4<f32> {
   let format = vec4_get_i(params.yuv_format, track);
-  let high_bit = format == 2;
-  let bytes_per_sample = select(1u, 2u, high_bit);
+  let uses_16bit = yuv_uses_16bit_storage(format);
+  let planar = yuv_is_planar_420(format);
+  let bytes_per_sample = select(1u, 2u, uses_16bit);
   let source_w = max(1, i32(vec4_get_f(params.source_width, track)));
   let source_h = max(1, i32(vec4_get_f(params.source_height, track)));
   let clamped_x = clamp(sx, 0, source_w - 1);
@@ -924,28 +960,30 @@ fn sample_yuv_pixel(track: i32, sx: i32, sy: i32) -> vec4<f32> {
   let y_index = u32(vec4_get_i(params.y_offset, track) +
       clamped_y * vec4_get_i(params.y_stride, track) +
       clamped_x * i32(bytes_per_sample));
-  let y_code = sample_code(y_index, high_bit);
+  let y_code = sample_code(y_index, format);
   var u_code = 128.0;
   var v_code = 128.0;
-  if (format == 3) {
+  if (planar) {
     let u_index = u32(vec4_get_i(params.uv_offset, track) +
-        chroma_y * vec4_get_i(params.uv_stride, track) + chroma_x);
+        chroma_y * vec4_get_i(params.uv_stride, track)) +
+        u32(chroma_x) * bytes_per_sample;
     let v_index = u32(vec4_get_i(params.v_offset, track) +
-        chroma_y * vec4_get_i(params.uv_stride, track) + chroma_x);
-    u_code = sample_code(u_index, false);
-    v_code = sample_code(v_index, false);
+        chroma_y * vec4_get_i(params.uv_stride, track)) +
+        u32(chroma_x) * bytes_per_sample;
+    u_code = sample_code(u_index, format);
+    v_code = sample_code(v_index, format);
   } else {
     let pair_bytes = bytes_per_sample * 2u;
     let uv_index = u32(vec4_get_i(params.uv_offset, track) +
         chroma_y * vec4_get_i(params.uv_stride, track)) +
         u32(chroma_x) * pair_bytes;
-    u_code = sample_code(uv_index, high_bit);
-    v_code = sample_code(uv_index + bytes_per_sample, high_bit);
+    u_code = sample_code(uv_index, format);
+    v_code = sample_code(uv_index + bytes_per_sample, format);
   }
   let range = vec4_get_i(params.color_range, track);
   let matrix = vec4_get_i(params.color_matrix, track);
-  let scale = select(1.0, 4.0, high_bit);
-  let max_code = select(255.0, 1023.0, high_bit);
+  let scale = select(1.0, 4.0, uses_16bit);
+  let max_code = select(255.0, 1023.0, uses_16bit);
   var y = y_code / max_code;
   var cb = u_code / max_code - 0.5;
   var cr = v_code / max_code - 0.5;
@@ -1025,16 +1063,67 @@ fn sample_bgra(track: i32, uv: vec2<f32>) -> vec4<f32> {
   return sample_bgra_nearest(track, uv);
 }
 
+fn runner_flags() -> i32 {
+  return i32(round(params.split.w));
+}
+
+fn runner_source_cache_active() -> bool {
+  return (runner_flags() & 1) != 0;
+}
+
+fn runner_video_srgb_to_linear() -> bool {
+  return (runner_flags() & 2) != 0;
+}
+
+fn runner_flutter_srgb_to_linear() -> bool {
+  return (runner_flags() & 4) != 0;
+}
+
+fn runner_source_srgb_to_linear() -> bool {
+  return (runner_flags() & 8) != 0;
+}
+
+fn map_runner_texture_to_output(color: vec4<f32>, srgb_to_linear_when_edr: bool) -> vec4<f32> {
+  if (output_is_edr() && srgb_to_linear_when_edr) {
+    return vec4<f32>(srgb_to_linear(color.rgb), color.a);
+  }
+  return color;
+}
+
+fn sample_runner_source_texture(track: i32, uv: vec2<f32>) -> vec4<f32> {
+  if (track == 0) {
+    return textureSample(runner_source0_texture, src_sampler, uv);
+  }
+  if (track == 1) {
+    return textureSample(runner_source1_texture, src_sampler, uv);
+  }
+  if (track == 2) {
+    return textureSample(runner_source2_texture, src_sampler, uv);
+  }
+  return textureSample(runner_source3_texture, src_sampler, uv);
+}
+
+fn sample_runner_source(track: i32, uv: vec2<f32>) -> vec4<f32> {
+  return map_runner_texture_to_output(
+    sample_runner_source_texture(track, uv),
+    runner_source_srgb_to_linear());
+}
+
 fn cv_yuv_to_rgb(track: i32, y_norm: f32, uv_norm: vec2<f32>) -> vec4<f32> {
   let format = vec4_get_i(params.yuv_format, track);
-  let high_bit = format == 2;
+  let uses_16bit = yuv_uses_16bit_storage(format);
+  let msb_aligned = yuv_sample_is_msb_aligned(format);
   let range = vec4_get_i(params.color_range, track);
   let matrix = vec4_get_i(params.color_matrix, track);
-  let scale = select(1.0, 4.0, high_bit);
-  let max_code = select(255.0, 1023.0, high_bit);
-  let y_code = y_norm * max_code;
-  let u_code = uv_norm.x * max_code;
-  let v_code = uv_norm.y * max_code;
+  let scale = select(1.0, 4.0, uses_16bit);
+  let max_code = select(255.0, 1023.0, uses_16bit);
+  let texture_code_scale = select(
+      max_code,
+      select(65535.0, 1023.0, msb_aligned),
+      uses_16bit);
+  let y_code = y_norm * texture_code_scale;
+  let u_code = uv_norm.x * texture_code_scale;
+  let v_code = uv_norm.y * texture_code_scale;
   var y = y_code / max_code;
   var cb = u_code / max_code - 0.5;
   var cr = v_code / max_code - 0.5;
@@ -1118,6 +1207,50 @@ fn sample_cv_yuv(track: i32, uv: vec2<f32>) -> vec4<f32> {
     return sample_cv_yuv_track_bilinear(cv_y3, cv_uv3, track, uv);
   }
   return sample_cv_yuv_track_nearest(cv_y3, cv_uv3, track, uv);
+}
+
+@fragment
+fn fs_runner_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+  let flutter_size = max(params.flutter_size.xy, vec2<f32>(1.0));
+  let viewport_min = params.viewport_rect.xy;
+  let viewport_size = max(params.viewport_rect.zw, vec2<f32>(1.0));
+  let viewport_max = viewport_min + viewport_size;
+  var base = map_sdr_ui_to_output(params.background);
+
+  if (position.x >= viewport_min.x && position.y >= viewport_min.y &&
+      position.x < viewport_max.x && position.y < viewport_max.y) {
+    let viewport_uv = (position.xy - viewport_min) / viewport_size;
+    if (runner_source_cache_active()) {
+      let selection = select_track(viewport_uv);
+      let track = clamp(selection.x, 0, 3);
+      let order_index = selection.y;
+      if (vec4_get_i(params.present, track) != 0) {
+        let uv = source_uv(track, track_local_uv(viewport_uv, order_index));
+        if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
+          base = apply_split_divider(
+            sample_runner_source(track, uv),
+            position.x - viewport_min.x);
+        }
+      }
+    } else {
+      base = map_runner_texture_to_output(
+        textureSample(runner_video_texture, src_sampler, viewport_uv),
+        runner_video_srgb_to_linear());
+    }
+  }
+
+  if (position.x >= 0.0 && position.y >= 0.0 &&
+      position.x < flutter_size.x && position.y < flutter_size.y) {
+    var flutter = textureSample(
+      flutter_surface_texture,
+      src_sampler,
+      position.xy / flutter_size);
+    if (runner_flutter_srgb_to_linear()) {
+      flutter = map_premul_sdr_ui_to_output(flutter);
+    }
+    return premul_blend_over(base, flutter);
+  }
+  return base;
 }
 
 @fragment

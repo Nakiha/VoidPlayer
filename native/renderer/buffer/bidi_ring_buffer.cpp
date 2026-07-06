@@ -1,8 +1,18 @@
 #include "renderer/buffer/bidi_ring_buffer.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace vr {
+namespace {
+
+uint64_t elapsed_us_since(std::chrono::steady_clock::time_point start) {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start).count());
+}
+
+} // namespace
 
 BidiRingBuffer::BidiRingBuffer(size_t forward_depth, size_t backward_depth)
     : capacity_(forward_depth + backward_depth + 1)
@@ -11,18 +21,37 @@ BidiRingBuffer::BidiRingBuffer(size_t forward_depth, size_t backward_depth)
     ring_.resize(capacity_);
 }
 
-bool BidiRingBuffer::push(TextureFrame frame) {
-    std::lock_guard<std::mutex> lock(mutex_);
+bool BidiRingBuffer::push(TextureFrame frame, PushTiming* timing) {
+    TextureFrame retired;
+    const auto lock_start = std::chrono::steady_clock::now();
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (timing) {
+            timing->lock_us = elapsed_us_since(lock_start);
+        }
 
-    // Reserve backward_depth slots behind read_idx so retreat data
-    // is never overwritten by pushes.
-    if (count_ >= capacity_ - backward_depth_) {
-        return false;
+        // Reserve backward_depth slots behind read_idx so retreat data
+        // is never overwritten by pushes.
+        if (count_ >= capacity_ - backward_depth_) {
+            return false;
+        }
+
+        if (timing) {
+            timing->overwritten_cpu_bytes = estimate_texture_frame_cpu_bytes(ring_[write_idx_]);
+        }
+        const auto assign_start = std::chrono::steady_clock::now();
+        retired = std::move(ring_[write_idx_]);
+        ring_[write_idx_] = std::move(frame);
+        if (timing) {
+            timing->assign_us = elapsed_us_since(assign_start);
+        }
+        const auto advance_start = std::chrono::steady_clock::now();
+        write_idx_ = (write_idx_ + 1) % capacity_;
+        ++count_;
+        if (timing) {
+            timing->advance_us = elapsed_us_since(advance_start);
+        }
     }
-
-    ring_[write_idx_] = std::move(frame);
-    write_idx_ = (write_idx_ + 1) % capacity_;
-    ++count_;
     return true;
 }
 
@@ -137,16 +166,19 @@ bool BidiRingBuffer::empty() const {
 }
 
 void BidiRingBuffer::clear() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    // Release all TextureFrame resources (shared_ptr cpu_data, texture handles)
-    for (size_t i = 0; i < capacity_; ++i) {
-        ring_[i] = TextureFrame{};
+    std::vector<TextureFrame> retired;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // Release TextureFrame resources after dropping the lock; some frame
+        // owners can run non-trivial destructors.
+        retired.swap(ring_);
+        ring_.resize(capacity_);
+        write_idx_ = 0;
+        read_idx_ = 0;
+        count_ = 0;
+        retreated_ = 0;
+        total_advanced_ = 0;
     }
-    write_idx_ = 0;
-    read_idx_ = 0;
-    count_ = 0;
-    retreated_ = 0;
-    total_advanced_ = 0;
 }
 
 } // namespace vr

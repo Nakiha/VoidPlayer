@@ -237,6 +237,7 @@ UiAutomationBridge _bridge(NativePlayerController controller) {
     setAnalysisOverlayType: (_) {},
     setAnalysisOverlayLayers: (_) {},
     setAnalysisOverlayOpacity: (_) {},
+    dartViewportDiagnostics: () => const {},
     actionRegistry: ActionRegistry(),
   );
 }

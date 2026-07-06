@@ -938,6 +938,65 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
                                               error, error_size);
 }
 
+int VPMacOSNativePlayerCommitSourceProviderPreview(
+    VPMacOSNativePlayer* player,
+    int32_t timeout_ms,
+    const int32_t* expected_file_ids,
+    size_t expected_file_id_count,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size) {
+  if (!player || !out) {
+    write_error(error, error_size, "player or preview frame output is null");
+    return -1;
+  }
+  VPMacOSNativeFrameInfoInit(out);
+  std::vector<int> expected;
+  expected.reserve(expected_file_id_count);
+  for (size_t i = 0; i < expected_file_id_count; ++i) {
+    if (!expected_file_ids) {
+      break;
+    }
+    expected.push_back(static_cast<int>(expected_file_ids[i]));
+  }
+
+  std::string message;
+  vr::PresentationBackendFrameInfo frame_info;
+  bool ok = false;
+  {
+    std::lock_guard<std::mutex> lock(player->mutex);
+    if (!player->renderer_active_locked()) {
+      write_error(error, error_size, "renderer is not active");
+      return -1;
+    }
+    ok = player->renderer->commit_source_provider_preview_frame(
+        timeout_ms,
+        expected.empty() ? nullptr : expected.data(),
+        expected.size(),
+        &frame_info,
+        &message);
+  }
+  if (!ok) {
+    write_error(error, error_size,
+                message.empty() ? "source-provider preview is not ready"
+                                : message);
+    return -1;
+  }
+  copy_frame_info(frame_info, out);
+  {
+    std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
+    player->last_renderer_owned_presentation_succeeded = true;
+    player->last_renderer_owned_frame_info_available = true;
+    player->last_renderer_owned_frame_info = *out;
+    player->renderer_owned_presentation_consecutive_failures = 0;
+    player->renderer_owned_presentation_last_error.clear();
+    ++player->renderer_owned_presentation_event_sequence;
+  }
+  player->presentation_condition.notify_all();
+  write_error(error, error_size, "");
+  return 0;
+}
+
 int VPMacOSNativePlayerBakeCurrentFrameSources(
     VPMacOSNativePlayer* player,
     VPMacOSMetalPresentationBackend* backend,

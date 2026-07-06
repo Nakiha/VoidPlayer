@@ -6,6 +6,8 @@ namespace vr {
 
 void RendererLayoutState::reset() {
     controller_.reset(layout_);
+    viewport_compositor_active_.store(false, std::memory_order_relaxed);
+    viewport_compositor_active_until_us_.store(0, std::memory_order_relaxed);
 }
 
 void RendererLayoutState::reset_revisions() {
@@ -148,7 +150,21 @@ void RendererLayoutState::note_viewport_compositor_activity(int64_t active_until
     }
 }
 
+void RendererLayoutState::set_viewport_compositor_active(bool active) {
+    viewport_compositor_active_.store(active, std::memory_order_relaxed);
+    if (!active) {
+        viewport_compositor_active_until_us_.store(0, std::memory_order_relaxed);
+    }
+}
+
+bool RendererLayoutState::viewport_compositor_persistent_active() const {
+    return viewport_compositor_active_.load(std::memory_order_relaxed);
+}
+
 bool RendererLayoutState::viewport_compositor_active(int64_t now_us) const {
+    if (viewport_compositor_active_.load(std::memory_order_relaxed)) {
+        return true;
+    }
     return now_us < viewport_compositor_active_until_us_.load(std::memory_order_relaxed);
 }
 

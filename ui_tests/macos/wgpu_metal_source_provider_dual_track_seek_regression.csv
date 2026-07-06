@@ -1,0 +1,32 @@
+# WGPU source-provider seek must publish a new ready source package after
+# add-track, including when the secondary track is shorter than the primary.
+# The regression was: seek committed/failed before the source ring published a
+# visual package, leaving the retained compositor stuck on the old frame.
+@WINDOW, 1280, 720
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/wgpu_source_provider_dual_seek_long_h264.mp4, 300, 30, 1920, 1080
+0.05, GENERATE_TEST_VIDEO, build/generated/macos/wgpu_source_provider_dual_seek_short_h264.mp4, 90, 30, 1920, 1080
+0.3, ADD_MEDIA, build/generated/macos/wgpu_source_provider_dual_seek_long_h264.mp4
+1.7, ASSERT_TRACK_COUNT, 1
+1.8, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
+1.81, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorBackend, wgpu-metal-thin-runner
+1.9, SET_ZOOM, 2.0
+2.0, DRAG_VIEWPORT, 160, -60, 30, 3
+2.5, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingLive, true
+2.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceRingPublishCount, 1
+2.7, ADD_MEDIA, build/generated/macos/wgpu_source_provider_dual_seek_short_h264.mp4
+4.1, ASSERT_TRACK_COUNT, 2
+4.2, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingLive, true
+4.21, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingTrackCount, 2, 2
+4.22, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingMissingMask, 0, 0
+4.3, SEEK_TO, 6200000
+5.1, DEBUG_NATIVE_TIMING, source-provider-dual-track-seek-6s
+5.2, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingLastPublishedPtsUs, 5600000, 6800000
+5.21, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingTrackCount, 2, 2
+5.22, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingMissingMask, 0, 0
+5.23, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceRingPublishCount, 3
+5.3, SEEK_TO, 2400000
+6.1, DEBUG_NATIVE_TIMING, source-provider-dual-track-seek-2s
+6.2, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingLastPublishedPtsUs, 1900000, 3000000
+6.21, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingTrackCount, 2, 2
+6.22, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingMissingMask, 0, 0
+6.3, QUIT, 0

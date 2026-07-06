@@ -1,0 +1,63 @@
+# macOS WGPU thin-runner playback source-projection pacing canary.
+# Run with:
+#   VOIDPLAYER_MACOS_PRESENTATION_MODE=wgpu-metal python dev.py mac-ui-test --build ui_tests/macos/wgpu_metal_playback_source_projection_pacing_regression.csv
+@WINDOW, 1366, 768
+0.0, SET_DECODE_MODE, forceSoftware
+0.1, GENERATE_TEST_VIDEO, build/generated/macos/wgpu_ready_state_30s_h264.mp4, 900, 30, 1920, 1080
+0.3, ADD_MEDIA, build/generated/macos/wgpu_ready_state_30s_h264.mp4
+1.6, ASSERT_TRACK_COUNT, 1
+1.7, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
+1.71, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorBackend, wgpu-metal-thin-runner
+1.72, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorEnabled, true
+1.8, SET_LOOP_RANGE, 1000000, 28000000
+1.85, SET_LOOP_ENABLED, 1
+2.0, PLAY
+2.2, ASSERT_PLAYING
+2.7, DEBUG_NATIVE_TIMING, playback-source-provider-warm-before-interaction
+2.71, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProjectionEnabled, true
+2.72, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, true
+2.73, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingLive, true
+2.74, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingHasPublished, true
+2.75, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingComplete, true
+2.76, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceTopologyCommitReady, true
+2.77, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, macosFrameCallbackQueuedCount, 10
+2.78, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, macosFrameCallbackProcessedCount, 10
+2.79, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceRingRefreshRequestCount, 10
+2.80, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceRingPublishCount, 10
+2.81, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
+2.82, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadCount, 0, 0
+2.83, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedCompositeProducerSubmitCount, 0, 0
+2.84, ASSERT_NATIVE_DIAGNOSTIC_STRING, softwareFrameStorageKind, planar-yuv420-ref
+2.85, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, softwareFramePackFallbackCount, 0, 0
+2.86, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSource0DisplayOffsetYX1000, 0, 0
+2.87, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSource0InvDisplaySizeYX1000, 1000, 1000
+2.88, SET_ZOOM, 3.0
+2.9, DRAG_VIEWPORT, 420, -160, 40, 2
+3.4, DEBUG_NATIVE_TIMING, playback-source-projection-a
+3.5, DRAG_VIEWPORT, -520, 220, 40, 2
+4.1, DEBUG_NATIVE_TIMING, playback-source-projection-b
+4.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProjectionEnabled, true
+4.31, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, true
+4.32, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingLive, true
+4.33, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingHasPublished, true
+4.34, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingComplete, true
+4.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceTopologyCommitReady, true
+4.36, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceRingRefreshRequestCount, 3
+4.37, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceRingPublishCount, 3
+4.38, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, rendererPlayingLayoutRedrawSuppressedCount, 1
+4.39, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
+4.40, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 2
+4.41, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
+4.42, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+4.43, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedCompositeProducerSubmitCount, 0, 0
+4.44, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorLastCompositeSucceeded, true
+4.45, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorLastFailure,
+4.46, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorWgpuLastCompletionResult, 0, 0
+4.47, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorWgpuLastCompletedFrame, 1
+4.48, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorWgpuPendingCompletionCount, 0, 2
+4.49, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorWgpuCompletionP95Ms, 0, 20
+4.50, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, displayTickBlockedProducerCount, 0, 0
+4.51, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorVideoAcquireP95Ms, 0, 1
+4.52, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSourceAcquireP95Ms, 0, 1
+4.53, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorCompositeHz, 100
+4.6, QUIT, 0

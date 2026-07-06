@@ -10,7 +10,6 @@ import '../platform/native_file_picker.dart';
 import '../preferences/playback_preferences.dart';
 import '../remote/ssh_remote_media.dart';
 import '../track_manager.dart';
-import '../utils/async_guard.dart';
 import '../utils/media_source.dart';
 import '../video_renderer_controller.dart';
 import '../viewport/viewport_display_state.dart';
@@ -197,15 +196,9 @@ class MainWindowMediaCoordinator {
       for (final path in uniquePaths) {
         if (!_alive) return;
         try {
-          final previousTrackCount = trackManager.count;
           final track = await controller.addTrack(
             path,
             useHardwareDecode: playbackPreferences.useHardwareDecode,
-          );
-          if (!_alive) return;
-          await layoutCoordinator.preemptTimelineTrackCountChange(
-            previousCount: previousTrackCount,
-            nextCount: previousTrackCount + 1,
           );
           if (!_alive) return;
           trackManager.addTrack(track);
@@ -243,9 +236,9 @@ class MainWindowMediaCoordinator {
     return result.uniqueSources;
   }
 
-  void addMediaByPath(String path) {
-    if (path.isEmpty) return;
-    fireAndLog('add media by path', loadMediaPaths([path]));
+  Future<void> addMediaByPath(String path) {
+    if (path.isEmpty) return Future<void>.value();
+    return loadMediaPaths([path]);
   }
 
   Future<void> addNetworkMedia(String url) {
@@ -370,12 +363,6 @@ class MainWindowMediaCoordinator {
         lifecycle.preparePlayerDestroyAfterLastTrackRemoved();
         lifecycle.resetAfterLastTrackRemoved();
       } else {
-        final previousTrackCount = trackManager.count;
-        await layoutCoordinator.preemptTimelineTrackCountChange(
-          previousCount: previousTrackCount,
-          nextCount: tracks.length,
-        );
-        if (!_alive) return;
         trackManager.setTracks(tracks);
         removeSyncOffset(fileId);
         if (wasAudible) {

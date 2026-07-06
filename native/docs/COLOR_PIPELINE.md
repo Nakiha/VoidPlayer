@@ -72,13 +72,13 @@ behavior remain testable.
 
 | Input format | Shared shader input | Notes |
 | --- | --- | --- |
-| `YUV420P`, `YUVJ420P` | CPU planar Y/U/V | Three 8-bit planes sampled directly. |
-| `NV12` | CPU NV12 | Y and interleaved UV are copied directly. |
+| `YUV420P`, `YUVJ420P` | CPU planar Y/U/V ref | Three 8-bit planes sampled directly. |
+| `NV12` | CPU semiplanar Y/UV ref | Y and interleaved UV are sampled directly. |
 | `NV21` | CPU NV12 | VU is swapped to UV. |
 | `YUV422P`, `YUVJ422P` | CPU NV12 | Chroma is vertically downsampled to 4:2:0. |
 | `YUV444P`, `YUVJ444P` | CPU NV12 | Chroma is 2x2 downsampled to 4:2:0. |
-| `YUV420P10LE` | CPU P010 | 10-bit planar data is packed into high-bit P010 layout. |
-| `P010LE` | CPU P010 | P010 high-bit layout is preserved. |
+| `YUV420P10LE` | CPU planar 10-bit Y/U/V ref | Low-aligned 10-bit planes are sampled directly. |
+| `P010LE` | CPU semiplanar P010 ref | P010 high-bit layout is sampled directly. |
 | `YUV422P10LE` | CPU P010 | Chroma is vertically downsampled to 4:2:0. |
 | `YUV444P10LE` | CPU P010 | Chroma is 2x2 downsampled to 4:2:0. |
 | D3D11VA NV12/P010/P016 | GPU plane textures | Windows renderer-owned direct path. |

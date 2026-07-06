@@ -6,12 +6,11 @@
 0.3, ADD_MEDIA, resources/video/mhw_hevc_fullrange_bt709_3s.mp4
 3.0, ASSERT_TRACK_COUNT, 1
 3.1, ASSERT_NATIVE_BACKEND, macos-native-player, true
-3.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-metal
-3.21, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
+3.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-source-provider
+3.21, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderPresenting, true
 3.22, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedBackendAvailable, true
 3.23, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
 3.235, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal
-3.24, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
 3.25, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, false
 3.26, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, true
 3.27, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-software

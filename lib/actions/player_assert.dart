@@ -93,6 +93,12 @@ class AssertNativeDiagnosticIntAtLeast extends PlayerAssert {
   const AssertNativeDiagnosticIntAtLeast(this.key, this.minValue);
 }
 
+class AssertDartViewportDiagnosticIntAtLeast extends PlayerAssert {
+  final String key;
+  final int minValue;
+  const AssertDartViewportDiagnosticIntAtLeast(this.key, this.minValue);
+}
+
 class AssertNativeDiagnosticIntRange extends PlayerAssert {
   final String key;
   final int minValue;

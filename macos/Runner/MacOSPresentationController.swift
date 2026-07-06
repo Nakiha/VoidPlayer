@@ -6,6 +6,8 @@ typealias LayoutRefreshCompletion = (String) -> Void
 
 struct MacOSPresentationContext {
   let nativeBackendActive: Bool
+  let nativeCompositorSourceProjectionActive: Bool
+  let nativeCompositorSourceProviderActive: Bool
   let player: MacOSNativePlayerSession?
   let texture: MacOSVideoTexture?
   let nativeTexture: MacOSFlutterTextureBridge?
@@ -113,6 +115,11 @@ final class MacOSPresentationController {
     guard context.nativeBackendActive,
           let player = context.player,
           let texture = context.nativeTexture else {
+      context.markFrameAvailable()
+      return true
+    }
+    if context.nativeCompositorSourceProviderActive {
+      player.noteViewportCompositorActivity()
       context.markFrameAvailable()
       return true
     }
@@ -313,6 +320,10 @@ final class MacOSPresentationController {
           }
         case .deferredToPlayback:
           self.layoutDeferredToPlaybackCount += 1
+        case .appliedWithoutDraw:
+          request.context.markFrameAvailable()
+          self.layoutPublishedCount += 1
+          finalOutcomeName = "applied"
         case .stale:
           self.layoutStaleDropCount += 1
         case .staleAfterDraw:
@@ -379,12 +390,14 @@ final class MacOSPresentationController {
     guard let player = context.player else {
       return .transientMiss
     }
+    let sourceProviderLayout = context.nativeCompositorSourceProviderActive
     let pumpReady = context.playback.ensurePresentationPump(
       player: player,
       texture: context.nativeTexture,
       maxTrackSlots: context.maxTrackSlots,
       userData: context.userData,
-      presentationState: context.presentationState
+      presentationState: context.presentationState,
+      requiresPresentationTarget: !sourceProviderLayout
     )
     guard pumpReady else {
       return .transientMiss
@@ -393,6 +406,10 @@ final class MacOSPresentationController {
       return .stale
     }
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
+    if sourceProviderLayout {
+      player.noteViewportCompositorActivity()
+      return .appliedWithoutDraw
+    }
     guard let texture = context.nativeTexture else {
       return .transientMiss
     }
@@ -546,6 +563,7 @@ private final class LayoutRefreshRequest {
 private enum LayoutRefreshOutcome {
   case ready(MacOSPendingNativeFrame)
   case deferredToPlayback
+  case appliedWithoutDraw
   case stale
   case staleAfterDraw
   case transientMiss
@@ -557,6 +575,8 @@ private enum LayoutRefreshOutcome {
       return "ready"
     case .deferredToPlayback:
       return "deferred-to-playback"
+    case .appliedWithoutDraw:
+      return "applied-without-draw"
     case .stale:
       return "stale"
     case .staleAfterDraw:

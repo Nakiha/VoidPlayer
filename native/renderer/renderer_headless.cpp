@@ -6,6 +6,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
+#include <sstream>
+#include <thread>
 
 #ifndef VOID_BUILD_ANALYSIS
 #define VOID_BUILD_ANALYSIS 0
@@ -72,6 +75,90 @@ RendererDrawSnapshot make_source_frame_snapshot(
         }
     }
     return snapshot;
+}
+
+bool first_frame_info_from_decision(const PresentDecision& decision,
+                                    uint64_t layout_revision,
+                                    PresentationBackendFrameInfo* out) {
+    if (!out) {
+        return false;
+    }
+    for (const auto& frame : decision.frames) {
+        if (!frame.has_value()) {
+            continue;
+        }
+        const auto& value = *frame;
+        out->width = value.width;
+        out->height = value.height;
+        out->pts_us = value.pts_us;
+        out->dts_us = value.dts_us;
+        out->duration_us = value.duration_us;
+        out->analysis_frame_index = value.analysis_frame_index;
+        out->frame_identity_mode =
+            static_cast<int32_t>(value.frame_identity_mode);
+        out->source_packet_index = value.source_packet_index;
+        out->source_packet_size = value.source_packet_size;
+        out->source_packet_pos = value.source_packet_pos;
+        out->source_packet_pts = value.source_packet_pts;
+        out->source_packet_dts = value.source_packet_dts;
+        out->color_range = value.color.range != VIDEO_COLOR_RANGE_UNKNOWN
+            ? value.color.range
+            : VIDEO_COLOR_RANGE_LIMITED;
+        out->color_matrix = value.color.matrix != VIDEO_COLOR_MATRIX_UNKNOWN
+            ? value.color.matrix
+            : default_presentation_color_matrix_for_size(value.width, value.height);
+        out->color_transfer = value.color.transfer != VIDEO_COLOR_TRANSFER_UNKNOWN
+            ? value.color.transfer
+            : VIDEO_COLOR_TRANSFER_SDR;
+        out->color_primaries =
+            value.color.primaries != VIDEO_COLOR_PRIMARIES_UNKNOWN
+            ? value.color.primaries
+            : default_presentation_color_primaries_for_matrix(out->color_matrix);
+        out->target_pixel_buffer_address = 0;
+        out->layout_revision = layout_revision;
+        return true;
+    }
+    return false;
+}
+
+bool decision_covers_expected_file_ids(const PresentDecision& decision,
+                                       const int* expected_file_ids,
+                                       size_t expected_file_id_count,
+                                       std::string* missing_file_ids) {
+    if (!expected_file_ids || expected_file_id_count == 0) {
+        return present_decision_has_frame(decision);
+    }
+
+    bool ok = true;
+    bool first_missing = true;
+    std::ostringstream missing;
+    for (size_t expected_index = 0; expected_index < expected_file_id_count;
+         ++expected_index) {
+        const int expected_file_id = expected_file_ids[expected_index];
+        if (expected_file_id < 0) {
+            continue;
+        }
+        bool found = false;
+        for (size_t slot = 0; slot < decision.file_ids.size(); ++slot) {
+            if (decision.file_ids[slot] == expected_file_id &&
+                decision.frames[slot].has_value()) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            ok = false;
+            if (!first_missing) {
+                missing << ",";
+            }
+            first_missing = false;
+            missing << expected_file_id;
+        }
+    }
+    if (!ok && missing_file_ids) {
+        *missing_file_ids = missing.str();
+    }
+    return ok;
 }
 
 }  // namespace
@@ -561,6 +648,130 @@ void Renderer::Impl::clear_headless_output() {
     presentation_.clear_headless_output();
 }
 
+bool Renderer::Impl::commit_paused_preview_frame(
+    int timeout_ms,
+    PresentationBackendFrameInfo* out,
+    std::string* error) {
+    const auto timeout = std::chrono::milliseconds(std::max(0, timeout_ms));
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    bool first_attempt = true;
+    PresentDecision committed_decision;
+
+    while (first_attempt || std::chrono::steady_clock::now() < deadline) {
+        first_attempt = false;
+        bool committed = false;
+        {
+            std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+            if (!initialized_.load(std::memory_order_acquire) ||
+                shutting_down_.load(std::memory_order_acquire)) {
+                return set_error(error, "renderer is not initialized");
+            }
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            auto preview = track_controller_.paused_refresh_decision(
+                present_history_.snapshot(), std::nullopt, true);
+            if (preview.has_frame) {
+                track_controller_.filter_present_decision(preview.decision);
+                if (present_decision_has_frame(preview.decision)) {
+                    RendererDrawSnapshotBuilder::update_track_geometry_from_decision(
+                        track_controller_, preview.decision);
+                    const auto layout_revision = layout_state_.current_revision();
+                    present_history_.set(preview.decision);
+                    loop_driver_.mark_preview_presented(true);
+                    mark_paused_hevc_seek_preview_drawn_locked();
+                    if (out) {
+                        *out = {};
+                        first_frame_info_from_decision(
+                            preview.decision, layout_revision, out);
+                    }
+                    committed_decision = preview.decision;
+                    committed = true;
+                }
+            }
+        }
+        if (committed) {
+            emit_seek_preview_presented_events(committed_decision);
+            if (error) {
+                error->clear();
+            }
+            return true;
+        }
+        if (timeout_ms <= 0) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return set_error(error, "paused preview frame is not ready");
+}
+
+bool Renderer::Impl::commit_source_provider_preview_frame(
+    int timeout_ms,
+    const int* expected_file_ids,
+    size_t expected_file_id_count,
+    PresentationBackendFrameInfo* out,
+    std::string* error) {
+    const auto timeout = std::chrono::milliseconds(std::max(0, timeout_ms));
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    bool first_attempt = true;
+    PresentDecision committed_decision;
+    std::string last_missing;
+
+    while (first_attempt || std::chrono::steady_clock::now() < deadline) {
+        first_attempt = false;
+        bool committed = false;
+        {
+            std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+            if (!initialized_.load(std::memory_order_acquire) ||
+                shutting_down_.load(std::memory_order_acquire)) {
+                return set_error(error, "renderer is not initialized");
+            }
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            auto preview = track_controller_.paused_refresh_decision(
+                present_history_.snapshot(), std::nullopt, true);
+            if (preview.has_frame) {
+                track_controller_.filter_present_decision(preview.decision);
+                if (present_decision_has_frame(preview.decision) &&
+                    decision_covers_expected_file_ids(
+                        preview.decision,
+                        expected_file_ids,
+                        expected_file_id_count,
+                        &last_missing)) {
+                    RendererDrawSnapshotBuilder::update_track_geometry_from_decision(
+                        track_controller_, preview.decision);
+                    const auto layout_revision = layout_state_.current_revision();
+                    present_history_.set(preview.decision);
+                    loop_driver_.mark_preview_presented(true);
+                    mark_paused_hevc_seek_preview_drawn_locked();
+                    if (out) {
+                        *out = {};
+                        first_frame_info_from_decision(
+                            preview.decision, layout_revision, out);
+                    }
+                    committed_decision = preview.decision;
+                    committed = true;
+                }
+            }
+        }
+        if (committed) {
+            emit_seek_preview_presented_events(committed_decision);
+            if (error) {
+                error->clear();
+            }
+            return true;
+        }
+        if (timeout_ms <= 0) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    if (!last_missing.empty()) {
+        std::ostringstream message;
+        message << "source-provider preview missing fileIds=" << last_missing;
+        return set_error(error, message.str().c_str());
+    }
+    return set_error(error, "source-provider preview frame is not ready");
+}
+
 bool Renderer::Impl::draw_current_frame_sources(
     PresentationBackend& backend,
     PresentationSourceFrameTarget* targets,
@@ -572,23 +783,52 @@ bool Renderer::Impl::draw_current_frame_sources(
 
     PresentDecision decision;
     float background_color[4] = {};
+    bool decoded_preview_decision = false;
     {
         std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
         if (!surface_state_.headless() || !presentation_.has_backend()) {
             return set_error(error, "renderer is not using a headless presentation backend");
         }
-        // Source-frame bake mirrors the last presented frame (via
-        // present_history_ below), which is valid whether paused or playing.
-        // The macOS compositor drives a per-frame bake during a live viewport
-        // interaction so playing-state pan reveals source pixels immediately,
-        // exactly like the paused path.
         std::lock_guard<std::mutex> lock(state_mutex_);
-        const auto decision_result =
-            track_controller_.paused_layout_decision(present_history_.snapshot());
-        if (!decision_result.has_frame) {
-            return set_error(error, "no complete paused frame is available for source bake");
+        bool has_decision = false;
+        if (render_sink_) {
+            PresentDecision evaluated = render_sink_->evaluate();
+            track_controller_.filter_present_decision(evaluated);
+            if (present_decision_has_frame(evaluated)) {
+                // Source-frame bake is the live video provider for the macOS
+                // WGPU thin runner. It must sample the current clock/track
+                // state directly; the old present history may be stale when
+                // playback presents are suppressed for the native compositor.
+                track_controller_.apply_carry_forward(
+                    present_history_.snapshot(), evaluated);
+                track_controller_.filter_present_decision(evaluated);
+                if (present_decision_has_frame(evaluated)) {
+                    decision = evaluated;
+                    has_decision = true;
+                }
+            }
         }
-        decision = decision_result.decision;
+        if (!has_decision && loop_driver_.preview_pending()) {
+            const auto preview = track_controller_.paused_refresh_decision(
+                present_history_.snapshot(), std::nullopt, true);
+            if (preview.has_frame) {
+                decision = preview.decision;
+                has_decision = true;
+                decoded_preview_decision = true;
+            }
+        }
+        if (!has_decision) {
+            const auto decision_result =
+                track_controller_.paused_layout_decision(
+                    present_history_.snapshot());
+            if (decision_result.has_frame) {
+                decision = decision_result.decision;
+                has_decision = true;
+            }
+        }
+        if (!has_decision) {
+            return set_error(error, "no current frame is available for source bake");
+        }
         track_controller_.filter_present_decision(decision);
         RendererDrawSnapshotBuilder::update_track_geometry_from_decision(
             track_controller_, decision);
@@ -692,6 +932,15 @@ bool Renderer::Impl::draw_current_frame_sources(
             error,
             last_error.empty() ? "source frame bake produced no frames"
                                : last_error.c_str());
+    }
+    if (decoded_preview_decision) {
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            present_history_.set(decision);
+            loop_driver_.mark_preview_presented(true);
+            mark_paused_hevc_seek_preview_drawn_locked();
+        }
+        emit_seek_preview_presented_events(decision);
     }
     if (error) {
         error->clear();

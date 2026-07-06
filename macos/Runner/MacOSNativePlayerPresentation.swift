@@ -170,8 +170,46 @@ extension MacOSNativePlayerSession {
     return MacOSNativeFrameInfo(native: info)
   }
 
+  func commitSourceProviderPreview(
+    timeoutMs: Int,
+    expectedFileIds: [Int]
+  ) throws -> MacOSNativeFrameInfo {
+    var info = VPMacOSNativeFrameInfo()
+    var error = [CChar](repeating: 0, count: 1024)
+    let expected = expectedFileIds.map { Int32($0) }
+    let ret = expected.withUnsafeBufferPointer { buffer in
+      VPMacOSNativePlayerCommitSourceProviderPreview(
+        handle,
+        Int32(max(0, timeoutMs)),
+        buffer.baseAddress,
+        buffer.count,
+        &info,
+        &error,
+        error.count
+      )
+    }
+    if ret != 0 {
+      let message = String(cString: error)
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        message.isEmpty ? "source-provider preview is not ready" : message
+      )
+    }
+    guard info.width > 0, info.height > 0 else {
+      throw MacOSNativePlayerError.invalidPayload
+    }
+    return MacOSNativeFrameInfo(native: info)
+  }
+
   func resetRendererOwnedPresentationStats() {
     VPMacOSNativePlayerResetRendererOwnedPresentationStats(handle)
+  }
+
+  func noteViewportCompositorActivity() {
+    VPMacOSNativePlayerNoteViewportCompositorActivity(handle)
+  }
+
+  func setViewportCompositorActive(_ active: Bool) {
+    VPMacOSNativePlayerSetViewportCompositorActive(handle, active ? 1 : 0)
   }
 
   func rendererOwnedPresentationUploadCount() -> Int {

@@ -6,7 +6,9 @@ use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
-use crate::{MAX_TRACKS, YUV_FORMAT_P010, YUV_FORMAT_YUV420P};
+use crate::{
+    MAX_TRACKS, YUV_FORMAT_NV12, YUV_FORMAT_P010, YUV_FORMAT_YUV420P, YUV_FORMAT_YUV420P10LE,
+};
 
 const STORAGE_NONE: i32 = 0;
 const STORAGE_YUV: i32 = 1;
@@ -16,6 +18,12 @@ const OUTPUT_FORMAT_BGRA8_UNORM: i32 = 1;
 const OUTPUT_FORMAT_RGBA16_FLOAT: i32 = 2;
 const OUTPUT_COLOR_MODE_SDR: i32 = 1;
 const OUTPUT_COLOR_MODE_EDR: i32 = 2;
+const RUNNER_TEXTURE_FORMAT_BGRA8_UNORM: i32 = 1;
+const RUNNER_TEXTURE_FORMAT_RGBA16_FLOAT: i32 = 2;
+const RUNNER_FLAG_SOURCE_CACHE_ACTIVE: i32 = 1;
+const RUNNER_FLAG_VIDEO_SRGB_TO_LINEAR: i32 = 2;
+const RUNNER_FLAG_FLUTTER_SRGB_TO_LINEAR: i32 = 4;
+const RUNNER_FLAG_SOURCE_SRGB_TO_LINEAR: i32 = 8;
 
 fn profile_elapsed_us(start: Instant) -> u64 {
     start.elapsed().as_micros().min(u128::from(u64::MAX)) as u64
@@ -69,6 +77,55 @@ pub struct WgpuMetalRetainedCompositeRequest {
     pub output_format: i32,
     pub output_color_mode: i32,
     pub decision: *const core::ffi::c_void,
+    pub overlay_fill_rects: *const OverlayRect,
+    pub overlay_fill_rect_count: usize,
+    pub overlay_line_rects: *const OverlayRect,
+    pub overlay_line_rect_count: usize,
+    pub overlay_motion_lines: *const OverlayRect,
+    pub overlay_motion_line_count: usize,
+    pub overlay_generation: u64,
+    pub width: i32,
+    pub height: i32,
+    pub error: *mut core::ffi::c_char,
+    pub error_size: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct WgpuMetalRunnerTexture {
+    pub mtl_texture: *mut core::ffi::c_void,
+    pub width: i32,
+    pub height: i32,
+    pub format: i32,
+    pub present: i32,
+}
+
+impl Default for WgpuMetalRunnerTexture {
+    fn default() -> Self {
+        Self {
+            mtl_texture: core::ptr::null_mut(),
+            width: 0,
+            height: 0,
+            format: 0,
+            present: 0,
+        }
+    }
+}
+
+#[repr(C)]
+pub struct WgpuMetalRunnerCompositeRequest {
+    pub destination_mtl_texture: *mut core::ffi::c_void,
+    pub output_format: i32,
+    pub output_color_mode: i32,
+    pub video: WgpuMetalRunnerTexture,
+    pub flutter: WgpuMetalRunnerTexture,
+    pub sources: [WgpuMetalRunnerTexture; MAX_TRACKS],
+    pub decision: *const core::ffi::c_void,
+    pub viewport_rect: [f32; 4],
+    pub source_cache_active: i32,
+    pub video_srgb_to_linear: i32,
+    pub flutter_srgb_to_linear: i32,
+    pub source_srgb_to_linear: i32,
     pub overlay_fill_rects: *const OverlayRect,
     pub overlay_fill_rect_count: usize,
     pub overlay_line_rects: *const OverlayRect,
@@ -426,6 +483,87 @@ pub fn composite_metal_retained_source_with_renderer_async(
     renderer.submit_completion(submission, completion)
 }
 
+pub fn composite_metal_runner_with_renderer(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalRunnerCompositeRequest,
+) -> Result<(), &'static str> {
+    renderer.begin_profile_frame();
+    let profile_start = Instant::now();
+    let submission = submit_metal_runner_with_renderer(renderer, request)?;
+    renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
+    wait_for_submission(
+        &renderer.device,
+        submission,
+        "wgpu-metal runner composite queue wait failed",
+    )
+}
+
+pub fn composite_metal_runner_with_renderer_async(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalRunnerCompositeRequest,
+    completion: WgpuMetalAsyncCompletion,
+) -> Result<(), &'static str> {
+    renderer.begin_profile_frame();
+    let profile_start = Instant::now();
+    let submission = match submit_metal_runner_with_renderer(renderer, request) {
+        Ok(submission) => submission,
+        Err(error) => {
+            renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
+            return Err(error);
+        }
+    };
+    renderer.profiler.last_cpu_render_us = profile_elapsed_us(profile_start);
+    renderer.submit_completion(submission, completion)
+}
+
+fn submit_metal_runner_with_renderer(
+    renderer: &mut WgpuMetalRenderer,
+    request: &WgpuMetalRunnerCompositeRequest,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
+    if request.destination_mtl_texture.is_null() {
+        return Err("wgpu-metal runner destination texture is null");
+    }
+    if request.video.mtl_texture.is_null() || request.flutter.mtl_texture.is_null() {
+        return Err("wgpu-metal runner source texture is null");
+    }
+    if request.decision.is_null() {
+        return Err("wgpu-metal runner decision metadata is null");
+    }
+    let output = output_target_from_request(
+        request.output_format,
+        request.output_color_mode,
+        request.width,
+        request.height,
+    )?;
+    let decision = unsafe { &*(request.decision.cast::<PresentDecisionInfo>()) };
+    let overlay_fill_rects =
+        overlay_rects_from_raw(request.overlay_fill_rects, request.overlay_fill_rect_count)?;
+    let overlay_line_rects =
+        overlay_rects_from_raw(request.overlay_line_rects, request.overlay_line_rect_count)?;
+    let overlay_motion_lines = overlay_rects_from_raw(
+        request.overlay_motion_lines,
+        request.overlay_motion_line_count,
+    )?;
+    render_runner_to_metal_destination(
+        renderer,
+        request.destination_mtl_texture,
+        &request.video,
+        &request.flutter,
+        &request.sources,
+        decision,
+        request.viewport_rect,
+        request.source_cache_active != 0,
+        request.video_srgb_to_linear != 0,
+        request.flutter_srgb_to_linear != 0,
+        request.source_srgb_to_linear != 0,
+        output,
+        overlay_fill_rects,
+        overlay_line_rects,
+        overlay_motion_lines,
+        request.overlay_generation,
+    )
+}
+
 fn submit_metal_retained_source_with_renderer(
     renderer: &mut WgpuMetalRenderer,
     request: &WgpuMetalRetainedCompositeRequest,
@@ -489,7 +627,11 @@ pub struct WgpuMetalRenderer {
     bind_group_layout: wgpu::BindGroupLayout,
     bgra8_pipeline: wgpu::RenderPipeline,
     rgba16_float_pipeline: wgpu::RenderPipeline,
+    runner_bgra8_pipeline: wgpu::RenderPipeline,
+    runner_rgba16_float_pipeline: wgpu::RenderPipeline,
     overlay_primitive_pipeline: wgpu::RenderPipeline,
+    overlay_viewport_bgra8_pipeline: wgpu::RenderPipeline,
+    overlay_viewport_rgba16_float_pipeline: wgpu::RenderPipeline,
     _dummy_bgra_array_texture: wgpu::Texture,
     dummy_bgra_array_view: wgpu::TextureView,
     _dummy_y_texture: wgpu::Texture,
@@ -807,11 +949,35 @@ fn cv_plane_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
+fn runner_texture_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    }
+}
+
 fn create_composite_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::PipelineLayout,
     shader: &wgpu::ShaderModule,
     format: wgpu::TextureFormat,
+    label: &'static str,
+) -> wgpu::RenderPipeline {
+    create_composite_pipeline_with_fragment(device, layout, shader, format, "fs_main", label)
+}
+
+fn create_composite_pipeline_with_fragment(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    format: wgpu::TextureFormat,
+    fragment_entry: &'static str,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -828,7 +994,7 @@ fn create_composite_pipeline(
         multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some("fs_main"),
+            entry_point: Some(fragment_entry),
             targets: &[Some(wgpu::ColorTargetState {
                 format,
                 blend: None,
@@ -846,6 +1012,8 @@ fn create_overlay_primitive_pipeline(
     layout: &wgpu::PipelineLayout,
     shader: &wgpu::ShaderModule,
     vertex_entry: &'static str,
+    fragment_entry: &'static str,
+    format: wgpu::TextureFormat,
     label: &'static str,
     blend: Option<wgpu::BlendState>,
 ) -> wgpu::RenderPipeline {
@@ -863,9 +1031,9 @@ fn create_overlay_primitive_pipeline(
         multisample: wgpu::MultisampleState::default(),
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some("fs_overlay_primitive"),
+            entry_point: Some(fragment_entry),
             targets: &[Some(wgpu::ColorTargetState {
-                format: wgpu::TextureFormat::Rgba8Unorm,
+                format,
                 blend,
                 write_mask: wgpu::ColorWrites::ALL,
             })],
@@ -884,6 +1052,28 @@ fn composite_pipeline_for_output<'a>(
         wgpu::TextureFormat::Bgra8Unorm => Ok(&renderer.bgra8_pipeline),
         wgpu::TextureFormat::Rgba16Float => Ok(&renderer.rgba16_float_pipeline),
         _ => Err("wgpu-metal output pipeline format is unsupported"),
+    }
+}
+
+fn runner_pipeline_for_output<'a>(
+    renderer: &'a WgpuMetalRenderer,
+    output_format: wgpu::TextureFormat,
+) -> Result<&'a wgpu::RenderPipeline, &'static str> {
+    match output_format {
+        wgpu::TextureFormat::Bgra8Unorm => Ok(&renderer.runner_bgra8_pipeline),
+        wgpu::TextureFormat::Rgba16Float => Ok(&renderer.runner_rgba16_float_pipeline),
+        _ => Err("wgpu-metal runner output pipeline format is unsupported"),
+    }
+}
+
+fn overlay_viewport_pipeline_for_output<'a>(
+    renderer: &'a WgpuMetalRenderer,
+    output_format: wgpu::TextureFormat,
+) -> Result<&'a wgpu::RenderPipeline, &'static str> {
+    match output_format {
+        wgpu::TextureFormat::Bgra8Unorm => Ok(&renderer.overlay_viewport_bgra8_pipeline),
+        wgpu::TextureFormat::Rgba16Float => Ok(&renderer.overlay_viewport_rgba16_float_pipeline),
+        _ => Err("wgpu-metal runner overlay pipeline format is unsupported"),
     }
 }
 
@@ -932,8 +1122,8 @@ impl WgpuMetalRenderer {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
@@ -1018,6 +1208,11 @@ impl WgpuMetalRenderer {
                     },
                     count: None,
                 },
+                runner_texture_layout_entry(15),
+                runner_texture_layout_entry(16),
+                runner_texture_layout_entry(17),
+                runner_texture_layout_entry(18),
+                runner_texture_layout_entry(19),
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -1039,6 +1234,22 @@ impl WgpuMetalRenderer {
             wgpu::TextureFormat::Rgba16Float,
             "voidplayer-wgpu-composite-rgba16float-pipeline",
         );
+        let runner_bgra8_pipeline = create_composite_pipeline_with_fragment(
+            &device,
+            &pipeline_layout,
+            &shader,
+            wgpu::TextureFormat::Bgra8Unorm,
+            "fs_runner_main",
+            "voidplayer-wgpu-runner-composite-bgra8-pipeline",
+        );
+        let runner_rgba16_float_pipeline = create_composite_pipeline_with_fragment(
+            &device,
+            &pipeline_layout,
+            &shader,
+            wgpu::TextureFormat::Rgba16Float,
+            "fs_runner_main",
+            "voidplayer-wgpu-runner-composite-rgba16float-pipeline",
+        );
         let overlay_blend = Some(wgpu::BlendState {
             color: wgpu::BlendComponent {
                 src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -1056,7 +1267,29 @@ impl WgpuMetalRenderer {
             &pipeline_layout,
             &shader,
             "vs_overlay_primitive",
+            "fs_overlay_primitive",
+            wgpu::TextureFormat::Rgba8Unorm,
             "voidplayer-wgpu-overlay-primitive-layer-pipeline",
+            overlay_blend,
+        );
+        let overlay_viewport_bgra8_pipeline = create_overlay_primitive_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            "vs_overlay_viewport_primitive",
+            "fs_overlay_viewport_primitive",
+            wgpu::TextureFormat::Bgra8Unorm,
+            "voidplayer-wgpu-overlay-primitive-viewport-bgra8-pipeline",
+            overlay_blend,
+        );
+        let overlay_viewport_rgba16_float_pipeline = create_overlay_primitive_pipeline(
+            &device,
+            &pipeline_layout,
+            &shader,
+            "vs_overlay_viewport_primitive",
+            "fs_overlay_viewport_primitive",
+            wgpu::TextureFormat::Rgba16Float,
+            "voidplayer-wgpu-overlay-primitive-viewport-rgba16float-pipeline",
             overlay_blend,
         );
         let dummy_bgra_array_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -1169,7 +1402,11 @@ impl WgpuMetalRenderer {
             bind_group_layout,
             bgra8_pipeline,
             rgba16_float_pipeline,
+            runner_bgra8_pipeline,
+            runner_rgba16_float_pipeline,
             overlay_primitive_pipeline,
+            overlay_viewport_bgra8_pipeline,
+            overlay_viewport_rgba16_float_pipeline,
             _dummy_bgra_array_texture: dummy_bgra_array_texture,
             dummy_bgra_array_view,
             _dummy_y_texture: dummy_y_texture,
@@ -1232,6 +1469,14 @@ fn texture_format_key(format: wgpu::TextureFormat) -> Result<u8, &'static str> {
         wgpu::TextureFormat::R16Unorm => Ok(5),
         wgpu::TextureFormat::Rg16Unorm => Ok(6),
         _ => Err("wgpu-metal texture import format is unsupported"),
+    }
+}
+
+fn runner_texture_format(format: i32) -> Result<wgpu::TextureFormat, &'static str> {
+    match format {
+        RUNNER_TEXTURE_FORMAT_BGRA8_UNORM => Ok(wgpu::TextureFormat::Bgra8Unorm),
+        RUNNER_TEXTURE_FORMAT_RGBA16_FLOAT => Ok(wgpu::TextureFormat::Rgba16Float),
+        _ => Err("wgpu-metal runner texture format is unsupported"),
     }
 }
 
@@ -1700,6 +1945,280 @@ fn render_retained_source_to_metal_destination(
     }
 }
 
+fn import_runner_texture(
+    renderer: &mut WgpuMetalRenderer,
+    texture: &WgpuMetalRunnerTexture,
+    usage: wgpu::TextureUsages,
+    label: &'static str,
+) -> Result<wgpu::TextureView, &'static str> {
+    if texture.mtl_texture.is_null() || texture.width <= 0 || texture.height <= 0 {
+        return Err("wgpu-metal runner texture arguments are invalid");
+    }
+    Ok(renderer
+        .import_metal_texture_2d_cached(
+            texture.mtl_texture,
+            runner_texture_format(texture.format)?,
+            texture.width as u32,
+            texture.height as u32,
+            usage,
+            label,
+            ImportedTextureClass::Source,
+        )?
+        .1)
+}
+
+fn runner_flags(
+    source_cache_active: bool,
+    video_srgb_to_linear: bool,
+    flutter_srgb_to_linear: bool,
+    source_srgb_to_linear: bool,
+) -> i32 {
+    (if source_cache_active {
+        RUNNER_FLAG_SOURCE_CACHE_ACTIVE
+    } else {
+        0
+    }) | (if video_srgb_to_linear {
+        RUNNER_FLAG_VIDEO_SRGB_TO_LINEAR
+    } else {
+        0
+    }) | (if flutter_srgb_to_linear {
+        RUNNER_FLAG_FLUTTER_SRGB_TO_LINEAR
+    } else {
+        0
+    }) | (if source_srgb_to_linear {
+        RUNNER_FLAG_SOURCE_SRGB_TO_LINEAR
+    } else {
+        0
+    })
+}
+
+fn render_runner_to_metal_destination(
+    renderer: &mut WgpuMetalRenderer,
+    destination_mtl_texture: *mut core::ffi::c_void,
+    video: &WgpuMetalRunnerTexture,
+    flutter: &WgpuMetalRunnerTexture,
+    sources: &[WgpuMetalRunnerTexture; MAX_TRACKS],
+    decision: &PresentDecisionInfo,
+    viewport_rect: [f32; 4],
+    source_cache_active: bool,
+    video_srgb_to_linear: bool,
+    flutter_srgb_to_linear: bool,
+    source_srgb_to_linear: bool,
+    output: OutputTarget,
+    overlay_fill_rects: &[OverlayRect],
+    overlay_line_rects: &[OverlayRect],
+    overlay_motion_lines: &[OverlayRect],
+    _overlay_generation: u64,
+) -> Result<wgpu::SubmissionIndex, &'static str> {
+    let (_destination_texture, destination_view) = renderer.import_metal_texture_2d_cached(
+        destination_mtl_texture,
+        output.format,
+        output.width,
+        output.height,
+        wgpu::TextureUsages::RENDER_ATTACHMENT,
+        "voidplayer-imported-runner-destination",
+        ImportedTextureClass::Destination,
+    )?;
+    let video_view = import_runner_texture(
+        renderer,
+        video,
+        wgpu::TextureUsages::TEXTURE_BINDING,
+        "voidplayer-imported-runner-video",
+    )?;
+    let flutter_view = import_runner_texture(
+        renderer,
+        flutter,
+        wgpu::TextureUsages::TEXTURE_BINDING,
+        "voidplayer-imported-runner-flutter",
+    )?;
+    let mut source_views: [wgpu::TextureView; MAX_TRACKS] =
+        std::array::from_fn(|_| renderer.dummy_flutter_view.clone());
+    if source_cache_active {
+        for slot in 0..MAX_TRACKS {
+            if sources[slot].present == 0 {
+                continue;
+            }
+            source_views[slot] = import_runner_texture(
+                renderer,
+                &sources[slot],
+                wgpu::TextureUsages::TEXTURE_BINDING,
+                "voidplayer-imported-runner-source-cache",
+            )?;
+        }
+    }
+
+    let prepare_start = Instant::now();
+    let package = PresentFramePackageInfo {
+        storage: STORAGE_BGRA,
+        width: output.width as i32,
+        height: output.height as i32,
+        max_track_slots: MAX_TRACKS as i32,
+        stride_bytes: 0,
+        track_stride_bytes: 0,
+        used_bytes: 4,
+        decision: *decision,
+    };
+    renderer.params_scratch.clear();
+    package_params(
+        &package,
+        STORAGE_BGRA,
+        output.color_mode,
+        overlay_fill_rects,
+        overlay_line_rects,
+        overlay_motion_lines,
+        0.0,
+        &mut renderer.params_scratch,
+    );
+    let flags = runner_flags(
+        source_cache_active,
+        video_srgb_to_linear,
+        flutter_srgb_to_linear,
+        source_srgb_to_linear,
+    );
+    write_param_f32(
+        &mut renderer.params_scratch,
+        PARAM_SPLIT_VEC,
+        3,
+        flags as f32,
+    );
+    for (lane, value) in viewport_rect.iter().copied().enumerate() {
+        write_param_f32(
+            &mut renderer.params_scratch,
+            PARAM_VIEWPORT_RECT_VEC,
+            lane,
+            value,
+        );
+    }
+    renderer.package_buffer_dirty |=
+        set_dummy_package_storage_bytes(&mut renderer.package_bytes_scratch);
+    combined_overlay_rects(
+        overlay_fill_rects,
+        overlay_line_rects,
+        overlay_motion_lines,
+        &mut renderer.overlay_rects_scratch,
+    );
+    renderer.profiler.last_prepare_us += profile_elapsed_us(prepare_start);
+
+    write_package_buffer_if_needed(renderer);
+    write_cached_storage_buffer(
+        &renderer.device,
+        &renderer.queue,
+        &mut renderer.params_buffer,
+        &mut renderer.resource_generation,
+        &renderer.params_scratch,
+        "voidplayer-wgpu-runner-composite-params",
+    );
+    renderer.profiler.params_buffer_write_count += 1;
+    write_cached_storage_buffer(
+        &renderer.device,
+        &renderer.queue,
+        &mut renderer.overlay_buffer,
+        &mut renderer.resource_generation,
+        overlay_rect_bytes(&renderer.overlay_rects_scratch),
+        "voidplayer-wgpu-runner-overlay-rects",
+    );
+    renderer.profiler.overlay_buffer_write_count += 1;
+
+    let params_buffer = &renderer
+        .params_buffer
+        .as_ref()
+        .ok_or("wgpu-metal runner params buffer cache is unavailable")?
+        .buffer;
+    let package_buffer = &renderer
+        .package_buffer
+        .as_ref()
+        .ok_or("wgpu-metal runner package buffer cache is unavailable")?
+        .buffer;
+    let overlay_buffer = &renderer
+        .overlay_buffer
+        .as_ref()
+        .ok_or("wgpu-metal runner overlay buffer cache is unavailable")?
+        .buffer;
+    let source_view_refs = [
+        &source_views[0],
+        &source_views[1],
+        &source_views[2],
+        &source_views[3],
+    ];
+    let bind_group_start = Instant::now();
+    let bind_group = renderer
+        .device
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("voidplayer-wgpu-runner-composite-bind-group"),
+            layout: &renderer.bind_group_layout,
+            entries: &composite_bind_group_entries(
+                params_buffer,
+                &renderer.dummy_bgra_array_view,
+                &renderer.sampler,
+                package_buffer,
+                overlay_buffer,
+                &renderer.dummy_y_view,
+                &renderer.dummy_uv_view,
+                &renderer.dummy_bgra_array_view,
+                &flutter_view,
+                &video_view,
+                source_view_refs,
+            ),
+        });
+    renderer.profiler.final_bind_group_create_count += 1;
+    renderer.profiler.last_bind_group_us += profile_elapsed_us(bind_group_start);
+
+    let mut encoder = renderer
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("voidplayer-wgpu-runner-composite-encoder"),
+        });
+    let pipeline = runner_pipeline_for_output(renderer, output.format)?;
+    let overlay_pipeline = overlay_viewport_pipeline_for_output(renderer, output.format)?;
+    let primitive_vertices = overlay_fill_rects
+        .len()
+        .checked_mul(6)
+        .and_then(|count| count.checked_add(overlay_line_rects.len().checked_mul(4 * 6 * 2)?))
+        .and_then(|count| count.checked_add(overlay_motion_lines.len().checked_mul(6)?))
+        .and_then(|count| u32::try_from(count).ok())
+        .ok_or("wgpu-metal runner overlay primitive vertex count is too large")?;
+    let pass_start = Instant::now();
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("voidplayer-wgpu-runner-composite-pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &destination_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_viewport(
+            0.0,
+            0.0,
+            output.width as f32,
+            output.height as f32,
+            0.0,
+            1.0,
+        );
+        pass.set_pipeline(pipeline);
+        pass.draw(0..3, 0..1);
+        if primitive_vertices > 0 {
+            pass.set_pipeline(overlay_pipeline);
+            pass.draw(0..primitive_vertices, 0..1);
+        }
+    }
+    renderer.profiler.last_pass_encode_us += profile_elapsed_us(pass_start);
+    let submit_start = Instant::now();
+    let submission = renderer.queue.submit(std::iter::once(encoder.finish()));
+    renderer.profiler.last_submit_us += profile_elapsed_us(submit_start);
+    renderer.profiler.submit_count += 1;
+    Ok(submission)
+}
+
 fn bgra_atlas_for_wgsl(
     source: &[u8],
     package: &PresentFramePackageInfo,
@@ -1920,10 +2439,12 @@ fn package_params(
 }
 
 const PARAM_VEC4_BYTES: usize = 16;
+const PARAM_SPLIT_VEC: usize = 1;
 const PARAM_PRESENT_VEC: usize = 10;
 const PARAM_SOURCE_WIDTH_VEC: usize = 11;
 const PARAM_SOURCE_HEIGHT_VEC: usize = 12;
 const PARAM_OUTPUT_MODE_VEC: usize = 26;
+const PARAM_VIEWPORT_RECT_VEC: usize = 28;
 const MAX_OVERLAY_LAYER_WIDTH: u32 = 1280;
 const MAX_OVERLAY_LAYER_HEIGHT: u32 = 720;
 
@@ -1948,6 +2469,13 @@ fn param_f32(params: &[u8], vec_index: usize, lane: usize) -> f32 {
 fn write_param_i32(params: &mut [u8], vec_index: usize, lane: usize, value: i32) {
     let offset = vec_index * PARAM_VEC4_BYTES + lane * core::mem::size_of::<i32>();
     if let Some(bytes) = params.get_mut(offset..offset + core::mem::size_of::<i32>()) {
+        bytes.copy_from_slice(&value.to_ne_bytes());
+    }
+}
+
+fn write_param_f32(params: &mut [u8], vec_index: usize, lane: usize, value: f32) {
+    let offset = vec_index * PARAM_VEC4_BYTES + lane * core::mem::size_of::<f32>();
+    if let Some(bytes) = params.get_mut(offset..offset + core::mem::size_of::<f32>()) {
         bytes.copy_from_slice(&value.to_ne_bytes());
     }
 }
@@ -2173,11 +2701,20 @@ fn upload_cpu_yuv_package_textures(
             continue;
         }
         let format = package.decision.yuv_format[slot];
-        let high_bit = format == YUV_FORMAT_P010;
-        if high_bit && !renderer.supports_texture_format_16bit_norm() {
-            return Err("wgpu-metal P010 package requires 16-bit normalized texture support");
+        if format != YUV_FORMAT_NV12
+            && format != YUV_FORMAT_P010
+            && format != YUV_FORMAT_YUV420P
+            && format != YUV_FORMAT_YUV420P10LE
+        {
+            return Err("wgpu-metal CPU YUV package format is unsupported");
         }
-        let bytes_per_sample = if high_bit { 2usize } else { 1usize };
+        let uses_16bit = format == YUV_FORMAT_P010 || format == YUV_FORMAT_YUV420P10LE;
+        if uses_16bit && !renderer.supports_texture_format_16bit_norm() {
+            return Err(
+                "wgpu-metal 10-bit CPU YUV package requires 16-bit normalized texture support",
+            );
+        }
+        let bytes_per_sample = if uses_16bit { 2usize } else { 1usize };
         let coded_width = package.decision.coded_width[slot];
         let coded_height = package.decision.coded_height[slot];
         let y_stride = package.decision.y_stride[slot];
@@ -2204,7 +2741,7 @@ fn upload_cpu_yuv_package_textures(
             &mut renderer.resource_generation,
             coded_width,
             coded_height,
-            if high_bit {
+            if uses_16bit {
                 wgpu::TextureFormat::R16Unorm
             } else {
                 wgpu::TextureFormat::R8Unorm
@@ -2228,7 +2765,7 @@ fn upload_cpu_yuv_package_textures(
             &mut renderer.resource_generation,
             chroma_width,
             chroma_height,
-            if high_bit {
+            if uses_16bit {
                 wgpu::TextureFormat::Rg16Unorm
             } else {
                 wgpu::TextureFormat::Rg8Unorm
@@ -2242,23 +2779,30 @@ fn upload_cpu_yuv_package_textures(
             .wrapping_mul(1099511628211)
             .wrapping_add(uv_generation)
             .max(1);
-        if format == YUV_FORMAT_YUV420P {
+        if format == YUV_FORMAT_YUV420P || format == YUV_FORMAT_YUV420P10LE {
             let u_plane = source_range(
                 source,
                 package.decision.uv_offset[slot],
                 uv_stride,
-                chroma_width as usize,
+                (chroma_width as usize)
+                    .checked_mul(bytes_per_sample)
+                    .ok_or("wgpu-metal CPU YUV package metadata overflow")?,
                 chroma_height,
             )?;
             let v_plane = source_range(
                 source,
                 package.decision.v_offset[slot],
                 uv_stride,
-                chroma_width as usize,
+                (chroma_width as usize)
+                    .checked_mul(bytes_per_sample)
+                    .ok_or("wgpu-metal CPU YUV package metadata overflow")?,
                 chroma_height,
             )?;
             let scratch = &mut renderer.cpu_yuv_uv_scratch[slot];
-            let row_bytes = chroma_width as usize * 2;
+            let row_bytes = (chroma_width as usize)
+                .checked_mul(bytes_per_sample)
+                .and_then(|bytes| bytes.checked_mul(2))
+                .ok_or("wgpu-metal CPU YUV UV scratch overflow")?;
             scratch.clear();
             scratch.resize(
                 row_bytes
@@ -2267,12 +2811,24 @@ fn upload_cpu_yuv_package_textures(
                 0,
             );
             for y in 0..chroma_height as usize {
-                let u_row = &u_plane[y * uv_stride as usize..][..chroma_width as usize];
-                let v_row = &v_plane[y * uv_stride as usize..][..chroma_width as usize];
+                let source_row_bytes = (chroma_width as usize)
+                    .checked_mul(bytes_per_sample)
+                    .ok_or("wgpu-metal CPU YUV package metadata overflow")?;
+                let u_row = &u_plane[y * uv_stride as usize..][..source_row_bytes];
+                let v_row = &v_plane[y * uv_stride as usize..][..source_row_bytes];
                 let dst_row = &mut scratch[y * row_bytes..][..row_bytes];
                 for x in 0..chroma_width as usize {
-                    dst_row[x * 2] = u_row[x];
-                    dst_row[x * 2 + 1] = v_row[x];
+                    let src = x
+                        .checked_mul(bytes_per_sample)
+                        .ok_or("wgpu-metal CPU YUV UV scratch overflow")?;
+                    let dst = x
+                        .checked_mul(bytes_per_sample)
+                        .and_then(|offset| offset.checked_mul(2))
+                        .ok_or("wgpu-metal CPU YUV UV scratch overflow")?;
+                    dst_row[dst..dst + bytes_per_sample]
+                        .copy_from_slice(&u_row[src..src + bytes_per_sample]);
+                    dst_row[dst + bytes_per_sample..dst + bytes_per_sample * 2]
+                        .copy_from_slice(&v_row[src..src + bytes_per_sample]);
                 }
             }
             upload_cpu_yuv_plane(
@@ -2505,6 +3061,12 @@ fn encode_overlay_layer_texture(
     let source_view = &renderer.dummy_bgra_array_view;
     let dummy_y_view = &renderer.dummy_y_view;
     let dummy_uv_view = &renderer.dummy_uv_view;
+    let dummy_runner_sources = [
+        &renderer.dummy_flutter_view,
+        &renderer.dummy_flutter_view,
+        &renderer.dummy_flutter_view,
+        &renderer.dummy_flutter_view,
+    ];
     let package_generation = renderer
         .package_buffer
         .as_ref()
@@ -2631,6 +3193,28 @@ fn encode_overlay_layer_texture(
                                 &renderer.dummy_flutter_view,
                             ),
                         },
+                        wgpu::BindGroupEntry {
+                            binding: 15,
+                            resource: wgpu::BindingResource::TextureView(
+                                &renderer.dummy_flutter_view,
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 16,
+                            resource: wgpu::BindingResource::TextureView(dummy_runner_sources[0]),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 17,
+                            resource: wgpu::BindingResource::TextureView(dummy_runner_sources[1]),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 18,
+                            resource: wgpu::BindingResource::TextureView(dummy_runner_sources[2]),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 19,
+                            resource: wgpu::BindingResource::TextureView(dummy_runner_sources[3]),
+                        },
                     ],
                 });
             renderer.overlay_layer_bind_groups[track] = Some(CachedOverlayLayerBindGroup {
@@ -2727,7 +3311,9 @@ fn composite_bind_group_entries<'a>(
     dummy_uv_view: &'a wgpu::TextureView,
     overlay_layer_texture: &'a wgpu::TextureView,
     dummy_flutter_view: &'a wgpu::TextureView,
-) -> [wgpu::BindGroupEntry<'a>; 15] {
+    runner_video_view: &'a wgpu::TextureView,
+    runner_source_views: [&'a wgpu::TextureView; MAX_TRACKS],
+) -> [wgpu::BindGroupEntry<'a>; 20] {
     [
         wgpu::BindGroupEntry {
             binding: 0,
@@ -2788,6 +3374,26 @@ fn composite_bind_group_entries<'a>(
         wgpu::BindGroupEntry {
             binding: 14,
             resource: wgpu::BindingResource::TextureView(dummy_flutter_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 15,
+            resource: wgpu::BindingResource::TextureView(runner_video_view),
+        },
+        wgpu::BindGroupEntry {
+            binding: 16,
+            resource: wgpu::BindingResource::TextureView(runner_source_views[0]),
+        },
+        wgpu::BindGroupEntry {
+            binding: 17,
+            resource: wgpu::BindingResource::TextureView(runner_source_views[1]),
+        },
+        wgpu::BindGroupEntry {
+            binding: 18,
+            resource: wgpu::BindingResource::TextureView(runner_source_views[2]),
+        },
+        wgpu::BindGroupEntry {
+            binding: 19,
+            resource: wgpu::BindingResource::TextureView(runner_source_views[3]),
         },
     ]
 }
@@ -2871,6 +3477,12 @@ fn render_bgra_atlas_with_wgsl(
     };
     let dummy_y_view = &renderer.dummy_y_view;
     let dummy_uv_view = &renderer.dummy_uv_view;
+    let dummy_runner_sources = [
+        &renderer.dummy_flutter_view,
+        &renderer.dummy_flutter_view,
+        &renderer.dummy_flutter_view,
+        &renderer.dummy_flutter_view,
+    ];
     let bind_group_key = BindGroupKey {
         source_storage,
         params_generation: renderer
@@ -2911,6 +3523,8 @@ fn render_bgra_atlas_with_wgsl(
                         dummy_uv_view,
                         overlay_layer_texture,
                         &renderer.dummy_flutter_view,
+                        &renderer.dummy_flutter_view,
+                        dummy_runner_sources,
                     ),
                 });
             renderer.generic_bind_group = Some(CachedBindGroup {
@@ -2936,6 +3550,8 @@ fn render_bgra_atlas_with_wgsl(
                     dummy_uv_view,
                     overlay_layer_texture,
                     &renderer.dummy_flutter_view,
+                    &renderer.dummy_flutter_view,
+                    dummy_runner_sources,
                 ),
             });
         renderer.generic_bind_group = Some(CachedBindGroup {
@@ -3049,6 +3665,12 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
             .as_ref()
             .unwrap_or(&renderer.dummy_uv_view)
     };
+    let dummy_runner_sources = [
+        &renderer.dummy_flutter_view,
+        &renderer.dummy_flutter_view,
+        &renderer.dummy_flutter_view,
+        &renderer.dummy_flutter_view,
+    ];
     let bind_group_key = CvBindGroupKey {
         params_generation: renderer
             .params_buffer
@@ -3141,6 +3763,26 @@ fn render_cv_pixel_buffer_frame_set_with_wgsl(
                     wgpu::BindGroupEntry {
                         binding: 14,
                         resource: wgpu::BindingResource::TextureView(&renderer.dummy_flutter_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 15,
+                        resource: wgpu::BindingResource::TextureView(&renderer.dummy_flutter_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 16,
+                        resource: wgpu::BindingResource::TextureView(dummy_runner_sources[0]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 17,
+                        resource: wgpu::BindingResource::TextureView(dummy_runner_sources[1]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 18,
+                        resource: wgpu::BindingResource::TextureView(dummy_runner_sources[2]),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 19,
+                        resource: wgpu::BindingResource::TextureView(dummy_runner_sources[3]),
                     },
                 ],
             });

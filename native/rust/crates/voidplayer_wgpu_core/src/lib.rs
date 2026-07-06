@@ -15,6 +15,7 @@ pub const MAX_TRACKS: usize = 4;
 pub const YUV_FORMAT_NV12: i32 = 1;
 pub const YUV_FORMAT_P010: i32 = 2;
 pub const YUV_FORMAT_YUV420P: i32 = 3;
+pub const YUV_FORMAT_YUV420P10LE: i32 = 4;
 
 #[cfg(target_os = "windows")]
 pub use d3d12::*;

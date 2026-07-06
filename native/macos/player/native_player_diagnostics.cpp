@@ -219,6 +219,104 @@ int VPMacOSNativePlayerCopyTrackDiagnostics(
       dst.decode_fps = perf->fps;
       dst.decode_avg_ms = perf->avg_decode_ms;
       dst.decode_max_ms = perf->max_decode_ms;
+      dst.decode_stage_packet_send_count =
+          perf->decode_stage_packet_send_count;
+      dst.decode_stage_packet_send_avg_ms =
+          perf->decode_stage_packet_send_avg_ms;
+      dst.decode_stage_packet_send_max_ms =
+          perf->decode_stage_packet_send_max_ms;
+      dst.decode_stage_receive_loop_count =
+          perf->decode_stage_receive_loop_count;
+      dst.decode_stage_receive_frame_count =
+          perf->decode_stage_receive_frame_count;
+      dst.decode_stage_receive_avg_ms =
+          perf->decode_stage_receive_avg_ms;
+      dst.decode_stage_receive_max_ms =
+          perf->decode_stage_receive_max_ms;
+      dst.decode_stage_convert_count =
+          perf->decode_stage_convert_count;
+      dst.decode_stage_convert_avg_ms =
+          perf->decode_stage_convert_avg_ms;
+      dst.decode_stage_convert_max_ms =
+          perf->decode_stage_convert_max_ms;
+      dst.decode_stage_convert_direct_planar_count =
+          perf->decode_stage_convert_direct_planar_count;
+      dst.decode_stage_convert_direct_planar_avg_ms =
+          perf->decode_stage_convert_direct_planar_avg_ms;
+      dst.decode_stage_convert_direct_planar_max_ms =
+          perf->decode_stage_convert_direct_planar_max_ms;
+      dst.decode_stage_convert_nv12_layout_count =
+          perf->decode_stage_convert_nv12_layout_count;
+      dst.decode_stage_convert_nv12_layout_avg_ms =
+          perf->decode_stage_convert_nv12_layout_avg_ms;
+      dst.decode_stage_convert_nv12_layout_max_ms =
+          perf->decode_stage_convert_nv12_layout_max_ms;
+      dst.decode_stage_convert_nv12_alloc_count =
+          perf->decode_stage_convert_nv12_alloc_count;
+      dst.decode_stage_convert_nv12_alloc_avg_ms =
+          perf->decode_stage_convert_nv12_alloc_avg_ms;
+      dst.decode_stage_convert_nv12_alloc_max_ms =
+          perf->decode_stage_convert_nv12_alloc_max_ms;
+      dst.decode_stage_convert_nv12_pack_count =
+          perf->decode_stage_convert_nv12_pack_count;
+      dst.decode_stage_convert_nv12_pack_avg_ms =
+          perf->decode_stage_convert_nv12_pack_avg_ms;
+      dst.decode_stage_convert_nv12_pack_max_ms =
+          perf->decode_stage_convert_nv12_pack_max_ms;
+      dst.decode_stage_publish_count =
+          perf->decode_stage_publish_count;
+      dst.decode_stage_publish_avg_ms =
+          perf->decode_stage_publish_avg_ms;
+      dst.decode_stage_publish_max_ms =
+          perf->decode_stage_publish_max_ms;
+      dst.decode_stage_publish_lock_count =
+          perf->decode_stage_publish_lock_count;
+      dst.decode_stage_publish_lock_avg_ms =
+          perf->decode_stage_publish_lock_avg_ms;
+      dst.decode_stage_publish_lock_max_ms =
+          perf->decode_stage_publish_lock_max_ms;
+      dst.decode_stage_publish_wait_count =
+          perf->decode_stage_publish_wait_count;
+      dst.decode_stage_publish_wait_avg_ms =
+          perf->decode_stage_publish_wait_avg_ms;
+      dst.decode_stage_publish_wait_max_ms =
+          perf->decode_stage_publish_wait_max_ms;
+      dst.decode_stage_publish_ring_push_count =
+          perf->decode_stage_publish_ring_push_count;
+      dst.decode_stage_publish_ring_push_avg_ms =
+          perf->decode_stage_publish_ring_push_avg_ms;
+      dst.decode_stage_publish_ring_push_max_ms =
+          perf->decode_stage_publish_ring_push_max_ms;
+      dst.decode_stage_publish_ring_lock_count =
+          perf->decode_stage_publish_ring_lock_count;
+      dst.decode_stage_publish_ring_lock_avg_ms =
+          perf->decode_stage_publish_ring_lock_avg_ms;
+      dst.decode_stage_publish_ring_lock_max_ms =
+          perf->decode_stage_publish_ring_lock_max_ms;
+      dst.decode_stage_publish_ring_assign_count =
+          perf->decode_stage_publish_ring_assign_count;
+      dst.decode_stage_publish_ring_assign_avg_ms =
+          perf->decode_stage_publish_ring_assign_avg_ms;
+      dst.decode_stage_publish_ring_assign_max_ms =
+          perf->decode_stage_publish_ring_assign_max_ms;
+      dst.decode_stage_publish_ring_advance_count =
+          perf->decode_stage_publish_ring_advance_count;
+      dst.decode_stage_publish_ring_advance_avg_ms =
+          perf->decode_stage_publish_ring_advance_avg_ms;
+      dst.decode_stage_publish_ring_advance_max_ms =
+          perf->decode_stage_publish_ring_advance_max_ms;
+      dst.decode_stage_publish_ring_overwrite_count =
+          perf->decode_stage_publish_ring_overwrite_count;
+      dst.decode_stage_publish_ring_overwrite_avg_bytes =
+          perf->decode_stage_publish_ring_overwrite_avg_bytes;
+      dst.decode_stage_publish_ring_overwrite_max_bytes =
+          perf->decode_stage_publish_ring_overwrite_max_bytes;
+      dst.decode_stage_flush_count =
+          perf->decode_stage_flush_count;
+      dst.decode_stage_flush_avg_ms =
+          perf->decode_stage_flush_avg_ms;
+      dst.decode_stage_flush_max_ms =
+          perf->decode_stage_flush_max_ms;
       dst.current_pts_us = perf->current_pts_us;
       dst.current_dts_us = perf->current_dts_us;
       dst.analysis_frame_index = perf->analysis_frame_index;
@@ -228,6 +326,13 @@ int VPMacOSNativePlayerCopyTrackDiagnostics(
       dst.source_packet_pos = perf->source_packet_pos;
       dst.source_packet_pts = perf->source_packet_pts;
       dst.source_packet_dts = perf->source_packet_dts;
+      dst.current_frame_storage_kind =
+          static_cast<int32_t>(perf->current_frame_storage_kind);
+      dst.current_frame_yuv_bit_depth = perf->current_frame_yuv_bit_depth;
+      dst.current_frame_yuv_plane_layout =
+          perf->current_frame_yuv_plane_layout;
+      dst.current_frame_yuv_sample_alignment =
+          perf->current_frame_yuv_sample_alignment;
     }
     for (const auto& memory : memory_stats.tracks) {
       if (memory.slot == info.slot && memory.file_id == info.file_id) {
@@ -371,6 +476,114 @@ int VPMacOSNativePlayerCopyPerfStats(
         out->decode_fps = stats.front().fps;
         out->decode_avg_ms = stats.front().avg_decode_ms;
         out->decode_max_ms = stats.front().max_decode_ms;
+        out->decode_stage_packet_send_count =
+            stats.front().decode_stage_packet_send_count;
+        out->decode_stage_packet_send_avg_ms =
+            stats.front().decode_stage_packet_send_avg_ms;
+        out->decode_stage_packet_send_max_ms =
+            stats.front().decode_stage_packet_send_max_ms;
+        out->decode_stage_receive_loop_count =
+            stats.front().decode_stage_receive_loop_count;
+        out->decode_stage_receive_frame_count =
+            stats.front().decode_stage_receive_frame_count;
+        out->decode_stage_receive_avg_ms =
+            stats.front().decode_stage_receive_avg_ms;
+        out->decode_stage_receive_max_ms =
+            stats.front().decode_stage_receive_max_ms;
+        out->decode_stage_convert_count =
+            stats.front().decode_stage_convert_count;
+        out->decode_stage_convert_avg_ms =
+            stats.front().decode_stage_convert_avg_ms;
+        out->decode_stage_convert_max_ms =
+            stats.front().decode_stage_convert_max_ms;
+        out->decode_stage_convert_direct_planar_count =
+            stats.front().decode_stage_convert_direct_planar_count;
+        out->decode_stage_convert_direct_planar_avg_ms =
+            stats.front().decode_stage_convert_direct_planar_avg_ms;
+        out->decode_stage_convert_direct_planar_max_ms =
+            stats.front().decode_stage_convert_direct_planar_max_ms;
+        out->decode_stage_convert_nv12_layout_count =
+            stats.front().decode_stage_convert_nv12_layout_count;
+        out->decode_stage_convert_nv12_layout_avg_ms =
+            stats.front().decode_stage_convert_nv12_layout_avg_ms;
+        out->decode_stage_convert_nv12_layout_max_ms =
+            stats.front().decode_stage_convert_nv12_layout_max_ms;
+        out->decode_stage_convert_nv12_alloc_count =
+            stats.front().decode_stage_convert_nv12_alloc_count;
+        out->decode_stage_convert_nv12_alloc_avg_ms =
+            stats.front().decode_stage_convert_nv12_alloc_avg_ms;
+        out->decode_stage_convert_nv12_alloc_max_ms =
+            stats.front().decode_stage_convert_nv12_alloc_max_ms;
+        out->decode_stage_convert_nv12_pack_count =
+            stats.front().decode_stage_convert_nv12_pack_count;
+        out->decode_stage_convert_nv12_pack_avg_ms =
+            stats.front().decode_stage_convert_nv12_pack_avg_ms;
+        out->decode_stage_convert_nv12_pack_max_ms =
+            stats.front().decode_stage_convert_nv12_pack_max_ms;
+        out->decode_stage_publish_count =
+            stats.front().decode_stage_publish_count;
+        out->decode_stage_publish_avg_ms =
+            stats.front().decode_stage_publish_avg_ms;
+        out->decode_stage_publish_max_ms =
+            stats.front().decode_stage_publish_max_ms;
+        out->decode_stage_publish_lock_count =
+            stats.front().decode_stage_publish_lock_count;
+        out->decode_stage_publish_lock_avg_ms =
+            stats.front().decode_stage_publish_lock_avg_ms;
+        out->decode_stage_publish_lock_max_ms =
+            stats.front().decode_stage_publish_lock_max_ms;
+        out->decode_stage_publish_wait_count =
+            stats.front().decode_stage_publish_wait_count;
+        out->decode_stage_publish_wait_avg_ms =
+            stats.front().decode_stage_publish_wait_avg_ms;
+        out->decode_stage_publish_wait_max_ms =
+            stats.front().decode_stage_publish_wait_max_ms;
+        out->decode_stage_publish_ring_push_count =
+            stats.front().decode_stage_publish_ring_push_count;
+        out->decode_stage_publish_ring_push_avg_ms =
+            stats.front().decode_stage_publish_ring_push_avg_ms;
+        out->decode_stage_publish_ring_push_max_ms =
+            stats.front().decode_stage_publish_ring_push_max_ms;
+        out->decode_stage_publish_ring_lock_count =
+            stats.front().decode_stage_publish_ring_lock_count;
+        out->decode_stage_publish_ring_lock_avg_ms =
+            stats.front().decode_stage_publish_ring_lock_avg_ms;
+        out->decode_stage_publish_ring_lock_max_ms =
+            stats.front().decode_stage_publish_ring_lock_max_ms;
+        out->decode_stage_publish_ring_assign_count =
+            stats.front().decode_stage_publish_ring_assign_count;
+        out->decode_stage_publish_ring_assign_avg_ms =
+            stats.front().decode_stage_publish_ring_assign_avg_ms;
+        out->decode_stage_publish_ring_assign_max_ms =
+            stats.front().decode_stage_publish_ring_assign_max_ms;
+        out->decode_stage_publish_ring_advance_count =
+            stats.front().decode_stage_publish_ring_advance_count;
+        out->decode_stage_publish_ring_advance_avg_ms =
+            stats.front().decode_stage_publish_ring_advance_avg_ms;
+        out->decode_stage_publish_ring_advance_max_ms =
+            stats.front().decode_stage_publish_ring_advance_max_ms;
+        out->decode_stage_publish_ring_overwrite_count =
+            stats.front().decode_stage_publish_ring_overwrite_count;
+        out->decode_stage_publish_ring_overwrite_avg_bytes =
+            stats.front().decode_stage_publish_ring_overwrite_avg_bytes;
+        out->decode_stage_publish_ring_overwrite_max_bytes =
+            stats.front().decode_stage_publish_ring_overwrite_max_bytes;
+        out->decode_stage_flush_count =
+            stats.front().decode_stage_flush_count;
+        out->decode_stage_flush_avg_ms =
+            stats.front().decode_stage_flush_avg_ms;
+        out->decode_stage_flush_max_ms =
+            stats.front().decode_stage_flush_max_ms;
+        out->software_frame_storage_kind =
+            static_cast<int32_t>(stats.front().current_frame_storage_kind);
+        out->software_frame_yuv_bit_depth =
+            stats.front().current_frame_yuv_bit_depth;
+        out->software_frame_yuv_plane_layout =
+            stats.front().current_frame_yuv_plane_layout;
+        out->software_frame_yuv_sample_alignment =
+            stats.front().current_frame_yuv_sample_alignment;
+        out->software_frame_pack_fallback_count =
+            stats.front().decode_stage_convert_nv12_pack_count;
       }
       out->active_track_count = stats.size();
       for (const auto& track_stats : stats) {

@@ -34,6 +34,16 @@ target_link_libraries(software_frame_packer_smoke PRIVATE
 add_test(NAME software_frame_packer_smoke COMMAND software_frame_packer_smoke)
 void_label_test(software_frame_packer_smoke "contract;portable")
 
+add_executable(bidi_ring_buffer_smoke
+    "${VOID_NATIVE_DIR}/tools/bidi_ring_buffer_smoke.cpp"
+)
+void_apply_native_compile_options(bidi_ring_buffer_smoke)
+target_link_libraries(bidi_ring_buffer_smoke PRIVATE
+    void_player_portable_core
+)
+add_test(NAME bidi_ring_buffer_smoke COMMAND bidi_ring_buffer_smoke)
+void_label_test(bidi_ring_buffer_smoke "contract;portable")
+
 add_executable(color_reference_smoke
     "${VOID_NATIVE_DIR}/tools/color_reference_smoke.cpp"
     "${VOID_NATIVE_DIR}/renderer/color/color_reference.cpp"

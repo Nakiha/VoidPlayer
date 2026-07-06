@@ -253,6 +253,35 @@ void main() {
     expect(find.byTooltip(detail), findsOneWidget);
   });
 
+  testWidgets('analysis hover panel refreshes after track updates', (
+    tester,
+  ) async {
+    final firstTrack = track();
+    const secondTrack = TrackEntry(
+      TrackInfo(
+        fileId: 2,
+        slot: 1,
+        path: 'second.mp4',
+        width: 1920,
+        height: 1080,
+      ),
+    );
+
+    await tester.pumpWidget(
+      buildToolbar(tracks: [firstTrack], onProfiler: () {}),
+    );
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.analytics_outlined));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(
+      buildToolbar(tracks: [firstTrack, secondTrack], onProfiler: () {}),
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('marks sidebar toggle invokes the toolbar action', (
     tester,
   ) async {

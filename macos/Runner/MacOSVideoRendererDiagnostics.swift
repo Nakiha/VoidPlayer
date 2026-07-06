@@ -39,6 +39,7 @@ enum MacOSVideoRendererDiagnostics {
     trackCount: Int,
     isPlaying: Bool,
     presentationTargetInstalled: Bool,
+    nativeCompositorSourceProviderActive: Bool = false,
     nativeEventDiagnostics: [String: Any],
     frameCallbackDiagnostics: [String: Any],
     viewportDiagnostics: [String: Any],
@@ -98,17 +99,26 @@ enum MacOSVideoRendererDiagnostics {
     let rendererOwnedPixelBufferBytes =
       Int64(textureStats?.rendererOwnedPixelBufferBytes ?? 0)
     let dedicatedGpuUsageBytes = nativeDedicatedGpuUsageBytes + rendererOwnedPixelBufferBytes
+    let nativeCompositorSourceProviderPresenting =
+      nativeCompositorSourceProviderActive && !presentationTargetInstalled
     var diagnostics: [String: Any] = [
       "platform": "macos",
       "backend": backendName,
       "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
       "presentationAdapterKind": presentationAdapterKind(
         player: player,
-        state: rendererOwnedState
+        state: rendererOwnedState,
+        sourceProviderPresenting: nativeCompositorSourceProviderPresenting
       ),
       "presentationScheduler": String(cString: VPMacOSNativePresentationSchedulerName()),
-      "presentationBackend": presentationBackendName(player: player, state: rendererOwnedState),
+      "presentationBackend": presentationBackendName(
+        player: player,
+        state: rendererOwnedState,
+        sourceProviderPresenting: nativeCompositorSourceProviderPresenting
+      ),
       "rendererOwnedPresentationActive": rendererOwnedActive,
+      "nativeCompositorSourceProviderActive": nativeCompositorSourceProviderActive,
+      "nativeCompositorSourceProviderPresenting": nativeCompositorSourceProviderPresenting,
       "rendererOwnedRendererInitialized": rendererOwnedState["rendererInitialized"] ?? false,
       "rendererOwnedTargetInstalled": rendererOwnedState["targetInstalled"] ?? false,
       "rendererOwnedBackendAvailable": rendererOwnedState["backendAvailable"] ?? false,
@@ -177,8 +187,123 @@ enum MacOSVideoRendererDiagnostics {
       "primaryTrackSlot": primaryTrack?["slot"] ?? -1,
       "primaryTrackDecodeMode": primaryTrack?["decodeMode"] ?? "none",
       "primaryTrackDecoderName": primaryTrack?["decoderName"] ?? "none",
+      "softwareFrameStorageKind": primaryTrack?["softwareFrameStorageKind"] ?? "empty",
+      "softwareFrameStorageKindCode": primaryTrack?["softwareFrameStorageKindCode"] ?? 0,
+      "softwareFrameYuvBitDepth": primaryTrack?["softwareFrameYuvBitDepth"] ?? 0,
+      "softwareFramePackFallbackCount":
+        primaryTrack?["softwareFramePackFallbackCount"] ?? 0,
+      "primaryTrackSoftwareFrameStorageKind":
+        primaryTrack?["softwareFrameStorageKind"] ?? "empty",
+      "primaryTrackSoftwareFramePackFallbackCount":
+        primaryTrack?["softwareFramePackFallbackCount"] ?? 0,
       "primaryTrackHardwareDecodeActive": primaryTrack?["hardwareDecodeActive"] ?? false,
       "primaryTrackFramesDecoded": primaryTrack?["framesDecoded"] ?? 0,
+      "primaryTrackDecodeFps": primaryTrack?["decodeFps"] ?? 0.0,
+      "primaryTrackDecodeFpsX1000": primaryTrack?["decodeFpsX1000"] ?? 0,
+      "primaryTrackDecodeAvgMs": primaryTrack?["decodeAvgMs"] ?? 0.0,
+      "primaryTrackDecodeMaxMs": primaryTrack?["decodeMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStagePacketSendCount":
+        primaryTrack?["decodeStagePacketSendCount"] ?? 0,
+      "primaryTrackDecodeStagePacketSendAvgMs":
+        primaryTrack?["decodeStagePacketSendAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStagePacketSendMaxMs":
+        primaryTrack?["decodeStagePacketSendMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStageReceiveLoopCount":
+        primaryTrack?["decodeStageReceiveLoopCount"] ?? 0,
+      "primaryTrackDecodeStageReceiveFrameCount":
+        primaryTrack?["decodeStageReceiveFrameCount"] ?? 0,
+      "primaryTrackDecodeStageReceiveAvgMs":
+        primaryTrack?["decodeStageReceiveAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStageReceiveMaxMs":
+        primaryTrack?["decodeStageReceiveMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStageConvertCount":
+        primaryTrack?["decodeStageConvertCount"] ?? 0,
+      "primaryTrackDecodeStageConvertAvgMs":
+        primaryTrack?["decodeStageConvertAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStageConvertMaxMs":
+        primaryTrack?["decodeStageConvertMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStageConvertDirectPlanarCount":
+        primaryTrack?["decodeStageConvertDirectPlanarCount"] ?? 0,
+      "primaryTrackDecodeStageConvertDirectPlanarAvgMs":
+        primaryTrack?["decodeStageConvertDirectPlanarAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStageConvertDirectPlanarMaxMs":
+        primaryTrack?["decodeStageConvertDirectPlanarMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStageConvertNv12LayoutCount":
+        primaryTrack?["decodeStageConvertNv12LayoutCount"] ?? 0,
+      "primaryTrackDecodeStageConvertNv12LayoutAvgMs":
+        primaryTrack?["decodeStageConvertNv12LayoutAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStageConvertNv12LayoutMaxMs":
+        primaryTrack?["decodeStageConvertNv12LayoutMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStageConvertNv12AllocCount":
+        primaryTrack?["decodeStageConvertNv12AllocCount"] ?? 0,
+      "primaryTrackDecodeStageConvertNv12AllocAvgMs":
+        primaryTrack?["decodeStageConvertNv12AllocAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStageConvertNv12AllocMaxMs":
+        primaryTrack?["decodeStageConvertNv12AllocMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStageConvertNv12PackCount":
+        primaryTrack?["decodeStageConvertNv12PackCount"] ?? 0,
+      "primaryTrackDecodeStageConvertNv12PackAvgMs":
+        primaryTrack?["decodeStageConvertNv12PackAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStageConvertNv12PackMaxMs":
+        primaryTrack?["decodeStageConvertNv12PackMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishCount":
+        primaryTrack?["decodeStagePublishCount"] ?? 0,
+      "primaryTrackDecodeStagePublishAvgMs":
+        primaryTrack?["decodeStagePublishAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishMaxMs":
+        primaryTrack?["decodeStagePublishMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishLockCount":
+        primaryTrack?["decodeStagePublishLockCount"] ?? 0,
+      "primaryTrackDecodeStagePublishLockAvgMs":
+        primaryTrack?["decodeStagePublishLockAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishLockMaxMs":
+        primaryTrack?["decodeStagePublishLockMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishWaitCount":
+        primaryTrack?["decodeStagePublishWaitCount"] ?? 0,
+      "primaryTrackDecodeStagePublishWaitAvgMs":
+        primaryTrack?["decodeStagePublishWaitAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishWaitMaxMs":
+        primaryTrack?["decodeStagePublishWaitMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishRingPushCount":
+        primaryTrack?["decodeStagePublishRingPushCount"] ?? 0,
+      "primaryTrackDecodeStagePublishRingPushAvgMs":
+        primaryTrack?["decodeStagePublishRingPushAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishRingPushMaxMs":
+        primaryTrack?["decodeStagePublishRingPushMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishRingLockCount":
+        primaryTrack?["decodeStagePublishRingLockCount"] ?? 0,
+      "primaryTrackDecodeStagePublishRingLockAvgMs":
+        primaryTrack?["decodeStagePublishRingLockAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishRingLockMaxMs":
+        primaryTrack?["decodeStagePublishRingLockMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishRingAssignCount":
+        primaryTrack?["decodeStagePublishRingAssignCount"] ?? 0,
+      "primaryTrackDecodeStagePublishRingAssignAvgMs":
+        primaryTrack?["decodeStagePublishRingAssignAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishRingAssignMaxMs":
+        primaryTrack?["decodeStagePublishRingAssignMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishRingAdvanceCount":
+        primaryTrack?["decodeStagePublishRingAdvanceCount"] ?? 0,
+      "primaryTrackDecodeStagePublishRingAdvanceAvgMs":
+        primaryTrack?["decodeStagePublishRingAdvanceAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishRingAdvanceMaxMs":
+        primaryTrack?["decodeStagePublishRingAdvanceMaxMs"] ?? 0.0,
+      "primaryTrackDecodeStagePublishRingOverwriteCount":
+        primaryTrack?["decodeStagePublishRingOverwriteCount"] ?? 0,
+      "primaryTrackDecodeStagePublishRingOverwriteAvgBytes":
+        primaryTrack?["decodeStagePublishRingOverwriteAvgBytes"] ?? 0.0,
+      "primaryTrackDecodeStagePublishRingOverwriteMaxBytes":
+        primaryTrack?["decodeStagePublishRingOverwriteMaxBytes"] ?? 0,
+      "primaryTrackDecodeStageFlushCount":
+        primaryTrack?["decodeStageFlushCount"] ?? 0,
+      "primaryTrackDecodeStageFlushAvgMs":
+        primaryTrack?["decodeStageFlushAvgMs"] ?? 0.0,
+      "primaryTrackDecodeStageFlushMaxMs":
+        primaryTrack?["decodeStageFlushMaxMs"] ?? 0.0,
+      "primaryTrackBufferCount": primaryTrack?["bufferCount"] ?? 0,
+      "primaryTrackBufferCapacity": primaryTrack?["bufferCapacity"] ?? 0,
+      "primaryTrackBufferState": primaryTrack?["bufferState"] ?? 0,
+      "primaryTrackCurrentPtsUs": primaryTrack?["currentPtsUs"] ?? 0,
       "secondaryTrackFileId": secondaryTrack?["fileId"] ?? -1,
       "secondaryTrackSlot": secondaryTrack?["slot"] ?? -1,
       "secondaryTrackDecodeMode": secondaryTrack?["decodeMode"] ?? "none",
@@ -188,7 +313,11 @@ enum MacOSVideoRendererDiagnostics {
       "available": player != nil,
       "reason": player == nil
         ? "Explicit macOS synthetic texture source is active"
-        : presentationReason(player: player, state: rendererOwnedState),
+        : presentationReason(
+          player: player,
+          state: rendererOwnedState,
+          sourceProviderPresenting: nativeCompositorSourceProviderPresenting
+        ),
       "textureId": textureId ?? -1,
       "textureWidth": textureDimensions?.width ?? 0,
       "textureHeight": textureDimensions?.height ?? 0,
@@ -249,12 +378,14 @@ enum MacOSVideoRendererDiagnostics {
       "pixelBufferMetalCVPixelBufferUploadCount":
         perfStats?["rendererOwnedCVPixelBufferUploadCount"] ?? 0,
       "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
-      "presentationUploadMode": MacOSPresentationDiagnostics.uploadMode(
-        perfStats: perfStats,
-        targetReady: textureStats?.metalTextureValid ?? false,
-        targetInstalled: presentationTargetInstalled,
-        textureRegistered: textureId != nil
-      ),
+      "presentationUploadMode": nativeCompositorSourceProviderPresenting
+        ? "wgpu-source-provider"
+        : MacOSPresentationDiagnostics.uploadMode(
+          perfStats: perfStats,
+          targetReady: textureStats?.metalTextureValid ?? false,
+          targetInstalled: presentationTargetInstalled,
+          textureRegistered: textureId != nil
+        ),
       "presentationPackageUploadCount":
         perfStats?["rendererOwnedPresentPackageUploadCount"] ?? 0,
       "presentationPackageCopyUs": perfStats?["rendererOwnedPresentPackageCopyUs"] ?? 0,
@@ -300,6 +431,8 @@ enum MacOSVideoRendererDiagnostics {
         perfStats?["rendererLayoutDeferredToPlaybackCount"] ?? 0,
       "playingLayoutRedrawSuppressedCount":
         perfStats?["rendererPlayingLayoutRedrawSuppressedCount"] ?? 0,
+      "rendererPlayingLayoutRedrawSuppressedCount":
+        perfStats?["rendererPlayingLayoutRedrawSuppressedCount"] ?? 0,
       "layoutStaleCompletionDropCount":
         perfStats?["rendererLayoutStaleCompletionDropCount"] ?? 0,
       "rendererLastLayoutRevision": perfStats?["rendererLastLayoutRevision"] ?? 0,
@@ -344,11 +477,13 @@ enum MacOSVideoRendererDiagnostics {
       "packetQueueMemoryBytes": perfStats?["packetQueueMemoryBytes"] ?? 0,
       "nativeCpuFrameMemoryBytes": perfStats?["cpuFrameMemoryBytes"] ?? 0,
       "nativePacketQueueMemoryBytes": perfStats?["packetQueueMemoryBytes"] ?? 0,
-      "presentationFallbackReason": MacOSPresentationDiagnostics.fallbackReason(
-        player: player,
-        targetInstalled: presentationTargetInstalled,
-        perfStats: perfStats
-      ),
+      "presentationFallbackReason": nativeCompositorSourceProviderPresenting
+        ? "none"
+        : MacOSPresentationDiagnostics.fallbackReason(
+          player: player,
+          targetInstalled: presentationTargetInstalled,
+          perfStats: perfStats
+        ),
     ]
     nativeEventDiagnostics.forEach { diagnostics[$0.key] = $0.value }
     frameCallbackDiagnostics.forEach { diagnostics[$0.key] = $0.value }
@@ -359,10 +494,14 @@ enum MacOSVideoRendererDiagnostics {
 
   private static func presentationBackendName(
     player: MacOSNativePlayerSession?,
-    state: [String: Any]
+    state: [String: Any],
+    sourceProviderPresenting: Bool
   ) -> String {
     guard player != nil else {
       return "explicit-synthetic-texture"
+    }
+    if sourceProviderPresenting {
+      return "native-wgpu-metal-source-provider"
     }
     if state["active"] as? Bool == true {
       let backendName = state["backendName"] as? String ?? "unknown"
@@ -376,10 +515,14 @@ enum MacOSVideoRendererDiagnostics {
 
   private static func presentationAdapterKind(
     player: MacOSNativePlayerSession?,
-    state: [String: Any]
+    state: [String: Any],
+    sourceProviderPresenting: Bool
   ) -> String {
     guard player != nil else {
       return "explicit-synthetic"
+    }
+    if sourceProviderPresenting {
+      return "renderer-owned-source-provider"
     }
     if state["active"] as? Bool == true {
       return "renderer-owned-metal"
@@ -389,8 +532,12 @@ enum MacOSVideoRendererDiagnostics {
 
   private static func presentationReason(
     player: MacOSNativePlayerSession?,
-    state: [String: Any]
+    state: [String: Any],
+    sourceProviderPresenting: Bool
   ) -> String {
+    if player != nil && sourceProviderPresenting {
+      return "macOS WGPU native compositor source provider is active"
+    }
     if player != nil && state["active"] as? Bool == true {
       return "macOS shared renderer is active with renderer-owned Metal presentation"
     }

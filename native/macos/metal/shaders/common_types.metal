@@ -7,6 +7,7 @@ using namespace metal;
 	constant int kPresentFormatNV12 = 1;
 	constant int kPresentFormatP010 = 2;
 	constant int kPresentFormatYUV420P = 3;
+	constant int kPresentFormatYUV420P10LE = 4;
 	constant int kColorRangeFull = 2;
 	constant int kColorMatrixUnknown = 0;
 	constant int kColorMatrixBT601 = 1;

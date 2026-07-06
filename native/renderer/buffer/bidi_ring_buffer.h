@@ -95,7 +95,14 @@ public:
     explicit BidiRingBuffer(size_t forward_depth = 4, size_t backward_depth = 2);
 
     // Write side (Decode thread)
-    bool push(TextureFrame frame);
+    struct PushTiming {
+        uint64_t lock_us = 0;
+        uint64_t assign_us = 0;
+        uint64_t advance_us = 0;
+        uint64_t overwritten_cpu_bytes = 0;
+    };
+
+    bool push(TextureFrame frame, PushTiming* timing = nullptr);
 
     // Read side (Render thread)
     std::optional<TextureFrame> peek(int offset = 0) const;

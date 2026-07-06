@@ -160,6 +160,14 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSNativePlayerCommitSourceProviderPreview(
+    VPMacOSNativePlayer* player,
+    int32_t timeout_ms,
+    const int32_t* expected_file_ids,
+    size_t expected_file_id_count,
+    VPMacOSNativeFrameInfo* out,
+    char* error,
+    size_t error_size);
 int VPMacOSNativePlayerBakeCurrentFrameSources(
     VPMacOSNativePlayer* player,
     VPMacOSMetalPresentationBackend* backend,
@@ -195,6 +203,9 @@ int64_t VPMacOSNativePlayerTrackOffsetUs(VPMacOSNativePlayer* player,
                                          int32_t file_id);
 void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
                                     const VPMacOSNativeLayoutState* state);
+void VPMacOSNativePlayerNoteViewportCompositorActivity(VPMacOSNativePlayer* player);
+void VPMacOSNativePlayerSetViewportCompositorActive(VPMacOSNativePlayer* player,
+                                                    int active);
 int VPMacOSNativePlayerCopyLayout(VPMacOSNativePlayer* player,
                                   VPMacOSNativeLayoutState* out);
 int VPMacOSNativePlayerCopyLayoutPresentationParams(

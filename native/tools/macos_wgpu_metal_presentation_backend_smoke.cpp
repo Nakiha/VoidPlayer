@@ -1940,6 +1940,57 @@ int main() {
     CVPixelBufferRelease(pixel_buffer);
     return fail("WgpuMetal backend planar YUV WGSL capture did not produce red BGRA output");
   }
+
+  auto planar10_y = std::make_shared<std::array<uint16_t, 4>>(
+      std::array<uint16_t, 4>{304, 304, 304, 304});
+  auto planar10_u =
+      std::make_shared<std::array<uint16_t, 1>>(std::array<uint16_t, 1>{340});
+  auto planar10_v =
+      std::make_shared<std::array<uint16_t, 1>>(std::array<uint16_t, 1>{1020});
+  vr::TextureFrame planar10_frame;
+  planar10_frame.width = 2;
+  planar10_frame.height = 2;
+  planar10_frame.pts_us = 224000;
+  planar10_frame.duration_us = 33333;
+  planar10_frame.color.range = vr::VIDEO_COLOR_RANGE_FULL;
+  planar10_frame.color.matrix = vr::VIDEO_COLOR_MATRIX_BT601;
+  planar10_frame.storage = vr::CpuPlanarYuvFrameStorage{
+      planar10_y,
+      {reinterpret_cast<const uint8_t*>(planar10_y->data()),
+       reinterpret_cast<const uint8_t*>(planar10_u->data()),
+       reinterpret_cast<const uint8_t*>(planar10_v->data())},
+      {4, 2, 2},
+      {2, 1, 1},
+      {2, 1, 1},
+      2,
+      10,
+      vr::CpuYuvPlaneLayout::PlanarYuv420,
+      vr::CpuYuvSampleAlignment::Packed,
+  };
+  vr::RendererDrawSnapshot planar10_snapshot = planar_snapshot;
+  planar10_snapshot.decision.current_pts_us = planar10_frame.pts_us;
+  planar10_snapshot.decision.frames[0] = planar10_frame;
+  if (!draw_wgpu_frame_and_wait(*wgpu_backend,
+                                planar10_snapshot,
+                                vr::PresentationBackendDrawHooks{})) {
+    std::cerr << "WgpuMetal backend rejected 10-bit planar YUV snapshot: "
+              << wgpu_backend->last_error() << "\n";
+    CVPixelBufferRelease(pixel_buffer);
+    return 1;
+  }
+  wgpu_capture.clear();
+  wgpu_capture_width = 0;
+  wgpu_capture_height = 0;
+  if (!wgpu_backend->capture_front_buffer(wgpu_capture,
+                                          wgpu_capture_width,
+                                          wgpu_capture_height) ||
+      wgpu_capture_width != kWidth || wgpu_capture_height != kHeight ||
+      wgpu_capture.size() < 4 || wgpu_capture[0] > 6 ||
+      wgpu_capture[1] > 6 || wgpu_capture[2] < 246 ||
+      wgpu_capture[3] != 255) {
+    CVPixelBufferRelease(pixel_buffer);
+    return fail("WgpuMetal backend 10-bit planar YUV capture did not produce red BGRA output");
+  }
   wgpu_backend->shutdown();
   auto left_cv = make_nv12_pixel_buffer(kWidth, kHeight, 96, 128, 128);
   auto right_cv = make_nv12_pixel_buffer(kWidth, kHeight, 180, 128, 128);

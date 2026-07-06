@@ -257,6 +257,12 @@ RendererTrackPresentationModel::paused_refresh_decision(
         if (snapshot.ready_to_present) {
             decision = snapshot.decision;
             result.has_frame = true;
+        } else {
+            const auto available = build_available_paused_frame_snapshot(tracks);
+            if (available.has_frame) {
+                decision = available.decision;
+                result.has_frame = true;
+            }
         }
     } else if (evaluated_decision.has_value()) {
         decision = *evaluated_decision;
@@ -297,7 +303,7 @@ RendererTrackPresentationModel::paused_refresh_decision(
         if (!decoded_preview_refresh &&
             present_decision_covers_active_tracks(cached, tracks)) {
             decision = cached;
-        } else {
+        } else if (!decoded_preview_refresh) {
             const auto snapshot = paused_preview_snapshot();
             if (snapshot.ready_to_present) {
                 decision = snapshot.decision;

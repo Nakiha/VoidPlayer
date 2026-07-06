@@ -32,6 +32,7 @@ class UiAutomationBridge {
   final void Function(Set<AnalysisOverlayLayer> layers)
   setAnalysisOverlayLayers;
   final void Function(double opacity) setAnalysisOverlayOpacity;
+  final Map<String, Object> Function() dartViewportDiagnostics;
   final ActionRegistry _actionRegistry;
 
   const UiAutomationBridge({
@@ -52,6 +53,7 @@ class UiAutomationBridge {
     required this.setAnalysisOverlayType,
     required this.setAnalysisOverlayLayers,
     required this.setAnalysisOverlayOpacity,
+    required this.dartViewportDiagnostics,
     required ActionRegistry actionRegistry,
   }) : _actionRegistry = actionRegistry;
 

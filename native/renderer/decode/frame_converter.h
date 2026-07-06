@@ -12,6 +12,8 @@ extern "C" {
 
 namespace vr {
 
+struct DecodeStagePerfCounters;
+
 class FrameConverter {
 public:
     FrameConverter();
@@ -24,7 +26,8 @@ public:
                        bool download_to_cpu = false,
                        std::recursive_mutex* device_mutex = nullptr);
 
-    std::optional<TextureFrame> convert(AVFrame* frame);
+    std::optional<TextureFrame> convert(AVFrame* frame,
+                                        DecodeStagePerfCounters* stage_perf = nullptr);
     std::optional<TextureFrame> snapshot_hardware_frame(AVFrame* frame);
 
     bool is_hardware() const { return hardware_converter_ != nullptr; }

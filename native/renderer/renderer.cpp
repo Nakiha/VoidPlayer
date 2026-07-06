@@ -202,6 +202,14 @@ void Renderer::apply_layout(const LayoutState& state) {
     impl_->apply_layout(state);
 }
 
+void Renderer::note_viewport_compositor_activity() {
+    impl_->note_viewport_compositor_activity();
+}
+
+void Renderer::set_viewport_compositor_active(bool active) {
+    impl_->set_viewport_compositor_active(active);
+}
+
 void Renderer::set_background_color(float r, float g, float b, float a) {
     impl_->set_background_color(r, g, b, a);
 }
@@ -367,6 +375,22 @@ bool Renderer::request_frame_refresh(const char* reason) {
 
 bool Renderer::update_presentation_sdr_white_level(double nits) {
     return impl_->update_presentation_sdr_white_level(nits);
+}
+
+bool Renderer::commit_paused_preview_frame(int timeout_ms,
+                                           PresentationBackendFrameInfo* out,
+                                           std::string* error) {
+    return impl_->commit_paused_preview_frame(timeout_ms, out, error);
+}
+
+bool Renderer::commit_source_provider_preview_frame(
+    int timeout_ms,
+    const int* expected_file_ids,
+    size_t expected_file_id_count,
+    PresentationBackendFrameInfo* out,
+    std::string* error) {
+    return impl_->commit_source_provider_preview_frame(
+        timeout_ms, expected_file_ids, expected_file_id_count, out, error);
 }
 
 bool Renderer::draw_current_frame_sources(PresentationBackend& backend,

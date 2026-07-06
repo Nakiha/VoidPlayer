@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
 import '../app_log.dart';
+import '../viewport/viewport_projection_diagnostics.dart';
 import 'native_player_events.dart';
 import 'native_player_protocol.dart';
 
@@ -384,6 +385,7 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     required List<double> viewOffsetUvX,
     required List<double> viewOffsetUvY,
   }) {
+    ViewportProjectionDiagnostics.instance.record('projectionChannelSend');
     return _invokeTimedVoid(
       NativePlayerMethods.prepareNativeCompositorSourceCache,
       _withCompositorTrace({

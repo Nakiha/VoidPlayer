@@ -132,11 +132,16 @@
 	  return map_sdr_ui_to_output(viewport_background_color(params), params.output_edr != 0);
 	}
 
-	float yuv_sample_to_float(device const uchar* source, uint offset, bool is_p010) {
-	  if (is_p010) {
+	float yuv_sample_to_float(device const uchar* source, uint offset, int format) {
+	  if (format == kPresentFormatP010 || format == kPresentFormatYUV420P10LE) {
 	    uint lo = uint(source[offset]);
 	    uint hi = uint(source[offset + 1]);
-	    uint sample = ((hi << 8) | lo) >> 6;
+	    uint sample = (hi << 8) | lo;
+	    if (format == kPresentFormatP010) {
+	      sample = sample >> 6;
+	    } else {
+	      sample = sample & 1023u;
+	    }
 	    return float(sample) / 1023.0;
 	  }
 	  return float(source[offset]) / 255.0;
@@ -149,8 +154,12 @@
 	                        uint source_y) {
 	  const int format = yuv_format_at(params, track_slot);
 	  const bool is_p010 = format == kPresentFormatP010;
-	  const bool is_planar_yuv420 = format == kPresentFormatYUV420P;
-	  const uint bytes_per_sample = is_p010 ? 2u : 1u;
+	  const bool is_planar_yuv420 =
+	      format == kPresentFormatYUV420P ||
+	      format == kPresentFormatYUV420P10LE;
+	  const bool uses_16bit =
+	      is_p010 || format == kPresentFormatYUV420P10LE;
+	  const uint bytes_per_sample = uses_16bit ? 2u : 1u;
 	  const uint coded_width = uint(max(coded_width_at(params, track_slot), 1));
 	  const uint coded_height = uint(max(coded_height_at(params, track_slot), 1));
 	  const uint y_x = min(source_x, coded_width - 1);
@@ -170,9 +179,9 @@
 	            uv_y * uv_stride_at(params, track_slot) +
 	            uv_x * bytes_per_sample
 	      : uv_offset + bytes_per_sample;
-	  const float y = yuv_sample_to_float(source, y_offset, is_p010);
-	  const float u = yuv_sample_to_float(source, uv_offset, is_p010);
-	  const float v = yuv_sample_to_float(source, v_offset, is_p010);
+	  const float y = yuv_sample_to_float(source, y_offset, format);
+	  const float u = yuv_sample_to_float(source, uv_offset, format);
+	  const float v = yuv_sample_to_float(source, v_offset, format);
 	  float y_full = y;
 	  float2 cbcr = (float2(u, v) * 255.0 - 128.0) / 255.0;
 	  if (color_range_at(params, track_slot) != kColorRangeFull) {

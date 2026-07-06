@@ -54,6 +54,7 @@ TrackPerfSnapshotResult snapshot_track_perf_stats(
     size_t slot,
     const TrackPipeline& track,
     const DecodePerfCounters::Snapshot& decode_perf,
+    const DecodeStagePerfCounters::Snapshot& decode_stage_perf,
     const std::optional<TextureFrame>& current_frame,
     uint64_t baseline_frames,
     double elapsed_s);

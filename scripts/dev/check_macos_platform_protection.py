@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -73,7 +74,9 @@ REQUIRED_SOURCE_MARKERS = {
     "macos/Runner/MacOSVideoRendererDiagnostics.swift": [
         '"presentationAdapterKind"',
         '"presentationBackend"',
+        "native-wgpu-metal-source-provider",
         "native-wgpu-metal-cvpixelbuffer-target",
+        "renderer-owned-source-provider",
         "renderer-owned-metal",
         '"nativePresentationTargetInstalled"',
         '"hardwareDecodeProvider"',
@@ -124,10 +127,14 @@ REQUIRED_UI_PROFILE_ENTRIES = {
 
 REQUIRED_UI_SCRIPT_MARKERS = {
     "ui_tests/macos/native_facade_smoke.csv": [
-        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-metal",
-        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-cvpixelbuffer-target",
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, wgpu-metal",
-        "ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true",
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-renderer",
+    ],
+    "ui_tests/macos/wgpu_metal_default_software_smoke.csv": [
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapterKind, renderer-owned-source-provider",
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationBackend, native-wgpu-metal-source-provider",
+        "ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderActive, true",
+        "ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProviderPresenting, true",
     ],
     "ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv": [
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationRequest, auto",
@@ -164,6 +171,13 @@ REQUIRED_UI_SCRIPT_MARKERS = {
 
 def _read(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
+
+
+def _extract_int_constant(pattern: str, text: str) -> int | None:
+    match = re.search(pattern, text)
+    if match is None:
+        return None
+    return int(match.group(1))
 
 
 def _check_contains(
@@ -233,6 +247,19 @@ def check_macos_platform_protection() -> list[str]:
 
     for rel, markers in REQUIRED_UI_SCRIPT_MARKERS.items():
         _check_contains(errors, rel, markers)
+
+    c_abi = _extract_int_constant(
+        r"VP_WGPU_FFI_ABI_VERSION\s*=\s*(\d+)",
+        _read("native/macos/wgpu/wgpu_ffi_bridge.h"),
+    )
+    rust_abi = _extract_int_constant(
+        r"pub const ABI_VERSION:\s*i32\s*=\s*(\d+);",
+        _read("native/rust/crates/voidplayer_wgpu_core/src/lib.rs"),
+    )
+    if c_abi is None or rust_abi is None:
+        errors.append("macOS WGPU FFI ABI constants must be statically discoverable")
+    elif c_abi != rust_abi:
+        errors.append(f"macOS WGPU FFI ABI mismatch: header={c_abi} rust={rust_abi}")
 
     return errors
 

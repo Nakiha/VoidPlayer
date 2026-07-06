@@ -3,6 +3,7 @@
 #include "test_utils.h"
 #include "renderer/layout/layout_controller.h"
 #include "renderer/layout/layout_geometry.h"
+#include "renderer/decode/decode_stage_perf.h"
 #include "renderer/track/track_lifecycle.h"
 #include "renderer/track/track_pipeline_factory.h"
 #include "renderer/track/track_perf_baseline.h"
@@ -537,9 +538,10 @@ TEST_CASE("TrackSnapshot builds track perf stats",
         3500,
         0,
     };
+    DecodeStagePerfCounters::Snapshot decode_stage_perf{};
 
     auto snapshot = snapshot_track_perf_stats(
-        3, track, decode_perf, current_frame, 90, 1.5);
+        3, track, decode_perf, decode_stage_perf, current_frame, 90, 1.5);
 
     REQUIRE(snapshot.frames_decoded == 120);
     REQUIRE(snapshot.stats.slot == 3);
@@ -554,7 +556,7 @@ TEST_CASE("TrackSnapshot builds track perf stats",
     REQUIRE(snapshot.stats.fps == 20.0);
 
     auto short_window = snapshot_track_perf_stats(
-        3, track, decode_perf, std::nullopt, 90, 0.25);
+        3, track, decode_perf, decode_stage_perf, std::nullopt, 90, 0.25);
     REQUIRE(short_window.stats.current_pts_us == 0);
     REQUIRE(short_window.stats.current_dts_us == kNoTimestampUs);
     REQUIRE(short_window.stats.fps == 0.0);

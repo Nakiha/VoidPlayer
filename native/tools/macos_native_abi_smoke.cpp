@@ -31,7 +31,7 @@ bool require_c_abi_struct(const char* name) {
 int main() {
   static_assert(VP_MACOS_NATIVE_API_VERSION == 7u,
                 "bump this smoke when the macOS native ABI version changes");
-  static_assert(VP_WGPU_FFI_ABI_VERSION == 10,
+  static_assert(VP_WGPU_FFI_ABI_VERSION == 16,
                 "bump this smoke when the wgpu FFI ABI version changes");
   static_assert(offsetof(VPMacOSNativeFrameInfo, struct_size) == 0,
                 "versioned ABI structs must start with struct_size");

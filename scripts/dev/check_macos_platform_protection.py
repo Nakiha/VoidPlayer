@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -172,6 +173,13 @@ def _read(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
+def _extract_int_constant(pattern: str, text: str) -> int | None:
+    match = re.search(pattern, text)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
 def _check_contains(
     errors: list[str],
     rel: str,
@@ -239,6 +247,19 @@ def check_macos_platform_protection() -> list[str]:
 
     for rel, markers in REQUIRED_UI_SCRIPT_MARKERS.items():
         _check_contains(errors, rel, markers)
+
+    c_abi = _extract_int_constant(
+        r"VP_WGPU_FFI_ABI_VERSION\s*=\s*(\d+)",
+        _read("native/macos/wgpu/wgpu_ffi_bridge.h"),
+    )
+    rust_abi = _extract_int_constant(
+        r"pub const ABI_VERSION:\s*i32\s*=\s*(\d+);",
+        _read("native/rust/crates/voidplayer_wgpu_core/src/lib.rs"),
+    )
+    if c_abi is None or rust_abi is None:
+        errors.append("macOS WGPU FFI ABI constants must be statically discoverable")
+    elif c_abi != rust_abi:
+        errors.append(f"macOS WGPU FFI ABI mismatch: header={c_abi} rust={rust_abi}")
 
     return errors
 

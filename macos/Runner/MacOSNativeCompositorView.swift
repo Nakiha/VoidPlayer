@@ -165,6 +165,9 @@ final class MacOSNativeCompositorView: NSView {
   private var lastDisplayTickNs: UInt64 = 0
   private var lastWgpuProfilerSnapshot = VPWgpuMetalProfilerSnapshot()
   private var lastWgpuCompletionResult: Int32 = 0
+  private var lastWgpuSubmittedFrame = 0
+  private var lastWgpuCompletedFrame = 0
+  private var pendingWgpuCompletionCount = 0
 
   private static let metricsSampleIntervalNs: UInt64 = 1_000_000_000
   private static let displayLinkWarmGraceNs: UInt64 = 250_000_000
@@ -181,7 +184,7 @@ final class MacOSNativeCompositorView: NSView {
     let device: MTLDevice?
     if useWgpuCompositor {
       var error = [CChar](repeating: 0, count: 512)
-      guard VPWgpuFfiVersion() >= VP_WGPU_FFI_ABI_VERSION,
+      guard VPWgpuFfiVersion() == VP_WGPU_FFI_ABI_VERSION,
             let renderer = VPWgpuMetalRendererCreate(&error, error.count),
             let rawDevice = VPWgpuMetalRendererMetalDevice(renderer) else {
         let message = error.withUnsafeBufferPointer { buffer in
@@ -542,6 +545,10 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorWgpuSubmitCpuP95Ms"] = wgpuSubmitCpuDuration.p95Ms()
     result["nativeCompositorWgpuCompletionLastMs"] = wgpuCompletionDuration.lastMs()
     result["nativeCompositorWgpuCompletionP95Ms"] = wgpuCompletionDuration.p95Ms()
+    result["nativeCompositorWgpuLastSubmittedFrame"] = lastWgpuSubmittedFrame
+    result["nativeCompositorWgpuLastCompletedFrame"] = lastWgpuCompletedFrame
+    result["nativeCompositorWgpuPendingCompletionCount"] = pendingWgpuCompletionCount
+    result["nativeCompositorWgpuLastCompletionResult"] = lastWgpuCompletionResult
     result["nativeCompositorStaticSkipHz"] = staticSkipRate.rateHz()
     result["nativeCompositorInFlightSkipHz"] = inFlightSkipRate.rateHz()
     result["nativeCompositorSourceChangeHz"] = sourceChangeRate.rateHz()
@@ -859,6 +866,11 @@ final class MacOSNativeCompositorView: NSView {
           inFlightSemaphore.signal()
           return
         }
+        lastWgpuSubmittedFrame = frameCount + 1
+        pendingWgpuCompletionCount += 1
+        // WGPU owns encoding/submission into the imported drawable texture. The
+        // Swift runner owns CAMetalDrawable presentation; completion below only
+        // confirms the submitted GPU work drained and updates success diagnostics.
         drawable.present()
         setHiddenOnMain(false)
         frameCount += 1
@@ -869,8 +881,6 @@ final class MacOSNativeCompositorView: NSView {
         }
         lastVideoTextureAvailable = true
         lastFlutterTextureAvailable = true
-        lastCompositeSucceeded = true
-        lastFailure = ""
         lastVideoSRGBToLinearEnabled = colorFlags.y > 0.5
         lastFlutterSRGBToLinearEnabled = colorFlags.z > 0.5
         lastPresentedVideoSourceKey = videoSnapshot.sourceKey
@@ -1360,6 +1370,8 @@ final class MacOSNativeCompositorView: NSView {
     completedNs: UInt64
   ) {
     inFlightSemaphore.signal()
+    pendingWgpuCompletionCount = max(0, pendingWgpuCompletionCount - 1)
+    lastWgpuCompletedFrame = max(lastWgpuCompletedFrame, frame)
     lastWgpuCompletionResult = result
     if submittedNs > 0, completedNs >= submittedNs {
       wgpuCompletionDuration.record(completedNs - submittedNs)
@@ -1370,8 +1382,18 @@ final class MacOSNativeCompositorView: NSView {
         lastWgpuProfilerSnapshot = snapshot
       }
     }
-    if result != 0 {
-      recordFailure("wgpu-metal runner composite completion failed result=\(result)")
+    if result == 0 {
+      lastCompositeSucceeded = true
+      lastFailure = ""
+    } else {
+      lastCompositeSucceeded = false
+      lastFailure = "wgpu-metal runner composite completion failed result=\(result)"
+      if lastFailure != lastLoggedFailure || frame == 1 || frame % 120 == 0 {
+        lastLoggedFailure = lastFailure
+        NSLog(
+          "VoidPlayer native compositor failure backend=wgpu-metal-thin-runner frame=\(frame): \(lastFailure)"
+        )
+      }
     }
     if MacOSProfilerLog.enabled && (frame == 1 || frame % 120 == 0 || result != 0) {
       let summary = String(
@@ -1589,7 +1611,8 @@ final class MacOSNativeCompositorView: NSView {
                 viewportRect.z,
                 viewportRect.w,
               ])
-              request.source_cache_active = sourceProjectionActive ? 1 : 0
+              request.source_cache_active =
+                (sourceProjectionActive && !sourceCache.textures.isEmpty) ? 1 : 0
               request.video_srgb_to_linear = colorFlags.y > 0.5 ? 1 : 0
               request.flutter_srgb_to_linear = colorFlags.z > 0.5 ? 1 : 0
               request.source_srgb_to_linear =

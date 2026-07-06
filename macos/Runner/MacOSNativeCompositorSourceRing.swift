@@ -27,21 +27,13 @@ struct MacOSNativeCompositorSourceRefreshResult {
   let error: String
 }
 
-/// Owns the live source-cache ring used during a viewport pan/zoom interaction.
+/// Owns the retained source package used by the WGPU thin runner.
 ///
-/// Paused and playing share one mechanism: at interaction start the bridge
-/// subscribes; the ring renders each track's current frame at source resolution
-/// (identity layout) into a per-track triple-buffered ring and publishes the
-/// just-baked buffer to the compositor via `setSourceBuffers`. While playing, the
-/// bridge calls `requestRefresh` on every presented frame so the ring mirrors the
-/// live frame — that is what lets playing-state pan reveal slid-to pixels
-/// immediately, exactly like paused. While paused, frames do not advance, so the
-/// single initial bake stays valid and no refresh fires.
-///
-/// The compositor owns projection separately; the ring only swaps in the
-/// freshly-baked published buffer each frame. Triple-buffering plus the ring
-/// holding strong refs means the compositor never reads a buffer the ring is
-/// mid-writing and buffers are never freed mid-read.
+/// Producers may ask the ring to bake or refresh a candidate package, but only a
+/// complete package is published to the compositor. Failed or incomplete
+/// candidates leave the previously published package intact, so display-link
+/// ticks can keep sampling a stable ready state instead of seeing blank or
+/// half-topology source textures.
 final class MacOSNativeCompositorSourceRing {
   private struct TrackRing {
     let slot: Int
@@ -96,6 +88,7 @@ final class MacOSNativeCompositorSourceRing {
   private var lastBakeDrawnCount = 0
   private var lastBakeError = ""
   private var topologyRevision: UInt64 = 0
+  private var lastPublishedTopologyRevision: UInt64 = 0
   private var lastRequiredMask: UInt64 = 0
   private var lastDrawnMask: UInt64 = 0
   private var lastMissingMask: UInt64 = 0
@@ -122,8 +115,8 @@ final class MacOSNativeCompositorSourceRing {
   }
 
   /// Sets up the ring for an interaction. Allocates per-track buffers, bakes the
-  /// initial frame, and publishes it. Returns false (and reports the error to the
-  /// compositor) when allocation/bake fails so the bridge can clear cleanly.
+  /// initial frame, and publishes it before returning. Failed candidate
+  /// subscriptions do not replace the previously published source package.
   func subscribe(
     player: MacOSNativePlayerSession,
     descriptors: [MacOSCompositorSourceTrackDescriptor],
@@ -131,16 +124,40 @@ final class MacOSNativeCompositorSourceRing {
     edrOutputEnabled: Bool,
     topologyRevision: UInt64,
     projection: MacOSNativeCompositorSourceProjection
-  ) {
+  ) -> MacOSNativeCompositorSourceRefreshResult {
+    let semaphore = DispatchSemaphore(value: 0)
+    var result = MacOSNativeCompositorSourceRefreshResult(
+      published: false,
+      publishCount: 0,
+      drawnMask: 0,
+      reusedMask: 0,
+      missingMask: 0,
+      ptsUs: -1,
+      error: "source ring subscribe did not run"
+    )
     ringQueue.async { [weak self] in
-      self?.subscribeOnQueue(
-        player: player,
-        descriptors: descriptors,
-        order: order,
-        edrOutputEnabled: edrOutputEnabled,
-        topologyRevision: topologyRevision,
-        projection: projection
-      )
+      if let self {
+        result = self.subscribeOnQueue(
+          player: player,
+          descriptors: descriptors,
+          order: order,
+          edrOutputEnabled: edrOutputEnabled,
+          topologyRevision: topologyRevision,
+          projection: projection
+        )
+      }
+      semaphore.signal()
+    }
+    semaphore.wait()
+    return result
+  }
+
+  func hasCompletePackage(topologyRevision expectedTopologyRevision: UInt64) -> Bool {
+    ringQueue.sync {
+      live &&
+        hasPublished &&
+        !rings.isEmpty &&
+        lastPublishedTopologyRevision == expectedTopologyRevision
     }
   }
 
@@ -270,6 +287,8 @@ final class MacOSNativeCompositorSourceRing {
     ringQueue.sync {
       [
         "sourceRingLive": live,
+        "sourceRingHasPublished": hasPublished,
+        "sourceRingComplete": live && hasPublished && !rings.isEmpty,
         "sourceRingDepth": depth,
         "sourceRingTrackCount": rings.count,
         "sourceRingRefreshRequestCount": refreshRequestCount,
@@ -286,6 +305,9 @@ final class MacOSNativeCompositorSourceRing {
         "sourceRingLastBakeDrawnCount": lastBakeDrawnCount,
         "sourceRingLastBakeError": lastBakeError,
         "sourceRingTopologyRevision": Int64(min(topologyRevision, UInt64(Int64.max))),
+        "sourceRingReadyTopologyRevision": Int64(
+          min(lastPublishedTopologyRevision, UInt64(Int64.max))
+        ),
         "sourceRingRequiredMask": Int64(min(lastRequiredMask, UInt64(Int64.max))),
         "sourceRingDrawnMask": Int64(min(lastDrawnMask, UInt64(Int64.max))),
         "sourceRingMissingMask": Int64(min(lastMissingMask, UInt64(Int64.max))),
@@ -326,16 +348,51 @@ final class MacOSNativeCompositorSourceRing {
     edrOutputEnabled: Bool,
     topologyRevision: UInt64,
     projection: MacOSNativeCompositorSourceProjection
-  ) {
-    live = false
-    rings = []
-    self.order = order
-    self.topologyRevision = topologyRevision
-    self.projection = projection
+  ) -> MacOSNativeCompositorSourceRefreshResult {
+    let previousRings = rings
+    let previousOrder = self.order
+    let previousProjection = self.projection
+    let previousBakeTarget = bakeTarget
+    let previousLive = live
+    let previousDepth = depth
+    let previousHasPublished = hasPublished
+    let previousTopologyRevision = self.topologyRevision
+    let previousPublishedTopologyRevision = lastPublishedTopologyRevision
+
+    func restorePreviousPublishedState() {
+      rings = previousRings
+      self.order = previousOrder
+      self.projection = previousProjection
+      bakeTarget = previousBakeTarget
+      live = previousLive
+      depth = previousDepth
+      hasPublished = previousHasPublished
+      self.topologyRevision = previousTopologyRevision
+      lastPublishedTopologyRevision = previousPublishedTopologyRevision
+      baking = false
+      pending = false
+    }
+
+    func failure(_ message: String, requiredMask: UInt64 = 0) -> MacOSNativeCompositorSourceRefreshResult {
+      lastIncompleteReason = message
+      if requiredMask != 0 {
+        lastRequiredMask = requiredMask
+        lastMissingMask = requiredMask
+      }
+      restorePreviousPublishedState()
+      return MacOSNativeCompositorSourceRefreshResult(
+        published: false,
+        publishCount: publishCount,
+        drawnMask: lastDrawnMask,
+        reusedMask: lastReusedMask,
+        missingMask: requiredMask != 0 ? requiredMask : lastMissingMask,
+        ptsUs: lastPublishedPtsUs,
+        error: message
+      )
+    }
 
     guard !descriptors.isEmpty else {
-      compositor?.setSourceBuffers(textures: [], overlay: .empty, error: "no source tracks")
-      return
+      return failure("no source tracks")
     }
 
     let pixelFormat: OSType = edrOutputEnabled
@@ -350,20 +407,14 @@ final class MacOSNativeCompositorSourceRing {
       perFrameBytes += d.width * d.height * bytesPerPixel
     }
     if perFrameBytes <= 0 {
-      compositor?.setSourceBuffers(textures: [], overlay: .empty, error: "no source cache targets")
-      return
+      return failure("no source cache targets")
     }
     var chosenDepth = Self.ringDepth
     if perFrameBytes * chosenDepth > Self.ringBudgetBytes {
       chosenDepth = 1
     }
     if perFrameBytes * chosenDepth > Self.ringBudgetBytes {
-      compositor?.setSourceBuffers(
-        textures: [],
-        overlay: .empty,
-        error: "source cache memory cap exceeded"
-      )
-      return
+      return failure("source cache memory cap exceeded")
     }
     depth = chosenDepth
 
@@ -393,12 +444,7 @@ final class MacOSNativeCompositorSourceRing {
         buffers.append(pixelBuffer)
       }
       guard ok, !buffers.isEmpty else {
-        compositor?.setSourceBuffers(
-          textures: [],
-          overlay: .empty,
-          error: "failed to allocate source cache pixel buffer"
-        )
-        return
+        return failure("failed to allocate source cache pixel buffer")
       }
       maxWidth = max(maxWidth, d.width)
       maxHeight = max(maxHeight, d.height)
@@ -420,12 +466,13 @@ final class MacOSNativeCompositorSourceRing {
     }
 
     guard !built.isEmpty else {
-      compositor?.setSourceBuffers(textures: [], overlay: .empty, error: "no source cache targets")
-      return
+      return failure("no source cache targets")
     }
 
     rings = built
     self.order = order
+    self.topologyRevision = topologyRevision
+    self.projection = projection
     bakeTarget = MacOSNativeMetalPresentationTarget(width: maxWidth, height: maxHeight)
     live = true
     baking = false
@@ -434,7 +481,11 @@ final class MacOSNativeCompositorSourceRing {
     lastReusedMask = 0
 
     // Initial bake into buffer 0 of each ring; publishes on success.
-    _ = bakeAndPublishOnQueue(player: player, requestNs: nil)
+    let result = bakeAndPublishOnQueue(player: player, requestNs: nil)
+    if !result.published {
+      restorePreviousPublishedState()
+    }
+    return result
   }
 
   /// Bakes the current frame into each track's next write buffer and, if any
@@ -582,6 +633,7 @@ final class MacOSNativeCompositorSourceRing {
       ))
     }
     hasPublished = true
+    lastPublishedTopologyRevision = topologyRevision
     let publishedIdentity = sourceIdentity(from: published)
     lastPublishedSlotSignature = publishedIdentity.slotSignature
     lastPublishedFileIdSignature = publishedIdentity.fileIdSignature

@@ -43,7 +43,7 @@ void hash_combine(uint64_t& seed, uint64_t value) {
 }
 
 bool wgpu_ffi_available() {
-  return VPWgpuFfiVersion() >= VP_WGPU_FFI_ABI_VERSION;
+  return VPWgpuFfiVersion() == VP_WGPU_FFI_ABI_VERSION;
 }
 
 bool wgpu_profiler_enabled() {

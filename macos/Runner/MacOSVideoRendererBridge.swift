@@ -16,6 +16,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private var nativeCompositorSourceSignature = ""
   private var nativeCompositorSourceExpectedFileIds: [Int] = []
   private var nativeCompositorSourceTopologyRevision: UInt64 = 0
+  private var nativeCompositorSourceTopologyCommitLastError = ""
   private var viewportBackgroundColor: UInt32?
   private var lastNativeCompositorFailure = "not initialized"
   private let lifecycle: MacOSPlayerLifecycleController
@@ -318,6 +319,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         sourceProjectionMethodReceiveRate.rateHz()
       diagnostics["nativeCompositorSourceProjectionMethodReceiveHzX1000"] =
         Int(sourceProjectionMethodReceiveRate.rateHz() * 1000.0)
+      diagnostics["sourceTopologyCommitRevision"] =
+        Int64(min(nativeCompositorSourceTopologyRevision, UInt64(Int64.max)))
+      diagnostics["sourceTopologyCommitReady"] = nativeCompositorSourceProviderReady()
+      diagnostics["sourceTopologyCommitLastError"] = nativeCompositorSourceTopologyCommitLastError
       result(diagnostics)
     case "debugFlutterSurfaceInfo":
       result(debugFlutterSurfaceInfo())
@@ -644,16 +649,18 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       )
       existingRing.updateProjection(projection)
       nativeCompositor.setOverlayPrimitives(player.currentOverlayPrimitives())
-      setNativeCompositorSourceProviderActive(true)
-      return true
+      if nativeCompositorSourceProviderReady() {
+        setNativeCompositorSourceProviderActive(true)
+        return true
+      }
+      nativeCompositorSourceTopologyCommitLastError = "source provider ring has no complete package"
+      return false
     }
 
     let ring = nativeCompositorSourceRing
       ?? MacOSNativeCompositorSourceRing(compositor: nativeCompositor)
     nativeCompositorSourceRing = ring
-    nativeCompositorSourceSignature = signature
-    nativeCompositorSourceExpectedFileIds = descriptors.map { $0.fileId }
-    setNativeCompositorSourceProviderActive(true)
+    let candidateTopologyRevision = nativeCompositorSourceTopologyRevision &+ 1
     if !playback.currentIsPlaying(player: player) {
       let previewReady = commitNativeCompositorSourceProviderPreview(
         player: player,
@@ -662,30 +669,46 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         reason: reason
       )
       if !previewReady {
+        nativeCompositorSourceTopologyCommitLastError =
+          "source provider preview did not become ready"
         return false
       }
     }
-    ring.subscribe(
+    let result = ring.subscribe(
       player: player,
       descriptors: descriptors,
       order: order,
       edrOutputEnabled: MacOSPresentationConfiguration.current.edrOutputEnabled,
-      topologyRevision: nativeCompositorSourceTopologyRevision,
+      topologyRevision: candidateTopologyRevision,
       projection: projection
     )
-    if MacOSProfilerLog.enabled {
-      NSLog("VoidPlayer WGPU source provider subscribed reason=\(reason)")
+    guard result.published,
+          ring.hasCompletePackage(topologyRevision: candidateTopologyRevision) else {
+      nativeCompositorSourceTopologyCommitLastError = result.error.isEmpty
+        ? "source provider did not publish a complete source package"
+        : result.error
+      if MacOSProfilerLog.enabled {
+        NSLog(
+          "VoidPlayer WGPU source provider subscribe failed reason=\(reason) " +
+            "topology=\(candidateTopologyRevision) " +
+            "drawnMask=\(result.drawnMask) missingMask=\(result.missingMask) " +
+            "error=\(nativeCompositorSourceTopologyCommitLastError)"
+        )
+      }
+      return false
     }
-    return true
-  }
-
-  private func bumpNativeCompositorSourceTopologyRevision(reason: String) {
-    nativeCompositorSourceTopologyRevision &+= 1
+    nativeCompositorSourceTopologyRevision = candidateTopologyRevision
+    nativeCompositorSourceSignature = signature
+    nativeCompositorSourceExpectedFileIds = descriptors.map { $0.fileId }
+    nativeCompositorSourceTopologyCommitLastError = ""
+    setNativeCompositorSourceProviderActive(true)
     if MacOSProfilerLog.enabled {
       NSLog(
-        "VoidPlayer WGPU source provider topology revision=\(nativeCompositorSourceTopologyRevision) reason=\(reason)"
+        "VoidPlayer WGPU source provider subscribed reason=\(reason) " +
+          "topology=\(nativeCompositorSourceTopologyRevision)"
       )
     }
+    return true
   }
 
   @discardableResult
@@ -918,9 +941,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     if addResult.payload is FlutterError {
       return addResult.payload
     }
-    if sourceProviderWasReady {
-      bumpNativeCompositorSourceTopologyRevision(reason: "track added")
-    } else {
+    if !sourceProviderWasReady {
       clearNativeCompositorSourceProvider(reason: "track topology changed")
     }
     refreshPresentationPolicyForCurrentTracks()
@@ -942,9 +963,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       backendName: backendName,
       nativePlayer: nativePlayer
     )
-    if sourceProviderWasReady {
-      bumpNativeCompositorSourceTopologyRevision(reason: "track removed")
-    } else {
+    if !sourceProviderWasReady {
       clearNativeCompositorSourceProvider(reason: "track topology changed")
     }
     if removeResult.destroyPlayer {
@@ -1139,14 +1158,17 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func nativeCompositorSourceProviderReady() -> Bool {
-    backendName == MacOSVideoTrackPayload.nativeFormatName &&
-      nativeCompositor != nil &&
-      nativeCompositorSourceRing != nil &&
-      !nativeCompositorSourceSignature.isEmpty
+    guard backendName == MacOSVideoTrackPayload.nativeFormatName,
+          nativeCompositor != nil,
+          let ring = nativeCompositorSourceRing,
+          !nativeCompositorSourceSignature.isEmpty else {
+      return false
+    }
+    return ring.hasCompletePackage(topologyRevision: nativeCompositorSourceTopologyRevision)
   }
 
   private func setNativeCompositorSourceProviderActive(_ active: Bool) {
-    guard active || nativeCompositorSourceProviderReady() else {
+    guard !active || nativeCompositorSourceProviderReady() else {
       return
     }
     nativePlayer?.setViewportCompositorActive(active)
@@ -1253,7 +1275,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       userData: Unmanaged.passUnretained(self).toOpaque(),
       requiresPresentationTarget: !sourceProviderReady,
       setSourceProviderActive: { [weak self] active in
-        guard active || sourceProviderReady else {
+        guard !active || sourceProviderReady else {
           return
         }
         self?.setNativeCompositorSourceProviderActive(active)

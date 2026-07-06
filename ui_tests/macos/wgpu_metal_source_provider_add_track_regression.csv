@@ -20,16 +20,19 @@
 4.31, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceProjectionEnabled, true
 4.32, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, true
 4.33, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingLive, true
-4.34, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingTrackCount, 2, 2
-4.35, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingLastBakeDrawnCount, 2, 2
-4.36, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingMissingMask, 0, 0
-4.37, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingIncompletePublishSuppressedCount, 0, 0
-4.38, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheTextureCount, 2
-4.39, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSource0InvDisplaySizeYX1000, 500, 2200
-4.40, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSource1InvDisplaySizeYX1000, 500, 2200
-4.41, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
-4.42, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadCount, 0, 0
-4.43, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedCompositeProducerSubmitCount, 0, 0
+4.34, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingHasPublished, true
+4.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingComplete, true
+4.36, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceTopologyCommitReady, true
+4.37, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingTrackCount, 2, 2
+4.38, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingLastBakeDrawnCount, 2, 2
+4.39, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingMissingMask, 0, 0
+4.40, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingIncompletePublishSuppressedCount, 0, 0
+4.41, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheTextureCount, 2
+4.42, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSource0InvDisplaySizeYX1000, 500, 2200
+4.43, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSource1InvDisplaySizeYX1000, 500, 2200
+4.44, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
+4.45, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadCount, 0, 0
+4.46, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedCompositeProducerSubmitCount, 0, 0
 4.6, CAPTURE_VIEWPORT, wgpu_add_track_measured_geometry
 4.7, ASSERT_CAPTURE_NOT_BLACK, wgpu_add_track_measured_geometry, 0.01, 4.0
 4.9, QUIT, 0

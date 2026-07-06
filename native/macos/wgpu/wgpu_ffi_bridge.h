@@ -13,7 +13,7 @@ extern "C" {
 typedef struct VPWgpuMetalRenderer VPWgpuMetalRenderer;
 
 enum {
-  VP_WGPU_FFI_ABI_VERSION = 10,
+  VP_WGPU_FFI_ABI_VERSION = 16,
 };
 
 enum {

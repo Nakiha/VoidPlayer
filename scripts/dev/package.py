@@ -21,6 +21,7 @@ from .paths import (
     MACOS_RELEASE_DOCS_DIR,
     ROOT,
     WINDOWS_BUILD_DIR,
+    WINDOWS_FFMPEG_ROOT,
     WINDOWS_INNO_SCRIPT,
     WINDOWS_INSTALLER_DIR,
     WINDOWS_PACKAGE_DIR,
@@ -108,6 +109,7 @@ def _cmd_package_windows(args) -> None:
     shutil.copytree(release_dir, stage_dir)
     _copy_release_docs(stage_dir)
     _copy_compliance_docs(stage_dir)
+    _copy_windows_ffmpeg_compliance(stage_dir)
 
     removed = _remove_build_only_artifacts(stage_dir)
     _assert_no_mutable_artifacts(stage_dir, "package staging")
@@ -269,6 +271,22 @@ def _copy_macos_ffmpeg_compliance(stage_dir: Path) -> None:
     licenses_src = ffmpeg_root / "LICENSES"
     licenses_dest = stage_dir / "LICENSES"
     print(f"Copy macOS FFmpeg licenses: {licenses_src} -> {licenses_dest}")
+    shutil.copytree(licenses_src, licenses_dest, dirs_exist_ok=True)
+
+
+def _copy_windows_ffmpeg_compliance(stage_dir: Path) -> None:
+    ffmpeg_root = WINDOWS_FFMPEG_ROOT
+    files = [
+        (ffmpeg_root / "README.txt", stage_dir / "README.txt"),
+        (ffmpeg_root / "voidplayer-ffmpeg-manifest.json", stage_dir / "voidplayer-ffmpeg-manifest.json"),
+    ]
+    for src, dest in files:
+        print(f"Copy Windows FFmpeg doc: {src} -> {dest}")
+        shutil.copy2(src, dest)
+
+    licenses_src = ffmpeg_root / "LICENSES"
+    licenses_dest = stage_dir / "LICENSES"
+    print(f"Copy Windows FFmpeg licenses: {licenses_src} -> {licenses_dest}")
     shutil.copytree(licenses_src, licenses_dest, dirs_exist_ok=True)
 
 

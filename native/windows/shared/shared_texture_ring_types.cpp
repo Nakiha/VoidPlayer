@@ -6,7 +6,7 @@
 namespace vr {
 namespace {
 
-bool valid_descriptor(const SourceCacheTrackDescriptor& descriptor) {
+bool valid_descriptor(const PresentationSourceCacheTrackDescriptor& descriptor) {
     return descriptor.slot >= 0 && descriptor.slot < 4 &&
            descriptor.file_id >= 0 &&
            descriptor.width > 0 && descriptor.height > 0;
@@ -41,7 +41,7 @@ uint64_t estimate_dxgi_surface_bytes(uint32_t width,
 } // namespace
 
 SourceCacheRingPolicy resolve_source_cache_ring_policy(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors,
+    const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors,
     uint64_t budget_bytes) {
     SourceCacheRingPolicy result;
     if (descriptors.empty() || descriptors.size() > 4 || budget_bytes == 0) {

@@ -2,6 +2,7 @@
 
 #include "renderer/overlay/analysis_overlay_renderer.h"
 #include "renderer/overlay/analysis_overlay_primitives.h"
+#include "renderer/render/presentation_source_cache_state.h"
 #include "renderer/render/presentation_snapshot.h"
 
 #include <array>
@@ -702,7 +703,7 @@ void fill_wgpu_d3d12_decision_from_snapshot(
 }
 
 void apply_windows_source_projection(
-    const WindowsSourceProjection& projection,
+    const PresentationSourceProjection& projection,
     VPWgpuD3D12PresentDecisionInfo& decision) {
     if (!projection.enabled) {
         return;
@@ -1114,7 +1115,7 @@ public:
     ~WgpuD3D12SharedSourceCacheRing() { shutdown(); }
 
     bool initialize(ID3D12Device* device,
-                    const std::vector<SourceCacheTrackDescriptor>& descriptors,
+                    const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors,
                     uint64_t budget_bytes = kDefaultBudgetBytes) {
         shutdown();
         device_ = device;
@@ -1149,7 +1150,7 @@ public:
         device_ = nullptr;
     }
 
-    bool reconfigure(const std::vector<SourceCacheTrackDescriptor>& descriptors,
+    bool reconfigure(const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors,
                      uint64_t budget_bytes = kDefaultBudgetBytes) {
         auto replacement = create_generation(descriptors, budget_bytes);
         if (!replacement) {
@@ -1372,7 +1373,7 @@ public:
 
 private:
     struct TrackTexture {
-        SourceCacheTrackDescriptor descriptor;
+        PresentationSourceCacheTrackDescriptor descriptor;
         Microsoft::WRL::ComPtr<ID3D12Resource> texture;
         HANDLE handle = nullptr;
         int32_t resource_state = VP_WGPU_D3D12_RESOURCE_STATE_COMMON;
@@ -1400,7 +1401,7 @@ private:
     };
 
     std::shared_ptr<Generation> create_generation(
-        const std::vector<SourceCacheTrackDescriptor>& descriptors,
+        const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors,
         uint64_t budget_bytes) {
         if (!device_) {
             return nullptr;
@@ -1616,6 +1617,10 @@ void WgpuD3D12PresentationBackend::shutdown() {
     headless_ = false;
     source_cache_descriptors_.clear();
     source_cache_error_ = "backend-shutdown";
+    source_cache_required_mask_ = 0;
+    source_cache_drawn_mask_ = 0;
+    source_cache_missing_mask_ = 0;
+    source_cache_incomplete_publish_suppressed_count_ = 0;
     {
         std::lock_guard<std::mutex> lock(source_projection_mutex_);
         source_projection_ = {};
@@ -1734,7 +1739,7 @@ void WgpuD3D12PresentationBackend::clear_external_flutter_surface() {
 }
 
 bool WgpuD3D12PresentationBackend::configure_source_cache(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors) {
 #if VOIDPLAYER_WGPU_RUST_LINKED
     auto* d3d12_device = renderer_
         ? static_cast<ID3D12Device*>(VPWgpuD3D12RendererD3D12Device(renderer_))
@@ -1757,6 +1762,10 @@ bool WgpuD3D12PresentationBackend::configure_source_cache(
     source_cache_ring_->set_frame_callback(source_cache_callback_);
     source_cache_descriptors_ = descriptors;
     source_cache_error_ = "none";
+    source_cache_required_mask_ =
+        build_presentation_source_cache_required_mask(descriptors.size());
+    source_cache_drawn_mask_ = 0;
+    source_cache_missing_mask_ = source_cache_required_mask_;
     return true;
 #else
     (void)descriptors;
@@ -1774,10 +1783,13 @@ void WgpuD3D12PresentationBackend::clear_source_cache(const char* reason) {
     }
     source_cache_descriptors_.clear();
     source_cache_error_ = reason ? reason : "source-cache-cleared";
+    source_cache_required_mask_ = 0;
+    source_cache_drawn_mask_ = 0;
+    source_cache_missing_mask_ = 0;
 }
 
 bool WgpuD3D12PresentationBackend::update_source_projection(
-    const WindowsSourceProjection& projection) {
+    const PresentationSourceProjection& projection) {
     std::lock_guard<std::mutex> lock(source_projection_mutex_);
     source_projection_ = projection;
     source_projection_.enabled = projection.enabled;
@@ -1935,6 +1947,11 @@ PresentationBackendDiagnostics WgpuD3D12PresentationBackend::diagnostics() const
             source_cache_ring_->backpressure_count();
         diagnostics.source_cache_fallback_count =
             source_cache_ring_->fallback_count();
+        diagnostics.source_cache_required_mask = source_cache_required_mask_;
+        diagnostics.source_cache_drawn_mask = source_cache_drawn_mask_;
+        diagnostics.source_cache_missing_mask = source_cache_missing_mask_;
+        diagnostics.source_cache_incomplete_publish_suppressed_count =
+            source_cache_incomplete_publish_suppressed_count_;
         diagnostics.source_cache_last_error = source_cache_error_ != "none"
             ? source_cache_error_
             : source_cache_ring_->last_error();
@@ -1992,6 +2009,7 @@ bool WgpuD3D12PresentationBackend::update_source_cache_from_snapshot(
         return false;
     }
     bool complete = target_count == source_cache_descriptors_.size();
+    uint64_t drawn_mask = 0;
     std::string source_error = complete
         ? "none"
         : "source-cache-target-count-mismatch";
@@ -2057,7 +2075,15 @@ bool WgpuD3D12PresentationBackend::update_source_cache_from_snapshot(
             complete = false;
             break;
         }
+        drawn_mask |= uint64_t{1} << target_index;
     }
+    auto commit_state = build_presentation_source_cache_commit_state(
+        source_cache_descriptors_.size(), drawn_mask, source_error);
+    source_cache_required_mask_ = commit_state.required_mask;
+    source_cache_drawn_mask_ = commit_state.drawn_mask;
+    source_cache_missing_mask_ = commit_state.missing_mask;
+    complete = complete && commit_state.complete;
+    source_error = commit_state.error;
     if (complete) {
         std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay;
         if (hooks.build_overlay_primitives) {
@@ -2070,9 +2096,11 @@ bool WgpuD3D12PresentationBackend::update_source_cache_from_snapshot(
             return false;
         }
         source_cache_error_ = "none";
+        source_cache_missing_mask_ = 0;
         return true;
     }
     source_cache_ring_->cancel_bundle();
+    ++source_cache_incomplete_publish_suppressed_count_;
     if (source_cache_error_ != source_error) {
         source_cache_error_ = source_error;
         spdlog::warn("[WgpuD3D12SourceCache] {}", source_error);

@@ -110,9 +110,15 @@ path is fully promoted.
 The retained D3D11 source/Flutter graph is no longer a product path. Diagnostic
 fields with `windowsRetainedGraph*` names remain as compatibility evidence and
 should report inactive/zero.
-Projection performance should be proven through wgpu/D3D12 source consumption,
-Flutter surface generation consumption, present cadence, and hot-path
-diagnostics rather than DComp retained bake counts.
+Flutter surface export is passive: Flutter owns scheduling and publishes the
+full premultiplied BGRA UI surface after its normal raster/present. The runner
+only observes the publish callback, acquires the latest surface on the
+composition thread, and submits it to the same wgpu/D3D12 composition pass as
+the native video/source surfaces. It must not request or pump Flutter frames as
+part of the product path. Projection performance should be proven through
+wgpu/D3D12 source consumption, `windowsFlutterSurface*` acquisition/generation
+evidence, present cadence, and hot-path diagnostics rather than DComp retained
+bake counts.
 
 The source cache budget is 384 MiB. A three-slot bundle ring is preferred; if
 that exceeds the budget, one frozen snapshot is allowed. A single bundle that
@@ -276,11 +282,11 @@ recovery, and the forced scRGB compositor mode.
 | `windowsPresentationBufferCount` | Active output buffer count |
 | `windowsPresentationHeadless` | Whether the backend is using shared textures |
 | `windowsNativeCompositorPhase` | `inactive`, `preparing`, `active`, or `failed` |
-| `windowsNativeCompositorStateSerial/AckSerial` | Flutter alpha-hole handshake serials |
+| `windowsNativeCompositorStateSerial/AckSerial` | Compatibility state serials; ACK no longer drives Flutter frame ownership |
+| `windowsFlutterSurface*` | Production sandwich evidence: passive D3D12 BGRA surface availability, acquire count, generation/ring, size, and format |
 | `windowsFlutterExportGeneration/windowsVideoRingGeneration` | Latest consumed input generations |
-| `windowsFlutterExportFramePumpAvailable` | Locked engine exposes the compositor-owned surface export request/state ABI |
-| `windowsFlutterExportPublishCount/windowsFlutterExportRequestCount` | Engine-owned export frame stream activity |
-| `windowsFlutterExportStaleTimeoutCount` | Native compositor failed closed because a requested Flutter generation never advanced |
+| `windowsFlutterExportPublishCount` | Engine-owned passive export stream activity |
+| `windowsFlutterExportStaleTimeoutCount` | Should remain zero; passive export must not fail because native waited on a Flutter generation |
 | `windowsDComp*` | Present-bridge swap-chain format/color space/support, SDR tone-map state, and composite/present/drop/failure counters |
 | `windowsDeviceRecovery*` | In-place D3D11/DComp recovery state, generation, attempts, success/failure counters, preserved player/track evidence, last removed reason, fallback stage, and last-frame hold |
 | `windowsCrossAdapter*` | Transport mode/status, requested/active sync kind, shared-fence capability/open/signal/wait counters, event-query/shared-fence P95 waits, copy counters, consumed generations, fallback reason, and last error |

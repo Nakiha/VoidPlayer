@@ -1,0 +1,38 @@
+# Windows sandwich compositor interaction smoke.
+# Validates passive Flutter surface acquisition through real UI interaction.
+@WINDOW, 1280, 720
+0.3, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+1.8, ASSERT_TRACK_COUNT, 1
+1.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-sdr
+1.91, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
+1.92, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterSurfaceAvailable, true
+1.93, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsFlutterSurfaceMode, passive-d3d12-bgra8
+1.94, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterSurfaceAcquireCount, 1
+1.95, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsDCompPresentCount, 1
+1.97, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsRetainedGraphActive, false
+1.98, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsRetainedGraphCommitCount, 0, 0
+2.0, DEBUG_NATIVE_TIMING, sandwich-baseline
+2.1, CLICK_CONTROLS_PLAY_BUTTON
+2.7, ASSERT_PLAYING
+2.8, CLICK_CONTROLS_PLAY_BUTTON
+3.2, ASSERT_PAUSED
+3.3, OPEN_SETTINGS
+3.7, DEBUG_NATIVE_TIMING, sandwich-settings-open
+3.8, OPEN_MEDIA_INFO
+4.2, DEBUG_NATIVE_TIMING, sandwich-media-info-open
+4.3, HOVER_CONTROLS_BAR_BUTTONS_NATIVE, 48
+4.9, DEBUG_NATIVE_TIMING, sandwich-toolbar-hover
+5.0, TOGGLE_MARKS_SIDEBAR
+5.4, DEBUG_NATIVE_TIMING, sandwich-sidebar-open
+5.5, TOGGLE_MARKS_SIDEBAR
+5.9, DEBUG_NATIVE_TIMING, sandwich-sidebar-closed
+6.0, OPEN_SETTINGS
+6.4, DEBUG_NATIVE_TIMING, sandwich-settings-toggle
+6.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterSurfaceAcquireCount, 5
+6.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterSurfaceGeneration, 1
+6.65, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationExternalFlutterSurfaceUpdateCount, 1
+6.66, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsPresentationExternalFlutterSurfaceConsumeCount, 1
+6.7, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportMakeCurrentFailCount, 0, 0
+6.8, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportPublishFailCount, 0, 0
+6.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0
+7.0, QUIT, 0

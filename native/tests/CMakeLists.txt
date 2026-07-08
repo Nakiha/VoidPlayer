@@ -25,6 +25,10 @@ add_executable(video_renderer_tests
     renderer/test_renderer_lifecycle.cpp
     renderer/test_renderer_config_validation.cpp
     renderer/test_renderer_stress.cpp
+    renderer/test_presentation_color_domain_contract.cpp
+    renderer/test_presentation_source_cache_plan.cpp
+    renderer/test_presentation_source_cache_state.cpp
+    renderer/test_presentation_source_projection.cpp
     media/test_packet_queue.cpp
     audio/test_audio_mixer.cpp
     audio/test_audio_track_registry.cpp

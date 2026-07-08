@@ -416,7 +416,7 @@ std::string NativePlayer::presentation_backend_last_error() const {
 }
 
 bool NativePlayer::configure_source_cache(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     return renderer_ready_locked() &&
            renderer_.configure_source_cache(descriptors);
@@ -430,7 +430,7 @@ void NativePlayer::clear_source_cache(const char* reason) {
 }
 
 bool NativePlayer::update_source_projection(
-    const WindowsSourceProjection& projection) {
+    const PresentationSourceProjection& projection) {
     std::shared_lock<std::shared_mutex> lock(lifecycle_mutex_);
     return renderer_ready_locked() &&
            renderer_.update_source_projection(projection);

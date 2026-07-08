@@ -9,7 +9,7 @@
 3.9, WAIT_TRACK_COUNT, 2, 10000
 4.0, ASSERT_TRACK_COUNT, 2
 4.1, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
-4.2, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
+4.2, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterSurfaceAvailable, true
 4.3, SET_LAYOUT_MODE, 1
 4.4, SET_SPLIT_POS, 0.42
 4.5, SET_ZOOM, 2.0

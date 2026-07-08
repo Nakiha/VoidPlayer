@@ -1,5 +1,7 @@
 #pragma once
 
+#include "renderer/render/presentation_backend_types.h"
+
 #include <windows.h>
 
 #include <array>
@@ -41,14 +43,6 @@ struct SharedFp16RingPrewarmStats {
     uint64_t hit_count = 0;
     uint64_t dropped_count = 0;
     uint64_t consumed_count = 0;
-};
-
-struct SourceCacheTrackDescriptor {
-    int slot = -1;
-    int file_id = -1;
-    int width = 0;
-    int height = 0;
-    int color_transfer = 0;
 };
 
 enum class SharedSourceCacheTextureSyncMode : uint32_t {
@@ -94,7 +88,7 @@ struct SourceCachePublishInfo {
 };
 
 SourceCacheRingPolicy resolve_source_cache_ring_policy(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors,
+    const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors,
     uint64_t budget_bytes);
 
 } // namespace vr

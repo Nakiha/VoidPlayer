@@ -660,7 +660,7 @@ bool RendererPresentationController::draw_frame_to_external_d3d12_target(
 }
 
 bool RendererPresentationController::configure_source_cache(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     return backend_ && backend_->configure_source_cache(descriptors);
 }
@@ -674,7 +674,7 @@ void RendererPresentationController::clear_source_cache(
 }
 
 bool RendererPresentationController::update_source_projection(
-    const WindowsSourceProjection& projection) {
+    const PresentationSourceProjection& projection) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     return backend_ && backend_->update_source_projection(projection);
 }

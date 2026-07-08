@@ -92,8 +92,6 @@ class MainWindowController {
   );
   Future<void>? _shutdownFuture;
   AgentProtocolServer? _agentServer;
-  bool _nativeCompositorFrameRequestQueued = false;
-  String? _lastNativeCompositorFrameRequestReason;
   DateTime? _lastNativeCompositorInteractionBoostAt;
   static const Duration _nativeCompositorInteractionBoostInterval = Duration(
     milliseconds: 100,
@@ -237,60 +235,6 @@ class MainWindowController {
 
   void _onStateChanged() {
     quickMarkCoordinator.handleStateChanged();
-    _queueNativeCompositorFlutterFrameRequest(
-      reason: _nativeCompositorFrameRequestReason(),
-    );
-  }
-
-  String _nativeCompositorFrameRequestReason() {
-    final state = stateStore.value;
-    return 'state-changed '
-        'tracks=${trackManager.entries.length} '
-        'sidebar=${state.marksSidebarVisible} '
-        'mediaInfo=${state.mediaInfoVisible} '
-        'profiler=${state.profilerVisible} '
-        'settings=${state.settingsVisible} '
-        'fullscreen=${state.fullScreen} '
-        'viewport=${state.viewportState.status.name} '
-        'surface=${layoutCoordinator.viewportWidth}x'
-        '${layoutCoordinator.viewportHeight}';
-  }
-
-  void _onNativeCompositorResizeCommitted(int width, int height) {
-    _queueNativeCompositorFlutterFrameRequest(
-      reason: 'resize ${width}x$height',
-    );
-  }
-
-  void _queueNativeCompositorFlutterFrameRequest({required String reason}) {
-    if (_nativeCompositorFrameRequestQueued ||
-        !Platform.isWindows ||
-        !_nativeCompositorActive ||
-        !player.canAcceptCommands) {
-      if (!_nativeCompositorActive) {
-        _lastNativeCompositorFrameRequestReason = null;
-      }
-      return;
-    }
-    if (_lastNativeCompositorFrameRequestReason == reason) {
-      return;
-    }
-    log.fine('[WindowsCompositorDebug] queue Flutter export frame: $reason');
-    _nativeCompositorFrameRequestQueued = true;
-    scheduleMicrotask(() {
-      _nativeCompositorFrameRequestQueued = false;
-      if (!_nativeCompositorActive || !player.canAcceptCommands) {
-        if (!_nativeCompositorActive) {
-          _lastNativeCompositorFrameRequestReason = null;
-        }
-        return;
-      }
-      _lastNativeCompositorFrameRequestReason = reason;
-      fireAndLog(
-        'request native compositor Flutter frame',
-        player.requestNativeCompositorFlutterFrame(reason: reason),
-      );
-    });
   }
 
   void _boostNativeCompositorFlutterInteraction({required String reason}) {

@@ -45,8 +45,8 @@ Windows presentation、shader output target 或颜色布局改动必须同时保
 `windows_d3d11_fp16_scrgb_smoke` 全绿，并运行 `windows-preservation`。
 DirectComposition、Flutter surface export 或共享 FP16 ring 改动还必须运行
 `video_renderer_tests [windows_dcomp]`，并使用锁定 Windows local engine
-执行 native-compositor UI smoke；surface export/frame-pump 改动还必须覆盖
-`native_compositor_flutter_surface_pump_scrgb.csv`。普通 Flutter SDK 的 fallback
+执行 native-compositor UI smoke；surface export/passive surface 改动还必须覆盖
+`native_compositor_flutter_surface_passive_scrgb.csv`。普通 Flutter SDK 的 fallback
 不算上屏证据。
 Windows source cache/projection、bundle lease、projection shader 或 compositor
 overlay 改动还必须运行 `[windows_source_cache]`、

@@ -201,9 +201,9 @@ GPU copies into output-local SRVs. The current bridge waits for producer copies
 with a D3D11 event query; shared-fence capability is diagnosed separately and is
 not part of the lock contract. Resize creates a new ring generation; an old
 generation cannot be destroyed until every consumer lease is returned. Flutter
-state ACKs are post-frame commits: activation publishes `active` after the
-transparent viewport ACK, while fallback teardown is queued to the composition
-thread after the restored-Texture ACK.
+surface publishes are passive: activation publishes `active` after the runner
+has acquired a Flutter UI surface, while fallback teardown is queued to the
+composition thread after native resources are released.
 
 Windows device-loss recovery uses the same lock order. Renderer-side D3D11
 rebuild work runs under the backend device mutex and does not destroy player,

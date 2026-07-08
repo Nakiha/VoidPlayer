@@ -995,24 +995,11 @@ class _PlaybackApi implements NativePlayerApi {
   }) async {}
 
   @override
-  Future<void> requestNativeCompositorFlutterFrame({
-    required String reason,
-  }) async {
-    calls.add('requestNativeCompositorFlutterFrame:$reason');
-  }
-
-  @override
   Future<void> boostNativeCompositorFlutterInteraction({
     required String reason,
   }) async {
     calls.add('boostNativeCompositorFlutterInteraction:$reason');
   }
-
-  @override
-  Future<void> ackNativeCompositorFlutterState({
-    required int serial,
-    required bool transparentViewport,
-  }) async {}
 
   @override
   Future<void> debugFailNativeCompositor({required String reason}) async {

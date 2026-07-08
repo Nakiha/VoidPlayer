@@ -1,12 +1,12 @@
-# Windows locked-engine Flutter export benchmark probe.
+# Windows locked-engine Flutter surface acquisition benchmark probe.
 # Repeated Flutter-only UI churn should publish fresh compositor surfaces without
-# stale generations or sustained frame-pump backpressure.
+# stale generations or sustained export backpressure.
 @WINDOW, 1280, 720
-0.0, GENERATE_TEST_VIDEO, build/generated/windows_flutter_export_churn.mp4, 180, 30, 1280, 720
-0.3, ADD_MEDIA, build/generated/windows_flutter_export_churn.mp4
+0.0, GENERATE_TEST_VIDEO, build/generated/windows_flutter_surface_churn.mp4, 180, 30, 1280, 720
+0.3, ADD_MEDIA, build/generated/windows_flutter_surface_churn.mp4
 1.8, ASSERT_TRACK_COUNT, 1
 1.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
-1.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
+1.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterSurfaceAvailable, true
 2.0, DEBUG_NATIVE_TIMING, baseline
 2.1, DEBUG_FLUTTER_TIMING
 2.2, RESET_NATIVE_PERF_COUNTERS
@@ -27,7 +27,7 @@
 5.9, OPEN_SETTINGS
 6.3, DEBUG_NATIVE_TIMING, settings-toggle
 6.4, ASSERT_FLUTTER_TIMING, 24, 24, 0, 4
-6.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportRequestCount, 5
+6.5, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterSurfaceAcquireCount, 5
 6.55, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportPresentCount, 18
 6.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsFlutterExportPublishCount, 18
 6.7, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, windowsFlutterExportStaleTimeoutCount, 0, 0

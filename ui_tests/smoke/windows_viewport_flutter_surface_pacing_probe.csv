@@ -7,7 +7,7 @@
 0.3, ADD_MEDIA, build/generated/windows_viewport_flutter_surface_pacing.mp4
 2.8, ASSERT_TRACK_COUNT, 1
 2.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
-2.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
+2.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterSurfaceAvailable, true
 3.0, CLEAR_MARKS
 3.1, ADD_QUICK_MARK, 0, 0.24, 0.43, 0.35, 0.035, overlay, 2
 3.3, ASSERT_MARK_COUNT, 1

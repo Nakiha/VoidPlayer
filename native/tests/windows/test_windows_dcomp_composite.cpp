@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 
+#include "renderer/render/presentation_source_projection.h"
 #include "windows/presentation/windows_dcomp_composite.h"
 
 TEST_CASE("Windows DComp composite preserves transparent scRGB highlights",
@@ -52,7 +53,7 @@ TEST_CASE("Windows DComp composite applies SDR reference white scale",
 
 TEST_CASE("Windows source projection selects stable side by side order",
           "[windows_dcomp][windows_source_projection]") {
-    vr::WindowsSourceProjection projection;
+    vr::PresentationSourceProjection projection;
     projection.enabled = true;
     projection.mode = 0;
     projection.active_track_count = 4;
@@ -62,9 +63,9 @@ TEST_CASE("Windows source projection selects stable side by side order",
     const std::array<bool, 4> present = {true, true, true, true};
 
     const auto first =
-        vr::project_windows_source_sample(0.10f, 0.25f, projection, present);
+        vr::project_presentation_source_sample(0.10f, 0.25f, projection, present);
     const auto last =
-        vr::project_windows_source_sample(0.90f, 0.75f, projection, present);
+        vr::project_presentation_source_sample(0.90f, 0.75f, projection, present);
     REQUIRE(first.present);
     REQUIRE(first.source_slot == 2);
     REQUIRE(first.u == Catch::Approx(0.4f));
@@ -75,7 +76,7 @@ TEST_CASE("Windows source projection selects stable side by side order",
 
 TEST_CASE("Windows source projection applies split pan zoom and background",
           "[windows_dcomp][windows_source_projection]") {
-    vr::WindowsSourceProjection projection;
+    vr::PresentationSourceProjection projection;
     projection.enabled = true;
     projection.mode = 1;
     projection.split_pos = 0.4f;
@@ -90,7 +91,7 @@ TEST_CASE("Windows source projection applies split pan zoom and background",
     const std::array<bool, 4> present = {false, true, false, true};
 
     const auto left =
-        vr::project_windows_source_sample(0.2f, 0.25f, projection, present);
+        vr::project_presentation_source_sample(0.2f, 0.25f, projection, present);
     REQUIRE(left.present);
     REQUIRE(left.source_slot == 1);
     REQUIRE(left.u == Catch::Approx(0.3f));
@@ -98,18 +99,18 @@ TEST_CASE("Windows source projection applies split pan zoom and background",
 
     projection.view_offset_uv_x[1] = 2.0f;
     const auto outside =
-        vr::project_windows_source_sample(0.2f, 0.25f, projection, present);
+        vr::project_presentation_source_sample(0.2f, 0.25f, projection, present);
     REQUIRE_FALSE(outside.present);
 
     const std::array<bool, 4> missing = {false, true, false, false};
     const auto absent =
-        vr::project_windows_source_sample(0.8f, 0.25f, projection, missing);
+        vr::project_presentation_source_sample(0.8f, 0.25f, projection, missing);
     REQUIRE_FALSE(absent.present);
 }
 
 TEST_CASE("Windows source projection split ignores tracks after comparison pair",
           "[windows_dcomp][windows_source_projection]") {
-    vr::WindowsSourceProjection projection;
+    vr::PresentationSourceProjection projection;
     projection.enabled = true;
     projection.mode = 1;
     projection.split_pos = 0.35f;
@@ -120,9 +121,9 @@ TEST_CASE("Windows source projection split ignores tracks after comparison pair"
 
     const std::array<bool, 4> present = {true, true, true, true};
     const auto left =
-        vr::project_windows_source_sample(0.10f, 0.25f, projection, present);
+        vr::project_presentation_source_sample(0.10f, 0.25f, projection, present);
     const auto right =
-        vr::project_windows_source_sample(0.90f, 0.25f, projection, present);
+        vr::project_presentation_source_sample(0.90f, 0.25f, projection, present);
     REQUIRE(left.present);
     REQUIRE(left.source_slot == 0);
     REQUIRE(right.present);
@@ -130,9 +131,9 @@ TEST_CASE("Windows source projection split ignores tracks after comparison pair"
 
     const std::array<bool, 4> only_extra_present = {
         false, false, true, true};
-    const auto absent_left = vr::project_windows_source_sample(
+    const auto absent_left = vr::project_presentation_source_sample(
         0.10f, 0.25f, projection, only_extra_present);
-    const auto absent_right = vr::project_windows_source_sample(
+    const auto absent_right = vr::project_presentation_source_sample(
         0.90f, 0.25f, projection, only_extra_present);
     REQUIRE_FALSE(absent_left.present);
     REQUIRE_FALSE(absent_right.present);
@@ -140,7 +141,7 @@ TEST_CASE("Windows source projection split ignores tracks after comparison pair"
 
 TEST_CASE("Windows retained source visuals invert pan zoom projection",
           "[windows_dcomp][windows_source_projection]") {
-    vr::WindowsSourceProjection projection;
+    vr::PresentationSourceProjection projection;
     projection.enabled = true;
     projection.mode = 0;
     projection.active_track_count = 1;
@@ -153,7 +154,7 @@ TEST_CASE("Windows retained source visuals invert pan zoom projection",
     projection.view_offset_uv_y[0] = 0.25f;
     const std::array<bool, 4> present = {true, false, false, false};
 
-    const auto rects = vr::project_windows_retained_source_visuals(
+    const auto rects = vr::project_presentation_retained_source_visuals(
         100.0f, 50.0f, 900.0f, 650.0f, projection, present);
     const auto& rect = rects[0];
 
@@ -171,7 +172,7 @@ TEST_CASE("Windows retained source visuals invert pan zoom projection",
 
 TEST_CASE("Windows retained source visuals keep split clips per slot",
           "[windows_dcomp][windows_source_projection]") {
-    vr::WindowsSourceProjection projection;
+    vr::PresentationSourceProjection projection;
     projection.enabled = true;
     projection.mode = 1;
     projection.split_pos = 0.4f;
@@ -183,7 +184,7 @@ TEST_CASE("Windows retained source visuals keep split clips per slot",
     projection.inv_display_size_y[3] = 2.0f;
     const std::array<bool, 4> present = {false, true, false, true};
 
-    const auto rects = vr::project_windows_retained_source_visuals(
+    const auto rects = vr::project_presentation_retained_source_visuals(
         0.0f, 0.0f, 1000.0f, 500.0f, projection, present);
 
     REQUIRE(rects[1].present);
@@ -200,7 +201,7 @@ TEST_CASE("Windows retained source visuals keep split clips per slot",
 
 TEST_CASE("Windows retained source visuals split keeps only comparison pair",
           "[windows_dcomp][windows_source_projection]") {
-    vr::WindowsSourceProjection projection;
+    vr::PresentationSourceProjection projection;
     projection.enabled = true;
     projection.mode = 1;
     projection.split_pos = 0.35f;
@@ -210,7 +211,7 @@ TEST_CASE("Windows retained source visuals split keeps only comparison pair",
     projection.inv_display_size_y = {1.0f, 1.0f, 1.0f, 1.0f};
     const std::array<bool, 4> present = {true, true, true, true};
 
-    const auto rects = vr::project_windows_retained_source_visuals(
+    const auto rects = vr::project_presentation_retained_source_visuals(
         100.0f, 50.0f, 1100.0f, 650.0f, projection, present);
 
     REQUIRE(rects[0].present);

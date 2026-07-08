@@ -22,10 +22,10 @@
 4.33, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingLive, true
 4.34, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingHasPublished, true
 4.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingComplete, true
-4.36, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceTopologyCommitReady, true
+4.36, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceReady, true
 4.37, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingTrackCount, 2, 2
 4.38, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingLastBakeDrawnCount, 2, 2
-4.39, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingMissingMask, 0, 0
+4.39, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceMissingMask, 0, 0
 4.40, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingIncompletePublishSuppressedCount, 0, 0
 4.41, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheTextureCount, 2
 4.42, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSource0InvDisplaySizeYX1000, 500, 2200

@@ -28,7 +28,6 @@ class MainWindowLayoutCoordinator {
   final TrackManager trackManager;
   final bool Function() mounted;
   final bool Function() sourceProjectionEnabled;
-  final void Function(int width, int height)? onNativeResizeCommitted;
 
   Ticker? _ticker;
   Timer? _resizeDebounceTimer;
@@ -114,7 +113,6 @@ class MainWindowLayoutCoordinator {
     required this.stateStore,
     required this.trackManager,
     required this.mounted,
-    this.onNativeResizeCommitted,
     bool Function()? sourceProjectionEnabled,
   }) : sourceProjectionEnabled =
            sourceProjectionEnabled ??
@@ -421,7 +419,6 @@ class MainWindowLayoutCoordinator {
       '[WindowsCompositorDebug] layout preemptViewportResize native complete '
       '${width}x$height',
     );
-    onNativeResizeCommitted?.call(width, height);
     if (_disposed || !mounted()) return;
     final nextLayout = await controller.getLayout();
     if (_disposed || !mounted()) return;
@@ -760,7 +757,6 @@ class MainWindowLayoutCoordinator {
             '[WindowsCompositorDebug] layout flush native resize complete '
             '${width}x$height layoutDirty=$_layoutDirty',
           );
-          onNativeResizeCommitted?.call(width, height);
           if (_disposed || !mounted()) return;
           final nextLayout = await controller.getLayout();
           if (_disposed || !mounted()) return;

@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 
 import '../app_log.dart';
 import '../marks/quick_mark.dart';
@@ -464,31 +463,6 @@ class MainWindowPlaybackCoordinator {
         onNativeCompositorAvailabilityChanged?.call(
           active: event.nativeCompositorActive,
         );
-      }
-      if (event.nativeCompositorSerial > 0 &&
-          event.nativeCompositorPhase == 'preparing') {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_disposed || !mounted()) return;
-          log.info(
-            'Native compositor Flutter-state ACK: '
-            'serial=${event.nativeCompositorSerial} '
-            'transparent=true',
-          );
-          unawaited(
-            () async {
-              await controller.ackNativeCompositorFlutterState(
-                serial: event.nativeCompositorSerial,
-                transparentViewport: true,
-              );
-            }().catchError((Object error, StackTrace stack) {
-              log.warning(
-                'native compositor Flutter-state ACK failed',
-                error,
-                stack,
-              );
-            }),
-          );
-        });
       }
       if (event.nativeCompositorRequested &&
           !event.nativeCompositorActive &&

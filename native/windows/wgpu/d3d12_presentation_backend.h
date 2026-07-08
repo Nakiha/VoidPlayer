@@ -45,10 +45,10 @@ public:
         const PresentationBackendDrawHooks& hooks,
         const PresentationExternalD3D12RenderTarget& target) override;
     bool configure_source_cache(
-        const std::vector<SourceCacheTrackDescriptor>& descriptors) override;
+        const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors) override;
     void clear_source_cache(const char* reason) override;
     bool update_source_projection(
-        const WindowsSourceProjection& projection) override;
+        const PresentationSourceProjection& projection) override;
     void clear_source_projection() override;
     bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot& snapshot) override;
@@ -109,13 +109,17 @@ private:
     VPWgpuD3D12RendererInfo renderer_info_{};
     std::unique_ptr<WgpuD3D12SharedFp16Ring> shared_fp16_ring_;
     std::unique_ptr<WgpuD3D12SharedSourceCacheRing> source_cache_ring_;
-    std::vector<SourceCacheTrackDescriptor> source_cache_descriptors_;
+    std::vector<PresentationSourceCacheTrackDescriptor> source_cache_descriptors_;
     std::function<void()> shared_fp16_callback_;
     std::function<void()> source_cache_callback_;
     std::string source_cache_error_ = "none";
+    uint64_t source_cache_required_mask_ = 0;
+    uint64_t source_cache_drawn_mask_ = 0;
+    uint64_t source_cache_missing_mask_ = 0;
+    uint64_t source_cache_incomplete_publish_suppressed_count_ = 0;
     std::string last_error_ = "wgpu-d3d12 presentation backend is not initialized";
     mutable std::mutex source_projection_mutex_;
-    WindowsSourceProjection source_projection_;
+    PresentationSourceProjection source_projection_;
     uint64_t source_projection_update_count_ = 0;
     uint64_t source_projection_consume_count_ = 0;
     mutable std::mutex external_flutter_mutex_;

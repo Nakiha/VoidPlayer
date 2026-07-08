@@ -21,12 +21,8 @@ class NativePlayerMethods {
       'prewarmNativePresentationTargetSize';
   static const setNativeCompositorViewportRect =
       'setNativeCompositorViewportRect';
-  static const requestNativeCompositorFlutterFrame =
-      'requestNativeCompositorFlutterFrame';
   static const boostNativeCompositorFlutterInteraction =
       'boostNativeCompositorFlutterInteraction';
-  static const ackNativeCompositorFlutterState =
-      'ackNativeCompositorFlutterState';
   static const debugFailNativeCompositor = 'debugFailNativeCompositor';
   static const debugSimulateWindowsDeviceLoss =
       'debugSimulateWindowsDeviceLoss';
@@ -144,7 +140,6 @@ class NativePlayerKeys {
   static const speed = 'speed';
   static const enabled = 'enabled';
   static const serial = 'serial';
-  static const transparentViewport = 'transparentViewport';
   static const startUs = 'startUs';
   static const endUs = 'endUs';
   static const offsetUs = 'offsetUs';

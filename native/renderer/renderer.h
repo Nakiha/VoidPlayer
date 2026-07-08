@@ -24,9 +24,7 @@ class PlaybackController;
 class PresentationBackend;
 struct AnalysisOverlayPrimitivePackage;
 struct SharedFp16TextureSnapshot;
-struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
-struct WindowsSourceProjection;
 
 class Renderer {
 public:
@@ -122,9 +120,9 @@ public:
         const PresentationExternalD3D12RenderTarget& target,
         const char* reason);
     bool configure_source_cache(
-        const std::vector<SourceCacheTrackDescriptor>& descriptors);
+        const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors);
     void clear_source_cache(const char* reason);
-    bool update_source_projection(const WindowsSourceProjection& projection);
+    bool update_source_projection(const PresentationSourceProjection& projection);
     void clear_source_projection();
     bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot& snapshot) const;

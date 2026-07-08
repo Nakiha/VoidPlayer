@@ -1,6 +1,7 @@
 #include "windows_presentation_policy.h"
 
 #include "renderer/frame/frame_storage.h"
+#include "renderer/render/presentation_color_domain_contract.h"
 #include "renderer/track/track_info.h"
 
 #include <algorithm>
@@ -27,6 +28,17 @@ std::string normalized_mode(std::string value) {
     return value;
 }
 
+PresentationFlutterSurfaceColorContract evaluate_windows_auto_hdr_ui_contract() {
+    PresentationBackendDiagnostics diagnostics;
+    diagnostics.external_flutter_surface_color_domain =
+        "sdr-srgb-premultiplied-bgra8";
+    diagnostics.external_flutter_surface_composition_owner = "native-shader";
+    diagnostics.external_flutter_surface_target_domain =
+        "windows-linear-scrgb";
+    diagnostics.external_flutter_surface_composited_into_hdr_target = true;
+    return evaluate_flutter_surface_color_contract(diagnostics);
+}
+
 } // namespace
 
 WindowsPresentationPolicy resolve_windows_presentation_policy(
@@ -46,8 +58,17 @@ WindowsPresentationPolicy resolve_windows_presentation_policy(
             return policy;
         }
         policy.desired_mode = "native-compositor-scrgb";
-        policy.reason = "auto-hdr-ui-composition-unsupported";
-        policy.fallback_reason = "hdr-ui-composition-unsupported";
+        const auto ui_contract = evaluate_windows_auto_hdr_ui_contract();
+        if (ui_contract.violation) {
+            policy.reason = "auto-hdr-ui-composition-unsupported";
+            policy.fallback_reason = "hdr-ui-composition-unsupported";
+            return policy;
+        }
+        policy.mode = policy.desired_mode;
+        policy.reason = "auto-hdr-ui-composition-owned";
+        policy.output_target = ColorOutputTarget::kWindowsLinearScRGB;
+        policy.fp16_scrgb_requested = true;
+        policy.hdr_output_requested = true;
         return policy;
     }
     if (request == "sdr") {

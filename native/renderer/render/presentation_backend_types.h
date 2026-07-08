@@ -4,6 +4,7 @@
 #include "renderer/decode/frame_identity_types.h"
 #include "renderer/render/backend_type.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -77,6 +78,48 @@ struct PresentationSourceFrameTarget {
     int32_t height = 0;
     int32_t drawn = 0;
     PresentationBackendFrameInfo frame_info;
+};
+
+struct PresentationSourceCacheTrackDescriptor {
+    int slot = -1;
+    int file_id = -1;
+    int width = 0;
+    int height = 0;
+    int color_transfer = 0;
+};
+
+struct PresentationSourceProjection {
+    bool enabled = false;
+    int mode = 0;
+    float split_pos = 0.5f;
+    int active_track_count = 1;
+    std::array<int, 4> source_order = {0, 1, 2, 3};
+    std::array<float, 4> display_offset_x{};
+    std::array<float, 4> display_offset_y{};
+    std::array<float, 4> inv_display_size_x{};
+    std::array<float, 4> inv_display_size_y{};
+    std::array<float, 4> view_offset_uv_x{};
+    std::array<float, 4> view_offset_uv_y{};
+};
+
+struct PresentationSourceProjectionSample {
+    bool present = false;
+    int source_slot = -1;
+    float u = 0.0f;
+    float v = 0.0f;
+};
+
+struct PresentationRetainedSourceVisualRect {
+    bool present = false;
+    int source_slot = -1;
+    float left = 0.0f;
+    float top = 0.0f;
+    float right = 0.0f;
+    float bottom = 0.0f;
+    float clip_left = 0.0f;
+    float clip_top = 0.0f;
+    float clip_right = 0.0f;
+    float clip_bottom = 0.0f;
 };
 
 struct PresentationBackendStats {
@@ -157,6 +200,10 @@ struct PresentationBackendDiagnostics {
     uint64_t source_cache_presented_anchor_publish_count = 0;
     uint64_t source_cache_backpressure_count = 0;
     uint64_t source_cache_fallback_count = 0;
+    uint64_t source_cache_required_mask = 0;
+    uint64_t source_cache_drawn_mask = 0;
+    uint64_t source_cache_missing_mask = 0;
+    uint64_t source_cache_incomplete_publish_suppressed_count = 0;
     uint64_t source_projection_update_count = 0;
     uint64_t source_projection_consume_count = 0;
     bool source_projection_active = false;

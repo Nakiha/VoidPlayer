@@ -284,7 +284,7 @@ bool Renderer::draw_current_frame_to_external_d3d12_target(
 }
 
 bool Renderer::configure_source_cache(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    const std::vector<PresentationSourceCacheTrackDescriptor>& descriptors) {
     return impl_->configure_source_cache(descriptors);
 }
 
@@ -293,7 +293,7 @@ void Renderer::clear_source_cache(const char* reason) {
 }
 
 bool Renderer::update_source_projection(
-    const WindowsSourceProjection& projection) {
+    const PresentationSourceProjection& projection) {
     return impl_->update_source_projection(projection);
 }
 

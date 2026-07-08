@@ -961,7 +961,7 @@ TEST_CASE("Windows wgpu-d3d12 backend publishes retained source-cache bundles",
         kChromaWidth * kChromaHeight, 160);
 
     REQUIRE(backend->configure_source_cache({
-        SourceCacheTrackDescriptor{
+        PresentationSourceCacheTrackDescriptor{
             0,
             kFileId,
             kSourceWidth,

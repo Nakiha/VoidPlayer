@@ -209,15 +209,6 @@ class NativePlayerController {
     );
   }
 
-  Future<void> requestNativeCompositorFlutterFrame({required String reason}) {
-    if (!_hasPlayerForCommand(
-      NativePlayerMethods.requestNativeCompositorFlutterFrame,
-    )) {
-      return Future.value();
-    }
-    return _api.requestNativeCompositorFlutterFrame(reason: reason);
-  }
-
   Future<void> boostNativeCompositorFlutterInteraction({
     required String reason,
   }) {
@@ -227,17 +218,6 @@ class NativePlayerController {
       return Future.value();
     }
     return _api.boostNativeCompositorFlutterInteraction(reason: reason);
-  }
-
-  Future<void> ackNativeCompositorFlutterState({
-    required int serial,
-    required bool transparentViewport,
-  }) {
-    _ensureAlive();
-    return _api.ackNativeCompositorFlutterState(
-      serial: serial,
-      transparentViewport: transparentViewport,
-    );
   }
 
   Future<void> debugFailNativeCompositor({

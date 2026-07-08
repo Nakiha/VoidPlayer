@@ -101,9 +101,6 @@ private:
     void SetNativeCompositorViewportRect(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-    void RequestNativeCompositorFlutterFrame(
-        const flutter::EncodableValue* arguments,
-        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void BoostNativeCompositorFlutterInteraction(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
@@ -114,9 +111,6 @@ private:
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void SetNativeAnalysisOverlay(
-        const flutter::EncodableValue* arguments,
-        std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-    void AckNativeCompositorFlutterState(
         const flutter::EncodableValue* arguments,
         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
     void DebugFailNativeCompositor(

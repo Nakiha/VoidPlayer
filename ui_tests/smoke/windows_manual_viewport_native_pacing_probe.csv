@@ -5,7 +5,7 @@
 0.3, ADD_MEDIA, build/generated/windows_manual_viewport_native_pacing.mp4
 1.8, ASSERT_TRACK_COUNT, 1
 1.9, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsNativeCompositorPhase, active
-1.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterExportFramePumpAvailable, true
+1.91, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsFlutterSurfaceAvailable, true
 2.0, CLEAR_MARKS
 2.1, ADD_QUICK_MARK, 0, 0.24, 0.43, 0.35, 0.035, overlay, 2
 2.3, ASSERT_MARK_COUNT, 1

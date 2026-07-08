@@ -10,6 +10,9 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 }
 
+struct ID3D11Device;
+struct ID3D11DeviceContext;
+
 namespace vr {
 
 struct DecodeStagePerfCounters;
@@ -34,7 +37,7 @@ public:
     bool downloads_hardware_to_cpu() const {
         return hardware_converter_ && hardware_converter_->downloads_to_cpu();
     }
-    HardwareSnapshotPoolStats snapshot_pool_stats() const;
+    D3D11SnapshotPoolStats snapshot_pool_stats() const;
 
 private:
     int width_ = 0;

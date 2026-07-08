@@ -60,6 +60,7 @@ struct RendererGpuMemoryStats {
 
 enum class SharedTextureHandleType {
     None = 0,
+    D3D11SharedHandle = 1,
 };
 
 struct SharedTextureSnapshot {

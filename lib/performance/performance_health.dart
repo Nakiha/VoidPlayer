@@ -152,9 +152,6 @@ class PerformanceHealthSnapshot {
           diagnostics['rendererOwnedBackendName'] ??
           diagnostics['backend'],
     );
-    final nativeCompositorBackend = _stringValue(
-      diagnostics['nativeCompositorBackend'],
-    );
     final rawDrawP95Us = _doubleValue(diagnostics['nativeRendererDrawP95Us']);
     final rawBackendP95Us = _doubleValue(
       diagnostics['nativeRendererDrawBackendP95Us'],
@@ -162,27 +159,9 @@ class PerformanceHealthSnapshot {
     final rawMetalP95Us = _doubleValue(
       diagnostics['metalCommandCompletionP95Us'],
     );
-    final usingRetainedWgpuSourceProvider =
-        presentationBackend == 'native-wgpu-metal-source-provider' ||
-        nativeCompositorBackend == 'wgpu-metal-thin-runner';
-    final retainedDrawP95Us =
-        _doubleValue(diagnostics['nativeCompositorFrameCpuP95Ms']) * 1000.0;
-    final retainedBackendP95Us =
-        _doubleValue(diagnostics['nativeCompositorWgpuSubmitCpuP95Ms']) *
-        1000.0;
-    final retainedMetalP95Us =
-        _doubleValue(diagnostics['nativeCompositorWgpuCompletionP95Ms']) *
-        1000.0;
-    final drawP95Us = usingRetainedWgpuSourceProvider && retainedDrawP95Us > 0
-        ? retainedDrawP95Us
-        : rawDrawP95Us;
-    final backendP95Us =
-        usingRetainedWgpuSourceProvider && retainedBackendP95Us > 0
-        ? retainedBackendP95Us
-        : rawBackendP95Us;
-    final metalP95Us = usingRetainedWgpuSourceProvider && retainedMetalP95Us > 0
-        ? retainedMetalP95Us
-        : rawMetalP95Us;
+    final drawP95Us = rawDrawP95Us;
+    final backendP95Us = rawBackendP95Us;
+    final metalP95Us = rawMetalP95Us;
     final hostIntervalP95Ms = _doubleValue(
       diagnostics['presentedFrameHostIntervalP95Ms'],
     );
@@ -679,9 +658,6 @@ class PerformanceHealthSnapshot {
 
   String _backendCompletionShortLabel() {
     final normalized = presentationBackend.toLowerCase();
-    if (normalized.contains('wgpu')) {
-      return 'WGPU';
-    }
     if (normalized.contains('metal')) {
       return 'Metal';
     }

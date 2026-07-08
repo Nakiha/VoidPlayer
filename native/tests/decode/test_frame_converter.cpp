@@ -1,17 +1,16 @@
 #include <catch2/catch_test_macros.hpp>
-#include "renderer/decode/decode_stage_perf.h"
 #include "renderer/decode/frame_converter.h"
 #include <cstdint>
 #include <cstring>
 #include <mutex>
 #include <utility>
 #include <atomic>
-#include <d3d12.h>
+#include <d3d11.h>
+#include <wrl/client.h>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/buffer.h>
-#include <libavutil/hwcontext_d3d12va.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/mem.h>
 }
@@ -147,102 +146,6 @@ TEST_CASE("FrameConverter: wraps odd YUV420P frame with ceil chroma planes",
     REQUIRE(planar->plane_heights[1] == 32);
     REQUIRE(planar->plane_widths[2] == 33);
     REQUIRE(planar->plane_heights[2] == 32);
-
-    av_frame_free(&frame);
-}
-
-TEST_CASE("FrameConverter: wraps NV12 frame as semiplanar YUV ref",
-          "[frame_converter][color]") {
-    FrameConverter converter;
-    REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_NV12));
-
-    AVFrame* frame = av_frame_alloc();
-    REQUIRE(frame != nullptr);
-    frame->format = AV_PIX_FMT_NV12;
-    frame->width = 4;
-    frame->height = 4;
-    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
-    for (int y = 0; y < 4; ++y) {
-        memset(frame->data[0] + y * frame->linesize[0], 64, 4);
-    }
-    for (int y = 0; y < 2; ++y) {
-        for (int x = 0; x < 4; x += 2) {
-            frame->data[1][y * frame->linesize[1] + x] = 96;
-            frame->data[1][y * frame->linesize[1] + x + 1] = 160;
-        }
-    }
-
-    DecodeStagePerfCounters perf;
-    auto converted = converter.convert(frame, &perf);
-    REQUIRE(converted.has_value());
-    const auto snapshot = perf.snapshot();
-    REQUIRE(snapshot.convert_direct_planar_count == 1);
-    REQUIRE(snapshot.convert_nv12_pack_count == 0);
-
-    TextureFrame result = std::move(*converted);
-    REQUIRE(result.is_nv12);
-    REQUIRE_FALSE(result.is_p010);
-    REQUIRE(result.cpu_nv12_storage() == nullptr);
-    REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
-    const auto* yuv = result.cpu_planar_yuv_storage();
-    REQUIRE(yuv->plane_layout == CpuYuvPlaneLayout::SemiPlanarYuv420);
-    REQUIRE(yuv->sample_alignment == CpuYuvSampleAlignment::Packed);
-    REQUIRE(yuv->bit_depth == 8);
-    REQUIRE(yuv->bytes_per_sample == 1);
-    REQUIRE(yuv->planes[0] == frame->data[0]);
-    REQUIRE(yuv->planes[1] == frame->data[1]);
-    REQUIRE(yuv->planes[2] == nullptr);
-    REQUIRE(yuv->plane_widths[1] == 2);
-    REQUIRE(yuv->plane_heights[1] == 2);
-
-    av_frame_free(&frame);
-}
-
-TEST_CASE("FrameConverter: wraps P010 frame as semiplanar YUV ref",
-          "[frame_converter][color]") {
-    FrameConverter converter;
-    REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_P010LE));
-
-    AVFrame* frame = av_frame_alloc();
-    REQUIRE(frame != nullptr);
-    frame->format = AV_PIX_FMT_P010LE;
-    frame->width = 4;
-    frame->height = 4;
-    REQUIRE(av_frame_get_buffer(frame, 0) >= 0);
-    for (int y = 0; y < 4; ++y) {
-        auto* row = reinterpret_cast<uint16_t*>(frame->data[0] + y * frame->linesize[0]);
-        for (int x = 0; x < 4; ++x) {
-            row[x] = static_cast<uint16_t>(512u << 6);
-        }
-    }
-    for (int y = 0; y < 2; ++y) {
-        auto* row = reinterpret_cast<uint16_t*>(frame->data[1] + y * frame->linesize[1]);
-        for (int x = 0; x < 4; x += 2) {
-            row[x] = static_cast<uint16_t>(256u << 6);
-            row[x + 1] = static_cast<uint16_t>(768u << 6);
-        }
-    }
-
-    DecodeStagePerfCounters perf;
-    auto converted = converter.convert(frame, &perf);
-    REQUIRE(converted.has_value());
-    const auto snapshot = perf.snapshot();
-    REQUIRE(snapshot.convert_direct_planar_count == 1);
-    REQUIRE(snapshot.convert_nv12_pack_count == 0);
-
-    TextureFrame result = std::move(*converted);
-    REQUIRE(result.is_nv12);
-    REQUIRE(result.is_p010);
-    REQUIRE(result.cpu_nv12_storage() == nullptr);
-    REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
-    const auto* yuv = result.cpu_planar_yuv_storage();
-    REQUIRE(yuv->plane_layout == CpuYuvPlaneLayout::SemiPlanarYuv420);
-    REQUIRE(yuv->sample_alignment == CpuYuvSampleAlignment::MsbAligned);
-    REQUIRE(yuv->bit_depth == 10);
-    REQUIRE(yuv->bytes_per_sample == 2);
-    REQUIRE(yuv->planes[0] == frame->data[0]);
-    REQUIRE(yuv->planes[1] == frame->data[1]);
-    REQUIRE(yuv->planes[2] == nullptr);
 
     av_frame_free(&frame);
 }
@@ -494,15 +397,13 @@ TEST_CASE("FrameConverter: maps HDR transfer metadata", "[frame_converter][color
     REQUIRE(converted.has_value());
     TextureFrame result = std::move(*converted);
     REQUIRE(result.texture_handle != nullptr);
+    REQUIRE_FALSE(result.is_nv12);
     REQUIRE_FALSE(result.is_p010);
-    REQUIRE(result.cpu_nv12_storage() == nullptr);
     REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
     REQUIRE(result.cpu_planar_yuv_storage()->bit_depth == 10);
     REQUIRE(result.cpu_planar_yuv_storage()->bytes_per_sample == 2);
     REQUIRE(result.cpu_planar_yuv_storage()->plane_layout ==
             CpuYuvPlaneLayout::PlanarYuv420);
-    REQUIRE(result.cpu_planar_yuv_storage()->sample_alignment ==
-            CpuYuvSampleAlignment::Packed);
     REQUIRE(result.color.range == VIDEO_COLOR_RANGE_LIMITED);
     REQUIRE(result.color.matrix == VIDEO_COLOR_MATRIX_BT2020_NCL);
     REQUIRE(result.color.transfer == VIDEO_COLOR_TRANSFER_PQ);
@@ -511,7 +412,7 @@ TEST_CASE("FrameConverter: maps HDR transfer metadata", "[frame_converter][color
     av_frame_free(&frame);
 }
 
-TEST_CASE("FrameConverter: preserves YUV420P10LE as direct planar storage",
+TEST_CASE("FrameConverter: preserves YUV420P10LE as CPU planar 10-bit before shader",
           "[frame_converter][color]") {
     FrameConverter converter;
     REQUIRE(converter.init_software(4, 4, AV_PIX_FMT_YUV420P10LE));
@@ -538,31 +439,27 @@ TEST_CASE("FrameConverter: preserves YUV420P10LE as direct planar storage",
         }
     }
 
-    DecodeStagePerfCounters perf;
-    auto converted = converter.convert(frame, &perf);
+    auto converted = converter.convert(frame);
     REQUIRE(converted.has_value());
-    const auto snapshot = perf.snapshot();
-    REQUIRE(snapshot.convert_direct_planar_count == 1);
-    REQUIRE(snapshot.convert_nv12_pack_count == 0);
-
     TextureFrame result = std::move(*converted);
     REQUIRE_FALSE(result.is_nv12);
     REQUIRE_FALSE(result.is_p010);
-    REQUIRE(result.cpu_nv12_storage() == nullptr);
     REQUIRE(result.cpu_planar_yuv_storage() != nullptr);
-
     const auto* planar = result.cpu_planar_yuv_storage();
     REQUIRE(planar->bit_depth == 10);
     REQUIRE(planar->bytes_per_sample == 2);
     REQUIRE(planar->plane_layout == CpuYuvPlaneLayout::PlanarYuv420);
     REQUIRE(planar->sample_alignment == CpuYuvSampleAlignment::Packed);
-    REQUIRE(planar->plane_widths[0] == 4);
-    REQUIRE(planar->plane_heights[0] == 4);
-    REQUIRE(planar->plane_widths[1] == 2);
-    REQUIRE(planar->plane_heights[1] == 2);
-    REQUIRE(reinterpret_cast<const uint16_t*>(planar->planes[0])[0] == 512);
-    REQUIRE(reinterpret_cast<const uint16_t*>(planar->planes[1])[0] == 256);
-    REQUIRE(reinterpret_cast<const uint16_t*>(planar->planes[2])[0] == 768);
+    REQUIRE(planar->strides[0] >= 8);
+    REQUIRE(planar->strides[1] >= 4);
+    REQUIRE(planar->strides[2] >= 4);
+
+    const auto* y_plane = reinterpret_cast<const uint16_t*>(planar->planes[0]);
+    const auto* u_plane = reinterpret_cast<const uint16_t*>(planar->planes[1]);
+    const auto* v_plane = reinterpret_cast<const uint16_t*>(planar->planes[2]);
+    REQUIRE(y_plane[0] == static_cast<uint16_t>(512u));
+    REQUIRE(u_plane[0] == static_cast<uint16_t>(256u));
+    REQUIRE(v_plane[0] == static_cast<uint16_t>(768u));
 
     av_frame_free(&frame);
 }
@@ -591,16 +488,16 @@ TEST_CASE("FrameConverter: YUVJ444P defaults to full range when metadata is abse
     av_frame_free(&frame);
 }
 
-TEST_CASE("FrameConverter: init_hardware sets D3D12 hardware mode", "[frame_converter]") {
+TEST_CASE("FrameConverter: init_hardware sets hardware mode", "[frame_converter]") {
     FrameConverter converter;
     std::recursive_mutex device_mutex;
-    // Pass null pointers because metadata-only initialization does not create a real device.
+    // Pass null pointers since we are not creating a real D3D11 device in tests
     bool ok = converter.init_hardware(
         nullptr,
         nullptr,
         1920,
         1080,
-        HwDecodeType::D3D12VA,
+        HwDecodeType::D3D11VA,
         false,
         &device_mutex);
     REQUIRE(ok == true);
@@ -645,75 +542,55 @@ TEST_CASE("FrameConverter: unsupported software format returns no frame",
     av_frame_free(&frame);
 }
 
-TEST_CASE("TextureFrame: storage exposes D3D12 texture metadata", "[frame_storage]") {
-    TextureFrame frame;
-    auto* texture = reinterpret_cast<ID3D12Resource*>(0x1234);
-    auto* fence = reinterpret_cast<ID3D12Fence*>(0x5678);
-    void* event = reinterpret_cast<void*>(0x2468);
-    auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x1357), [](void*) {});
+TEST_CASE("FrameConverter: direct D3D11 hardware frame keeps AVFrame ownership",
+          "[frame_converter][hw][av_frame_lifetime]") {
+    Microsoft::WRL::ComPtr<ID3D11Device> device;
+    D3D_FEATURE_LEVEL feature_level = D3D_FEATURE_LEVEL_11_0;
+    REQUIRE(SUCCEEDED(D3D11CreateDevice(
+        nullptr,
+        D3D_DRIVER_TYPE_HARDWARE,
+        nullptr,
+        0,
+        &feature_level,
+        1,
+        D3D11_SDK_VERSION,
+        &device,
+        nullptr,
+        nullptr)));
 
-    frame.texture_handle = texture;
-    frame.is_ref = true;
-    frame.is_nv12 = true;
-    frame.texture_array_index = 3;
-    frame.hw_frame_ref = ref;
-    frame.storage = D3D12TextureFrameStorage{
-        texture,
-        3,
-        fence,
-        event,
-        42,
-        true,
-        true,
-        1920,
-        1080,
-        ref,
-    };
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = 64;
+    desc.Height = 64;
+    desc.MipLevels = 1;
+    desc.ArraySize = 2;
+    desc.Format = DXGI_FORMAT_NV12;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
 
-    REQUIRE(frame.storage_kind() == FrameStorageKind::D3D12Texture);
-    REQUIRE(frame.storage_class() == FrameStorageClass::HardwareTexture);
-    REQUIRE(frame.d3d12_texture_storage() != nullptr);
-    REQUIRE(frame.d3d12_texture_storage()->texture == texture);
-    REQUIRE(frame.d3d12_texture_storage()->subresource_index == 3);
-    REQUIRE(frame.d3d12_texture_storage()->fence == fence);
-    REQUIRE(frame.d3d12_texture_storage()->fence_event == event);
-    REQUIRE(frame.d3d12_texture_storage()->fence_value == 42);
-    REQUIRE(frame.d3d12_texture_storage()->is_texture_array);
-    REQUIRE(frame.d3d12_texture_storage()->is_p010);
-    REQUIRE(frame.d3d12_texture_storage()->coded_width == 1920);
-    REQUIRE(frame.d3d12_texture_storage()->coded_height == 1080);
-    REQUIRE(frame.d3d12_texture_storage()->frame_ref == ref);
-}
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+    REQUIRE(SUCCEEDED(device->CreateTexture2D(&desc, nullptr, &texture)));
 
-TEST_CASE("FrameConverter retains D3D12VA frame metadata for wgpu import",
-          "[frame_converter][d3d12va]") {
+    std::recursive_mutex device_mutex;
     FrameConverter converter;
     REQUIRE(converter.init_hardware(
         nullptr,
         nullptr,
         64,
         64,
-        HwDecodeType::D3D12VA,
+        HwDecodeType::D3D11VA,
         false,
-        nullptr));
+        &device_mutex));
 
     std::atomic<int> free_count{0};
     AVFrame* frame = av_frame_alloc();
     REQUIRE(frame != nullptr);
-    frame->format = AV_PIX_FMT_D3D12;
+    frame->format = AV_PIX_FMT_D3D11;
     frame->width = 64;
     frame->height = 64;
-    frame->pts = 9000;
-
-    AVD3D12VAFrame d3d12_frame = {};
-    d3d12_frame.texture = reinterpret_cast<ID3D12Resource*>(0x1234);
-    d3d12_frame.subresource_index = 2;
-    d3d12_frame.sync_ctx.fence = reinterpret_cast<ID3D12Fence*>(0x5678);
-    d3d12_frame.sync_ctx.event = reinterpret_cast<HANDLE>(0x2468);
-    d3d12_frame.sync_ctx.fence_value = 77;
-    d3d12_frame.flags = AV_D3D12VA_FRAME_FLAG_TEXTURE_ARRAY;
-    frame->data[0] = reinterpret_cast<uint8_t*>(&d3d12_frame);
-
+    frame->pts = 7000;
+    frame->data[0] = reinterpret_cast<uint8_t*>(texture.Get());
+    frame->data[1] = reinterpret_cast<uint8_t*>(intptr_t{1});
     auto* token = static_cast<uint8_t*>(av_malloc(1));
     REQUIRE(token != nullptr);
     frame->buf[0] = av_buffer_create(
@@ -722,15 +599,10 @@ TEST_CASE("FrameConverter retains D3D12VA frame metadata for wgpu import",
 
     auto converted = converter.convert(frame);
     REQUIRE(converted.has_value());
-    REQUIRE(converted->storage_kind() == FrameStorageKind::D3D12Texture);
-    REQUIRE(converted->texture_handle == d3d12_frame.texture);
-    REQUIRE(converted->texture_array_index == 2);
     REQUIRE(converted->hw_frame_ref != nullptr);
-    REQUIRE(converted->d3d12_texture_storage() != nullptr);
-    REQUIRE(converted->d3d12_texture_storage()->fence == d3d12_frame.sync_ctx.fence);
-    REQUIRE(converted->d3d12_texture_storage()->fence_event == d3d12_frame.sync_ctx.event);
-    REQUIRE(converted->d3d12_texture_storage()->fence_value == 77);
-    REQUIRE(converted->d3d12_texture_storage()->is_texture_array);
+    REQUIRE(converted->storage_kind() == FrameStorageKind::D3D11Nv12);
+    REQUIRE(converted->texture_handle == texture.Get());
+    REQUIRE(converted->texture_array_index == 1);
 
     av_frame_unref(frame);
     REQUIRE(free_count.load(std::memory_order_relaxed) == 0);
@@ -739,6 +611,26 @@ TEST_CASE("FrameConverter retains D3D12VA frame metadata for wgpu import",
     REQUIRE(free_count.load(std::memory_order_relaxed) == 1);
 
     av_frame_free(&frame);
+}
+
+TEST_CASE("TextureFrame: storage exposes D3D11 NV12 texture metadata", "[frame_storage]") {
+    TextureFrame frame;
+    auto* texture = reinterpret_cast<ID3D11Texture2D*>(0x1234);
+    auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x5678), [](void*) {});
+
+    frame.texture_handle = texture;
+    frame.is_ref = true;
+    frame.is_nv12 = true;
+    frame.texture_array_index = 7;
+    frame.hw_frame_ref = ref;
+    frame.storage = D3D11Nv12FrameStorage{texture, 7, ref};
+
+    REQUIRE(frame.storage_kind() == FrameStorageKind::D3D11Nv12);
+    REQUIRE(frame.storage_class() == FrameStorageClass::HardwareTexture);
+    REQUIRE(frame.d3d11_nv12_storage() != nullptr);
+    REQUIRE(frame.d3d11_nv12_storage()->texture == texture);
+    REQUIRE(frame.d3d11_nv12_storage()->array_index == 7);
+    REQUIRE(frame.d3d11_nv12_storage()->frame_ref == ref);
 }
 
 TEST_CASE("TextureFrame: storage exposes CPU NV12 metadata", "[frame_storage]") {

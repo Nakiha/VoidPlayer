@@ -1,4 +1,4 @@
-"""Static guardrails for the Windows native compositor fork protection line."""
+"""Static guardrails for the Windows standard Flutter Texture presentation line."""
 
 from __future__ import annotations
 
@@ -13,26 +13,17 @@ except ImportError:
 
 
 REQUIRED_GATE_CALLS = [
-    "_run_windows_display_tests()",
-    "_run_windows_device_recovery_tests()",
-    "_run_windows_high_refresh_tests()",
-    "_run_windows_overlay_layer_tests()",
+    "_run_windows_preservation()",
 ]
 
 REQUIRED_UI_PROFILE_ENTRIES = {
     "ui_tests/profiles/windows-preservation-auto.txt": [
-        "ui_tests/smoke/native_compositor_auto_sdr.csv",
-        "ui_tests/smoke/native_compositor_device_recovery_sdr.csv",
+        "ui_tests/smoke/basic.csv",
+        "ui_tests/smoke/native_seek_preview_event.csv",
     ],
     "ui_tests/profiles/windows-preservation-scrgb.txt": [
-        "ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv",
-        "ui_tests/smoke/native_compositor_flutter_surface_pump_scrgb.csv",
-        "ui_tests/smoke/native_source_projection_dcomp_scrgb.csv",
-        "ui_tests/smoke/native_compositor_device_recovery_scrgb.csv",
-        "ui_tests/smoke/native_source_projection_device_recovery.csv",
-        "ui_tests/smoke/native_high_refresh_paused_pan_zoom.csv",
-        "ui_tests/smoke/native_high_refresh_playing_pan_split.csv",
-        "ui_tests/smoke/native_high_refresh_overlay_pan_zoom.csv",
+        "ui_tests/smoke/basic.csv",
+        "ui_tests/smoke/native_seek_preview_event.csv",
     ],
     "ui_tests/profiles/windows-preservation-sdr.txt": [
         "ui_tests/smoke/basic.csv",
@@ -41,11 +32,7 @@ REQUIRED_UI_PROFILE_ENTRIES = {
 }
 
 REQUIRED_NATIVE_TAGS = {
-    "[windows_dcomp]": "native/tests/windows/test_windows_dcomp_composite.cpp",
-    "[windows_source_projection]": "native/tests/windows/test_windows_dcomp_composite.cpp",
-    "[windows_device_recovery]": "native/tests/windows/test_windows_device_recovery.cpp",
-    "[windows_high_refresh]": "native/tests/windows/test_windows_high_refresh_metrics.cpp",
-    "[windows_overlay_layer]": "native/tests/windows/test_windows_overlay_layer_state.cpp",
+    "[windows_display]": "native/tests/windows/test_windows_display_resolver.cpp",
 }
 
 

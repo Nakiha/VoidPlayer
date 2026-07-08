@@ -28,8 +28,8 @@ const char* storage_kind_name(vr::FrameStorageKind kind) {
         return "CpuNv12";
     case vr::FrameStorageKind::CpuPlanarYuv:
         return "CpuPlanarYuv";
-    case vr::FrameStorageKind::D3D12Texture:
-        return "D3D12Texture";
+    case vr::FrameStorageKind::D3D11Texture:
+        return "D3D11Texture";
     case vr::FrameStorageKind::MacOSCVPixelBuffer:
         return "MacOSCVPixelBuffer";
     case vr::FrameStorageKind::Empty:

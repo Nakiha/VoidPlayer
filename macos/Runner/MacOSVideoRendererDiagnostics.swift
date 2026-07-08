@@ -379,7 +379,7 @@ enum MacOSVideoRendererDiagnostics {
         perfStats?["rendererOwnedCVPixelBufferUploadCount"] ?? 0,
       "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
       "presentationUploadMode": nativeCompositorSourceProviderPresenting
-        ? "wgpu-source-provider"
+        ? "renderer-owned-source-provider"
         : MacOSPresentationDiagnostics.uploadMode(
           perfStats: perfStats,
           targetReady: textureStats?.metalTextureValid ?? false,
@@ -501,13 +501,9 @@ enum MacOSVideoRendererDiagnostics {
       return "explicit-synthetic-texture"
     }
     if sourceProviderPresenting {
-      return "native-wgpu-metal-source-provider"
+      return "native-metal-source-provider"
     }
     if state["active"] as? Bool == true {
-      let backendName = state["backendName"] as? String ?? "unknown"
-      if backendName.lowercased().contains("wgpu") {
-        return "native-wgpu-metal-cvpixelbuffer-target"
-      }
       return "native-metal-cvpixelbuffer-target"
     }
     return "native-metal-target-unavailable"

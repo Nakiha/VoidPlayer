@@ -34,87 +34,40 @@ WindowsPresentationPolicy resolve_windows_presentation_policy(
     bool has_hdr_track,
     const WindowsDisplayProbeResult& display) {
     const std::string request = normalized_mode(requested_mode);
+    (void)display;
     if (request.empty() || request == "auto") {
         WindowsPresentationPolicy policy;
         policy.has_hdr_track = has_hdr_track;
-        if (!has_hdr_track) {
-            return policy;
+        if (has_hdr_track) {
+            policy.reason = "auto-hdr-deferred-flutter-texture-sdr";
+            policy.fallback_reason = "hdr-native-compositor-deferred";
         }
-        if (!display.output_resolved || !display.color_metadata_available ||
-            !display.hdr_active) {
-            policy.reason = "auto-hdr-display-unavailable";
-            return policy;
-        }
-        if (!display.matches_presentation_adapter) {
-            policy.mode = "native-compositor-scrgb";
-            policy.desired_mode = policy.mode;
-            policy.reason = "auto-hdr-cross-adapter";
-            policy.output_target = ColorOutputTarget::kWindowsLinearScRGB;
-            policy.fp16_scrgb_requested = true;
-            policy.hdr_output_requested = true;
-            policy.cross_adapter_required = true;
-            policy.cross_adapter_migration_requested = true;
-            return policy;
-        }
-        policy.mode = "native-compositor-scrgb";
-        policy.desired_mode = policy.mode;
-        policy.reason = "auto-hdr-track";
-        policy.output_target = ColorOutputTarget::kWindowsLinearScRGB;
-        policy.fp16_scrgb_requested = true;
-        policy.hdr_output_requested = true;
         return policy;
     }
-    if (request == "sdr") {
+    if (request == "sdr" || request == "flutter" ||
+        request == "flutter-texture-sdr") {
         WindowsPresentationPolicy policy;
         policy.request = request;
-        policy.mode = "native-compositor-sdr";
+        policy.mode = "flutter-texture-sdr";
         policy.desired_mode = policy.mode;
-        policy.reason = "forced-native-compositor-sdr";
+        policy.reason = "forced-flutter-texture-sdr";
         policy.auto_enabled = false;
         policy.has_hdr_track = has_hdr_track;
         return policy;
     }
-    if (request == "flutter" || request == "flutter-texture-sdr" ||
-        request == "fp16-scrgb") {
+    if (request == "fp16-scrgb" || request == "native-compositor-sdr" ||
+        request == "native-compositor-scrgb") {
         WindowsPresentationPolicy policy;
         policy.request = request;
         policy.mode = "unsupported";
         policy.desired_mode = "unsupported";
-        policy.reason = "unsupported-windows-presentation-mode";
-        policy.fallback_reason = "unsupported-windows-presentation-mode";
+        policy.reason = "native-compositor-deferred";
+        policy.fallback_reason = "native-compositor-deferred";
         policy.auto_enabled = false;
         policy.has_hdr_track = has_hdr_track;
         policy.fp16_scrgb_requested = false;
         policy.native_compositor_requested = false;
         policy.supported = false;
-        return policy;
-    }
-    if (request == "native-compositor-sdr") {
-        WindowsPresentationPolicy policy;
-        policy.request = request;
-        policy.mode = request;
-        policy.desired_mode = request;
-        policy.reason = "forced-native-compositor-sdr";
-        policy.auto_enabled = false;
-        policy.has_hdr_track = has_hdr_track;
-        return policy;
-    }
-    if (request == "native-compositor-scrgb") {
-        WindowsPresentationPolicy policy;
-        policy.request = request;
-        policy.mode = "native-compositor-scrgb";
-        policy.desired_mode = policy.mode;
-        policy.reason = "forced-native-compositor-scrgb";
-        policy.output_target = ColorOutputTarget::kWindowsLinearScRGB;
-        policy.auto_enabled = false;
-        policy.has_hdr_track = has_hdr_track;
-        policy.fp16_scrgb_requested = true;
-        policy.native_compositor_requested = true;
-        policy.hdr_output_requested = true;
-        policy.cross_adapter_required =
-            display.output_resolved && !display.matches_presentation_adapter;
-        policy.cross_adapter_migration_requested =
-            policy.cross_adapter_required;
         return policy;
     }
 

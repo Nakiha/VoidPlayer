@@ -177,7 +177,7 @@ void main() {
     expect(coordinator.viewportHeight, 200);
   });
 
-  test('native compositor preempt resize republishes source cache', () async {
+  test('standard texture preempt resize skips native source cache', () async {
     final stateStore = MainWindowStateStore()
       ..setTextureId(1)
       ..setNativeCompositorActive(true)
@@ -204,7 +204,6 @@ void main() {
     expect(controller.calls, const [
       'resize',
       'getLayout',
-      'prepareNativeCompositorSourceCache',
     ]);
     expect(coordinator.viewportWidth, 1516);
     expect(coordinator.viewportHeight, 876);

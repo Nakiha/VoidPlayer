@@ -5,7 +5,7 @@ import '../app_log.dart';
 void fireAndLog(String operation, Future<void> future) {
   unawaited(
     future.catchError((Object error, StackTrace stack) {
-      log.severe('$operation failed', error, stack);
+      logSevere('$operation failed', error, stack);
     }),
   );
 }
@@ -17,7 +17,7 @@ void fireAndLogFine(
 }) {
   unawaited(
     future.catchError((Object error, StackTrace stack) {
-      log.fine('$operation failed', error, stack);
+      logFine('$operation failed', error, stack);
       onError?.call(error, stack);
     }),
   );
@@ -34,7 +34,7 @@ Future<void> runGuardedAction(
       await result;
     }
   } catch (error, stack) {
-    log.severe('$operation failed', error, stack);
+    logSevere('$operation failed', error, stack);
     onError?.call(error, stack);
   }
 }

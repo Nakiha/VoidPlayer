@@ -9,7 +9,7 @@ void main() {
       'void_player_log_test_',
     );
     addTearDown(() async {
-      await flushLogFile();
+      await closeLogFile();
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
       }
@@ -38,7 +38,7 @@ void main() {
       'void_player_log_batch_test_',
     );
     addTearDown(() async {
-      await flushLogFile();
+      await closeLogFile();
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
       }

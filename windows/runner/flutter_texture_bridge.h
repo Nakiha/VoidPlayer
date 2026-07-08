@@ -1,6 +1,8 @@
 #pragma once
 
 #include <flutter/texture_registrar.h>
+#include <flutter_windows.h>
+
 #include "windows/player/native_player.h"
 
 #include <atomic>
@@ -21,7 +23,15 @@ public:
     int64_t texture_id() const;
 
 private:
+    const FlutterDesktopGpuSurfaceDescriptor* AcquireSurfaceDescriptor(
+        size_t width,
+        size_t height);
+    void MarkFrameAvailable();
+
     flutter::TextureRegistrar* texture_registrar_;
     std::weak_ptr<vr::NativePlayer> player_;
     std::atomic<int64_t> texture_id_{-1};
+    std::unique_ptr<flutter::TextureVariant> texture_variant_;
+    FlutterDesktopGpuSurfaceDescriptor surface_descriptor_ = {};
+    bool frame_callback_attached_ = false;
 };

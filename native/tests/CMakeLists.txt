@@ -52,7 +52,6 @@ add_executable(video_renderer_tests
     decode/test_frame_converter.cpp
     decode/test_decode_thread.cpp
     windows/test_windows_display_resolver.cpp
-    windows/test_windows_d3d12_present_target.cpp
     windows/test_windows_presentation_policy.cpp
     windows/test_windows_dcomp_composite.cpp
     windows/test_windows_device_recovery.cpp

@@ -52,8 +52,11 @@ struct TextureFrame {
     const CpuPlanarYuvFrameStorage* cpu_planar_yuv_storage() const {
         return std::get_if<CpuPlanarYuvFrameStorage>(&storage);
     }
-    const D3D12TextureFrameStorage* d3d12_texture_storage() const {
-        return std::get_if<D3D12TextureFrameStorage>(&storage);
+    const D3D11TextureFrameStorage* d3d11_texture_storage() const {
+        return std::get_if<D3D11TextureFrameStorage>(&storage);
+    }
+    const D3D11Nv12FrameStorage* d3d11_nv12_storage() const {
+        return std::get_if<D3D11Nv12FrameStorage>(&storage);
     }
     const MacOSCVPixelBufferFrameStorage* cv_pixel_buffer_storage() const {
         return std::get_if<MacOSCVPixelBufferFrameStorage>(&storage);

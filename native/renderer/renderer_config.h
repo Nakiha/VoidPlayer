@@ -14,8 +14,7 @@ class PresentationBackendProvider;
 
 /// Platform-specific renderer interop values.
 /// Backends that present into a host-owned target, such as macOS Metal writing
-/// into a CVPixelBuffer or Windows wgpu-d3d12 writing into an external target,
-/// use `output`.
+/// into a CVPixelBuffer, use `output`.
 struct RendererBackendInterop {
     RendererBackendType type = default_render_backend_kind();
     void* adapter = nullptr;

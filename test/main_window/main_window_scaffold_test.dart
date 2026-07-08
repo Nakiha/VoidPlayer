@@ -136,9 +136,9 @@ void main() {
   });
 
   testWidgets(
-    'Windows native compositor never exposes Flutter texture fallback',
+    'standard texture presentation exposes Flutter Texture on Windows',
     (tester) async {
-      if (!Platform.isMacOS && !Platform.isWindows) return;
+      if (!Platform.isWindows) return;
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
 
@@ -160,50 +160,16 @@ void main() {
         ),
       );
 
-      expect(
-        find.byType(Texture),
-        Platform.isWindows ? findsNothing : findsOneWidget,
-      );
-
-      await tester.pumpWidget(
-        _localized(
-          AppFeedbackScope(
-            controller: feedback,
-            child: MainWindowScaffold(
-              model: _model(
-                settingsVisible: false,
-                textureId: 7,
-                viewportState: const ViewportDisplayState.active(),
-                nativeCompositorActive: true,
-              ),
-              handles: _handles(),
-              actions: _noop,
-            ),
-          ),
-        ),
-      );
-
-      expect(find.byType(Texture), findsNothing);
+      expect(find.byType(Texture), findsOneWidget);
     },
   );
 
   testWidgets(
-    'native compositor viewport rect follows sidebar and timeline layout',
+    'standard texture viewport follows sidebar and timeline layout',
     (tester) async {
-      if (!Platform.isMacOS && !Platform.isWindows) return;
+      if (!Platform.isWindows) return;
       final feedback = AppFeedbackController();
       addTearDown(feedback.dispose);
-      final rects = <({int left, int top, int width, int height})>[];
-      final actions = _actionsWithViewportRect((
-        left,
-        top,
-        width,
-        height,
-        surfaceWidth,
-        surfaceHeight,
-      ) {
-        rects.add((left: left, top: top, width: width, height: height));
-      });
       const mediaTrack = TrackEntry(
         TrackInfo(
           fileId: 1,
@@ -222,35 +188,27 @@ void main() {
               settingsVisible: false,
               textureId: 7,
               viewportState: const ViewportDisplayState.active(),
-              nativeCompositorActive: true,
+              nativeCompositorActive: false,
               marksSidebarVisible: sidebar,
               tracks: [mediaTrack],
             ),
             handles: _handles(),
-            actions: actions,
+            actions: _noop,
           ),
         ),
       );
 
       await tester.pumpWidget(build(sidebar: false));
       await tester.pump();
-      expect(rects, isNotEmpty);
-      final withoutSidebar = rects.last;
+      final withoutSidebar = tester.getRect(find.byType(ViewportPanel));
 
       await tester.pumpWidget(build(sidebar: true));
       await tester.pump();
-      expect(rects.last.width, lessThan(withoutSidebar.width));
-
       final viewportRect = tester.getRect(find.byType(ViewportPanel));
       final sidebarRect = tester.getRect(find.byType(QuickMarkSidebar));
       final timelineRect = tester.getRect(find.byType(MediaTimelineSection));
-      final devicePixelRatio = tester.view.devicePixelRatio;
-      final reported = rects.last;
 
-      expect(reported.left, (viewportRect.left * devicePixelRatio).round());
-      expect(reported.top, (viewportRect.top * devicePixelRatio).round());
-      expect(reported.width, (viewportRect.width * devicePixelRatio).round());
-      expect(reported.height, (viewportRect.height * devicePixelRatio).round());
+      expect(viewportRect.width, lessThan(withoutSidebar.width));
       expect(viewportRect.right, lessThanOrEqualTo(sidebarRect.left));
       expect(viewportRect.bottom, lessThanOrEqualTo(timelineRect.top));
     },
@@ -686,44 +644,6 @@ final _noop = MainWindowViewActions(
     onFullScreenControlsHoverChanged: (_) {},
   ),
 );
-
-MainWindowViewActions _actionsWithViewportRect(
-  void Function(
-    int left,
-    int top,
-    int width,
-    int height,
-    int surfaceWidth,
-    int surfaceHeight,
-  )
-  onNativeCompositorViewportRect,
-) {
-  return MainWindowViewActions(
-    drop: _noop.drop,
-    toolbar: _noop.toolbar,
-    viewport: MainWindowViewportActions(
-      onPan: _noop.viewport.onPan,
-      onSplit: _noop.viewport.onSplit,
-      onZoom: _noop.viewport.onZoom,
-      onPointerButton: _noop.viewport.onPointerButton,
-      onResize: _noop.viewport.onResize,
-      onNativeCompositorViewportRect: onNativeCompositorViewportRect,
-      onQuickMarkStart: _noop.viewport.onQuickMarkStart,
-      onQuickMarkUpdate: _noop.viewport.onQuickMarkUpdate,
-      onQuickMarkInteraction: _noop.viewport.onQuickMarkInteraction,
-      onQuickMarkEnd: _noop.viewport.onQuickMarkEnd,
-      onQuickMarkCancel: _noop.viewport.onQuickMarkCancel,
-      onQuickMarkSelect: _noop.viewport.onQuickMarkSelect,
-      onQuickMarkChanged: _noop.viewport.onQuickMarkChanged,
-      onQuickMarkDeleted: _noop.viewport.onQuickMarkDeleted,
-      onQuickMarkFocus: _noop.viewport.onQuickMarkFocus,
-    ),
-    marks: _noop.marks,
-    mediaTimeline: _noop.mediaTimeline,
-    analysisOverlay: _noop.analysisOverlay,
-    overlays: _noop.overlays,
-  );
-}
 
 MainWindowViewActions _noopWithMarkActions({
   ValueChanged<int>? onJumpToMark,

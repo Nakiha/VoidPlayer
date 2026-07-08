@@ -40,8 +40,9 @@ void main() {
   });
 
   test('media source identity treats file URIs as local file paths', () async {
-    final pathIdentity = await mediaSourceIdentity('/tmp/a.mp4');
-    final uriIdentity = await mediaSourceIdentity('file:///tmp/a.mp4');
+    final localPath = p.join(Directory.current.path, 'tmp', 'a.mp4');
+    final pathIdentity = await mediaSourceIdentity(localPath);
+    final uriIdentity = await mediaSourceIdentity(Uri.file(localPath).toString());
 
     expect(uriIdentity, pathIdentity);
   });

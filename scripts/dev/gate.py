@@ -99,41 +99,6 @@ def _run_macos_ui_nightly() -> None:
     _python_dev("mac-ui-test", "--build", *_load_ui_profile("macos-ui-nightly"))
 
 
-def _run_macos_hdr_edr_smoke() -> None:
-    _python_dev("mac-ui-test", "--build", *_load_ui_profile("macos-hdr-edr-smoke"))
-
-
-def _run_macos_wgpu_metal_smoke() -> None:
-    _python_dev_with_env(
-        {"VOIDPLAYER_MACOS_PRESENTATION_MODE": "wgpu-metal"},
-        "mac-ui-test",
-        "--build",
-        "ui_tests/macos/wgpu_metal_default_software_smoke.csv",
-        "ui_tests/macos/wgpu_metal_source_projection_overlay_smoke.csv",
-    )
-    _python_dev_with_env(
-        {
-            "VOIDPLAYER_MACOS_PRESENTATION_MODE": "wgpu-metal",
-            "VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX": "1",
-        },
-        "mac-ui-test",
-        "ui_tests/macos/wgpu_metal_videotoolbox_smoke.csv",
-        "ui_tests/macos/wgpu_metal_4k60_videotoolbox_smoke.csv",
-    )
-
-
-def _run_macos_wgpu_metal_edr_smoke() -> None:
-    _python_dev_with_env(
-        {
-            "VOIDPLAYER_MACOS_PRESENTATION_MODE": "wgpu-metal",
-            "VOIDPLAYER_WGPU_METAL_ENABLE_VIDEOTOOLBOX": "1",
-        },
-        "mac-ui-test",
-        "--build",
-        "ui_tests/macos/wgpu_metal_hlg_edr_smoke.csv",
-    )
-
-
 def _run_windows_preservation() -> None:
     _python_dev("test", "--native-only")
     local_engine_src = os.environ.get(
@@ -157,15 +122,6 @@ def _run_windows_preservation() -> None:
         "ui-test",
         "--build",
         *_load_ui_profile("windows-preservation-auto"),
-    )
-    _python_dev_with_env(
-        {
-            **local_engine_environment,
-            "VOIDPLAYER_WINDOWS_PRESENTATION_MODE":
-                "native-compositor-scrgb",
-        },
-        "ui-test",
-        *_load_ui_profile("windows-preservation-scrgb"),
     )
     _python_dev_with_env(
         {
@@ -320,69 +276,6 @@ def _run_windows_overlay_layer_tests() -> None:
     )
 
 
-def _run_windows_cross_adapter_local() -> None:
-    local_engine_src = os.environ.get(
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
-        str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
-    )
-    local_engine_environment = {
-        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "auto",
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": local_engine_src,
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
-            "host_release",
-        ),
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE": os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
-            "host_release",
-        ),
-    }
-    _python_dev_with_env(
-        {
-            **local_engine_environment,
-            "VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC": "event-query",
-        },
-        "ui-test",
-        "--build",
-        "ui_tests/smoke/native_compositor_auto_sdr.csv",
-    )
-    _python_dev_with_env(
-        {
-            **local_engine_environment,
-            "VOIDPLAYER_WINDOWS_CROSS_ADAPTER_SYNC": "shared-fence",
-        },
-        "ui-test",
-        "ui_tests/smoke/native_compositor_auto_sdr.csv",
-    )
-
-
-def _run_windows_high_refresh_local() -> None:
-    _run_windows_high_refresh_tests()
-    _run_windows_overlay_layer_tests()
-    local_engine_src = os.environ.get(
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
-        str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
-    )
-    local_engine_environment = {
-        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE": "native-compositor-scrgb",
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH": local_engine_src,
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE": os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
-            "host_release",
-        ),
-        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE": os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
-            "host_release",
-        ),
-    }
-    _python_dev_with_env(
-        local_engine_environment,
-        "ui-test",
-        "--build",
-        *_load_ui_profile("windows-high-refresh-local"),
-    )
-
-
 def _run_macos_release_readiness() -> None:
     _python_dev("package")
     run(
@@ -408,9 +301,6 @@ def cmd_gate(args: argparse.Namespace) -> None:
         elif _is_windows():
             _python_dev("test", "--native-only", "--github")
             _run_windows_display_tests()
-            _run_windows_device_recovery_tests()
-            _run_windows_high_refresh_tests()
-            _run_windows_overlay_layer_tests()
             run([sys.executable, "scripts/dev/check_release_compliance.py"], cwd=str(ROOT))
         else:
             _python_dev("test", "--native-only")
@@ -480,46 +370,10 @@ def cmd_gate(args: argparse.Namespace) -> None:
         _run_macos_ui_nightly()
         return
 
-    if profile == "macos-hdr-edr-smoke":
-        if not _is_macos():
-            _unsupported(profile, "macOS with an EDR-capable display")
-        _run_macos_hdr_edr_smoke()
-        return
-
-    if profile == "macos-wgpu-metal-smoke":
-        if not _is_macos():
-            _unsupported(profile, "macOS")
-        _run_macos_wgpu_metal_smoke()
-        return
-
-    if profile == "macos-wgpu-metal-edr-smoke":
-        if not _is_macos():
-            _unsupported(profile, "macOS with an EDR-capable display")
-        _run_macos_wgpu_metal_edr_smoke()
-        return
-
     if profile == "windows-preservation":
         if not _is_windows():
             _unsupported(profile, "Windows")
         _run_windows_preservation()
-        return
-
-    if profile == "windows-hdr-auto":
-        if not _is_windows():
-            _unsupported(profile, "Windows with HDR enabled")
-        _run_windows_hdr_auto()
-        return
-
-    if profile == "windows-cross-adapter-local":
-        if not _is_windows():
-            _unsupported(profile, "Windows with multiple GPU outputs")
-        _run_windows_cross_adapter_local()
-        return
-
-    if profile == "windows-high-refresh-local":
-        if not _is_windows():
-            _unsupported(profile, "Windows with a high-refresh display")
-        _run_windows_high_refresh_local()
         return
 
     if profile == "macos-release-readiness":

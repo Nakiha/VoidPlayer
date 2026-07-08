@@ -96,8 +96,8 @@ std::string presented_anchor_mode_name(vr::RendererPresentedAnchorMode mode) {
 }
 
 struct WindowsRenderBackendSelection {
-    vr::RendererBackendType type = vr::RendererBackendType::WgpuD3D12;
-    std::string name = "wgpu-d3d12";
+    vr::RendererBackendType type = vr::RendererBackendType::D3D11;
+    std::string name = "d3d11";
     std::string reason = "default";
 };
 
@@ -130,17 +130,16 @@ WindowsRenderBackendSelection resolve_windows_render_backend(
     if (normalized.empty() || normalized == "auto") {
         return {};
     }
-    if (normalized == "wgpu" || normalized == "wgpu-d3d12" ||
-        normalized == "d3d12") {
+    if (normalized == "d3d11") {
         return {
-            vr::RendererBackendType::WgpuD3D12,
-            "wgpu-d3d12",
+            vr::RendererBackendType::D3D11,
+            "d3d11",
             "env-override",
         };
     }
     spdlog::warn(
         "[WindowsRenderBackend] unsupported VOIDPLAYER_WINDOWS_RENDER_BACKEND='{}'; "
-        "using wgpu-d3d12",
+        "using d3d11 Flutter texture",
         request);
     return {};
 }
@@ -915,13 +914,8 @@ void VideoRendererPlugin::CreatePlayer(
         vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_RENDER_BACKEND");
     const auto render_backend =
         resolve_windows_render_backend(render_backend_request);
-    const bool use_wgpu_d3d12_backend =
-        render_backend.type == vr::RendererBackendType::WgpuD3D12;
     config.backend.type = render_backend.type;
     config.backend.adapter = dxgi_adapter_.Get();
-    if (use_wgpu_d3d12_backend) {
-        config.backend.output = window_handle_;
-    }
     config.width = width;
     config.height = height;
     config.use_hardware_decode = use_hardware_decode;
@@ -929,7 +923,7 @@ void VideoRendererPlugin::CreatePlayer(
     if (!config.backend.adapter) {
         result->Error(
             "NO_DXGI_ADAPTER",
-            "Flutter DXGI adapter is unavailable; cannot start wgpu-d3d12 renderer");
+            "Flutter DXGI adapter is unavailable; cannot create shared D3D11 texture");
         return;
     }
 
@@ -943,7 +937,7 @@ void VideoRendererPlugin::CreatePlayer(
         result->Error(
             "UNSUPPORTED_PRESENTATION_MODE",
             "Windows presentation mode is unsupported; use auto, sdr, "
-            "native-compositor-sdr, or native-compositor-scrgb");
+            "or flutter-texture-sdr");
         return;
     }
     config.backend.output_target = presentation_policy_.output_target;
@@ -1007,7 +1001,7 @@ void VideoRendererPlugin::CreatePlayer(
         result->Error(
             "UNSUPPORTED_PRESENTATION_MODE",
             "Windows presentation mode is unsupported; use auto, sdr, "
-            "native-compositor-sdr, or native-compositor-scrgb");
+            "or flutter-texture-sdr");
         return;
     }
     const double resolved_white_nits =
@@ -1835,12 +1829,12 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
             player_->update_source_projection(projection);
         if (backend_projection_ready) {
             native_compositor_->DisableRetainedSourceProjection(
-                "wgpu-d3d12-backend-source-projection");
+                "backend-source-projection");
         } else {
             const auto backend = player_->presentation_backend_diagnostics();
             const std::string error =
-                backend.backend == "wgpu-d3d12"
-                    ? "wgpu-d3d12-source-projection-update-failed"
+                backend.backend == "d3d11"
+                    ? "d3d11-source-projection-update-failed"
                     : "source-projection-backend-unavailable";
             spdlog::warn(
                 "[WindowsSourceProjection] backend projection update failed backend={} error={}; retained fallback is disabled",
@@ -1871,8 +1865,8 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
                 const auto backend =
                     player_->presentation_backend_diagnostics();
                 const std::string error =
-                    backend.backend == "wgpu-d3d12"
-                        ? "wgpu-d3d12-source-cache-unimplemented"
+                    backend.backend == "d3d11"
+                        ? "d3d11-source-cache-unimplemented"
                         : "source-cache-configuration-failed";
                 const std::string failure_signature =
                     backend.backend + "|" + error + "|" + signature;
@@ -2845,6 +2839,28 @@ void VideoRendererPlugin::GetDiagnostics(
             display,
             presentation_policy_,
             presentation_sdr_white_level_status_);
+    const auto backend_diagnostics =
+        player_ ? player_->presentation_backend_diagnostics()
+                : vr::PresentationBackendDiagnostics{};
+    diagnostics[flutter::EncodableValue("windowsPresentationRequest")] =
+        flutter::EncodableValue(presentation_policy_.request);
+    diagnostics[flutter::EncodableValue("windowsPresentationMode")] =
+        flutter::EncodableValue(presentation_policy_.mode);
+    diagnostics[flutter::EncodableValue("windowsPresentationBackend")] =
+        flutter::EncodableValue(
+            backend_diagnostics.backend.empty() ? "d3d11"
+                                                : backend_diagnostics.backend);
+    diagnostics[flutter::EncodableValue("windowsPresentationTargetFormat")] =
+        flutter::EncodableValue(
+            backend_diagnostics.target_format.empty()
+                ? "B8G8R8A8_UNORM"
+                : backend_diagnostics.target_format);
+    diagnostics[flutter::EncodableValue("windowsPresentationHeadless")] =
+        flutter::EncodableValue(backend_diagnostics.headless);
+    diagnostics[flutter::EncodableValue("windowsPresentationFallbackReason")] =
+        flutter::EncodableValue(presentation_policy_.fallback_reason);
+    diagnostics[flutter::EncodableValue("windowsPresentationCompositorActive")] =
+        flutter::EncodableValue(false);
     const auto event_diagnostics = event_bridge_.diagnostics();
     diagnostics[flutter::EncodableValue("nativeEventListenCount")] =
         enc_i64(event_diagnostics.listen_count);
@@ -3585,7 +3601,7 @@ void VideoRendererPlugin::GetDiagnostics(
                 flutter::EncodableValue(true);
             diagnostics[flutter::EncodableValue("windowsHotPathMode")] =
                 flutter::EncodableValue(
-                    "source-projection-wgpu-d3d12");
+                    "source-projection-d3d11");
             diagnostics[flutter::EncodableValue(
                 "windowsHotPathProjectionOnlyUpdateCount")] =
                 enc_i64(static_cast<int64_t>(
@@ -3595,7 +3611,7 @@ void VideoRendererPlugin::GetDiagnostics(
                 enc_i64(static_cast<int64_t>(
                     backend.source_projection_consume_count));
             diagnostics[flutter::EncodableValue("windowsHotPathGateResult")] =
-                flutter::EncodableValue("pass-wgpu-d3d12-source-projection");
+                flutter::EncodableValue("pass-d3d11-source-projection");
             diagnostics[flutter::EncodableValue(
                 "windowsHotPathLastFailureReason")] =
                 flutter::EncodableValue("none");

@@ -12,15 +12,15 @@ struct TrackInfo;
 
 struct WindowsPresentationPolicy {
     std::string request = "auto";
-    std::string mode = "native-compositor-sdr";
-    std::string desired_mode = "native-compositor-sdr";
+    std::string mode = "flutter-texture-sdr";
+    std::string desired_mode = "flutter-texture-sdr";
     std::string reason = "auto-sdr-only";
     std::string fallback_reason = "none";
     ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
     bool auto_enabled = true;
     bool has_hdr_track = false;
     bool fp16_scrgb_requested = false;
-    bool native_compositor_requested = true;
+    bool native_compositor_requested = false;
     bool hdr_output_requested = false;
     bool cross_adapter_required = false;
     bool cross_adapter_migration_requested = false;

@@ -161,6 +161,11 @@ void logWarning(String message, [Object? error, StackTrace? stackTrace]) {
   _root.warning(message, error, stackTrace);
 }
 
+void logSevere(String message, [Object? error, StackTrace? stackTrace]) {
+  if (!_loggingInitialized) return;
+  _root.severe(message, error, stackTrace);
+}
+
 /// Initialize logging system. Call once at app startup, before runApp.
 ///
 /// [args] are the CLI arguments from `getDartEntryPointArguments()`.
@@ -291,6 +296,14 @@ Future<void> flushLogFile() async {
   }
 }
 
+Future<void> closeLogFile() async {
+  await flushLogFile();
+  await _raf?.close();
+  _raf = null;
+  _currentFileSize = 0;
+  _cachedDateStr = null;
+}
+
 Future<void> _flushFileQueue() {
   if (_fileFlushInProgress) {
     return _fileFlushCompleter?.future ?? Future<void>.value();
@@ -340,8 +353,7 @@ Future<void> _flushFileQueue() {
 
 Future<void> _resetFileSink() async {
   try {
-    await flushLogFile();
-    await _raf?.close();
+    await closeLogFile();
   } catch (_) {
     // Never let logging teardown crash tests or app startup.
   } finally {

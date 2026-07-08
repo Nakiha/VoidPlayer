@@ -26,9 +26,9 @@ FrameConverter::FrameConverter() {}
 
 FrameConverter::~FrameConverter() = default;
 
-HardwareSnapshotPoolStats FrameConverter::snapshot_pool_stats() const {
+D3D11SnapshotPoolStats FrameConverter::snapshot_pool_stats() const {
     return hardware_converter_ ? hardware_converter_->snapshot_pool_stats()
-                               : HardwareSnapshotPoolStats{};
+                               : D3D11SnapshotPoolStats{};
 }
 
 bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat src_format) {
@@ -92,8 +92,9 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
     return true;
 }
 
-std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame,
-                                                    DecodeStagePerfCounters* stage_perf) {
+std::optional<TextureFrame> FrameConverter::convert(
+    AVFrame* frame,
+    DecodeStagePerfCounters* stage_perf) {
     if (!frame) {
         spdlog::error("[FrameConverter] convert called with null AVFrame");
         return std::nullopt;
@@ -116,8 +117,8 @@ std::optional<TextureFrame> FrameConverter::convert(AVFrame* frame,
     result.color = color_info_from_av_frame(frame);
     populate_frame_identity_from_av_frame(frame, result);
 
-    // Software 4:2:0 frames can be uploaded from their original planes. Keep
-    // the deterministic packer only for formats that need chroma resampling.
+    // Software 4:2:0 can be uploaded from its original planes. Other
+    // supported software formats still use the deterministic packer.
     if (software_format_uses_direct_yuv420_storage(
             static_cast<AVPixelFormat>(frame->format))) {
         const auto direct_start = std::chrono::steady_clock::now();
@@ -149,7 +150,7 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
     if (!hardware_converter_) {
         return std::nullopt;
     }
-    if (hardware_converter_->hw_type() == HwDecodeType::D3D12VA) {
+    if (hardware_converter_->hw_type() != HwDecodeType::D3D11VA) {
         return hardware_converter_->convert(frame);
     }
     return hardware_converter_->snapshot_frame(frame);

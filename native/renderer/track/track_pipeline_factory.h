@@ -11,7 +11,7 @@ namespace vr {
 DecodeDeviceMode default_decode_device_mode(AVCodecID codec_id);
 
 struct TrackPipelineOpenOptions {
-    RenderBackendKind render_backend = default_render_backend_kind();
+    RenderBackendKind render_backend = RenderBackendKind::D3D11;
     bool use_default_decode_device_mode = true;
     DecodeDeviceMode decode_device_mode = DecodeDeviceMode::IndependentDevice;
     void* render_device = nullptr;

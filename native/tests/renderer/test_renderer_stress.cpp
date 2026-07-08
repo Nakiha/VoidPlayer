@@ -6,12 +6,34 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <d3d11.h>
+#include <dxgi.h>
+#include <wrl/client.h>
 #include <random>
 #include <thread>
 #include <vector>
+#include <wrl/client.h>
 
 using namespace vr;
 using namespace vr::test;
+
+namespace {
+
+IDXGIAdapter* get_default_adapter() {
+    static Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+    if (adapter) return adapter.Get();
+
+    Microsoft::WRL::ComPtr<IDXGIFactory> factory;
+    HRESULT hr = CreateDXGIFactory(__uuidof(IDXGIFactory), &factory);
+    if (FAILED(hr)) return nullptr;
+
+    hr = factory->EnumAdapters(0, &adapter);
+    if (FAILED(hr)) return nullptr;
+
+    return adapter.Get();
+}
+
+} // namespace
 
 TEST_CASE("Renderer: deterministic playback control stress",
           "[renderer][stress]") {
@@ -88,6 +110,8 @@ TEST_CASE("Renderer: deterministic playback control stress",
 TEST_CASE("Renderer: shutdown during headless capture and resize stress",
           "[renderer][stress][capture]") {
     constexpr uint32_t kSeed = 0x5A17C0DEu;
+    auto* adapter = get_default_adapter();
+    REQUIRE(adapter != nullptr);
 
     INFO("seed=" << kSeed);
 
@@ -98,9 +122,7 @@ TEST_CASE("Renderer: shutdown during headless capture and resize stress",
         RendererConfig config;
         config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
         config.headless = true;
-        config.backend.type = RendererBackendType::WgpuD3D12;
-        config.backend.output = reinterpret_cast<void*>(0x9abc);
-        config.backend.shared_fp16_output = true;
+        config.backend.adapter = adapter;
         config.width = 320;
         config.height = 180;
         config.use_hardware_decode = false;

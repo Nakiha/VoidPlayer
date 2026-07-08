@@ -68,7 +68,7 @@ struct DecodeMemoryStats {
     size_t exact_seek_budget_drop_count = 0;
     uint64_t exact_seek_candidate_cpu_bytes = 0;
     uint64_t exact_seek_stable_cpu_bytes = 0;
-    HardwareSnapshotPoolStats snapshot_pool;
+    D3D11SnapshotPoolStats snapshot_pool;
 };
 
 class DecodeThread {
@@ -85,12 +85,12 @@ public:
     /// Must be called before start(). On failure, falls back to software.
     /// @param mode  Decode device ownership and sharing policy.
     /// @param render_device  Required only for SharedRenderDevice.
-    /// @param device_mutex  Shared mutex for renderer/decode device synchronization.
+    /// @param device_mutex  Shared mutex for D3D11 immediate context serialization.
     ///                      Must outlive this DecodeThread.
     bool enable_hardware_decode(DecodeDeviceMode mode = DecodeDeviceMode::IndependentDevice,
                                 void* render_device = nullptr,
                                 std::recursive_mutex* device_mutex = nullptr,
-                                RenderBackendKind backend = default_render_backend_kind());
+                                RenderBackendKind backend = RenderBackendKind::D3D11);
 
     bool start();
     void stop();
@@ -221,7 +221,7 @@ private:
     HwDecodeType hw_type_ = HwDecodeType::None;
     std::unique_ptr<HwDecodeProvider> hw_provider_;  // Holds mutex lifetime
     AVPixelFormat hw_pix_fmt_ = AV_PIX_FMT_NONE;  // Per-instance, avoids global shared state
-    std::recursive_mutex* device_mutex_ = nullptr;  // Shared mutex for hw decode serialization
+    std::recursive_mutex* device_mutex_ = nullptr;  // Shared D3D11 mutex for hw decode serialization
     bool hw_frames_ctx_logged_ = false;
     std::atomic<int> hw_frames_format_{AV_PIX_FMT_NONE};
     std::atomic<int> hw_frames_sw_format_{AV_PIX_FMT_NONE};

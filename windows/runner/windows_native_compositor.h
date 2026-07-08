@@ -1,25 +1,14 @@
 #pragma once
 
-#include "windows/presentation/windows_d3d12_present_target.h"
-#include "windows/presentation/windows_device_recovery.h"
-#include "windows/presentation/windows_high_refresh_metrics.h"
 #include "windows/player/native_player.h"
 
-#include <d3d12.h>
-#include <dcomp.h>
 #include <dxgi1_4.h>
 #include <windows.h>
-#include <wrl/client.h>
 
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 
 namespace vr {
 struct WindowsSourceProjection;
@@ -41,25 +30,25 @@ public:
 
     struct Diagnostics {
         std::string phase = "inactive";
-        std::string fallback_reason = "none";
-        std::string source_cache_last_error = "none";
+        std::string fallback_reason = "native-compositor-removed";
+        std::string source_cache_last_error = "native-compositor-removed";
         std::string output_target = "sdr";
         std::string desired_output_target = "sdr";
         std::string transition_state = "stable";
-        std::string transition_reason = "initial";
-        std::string swap_chain_format = "B8G8R8A8_UNORM";
-        std::string color_space = "RGB_FULL_G22_NONE_P709";
+        std::string transition_reason = "flutter-texture-sdr";
+        std::string swap_chain_format = "none";
+        std::string color_space = "flutter-texture-sdr";
         std::string producer_adapter_luid = "0:0";
         std::string output_adapter_luid = "0:0";
         std::string pending_output_adapter_luid = "0:0";
-        std::string cross_adapter_transport_mode = "same-adapter";
+        std::string cross_adapter_transport_mode = "disabled";
         std::string cross_adapter_transport_status = "not-required";
-        std::string cross_adapter_sync_kind = "keyed-mutex";
-        std::string cross_adapter_requested_sync_kind = "auto";
-        std::string cross_adapter_active_sync_kind = "keyed-mutex";
-        std::string cross_adapter_sync_fallback_reason = "none";
+        std::string cross_adapter_sync_kind = "none";
+        std::string cross_adapter_requested_sync_kind = "none";
+        std::string cross_adapter_active_sync_kind = "none";
+        std::string cross_adapter_sync_fallback_reason = "native-compositor-removed";
         std::string cross_adapter_last_error = "none";
-        std::string device_recovery_state = "stable";
+        std::string device_recovery_state = "disabled";
         std::string device_recovery_last_reason = "none";
         std::string device_recovery_last_removed_reason = "0x00000000";
         std::string device_recovery_fallback_stage = "none";
@@ -168,22 +157,20 @@ public:
         double source_cache_hz = 0.0;
         double source_projection_hz = 0.0;
         std::string overlay_layer_mode = "inactive";
-        std::string overlay_layer_fallback_reason = "none";
+        std::string overlay_layer_fallback_reason = "native-compositor-removed";
         std::string overlay_layer_last_error = "none";
         std::string high_refresh_gate_last_result = "not-run";
         std::string hot_path_mode = "inactive";
-        std::string hot_path_last_failure_reason = "none";
+        std::string hot_path_last_failure_reason = "native-compositor-removed";
         std::string hot_path_gate_result = "not-run";
         std::string retained_graph_mode = "inactive";
-        std::string retained_graph_fallback_reason = "none";
-        uint32_t swap_chain_width = 0;
-        uint32_t swap_chain_height = 0;
+        std::string retained_graph_fallback_reason = "native-compositor-removed";
         bool engine_export_available = false;
         bool engine_export_frame_pump_available = false;
         bool flutter_export_latest_available = false;
         bool swap_chain_active = false;
         bool color_space_supported = false;
-        bool sdr_tone_map_active = true;
+        bool sdr_tone_map_active = false;
         bool cross_adapter_required = false;
         bool cross_adapter_supported = false;
         bool device_recovery_preserved_player = true;
@@ -212,280 +199,45 @@ public:
         int64_t retained_graph_source_bake_p95_us = 0;
         int64_t retained_graph_apply_p95_us = 0;
         int64_t retained_graph_commit_p95_us = 0;
+        uint32_t swap_chain_width = 0;
+        uint32_t swap_chain_height = 0;
     };
 
     using StateCallback = std::function<void(Phase, uint64_t, const std::string&)>;
     using SourceProjection = vr::WindowsSourceProjection;
 
-    WindowsNativeCompositor();
-    ~WindowsNativeCompositor();
+    WindowsNativeCompositor() = default;
+    ~WindowsNativeCompositor() = default;
 
-    bool Start(HWND hwnd,
-               void* flutter_view,
-               const std::shared_ptr<vr::NativePlayer>& player,
-               IDXGIAdapter* producer_adapter,
-               IDXGIAdapter* output_adapter,
-               double sdr_white_level_nits,
-               OutputTarget output_target,
-               StateCallback callback);
-    void Stop(const char* reason = "shutdown");
-    void SetViewportRect(double left, double top, double right, double bottom);
-    void SetViewportBackgroundColor(uint32_t argb);
-    void NotifyClientSizeChanged(uint32_t width, uint32_t height);
-    bool RequestFlutterFrame(const std::string& reason);
-    void BoostFlutterInteraction(const std::string& reason);
-    void DisableRetainedSourceProjection(const std::string& reason);
-    void ClearSourceProjection(const std::string& reason);
-    void SetSourceCacheError(const std::string& error);
-    void RequestOutputTarget(OutputTarget target,
-                             IDXGIAdapter* output_adapter,
-                             double sdr_white_level_nits,
-                             uint64_t display_generation,
-                             const std::string& reason);
-    void AcknowledgeFlutterState(uint64_t serial, bool transparent_viewport);
-    void ForceFailureForTesting(const std::string& reason);
-    bool BeginDeviceRecovery(const std::string& reason, long removed_reason);
-    void SetHighRefreshDisplayHz(int64_t display_hz);
-    void ResetHighRefreshMetrics();
-    void BeginInteractionSample(const std::string& label);
-    void EndInteractionSample(const std::string& label);
-    Diagnostics diagnostics() const;
-
-private:
-    enum class FlutterSurfaceBackend : int {
-        Unknown = 0,
-        D3D12 = 2,
-    };
-
-    enum class FlutterSurfaceSync : int {
-        None = 0,
-        KeyedMutex = 1,
-        SharedFence = 2,
-    };
-
-    struct FlutterSurface {
-        size_t struct_size = sizeof(FlutterSurface);
-        FlutterSurfaceBackend backend = FlutterSurfaceBackend::Unknown;
-        FlutterSurfaceSync sync = FlutterSurfaceSync::KeyedMutex;
-        HANDLE shared_texture_handle = nullptr;
-        HANDLE fence_handle = nullptr;
-        uint64_t fence_value = 0;
-        uint32_t width = 0;
-        uint32_t height = 0;
-        DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
-        int alpha_mode = 0;
-        uint64_t ring_generation = 0;
-        uint64_t frame_generation = 0;
-        uint32_t slot = 0;
-        uint64_t consumer_acquire_key = 1;
-        uint64_t producer_release_key = 0;
-        uint64_t lease_id = 0;
-    };
-
-    struct FlutterSurfaceAcquireOptions {
-        size_t struct_size = sizeof(FlutterSurfaceAcquireOptions);
-        FlutterSurfaceBackend requested_backend = FlutterSurfaceBackend::Unknown;
-    };
-
-    struct FlutterSurfaceV2 {
-        size_t struct_size = sizeof(FlutterSurfaceV2);
-        FlutterSurfaceBackend backend = FlutterSurfaceBackend::Unknown;
-        FlutterSurfaceSync sync = FlutterSurfaceSync::None;
-        HANDLE texture_handle = nullptr;
-        HANDLE fence_handle = nullptr;
-        uint64_t fence_value = 0;
-        uint32_t width = 0;
-        uint32_t height = 0;
-        DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
-        int alpha_mode = 0;
-        uint64_t ring_generation = 0;
-        uint64_t frame_generation = 0;
-        uint32_t slot = 0;
-        uint64_t consumer_acquire_key = 1;
-        uint64_t producer_release_key = 0;
-        uint64_t lease_id = 0;
-    };
-
-    struct FlutterSurfaceExportState {
-        size_t struct_size = sizeof(FlutterSurfaceExportState);
-        int mode = 0;
-        uint64_t ring_generation = 0;
-        uint64_t frame_generation = 0;
-        uint64_t publish_count = 0;
-        uint64_t request_count = 0;
-        uint64_t request_dispatch_count = 0;
-        uint64_t schedule_frame_count = 0;
-        uint64_t vsync_count = 0;
-        uint64_t present_count = 0;
-        uint64_t export_begin_count = 0;
-        uint64_t export_begin_fail_count = 0;
-        uint64_t export_make_current_fail_count = 0;
-        uint64_t export_publish_fail_count = 0;
-        uint64_t export_flush_count = 0;
-        uint64_t export_finish_count = 0;
-        uint64_t backpressure_count = 0;
-        uint64_t pending_frame_pump_frames = 0;
-        uint32_t width = 0;
-        uint32_t height = 0;
-        uint32_t latest_slot = 0;
-        bool latest_available = false;
-        bool shutdown = false;
-        uint64_t last_request_time_us = 0;
-        uint64_t last_request_dispatch_time_us = 0;
-        uint64_t last_schedule_frame_time_us = 0;
-        uint64_t last_vsync_time_us = 0;
-        uint64_t last_present_time_us = 0;
-        uint64_t last_begin_time_us = 0;
-        uint64_t last_begin_fail_time_us = 0;
-        uint64_t last_backpressure_time_us = 0;
-        uint64_t last_publish_time_us = 0;
-        uint64_t last_export_sync_time_us = 0;
-        uint64_t last_acquire_time_us = 0;
-        uint64_t last_release_time_us = 0;
-        uint32_t active_lease_count = 0;
-        uint32_t writing_slot_count = 0;
-        uint32_t leased_slot_count = 0;
-        uint32_t retired_ring_count = 0;
-        uint32_t latest_slot_lease_count = 0;
-        uint64_t acquire_count = 0;
-        uint64_t release_count = 0;
-    };
-
-    using SetExportModeFn = bool (*)(void*, int);
-    using RequestSurfaceExportFrameFn = bool (*)(void*);
-    using GetSurfaceExportStateFn =
-        bool (*)(void*, FlutterSurfaceExportState*);
-    using PublishedCallback = void (*)(void*, uint64_t, void*);
-    using SetPublishedCallbackFn = void (*)(void*, PublishedCallback, void*);
-    using AcquireFlutterSurfaceV2Fn =
-        bool (*)(void*, const FlutterSurfaceAcquireOptions*, FlutterSurfaceV2*);
-    using ReleaseFlutterSurfaceFn = bool (*)(void*, uint64_t);
-
-    struct EngineApi {
-        SetExportModeFn set_mode = nullptr;
-        RequestSurfaceExportFrameFn request_frame = nullptr;
-        GetSurfaceExportStateFn get_state = nullptr;
-        SetPublishedCallbackFn set_callback = nullptr;
-        AcquireFlutterSurfaceV2Fn acquire_v2 = nullptr;
-        ReleaseFlutterSurfaceFn release = nullptr;
-        bool available() const {
-            return set_mode && set_callback && acquire_v2 && release;
+    bool Start(HWND,
+               void*,
+               const std::shared_ptr<vr::NativePlayer>&,
+               IDXGIAdapter*,
+               IDXGIAdapter*,
+               double,
+               OutputTarget,
+               StateCallback callback) {
+        if (callback) {
+            callback(Phase::Inactive, 0, "native-compositor-removed");
         }
-        bool frame_pump_available() const {
-            return request_frame && get_state;
-        }
-    };
-
-    static void OnFlutterSurfacePublished(
-        void* view, uint64_t generation, void* user_data);
-    bool LoadEngineApi();
-    bool InitializeDeviceAndComposition(IDXGIAdapter* producer_adapter,
-                                        IDXGIAdapter* output_adapter);
-    void ReleaseHeldInputs(const std::shared_ptr<vr::NativePlayer>& player);
-    void ThreadMain();
-    bool CompositeLatest();
-    void SignalWork();
-    void EnterFailed(const std::string& reason);
-    void PublishState(Phase phase, const std::string& reason);
-    bool SetOutputAdapterLocked(IDXGIAdapter* output_adapter);
-    void UpdateTransportDiagnosticsLocked();
-    static const char* PhaseName(Phase phase);
-    static const char* OutputTargetName(OutputTarget target);
-    static const char* OutputFormatName(OutputTarget target);
-    static const char* OutputColorSpaceName(OutputTarget target);
-
-    HWND hwnd_ = nullptr;
-    void* flutter_view_ = nullptr;
-    std::weak_ptr<vr::NativePlayer> player_;
-    std::atomic<double> sdr_white_scale_{1.0};
-    uint64_t locked_display_generation_ = 0;
-    int32_t producer_luid_high_ = 0;
-    uint32_t producer_luid_low_ = 0;
-    int32_t output_luid_high_ = 0;
-    uint32_t output_luid_low_ = 0;
-    int32_t pending_output_luid_high_ = 0;
-    uint32_t pending_output_luid_low_ = 0;
-    EngineApi engine_api_;
-    StateCallback state_callback_;
-
-    Microsoft::WRL::ComPtr<IDXGIAdapter> producer_adapter_;
-    Microsoft::WRL::ComPtr<IDXGIAdapter> output_adapter_;
-    Microsoft::WRL::ComPtr<IDXGIAdapter> pending_output_adapter_;
-    Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device_;
-    Microsoft::WRL::ComPtr<IDCompositionTarget> dcomp_target_;
-    Microsoft::WRL::ComPtr<IDCompositionVisual> dcomp_visual_;
-    std::unique_ptr<vr::WindowsD3D12PresentTarget> d3d12_present_target_;
-
-    bool held_flutter_valid_ = false;
-    FlutterSurface held_flutter_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> held_flutter_d3d12_resource_;
-    uint64_t external_flutter_surface_submitted_generation_ = 0;
-    uint64_t external_flutter_surface_refresh_generation_ = 0;
-    uint64_t d3d12_direct_present_count_ = 0;
-    uint64_t d3d12_target_resize_count_ = 0;
-
-    mutable std::mutex mutex_;
-    std::condition_variable wake_;
-    std::thread thread_;
-    bool stop_ = false;
-    bool work_pending_ = false;
-    uint32_t pending_client_width_ = 0;
-    uint32_t pending_client_height_ = 0;
-    uint64_t client_resize_signal_count_ = 0;
-    bool terminal_inactive_ = false;
-    OutputTarget desired_output_target_ = OutputTarget::SDR;
-    uint64_t transition_min_video_generation_ = 0;
-    Phase phase_ = Phase::Inactive;
-    uint64_t state_serial_ = 0;
-    uint64_t ack_serial_ = 0;
-    double viewport_[4] = {0.0, 0.0, 1.0, 1.0};
-    float viewport_background_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-    std::string source_cache_error_ = "none";
-    std::string retained_graph_fallback_reason_ = "none";
-    std::chrono::steady_clock::time_point
-        last_transition_guard_log_{};
-    std::chrono::steady_clock::time_point
-        last_flutter_export_pacing_log_{};
-    uint64_t last_flutter_export_pacing_request_count_ = 0;
-    uint64_t last_flutter_export_pacing_request_dispatch_count_ = 0;
-    uint64_t last_flutter_export_pacing_schedule_frame_count_ = 0;
-    uint64_t last_flutter_export_pacing_vsync_count_ = 0;
-    uint64_t last_flutter_export_pacing_publish_count_ = 0;
-    uint64_t last_flutter_export_pacing_present_count_ = 0;
-    uint64_t last_flutter_export_pacing_acquire_count_ = 0;
-    uint64_t last_flutter_export_pacing_release_count_ = 0;
-    uint64_t last_flutter_export_pacing_begin_count_ = 0;
-    uint64_t last_flutter_export_pacing_backpressure_count_ = 0;
-    std::chrono::steady_clock::time_point rate_start_time_{};
-    uint64_t source_cache_publish_count_ = 0;
-    vr::WindowsHighRefreshMetrics high_refresh_metrics_;
-    std::chrono::steady_clock::time_point last_present_time_{};
-    std::chrono::steady_clock::time_point interaction_sample_started_{};
-    uint64_t last_overlay_metrics_generation_ = 0;
-    bool interaction_sample_active_ = false;
-    uint32_t last_logged_backbuffer_width_ = 0;
-    uint32_t last_logged_backbuffer_height_ = 0;
-    uint32_t last_logged_flutter_width_ = 0;
-    uint32_t last_logged_flutter_height_ = 0;
-    uint32_t last_logged_video_width_ = 0;
-    uint32_t last_logged_video_height_ = 0;
-    uint64_t flutter_generation_log_count_ = 0;
-    uint64_t flutter_publish_callback_count_ = 0;
-    uint64_t last_flutter_publish_callback_generation_ = 0;
-    uint64_t flutter_export_unsolicited_signal_count_ = 0;
-    uint64_t flutter_export_unsolicited_throttle_count_ = 0;
-    std::chrono::steady_clock::time_point
-        last_unsolicited_flutter_export_signal_{};
-    uint64_t flutter_frame_request_sequence_ = 0;
-    uint64_t pending_flutter_frame_request_sequence_ = 0;
-    uint64_t pending_flutter_frame_request_base_generation_ = 0;
-    std::string pending_flutter_frame_request_reason_;
-    std::chrono::steady_clock::time_point
-        pending_flutter_frame_request_time_{};
-    std::chrono::steady_clock::time_point
-        last_explicit_flutter_frame_request_time_{};
-    bool pending_flutter_frame_request_acquire_logged_ = false;
-    uint64_t flutter_export_stale_timeout_count_ = 0;
-    double last_logged_viewport_[4] = {-1.0, -1.0, -1.0, -1.0};
-    Diagnostics diagnostics_;
+        return false;
+    }
+    void Stop(const char* = "shutdown") {}
+    void SetViewportRect(double, double, double, double) {}
+    void SetViewportBackgroundColor(uint32_t) {}
+    void NotifyClientSizeChanged(uint32_t, uint32_t) {}
+    bool RequestFlutterFrame(const std::string&) { return false; }
+    void BoostFlutterInteraction(const std::string&) {}
+    void DisableRetainedSourceProjection(const std::string&) {}
+    void ClearSourceProjection(const std::string&) {}
+    void SetSourceCacheError(const std::string&) {}
+    void RequestOutputTarget(OutputTarget, IDXGIAdapter*, double, uint64_t, const std::string&) {}
+    void AcknowledgeFlutterState(uint64_t, bool) {}
+    void ForceFailureForTesting(const std::string&) {}
+    bool BeginDeviceRecovery(const std::string&, long) { return false; }
+    void SetHighRefreshDisplayHz(int64_t) {}
+    void ResetHighRefreshMetrics() {}
+    void BeginInteractionSample(const std::string&) {}
+    void EndInteractionSample(const std::string&) {}
+    Diagnostics diagnostics() const { return {}; }
 };

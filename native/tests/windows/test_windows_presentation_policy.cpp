@@ -8,51 +8,43 @@
 
 using Catch::Approx;
 
-TEST_CASE("Windows presentation policy defaults to native compositor Auto",
+TEST_CASE("Windows presentation policy defaults to Flutter Texture SDR",
           "[windows_presentation]") {
     const auto empty = vr::resolve_windows_presentation_policy("");
 
     REQUIRE(empty.request == "auto");
-    REQUIRE(empty.mode == "native-compositor-sdr");
+    REQUIRE(empty.mode == "flutter-texture-sdr");
     REQUIRE(empty.reason == "auto-sdr-only");
     REQUIRE(empty.auto_enabled);
     REQUIRE(empty.output_target == vr::ColorOutputTarget::kSDRToneMappedBT709);
     REQUIRE_FALSE(empty.fp16_scrgb_requested);
-    REQUIRE(empty.native_compositor_requested);
+    REQUIRE_FALSE(empty.native_compositor_requested);
 }
 
-TEST_CASE("Windows presentation policy maps explicit SDR to native compositor",
+TEST_CASE("Windows presentation policy maps explicit SDR to Flutter Texture",
           "[windows_presentation]") {
     const auto explicit_sdr = vr::resolve_windows_presentation_policy(" SDR ");
 
     REQUIRE(explicit_sdr.request == "sdr");
-    REQUIRE(explicit_sdr.mode == "native-compositor-sdr");
-    REQUIRE(explicit_sdr.reason == "forced-native-compositor-sdr");
+    REQUIRE(explicit_sdr.mode == "flutter-texture-sdr");
+    REQUIRE(explicit_sdr.reason == "forced-flutter-texture-sdr");
     REQUIRE_FALSE(explicit_sdr.auto_enabled);
     REQUIRE(explicit_sdr.output_target ==
             vr::ColorOutputTarget::kSDRToneMappedBT709);
     REQUIRE_FALSE(explicit_sdr.fp16_scrgb_requested);
-    REQUIRE(explicit_sdr.native_compositor_requested);
+    REQUIRE_FALSE(explicit_sdr.native_compositor_requested);
     REQUIRE(explicit_sdr.supported);
     REQUIRE(explicit_sdr.fallback_reason == "none");
 }
 
-TEST_CASE("Windows presentation policy fail-closes legacy texture modes",
+TEST_CASE("Windows presentation policy accepts Flutter Texture aliases",
           "[windows_presentation]") {
-    const auto fp16 =
-        vr::resolve_windows_presentation_policy(" FP16-scRGB ");
-    REQUIRE(fp16.request == "fp16-scrgb");
-    REQUIRE(fp16.mode == "unsupported");
-    REQUIRE(fp16.reason == "unsupported-windows-presentation-mode");
-    REQUIRE_FALSE(fp16.supported);
-    REQUIRE_FALSE(fp16.fp16_scrgb_requested);
-    REQUIRE_FALSE(fp16.native_compositor_requested);
-
     const auto flutter =
         vr::resolve_windows_presentation_policy("flutter-texture-sdr");
     REQUIRE(flutter.request == "flutter-texture-sdr");
-    REQUIRE(flutter.mode == "unsupported");
-    REQUIRE_FALSE(flutter.supported);
+    REQUIRE(flutter.mode == "flutter-texture-sdr");
+    REQUIRE(flutter.supported);
+    REQUIRE_FALSE(flutter.native_compositor_requested);
 
     const auto unknown =
         vr::resolve_windows_presentation_policy("future-hdr");
@@ -64,7 +56,33 @@ TEST_CASE("Windows presentation policy fail-closes legacy texture modes",
     REQUIRE_FALSE(unknown.supported);
 }
 
-TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
+TEST_CASE("Windows native compositor requests are deferred",
+          "[windows_presentation]") {
+    const auto fp16 =
+        vr::resolve_windows_presentation_policy(" FP16-scRGB ");
+    REQUIRE(fp16.request == "fp16-scrgb");
+    REQUIRE(fp16.mode == "unsupported");
+    REQUIRE(fp16.reason == "native-compositor-deferred");
+    REQUIRE_FALSE(fp16.supported);
+    REQUIRE_FALSE(fp16.fp16_scrgb_requested);
+    REQUIRE_FALSE(fp16.native_compositor_requested);
+
+    const auto native_sdr =
+        vr::resolve_windows_presentation_policy(" native-compositor-sdr ");
+    REQUIRE(native_sdr.request == "native-compositor-sdr");
+    REQUIRE(native_sdr.mode == "unsupported");
+    REQUIRE(native_sdr.reason == "native-compositor-deferred");
+    REQUIRE_FALSE(native_sdr.supported);
+
+    const auto native_scrgb =
+        vr::resolve_windows_presentation_policy("native-compositor-scrgb");
+    REQUIRE(native_scrgb.request == "native-compositor-scrgb");
+    REQUIRE(native_scrgb.mode == "unsupported");
+    REQUIRE(native_scrgb.reason == "native-compositor-deferred");
+    REQUIRE_FALSE(native_scrgb.supported);
+}
+
+TEST_CASE("Windows Auto defers HDR tracks to Flutter Texture SDR",
           "[windows_presentation][windows_display]") {
     vr::WindowsDisplayProbeResult display;
     display.output_resolved = true;
@@ -74,15 +92,16 @@ TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
 
     const auto promoted =
         vr::resolve_windows_presentation_policy("auto", true, display);
-    REQUIRE(promoted.mode == "native-compositor-scrgb");
-    REQUIRE(promoted.reason == "auto-hdr-track");
-    REQUIRE(promoted.hdr_output_requested);
+    REQUIRE(promoted.mode == "flutter-texture-sdr");
+    REQUIRE(promoted.reason == "auto-hdr-deferred-flutter-texture-sdr");
+    REQUIRE(promoted.fallback_reason == "hdr-native-compositor-deferred");
+    REQUIRE_FALSE(promoted.hdr_output_requested);
 
     display.hdr_active = false;
     const auto unavailable =
         vr::resolve_windows_presentation_policy("auto", true, display);
-    REQUIRE(unavailable.mode == "native-compositor-sdr");
-    REQUIRE(unavailable.reason == "auto-hdr-display-unavailable");
+    REQUIRE(unavailable.mode == "flutter-texture-sdr");
+    REQUIRE(unavailable.reason == "auto-hdr-deferred-flutter-texture-sdr");
     REQUIRE(unavailable.output_target ==
             vr::ColorOutputTarget::kSDRToneMappedBT709);
     REQUIRE_FALSE(unavailable.fp16_scrgb_requested);
@@ -92,19 +111,17 @@ TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
     display.matches_presentation_adapter = false;
     const auto mismatch =
         vr::resolve_windows_presentation_policy("auto", true, display);
-    REQUIRE(mismatch.mode == "native-compositor-scrgb");
-    REQUIRE(mismatch.reason == "auto-hdr-cross-adapter");
-    REQUIRE(mismatch.output_target == vr::ColorOutputTarget::kWindowsLinearScRGB);
-    REQUIRE(mismatch.fp16_scrgb_requested);
-    REQUIRE(mismatch.hdr_output_requested);
-    REQUIRE(mismatch.cross_adapter_required);
-    REQUIRE(mismatch.cross_adapter_migration_requested);
+    REQUIRE(mismatch.mode == "flutter-texture-sdr");
+    REQUIRE_FALSE(mismatch.fp16_scrgb_requested);
+    REQUIRE_FALSE(mismatch.hdr_output_requested);
+    REQUIRE_FALSE(mismatch.cross_adapter_required);
+    REQUIRE_FALSE(mismatch.cross_adapter_migration_requested);
 
     display.output_resolved = false;
     const auto transient =
         vr::resolve_windows_presentation_policy("auto", true, display);
-    REQUIRE(transient.mode == "native-compositor-sdr");
-    REQUIRE(transient.reason == "auto-hdr-display-unavailable");
+    REQUIRE(transient.mode == "flutter-texture-sdr");
+    REQUIRE(transient.reason == "auto-hdr-deferred-flutter-texture-sdr");
     REQUIRE(transient.output_target ==
             vr::ColorOutputTarget::kSDRToneMappedBT709);
     REQUIRE_FALSE(transient.fp16_scrgb_requested);
@@ -113,8 +130,8 @@ TEST_CASE("Windows Auto promotes HDR tracks only on matching HDR output",
     display.color_metadata_available = false;
     const auto no_metadata =
         vr::resolve_windows_presentation_policy("auto", true, display);
-    REQUIRE(no_metadata.mode == "native-compositor-sdr");
-    REQUIRE(no_metadata.reason == "auto-hdr-display-unavailable");
+    REQUIRE(no_metadata.mode == "flutter-texture-sdr");
+    REQUIRE(no_metadata.reason == "auto-hdr-deferred-flutter-texture-sdr");
     REQUIRE(no_metadata.output_target ==
             vr::ColorOutputTarget::kSDRToneMappedBT709);
     REQUIRE_FALSE(no_metadata.fp16_scrgb_requested);
@@ -131,54 +148,6 @@ TEST_CASE("Windows HDR track detection ignores unknown transfer",
     REQUIRE(vr::windows_tracks_have_hdr_transfer(tracks));
     tracks[1].color.transfer = vr::VIDEO_COLOR_TRANSFER_HLG;
     REQUIRE(vr::windows_tracks_have_hdr_transfer(tracks));
-}
-
-TEST_CASE("Windows presentation policy accepts native compositor scRGB opt-in",
-          "[windows_presentation][windows_dcomp]") {
-    const auto policy = vr::resolve_windows_presentation_policy(
-        " native-compositor-scrgb ");
-    REQUIRE(policy.request == "native-compositor-scrgb");
-    REQUIRE(policy.mode == "native-compositor-scrgb");
-    REQUIRE(policy.output_target == vr::ColorOutputTarget::kWindowsLinearScRGB);
-    REQUIRE(policy.fp16_scrgb_requested);
-    REQUIRE(policy.native_compositor_requested);
-    REQUIRE(policy.hdr_output_requested);
-    REQUIRE(policy.fallback_reason == "none");
-}
-
-TEST_CASE("Windows forced scRGB records cross adapter migration need",
-          "[windows_presentation][windows_dcomp]") {
-    vr::WindowsDisplayProbeResult display;
-    display.output_resolved = true;
-    display.matches_presentation_adapter = false;
-
-    const auto policy = vr::resolve_windows_presentation_policy(
-        "native-compositor-scrgb", true, display);
-
-    REQUIRE(policy.mode == "native-compositor-scrgb");
-    REQUIRE(policy.cross_adapter_required);
-    REQUIRE(policy.cross_adapter_migration_requested);
-}
-
-TEST_CASE("Windows presentation policy supports forced native SDR",
-          "[windows_presentation][windows_dcomp]") {
-    vr::WindowsDisplayProbeResult display;
-    display.output_resolved = true;
-    display.color_metadata_available = true;
-    display.hdr_active = true;
-    display.matches_presentation_adapter = true;
-
-    const auto policy = vr::resolve_windows_presentation_policy(
-        " native-compositor-sdr ", true, display);
-    REQUIRE(policy.request == "native-compositor-sdr");
-    REQUIRE(policy.mode == "native-compositor-sdr");
-    REQUIRE(policy.reason == "forced-native-compositor-sdr");
-    REQUIRE_FALSE(policy.auto_enabled);
-    REQUIRE(policy.has_hdr_track);
-    REQUIRE(policy.output_target == vr::ColorOutputTarget::kSDRToneMappedBT709);
-    REQUIRE_FALSE(policy.fp16_scrgb_requested);
-    REQUIRE(policy.native_compositor_requested);
-    REQUIRE_FALSE(policy.hdr_output_requested);
 }
 
 TEST_CASE("Windows scRGB maps SDR reference white without clipping",

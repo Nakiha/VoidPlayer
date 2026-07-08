@@ -54,7 +54,7 @@ public:
     HwDecodeInitResult init(const HwDecodeInitParams&) override { return {}; }
     void shutdown() override {}
     void flush() override { ++flush_count; }
-    HwDecodeType type() const override { return HwDecodeType::D3D12VA; }
+    HwDecodeType type() const override { return HwDecodeType::D3D11VA; }
     const char* name() const override { return "counting"; }
 
     int flush_count = 0;
@@ -221,7 +221,7 @@ TEST_CASE("DecodedFramePublisher: publish flush respects hw download and shared-
         nullptr,
         64,
         64,
-        HwDecodeType::D3D12VA,
+        HwDecodeType::D3D11VA,
         false,
         &device_mutex));
 

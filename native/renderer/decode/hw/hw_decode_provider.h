@@ -15,7 +15,7 @@ namespace vr {
 
 enum class HwDecodeType {
     None = 0,
-    D3D12VA,
+    D3D11VA,
     CUDA,
     DXVA2,
     Vulkan,
@@ -31,7 +31,7 @@ enum class DecodeDeviceMode {
 };
 
 struct HwDecodeInitParams {
-    RenderBackendType backend = default_render_backend_kind();
+    RenderBackendType backend = RenderBackendType::D3D11;
     DecodeDeviceMode device_mode = DecodeDeviceMode::IndependentDevice;
     void* render_device = nullptr;
     void* shared_context = nullptr;
@@ -41,7 +41,7 @@ struct HwDecodeInitParams {
 };
 
 /// Abstract interface for hardware decode providers.
-/// Each backend (D3D12VA, VideoToolbox, etc.) implements this interface.
+/// Each backend (D3D11VA, CUDA, etc.) implements this interface.
 /// The factory function try_hw_decode_providers() probes providers in priority order.
 class HwDecodeProvider {
 public:

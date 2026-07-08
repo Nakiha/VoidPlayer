@@ -3,6 +3,10 @@
 #include "renderer/metrics/presentation_metrics_store.h"
 #include "renderer/render/swap_chain_present_policy.h"
 
+#ifdef _WIN32
+#include "windows/d3d11/render_backend.h"
+#endif
+
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -51,8 +55,7 @@ PresentationBackendKind RendererPresentationController::backend_kind() const {
 
 bool RendererPresentationController::uses_macos_native_compositor_scheduling() const {
     const PresentationBackendKind kind = backend_kind();
-    return kind == PresentationBackendKind::Metal ||
-           kind == PresentationBackendKind::WgpuMetal;
+    return kind == PresentationBackendKind::Metal;
 }
 
 void RendererPresentationController::set_backend(std::unique_ptr<PresentationBackend> backend) {
@@ -534,7 +537,16 @@ bool RendererPresentationController::capture_backend_front_buffer_region(
 
 RendererPresentationD3DMemorySnapshot
 RendererPresentationController::d3d_memory_snapshot() const {
-    return {};
+    RendererPresentationD3DMemorySnapshot result;
+#ifdef _WIN32
+    std::lock_guard<std::recursive_mutex> device_lock(device_mutex_);
+    if (auto* backend = d3d_backend()) {
+        backend->snapshot_memory_stats(
+            result.stats,
+            result.presenter_copy_texture_bytes_by_slot);
+    }
+#endif
+    return result;
 }
 
 bool RendererPresentationController::resize_renderer_managed_headless_output(
@@ -585,28 +597,35 @@ bool RendererPresentationController::acquire_d3d_shared_texture(
     SharedTextureSnapshot& snapshot,
     PresentationMetricsStore& metrics) const {
     snapshot = {};
-    metrics.note_texture_sharing_failure();
-    return false;
+    auto* backend = d3d_backend();
+    if (!backend || !backend->acquire_shared_texture(snapshot)) {
+        metrics.note_texture_sharing_failure();
+        return false;
+    }
+    return true;
 }
 
 void RendererPresentationController::release_d3d_shared_texture(
     int buffer_index,
     uint64_t buffer_generation) const {
-    (void)buffer_index;
-    (void)buffer_generation;
+    if (auto* backend = d3d_backend()) {
+        backend->release_shared_texture(buffer_index, buffer_generation);
+    }
 }
 
 bool RendererPresentationController::acquire_d3d_shared_fp16_texture(
     SharedFp16TextureSnapshot& snapshot) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    return backend_ && backend_->acquire_shared_fp16_texture(snapshot);
+    auto* backend = d3d_backend();
+    return backend && backend->acquire_shared_fp16_texture(snapshot);
 }
 
 void RendererPresentationController::release_d3d_shared_fp16_texture(
     int buffer_index, uint64_t ring_generation) const {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (backend_) {
-        backend_->release_shared_fp16_texture(
+    auto* backend = d3d_backend();
+    if (backend) {
+        backend->release_shared_fp16_texture(
             buffer_index, ring_generation);
     }
 }
@@ -614,8 +633,8 @@ void RendererPresentationController::release_d3d_shared_fp16_texture(
 void RendererPresentationController::set_d3d_shared_fp16_frame_callback(
     std::function<void()> callback) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    if (backend_) {
-        backend_->set_shared_fp16_frame_callback(std::move(callback));
+    if (auto* backend = d3d_backend()) {
+        backend->set_shared_fp16_frame_callback(std::move(callback));
     }
 }
 
@@ -713,9 +732,20 @@ bool RendererPresentationController::recover_d3d_device_loss(
     const char* reason,
     long removed_reason) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
-    (void)reason;
-    (void)removed_reason;
-    return false;
+    auto* backend = d3d_backend();
+    return backend && backend->recover_device_loss(reason, removed_reason);
+}
+
+D3D11RenderBackend* RendererPresentationController::d3d_backend() const {
+    if (!backend_ || backend_->kind() != PresentationBackendKind::D3D11) {
+        return nullptr;
+    }
+    return static_cast<D3D11RenderBackend*>(backend_.get());
+}
+
+D3D11Device* RendererPresentationController::d3d_device() const {
+    auto* backend = d3d_backend();
+    return backend ? backend->device() : nullptr;
 }
 
 #endif

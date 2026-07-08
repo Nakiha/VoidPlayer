@@ -1,7 +1,6 @@
 include_guard(GLOBAL)
 
 include("${CMAKE_CURRENT_LIST_DIR}/NativeSources.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/WgpuRustTarget.cmake")
 
 set(VOID_FLUTTER_ZSTD_DIR "${VOID_NATIVE_DIR}/analysis/vendor/zstd")
 if(BUILD_ANALYSIS AND EXISTS "${VOID_FLUTTER_ZSTD_DIR}/build/cmake/CMakeLists.txt" AND NOT TARGET libzstd_static)
@@ -24,6 +23,7 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
     target_sources(${target_name} PRIVATE
         ${VOID_RENDERER_CORE_SOURCES}
         ${VOID_RENDERER_WINDOWS_SOURCES}
+        ${VOID_D3D11_BACKEND_SOURCES}
         ${VOID_WINDOWS_ANALYSIS_OVERLAY_STUB_SOURCE}
     )
     if(BUILD_ANALYSIS)
@@ -46,15 +46,13 @@ function(void_configure_flutter_native_target target_name generated_include_dir)
         ${AVUTIL_LIBRARY}
         ${SWRESAMPLE_LIBRARY}
         dxgi
-        d3d12
-        dcomp
+        d3d11
+        d3dcompiler
         winmm
     )
     if(BUILD_ANALYSIS)
         target_link_libraries(${target_name} PRIVATE libzstd_static)
     endif()
-    void_link_wgpu_rust_ffi(${target_name})
-
     target_compile_definitions(${target_name} PRIVATE
         _CRT_SECURE_NO_WARNINGS
         VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>

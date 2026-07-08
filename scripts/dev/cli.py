@@ -79,9 +79,6 @@ Examples:
   python dev.py test --native-only --github
   python dev.py gate pr-fast
   python dev.py gate macos-ui-smoke
-  python dev.py gate macos-hdr-edr-smoke
-  python dev.py gate macos-wgpu-metal-smoke
-  python dev.py gate macos-wgpu-metal-edr-smoke
   python dev.py gate macos-release-readiness
   python dev.py gate flutter-fork-protection
   python dev.py gate macos-platform-protection
@@ -148,17 +145,11 @@ Examples:
             "macos-native-sanitizers",
             "macos-ui-smoke",
             "macos-ui-nightly",
-            "macos-hdr-edr-smoke",
-            "macos-wgpu-metal-smoke",
-            "macos-wgpu-metal-edr-smoke",
             "macos-release-readiness",
             "repo-hygiene",
             "flutter-fork-protection",
             "macos-platform-protection",
             "windows-fork-protection",
-            "windows-cross-adapter-local",
-            "windows-high-refresh-local",
-            "windows-hdr-auto",
             "windows-preservation",
             "release-candidate",
         ],

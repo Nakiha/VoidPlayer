@@ -26,20 +26,15 @@ void main() {
     expect(snapshot.reason, 'native-render');
   });
 
-  test('uses retained WGPU timings for source-provider native pressure', () {
+  test('uses renderer timings for native pressure', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
       'isPlaying': true,
       'displayRefreshHzEstimate': 120.0,
-      'presentationBackend': 'native-wgpu-metal-source-provider',
-      'nativeCompositorBackend': 'wgpu-metal-thin-runner',
       'nativeCompositorCompositeHz': 120.0,
-      'nativeRendererDrawP95Us': 12000.0,
-      'nativeRendererDrawBackendP95Us': 11000.0,
-      'metalCommandCompletionP95Us': 10500.0,
-      'nativeCompositorFrameCpuP95Ms': 0.28,
-      'nativeCompositorWgpuSubmitCpuP95Ms': 0.19,
-      'nativeCompositorWgpuCompletionP95Ms': 3.85,
+      'nativeRendererDrawP95Us': 280.0,
+      'nativeRendererDrawBackendP95Us': 190.0,
+      'metalCommandCompletionP95Us': 3850.0,
     });
 
     expect(snapshot.level, PerformanceHealthLevel.ok);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "renderer/buffer/bidi_ring_buffer.h"
+#include "windows/decode/d3d11_frame_snapshot.h"
 #include "renderer/decode/hw/hw_decode_provider.h"
 
 #include <memory>
@@ -12,18 +13,6 @@ extern "C" {
 }
 
 namespace vr {
-
-struct HardwareSnapshotPoolStats {
-    uint64_t estimated_bytes = 0;
-    uint64_t texture_bytes = 0;
-    uint64_t created_count = 0;
-    uint64_t reused_count = 0;
-    size_t checked_out_count = 0;
-    size_t available_count = 0;
-    int width = 0;
-    int height = 0;
-    int format = 0;
-};
 
 class HardwareFrameConverter {
 public:
@@ -38,7 +27,7 @@ public:
 
     std::optional<TextureFrame> convert(AVFrame* frame);
     std::optional<TextureFrame> snapshot_frame(AVFrame* frame);
-    HardwareSnapshotPoolStats snapshot_pool_stats() const;
+    D3D11SnapshotPoolStats snapshot_pool_stats() const;
 
 private:
     int width_ = 0;
@@ -47,6 +36,7 @@ private:
     HwDecodeType hw_type_ = HwDecodeType::None;
     AVPixelFormat downloaded_format_ = AV_PIX_FMT_NONE;
     std::recursive_mutex* device_mutex_ = nullptr;
+    std::shared_ptr<D3D11SnapshotPool> d3d11_snapshot_pool_;
 };
 
 } // namespace vr

@@ -75,16 +75,7 @@ def _macos_local_engine_args(debug: bool) -> list[str]:
 
 
 def _windows_native_compositor_requested() -> bool:
-    mode = os.environ.get(
-        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE", ""
-    ).strip().lower()
-    return mode in (
-        "",
-        "auto",
-        "sdr",
-        "native-compositor-sdr",
-        "native-compositor-scrgb",
-    )
+    return False
 
 
 def _windows_local_engine_args(debug: bool) -> list[str]:
@@ -138,13 +129,7 @@ def _windows_engine_marker_path(debug: bool) -> Path:
 
 
 def _windows_app_uses_native_engine(debug: bool) -> bool:
-    try:
-        return (
-            _windows_engine_marker_path(debug).read_text(encoding="utf-8").strip()
-            in ("native-compositor", "native-compositor-scrgb")
-        )
-    except OSError:
-        return False
+    return False
 
 
 def flutter_build(debug: bool) -> None:

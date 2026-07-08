@@ -2,4 +2,3 @@ ui_tests/macos/native_facade_smoke.csv
 ui_tests/macos/native_seek_frame_smoke.csv
 ui_tests/macos/native_layout_split_smoke.csv
 ui_tests/macos/native_controls_smoke.csv
-ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv

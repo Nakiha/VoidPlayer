@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -10,6 +11,71 @@ inline constexpr int kSourceCompositorMaxTracks = 4;
 inline constexpr int kSourceCompositorLiveBufferCount = 3;
 inline constexpr uint64_t kSourceCompositorDefaultBudgetBytes =
     384ull * 1024ull * 1024ull;
+
+// Platform resources never cross this contract. Metal textures, IOSurfaces,
+// D3D resources, and synchronization primitives belong to the platform lease
+// that carries this metadata.
+enum class SourceCompositorPixelFormat : uint8_t {
+    Unknown,
+    Bgra8Unorm,
+    Rgba16Float,
+};
+
+enum class SourceCompositorColorEncoding : uint8_t {
+    Unknown,
+    CompositorReadySDR,
+    LinearExtended,
+};
+
+enum class SourceCompositorAlphaMode : uint8_t {
+    Unknown,
+    Opaque,
+    Premultiplied,
+};
+
+struct SourceCompositorOutputContract {
+    SourceCompositorPixelFormat pixel_format =
+        SourceCompositorPixelFormat::Unknown;
+    SourceCompositorColorEncoding color_encoding =
+        SourceCompositorColorEncoding::Unknown;
+    SourceCompositorAlphaMode alpha_mode =
+        SourceCompositorAlphaMode::Unknown;
+    uint32_t bytes_per_pixel = 0;
+    bool extended_range = false;
+};
+
+enum class SourceCompositorLifecycleState : uint8_t {
+    Unconfigured,
+    Allocating,
+    Ready,
+    Publishing,
+    Draining,
+};
+
+enum class SourceCompositorLifecycleEventType : uint8_t {
+    BeginAllocation,
+    MarkReady,
+    Publish,
+    BeginDraining,
+    Reset,
+};
+
+struct SourceCompositorLifecycleEvent {
+    SourceCompositorLifecycleEventType type =
+        SourceCompositorLifecycleEventType::Reset;
+    uint64_t topology_generation = 0;
+    uint64_t ring_generation = 0;
+    uint64_t frame_generation = 0;
+};
+
+struct SourceCompositorLifecycle {
+    SourceCompositorLifecycleState state =
+        SourceCompositorLifecycleState::Unconfigured;
+    uint64_t topology_generation = 0;
+    uint64_t ring_generation = 0;
+    uint64_t frame_generation = 0;
+    uint64_t publish_count = 0;
+};
 
 struct SourceCompositorTrackDescriptor {
     int slot = -1;
@@ -60,6 +126,36 @@ struct SourceCompositorRingPolicy {
     bool frozen_snapshot = false;
     bool allowed = false;
 };
+
+struct SourceCompositorPackageMetadata {
+    SourceCompositorOutputContract output;
+    uint64_t topology_generation = 0;
+    uint64_t ring_generation = 0;
+    uint64_t frame_generation = 0;
+    int buffer_index = -1;
+    int ring_depth = 0;
+    size_t track_count = 0;
+    uint64_t required_slot_mask = 0;
+    uint64_t published_slot_mask = 0;
+    bool frozen_snapshot = false;
+};
+
+SourceCompositorOutputContract source_compositor_sdr_output_contract();
+SourceCompositorOutputContract source_compositor_edr_output_contract();
+
+bool validate_source_compositor_output_contract(
+    const SourceCompositorOutputContract& output);
+
+bool validate_source_compositor_descriptors(
+    const std::vector<SourceCompositorTrackDescriptor>& descriptors);
+
+bool validate_source_compositor_package(
+    const SourceCompositorPackageMetadata& package,
+    const std::vector<SourceCompositorTrackDescriptor>& descriptors);
+
+bool apply_source_compositor_lifecycle_event(
+    SourceCompositorLifecycle& lifecycle,
+    const SourceCompositorLifecycleEvent& event);
 
 SourceCompositorRingPolicy resolve_source_compositor_ring_policy(
     const std::vector<SourceCompositorTrackDescriptor>& descriptors,

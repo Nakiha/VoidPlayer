@@ -26,6 +26,39 @@ The Flutter fork should only make the Flutter surface exportable as a real
 premultiplied-alpha ARGB layer. It should not own the native video texture or
 the final presentation strategy.
 
+## Source Compositor Contract
+
+The shared renderer contract owns only platform-neutral state:
+
+- track identity and dimensions;
+- projection and retained visual clipping;
+- ring budget policy;
+- output pixel/color/alpha semantics;
+- topology, ring, and frame generations;
+- package completeness and lifecycle transitions.
+
+Platform resource leases remain outside the shared contract. A macOS lease may
+carry `CVPixelBuffer`, `IOSurface`, and Metal objects. A Windows lease may carry
+D3D resources, shared handles, and synchronization primitives. Both leases
+must carry metadata compatible with `SourceCompositorPackageMetadata`, but the
+shared renderer must not include either platform resource type.
+
+The source texture is compositor-ready. SDR BGRA8 samples must not be decoded
+again by the runner compositor. EDR RGBA16F samples are linear extended-range
+values. Native video sources are opaque; Flutter remains the only
+premultiplied-alpha layer in the sandwich.
+
+The shared lifecycle is generation driven:
+
+```text
+Unconfigured -> Allocating -> Ready -> Publishing -> Draining -> Unconfigured
+```
+
+Reconfiguration begins with a newer topology generation. Publication requires
+the current topology and ring generations plus a strictly increasing frame
+generation. Incomplete packages never replace the last complete published
+package.
+
 ## macOS Target
 
 The first implementation target is:

@@ -37,6 +37,68 @@ int main() {
     return fail("source compositor ring policy rejected normal dual-track budget");
   }
 
+  const auto sdr_output = vr::source_compositor_sdr_output_contract();
+  const auto edr_output = vr::source_compositor_edr_output_contract();
+  if (!vr::validate_source_compositor_output_contract(sdr_output) ||
+      !vr::validate_source_compositor_output_contract(edr_output) ||
+      sdr_output.extended_range || !edr_output.extended_range) {
+    return fail("source compositor output contracts were not deterministic");
+  }
+
+  vr::SourceCompositorPackageMetadata package;
+  package.output = edr_output;
+  package.topology_generation = 1;
+  package.ring_generation = 2;
+  package.frame_generation = 3;
+  package.buffer_index = 1;
+  package.ring_depth = vr::kSourceCompositorLiveBufferCount;
+  package.track_count = descriptors.size();
+  package.required_slot_mask = 0b11;
+  package.published_slot_mask = 0b11;
+  if (!vr::validate_source_compositor_package(package, descriptors)) {
+    return fail("source compositor rejected a complete package");
+  }
+  package.published_slot_mask = 0b01;
+  if (vr::validate_source_compositor_package(package, descriptors)) {
+    return fail("source compositor accepted an incomplete package");
+  }
+  package.published_slot_mask = 0b11;
+
+  vr::SourceCompositorLifecycle lifecycle;
+  vr::SourceCompositorLifecycleEvent event;
+  event.type = vr::SourceCompositorLifecycleEventType::BeginAllocation;
+  event.topology_generation = 1;
+  if (!vr::apply_source_compositor_lifecycle_event(lifecycle, event) ||
+      lifecycle.state != vr::SourceCompositorLifecycleState::Allocating) {
+    return fail("source compositor did not enter allocating state");
+  }
+  event.type = vr::SourceCompositorLifecycleEventType::MarkReady;
+  event.ring_generation = 2;
+  if (!vr::apply_source_compositor_lifecycle_event(lifecycle, event) ||
+      lifecycle.state != vr::SourceCompositorLifecycleState::Ready) {
+    return fail("source compositor did not enter ready state");
+  }
+  event.type = vr::SourceCompositorLifecycleEventType::Publish;
+  event.frame_generation = 3;
+  if (!vr::apply_source_compositor_lifecycle_event(lifecycle, event) ||
+      lifecycle.state != vr::SourceCompositorLifecycleState::Publishing ||
+      lifecycle.publish_count != 1) {
+    return fail("source compositor did not publish a valid generation");
+  }
+  if (vr::apply_source_compositor_lifecycle_event(lifecycle, event)) {
+    return fail("source compositor accepted a duplicate frame generation");
+  }
+  event.type = vr::SourceCompositorLifecycleEventType::BeginDraining;
+  if (!vr::apply_source_compositor_lifecycle_event(lifecycle, event) ||
+      lifecycle.state != vr::SourceCompositorLifecycleState::Draining) {
+    return fail("source compositor did not enter draining state");
+  }
+  event = vr::SourceCompositorLifecycleEvent();
+  if (!vr::apply_source_compositor_lifecycle_event(lifecycle, event) ||
+      lifecycle.state != vr::SourceCompositorLifecycleState::Unconfigured) {
+    return fail("source compositor did not reset");
+  }
+
   vr::SourceCompositorTrackDescriptor duplicate;
   duplicate.slot = 1;
   duplicate.file_id = 30;

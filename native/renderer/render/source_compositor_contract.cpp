@@ -32,26 +32,160 @@ int display_count_for_mode(int mode, int count) {
     return mode == 1 && count > 1 ? 2 : count;
 }
 
+uint64_t descriptor_slot_mask(
+    const std::vector<SourceCompositorTrackDescriptor>& descriptors) {
+    uint64_t mask = 0;
+    for (const auto& descriptor : descriptors) {
+        mask |= uint64_t{1} << static_cast<uint64_t>(descriptor.slot);
+    }
+    return mask;
+}
+
 } // namespace
+
+SourceCompositorOutputContract source_compositor_sdr_output_contract() {
+    SourceCompositorOutputContract result;
+    result.pixel_format = SourceCompositorPixelFormat::Bgra8Unorm;
+    result.color_encoding =
+        SourceCompositorColorEncoding::CompositorReadySDR;
+    result.alpha_mode = SourceCompositorAlphaMode::Opaque;
+    result.bytes_per_pixel = 4;
+    result.extended_range = false;
+    return result;
+}
+
+SourceCompositorOutputContract source_compositor_edr_output_contract() {
+    SourceCompositorOutputContract result;
+    result.pixel_format = SourceCompositorPixelFormat::Rgba16Float;
+    result.color_encoding = SourceCompositorColorEncoding::LinearExtended;
+    result.alpha_mode = SourceCompositorAlphaMode::Opaque;
+    result.bytes_per_pixel = 8;
+    result.extended_range = true;
+    return result;
+}
+
+bool validate_source_compositor_output_contract(
+    const SourceCompositorOutputContract& output) {
+    if (output.alpha_mode != SourceCompositorAlphaMode::Opaque) {
+        return false;
+    }
+    if (output.pixel_format == SourceCompositorPixelFormat::Bgra8Unorm) {
+        return output.color_encoding ==
+                   SourceCompositorColorEncoding::CompositorReadySDR &&
+               output.bytes_per_pixel == 4 && !output.extended_range;
+    }
+    if (output.pixel_format == SourceCompositorPixelFormat::Rgba16Float) {
+        return output.color_encoding ==
+                   SourceCompositorColorEncoding::LinearExtended &&
+               output.bytes_per_pixel == 8 && output.extended_range;
+    }
+    return false;
+}
+
+bool validate_source_compositor_descriptors(
+    const std::vector<SourceCompositorTrackDescriptor>& descriptors) {
+    if (descriptors.empty() ||
+        descriptors.size() > kSourceCompositorMaxTracks) {
+        return false;
+    }
+    std::array<bool, kSourceCompositorMaxTracks> slots{};
+    for (const auto& descriptor : descriptors) {
+        if (!valid_descriptor(descriptor) ||
+            slots[static_cast<size_t>(descriptor.slot)]) {
+            return false;
+        }
+        slots[static_cast<size_t>(descriptor.slot)] = true;
+    }
+    return true;
+}
+
+bool validate_source_compositor_package(
+    const SourceCompositorPackageMetadata& package,
+    const std::vector<SourceCompositorTrackDescriptor>& descriptors) {
+    if (!validate_source_compositor_output_contract(package.output) ||
+        !validate_source_compositor_descriptors(descriptors) ||
+        package.topology_generation == 0 || package.ring_generation == 0 ||
+        package.frame_generation == 0 || package.ring_depth <= 0 ||
+        package.ring_depth > kSourceCompositorLiveBufferCount ||
+        package.buffer_index < 0 ||
+        package.buffer_index >= package.ring_depth ||
+        package.track_count != descriptors.size()) {
+        return false;
+    }
+    const uint64_t expected_mask = descriptor_slot_mask(descriptors);
+    if (package.required_slot_mask != expected_mask ||
+        package.published_slot_mask != expected_mask) {
+        return false;
+    }
+    return package.frozen_snapshot == (package.ring_depth == 1);
+}
+
+bool apply_source_compositor_lifecycle_event(
+    SourceCompositorLifecycle& lifecycle,
+    const SourceCompositorLifecycleEvent& event) {
+    SourceCompositorLifecycle next = lifecycle;
+    switch (event.type) {
+    case SourceCompositorLifecycleEventType::BeginAllocation:
+        if (event.topology_generation == 0 ||
+            event.topology_generation <= lifecycle.topology_generation ||
+            lifecycle.state == SourceCompositorLifecycleState::Allocating ||
+            lifecycle.state == SourceCompositorLifecycleState::Draining) {
+            return false;
+        }
+        next.state = SourceCompositorLifecycleState::Allocating;
+        next.topology_generation = event.topology_generation;
+        next.ring_generation = 0;
+        next.frame_generation = 0;
+        break;
+    case SourceCompositorLifecycleEventType::MarkReady:
+        if (lifecycle.state != SourceCompositorLifecycleState::Allocating ||
+            event.topology_generation != lifecycle.topology_generation ||
+            event.ring_generation == 0) {
+            return false;
+        }
+        next.state = SourceCompositorLifecycleState::Ready;
+        next.ring_generation = event.ring_generation;
+        next.frame_generation = 0;
+        break;
+    case SourceCompositorLifecycleEventType::Publish:
+        if ((lifecycle.state != SourceCompositorLifecycleState::Ready &&
+             lifecycle.state != SourceCompositorLifecycleState::Publishing) ||
+            event.topology_generation != lifecycle.topology_generation ||
+            event.ring_generation != lifecycle.ring_generation ||
+            event.frame_generation == 0 ||
+            event.frame_generation <= lifecycle.frame_generation) {
+            return false;
+        }
+        next.state = SourceCompositorLifecycleState::Publishing;
+        next.frame_generation = event.frame_generation;
+        next.publish_count++;
+        break;
+    case SourceCompositorLifecycleEventType::BeginDraining:
+        if (lifecycle.state == SourceCompositorLifecycleState::Unconfigured ||
+            lifecycle.state == SourceCompositorLifecycleState::Draining) {
+            return false;
+        }
+        next.state = SourceCompositorLifecycleState::Draining;
+        break;
+    case SourceCompositorLifecycleEventType::Reset:
+        next = SourceCompositorLifecycle();
+        break;
+    }
+    lifecycle = next;
+    return true;
+}
 
 SourceCompositorRingPolicy resolve_source_compositor_ring_policy(
     const std::vector<SourceCompositorTrackDescriptor>& descriptors,
     uint64_t budget_bytes,
     uint64_t bytes_per_pixel) {
     SourceCompositorRingPolicy result;
-    if (descriptors.empty() ||
-        descriptors.size() > kSourceCompositorMaxTracks ||
+    if (!validate_source_compositor_descriptors(descriptors) ||
         budget_bytes == 0) {
         return result;
     }
     uint64_t bytes_per_frame = 0;
-    std::array<bool, kSourceCompositorMaxTracks> slots{};
     for (const auto& descriptor : descriptors) {
-        if (!valid_descriptor(descriptor) ||
-            slots[static_cast<size_t>(descriptor.slot)]) {
-            return result;
-        }
-        slots[static_cast<size_t>(descriptor.slot)] = true;
         const uint64_t bytes = estimate_surface_bytes(
             descriptor.width, descriptor.height, bytes_per_pixel);
         if (bytes == 0 ||

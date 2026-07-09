@@ -35,6 +35,7 @@ final class MacOSNativeCompositorView: NSView {
   private let overlayPipeline: MTLRenderPipelineState
   private let configuration: MacOSPresentationConfiguration
   private let latencyProfiler: MacOSCompositorLatencyProfiler
+  private let firstFrameLatency: MacOSFirstFrameLatencyTracker
   private let outputPixelFormat: MTLPixelFormat
   private let outputMode: String
   private let textureCache: CVMetalTextureCache
@@ -137,7 +138,11 @@ final class MacOSNativeCompositorView: NSView {
     MacOSPresentationConfiguration.current.nativeCompositorEnabled
   }
 
-  init?(engine: FlutterEngine, latencyProfiler: MacOSCompositorLatencyProfiler) {
+  init?(
+    engine: FlutterEngine,
+    latencyProfiler: MacOSCompositorLatencyProfiler,
+    firstFrameLatency: MacOSFirstFrameLatencyTracker
+  ) {
     let configuration = MacOSPresentationConfiguration.current
     let outputPixelFormat = configuration.compositorPixelFormat
     let device = MTLCreateSystemDefaultDevice()
@@ -163,6 +168,7 @@ final class MacOSNativeCompositorView: NSView {
     self.overlayPipeline = pipelines.overlay
     self.configuration = configuration
     self.latencyProfiler = latencyProfiler
+    self.firstFrameLatency = firstFrameLatency
     self.outputPixelFormat = outputPixelFormat
     self.outputMode = configuration.compositorOutputMode
     self.textureCache = cache
@@ -886,8 +892,13 @@ final class MacOSNativeCompositorView: NSView {
       )
       encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
       encoder.endEncoding()
+      let firstFrameLatency = self.firstFrameLatency
       commandBuffer.addCompletedHandler { _ in
         inFlightSemaphore.signal()
+        if sourceCacheActive,
+           let summary = firstFrameLatency.markCompositeCompleted() {
+          NSLog("VoidPlayer native add first-frame latency: \(summary)")
+        }
       }
       commandBuffer.present(drawable)
       commandBuffer.commit()

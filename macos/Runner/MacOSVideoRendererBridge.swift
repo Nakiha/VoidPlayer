@@ -28,6 +28,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private let transport = MacOSTransportController()
   private let frameCallbackProfiler = MacOSFrameCallbackProfiler()
   private let compositorLatencyProfiler = MacOSCompositorLatencyProfiler()
+  private let firstFrameLatency = MacOSFirstFrameLatencyTracker()
   private let frameAvailableRate = MacOSRateWindow()
   private let sourceProjectionMethodReceiveRate = MacOSRateWindow()
   private let coalescedFrameCallbackDelayMs = 8
@@ -313,6 +314,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       if let nativeCompositorSourceRing {
         diagnostics.merge(nativeCompositorSourceRing.diagnostics()) { _, next in next }
       }
+      diagnostics.merge(firstFrameLatency.diagnostics()) { _, next in next }
       diagnostics["nativeCompositorSourceProjectionMethodReceiveCount"] =
         sourceProjectionMethodReceiveCount
       diagnostics["nativeCompositorSourceProjectionMethodReceiveHz"] =
@@ -702,6 +704,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     nativeCompositorSourceExpectedFileIds = descriptors.map { $0.fileId }
     nativeCompositorSourceTopologyCommitLastError = ""
     setNativeCompositorSourceProviderActive(true)
+    firstFrameLatency.markSourceReady()
     if MacOSProfilerLog.enabled {
       NSLog(
         "VoidPlayer native Metal source provider subscribed reason=\(reason) " +
@@ -931,6 +934,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       )
     }
 
+    firstFrameLatency.beginAdd(trackCountBefore: tracks.count)
     let sourceProviderWasReady = nativeCompositorSourceProviderReady()
     let addResult = tracks.addTrack(
       arguments: arguments,
@@ -938,13 +942,16 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nativePlayer: nativePlayer,
       textureDimensions: texture?.dimensions()
     )
-    if addResult.payload is FlutterError {
+    let addSucceeded = !(addResult.payload is FlutterError)
+    firstFrameLatency.markNativeReturned(succeeded: addSucceeded)
+    if !addSucceeded {
       return addResult.payload
     }
     if !sourceProviderWasReady {
       clearNativeCompositorSourceProvider(reason: "track topology changed")
     }
     refreshPresentationPolicyForCurrentTracks()
+    firstFrameLatency.markPolicyReady()
     if addResult.refreshCurrentFrame {
       if !sourceProviderWasReady {
         presentation.refreshCurrentFrame(context: presentationContext())
@@ -1035,7 +1042,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
     guard let compositor = MacOSNativeCompositorView(
       engine: engine,
-      latencyProfiler: compositorLatencyProfiler
+      latencyProfiler: compositorLatencyProfiler,
+      firstFrameLatency: firstFrameLatency
     ) else {
       lastNativeCompositorFailure = "native compositor initialization failed"
       emitNativeCompositorState()

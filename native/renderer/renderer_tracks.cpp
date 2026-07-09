@@ -111,6 +111,7 @@ int Renderer::Impl::add_track_with_file_id(const std::string& video_path,
 int Renderer::Impl::add_track_internal(const std::string& video_path,
                                  bool use_hardware_decode,
                                  int requested_file_id) {
+    const auto add_started_at = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     RendererTrackAddReservation reservation;
     int64_t current_pts = 0;
@@ -144,18 +145,22 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
         current_pts = timeline_.playback().clock().current_pts_us();
     }
 
+    const auto pipeline_open_started_at = std::chrono::steady_clock::now();
     auto pipeline = track_controller_.create_pipeline(
         video_path,
         use_hardware_decode,
         surface_state_.backend_kind(),
         presentation_.native_render_device(),
         &presentation_.device_mutex());
+    const auto pipeline_open_finished_at = std::chrono::steady_clock::now();
     if (!pipeline) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         rollback_track_mutation_playback(playback_state, playback_hooks);
         return -1;
     }
     pipeline->generation = reservation.generation;
+    const auto initial_seek_result = prepare_add_track_initial_seek(
+        *pipeline, current_pts, playback_state.was_playing);
     const TrackPipelineStartConfig start_config{
         reservation.file_id,
         0,
@@ -168,12 +173,14 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
         [this](TrackPipeline& track) { register_track_audio(track); },
         [this](int id) { unregister_track_audio(id); },
     };
+    const auto pipeline_start_started_at = std::chrono::steady_clock::now();
     if (!track_controller_.configure_and_start_pipeline(
             *pipeline, start_config, hooks, "Renderer::add_track")) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         rollback_track_mutation_playback(playback_state, playback_hooks);
         return -1;
     }
+    const auto pipeline_start_finished_at = std::chrono::steady_clock::now();
 
     TrackAddSeekResult seek_result;
     int64_t track_offset_us = 0;
@@ -218,8 +225,15 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
                 }
             },
         };
-        seek_result = track_controller_.prepare_add_track_seek_to_clock(
-            *track, current_pts, playback_state.was_playing, add_seek_hooks);
+        seek_result = initial_seek_result;
+        if (seek_result.applied) {
+            if (add_seek_hooks.set_audio_decode_paused) {
+                add_seek_hooks.set_audio_decode_paused(track->file_id, true);
+            }
+        } else {
+            seek_result = track_controller_.prepare_add_track_seek_to_clock(
+                *track, current_pts, playback_state.was_playing, add_seek_hooks);
+        }
         track_offset_us = track->offset_us;
 
         // Force redraw, but keep already-presented frames from existing tracks so
@@ -244,6 +258,18 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
                  reservation.slot,
                  use_hardware_decode,
                  video_path);
+    const auto add_finished_at = std::chrono::steady_clock::now();
+    spdlog::info(
+        "[TrackAddLatency] slot={} pipeline_open_ms={} pipeline_start_ms={} sync_total_ms={} initial_seek={} target_ms={}",
+        reservation.slot,
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            pipeline_open_finished_at - pipeline_open_started_at).count(),
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            pipeline_start_finished_at - pipeline_start_started_at).count(),
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            add_finished_at - add_started_at).count(),
+        initial_seek_result.applied,
+        initial_seek_result.target_pts_us / 1000);
     return reservation.slot;
 }
 

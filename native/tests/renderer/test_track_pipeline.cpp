@@ -2049,6 +2049,53 @@ TEST_CASE("TrackLifecycle prepares add-track seek to current clock",
     REQUIRE(audio_pause_count == 2);
 }
 
+TEST_CASE("TrackLifecycle prepares add-track initial seek before demux start",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipeline track;
+    track.offset_us = 250000;
+    track.packet_queue = std::make_unique<PacketQueue>();
+    track.audio_packet_queue = std::make_unique<PacketQueue>();
+    track.track_buffer = std::make_shared<TrackBuffer>(4, 1);
+    track.seek_controller = std::make_unique<SeekController>();
+
+    TextureFrame frame;
+    frame.pts_us = 1000;
+    track.track_buffer->push_frame(frame);
+
+    const auto result = prepare_add_track_initial_seek(track, 1000000, false);
+    REQUIRE(result.applied);
+    REQUIRE(result.target_pts_us == 750000);
+    REQUIRE(result.seek_type == SeekType::Exact);
+    REQUIRE(track.track_buffer->total_count() == 1);
+    REQUIRE(track.packet_queue->try_pop().status == PacketPopStatus::Empty);
+    REQUIRE(track.audio_packet_queue->try_pop().status == PacketPopStatus::Empty);
+
+    const auto pending_seek = track.seek_controller->take_pending();
+    REQUIRE(pending_seek);
+    REQUIRE(pending_seek->target_pts_us == 750000);
+    REQUIRE(pending_seek->type == SeekType::Exact);
+}
+
+TEST_CASE("TrackLifecycle initial add seek backs away from EOF",
+          "[track_pipeline][track_lifecycle]") {
+    TrackPipelineFactory factory;
+    auto pipeline = factory.create_opened_pipeline(
+        video_test_dir() + "/h264_9s_1920x1080.mp4",
+        false);
+    REQUIRE(pipeline);
+    pipeline->offset_us = 250000;
+    const int64_t track_end_us =
+        track_pts_end_us_from_stats(pipeline->demux_thread->stats());
+    REQUIRE(track_end_us > 1000);
+
+    const auto result = prepare_add_track_initial_seek(
+        *pipeline, track_end_us + pipeline->offset_us, true);
+
+    REQUIRE(result.applied);
+    REQUIRE(result.seek_type == SeekType::Keyframe);
+    REQUIRE(result.target_pts_us == track_end_us - 1000);
+}
+
 TEST_CASE("TrackLifecycle backs add-track seek away from EOF",
           "[track_pipeline][track_lifecycle]") {
     TrackPipelineFactory factory;

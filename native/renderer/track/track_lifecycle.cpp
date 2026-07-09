@@ -452,6 +452,22 @@ TrackAddSeekResult prepare_add_track_seek_to_clock(
     return result;
 }
 
+TrackAddSeekResult prepare_add_track_initial_seek(
+    TrackPipeline& track,
+    int64_t current_pts_us,
+    bool was_playing) {
+    TrackAddSeekResult result;
+    if (current_pts_us <= 0 || !track.seek_controller) {
+        return result;
+    }
+
+    result.target_pts_us = clamp_add_track_seek_target_us(track, current_pts_us);
+    result.seek_type = was_playing ? SeekType::Keyframe : SeekType::Exact;
+    track.seek_controller->request_seek(result.target_pts_us, result.seek_type);
+    result.applied = true;
+    return result;
+}
+
 TrackPipeline* commit_new_track_pipeline(
     TrackPipelineManager& tracks,
     size_t slot,

@@ -112,7 +112,7 @@ REQUIRED_UI_PROFILE_ENTRIES = {
         "ui_tests/macos/native_vvc_software_playback_smoke.csv",
         "ui_tests/macos/native_p010_presentation_smoke.csv",
         "ui_tests/macos/native_h264_high422_fallback_smoke.csv",
-        "ui_tests/macos/native_callback_stress_smoke.csv",
+        "ui_tests/macos/native_compositor_lifecycle_stress_smoke.csv",
     ],
     "ui_tests/profiles/macos-hdr-edr-smoke.txt": [
         "ui_tests/macos/native_compositor_auto_hlg_policy_smoke.csv",

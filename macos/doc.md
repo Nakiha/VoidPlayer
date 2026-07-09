@@ -95,7 +95,8 @@ Useful macOS smoke areas:
 - `native_paused_dual_track_pan_zoom_smoke.csv`: paused source-cache composite
   follows display-link cadence.
 - `native_add_track_smoke.csv`: multi-track add/remove/offset diagnostics.
-- `native_callback_stress_smoke.csv`: play/pause, seek storm, destroy/recreate.
+- `native_compositor_lifecycle_stress_smoke.csv`: SDR/HDR source-ring rebuild,
+  seek/resize, track compaction, destroy/recreate, and window-close lifecycle.
 - `analysis_gated_smoke.csv`: analysis FFI and media-header overlay activation present, external
   analysis UI/IPC still gated.
 

@@ -108,7 +108,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `ui_tests/macos/native_vvc_software_playback_smoke.csv` | Software fallback + Metal package path. | Nightly/headed or release candidate. |
 | `ui_tests/macos/native_add_short_after_eof_smoke.csv` | EOF carry-forward when adding a shorter hardware-decoded track after AV1/VVC software tracks. | Nightly/headed or targeted track/presentation changes. |
 | `ui_tests/macos/native_audio_play_seek_smoke.csv` | Native audio play/seek and audible-track diagnostics. | Nightly/headed; manual audible check remains separate. |
-| `ui_tests/macos/native_callback_stress_smoke.csv` | Callback lifecycle stress. | Nightly/headed. |
+| `ui_tests/macos/native_compositor_lifecycle_stress_smoke.csv` | SDR/HDR native compositor lifecycle stress. | Nightly/headed. |
 | `ui_tests/macos/native_quit_while_playing_smoke.csv` / `native_user_window_close_smoke.csv` | Teardown and crash-report regression. | Nightly/headed or targeted runner changes. |
 | `ui_tests/local/**` | Developer-specific absolute-path regressions. | Manual/local only; never CI. |
 

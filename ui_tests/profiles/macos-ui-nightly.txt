@@ -4,7 +4,7 @@ ui_tests/macos/native_audio_destroy_recreate_smoke.csv
 ui_tests/macos/native_vvc_software_playback_smoke.csv
 ui_tests/macos/native_p010_presentation_smoke.csv
 ui_tests/macos/native_4k60_playback_smoke.csv
-ui_tests/macos/native_callback_stress_smoke.csv
+ui_tests/macos/native_compositor_lifecycle_stress_smoke.csv
 ui_tests/macos/native_user_window_close_smoke.csv
 ui_tests/macos/native_quit_while_playing_smoke.csv
 ui_tests/macos/native_loop_range_smoke.csv

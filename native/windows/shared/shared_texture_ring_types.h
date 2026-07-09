@@ -1,5 +1,7 @@
 #pragma once
 
+#include "renderer/render/source_compositor_contract.h"
+
 #include <windows.h>
 
 #include <array>
@@ -13,9 +15,10 @@ namespace vr {
 struct AnalysisOverlayPrimitivePackage;
 
 inline constexpr int kSharedFp16TextureRingBufferCount = 3;
-inline constexpr int kSharedSourceCacheLiveBufferCount = 3;
+inline constexpr int kSharedSourceCacheLiveBufferCount =
+    kSourceCompositorLiveBufferCount;
 inline constexpr uint64_t kSharedSourceCacheDefaultBudgetBytes =
-    384ull * 1024ull * 1024ull;
+    kSourceCompositorDefaultBudgetBytes;
 
 enum class SharedFp16TextureSyncMode : uint32_t {
     KeyedMutex = 0,
@@ -43,13 +46,7 @@ struct SharedFp16RingPrewarmStats {
     uint64_t consumed_count = 0;
 };
 
-struct SourceCacheTrackDescriptor {
-    int slot = -1;
-    int file_id = -1;
-    int width = 0;
-    int height = 0;
-    int color_transfer = 0;
-};
+using SourceCacheTrackDescriptor = SourceCompositorTrackDescriptor;
 
 enum class SharedSourceCacheTextureSyncMode : uint32_t {
     KeyedMutex = 0,
@@ -79,13 +76,7 @@ struct SharedSourceCacheBundleSnapshot {
     std::shared_ptr<const AnalysisOverlayPrimitivePackage> overlay;
 };
 
-struct SourceCacheRingPolicy {
-    int depth = 0;
-    uint64_t bytes_per_frame = 0;
-    uint64_t total_bytes = 0;
-    bool frozen_snapshot = false;
-    bool allowed = false;
-};
+using SourceCacheRingPolicy = SourceCompositorRingPolicy;
 
 struct SourceCachePublishInfo {
     uint64_t ring_generation = 0;

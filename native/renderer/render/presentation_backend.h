@@ -2,6 +2,7 @@
 
 #include "renderer/render/presentation_backend_types.h"
 #include "renderer/render/renderer_draw_snapshot.h"
+#include "renderer/render/source_compositor_contract.h"
 
 #include <cstddef>
 #include <functional>
@@ -10,12 +11,10 @@
 namespace vr {
 
 class PresentationBackend;
-struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
 struct AnalysisOverlayPrimitivePackage;
 struct SharedFp16TextureSnapshot;
 struct PresentationExternalD3D12Surface;
-struct WindowsSourceProjection;
 
 using PresentationBackendAsyncDrawCompleted =
     std::function<void(bool, const char*, uint64_t, const PresentationBackendFrameInfo*)>;
@@ -112,9 +111,9 @@ public:
                                              int&) { return false; }
 #ifdef _WIN32
     virtual bool configure_source_cache(
-        const std::vector<SourceCacheTrackDescriptor>&) { return false; }
+        const std::vector<SourceCompositorTrackDescriptor>&) { return false; }
     virtual void clear_source_cache(const char*) {}
-    virtual bool update_source_projection(const WindowsSourceProjection&) {
+    virtual bool update_source_projection(const SourceCompositorProjection&) {
         return false;
     }
     virtual void clear_source_projection() {}

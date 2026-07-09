@@ -353,7 +353,7 @@ bool Renderer::Impl::draw_current_frame_to_external_d3d12_target(
 }
 
 bool Renderer::Impl::configure_source_cache(
-    const std::vector<SourceCacheTrackDescriptor>& descriptors) {
+    const std::vector<SourceCompositorTrackDescriptor>& descriptors) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     return presentation_.configure_source_cache(descriptors);
@@ -383,7 +383,7 @@ void Renderer::Impl::clear_source_cache(const char* reason) {
 }
 
 bool Renderer::Impl::update_source_projection(
-    const WindowsSourceProjection& projection) {
+    const SourceCompositorProjection& projection) {
 #ifdef _WIN32
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     return presentation_.update_source_projection(projection);

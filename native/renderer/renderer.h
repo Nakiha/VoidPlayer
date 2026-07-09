@@ -5,6 +5,7 @@
 #include "renderer/layout/layout_state.h"
 #include "renderer/render/presentation_backend_types.h"
 #include "renderer/render/renderer_present_history.h"
+#include "renderer/render/source_compositor_contract.h"
 #include "renderer/render/renderer_device_state.h"
 #include "renderer/renderer_api_types.h"
 #include "renderer/renderer_config.h"
@@ -24,9 +25,7 @@ class PlaybackController;
 class PresentationBackend;
 struct AnalysisOverlayPrimitivePackage;
 struct SharedFp16TextureSnapshot;
-struct SourceCacheTrackDescriptor;
 struct SharedSourceCacheBundleSnapshot;
-struct WindowsSourceProjection;
 
 class Renderer {
 public:
@@ -122,9 +121,9 @@ public:
         const PresentationExternalD3D12RenderTarget& target,
         const char* reason);
     bool configure_source_cache(
-        const std::vector<SourceCacheTrackDescriptor>& descriptors);
+        const std::vector<SourceCompositorTrackDescriptor>& descriptors);
     void clear_source_cache(const char* reason);
-    bool update_source_projection(const WindowsSourceProjection& projection);
+    bool update_source_projection(const SourceCompositorProjection& projection);
     void clear_source_projection();
     bool acquire_source_cache_bundle(
         SharedSourceCacheBundleSnapshot& snapshot) const;

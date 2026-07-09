@@ -121,9 +121,9 @@ debugging.
 9. Re-run the macOS HDR compositor smoke scripts documented in
    `native/docs/MACOS_HDR_EXPLORATION.md`.
 10. For Windows surface-export changes, run `python dev.py gate
-    windows-preservation` with the locked Windows local engine. Hosted CI can
-    validate PR-fast native contracts, but ordinary Flutter SDK fallback is not
-    release evidence for compositor-surface changes.
+    windows-fork-protection` until the new D3D11/DX12 sandwich backend has its
+    own validation matrix. Ordinary Flutter SDK fallback is not release evidence
+    for compositor-surface changes.
 
 Do not move an existing `voidplayer-flutter-*-hdr.*` tag after VoidPlayer has
 pointed at it. Publish a new tag instead.

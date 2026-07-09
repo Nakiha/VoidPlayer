@@ -7,12 +7,11 @@
 0.3, ADD_MEDIA, build/generated/macos/native_p010_presentation.mp4
 1.3, ASSERT_TRACK_COUNT, 1
 1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
-1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationAdapter, cvpixelbuffer-bgra-copy
+1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, metal
 1.65, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
 1.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
 1.75, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, false
 1.8, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-videotoolbox
-1.82, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
 1.85, ASSERT_TRACK_METADATA, 0, QuickTime / MOV, VideoToolbox / h264
 1.9, CAPTURE_VIEWPORT, p010_initial
 2.0, ASSERT_CAPTURE_NOT_BLACK, p010_initial, 0.5, 16.0

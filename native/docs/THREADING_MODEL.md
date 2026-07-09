@@ -2,8 +2,10 @@
 
 VoidPlayer native now uses one shared playback/render scheduler with platform
 presentation backends. The threading contract is owned by shared native code;
-Windows D3D11 and macOS Metal only differ once a `RendererDrawSnapshot` is handed
-to a `PresentationBackend`.
+active platform behavior begins once a `RendererDrawSnapshot` is handed to a
+`PresentationBackend`. macOS Metal is the active backend on this branch; Windows
+D3D11/DX12 presentation is reserved/fail-closed until the runner-composed
+sandwich backend is rebuilt.
 
 ## Thread Roles
 
@@ -35,7 +37,7 @@ NativePlayer / Renderer command surface
           |                             |
           v                             v
  Windows PresentationBackend      macOS PresentationBackend
- D3D11 shared texture             Metal/CVPixelBuffer/IOSurface
+ reserved D3D11/DX12              Metal/CVPixelBuffer/IOSurface
 ```
 
 ### Demux Thread
@@ -53,7 +55,7 @@ NativePlayer / Renderer command surface
 - Windows D3D11VA may serialize immediate-context access through the backend
   device mutex depending on decode device mode.
 - macOS VideoToolbox preserves `CVPixelBuffer` frames for the renderer-owned
-  wgpu-metal path when the codec/pixel format is supported, and otherwise falls back
+  native-metal path when the codec/pixel format is supported, and otherwise falls back
   to explicit software or hwdownload packages.
 - Does not call renderer public lifecycle APIs and does not access platform
   texture publication locks directly.
@@ -76,24 +78,9 @@ NativePlayer / Renderer command surface
 
 ### Platform Host / UI Thread
 
-- Windows runner acquires the latest shared D3D11 texture handle and releases it
-  through the Flutter texture descriptor callback.
-- In `native-compositor-scrgb`, the Windows platform thread owns the serial/ACK
-  state machine only. A dedicated composition thread consumes immutable Flutter
-  BGRA and video FP16 leases, draws and presents the DComp swap chain, and keeps
-  the latest successfully synchronized inputs leased until a newer generation
-  replaces them or the compositor stops. This lets one input update re-composite
-  against stable video, Flutter, and source-cache inputs without reacquiring a
-  keyed-mutex frame that was already consumed.
-- Source-cache publication stays on the renderer D3D11 device mutex. One render
-  draw acquires every target in a bundle, renders all tracks, flushes, then
-  publishes one generation. The composition thread acquires that bundle as one
-  lease, never mixes generations, retains the latest successful bundle for
-  projection-only redraws, and treats keyed-mutex timeout as backpressure rather
-  than a compositor-wide failure.
-- Windows overlay composition is owned by the wgpu/D3D12 render core. Pan,
-  zoom, split, and order updates should reuse source/projection state in that
-  render domain; the runner DComp bridge only presents the final target.
+- Windows runner currently owns only Win32/platform-channel glue and fail-closed
+  native-player lifecycle. Native D3D11/DX12 presentation threading is reserved
+  for the later runner-composed sandwich backend.
 - macOS runner owns Cocoa, sandbox file access, platform channels, Flutter
   texture registration, `CVPixelBuffer` lifecycle, and frame notification.
 - macOS viewport pan/zoom submits only the latest layout intent. `CVDisplayLink`
@@ -169,66 +156,13 @@ Rules:
 - `TrackPipelineManager::stop_all()` only runs after render-loop access to the
   track list is stopped or otherwise excluded.
 
-## Windows D3D11 Serialization
+## Windows Native Presentation
 
-The Windows backend serializes D3D11 immediate-context work under the backend
-device mutex. This includes draw, copy, flush/fence wait, headless shared texture
-publish, and any D3D11VA path that shares the immediate context.
-
-The headless output path uses this order:
-
-```text
-device_mutex -> D3D11HeadlessOutput::texture_mutex()
-```
-
-`D3D11HeadlessOutput::*_locked()` methods require the caller to already hold the
-texture mutex. GPU fence waits happen under the device mutex only, then the
-texture mutex is reacquired briefly to swap the front buffer and collect the
-Flutter callback. The callback runs outside both locks.
-
-Flutter consumers obtain an AddRef'ed shared texture snapshot through
-`acquire_shared_texture()`. They must not cache native texture pointers that were
-not leased through that API.
-
-The Windows DComp route uses independent producer/exporter devices and a
-runner-owned final compositor device. On a matching adapter, shared BGRA/FP16
-slots cross those boundaries only through NT handles, keyed mutex keys,
-generation-stamped leases, and explicit release. On an output-adapter mismatch,
-the producer renderer and Flutter exporter remain on their original adapter;
-the composition thread recreates only the final D3D/DComp device on the output
-adapter and bridges each immutable lease through row-major shared textures plus
-GPU copies into output-local SRVs. The current bridge waits for producer copies
-with a D3D11 event query; shared-fence capability is diagnosed separately and is
-not part of the lock contract. Resize creates a new ring generation; an old
-generation cannot be destroyed until every consumer lease is returned. Flutter
-state ACKs are post-frame commits: activation publishes `active` after the
-transparent viewport ACK, while fallback teardown is queued to the composition
-thread after the restored-Texture ACK.
-
-Windows device-loss recovery uses the same lock order. Renderer-side D3D11
-rebuild work runs under the backend device mutex and does not destroy player,
-track, timeline, or layout state. Compositor-side recovery is scheduled through
-the compositor mutex/condition variable, then the composition thread releases
-held input leases, rebuilds D3D/DComp resources, and waits for fresh
-video/source generations before reporting `active` again. Old Flutter ACKs and
-old texture generations remain generation-checked and are discarded rather than
-mixed with new device resources.
-
-The platform thread receives `WM_DISPLAYCHANGE`, `WM_SETTINGCHANGE`, `WM_MOVE`,
-`WM_EXITSIZEMOVE`, and `WM_DPICHANGED`, coalesces them with a short timer, then
-runs the same display/presentation resolver used by diagnostics and track
-mutations. The composition thread builds a candidate SDR or scRGB swap chain,
-waits for video/source generations rendered with the new white level, migrates
-the output device when the resolved output adapter changes, Presents the
-candidate, and only then commits it to the DComp visual. Existing source/Flutter
-leases remain valid during this transition; cross-adapter transport failure
-falls back to producer-adapter native SDR before entering an explicit failed
-state. It must not restore Flutter Texture SDR.
-
-Source-cache clear and signature replacement stop new acquisition immediately.
-Any generation already leased by DComp remains in the retired set until release.
-An unchanged-signature draw miss leaves the last complete bundle published;
-partial source updates are cancelled before publication.
+Windows native presentation is disabled in this restart branch. The shared
+renderer keeps reserved D3D11/DX12 types, but no active Windows presentation
+threading, DComp composition, source-cache lease, or high-refresh contract is
+claimed here. Reintroduce this section with the new lock order and validation
+matrix when the Windows sandwich backend is rebuilt.
 
 ## macOS Metal / CVPixelBuffer Completion
 
@@ -285,8 +219,8 @@ Current shared renderer ownership is split as follows:
 - Render loop / tick / present scheduling: shared renderer code.
 - Track lifecycle, layout, seek, loop, EOF settle, and refresh completion: shared
   renderer/native player code.
-- D3D11 shared texture, swap chain, D3D11VA texture upload, and Windows capture:
-  Windows presentation backend.
+- D3D11/DX12 target, hardware frame import, and Windows capture:
+  reserved Windows presentation backend.
 - Metal/CVPixelBuffer/IOSurface target, VideoToolbox frame preservation, Metal
   package upload, and macOS capture: macOS presentation backend.
 - Analysis overlay raster/upload and future analysis IPC remain separate

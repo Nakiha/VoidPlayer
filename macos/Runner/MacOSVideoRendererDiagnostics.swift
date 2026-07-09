@@ -379,7 +379,7 @@ enum MacOSVideoRendererDiagnostics {
         perfStats?["rendererOwnedCVPixelBufferUploadCount"] ?? 0,
       "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
       "presentationUploadMode": nativeCompositorSourceProviderPresenting
-        ? "wgpu-source-provider"
+        ? "metal-source-provider"
         : MacOSPresentationDiagnostics.uploadMode(
           perfStats: perfStats,
           targetReady: textureStats?.metalTextureValid ?? false,
@@ -501,13 +501,9 @@ enum MacOSVideoRendererDiagnostics {
       return "explicit-synthetic-texture"
     }
     if sourceProviderPresenting {
-      return "native-wgpu-metal-source-provider"
+      return "native-metal-source-provider"
     }
     if state["active"] as? Bool == true {
-      let backendName = state["backendName"] as? String ?? "unknown"
-      if backendName.lowercased().contains("wgpu") {
-        return "native-wgpu-metal-cvpixelbuffer-target"
-      }
       return "native-metal-cvpixelbuffer-target"
     }
     return "native-metal-target-unavailable"
@@ -536,7 +532,7 @@ enum MacOSVideoRendererDiagnostics {
     sourceProviderPresenting: Bool
   ) -> String {
     if player != nil && sourceProviderPresenting {
-      return "macOS WGPU native compositor source provider is active"
+      return "macOS native Metal compositor source provider is active"
     }
     if player != nil && state["active"] as? Bool == true {
       return "macOS shared renderer is active with renderer-owned Metal presentation"

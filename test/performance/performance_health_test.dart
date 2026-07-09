@@ -26,28 +26,31 @@ void main() {
     expect(snapshot.reason, 'native-render');
   });
 
-  test('uses retained WGPU timings for source-provider native pressure', () {
-    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
-      'trackCount': 1,
-      'isPlaying': true,
-      'displayRefreshHzEstimate': 120.0,
-      'presentationBackend': 'native-wgpu-metal-source-provider',
-      'nativeCompositorBackend': 'wgpu-metal-thin-runner',
-      'nativeCompositorCompositeHz': 120.0,
-      'nativeRendererDrawP95Us': 12000.0,
-      'nativeRendererDrawBackendP95Us': 11000.0,
-      'metalCommandCompletionP95Us': 10500.0,
-      'nativeCompositorFrameCpuP95Ms': 0.28,
-      'nativeCompositorWgpuSubmitCpuP95Ms': 0.19,
-      'nativeCompositorWgpuCompletionP95Ms': 3.85,
-    });
+  test(
+    'uses native compositor timings for source-provider native pressure',
+    () {
+      final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+        'trackCount': 1,
+        'isPlaying': true,
+        'displayRefreshHzEstimate': 120.0,
+        'presentationBackend': 'native-metal-source-provider',
+        'nativeCompositorBackend': 'metal',
+        'nativeCompositorCompositeHz': 120.0,
+        'nativeRendererDrawP95Us': 12000.0,
+        'nativeRendererDrawBackendP95Us': 11000.0,
+        'metalCommandCompletionP95Us': 10500.0,
+        'nativeCompositorFrameCpuP95Ms': 0.28,
+        'nativeCompositorBackendSubmitCpuP95Ms': 0.19,
+        'nativeCompositorBackendCompletionP95Ms': 3.85,
+      });
 
-    expect(snapshot.level, PerformanceHealthLevel.ok);
-    expect(snapshot.kind, PerformanceHealthKind.ok);
-    expect(snapshot.drawP95Us, closeTo(280.0, 0.1));
-    expect(snapshot.backendP95Us, closeTo(190.0, 0.1));
-    expect(snapshot.metalP95Us, closeTo(3850.0, 0.1));
-  });
+      expect(snapshot.level, PerformanceHealthLevel.ok);
+      expect(snapshot.kind, PerformanceHealthKind.ok);
+      expect(snapshot.drawP95Us, closeTo(280.0, 0.1));
+      expect(snapshot.backendP95Us, closeTo(190.0, 0.1));
+      expect(snapshot.metalP95Us, closeTo(3850.0, 0.1));
+    },
+  );
 
   test('classifies queued GPU completion latency as display pressure', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({

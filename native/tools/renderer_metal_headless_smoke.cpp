@@ -103,12 +103,12 @@ int main() {
     config.height = target_height;
     config.headless = true;
     config.use_hardware_decode = true;
-    config.backend.type = vr::RendererBackendType::WgpuMetal;
+    config.backend.type = vr::RendererBackendType::Metal;
     config.backend.output = target.buffer;
     config.backend.max_track_slots = 1;
 
     if (!renderer.initialize(config)) {
-        std::cerr << "shared Renderer failed to initialize with WgpuMetal backend\n";
+        std::cerr << "shared Renderer failed to initialize with Metal backend\n";
         return 1;
     }
     std::atomic<int> callbacks{0};

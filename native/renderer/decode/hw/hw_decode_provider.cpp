@@ -39,7 +39,7 @@ std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
 #ifdef _WIN32
     providers.push_back({
         "D3D12VA",
-        RenderBackendKind::WgpuD3D12,
+        RenderBackendKind::NativeD3D12,
         RenderBackendKind::Unknown,
         false,
         &create_d3d12va_provider,
@@ -48,7 +48,7 @@ std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
 #ifdef __APPLE__
     providers.push_back({
         "VideoToolbox",
-        RenderBackendKind::WgpuMetal,
+        RenderBackendKind::Metal,
         RenderBackendKind::Unknown,
         true,
         &create_videotoolbox_provider,

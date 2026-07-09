@@ -235,7 +235,7 @@ void main() {
     expect(find.textContaining('display-link'), findsNothing);
   });
 
-  testWidgets('health summary labels wgpu backend latency', (tester) async {
+  testWidgets('health summary labels native backend latency', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         locale: const Locale('zh'),
@@ -250,7 +250,7 @@ void main() {
           width: 560,
           child: StatsHealthSummarySection(
             health: _health(
-              presentationBackend: 'native-wgpu-metal-cvpixelbuffer-target',
+              presentationBackend: 'native-metal-source-provider',
               metalP95Us: 2400,
             ),
           ),
@@ -258,8 +258,7 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('WGPU p95 2.4ms'), findsOneWidget);
-    expect(find.textContaining('Metal p95'), findsNothing);
+    expect(find.textContaining('Metal p95 2.4ms'), findsOneWidget);
   });
 
   testWidgets('health summary keeps a stable height across metric counts', (

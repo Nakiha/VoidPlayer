@@ -96,9 +96,9 @@ std::string presented_anchor_mode_name(vr::RendererPresentedAnchorMode mode) {
 }
 
 struct WindowsRenderBackendSelection {
-    vr::RendererBackendType type = vr::RendererBackendType::WgpuD3D12;
-    std::string name = "wgpu-d3d12";
-    std::string reason = "default";
+    vr::RendererBackendType type = vr::RendererBackendType::Unknown;
+    std::string name = "disabled";
+    std::string reason = "back-to-native-macos-metal";
 };
 
 std::string normalize_backend_request(std::string request) {
@@ -130,17 +130,18 @@ WindowsRenderBackendSelection resolve_windows_render_backend(
     if (normalized.empty() || normalized == "auto") {
         return {};
     }
-    if (normalized == "wgpu" || normalized == "wgpu-d3d12" ||
-        normalized == "d3d12") {
-        return {
-            vr::RendererBackendType::WgpuD3D12,
-            "wgpu-d3d12",
-            "env-override",
-        };
+    if (normalized == "d3d12" || normalized == "native-d3d12" ||
+        normalized == "d3d11" || normalized == "native-d3d11") {
+        spdlog::warn(
+            "[WindowsRenderBackend] VOIDPLAYER_WINDOWS_RENDER_BACKEND='{}' "
+            "requested while Windows native sandwich backends are reserved "
+            "but not implemented",
+            request);
+        return {};
     }
     spdlog::warn(
         "[WindowsRenderBackend] unsupported VOIDPLAYER_WINDOWS_RENDER_BACKEND='{}'; "
-        "using wgpu-d3d12",
+        "Windows render backends are disabled",
         request);
     return {};
 }
@@ -915,11 +916,16 @@ void VideoRendererPlugin::CreatePlayer(
         vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_RENDER_BACKEND");
     const auto render_backend =
         resolve_windows_render_backend(render_backend_request);
-    const bool use_wgpu_d3d12_backend =
-        render_backend.type == vr::RendererBackendType::WgpuD3D12;
+    if (render_backend.type == vr::RendererBackendType::Unknown) {
+        result->Error(
+            "WINDOWS_RENDER_BACKEND_DISABLED",
+            "Windows render backends are disabled on the back-to-native macOS "
+            "Metal branch");
+        return;
+    }
     config.backend.type = render_backend.type;
     config.backend.adapter = dxgi_adapter_.Get();
-    if (use_wgpu_d3d12_backend) {
+    if (render_backend.type == vr::RendererBackendType::NativeD3D12) {
         config.backend.output = window_handle_;
     }
     config.width = width;
@@ -929,7 +935,7 @@ void VideoRendererPlugin::CreatePlayer(
     if (!config.backend.adapter) {
         result->Error(
             "NO_DXGI_ADAPTER",
-            "Flutter DXGI adapter is unavailable; cannot start wgpu-d3d12 renderer");
+            "Flutter DXGI adapter is unavailable; cannot start native-d3d12 renderer");
         return;
     }
 
@@ -1835,12 +1841,12 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
             player_->update_source_projection(projection);
         if (backend_projection_ready) {
             native_compositor_->DisableRetainedSourceProjection(
-                "wgpu-d3d12-backend-source-projection");
+                "native-d3d12-backend-source-projection");
         } else {
             const auto backend = player_->presentation_backend_diagnostics();
             const std::string error =
-                backend.backend == "wgpu-d3d12"
-                    ? "wgpu-d3d12-source-projection-update-failed"
+                backend.backend == "native-d3d12"
+                    ? "native-d3d12-source-projection-update-failed"
                     : "source-projection-backend-unavailable";
             spdlog::warn(
                 "[WindowsSourceProjection] backend projection update failed backend={} error={}; retained fallback is disabled",
@@ -1871,8 +1877,8 @@ void VideoRendererPlugin::PrepareNativeCompositorSourceCache(
                 const auto backend =
                     player_->presentation_backend_diagnostics();
                 const std::string error =
-                    backend.backend == "wgpu-d3d12"
-                        ? "wgpu-d3d12-source-cache-unimplemented"
+                    backend.backend == "native-d3d12"
+                        ? "native-d3d12-source-cache-unimplemented"
                         : "source-cache-configuration-failed";
                 const std::string failure_signature =
                     backend.backend + "|" + error + "|" + signature;
@@ -3585,7 +3591,7 @@ void VideoRendererPlugin::GetDiagnostics(
                 flutter::EncodableValue(true);
             diagnostics[flutter::EncodableValue("windowsHotPathMode")] =
                 flutter::EncodableValue(
-                    "source-projection-wgpu-d3d12");
+                    "source-projection-native-d3d12");
             diagnostics[flutter::EncodableValue(
                 "windowsHotPathProjectionOnlyUpdateCount")] =
                 enc_i64(static_cast<int64_t>(
@@ -3595,7 +3601,7 @@ void VideoRendererPlugin::GetDiagnostics(
                 enc_i64(static_cast<int64_t>(
                     backend.source_projection_consume_count));
             diagnostics[flutter::EncodableValue("windowsHotPathGateResult")] =
-                flutter::EncodableValue("pass-wgpu-d3d12-source-projection");
+                flutter::EncodableValue("pass-native-d3d12-source-projection");
             diagnostics[flutter::EncodableValue(
                 "windowsHotPathLastFailureReason")] =
                 flutter::EncodableValue("none");

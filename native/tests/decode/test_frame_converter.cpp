@@ -685,7 +685,7 @@ TEST_CASE("TextureFrame: storage exposes D3D12 texture metadata", "[frame_storag
     REQUIRE(frame.d3d12_texture_storage()->frame_ref == ref);
 }
 
-TEST_CASE("FrameConverter retains D3D12VA frame metadata for wgpu import",
+TEST_CASE("FrameConverter retains D3D12VA frame metadata for native import",
           "[frame_converter][d3d12va]") {
     FrameConverter converter;
     REQUIRE(converter.init_hardware(

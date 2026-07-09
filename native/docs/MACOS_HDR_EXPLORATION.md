@@ -138,7 +138,7 @@ remaining work is therefore tracked as merge evidence and operational guardrails
 | Interaction parity | Viewport pan/zoom/split, annotation overlays, timeline controls, resize, seek, EOF, and track removal must behave like the pre-HDR route. | Covered by macOS smoke and targeted local validation; keep adding targeted tests for regressions. |
 | Performance | Display-link rendering must avoid hot-path CPU readback and drawable starvation. External CPU pressure should degrade by dropping compositor ticks, not by blocking the UI thread. | Implemented in the compositor refresh path; re-run perf smoke before merge. |
 | Color correctness baseline | CPU reference tests and Metal shader tests must agree on range, matrix, transfer, primaries, SDR fallback, and EDR output thresholds. | Implemented as deterministic baseline; subjective tone calibration remains future work. |
-| Platform preservation | Windows runner/D3D11 behavior must remain SDR-compatible and must not depend on the Flutter fork patch. | Required before merge; use the Windows preservation gate plus CI/manual evidence. |
+| Platform preservation | Windows native presentation is reserved/fail-closed on this restart branch and must not be half-enabled by macOS work. | Required before merge; use `windows-fork-protection`. |
 | Release readiness | Package/signing checks, FFmpeg dylib staging, notices, toolchain doctor, and macOS release-readiness gate must pass. | Required before merge. |
 
 Merge-blocking validation:
@@ -150,16 +150,14 @@ python3.12 dev.py gate pr-fast
 python3.12 dev.py gate macos-ui-smoke
 python3.12 dev.py gate macos-hdr-edr-smoke
 python3.12 dev.py gate macos-release-readiness
-python dev.py gate windows-preservation
+python dev.py gate windows-fork-protection
 ```
 
 `macos-hdr-edr-smoke` requires an EDR-capable local display and covers both
 initial HLG Auto promotion and adding an HLG track to an already-created SDR
-session. The GitHub-hosted
-Windows UI preservation workflow is useful merge evidence, but it runs with
-documented CI-only fallbacks because hosted Windows does not expose the same GPU
-shape as a real desktop release machine. A local Windows preservation run remains
-the release-quality Windows signal.
+session. Windows native presentation will need fresh D3D11/DX12 merge evidence
+when that backend is rebuilt; it is intentionally not part of this macOS restart
+merge evidence.
 
 After these pass, update the PR body with the exact commands, local machine
 conditions, and GitHub run URLs, then mark the PR ready for review.

@@ -27,36 +27,6 @@ struct MacOSNativeCompositorSourceProjection {
   let trace: MacOSCompositorLatencyTrace?
 }
 
-private final class MacOSNativeCompositorWgpuCallbackContext {
-  let view: MacOSNativeCompositorView
-  let frame: Int
-  let submittedNs: UInt64
-
-  init(view: MacOSNativeCompositorView, frame: Int, submittedNs: UInt64) {
-    self.view = view
-    self.frame = frame
-    self.submittedNs = submittedNs
-  }
-}
-
-private let macOSNativeCompositorWgpuCompletion: @convention(c) (
-  UnsafeMutableRawPointer?,
-  Int32
-) -> Void = { userData, result in
-  guard let userData else {
-    return
-  }
-  let context = Unmanaged<MacOSNativeCompositorWgpuCallbackContext>
-    .fromOpaque(userData)
-    .takeRetainedValue()
-  context.view.completeWgpuCompositeFromCallback(
-    result: result,
-    frame: context.frame,
-    submittedNs: context.submittedNs,
-    completedNs: DispatchTime.now().uptimeNanoseconds
-  )
-}
-
 final class MacOSNativeCompositorView: NSView {
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue
@@ -67,9 +37,7 @@ final class MacOSNativeCompositorView: NSView {
   private let latencyProfiler: MacOSCompositorLatencyProfiler
   private let outputPixelFormat: MTLPixelFormat
   private let outputMode: String
-  private let useWgpuCompositor: Bool
   private let textureCache: CVMetalTextureCache
-  private var wgpuRenderer: OpaquePointer?
   private weak var engine: FlutterEngine?
   private weak var videoTexture: MacOSVideoTexture?
   private let metalLayer = CAMetalLayer()
@@ -158,16 +126,9 @@ final class MacOSNativeCompositorView: NSView {
   private let sourceAcquireDuration = MacOSDurationWindow()
   private let inFlightWaitDuration = MacOSDurationWindow()
   private let drawableAcquireDuration = MacOSDurationWindow()
-  private let wgpuSubmitCpuDuration = MacOSDurationWindow()
-  private let wgpuCompletionDuration = MacOSDurationWindow()
   private let inFlightSemaphore = DispatchSemaphore(value: 2)
   private var pendingCompositeTrace: MacOSCompositorLatencyTrace?
   private var lastDisplayTickNs: UInt64 = 0
-  private var lastWgpuProfilerSnapshot = VPWgpuMetalProfilerSnapshot()
-  private var lastWgpuCompletionResult: Int32 = 0
-  private var lastWgpuSubmittedFrame = 0
-  private var lastWgpuCompletedFrame = 0
-  private var pendingWgpuCompletionCount = 0
 
   private static let metricsSampleIntervalNs: UInt64 = 1_000_000_000
   private static let displayLinkWarmGraceNs: UInt64 = 250_000_000
@@ -179,34 +140,13 @@ final class MacOSNativeCompositorView: NSView {
   init?(engine: FlutterEngine, latencyProfiler: MacOSCompositorLatencyProfiler) {
     let configuration = MacOSPresentationConfiguration.current
     let outputPixelFormat = configuration.compositorPixelFormat
-    let useWgpuCompositor = configuration.request == "wgpu-metal" || configuration.request == "wgpu"
-    var wgpuRenderer: OpaquePointer?
-    let device: MTLDevice?
-    if useWgpuCompositor {
-      var error = [CChar](repeating: 0, count: 512)
-      guard VPWgpuFfiVersion() == VP_WGPU_FFI_ABI_VERSION,
-            let renderer = VPWgpuMetalRendererCreate(&error, error.count),
-            let rawDevice = VPWgpuMetalRendererMetalDevice(renderer) else {
-        let message = error.withUnsafeBufferPointer { buffer in
-          buffer.baseAddress.map { String(cString: $0) } ?? "wgpu-metal renderer unavailable"
-        }
-        NSLog("VoidPlayer WGPU compositor: init failed: \(message)")
-        return nil
-      }
-      wgpuRenderer = renderer
-      device = unsafeBitCast(rawDevice, to: MTLDevice.self)
-    } else {
-      device = MTLCreateSystemDefaultDevice()
-    }
+    let device = MTLCreateSystemDefaultDevice()
     guard let device,
           let commandQueue = device.makeCommandQueue(),
           let pipelines = Self.makePipelines(
             device: device,
             outputPixelFormat: outputPixelFormat
           ) else {
-      if let wgpuRenderer {
-        VPWgpuMetalRendererDestroy(wgpuRenderer)
-      }
       return nil
     }
 
@@ -225,9 +165,7 @@ final class MacOSNativeCompositorView: NSView {
     self.latencyProfiler = latencyProfiler
     self.outputPixelFormat = outputPixelFormat
     self.outputMode = configuration.compositorOutputMode
-    self.useWgpuCompositor = useWgpuCompositor
     self.textureCache = cache
-    self.wgpuRenderer = wgpuRenderer
     self.engine = engine
     super.init(frame: .zero)
     compositorQueue.setSpecific(key: compositorQueueKey, value: true)
@@ -248,12 +186,6 @@ final class MacOSNativeCompositorView: NSView {
 
   required init?(coder: NSCoder) {
     return nil
-  }
-
-  deinit {
-    if let wgpuRenderer {
-      VPWgpuMetalRendererDestroy(wgpuRenderer)
-    }
   }
 
   override func hitTest(_ point: NSPoint) -> NSView? {
@@ -541,14 +473,14 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorInFlightWaitP95Ms"] = inFlightWaitDuration.p95Ms()
     result["nativeCompositorDrawableAcquireLastMs"] = drawableAcquireDuration.lastMs()
     result["nativeCompositorDrawableAcquireP95Ms"] = drawableAcquireDuration.p95Ms()
-    result["nativeCompositorWgpuSubmitCpuLastMs"] = wgpuSubmitCpuDuration.lastMs()
-    result["nativeCompositorWgpuSubmitCpuP95Ms"] = wgpuSubmitCpuDuration.p95Ms()
-    result["nativeCompositorWgpuCompletionLastMs"] = wgpuCompletionDuration.lastMs()
-    result["nativeCompositorWgpuCompletionP95Ms"] = wgpuCompletionDuration.p95Ms()
-    result["nativeCompositorWgpuLastSubmittedFrame"] = lastWgpuSubmittedFrame
-    result["nativeCompositorWgpuLastCompletedFrame"] = lastWgpuCompletedFrame
-    result["nativeCompositorWgpuPendingCompletionCount"] = pendingWgpuCompletionCount
-    result["nativeCompositorWgpuLastCompletionResult"] = lastWgpuCompletionResult
+    result["nativeCompositorBackendSubmitCpuLastMs"] = 0.0
+    result["nativeCompositorBackendSubmitCpuP95Ms"] = 0.0
+    result["nativeCompositorBackendCompletionLastMs"] = 0.0
+    result["nativeCompositorBackendCompletionP95Ms"] = 0.0
+    result["nativeCompositorBackendLastSubmittedFrame"] = 0
+    result["nativeCompositorBackendLastCompletedFrame"] = 0
+    result["nativeCompositorBackendPendingCompletionCount"] = 0
+    result["nativeCompositorBackendLastCompletionResult"] = 0
     result["nativeCompositorStaticSkipHz"] = staticSkipRate.rateHz()
     result["nativeCompositorInFlightSkipHz"] = inFlightSkipRate.rateHz()
     result["nativeCompositorSourceChangeHz"] = sourceChangeRate.rateHz()
@@ -568,7 +500,7 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorDrawableWidth"] = Int(metalLayer.drawableSize.width)
     result["nativeCompositorDrawableHeight"] = Int(metalLayer.drawableSize.height)
     result["nativeCompositorOutputMode"] = outputMode
-    result["nativeCompositorBackend"] = useWgpuCompositor ? "wgpu-metal-thin-runner" : "metal"
+    result["nativeCompositorBackend"] = "metal"
     result["nativeCompositorOutputPixelFormat"] = String(describing: outputPixelFormat)
     result["nativeCompositorEDREnabled"] = outputPixelFormat == .rgba16Float
     result["nativeCompositorEDRWantsExtendedDynamicRangeContent"] =
@@ -679,43 +611,25 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorSource1DisplayOffsetYX1000"] = Int(sourceProjDisplayOffsetY.y * 1000.0)
     result["nativeCompositorSource1InvDisplaySizeXX1000"] = Int(sourceProjInvDisplaySizeX.y * 1000.0)
     result["nativeCompositorSource1InvDisplaySizeYX1000"] = Int(sourceProjInvDisplaySizeY.y * 1000.0)
-    result["nativeCompositorWgpuLastCompletionResult"] = Int(lastWgpuCompletionResult)
-    result["nativeCompositorWgpuDestinationImportCount"] =
-      Int(min(lastWgpuProfilerSnapshot.destination_import_count, UInt64(Int.max)))
-    result["nativeCompositorWgpuDestinationImportReuseCount"] =
-      Int(min(lastWgpuProfilerSnapshot.destination_import_reuse_count, UInt64(Int.max)))
-    result["nativeCompositorWgpuSourceImportCount"] =
-      Int(min(lastWgpuProfilerSnapshot.source_import_count, UInt64(Int.max)))
-    result["nativeCompositorWgpuSourceImportReuseCount"] =
-      Int(min(lastWgpuProfilerSnapshot.source_import_reuse_count, UInt64(Int.max)))
-    result["nativeCompositorWgpuImportedTextureCacheSize"] =
-      Int(min(lastWgpuProfilerSnapshot.imported_texture_cache_size, UInt64(Int.max)))
-    result["nativeCompositorWgpuImportedTextureCacheEvictionCount"] =
-      Int(min(lastWgpuProfilerSnapshot.imported_texture_cache_eviction_count, UInt64(Int.max)))
-    result["nativeCompositorWgpuFinalBindGroupCreateCount"] =
-      Int(min(lastWgpuProfilerSnapshot.final_bind_group_create_count, UInt64(Int.max)))
-    result["nativeCompositorWgpuOverlayBindGroupCreateCount"] =
-      Int(min(lastWgpuProfilerSnapshot.overlay_bind_group_create_count, UInt64(Int.max)))
-    result["nativeCompositorWgpuOverlayLayerRebuildCount"] =
-      Int(min(lastWgpuProfilerSnapshot.overlay_layer_rebuild_count, UInt64(Int.max)))
-    result["nativeCompositorWgpuOverlayLayerReuseCount"] =
-      Int(min(lastWgpuProfilerSnapshot.overlay_layer_reuse_count, UInt64(Int.max)))
-    result["nativeCompositorWgpuSubmitCount"] =
-      Int(min(lastWgpuProfilerSnapshot.submit_count, UInt64(Int.max)))
-    result["nativeCompositorWgpuLastImportUs"] =
-      Int(min(lastWgpuProfilerSnapshot.last_import_us, UInt64(Int.max)))
-    result["nativeCompositorWgpuLastPrepareUs"] =
-      Int(min(lastWgpuProfilerSnapshot.last_prepare_us, UInt64(Int.max)))
-    result["nativeCompositorWgpuLastOverlayEncodeUs"] =
-      Int(min(lastWgpuProfilerSnapshot.last_overlay_encode_us, UInt64(Int.max)))
-    result["nativeCompositorWgpuLastBindGroupUs"] =
-      Int(min(lastWgpuProfilerSnapshot.last_bind_group_us, UInt64(Int.max)))
-    result["nativeCompositorWgpuLastPassEncodeUs"] =
-      Int(min(lastWgpuProfilerSnapshot.last_pass_encode_us, UInt64(Int.max)))
-    result["nativeCompositorWgpuLastSubmitUs"] =
-      Int(min(lastWgpuProfilerSnapshot.last_submit_us, UInt64(Int.max)))
-    result["nativeCompositorWgpuLastCpuRenderUs"] =
-      Int(min(lastWgpuProfilerSnapshot.last_cpu_render_us, UInt64(Int.max)))
+    result["nativeCompositorBackendLastCompletionResult"] = 0
+    result["nativeCompositorBackendDestinationImportCount"] = 0
+    result["nativeCompositorBackendDestinationImportReuseCount"] = 0
+    result["nativeCompositorBackendSourceImportCount"] = 0
+    result["nativeCompositorBackendSourceImportReuseCount"] = 0
+    result["nativeCompositorBackendImportedTextureCacheSize"] = 0
+    result["nativeCompositorBackendImportedTextureCacheEvictionCount"] = 0
+    result["nativeCompositorBackendFinalBindGroupCreateCount"] = 0
+    result["nativeCompositorBackendOverlayBindGroupCreateCount"] = 0
+    result["nativeCompositorBackendOverlayLayerRebuildCount"] = 0
+    result["nativeCompositorBackendOverlayLayerReuseCount"] = 0
+    result["nativeCompositorBackendSubmitCount"] = 0
+    result["nativeCompositorBackendLastImportUs"] = 0
+    result["nativeCompositorBackendLastPrepareUs"] = 0
+    result["nativeCompositorBackendLastOverlayEncodeUs"] = 0
+    result["nativeCompositorBackendLastBindGroupUs"] = 0
+    result["nativeCompositorBackendLastPassEncodeUs"] = 0
+    result["nativeCompositorBackendLastSubmitUs"] = 0
+    result["nativeCompositorBackendLastCpuRenderUs"] = 0
     result.merge(latencyProfiler.diagnosticMap()) { _, next in next }
     return result
   }
@@ -846,63 +760,6 @@ final class MacOSNativeCompositorView: NSView {
         return
       }
       drawableAcquireDuration.record(Self.elapsedNs(from: drawableAcquireStartNs))
-      if useWgpuCompositor {
-        let wgpuSubmitStartNs = DispatchTime.now().uptimeNanoseconds
-        let ok = drawWgpuComposite(
-          drawable: drawable,
-          video: video,
-          flutter: flutter,
-          sourceCache: sourceCache,
-          holeRect: holeRect,
-          layoutFlags: layoutFlags,
-          sourceProjectionEnabled: sourceProjectionEnabled,
-          colorFlags: colorFlags,
-          backgroundColor: backgroundColor,
-          frame: frameCount + 1,
-          submittedNs: wgpuSubmitStartNs
-        )
-        wgpuSubmitCpuDuration.record(Self.elapsedNs(from: wgpuSubmitStartNs))
-        guard ok else {
-          inFlightSemaphore.signal()
-          return
-        }
-        lastWgpuSubmittedFrame = frameCount + 1
-        pendingWgpuCompletionCount += 1
-        // WGPU owns encoding/submission into the imported drawable texture. The
-        // Swift runner owns CAMetalDrawable presentation; completion below only
-        // confirms the submitted GPU work drained and updates success diagnostics.
-        drawable.present()
-        setHiddenOnMain(false)
-        frameCount += 1
-        compositeRate.record()
-        if let trace = pendingCompositeTrace {
-          pendingCompositeTrace = nil
-          latencyProfiler.recordComposited(trace, compositeNs: nowNs)
-        }
-        lastVideoTextureAvailable = true
-        lastFlutterTextureAvailable = true
-        lastVideoSRGBToLinearEnabled = colorFlags.y > 0.5
-        lastFlutterSRGBToLinearEnabled = colorFlags.z > 0.5
-        lastPresentedVideoSourceKey = videoSnapshot.sourceKey
-        lastPresentedFlutterSourceKey = flutterSnapshot.sourceKey
-        lastPresentedSourceCacheGeneration = sourceCache.generation
-        compositorDirty = false
-        frameCpuDuration.record(Self.elapsedNs(from: tickStartNs))
-        logCompositeFrameSummary(
-          frame: frameCount,
-          video: video,
-          flutter: flutter,
-          sourceCacheActive: sourceCacheActive,
-          sourceProjectionEnabled: sourceProjectionEnabled,
-          holeRect: holeRect,
-          backgroundColor: backgroundColor,
-          sourceDisplayOffsetX: sourceDisplayOffsetX,
-          sourceDisplayOffsetY: sourceDisplayOffsetY,
-          sourceInvDisplaySizeX: sourceInvDisplaySizeX,
-          sourceInvDisplaySizeY: sourceInvDisplaySizeY
-        )
-        return
-      }
       let overlayVertices = sourceCacheActive
         ? buildOverlayVertices(
             primitives: overlayPrimitives,
@@ -1325,9 +1182,9 @@ final class MacOSNativeCompositorView: NSView {
     }
     let compositeSummary = String(
       format:
-        "NativeCompositorComposite frame=%d backend=%@ mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d layoutRevision=%llu sourceProjection=%d sourceProjectionEnabled=%d hole=%.4f,%.4f,%.4f,%.4f source0Offset=%.4f,%.4f source0InvSize=%.4f,%.4f bg=%.3f,%.3f,%.3f,%.3f frameCpuLastMs=%.2f videoAcquireLastMs=%.2f flutterAcquireLastMs=%.2f sourceAcquireLastMs=%.2f drawableAcquireLastMs=%.2f wgpuSubmitLastMs=%.2f wgpuCompletionP95Ms=%.2f",
-      frame,
-      useWgpuCompositor ? "wgpu-metal-thin-runner" : "metal",
+        "NativeCompositorComposite frame=%d backend=%@ mode=%@ video=%dx%d flutter=%dx%d drawable=%dx%d layoutRevision=%llu sourceProjection=%d sourceProjectionEnabled=%d hole=%.4f,%.4f,%.4f,%.4f source0Offset=%.4f,%.4f source0InvSize=%.4f,%.4f bg=%.3f,%.3f,%.3f,%.3f frameCpuLastMs=%.2f videoAcquireLastMs=%.2f flutterAcquireLastMs=%.2f sourceAcquireLastMs=%.2f drawableAcquireLastMs=%.2f",
+        frame,
+      "metal",
       outputMode,
       video.width,
       video.height,
@@ -1354,302 +1211,11 @@ final class MacOSNativeCompositorView: NSView {
       videoAcquireDuration.lastMs(),
       flutterAcquireDuration.lastMs(),
       sourceAcquireDuration.lastMs(),
-      drawableAcquireDuration.lastMs(),
-      wgpuSubmitCpuDuration.lastMs(),
-      wgpuCompletionDuration.p95Ms()
+      drawableAcquireDuration.lastMs()
     )
     compositeSummary.withCString { pointer in
       VPMacOSLogProfilerSummary(pointer)
     }
-  }
-
-  private func finishWgpuComposite(
-    result: Int32,
-    frame: Int,
-    submittedNs: UInt64,
-    completedNs: UInt64
-  ) {
-    inFlightSemaphore.signal()
-    pendingWgpuCompletionCount = max(0, pendingWgpuCompletionCount - 1)
-    lastWgpuCompletedFrame = max(lastWgpuCompletedFrame, frame)
-    lastWgpuCompletionResult = result
-    if submittedNs > 0, completedNs >= submittedNs {
-      wgpuCompletionDuration.record(completedNs - submittedNs)
-    }
-    if let wgpuRenderer {
-      var snapshot = VPWgpuMetalProfilerSnapshot()
-      if VPWgpuMetalRendererGetProfilerSnapshot(wgpuRenderer, &snapshot) == 0 {
-        lastWgpuProfilerSnapshot = snapshot
-      }
-    }
-    if result == 0 {
-      lastCompositeSucceeded = true
-      lastFailure = ""
-    } else {
-      lastCompositeSucceeded = false
-      lastFailure = "wgpu-metal runner composite completion failed result=\(result)"
-      if lastFailure != lastLoggedFailure || frame == 1 || frame % 120 == 0 {
-        lastLoggedFailure = lastFailure
-        NSLog(
-          "VoidPlayer native compositor failure backend=wgpu-metal-thin-runner frame=\(frame): \(lastFailure)"
-        )
-      }
-    }
-    if MacOSProfilerLog.enabled && (frame == 1 || frame % 120 == 0 || result != 0) {
-      let summary = String(
-        format:
-          "NativeCompositorWgpuCompletion frame=%d result=%d completionLastMs=%.2f completionP95Ms=%.2f rustImportUs=%llu rustPrepareUs=%llu rustBindGroupUs=%llu rustPassEncodeUs=%llu rustSubmitUs=%llu rustCpuRenderUs=%llu destImport=%llu/%llu sourceImport=%llu/%llu cacheSize=%llu cacheEvict=%llu finalBindGroups=%llu overlayBindGroups=%llu overlayLayer=%llu/%llu submitCount=%llu",
-        frame,
-        result,
-        wgpuCompletionDuration.lastMs(),
-        wgpuCompletionDuration.p95Ms(),
-        lastWgpuProfilerSnapshot.last_import_us,
-        lastWgpuProfilerSnapshot.last_prepare_us,
-        lastWgpuProfilerSnapshot.last_bind_group_us,
-        lastWgpuProfilerSnapshot.last_pass_encode_us,
-        lastWgpuProfilerSnapshot.last_submit_us,
-        lastWgpuProfilerSnapshot.last_cpu_render_us,
-        lastWgpuProfilerSnapshot.destination_import_count,
-        lastWgpuProfilerSnapshot.destination_import_reuse_count,
-        lastWgpuProfilerSnapshot.source_import_count,
-        lastWgpuProfilerSnapshot.source_import_reuse_count,
-        lastWgpuProfilerSnapshot.imported_texture_cache_size,
-        lastWgpuProfilerSnapshot.imported_texture_cache_eviction_count,
-        lastWgpuProfilerSnapshot.final_bind_group_create_count,
-        lastWgpuProfilerSnapshot.overlay_bind_group_create_count,
-        lastWgpuProfilerSnapshot.overlay_layer_rebuild_count,
-        lastWgpuProfilerSnapshot.overlay_layer_reuse_count,
-        lastWgpuProfilerSnapshot.submit_count
-      )
-      summary.withCString { pointer in
-        VPMacOSLogProfilerSummary(pointer)
-      }
-    }
-  }
-
-  fileprivate func completeWgpuCompositeFromCallback(
-    result: Int32,
-    frame: Int,
-    submittedNs: UInt64,
-    completedNs: UInt64
-  ) {
-    compositorQueue.async {
-      self.finishWgpuComposite(
-        result: result,
-        frame: frame,
-        submittedNs: submittedNs,
-        completedNs: completedNs
-      )
-    }
-  }
-
-  private func drawWgpuComposite(
-    drawable: CAMetalDrawable,
-    video: MTLTexture,
-    flutter: MTLTexture,
-    sourceCache: SourceCacheTextureSnapshot,
-    holeRect: SIMD4<Float>,
-    layoutFlags: SIMD4<Float>,
-    sourceProjectionEnabled: Bool,
-    colorFlags: SIMD4<Float>,
-    backgroundColor: SIMD4<Float>,
-    frame: Int,
-    submittedNs: UInt64
-  ) -> Bool {
-    guard let wgpuRenderer else {
-      recordFailure("wgpu-metal runner renderer is unavailable")
-      return false
-    }
-    guard let videoFormat = Self.wgpuTextureFormat(texture: video),
-          let flutterFormat = Self.wgpuTextureFormat(texture: flutter),
-          let outputFormat = Self.wgpuOutputFormat(pixelFormat: outputPixelFormat) else {
-      recordFailure("wgpu-metal runner texture format is unsupported")
-      return false
-    }
-
-    let outputWidth = max(1, drawable.texture.width)
-    let outputHeight = max(1, drawable.texture.height)
-    let viewportRect = SIMD4<Float>(
-      max(0, min(Float(outputWidth), holeRect.x * Float(outputWidth))),
-      max(0, min(Float(outputHeight), holeRect.y * Float(outputHeight))),
-      max(1, (holeRect.z - holeRect.x) * Float(outputWidth)),
-      max(1, (holeRect.w - holeRect.y) * Float(outputHeight))
-    )
-    let sourceProjectionActive = sourceProjectionEnabled
-    let overlayActive = sourceProjectionActive && !sourceCache.textures.isEmpty
-    var decision = VPMacOSNativePresentDecisionInfo()
-    decision.should_present = 1
-    decision.frame_count = 1
-    decision.track_count = Int32(max(1, min(4, Int(layoutFlags.w.rounded()))))
-    decision.mode = Int32(layoutFlags.y.rounded())
-    decision.split_pos = layoutFlags.z
-    Self.writeFixedFloatArray(&decision.background_color, [
-      backgroundColor.x,
-      backgroundColor.y,
-      backgroundColor.z,
-      backgroundColor.w,
-    ])
-    Self.writeFixedInt32Array(&decision.order, [
-      Int32(sourceCache.order.x.rounded()),
-      Int32(sourceCache.order.y.rounded()),
-      Int32(sourceCache.order.z.rounded()),
-      Int32(sourceCache.order.w.rounded()),
-    ])
-    Self.writeFixedFloatArray(&decision.display_offset_x, [
-      sourceCache.displayOffsetX.x,
-      sourceCache.displayOffsetX.y,
-      sourceCache.displayOffsetX.z,
-      sourceCache.displayOffsetX.w,
-    ])
-    Self.writeFixedFloatArray(&decision.display_offset_y, [
-      sourceCache.displayOffsetY.x,
-      sourceCache.displayOffsetY.y,
-      sourceCache.displayOffsetY.z,
-      sourceCache.displayOffsetY.w,
-    ])
-    Self.writeFixedFloatArray(&decision.inv_display_size_x, [
-      sourceCache.invDisplaySizeX.x,
-      sourceCache.invDisplaySizeX.y,
-      sourceCache.invDisplaySizeX.z,
-      sourceCache.invDisplaySizeX.w,
-    ])
-    Self.writeFixedFloatArray(&decision.inv_display_size_y, [
-      sourceCache.invDisplaySizeY.x,
-      sourceCache.invDisplaySizeY.y,
-      sourceCache.invDisplaySizeY.z,
-      sourceCache.invDisplaySizeY.w,
-    ])
-    Self.writeFixedFloatArray(&decision.view_offset_uv_x, [
-      sourceCache.viewOffsetUvX.x,
-      sourceCache.viewOffsetUvX.y,
-      sourceCache.viewOffsetUvX.z,
-      sourceCache.viewOffsetUvX.w,
-    ])
-    Self.writeFixedFloatArray(&decision.view_offset_uv_y, [
-      sourceCache.viewOffsetUvY.x,
-      sourceCache.viewOffsetUvY.y,
-      sourceCache.viewOffsetUvY.z,
-      sourceCache.viewOffsetUvY.w,
-    ])
-
-    var sourceWidths = [Int32](repeating: Int32(video.width), count: 4)
-    var sourceHeights = [Int32](repeating: Int32(video.height), count: 4)
-    var present = [Int32](repeating: 0, count: 4)
-    var sourceTextures = [VPWgpuMetalRunnerTexture](
-      repeating: VPWgpuMetalRunnerTexture(),
-      count: 4
-    )
-    for slot in 0..<4 {
-      if sourceProjectionActive, let texture = sourceCache.textures[slot],
-         let format = Self.wgpuTextureFormat(texture: texture) {
-        present[slot] = 1
-        sourceWidths[slot] = Int32(texture.width)
-        sourceHeights[slot] = Int32(texture.height)
-        sourceTextures[slot] = Self.runnerTexture(texture: texture, format: format, present: true)
-      }
-    }
-    if !sourceProjectionActive {
-      present[0] = 1
-    }
-    Self.writeFixedInt32Array(&decision.source_width, sourceWidths)
-    Self.writeFixedInt32Array(&decision.source_height, sourceHeights)
-    Self.writeFixedInt32Array(&decision.color_range, [2, 2, 2, 2])
-    Self.writeFixedInt32Array(&decision.color_matrix, [2, 2, 2, 2])
-    Self.writeFixedInt32Array(&decision.color_transfer, [1, 1, 1, 1])
-    Self.writeFixedInt32Array(&decision.color_primaries, [2, 2, 2, 2])
-    Self.writeFrameArray(&decision.frames) { frames in
-      for slot in 0..<4 {
-        var frame = VPMacOSNativePresentFrameInfo()
-        frame.present = present[slot]
-        frame.slot = Int32(slot)
-        frame.width = sourceWidths[slot]
-        frame.height = sourceHeights[slot]
-        frame.color_range = 2
-        frame.color_matrix = 2
-        frame.color_transfer = 1
-        frame.color_primaries = 2
-        frames[slot] = frame
-      }
-    }
-
-    let fillRects = overlayActive ? overlayPrimitives.fillRects : []
-    let lineRects = overlayActive ? overlayPrimitives.lineRects : []
-    let motionLines = overlayActive ? overlayPrimitives.motionLines : []
-    var error = [CChar](repeating: 0, count: 512)
-    let context = MacOSNativeCompositorWgpuCallbackContext(
-      view: self,
-      frame: frame,
-      submittedNs: submittedNs
-    )
-    let retainedContext = Unmanaged.passRetained(context)
-    let ret = fillRects.withUnsafeBufferPointer { fillBuffer in
-      lineRects.withUnsafeBufferPointer { lineBuffer in
-        motionLines.withUnsafeBufferPointer { motionBuffer in
-          withUnsafePointer(to: &decision) { decisionPointer in
-            error.withUnsafeMutableBufferPointer { errorBuffer in
-              var request = VPWgpuMetalRunnerCompositeRequest()
-              request.destination_mtl_texture = Self.rawPointer(drawable.texture)
-              request.output_format = outputFormat
-              request.output_color_mode = outputPixelFormat == .rgba16Float
-                ? Int32(VP_WGPU_METAL_OUTPUT_COLOR_MODE_EDR)
-                : Int32(VP_WGPU_METAL_OUTPUT_COLOR_MODE_SDR)
-              request.video = Self.runnerTexture(
-                texture: video,
-                format: videoFormat,
-                present: true
-              )
-              request.flutter = Self.runnerTexture(
-                texture: flutter,
-                format: flutterFormat,
-                present: true
-              )
-              Self.writeRunnerTextureArray(&request.sources, sourceTextures)
-              request.decision = decisionPointer
-              Self.writeFixedFloatArray(&request.viewport_rect, [
-                viewportRect.x,
-                viewportRect.y,
-                viewportRect.z,
-                viewportRect.w,
-              ])
-              request.source_cache_active =
-                (sourceProjectionActive && !sourceCache.textures.isEmpty) ? 1 : 0
-              request.video_srgb_to_linear = colorFlags.y > 0.5 ? 1 : 0
-              request.flutter_srgb_to_linear = colorFlags.z > 0.5 ? 1 : 0
-              request.source_srgb_to_linear =
-                (outputPixelFormat == .rgba16Float &&
-                  sourceCache.textures.values.contains { $0.pixelFormat == .bgra8Unorm })
-                ? 1
-                : 0
-              request.overlay_fill_rects = fillBuffer.baseAddress
-              request.overlay_fill_rect_count = fillBuffer.count
-              request.overlay_line_rects = lineBuffer.baseAddress
-              request.overlay_line_rect_count = lineBuffer.count
-              request.overlay_motion_lines = motionBuffer.baseAddress
-              request.overlay_motion_line_count = motionBuffer.count
-              request.overlay_generation = overlayPrimitives.generation
-              request.width = Int32(outputWidth)
-              request.height = Int32(outputHeight)
-              request.error = errorBuffer.baseAddress
-              request.error_size = errorBuffer.count
-              var completion = VPWgpuMetalAsyncCompletion()
-              completion.callback = macOSNativeCompositorWgpuCompletion
-              completion.user_data = retainedContext.toOpaque()
-              completion.profiler_snapshot = nil
-              return VPWgpuMetalRendererCompositeRunnerAsync(wgpuRenderer, &request, completion)
-            }
-          }
-        }
-      }
-    }
-    guard ret == 0 else {
-      retainedContext.release()
-      let message = error.withUnsafeBufferPointer { buffer in
-        buffer.baseAddress.map { String(cString: $0) } ?? "wgpu-metal runner composite failed"
-      }
-      recordFailure(message.isEmpty ? "wgpu-metal runner composite failed" : message)
-      return false
-    }
-    return true
   }
 
   private func recordPendingCompositeTrace(_ trace: MacOSCompositorLatencyTrace) {
@@ -1687,42 +1253,6 @@ final class MacOSNativeCompositorView: NSView {
     UnsafeMutableRawPointer(Unmanaged.passUnretained(texture as AnyObject).toOpaque())
   }
 
-  private static func wgpuOutputFormat(pixelFormat: MTLPixelFormat) -> Int32? {
-    switch pixelFormat {
-    case .bgra8Unorm:
-      return Int32(VP_WGPU_METAL_OUTPUT_FORMAT_BGRA8_UNORM)
-    case .rgba16Float:
-      return Int32(VP_WGPU_METAL_OUTPUT_FORMAT_RGBA16_FLOAT)
-    default:
-      return nil
-    }
-  }
-
-  private static func wgpuTextureFormat(texture: MTLTexture) -> Int32? {
-    switch texture.pixelFormat {
-    case .bgra8Unorm:
-      return Int32(VP_WGPU_METAL_TEXTURE_FORMAT_BGRA8_UNORM)
-    case .rgba16Float:
-      return Int32(VP_WGPU_METAL_TEXTURE_FORMAT_RGBA16_FLOAT)
-    default:
-      return nil
-    }
-  }
-
-  private static func runnerTexture(
-    texture: MTLTexture,
-    format: Int32,
-    present: Bool
-  ) -> VPWgpuMetalRunnerTexture {
-    var result = VPWgpuMetalRunnerTexture()
-    result.mtl_texture = rawPointer(texture)
-    result.width = Int32(texture.width)
-    result.height = Int32(texture.height)
-    result.format = format
-    result.present = present ? 1 : 0
-    return result
-  }
-
   private static func writeFixedInt32Array<T>(_ storage: inout T, _ values: [Int32]) {
     withUnsafeMutableBytes(of: &storage) { raw in
       let buffer = raw.bindMemory(to: Int32.self)
@@ -1747,18 +1277,6 @@ final class MacOSNativeCompositorView: NSView {
   ) {
     withUnsafeMutableBytes(of: &storage) { raw in
       body(raw.bindMemory(to: VPMacOSNativePresentFrameInfo.self))
-    }
-  }
-
-  private static func writeRunnerTextureArray<T>(
-    _ storage: inout T,
-    _ textures: [VPWgpuMetalRunnerTexture]
-  ) {
-    withUnsafeMutableBytes(of: &storage) { raw in
-      let buffer = raw.bindMemory(to: VPWgpuMetalRunnerTexture.self)
-      for i in 0..<min(buffer.count, textures.count) {
-        buffer[i] = textures[i]
-      }
     }
   }
 
@@ -1931,16 +1449,66 @@ final class MacOSNativeCompositorView: NSView {
       localMin = sortedMin
       localMax = sortedMax
 
+      func intersectRect(
+        min rectMin: SIMD2<Float>,
+        max rectMax: SIMD2<Float>,
+        clipMin: SIMD2<Float>,
+        clipMax: SIMD2<Float>
+      ) -> (SIMD2<Float>, SIMD2<Float>)? {
+        let clippedMin = SIMD2<Float>(
+          Swift.max(rectMin.x, clipMin.x),
+          Swift.max(rectMin.y, clipMin.y)
+        )
+        let clippedMax = SIMD2<Float>(
+          Swift.min(rectMax.x, clipMax.x),
+          Swift.min(rectMax.y, clipMax.y)
+        )
+        guard clippedMax.x > clippedMin.x, clippedMax.y > clippedMin.y else {
+          return nil
+        }
+        return (clippedMin, clippedMax)
+      }
+
       let globalMin: SIMD2<Float>
       let globalMax: SIMD2<Float>
       if mode == 0 && count > 1 {
+        guard let clipped = intersectRect(
+          min: localMin,
+          max: localMax,
+          clipMin: SIMD2<Float>(0, 0),
+          clipMax: SIMD2<Float>(1, 1)
+        ) else {
+          return nil
+        }
         let slotOffset = Float(displaySlot)
         let divisor = Float(count)
-        globalMin = SIMD2<Float>((slotOffset + localMin.x) / divisor, localMin.y)
-        globalMax = SIMD2<Float>((slotOffset + localMax.x) / divisor, localMax.y)
+        globalMin = SIMD2<Float>((slotOffset + clipped.0.x) / divisor, clipped.0.y)
+        globalMax = SIMD2<Float>((slotOffset + clipped.1.x) / divisor, clipped.1.y)
+      } else if mode == 1 && count > 1 {
+        let split = Swift.max(0.0001, Swift.min(0.9999, sourceLayoutFlags.z))
+        let clipMinX: Float = displaySlot == 0 ? 0.0 : split
+        let clipMaxX: Float = displaySlot == 0 ? split : 1.0
+        guard let clipped = intersectRect(
+          min: localMin,
+          max: localMax,
+          clipMin: SIMD2<Float>(clipMinX, 0),
+          clipMax: SIMD2<Float>(clipMaxX, 1)
+        ) else {
+          return nil
+        }
+        globalMin = clipped.0
+        globalMax = clipped.1
       } else {
-        globalMin = localMin
-        globalMax = localMax
+        guard let clipped = intersectRect(
+          min: localMin,
+          max: localMax,
+          clipMin: SIMD2<Float>(0, 0),
+          clipMax: SIMD2<Float>(1, 1)
+        ) else {
+          return nil
+        }
+        globalMin = clipped.0
+        globalMax = clipped.1
       }
       return SIMD4<Float>(
         holeMinX + globalMin.x * holeWidth,
@@ -2280,7 +1848,7 @@ final class MacOSNativeCompositorView: NSView {
     if message != lastLoggedFailure || frameCount == 1 || frameCount % 120 == 0 {
       lastLoggedFailure = message
       NSLog(
-        "VoidPlayer native compositor failure backend=\(useWgpuCompositor ? "wgpu-metal-thin-runner" : "metal") frame=\(frameCount): \(message)"
+        "VoidPlayer native compositor failure backend=metal frame=\(frameCount): \(message)"
       )
     }
   }
@@ -2594,6 +2162,13 @@ final class MacOSNativeCompositorView: NSView {
           } else {
             video = videoTexture.sample(linearSampler, videoUv);
           }
+        }
+        if (colorFlags.w > 0.5) {
+          // Source-cache textures are already baked by the native renderer into
+          // the compositor output contract. Re-decoding them as SDR here breaks
+          // mixed SDR/HDR sessions when adding a HDR track promotes the runner
+          // compositor to EDR.
+          return video;
         }
         return colorFlags.y > 0.5
           ? float4(srgbToLinear(video.rgb), video.a)

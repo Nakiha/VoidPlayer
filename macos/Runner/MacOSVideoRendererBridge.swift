@@ -689,7 +689,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         : result.error
       if MacOSProfilerLog.enabled {
         NSLog(
-          "VoidPlayer WGPU source provider subscribe failed reason=\(reason) " +
+          "VoidPlayer native Metal source provider subscribe failed reason=\(reason) " +
             "topology=\(candidateTopologyRevision) " +
             "drawnMask=\(result.drawnMask) missingMask=\(result.missingMask) " +
             "error=\(nativeCompositorSourceTopologyCommitLastError)"
@@ -704,7 +704,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     setNativeCompositorSourceProviderActive(true)
     if MacOSProfilerLog.enabled {
       NSLog(
-        "VoidPlayer WGPU source provider subscribed reason=\(reason) " +
+        "VoidPlayer native Metal source provider subscribed reason=\(reason) " +
           "topology=\(nativeCompositorSourceTopologyRevision)"
       )
     }
@@ -729,7 +729,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       return true
     } catch {
       NSLog(
-        "VoidPlayer WGPU source provider preview not ready reason=\(reason) expectedFileIds=\(expectedFileIds) error=\(error)"
+        "VoidPlayer native Metal source provider preview not ready reason=\(reason) expectedFileIds=\(expectedFileIds) error=\(error)"
       )
       return false
     }
@@ -1202,7 +1202,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     player.noteViewportCompositorActivity()
     sourceRing.requestRefresh(player: player)
     if MacOSProfilerLog.enabled {
-      NSLog("VoidPlayer WGPU source provider primed reason=\(reason)")
+      NSLog("VoidPlayer native Metal source provider primed reason=\(reason)")
     }
   }
 
@@ -1221,7 +1221,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     if result.published {
       if MacOSProfilerLog.enabled {
         NSLog(
-          "VoidPlayer WGPU source provider published reason=\(reason) " +
+          "VoidPlayer native Metal source provider published reason=\(reason) " +
             "publish=\(result.publishCount) ptsUs=\(result.ptsUs) " +
             "drawnMask=\(result.drawnMask) reusedMask=\(result.reusedMask)"
         )
@@ -1233,7 +1233,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       : result.error
     if MacOSProfilerLog.enabled {
       NSLog(
-        "VoidPlayer WGPU source provider publish failed reason=\(reason) " +
+        "VoidPlayer native Metal source provider publish failed reason=\(reason) " +
           "publish=\(result.publishCount) drawnMask=\(result.drawnMask) " +
           "missingMask=\(result.missingMask) error=\(error)"
       )

@@ -124,16 +124,21 @@ enum MacOSVideoRendererStartupFactory {
       nativeWidth: requestedWidth,
       nativeHeight: requestedHeight
     )
-    let firstFrame = try texture.updateFromNativePlayer(
+    guard texture.installNativePresentationTarget(
       session,
-      maxTrackSlots: 1,
-      waitTimeoutMs: 3_000
-    )
-    let trackWidth = session.width() > 0 ? session.width() : firstFrame.width
-    let trackHeight = session.height() > 0 ? session.height() : firstFrame.height
+      maxTrackSlots: max(1, paths.count),
+      refresh: false
+    ) else {
+      throw MacOSNativePlayerError.failed(
+        "failed to install renderer-owned Metal presentation target ring"
+      )
+    }
     let sessionDurationUs = session.durationUs()
     let trackDurationUs = max(0, sessionDurationUs)
     let firstMetadata = try session.trackMetadata(fileId: 0)
+    let firstFrame = session.lastRendererOwnedFrameInfo()
+    let trackWidth = firstMetadata.width > 0 ? firstMetadata.width : (firstFrame?.width ?? requestedWidth)
+    let trackHeight = firstMetadata.height > 0 ? firstMetadata.height : (firstFrame?.height ?? requestedHeight)
     var tracks = [
       MacOSVideoTrackPayload.nativeTrack(
         path: firstPath,
@@ -177,8 +182,10 @@ enum MacOSVideoRendererStartupFactory {
       nativePlayer: session,
       tracks: tracks,
       trackDurationUs: trackDurationUs,
-      initialPresentedPtsUs: firstFrame.ptsUs,
-      initialPresentedDtsUs: MacOSFramePresentationState.normalizedDtsUs(firstFrame),
+      initialPresentedPtsUs: firstFrame?.ptsUs ?? 0,
+      initialPresentedDtsUs: firstFrame.map {
+        MacOSFramePresentationState.normalizedDtsUs($0)
+      } ?? 0,
       presentationTargetInstalled: session.rendererOwnedPresentationActive()
     )
   }

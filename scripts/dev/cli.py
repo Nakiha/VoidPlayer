@@ -80,11 +80,10 @@ Examples:
   python dev.py gate pr-fast
   python dev.py gate macos-ui-smoke
   python dev.py gate macos-hdr-edr-smoke
-  python dev.py gate macos-wgpu-metal-smoke
-  python dev.py gate macos-wgpu-metal-edr-smoke
   python dev.py gate macos-release-readiness
   python dev.py gate flutter-fork-protection
   python dev.py gate macos-platform-protection
+  python dev.py gate windows-fork-protection
   python dev.py package
   python dev.py package --installer
   python dev.py package --installer --macos-sign-identity "Developer ID Application: Team" --macos-notarize --macos-notary-profile PROFILE
@@ -149,17 +148,11 @@ Examples:
             "macos-ui-smoke",
             "macos-ui-nightly",
             "macos-hdr-edr-smoke",
-            "macos-wgpu-metal-smoke",
-            "macos-wgpu-metal-edr-smoke",
             "macos-release-readiness",
             "repo-hygiene",
             "flutter-fork-protection",
             "macos-platform-protection",
             "windows-fork-protection",
-            "windows-cross-adapter-local",
-            "windows-high-refresh-local",
-            "windows-hdr-auto",
-            "windows-preservation",
             "release-candidate",
         ],
         help="Gate profile to run",

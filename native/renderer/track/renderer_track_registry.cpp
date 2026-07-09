@@ -18,7 +18,7 @@ std::unique_ptr<TrackPipeline> RendererTrackRegistry::create_pipeline(
     const SeekRequest* initial_seek) const {
     TrackPipelineOpenOptions options;
     options.render_backend = render_backend;
-    if (render_backend == RenderBackendKind::WgpuD3D12 && render_device) {
+    if (render_backend == RenderBackendKind::NativeD3D12 && render_device) {
         options.use_default_decode_device_mode = false;
         options.decode_device_mode = DecodeDeviceMode::SharedRenderDevice;
         options.render_device = render_device;

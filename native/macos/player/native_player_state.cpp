@@ -101,7 +101,7 @@ bool probe_videotoolbox_h264() {
   }
 
   vr::HwDecodeInitParams params;
-  params.backend = vr::RenderBackendType::WgpuMetal;
+  params.backend = vr::default_render_backend_kind();
   params.device_mode = videotoolbox_hwdownload_forced_by_env()
       ? vr::DecodeDeviceMode::FfmpegOwnedHwDownloadDevice
       : vr::DecodeDeviceMode::IndependentDevice;
@@ -212,15 +212,13 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   config.height = height;
   config.headless = true;
   if (vp_macos::legacy_metal_requested_by_env()) {
-    spdlog::warn(
-        "[MacOSNativePlayer] legacy Metal renderer backend was removed; using "
-        "wgpu-metal");
+    spdlog::info("[MacOSNativePlayer] using native Metal renderer backend");
   }
   config.use_hardware_decode =
       use_hardware_decode &&
       !vp_macos::videotoolbox_disabled_by_env();
   config.initial_file_id = 0;
-  config.backend.type = vr::RendererBackendType::WgpuMetal;
+  config.backend.type = vr::RendererBackendType::Metal;
   config.backend.output = output;
   config.backend.max_track_slots =
       std::clamp(max_track_slots,

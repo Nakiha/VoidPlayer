@@ -180,12 +180,12 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
     device_mutex_ = device_mutex;
 
     const auto stream_format = static_cast<AVPixelFormat>(codec_params_->format);
-    if (backend == RenderBackendKind::WgpuD3D12 &&
+    if (backend == RenderBackendKind::NativeD3D12 &&
         mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice &&
         !renderer_owned_d3d12_supports_stream_format(stream_format)) {
         const char* name = av_get_pix_fmt_name(stream_format);
         spdlog::info("[DecodeThread] Hardware decode disabled for stream pixel format {} ({}) "
-                     "because renderer-owned wgpu-d3d12 path only supports NV12/P010-like 4:2:0 surfaces",
+                     "because renderer-owned native-d3d12 path only supports NV12/P010-like 4:2:0 surfaces",
                      static_cast<int>(stream_format), name ? name : "unknown");
         hw_enabled_ = false;
         const AVCodec* sw_codec = preferred_software_decoder();
@@ -196,13 +196,12 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
         }
         return false;
     }
-    if ((backend == RenderBackendKind::Metal ||
-         backend == RenderBackendKind::WgpuMetal) &&
+    if (backend == RenderBackendKind::Metal &&
         mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice &&
         !renderer_owned_metal_supports_stream_format(stream_format)) {
         const char* name = av_get_pix_fmt_name(stream_format);
         spdlog::info("[DecodeThread] Hardware decode disabled for stream pixel format {} ({}) "
-                     "because renderer-owned Metal/wgpu-metal path only supports NV12/P010-like 4:2:0 surfaces",
+                     "because renderer-owned Metal path only supports NV12/P010-like 4:2:0 surfaces",
                      static_cast<int>(stream_format), name ? name : "unknown");
         hw_enabled_ = false;
         const AVCodec* sw_codec = preferred_software_decoder();

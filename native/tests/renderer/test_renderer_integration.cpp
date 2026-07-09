@@ -372,13 +372,13 @@ TEST_CASE("Renderer: texture sharing failure increments presentation metrics", "
 // Headless-mode tests (hardware decode — mirrors Flutter plugin setup)
 // =============================================================================
 
-TEST_CASE("Renderer: headless wgpu-d3d12 mode requires an output target", "[renderer][hw]") {
+TEST_CASE("Renderer: headless native-d3d12 mode requires an output target", "[renderer][hw]") {
     Renderer renderer;
 
     RendererConfig config;
     config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
     config.headless = true;
-    config.backend.type = RendererBackendType::WgpuD3D12;
+    config.backend.type = RendererBackendType::NativeD3D12;
     config.backend.output = nullptr;
     config.backend.shared_fp16_output = true;
     config.width = 640;
@@ -395,7 +395,7 @@ TEST_CASE("Renderer: headless hw decode initialize", "[renderer][hw]") {
     RendererConfig config;
     config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
     config.headless = true;
-    config.backend.type = RendererBackendType::WgpuD3D12;
+    config.backend.type = RendererBackendType::NativeD3D12;
     config.backend.output = reinterpret_cast<void*>(0x9abc);
     config.backend.shared_fp16_output = true;
     config.width = 640;
@@ -422,7 +422,7 @@ TEST_CASE("Renderer: headless hw decode play", "[renderer][hw]") {
     RendererConfig config;
     config.video_paths = { video_test_dir() + "/h264_9s_1920x1080.mp4" };
     config.headless = true;
-    config.backend.type = RendererBackendType::WgpuD3D12;
+    config.backend.type = RendererBackendType::NativeD3D12;
     config.backend.output = reinterpret_cast<void*>(0x9abc);
     config.backend.shared_fp16_output = true;
     config.width = 640;
@@ -453,7 +453,7 @@ TEST_CASE("Renderer: headless hw decode multi-track", "[renderer][hw]") {
         video_test_dir() + "/h265_10s_1920x1080.mp4"
     };
     config.headless = true;
-    config.backend.type = RendererBackendType::WgpuD3D12;
+    config.backend.type = RendererBackendType::NativeD3D12;
     config.backend.output = reinterpret_cast<void*>(0x9abc);
     config.backend.shared_fp16_output = true;
     config.width = 1280;
@@ -472,7 +472,7 @@ TEST_CASE("Renderer: headless HEVC paused exact seek updates captured frame", "[
     RendererConfig config;
     config.video_paths = { video_test_dir() + "/h265_10s_1920x1080.mp4" };
     config.headless = true;
-    config.backend.type = RendererBackendType::WgpuD3D12;
+    config.backend.type = RendererBackendType::NativeD3D12;
     config.backend.output = reinterpret_cast<void*>(0x9abc);
     config.backend.shared_fp16_output = true;
     config.width = 1280;
@@ -518,7 +518,7 @@ TEST_CASE("Renderer: headless AV1 and VP9 produce visual frames", "[renderer][hw
         RendererConfig config;
         config.video_paths = { file };
         config.headless = true;
-        config.backend.type = RendererBackendType::WgpuD3D12;
+        config.backend.type = RendererBackendType::NativeD3D12;
         config.backend.output = reinterpret_cast<void*>(0x9abc);
         config.backend.shared_fp16_output = true;
         config.width = 1280;

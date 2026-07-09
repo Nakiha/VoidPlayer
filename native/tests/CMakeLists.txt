@@ -51,13 +51,6 @@ add_executable(video_renderer_tests
     decode/test_frame_timestamp_rescaler.cpp
     decode/test_frame_converter.cpp
     decode/test_decode_thread.cpp
-    windows/test_windows_display_resolver.cpp
-    windows/test_windows_d3d12_present_target.cpp
-    windows/test_windows_presentation_policy.cpp
-    windows/test_windows_dcomp_composite.cpp
-    windows/test_windows_device_recovery.cpp
-    windows/test_windows_high_refresh_metrics.cpp
-    windows/test_windows_overlay_layer_state.cpp
     renderer/test_renderer_present_history.cpp
     renderer/test_render_sink.cpp
     renderer/test_track_buffer_budget.cpp

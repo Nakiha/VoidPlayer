@@ -6,8 +6,6 @@ Most detailed documentation lives beside the code it describes:
 - Windows runner: `windows/doc.md`
 - macOS runner: `macos/doc.md`
 - Native C++: `native/docs/`
-- Native compositor convergence:
-  `docs/NATIVE_COMPOSITOR_CONVERGENCE.md`
 - UI automation: `ui_tests/README.md`
 - Toolchains: `toolchains/README.md`
 

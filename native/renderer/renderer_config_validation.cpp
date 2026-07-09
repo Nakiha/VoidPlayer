@@ -21,32 +21,33 @@ RendererConfigValidationResult validate_headless_backend(
     const auto budget = default_native_resource_budget();
     switch (backend.type) {
     case RendererBackendType::Metal:
-        return invalid("macOS Metal renderer backend has been removed; use wgpu-metal");
-    case RendererBackendType::WgpuMetal:
 #ifdef __APPLE__
         if (backend.output == nullptr) {
-            return invalid("headless wgpu-metal renderer requires an output target");
+            return invalid("headless metal renderer requires an output target");
         }
         if (backend.max_track_slots < 0 ||
             static_cast<size_t>(backend.max_track_slots) > budget.max_tracks) {
-            return invalid("headless wgpu-metal renderer max track slots out of range");
+            return invalid("headless metal renderer max track slots out of range");
         }
         return ok_result();
 #else
-        return invalid("wgpu-metal renderer is only supported on macOS");
+        return invalid("metal renderer is only supported on macOS");
 #endif
-    case RendererBackendType::WgpuD3D12:
+    case RendererBackendType::NativeD3D11:
 #ifdef _WIN32
-        if (backend.output == nullptr) {
-            return invalid("headless wgpu-d3d12 renderer requires an output target");
-        }
-        if (backend.max_track_slots < 0 ||
-            static_cast<size_t>(backend.max_track_slots) > budget.max_tracks) {
-            return invalid("headless wgpu-d3d12 renderer max track slots out of range");
-        }
-        return ok_result();
+        return invalid(
+            "windows native-d3d11 renderer backend is reserved for the "
+            "runner-composed sandwich path and is not implemented yet");
 #else
-        return invalid("wgpu-d3d12 renderer is only supported on Windows");
+        return invalid("native-d3d11 renderer is only supported on Windows");
+#endif
+    case RendererBackendType::NativeD3D12:
+#ifdef _WIN32
+        return invalid(
+            "windows native-d3d12 renderer backend is reserved for the "
+            "runner-composed sandwich path and is not implemented yet");
+#else
+        return invalid("native-d3d12 renderer is only supported on Windows");
 #endif
     case RendererBackendType::Unknown:
     case RendererBackendType::Vulkan:

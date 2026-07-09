@@ -18,9 +18,9 @@
 1.94, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, hlg
 1.96, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorPrimaries, bt2020
 2.0, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoSampleCount, 1
-2.02, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoMaxRGBX1000, 1001
 2.06, CAPTURE_VIEWPORT_REGION, native_auto_hlg_policy_roi, 80, 50, 320, 180, 96, build/native_auto_hlg_policy_roi.png
 2.08, ASSERT_CAPTURE_NOT_BLACK, native_auto_hlg_policy_roi, 0.01, 4.0
 2.1, CAPTURE_WINDOW, native_auto_hlg_policy
 2.2, ASSERT_CAPTURE_NOT_BLACK, native_auto_hlg_policy, 0.01, 4.0
+2.3, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorEDRVideoMaxRGBX1000, 1001
 2.4, QUIT, 0

@@ -7,12 +7,9 @@ selected platform presentation target.
 
 The historical production target is SDR BGRA/RGB for a Flutter texture. The
 macOS HDR exploration path adds a native compositor target that outputs extended
-linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows Auto presents
-SDR media through a BGRA8 DComp target and promotes PQ/HLG sessions on an HDR
-output to an FP16/scRGB target using linear BT.709 through the locked-engine
-DirectComposition route. If that HDR output lives on a different adapter, the
-renderer stays on the producer adapter and the compositor migrates only the
-output device through the diagnosed cross-adapter transport.
+linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows native
+presentation is reserved/fail-closed on this branch; a new D3D11/DX12 color
+contract must be documented when that backend is rebuilt.
 
 ## Shared Output Contract
 
@@ -34,7 +31,7 @@ Concrete presentation targets are platform-specific:
 
 | Platform | Backend target | Notes |
 | --- | --- | --- |
-| Windows | wgpu/D3D12 render target with D3D12 Flutter surface import, D3D12 video/source imports, and locked-engine DComp/DXGI present bridge | Auto selects BGRA8 SDR or FP16 scRGB native compositor targets; Flutter Texture SDR is not an allowed fallback. |
+| Windows | reserved native D3D11/DX12 backend | Disabled on this branch; Flutter Texture SDR is not an allowed video fallback. |
 | macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
 | macOS EDR | Native compositor `RGBA16Float` `CAMetalLayer` | Uses `extendedLinearDisplayP3` and composites native video with the exported Flutter texture. |
 
@@ -82,7 +79,7 @@ behavior remain testable.
 | `YUV422P10LE` | CPU P010 | Chroma is vertically downsampled to 4:2:0. |
 | `YUV444P10LE` | CPU P010 | Chroma is 2x2 downsampled to 4:2:0. |
 | D3D11VA NV12/P010/P016 | GPU plane textures | Windows renderer-owned direct path. |
-| VideoToolbox NV12/P010 `CVPixelBuffer` | `CVPixelBuffer` fast path | macOS renderer-owned wgpu-metal path when supported. |
+| VideoToolbox NV12/P010 `CVPixelBuffer` | `CVPixelBuffer` fast path | macOS renderer-owned native-metal path when supported. |
 | BGRA package | BGRA texture/package | Fallback, capture, and parity path. |
 
 4:2:2 and 4:4:4 software frames are currently displayed after downsampling to
@@ -128,67 +125,28 @@ Dolby Vision dynamic metadata / RPU is not consumed yet. Dolby Vision profile 8
 and similar files are displayed through their base HLG/PQ layer when FFmpeg
 reports that transfer metadata; full Dolby Vision grading remains future work.
 
-## Windows wgpu/D3D12 Path
+## Windows native D3D Path
 
-Windows is migrating shader input sampling to wgpu/D3D12 resources:
+Windows native presentation is reserved/fail-closed on this restart branch. The
+old D3D11/DComp/D3D12 color path, source projection, HDR promotion,
+cross-adapter handling, and overlay composition evidence were removed from the
+active docs and gates.
 
-- 8-bit planar YUV420 software frames use `R8` plane textures.
-- NV12 uses Y `R8` and UV `R8G8` plane views.
-- P010/P016 uses Y `R16` and UV `R16G16` plane views.
-- BGRA fallback uses a BGRA texture.
-- The wgpu shader path must share the same range, matrix, primaries, transfer,
-  tone mapping, and final output rules as the legacy HLSL canaries.
+When Windows work resumes, the new D3D11/DX12 sandwich backend must document:
 
-The compatibility pass tone-maps to the BGRA shared texture used by Flutter or
-the native SDR compositor. In native-compositor modes the same
-prepared source snapshot is first rendered to
-`R16G16B16A16_FLOAT`:
+- shader input resource layout for software, hwdownload, and hardware frames;
+- SDR/HDR output formats, reference white, transfer handling, and tone mapping;
+- how the runner composites the exported premultiplied-alpha Flutter surface
+  over native video without color keys, child HWND holes, or desktop capture;
+- deterministic parity tests against the shared color reference and macOS
+  native-metal behavior.
 
-- linear BT.709 primaries
-- `1.0 = 80 nits`
-- SDR/UI colors use sRGB decode and `SDRWhiteLevel / 80`
-- PQ uses absolute nits divided by 80
-- HLG uses the shared headroom/reference-white policy on the 80-nit scale
-- FP16 values are not clamped to the SDR range
+## macOS native-metal / CVPixelBuffer Path
 
-The BGRA compatibility pass rerenders from source rather than tone-mapping the
-mixed FP16 texture. This keeps existing SDR layout/color canaries stable.
-
-In native-compositor mode, the renderer publishes the same linear BT.709 scRGB
-video contract through D3D12 resources. The wgpu final composition shader
-samples the locked engine's full-window premultiplied BGRA Flutter surface,
-restores straight sRGB for transfer decoding, re-premultiplies in linear light,
-applies `SDRWhiteLevel / 80`, and composites it source-over the video.
-Transparent viewport pixels reveal video without color keys or a rectangular
-native hole. The final target capture must preserve video values above `1.0`
-and Flutter alpha-edge behavior. Auto SDR instead samples the source-rerendered
-BGRA compatibility texture into a BGRA8/G22 target where the compatibility
-bridge still requires it.
-Auto HDR uses FP16/G10 scRGB for PQ/HLG media on a resolved HDR output. Matching
-adapters consume the producer leases directly; mismatched adapters bridge the
-same BGRA/scRGB inputs through row-major shared textures and GPU copies without
-changing the color math. Windows does not submit HDR10 metadata, custom ICC
-curves, or LUT corrections; Advanced Color and calibration remain
-system-managed.
-
-For source projection, each active track is rendered with identity layout into
-its source-sized `R16G16B16A16_FLOAT` texture from the same
-`PreparedDrawResources` snapshot. The source pass does not bake analysis
-overlays. The wgpu/D3D12 composite path imports the source textures, applies
-the Dart/macOS projection contract, fills missing/out-of-range UVs with the
-linearized viewport background, composites video-space overlay primitives, then
-composites the exported Flutter surface. Overlay colors are sRGB-decoded and
-scaled by the same SDR white contract on scRGB targets, while SDR targets keep
-the BGRA compatibility contract. The remaining DComp bridge presents the final
-target and does not own source/overlay/Flutter composition. This preserves the order
-`source video -> analysis overlay -> Flutter UI`.
-
-## macOS wgpu-metal / CVPixelBuffer Path
-
-macOS uses the same metadata and layout contract through wgpu-metal:
+macOS uses the same metadata and layout contract through native-metal:
 
 - VideoToolbox zero-copy frames keep their `CVPixelBuffer` storage when the
-  codec and pixel format are supported by the renderer-owned wgpu-metal path.
+  codec and pixel format are supported by the renderer-owned native-metal path.
 - VideoToolbox renderer-owned direct decode is gated to 4:2:0-like stream
   formats before codec open; 4:2:2 / 4:4:4 streams fall back to software decode
   until dedicated CVPixelBuffer/shader layouts exist.
@@ -257,32 +215,17 @@ hardware output for the same source.
 
 ## Parity Gates
 
-Current Windows preservation evidence:
+Current Windows status:
 
-- `windows_d3d11_color_layout_parity_smoke` drives synthetic
-  `RendererDrawSnapshot` inputs through the real D3D11 presentation backend,
-  captures the renderer-owned BGRA output, and compares it with a CPU
-  reference. It covers BGRA channel order, NV12 and planar YUV420
-  full/limited range, P010 high-bit samples, odd dimensions, padded strides,
-  aspect-fit background bars, and split/order layout.
-- `windows_d3d11_fp16_scrgb_smoke` reads back RGBA16F and BGRA outputs from the
-  same draw. It covers SDR white scaling, PQ/HLG, P010, BT.2020 conversion,
-  values above `1.0`, odd/padded storage, background/split/order, overlay hook
-  participation, and source-rerender SDR compatibility.
-- `[windows_source_cache]` and `[windows_source_projection]` tests cover bundle
-  leases/generations, the 384 MiB policy, split/pan/zoom, missing sources, and
-  background fallback. Rebuilt source-projection UI smoke proves the wgpu/D3D12
-  product path imports source/video/Flutter surfaces and preserves the same
-  visible ordering.
-- `[windows_high_refresh]`, `[windows_overlay_layer]`, and
-  `native_high_refresh_overlay_pan_zoom.csv` validate overlay reuse,
-  projection pacing, and high-refresh hot-path behavior without reviving the
-  removed D3D11 retained overlay graph.
+- Windows native presentation is reserved/fail-closed in the back-to-native
+  restart branch. The old D3D11/DComp/D3D12 preservation evidence was removed
+  from active gates and must be replaced with a fresh D3D11/DX12 matrix when
+  the Windows runner-composed sandwich backend is rebuilt.
 
 Current macOS release-readiness evidence:
 
-- macOS wgpu-metal color/layout parity is covered by the targeted
-  `macos-wgpu-metal-smoke` UI profile and native color reference smoke. It
+- macOS native-metal color/layout parity is covered by targeted macOS UI
+  capture smokes and native color reference smoke. It
   compares BGRA channel order, NV12/P010 paths, split/layout fit, VideoToolbox
   CVPixelBuffer source import, and headed capture diagnostics against shared
   CPU/reference expectations.

@@ -1,4 +1,4 @@
-"""Static guardrails for the Windows native compositor fork protection line."""
+"""Static guardrails for the disabled Windows native renderer restart line."""
 
 from __future__ import annotations
 
@@ -12,41 +12,41 @@ except ImportError:
     from scripts.dev.paths import ROOT
 
 
-REQUIRED_GATE_CALLS = [
-    "_run_windows_display_tests()",
-    "_run_windows_device_recovery_tests()",
-    "_run_windows_high_refresh_tests()",
-    "_run_windows_overlay_layer_tests()",
+REQUIRED_TOKENS = {
+    "windows/runner/video_renderer_plugin.cpp": [
+        "WindowsRenderBackendSelection",
+        "reserved ",
+        "but not implemented",
+        '"disabled"',
+    ],
+    "native/renderer/renderer_config_validation.cpp": [
+        "windows native-d3d11 renderer backend is reserved",
+        "windows native-d3d12 renderer backend is reserved",
+    ],
+    "native/renderer/render/presentation_backend_factory.cpp": [
+        "#ifdef _WIN32",
+        "return false;",
+        "return nullptr;",
+    ],
+    "native/cmake/NativeSourcesWindows.cmake": [
+        "windows/common/windows_crash_handler.cpp",
+        "windows/player/native_player.cpp",
+    ],
+}
+
+FORBIDDEN_WINDOWS_ACTIVE_SOURCES = [
+    "windows/presentation/windows_dcomp_composite.cpp",
+    "windows/presentation/windows_d3d12_present_target.cpp",
+    "windows/decode/d3d12va_provider.cpp",
+    "windows/shared/shared_texture_ring_types.cpp",
 ]
 
-REQUIRED_UI_PROFILE_ENTRIES = {
-    "ui_tests/profiles/windows-preservation-auto.txt": [
-        "ui_tests/smoke/native_compositor_auto_sdr.csv",
-        "ui_tests/smoke/native_compositor_device_recovery_sdr.csv",
-    ],
-    "ui_tests/profiles/windows-preservation-scrgb.txt": [
-        "ui_tests/smoke/native_seek_preview_event_dcomp_scrgb.csv",
-        "ui_tests/smoke/native_compositor_flutter_surface_pump_scrgb.csv",
-        "ui_tests/smoke/native_source_projection_dcomp_scrgb.csv",
-        "ui_tests/smoke/native_compositor_device_recovery_scrgb.csv",
-        "ui_tests/smoke/native_source_projection_device_recovery.csv",
-        "ui_tests/smoke/native_high_refresh_paused_pan_zoom.csv",
-        "ui_tests/smoke/native_high_refresh_playing_pan_split.csv",
-        "ui_tests/smoke/native_high_refresh_overlay_pan_zoom.csv",
-    ],
-    "ui_tests/profiles/windows-preservation-sdr.txt": [
-        "ui_tests/smoke/basic.csv",
-        "ui_tests/smoke/native_seek_preview_event.csv",
-    ],
-}
-
-REQUIRED_NATIVE_TAGS = {
-    "[windows_dcomp]": "native/tests/windows/test_windows_dcomp_composite.cpp",
-    "[windows_source_projection]": "native/tests/windows/test_windows_dcomp_composite.cpp",
-    "[windows_device_recovery]": "native/tests/windows/test_windows_device_recovery.cpp",
-    "[windows_high_refresh]": "native/tests/windows/test_windows_high_refresh_metrics.cpp",
-    "[windows_overlay_layer]": "native/tests/windows/test_windows_overlay_layer_state.cpp",
-}
+FORBIDDEN_GATE_PROFILES = [
+    "windows-preservation",
+    "windows-hdr-auto",
+    "windows-cross-adapter-local",
+    "windows-high-refresh-local",
+]
 
 
 def _read(rel: str) -> str:
@@ -56,38 +56,25 @@ def _read(rel: str) -> str:
 def check_windows_fork_protection() -> list[str]:
     errors: list[str] = []
 
+    for rel, tokens in REQUIRED_TOKENS.items():
+        text = _read(rel)
+        for token in tokens:
+            if token not in text:
+                errors.append(f"{rel} is missing disabled-backend guard token: {token}")
+
+    cmake = _read("native/cmake/NativeSourcesWindows.cmake")
+    for source in FORBIDDEN_WINDOWS_ACTIVE_SOURCES:
+        if source in cmake:
+            errors.append(f"Windows backend source is still active in CMake: {source}")
+
+    cli = _read("scripts/dev/cli.py")
     gate = _read("scripts/dev/gate.py")
-    for call in REQUIRED_GATE_CALLS:
-        if call not in gate:
-            errors.append(f"scripts/dev/gate.py is missing Windows protection call: {call}")
+    for profile in FORBIDDEN_GATE_PROFILES:
+        if profile in cli or profile in gate:
+            errors.append(f"removed Windows gate profile still appears in dev scripts: {profile}")
 
-    test_cmake = _read("native/tests/CMakeLists.txt")
-    for tag, rel in REQUIRED_NATIVE_TAGS.items():
-        path = ROOT / rel
-        if not path.is_file():
-            errors.append(f"missing Windows protection test file: {rel}")
-            continue
-        if tag not in path.read_text(encoding="utf-8"):
-            errors.append(f"{rel} is missing Catch2 tag {tag}")
-        cmake_rel = Path(rel).relative_to("native/tests").as_posix()
-        if cmake_rel not in test_cmake:
-            errors.append(f"native/tests/CMakeLists.txt does not include {cmake_rel}")
-
-    for profile, entries in REQUIRED_UI_PROFILE_ENTRIES.items():
-        path = ROOT / profile
-        if not path.is_file():
-            errors.append(f"missing Windows preservation UI profile: {profile}")
-            continue
-        lines = {
-            line.strip()
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        }
-        for entry in entries:
-            if entry not in lines:
-                errors.append(f"{profile} is missing UI smoke: {entry}")
-            elif not (ROOT / entry).is_file():
-                errors.append(f"{profile} references missing UI smoke: {entry}")
+    for path in (ROOT / "ui_tests" / "profiles").glob("windows-*.txt"):
+        errors.append(f"removed Windows UI profile still exists: {path.relative_to(ROOT)}")
 
     return errors
 

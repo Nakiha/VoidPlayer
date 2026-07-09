@@ -25,7 +25,7 @@ bool VideoToolboxProvider::probe(const AVCodec* codec) const {
         case AV_CODEC_ID_VP9:
             break;
         default:
-            spdlog::info("[VideoToolbox] Codec {} is not enabled for VoidPlayer hwdownload path yet",
+            spdlog::info("[VideoToolbox] Codec {} is not enabled for VoidPlayer VideoToolbox path yet",
                          codec->name ? codec->name : "unknown");
             return false;
     }
@@ -45,11 +45,7 @@ bool VideoToolboxProvider::probe(const AVCodec* codec) const {
 
 HwDecodeInitResult VideoToolboxProvider::init(const HwDecodeInitParams& params) {
     HwDecodeInitResult result;
-    if (params.backend != RenderBackendKind::WgpuMetal &&
-        params.device_mode != DecodeDeviceMode::FfmpegOwnedHwDownloadDevice) {
-        spdlog::info("[VideoToolbox] Renderer-owned CVPixelBuffer output requires wgpu-metal backend");
-        return result;
-    }
+    (void)params;
 
     AvBufferRefOwner hw_dev_ref;
     const int ret = av_hwdevice_ctx_create(

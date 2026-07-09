@@ -80,22 +80,6 @@ struct MacOSPresentationConfiguration {
         displayEDRHeadroomX1000: headroomX1000
       )
     case .nativeCompositorSDR:
-      if environment.isWgpuMetalRequest {
-        if hasHDRTrack && supportsEDR {
-          return MacOSPresentationConfiguration(
-            mode: .nativeCompositorEDR,
-            request: environment.request,
-            reason: "forced-wgpu-metal-edr",
-            displayEDRHeadroomX1000: headroomX1000
-          )
-        }
-        return MacOSPresentationConfiguration(
-          mode: .nativeCompositorSDR,
-          request: environment.request,
-          reason: hasHDRTrack ? "wgpu-metal-edr-display-unavailable" : "forced-wgpu-metal-sdr",
-          displayEDRHeadroomX1000: headroomX1000
-        )
-      }
       return MacOSPresentationConfiguration(
         mode: .nativeCompositorSDR,
         request: environment.request,
@@ -157,10 +141,6 @@ struct MacOSPresentationEnvironment {
   let request: String
   let overrideMode: MacOSPresentationMode?
 
-  var isWgpuMetalRequest: Bool {
-    request == "wgpu-metal" || request == "wgpu"
-  }
-
   init(environment: [String: String]) {
     if let rawMode = environment["VOIDPLAYER_MACOS_PRESENTATION_MODE"]?.lowercased() {
       switch rawMode {
@@ -175,10 +155,6 @@ struct MacOSPresentationEnvironment {
       case "flutter-texture-sdr", "flutter", "sdr":
         request = rawMode
         overrideMode = .flutterTextureSDR
-        return
-      case "wgpu-metal", "wgpu":
-        request = rawMode
-        overrideMode = .nativeCompositorSDR
         return
       case "auto":
         request = "auto"

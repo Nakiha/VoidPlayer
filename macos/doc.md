@@ -39,13 +39,14 @@ macOS-specific native code owns the Metal presentation backend:
 
 ```text
 RendererDrawSnapshot
-  -> WgpuMetalPresentationBackend::draw_frame()
+  -> MetalPresentationBackend::draw_frame()
   -> renderer-owned BGRA CVPixelBuffer / IOSurface target
-  -> Flutter Texture
+  -> runner-managed native video layer
+  -> runner composition under Flutter's transparent ARGB UI surface
 ```
 
-Swift creates/registers the texture target, installs it into native, and
-releases the texture lock before any native refresh wait. Viewport pan/zoom only
+Swift creates/registers the native video target, installs it into native, and
+keeps it separate from Flutter's UI surface. Viewport pan/zoom only
 submits the latest layout intent; `CVDisplayLink` coalesces input, while native
 keeps video source updates tied to media PTS and lets display ticks re-composite
 the retained source cache for pan/zoom/split/overlay changes. Swift must not add
@@ -62,8 +63,8 @@ tracked in `../native/docs/MACOS_HDR_EXPLORATION.md`.
 | Capability | Current state |
 | --- | --- |
 | Native playback | Feature-complete enough for stabilization/release-readiness. |
-| Presentation | Renderer-owned Metal/CVPixelBuffer/IOSurface normal route. |
-| Hardware decode | VideoToolbox supported for diagnosed codecs, with visible fallback. |
+| Presentation | Runner-composed native Metal video layer behind Flutter ARGB UI. |
+| Hardware decode | VideoToolbox hwdownload is probed; renderer-owned CVPixelBuffer import must be rebuilt on native Metal before claiming zero-copy. |
 | Software fallback | Supported through explicit YUV/BGRA present packages and fallback diagnostics. |
 | Audio | Shared native audio engine and miniaudio output path. |
 | Analysis FFI/cache | Native analysis symbols and cache tooling are linked. |
@@ -86,7 +87,6 @@ python dev.py mac-ui-test --build ui_tests/macos/native_facade_smoke.csv
 Useful macOS smoke areas:
 
 - `native_facade_smoke.csv`: native bridge, metadata, diagnostics.
-- `native_4k60_playback_smoke.csv`: renderer-owned Metal/VideoToolbox cadence.
 - `native_vvc_software_playback_smoke.csv`: software decode fallback visibility.
 - `native_seek_frame_smoke.csv`: seek refresh through native renderer completion.
 - `native_layout_split_smoke.csv`: shared layout through Metal presentation.

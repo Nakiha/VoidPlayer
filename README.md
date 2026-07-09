@@ -11,7 +11,7 @@ playback timing, seek/loop behavior, layout, and presentation scheduling.
 | --- | --- |
 | `lib/` | Flutter UI, main-window orchestration, actions, storage, automation, and platform bindings. |
 | `native/` | Shared C++ renderer, media pipeline, analysis tooling, platform backends, and native tests. |
-| `windows/` | Flutter Windows runner, D3D11/DComp integration, Windows services, and packaging inputs. |
+| `windows/` | Flutter Windows runner shell, Windows services, and packaging inputs; native presentation is reserved/fail-closed on this branch. |
 | `macos/` | Flutter macOS runner, Cocoa/Swift bridge, Metal/CVPixelBuffer presentation, and packaging inputs. |
 | `scripts/` | Development, CI, packaging, toolchain, and verification helpers. |
 | `toolchains/` | Lock files for build-critical external toolchains. Hydrated toolchains live under `.toolchains/`. |

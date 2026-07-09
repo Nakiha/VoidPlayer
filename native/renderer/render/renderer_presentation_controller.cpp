@@ -50,9 +50,7 @@ PresentationBackendKind RendererPresentationController::backend_kind() const {
 }
 
 bool RendererPresentationController::uses_macos_native_compositor_scheduling() const {
-    const PresentationBackendKind kind = backend_kind();
-    return kind == PresentationBackendKind::Metal ||
-           kind == PresentationBackendKind::WgpuMetal;
+    return backend_kind() == PresentationBackendKind::Metal;
 }
 
 void RendererPresentationController::set_backend(std::unique_ptr<PresentationBackend> backend) {

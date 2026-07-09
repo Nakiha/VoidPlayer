@@ -1,5 +1,5 @@
 # macOS native event bridge smoke. Keep this aligned with
-# ui_tests/smoke/native_seek_preview_event.csv.
+# ui_tests/macos/native_seek_preview_event_smoke.csv.
 @WINDOW, 960, 540
 0.0, GENERATE_TEST_VIDEO, build/generated/macos/native_seek_preview_event_h264.mp4, 180, 30, 1280, 720
 0.3, ADD_MEDIA, build/generated/macos/native_seek_preview_event_h264.mp4

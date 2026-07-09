@@ -119,36 +119,16 @@ Shared native renderer 负责：
 - 按最终显示尺度保持线框像素宽度稳定，避免高倍率下把源像素线条放大成粗块。
 - 绘制 selected/hover 高亮。
 
-Windows D3D11 backend 当前按 `track_file_id + frame_index + overlay state + video size`
-缓存 renderer 侧 overlay materialization；只有实际上屏帧、overlay 类型/图层/透明度或
-视频尺寸变化时才重新读取 VACHUNK。QP / bit-density / prediction-mode 填充不再生成
-整张 BGRA dynamic texture，而是把每个 CU/MB 写成 16-byte packed rect instance，
-上传到 D3D11 structured buffer，并由 instanced quad pass 在 GPU 上直接绘制。平滑
-pan/zoom/resize 只更新已有 layout constants，不重新 raster 或上传整张 video-space
-color texture。
-
-CU/MB 反色线框也复用同一组 rect instances，在 GPU 侧写入 video-size R8 mask render
-target。这个选择保留了共享边界的幂等绘制语义：同一条边只在 mask 中置位一次，再通过
-fullscreen invert pass 合成，避免直接画线时双重叠加导致的点状闪烁。预测线/MV 线仍走
-小量 BGRA color texture fallback。使用
-`python dev.py analysis-overlay-benchmark --iterations 240` 可以独立测量 dirty-frame
-CPU raster 成本、当前 GUI/DX11 路径的 estimated rect upload 字节数，以及
-rect upload / color pass / GPU mask pass / invert pass / full overlay pass 的粒度耗时。
-如果 GPU mask pass 成为瓶颈，优化应保持 rect/mask 语义，不能退回会产生双重叠加闪烁的普通 alpha line 绘制。
-
-Windows native-compositor source-projection 路径还会在 DComp compositor
-device 上保留一份 video-space overlay primitive buffer。只有 primitive
-generation、track/file/尺寸、overlay mode 或输出 target class 变化时才重新
-打包和上传；pan/zoom/split/order 只更新 projection constants。高刷新门禁要求
-`windowsOverlayLayerReuseCount` 高于 dirty raster/upload 计数，并且
-`windowsViewportRedrawDuringProjectionCount == 0`。
+Windows overlay GPU/materialization policy is reserved with the disabled
+Windows native presentation backend. Rebuild the D3D11/DX12 overlay validation
+matrix when Windows sandwich composition returns.
 
 ### macOS Overlay Layer Policy
 
 macOS high-refresh viewport 不应把 overlay primitive rebuild/upload/raster 放在每次
 display-link final composite 热路径里。当前 Metal immediate primitive path 可作为
 兼容 fallback，但不能继续扩张为主路径；高倍率 pan/zoom 下它会让同一批 CU 线框随 layout tick
-反复进入 `WgpuMetalPresentationBackend` 和 overlay composite pass，导致 command completion
+反复进入 native Metal backend 和 overlay composite pass，导致 command completion
 超过 display budget。
 
 当前合同：

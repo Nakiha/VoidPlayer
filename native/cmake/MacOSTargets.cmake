@@ -1,5 +1,4 @@
 include_guard(GLOBAL)
-include("${CMAKE_CURRENT_LIST_DIR}/WgpuRustTarget.cmake")
 
 set(VOID_RENDERER_PORTABLE_OVERLAY_SOURCES
     "${VOID_NATIVE_DIR}/renderer/overlay/analysis_overlay_renderer_portable_stub.cpp")
@@ -38,8 +37,6 @@ target_link_libraries(void_macos_native_player PUBLIC
     "-framework Metal"
     "-framework CoreVideo"
 )
-
-void_link_wgpu_rust_ffi(void_macos_native_player)
 
 target_sources(void_media_ffmpeg PRIVATE
     "${VOID_NATIVE_DIR}/macos/decode/videotoolbox_provider.cpp"

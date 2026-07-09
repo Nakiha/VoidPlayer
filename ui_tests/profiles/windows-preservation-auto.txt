@@ -1,2 +1,0 @@
-ui_tests/smoke/native_compositor_auto_sdr.csv
-ui_tests/smoke/native_compositor_device_recovery_sdr.csv

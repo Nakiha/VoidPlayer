@@ -162,25 +162,24 @@ class PerformanceHealthSnapshot {
     final rawMetalP95Us = _doubleValue(
       diagnostics['metalCommandCompletionP95Us'],
     );
-    final usingRetainedWgpuSourceProvider =
-        presentationBackend == 'native-wgpu-metal-source-provider' ||
-        nativeCompositorBackend == 'wgpu-metal-thin-runner';
+    final usingNativeMetalCompositor =
+        presentationBackend == 'native-metal-source-provider' ||
+        nativeCompositorBackend == 'metal';
     final retainedDrawP95Us =
         _doubleValue(diagnostics['nativeCompositorFrameCpuP95Ms']) * 1000.0;
     final retainedBackendP95Us =
-        _doubleValue(diagnostics['nativeCompositorWgpuSubmitCpuP95Ms']) *
+        _doubleValue(diagnostics['nativeCompositorBackendSubmitCpuP95Ms']) *
         1000.0;
     final retainedMetalP95Us =
-        _doubleValue(diagnostics['nativeCompositorWgpuCompletionP95Ms']) *
+        _doubleValue(diagnostics['nativeCompositorBackendCompletionP95Ms']) *
         1000.0;
-    final drawP95Us = usingRetainedWgpuSourceProvider && retainedDrawP95Us > 0
+    final drawP95Us = usingNativeMetalCompositor && retainedDrawP95Us > 0
         ? retainedDrawP95Us
         : rawDrawP95Us;
-    final backendP95Us =
-        usingRetainedWgpuSourceProvider && retainedBackendP95Us > 0
+    final backendP95Us = usingNativeMetalCompositor && retainedBackendP95Us > 0
         ? retainedBackendP95Us
         : rawBackendP95Us;
-    final metalP95Us = usingRetainedWgpuSourceProvider && retainedMetalP95Us > 0
+    final metalP95Us = usingNativeMetalCompositor && retainedMetalP95Us > 0
         ? retainedMetalP95Us
         : rawMetalP95Us;
     final hostIntervalP95Ms = _doubleValue(
@@ -679,9 +678,6 @@ class PerformanceHealthSnapshot {
 
   String _backendCompletionShortLabel() {
     final normalized = presentationBackend.toLowerCase();
-    if (normalized.contains('wgpu')) {
-      return 'WGPU';
-    }
     if (normalized.contains('metal')) {
       return 'Metal';
     }

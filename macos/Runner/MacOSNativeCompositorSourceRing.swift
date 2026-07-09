@@ -27,7 +27,7 @@ struct MacOSNativeCompositorSourceRefreshResult {
   let error: String
 }
 
-/// Owns the retained source package used by the WGPU thin runner.
+/// Owns the retained source package used by the native Metal compositor.
 ///
 /// Producers may ask the ring to bake or refresh a candidate package, but only a
 /// complete package is published to the compositor. Failed or incomplete

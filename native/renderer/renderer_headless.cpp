@@ -796,7 +796,7 @@ bool Renderer::Impl::draw_current_frame_sources(
             track_controller_.filter_present_decision(evaluated);
             if (present_decision_has_frame(evaluated)) {
                 // Source-frame bake is the live video provider for the macOS
-                // WGPU thin runner. It must sample the current clock/track
+                // native compositor source provider. It must sample the current clock/track
                 // state directly; the old present history may be stale when
                 // playback presents are suppressed for the native compositor.
                 track_controller_.apply_carry_forward(

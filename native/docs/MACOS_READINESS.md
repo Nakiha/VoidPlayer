@@ -90,9 +90,8 @@ for the current backend contracts.
 | Portable native code | `python dev.py test --native-only` |
 | macOS runner or texture path | `flutter build macos --debug` plus targeted `python dev.py mac-ui-test ...` |
 | Shared renderer scheduling | macOS native tests plus Windows native/UI preservation checks |
-| macOS wgpu/color/layout behavior | native parity tests plus targeted macOS UI capture smokes |
+| macOS native/color/layout behavior | native parity tests plus targeted macOS UI capture smokes |
 | macOS HDR Auto policy | `python dev.py gate macos-ui-smoke` for SDR policy plus `python dev.py gate macos-hdr-edr-smoke` on an EDR-capable display |
-| default wgpu-metal backend | `python dev.py gate macos-wgpu-metal-smoke` plus `python dev.py gate macos-wgpu-metal-edr-smoke` on an EDR-capable display |
 | Packaging | `python dev.py gate macos-release-readiness` |
 
 Representative local macOS smoke set:
@@ -107,11 +106,4 @@ Current stabilization gate:
 python3.12 dev.py gate pr-fast
 python3.12 dev.py gate macos-ui-smoke
 python3.12 dev.py gate macos-hdr-edr-smoke
-```
-
-wgpu-metal default backend evidence:
-
-```bash
-python3.12 dev.py gate macos-wgpu-metal-smoke
-python3.12 dev.py gate macos-wgpu-metal-edr-smoke
 ```

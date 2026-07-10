@@ -42,7 +42,7 @@ python dev.py test --native-only   # 全部 PASS
 
 Windows native presentation 在本 restart 分支处于 reserved/fail-closed 状态。
 修改 Windows runner/native presentation 壳时，必须运行
-`python dev.py gate windows-fork-protection`，确保 D3D11/DX12 backend 没有被
+`python dev.py gate windows-rebuild-boundary`，确保 D3D11/DX12 backend 没有被
 半接回 active build/test path。后续恢复 Windows 时，需要为新的
 runner-composed sandwich backend 重新建立 D3D11/DX12 验证矩阵，而不是直接复活
 旧 DComp/source-projection preservation profiles。
@@ -67,7 +67,6 @@ runner-composed sandwich backend 重新建立 D3D11/DX12 验证矩阵，而不�
 | 像素格式 / 色彩转换 / HDR-SDR 边界变更 | [COLOR_PIPELINE.md](COLOR_PIPELINE.md) |
 | Seek 逻辑变更 | [SEEK_STRATEGY.md](SEEK_STRATEGY.md) |
 | Windows 上屏 / native D3D 着色器变更 | 新建/更新 Windows backend 文档与 [COLOR_PIPELINE.md](COLOR_PIPELINE.md)，并同步新的验证矩阵 |
-| FFI 函数签名变更 | [FFI_AND_BINDINGS.md](FFI_AND_BINDINGS.md) |
 | 新增测试/基准/Demo | [BUILD_AND_TEST.md](BUILD_AND_TEST.md) |
 
 ### 更新原则
@@ -100,7 +99,6 @@ runner-composed sandwich backend 重新建立 D3D11/DX12 验证矩阵，而不�
 | [DECODE_PIPELINE.md](DECODE_PIPELINE.md) | 解码管线 | 解码路径变更时 |
 | [COLOR_PIPELINE.md](COLOR_PIPELINE.md) | 色彩管线 | 像素格式或色彩转换变更时 |
 | [SEEK_STRATEGY.md](SEEK_STRATEGY.md) | Seek 策略 | seek 逻辑变更时 |
-| [FFI_AND_BINDINGS.md](FFI_AND_BINDINGS.md) | FFI 绑定 | API 签名变更时 |
 | [BUILD_AND_TEST.md](BUILD_AND_TEST.md) | 构建测试 | 构建/测试变更时 |
 | [TEST_MATRIX.md](TEST_MATRIX.md) | 测试 ownership / gate 映射 | 新增、删除或重分类测试时 |
 | [TARGET_BOUNDARIES.md](TARGET_BOUNDARIES.md) | CMake target / feature 边界 | target 或 feature option 变更时 |

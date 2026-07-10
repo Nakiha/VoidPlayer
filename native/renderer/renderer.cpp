@@ -148,10 +148,6 @@ PresentationBackendMetrics Renderer::presentation_backend_metrics() const {
     return impl_->presentation_backend_metrics();
 }
 
-PresentationBackendMetrics Renderer::d3d_backend_metrics() const {
-    return impl_->d3d_backend_metrics();
-}
-
 PresentationBackendStats Renderer::presentation_backend_stats() const {
     return impl_->presentation_backend_stats();
 }
@@ -170,20 +166,6 @@ bool Renderer::copy_last_presentation_frame_info(PresentationBackendFrameInfo* o
 
 RendererGpuMemoryStats Renderer::gpu_memory_stats() const {
     return impl_->gpu_memory_stats();
-}
-
-bool Renderer::d3d_device_lost() const {
-    return impl_->d3d_device_lost();
-}
-
-long Renderer::d3d_device_removed_reason() const {
-    return impl_->d3d_device_removed_reason();
-}
-
-bool Renderer::recover_presentation_device_loss(
-    const char* reason,
-    long removed_reason) {
-    return impl_->recover_presentation_device_loss(reason, removed_reason);
 }
 
 RendererDeviceState Renderer::device_state() const {
@@ -236,83 +218,6 @@ int Renderer::texture_width() const {
 
 int Renderer::texture_height() const {
     return impl_->texture_height();
-}
-
-bool Renderer::acquire_shared_texture(SharedTextureSnapshot& snapshot) const {
-    return impl_->acquire_shared_texture(snapshot);
-}
-
-void Renderer::release_shared_texture(int buffer_index, uint64_t buffer_generation) const {
-    impl_->release_shared_texture(buffer_index, buffer_generation);
-}
-
-void* Renderer::native_render_device() const {
-    return impl_->native_render_device();
-}
-
-void* Renderer::native_render_command_queue() const {
-    return impl_->native_render_command_queue();
-}
-
-bool Renderer::acquire_shared_fp16_texture(
-    SharedFp16TextureSnapshot& snapshot) const {
-    return impl_->acquire_shared_fp16_texture(snapshot);
-}
-
-void Renderer::release_shared_fp16_texture(
-    int buffer_index, uint64_t ring_generation) const {
-    impl_->release_shared_fp16_texture(buffer_index, ring_generation);
-}
-
-void Renderer::set_shared_fp16_frame_callback(std::function<void()> cb) {
-    impl_->set_shared_fp16_frame_callback(std::move(cb));
-}
-
-bool Renderer::update_external_flutter_surface(
-    const PresentationExternalD3D12Surface& surface) {
-    return impl_->update_external_flutter_surface(surface);
-}
-
-void Renderer::clear_external_flutter_surface() {
-    impl_->clear_external_flutter_surface();
-}
-
-bool Renderer::draw_current_frame_to_external_d3d12_target(
-    const PresentationExternalD3D12RenderTarget& target,
-    const char* reason) {
-    return impl_->draw_current_frame_to_external_d3d12_target(target, reason);
-}
-
-bool Renderer::configure_source_cache(
-    const std::vector<SourceCompositorTrackDescriptor>& descriptors) {
-    return impl_->configure_source_cache(descriptors);
-}
-
-void Renderer::clear_source_cache(const char* reason) {
-    impl_->clear_source_cache(reason);
-}
-
-bool Renderer::update_source_projection(
-    const SourceCompositorProjection& projection) {
-    return impl_->update_source_projection(projection);
-}
-
-void Renderer::clear_source_projection() {
-    impl_->clear_source_projection();
-}
-
-bool Renderer::acquire_source_cache_bundle(
-    SharedSourceCacheBundleSnapshot& snapshot) const {
-    return impl_->acquire_source_cache_bundle(snapshot);
-}
-
-void Renderer::release_source_cache_bundle(
-    int buffer_index, uint64_t ring_generation) const {
-    impl_->release_source_cache_bundle(buffer_index, ring_generation);
-}
-
-void Renderer::set_source_cache_frame_callback(std::function<void()> cb) {
-    impl_->set_source_cache_frame_callback(std::move(cb));
 }
 
 bool Renderer::prewarm_presentation_target(int width, int height) {

@@ -20,7 +20,7 @@ public:
     ~FrameConverter();
 
     bool init_software(int src_width, int src_height, AVPixelFormat src_format);
-    bool init_hardware(void* d3d_device, void* d3d_context,
+    bool init_hardware(void* native_device, void* native_context,
                        int src_width, int src_height,
                        HwDecodeType hw_type = HwDecodeType::None,
                        bool download_to_cpu = false,

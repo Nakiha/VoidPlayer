@@ -28,8 +28,6 @@ class NativePlayerMethods {
   static const ackNativeCompositorFlutterState =
       'ackNativeCompositorFlutterState';
   static const debugFailNativeCompositor = 'debugFailNativeCompositor';
-  static const debugSimulateWindowsDeviceLoss =
-      'debugSimulateWindowsDeviceLoss';
   static const resetNativePerfCounters = 'resetNativePerfCounters';
   static const beginNativeInteractionSample = 'beginNativeInteractionSample';
   static const endNativeInteractionSample = 'endNativeInteractionSample';

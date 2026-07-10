@@ -511,7 +511,6 @@
 				"$(PROJECT_DIR)/../native/cmake/NativeSourcesAnalysis.cmake",
 				"$(PROJECT_DIR)/../native/cmake/NativeSourcesMacOS.cmake",
 				"$(PROJECT_DIR)/../native/cmake/NativeSourcesPortable.cmake",
-				"$(PROJECT_DIR)/../native/cmake/NativeSourcesShaders.cmake",
 				"$(PROJECT_DIR)/../native/cmake/NativeSourcesWindows.cmake",
 				"$(PROJECT_DIR)/../native/cmake/PortableTargets.cmake",
 				"$(PROJECT_DIR)/../native/analysis/analysis_ffi_abi.h",
@@ -557,7 +556,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nBUILD_DIR=\"${PROJECT_DIR}/../build/native/runner/macos-xcode\"\ncmake -S \"${PROJECT_DIR}/../native\" -B \"${BUILD_DIR}\" -G \"Unix Makefiles\" \\\n  -DBUILD_ANALYSIS=ON \\\n  -DBUILD_ANALYSIS_TESTS=OFF \\\n  -DBUILD_TESTS=OFF \\\n  -DBUILD_FFI=OFF \\\n  -DBUILD_PYTHON=OFF \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET}\" \\\n  -DCMAKE_BUILD_TYPE=\"${CONFIGURATION}\"\ncmake --build \"${BUILD_DIR}\" --target void_macos_native_player -- -j \"$(sysctl -n hw.ncpu)\"\n";
+			shellScript = "set -euo pipefail\nBUILD_DIR=\"${PROJECT_DIR}/../build/native/runner/macos-xcode\"\ncmake -S \"${PROJECT_DIR}/../native\" -B \"${BUILD_DIR}\" -G \"Unix Makefiles\" \\\n  -DBUILD_ANALYSIS=ON \\\n  -DBUILD_ANALYSIS_TESTS=OFF \\\n  -DBUILD_TESTS=OFF \\\n  -DBUILD_PYTHON=OFF \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET}\" \\\n  -DCMAKE_BUILD_TYPE=\"${CONFIGURATION}\"\ncmake --build \"${BUILD_DIR}\" --target void_macos_native_player -- -j \"$(sysctl -n hw.ncpu)\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */

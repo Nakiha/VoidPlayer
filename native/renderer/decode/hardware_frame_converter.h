@@ -27,7 +27,7 @@ struct HardwareSnapshotPoolStats {
 
 class HardwareFrameConverter {
 public:
-    bool init(void* d3d_device, void* d3d_context,
+    bool init(void* native_device, void* native_context,
               int src_width, int src_height,
               HwDecodeType hw_type,
               bool download_to_cpu,

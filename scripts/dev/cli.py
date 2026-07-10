@@ -83,7 +83,7 @@ Examples:
   python dev.py gate macos-release-readiness
   python dev.py gate flutter-fork-protection
   python dev.py gate macos-platform-protection
-  python dev.py gate windows-fork-protection
+  python dev.py gate windows-rebuild-boundary
   python dev.py package
   python dev.py package --installer
   python dev.py package --installer --macos-sign-identity "Developer ID Application: Team" --macos-notarize --macos-notary-profile PROFILE
@@ -152,7 +152,7 @@ Examples:
             "repo-hygiene",
             "flutter-fork-protection",
             "macos-platform-protection",
-            "windows-fork-protection",
+            "windows-rebuild-boundary",
             "release-candidate",
         ],
         help="Gate profile to run",

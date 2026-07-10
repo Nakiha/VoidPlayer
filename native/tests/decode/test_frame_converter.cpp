@@ -5,13 +5,10 @@
 #include <cstring>
 #include <mutex>
 #include <utility>
-#include <atomic>
-#include <d3d12.h>
 
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/buffer.h>
-#include <libavutil/hwcontext_d3d12va.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/mem.h>
 }
@@ -41,12 +38,6 @@ AVFrame* make_yuv420_frame(int width, int height, int64_t pts) {
         memset(frame->data[2] + y * frame->linesize[2], 128, chroma_width);
     }
     return frame;
-}
-
-void free_counted_buffer(void* opaque, uint8_t* data) {
-    auto* free_count = static_cast<std::atomic<int>*>(opaque);
-    free_count->fetch_add(1, std::memory_order_relaxed);
-    av_free(data);
 }
 
 } // namespace
@@ -591,22 +582,6 @@ TEST_CASE("FrameConverter: YUVJ444P defaults to full range when metadata is abse
     av_frame_free(&frame);
 }
 
-TEST_CASE("FrameConverter: init_hardware sets D3D12 hardware mode", "[frame_converter]") {
-    FrameConverter converter;
-    std::recursive_mutex device_mutex;
-    // Pass null pointers because metadata-only initialization does not create a real device.
-    bool ok = converter.init_hardware(
-        nullptr,
-        nullptr,
-        1920,
-        1080,
-        HwDecodeType::D3D12VA,
-        false,
-        &device_mutex);
-    REQUIRE(ok == true);
-    REQUIRE(converter.is_hardware() == true);
-}
-
 TEST_CASE("FrameConverter: rejects oversized software frame geometry",
           "[frame_converter]") {
     FrameConverter converter;
@@ -641,102 +616,6 @@ TEST_CASE("FrameConverter: unsupported software format returns no frame",
 
     auto result = converter.convert(frame);
     REQUIRE(result.has_value() == false);
-
-    av_frame_free(&frame);
-}
-
-TEST_CASE("TextureFrame: storage exposes D3D12 texture metadata", "[frame_storage]") {
-    TextureFrame frame;
-    auto* texture = reinterpret_cast<ID3D12Resource*>(0x1234);
-    auto* fence = reinterpret_cast<ID3D12Fence*>(0x5678);
-    void* event = reinterpret_cast<void*>(0x2468);
-    auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x1357), [](void*) {});
-
-    frame.texture_handle = texture;
-    frame.is_ref = true;
-    frame.is_nv12 = true;
-    frame.texture_array_index = 3;
-    frame.hw_frame_ref = ref;
-    frame.storage = D3D12TextureFrameStorage{
-        texture,
-        3,
-        fence,
-        event,
-        42,
-        true,
-        true,
-        1920,
-        1080,
-        ref,
-    };
-
-    REQUIRE(frame.storage_kind() == FrameStorageKind::D3D12Texture);
-    REQUIRE(frame.storage_class() == FrameStorageClass::HardwareTexture);
-    REQUIRE(frame.d3d12_texture_storage() != nullptr);
-    REQUIRE(frame.d3d12_texture_storage()->texture == texture);
-    REQUIRE(frame.d3d12_texture_storage()->subresource_index == 3);
-    REQUIRE(frame.d3d12_texture_storage()->fence == fence);
-    REQUIRE(frame.d3d12_texture_storage()->fence_event == event);
-    REQUIRE(frame.d3d12_texture_storage()->fence_value == 42);
-    REQUIRE(frame.d3d12_texture_storage()->is_texture_array);
-    REQUIRE(frame.d3d12_texture_storage()->is_p010);
-    REQUIRE(frame.d3d12_texture_storage()->coded_width == 1920);
-    REQUIRE(frame.d3d12_texture_storage()->coded_height == 1080);
-    REQUIRE(frame.d3d12_texture_storage()->frame_ref == ref);
-}
-
-TEST_CASE("FrameConverter retains D3D12VA frame metadata for native import",
-          "[frame_converter][d3d12va]") {
-    FrameConverter converter;
-    REQUIRE(converter.init_hardware(
-        nullptr,
-        nullptr,
-        64,
-        64,
-        HwDecodeType::D3D12VA,
-        false,
-        nullptr));
-
-    std::atomic<int> free_count{0};
-    AVFrame* frame = av_frame_alloc();
-    REQUIRE(frame != nullptr);
-    frame->format = AV_PIX_FMT_D3D12;
-    frame->width = 64;
-    frame->height = 64;
-    frame->pts = 9000;
-
-    AVD3D12VAFrame d3d12_frame = {};
-    d3d12_frame.texture = reinterpret_cast<ID3D12Resource*>(0x1234);
-    d3d12_frame.subresource_index = 2;
-    d3d12_frame.sync_ctx.fence = reinterpret_cast<ID3D12Fence*>(0x5678);
-    d3d12_frame.sync_ctx.event = reinterpret_cast<HANDLE>(0x2468);
-    d3d12_frame.sync_ctx.fence_value = 77;
-    d3d12_frame.flags = AV_D3D12VA_FRAME_FLAG_TEXTURE_ARRAY;
-    frame->data[0] = reinterpret_cast<uint8_t*>(&d3d12_frame);
-
-    auto* token = static_cast<uint8_t*>(av_malloc(1));
-    REQUIRE(token != nullptr);
-    frame->buf[0] = av_buffer_create(
-        token, 1, free_counted_buffer, &free_count, 0);
-    REQUIRE(frame->buf[0] != nullptr);
-
-    auto converted = converter.convert(frame);
-    REQUIRE(converted.has_value());
-    REQUIRE(converted->storage_kind() == FrameStorageKind::D3D12Texture);
-    REQUIRE(converted->texture_handle == d3d12_frame.texture);
-    REQUIRE(converted->texture_array_index == 2);
-    REQUIRE(converted->hw_frame_ref != nullptr);
-    REQUIRE(converted->d3d12_texture_storage() != nullptr);
-    REQUIRE(converted->d3d12_texture_storage()->fence == d3d12_frame.sync_ctx.fence);
-    REQUIRE(converted->d3d12_texture_storage()->fence_event == d3d12_frame.sync_ctx.event);
-    REQUIRE(converted->d3d12_texture_storage()->fence_value == 77);
-    REQUIRE(converted->d3d12_texture_storage()->is_texture_array);
-
-    av_frame_unref(frame);
-    REQUIRE(free_count.load(std::memory_order_relaxed) == 0);
-
-    converted.reset();
-    REQUIRE(free_count.load(std::memory_order_relaxed) == 1);
 
     av_frame_free(&frame);
 }

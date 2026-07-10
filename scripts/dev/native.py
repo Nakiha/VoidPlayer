@@ -57,7 +57,6 @@ def build_macos_analysis_cli() -> None:
         "-DBUILD_ANALYSIS=ON",
         "-DBUILD_ANALYSIS_TESTS=OFF",
         "-DBUILD_TESTS=ON",
-        "-DBUILD_FFI=OFF",
         "-DBUILD_PYTHON=OFF",
         f"-DFFMPEG_ROOT={MACOS_FFMPEG_ROOT}",
         *(

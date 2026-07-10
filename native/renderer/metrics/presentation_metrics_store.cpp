@@ -42,9 +42,8 @@ void PresentationMetricsStore::reset() {
     frame_copy_count.store(0, std::memory_order_relaxed);
     present_publish_us.store(0, std::memory_order_relaxed);
     present_publish_count.store(0, std::memory_order_relaxed);
-    shared_texture_resize_count.store(0, std::memory_order_relaxed);
+    presentation_target_resize_count.store(0, std::memory_order_relaxed);
     device_lost_count.store(0, std::memory_order_relaxed);
-    texture_sharing_failure_count.store(0, std::memory_order_relaxed);
     layout_intent_count.store(0, std::memory_order_relaxed);
     layout_presented_count.store(0, std::memory_order_relaxed);
     layout_deferred_to_playback_count.store(0, std::memory_order_relaxed);
@@ -93,8 +92,8 @@ void PresentationMetricsStore::record_draw_timing(uint64_t total_us, uint64_t ba
     }
 }
 
-void PresentationMetricsStore::note_shared_texture_resize() {
-    shared_texture_resize_count.fetch_add(1, std::memory_order_relaxed);
+void PresentationMetricsStore::note_presentation_target_resize() {
+    presentation_target_resize_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 void PresentationMetricsStore::note_layout_presented() {
@@ -115,10 +114,6 @@ void PresentationMetricsStore::note_layout_stale_completion_drop() {
 
 void PresentationMetricsStore::note_device_lost() {
     device_lost_count.fetch_add(1, std::memory_order_relaxed);
-}
-
-void PresentationMetricsStore::note_texture_sharing_failure() {
-    texture_sharing_failure_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 uint64_t PresentationMetricsStore::note_playing_layout_redraw_suppressed() {
@@ -171,11 +166,9 @@ PresentationBackendMetrics PresentationMetricsStore::snapshot(
     result.frame_copy_count = frame_copy_count.load(std::memory_order_relaxed);
     result.present_publish_us = present_publish_us.load(std::memory_order_relaxed);
     result.present_publish_count = present_publish_count.load(std::memory_order_relaxed);
-    result.shared_texture_resize_count =
-        shared_texture_resize_count.load(std::memory_order_relaxed);
+    result.presentation_target_resize_count =
+        presentation_target_resize_count.load(std::memory_order_relaxed);
     result.device_lost_count = device_lost_count.load(std::memory_order_relaxed);
-    result.texture_sharing_failure_count =
-        texture_sharing_failure_count.load(std::memory_order_relaxed);
     result.layout_intent_count = layout_intent_count.load(std::memory_order_relaxed);
     result.layout_presented_count = layout_presented_count.load(std::memory_order_relaxed);
     result.layout_deferred_to_playback_count =

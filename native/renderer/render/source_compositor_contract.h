@@ -12,9 +12,8 @@ inline constexpr int kSourceCompositorLiveBufferCount = 3;
 inline constexpr uint64_t kSourceCompositorDefaultBudgetBytes =
     384ull * 1024ull * 1024ull;
 
-// Platform resources never cross this contract. Metal textures, IOSurfaces,
-// D3D resources, and synchronization primitives belong to the platform lease
-// that carries this metadata.
+// Platform GPU resources and synchronization primitives never cross this
+// contract. They belong to the platform lease that carries this metadata.
 enum class SourceCompositorPixelFormat : uint8_t {
     Unknown,
     Bgra8Unorm,

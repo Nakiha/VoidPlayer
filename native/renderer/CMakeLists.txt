@@ -38,9 +38,6 @@ target_link_libraries(video_renderer_lib PUBLIC
     ${AVFORMAT_LIBRARY}
     ${AVUTIL_LIBRARY}
     ${SWRESAMPLE_LIBRARY}
-    dxgi
-    d3d12
-    dcomp
     winmm
 )
 if(BUILD_ANALYSIS)
@@ -49,5 +46,3 @@ endif()
 
 target_compile_definitions(video_renderer_lib PUBLIC
     VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>)
-
-void_configure_renderer_shaders("${CMAKE_CURRENT_BINARY_DIR}")

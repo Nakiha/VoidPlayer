@@ -15,8 +15,6 @@
 namespace vr {
 
 class PresentationMetricsStore;
-struct SharedFp16TextureSnapshot;
-struct SharedSourceCacheBundleSnapshot;
 struct AnalysisOverlayPrimitivePackage;
 
 struct RendererPresentationOverlayHooks {
@@ -51,9 +49,6 @@ struct RendererPresentationDrawResult {
     bool async_draw_submitted = false;
     bool device_lost = false;
     bool frame_info_available = false;
-    bool source_cache_published = false;
-    uint64_t source_cache_ring_generation = 0;
-    uint64_t source_cache_frame_generation = 0;
     uint64_t backend_us = 0;
     PresentationBackendFrameInfo frame_info{};
     RendererFrameCallback frame_callback;
@@ -111,7 +106,7 @@ struct RendererPresentationSubmitDispatchHooks {
     std::function<void(const RendererPresentationSyncCompletion&)> sync_completed;
 };
 
-struct RendererPresentationD3DMemorySnapshot {
+struct RendererPresentationMemorySnapshot {
     RendererGpuMemoryStats stats;
     std::array<uint64_t, kMaxTracks> presenter_copy_texture_bytes_by_slot{};
 };
@@ -211,7 +206,7 @@ public:
                                              std::vector<uint8_t>& bgra,
                                              int& region_width,
                                              int& region_height);
-    RendererPresentationD3DMemorySnapshot d3d_memory_snapshot() const;
+    RendererPresentationMemorySnapshot memory_snapshot() const;
     bool resize_renderer_managed_headless_output(int width,
                                                  int height,
                                                  PresentationMetricsStore& metrics);
@@ -220,36 +215,7 @@ public:
     bool set_renderer_managed_headless_frame_callback(
         RendererFrameCallback callback);
 
-#ifdef _WIN32
-    bool acquire_d3d_shared_texture(SharedTextureSnapshot& snapshot,
-                                    PresentationMetricsStore& metrics) const;
-    void release_d3d_shared_texture(int buffer_index,
-                                    uint64_t buffer_generation) const;
-    bool acquire_d3d_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
-    void release_d3d_shared_fp16_texture(int buffer_index,
-                                         uint64_t ring_generation) const;
-    void set_d3d_shared_fp16_frame_callback(std::function<void()> callback);
-    bool update_external_flutter_surface(
-        const PresentationExternalD3D12Surface& surface);
-    void clear_external_flutter_surface();
-    bool draw_frame_to_external_d3d12_target(
-        const RendererDrawSnapshot& snapshot,
-        const char* source,
-        PresentationMetricsStore& metrics,
-        const PresentationExternalD3D12RenderTarget& target,
-        RendererPresentationOverlayHooks overlay_hooks = {});
-    bool configure_source_cache(
-        const std::vector<SourceCompositorTrackDescriptor>& descriptors);
-    void clear_source_cache(const char* reason);
-    bool update_source_projection(const SourceCompositorProjection& projection);
-    void clear_source_projection();
-    bool acquire_source_cache_bundle(
-        SharedSourceCacheBundleSnapshot& snapshot) const;
-    void release_source_cache_bundle(
-        int buffer_index, uint64_t ring_generation) const;
-    void set_source_cache_frame_callback(std::function<void()> callback);
-    bool recover_d3d_device_loss(const char* reason, long removed_reason);
-#endif
+    bool recover_device_loss(const char* reason, long removed_reason);
 
 private:
     std::unique_ptr<PresentationBackend> backend_;

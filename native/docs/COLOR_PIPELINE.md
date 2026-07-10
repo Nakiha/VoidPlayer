@@ -236,8 +236,8 @@ Current macOS release-readiness evidence:
 
 Required evidence before raising macOS release confidence further:
 
-- D3D11 HLSL vs Metal shader parity for range, matrix, transfer, and odd
-  dimensions.
+- New Windows shader vs Metal shader parity for range, matrix, transfer, and
+  odd dimensions once the Windows backend exists.
 - Full/limited range parity for BT.601, BT.709, and BT.2020_NCL.
 - P010 high-bit interpretation parity across VideoToolbox and D3D11VA direct
   surfaces, beyond the synthetic CPU P010 package gate.

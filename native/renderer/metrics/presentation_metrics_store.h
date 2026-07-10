@@ -18,13 +18,12 @@ class PresentationMetricsStore {
 public:
     void reset();
     void record_draw_timing(uint64_t total_us, uint64_t backend_us);
-    void note_shared_texture_resize();
+    void note_presentation_target_resize();
     void note_layout_presented();
     void note_layout_intent();
     void note_layout_deferred_to_playback();
     void note_layout_stale_completion_drop();
     void note_device_lost();
-    void note_texture_sharing_failure();
     uint64_t note_playing_layout_redraw_suppressed();
     void note_present_publish(uint64_t elapsed_us);
     uint64_t note_transient_backpressure(std::chrono::microseconds backoff,
@@ -39,9 +38,8 @@ public:
     std::atomic<uint64_t> frame_copy_count{0};
     std::atomic<uint64_t> present_publish_us{0};
     std::atomic<uint64_t> present_publish_count{0};
-    std::atomic<uint64_t> shared_texture_resize_count{0};
+    std::atomic<uint64_t> presentation_target_resize_count{0};
     std::atomic<uint64_t> device_lost_count{0};
-    std::atomic<uint64_t> texture_sharing_failure_count{0};
     std::atomic<uint64_t> layout_intent_count{0};
     std::atomic<uint64_t> layout_presented_count{0};
     std::atomic<uint64_t> layout_deferred_to_playback_count{0};

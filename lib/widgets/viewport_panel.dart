@@ -140,7 +140,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     }
     _lastDebugInteractionSampleAt = now;
     final message =
-        '[WindowsCompositorDebug] viewport interaction sample '
+        '[NativeCompositorDebug] viewport interaction sample '
         'stage=$stage moves=$_debugPointerMoveCount '
         'hovers=$_debugPointerHoverCount buttons=${event.buttons} '
         'local=(${event.localPosition.dx.toStringAsFixed(1)},'
@@ -665,7 +665,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
       if (shouldLogResize) {
         _lastResizePacingLogAt = now;
         log.info(
-          '[WindowsResizePacing] flutter viewportReport '
+          '[NativeResizePacing] flutter viewportReport '
           'count=$_debugResizeReportCount '
           'logical=${logicalWidth.toStringAsFixed(1)}x'
           '${logicalHeight.toStringAsFixed(1)} '
@@ -676,7 +676,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
         );
       }
       log.fine(
-        '[WindowsCompositorDebug] viewport resize report '
+        '[NativeCompositorDebug] viewport resize report '
         'logical=${logicalWidth.toStringAsFixed(1)}x'
         '${logicalHeight.toStringAsFixed(1)} '
         'physical=${physicalWidth}x$physicalHeight '
@@ -737,7 +737,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
     if (shouldLogRect) {
       _lastViewportRectPacingLogAt = now;
       log.info(
-        '[WindowsResizePacing] flutter viewportRect '
+        '[NativeResizePacing] flutter viewportRect '
         'count=$_debugViewportRectReportCount '
         'physical=($left,$top ${width}x$height) '
         'surface=${surfaceWidth}x$surfaceHeight '
@@ -749,7 +749,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
       );
     }
     log.fine(
-      '[WindowsCompositorDebug] native compositor viewport rect '
+      '[NativeCompositorDebug] native compositor viewport rect '
       'physical=($left,$top ${width}x$height) '
       'surface=${surfaceWidth}x$surfaceHeight '
       'logicalOffset=(${globalOffset.dx.toStringAsFixed(1)},'
@@ -894,7 +894,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           behavior: HitTestBehavior.opaque,
           onPointerDown: (e) {
             log.fine(
-              '[WindowsCompositorDebug] viewport pointerDown '
+              '[NativeCompositorDebug] viewport pointerDown '
               'kind=${e.kind.name} buttons=${e.buttons} '
               'local=(${e.localPosition.dx.toStringAsFixed(1)},'
               '${e.localPosition.dy.toStringAsFixed(1)}) '
@@ -926,7 +926,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           },
           onPointerUp: (e) {
             log.fine(
-              '[WindowsCompositorDebug] viewport pointerUp '
+              '[NativeCompositorDebug] viewport pointerUp '
               'kind=${e.kind.name} buttons=${e.buttons} '
               'local=(${e.localPosition.dx.toStringAsFixed(1)},'
               '${e.localPosition.dy.toStringAsFixed(1)}) '
@@ -950,7 +950,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           },
           onPointerCancel: (_) {
             log.fine(
-              '[WindowsCompositorDebug] viewport pointerCancel '
+              '[NativeCompositorDebug] viewport pointerCancel '
               'panning=$_panning splitting=$_splitting '
               'quickMark=$_quickMarkDragging splitHandle=$_splitHandleDragging',
             );

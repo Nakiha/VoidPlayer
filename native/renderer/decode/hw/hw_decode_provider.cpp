@@ -1,7 +1,4 @@
 #include "renderer/decode/hw/hw_decode_provider.h"
-#ifdef _WIN32
-#include "windows/decode/d3d12va_provider.h"
-#endif
 #ifdef __APPLE__
 #include "macos/decode/videotoolbox_provider.h"
 #endif
@@ -22,12 +19,6 @@ struct HwDecodeProviderDescriptor {
     HwDecodeProviderFactory create = nullptr;
 };
 
-#ifdef _WIN32
-std::unique_ptr<HwDecodeProvider> create_d3d12va_provider() {
-    return std::make_unique<D3D12VAProvider>();
-}
-#endif
-
 #ifdef __APPLE__
 std::unique_ptr<HwDecodeProvider> create_videotoolbox_provider() {
     return std::make_unique<VideoToolboxProvider>();
@@ -36,15 +27,6 @@ std::unique_ptr<HwDecodeProvider> create_videotoolbox_provider() {
 
 std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
     std::vector<HwDecodeProviderDescriptor> providers;
-#ifdef _WIN32
-    providers.push_back({
-        "D3D12VA",
-        RenderBackendKind::NativeD3D12,
-        RenderBackendKind::Unknown,
-        false,
-        &create_d3d12va_provider,
-    });
-#endif
 #ifdef __APPLE__
     providers.push_back({
         "VideoToolbox",
@@ -115,8 +97,6 @@ const char* hw_decode_type_name(HwDecodeType type) {
     switch (type) {
     case HwDecodeType::None:
         return "none";
-    case HwDecodeType::D3D12VA:
-        return "D3D12VA";
     case HwDecodeType::CUDA:
         return "CUDA";
     case HwDecodeType::DXVA2:

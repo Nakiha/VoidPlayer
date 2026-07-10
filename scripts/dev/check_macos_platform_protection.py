@@ -26,6 +26,7 @@ REQUIRED_CMAKE_SOURCES = [
     "macos/metal/metal_uploader_bridge.mm",
     "macos/metal/metal_texture_wrapping.mm",
     "macos/metal/metal_pixel_buffer_uploader.mm",
+    "macos/metal/source_compositor_lease.mm",
     "macos/player/native_player_presentation_target.cpp",
     "macos/presentation/presentation_adapter.cpp",
     "macos/presentation/presentation_cv_pixel_buffer_frame.cpp",
@@ -45,7 +46,8 @@ REQUIRED_CMAKE_TARGETS = [
 
 REQUIRED_SOURCE_MARKERS = {
     "macos/Runner/MacOSFlutterTextureBridge.swift": [
-        "protocol MacOSVideoTexture: FlutterTexture",
+        "protocol MacOSVideoSurface: AnyObject",
+        "MacOSVideoSurface, FlutterTexture",
         "rendererOwnedPixelBufferCount",
         "installNativePresentationTarget",
         "publishRenderedTargetAndInstallNext",

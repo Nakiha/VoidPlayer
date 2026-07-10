@@ -500,7 +500,7 @@ class MainWindowPlaybackCoordinator {
         );
         stateStore.setViewportState(
           ViewportDisplayState.error(
-            'Windows native compositor failed: '
+            'Native compositor failed: '
             '${event.nativeCompositorFailure}',
           ),
         );

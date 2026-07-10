@@ -275,7 +275,7 @@ class MainWindowController {
     if (_lastNativeCompositorFrameRequestReason == reason) {
       return;
     }
-    log.fine('[WindowsCompositorDebug] queue Flutter export frame: $reason');
+    log.fine('[NativeCompositorDebug] queue Flutter export frame: $reason');
     _nativeCompositorFrameRequestQueued = true;
     scheduleMicrotask(() {
       _nativeCompositorFrameRequestQueued = false;

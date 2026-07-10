@@ -326,15 +326,6 @@ class TestRunner {
       case DebugFailNativeCompositorAction(:final reason):
         log.info('TestRunner: DEBUG_FAIL_NATIVE_COMPOSITOR reason=$reason');
         await controller.debugFailNativeCompositor(reason: reason);
-      case DebugSimulateWindowsDeviceLossAction(:final target, :final reason):
-        log.info(
-          'TestRunner: DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS '
-          'target=$target reason=$reason',
-        );
-        await controller.debugSimulateWindowsDeviceLoss(
-          target: target,
-          reason: reason,
-        );
       case ResetNativePerfCountersAction():
         log.info('TestRunner: RESET_NATIVE_PERF_COUNTERS');
         ViewportProjectionDiagnostics.instance.reset();

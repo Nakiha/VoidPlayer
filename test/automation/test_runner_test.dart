@@ -118,30 +118,6 @@ void main() {
       expect(runtime.quitCodes, [0]);
     });
 
-    test('simulated Windows device loss reaches the native API', () async {
-      final api = _FakeNativePlayerApi();
-      final controller = NativePlayerController(api: api);
-      await controller.createPlayer(['a.mp4'], width: 320, height: 180);
-
-      final runtime = _FakeRuntime();
-      final runner = TestRunner(
-        scriptPath: _writeScript('''
-0.0,DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS,compositor,contract-test
-0.1,QUIT,0
-'''),
-        automation: _bridge(controller),
-        runtime: runtime,
-      );
-
-      await runner.run();
-
-      expect(
-        api.calls,
-        contains('debugSimulateWindowsDeviceLoss:compositor:contract-test'),
-      );
-      expect(runtime.quitCodes, [0]);
-    });
-
     test('wait presented frame range polls until frame enters range', () async {
       final api = _FakeNativePlayerApi(
         presentedFrames: [
@@ -375,14 +351,6 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   @override
   Future<void> debugFailNativeCompositor({required String reason}) async {
     calls.add('debugFailNativeCompositor:$reason');
-  }
-
-  @override
-  Future<void> debugSimulateWindowsDeviceLoss({
-    required String target,
-    required String reason,
-  }) async {
-    calls.add('debugSimulateWindowsDeviceLoss:$target:$reason');
   }
 
   @override

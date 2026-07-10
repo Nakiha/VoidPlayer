@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .check_flutter_fork_protection import check_flutter_fork_protection
 from .check_macos_platform_protection import check_macos_platform_protection
-from .check_windows_fork_protection import check_windows_fork_protection
+from .check_windows_rebuild_boundary import check_windows_rebuild_boundary
 from .paths import ROOT
 
 
@@ -136,7 +136,7 @@ def cmd_repo_hygiene(args: argparse.Namespace) -> None:
     _check_github_actions_versions(errors)
     errors.extend(check_flutter_fork_protection())
     errors.extend(check_macos_platform_protection())
-    errors.extend(check_windows_fork_protection())
+    errors.extend(check_windows_rebuild_boundary())
     if errors:
         print("Repository hygiene check failed:")
         for error in errors:

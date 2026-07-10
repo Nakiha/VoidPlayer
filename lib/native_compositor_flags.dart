@@ -4,15 +4,6 @@ class NativeCompositorFlags {
   const NativeCompositorFlags._();
 
   static bool get nativeCompositor {
-    if (Platform.isWindows) {
-      final mode = Platform.environment['VOIDPLAYER_WINDOWS_PRESENTATION_MODE']
-          ?.toLowerCase();
-      return mode == null ||
-          mode.isEmpty ||
-          mode == 'auto' ||
-          mode == 'native-compositor-sdr' ||
-          mode == 'native-compositor-scrgb';
-    }
     if (!Platform.isMacOS) {
       return false;
     }
@@ -29,6 +20,5 @@ class NativeCompositorFlags {
         Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR'] == '1';
   }
 
-  static bool get sourceProjection =>
-      (Platform.isMacOS || Platform.isWindows) && nativeCompositor;
+  static bool get sourceProjection => Platform.isMacOS && nativeCompositor;
 }

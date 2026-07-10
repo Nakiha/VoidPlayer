@@ -1021,14 +1021,6 @@ class _PlaybackApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> debugSimulateWindowsDeviceLoss({
-    required String target,
-    required String reason,
-  }) async {
-    calls.add('debugSimulateWindowsDeviceLoss:$target:$reason');
-  }
-
-  @override
   Future<void> resetNativePerfCounters() async {
     calls.add('resetNativePerfCounters');
   }

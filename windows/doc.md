@@ -1,60 +1,37 @@
-# Windows 宿主层文档
+# Windows 宿主层
 
-本文档是 Windows Flutter runner / Win32 宿主层入口。macOS runner 文档见
-[../macos/doc.md](../macos/doc.md)，shared native renderer 文档见
-[../native/docs/ARCHITECTURE.md](../native/docs/ARCHITECTURE.md)。
+Windows 当前处于 native presentation 重建边界，不是可播放产品路径。
 
-## 当前状态
+## 当前可用内容
 
-本 restart 分支以 macOS native Metal 为主线。Windows native presentation
-后端已经从 active build/test/gate 路径移除，`native-d3d11` 和
-`native-d3d12` 只保留为后续 runner-composed sandwich backend 的接口占位。
+- Win32 Flutter runner、窗口生命周期和插件注册；
+- `video_renderer` MethodChannel/EventChannel 的 fail-closed 壳；
+- 原生文件选择器；
+- `native/windows/presentation/windows_presentation_backend.*` 中的新 backend factory 合同。
 
-当前 Windows runner 可以继续承载：
+创建 player 或添加媒体会返回 `BACKEND_UNAVAILABLE`。runner 不链接 FFmpeg、D3D、
+DComp 或 shared native renderer，也不要求 patched Flutter engine。不要把 Flutter Texture
+当作视频 fallback。
 
-- Win32 主窗口、Flutter engine 初始化和插件注册；
-- `video_renderer` MethodChannel / EventChannel 壳层；
-- 文件选择、窗口捕获、日志、analysis FFI、诊断转发等平台服务；
-- native player lifecycle 的 fail-closed 桥接。
+## 重建入口
 
-当前 Windows runner 不应声明：
-
-- DComp/D3D11/D3D12 视频上屏产品路径可用；
-- Windows HDR / high-refresh / source-projection / cross-adapter gate 可用；
-- Flutter Texture SDR 是正常视频 fallback。
-
-## 目录结构
+后续 Windows 工作只从以下边界开始：
 
 ```text
-windows/
-├── CMakeLists.txt                 # Windows runner/native/plugin 构建入口
-├── flutter/                       # Flutter 工具生成的 embedding 集成层
-└── runner/                        # Win32 应用宿主和插件桥接代码
-    ├── analysis_ffi.*             # analysis FFI bridge
-    ├── flutter_window.*           # Flutter window / plugin 注册
-    ├── main.cpp                   # Windows app 入口
-    ├── native_*                   # native lifecycle / diagnostics bridge
-    ├── video_renderer_plugin.*    # video_renderer MethodChannel 壳层
-    └── win32_window.*             # Win32 窗口包装
+Win32 window
+  + native SDR/HDR video surface
+  + Flutter premultiplied-ARGB surface
+  -> runner composition
 ```
 
-## 边界规则
+1. 在 `windows_presentation_backend.*` 实现 D3D11 或 D3D12 backend。
+2. runner 只负责窗口、surface 绑定和最终合成，不接管 Flutter frame 调度。
+3. shared renderer 只提交 `RendererDrawSnapshot`，不暴露 GPU device、shared ring 或
+   external-target draw 旁路。
+4. 新后端必须建立自己的 color、layout、HDR、device-loss 和 UI smoke 矩阵。
 
-- `flutter/` 目录由 Flutter 工具生成，除非升级 embedding 或修复生成层问题，否则不要手改。
-- `runner/` 可以处理 Win32 窗口、插件注册、MethodChannel 参数、平台服务和诊断。
-- 复杂渲染、解码、同步和 presentation backend 逻辑应放在 `native/`。
-- Windows native presentation 重新接入时，必须按
-  [../native/docs/SANDWICH_RENDERING.md](../native/docs/SANDWICH_RENDERING.md)
-  建立新的 D3D11/DX12 backend 和验证矩阵，而不是复活旧 DComp/source-projection
-  preservation profiles。
+旧 DComp compositor、source projection、FP16 ring、window capture 和 native player
+bridge 已删除。需要算法参考时看历史提交，不要把旧文件复制回 active tree。
 
-## 相关文档
-
-| 文档 | 内容 |
-|------|------|
-| [../lib/doc.md](../lib/doc.md) | Flutter / Dart UI 层入口 |
-| [../native/docs/ARCHITECTURE.md](../native/docs/ARCHITECTURE.md) | Native C++ 渲染引擎入口 |
-| [../native/docs/SANDWICH_RENDERING.md](../native/docs/SANDWICH_RENDERING.md) | runner-composed native sandwich 合同 |
-| [../native/docs/NATIVE_EVENT_PIPELINE.md](../native/docs/NATIVE_EVENT_PIPELINE.md) | native -> Dart EventChannel 事件通知合同 |
-| [../native/docs/FFI_AND_BINDINGS.md](../native/docs/FFI_AND_BINDINGS.md) | Native FFI / Python 绑定说明 |
-| [../native/docs/MAINTENANCE.md](../native/docs/MAINTENANCE.md) | Native 层维护规范 |
+相关合同见 [Sandwich rendering](../native/docs/SANDWICH_RENDERING.md) 和
+[Native architecture](../native/docs/ARCHITECTURE.md)。

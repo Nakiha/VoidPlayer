@@ -39,10 +39,7 @@ void finish_presented_draw(
     bool drew,
     const char* frame_failure_error,
     uint64_t backend_us,
-    const PresentationBackendFrameInfo* completed_frame_info,
-    bool source_cache_published = false,
-    uint64_t source_cache_ring_generation = 0,
-    uint64_t source_cache_frame_generation = 0) {
+    const PresentationBackendFrameInfo* completed_frame_info) {
     if (context.shutting_down->load(std::memory_order_acquire)) {
         return;
     }
@@ -61,12 +58,6 @@ void finish_presented_draw(
         }
         if (layout_commit.marked_presented) {
             context.metrics->note_layout_presented();
-        }
-        if (source_cache_published && context.history) {
-            context.history->set_source_cache_published(
-                snapshot.decision,
-                source_cache_ring_generation,
-                source_cache_frame_generation);
         }
         context.loop->mark_preview_presented(!stale_layout_after_draw);
     } else {
@@ -194,10 +185,7 @@ RendererPresentationSubmitDispatchHooks dispatch_hooks(
                 completion.draw.backend_us,
                 completion.draw.frame_info_available
                     ? &completion.draw.frame_info
-                    : nullptr,
-                completion.draw.source_cache_published,
-                completion.draw.source_cache_ring_generation,
-                completion.draw.source_cache_frame_generation);
+                    : nullptr);
         },
     };
 }
@@ -209,8 +197,7 @@ bool RendererPresentCommandProcessor::draw_paused_frame(
     const char* reason) {
     const bool interactive_refresh =
         reason && (std::strcmp(reason, "macos-renderer-owned-refresh") == 0 ||
-                   std::strcmp(reason, "request_frame_refresh") == 0 ||
-                   std::strcmp(reason, "windows-source-projection-refresh") == 0);
+                   std::strcmp(reason, "request_frame_refresh") == 0);
     const bool decoded_preview_refresh =
         reason && std::strcmp(reason, "seek_frame_refresh") == 0;
     PresentDecision decision;

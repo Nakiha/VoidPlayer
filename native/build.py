@@ -85,7 +85,6 @@ def configure(
     build_tests: bool = True,
     build_analysis_tests: bool = True,
     build_python: bool = True,
-    build_ffi: bool = True,
     use_local_deps: bool = False,
 ):
     cmake_args = [
@@ -97,7 +96,6 @@ def configure(
         f"-DBUILD_TESTS={'ON' if build_tests else 'OFF'}",
         f"-DBUILD_ANALYSIS_TESTS={'ON' if build_analysis_tests else 'OFF'}",
         f"-DBUILD_PYTHON={'ON' if build_python else 'OFF'}",
-        f"-DBUILD_FFI={'ON' if build_ffi else 'OFF'}",
     ]
     if use_local_deps:
         cmake_args.append("-DVOID_USE_LOCAL_DEPS=ON")

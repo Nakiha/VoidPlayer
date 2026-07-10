@@ -85,7 +85,7 @@ class MainWindowLayoutCoordinator {
     _lastDebugInteractionSampleAt = now;
     final current = layout();
     log.fine(
-      '[WindowsCompositorDebug] viewport layout sample '
+      '[NativeCompositorDebug] viewport layout sample '
       'event=$event pan=$_debugPanUpdates zoom=$_debugZoomUpdates '
       'split=$_debugSplitUpdates deferred=$_debugDeferredLayoutUpdates '
       'projection=$_debugProjectionPublishes transformed=$transformed '
@@ -335,7 +335,7 @@ class MainWindowLayoutCoordinator {
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
     log.fine(
-      '[WindowsCompositorDebug] layout onViewportResize '
+      '[NativeCompositorDebug] layout onViewportResize '
       '${previousWidth}x$previousHeight -> ${width}x$height '
       'dpr=${devicePixelRatio.toStringAsFixed(3)} '
       'immediate=$immediate layoutDirty=$_layoutDirty '
@@ -359,7 +359,7 @@ class MainWindowLayoutCoordinator {
     if (shouldLogResize) {
       _lastViewportResizePacingLogAt = now;
       log.info(
-        '[WindowsResizePacing] dart viewportResize '
+        '[NativeResizePacing] dart viewportResize '
         'count=$_debugViewportResizeReports '
         'previous=${previousWidth}x$previousHeight next=${width}x$height '
         'dpr=${devicePixelRatio.toStringAsFixed(3)} '
@@ -377,7 +377,7 @@ class MainWindowLayoutCoordinator {
     _resizeDebounceTimer = Timer(viewportResizeDebounce, () {
       if (_disposed || !mounted()) return;
       log.info(
-        '[WindowsResizePacing] dart viewportResize debounceFire '
+        '[NativeResizePacing] dart viewportResize debounceFire '
         'target=${viewportWidth}x$viewportHeight '
         'reports=$_debugViewportResizeReports '
         'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty '
@@ -398,7 +398,7 @@ class MainWindowLayoutCoordinator {
     final previousWidth = viewportWidth;
     final previousHeight = viewportHeight;
     log.fine(
-      '[WindowsCompositorDebug] layout preemptViewportResize '
+      '[NativeCompositorDebug] layout preemptViewportResize '
       '${previousWidth}x$previousHeight -> ${width}x$height '
       'layoutDirty=$_layoutDirty activeFlush=${_activeFlush != null} '
       'tracks=${trackCount()}',
@@ -419,7 +419,7 @@ class MainWindowLayoutCoordinator {
     viewportHeight = height;
     await controller.resize(width, height);
     log.fine(
-      '[WindowsCompositorDebug] layout preemptViewportResize native complete '
+      '[NativeCompositorDebug] layout preemptViewportResize native complete '
       '${width}x$height',
     );
     onNativeResizeCommitted?.call(width, height);
@@ -524,7 +524,7 @@ class MainWindowLayoutCoordinator {
         .toInt();
     if (nextWidth == baseWidth && nextHeight == baseHeight) return;
     log.fine(
-      '[WindowsCompositorDebug] layout queuePreemptResize '
+      '[NativeCompositorDebug] layout queuePreemptResize '
       'base=${baseWidth}x$baseHeight '
       'delta=(${widthDelta.toStringAsFixed(1)},'
       '${heightDelta.toStringAsFixed(1)}) '
@@ -692,7 +692,7 @@ class MainWindowLayoutCoordinator {
     if (_disposed) return;
     _resizeDirty = true;
     log.fine(
-      '[WindowsCompositorDebug] layout resizeDirty '
+      '[NativeCompositorDebug] layout resizeDirty '
       '${viewportWidth}x$viewportHeight '
       'layoutDirty=$_layoutDirty activeFlush=${_activeFlush != null}',
     );
@@ -750,7 +750,7 @@ class MainWindowLayoutCoordinator {
           if (shouldLogNative) {
             _lastNativeResizePacingLogAt = now;
             log.info(
-              '[WindowsResizePacing] dart nativeResizeFlush '
+              '[NativeResizePacing] dart nativeResizeFlush '
               'count=$_debugNativeResizeFlushes '
               'target=${width}x$height '
               'layoutDirty=$_layoutDirty resizeDirty=$_resizeDirty '
@@ -758,7 +758,7 @@ class MainWindowLayoutCoordinator {
             );
           }
           log.fine(
-            '[WindowsCompositorDebug] layout flush native resize complete '
+            '[NativeCompositorDebug] layout flush native resize complete '
             '${width}x$height layoutDirty=$_layoutDirty',
           );
           onNativeResizeCommitted?.call(width, height);
@@ -956,7 +956,7 @@ class MainWindowLayoutCoordinator {
         return;
       }
       log.info(
-        '[WindowsResizePacing] dart measuredSourceCacheRefresh '
+        '[NativeResizePacing] dart measuredSourceCacheRefresh '
         'generation=$_measuredSourceCacheRefreshGeneration '
         'reason=$_measuredSourceCacheRefreshReason '
         'viewport=${viewportWidth}x$viewportHeight '

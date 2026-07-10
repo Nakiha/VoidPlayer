@@ -74,16 +74,6 @@ class DebugFailNativeCompositorAction extends AutomationAction {
   }) : super('DEBUG_FAIL_NATIVE_COMPOSITOR');
 }
 
-class DebugSimulateWindowsDeviceLossAction extends AutomationAction {
-  final String target;
-  final String reason;
-
-  const DebugSimulateWindowsDeviceLossAction({
-    required this.target,
-    this.reason = 'debug-simulated-device-loss',
-  }) : super('DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS');
-}
-
 class ResetNativePerfCountersAction extends AutomationAction {
   const ResetNativePerfCountersAction() : super('RESET_NATIVE_PERF_COUNTERS');
 }

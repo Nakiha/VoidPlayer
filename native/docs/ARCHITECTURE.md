@@ -49,8 +49,7 @@ native/
 │   ├── decode/          # DecodeThread, FrameConverter, hardware providers
 │   ├── render/          # RendererDrawSnapshot, PresentationBackend contracts
 │   ├── sync/            # RenderSink and present scheduling
-│   └── exports/         # FFI surfaces
-├── windows/             # Windows facade and reserved native-D3D presentation pieces
+├── windows/             # fail-closed Windows presentation factory boundary
 ├── macos/               # macOS native bridge and Metal presentation backend
 ├── tests/               # Catch2 tests
 ├── tools/               # native smoke binaries and CLIs

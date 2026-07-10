@@ -1,35 +1,28 @@
 # Native Target Boundaries
 
-本文档记录 native CMake target 的 public/internal 边界。它只描述当前 target ownership。
+## Active Targets
 
-## Current Targets
+| Target | Ownership |
+| --- | --- |
+| `void_player_portable_core` | Shared clock, seek, queues, layout and presentation contracts |
+| `void_media_ffmpeg` | Shared FFmpeg demux/decode policy |
+| `void_renderer_portable_driver` | Shared renderer scheduler used by native smokes and macOS |
+| `void_macos_native_player` | macOS player bridge, VideoToolbox and Metal presentation |
+| `analysis_lib` / `VoidPlayerCli` | Optional analysis cache and CLI when `BUILD_ANALYSIS=ON` |
+| `video_renderer_native` | Optional local Python tooling when `BUILD_PYTHON=ON` |
+| `macos_*_smoke` and portable smoke targets | CTest-only validation |
 
-| Target | Boundary | Public Surface |
-| --- | --- | --- |
-| `void_player_portable_core` | macOS-buildable playback clock, logging, packet queue, seek coordinator, frame buffers, render sink | Internal static library for platform-neutral contracts |
-| `void_media_ffmpeg` | macOS-buildable FFmpeg demux/private CDN FLV demux layer plus decode/exact-seek policies that do not own texture conversion | Internal static library depending on `void_player_portable_core` |
-| `macos_media_smoke` | CLI/CTest probe that opens a bundled media fixture through `void_media_ffmpeg` | macOS-only validation executable |
-| `video_renderer_core` | FFmpeg demux/decode common logic, playback clock, queues, buffers, sync policies | Internal static library |
-| `video_renderer_lib` | Windows player/renderer facade, audio, reserved presentation hooks, optional analysis overlay implementation | Internal static library consumed by FFI/Python/tests |
-| `analysis_lib` | VAC2/VACHUNK cache, parsers, generators, analysis sessions | Internal static library, only when `BUILD_ANALYSIS=ON` |
-| `video_renderer_ffi` | C ABI exported through `renderer/exports/ffi_exports.h` | Public native ABI |
-| `video_renderer_native` | pybind11 module for local demo/tooling | Developer-facing module |
-| `VoidPlayerCli` | Analysis cache inspection/generation CLI | Release/tooling executable, only when `BUILD_ANALYSIS=ON` |
-| `video_renderer_tests` / `analysis_tests` / `test_ffi_c` | CTest coverage | Test-only |
+`native/windows/presentation/windows_presentation_backend.*` is a fail-closed factory
+boundary. It is not an active renderer target.
 
-## Feature Options
+## Options
 
-| Option | Default | Required Behavior |
-| --- | --- | --- |
-| `BUILD_ANALYSIS` | `ON` | `OFF` must build renderer/player/FFI without `analysis_lib`, zstd, analysis tests, or `VoidPlayerCli`; renderer overlay draw is a no-op stub. |
-| `BUILD_FFI` | `ON` | `OFF` must not create `video_renderer_ffi`, FFI dist staging, or `test_ffi_c`. |
-| `BUILD_PYTHON` | `ON` | `OFF` must not create `video_renderer_native` or Python dist staging. |
-| `BUILD_TESTS` | `ON` | `OFF` must not create CTest targets. |
+| Option | Behavior |
+| --- | --- |
+| `BUILD_ANALYSIS` | Enables analysis library, CLI and analysis tests |
+| `BUILD_PYTHON` | Enables the optional pybind11 tooling module |
+| `BUILD_TESTS` | Enables CTest targets |
 
-## Policy
-
-- Public ABI is limited to exported headers and symbols, currently `renderer/exports/ffi_exports.h` and `naki_vr_*`.
-- Static libraries are internal unless explicitly documented here as release/tooling surfaces.
-- A target may depend on a more foundational target, but foundational targets must not include higher-level feature headers just for convenience.
-- New feature options need one default-path verification and one disabled-path verification.
-- Optional features should fail closed: disabled targets should not leave empty dist folders, dangling tests, or generated projects that link missing libraries.
+There is no renderer C FFI target or dist staging contract. Platform runners own their
+channel bridges. Static libraries remain internal unless this document explicitly marks
+them as a release surface.

@@ -5,7 +5,7 @@ import sys
 
 from .check_flutter_fork_protection import check_flutter_fork_protection
 from .check_macos_platform_protection import check_macos_platform_protection
-from .check_windows_fork_protection import check_windows_fork_protection
+from .check_windows_rebuild_boundary import check_windows_rebuild_boundary
 from .paths import ROOT
 from .process import header, run
 from .repo_hygiene import cmd_repo_hygiene
@@ -124,14 +124,14 @@ def cmd_gate(args: argparse.Namespace) -> None:
         cmd_repo_hygiene(argparse.Namespace())
         return
 
-    if profile == "windows-fork-protection":
-        errors = check_windows_fork_protection()
+    if profile == "windows-rebuild-boundary":
+        errors = check_windows_rebuild_boundary()
         if errors:
-            print("Windows fork protection check failed:")
+            print("Windows rebuild boundary check failed:")
             for error in errors:
                 print(f"  - {error}")
             sys.exit(1)
-        print("Windows fork protection check passed.")
+        print("Windows rebuild boundary check passed.")
         return
 
     if profile == "flutter-fork-protection":

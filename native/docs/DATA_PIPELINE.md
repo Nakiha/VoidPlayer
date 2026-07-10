@@ -26,17 +26,15 @@ layout 和 diagnostics 都使用微秒时间戳。
 ## TextureFrame
 
 `TextureFrame` 是 decode/convert 之后进入 renderer buffer 的平台中立 frame 包装。当前主字段是
-`FrameStorage` variant，兼容字段仍为旧调用点和测试保留。
+`FrameStorage` variant。
 
 | Storage | 典型来源 | 消费方 |
 | --- | --- | --- |
 | `CpuNv12FrameStorage` / planar YUV | software decode、hwdownload fallback | native upload / fallback package |
 | `CpuRgbaFrameStorage` | 旧测试、BGRA fallback、capture helpers | native BGRA upload path |
-| `D3D12TextureFrameStorage` / D3D12 texture | reserved Windows D3D12VA renderer-owned path | reserved native D3D12 backend |
-| `D3D11Nv12FrameStorage` / D3D11 texture | legacy Windows D3D11VA storage | disabled legacy backend |
 | macOS CVPixelBuffer storage | VideoToolbox zero-copy path | native-metal backend through CVMetalTextureCache / IOSurface |
 
-Frame storage 必须带足 lifetime 信息。D3D11VA 和 VideoToolbox 硬解 frame 都持有底层 FFmpeg/CVPixelBuffer 引用，避免
+Frame storage 必须带足 lifetime 信息。VideoToolbox 硬解 frame 持有底层 FFmpeg/CVPixelBuffer 引用，避免
 decoder pool 在 renderer 使用期间提前复用 surface。
 
 ## PresentDecision 与 RendererDrawSnapshot
@@ -99,6 +97,5 @@ viewport metrics，但 native capture smoke 应优先使用 renderer/backend cap
 | RGBA/BGRA frame | 约 8 MB/帧 |
 | NV12 frame | 约 3 MB/帧 |
 | P010 frame | 约 6 MB/帧 |
-| D3D11 headless BGRA 三缓冲 | 约 24 MB |
 | macOS CVPixelBuffer target | 约 8 MB/1080p BGRA target |
 | renderer-owned YUV/P010 textures or staging | 随格式、轨道数和目标尺寸变化 |

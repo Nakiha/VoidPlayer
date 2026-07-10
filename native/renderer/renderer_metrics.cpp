@@ -17,10 +17,6 @@ PresentationBackendMetrics Renderer::Impl::presentation_backend_metrics() const 
     return presentation_metrics_.snapshot(layout_revision, last_presented_layout_revision);
 }
 
-PresentationBackendMetrics Renderer::Impl::d3d_backend_metrics() const {
-    return presentation_backend_metrics();
-}
-
 PresentationBackendStats Renderer::Impl::presentation_backend_stats() const {
     return presentation_.backend_stats();
 }
@@ -36,7 +32,7 @@ bool Renderer::Impl::copy_last_presentation_frame_info(
 }
 
 RendererGpuMemoryStats Renderer::Impl::gpu_memory_stats() const {
-    auto presentation_memory = presentation_.d3d_memory_snapshot();
+    auto presentation_memory = presentation_.memory_snapshot();
     RendererGpuMemoryStats result = std::move(presentation_memory.stats);
     std::lock_guard<std::mutex> lock(state_mutex_);
     const auto track_memory =
@@ -55,15 +51,6 @@ RendererGpuMemoryStats Renderer::Impl::gpu_memory_stats() const {
     result.tracks = track_memory.tracks;
 
     return result;
-}
-
-bool Renderer::Impl::d3d_device_lost() const {
-    return device_state_.load(std::memory_order_acquire) != RendererDeviceState::Ready ||
-           presentation_.device_lost();
-}
-
-long Renderer::Impl::d3d_device_removed_reason() const {
-    return presentation_.device_removed_reason();
 }
 
 RendererDeviceState Renderer::Impl::device_state() const {

@@ -49,10 +49,6 @@ abstract interface class NativePlayerApi {
     required bool transparentViewport,
   });
   Future<void> debugFailNativeCompositor({required String reason});
-  Future<void> debugSimulateWindowsDeviceLoss({
-    required String target,
-    required String reason,
-  });
   Future<void> resetNativePerfCounters();
   Future<void> beginNativeInteractionSample({required String label});
   Future<void> endNativeInteractionSample({required String label});
@@ -298,17 +294,6 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     return _channel.invokeMethod<void>(
       NativePlayerMethods.debugFailNativeCompositor,
       {NativePlayerKeys.reason: reason},
-    );
-  }
-
-  @override
-  Future<void> debugSimulateWindowsDeviceLoss({
-    required String target,
-    required String reason,
-  }) {
-    return _channel.invokeMethod<void>(
-      NativePlayerMethods.debugSimulateWindowsDeviceLoss,
-      {NativePlayerKeys.target: target, NativePlayerKeys.reason: reason},
     );
   }
 

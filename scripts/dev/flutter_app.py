@@ -74,79 +74,6 @@ def _macos_local_engine_args(debug: bool) -> list[str]:
     return args
 
 
-def _windows_native_compositor_requested() -> bool:
-    mode = os.environ.get(
-        "VOIDPLAYER_WINDOWS_PRESENTATION_MODE", ""
-    ).strip().lower()
-    return mode in (
-        "",
-        "auto",
-        "sdr",
-        "native-compositor-sdr",
-        "native-compositor-scrgb",
-    )
-
-
-def _windows_local_engine_args(debug: bool) -> list[str]:
-    engine_src = Path(
-        os.environ.get(
-            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
-            str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
-        )
-    )
-    if debug:
-        engine_name = (
-            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE")
-            or "host_debug_unopt"
-        )
-        engine_host = (
-            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST")
-            or engine_name
-        )
-    else:
-        engine_name = (
-            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE")
-            or "host_release"
-        )
-        engine_host = (
-            os.environ.get("VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE")
-            or engine_name
-        )
-    engine_path = engine_src / "out" / engine_name
-    required = (
-        engine_path / "flutter_windows.dll",
-        engine_path / "flutter_export.h",
-        engine_path / "flutter_windows.h",
-        engine_path / "cpp_client_wrapper",
-        engine_path / "flutter_patched_sdk",
-    )
-    if not engine_path.exists() or any(not path.exists() for path in required):
-        print("ERROR: Windows native compositor modes require the locked local engine.")
-        print("Run scripts/ci/bootstrap_flutter_windows_engine.ps1 or set:")
-        print("  VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH=<engine/src>")
-        print("  VOIDPLAYER_FLUTTER_LOCAL_ENGINE[_RELEASE]=<output-name>")
-        sys.exit(1)
-    return [
-        f"--local-engine-src-path={engine_src}",
-        f"--local-engine={engine_name}",
-        f"--local-engine-host={engine_host}",
-    ]
-
-
-def _windows_engine_marker_path(debug: bool) -> Path:
-    return app_exe_path(debug).parent / ".voidplayer_flutter_engine_mode"
-
-
-def _windows_app_uses_native_engine(debug: bool) -> bool:
-    try:
-        return (
-            _windows_engine_marker_path(debug).read_text(encoding="utf-8").strip()
-            in ("native-compositor", "native-compositor-scrgb")
-        )
-    except OSError:
-        return False
-
-
 def flutter_build(debug: bool) -> None:
     """Build Flutter Windows app."""
     build_type = "Debug" if debug else "Release"
@@ -155,19 +82,9 @@ def flutter_build(debug: bool) -> None:
     header(f"Build Flutter ({build_type})")
 
     cmd = _flutter_cmd("build", "windows")
-    if _windows_native_compositor_requested():
-        cmd.extend(_windows_local_engine_args(debug))
     cmd.append("--debug" if debug else "--release")
 
     run(cmd, cwd=str(ROOT))
-    marker = _windows_engine_marker_path(debug)
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(
-        "native-compositor\n"
-        if _windows_native_compositor_requested()
-        else "standard\n",
-        encoding="utf-8",
-    )
 
 
 def flutter_build_macos(debug: bool) -> None:
@@ -401,8 +318,6 @@ def cmd_run(args) -> None:
     )
     if _is_macos():
         flutter_args.extend(_macos_local_engine_args(debug))
-    elif _windows_native_compositor_requested():
-        flutter_args.extend(_windows_local_engine_args(debug))
     flutter_args.append("--debug" if debug else "--release")
 
     if args.log_level:
@@ -434,11 +349,7 @@ def _cmd_launch(args) -> None:
     debug = bool(args.debug)
     exe = app_exe_path(debug)
 
-    needs_native_engine = (
-        _windows_native_compositor_requested()
-        and not _windows_app_uses_native_engine(debug)
-    )
-    if args.build or not exe.exists() or needs_native_engine:
+    if args.build or not exe.exists():
         flutter_build(debug)
 
     if not exe.exists():
@@ -570,11 +481,7 @@ def _cmd_ui_test(args) -> None:
 
     exe = app_exe_path(args.debug)
 
-    needs_native_engine = (
-        _windows_native_compositor_requested()
-        and not _windows_app_uses_native_engine(args.debug)
-    )
-    if args.build or not exe.exists() or needs_native_engine:
+    if args.build or not exe.exists():
         flutter_build(args.debug)
 
     if not exe.exists():

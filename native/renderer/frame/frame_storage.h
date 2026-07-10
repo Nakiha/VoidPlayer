@@ -5,9 +5,6 @@
 #include <variant>
 #include <vector>
 
-struct ID3D12Fence;
-struct ID3D12Resource;
-
 namespace vr {
 
 enum VideoColorRange : int {
@@ -81,19 +78,6 @@ struct CpuPlanarYuvFrameStorage {
     CpuYuvSampleAlignment sample_alignment = CpuYuvSampleAlignment::Packed;
 };
 
-struct D3D12TextureFrameStorage {
-    ID3D12Resource* texture = nullptr;
-    int subresource_index = 0;
-    ID3D12Fence* fence = nullptr;
-    void* fence_event = nullptr;
-    uint64_t fence_value = 0;
-    bool is_texture_array = false;
-    bool is_p010 = false;
-    int coded_width = 0;
-    int coded_height = 0;
-    std::shared_ptr<void> frame_ref;
-};
-
 struct MacOSCVPixelBufferFrameStorage {
     void* pixel_buffer = nullptr;
     uint32_t pixel_format = 0;
@@ -109,7 +93,6 @@ using FrameStorage = std::variant<
     CpuRgbaFrameStorage,
     CpuNv12FrameStorage,
     CpuPlanarYuvFrameStorage,
-    D3D12TextureFrameStorage,
     MacOSCVPixelBufferFrameStorage>;
 
 enum class FrameStorageKind {
@@ -117,7 +100,6 @@ enum class FrameStorageKind {
     CpuRgba,
     CpuNv12,
     CpuPlanarYuv,
-    D3D12Texture,
     MacOSCVPixelBuffer,
 };
 
@@ -138,9 +120,6 @@ inline FrameStorageKind frame_storage_kind(const FrameStorage& storage) {
     if (std::holds_alternative<CpuPlanarYuvFrameStorage>(storage)) {
         return FrameStorageKind::CpuPlanarYuv;
     }
-    if (std::holds_alternative<D3D12TextureFrameStorage>(storage)) {
-        return FrameStorageKind::D3D12Texture;
-    }
     if (std::holds_alternative<MacOSCVPixelBufferFrameStorage>(storage)) {
         return FrameStorageKind::MacOSCVPixelBuffer;
     }
@@ -153,8 +132,6 @@ inline FrameStorageClass frame_storage_class(FrameStorageKind kind) {
     case FrameStorageKind::CpuNv12:
     case FrameStorageKind::CpuPlanarYuv:
         return FrameStorageClass::CpuPixels;
-    case FrameStorageKind::D3D12Texture:
-        return FrameStorageClass::HardwareTexture;
     case FrameStorageKind::MacOSCVPixelBuffer:
         return FrameStorageClass::CVPixelBuffer;
     case FrameStorageKind::Empty:

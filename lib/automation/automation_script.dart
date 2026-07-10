@@ -540,22 +540,6 @@ ScriptInstruction? _parseInstruction(
               : args[0],
         ),
       );
-    case 'DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS':
-      if (args.isEmpty || args[0].isEmpty) {
-        log.warning(
-          'DEBUG_SIMULATE_WINDOWS_DEVICE_LOSS needs a target: $rawLine',
-        );
-        return null;
-      }
-      return ScriptAutomationAction(
-        time,
-        DebugSimulateWindowsDeviceLossAction(
-          target: args[0],
-          reason: args.length < 2 || args[1].isEmpty
-              ? 'debug-simulated-device-loss'
-              : args[1],
-        ),
-      );
     case 'RESET_NATIVE_PERF_COUNTERS':
       return ScriptAutomationAction(
         time,

@@ -24,8 +24,6 @@ namespace vr {
 class PlaybackController;
 class PresentationBackend;
 struct AnalysisOverlayPrimitivePackage;
-struct SharedFp16TextureSnapshot;
-struct SharedSourceCacheBundleSnapshot;
 
 class Renderer {
 public:
@@ -79,16 +77,12 @@ public:
     RendererPresentedAnchorDiagnostics presented_anchor_diagnostics() const;
 
     PresentationBackendMetrics presentation_backend_metrics() const;
-    PresentationBackendMetrics d3d_backend_metrics() const;
     PresentationBackendStats presentation_backend_stats() const;
     PresentationBackendDiagnostics presentation_backend_diagnostics() const;
     std::string presentation_backend_last_error() const;
     bool copy_last_presentation_frame_info(PresentationBackendFrameInfo* out) const;
     RendererGpuMemoryStats gpu_memory_stats() const;
 
-    bool d3d_device_lost() const;
-    long d3d_device_removed_reason() const;
-    bool recover_presentation_device_loss(const char* reason, long removed_reason);
     RendererDeviceState device_state() const;
 
     void set_track_offset(int file_id, int64_t offset_us);
@@ -107,29 +101,6 @@ public:
     int texture_width() const;
     int texture_height() const;
 
-    bool acquire_shared_texture(SharedTextureSnapshot& snapshot) const;
-    void release_shared_texture(int buffer_index, uint64_t buffer_generation) const;
-    void* native_render_device() const;
-    void* native_render_command_queue() const;
-    bool acquire_shared_fp16_texture(SharedFp16TextureSnapshot& snapshot) const;
-    void release_shared_fp16_texture(int buffer_index, uint64_t ring_generation) const;
-    void set_shared_fp16_frame_callback(std::function<void()> cb);
-    bool update_external_flutter_surface(
-        const PresentationExternalD3D12Surface& surface);
-    void clear_external_flutter_surface();
-    bool draw_current_frame_to_external_d3d12_target(
-        const PresentationExternalD3D12RenderTarget& target,
-        const char* reason);
-    bool configure_source_cache(
-        const std::vector<SourceCompositorTrackDescriptor>& descriptors);
-    void clear_source_cache(const char* reason);
-    bool update_source_projection(const SourceCompositorProjection& projection);
-    void clear_source_projection();
-    bool acquire_source_cache_bundle(
-        SharedSourceCacheBundleSnapshot& snapshot) const;
-    void release_source_cache_bundle(
-        int buffer_index, uint64_t ring_generation) const;
-    void set_source_cache_frame_callback(std::function<void()> cb);
     bool prewarm_presentation_target(int width, int height);
     void resize(int width, int height);
     bool update_headless_output(void* output,

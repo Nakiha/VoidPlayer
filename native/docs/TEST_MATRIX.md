@@ -27,7 +27,7 @@ targets:
 | `backend` | Platform presentation/decode backend canary. |
 | `integration` | A real native playback or subsystem vertical slice. |
 | `windows` / `macos` | Platform-specific native coverage. |
-| `analysis` / `ffi` / `cli` | Analysis, C ABI, or CLI-specific coverage. |
+| `analysis` / `cli` | Analysis or CLI-specific coverage. |
 | `videotoolbox` | VideoToolbox-specific native canary. |
 | `diagnostics` | Crash/log/diagnostic behavior. |
 | `audio` | Native audio behavior. |
@@ -47,9 +47,8 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 
 | Test | Type | Gate | Requires | Covered risk |
 | --- | --- | --- | --- | --- |
-| `video_renderer_tests` | contract + integration | PR fast | platform native build | Shared renderer, FFI command policy, decode/seek/layout unit coverage. |
+| `video_renderer_tests` | contract + integration | PR fast | platform native build | Shared renderer, decode/seek/layout unit coverage. |
 | `analysis_tests` | contract | Release candidate / analysis changes | analysis submodules/tools | VAC2/VACHUNK/cache and analysis FFI behavior. |
-| `test_ffi_c` | FFI canary | PR fast when FFI is built | Windows FFI target | C ABI load/call sanity. |
 | `voidplayer_cli_help` | CLI canary | Release candidate | analysis build | CLI starts and exposes help. |
 | `analysis_cli_smoke` | CLI integration | Release candidate / analysis changes | analyzer + sample media | CLI end-to-end analysis smoke. |
 | `software_bgra_converter_smoke` | contract | PR fast | macOS native build | BGRA copy/channel/stride behavior. |
@@ -79,7 +78,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 
 | Script group | Canonical role | Gate |
 | --- | --- | --- |
-| Windows UI smokes | Removed from this restart branch. Windows native presentation is currently reserved/fail-closed and will get a new D3D11/DX12 matrix when that backend is reintroduced. | `python dev.py gate windows-fork-protection` |
+| Windows UI smokes | Removed from this restart branch. Windows native presentation is reserved/fail-closed until a new D3D11/DX12 matrix is introduced. | `python dev.py gate windows-rebuild-boundary` |
 | `ui_tests/timeline/**` | Real pointer timeline/seek path. | Targeted Windows preservation; stress scripts nightly/release. |
 | `ui_tests/seek/**` | Direct seek/step/rapid seek regressions. | Targeted preservation; rapid/storm scripts nightly. |
 | `ui_tests/loop/**` | Loop range state and commit behavior. | Targeted preservation. |
@@ -130,7 +129,7 @@ candidate.
 For the macOS native-compositor restart, treat these as the minimum merge
 evidence set: `toolchain doctor`, macOS local-engine bootstrap, `pr-fast`,
 `macos-ui-smoke`, targeted macOS HDR/EDR evidence when touching HDR policy,
-`macos-release-readiness`, `windows-fork-protection`, and green GitHub
+`macos-release-readiness`, `windows-rebuild-boundary`, and green GitHub
 Flutter/Native checks.
 
 ## Rules

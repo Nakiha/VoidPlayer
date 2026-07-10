@@ -97,51 +97,13 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
     return drew;
 }
 
-bool Renderer::Impl::recover_presentation_device_loss(
-    const char* reason,
-    long removed_reason) {
-#ifdef _WIN32
-    {
-        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-        if (!initialized_.load(std::memory_order_acquire) ||
-            shutting_down_.load(std::memory_order_acquire)) {
-            return false;
-        }
-    }
-    device_state_.store(RendererDeviceState::Lost, std::memory_order_release);
-    presentation_metrics_.note_device_lost();
-    const char* recovery_reason =
-        reason && reason[0] != '\0' ? reason : "presentation-device-loss";
-    const bool recovered =
-        presentation_.recover_d3d_device_loss(recovery_reason, removed_reason);
-    if (!recovered) {
-        return false;
-    }
-    {
-        std::lock_guard<std::mutex> lock(state_mutex_);
-        loop_driver_.force_preview_redraw();
-    }
-    device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
-    (void)request_frame_refresh("windows-device-recovery");
-    spdlog::info(
-        "[Renderer] recovered presentation device reason={} removed={:#x}",
-        recovery_reason,
-        static_cast<unsigned long>(removed_reason));
-    return true;
-#else
-    (void)reason;
-    (void)removed_reason;
-    return false;
-#endif
-}
-
 bool Renderer::Impl::recover_or_enter_terminal_device_lost_locked(
     const char* operation) {
 #ifdef _WIN32
     const long reason = presentation_.device_removed_reason();
     device_state_.store(RendererDeviceState::Lost, std::memory_order_release);
     presentation_metrics_.note_device_lost();
-    if (presentation_.recover_d3d_device_loss(operation, reason)) {
+    if (presentation_.recover_device_loss(operation, reason)) {
         loop_driver_.force_preview_redraw();
         device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
         spdlog::info(

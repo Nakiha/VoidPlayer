@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../app_log.dart';
@@ -46,7 +44,7 @@ class MainWindowScaffold extends StatelessWidget {
     final nativeCompositor = NativeCompositorFlags.nativeCompositor;
     final nativeCompositorViewportActive =
         nativeCompositor &&
-        (Platform.isWindows || viewport.nativeCompositorActive) &&
+        viewport.nativeCompositorActive &&
         viewport.viewModeEnabled &&
         viewport.viewportState.status == ViewportDisplayStatus.active;
     if (overlays.settingsVisible ||
@@ -54,7 +52,7 @@ class MainWindowScaffold extends StatelessWidget {
         overlays.profilerVisible ||
         overlays.marksSidebarVisible) {
       log.fine(
-        '[WindowsCompositorDebug] scaffold overlay build '
+        '[NativeCompositorDebug] scaffold overlay build '
         'nativeHole=$nativeCompositorViewportActive '
         'settings=${overlays.settingsVisible} '
         'mediaInfo=${overlays.mediaInfoVisible} '
@@ -71,7 +69,7 @@ class MainWindowScaffold extends StatelessWidget {
         behavior: HitTestBehavior.translucent,
         onPointerDown: (event) {
           log.fine(
-            '[WindowsCompositorDebug] root pointerDown '
+            '[NativeCompositorDebug] root pointerDown '
             'global=${event.position} local=${event.localPosition} '
             'buttons=${event.buttons} tracks=${media.tracks.length} '
             'nativeHole=$nativeCompositorViewportActive '

@@ -64,7 +64,7 @@ bool FrameConverter::init_software(int src_width, int src_height, AVPixelFormat 
     return true;
 }
 
-bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
+bool FrameConverter::init_hardware(void* native_device, void* native_context,
                                    int src_width, int src_height,
                                    HwDecodeType hw_type,
                                    bool download_to_cpu,
@@ -74,8 +74,8 @@ bool FrameConverter::init_hardware(void* d3d_device, void* d3d_context,
 
     auto hardware_converter = std::make_unique<HardwareFrameConverter>();
     if (!hardware_converter->init(
-            d3d_device,
-            d3d_context,
+            native_device,
+            native_context,
             src_width,
             src_height,
             hw_type,
@@ -149,8 +149,7 @@ std::optional<TextureFrame> FrameConverter::snapshot_hardware_frame(AVFrame* fra
     if (!hardware_converter_) {
         return std::nullopt;
     }
-    if (hardware_converter_->hw_type() == HwDecodeType::D3D12VA ||
-        hardware_converter_->hw_type() == HwDecodeType::VideoToolbox) {
+    if (hardware_converter_->hw_type() == HwDecodeType::VideoToolbox) {
         return hardware_converter_->convert(frame);
     }
     return hardware_converter_->snapshot_frame(frame);

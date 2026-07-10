@@ -29,7 +29,6 @@ bool Renderer::Impl::recreate_pipeline_for_seek(std::unique_lock<std::mutex>& st
     spdlog::info("[Renderer] Recreating pipeline for {}", detached.file_path);
 
     present_history_.clear_slot(slot);
-    clear_present_decision_slot(external_d3d12_visible_decision_, slot);
     loop_driver_.force_preview_redraw();
 
     state_lock.unlock();
@@ -240,9 +239,6 @@ int Renderer::Impl::add_track_internal(const std::string& video_path,
         // they remain visible while the new track is still buffering/soft-decoding.
         loop_driver_.force_preview_redraw();
         present_history_.clear_reserved_slot(static_cast<size_t>(reservation.slot));
-        clear_present_decision_slot(
-            external_d3d12_visible_decision_,
-            static_cast<size_t>(reservation.slot));
         loop_driver_.reset_presentation_scheduler();
     }
 
@@ -318,9 +314,6 @@ void Renderer::Impl::remove_track(int file_id) {
         slot = detach_result.slot;
         remaining = detach_result.remaining;
         present_history_.compact_from(static_cast<size_t>(slot));
-        compact_present_decision_frames(
-            external_d3d12_visible_decision_,
-            static_cast<size_t>(slot));
 
         layout_state_.remove_track(
             file_id, [this](int id) {

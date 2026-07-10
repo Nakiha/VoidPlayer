@@ -37,7 +37,7 @@ python3.12 dev.py gate macos-ui-smoke
 python3.12 dev.py gate macos-ui-nightly
 python3.12 dev.py gate macos-hdr-edr-smoke
 python3.12 dev.py gate macos-release-readiness
-python3.12 dev.py gate windows-fork-protection
+python3.12 dev.py gate windows-rebuild-boundary
 ```
 
 Native 子目录仍可直接使用 CMake/presets，但日常开发应通过顶层 `dev.py` 保持平台产物和依赖检查一致。
@@ -49,7 +49,7 @@ Native 子目录仍可直接使用 CMake/presets，但日常开发应通过顶�
 
 | 目录 | 说明 |
 | --- | --- |
-| `build/native/standalone/` | `dev.py build --native`、native CMake presets、独立 CTest/FFI/Python 产物 |
+| `build/native/standalone/` | `dev.py build --native`、native CMake presets、独立 CTest/Python 产物 |
 | `build/native/runner/` | Flutter/Xcode runner 内嵌 native 静态库或中间产物 |
 | `build/native/analysis/` | analysis CLI 等辅助 native 工具构建目录 |
 
@@ -65,9 +65,6 @@ Source ownership is split under `native/cmake/`:
 | `NativeSourcesWindows.cmake` | Windows facade shell only; native D3D11/DX12 backend sources are reserved for the later Windows restart |
 | `NativeSourcesMacOS.cmake` | macOS native bridge、Metal/CVPixelBuffer presentation |
 | `NativeSourcesAnalysis.cmake` | analysis cache/generator source list |
-| `NativeSourcesShaders.cmake` | embedded HLSL shader inputs |
-| `WindowsBindingTargets.cmake` | Windows FFI / pybind11 binding targets |
-| `NativeInstall.cmake` | FFI / Python dist staging rules |
 
 新增 native 源文件时先按 ownership 放进对应清单；`NativeSources.cmake` 只保留 shared path setup、includes 和通用 CMake helper functions。
 
@@ -78,19 +75,16 @@ Source ownership is split under `native/cmake/`:
 | `void_renderer_portable_driver` | macOS/native smokes | shared renderer driver object target |
 | `void_macos_native_player` | macOS | macOS native bridge + Metal presentation backend |
 | `macos_native_abi_smoke` | macOS | macOS C ABI layout/status/lifetime contract smoke |
-| `video_renderer_ffi` | native FFI | C FFI shared library，导出 `naki_vr_*` |
 | `video_renderer_native` | native/Python | pybind11 module for demo/scripts |
 | `VoidPlayerCli` | analysis enabled | analysis cache/overlay CLI |
 | `video_renderer_tests` | native | Catch2 renderer/unit/integration tests |
 | `analysis_tests` | analysis enabled | VAC2/VACHUNK/cache tests |
-| `test_ffi_c` | FFI tests | C ABI smoke |
 | `macos_*_smoke` / `renderer_metal_headless_smoke` | macOS | Metal、VideoToolbox、native player、capture、audio native smokes |
 
 常用 CMake 开关：
 
 | 开关 | 默认 | 说明 |
 | --- | --- | --- |
-| `BUILD_FFI` | `ON` | 构建 C FFI target |
 | `BUILD_PYTHON` | `ON` | 构建 pybind11 Python binding；找不到依赖时自动关闭 |
 | `BUILD_TESTS` | `ON` | 构建 CTest targets |
 | `BUILD_ANALYSIS` | `ON` | 构建 analysis cache/overlay/CLI；关闭时 renderer 使用 no-op overlay stub |
@@ -187,7 +181,7 @@ contract is that D3D11/DX12 backends stay reserved/fail-closed until the Windows
 runner-composed sandwich backend is rebuilt:
 
 ```powershell
-python dev.py gate windows-fork-protection
+python dev.py gate windows-rebuild-boundary
 ```
 
 When Windows work resumes, add a new D3D11/DX12 backend matrix instead of

@@ -24,7 +24,6 @@ struct RendererBackendInterop {
     const PresentationBackendProvider* provider = nullptr;
     ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
     double sdr_white_level_nits = 80.0;
-    bool shared_fp16_output = false;
 };
 
 struct RendererConfig {

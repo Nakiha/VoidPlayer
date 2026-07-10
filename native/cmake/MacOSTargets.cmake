@@ -30,6 +30,7 @@ target_include_directories(void_macos_native_player PUBLIC
 )
 target_compile_definitions(void_macos_native_player PRIVATE
     VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>
+    VOIDPLAYER_METAL_RUNTIME_SHADER_FALLBACK=$<BOOL:${BUILD_TESTS}>
 )
 target_link_libraries(void_macos_native_player PUBLIC
     void_media_ffmpeg

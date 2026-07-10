@@ -58,6 +58,18 @@ projection, and performs final composition. Neither side may:
 The native compositor and Flutter overlay should be tested as two independent
 surfaces composed by the runner.
 
+## Metal Pipeline Startup
+
+The runner compiles `VoidPlayerNativeShaders.metal` into the app's
+`default.metallib`. Native pipeline creation loads that precompiled library and
+is prewarmed on a background queue while Flutter starts, so media creation does
+not invoke Metal's runtime source compiler.
+
+The generated MSL include remains only for standalone native tests built with
+`BUILD_TESTS=ON`. Product runner builds compile with runtime shader fallback
+disabled; a missing or stale app metallib therefore fails closed instead of
+silently restoring the old first-frame compile stall.
+
 ## Required Validation
 
 For current native backend work:

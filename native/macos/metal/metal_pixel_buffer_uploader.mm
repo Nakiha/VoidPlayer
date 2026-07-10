@@ -16,9 +16,10 @@
 
 namespace {
 
-constexpr const char* kLayoutBgraKernelSource =
+#if VOIDPLAYER_METAL_RUNTIME_SHADER_FALLBACK
+constexpr const char* kLayoutBgraKernelSourceChunks[] =
 #include "macos/metal/generated/metal_pixel_buffer_uploader_shaders.inc"
-    ;
+#endif
 
 void write_error(char* error, size_t error_size, const char* message) {
   if (!error || error_size == 0) {
@@ -126,12 +127,19 @@ VPMacOSMetalPipelineRegistry build_pipeline_registry(id<MTLDevice> device) {
   if (!device) {
     return registry;
   }
-  NSError* libraryError = nil;
-  NSString* source =
-      [[NSString alloc] initWithUTF8String:kLayoutBgraKernelSource];
-  registry.library = [device newLibraryWithSource:source
-                                          options:nil
-                                            error:&libraryError];
+  registry.library = [device newDefaultLibrary];
+#if VOIDPLAYER_METAL_RUNTIME_SHADER_FALLBACK
+  if (!registry.library) {
+    NSError* libraryError = nil;
+    NSMutableString* source = [[NSMutableString alloc] init];
+    for (const char* chunk : kLayoutBgraKernelSourceChunks) {
+      [source appendString:[[NSString alloc] initWithUTF8String:chunk]];
+    }
+    registry.library = [device newLibraryWithSource:source
+                                            options:nil
+                                              error:&libraryError];
+  }
+#endif
   registry.layout_package =
       new_compute_pipeline(device, registry.library, @"layout_bgra_copy");
   registry.layout_cv_single =
@@ -299,6 +307,15 @@ public:
 };
 
 }  // namespace
+
+void VPMacOSMetalUploaderPrewarmPipelines(void) {
+  @autoreleasepool {
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    if (device) {
+      (void)shared_pipeline_registry(device);
+    }
+  }
+}
 
 const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
   switch (status) {

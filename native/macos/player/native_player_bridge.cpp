@@ -1,6 +1,7 @@
 #include "native_player_bridge.h"
 
 #include "common/logging.h"
+#include "macos/metal/metal_uploader_bridge.h"
 #include "macos/player/native_player_state.h"
 #include "renderer/decode/frame_color_metadata.h"
 
@@ -123,6 +124,10 @@ void VPMacOSLogProfilerSummary(const char* message) {
     return;
   }
   spdlog::info("[MacOSProfilerSummary] {}", message);
+}
+
+void VPMacOSNativePrewarmMetalPipelines(void) {
+  VPMacOSMetalUploaderPrewarmPipelines();
 }
 
 void VPMacOSNativeAnalysisOverlayClearTracks(void) {

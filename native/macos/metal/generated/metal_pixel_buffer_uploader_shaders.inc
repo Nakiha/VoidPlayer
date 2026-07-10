@@ -1,3 +1,4 @@
+{
 R"(
 #include <metal_stdlib>
 using namespace metal;
@@ -301,6 +302,8 @@ float4 viewport_background_color(constant LayoutParams& params) {
                          params.background_color_b,
                          params.background_color_a));
 }
+)",
+R"(
 
 	float2 aspect_fit_uv(float2 local_uv,
                      constant LayoutParams& params,
@@ -324,6 +327,8 @@ float4 viewport_background_color(constant LayoutParams& params) {
   out_of_bounds = false;
 	  return source_uv;
 	}
+)",
+R"(
 
 	float3 linear_to_srgb(float3 x) {
 	  x = max(x, 0.0);
@@ -544,6 +549,8 @@ float4 viewport_background_color(constant LayoutParams& params) {
 	                    params.output_edr != 0),
 	      1.0);
 	}
+)",
+R"(
 
 float4 overlay_blend_over(float4 dst, float4 src) {
   return float4(
@@ -691,6 +698,8 @@ float4 overlay_sample_for_track(
   return center_bits == 0u ? sample : float4(0.0, 0.0, 0.0, 0.0);
 }
 
+)",
+R"(
 	kernel void layout_bgra_copy(
 	    device const uchar* source [[buffer(0)]],
 	    constant LayoutParams& params [[buffer(1)]],
@@ -787,6 +796,8 @@ float4 overlay_sample_for_track(
                                overlay3));
   destination.write(color, gid);
 }
+)",
+R"(
 float4 sample_cv_yuv_track(texture2d<float, access::read> y_texture,
                            texture2d<float, access::read> uv_texture,
                            constant LayoutParams& params,
@@ -997,6 +1008,8 @@ kernel void layout_cv_yuv_set_copy(
                                overlay3));
   destination.write(color, gid);
 }
+)",
+R"(
 struct OverlayGpuRect {
   uint rect_uv0;
   uint rect_uv1;
@@ -1102,6 +1115,8 @@ int overlay_snap_line_px(float line_px) {
   return int(floor(line_px + 0.001));
 }
 
+)",
+R"(
 void overlay_write_direct_line_pixel(
     texture2d<float, access::read_write> destination,
     int width,
@@ -1265,6 +1280,8 @@ kernel void composite_overlay_line_rects_direct(
   }
 }
 
+)",
+R"(
 bool overlay_rect_matches_layer(OverlayGpuRect rect, constant OverlayLayerParams& params) {
   return uint(overlay_track_index_from_rect(rect)) == params.track_slot;
 }
@@ -1443,7 +1460,6 @@ kernel void build_overlay_line_mask_layer(
       clamp(int(floor(snapped_rect_px.y - line_width_px)), 0, int(params.height));
   const int max_y =
       clamp(int(ceil(snapped_rect_px.w + line_width_px)), 0, int(params.height));
-  const float2 rect_min = overlay_unpack_uv16(rect.rect_uv0);
   const float2 rect_max = overlay_unpack_uv16(rect.rect_uv1);
   for (int y = min_y; y < max_y; ++y) {
     const uint row = uint(y) * params.width;
@@ -1503,7 +1519,8 @@ kernel void composite_overlay_line_layer(
   const float marker = float(center_bits) / 15.0;
   layer.write(float4(marker, 0.0, 0.0, 1.0), gid);
 }
-
+)",
+R"(
 bool overlay_global_rect_from_video_rect(
     OverlayGpuRect rect,
     constant LayoutParams& params,
@@ -1733,4 +1750,5 @@ kernel void composite_overlay_line_contrast(
   const float4 dst = destination.read(gid);
   destination.write(overlay_blend_over(dst, center ? center_color : halo_color), gid);
 }
-)";
+)",
+};

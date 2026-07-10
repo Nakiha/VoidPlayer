@@ -43,6 +43,7 @@ void VPMacOSConfigureLogging(const char* logs_dir,
                              const char* log_file_name,
                              const char* level);
 void VPMacOSLogProfilerSummary(const char* message);
+void VPMacOSNativePrewarmMetalPipelines(void);
 void VPMacOSNativeAnalysisOverlayClearTracks(void);
 int VPMacOSNativeAnalysisOverlaySetTrack(int32_t track_file_id,
                                          const char* analysis_path);

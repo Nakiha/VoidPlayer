@@ -128,7 +128,7 @@ reports that transfer metadata; full Dolby Vision grading remains future work.
 ## Windows native D3D Path
 
 Windows native presentation is reserved/fail-closed on this restart branch. The
-old D3D11/DComp/D3D12 color path, source projection, HDR promotion,
+old D3D11/DComp/D3D12 color path, HDR promotion,
 cross-adapter handling, and overlay composition evidence were removed from the
 active docs and gates.
 

@@ -45,13 +45,13 @@ RendererDrawSnapshot
   -> runner composition under Flutter's transparent ARGB UI surface
 ```
 
-Native allocates and publishes the video source targets; Swift retains complete
-packages and composes them separately from Flutter's UI surface. Viewport pan/zoom only
-submits the latest layout intent; `CVDisplayLink` coalesces input, while native
-keeps video source updates tied to media PTS and lets display ticks re-composite
-the retained source cache for pan/zoom/split/overlay changes. Swift must not add
-a second frame pump, playback clock, seek policy, loop policy, or layout
-compositor.
+Native allocates and publishes one complete viewport target; Swift retains the
+latest target and composes it separately from Flutter's UI surface. Viewport
+pan/zoom submits the latest layout intent to the shared renderer, which redraws
+the native target with layout and overlay already applied. The runner display
+link samples the retained native target and current Flutter surface each tick.
+Swift must not add a second frame pump, playback clock, seek policy, loop policy,
+or layout compositor.
 
 The detailed presentation contract is documented in
 `../native/docs/MACOS_PRESENTATION_BACKEND.md`; stabilization and local
@@ -89,12 +89,12 @@ Useful macOS smoke areas:
 - `native_vvc_software_playback_smoke.csv`: software decode fallback visibility.
 - `native_seek_frame_smoke.csv`: seek refresh through native renderer completion.
 - `native_layout_split_smoke.csv`: shared layout through Metal presentation.
-- `native_playing_dual_track_pan_smoke.csv`: playing viewport composite follows
-  display-link cadence while video source updates remain media-clock driven.
-- `native_paused_dual_track_pan_zoom_smoke.csv`: paused source-cache composite
-  follows display-link cadence.
+- `native_playing_dual_track_pan_smoke.csv`: playing complete-target layout and
+  runner composition follow pan updates.
+- `native_paused_dual_track_pan_zoom_smoke.csv`: paused complete-target redraw
+  follows pan/zoom updates.
 - `native_add_track_smoke.csv`: multi-track add/remove/offset diagnostics.
-- `native_compositor_lifecycle_stress_smoke.csv`: SDR/HDR source-ring rebuild,
+- `native_compositor_lifecycle_stress_smoke.csv`: SDR/HDR target-ring rebuild,
   seek/resize, track compaction, destroy/recreate, and window-close lifecycle.
 - `analysis_gated_smoke.csv`: analysis FFI and media-header overlay activation present, external
   analysis UI/IPC still gated.

@@ -247,9 +247,7 @@ void RendererPresentCommandProcessor::present_frame(
     {
         const auto snapshot_start = std::chrono::steady_clock::now();
         std::lock_guard<std::mutex> lock(context.state_mutex);
-        if (context.hooks.should_consume_pending_layout()) {
-            context.hooks.consume_pending_layout_locked();
-        }
+        context.hooks.consume_pending_layout_locked();
         spdlog::debug("[present_frame] mode={}", context.layout.current_for_draw().mode);
         PresentDecision filtered_decision = decision;
         context.tracks.filter_present_decision(filtered_decision);
@@ -263,26 +261,6 @@ void RendererPresentCommandProcessor::present_frame(
         snapshot_us = elapsed_us_since(snapshot_start);
     }
     const bool attempted_draw = present_decision_has_frame(snapshot.decision);
-    if (attempted_draw &&
-        context.hooks
-            .should_suppress_playback_present_for_viewport_compositor()) {
-        const auto suppressed =
-            context.metrics.note_playing_layout_redraw_suppressed();
-        if (profiler_enabled("VOIDPLAYER_MACOS_PROFILER") &&
-            (suppressed % 120 == 0 || viewport_trace_log_all())) {
-            spdlog::info(
-                "[RendererProfiler] present_frame suppressed by viewport compositor "
-                "layout_rev={} suppressed={} tracks={}",
-                snapshot_layout_revision,
-                suppressed,
-                present_decision_frame_count(snapshot.decision));
-        }
-        if (context.hooks.playback_frame_ready_for_viewport_compositor) {
-            context.hooks.playback_frame_ready_for_viewport_compositor();
-        }
-        return;
-    }
-
     const auto completion_ctx = completion_context(context);
     RendererPresentationSubmitRequest request(snapshot, context.metrics);
     request.source = "present_frame";

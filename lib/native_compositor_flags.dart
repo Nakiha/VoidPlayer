@@ -19,6 +19,4 @@ class NativeCompositorFlags {
         mode == 'hdr' ||
         Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR'] == '1';
   }
-
-  static bool get sourceProjection => Platform.isMacOS && nativeCompositor;
 }

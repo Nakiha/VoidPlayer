@@ -8,10 +8,6 @@ final class MacOSPlaybackController {
     framePump.targetInstalled
   }
 
-  var sourceProviderFramePumpActive: Bool {
-    framePump.sourceProviderActive
-  }
-
   var framePumpForRefresh: MacOSNativeFramePump {
     framePump
   }
@@ -45,18 +41,16 @@ final class MacOSPlaybackController {
     textureRegistered: Bool,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
-    presentationState: MacOSFramePresentationState,
-    requiresPresentationTarget: Bool = true
+    presentationState: MacOSFramePresentationState
   ) {
-    isPlaying = textureRegistered || !requiresPresentationTarget
+    isPlaying = player != nil || textureRegistered
     player?.play()
     startFramePump(
       player: player,
       texture: texture,
       maxTrackSlots: maxTrackSlots,
       userData: userData,
-      presentationState: presentationState,
-      requiresPresentationTarget: requiresPresentationTarget
+      presentationState: presentationState
     )
   }
 
@@ -87,8 +81,7 @@ final class MacOSPlaybackController {
     textureRegistered: Bool,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
-    presentationState: MacOSFramePresentationState,
-    requiresPresentationTarget: Bool = true
+    presentationState: MacOSFramePresentationState
   ) {
     guard shouldResume else { return }
     play(
@@ -97,8 +90,7 @@ final class MacOSPlaybackController {
       textureRegistered: textureRegistered,
       maxTrackSlots: maxTrackSlots,
       userData: userData,
-      presentationState: presentationState,
-      requiresPresentationTarget: requiresPresentationTarget
+      presentationState: presentationState
     )
   }
 
@@ -165,8 +157,7 @@ final class MacOSPlaybackController {
     texture: MacOSFlutterTextureBridge?,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
-    presentationState: MacOSFramePresentationState,
-    requiresPresentationTarget: Bool = true
+    presentationState: MacOSFramePresentationState
   ) -> Bool {
     guard let player else { return false }
     return framePump.ensure(
@@ -174,8 +165,7 @@ final class MacOSPlaybackController {
       texture: texture,
       maxTrackSlots: maxTrackSlots,
       userData: userData,
-      presentationState: presentationState,
-      requiresPresentationTarget: requiresPresentationTarget
+      presentationState: presentationState
     )
   }
 
@@ -184,8 +174,7 @@ final class MacOSPlaybackController {
     texture: MacOSFlutterTextureBridge?,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
-    presentationState: MacOSFramePresentationState,
-    requiresPresentationTarget: Bool = true
+    presentationState: MacOSFramePresentationState
   ) {
     stopFramePump(player: player)
     guard let player else { return }
@@ -194,8 +183,7 @@ final class MacOSPlaybackController {
       texture: texture,
       maxTrackSlots: maxTrackSlots,
       userData: userData,
-      presentationState: presentationState,
-      requiresPresentationTarget: requiresPresentationTarget
+      presentationState: presentationState
     )
     if !started {
       isPlaying = false

@@ -31,11 +31,7 @@ class NativePlayerMethods {
   static const resetNativePerfCounters = 'resetNativePerfCounters';
   static const beginNativeInteractionSample = 'beginNativeInteractionSample';
   static const endNativeInteractionSample = 'endNativeInteractionSample';
-  static const prepareNativeCompositorSourceCache =
-      'prepareNativeCompositorSourceCache';
   static const setNativeAnalysisOverlay = 'setNativeAnalysisOverlay';
-  static const clearNativeCompositorSourceCache =
-      'clearNativeCompositorSourceCache';
   static const setViewportBackgroundColor = 'setViewportBackgroundColor';
   static const captureViewport = 'captureViewport';
   static const captureViewportRegion = 'captureViewportRegion';
@@ -73,17 +69,8 @@ class NativePlayerKeys {
   static const scaleY = 'scaleY';
   static const translateX = 'translateX';
   static const translateY = 'translateY';
-  static const activeTrackCount = 'activeTrackCount';
-  static const sourceSlots = 'sourceSlots';
-  static const sourceOrder = 'sourceOrder';
   static const traceId = 'traceId';
   static const traceSentUs = 'traceSentUs';
-  static const displayOffsetX = 'displayOffsetX';
-  static const displayOffsetY = 'displayOffsetY';
-  static const invDisplaySizeX = 'invDisplaySizeX';
-  static const invDisplaySizeY = 'invDisplaySizeY';
-  static const viewOffsetUvX = 'viewOffsetUvX';
-  static const viewOffsetUvY = 'viewOffsetUvY';
   static const reason = 'reason';
   static const target = 'target';
   static const label = 'label';

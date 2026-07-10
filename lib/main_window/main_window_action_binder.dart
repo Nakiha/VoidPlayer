@@ -122,7 +122,7 @@ extension MainWindowViewActionBinding on MainWindowController {
       viewport: MainWindowViewportActions(
         onPan: (delta) {
           if (!_capabilities.canPanViewport) return;
-          ViewportProjectionDiagnostics.instance.record('viewportActionPan');
+          ViewportInteractionDiagnostics.instance.record('viewportActionPan');
           _boostNativeCompositorFlutterInteraction(reason: 'viewport-pan');
           layoutCoordinator.onPan(delta);
         },
@@ -132,7 +132,7 @@ extension MainWindowViewActionBinding on MainWindowController {
         },
         onZoom: (factor, localPos) {
           if (!_capabilities.canZoomViewport) return;
-          ViewportProjectionDiagnostics.instance.record('viewportActionZoom');
+          ViewportInteractionDiagnostics.instance.record('viewportActionZoom');
           _boostNativeCompositorFlutterInteraction(reason: 'viewport-zoom');
           layoutCoordinator.onZoom(factor, localPos);
         },

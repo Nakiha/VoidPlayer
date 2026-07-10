@@ -45,7 +45,7 @@ Windows native presentation 在本 restart 分支处于 reserved/fail-closed 状
 `python dev.py gate windows-rebuild-boundary`，确保 D3D11/DX12 backend 没有被
 半接回 active build/test path。后续恢复 Windows 时，需要为新的
 runner-composed sandwich backend 重新建立 D3D11/DX12 验证矩阵，而不是直接复活
-旧 DComp/source-projection preservation profiles。
+旧 DComp preservation profiles。
 
 ---
 

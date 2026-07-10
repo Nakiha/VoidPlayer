@@ -33,7 +33,4 @@ namespace vr {
 
 static constexpr auto kPausedHevcSeekSettleDelay = std::chrono::milliseconds(250);
 static constexpr auto kStepForwardDecodeWait = std::chrono::milliseconds(180);
-static constexpr auto kViewportCompositorActivityGrace =
-    std::chrono::milliseconds(25);
-
 } // namespace vr

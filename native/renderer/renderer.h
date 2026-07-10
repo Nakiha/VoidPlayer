@@ -5,7 +5,6 @@
 #include "renderer/layout/layout_state.h"
 #include "renderer/render/presentation_backend_types.h"
 #include "renderer/render/renderer_present_history.h"
-#include "renderer/render/source_compositor_contract.h"
 #include "renderer/render/renderer_device_state.h"
 #include "renderer/renderer_api_types.h"
 #include "renderer/renderer_config.h"
@@ -23,7 +22,6 @@ namespace vr {
 
 class PlaybackController;
 class PresentationBackend;
-struct AnalysisOverlayPrimitivePackage;
 
 class Renderer {
 public:
@@ -89,8 +87,6 @@ public:
     int64_t track_offset_us(int file_id) const;
 
     void apply_layout(const LayoutState& state);
-    void note_viewport_compositor_activity();
-    void set_viewport_compositor_active(bool active);
     void set_background_color(float r, float g, float b, float a);
     LayoutState layout() const;
 
@@ -128,17 +124,6 @@ public:
     bool commit_paused_preview_frame(int timeout_ms,
                                      PresentationBackendFrameInfo* out,
                                      std::string* error);
-    bool commit_source_provider_preview_frame(int timeout_ms,
-                                              const int* expected_file_ids,
-                                              size_t expected_file_id_count,
-                                              PresentationBackendFrameInfo* out,
-                                              std::string* error);
-    bool draw_current_frame_sources(PresentationBackend& backend,
-                                    PresentationSourceFrameTarget* targets,
-                                    size_t target_count,
-                                    std::string* error);
-    std::shared_ptr<const AnalysisOverlayPrimitivePackage> current_overlay_primitives(
-        std::string* error);
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
     bool capture_front_buffer_region(int x,
                                      int y,

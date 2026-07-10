@@ -68,10 +68,9 @@ NativePlayer / Renderer command surface
 - Calls `PresentationBackend::draw_frame()` for normal playback, paused redraw,
   layout refresh, seek refresh, step refresh, capture preparation, and EOF
   settling.
-- During playback, video source selection remains PTS-driven, but display-link
-  layout refresh may re-composite the last completed source frame. The render
-  thread skips duplicate source updates and never queues redraws faster than
-  display ticks.
+- During playback, frame selection remains PTS-driven. Pending layout is
+  consumed by the next present; explicit paused/layout refresh draws a complete
+  target through the same backend.
 - Publishes success/failure state and frame callbacks after releasing renderer
   locks.
 - Does not call public lifecycle APIs and never joins itself.
@@ -83,10 +82,9 @@ NativePlayer / Renderer command surface
   for the later runner-composed sandwich backend.
 - macOS runner owns Cocoa, sandbox file access, platform channels, Flutter
   texture registration, `CVPixelBuffer` lifecycle, and frame notification.
-- macOS viewport pan/zoom submits only the latest layout intent. `CVDisplayLink`
-  coalesces input and keeps a short idle grace. Native decides whether the tick
-  updates a video source, composites the retained source cache, skips for ring
-  pressure, or fails with a visible diagnostic.
+- macOS viewport pan/zoom submits only the latest layout intent. Native redraws
+  one complete viewport target; the runner display link independently samples
+  that target and Flutter's current surface for final composition.
 - macOS seek/step/startup/paused/EOF refresh calls install or validate the
   renderer-owned target, release the Swift texture lock, then request native
   refresh completion. Swift does not own playback clock, seek, loop, layout, or
@@ -160,7 +158,7 @@ Rules:
 
 Windows native presentation is disabled in this restart branch. The shared
 renderer keeps reserved D3D11/DX12 types, but no active Windows presentation
-threading, DComp composition, source-cache lease, or high-refresh contract is
+threading, DComp composition, or high-refresh contract is
 claimed here. Reintroduce this section with the new lock order and validation
 matrix when the Windows sandwich backend is rebuilt.
 

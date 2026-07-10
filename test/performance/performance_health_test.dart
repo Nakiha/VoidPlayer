@@ -450,8 +450,6 @@ void main() {
       'displayRefreshHzEstimate': 120.0,
       'displayTickHz': 0.0,
       'nativeCompositorCompositeHz': 86.4,
-      'nativeCompositorSourceCacheHz': 29.7,
-      'nativeCompositorSourceProjectionHz': 119.1,
     });
     late String detail;
 
@@ -468,8 +466,6 @@ void main() {
     );
 
     expect(detail, startsWith('compositor 86/120Hz'));
-    expect(detail, contains('source 30Hz'));
-    expect(detail, contains('projection 119Hz'));
     expect(detail, contains('display-link idle/120Hz'));
   });
 

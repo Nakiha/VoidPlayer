@@ -1,5 +1,5 @@
 # Removing the HDR/HLG track from a mixed compositor session should leave the
-# remaining SDR track able to use paused source-projection pan without waiting
+# remaining SDR track able to redraw the paused full target without waiting
 # for playback to resume.
 @WINDOW, 960, 540
 0.0, SET_DECODE_MODE, preferHardware
@@ -23,5 +23,4 @@
 6.5, CAPTURE_VIEWPORT, remove_hlg_paused_pan_after
 6.6, ASSERT_CAPTURE_NOT_BLACK, remove_hlg_paused_pan_after, 0.01, 4.0
 6.7, ASSERT_CAPTURE_CHANGED, remove_hlg_paused_pan_before, remove_hlg_paused_pan_after
-6.8, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheGeneration, 1
 7.0, QUIT, 0

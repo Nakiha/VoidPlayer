@@ -49,10 +49,6 @@ PresentationBackendKind RendererPresentationController::backend_kind() const {
     return backend_ ? backend_->kind() : PresentationBackendKind::Unknown;
 }
 
-bool RendererPresentationController::uses_macos_native_compositor_scheduling() const {
-    return backend_kind() == PresentationBackendKind::Metal;
-}
-
 void RendererPresentationController::set_backend(std::unique_ptr<PresentationBackend> backend) {
     backend_ = std::move(backend);
 }

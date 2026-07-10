@@ -1,7 +1,6 @@
 import 'package:flutter/services.dart';
 
 import '../app_log.dart';
-import '../viewport/viewport_projection_diagnostics.dart';
 import 'native_player_events.dart';
 import 'native_player_protocol.dart';
 
@@ -52,21 +51,7 @@ abstract interface class NativePlayerApi {
   Future<void> resetNativePerfCounters();
   Future<void> beginNativeInteractionSample({required String label});
   Future<void> endNativeInteractionSample({required String label});
-  Future<void> prepareNativeCompositorSourceCache({
-    required List<int> sourceSlots,
-    required List<int> sourceOrder,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-    required List<double> displayOffsetX,
-    required List<double> displayOffsetY,
-    required List<double> invDisplaySizeX,
-    required List<double> invDisplaySizeY,
-    required List<double> viewOffsetUvX,
-    required List<double> viewOffsetUvY,
-  });
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state);
-  Future<void> clearNativeCompositorSourceCache({required String reason});
   Future<void> setViewportBackgroundColor(int colorValue);
   Future<ViewportCapture> captureViewport({String? outputPath});
   Future<ViewportCapture> captureViewportRegion({
@@ -317,47 +302,6 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     return _channel.invokeMethod<void>(
       NativePlayerMethods.endNativeInteractionSample,
       {NativePlayerKeys.label: label},
-    );
-  }
-
-  @override
-  Future<void> prepareNativeCompositorSourceCache({
-    required List<int> sourceSlots,
-    required List<int> sourceOrder,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-    required List<double> displayOffsetX,
-    required List<double> displayOffsetY,
-    required List<double> invDisplaySizeX,
-    required List<double> invDisplaySizeY,
-    required List<double> viewOffsetUvX,
-    required List<double> viewOffsetUvY,
-  }) {
-    ViewportProjectionDiagnostics.instance.record('projectionChannelSend');
-    return _invokeTimedVoid(
-      NativePlayerMethods.prepareNativeCompositorSourceCache,
-      _withCompositorTrace({
-        NativePlayerKeys.sourceSlots: sourceSlots,
-        NativePlayerKeys.sourceOrder: sourceOrder,
-        NativePlayerKeys.mode: mode,
-        NativePlayerKeys.splitPos: splitPos,
-        NativePlayerKeys.activeTrackCount: activeTrackCount,
-        NativePlayerKeys.displayOffsetX: displayOffsetX,
-        NativePlayerKeys.displayOffsetY: displayOffsetY,
-        NativePlayerKeys.invDisplaySizeX: invDisplaySizeX,
-        NativePlayerKeys.invDisplaySizeY: invDisplaySizeY,
-        NativePlayerKeys.viewOffsetUvX: viewOffsetUvX,
-        NativePlayerKeys.viewOffsetUvY: viewOffsetUvY,
-      }),
-    );
-  }
-
-  @override
-  Future<void> clearNativeCompositorSourceCache({required String reason}) {
-    return _invokeTimedVoid(
-      NativePlayerMethods.clearNativeCompositorSourceCache,
-      _withCompositorTrace({NativePlayerKeys.reason: reason}),
     );
   }
 

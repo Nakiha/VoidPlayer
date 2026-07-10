@@ -184,17 +184,6 @@ public:
     bool commit_paused_preview_frame(int timeout_ms,
                                      PresentationBackendFrameInfo* out,
                                      std::string* error);
-    bool commit_source_provider_preview_frame(int timeout_ms,
-                                              const int* expected_file_ids,
-                                              size_t expected_file_id_count,
-                                              PresentationBackendFrameInfo* out,
-                                              std::string* error);
-    bool draw_current_frame_sources(PresentationBackend& backend,
-                                    PresentationSourceFrameTarget* targets,
-                                    size_t target_count,
-                                    std::string* error);
-    std::shared_ptr<const AnalysisOverlayPrimitivePackage> current_overlay_primitives(
-        std::string* error);
 
     /// Capture the currently published headless frame as packed BGRA bytes.
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
@@ -210,8 +199,6 @@ public:
     // through render-thread or host-callback timing.
     bool has_event_callback_for_test() const;
     void enter_terminal_render_loop_error_for_test(const char* reason);
-    void note_viewport_compositor_activity();
-    void set_viewport_compositor_active(bool active);
 
 private:
     class SeekCommandProcessor {
@@ -243,8 +230,6 @@ private:
     void apply_layout_locked(const LayoutState& state, uint64_t revision);
     bool consume_pending_layout_locked();
     void clear_pending_layout_intent();
-    bool should_present_frame_consume_pending_layout() const;
-    bool should_suppress_playback_present_for_viewport_compositor() const;
     RendererPresentCommandContext present_command_context();
 
     /// Apply pending resize on the render thread.

@@ -10,7 +10,7 @@ import '../actions/player_action.dart';
 import '../analysis/analysis_cache.dart';
 import '../app_log.dart';
 import '../video_renderer_controller.dart';
-import '../viewport/viewport_projection_diagnostics.dart';
+import '../viewport/viewport_interaction_diagnostics.dart';
 import 'automation_assert_executor.dart';
 import 'automation_probe.dart';
 import 'automation_run_state.dart';
@@ -328,11 +328,11 @@ class TestRunner {
         await controller.debugFailNativeCompositor(reason: reason);
       case ResetNativePerfCountersAction():
         log.info('TestRunner: RESET_NATIVE_PERF_COUNTERS');
-        ViewportProjectionDiagnostics.instance.reset();
+        ViewportInteractionDiagnostics.instance.reset();
         await controller.resetNativePerfCounters();
       case ResetDartViewportDiagnosticsAction():
         log.info('TestRunner: RESET_DART_VIEWPORT_DIAGNOSTICS');
-        ViewportProjectionDiagnostics.instance.reset();
+        ViewportInteractionDiagnostics.instance.reset();
       case BeginNativeInteractionSampleAction(:final label):
         log.info('TestRunner: BEGIN_NATIVE_INTERACTION_SAMPLE $label');
         await controller.beginNativeInteractionSample(label: label);
@@ -409,8 +409,6 @@ class TestRunner {
           'errors=${value('presentedFrameErrorCount')} '
           'compositorFrames=${value('nativeCompositorFrames')} '
           'compositorHz=${value('nativeCompositorCompositeHz')} '
-          'sourceCacheHz=${value('nativeCompositorSourceCacheHz')} '
-          'sourceProjectionHz=${value('nativeCompositorSourceProjectionHz')} '
           'dartRawPanZoom=${dartValue('dartViewportPointerPanZoomUpdateCount')}@${dartValue('dartViewportPointerPanZoomUpdateHz')}Hz '
           'dartPanZoomPan=${dartValue('dartViewportPointerPanZoomPanDispatchCount')}@${dartValue('dartViewportPointerPanZoomPanDispatchHz')}Hz '
           'dartPanZoomScale=${dartValue('dartViewportPointerPanZoomScaleDispatchCount')}@${dartValue('dartViewportPointerPanZoomScaleDispatchHz')}Hz '
@@ -419,12 +417,6 @@ class TestRunner {
           'dartActionZoom=${dartValue('dartViewportViewportActionZoomCount')}@${dartValue('dartViewportViewportActionZoomHz')}Hz '
           'dartLayoutPan=${dartValue('dartViewportLayoutPanCount')}@${dartValue('dartViewportLayoutPanHz')}Hz '
           'dartLayoutZoom=${dartValue('dartViewportLayoutZoomCount')}@${dartValue('dartViewportLayoutZoomHz')}Hz '
-          'dartProjectionPublish=${dartValue('dartViewportProjectionPublishAttemptCount')}@${dartValue('dartViewportProjectionPublishAttemptHz')}Hz '
-          'dartProjectionPrepare=${dartValue('dartViewportProjectionPrepareCount')}@${dartValue('dartViewportProjectionPrepareHz')}Hz '
-          'dartProjectionSend=${dartValue('dartViewportProjectionChannelSendCount')}@${dartValue('dartViewportProjectionChannelSendHz')}Hz '
-          'dartProjectionSkippedIneligible=${dartValue('dartViewportProjectionPrepareSkippedIneligibleCount')} '
-          'swiftProjectionReceive=${value('nativeCompositorSourceProjectionMethodReceiveCount')}@${value('nativeCompositorSourceProjectionMethodReceiveHz')}Hz '
-          'swiftProjectionApply=${value('nativeCompositorSourceProjectionApplyCount')}@${value('nativeCompositorSourceProjectionHz')}Hz '
           'windowsPhase=${value('windowsNativeCompositorPhase')} '
           'windowsMode=${value('windowsHotPathMode')} '
           'windowsHotPath=${value('windowsHotPathActive')} '
@@ -477,40 +469,8 @@ class TestRunner {
           'windowsExportStale=${value('windowsFlutterExportStaleTimeoutCount')} '
           'windowsExportUnrequestedSignal=${value('windowsFlutterExportUnrequestedSignalCount')} '
           'windowsExportUnrequestedThrottle=${value('windowsFlutterExportUnrequestedThrottleCount')} '
-          'sourceRingBake=${value('sourceRingBakeCount')}@${value('sourceRingBakeHz')}Hz '
-          'sourceRingBakeP95Ms=${value('sourceRingBakeP95Ms')} '
-          'sourceRingBakeLastMs=${value('sourceRingBakeLastMs')} '
-          'sourceRingReq=${value('sourceRingRefreshRequestCount')}@${value('sourceRingRefreshRequestHz')}Hz '
-          'sourceRingQueueP95Ms=${value('sourceRingRefreshQueueWaitP95Ms')} '
-          'sourceRingPublish=${value('sourceRingPublishCount')}@${value('sourceRingPublishHz')}Hz '
-          'sourceRingTopology=${value('sourceRingTopologyRevision')} '
-          'sourceRingRequiredMask=${value('sourceRingRequiredMask')} '
-          'sourceRingDrawnMask=${value('sourceRingDrawnMask')} '
-          'sourceRingMissingMask=${value('sourceRingMissingMask')} '
-          'sourceRingIncompleteSuppressed=${value('sourceRingIncompletePublishSuppressedCount')} '
-          'sourceRingIncompleteReason=${value('sourceRingLastIncompleteReason')} '
-          'sourceRingSlotSig=${value('sourceRingPublishedSlotSignature')} '
-          'sourceRingFileIds=${value('sourceRingPublishedFileIdSignature')} '
-          'sourceRingActualFileIds=${value('sourceRingPublishedActualFileIdSignature')} '
-          'sourceRingDupSlots=${value('sourceRingPublishedDuplicateSlotCount')} '
-          'sourceRingDupFileIds=${value('sourceRingPublishedDuplicateFileIdCount')} '
-          'sourceRingDupActualFileIds=${value('sourceRingPublishedDuplicateActualFileIdCount')} '
-          'sourceRingDupBuffers=${value('sourceRingPublishedDuplicateBufferCount')} '
-          'sourceReadySlotSig=${value('nativeCompositorSourceSlotSignature')} '
-          'sourceReadyDupSlots=${value('nativeCompositorSourceDuplicateSlotCount')} '
-          'sourceReadyDupFileIds=${value('nativeCompositorSourceDuplicateFileIdCount')} '
-          'sourceReadyDupTextures=${value('nativeCompositorSourceDuplicateTextureCount')} '
-          'sourceRingReqToPubP95Ms=${value('sourceRingRequestToPublishP95Ms')} '
-          'sourceRingPtsUs=${value('sourceRingLastPublishedPtsUs')} '
-          'sourceRingDurationUs=${value('sourceRingLastPublishedDurationUs')} '
-          'sourceRingPtsStepP95Ms=${value('sourceRingPublishedPtsStepP95Ms')} '
-          'sourceRingPtsDuplicate=${value('sourceRingPublishedPtsDuplicateCount')} '
-          'sourceRingPtsLargeStep=${value('sourceRingPublishedPtsLargeStepCount')} '
-          'sourceRingPtsRegression=${value('sourceRingPublishedPtsRegressionCount')} '
           'softwareStorage=${value('softwareFrameStorageKind')} '
           'softwarePackFallback=${value('softwareFramePackFallbackCount')} '
-          'sourceRingCoalesced=${value('sourceRingRefreshCoalescedCount')} '
-          'sourceRingMiss=${value('sourceRingPublishMissCount')} '
           'traceHz=${value('nativeCompositorTraceHz')} '
           'traceReceived=${value('nativeCompositorTraceReceivedCount')} '
           'traceApplied=${value('nativeCompositorTraceAppliedCount')} '

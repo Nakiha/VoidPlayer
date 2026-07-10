@@ -3,9 +3,9 @@ import 'dart:io';
 
 import '../app_log.dart';
 
-class ViewportProjectionDiagnostics {
-  static final ViewportProjectionDiagnostics instance =
-      ViewportProjectionDiagnostics._();
+class ViewportInteractionDiagnostics {
+  static final ViewportInteractionDiagnostics instance =
+      ViewportInteractionDiagnostics._();
 
   static const _metricNames = <String, String>{
     'pointerMovePanDispatch': 'PointerMovePanDispatch',
@@ -16,10 +16,6 @@ class ViewportProjectionDiagnostics {
     'viewportActionZoom': 'ViewportActionZoom',
     'layoutPan': 'LayoutPan',
     'layoutZoom': 'LayoutZoom',
-    'projectionPublishAttempt': 'ProjectionPublishAttempt',
-    'projectionPrepare': 'ProjectionPrepare',
-    'projectionPrepareSkippedIneligible': 'ProjectionPrepareSkippedIneligible',
-    'projectionChannelSend': 'ProjectionChannelSend',
   };
 
   final Map<String, _RateCounter> _counters = {
@@ -27,7 +23,7 @@ class ViewportProjectionDiagnostics {
   };
   DateTime? _lastLogAt;
 
-  ViewportProjectionDiagnostics._();
+  ViewportInteractionDiagnostics._();
 
   void reset() {
     for (final counter in _counters.values) {
@@ -62,26 +58,23 @@ class ViewportProjectionDiagnostics {
       return;
     }
     _lastLogAt = now;
-    final s = snapshot();
-    String c(String key) => '${s['dartViewport${key}Count'] ?? 0}';
-    String h(String key) {
-      final value = s['dartViewport${key}Hz'];
+    final values = snapshot();
+    String count(String key) => '${values['dartViewport${key}Count'] ?? 0}';
+    String hz(String key) {
+      final value = values['dartViewport${key}Hz'];
       return value is num ? value.toStringAsFixed(1) : '0.0';
     }
 
     log.info(
-      '[ViewportProjectionDiagnostics] '
-      'rawPanZoom=${c('PointerPanZoomUpdate')}@${h('PointerPanZoomUpdate')}Hz '
-      'panZoomPan=${c('PointerPanZoomPanDispatch')}@${h('PointerPanZoomPanDispatch')}Hz '
-      'panZoomScale=${c('PointerPanZoomScaleDispatch')}@${h('PointerPanZoomScaleDispatch')}Hz '
-      'mousePan=${c('PointerMovePanDispatch')}@${h('PointerMovePanDispatch')}Hz '
-      'actionPan=${c('ViewportActionPan')}@${h('ViewportActionPan')}Hz '
-      'actionZoom=${c('ViewportActionZoom')}@${h('ViewportActionZoom')}Hz '
-      'layoutPan=${c('LayoutPan')}@${h('LayoutPan')}Hz '
-      'layoutZoom=${c('LayoutZoom')}@${h('LayoutZoom')}Hz '
-      'publish=${c('ProjectionPublishAttempt')}@${h('ProjectionPublishAttempt')}Hz '
-      'prepare=${c('ProjectionPrepare')}@${h('ProjectionPrepare')}Hz '
-      'send=${c('ProjectionChannelSend')}@${h('ProjectionChannelSend')}Hz',
+      '[ViewportInteractionDiagnostics] '
+      'rawPanZoom=${count('PointerPanZoomUpdate')}@${hz('PointerPanZoomUpdate')}Hz '
+      'panZoomPan=${count('PointerPanZoomPanDispatch')}@${hz('PointerPanZoomPanDispatch')}Hz '
+      'panZoomScale=${count('PointerPanZoomScaleDispatch')}@${hz('PointerPanZoomScaleDispatch')}Hz '
+      'mousePan=${count('PointerMovePanDispatch')}@${hz('PointerMovePanDispatch')}Hz '
+      'actionPan=${count('ViewportActionPan')}@${hz('ViewportActionPan')}Hz '
+      'actionZoom=${count('ViewportActionZoom')}@${hz('ViewportActionZoom')}Hz '
+      'layoutPan=${count('LayoutPan')}@${hz('LayoutPan')}Hz '
+      'layoutZoom=${count('LayoutZoom')}@${hz('LayoutZoom')}Hz',
     );
   }
 }

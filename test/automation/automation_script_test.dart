@@ -29,7 +29,7 @@ void main() {
 0.3,ADD_SSH_MEDIA,user@example.com:/videos/clip.mp4
 0.7,ASSERT_PLAYING
 0.75,CAPTURE_VIEWPORT_REGION,roi,1,2,30,40,50,build/roi.png
-0.76,DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL,120,-60,nativeCompositorSourceCacheActive,true,18,8,2
+0.76,DRAG_VIEWPORT_SAMPLE_NATIVE_DIAGNOSTIC_BOOL,120,-60,nativeCompositorLastCompositeSucceeded,true,18,8,2
 0.77,DEBUG_NATIVE_TIMING
 0.78,DEBUG_FLUTTER_TIMING
 0.79,CLICK_FLUTTER_POINT,250,365
@@ -142,7 +142,11 @@ void main() {
         isA<DragViewportSampleNativeDiagnosticBool>()
             .having((a) => a.dx, 'dx', 120)
             .having((a) => a.dy, 'dy', -60)
-            .having((a) => a.key, 'key', 'nativeCompositorSourceCacheActive')
+            .having(
+              (a) => a.key,
+              'key',
+              'nativeCompositorLastCompositeSucceeded',
+            )
             .having((a) => a.value, 'value', isTrue)
             .having((a) => a.steps, 'steps', 18)
             .having((a) => a.stepMs, 'stepMs', 8)

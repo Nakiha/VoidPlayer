@@ -10,37 +10,6 @@ void Renderer::Impl::apply_layout_locked(const LayoutState& state, uint64_t revi
     loop_driver_.force_preview_redraw();
 }
 
-bool Renderer::Impl::should_present_frame_consume_pending_layout() const {
-    if (!timeline_.playing() ||
-        timeline_.playback().clock().is_paused()) {
-        return true;
-    }
-    if (!presentation_.uses_macos_native_compositor_scheduling()) {
-        return true;
-    }
-    return false;
-}
-
-void Renderer::Impl::note_viewport_compositor_activity() {
-    const auto active_until =
-        steady_clock_us_now() +
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            kViewportCompositorActivityGrace)
-            .count();
-    layout_state_.note_viewport_compositor_activity(active_until);
-}
-
-void Renderer::Impl::set_viewport_compositor_active(bool active) {
-    layout_state_.set_viewport_compositor_active(active);
-}
-
-bool Renderer::Impl::should_suppress_playback_present_for_viewport_compositor() const {
-    if (!presentation_.uses_macos_native_compositor_scheduling()) {
-        return false;
-    }
-    return layout_state_.viewport_compositor_persistent_active();
-}
-
 bool Renderer::Impl::consume_pending_layout_locked() {
     const bool consumed = layout_state_.consume_pending_if_newer(
         [this](int file_id) {

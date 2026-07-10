@@ -22,11 +22,10 @@ The active renderer backend is `RenderBackendKind::Metal`.
 
 ```text
 RendererDrawSnapshot
-  -> native SourceCompositorLease
   -> MetalPresentationBackend::draw_frame()
-  -> native-owned BGRA8/RGBA16F CVPixelBuffer / IOSurface rings
-  -> complete retained source package
-  -> runner-managed Metal video layer
+  -> complete BGRA8/RGBA16F viewport target
+  -> native-owned CVPixelBuffer / IOSurface ring
+  -> runner-managed Metal final compositor
 ```
 
 The old Rust/native backend is removed from the active tree. `native-metal` is no
@@ -35,9 +34,9 @@ longer a supported macOS presentation mode in this worktree.
 ## Current Capability Boundary
 
 Software frames and VideoToolbox decode output are normalized by the native
-Metal source-bake path into compositor-ready SDR BGRA8 or linear EDR RGBA16F
-IOSurfaces. The final runner compositor does not decode color or reinterpret
-source transfer functions.
+Metal backend into a complete compositor-ready SDR BGRA8 or linear EDR RGBA16F
+viewport target. The final runner compositor does not decode color, interpret
+layout, or redraw native overlays.
 
 Unsupported hardware formats must fail closed and remain visible in
 diagnostics; they must not silently fall back to Flutter Texture video
@@ -45,15 +44,16 @@ presentation.
 
 ## Runner Boundary
 
-Native owns source presentation resources and package publication. The runner
-owns the destination layer, retains the latest complete source package, applies
-projection, and performs final composition. Neither side may:
+Native owns target presentation resources and publication. The runner owns the
+destination layer, retains the latest complete target, and performs final
+composition. Neither side may:
 
 - render the video into Flutter's texture registry as the product path;
 - wait on or drive Flutter's present loop;
 - composite Flutter UI into the video target;
 - depend on Flutter dirty state to make video visible;
-- rebuild source resource rings from Swift-side policy.
+- rebuild native target rings from Swift-side policy;
+- pass per-track source textures or layout projection through Dart/Swift.
 
 The native compositor and Flutter overlay should be tested as two independent
 surfaces composed by the runner.

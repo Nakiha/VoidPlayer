@@ -112,7 +112,7 @@ python3.12 scripts/dev/check_release_compliance.py
 ```
 
 Windows `pr-fast` runs native tests and compliance only. The old DComp,
-D3D11 parity, HDR Auto, high-refresh, source-projection, and cross-adapter gates
+D3D11 parity, HDR Auto, high-refresh, and cross-adapter gates
 were removed with the Windows backend cutover.
 
 macOS CI 的 native fast gate uses the hosted-runner CTest profile：

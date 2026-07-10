@@ -466,7 +466,8 @@ class MainWindowPlaybackCoordinator {
           active: event.nativeCompositorActive,
         );
       }
-      if (event.nativeCompositorSerial > 0 &&
+      if (Platform.isWindows &&
+          event.nativeCompositorSerial > 0 &&
           event.nativeCompositorPhase == 'preparing') {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_disposed || !mounted()) return;

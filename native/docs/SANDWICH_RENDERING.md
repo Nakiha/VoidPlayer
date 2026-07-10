@@ -26,38 +26,20 @@ The Flutter fork should only make the Flutter surface exportable as a real
 premultiplied-alpha ARGB layer. It should not own the native video texture or
 the final presentation strategy.
 
-## Source Compositor Contract
+## Native Target Contract
 
-The shared renderer contract owns only platform-neutral state:
+The shared renderer selects frames, applies the complete multi-track layout,
+and submits one `RendererDrawSnapshot` to the platform presentation backend.
+The platform backend publishes one complete opaque viewport target:
 
-- track identity and dimensions;
-- projection and retained visual clipping;
-- ring budget policy;
-- output pixel/color/alpha semantics;
-- topology, ring, and frame generations;
-- package completeness and lifecycle transitions.
+- SDR uses compositor-ready BGRA8;
+- HDR uses linear extended-range RGBA16F;
+- pan, zoom, split, track order, background, and analysis overlay are already
+  resolved in that target;
+- target publication is generation based and independent of Flutter state.
 
-Platform resource leases remain outside the shared contract. A macOS lease may
-carry `CVPixelBuffer`, `IOSurface`, and Metal objects. A Windows lease may carry
-D3D resources, shared handles, and synchronization primitives. Both leases
-must carry metadata compatible with `SourceCompositorPackageMetadata`, but the
-shared renderer must not include either platform resource type.
-
-The source texture is compositor-ready. SDR BGRA8 samples must not be decoded
-again by the runner compositor. EDR RGBA16F samples are linear extended-range
-values. Native video sources are opaque; Flutter remains the only
-premultiplied-alpha layer in the sandwich.
-
-The shared lifecycle is generation driven:
-
-```text
-Unconfigured -> Allocating -> Ready -> Publishing -> Draining -> Unconfigured
-```
-
-Reconfiguration begins with a newer topology generation. Publication requires
-the current topology and ring generations plus a strictly increasing frame
-generation. Incomplete packages never replace the last complete published
-package.
+There is no per-track source lease or runner-side layout projection. Flutter is
+the only premultiplied-alpha layer in the final composition.
 
 ## macOS Target
 
@@ -70,17 +52,10 @@ NSWindow / content view
   -> CoreAnimation/runner composition
 ```
 
-The macOS source lease allocates and owns the compositor-ready
-`CVPixelBuffer`/`IOSurface` rings, runs the native Metal source bake, validates
-generation transitions, and publishes only complete packages. The runner keeps
-the latest retained package, applies projection, and composes it below Flutter's
-ARGB UI surface. Swift does not allocate source rings or infer package
-completeness.
-
-Source refresh requests are currently serialized by the runner bridge. Moving
-that cadence behind the native presentation contract is the remaining ownership
-step; it must not be coupled to Flutter texture availability or Flutter present
-scheduling.
+The macOS presentation target owns its `CVPixelBuffer`/`IOSurface` ring. The
+runner retains the latest complete native target and samples it below Flutter's
+ARGB UI surface on every display tick. Swift does not interpret video layout,
+overlay primitives, or track topology.
 
 ## Windows Target
 

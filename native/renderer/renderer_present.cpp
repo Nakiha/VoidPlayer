@@ -16,13 +16,7 @@ RendererPresentCommandContext Renderer::Impl::present_command_context() {
         shutting_down_,
         RendererPresentCommandHooks{
             [this]() {
-                return should_present_frame_consume_pending_layout();
-            },
-            [this]() {
                 consume_pending_layout_locked();
-            },
-            [this]() {
-                return should_suppress_playback_present_for_viewport_compositor();
             },
             [this]() {
                 return presentation_overlay_hooks();
@@ -33,9 +27,6 @@ RendererPresentCommandContext Renderer::Impl::present_command_context() {
             [this]() {
                 return !timeline_.playing() ||
                        timeline_.playback().clock().is_paused();
-            },
-            [this]() {
-                emit_playback_frame_ready_event();
             },
         },
     };
@@ -55,11 +46,6 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
     const bool renderer_owned_refresh =
         std::strcmp(refresh_reason, "macos-renderer-owned-refresh") == 0 ||
         std::strcmp(refresh_reason, "request_frame_refresh") == 0;
-    const bool viewport_compositor_refresh =
-        std::strcmp(refresh_reason, "macos-renderer-owned-refresh") == 0;
-    if (viewport_compositor_refresh) {
-        note_viewport_compositor_activity();
-    }
     bool has_complete_cached_decision = false;
     bool preview_draw_pending = false;
     if (renderer_owned_refresh) {

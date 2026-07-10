@@ -242,16 +242,6 @@ target_link_libraries(layout_geometry_smoke PRIVATE
 add_test(NAME layout_geometry_smoke COMMAND layout_geometry_smoke)
 void_label_test(layout_geometry_smoke "contract;portable")
 
-add_executable(source_compositor_contract_smoke
-    "${VOID_NATIVE_DIR}/tools/source_compositor_contract_smoke.cpp"
-)
-void_apply_native_compile_options(source_compositor_contract_smoke)
-target_link_libraries(source_compositor_contract_smoke PRIVATE
-    void_player_portable_core
-)
-add_test(NAME source_compositor_contract_smoke COMMAND source_compositor_contract_smoke)
-void_label_test(source_compositor_contract_smoke "contract;portable")
-
 add_executable(renderer_config_validation_smoke
     "${VOID_NATIVE_DIR}/tools/renderer_config_validation_smoke.cpp"
 )

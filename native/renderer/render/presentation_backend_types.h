@@ -44,16 +44,6 @@ struct PresentationBackendFrameInfo {
     uint64_t layout_revision = 0;
 };
 
-struct PresentationSourceFrameTarget {
-    void* output = nullptr;
-    int32_t source_slot = -1;
-    int32_t source_file_id = -1;
-    int32_t width = 0;
-    int32_t height = 0;
-    int32_t drawn = 0;
-    PresentationBackendFrameInfo frame_info;
-};
-
 struct PresentationBackendStats {
     int64_t direct_yuv_upload_count = 0;
     int64_t cvpixelbuffer_upload_count = 0;

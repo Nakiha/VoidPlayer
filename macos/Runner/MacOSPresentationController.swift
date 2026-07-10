@@ -6,8 +6,6 @@ typealias LayoutRefreshCompletion = (String) -> Void
 
 struct MacOSPresentationContext {
   let nativeBackendActive: Bool
-  let nativeCompositorSourceProjectionActive: Bool
-  let nativeCompositorSourceProviderActive: Bool
   let player: MacOSNativePlayerSession?
   let texture: MacOSVideoSurface?
   let nativeTexture: MacOSFlutterTextureBridge?
@@ -41,8 +39,6 @@ final class MacOSPresentationController {
   private var layoutStaleAfterDrawDropCount = 0
   private var layoutPublishedCount = 0
   private var layoutRefreshSupersededCount = 0
-  private var layoutCallbackPublicationSuppressedCount = 0
-  private var layoutDeferredToPlaybackCount = 0
   private var displayLinkIdleUntilNs: UInt64 = 0
   private let displayLinkIdleGraceNs: UInt64 = 250_000_000
   private let layoutIntentRate = MacOSRateWindow()
@@ -118,11 +114,6 @@ final class MacOSPresentationController {
       context.markFrameAvailable()
       return true
     }
-    if context.nativeCompositorSourceProviderActive {
-      player.noteViewportCompositorActivity()
-      context.markFrameAvailable()
-      return true
-    }
     if context.playback.currentIsPlaying(player: player) {
       context.playback.reinstallPresentationTargetIfPlaying(
         player: player,
@@ -154,9 +145,6 @@ final class MacOSPresentationController {
     diagnostics["layoutStaleAfterDrawDropCount"] = layoutStaleAfterDrawDropCount
     diagnostics["layoutPublishedCount"] = layoutPublishedCount
     diagnostics["layoutRefreshSupersededCount"] = layoutRefreshSupersededCount
-    diagnostics["layoutCallbackPublicationSuppressedCount"] =
-      layoutCallbackPublicationSuppressedCount
-    diagnostics["viewportLayoutDeferredToPlaybackCount"] = layoutDeferredToPlaybackCount
     diagnostics["viewportClockWarm"] = displayLink.isRunning
     diagnostics["displayIdleGraceMs"] = Int(displayLinkIdleGraceNs / 1_000_000)
     let intentHz = layoutIntentRate.rateHz()
@@ -178,18 +166,6 @@ final class MacOSPresentationController {
     diagnostics["layoutRefreshRunning"] = layoutRefreshRunning
     diagnostics["layoutIntentPending"] = latestLayoutRefreshRequest != nil
     return diagnostics
-  }
-
-  func shouldSuppressNativeCallbackPublicationDuringLayout() -> Bool {
-    // Layout-owned refreshes are published through the revision gate. Native
-    // callbacks that arrive while a layout refresh is active are only
-    // diagnostic signals; publishing them here would bypass stale-revision
-    // checks and can double-drive Flutter texture notifications during pan/zoom.
-    layoutRefreshRunning || latestLayoutRefreshRequest != nil
-  }
-
-  func recordLayoutCallbackPublicationSuppressed() {
-    layoutCallbackPublicationSuppressedCount += 1
   }
 
   func cancelPendingLayoutRefreshes() {
@@ -318,12 +294,6 @@ final class MacOSPresentationController {
             request.context.presentationState.recordMiss()
             finalOutcomeName = LayoutRefreshOutcome.transientMiss.profilerName
           }
-        case .deferredToPlayback:
-          self.layoutDeferredToPlaybackCount += 1
-        case .appliedWithoutDraw:
-          request.context.markFrameAvailable()
-          self.layoutPublishedCount += 1
-          finalOutcomeName = "applied"
         case .stale:
           self.layoutStaleDropCount += 1
         case .staleAfterDraw:
@@ -390,14 +360,12 @@ final class MacOSPresentationController {
     guard let player = context.player else {
       return .transientMiss
     }
-    let sourceProviderLayout = context.nativeCompositorSourceProviderActive
     let pumpReady = context.playback.ensurePresentationPump(
       player: player,
       texture: context.nativeTexture,
       maxTrackSlots: context.maxTrackSlots,
       userData: context.userData,
-      presentationState: context.presentationState,
-      requiresPresentationTarget: !sourceProviderLayout
+      presentationState: context.presentationState
     )
     guard pumpReady else {
       return .transientMiss
@@ -406,10 +374,6 @@ final class MacOSPresentationController {
       return .stale
     }
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
-    if sourceProviderLayout {
-      player.noteViewportCompositorActivity()
-      return .appliedWithoutDraw
-    }
     guard let texture = context.nativeTexture else {
       return .transientMiss
     }
@@ -474,7 +438,7 @@ final class MacOSPresentationController {
     let offsetY = MacOSFlutterArguments.doubleValue(layout["viewOffsetY"]) ?? 0.0
     let mode = MacOSFlutterArguments.intValue(layout["mode"]) ?? 0
     MacOSProfilerLog.trace(String(
-      format: "VoidPlayer viewport trace swift event=%@ outcome=%@ revision=%llu intent=%d submit=%d draw=%d skip=%d stale=%d running=%d pending=%d source=%@ hz=%.2f mode=%d zoom=%.4f offset=(%.1f,%.1f)",
+      format: "VoidPlayer viewport trace swift event=%@ outcome=%@ revision=%llu intent=%d submit=%d draw=%d skip=%d stale=%d running=%d pending=%d clock=%@ hz=%.2f mode=%d zoom=%.4f offset=(%.1f,%.1f)",
       event,
       outcome,
       revision,
@@ -506,7 +470,7 @@ final class MacOSPresentationController {
     let periodic = layoutIntentCount > 0 && layoutIntentCount % 120 == 0
     guard slow || periodic else { return }
     MacOSProfilerLog.log(String(
-      format: "VoidPlayer macOS layout profiler route=%@ outcome=%@ intents=%d submits=%d draws=%d skips=%d stale=%d totalMs=%.2f queueMs=%.2f applyMs=%.2f source=%@ hz=%.1f",
+      format: "VoidPlayer macOS layout profiler route=%@ outcome=%@ intents=%d submits=%d draws=%d skips=%d stale=%d totalMs=%.2f queueMs=%.2f applyMs=%.2f clock=%@ hz=%.1f",
       route,
       outcome,
       layoutIntentCount,
@@ -562,8 +526,6 @@ private final class LayoutRefreshRequest {
 
 private enum LayoutRefreshOutcome {
   case ready(MacOSPendingNativeFrame)
-  case deferredToPlayback
-  case appliedWithoutDraw
   case stale
   case staleAfterDraw
   case transientMiss
@@ -573,10 +535,6 @@ private enum LayoutRefreshOutcome {
     switch self {
     case .ready:
       return "ready"
-    case .deferredToPlayback:
-      return "deferred-to-playback"
-    case .appliedWithoutDraw:
-      return "applied-without-draw"
     case .stale:
       return "stale"
     case .staleAfterDraw:

@@ -15,8 +15,6 @@ PerformanceHealthSnapshot _health({
   double displayRefreshHz = 120,
   double displayTickHz = 120,
   double nativeCompositorCompositeHz = 0,
-  double nativeCompositorSourceCacheHz = 0,
-  double nativeCompositorSourceProjectionHz = 0,
   double drawP95Us = 1800,
   double metalP95Us = 1800,
   String presentationBackend = 'unknown',
@@ -35,8 +33,6 @@ PerformanceHealthSnapshot _health({
     layoutDrawHz: 0,
     layoutIntentHz: 0,
     nativeCompositorCompositeHz: nativeCompositorCompositeHz,
-    nativeCompositorSourceCacheHz: nativeCompositorSourceCacheHz,
-    nativeCompositorSourceProjectionHz: nativeCompositorSourceProjectionHz,
     drawP95Us: drawP95Us,
     backendP95Us: 0,
     metalP95Us: metalP95Us,
@@ -290,8 +286,6 @@ void main() {
       build(
         _health(
           nativeCompositorCompositeHz: 108,
-          nativeCompositorSourceCacheHz: 60,
-          nativeCompositorSourceProjectionHz: 120,
           metalBufferExhaustionCount: 92,
           playing: true,
           largeGapCount: 2,

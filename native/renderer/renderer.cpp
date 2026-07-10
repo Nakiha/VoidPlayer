@@ -184,14 +184,6 @@ void Renderer::apply_layout(const LayoutState& state) {
     impl_->apply_layout(state);
 }
 
-void Renderer::note_viewport_compositor_activity() {
-    impl_->note_viewport_compositor_activity();
-}
-
-void Renderer::set_viewport_compositor_active(bool active) {
-    impl_->set_viewport_compositor_active(active);
-}
-
 void Renderer::set_background_color(float r, float g, float b, float a) {
     impl_->set_background_color(r, g, b, a);
 }
@@ -286,28 +278,6 @@ bool Renderer::commit_paused_preview_frame(int timeout_ms,
                                            PresentationBackendFrameInfo* out,
                                            std::string* error) {
     return impl_->commit_paused_preview_frame(timeout_ms, out, error);
-}
-
-bool Renderer::commit_source_provider_preview_frame(
-    int timeout_ms,
-    const int* expected_file_ids,
-    size_t expected_file_id_count,
-    PresentationBackendFrameInfo* out,
-    std::string* error) {
-    return impl_->commit_source_provider_preview_frame(
-        timeout_ms, expected_file_ids, expected_file_id_count, out, error);
-}
-
-bool Renderer::draw_current_frame_sources(PresentationBackend& backend,
-                                          PresentationSourceFrameTarget* targets,
-                                          size_t target_count,
-                                          std::string* error) {
-    return impl_->draw_current_frame_sources(backend, targets, target_count, error);
-}
-
-std::shared_ptr<const AnalysisOverlayPrimitivePackage> Renderer::current_overlay_primitives(
-    std::string* error) {
-    return impl_->current_overlay_primitives(error);
 }
 
 bool Renderer::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {

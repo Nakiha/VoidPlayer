@@ -1,5 +1,5 @@
 # macOS native sandwich lifecycle stress in one runner process.
-# Covers SDR/HDR promotion and demotion, source-ring rebuilds, seek/resize,
+# Covers SDR/HDR promotion and demotion, target rebuilds, seek/resize,
 # paused add-track initial seek, track compaction, player recreation, and close.
 @WINDOW, 1100, 680
 0.0, SET_DECODE_MODE, preferHardware
@@ -11,9 +11,7 @@
 1.8, ADD_MEDIA, build/generated/macos/lifecycle_hlg.mp4
 3.2, ASSERT_TRACK_COUNT, 2
 3.3, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-edr
-3.4, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceTopologyCommitReady, true
-3.5, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSourceDuplicateSlotCount, 0, 0
-3.6, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeCompositorSourceDuplicateTextureCount, 0, 0
+3.4, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorLastCompositeSucceeded, true
 3.8, PLAY
 4.1, ASSERT_PLAYING
 4.2, SEEK_TO, 1800000
@@ -24,7 +22,7 @@
 5.2, REMOVE_TRACK, 1
 6.2, ASSERT_TRACK_COUNT, 1
 6.3, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-sdr
-6.4, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceTopologyCommitReady, true
+6.4, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorLastCompositeSucceeded, true
 6.5, PAUSE
 6.8, ASSERT_PAUSED
 7.0, ADD_MEDIA, build/generated/macos/lifecycle_hlg.mp4
@@ -33,13 +31,11 @@
 8.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeTrackAddLatencySucceeded, true
 8.8, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeTrackAddLatencyActive, false
 8.9, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackAddLatencyCompositeMsX1000, 1
-9.0, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceRingComplete, true
 9.1, REMOVE_TRACK, 0
 10.1, ASSERT_TRACK_COUNT, 1
 10.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-edr
-10.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceTopologyCommitReady, true
+10.3, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorFrames, 1
 10.4, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorLastCompositeSucceeded, true
-10.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingIncompletePublishSuppressedCount, 0, 0
 11.0, REMOVE_TRACK, 1
 11.8, ASSERT_TRACK_COUNT, 0
 12.0, ADD_MEDIA, build/generated/macos/lifecycle_sdr.mp4

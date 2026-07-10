@@ -57,8 +57,6 @@
   "performanceHealthDecodePressure": "解码缓冲压力",
   "performanceHealthPlaybackCadencePressure": "播放帧率不足",
   "performanceMetricCompositor": "合成",
-  "performanceMetricSource": "源",
-  "performanceMetricProjection": "投影",
   "performanceMetricDisplayLink": "显示",
   "performanceMetricIdle": "空闲",
   "performanceMetricDrawP95": "绘制 p95",

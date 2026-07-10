@@ -153,12 +153,6 @@
   "performanceMetricCompositor": "Compositor",
   "@performanceMetricCompositor": { "description": "Performance monitor metric label: native compositor frame rate" },
 
-  "performanceMetricSource": "Source",
-  "@performanceMetricSource": { "description": "Performance monitor metric label: native source cache refresh rate" },
-
-  "performanceMetricProjection": "Projection",
-  "@performanceMetricProjection": { "description": "Performance monitor metric label: native source projection refresh rate" },
-
   "performanceMetricDisplayLink": "Display",
   "@performanceMetricDisplayLink": { "description": "Performance monitor metric label: display-link tick rate" },
 

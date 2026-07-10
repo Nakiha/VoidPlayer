@@ -24,7 +24,6 @@ set(VOID_PLAYER_PORTABLE_CORE_SOURCES
     "${VOID_NATIVE_DIR}/renderer/render/presentation_scheduler.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/presentation_snapshot.cpp"
     "${VOID_NATIVE_DIR}/renderer/render/render_thread_platform.cpp"
-    "${VOID_NATIVE_DIR}/renderer/render/source_compositor_contract.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer_config_validation.cpp"
     "${VOID_NATIVE_DIR}/renderer/seek/seek_coordinator.cpp"
     "${VOID_NATIVE_DIR}/renderer/track/track_buffer_budget.cpp"

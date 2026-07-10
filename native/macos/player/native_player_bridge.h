@@ -11,8 +11,6 @@
 extern "C" {
 #endif
 
-typedef struct VPMacOSNativeSourceCompositorLease
-    VPMacOSNativeSourceCompositorLease;
 
 /*
  * macOS native bridge contract:
@@ -164,61 +162,6 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
-int VPMacOSNativePlayerCommitSourceProviderPreview(
-    VPMacOSNativePlayer* player,
-    int32_t timeout_ms,
-    const int32_t* expected_file_ids,
-    size_t expected_file_id_count,
-    VPMacOSNativeFrameInfo* out,
-    char* error,
-    size_t error_size);
-int VPMacOSNativePlayerBakeCurrentFrameSources(
-    VPMacOSNativePlayer* player,
-    VPMacOSMetalPresentationBackend* backend,
-    VPMacOSNativeSourceFrameBakeTarget* targets,
-    size_t target_count,
-    char* error,
-    size_t error_size);
-VPMacOSNativeSourceCompositorLease*
-VPMacOSNativeSourceCompositorLeaseCreate(void);
-void VPMacOSNativeSourceCompositorLeaseDestroy(
-    VPMacOSNativeSourceCompositorLease* lease);
-int VPMacOSNativeSourceCompositorLeaseSubscribeAndBake(
-    VPMacOSNativeSourceCompositorLease* lease,
-    VPMacOSNativePlayer* player,
-    const VPMacOSNativeSourceCompositorDescriptor* descriptors,
-    size_t descriptor_count,
-    int32_t edr_output_enabled,
-    uint64_t topology_generation,
-    VPMacOSNativeSourceCompositorPackage* out,
-    char* error,
-    size_t error_size);
-int VPMacOSNativeSourceCompositorLeaseRefreshAndBake(
-    VPMacOSNativeSourceCompositorLease* lease,
-    VPMacOSNativePlayer* player,
-    VPMacOSNativeSourceCompositorPackage* out,
-    char* error,
-    size_t error_size);
-int VPMacOSNativeSourceCompositorLeaseHasCompletePackage(
-    VPMacOSNativeSourceCompositorLease* lease,
-    uint64_t topology_generation);
-void VPMacOSNativeSourceCompositorLeaseReset(
-    VPMacOSNativeSourceCompositorLease* lease);
-int VPMacOSNativeSourceCompositorLeaseCopyDiagnostics(
-    VPMacOSNativeSourceCompositorLease* lease,
-    VPMacOSNativeSourceCompositorDiagnostics* out);
-int VPMacOSNativePlayerCopyCurrentOverlayPrimitives(
-    VPMacOSNativePlayer* player,
-    VPMacOSNativeOverlayPrimitiveSnapshot* snapshot,
-    VPMacOSNativeOverlayGpuRect* fill_rects,
-    size_t fill_rect_capacity,
-    VPMacOSNativeOverlayGpuRect* line_rects,
-    size_t line_rect_capacity,
-    VPMacOSNativeOverlayGpuRect* motion_lines,
-    size_t motion_line_capacity,
-    char* error,
-    size_t error_size);
-
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerSetSpeed(VPMacOSNativePlayer* player, double speed);
@@ -235,9 +178,6 @@ int64_t VPMacOSNativePlayerTrackOffsetUs(VPMacOSNativePlayer* player,
                                          int32_t file_id);
 void VPMacOSNativePlayerApplyLayout(VPMacOSNativePlayer* player,
                                     const VPMacOSNativeLayoutState* state);
-void VPMacOSNativePlayerNoteViewportCompositorActivity(VPMacOSNativePlayer* player);
-void VPMacOSNativePlayerSetViewportCompositorActive(VPMacOSNativePlayer* player,
-                                                    int active);
 int VPMacOSNativePlayerCopyLayout(VPMacOSNativePlayer* player,
                                   VPMacOSNativeLayoutState* out);
 int VPMacOSNativePlayerCopyLayoutPresentationParams(

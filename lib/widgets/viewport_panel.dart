@@ -11,7 +11,7 @@ import '../video_renderer_controller.dart';
 import '../viewport/display_geometry.dart';
 import '../viewport/viewport_display_state.dart';
 import '../viewport/viewport_interaction.dart';
-import '../viewport/viewport_projection_diagnostics.dart';
+import '../viewport/viewport_interaction_diagnostics.dart';
 import 'axtree_region.dart';
 import 'quick_mark_overlay.dart';
 
@@ -998,7 +998,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
             _lastMouseLocalPos = e.localPosition;
 
             if (_panning) {
-              ViewportProjectionDiagnostics.instance.record(
+              ViewportInteractionDiagnostics.instance.record(
                 'pointerMovePanDispatch',
               );
               widget.onPan(physicalDelta);
@@ -1022,7 +1022,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           },
           onPointerPanZoomStart: (_) => _resetPanZoom(),
           onPointerPanZoomUpdate: (e) {
-            ViewportProjectionDiagnostics.instance.record(
+            ViewportInteractionDiagnostics.instance.record(
               'pointerPanZoomUpdate',
             );
             if (e.scale > 0 && e.scale.isFinite && _lastPanZoomScale > 0) {
@@ -1037,7 +1037,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
                   );
               if (scaleIntent && scaleDelta != 1.0) {
                 _panZoomScaling = true;
-                ViewportProjectionDiagnostics.instance.record(
+                ViewportInteractionDiagnostics.instance.record(
                   'pointerPanZoomScaleDispatch',
                 );
                 _zoomByFactor(scaleDelta, e.localPosition * devicePixelRatio);
@@ -1053,7 +1053,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
             if (_panZoomScaling) return;
             final physicalPanDelta = e.panDelta * devicePixelRatio;
             if (physicalPanDelta != Offset.zero) {
-              ViewportProjectionDiagnostics.instance.record(
+              ViewportInteractionDiagnostics.instance.record(
                 'pointerPanZoomPanDispatch',
               );
               widget.onPan(physicalPanDelta);

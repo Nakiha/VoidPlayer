@@ -10,7 +10,7 @@ final class MacOSFirstFrameLatencyTracker {
   private var startNs: UInt64 = 0
   private var nativeReturnNs: UInt64 = 0
   private var policyReadyNs: UInt64 = 0
-  private var sourceReadyNs: UInt64 = 0
+  private var targetReadyNs: UInt64 = 0
   private var compositeCompleteNs: UInt64 = 0
 
   func beginAdd(trackCountBefore: Int) {
@@ -23,7 +23,7 @@ final class MacOSFirstFrameLatencyTracker {
     startNs = DispatchTime.now().uptimeNanoseconds
     nativeReturnNs = 0
     policyReadyNs = 0
-    sourceReadyNs = 0
+    targetReadyNs = 0
     compositeCompleteNs = 0
     lock.unlock()
   }
@@ -50,10 +50,10 @@ final class MacOSFirstFrameLatencyTracker {
     lock.unlock()
   }
 
-  func markSourceReady() {
+  func markTargetReady() {
     lock.lock()
-    if active, succeeded, sourceReadyNs == 0 {
-      sourceReadyNs = DispatchTime.now().uptimeNanoseconds
+    if active, succeeded, targetReadyNs == 0 {
+      targetReadyNs = DispatchTime.now().uptimeNanoseconds
     }
     lock.unlock()
   }
@@ -61,14 +61,14 @@ final class MacOSFirstFrameLatencyTracker {
   func markCompositeCompleted() -> String? {
     lock.lock()
     defer { lock.unlock() }
-    guard active, succeeded, sourceReadyNs > 0, compositeCompleteNs == 0 else {
+    guard active, succeeded, targetReadyNs > 0, compositeCompleteNs == 0 else {
       return nil
     }
     compositeCompleteNs = DispatchTime.now().uptimeNanoseconds
     active = false
     return "generation=\(generation) ffiMs=\(milliseconds(nativeReturnNs, since: startNs)) " +
       "policyMs=\(milliseconds(policyReadyNs, since: startNs)) " +
-      "sourceMs=\(milliseconds(sourceReadyNs, since: startNs)) " +
+      "targetMs=\(milliseconds(targetReadyNs, since: startNs)) " +
       "compositeMs=\(milliseconds(compositeCompleteNs, since: startNs))"
   }
 
@@ -83,14 +83,14 @@ final class MacOSFirstFrameLatencyTracker {
       "nativeTrackAddLatencyTrackCountBefore": trackCountBefore,
       "nativeTrackAddLatencyFFIMsX1000": millisecondsX1000(nativeReturnNs, since: startNs),
       "nativeTrackAddLatencyPolicyMsX1000": millisecondsX1000(policyReadyNs, since: startNs),
-      "nativeTrackAddLatencySourceReadyMsX1000": millisecondsX1000(sourceReadyNs, since: startNs),
+      "nativeTrackAddLatencyTargetReadyMsX1000": millisecondsX1000(targetReadyNs, since: startNs),
       "nativeTrackAddLatencyCompositeMsX1000": millisecondsX1000(
         compositeCompleteNs,
         since: startNs
       ),
-      "nativeTrackAddLatencySourceToCompositeMsX1000": millisecondsX1000(
+      "nativeTrackAddLatencyTargetToCompositeMsX1000": millisecondsX1000(
         compositeCompleteNs,
-        since: sourceReadyNs
+        since: targetReadyNs
       ),
     ]
   }

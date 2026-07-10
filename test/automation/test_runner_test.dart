@@ -369,27 +369,7 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   }
 
   @override
-  Future<void> prepareNativeCompositorSourceCache({
-    required List<int> sourceSlots,
-    required List<int> sourceOrder,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-    required List<double> displayOffsetX,
-    required List<double> displayOffsetY,
-    required List<double> invDisplaySizeX,
-    required List<double> invDisplaySizeY,
-    required List<double> viewOffsetUvX,
-    required List<double> viewOffsetUvY,
-  }) async {}
-
-  @override
   Future<void> setNativeAnalysisOverlay(Map<String, Object?> state) async {}
-
-  @override
-  Future<void> clearNativeCompositorSourceCache({
-    required String reason,
-  }) async {}
 
   @override
   Future<void> setViewportBackgroundColor(int colorValue) async {}

@@ -30,8 +30,6 @@ class PerformanceHealthSnapshot {
   final double layoutDrawHz;
   final double layoutIntentHz;
   final double nativeCompositorCompositeHz;
-  final double nativeCompositorSourceCacheHz;
-  final double nativeCompositorSourceProjectionHz;
   final double drawP95Us;
   final double backendP95Us;
   final double metalP95Us;
@@ -62,8 +60,6 @@ class PerformanceHealthSnapshot {
     required this.layoutDrawHz,
     required this.layoutIntentHz,
     required this.nativeCompositorCompositeHz,
-    required this.nativeCompositorSourceCacheHz,
-    required this.nativeCompositorSourceProjectionHz,
     required this.drawP95Us,
     required this.backendP95Us,
     required this.metalP95Us,
@@ -96,8 +92,6 @@ class PerformanceHealthSnapshot {
         layoutDrawHz: 0,
         layoutIntentHz: 0,
         nativeCompositorCompositeHz: 0,
-        nativeCompositorSourceCacheHz: 0,
-        nativeCompositorSourceProjectionHz: 0,
         drawP95Us: 0,
         backendP95Us: 0,
         metalP95Us: 0,
@@ -141,12 +135,6 @@ class PerformanceHealthSnapshot {
     final nativeCompositorCompositeHz = _doubleValue(
       diagnostics['nativeCompositorCompositeHz'],
     );
-    final nativeCompositorSourceCacheHz = _doubleValue(
-      diagnostics['nativeCompositorSourceCacheHz'],
-    );
-    final nativeCompositorSourceProjectionHz = _doubleValue(
-      diagnostics['nativeCompositorSourceProjectionHz'],
-    );
     final presentationBackend = _stringValue(
       diagnostics['presentationBackend'] ??
           diagnostics['rendererOwnedBackendName'] ??
@@ -162,9 +150,7 @@ class PerformanceHealthSnapshot {
     final rawMetalP95Us = _doubleValue(
       diagnostics['metalCommandCompletionP95Us'],
     );
-    final usingNativeMetalCompositor =
-        presentationBackend == 'native-metal-source-provider' ||
-        nativeCompositorBackend == 'metal';
+    final usingNativeMetalCompositor = nativeCompositorBackend == 'metal';
     final retainedDrawP95Us =
         _doubleValue(diagnostics['nativeCompositorFrameCpuP95Ms']) * 1000.0;
     final retainedBackendP95Us =
@@ -321,8 +307,6 @@ class PerformanceHealthSnapshot {
       layoutDrawHz: layoutDrawHz,
       layoutIntentHz: layoutIntentHz,
       nativeCompositorCompositeHz: nativeCompositorCompositeHz,
-      nativeCompositorSourceCacheHz: nativeCompositorSourceCacheHz,
-      nativeCompositorSourceProjectionHz: nativeCompositorSourceProjectionHz,
       drawP95Us: drawP95Us,
       backendP95Us: backendP95Us,
       metalP95Us: metalP95Us,
@@ -359,10 +343,6 @@ class PerformanceHealthSnapshot {
       'layout=intent ${_hzText(layoutIntentHz)} draw ${_hzText(layoutDrawHz)}',
       if (nativeCompositorCompositeHz > 0)
         'compositor=${_hzText(nativeCompositorCompositeHz)}',
-      if (nativeCompositorSourceCacheHz > 0)
-        'source=${_hzText(nativeCompositorSourceCacheHz)}',
-      if (nativeCompositorSourceProjectionHz > 0)
-        'projection=${_hzText(nativeCompositorSourceProjectionHz)}',
       if (presentationBackend.isNotEmpty && presentationBackend != 'unknown')
         'presentation=$presentationBackend',
       'drawP95=${_usText(drawP95Us)}',
@@ -468,22 +448,6 @@ class PerformanceHealthSnapshot {
         ),
       );
     }
-    if (nativeCompositorSourceCacheHz > 0) {
-      metrics.add(
-        PerformanceHealthDetailMetric(
-          l.performanceMetricSource,
-          '${nativeCompositorSourceCacheHz.toStringAsFixed(0)}Hz',
-        ),
-      );
-    }
-    if (nativeCompositorSourceProjectionHz > 0) {
-      metrics.add(
-        PerformanceHealthDetailMetric(
-          l.performanceMetricProjection,
-          '${nativeCompositorSourceProjectionHz.toStringAsFixed(0)}Hz',
-        ),
-      );
-    }
     if (displayRefreshHz > 0 || displayTickHz > 0) {
       final tickText = displayTickHz > 0
           ? displayTickHz.toStringAsFixed(0)
@@ -564,14 +528,6 @@ class PerformanceHealthSnapshot {
         '${refreshText}Hz',
       );
     }
-    if (nativeCompositorSourceCacheHz > 0) {
-      parts.add('source ${nativeCompositorSourceCacheHz.toStringAsFixed(0)}Hz');
-    }
-    if (nativeCompositorSourceProjectionHz > 0) {
-      parts.add(
-        'projection ${nativeCompositorSourceProjectionHz.toStringAsFixed(0)}Hz',
-      );
-    }
     if (displayRefreshHz > 0 || displayTickHz > 0) {
       final tickText = displayTickHz > 0
           ? displayTickHz.toStringAsFixed(0)
@@ -608,9 +564,6 @@ class PerformanceHealthSnapshot {
       layoutDrawHz == other.layoutDrawHz &&
       layoutIntentHz == other.layoutIntentHz &&
       nativeCompositorCompositeHz == other.nativeCompositorCompositeHz &&
-      nativeCompositorSourceCacheHz == other.nativeCompositorSourceCacheHz &&
-      nativeCompositorSourceProjectionHz ==
-          other.nativeCompositorSourceProjectionHz &&
       drawP95Us == other.drawP95Us &&
       backendP95Us == other.backendP95Us &&
       metalP95Us == other.metalP95Us &&
@@ -643,8 +596,6 @@ class PerformanceHealthSnapshot {
     layoutDrawHz.round(),
     layoutIntentHz.round(),
     nativeCompositorCompositeHz.round(),
-    nativeCompositorSourceCacheHz.round(),
-    nativeCompositorSourceProjectionHz.round(),
     drawP95Us.round(),
     backendP95Us.round(),
     metalP95Us.round(),

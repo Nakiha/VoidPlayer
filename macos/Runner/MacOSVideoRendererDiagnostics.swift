@@ -40,7 +40,6 @@ enum MacOSVideoRendererDiagnostics {
     trackCount: Int,
     isPlaying: Bool,
     presentationTargetInstalled: Bool,
-    nativeCompositorSourceProviderActive: Bool = false,
     nativeEventDiagnostics: [String: Any],
     frameCallbackDiagnostics: [String: Any],
     viewportDiagnostics: [String: Any],
@@ -100,26 +99,20 @@ enum MacOSVideoRendererDiagnostics {
     let rendererOwnedPixelBufferBytes =
       Int64(textureStats?.rendererOwnedPixelBufferBytes ?? 0)
     let dedicatedGpuUsageBytes = nativeDedicatedGpuUsageBytes + rendererOwnedPixelBufferBytes
-    let nativeCompositorSourceProviderPresenting =
-      nativeCompositorSourceProviderActive && !presentationTargetInstalled
     var diagnostics: [String: Any] = [
       "platform": "macos",
       "backend": backendName,
       "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
       "presentationAdapterKind": presentationAdapterKind(
         player: player,
-        state: rendererOwnedState,
-        sourceProviderPresenting: nativeCompositorSourceProviderPresenting
+        state: rendererOwnedState
       ),
       "presentationScheduler": String(cString: VPMacOSNativePresentationSchedulerName()),
       "presentationBackend": presentationBackendName(
         player: player,
-        state: rendererOwnedState,
-        sourceProviderPresenting: nativeCompositorSourceProviderPresenting
+        state: rendererOwnedState
       ),
       "rendererOwnedPresentationActive": rendererOwnedActive,
-      "nativeCompositorSourceProviderActive": nativeCompositorSourceProviderActive,
-      "nativeCompositorSourceProviderPresenting": nativeCompositorSourceProviderPresenting,
       "rendererOwnedRendererInitialized": rendererOwnedState["rendererInitialized"] ?? false,
       "rendererOwnedTargetInstalled": rendererOwnedState["targetInstalled"] ?? false,
       "rendererOwnedBackendAvailable": rendererOwnedState["backendAvailable"] ?? false,
@@ -316,8 +309,7 @@ enum MacOSVideoRendererDiagnostics {
         ? "Explicit macOS synthetic texture source is active"
         : presentationReason(
           player: player,
-          state: rendererOwnedState,
-          sourceProviderPresenting: nativeCompositorSourceProviderPresenting
+          state: rendererOwnedState
         ),
       "playerId": playerId ?? -1,
       "textureId": textureId ?? -1,
@@ -381,9 +373,7 @@ enum MacOSVideoRendererDiagnostics {
       "pixelBufferMetalCVPixelBufferUploadCount":
         perfStats?["rendererOwnedCVPixelBufferUploadCount"] ?? 0,
       "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
-      "presentationUploadMode": nativeCompositorSourceProviderPresenting
-        ? "metal-source-provider"
-        : MacOSPresentationDiagnostics.uploadMode(
+      "presentationUploadMode": MacOSPresentationDiagnostics.uploadMode(
           perfStats: perfStats,
           targetReady: textureStats?.metalTextureValid ?? false,
           targetInstalled: presentationTargetInstalled,
@@ -480,9 +470,7 @@ enum MacOSVideoRendererDiagnostics {
       "packetQueueMemoryBytes": perfStats?["packetQueueMemoryBytes"] ?? 0,
       "nativeCpuFrameMemoryBytes": perfStats?["cpuFrameMemoryBytes"] ?? 0,
       "nativePacketQueueMemoryBytes": perfStats?["packetQueueMemoryBytes"] ?? 0,
-      "presentationFallbackReason": nativeCompositorSourceProviderPresenting
-        ? "none"
-        : MacOSPresentationDiagnostics.fallbackReason(
+      "presentationFallbackReason": MacOSPresentationDiagnostics.fallbackReason(
           player: player,
           targetInstalled: presentationTargetInstalled,
           perfStats: perfStats
@@ -497,14 +485,10 @@ enum MacOSVideoRendererDiagnostics {
 
   private static func presentationBackendName(
     player: MacOSNativePlayerSession?,
-    state: [String: Any],
-    sourceProviderPresenting: Bool
+    state: [String: Any]
   ) -> String {
     guard player != nil else {
       return "explicit-synthetic-texture"
-    }
-    if sourceProviderPresenting {
-      return "native-metal-source-provider"
     }
     if state["active"] as? Bool == true {
       return "native-metal-cvpixelbuffer-target"
@@ -514,14 +498,10 @@ enum MacOSVideoRendererDiagnostics {
 
   private static func presentationAdapterKind(
     player: MacOSNativePlayerSession?,
-    state: [String: Any],
-    sourceProviderPresenting: Bool
+    state: [String: Any]
   ) -> String {
     guard player != nil else {
       return "explicit-synthetic"
-    }
-    if sourceProviderPresenting {
-      return "renderer-owned-source-provider"
     }
     if state["active"] as? Bool == true {
       return "renderer-owned-metal"
@@ -531,12 +511,8 @@ enum MacOSVideoRendererDiagnostics {
 
   private static func presentationReason(
     player: MacOSNativePlayerSession?,
-    state: [String: Any],
-    sourceProviderPresenting: Bool
+    state: [String: Any]
   ) -> String {
-    if player != nil && sourceProviderPresenting {
-      return "macOS native Metal compositor source provider is active"
-    }
     if player != nil && state["active"] as? Bool == true {
       return "macOS shared renderer is active with renderer-owned Metal presentation"
     }

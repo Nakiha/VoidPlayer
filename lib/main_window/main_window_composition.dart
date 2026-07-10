@@ -193,7 +193,7 @@ extension MainWindowComposition on MainWindowController {
             );
           },
           dartViewportDiagnostics: () =>
-              ViewportProjectionDiagnostics.instance.snapshot(),
+              ViewportInteractionDiagnostics.instance.snapshot(),
           actionRegistry: actionRegistry,
         ),
       ).run();

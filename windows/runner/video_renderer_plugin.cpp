@@ -658,11 +658,6 @@ void VideoRendererPlugin::RegisterMethodHandlers() {
                 call.arguments(), std::move(result));
         });
     method_dispatcher_.Register(
-        "setNativeCompositorViewportTransform",
-        [](const MethodCall&, MethodResultPtr result) {
-            result->Success();
-        });
-    method_dispatcher_.Register(
         "prepareNativeCompositorSourceCache",
         [this](const MethodCall& call, MethodResultPtr result) {
             PrepareNativeCompositorSourceCache(

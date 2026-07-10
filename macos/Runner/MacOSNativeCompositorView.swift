@@ -40,7 +40,7 @@ final class MacOSNativeCompositorView: NSView {
   private let outputMode: String
   private let textureCache: CVMetalTextureCache
   private weak var engine: FlutterEngine?
-  private weak var videoTexture: MacOSVideoTexture?
+  private weak var videoTexture: MacOSVideoSurface?
   private let metalLayer = CAMetalLayer()
   private let compositorQueue = DispatchQueue(
     label: "dev.nakiha.voidplayer.macos.native-compositor",
@@ -227,7 +227,7 @@ final class MacOSNativeCompositorView: NSView {
     removeFromSuperview()
   }
 
-  func setVideoTexture(_ texture: MacOSVideoTexture?) {
+  func setVideoTexture(_ texture: MacOSVideoSurface?) {
     compositorQueue.async { [weak self] in
       guard let self else { return }
       videoTexture = texture
@@ -455,7 +455,6 @@ final class MacOSNativeCompositorView: NSView {
     let sourceCacheBytes = sourceReadyState?.bytes ?? 0
     let sourceCacheTextureCount = sourceReadyState?.textures.count ?? 0
     result["nativeCompositorEnabled"] = true
-    result["nativeCompositorSpikeEnabled"] = true
     result["nativeCompositorFrames"] = frameCount
     result["nativeCompositorCompositeHz"] = compositeHz
     result["nativeCompositorCompositeHzX1000"] = Int(compositeHz * 1000.0)
@@ -617,25 +616,6 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorSource1DisplayOffsetYX1000"] = Int(sourceProjDisplayOffsetY.y * 1000.0)
     result["nativeCompositorSource1InvDisplaySizeXX1000"] = Int(sourceProjInvDisplaySizeX.y * 1000.0)
     result["nativeCompositorSource1InvDisplaySizeYX1000"] = Int(sourceProjInvDisplaySizeY.y * 1000.0)
-    result["nativeCompositorBackendLastCompletionResult"] = 0
-    result["nativeCompositorBackendDestinationImportCount"] = 0
-    result["nativeCompositorBackendDestinationImportReuseCount"] = 0
-    result["nativeCompositorBackendSourceImportCount"] = 0
-    result["nativeCompositorBackendSourceImportReuseCount"] = 0
-    result["nativeCompositorBackendImportedTextureCacheSize"] = 0
-    result["nativeCompositorBackendImportedTextureCacheEvictionCount"] = 0
-    result["nativeCompositorBackendFinalBindGroupCreateCount"] = 0
-    result["nativeCompositorBackendOverlayBindGroupCreateCount"] = 0
-    result["nativeCompositorBackendOverlayLayerRebuildCount"] = 0
-    result["nativeCompositorBackendOverlayLayerReuseCount"] = 0
-    result["nativeCompositorBackendSubmitCount"] = 0
-    result["nativeCompositorBackendLastImportUs"] = 0
-    result["nativeCompositorBackendLastPrepareUs"] = 0
-    result["nativeCompositorBackendLastOverlayEncodeUs"] = 0
-    result["nativeCompositorBackendLastBindGroupUs"] = 0
-    result["nativeCompositorBackendLastPassEncodeUs"] = 0
-    result["nativeCompositorBackendLastSubmitUs"] = 0
-    result["nativeCompositorBackendLastCpuRenderUs"] = 0
     result.merge(latencyProfiler.diagnosticMap()) { _, next in next }
     return result
   }
@@ -1066,7 +1046,7 @@ final class MacOSNativeCompositorView: NSView {
     }
   }
 
-  private func makeVideoReadySnapshot(videoTexture: MacOSVideoTexture) -> VideoTextureSnapshot? {
+  private func makeVideoReadySnapshot(videoTexture: MacOSVideoSurface) -> VideoTextureSnapshot? {
     guard let presentationSnapshot = videoTexture.presentationSnapshot() else {
       return nil
     }

@@ -106,7 +106,6 @@ runner-composed sandwich backend 重新建立 D3D11/DX12 验证矩阵，而不�
 | [TARGET_BOUNDARIES.md](TARGET_BOUNDARIES.md) | CMake target / feature 边界 | target 或 feature option 变更时 |
 | [MACOS_READINESS.md](MACOS_READINESS.md) | macOS readiness / release gates | macOS runner、package、release gate 变更时 |
 | [MACOS_PRESENTATION_BACKEND.md](MACOS_PRESENTATION_BACKEND.md) | macOS Metal presentation contract | macOS texture / Metal / CVPixelBuffer 路径变更时 |
-| [MACOS_HDR_EXPLORATION.md](MACOS_HDR_EXPLORATION.md) | macOS HDR/EDR 路径 | Flutter fork pin、presentation mode、HDR 验证方式变更时 |
 | [NATIVE_EVENT_PIPELINE.md](NATIVE_EVENT_PIPELINE.md) | native -> Dart EventChannel 合同 | native event envelope 或 bridge 变更时 |
 | [ANALYSIS_MODULE.md](ANALYSIS_MODULE.md) | analysis 模块入口 | analysis FFI、parser、generator 变更时 |
 | [ANALYSIS_CACHE.md](ANALYSIS_CACHE.md) | VAC2/VACHUNK cache contract | cache layout、chunk policy、generation contract 变更时 |

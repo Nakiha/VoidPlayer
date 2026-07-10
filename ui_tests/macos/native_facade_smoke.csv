@@ -9,6 +9,9 @@
 3.1, ASSERT_NATIVE_BACKEND, macos-native-player, true
 4.011, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedRendererInitialized, true
 4.012, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorEnabled, true
+4.0121, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, playerId, 1
+4.0122, ASSERT_NATIVE_DIAGNOSTIC_BOOL, flutterVideoTextureRegistered, false
+4.0123, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureId, -1, -1
 4.0125, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-sdr
 4.0128, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorBackend, metal
 4.0129, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorLastFailure,

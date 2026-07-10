@@ -73,10 +73,12 @@ class MainWindowMediaCoordinator {
 
   MainWindowStateModel get _state => stateStore.value;
 
+  int? playerId() => _state.playerId;
   int? textureId() => _state.textureId;
   void setViewportState(ViewportDisplayState state) =>
       stateStore.setViewportState(state);
-  void setTextureId(int textureId) => stateStore.setTextureId(textureId);
+  void setPlayerIdentity({required int playerId, int? textureId}) =>
+      stateStore.setPlayerIdentity(playerId: playerId, textureId: textureId);
   void setLayout(LayoutState layout) => stateStore.setLayout(layout);
   Map<int, int> syncOffsets() => _state.syncOffsets;
   void setSyncOffsets(Map<int, int> offsets) =>
@@ -131,7 +133,7 @@ class MainWindowMediaCoordinator {
     final uniquePaths = await _filterDuplicateMedia(paths);
     if (!_alive || uniquePaths.isEmpty) return;
 
-    if (textureId() == null) {
+    if (playerId() == null) {
       if (uniquePaths.length > TrackManager.maxTracks) {
         _rejectTrackLimit(requestedCount: uniquePaths.length);
         return;
@@ -151,7 +153,7 @@ class MainWindowMediaCoordinator {
           useHardwareDecode: playbackPreferences.useHardwareDecode,
         );
         if (!_alive) return;
-        setTextureId(res.textureId);
+        setPlayerIdentity(playerId: res.playerId, textureId: res.textureId);
         trackManager.setTracks(res.tracks);
         await _syncDefaultAudioPolicy(res.tracks);
         if (!_alive) return;
@@ -220,7 +222,7 @@ class MainWindowMediaCoordinator {
         'Requested $requestedCount.';
     log.warning(message);
     onMediaLoadRejected?.call(message);
-    if (textureId() == null) {
+    if (playerId() == null) {
       setViewportState(ViewportDisplayState.error(message));
     }
   }
@@ -254,7 +256,7 @@ class MainWindowMediaCoordinator {
       await loadMediaPaths([playableInput]);
     } catch (e) {
       log.severe("SSH remote media failed: $e");
-      if (_alive && textureId() == null) {
+      if (_alive && playerId() == null) {
         setViewportState(ViewportDisplayState.error('Failed to load: $e'));
       }
       rethrow;

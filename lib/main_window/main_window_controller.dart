@@ -317,6 +317,7 @@ class MainWindowController {
     return MainWindowViewModelFactory.build(
       session: _session,
       layout: _layout,
+      hasPlayer: _state.playerId != null,
       textureId: _textureId,
       nativeCompositorActive: _nativeCompositorActive,
       viewportState: _viewportState,

@@ -48,7 +48,7 @@ void main() {
     'immediate viewport resize applies pending layout before native resize',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setLayout(const LayoutState());
       addTearDown(stateStore.dispose);
       final trackManager = TrackManager();
@@ -83,7 +83,7 @@ void main() {
     tester,
   ) async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setNativeCompositorActive(true)
       ..setLayout(const LayoutState());
     addTearDown(stateStore.dispose);
@@ -117,7 +117,7 @@ void main() {
     'preempt viewport resize lets native resize rescale applied pending layout',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setLayout(const LayoutState());
       addTearDown(stateStore.dispose);
       final trackManager = TrackManager();
@@ -151,7 +151,7 @@ void main() {
 
   test('queued logical viewport width delta preempts native resize', () async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setLayout(const LayoutState());
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager();
@@ -179,7 +179,7 @@ void main() {
 
   test('native compositor preempt resize republishes source cache', () async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setNativeCompositorActive(true)
       ..setLayout(const LayoutState(order: [1, -1, -1, -1]));
     addTearDown(stateStore.dispose);
@@ -212,7 +212,7 @@ void main() {
 
   test('visible marks sidebar width changes preempt native resize', () async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setMarksSidebarVisible(true)
       ..setMarksSidebarWidth(340)
       ..setLayout(const LayoutState());
@@ -246,7 +246,7 @@ void main() {
     'hiding marks sidebar removes Flutter panel before native resize',
     (tester) async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setMarksSidebarVisible(true)
         ..setMarksSidebarWidth(320)
         ..setLayout(const LayoutState());
@@ -290,7 +290,7 @@ void main() {
 
   test('zoom combo changes are clamped through shared zoom path', () {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setLayout(const LayoutState());
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager();
@@ -313,7 +313,7 @@ void main() {
     'paused native compositor pan keeps source cache after final layout',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setNativeCompositorActive(true)
         ..setPlaying(false)
         ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
@@ -338,7 +338,6 @@ void main() {
 
       expect(controller.appliedLayouts, isEmpty);
       expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
-      expect(controller.transforms, isEmpty);
       expect(stateStore.value.layout.viewOffsetX, 160);
       expect(stateStore.value.layout.viewOffsetY, -90);
 
@@ -348,7 +347,6 @@ void main() {
       expect(controller.appliedLayouts, hasLength(1));
       expect(controller.appliedLayouts.single.viewOffsetX, 160);
       expect(controller.appliedLayouts.single.viewOffsetY, -90);
-      expect(controller.transforms, isEmpty);
       expect(
         controller.calls,
         isNot(
@@ -370,7 +368,7 @@ void main() {
     'paused native compositor split pan uses full source projection',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setNativeCompositorActive(true)
         ..setPlaying(false)
         ..setLayout(
@@ -399,7 +397,6 @@ void main() {
       await pumpEventQueue();
 
       expect(controller.appliedLayouts, isEmpty);
-      expect(controller.transforms, isEmpty);
       expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
     },
   );
@@ -408,7 +405,7 @@ void main() {
     'single source projection uses viewport geometry, not surface geometry',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setNativeCompositorActive(true)
         ..setPlaying(true)
         ..setLayout(const LayoutState(order: [1, -1, -1, -1]));
@@ -445,7 +442,7 @@ void main() {
     'native compositor split drag uses projection and defers full layout',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setNativeCompositorActive(true)
         ..setPlaying(false)
         ..setLayout(
@@ -476,7 +473,6 @@ void main() {
 
       expect(stateStore.value.layout.splitPos, 0.62);
       expect(controller.appliedLayouts, isEmpty);
-      expect(controller.transforms, isEmpty);
       expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
 
       coordinator.onPointerButton(false, false);
@@ -492,7 +488,7 @@ void main() {
     'native compositor overlay refresh republishes source cache without layout dirty',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setNativeCompositorActive(true)
         ..setPlaying(false)
         ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
@@ -522,7 +518,7 @@ void main() {
 
   test('inactive native compositor clears retained source cache', () async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setNativeCompositorActive(true);
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager()..setTracks([track(1)]);
@@ -549,7 +545,7 @@ void main() {
 
   test('zero tracks clear retained native compositor source cache', () async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setNativeCompositorActive(true);
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager();
@@ -578,7 +574,7 @@ void main() {
     'playing native compositor pan subscribes live source cache, defers commit',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setNativeCompositorActive(true)
         ..setPlaying(true)
         ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
@@ -605,7 +601,6 @@ void main() {
       // per frame); projection updates immediately and the authoritative native
       // layout is deferred until pointer-up.
       expect(controller.calls, contains('prepareNativeCompositorSourceCache'));
-      expect(controller.transforms, isEmpty);
       expect(controller.appliedLayouts, isEmpty);
 
       // Continued panning still does not commit mid-interaction.
@@ -636,7 +631,7 @@ void main() {
     'playback transition flushes deferred pan layout before play starts',
     () async {
       final stateStore = MainWindowStateStore()
-        ..setTextureId(1)
+        ..setPlayerIdentity(playerId: 1, textureId: 1)
         ..setNativeCompositorActive(true)
         ..setPlaying(false)
         ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
@@ -687,7 +682,7 @@ void main() {
 
   test('playback transition without interaction state is a no-op', () async {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setNativeCompositorActive(true)
       ..setPlaying(false)
       ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
@@ -710,12 +705,11 @@ void main() {
     await coordinator.onPlaybackStateChanged(playing: false);
 
     expect(controller.appliedLayouts, isEmpty);
-    expect(controller.transforms, isEmpty);
   });
 
   test('layout mode changes keep normalized view center stable', () {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setLayout(
         const LayoutState(
           zoomRatio: 2,
@@ -769,7 +763,7 @@ void main() {
 
   test('focus quick mark centers a rectangle with visual padding', () {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager()..setTracks([track(1), track(2)]);
@@ -815,7 +809,7 @@ void main() {
 
   test('focus quick mark centers an arrow on its head', () {
     final stateStore = MainWindowStateStore()
-      ..setTextureId(1)
+      ..setPlayerIdentity(playerId: 1, textureId: 1)
       ..setLayout(const LayoutState(order: [1, 2, -1, -1]));
     addTearDown(stateStore.dispose);
     final trackManager = TrackManager()..setTracks([track(1), track(2)]);
@@ -889,7 +883,6 @@ class _FakeNativePlayerController extends NativePlayerController {
   final List<String> calls = [];
   final List<Size> resizes = [];
   final List<LayoutState> appliedLayouts = [];
-  final List<_NativeCompositorTransformCall> transforms = [];
   final List<_NativeCompositorSourceCacheCall> sourceCacheProjections = [];
   LayoutState nativeLayout;
   Size currentSize = const Size(100, 100);
@@ -920,32 +913,6 @@ class _FakeNativePlayerController extends NativePlayerController {
     calls.add('applyLayout');
     appliedLayouts.add(state);
     nativeLayout = state;
-  }
-
-  @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) async {
-    calls.add('setNativeCompositorViewportTransform');
-    transforms.add(
-      _NativeCompositorTransformCall(
-        enabled: enabled,
-        scaleX: scaleX,
-        scaleY: scaleY,
-        translateX: translateX,
-        translateY: translateY,
-        mode: mode,
-        splitPos: splitPos,
-        activeTrackCount: activeTrackCount,
-      ),
-    );
   }
 
   @override
@@ -992,28 +959,6 @@ class _FakeNativePlayerController extends NativePlayerController {
     getLayoutCalls++;
     return nativeLayout;
   }
-}
-
-class _NativeCompositorTransformCall {
-  final bool enabled;
-  final double scaleX;
-  final double scaleY;
-  final double translateX;
-  final double translateY;
-  final int mode;
-  final double splitPos;
-  final int activeTrackCount;
-
-  const _NativeCompositorTransformCall({
-    required this.enabled,
-    required this.scaleX,
-    required this.scaleY,
-    required this.translateX,
-    required this.translateY,
-    required this.mode,
-    required this.splitPos,
-    required this.activeTrackCount,
-  });
 }
 
 class _NativeCompositorSourceCacheCall {

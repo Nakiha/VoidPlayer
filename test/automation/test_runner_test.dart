@@ -303,7 +303,7 @@ class _FakeNativePlayerApi implements NativePlayerApi {
     int? viewportBackgroundColor,
   }) async {
     calls.add('createPlayer:${width}x$height:${videoPaths.join('|')}');
-    return const CreatePlayerResult(textureId: 1, tracks: []);
+    return const CreatePlayerResult(playerId: 1, tracks: []);
   }
 
   @override
@@ -399,18 +399,6 @@ class _FakeNativePlayerApi implements NativePlayerApi {
   Future<void> endNativeInteractionSample({required String label}) async {
     calls.add('endNativeInteractionSample:$label');
   }
-
-  @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) async {}
 
   @override
   Future<void> prepareNativeCompositorSourceCache({

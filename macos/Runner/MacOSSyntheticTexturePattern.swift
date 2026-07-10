@@ -1,7 +1,7 @@
 import CoreVideo
 import FlutterMacOS
 
-final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoTexture {
+final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoSurface, FlutterTexture {
   private let lock = NSLock()
   private(set) var width: Int
   private(set) var height: Int

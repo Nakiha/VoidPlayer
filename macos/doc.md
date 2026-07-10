@@ -45,8 +45,8 @@ RendererDrawSnapshot
   -> runner composition under Flutter's transparent ARGB UI surface
 ```
 
-Swift creates/registers the native video target, installs it into native, and
-keeps it separate from Flutter's UI surface. Viewport pan/zoom only
+Native allocates and publishes the video source targets; Swift retains complete
+packages and composes them separately from Flutter's UI surface. Viewport pan/zoom only
 submits the latest layout intent; `CVDisplayLink` coalesces input, while native
 keeps video source updates tied to media PTS and lets display ticks re-composite
 the retained source cache for pan/zoom/split/overlay changes. Swift must not add
@@ -54,9 +54,8 @@ a second frame pump, playback clock, seek policy, loop policy, or layout
 compositor.
 
 The detailed presentation contract is documented in
-`../native/docs/MACOS_PRESENTATION_BACKEND.md`. The gated HDR/EDR native
-compositor exploration, Flutter fork pin, and local validation commands are
-tracked in `../native/docs/MACOS_HDR_EXPLORATION.md`.
+`../native/docs/MACOS_PRESENTATION_BACKEND.md`; stabilization and local
+validation are tracked in `../native/docs/MACOS_READINESS.md`.
 
 ## Capabilities
 
@@ -64,7 +63,7 @@ tracked in `../native/docs/MACOS_HDR_EXPLORATION.md`.
 | --- | --- |
 | Native playback | Feature-complete enough for stabilization/release-readiness. |
 | Presentation | Runner-composed native Metal video layer behind Flutter ARGB UI. |
-| Hardware decode | VideoToolbox hwdownload is probed; renderer-owned CVPixelBuffer import must be rebuilt on native Metal before claiming zero-copy. |
+| Hardware decode | VideoToolbox preserves decoder-owned CVPixelBuffer/IOSurface frames for the native Metal path; forced hwdownload remains diagnostic fallback only. |
 | Software fallback | Supported through explicit YUV/BGRA present packages and fallback diagnostics. |
 | Audio | Shared native audio engine and miniaudio output path. |
 | Analysis FFI/cache | Native analysis symbols and cache tooling are linked. |

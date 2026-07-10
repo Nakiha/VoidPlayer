@@ -48,6 +48,7 @@ void main() {
     ValueChanged<int>? onQuickMarkFocus,
     Size size = const Size(240, 160),
     bool nativeCompositorHole = false,
+    int? textureId = 1,
   }) {
     return MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -59,7 +60,7 @@ void main() {
             width: size.width,
             height: size.height,
             child: ViewportPanel(
-              textureId: 1,
+              textureId: textureId,
               viewportState: const ViewportDisplayState.active(),
               layout: const LayoutState(),
               onPan: pans.add,
@@ -87,6 +88,22 @@ void main() {
       ),
     );
   }
+
+  testWidgets('native compositor viewport does not require Flutter texture', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      buildPanel(
+        pans: [],
+        zooms: [],
+        nativeCompositorHole: true,
+        textureId: null,
+      ),
+    );
+
+    expect(find.byType(Texture), findsNothing);
+    expect(find.bySemanticsLabel('Video viewport'), findsOneWidget);
+  });
 
   testWidgets('pan zoom scale noise still pans the viewport', (tester) async {
     final pans = <Offset>[];

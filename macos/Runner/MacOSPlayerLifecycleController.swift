@@ -4,11 +4,13 @@ import Foundation
 final class MacOSPlayerLifecycleController {
   private let textureRegistry: FlutterTextureRegistry
 
-  private(set) var texture: MacOSVideoTexture?
+  private(set) var texture: MacOSVideoSurface?
   private(set) var nativeTexture: MacOSFlutterTextureBridge?
+  private(set) var playerId: Int64?
   private(set) var textureId: Int64?
   private(set) var backendName = "synthetic-texture"
   private(set) var nativePlayer: MacOSNativePlayerSession?
+  private var nextPlayerId: Int64 = 1
 
   init(textureRegistry: FlutterTextureRegistry) {
     self.textureRegistry = textureRegistry
@@ -34,10 +36,13 @@ final class MacOSPlayerLifecycleController {
       )
     }
 
-    let registeredTextureId = textureRegistry.register(startup.texture)
+    let registeredTextureId = startup.flutterTexture.map(textureRegistry.register)
+    let createdPlayerId = nextPlayerId
+    nextPlayerId &+= 1
 
     texture = startup.texture
     nativeTexture = startup.nativeTexture
+    playerId = createdPlayerId
     textureId = registeredTextureId
     backendName = startup.backendName
     nativePlayer = startup.nativePlayer
@@ -50,10 +55,14 @@ final class MacOSPlayerLifecycleController {
     )
     markFrameAvailable()
 
-    return [
-      "textureId": registeredTextureId,
+    var result: [String: Any] = [
+      "playerId": createdPlayerId,
       "tracks": tracks.tracks,
     ]
+    if let registeredTextureId {
+      result["textureId"] = registeredTextureId
+    }
+    return result
   }
 
   func destroy(
@@ -67,6 +76,7 @@ final class MacOSPlayerLifecycleController {
     }
     texture = nil
     nativeTexture = nil
+    playerId = nil
     textureId = nil
     tracks.reset()
     presentationState.resetAll()

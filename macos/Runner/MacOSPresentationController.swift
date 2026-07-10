@@ -9,7 +9,7 @@ struct MacOSPresentationContext {
   let nativeCompositorSourceProjectionActive: Bool
   let nativeCompositorSourceProviderActive: Bool
   let player: MacOSNativePlayerSession?
-  let texture: MacOSVideoTexture?
+  let texture: MacOSVideoSurface?
   let nativeTexture: MacOSFlutterTextureBridge?
   let maxTrackSlots: Int
   let playback: MacOSPlaybackController

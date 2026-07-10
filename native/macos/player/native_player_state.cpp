@@ -81,16 +81,6 @@ bool videotoolbox_hwdownload_forced_by_env() {
   return env_enabled("VOIDPLAYER_FORCE_VIDEOTOOLBOX_HWDOWNLOAD");
 }
 
-bool legacy_metal_requested_by_env() {
-  const char* mode = std::getenv("VOIDPLAYER_MACOS_PRESENTATION_MODE");
-  if (!mode) {
-    return false;
-  }
-  const std::string normalized = lower_ascii(mode);
-  return normalized == "metal" || normalized == "legacy-metal" ||
-         normalized == "metal-cvpixelbuffer";
-}
-
 bool probe_videotoolbox_h264() {
   if (videotoolbox_disabled_by_env()) {
     return false;
@@ -211,9 +201,6 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   config.width = width;
   config.height = height;
   config.headless = true;
-  if (vp_macos::legacy_metal_requested_by_env()) {
-    spdlog::info("[MacOSNativePlayer] using native Metal renderer backend");
-  }
   config.use_hardware_decode =
       use_hardware_decode &&
       !vp_macos::videotoolbox_disabled_by_env();

@@ -530,7 +530,6 @@ ScriptInstruction? _parseInstruction(
         const DebugFlutterSurfaceInfoAction(),
       );
     case 'DEBUG_NATIVE_COMPOSITOR':
-    case 'DEBUG_NATIVE_COMPOSITOR_SPIKE':
       return ScriptAutomationAction(time, const DebugNativeCompositorAction());
     case 'DEBUG_FAIL_NATIVE_COMPOSITOR':
       return ScriptAutomationAction(

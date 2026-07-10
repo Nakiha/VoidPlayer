@@ -118,8 +118,8 @@ Flutter checkout bootstrap and locked local-engine downloads. The standalone
 macOS and Windows bootstrap scripts remain available for CI and artifact
 debugging.
 
-9. Re-run the macOS HDR compositor smoke scripts documented in
-   `native/docs/MACOS_HDR_EXPLORATION.md`.
+9. Re-run `python dev.py gate macos-ui-smoke` and the release checks documented
+   in `native/docs/MACOS_READINESS.md`.
 10. For Windows surface-export changes, run `python dev.py gate
     windows-fork-protection` until the new D3D11/DX12 sandwich backend has its
     own validation matrix. Ordinary Flutter SDK fallback is not release evidence

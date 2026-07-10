@@ -33,8 +33,6 @@ class NativePlayerMethods {
   static const resetNativePerfCounters = 'resetNativePerfCounters';
   static const beginNativeInteractionSample = 'beginNativeInteractionSample';
   static const endNativeInteractionSample = 'endNativeInteractionSample';
-  static const setNativeCompositorViewportTransform =
-      'setNativeCompositorViewportTransform';
   static const prepareNativeCompositorSourceCache =
       'prepareNativeCompositorSourceCache';
   static const setNativeAnalysisOverlay = 'setNativeAnalysisOverlay';
@@ -46,7 +44,6 @@ class NativePlayerMethods {
   static const captureWindow = 'captureWindow';
   static const debugFlutterSurfaceInfo = 'debugFlutterSurfaceInfo';
   static const debugNativeCompositor = 'debugNativeCompositor';
-  static const debugNativeCompositorSpike = 'debugNativeCompositorSpike';
   static const stepForward = 'stepForward';
   static const stepBackward = 'stepBackward';
   static const currentPts = 'currentPts';
@@ -92,6 +89,7 @@ class NativePlayerKeys {
   static const reason = 'reason';
   static const target = 'target';
   static const label = 'label';
+  static const playerId = 'playerId';
   static const textureId = 'textureId';
   static const tracks = 'tracks';
   static const fileId = 'fileId';
@@ -616,19 +614,36 @@ class TrackInfo {
   }
 }
 
-/// Result of createPlayer, containing texture ID and initial track info.
+/// Result of createPlayer. A Flutter texture is optional for native compositors.
 class CreatePlayerResult {
-  final int textureId;
+  final int playerId;
+  final int? textureId;
   final List<TrackInfo> tracks;
 
-  const CreatePlayerResult({required this.textureId, required this.tracks});
+  const CreatePlayerResult({
+    required this.playerId,
+    this.textureId,
+    required this.tracks,
+  });
 
   factory CreatePlayerResult.fromMap(Map<dynamic, dynamic> payload) {
-    final textureId = NativePlayerPayloads.requireField<int>(
-      payload,
-      NativePlayerKeys.textureId,
-      NativePlayerMethods.createPlayer,
-    );
+    final textureValue = payload[NativePlayerKeys.textureId];
+    if (textureValue != null && textureValue is! int) {
+      throw NativeProtocolException(
+        context: NativePlayerMethods.createPlayer,
+        reason: 'expected optional "textureId" to be an int',
+        payload: payload,
+      );
+    }
+    // Older platform runners identify the player by their texture registry ID.
+    final playerValue = payload[NativePlayerKeys.playerId] ?? textureValue;
+    if (playerValue is! int) {
+      throw NativeProtocolException(
+        context: NativePlayerMethods.createPlayer,
+        reason: 'expected "playerId" to be an int',
+        payload: payload,
+      );
+    }
     final tracksValue = payload[NativePlayerKeys.tracks];
     if (tracksValue != null && tracksValue is! List) {
       throw NativeProtocolException(
@@ -639,7 +654,8 @@ class CreatePlayerResult {
     }
     final tracksList = tracksValue as List<dynamic>? ?? [];
     return CreatePlayerResult(
-      textureId: textureId,
+      playerId: playerValue,
+      textureId: textureValue as int?,
       tracks: tracksList
           .map(
             (e) => NativePlayerPayloads.trackInfoFromValue(e, 'createPlayer'),

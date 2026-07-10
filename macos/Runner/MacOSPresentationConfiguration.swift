@@ -3,7 +3,6 @@ import CoreVideo
 import Metal
 
 enum MacOSPresentationMode: String {
-  case flutterTextureSDR = "flutter-texture-sdr"
   case nativeCompositorSDR = "native-compositor-sdr"
   case nativeCompositorEDR = "native-compositor-edr"
 }
@@ -72,13 +71,6 @@ struct MacOSPresentationConfiguration {
     let headroomX1000 = displayEDRHeadroomX1000(screen: screen)
     let supportsEDR = headroomX1000 > 1000
     switch environment.overrideMode {
-    case .flutterTextureSDR:
-      return MacOSPresentationConfiguration(
-        mode: .flutterTextureSDR,
-        request: environment.request,
-        reason: "forced-flutter-texture-sdr",
-        displayEDRHeadroomX1000: headroomX1000
-      )
     case .nativeCompositorSDR:
       return MacOSPresentationConfiguration(
         mode: .nativeCompositorSDR,
@@ -152,10 +144,6 @@ struct MacOSPresentationEnvironment {
         request = rawMode
         overrideMode = .nativeCompositorSDR
         return
-      case "flutter-texture-sdr", "flutter", "sdr":
-        request = rawMode
-        overrideMode = .flutterTextureSDR
-        return
       case "auto":
         request = "auto"
         overrideMode = nil
@@ -164,24 +152,13 @@ struct MacOSPresentationEnvironment {
         break
       }
     }
-    if environment["VOIDPLAYER_NATIVE_COMPOSITOR"] == "1" ||
-        environment["VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE"] == "1" {
-      let isCurrentAlias = environment["VOIDPLAYER_NATIVE_COMPOSITOR"] == "1"
-      if environment["VOIDPLAYER_NATIVE_COMPOSITOR_EDR"] == "1" ||
-        environment["VOIDPLAYER_FLUTTER_HDR_SPIKE"] == "1" {
-        if isCurrentAlias {
-          request = "native-compositor-edr-env"
-        } else {
-          request = "legacy-native-compositor-edr"
-        }
+    if environment["VOIDPLAYER_NATIVE_COMPOSITOR"] == "1" {
+      if environment["VOIDPLAYER_NATIVE_COMPOSITOR_EDR"] == "1" {
+        request = "native-compositor-edr-env"
         overrideMode = .nativeCompositorEDR
         return
       }
-      if isCurrentAlias {
-        request = "native-compositor-sdr-env"
-      } else {
-        request = "legacy-native-compositor-sdr"
-      }
+      request = "native-compositor-sdr-env"
       overrideMode = .nativeCompositorSDR
       return
     }

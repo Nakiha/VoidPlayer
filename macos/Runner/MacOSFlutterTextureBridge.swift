@@ -39,7 +39,8 @@ struct MacOSTexturePresentationSnapshot {
   let layoutRevision: UInt64
 }
 
-protocol MacOSVideoTexture: FlutterTexture {
+protocol MacOSVideoSurface: AnyObject {
+  func copyPixelBuffer() -> Unmanaged<CVPixelBuffer>?
   func resize(width: Int, height: Int) -> Bool
   func prewarmRendererTarget(width: Int, height: Int)
   func dimensions() -> (width: Int, height: Int)
@@ -84,7 +85,7 @@ private struct MacOSStableDisplaySnapshot {
   let ptsUs: Int
 }
 
-final class MacOSFlutterTextureBridge: NSObject, MacOSVideoTexture {
+final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTexture {
   private static let rendererOwnedPixelBufferCount = 6
 
   private let lock = NSLock()

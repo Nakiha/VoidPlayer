@@ -56,16 +56,6 @@ abstract interface class NativePlayerApi {
   Future<void> resetNativePerfCounters();
   Future<void> beginNativeInteractionSample({required String label});
   Future<void> endNativeInteractionSample({required String label});
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  });
   Future<void> prepareNativeCompositorSourceCache({
     required List<int> sourceSlots,
     required List<int> sourceOrder,
@@ -342,32 +332,6 @@ class MethodChannelNativePlayerApi implements NativePlayerApi {
     return _channel.invokeMethod<void>(
       NativePlayerMethods.endNativeInteractionSample,
       {NativePlayerKeys.label: label},
-    );
-  }
-
-  @override
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) {
-    return _invokeTimedVoid(
-      NativePlayerMethods.setNativeCompositorViewportTransform,
-      _withCompositorTrace({
-        NativePlayerKeys.enabled: enabled,
-        NativePlayerKeys.scaleX: scaleX,
-        NativePlayerKeys.scaleY: scaleY,
-        NativePlayerKeys.translateX: translateX,
-        NativePlayerKeys.translateY: translateY,
-        NativePlayerKeys.mode: mode,
-        NativePlayerKeys.splitPos: splitPos,
-        NativePlayerKeys.activeTrackCount: activeTrackCount,
-      }),
     );
   }
 

@@ -26,8 +26,7 @@ class NativeCompositorFlags {
         mode == 'compositor' ||
         mode == 'edr' ||
         mode == 'hdr' ||
-        Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR'] == '1' ||
-        Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR_SPIKE'] == '1';
+        Platform.environment['VOIDPLAYER_NATIVE_COMPOSITOR'] == '1';
   }
 
   static bool get sourceProjection =>

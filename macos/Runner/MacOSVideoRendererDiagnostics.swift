@@ -4,6 +4,7 @@ enum MacOSVideoRendererDiagnostics {
   static func map(
     backendName: String,
     player: MacOSNativePlayerSession?,
+    playerId: Int64?,
     textureId: Int64?,
     textureStats: (
       rebuildCount: Int,
@@ -318,7 +319,9 @@ enum MacOSVideoRendererDiagnostics {
           state: rendererOwnedState,
           sourceProviderPresenting: nativeCompositorSourceProviderPresenting
         ),
+      "playerId": playerId ?? -1,
       "textureId": textureId ?? -1,
+      "flutterVideoTextureRegistered": textureId != nil,
       "textureWidth": textureDimensions?.width ?? 0,
       "textureHeight": textureDimensions?.height ?? 0,
       "trackCount": trackCount,

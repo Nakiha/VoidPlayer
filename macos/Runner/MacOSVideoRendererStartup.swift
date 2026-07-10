@@ -1,8 +1,10 @@
 import AppKit
 import Foundation
+import FlutterMacOS
 
 struct MacOSVideoRendererStartup {
-  let texture: MacOSVideoTexture
+  let texture: MacOSVideoSurface
+  let flutterTexture: FlutterTexture?
   let nativeTexture: MacOSFlutterTextureBridge?
   let backendName: String
   let nativePlayer: MacOSNativePlayerSession?
@@ -68,6 +70,7 @@ enum MacOSVideoRendererStartupFactory {
     }
     return MacOSVideoRendererStartup(
       texture: texture,
+      flutterTexture: texture,
       nativeTexture: nil,
       backendName: "synthetic-texture",
       nativePlayer: nil,
@@ -177,6 +180,7 @@ enum MacOSVideoRendererStartupFactory {
     }
     return MacOSVideoRendererStartup(
       texture: texture,
+      flutterTexture: nil,
       nativeTexture: texture,
       backendName: MacOSVideoTrackPayload.nativeFormatName,
       nativePlayer: session,

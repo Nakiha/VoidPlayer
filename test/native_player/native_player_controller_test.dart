@@ -91,6 +91,7 @@ void main() {
           calls.add(call.method);
           if (call.method == 'createPlayer') {
             return {
+              'playerId': 7,
               'textureId': 7,
               'tracks': <Map<String, Object>>[
                 {
@@ -130,6 +131,7 @@ void main() {
           .setMockMethodCallHandler(channel, (call) async {
             if (call.method == 'createPlayer') {
               return {
+                'playerId': 7,
                 'textureId': 7,
                 'tracks': <Map<String, Object>>[
                   {
@@ -188,6 +190,7 @@ void main() {
           .setMockMethodCallHandler(channel, (call) async {
             if (call.method == 'createPlayer') {
               return {
+                'playerId': 7,
                 'textureId': 7,
                 'tracks': <Map<String, Object>>[
                   {
@@ -228,6 +231,7 @@ void main() {
         .setMockMethodCallHandler(channel, (call) async {
           if (call.method == 'createPlayer') {
             return {
+              'playerId': 7,
               'textureId': 7,
               'tracks': <Map<String, Object>>[
                 {

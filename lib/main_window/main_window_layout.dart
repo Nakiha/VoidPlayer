@@ -61,6 +61,7 @@ class MainWindowLayoutCoordinator {
 
   MainWindowStateModel get _state => stateStore.value;
 
+  int? playerId() => _state.playerId;
   int? textureId() => _state.textureId;
   LayoutState layout() => _state.layout;
   void setLayout(LayoutState layout) => stateStore.setLayout(layout);
@@ -390,7 +391,7 @@ class MainWindowLayoutCoordinator {
     required int width,
     required int height,
   }) async {
-    if (_disposed || textureId() == null) return;
+    if (_disposed || playerId() == null) return;
     if (width <= 0 || height <= 0) return;
     if (width == viewportWidth && height == viewportHeight) return;
 
@@ -469,7 +470,7 @@ class MainWindowLayoutCoordinator {
   }
 
   void _prewarmNextMarksSidebarViewportTarget() {
-    if (_disposed || textureId() == null) return;
+    if (_disposed || playerId() == null) return;
     if (viewportWidth <= 0 || viewportHeight <= 0) return;
     final dpr = viewportDevicePixelRatio > 0 ? viewportDevicePixelRatio : 1.0;
     final widthDelta = _state.marksSidebarVisible
@@ -507,7 +508,7 @@ class MainWindowLayoutCoordinator {
     double widthDelta = 0,
     double heightDelta = 0,
   }) {
-    if (_disposed || textureId() == null) return;
+    if (_disposed || playerId() == null) return;
     if (viewportWidth <= 0 || viewportHeight <= 0) return;
     if (widthDelta == 0 && heightDelta == 0) return;
     final dpr = viewportDevicePixelRatio > 0 ? viewportDevicePixelRatio : 1.0;
@@ -719,7 +720,7 @@ class MainWindowLayoutCoordinator {
 
   Future<void> _flushPendingLayoutLoop() async {
     if (_disposed) return;
-    if (textureId() == null) {
+    if (playerId() == null) {
       _resizeDirty = false;
       _layoutDirty = false;
       _ticker?.stop();
@@ -795,7 +796,7 @@ class MainWindowLayoutCoordinator {
   bool get _canUseNativeCompositorViewportTransform {
     return sourceProjectionEnabled() &&
         _state.nativeCompositorActive &&
-        textureId() != null &&
+        playerId() != null &&
         viewportWidth > 0 &&
         viewportHeight > 0 &&
         trackCount() > 0 &&
@@ -992,11 +993,6 @@ class MainWindowLayoutCoordinator {
     if (!hadTransform || _disposed || !_nativeCompositorTransformActive) {
       return;
     }
-    _resetNativeCompositorViewportTransformAfterAuthoritativeLayout();
-  }
-
-  void _resetNativeCompositorViewportTransformAfterAuthoritativeLayout() {
-    if (!_nativeCompositorTransformActive) return;
     _nativeCompositorTransformActive = false;
   }
 

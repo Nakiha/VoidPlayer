@@ -861,7 +861,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
   }
 
   Widget _buildActiveViewport(BuildContext context) {
-    if (widget.textureId == null) {
+    if (widget.textureId == null && !widget.nativeCompositorHole) {
       return const SizedBox.shrink();
     }
     final devicePixelRatio = View.of(context).devicePixelRatio;
@@ -1068,7 +1068,7 @@ class _ViewportPanelState extends State<ViewportPanel> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (!widget.nativeCompositorHole)
+              if (!widget.nativeCompositorHole && widget.textureId != null)
                 ExcludeSemantics(child: Texture(textureId: widget.textureId!)),
               QuickMarkOverlay(
                 layout: widget.layout,

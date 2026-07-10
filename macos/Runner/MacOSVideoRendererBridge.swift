@@ -58,8 +58,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
   }
 
-  private var texture: MacOSVideoTexture? {
+  private var texture: MacOSVideoSurface? {
     lifecycle.texture
+  }
+
+  private var playerId: Int64? {
+    lifecycle.playerId
   }
 
   private var nativeTexture: MacOSFlutterTextureBridge? {
@@ -188,9 +192,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       result(nil)
     case "ackNativeCompositorFlutterState":
       result(nil)
-    case "setNativeCompositorViewportTransform":
-      setNativeCompositorViewportTransform(arguments: call.arguments)
-      result(nil)
     case "prepareNativeCompositorSourceCache":
       prepareNativeCompositorSourceCache(arguments: call.arguments)
       result(nil)
@@ -294,6 +295,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       var diagnostics = MacOSVideoRendererDiagnostics.map(
         backendName: backendName,
         player: nativePlayer,
+        playerId: playerId,
         textureId: textureId,
         textureStats: texture?.diagnostics(),
         textureDimensions: texture?.dimensions(),
@@ -335,7 +337,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       result(diagnostics)
     case "debugFlutterSurfaceInfo":
       result(debugFlutterSurfaceInfo())
-    case "debugNativeCompositor", "debugNativeCompositorSpike":
+    case "debugNativeCompositor":
       if let nativeCompositor {
         var diagnostics = nativeCompositor.diagnostics()
         if let state = nativePlayer?.rendererOwnedPresentationState() {
@@ -346,7 +348,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         var diagnostics = MacOSPresentationConfiguration.current.diagnostics
         diagnostics.merge([
           "nativeCompositorEnabled": false,
-          "nativeCompositorSpikeEnabled": false,
           "nativeCompositorLastFailure": "native compositor presentation mode is not enabled",
         ]) { _, next in next }
         result(diagnostics)
@@ -431,12 +432,6 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       width: MacOSFlutterArguments.intArg(arguments, "width") ?? 0,
       height: MacOSFlutterArguments.intArg(arguments, "height") ?? 0
     )
-  }
-
-  private func setNativeCompositorViewportTransform(arguments: Any?) {
-    _ = compositorLatencyProfiler.receive(route: "viewport-transform-noop", arguments: arguments)
-    // Kept as a no-op compatibility endpoint while Dart/native converge on
-    // full-layout source projection.
   }
 
   private func prepareNativeCompositorSourceCache(arguments: Any?) {
@@ -755,7 +750,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func currentPresentedFrame(arguments: Any?) -> Any? {
-    guard textureId != nil else { return nil }
+    guard playerId != nil else { return nil }
     let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") ?? -1
     if fileId >= 0, let player = nativePlayer {
       let tracks = player.trackDiagnostics()
@@ -810,7 +805,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func currentPresentedFrames() -> [[String: Any]] {
-    guard textureId != nil, let player = nativePlayer else { return [] }
+    guard playerId != nil, let player = nativePlayer else { return [] }
     let tracks = player.trackDiagnostics()
     if shouldUseRendererOwnedPresentedFrame(player: player),
        tracks.count == 1,
@@ -929,7 +924,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func destroyPlayerForWindowClose() {
-    if textureId == nil && nativePlayer == nil {
+    if playerId == nil && nativePlayer == nil {
       return
     }
     NSLog("VoidPlayer macOS native player teardown before window close")
@@ -937,7 +932,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   }
 
   private func addTrack(arguments: Any?) -> Any {
-    guard textureId != nil else {
+    guard playerId != nil else {
       return FlutterError(
         code: "NO_PLAYER",
         message: "createPlayer must be called before addTrack",
@@ -1021,7 +1016,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func ensureNativeCompositorMatchesCurrentConfiguration() {
     let configuration = MacOSPresentationConfiguration.current
     guard configuration.nativeCompositorEnabled,
-          textureId != nil,
+          playerId != nil,
           texture != nil else {
       clearNativeCompositorSourceProvider(reason: "compositor disabled")
       nativeCompositorSourceRing = nil

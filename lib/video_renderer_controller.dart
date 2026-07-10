@@ -11,6 +11,7 @@ class NativePlayerController {
   final NativePlayerApi _api;
   final bool strictCommandOrder;
   final void Function(String method, String reason)? onNoopCommand;
+  int? _playerId;
   int? _textureId;
   bool _disposed = false;
   Future<CreatePlayerResult>? _createInFlight;
@@ -24,10 +25,11 @@ class NativePlayerController {
     this.onNoopCommand,
   }) : _api = api ?? const MethodChannelNativePlayerApi();
 
+  int? get playerId => _playerId;
   int? get textureId => _textureId;
   bool get isDisposed => _disposed;
-  bool get hasPlayer => _textureId != null;
-  bool get canAcceptCommands => !_disposed && _textureId != null;
+  bool get hasPlayer => _playerId != null;
+  bool get canAcceptCommands => !_disposed && _playerId != null;
   Stream<NativePlayerEvent> get events => _api.events;
 
   void _ensureAlive() {
@@ -38,7 +40,7 @@ class NativePlayerController {
 
   void _ensurePlayer(String method) {
     _ensureAlive();
-    if (_textureId == null) {
+    if (_playerId == null) {
       throw StateError('$method called before createPlayer');
     }
   }
@@ -67,7 +69,7 @@ class NativePlayerController {
     bool useHardwareDecode = true,
   }) {
     _ensureAlive();
-    if (_textureId != null) {
+    if (_playerId != null) {
       throw StateError('Player already created');
     }
     final existing = _createInFlight;
@@ -107,8 +109,10 @@ class NativePlayerController {
       useHardwareDecode: useHardwareDecode,
       viewportBackgroundColor: _viewportBackgroundColor,
     );
+    _playerId = result.playerId;
     _textureId = result.textureId;
     if (_disposed) {
+      _playerId = null;
       _textureId = null;
       await _api.destroyPlayer();
       throw StateError('NativePlayerController is disposed');
@@ -268,29 +272,6 @@ class NativePlayerController {
   Future<void> endNativeInteractionSample({required String label}) {
     _ensureAlive();
     return _api.endNativeInteractionSample(label: label);
-  }
-
-  Future<void> setNativeCompositorViewportTransform({
-    required bool enabled,
-    required double scaleX,
-    required double scaleY,
-    required double translateX,
-    required double translateY,
-    required int mode,
-    required double splitPos,
-    required int activeTrackCount,
-  }) {
-    _ensureAlive();
-    return _api.setNativeCompositorViewportTransform(
-      enabled: enabled,
-      scaleX: scaleX,
-      scaleY: scaleY,
-      translateX: translateX,
-      translateY: translateY,
-      mode: mode,
-      splitPos: splitPos,
-      activeTrackCount: activeTrackCount,
-    );
   }
 
   Future<void> prepareNativeCompositorSourceCache({
@@ -520,9 +501,10 @@ class NativePlayerController {
         log.fine('createPlayer failed before destroy completed', error, stack);
       }
     }
-    final textureId = _textureId;
+    final playerId = _playerId;
+    _playerId = null;
     _textureId = null;
-    if (textureId != null) {
+    if (playerId != null) {
       await _api.destroyPlayer();
     }
   }

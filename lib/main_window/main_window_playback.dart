@@ -95,6 +95,7 @@ class MainWindowPlaybackCoordinator {
 
   MainWindowStateModel get _state => stateStore.value;
 
+  int? playerId() => _state.playerId;
   int? textureId() => _state.textureId;
   double timelineControlsWidth() => _state.timelineControlsWidth;
   bool isPlaying() => _state.isPlaying;
@@ -822,7 +823,7 @@ class MainWindowPlaybackCoordinator {
   }
 
   Future<void> _pollState() async {
-    if (_disposed || textureId() == null) return;
+    if (_disposed || playerId() == null) return;
     final serial = ++_pollSerial;
     try {
       final snapshot = await _pollPlaybackSnapshot();

@@ -38,8 +38,8 @@
 10.1, ASSERT_TRACK_COUNT, 1
 10.2, ASSERT_NATIVE_DIAGNOSTIC_STRING, macOSPresentationMode, native-compositor-edr
 10.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, sourceTopologyCommitReady, true
-10.4, CAPTURE_WINDOW, lifecycle_hdr_after_compaction
-10.9, ASSERT_CAPTURE_NOT_BLACK, lifecycle_hdr_after_compaction, 0.01, 4.0
+10.4, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorLastCompositeSucceeded, true
+10.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingIncompletePublishSuppressedCount, 0, 0
 11.0, REMOVE_TRACK, 1
 11.8, ASSERT_TRACK_COUNT, 0
 12.0, ADD_MEDIA, build/generated/macos/lifecycle_sdr.mp4

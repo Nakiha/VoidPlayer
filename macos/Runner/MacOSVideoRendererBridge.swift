@@ -312,7 +312,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         diagnostics.merge(nativeCompositor.diagnostics()) { _, next in next }
       }
       if let nativeCompositorSourceRing {
-        diagnostics.merge(nativeCompositorSourceRing.diagnostics()) { _, next in next }
+        let sourceDiagnostics = nativeCompositorSourceRing.diagnostics()
+        diagnostics.merge(sourceDiagnostics) { _, next in next }
+        if nativeCompositorSourceProviderReady() {
+          diagnostics["nativeRendererOwnedUploadCount"] =
+            sourceDiagnostics["sourceRingPublishCount"] ?? 0
+          diagnostics["rendererOwnedUploadStorageKind"] = "cvpixelbuffer"
+          diagnostics["nativeRendererOwnedUploadCountSource"] = "source-lease"
+        }
       }
       diagnostics.merge(firstFrameLatency.diagnostics()) { _, next in next }
       diagnostics["nativeCompositorSourceProjectionMethodReceiveCount"] =
@@ -602,6 +609,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
             let fileId = payload["fileId"] as? Int,
             let width = payload["width"] as? Int,
             let height = payload["height"] as? Int,
+            let colorTransfer = payload["colorTransfer"] as? Int,
             width > 0,
             height > 0 else {
         return nil
@@ -611,6 +619,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
         fileId: fileId,
         width: width,
         height: height,
+        colorTransfer: colorTransfer,
         displayOffsetX: Float(doubleAt(displayOffsetX, slot)),
         displayOffsetY: Float(doubleAt(displayOffsetY, slot)),
         invDisplaySizeX: Float(doubleAt(invDisplaySizeX, slot)),
@@ -632,7 +641,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     guard let nativeCompositor, !descriptors.isEmpty else { return false }
     let pixelFormat = MacOSPresentationConfiguration.current.edrOutputEnabled ? "edr" : "sdr"
     let signature = ([pixelFormat] +
-      descriptors.map { "\($0.slot):\($0.fileId):\($0.width)x\($0.height)" })
+      descriptors.map {
+        "\($0.slot):\($0.fileId):\($0.width)x\($0.height):t\($0.colorTransfer)"
+      })
       .joined(separator: "|")
     if signature == nativeCompositorSourceSignature,
        let existingRing = nativeCompositorSourceRing {

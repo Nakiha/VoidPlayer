@@ -11,6 +11,9 @@
 extern "C" {
 #endif
 
+typedef struct VPMacOSNativeSourceCompositorLease
+    VPMacOSNativeSourceCompositorLease;
+
 /*
  * macOS native bridge contract:
  *
@@ -175,6 +178,34 @@ int VPMacOSNativePlayerBakeCurrentFrameSources(
     size_t target_count,
     char* error,
     size_t error_size);
+VPMacOSNativeSourceCompositorLease*
+VPMacOSNativeSourceCompositorLeaseCreate(void);
+void VPMacOSNativeSourceCompositorLeaseDestroy(
+    VPMacOSNativeSourceCompositorLease* lease);
+int VPMacOSNativeSourceCompositorLeaseSubscribeAndBake(
+    VPMacOSNativeSourceCompositorLease* lease,
+    VPMacOSNativePlayer* player,
+    const VPMacOSNativeSourceCompositorDescriptor* descriptors,
+    size_t descriptor_count,
+    int32_t edr_output_enabled,
+    uint64_t topology_generation,
+    VPMacOSNativeSourceCompositorPackage* out,
+    char* error,
+    size_t error_size);
+int VPMacOSNativeSourceCompositorLeaseRefreshAndBake(
+    VPMacOSNativeSourceCompositorLease* lease,
+    VPMacOSNativePlayer* player,
+    VPMacOSNativeSourceCompositorPackage* out,
+    char* error,
+    size_t error_size);
+int VPMacOSNativeSourceCompositorLeaseHasCompletePackage(
+    VPMacOSNativeSourceCompositorLease* lease,
+    uint64_t topology_generation);
+void VPMacOSNativeSourceCompositorLeaseReset(
+    VPMacOSNativeSourceCompositorLease* lease);
+int VPMacOSNativeSourceCompositorLeaseCopyDiagnostics(
+    VPMacOSNativeSourceCompositorLease* lease,
+    VPMacOSNativeSourceCompositorDiagnostics* out);
 int VPMacOSNativePlayerCopyCurrentOverlayPrimitives(
     VPMacOSNativePlayer* player,
     VPMacOSNativeOverlayPrimitiveSnapshot* snapshot,

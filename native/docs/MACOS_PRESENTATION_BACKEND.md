@@ -22,9 +22,11 @@ The active renderer backend is `RenderBackendKind::Metal`.
 
 ```text
 RendererDrawSnapshot
+  -> native SourceCompositorLease
   -> MetalPresentationBackend::draw_frame()
-  -> renderer-owned BGRA CVPixelBuffer / IOSurface target
-  -> runner-managed native video layer
+  -> native-owned BGRA8/RGBA16F CVPixelBuffer / IOSurface rings
+  -> complete retained source package
+  -> runner-managed Metal video layer
 ```
 
 The old Rust/native backend is removed from the active tree. `native-metal` is no
@@ -32,25 +34,26 @@ longer a supported macOS presentation mode in this worktree.
 
 ## Current Capability Boundary
 
-Software and CPU fallback frames are rendered through the native Metal path.
-VideoToolbox hardware decode can still be probed through FFmpeg-owned
-hwdownload, but renderer-owned CVPixelBuffer zero-copy import is intentionally
-disabled until it is rebuilt directly on native Metal.
+Software frames and VideoToolbox decode output are normalized by the native
+Metal source-bake path into compositor-ready SDR BGRA8 or linear EDR RGBA16F
+IOSurfaces. The final runner compositor does not decode color or reinterpret
+source transfer functions.
 
-Unsupported renderer-owned hardware paths must fail closed and remain visible in
+Unsupported hardware formats must fail closed and remain visible in
 diagnostics; they must not silently fall back to Flutter Texture video
 presentation.
 
 ## Runner Boundary
 
-The runner should allocate and own presentation targets/layers, then install the
-native video target into the renderer. The renderer may write video pixels, mark
-frame completion, and publish diagnostics. It must not:
+Native owns source presentation resources and package publication. The runner
+owns the destination layer, retains the latest complete source package, applies
+projection, and performs final composition. Neither side may:
 
 - render the video into Flutter's texture registry as the product path;
 - wait on or drive Flutter's present loop;
 - composite Flutter UI into the video target;
-- depend on Flutter dirty state to make video visible.
+- depend on Flutter dirty state to make video visible;
+- rebuild source resource rings from Swift-side policy.
 
 The native compositor and Flutter overlay should be tested as two independent
 surfaces composed by the runner.

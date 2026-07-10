@@ -64,6 +64,77 @@ typedef struct VPMacOSNativeSourceFrameBakeTarget {
   VPMacOSNativeFrameInfo frame_info;
 } VPMacOSNativeSourceFrameBakeTarget;
 
+typedef struct VPMacOSNativeSourceCompositorDescriptor {
+  int32_t source_slot;
+  int32_t source_file_id;
+  int32_t width;
+  int32_t height;
+  int32_t color_transfer;
+} VPMacOSNativeSourceCompositorDescriptor;
+
+typedef struct VPMacOSNativeSourceCompositorPackageEntry {
+  void* pixel_buffer;
+  int32_t source_slot;
+  int32_t source_file_id;
+  int32_t width;
+  int32_t height;
+  VPMacOSNativeFrameInfo frame_info;
+} VPMacOSNativeSourceCompositorPackageEntry;
+
+typedef struct VPMacOSNativeSourceCompositorPackage {
+  uint32_t struct_size;
+  uint32_t api_version;
+  uint64_t topology_generation;
+  uint64_t ring_generation;
+  uint64_t frame_generation;
+  uint64_t publish_count;
+  int32_t ring_depth;
+  int32_t track_count;
+  uint64_t required_slot_mask;
+  uint64_t published_slot_mask;
+  int32_t frozen_snapshot;
+  VPMacOSNativeSourceCompositorPackageEntry entries[4];
+} VPMacOSNativeSourceCompositorPackage;
+
+static inline void VPMacOSNativeSourceCompositorPackageInit(
+    VPMacOSNativeSourceCompositorPackage* out) {
+  if (!out) {
+    return;
+  }
+  memset(out, 0, sizeof(*out));
+  out->struct_size = (uint32_t)sizeof(VPMacOSNativeSourceCompositorPackage);
+  out->api_version = VP_MACOS_NATIVE_API_VERSION;
+}
+
+typedef struct VPMacOSNativeSourceCompositorDiagnostics {
+  uint32_t struct_size;
+  uint32_t api_version;
+  int32_t lifecycle_state;
+  int32_t ring_depth;
+  int32_t track_count;
+  int32_t frozen_snapshot;
+  uint64_t topology_generation;
+  uint64_t ring_generation;
+  uint64_t frame_generation;
+  uint64_t publish_count;
+  uint64_t bytes_per_frame;
+  uint64_t total_bytes;
+  uint64_t required_slot_mask;
+  uint64_t published_slot_mask;
+  uint64_t incomplete_publish_count;
+} VPMacOSNativeSourceCompositorDiagnostics;
+
+static inline void VPMacOSNativeSourceCompositorDiagnosticsInit(
+    VPMacOSNativeSourceCompositorDiagnostics* out) {
+  if (!out) {
+    return;
+  }
+  memset(out, 0, sizeof(*out));
+  out->struct_size =
+      (uint32_t)sizeof(VPMacOSNativeSourceCompositorDiagnostics);
+  out->api_version = VP_MACOS_NATIVE_API_VERSION;
+}
+
 typedef struct VPMacOSNativeOverlayPrimitiveSnapshot {
   uint32_t struct_size;
   uint32_t api_version;

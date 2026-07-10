@@ -121,7 +121,7 @@ id<MTLRenderPipelineState> new_overlay_fill_rect_render_pipeline(
                                                 error:&pipelineError];
 }
 
-VPMacOSMetalPipelineRegistry create_pipeline_registry(id<MTLDevice> device) {
+VPMacOSMetalPipelineRegistry build_pipeline_registry(id<MTLDevice> device) {
   VPMacOSMetalPipelineRegistry registry;
   if (!device) {
     return registry;
@@ -160,6 +160,15 @@ VPMacOSMetalPipelineRegistry create_pipeline_registry(id<MTLDevice> device) {
       new_compute_pipeline(device, registry.library, @"raster_overlay_motion_lines_layer");
   registry.overlay_direct_line =
       new_compute_pipeline(device, registry.library, @"composite_overlay_line_rects_direct");
+  return registry;
+}
+
+VPMacOSMetalPipelineRegistry shared_pipeline_registry(id<MTLDevice> device) {
+  static dispatch_once_t once_token;
+  static VPMacOSMetalPipelineRegistry registry;
+  dispatch_once(&once_token, ^{
+    registry = build_pipeline_registry(device);
+  });
   return registry;
 }
 
@@ -368,7 +377,7 @@ const char* VPMacOSMetalUploaderStatusMessageForCode(int status) {
           kCVReturnSuccess) {
         _textureCache = cache;
       }
-      _pipelines = create_pipeline_registry(_device);
+      _pipelines = shared_pipeline_registry(_device);
     }
   }
   return self;

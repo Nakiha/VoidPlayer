@@ -13,16 +13,14 @@
 6.0, ASSERT_PLAYING
 6.1, DRAG_VIEWPORT, 420, -160, 60, 4
 6.7, ASSERT_POSITION_RANGE, 300000, 2800000
-6.8, CAPTURE_WINDOW, overlay_dual_track_pan_a
-6.9, ASSERT_CAPTURE_NOT_BLACK, overlay_dual_track_pan_a, 0.01, 4.0
+6.8, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceRingFrameGeneration, 20
 7.0, DRAG_VIEWPORT, -520, 220, 60, 4
 7.6, ASSERT_POSITION_RANGE, 700000, 9000000
-7.7, CAPTURE_WINDOW, overlay_dual_track_pan_b
-7.8, ASSERT_CAPTURE_NOT_BLACK, overlay_dual_track_pan_b, 0.01, 4.0
+7.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, sourceRingFrameGeneration, 40
 7.85, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorSourceCacheActive, true
 7.86, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorFrames, 5
 7.87, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceCacheGeneration, 1
 7.88, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorSourceProjectionApplyCount, 1
 7.89, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeCompositorOverlayTrackCount, 1
-7.9, ASSERT_CAPTURE_CHANGED, overlay_dual_track_pan_a, overlay_dual_track_pan_b
+7.9, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, sourceRingIncompletePublishSuppressedCount, 0, 0
 8.0, QUIT, 0

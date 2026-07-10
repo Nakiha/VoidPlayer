@@ -1,14 +1,12 @@
 import CoreVideo
 import Foundation
 
-/// Per-track projection metadata + dimensions for a source-cache subscription.
-/// Parsed by `MacOSVideoRendererBridge` from the Dart `prepareNativeCompositorSourceCache`
-/// arguments and handed to the ring, which owns allocation and baking.
 struct MacOSCompositorSourceTrackDescriptor {
   let slot: Int
   let fileId: Int
   let width: Int
   let height: Int
+  let colorTransfer: Int
   let displayOffsetX: Float
   let displayOffsetY: Float
   let invDisplaySizeX: Float
@@ -27,52 +25,25 @@ struct MacOSNativeCompositorSourceRefreshResult {
   let error: String
 }
 
-/// Owns the retained source package used by the native Metal compositor.
+/// Serializes source-package refresh requests around a native-owned lease.
 ///
-/// Producers may ask the ring to bake or refresh a candidate package, but only a
-/// complete package is published to the compositor. Failed or incomplete
-/// candidates leave the previously published package intact, so display-link
-/// ticks can keep sampling a stable ready state instead of seeing blank or
-/// half-topology source textures.
+/// CVPixelBuffer/IOSurface allocation, ring generations, package completeness,
+/// and lifecycle validation live in native. Swift retains only the published
+/// package handed to the runner compositor and the projection supplied by Dart.
 final class MacOSNativeCompositorSourceRing {
-  private struct TrackRing {
-    let slot: Int
-    let fileId: Int
-    let width: Int
-    let height: Int
-    let displayOffsetX: Float
-    let displayOffsetY: Float
-    let invDisplaySizeX: Float
-    let invDisplaySizeY: Float
-    let viewOffsetUvX: Float
-    let viewOffsetUvY: Float
-    let buffers: [CVPixelBuffer]
-    var writeIndex: Int
-    var publishedIndex: Int
-  }
-
-  private static let ringDepth = 3
-  /// Total ring budget. Above this a live triple ring will not fit, so the
-  /// subscription degrades to a single-buffer frozen snapshot (paused-quality
-  /// reveal only) rather than allocating hundreds of MB for 8K sources.
-  private static let ringBudgetBytes = 384 * 1024 * 1024
-
   private weak var compositor: MacOSNativeCompositorView?
+  private let lease: OpaquePointer
   private let ringQueue = DispatchQueue(
     label: "dev.nakiha.voidplayer.macos.source-ring",
     qos: .userInteractive
   )
 
-  // All of the following are confined to `ringQueue`.
-  private var rings: [TrackRing] = []
-  private var order: [Int] = []
+  // Confined to ringQueue.
   private var projection: MacOSNativeCompositorSourceProjection?
-  private var bakeTarget: MacOSNativeMetalPresentationTarget?
   private var live = false
   private var baking = false
   private var pending = false
-  private var hasPublished = false
-  private var depth = MacOSNativeCompositorSourceRing.ringDepth
+  private var topologyRevision: UInt64 = 0
   private let refreshRequestRate = MacOSRateWindow()
   private let bakeRate = MacOSRateWindow()
   private let publishRate = MacOSRateWindow()
@@ -83,26 +54,17 @@ final class MacOSNativeCompositorSourceRing {
   private var refreshRequestCount = 0
   private var refreshCoalescedCount = 0
   private var bakeCount = 0
-  private var publishCount = 0
   private var publishMissCount = 0
   private var lastBakeDrawnCount = 0
   private var lastBakeError = ""
-  private var topologyRevision: UInt64 = 0
-  private var lastPublishedTopologyRevision: UInt64 = 0
   private var lastRequiredMask: UInt64 = 0
   private var lastDrawnMask: UInt64 = 0
   private var lastMissingMask: UInt64 = 0
-  private var lastReusedMask: UInt64 = 0
-  private var reusedPublishedSlotCount = 0
-  private var incompletePublishSuppressedCount = 0
-  private var lastIncompleteReason = ""
   private var lastPublishedSlotSignature = ""
   private var lastPublishedFileIdSignature = ""
-  private var lastPublishedActualFileIdSignature = ""
   private var lastPublishedBufferSignature = ""
   private var lastPublishedDuplicateSlotCount = 0
   private var lastPublishedDuplicateFileIdCount = 0
-  private var lastPublishedDuplicateActualFileIdCount = 0
   private var lastPublishedDuplicateBufferCount = 0
   private var lastPublishedPtsUs: Int64 = -1
   private var lastPublishedDurationUs: Int64 = 0
@@ -112,11 +74,16 @@ final class MacOSNativeCompositorSourceRing {
 
   init(compositor: MacOSNativeCompositorView) {
     self.compositor = compositor
+    guard let lease = VPMacOSNativeSourceCompositorLeaseCreate() else {
+      preconditionFailure("failed to create native source compositor lease")
+    }
+    self.lease = lease
   }
 
-  /// Sets up the ring for an interaction. Allocates per-track buffers, bakes the
-  /// initial frame, and publishes it before returning. Failed candidate
-  /// subscriptions do not replace the previously published source package.
+  deinit {
+    VPMacOSNativeSourceCompositorLeaseDestroy(lease)
+  }
+
   func subscribe(
     player: MacOSNativePlayerSession,
     descriptors: [MacOSCompositorSourceTrackDescriptor],
@@ -126,21 +93,12 @@ final class MacOSNativeCompositorSourceRing {
     projection: MacOSNativeCompositorSourceProjection
   ) -> MacOSNativeCompositorSourceRefreshResult {
     let semaphore = DispatchSemaphore(value: 0)
-    var result = MacOSNativeCompositorSourceRefreshResult(
-      published: false,
-      publishCount: 0,
-      drawnMask: 0,
-      reusedMask: 0,
-      missingMask: 0,
-      ptsUs: -1,
-      error: "source ring subscribe did not run"
-    )
+    var result = Self.emptyFailure("source ring subscribe did not run")
     ringQueue.async { [weak self] in
       if let self {
         result = self.subscribeOnQueue(
           player: player,
           descriptors: descriptors,
-          order: order,
           edrOutputEnabled: edrOutputEnabled,
           topologyRevision: topologyRevision,
           projection: projection
@@ -149,15 +107,16 @@ final class MacOSNativeCompositorSourceRing {
       semaphore.signal()
     }
     semaphore.wait()
+    _ = order // Ordering is carried by the projection package.
     return result
   }
 
   func hasCompletePackage(topologyRevision expectedTopologyRevision: UInt64) -> Bool {
     ringQueue.sync {
-      live &&
-        hasPublished &&
-        !rings.isEmpty &&
-        lastPublishedTopologyRevision == expectedTopologyRevision
+      live && VPMacOSNativeSourceCompositorLeaseHasCompletePackage(
+        lease,
+        expectedTopologyRevision
+      ) != 0
     }
   }
 
@@ -167,29 +126,23 @@ final class MacOSNativeCompositorSourceRing {
     }
   }
 
-  /// Requests a re-bake of the current frame into the next ring buffers. Coalesced
-  /// on the ring queue: a burst of frame callbacks collapses into baking the
-  /// latest available frame. No-op when not subscribed.
   func requestRefresh(player: MacOSNativePlayerSession) {
     let requestedNs = DispatchTime.now().uptimeNanoseconds
     ringQueue.async { [weak self] in
-      guard let self, self.live, !self.rings.isEmpty else { return }
-      self.recordRefreshRequest(requestedNs: requestedNs)
-      // Frozen-snapshot fallback (depth == 1) never refreshes: the source is too
-      // large for a live ring, so it intentionally behaves like the old paused
-      // one-shot.
-      if self.depth <= 1 { return }
-      if self.baking {
-        self.refreshCoalescedCount += 1
-        self.pending = true
+      guard let self, live else { return }
+      recordRefreshRequest(requestedNs: requestedNs)
+      if nativeDiagnostics().frozen_snapshot != 0 { return }
+      if baking {
+        refreshCoalescedCount += 1
+        pending = true
         return
       }
-      self.baking = true
+      baking = true
       repeat {
-        self.pending = false
-        _ = self.bakeAndPublishOnQueue(player: player, requestNs: requestedNs)
-      } while self.pending && self.live
-      self.baking = false
+        pending = false
+        _ = bakeAndPublishOnQueue(player: player, requestNs: requestedNs)
+      } while pending && live
+      baking = false
     }
   }
 
@@ -198,99 +151,71 @@ final class MacOSNativeCompositorSourceRing {
     timeoutMs: Int
   ) -> MacOSNativeCompositorSourceRefreshResult {
     let requestedNs = DispatchTime.now().uptimeNanoseconds
-    let timeout = DispatchTimeInterval.milliseconds(max(0, timeoutMs))
     let semaphore = DispatchSemaphore(value: 0)
-    var result = MacOSNativeCompositorSourceRefreshResult(
-      published: false,
-      publishCount: 0,
-      drawnMask: 0,
-      reusedMask: 0,
-      missingMask: 0,
-      ptsUs: -1,
-      error: "source ring refresh timed out"
-    )
-
+    var result = Self.emptyFailure("source ring refresh timed out")
     ringQueue.async { [weak self] in
       guard let self else {
         semaphore.signal()
         return
       }
-      guard self.live, !self.rings.isEmpty else {
-        result = MacOSNativeCompositorSourceRefreshResult(
-          published: false,
-          publishCount: self.publishCount,
-          drawnMask: 0,
-          reusedMask: 0,
-          missingMask: self.lastRequiredMask,
-          ptsUs: self.lastPublishedPtsUs,
-          error: "source ring is not live"
-        )
+      guard live else {
+        result = failedResult("source ring is not live")
         semaphore.signal()
         return
       }
-      self.recordRefreshRequest(requestedNs: requestedNs)
-      if self.depth <= 1 {
-        result = MacOSNativeCompositorSourceRefreshResult(
-          published: false,
-          publishCount: self.publishCount,
-          drawnMask: 0,
-          reusedMask: 0,
-          missingMask: self.lastRequiredMask,
-          ptsUs: self.lastPublishedPtsUs,
-          error: "source ring is frozen"
-        )
+      recordRefreshRequest(requestedNs: requestedNs)
+      if nativeDiagnostics().frozen_snapshot != 0 {
+        result = failedResult("source ring is frozen")
         semaphore.signal()
         return
       }
-      if self.baking {
-        self.refreshCoalescedCount += 1
-        self.pending = true
-        result = MacOSNativeCompositorSourceRefreshResult(
-          published: false,
-          publishCount: self.publishCount,
-          drawnMask: self.lastDrawnMask,
-          reusedMask: self.lastReusedMask,
-          missingMask: self.lastMissingMask,
-          ptsUs: self.lastPublishedPtsUs,
-          error: "source ring is already baking"
-        )
+      if baking {
+        refreshCoalescedCount += 1
+        pending = true
+        result = failedResult("source ring is already baking")
         semaphore.signal()
         return
       }
-      self.baking = true
-      self.pending = false
-      result = self.bakeAndPublishOnQueue(player: player, requestNs: requestedNs)
-      self.baking = false
+      baking = true
+      pending = false
+      result = bakeAndPublishOnQueue(player: player, requestNs: requestedNs)
+      baking = false
       semaphore.signal()
     }
-
-    if semaphore.wait(timeout: DispatchTime.now() + timeout) == .timedOut {
+    if semaphore.wait(timeout: .now() + .milliseconds(max(0, timeoutMs))) == .timedOut {
       return result
     }
     return result
   }
 
-  /// Tears down the ring and clears the compositor source cache.
   func unsubscribe(reason: String) {
     ringQueue.async { [weak self] in
       guard let self else { return }
-      self.live = false
-      self.rings = []
-      self.order = []
-      self.projection = nil
-      self.bakeTarget = nil
-      self.compositor?.clearSource(reason: reason)
+      live = false
+      baking = false
+      pending = false
+      projection = nil
+      VPMacOSNativeSourceCompositorLeaseReset(lease)
+      compositor?.clearSource(reason: reason)
     }
   }
 
   func diagnostics() -> [String: Any] {
     ringQueue.sync {
-      [
+      let native = nativeDiagnostics()
+      let complete = live && native.published_slot_mask == native.required_slot_mask &&
+        native.required_slot_mask != 0
+      return [
         "sourceRingLive": live,
-        "sourceRingHasPublished": hasPublished,
-        "sourceRingComplete": live && hasPublished && !rings.isEmpty,
-        "sourceRingDepth": depth,
-        "sourceRingTrackCount": rings.count,
+        "sourceRingHasPublished": native.publish_count > 0,
+        "sourceRingComplete": complete,
+        "sourceRingNativeOwned": true,
+        "sourceRingLifecycleState": Int(native.lifecycle_state),
+        "sourceRingDepth": Int(native.ring_depth),
+        "sourceRingTrackCount": Int(native.track_count),
+        "sourceRingFrozenSnapshot": native.frozen_snapshot != 0,
+        "sourceRingBytesPerFrame": Int64(min(native.bytes_per_frame, UInt64(Int64.max))),
+        "sourceRingTotalBytes": Int64(min(native.total_bytes, UInt64(Int64.max))),
         "sourceRingRefreshRequestCount": refreshRequestCount,
         "sourceRingRefreshRequestHz": refreshRequestRate.rateHz(),
         "sourceRingRefreshQueueWaitP95Ms": refreshQueueWaitDuration.p95Ms(),
@@ -305,25 +230,27 @@ final class MacOSNativeCompositorSourceRing {
         "sourceRingLastBakeDrawnCount": lastBakeDrawnCount,
         "sourceRingLastBakeError": lastBakeError,
         "sourceRingTopologyRevision": Int64(min(topologyRevision, UInt64(Int64.max))),
-        "sourceRingReadyTopologyRevision": Int64(
-          min(lastPublishedTopologyRevision, UInt64(Int64.max))
-        ),
-        "sourceRingRequiredMask": Int64(min(lastRequiredMask, UInt64(Int64.max))),
+        "sourceRingReadyTopologyRevision": Int64(min(native.topology_generation, UInt64(Int64.max))),
+        "sourceRingRingGeneration": Int64(min(native.ring_generation, UInt64(Int64.max))),
+        "sourceRingFrameGeneration": Int64(min(native.frame_generation, UInt64(Int64.max))),
+        "sourceRingRequiredMask": Int64(min(native.required_slot_mask, UInt64(Int64.max))),
         "sourceRingDrawnMask": Int64(min(lastDrawnMask, UInt64(Int64.max))),
         "sourceRingMissingMask": Int64(min(lastMissingMask, UInt64(Int64.max))),
-        "sourceRingReusedMask": Int64(min(lastReusedMask, UInt64(Int64.max))),
-        "sourceRingReusedPublishedSlotCount": reusedPublishedSlotCount,
-        "sourceRingIncompletePublishSuppressedCount": incompletePublishSuppressedCount,
-        "sourceRingLastIncompleteReason": lastIncompleteReason,
+        "sourceRingReusedMask": 0,
+        "sourceRingReusedPublishedSlotCount": 0,
+        "sourceRingIncompletePublishSuppressedCount": Int64(
+          min(native.incomplete_publish_count, UInt64(Int64.max))
+        ),
+        "sourceRingLastIncompleteReason": lastMissingMask == 0 ? "" : lastBakeError,
         "sourceRingPublishedSlotSignature": lastPublishedSlotSignature,
         "sourceRingPublishedFileIdSignature": lastPublishedFileIdSignature,
-        "sourceRingPublishedActualFileIdSignature": lastPublishedActualFileIdSignature,
+        "sourceRingPublishedActualFileIdSignature": lastPublishedFileIdSignature,
         "sourceRingPublishedBufferSignature": lastPublishedBufferSignature,
         "sourceRingPublishedDuplicateSlotCount": lastPublishedDuplicateSlotCount,
         "sourceRingPublishedDuplicateFileIdCount": lastPublishedDuplicateFileIdCount,
-        "sourceRingPublishedDuplicateActualFileIdCount": lastPublishedDuplicateActualFileIdCount,
+        "sourceRingPublishedDuplicateActualFileIdCount": lastPublishedDuplicateFileIdCount,
         "sourceRingPublishedDuplicateBufferCount": lastPublishedDuplicateBufferCount,
-        "sourceRingPublishCount": publishCount,
+        "sourceRingPublishCount": Int64(min(native.publish_count, UInt64(Int64.max))),
         "sourceRingPublishHz": publishRate.rateHz(),
         "sourceRingRequestToPublishP95Ms": requestToPublishDuration.p95Ms(),
         "sourceRingRequestToPublishLastMs": requestToPublishDuration.lastMs(),
@@ -339,394 +266,223 @@ final class MacOSNativeCompositorSourceRing {
     }
   }
 
-  // MARK: - Ring queue internals
-
   private func subscribeOnQueue(
     player: MacOSNativePlayerSession,
     descriptors: [MacOSCompositorSourceTrackDescriptor],
-    order: [Int],
     edrOutputEnabled: Bool,
     topologyRevision: UInt64,
     projection: MacOSNativeCompositorSourceProjection
   ) -> MacOSNativeCompositorSourceRefreshResult {
-    let previousRings = rings
-    let previousOrder = self.order
-    let previousProjection = self.projection
-    let previousBakeTarget = bakeTarget
-    let previousLive = live
-    let previousDepth = depth
-    let previousHasPublished = hasPublished
-    let previousTopologyRevision = self.topologyRevision
-    let previousPublishedTopologyRevision = lastPublishedTopologyRevision
-
-    func restorePreviousPublishedState() {
-      rings = previousRings
-      self.order = previousOrder
-      self.projection = previousProjection
-      bakeTarget = previousBakeTarget
-      live = previousLive
-      depth = previousDepth
-      hasPublished = previousHasPublished
-      self.topologyRevision = previousTopologyRevision
-      lastPublishedTopologyRevision = previousPublishedTopologyRevision
-      baking = false
-      pending = false
+    guard !descriptors.isEmpty else {
+      return failedResult("no source tracks")
     }
-
-    func failure(_ message: String, requiredMask: UInt64 = 0) -> MacOSNativeCompositorSourceRefreshResult {
-      lastIncompleteReason = message
-      if requiredMask != 0 {
-        lastRequiredMask = requiredMask
-        lastMissingMask = requiredMask
-      }
-      restorePreviousPublishedState()
-      return MacOSNativeCompositorSourceRefreshResult(
-        published: false,
-        publishCount: publishCount,
-        drawnMask: lastDrawnMask,
-        reusedMask: lastReusedMask,
-        missingMask: requiredMask != 0 ? requiredMask : lastMissingMask,
-        ptsUs: lastPublishedPtsUs,
-        error: message
+    let nativeDescriptors = descriptors.map { descriptor in
+      VPMacOSNativeSourceCompositorDescriptor(
+        source_slot: Int32(descriptor.slot),
+        source_file_id: Int32(descriptor.fileId),
+        width: Int32(descriptor.width),
+        height: Int32(descriptor.height),
+        color_transfer: Int32(descriptor.colorTransfer)
       )
     }
-
-    guard !descriptors.isEmpty else {
-      return failure("no source tracks")
+    var package = VPMacOSNativeSourceCompositorPackage()
+    VPMacOSNativeSourceCompositorPackageInit(&package)
+    var error = [CChar](repeating: 0, count: 512)
+    let startNs = DispatchTime.now().uptimeNanoseconds
+    let status = nativeDescriptors.withUnsafeBufferPointer { buffer in
+      VPMacOSNativeSourceCompositorLeaseSubscribeAndBake(
+        lease,
+        player.handle,
+        buffer.baseAddress,
+        buffer.count,
+        edrOutputEnabled ? 1 : 0,
+        topologyRevision,
+        &package,
+        &error,
+        error.count
+      )
     }
-
-    let pixelFormat: OSType = edrOutputEnabled
-      ? kCVPixelFormatType_64RGBAHalf
-      : kCVPixelFormatType_32BGRA
-    let bytesPerPixel = edrOutputEnabled ? 8 : 4
-
-    // Decide ring depth within budget; degrade to a frozen single buffer if a
-    // live triple ring would blow the cap (e.g. 8K sources).
-    var perFrameBytes = 0
-    for d in descriptors {
-      perFrameBytes += d.width * d.height * bytesPerPixel
+    recordBake(startNs: startNs, status: status, error: String(cString: error))
+    guard status == VPMacOSNativeStatusOk.rawValue else {
+      publishMissCount += 1
+      return failedResult(lastBakeError)
     }
-    if perFrameBytes <= 0 {
-      return failure("no source cache targets")
-    }
-    var chosenDepth = Self.ringDepth
-    if perFrameBytes * chosenDepth > Self.ringBudgetBytes {
-      chosenDepth = 1
-    }
-    if perFrameBytes * chosenDepth > Self.ringBudgetBytes {
-      return failure("source cache memory cap exceeded")
-    }
-    depth = chosenDepth
-
-    let attributes = [
-      kCVPixelBufferCGImageCompatibilityKey as String: true,
-      kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
-      kCVPixelBufferMetalCompatibilityKey as String: true,
-      kCVPixelBufferIOSurfacePropertiesKey as String: [:],
-    ] as CFDictionary
-
-    var built: [TrackRing] = []
-    var maxWidth = 1
-    var maxHeight = 1
-    for d in descriptors {
-      guard d.width > 0, d.height > 0 else { continue }
-      var buffers: [CVPixelBuffer] = []
-      var ok = true
-      for _ in 0..<chosenDepth {
-        var pixelBuffer: CVPixelBuffer?
-        let status = CVPixelBufferCreate(
-          kCFAllocatorDefault, d.width, d.height, pixelFormat, attributes, &pixelBuffer
-        )
-        guard status == kCVReturnSuccess, let pixelBuffer else {
-          ok = false
-          break
-        }
-        buffers.append(pixelBuffer)
-      }
-      guard ok, !buffers.isEmpty else {
-        return failure("failed to allocate source cache pixel buffer")
-      }
-      maxWidth = max(maxWidth, d.width)
-      maxHeight = max(maxHeight, d.height)
-      built.append(TrackRing(
-        slot: d.slot,
-        fileId: d.fileId,
-        width: d.width,
-        height: d.height,
-        displayOffsetX: d.displayOffsetX,
-        displayOffsetY: d.displayOffsetY,
-        invDisplaySizeX: d.invDisplaySizeX,
-        invDisplaySizeY: d.invDisplaySizeY,
-        viewOffsetUvX: d.viewOffsetUvX,
-        viewOffsetUvY: d.viewOffsetUvY,
-        buffers: buffers,
-        writeIndex: 0,
-        publishedIndex: 0
-      ))
-    }
-
-    guard !built.isEmpty else {
-      return failure("no source cache targets")
-    }
-
-    rings = built
-    self.order = order
-    self.topologyRevision = topologyRevision
     self.projection = projection
-    bakeTarget = MacOSNativeMetalPresentationTarget(width: maxWidth, height: maxHeight)
+    self.topologyRevision = topologyRevision
     live = true
-    baking = false
-    pending = false
-    hasPublished = false
-    lastReusedMask = 0
-
-    // Initial bake into buffer 0 of each ring; publishes on success.
-    let result = bakeAndPublishOnQueue(player: player, requestNs: nil)
-    if !result.published {
-      restorePreviousPublishedState()
-    }
-    return result
-  }
-
-  /// Bakes the current frame into each track's next write buffer and, if any
-  /// track drew, publishes the just-baked buffers to the compositor. Runs on the
-  /// ring queue. The bake is synchronous (waits for GPU completion), so the buffer
-  /// is fully written before it is published.
-  private func recordRefreshRequest(requestedNs: UInt64) {
-    let queueStartNs = DispatchTime.now().uptimeNanoseconds
-    refreshQueueWaitDuration.record(
-      queueStartNs >= requestedNs ? queueStartNs - requestedNs : 0
-    )
-    refreshRequestCount += 1
-    refreshRequestRate.record(nowNs: queueStartNs)
+    return publish(package: &package, player: player, requestNs: nil)
   }
 
   private func bakeAndPublishOnQueue(
     player: MacOSNativePlayerSession,
     requestNs: UInt64?
   ) -> MacOSNativeCompositorSourceRefreshResult {
-    guard live, let bakeTarget, !rings.isEmpty else {
-      return MacOSNativeCompositorSourceRefreshResult(
-        published: false,
-        publishCount: publishCount,
-        drawnMask: 0,
-        reusedMask: 0,
-        missingMask: lastRequiredMask,
-        ptsUs: lastPublishedPtsUs,
-        error: "source ring is not ready"
-      )
-    }
+    guard live else { return failedResult("source ring is not ready") }
+    var package = VPMacOSNativeSourceCompositorPackage()
+    VPMacOSNativeSourceCompositorPackageInit(&package)
+    var error = [CChar](repeating: 0, count: 512)
     let startNs = DispatchTime.now().uptimeNanoseconds
-
-    // Advance each ring to the next write buffer (away from the published one).
-    for i in rings.indices {
-      rings[i].writeIndex = (rings[i].publishedIndex + 1) % rings[i].buffers.count
-    }
-
-    var targets: [VPMacOSNativeSourceFrameBakeTarget] = []
-    targets.reserveCapacity(rings.count)
-    for ring in rings {
-      let buffer = ring.buffers[ring.writeIndex]
-      var target = VPMacOSNativeSourceFrameBakeTarget()
-      target.pixel_buffer = UnsafeMutableRawPointer(
-        Unmanaged.passUnretained(buffer).toOpaque()
-      )
-      target.source_slot = Int32(ring.slot)
-      target.source_file_id = Int32(ring.fileId)
-      target.width = Int32(ring.width)
-      target.height = Int32(ring.height)
-      target.drawn = 0
-      VPMacOSNativeFrameInfoInit(&target.frame_info)
-      targets.append(target)
-    }
-
-    let result = targets.withUnsafeMutableBufferPointer { buffer in
-      bakeTarget.bakeCurrentFrameSources(player: player, targets: buffer)
-    }
-    let finishNs = DispatchTime.now().uptimeNanoseconds
-    bakeCount += 1
-    bakeRate.record(nowNs: finishNs)
-    bakeDuration.record(finishNs >= startNs ? finishNs - startNs : 0)
-    lastBakeDrawnCount = result.drawnCount
-    lastBakeError = result.error
-    guard result.drawnCount > 0 else {
+    let status = VPMacOSNativeSourceCompositorLeaseRefreshAndBake(
+      lease,
+      player.handle,
+      &package,
+      &error,
+      error.count
+    )
+    recordBake(startNs: startNs, status: status, error: String(cString: error))
+    guard status == VPMacOSNativeStatusOk.rawValue else {
       publishMissCount += 1
-      lastRequiredMask = requiredMask(for: targets.count)
-      lastDrawnMask = 0
-      lastReusedMask = 0
-      lastMissingMask = lastRequiredMask
-      lastIncompleteReason = result.error.isEmpty
-        ? "source frame bake produced no frames"
-        : result.error
-      return MacOSNativeCompositorSourceRefreshResult(
-        published: false,
-        publishCount: publishCount,
-        drawnMask: 0,
-        reusedMask: 0,
-        missingMask: lastMissingMask,
-        ptsUs: lastPublishedPtsUs,
-        error: lastIncompleteReason
-      )
+      return failedResult(lastBakeError)
     }
+    return publish(package: &package, player: player, requestNs: requestNs)
+  }
 
-    let requiredMask = requiredMask(for: targets.count)
-    var drawnMask: UInt64 = 0
-    for i in targets.indices where targets[i].drawn != 0 {
-      drawnMask |= UInt64(1) << UInt64(i)
+  private func publish(
+    package: inout VPMacOSNativeSourceCompositorPackage,
+    player: MacOSNativePlayerSession,
+    requestNs: UInt64?
+  ) -> MacOSNativeCompositorSourceRefreshResult {
+    guard let projection else {
+      return failedResult("source package projection is not ready")
     }
+    var textures: [MacOSNativeCompositorSourceTexture] = []
+    var ptsUs: Int64 = -1
+    var durationUs: Int64 = 0
+    withUnsafeBytes(of: &package.entries) { raw in
+      let entries = raw.bindMemory(to: VPMacOSNativeSourceCompositorPackageEntry.self)
+      for index in 0..<min(Int(package.track_count), entries.count) {
+        let entry = entries[index]
+        guard let pointer = entry.pixel_buffer else { continue }
+        let pixelBuffer = Unmanaged<CVPixelBuffer>
+          .fromOpaque(pointer)
+          .takeRetainedValue()
+        textures.append(MacOSNativeCompositorSourceTexture(
+          pixelBuffer: pixelBuffer,
+          sourceSlot: Int(entry.source_slot),
+          fileId: Int(entry.source_file_id),
+          width: Int(entry.width),
+          height: Int(entry.height)
+        ))
+        if ptsUs < 0 {
+          ptsUs = entry.frame_info.pts_us
+          durationUs = entry.frame_info.duration_us
+        }
+      }
+    }
+    let requiredMask = package.required_slot_mask
+    let drawnMask = package.published_slot_mask
     let missingMask = requiredMask & ~drawnMask
     lastRequiredMask = requiredMask
     lastDrawnMask = drawnMask
-    lastReusedMask = 0
-    guard missingMask == 0 else {
-      lastMissingMask = missingMask
-      incompletePublishSuppressedCount += 1
-      lastIncompleteReason =
-        "source package incomplete requiredMask=\(requiredMask) drawnMask=\(drawnMask) missingMask=\(missingMask)"
-      return MacOSNativeCompositorSourceRefreshResult(
-        published: false,
-        publishCount: publishCount,
-        drawnMask: drawnMask,
-        reusedMask: 0,
-        missingMask: missingMask,
-        ptsUs: lastPublishedPtsUs,
-        error: lastIncompleteReason
-      )
-    }
-    lastMissingMask = 0
-    lastIncompleteReason = ""
-    guard let projection else {
-      lastIncompleteReason = "source package projection is not ready"
-      return MacOSNativeCompositorSourceRefreshResult(
-        published: false,
-        publishCount: publishCount,
-        drawnMask: drawnMask,
-        reusedMask: 0,
-        missingMask: 0,
-        ptsUs: lastPublishedPtsUs,
-        error: lastIncompleteReason
-      )
+    lastMissingMask = missingMask
+    guard !textures.isEmpty, missingMask == 0 else {
+      publishMissCount += 1
+      return failedResult("native source package was incomplete")
     }
 
-    var published: [MacOSNativeCompositorSourceTexture] = []
-    published.reserveCapacity(rings.count)
-    var actualFileIds: [Int] = []
-    var publishPtsUs: Int64 = -1
-    var publishDurationUs: Int64 = 0
-    for i in rings.indices {
-      // A target is at the same array order as `rings`; mark drawn ones published.
-      if targets[i].drawn != 0 {
-        rings[i].publishedIndex = rings[i].writeIndex
-        if publishPtsUs < 0 {
-          publishPtsUs = Int64(targets[i].frame_info.pts_us)
-          publishDurationUs = Int64(targets[i].frame_info.duration_us)
-        }
-      }
-      let ring = rings[i]
-      actualFileIds.append(Int(targets[i].source_file_id))
-      published.append(MacOSNativeCompositorSourceTexture(
-        pixelBuffer: ring.buffers[ring.publishedIndex],
-        sourceSlot: ring.slot,
-        fileId: ring.fileId,
-        width: ring.width,
-        height: ring.height
-      ))
-    }
-    hasPublished = true
-    lastPublishedTopologyRevision = topologyRevision
-    let publishedIdentity = sourceIdentity(from: published)
-    lastPublishedSlotSignature = publishedIdentity.slotSignature
-    lastPublishedFileIdSignature = publishedIdentity.fileIdSignature
-    lastPublishedActualFileIdSignature = actualFileIds.map(String.init).joined(separator: ",")
-    lastPublishedBufferSignature = publishedIdentity.bufferSignature
-    lastPublishedDuplicateSlotCount = publishedIdentity.duplicateSlotCount
-    lastPublishedDuplicateFileIdCount = publishedIdentity.duplicateFileIdCount
-    lastPublishedDuplicateActualFileIdCount = max(0, actualFileIds.count - Set(actualFileIds).count)
-    lastPublishedDuplicateBufferCount = publishedIdentity.duplicateBufferCount
-    publishCount += 1
+    updatePublishedIdentity(textures)
+    updatePublishedPts(ptsUs: ptsUs, durationUs: durationUs)
     let publishNs = DispatchTime.now().uptimeNanoseconds
     publishRate.record(nowNs: publishNs)
     if let requestNs {
       requestToPublishDuration.record(publishNs >= requestNs ? publishNs - requestNs : 0)
     }
-    if publishPtsUs >= 0 {
-      if lastPublishedPtsUs >= 0 {
-        let stepUs = publishPtsUs - lastPublishedPtsUs
-        if stepUs < 0 {
-          publishedPtsRegressionCount += 1
-        } else {
-          if stepUs == 0 {
-            publishedPtsDuplicateCount += 1
-          } else if stepUs > 50_000 {
-            publishedPtsLargeStepCount += 1
-          }
-          publishedPtsStepDuration.record(UInt64(stepUs) * 1_000)
-        }
-      }
-      lastPublishedPtsUs = publishPtsUs
-      lastPublishedDurationUs = publishDurationUs
-    }
     compositor?.setSourcePackage(
-      textures: published,
+      textures: textures,
       projection: projection,
       overlay: player.currentOverlayPrimitives()
     )
     return MacOSNativeCompositorSourceRefreshResult(
       published: true,
-      publishCount: publishCount,
+      publishCount: Int(min(package.publish_count, UInt64(Int.max))),
       drawnMask: drawnMask,
       reusedMask: 0,
       missingMask: 0,
-      ptsUs: lastPublishedPtsUs,
+      ptsUs: ptsUs,
       error: ""
     )
   }
 
-  private func requiredMask(for count: Int) -> UInt64 {
-    guard count > 0 else { return 0 }
-    let clamped = min(count, 63)
-    return (UInt64(1) << UInt64(clamped)) - 1
+  private func recordRefreshRequest(requestedNs: UInt64) {
+    let queueStartNs = DispatchTime.now().uptimeNanoseconds
+    refreshQueueWaitDuration.record(queueStartNs >= requestedNs ? queueStartNs - requestedNs : 0)
+    refreshRequestCount += 1
+    refreshRequestRate.record(nowNs: queueStartNs)
   }
 
-  private func sourceIdentity(
-    from textures: [MacOSNativeCompositorSourceTexture]
-  ) -> (
-    slotSignature: String,
-    fileIdSignature: String,
-    bufferSignature: String,
-    duplicateSlotCount: Int,
-    duplicateFileIdCount: Int,
-    duplicateBufferCount: Int
-  ) {
-    let sorted = textures.sorted { lhs, rhs in
-      if lhs.sourceSlot != rhs.sourceSlot {
-        return lhs.sourceSlot < rhs.sourceSlot
+  private func recordBake(startNs: UInt64, status: Int32, error: String) {
+    let finishNs = DispatchTime.now().uptimeNanoseconds
+    bakeCount += 1
+    bakeRate.record(nowNs: finishNs)
+    bakeDuration.record(finishNs >= startNs ? finishNs - startNs : 0)
+    lastBakeError = status == VPMacOSNativeStatusOk.rawValue ? "" : error
+    let native = nativeDiagnostics()
+    lastBakeDrawnCount = native.published_slot_mask.nonzeroBitCount
+  }
+
+  private func nativeDiagnostics() -> VPMacOSNativeSourceCompositorDiagnostics {
+    var result = VPMacOSNativeSourceCompositorDiagnostics()
+    VPMacOSNativeSourceCompositorDiagnosticsInit(&result)
+    _ = VPMacOSNativeSourceCompositorLeaseCopyDiagnostics(lease, &result)
+    return result
+  }
+
+  private func updatePublishedPts(ptsUs: Int64, durationUs: Int64) {
+    guard ptsUs >= 0 else { return }
+    if lastPublishedPtsUs >= 0 {
+      let stepUs = ptsUs - lastPublishedPtsUs
+      if stepUs < 0 {
+        publishedPtsRegressionCount += 1
+      } else if stepUs == 0 {
+        publishedPtsDuplicateCount += 1
+      } else {
+        if stepUs > 50_000 { publishedPtsLargeStepCount += 1 }
+        publishedPtsStepDuration.record(UInt64(stepUs) * 1_000)
       }
-      return lhs.fileId < rhs.fileId
     }
-    var fileIds: [Int] = []
-    var slots: [Int] = []
-    var bufferIds: [UInt] = []
-    var slotParts: [String] = []
-    for texture in sorted {
-      let bufferId = UInt(bitPattern: Unmanaged.passUnretained(texture.pixelBuffer).toOpaque())
-      slots.append(texture.sourceSlot)
-      fileIds.append(texture.fileId)
-      bufferIds.append(bufferId)
-      slotParts.append(
-        "s\(texture.sourceSlot):f\(texture.fileId):b\(String(bufferId, radix: 16))"
-      )
+    lastPublishedPtsUs = ptsUs
+    lastPublishedDurationUs = durationUs
+  }
+
+  private func updatePublishedIdentity(_ textures: [MacOSNativeCompositorSourceTexture]) {
+    let sorted = textures.sorted { $0.sourceSlot < $1.sourceSlot }
+    let slots = sorted.map(\.sourceSlot)
+    let fileIds = sorted.map(\.fileId)
+    let buffers = sorted.map {
+      UInt(bitPattern: Unmanaged.passUnretained($0.pixelBuffer).toOpaque())
     }
-    let duplicateSlotCount = max(0, slots.count - Set(slots).count)
-    let duplicateFileIdCount = max(0, fileIds.count - Set(fileIds).count)
-    let duplicateBufferCount = max(0, bufferIds.count - Set(bufferIds).count)
-    return (
-      slotSignature: slotParts.joined(separator: "|"),
-      fileIdSignature: fileIds.map(String.init).joined(separator: ","),
-      bufferSignature: bufferIds.map { String($0, radix: 16) }.joined(separator: ","),
-      duplicateSlotCount: duplicateSlotCount,
-      duplicateFileIdCount: duplicateFileIdCount,
-      duplicateBufferCount: duplicateBufferCount
+    lastPublishedSlotSignature = zip(slots, fileIds)
+      .map { "s\($0.0):f\($0.1)" }
+      .joined(separator: "|")
+    lastPublishedFileIdSignature = fileIds.map(String.init).joined(separator: ",")
+    lastPublishedBufferSignature = buffers.map { String($0, radix: 16) }.joined(separator: ",")
+    lastPublishedDuplicateSlotCount = max(0, slots.count - Set(slots).count)
+    lastPublishedDuplicateFileIdCount = max(0, fileIds.count - Set(fileIds).count)
+    lastPublishedDuplicateBufferCount = max(0, buffers.count - Set(buffers).count)
+  }
+
+  private func failedResult(_ error: String) -> MacOSNativeCompositorSourceRefreshResult {
+    let native = nativeDiagnostics()
+    return MacOSNativeCompositorSourceRefreshResult(
+      published: false,
+      publishCount: Int(min(native.publish_count, UInt64(Int.max))),
+      drawnMask: lastDrawnMask,
+      reusedMask: 0,
+      missingMask: lastMissingMask,
+      ptsUs: lastPublishedPtsUs,
+      error: error
+    )
+  }
+
+  private static func emptyFailure(_ error: String) -> MacOSNativeCompositorSourceRefreshResult {
+    MacOSNativeCompositorSourceRefreshResult(
+      published: false,
+      publishCount: 0,
+      drawnMask: 0,
+      reusedMask: 0,
+      missingMask: 0,
+      ptsUs: -1,
+      error: error
     )
   }
 }

@@ -70,10 +70,17 @@ NSWindow / content view
   -> CoreAnimation/runner composition
 ```
 
-The current native validation path uses renderer-owned Metal targets for
-software/package frames and VideoToolbox CVPixelBuffer frames. Startup installs
-the native target ring and then lets the native renderer own video cadence;
-Flutter remains responsible only for its ARGB UI surface.
+The macOS source lease allocates and owns the compositor-ready
+`CVPixelBuffer`/`IOSurface` rings, runs the native Metal source bake, validates
+generation transitions, and publishes only complete packages. The runner keeps
+the latest retained package, applies projection, and composes it below Flutter's
+ARGB UI surface. Swift does not allocate source rings or infer package
+completeness.
+
+Source refresh requests are currently serialized by the runner bridge. Moving
+that cadence behind the native presentation contract is the remaining ownership
+step; it must not be coupled to Flutter texture availability or Flutter present
+scheduling.
 
 ## Windows Target
 

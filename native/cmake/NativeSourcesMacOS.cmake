@@ -7,6 +7,7 @@ set(VOID_MACOS_NATIVE_PLAYER_SOURCES
     "${VOID_NATIVE_DIR}/macos/metal/metal_presentation_backend.cpp"
     "${VOID_NATIVE_DIR}/macos/metal/metal_presentation_backend_bridge.h"
     "${VOID_NATIVE_DIR}/macos/metal/metal_presentation_backend_bridge.cpp"
+    "${VOID_NATIVE_DIR}/macos/metal/source_compositor_lease.mm"
     "${VOID_NATIVE_DIR}/macos/metal/metal_uploader_bridge.h"
     "${VOID_NATIVE_DIR}/macos/metal/metal_uploader_bridge.mm"
     "${VOID_NATIVE_DIR}/macos/metal/metal_uploader_internal.h"

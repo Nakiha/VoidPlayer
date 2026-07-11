@@ -48,10 +48,12 @@ RendererDrawSnapshot
 Native allocates and publishes one complete viewport target; Swift retains the
 latest target and composes it separately from Flutter's UI surface. Viewport
 pan/zoom submits the latest layout intent to the shared renderer, which redraws
-the native target with layout and overlay already applied. The runner display
-link samples the retained native target and current Flutter surface each tick.
-Swift must not add a second frame pump, playback clock, seek policy, loop policy,
-or layout compositor.
+the native target with layout and overlay already applied. Interaction redraws
+are display-link driven and independent of media frame rate; shared native code
+arbitrates them against playback presents so the same full target is not drawn
+twice. The runner display link samples the retained native target and current
+Flutter surface each tick. Swift must not add a playback clock, seek policy,
+loop policy, or layout compositor.
 
 The detailed presentation contract is documented in
 `../native/docs/MACOS_PRESENTATION_BACKEND.md`; stabilization and local

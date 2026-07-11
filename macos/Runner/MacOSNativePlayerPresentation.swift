@@ -170,6 +170,24 @@ extension MacOSNativePlayerSession {
     return MacOSNativeFrameInfo(native: info)
   }
 
+  func requestInteractionLayoutFrame() throws {
+    var error = [CChar](repeating: 0, count: 1024)
+    let ret = VPMacOSNativePlayerRequestInteractionLayoutFrame(
+      handle,
+      &error,
+      error.count
+    )
+    guard ret != 0 else { return }
+    let message = String(cString: error)
+    let fallback = "native interaction layout frame submission failed with code \(ret)"
+    if ret == -3 {
+      throw MacOSNativePlayerError.transientFrameUnavailable(
+        message.isEmpty ? fallback : message
+      )
+    }
+    throw MacOSNativePlayerError.failed(message.isEmpty ? fallback : message)
+  }
+
   func resetRendererOwnedPresentationStats() {
     VPMacOSNativePlayerResetRendererOwnedPresentationStats(handle)
   }

@@ -31,6 +31,7 @@ bool Renderer::Impl::initialize(const RendererConfig& config) {
     surface_state_.configure(config);
     layout_state_.reset_revisions();
     shutting_down_.store(false, std::memory_order_release);
+    interaction_presentation_until_us_.store(0, std::memory_order_release);
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
     presentation_metrics_.reset();
     timeline_.start_session_if_needed();
@@ -205,6 +206,7 @@ void Renderer::Impl::release_resources_locked() {
     loop_driver_.clear_pending_resize();
     loop_driver_.reset_timing();
     track_controller_.reset_perf_baseline();
+    interaction_presentation_until_us_.store(0, std::memory_order_release);
     initialized_ = false;
     device_state_.store(RendererDeviceState::Ready, std::memory_order_release);
 }

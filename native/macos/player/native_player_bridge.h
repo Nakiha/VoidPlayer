@@ -162,6 +162,10 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
+int VPMacOSNativePlayerRequestInteractionLayoutFrame(
+    VPMacOSNativePlayer* player,
+    char* error,
+    size_t error_size);
 void VPMacOSNativePlayerPlay(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerPause(VPMacOSNativePlayer* player);
 void VPMacOSNativePlayerSetSpeed(VPMacOSNativePlayer* player, double speed);

@@ -180,6 +180,8 @@ public:
     /// Request an immediate redraw of the currently presentable frame.
     /// Returns false when the renderer cannot issue a refresh command.
     bool request_frame_refresh(const char* reason);
+    bool request_interaction_frame();
+    bool interaction_presentation_active() const;
     bool update_presentation_sdr_white_level(double nits);
     bool commit_paused_preview_frame(int timeout_ms,
                                      PresentationBackendFrameInfo* out,
@@ -278,6 +280,7 @@ private:
 
     std::atomic<bool> initialized_{false};
     std::atomic<bool> shutting_down_{false};
+    std::atomic<int64_t> interaction_presentation_until_us_{0};
     std::atomic<RendererDeviceState> device_state_{RendererDeviceState::Ready};
     mutable PresentationMetricsStore presentation_metrics_;
 

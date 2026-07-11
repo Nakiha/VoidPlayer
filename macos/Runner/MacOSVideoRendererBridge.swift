@@ -923,6 +923,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       presentationState: presentationState,
       markFrameAvailable: {
         self.markFrameAvailable()
+        self.presentation.nativeFramePresented()
         self.transport.resolvePendingSeekPreviewIfPresented(
           presentationState: self.presentationState,
           emitSeekPreviewPresented: { [weak self] requestId, targetPtsUs in

@@ -58,6 +58,17 @@ composition. Neither side may:
 The native compositor and Flutter overlay should be tested as two independent
 surfaces composed by the runner.
 
+## Presentation Cadence
+
+Playback frame selection remains media-clock driven. Viewport interaction is
+display-link driven and submits cached-decision redraws through
+`VPMacOSNativePlayerRequestInteractionLayoutFrame`; it never waits for the next
+decoded frame. The shared renderer temporarily treats interaction as the active
+presentation producer so playback can update its latest decision without
+duplicating a full-target draw. At most two interaction draws may be in flight,
+leaving one native ring slot as transition headroom; backpressure retains only
+the newest layout revision for retry.
+
 ## Metal Pipeline Startup
 
 The runner compiles `VoidPlayerNativeShaders.metal` into the app's

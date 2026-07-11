@@ -1,6 +1,13 @@
 #include "renderer/renderer_internal.h"
+#include "renderer/render/renderer_timing_utils.h"
 
 namespace vr {
+
+namespace {
+
+constexpr int64_t kInteractionPresentationHoldUs = 50'000;
+
+} // namespace
 
 RendererPresentCommandContext Renderer::Impl::present_command_context() {
     return RendererPresentCommandContext{
@@ -81,6 +88,18 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
         mark_paused_hevc_seek_preview_drawn_locked();
     }
     return drew;
+}
+
+bool Renderer::Impl::request_interaction_frame() {
+    interaction_presentation_until_us_.store(
+        steady_clock_us_now() + kInteractionPresentationHoldUs,
+        std::memory_order_release);
+    return request_frame_refresh("macos-renderer-owned-refresh");
+}
+
+bool Renderer::Impl::interaction_presentation_active() const {
+    return interaction_presentation_until_us_.load(std::memory_order_acquire) >
+           steady_clock_us_now();
 }
 
 bool Renderer::Impl::recover_or_enter_terminal_device_lost_locked(

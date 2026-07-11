@@ -1,8 +1,10 @@
-# Playing dual-track viewport pan should keep advancing playback and presenting frames.
+# Interaction redraw stays independent from 24 fps dual-track video presentation.
 @WINDOW, 1366, 768
-0.3, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+0.0, GENERATE_TEST_VIDEO, build/generated/macos/interaction_24fps_h264.mp4, 240, 24, 640, 360
+0.1, GENERATE_TEST_VIDEO, build/generated/macos/interaction_24fps_hevc.mp4, 240, 24, 640, 360, 0, hevc
+0.3, ADD_MEDIA, build/generated/macos/interaction_24fps_h264.mp4
 1.6, ASSERT_TRACK_COUNT, 1
-1.8, ADD_MEDIA, resources/video/h265_10s_1920x1080.mp4
+1.8, ADD_MEDIA, build/generated/macos/interaction_24fps_hevc.mp4
 3.8, ASSERT_TRACK_COUNT, 2
 3.9, SET_ZOOM, 4.0
 4.1, PLAY
@@ -13,6 +15,8 @@
 5.8, ASSERT_POSITION_RANGE, 700000, 9000000
 6.06, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
 6.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, layoutPresentedCount, 1
+6.08, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, interactionLayoutSubmitCount, 30
+6.095, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, metalBufferExhaustionCount, 0, 0
 6.097, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureMetalBufferExhaustionCount, 0, 0
 6.098, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureInFlightMetalBufferCount, 0, 1
 6.2, QUIT, 0

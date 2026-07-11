@@ -41,6 +41,14 @@ The platform backend publishes one complete opaque viewport target:
 There is no per-track source lease or runner-side layout projection. Flutter is
 the only premultiplied-alpha layer in the final composition.
 
+Video cadence and viewport interaction cadence are separate producers. Normal
+playback advances the latest `PresentDecision` at media PTS cadence. While
+pan/zoom/split interaction is active, the runner display link requests
+non-blocking redraws of that latest decision at interaction cadence. Shared
+native arbitration suppresses duplicate playback presents during that short
+interaction window; it does not defer interaction until the next video frame.
+Both producers use the same complete target ring and native layout pipeline.
+
 ## macOS Target
 
 The first implementation target is:

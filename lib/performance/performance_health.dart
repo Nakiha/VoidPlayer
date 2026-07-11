@@ -127,7 +127,10 @@ class PerformanceHealthSnapshot {
       diagnostics['displayRefreshHzEstimate'],
     );
     final displayTickHz = _doubleValue(diagnostics['displayTickHz']);
-    final layoutDrawHz = _doubleValue(diagnostics['layoutDrawHz']);
+    final layoutDrawHz = math.max(
+      _doubleValue(diagnostics['layoutDrawHz']),
+      _doubleValue(diagnostics['interactionLayoutSubmitHz']),
+    );
     final layoutIntentHz = _doubleValue(diagnostics['layoutIntentHz']);
     final nativeCompositorEnabled = _boolValue(
       diagnostics['nativeCompositorEnabled'],

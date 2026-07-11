@@ -877,5 +877,37 @@ int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
     char* error,
     size_t error_size) {
   return request_renderer_owned_frame_refresh(player, timeout_ms, flags, out,
-                                              error, error_size);
+                                               error, error_size);
+}
+
+int VPMacOSNativePlayerRequestInteractionLayoutFrame(
+    VPMacOSNativePlayer* player,
+    char* error,
+    size_t error_size) {
+  if (!player) {
+    write_error(error, error_size, "player is null");
+    return VPMacOSNativeStatusInvalidArgument;
+  }
+
+  std::string message;
+  std::lock_guard<std::mutex> lock(player->mutex);
+  if (!player->ensure_renderer_locked(message) || !player->renderer) {
+    write_error(error, error_size,
+                message.empty() ? "shared macOS renderer is not available" : message);
+    return VPMacOSNativeStatusRendererFailed;
+  }
+  if (player->renderer->request_interaction_frame()) {
+    write_error(error, error_size, "");
+    return VPMacOSNativeStatusOk;
+  }
+
+  message = player->renderer->presentation_backend_last_error();
+  if (vr::is_transient_presentation_backpressure_error(message)) {
+    write_error(error, error_size, message);
+    return VPMacOSNativeStatusTransientBackpressure;
+  }
+  write_error(error, error_size,
+              message.empty() ? "native interaction layout frame was not submitted"
+                              : message);
+  return VPMacOSNativeStatusRendererFailed;
 }

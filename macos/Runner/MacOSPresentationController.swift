@@ -28,6 +28,8 @@ final class MacOSPresentationController {
   }
   private let layoutRevisionLock = NSLock()
   private var layoutRefreshRunning = false
+  private var interactionFramesInFlight = 0
+  private let maxInteractionFramesInFlight = 2
   private var layoutRefreshMainTickScheduled = false
   private var latestLayoutRefreshRequest: LayoutRefreshRequest?
   private var latestLayoutRevision: UInt64 = 0
@@ -38,12 +40,14 @@ final class MacOSPresentationController {
   private var layoutStaleDropCount = 0
   private var layoutStaleAfterDrawDropCount = 0
   private var layoutPublishedCount = 0
+  private var interactionLayoutSubmitCount = 0
   private var layoutRefreshSupersededCount = 0
   private var displayLinkIdleUntilNs: UInt64 = 0
   private let displayLinkIdleGraceNs: UInt64 = 250_000_000
   private let layoutIntentRate = MacOSRateWindow()
   private let layoutSubmitRate = MacOSRateWindow()
   private let layoutDrawRate = MacOSRateWindow()
+  private let interactionLayoutSubmitRate = MacOSRateWindow()
   private let layoutSkipRate = MacOSRateWindow()
   private let layoutQueueDuration = MacOSDurationWindow()
   private let layoutApplyDuration = MacOSDurationWindow()
@@ -144,6 +148,11 @@ final class MacOSPresentationController {
     diagnostics["layoutStaleDropCount"] = layoutStaleDropCount
     diagnostics["layoutStaleAfterDrawDropCount"] = layoutStaleAfterDrawDropCount
     diagnostics["layoutPublishedCount"] = layoutPublishedCount
+    diagnostics["interactionLayoutSubmitCount"] = interactionLayoutSubmitCount
+    diagnostics["interactionLayoutSubmitHz"] = interactionLayoutSubmitRate.rateHz()
+    diagnostics["interactionLayoutSubmitHzX1000"] = Int(
+      interactionLayoutSubmitRate.rateHz() * 1000.0
+    )
     diagnostics["layoutRefreshSupersededCount"] = layoutRefreshSupersededCount
     diagnostics["viewportClockWarm"] = displayLink.isRunning
     diagnostics["displayIdleGraceMs"] = Int(displayLinkIdleGraceNs / 1_000_000)
@@ -164,6 +173,8 @@ final class MacOSPresentationController {
     diagnostics["layoutRefreshTotalP95Ms"] = layoutTotalDuration.p95Ms()
     diagnostics["layoutRefreshTotalLastMs"] = layoutTotalDuration.lastMs()
     diagnostics["layoutRefreshRunning"] = layoutRefreshRunning
+    diagnostics["interactionFramesInFlight"] = interactionFramesInFlight
+    diagnostics["maxInteractionFramesInFlight"] = maxInteractionFramesInFlight
     diagnostics["layoutIntentPending"] = latestLayoutRefreshRequest != nil
     return diagnostics
   }
@@ -179,6 +190,7 @@ final class MacOSPresentationController {
       waitForLayoutRefreshQueueDrain()
     }
     layoutRefreshRunning = false
+    interactionFramesInFlight = 0
   }
 
   private func waitForLayoutRefreshQueueDrain() {
@@ -237,6 +249,11 @@ final class MacOSPresentationController {
       layoutSkipRate.record()
       return
     }
+    guard interactionFramesInFlight < maxInteractionFramesInFlight else {
+      layoutSkipCount += 1
+      layoutSkipRate.record()
+      return
+    }
     latestLayoutRefreshRequest = nil
     layoutRefreshRunning = true
     layoutSubmitCount += 1
@@ -263,6 +280,7 @@ final class MacOSPresentationController {
           return
         }
         var finalOutcomeName = outcome.profilerName
+        var retryAfterBackpressure = false
         switch outcome {
         case .ready(let pending):
           guard self.isCurrentLayoutRequest(request) else {
@@ -298,14 +316,22 @@ final class MacOSPresentationController {
           self.layoutStaleDropCount += 1
         case .staleAfterDraw:
           self.layoutStaleAfterDrawDropCount += 1
-        case .deferredToPlayback:
-          break
+        case .interactionSubmitted:
+          self.interactionLayoutSubmitCount += 1
+          self.interactionLayoutSubmitRate.record()
+          self.interactionFramesInFlight += 1
         case .transientMiss:
           request.context.presentationState.recordMiss()
         case .coalesced:
           self.layoutSkipCount += 1
           self.layoutSkipRate.record()
           request.context.presentationState.recordMiss()
+          if self.isCurrentLayoutRequest(request), self.latestLayoutRefreshRequest == nil {
+            self.latestLayoutRefreshRequest = request
+            self.extendDisplayLinkIdleGrace()
+            retryAfterBackpressure = true
+            finalOutcomeName = "retry-backpressure"
+          }
         }
         self.logLayoutTrace(
           event: "complete",
@@ -320,7 +346,9 @@ final class MacOSPresentationController {
           finalOutcomeName,
           finalOutcomeName == "applied" ? 1 : 0
         ))
-        request.complete(finalOutcomeName)
+        if !retryAfterBackpressure {
+          request.complete(finalOutcomeName)
+        }
         let queueDelayNs = startNs >= request.requestNs ? startNs - request.requestNs : 0
         let applyNs = finishNs >= startNs ? finishNs - startNs : 0
         let totalNs = DispatchTime.now().uptimeNanoseconds - request.requestNs
@@ -352,6 +380,16 @@ final class MacOSPresentationController {
     }
   }
 
+  func nativeFramePresented() {
+    guard interactionFramesInFlight > 0 else { return }
+    interactionFramesInFlight -= 1
+    if latestLayoutRefreshRequest != nil {
+      extendDisplayLinkIdleGrace()
+      displayLink.start()
+      scheduleMainLayoutRefreshTick()
+    }
+  }
+
   private func performLayoutRefresh(
     request: LayoutRefreshRequest
   ) -> LayoutRefreshOutcome {
@@ -375,9 +413,19 @@ final class MacOSPresentationController {
     guard isCurrentLayoutRequest(request) else {
       return .stale
     }
-    MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
+    if request.markNativeLayoutAppliedIfNeeded() {
+      MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
+    }
     if context.playback.currentIsPlaying(player: player) {
-      return .deferredToPlayback
+      do {
+        try player.requestInteractionLayoutFrame()
+        return .interactionSubmitted
+      } catch {
+        if (error as? MacOSNativePlayerError)?.isTransientFrameUnavailable == true {
+          return .coalesced
+        }
+        return .transientMiss
+      }
     }
     guard let texture = context.nativeTexture else {
       return .transientMiss
@@ -504,6 +552,7 @@ private final class LayoutRefreshRequest {
   private let completion: LayoutRefreshCompletion?
   private let completionLock = NSLock()
   private var completed = false
+  private var nativeLayoutApplied = false
 
   init(
     context: MacOSPresentationContext,
@@ -527,13 +576,21 @@ private final class LayoutRefreshRequest {
     completionLock.unlock()
     completion?(outcome)
   }
+
+  func markNativeLayoutAppliedIfNeeded() -> Bool {
+    completionLock.lock()
+    defer { completionLock.unlock() }
+    guard !nativeLayoutApplied else { return false }
+    nativeLayoutApplied = true
+    return true
+  }
 }
 
 private enum LayoutRefreshOutcome {
   case ready(MacOSPendingNativeFrame)
   case stale
   case staleAfterDraw
-  case deferredToPlayback
+  case interactionSubmitted
   case transientMiss
   case coalesced
 
@@ -545,8 +602,8 @@ private enum LayoutRefreshOutcome {
       return "stale"
     case .staleAfterDraw:
       return "stale-after-draw"
-    case .deferredToPlayback:
-      return "deferred-to-playback"
+    case .interactionSubmitted:
+      return "interaction-submitted"
     case .transientMiss:
       return "transient-miss"
     case .coalesced:

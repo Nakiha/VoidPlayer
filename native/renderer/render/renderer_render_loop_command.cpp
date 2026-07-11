@@ -263,9 +263,11 @@ void RendererRenderLoopCommandProcessor::run_body(
                 track_controller_.apply_carry_forward(
                     present_history_.snapshot(), decision);
             }
-            auto present_context = context.hooks.present_command_context();
-            RendererPresentCommandProcessor::present_frame(
-                present_context, decision);
+            if (!context.hooks.interaction_presentation_active()) {
+                auto present_context = context.hooks.present_command_context();
+                RendererPresentCommandProcessor::present_frame(
+                    present_context, decision);
+            }
             {
                 std::lock_guard<std::mutex> lock(state_mutex_);
                 present_history_.set(decision);

@@ -11,6 +11,17 @@ void main() {
     expect(snapshot.kind, PerformanceHealthKind.ok);
   });
 
+  test('uses independent interaction submissions as layout draw cadence', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'layoutIntentHz': 74.0,
+      'layoutDrawHz': 0.0,
+      'interactionLayoutSubmitHz': 68.0,
+    });
+
+    expect(snapshot.layoutDrawHz, 68.0);
+  });
+
   test('classifies native render pressure from renderer latency', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
       'trackCount': 1,
@@ -27,13 +38,13 @@ void main() {
   });
 
   test(
-    'uses native compositor timings for source-provider native pressure',
+    'uses native compositor timings for retained native pressure',
     () {
       final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
         'trackCount': 1,
         'isPlaying': true,
         'displayRefreshHzEstimate': 120.0,
-        'presentationBackend': 'native-metal-source-provider',
+        'presentationBackend': 'native-metal-cvpixelbuffer-target',
         'nativeCompositorBackend': 'metal',
         'nativeCompositorCompositeHz': 120.0,
         'nativeRendererDrawP95Us': 12000.0,

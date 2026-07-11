@@ -270,6 +270,10 @@ bool Renderer::request_frame_refresh(const char* reason) {
     return impl_->request_frame_refresh(reason);
 }
 
+bool Renderer::request_interaction_frame() {
+    return impl_->request_interaction_frame();
+}
+
 bool Renderer::update_presentation_sdr_white_level(double nits) {
     return impl_->update_presentation_sdr_white_level(nits);
 }

@@ -65,12 +65,14 @@ NativePlayer / Renderer command surface
 - Owns playback cadence and deadline sleep.
 - Reads the shared `Clock`, asks `RenderSink` for a `PresentDecision`, and builds
   `RendererDrawSnapshot` values.
-- Calls `PresentationBackend::draw_frame()` for normal playback, paused redraw,
-  layout refresh, seek refresh, step refresh, capture preparation, and EOF
-  settling.
+- Calls `PresentationBackend::draw_frame()` for normal playback, seek/step,
+  capture preparation, and EOF settling. Paused and interaction redraw commands
+  enter the same presentation controller from the serialized host refresh
+  queue.
 - During playback, frame selection remains PTS-driven. Pending layout is
-  consumed by the next present; explicit paused/layout refresh draws a complete
-  target through the same backend.
+  consumed by either the next playback present or an independent interaction
+  redraw. While interaction redraw is active, the loop continues advancing the
+  latest decision but suppresses its duplicate playback present.
 - Publishes success/failure state and frame callbacks after releasing renderer
   locks.
 - Does not call public lifecycle APIs and never joins itself.
@@ -82,9 +84,11 @@ NativePlayer / Renderer command surface
   for the later runner-composed sandwich backend.
 - macOS runner owns Cocoa, sandbox file access, platform channels, Flutter
   texture registration, `CVPixelBuffer` lifecycle, and frame notification.
-- macOS viewport pan/zoom submits only the latest layout intent. Native redraws
-  one complete viewport target; the runner display link independently samples
-  that target and Flutter's current surface for final composition.
+- macOS viewport pan/zoom submits only the latest layout intent. Its display
+  link drives a non-blocking complete-target redraw independently from media
+  PTS cadence, with at most two interaction targets in flight. Native completion
+  releases the next interaction tick; transient ring pressure retries only the
+  latest revision.
 - macOS seek/step/startup/paused/EOF refresh calls install or validate the
   renderer-owned target, release the Swift texture lock, then request native
   refresh completion. Swift does not own playback clock, seek, loop, layout, or

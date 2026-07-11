@@ -529,7 +529,7 @@ bool MetalPresentationBackend::initialize(const vr::PresentationBackendConfig& c
   }
   width_ = config.width;
   height_ = config.height;
-  headless_ = config.headless;
+  offscreen_ = config.offscreen;
   set_draw_target(config.output,
                   config.width,
                   config.height,
@@ -554,14 +554,14 @@ void MetalPresentationBackend::shutdown() {
   clear_draw_target();
   width_ = 0;
   height_ = 0;
-  headless_ = true;
+  offscreen_ = true;
 }
 
 bool MetalPresentationBackend::available() const {
   return uploader_ && VPMacOSMetalUploaderIsAvailable(uploader_) != 0;
 }
 
-bool MetalPresentationBackend::update_headless_output(void* output,
+bool MetalPresentationBackend::update_offscreen_target(void* output,
                                                       int width,
                                                       int height,
                                                       int max_track_slots) {
@@ -578,7 +578,7 @@ bool MetalPresentationBackend::update_headless_output(void* output,
                                                      sizeof(validation_error)) != 0) {
     mark_draw_failure(validation_error[0] != '\0'
                           ? validation_error
-                          : "renderer-owned Metal presentation target is invalid");
+                          : "native Metal presentation target is invalid");
     return false;
   }
   width_ = width;
@@ -587,7 +587,7 @@ bool MetalPresentationBackend::update_headless_output(void* output,
   return available();
 }
 
-bool MetalPresentationBackend::update_headless_output_ring(
+bool MetalPresentationBackend::update_offscreen_target_ring(
     const void* const* pixel_buffers,
     size_t pixel_buffer_count,
     void* displayed_pixel_buffer,
@@ -611,7 +611,7 @@ bool MetalPresentationBackend::update_headless_output_ring(
             sizeof(validation_error)) != 0) {
       mark_draw_failure(validation_error[0] != '\0'
                             ? validation_error
-                            : "renderer-owned Metal presentation target ring is invalid");
+                            : "native Metal presentation target ring is invalid");
       return false;
     }
   }
@@ -627,19 +627,19 @@ bool MetalPresentationBackend::update_headless_output_ring(
   return available();
 }
 
-void MetalPresentationBackend::clear_headless_output() {
+void MetalPresentationBackend::clear_offscreen_target() {
   clear_draw_target();
 }
 
-void MetalPresentationBackend::mark_headless_output_displayed(void* pixel_buffer) {
+void MetalPresentationBackend::mark_offscreen_target_displayed(void* pixel_buffer) {
   mark_displayed_target(pixel_buffer);
 }
 
-void MetalPresentationBackend::protect_headless_output(void* pixel_buffer) {
+void MetalPresentationBackend::protect_offscreen_target(void* pixel_buffer) {
   protect_target(pixel_buffer);
 }
 
-void MetalPresentationBackend::release_headless_output(void* pixel_buffer) {
+void MetalPresentationBackend::release_offscreen_target(void* pixel_buffer) {
   release_target(pixel_buffer);
 }
 
@@ -837,13 +837,13 @@ void MetalPresentationBackend::invalidate_source_cache() {
 bool MetalPresentationBackend::try_begin_async_draw(const char* source) {
   // The uploader can accept multiple per-frame resource slots, but this backend
   // still presents into one installed CVPixelBuffer target at a time. Keep
-  // renderer-owned draws serialized until target ownership moves fully native.
-  const uint64_t max_async_renderer_owned_draws =
+  // native-target draws serialized until target ownership moves fully native.
+  const uint64_t max_async_native_target_draws =
       vp_macos::kMetalPresentConcurrencyPolicy.max_single_target_in_flight;
   std::lock_guard<std::mutex> lock(async_mutex_);
-  if (in_flight_draws_ >= max_async_renderer_owned_draws) {
+  if (in_flight_draws_ >= max_async_native_target_draws) {
     ++metal_buffer_exhaustion_count_;
-    set_last_error("renderer-owned Metal async draw deferred by backpressure");
+    set_last_error("native Metal async draw deferred by backpressure");
     if (macos_profiler_enabled() &&
         (metal_buffer_exhaustion_count_ <= 8 ||
          (metal_buffer_exhaustion_count_ % 60) == 0)) {
@@ -851,7 +851,7 @@ bool MetalPresentationBackend::try_begin_async_draw(const char* source) {
           "[MetalProfiler] async_backpressure source={} in_flight={} limit={} count={}",
           source ? source : "",
           in_flight_draws_,
-          max_async_renderer_owned_draws,
+          max_async_native_target_draws,
           metal_buffer_exhaustion_count_);
     }
     return false;
@@ -899,18 +899,18 @@ std::string MetalPresentationBackend::target_ring_state_summary_locked() const {
 void* MetalPresentationBackend::try_acquire_ring_draw_target(const char* source) {
   std::lock_guard<std::mutex> lock(async_mutex_);
   if (async_shutdown_) {
-    set_last_error("renderer-owned Metal presentation backend is shutting down");
+    set_last_error("native Metal presentation backend is shutting down");
     return nullptr;
   }
-  const uint64_t max_async_renderer_owned_draws =
+  const uint64_t max_async_native_target_draws =
       vp_macos::kMetalPresentConcurrencyPolicy.max_ring_in_flight;
-  if (in_flight_draws_ >= max_async_renderer_owned_draws) {
+  if (in_flight_draws_ >= max_async_native_target_draws) {
     ++metal_buffer_exhaustion_count_;
-    set_last_error("renderer-owned Metal async draw deferred by backpressure");
+    set_last_error("native Metal async draw deferred by backpressure");
     return nullptr;
   }
   if (!target_ring_enabled_) {
-    set_last_error("renderer-owned Metal presentation target ring is unavailable");
+    set_last_error("native Metal presentation target ring is unavailable");
     return nullptr;
   }
   for (auto& slot : target_ring_) {
@@ -922,7 +922,7 @@ void* MetalPresentationBackend::try_acquire_ring_draw_target(const char* source)
     return slot.pixel_buffer;
   }
   ++metal_buffer_exhaustion_count_;
-  set_last_error("renderer-owned Metal presentation target ring is busy");
+  set_last_error("native Metal presentation target ring is busy");
   if (macos_profiler_enabled() &&
       (metal_buffer_exhaustion_count_ <= 8 ||
        (metal_buffer_exhaustion_count_ % 60) == 0)) {
@@ -1044,7 +1044,7 @@ void MetalPresentationBackend::complete_async_draw_result(
                             cpu_attempted,
                             fill_rect_count,
                             line_rect_count);
-      mark_draw_failure(error ? error : "renderer-owned Metal async draw failed");
+      mark_draw_failure(error ? error : "native Metal async draw failed");
     }
     if (target_ring_enabled_ && ticket.target_pixel_buffer_address != 0) {
       for (auto& slot : target_ring_) {
@@ -1148,7 +1148,7 @@ void metal_async_upload_completed(void* user_data,
     backend_frame_info.layout_revision = 0;
     context->hooks.async_draw_completed(
         success,
-        success ? "" : (error ? error : "renderer-owned Metal async draw failed"),
+        success ? "" : (error ? error : "native Metal async draw failed"),
         static_cast<uint64_t>(std::max<int64_t>(0, total_us)),
         success ? &backend_frame_info : nullptr);
   }
@@ -1307,7 +1307,7 @@ bool MetalPresentationBackend::draw_frame(
       ring_state = target_ring_state_summary_locked();
     }
     release_acquired_target();
-    mark_draw_failure("renderer-owned Metal presentation target is unavailable");
+    mark_draw_failure("native Metal presentation target is unavailable");
     spdlog::warn(
         "[MetalTarget] unavailable source={} available={} target=0x{:x} size={}x{} "
         "draw_target=0x{:x} {}",
@@ -1323,7 +1323,7 @@ bool MetalPresentationBackend::draw_frame(
   }
   if (hooks.async_draw_completed && shutting_down_async()) {
     release_acquired_target();
-    mark_draw_failure("renderer-owned Metal presentation backend is shutting down");
+    mark_draw_failure("native Metal presentation backend is shutting down");
     log_profiler("shutdown", false, -1, 0, 0, 0, last_error_.c_str());
     return false;
   }
@@ -1363,7 +1363,7 @@ bool MetalPresentationBackend::draw_frame(
       package_layout.bgra_row_bytes >
           static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
     release_acquired_target();
-    mark_draw_failure("renderer-owned Metal presentation package layout is invalid");
+    mark_draw_failure("native Metal presentation package layout is invalid");
     log_profiler("package-layout", false, -1, 0, package_layout.max_bytes, 0,
                  last_error_.c_str());
     return false;

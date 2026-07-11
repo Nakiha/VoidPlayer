@@ -256,18 +256,18 @@ add_custom_target(renderer_portable_compile_smoke
     DEPENDS void_renderer_portable_driver
 )
 
-add_executable(renderer_metal_headless_smoke
-    "${VOID_NATIVE_DIR}/tools/renderer_metal_headless_smoke.cpp"
+add_executable(renderer_metal_offscreen_smoke
+    "${VOID_NATIVE_DIR}/tools/renderer_metal_offscreen_smoke.cpp"
 )
-void_apply_native_compile_options(renderer_metal_headless_smoke)
-target_link_libraries(renderer_metal_headless_smoke PRIVATE
+void_apply_native_compile_options(renderer_metal_offscreen_smoke)
+target_link_libraries(renderer_metal_offscreen_smoke PRIVATE
     void_macos_native_player
 )
-target_compile_definitions(renderer_metal_headless_smoke PRIVATE
+target_compile_definitions(renderer_metal_offscreen_smoke PRIVATE
     VIDEO_TEST_DIR="${VIDEO_TEST_DIR}"
 )
-add_test(NAME renderer_metal_headless_smoke COMMAND renderer_metal_headless_smoke)
-void_label_test(renderer_metal_headless_smoke "macos;backend;integration;hosted-flaky;nightly")
+add_test(NAME renderer_metal_offscreen_smoke COMMAND renderer_metal_offscreen_smoke)
+void_label_test(renderer_metal_offscreen_smoke "macos;backend;integration;hosted-flaky;nightly")
 
 add_executable(presentation_snapshot_smoke
     "${VOID_NATIVE_DIR}/tools/presentation_snapshot_smoke.cpp"

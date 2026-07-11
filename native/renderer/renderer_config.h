@@ -34,10 +34,10 @@ struct RendererConfig {
     bool use_hardware_decode = true;
     int initial_file_id = 1;
 
-    /// Headless mode: render to offscreen texture instead of swap chain.
-    bool headless = false;
+    /// Offscreen mode: render into a runner-consumable target instead of a swap chain.
+    bool offscreen = false;
 
-    /// Native backend interop for headless mode.
+    /// Native backend interop for offscreen mode.
     RendererBackendInterop backend;
 
     /// Logging configuration. Applied during initialize().

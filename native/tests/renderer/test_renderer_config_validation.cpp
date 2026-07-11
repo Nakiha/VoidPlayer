@@ -57,10 +57,10 @@ TEST_CASE("Renderer config validation rejects invalid path lists",
     REQUIRE_FALSE(validate_renderer_config(config).ok);
 }
 
-TEST_CASE("Renderer config validation accepts Metal headless output on macOS",
+TEST_CASE("Renderer config validation accepts Metal offscreen output on macOS",
           "[renderer_config]") {
     auto config = valid_windowed_config();
-    config.headless = true;
+    config.offscreen = true;
     config.hwnd = nullptr;
     config.backend.type = RendererBackendType::Metal;
     config.backend.output = reinterpret_cast<void*>(0x9abc);
@@ -82,7 +82,7 @@ TEST_CASE("Renderer config validation accepts Metal headless output on macOS",
 TEST_CASE("Windows native D3D backends are reserved but not active",
           "[renderer_config][presentation_backend]") {
     auto config = valid_windowed_config();
-    config.headless = true;
+    config.offscreen = true;
     config.hwnd = nullptr;
     config.backend.type = RendererBackendType::NativeD3D12;
     config.backend.output = reinterpret_cast<void*>(0x9abc);

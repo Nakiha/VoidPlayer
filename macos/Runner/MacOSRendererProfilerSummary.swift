@@ -27,7 +27,7 @@ enum MacOSRendererProfilerSummary {
       presented,
       draws,
       int64Value(perf, "rendererDrawP95Us"),
-      doubleValue(perf, "rendererOwnedUploadFps"),
+      doubleValue(perf, "nativeTargetUploadFps"),
       int64Value(scheduler, "tickCount"),
       int64Value(scheduler, "presentableTickCount"),
       int64Value(texture, "pixelBufferRebuildCount"),

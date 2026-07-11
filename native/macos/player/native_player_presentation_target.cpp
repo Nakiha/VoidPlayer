@@ -32,13 +32,13 @@ uint64_t pointer_address(const void* pointer) {
 }
 
 void reset_target_warmup_locked(VPMacOSNativePlayer* player) {
-  player->renderer_owned_target_warmup_generation =
+  player->native_target_warmup_generation =
       player->presentation_target_generation;
-  player->renderer_owned_target_warmup_remaining = 8;
-  player->renderer_owned_target_warmup_sample_count = 0;
-  player->renderer_owned_target_warmup_last_ms = 0;
-  player->renderer_owned_target_warmup_p95_ms = 0;
-  player->renderer_owned_target_warmup_intervals_ns.clear();
+  player->native_target_warmup_remaining = 8;
+  player->native_target_warmup_sample_count = 0;
+  player->native_target_warmup_last_ms = 0;
+  player->native_target_warmup_p95_ms = 0;
+  player->native_target_warmup_intervals_ns.clear();
 }
 
 std::string target_address_summary(const std::vector<void*>& targets) {
@@ -92,11 +92,11 @@ void commit_single_target_locked(VPMacOSNativePlayer* player,
       max_track_slots,
       refresh_now);
   if (refresh_now) {
-    player->last_renderer_owned_presentation_succeeded = false;
-    player->last_renderer_owned_frame_info_available = false;
-    player->last_renderer_owned_frame_info = {};
-    player->renderer_owned_presentation_consecutive_failures = 0;
-    player->renderer_owned_presentation_last_error.clear();
+    player->last_native_target_presentation_succeeded = false;
+    player->last_native_target_frame_info_available = false;
+    player->last_native_target_frame_info = {};
+    player->native_target_presentation_consecutive_failures = 0;
+    player->native_target_presentation_last_error.clear();
   }
 }
 
@@ -143,11 +143,11 @@ void commit_target_ring_locked(VPMacOSNativePlayer* player,
       width,
       height,
       max_track_slots);
-  player->last_renderer_owned_presentation_succeeded = false;
-  player->last_renderer_owned_frame_info_available = false;
-  player->last_renderer_owned_frame_info = {};
-  player->renderer_owned_presentation_consecutive_failures = 0;
-  player->renderer_owned_presentation_last_error.clear();
+  player->last_native_target_presentation_succeeded = false;
+  player->last_native_target_frame_info_available = false;
+  player->last_native_target_frame_info = {};
+  player->native_target_presentation_consecutive_failures = 0;
+  player->native_target_presentation_last_error.clear();
 }
 
 }  // namespace
@@ -205,16 +205,16 @@ int set_metal_presentation_target(
       }
       const bool installed =
           refresh_now
-              ? player->renderer->update_headless_output(
+              ? player->renderer->update_offscreen_target(
                     pixel_buffer, width, height, clamped_track_slots)
-              : player->renderer->install_headless_output(
+              : player->renderer->install_offscreen_target(
                     pixel_buffer, width, height, clamped_track_slots);
       if (!installed) {
         renderer_install_failed = true;
         renderer_error = player->renderer->presentation_backend_last_error();
       }
       if (renderer_install_failed && renderer_error.empty()) {
-        renderer_error = "failed to install renderer-owned Metal presentation target";
+        renderer_error = "failed to install native Metal presentation target";
       }
     }
   }
@@ -327,12 +327,12 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
     if (renderer_was_active) {
       if (!target_changed) {
         if (displayed_pixel_buffer) {
-          player->renderer->mark_headless_output_displayed(displayed_pixel_buffer);
+          player->renderer->mark_offscreen_target_displayed(displayed_pixel_buffer);
         }
-        player->renderer->protect_headless_output(protected_pixel_buffer);
+        player->renderer->protect_offscreen_target(protected_pixel_buffer);
         return 0;
       }
-      if (!player->renderer->install_headless_output_ring(pixel_buffers,
+      if (!player->renderer->install_offscreen_target_ring(pixel_buffers,
                                                           pixel_buffer_count,
                                                           displayed_pixel_buffer,
                                                           protected_pixel_buffer,
@@ -343,7 +343,7 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
         renderer_error = player->renderer->presentation_backend_last_error();
       }
       if (renderer_install_failed && renderer_error.empty()) {
-        renderer_error = "failed to install renderer-owned Metal presentation target ring";
+        renderer_error = "failed to install native Metal presentation target ring";
       }
     }
   }
@@ -381,7 +381,7 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
         player->presentation_condition.notify_all();
         return -1;
       }
-      if (!player->renderer->install_headless_output_ring(pixel_buffers,
+      if (!player->renderer->install_offscreen_target_ring(pixel_buffers,
                                                           pixel_buffer_count,
                                                           displayed_pixel_buffer,
                                                           protected_pixel_buffer,
@@ -393,7 +393,7 @@ int VPMacOSNativePlayerInstallMetalPresentationTargetRing(
             player->renderer->presentation_backend_last_error();
         if (install_error.empty()) {
           install_error =
-              "failed to install renderer-owned Metal presentation target ring";
+              "failed to install native Metal presentation target ring";
         }
         player->record_presentation_failure_locked(install_error, true);
         player->presentation_condition.notify_all();
@@ -418,7 +418,7 @@ void VPMacOSNativePlayerMarkMetalPresentationTargetDisplayed(
   {
     std::lock_guard<std::mutex> player_lock(player->mutex);
     if (player->renderer_active_locked()) {
-      player->renderer->mark_headless_output_displayed(pixel_buffer);
+      player->renderer->mark_offscreen_target_displayed(pixel_buffer);
       return;
     }
   }
@@ -439,7 +439,7 @@ void VPMacOSNativePlayerProtectMetalPresentationTarget(
   {
     std::lock_guard<std::mutex> player_lock(player->mutex);
     if (player->renderer_active_locked()) {
-      player->renderer->protect_headless_output(pixel_buffer);
+      player->renderer->protect_offscreen_target(pixel_buffer);
       return;
     }
   }
@@ -460,7 +460,7 @@ void VPMacOSNativePlayerReleaseMetalPresentationTarget(
   {
     std::lock_guard<std::mutex> player_lock(player->mutex);
     if (player->renderer_active_locked()) {
-      player->renderer->release_headless_output(pixel_buffer);
+      player->renderer->release_offscreen_target(pixel_buffer);
       return;
     }
   }
@@ -483,15 +483,15 @@ void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player
     spdlog::info(
         "[MacOSFrameRefresh] clear_target generation={} upload={} failures={}",
         player->presentation_target_generation,
-        player->renderer_owned_presentation_upload_count,
-        player->renderer_owned_presentation_draw_failure_count);
+        player->native_target_presentation_upload_count,
+        player->native_target_presentation_draw_failure_count);
     player->record_presentation_failure_locked(
-        "renderer-owned Metal presentation target was cleared", false);
+        "native Metal presentation target was cleared", false);
   }
   player->presentation_condition.notify_all();
   std::lock_guard<std::mutex> player_lock(player->mutex);
   if (player->renderer_active_locked()) {
-    player->renderer->clear_headless_output();
+    player->renderer->clear_offscreen_target();
   }
 }
 
@@ -501,7 +501,7 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
     char* error,
     size_t error_size) {
   if (!player || !out) {
-    write_error(error, error_size, "player or renderer-owned frame output is null");
+    write_error(error, error_size, "player or native-target frame output is null");
     return -1;
   }
   VPMacOSNativeFrameInfoInit(out);
@@ -514,18 +514,18 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
     }
   }
   std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
-  if (!player->last_renderer_owned_frame_info_available) {
+  if (!player->last_native_target_frame_info_available) {
     write_error(error, error_size, "shared macOS renderer has not presented a frame yet");
     return -1;
   }
-  *out = player->last_renderer_owned_frame_info;
+  *out = player->last_native_target_frame_info;
   write_error(error, error_size, "");
   return 0;
 }
 
 namespace {
 
-int request_renderer_owned_frame_refresh(
+int request_native_target_frame_refresh(
     VPMacOSNativePlayer* player,
     int32_t timeout_ms,
     uint32_t flags,
@@ -534,7 +534,7 @@ int request_renderer_owned_frame_refresh(
     size_t error_size) {
   const auto profiler_start = std::chrono::steady_clock::now();
   if (!player || !out) {
-    write_error(error, error_size, "player or renderer-owned frame output is null");
+    write_error(error, error_size, "player or native-target frame output is null");
     return -1;
   }
   VPMacOSNativeFrameInfoInit(out);
@@ -574,12 +574,12 @@ int request_renderer_owned_frame_refresh(
         player->presentation_target_width <= 0 ||
         player->presentation_target_height <= 0) {
       write_error(error, error_size,
-                  "renderer-owned Metal presentation target is not installed");
+                  "native Metal presentation target is not installed");
       return -1;
     }
-    baseline_upload_count = player->renderer_owned_presentation_upload_count;
+    baseline_upload_count = player->native_target_presentation_upload_count;
     baseline_draw_failure_count =
-        player->renderer_owned_presentation_draw_failure_count;
+        player->native_target_presentation_draw_failure_count;
     baseline_target_generation = player->presentation_target_generation;
     baseline_target_address = pointer_address(player->presentation_target_pixel_buffer);
     baseline_target_addresses.clear();
@@ -587,8 +587,8 @@ int request_renderer_owned_frame_refresh(
     for (void* target : player->presentation_target_pixel_buffers) {
       baseline_target_addresses.push_back(pointer_address(target));
     }
-    baseline_frame_available = player->last_renderer_owned_frame_info_available;
-    refresh_min_pts_us = player->renderer_owned_refresh_min_pts_us;
+    baseline_frame_available = player->last_native_target_frame_info_available;
+    refresh_min_pts_us = player->native_target_refresh_min_pts_us;
     if (suppress_frame_callback) {
       ++player->manual_refresh_callback_suppression_count;
     }
@@ -619,7 +619,7 @@ int request_renderer_owned_frame_refresh(
       refresh_deferred_by_backpressure = false;
       const char* refresh_reason =
           refresh_min_pts_us >= 0 ? "seek_frame_refresh"
-                                  : "macos-renderer-owned-refresh";
+                                  : "macos-native-target-refresh";
       refresh_submitted =
           player->renderer->request_frame_refresh(refresh_reason);
       if (!refresh_submitted) {
@@ -652,13 +652,13 @@ int request_renderer_owned_frame_refresh(
   const bool enforce_refresh_pts_window =
       refresh_min_pts_us >= 0 || (!baseline_frame_available && refresh_clock_us > 0);
   const auto frame_matches_refresh_request = [&]() {
-    if (!player->last_renderer_owned_frame_info_available) {
+    if (!player->last_native_target_frame_info_available) {
       return false;
     }
     constexpr int64_t kRefreshPtsLowerToleranceUs = 500'000;
     constexpr int64_t kRefreshPtsUpperToleranceUs = 1'500'000;
     if (refresh_min_pts_us >= 0) {
-      const int64_t pts_us = player->last_renderer_owned_frame_info.pts_us;
+      const int64_t pts_us = player->last_native_target_frame_info.pts_us;
       return pts_us >= refresh_min_pts_us &&
              pts_us <= refresh_min_pts_us + kRefreshPtsLowerToleranceUs +
                            kRefreshPtsUpperToleranceUs;
@@ -666,22 +666,22 @@ int request_renderer_owned_frame_refresh(
     if (!enforce_refresh_pts_window) {
       return true;
     }
-    const int64_t pts_us = player->last_renderer_owned_frame_info.pts_us;
+    const int64_t pts_us = player->last_native_target_frame_info.pts_us;
     return pts_us >= refresh_clock_us - kRefreshPtsLowerToleranceUs &&
            pts_us <= refresh_clock_us + kRefreshPtsUpperToleranceUs;
   };
   const auto frame_matches_layout_request = [&]() {
     return expected_layout_revision == 0 ||
-           player->last_renderer_owned_layout_revision >=
+           player->last_native_target_layout_revision >=
                expected_layout_revision;
   };
   const auto frame_matches_target_request = [&]() {
-    if (!player->last_renderer_owned_frame_info_available ||
+    if (!player->last_native_target_frame_info_available ||
         (baseline_target_address == 0 && baseline_target_addresses.empty())) {
       return false;
     }
     const uint64_t frame_target =
-        player->last_renderer_owned_frame_info.target_pixel_buffer_address;
+        player->last_native_target_frame_info.target_pixel_buffer_address;
     if (!baseline_target_addresses.empty()) {
       return std::find(baseline_target_addresses.begin(),
                        baseline_target_addresses.end(),
@@ -691,12 +691,12 @@ int request_renderer_owned_frame_refresh(
   };
   const auto completed = [&]() {
     return player->presentation_target_generation != baseline_target_generation ||
-           (player->renderer_owned_presentation_upload_count >
+           (player->native_target_presentation_upload_count >
                 baseline_upload_count &&
             frame_matches_target_request() &&
             frame_matches_layout_request() &&
             frame_matches_refresh_request()) ||
-           player->renderer_owned_presentation_draw_failure_count >
+           player->native_target_presentation_draw_failure_count >
                baseline_draw_failure_count;
   };
   if (bounded_timeout_ms > 0) {
@@ -742,17 +742,17 @@ int request_renderer_owned_frame_refresh(
           refresh_attempts);
     }
     write_error(error, error_size,
-                "renderer-owned Metal presentation target changed during refresh");
+                "native Metal presentation target changed during refresh");
     release_manual_refresh_callback_suppression_locked();
     return -1;
   }
-  if (player->renderer_owned_presentation_upload_count > baseline_upload_count &&
+  if (player->native_target_presentation_upload_count > baseline_upload_count &&
       frame_matches_target_request() &&
       frame_matches_layout_request() &&
       frame_matches_refresh_request()) {
-    *out = player->last_renderer_owned_frame_info;
+    *out = player->last_native_target_frame_info;
     if (refresh_min_pts_us >= 0) {
-      player->renderer_owned_refresh_min_pts_us = -1;
+      player->native_target_refresh_min_pts_us = -1;
     }
     const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - profiler_start).count();
@@ -764,7 +764,7 @@ int request_renderer_owned_frame_refresh(
           bounded_timeout_ms,
           refresh_attempts,
           baseline_upload_count,
-          player->renderer_owned_presentation_upload_count,
+          player->native_target_presentation_upload_count,
           out->pts_us,
           refresh_clock_us);
     }
@@ -780,12 +780,12 @@ int request_renderer_owned_frame_refresh(
           elapsed_ms,
           refresh_attempts,
           baseline_upload_count,
-          player->renderer_owned_presentation_upload_count);
+          player->native_target_presentation_upload_count);
     }
     write_error(error, error_size, "");
     return 0;
   }
-  if (player->renderer_owned_presentation_draw_failure_count >
+  if (player->native_target_presentation_draw_failure_count >
       baseline_draw_failure_count) {
     const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - profiler_start).count();
@@ -795,8 +795,8 @@ int request_renderer_owned_frame_refresh(
           elapsed_ms,
           bounded_timeout_ms,
           refresh_attempts,
-          player->renderer_owned_presentation_draw_failure_count,
-          player->renderer_owned_presentation_last_error);
+          player->native_target_presentation_draw_failure_count,
+          player->native_target_presentation_last_error);
     }
     spdlog::warn(
         "[MacOSFrameRefresh] draw_failed elapsed_ms={} timeout_ms={} attempts={} "
@@ -806,12 +806,12 @@ int request_renderer_owned_frame_refresh(
         refresh_attempts,
         refresh_min_pts_us,
         baseline_upload_count,
-        player->renderer_owned_presentation_upload_count,
-        player->renderer_owned_presentation_last_error);
+        player->native_target_presentation_upload_count,
+        player->native_target_presentation_last_error);
     write_error(error, error_size,
-                player->renderer_owned_presentation_last_error.empty()
-                    ? "renderer-owned Metal frame refresh failed"
-                    : player->renderer_owned_presentation_last_error);
+                player->native_target_presentation_last_error.empty()
+                    ? "native Metal frame refresh failed"
+                    : player->native_target_presentation_last_error);
     return -1;
   }
   const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -824,9 +824,9 @@ int request_renderer_owned_frame_refresh(
         bounded_timeout_ms,
         refresh_attempts,
         baseline_upload_count,
-        player->renderer_owned_presentation_upload_count,
+        player->native_target_presentation_upload_count,
         baseline_draw_failure_count,
-        player->renderer_owned_presentation_draw_failure_count,
+        player->native_target_presentation_draw_failure_count,
         refresh_clock_us);
   }
   spdlog::warn(
@@ -840,9 +840,9 @@ int request_renderer_owned_frame_refresh(
       refresh_min_pts_us,
       refresh_clock_us,
       baseline_upload_count,
-      player->renderer_owned_presentation_upload_count,
+      player->native_target_presentation_upload_count,
       baseline_draw_failure_count,
-      player->renderer_owned_presentation_draw_failure_count,
+      player->native_target_presentation_draw_failure_count,
       refresh_deferred_by_backpressure,
       last_refresh_backpressure_error,
       last_refresh_renderer_error);
@@ -851,7 +851,7 @@ int request_renderer_owned_frame_refresh(
     write_error(error, error_size, last_refresh_backpressure_error);
   } else {
     write_error(error, error_size,
-                "renderer-owned Metal frame refresh timed out");
+                "native Metal frame refresh timed out");
   }
   release_manual_refresh_callback_suppression_locked();
   return -2;
@@ -859,24 +859,24 @@ int request_renderer_owned_frame_refresh(
 
 }  // namespace
 
-int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+int VPMacOSNativePlayerRequestNativeTargetFrameRefresh(
     VPMacOSNativePlayer* player,
     int32_t timeout_ms,
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size) {
-  return request_renderer_owned_frame_refresh(player, timeout_ms, 0, out, error,
+  return request_native_target_frame_refresh(player, timeout_ms, 0, out, error,
                                               error_size);
 }
 
-int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
+int VPMacOSNativePlayerRequestNativeTargetFrameRefreshWithOptions(
     VPMacOSNativePlayer* player,
     int32_t timeout_ms,
     uint32_t flags,
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size) {
-  return request_renderer_owned_frame_refresh(player, timeout_ms, flags, out,
+  return request_native_target_frame_refresh(player, timeout_ms, flags, out,
                                                error, error_size);
 }
 

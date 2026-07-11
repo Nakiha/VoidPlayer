@@ -139,43 +139,39 @@ public:
     /// Get a snapshot of the current layout state (thread-safe).
     LayoutState layout() const;
 
-    // -- Headless mode: texture sharing --
+    // -- Offscreen target publication --
 
-    /// Set callback invoked after each frame is drawn in headless mode.
+    /// Set callback invoked after each frame is drawn in offscreen mode.
     void set_frame_callback(RendererFrameCallback cb);
     void set_frame_failure_callback(std::function<void(const char*)> cb);
 
     /// Set callback invoked for low-frequency renderer/player events.
     void set_event_callback(RendererEventCallback cb);
 
-    /// Get actual texture dimensions (may lag behind resize request).
-    int texture_width() const;
-    int texture_height() const;
-
     bool prewarm_presentation_target(int width, int height);
 
-    /// Resize the offscreen shared texture (headless mode only).
+    /// Resize the offscreen target (offscreen mode only).
     /// Stores pending dimensions; render loop applies at controlled rate.
     void resize(int width, int height);
-    bool update_headless_output(void* output,
+    bool update_offscreen_target(void* output,
                                 int width,
                                 int height,
                                 int max_track_slots);
-    bool install_headless_output(void* output,
+    bool install_offscreen_target(void* output,
                                  int width,
                                  int height,
                                  int max_track_slots);
-    bool install_headless_output_ring(const void* const* pixel_buffers,
+    bool install_offscreen_target_ring(const void* const* pixel_buffers,
                                       size_t pixel_buffer_count,
                                       void* displayed_pixel_buffer,
                                       void* protected_pixel_buffer,
                                       int width,
                                       int height,
                                       int max_track_slots);
-    void mark_headless_output_displayed(void* pixel_buffer);
-    void protect_headless_output(void* pixel_buffer);
-    void release_headless_output(void* pixel_buffer);
-    void clear_headless_output();
+    void mark_offscreen_target_displayed(void* pixel_buffer);
+    void protect_offscreen_target(void* pixel_buffer);
+    void release_offscreen_target(void* pixel_buffer);
+    void clear_offscreen_target();
 
     /// Request an immediate redraw of the currently presentable frame.
     /// Returns false when the renderer cannot issue a refresh command.
@@ -187,7 +183,7 @@ public:
                                      PresentationBackendFrameInfo* out,
                                      std::string* error);
 
-    /// Capture the currently published headless frame as packed BGRA bytes.
+    /// Capture the currently published offscreen frame as packed BGRA bytes.
     bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height);
     bool capture_front_buffer_region(int x,
                                      int y,

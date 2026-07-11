@@ -93,7 +93,6 @@ class AutomationProbe {
       'unattributed=${formatMb(unattributedBytes)}MB',
       'decoderPool=${formatMb(bytes('decoderPoolBytes'))}MB',
       'presenter=${formatMb(bytes('presenterTextureBytes'))}MB',
-      'headless=${formatMb(bytes('headlessOutputBytes'))}MB',
       'seekSnapshot=${formatMb(bytes('exactSeekSnapshotBytes'))}MB',
       'overlay=${formatMb(bytes('analysisOverlayBytes'))}MB',
       'cpuFrames=${formatMb(bytes('cpuFrameBytes'))}MB',

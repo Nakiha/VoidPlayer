@@ -12,7 +12,7 @@ platform service 注入、MethodChannel/EventChannel 调用编排，以及平台
 
 - UI 只组合 widget 和 view model，不直接承载播放/布局业务。
 - 主窗口业务由 `MainWindowController` 组合多个 coordinator。
-- Native 播放、渲染与解码能力通过 `NativePlayerController` 暴露，Flutter 层不直接处理帧数据；Windows D3D11 shared texture 和 macOS CVPixelBuffer/FlutterTexture 都是平台细节。
+- Native 播放、渲染与解码能力通过 `NativePlayerController` 暴露，Flutter 层不直接处理帧数据；平台 native target 与 runner compose 都在平台边界内。
 - 跨平台主窗口在 `lib/main_window/`。Windows 专属能力集中在 `lib/windows/`，其中 analysis 窗口在 `lib/windows/analysis/`，跨窗口基础设施留在 `lib/windows/` 根目录。
 - macOS runner/platform services 由 `macos/` 和平台能力开关承接；native playback 已可用，analysis UI/IPC 仍 capability-gated。
 
@@ -32,7 +32,7 @@ platform service 注入、MethodChannel/EventChannel 调用编排，以及平台
 | [Action 维护](docs/ACTION_MAINTENANCE.md) | 新增/修改/移除 Action 与 Assert 的维护清单 |
 | [AXTree 维护](docs/AXTREE_MAINTENANCE.md) | 主窗口 / analysis 窗口 Semantics、UIA、识图分割维护规则 |
 | [UI 自动化测试](docs/UI_TESTING.md) | `ui_tests/` 目录分区、回归选择、补测试规则 |
-| [macOS Runner](../macos/doc.md) | macOS Cocoa runner、FlutterTexture/CVPixelBuffer、Metal presentation、release gate |
+| [macOS Runner](../macos/doc.md) | macOS Cocoa runner、native CVPixelBuffer target ring、Metal composition、release gate |
 | [VoidPlayerCli](../installer/windows/docs/cli.md) | 发布包内只读 VAC2/VACHUNK cache 检查工具 |
 
 ## 常用开发命令

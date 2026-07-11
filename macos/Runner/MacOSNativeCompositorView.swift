@@ -44,7 +44,7 @@ final class MacOSNativeCompositorView: NSView {
 
   private var frameCount = 0
   private var lastVideoTextureAvailable = false
-  private var lastFlutterTextureAvailable = false
+  private var lastFlutterSurfaceAvailable = false
   private var lastCompositeSucceeded = false
   private var lastFailure = "not drawn"
   private var lastLoggedFailure = ""
@@ -281,7 +281,7 @@ final class MacOSNativeCompositorView: NSView {
     result["nativeCompositorVideoSourceChangeHz"] = videoSourceChangeRate.rateHz()
     result["nativeCompositorFlutterSourceChangeHz"] = flutterSourceChangeRate.rateHz()
     result["nativeCompositorVideoTextureAvailable"] = lastVideoTextureAvailable
-    result["nativeCompositorFlutterTextureAvailable"] = lastFlutterTextureAvailable
+    result["nativeCompositorFlutterSurfaceAvailable"] = lastFlutterSurfaceAvailable
     result["nativeCompositorLastCompositeSucceeded"] = lastCompositeSucceeded
     result["nativeCompositorLastFailure"] = lastFailure
     result["nativeCompositorFlutterAlphaAverageX1000"] = lastFlutterAlphaAverageX1000
@@ -335,10 +335,10 @@ final class MacOSNativeCompositorView: NSView {
       videoAcquireDuration.record(Self.elapsedNs(from: videoAcquireStartNs))
 
       let flutterAcquireStartNs = DispatchTime.now().uptimeNanoseconds
-      guard let flutterSnapshot = currentFlutterMetalTexture() else {
+      guard let flutterSnapshot = currentFlutterSurface() else {
         flutterAcquireDuration.record(Self.elapsedNs(from: flutterAcquireStartNs))
         setHiddenOnMain(true)
-        recordFailure("no Flutter texture")
+        recordFailure("no Flutter surface")
         return
       }
       flutterAcquireDuration.record(Self.elapsedNs(from: flutterAcquireStartNs))
@@ -424,7 +424,7 @@ final class MacOSNativeCompositorView: NSView {
       }
       displayedLayoutRevision = max(displayedLayoutRevision, videoSnapshot.layoutRevision)
       lastVideoTextureAvailable = true
-      lastFlutterTextureAvailable = true
+      lastFlutterSurfaceAvailable = true
       lastCompositeSucceeded = true
       lastFailure = ""
       lastVideoSRGBToLinearEnabled = colorFlags.y > 0.5
@@ -524,14 +524,14 @@ final class MacOSNativeCompositorView: NSView {
     )
   }
 
-  private func currentFlutterMetalTexture() -> FlutterTextureSnapshot? {
+  private func currentFlutterSurface() -> FlutterSurfaceSnapshot? {
     guard let info = engine?.voidPlayerHDRCurrentFlutterSurfaceInfos().first,
           let texture = info["texture"] as? MTLTexture else {
-      lastFlutterTextureAvailable = false
+      lastFlutterSurfaceAvailable = false
       return nil
     }
     maybeUpdateFlutterAlphaMetrics(info: info)
-    return FlutterTextureSnapshot(
+    return FlutterSurfaceSnapshot(
       texture: texture,
       sourceKey: flutterSurfaceSourceKey(info: info, texture: texture)
     )
@@ -736,7 +736,7 @@ final class MacOSNativeCompositorView: NSView {
     let layoutRevision: UInt64
   }
 
-  private struct FlutterTextureSnapshot {
+  private struct FlutterSurfaceSnapshot {
     let texture: MTLTexture
     let sourceKey: UInt64
   }

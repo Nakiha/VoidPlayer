@@ -40,16 +40,16 @@ public:
     virtual const char* name() const = 0;
     virtual bool initialize(const PresentationBackendConfig& config) = 0;
     virtual void shutdown() = 0;
-    virtual bool headless() const = 0;
-    virtual bool renderer_manages_headless_publish() const { return false; }
-    virtual bool begin_renderer_managed_headless_frame() { return true; }
-    virtual std::function<void()> publish_renderer_managed_headless_frame(const char*) {
+    virtual bool offscreen() const = 0;
+    virtual bool renderer_manages_offscreen_publish() const { return false; }
+    virtual bool begin_renderer_managed_offscreen_frame() { return true; }
+    virtual std::function<void()> publish_renderer_managed_offscreen_frame(const char*) {
         return {};
     }
-    virtual bool resize_renderer_managed_headless_output(int, int) { return false; }
-    virtual bool prewarm_renderer_managed_headless_output(int, int) { return false; }
-    virtual void cleanup_renderer_managed_headless_pending_buffers() {}
-    virtual bool set_renderer_managed_headless_frame_callback(std::function<void()>) {
+    virtual bool resize_renderer_managed_offscreen_target(int, int) { return false; }
+    virtual bool prewarm_renderer_managed_offscreen_target(int, int) { return false; }
+    virtual void cleanup_renderer_managed_offscreen_pending_buffers() {}
+    virtual bool set_renderer_managed_offscreen_frame_callback(std::function<void()>) {
         return false;
     }
     virtual bool completes_draw_asynchronously() const { return false; }
@@ -61,18 +61,18 @@ public:
     virtual bool present_swap_chain(int) { return false; }
     virtual void reset_track(size_t) {}
     virtual void move_track(size_t, size_t) {}
-    virtual bool update_headless_output(void*, int, int, int) { return false; }
-    virtual bool update_headless_output_ring(const void* const*,
+    virtual bool update_offscreen_target(void*, int, int, int) { return false; }
+    virtual bool update_offscreen_target_ring(const void* const*,
                                              size_t,
                                              void*,
                                              void*,
                                              int,
                                              int,
                                              int) { return false; }
-    virtual void mark_headless_output_displayed(void*) {}
-    virtual void protect_headless_output(void*) {}
-    virtual void release_headless_output(void*) {}
-    virtual void clear_headless_output() {}
+    virtual void mark_offscreen_target_displayed(void*) {}
+    virtual void protect_offscreen_target(void*) {}
+    virtual void release_offscreen_target(void*) {}
+    virtual void clear_offscreen_target() {}
     virtual bool update_sdr_white_level(double) { return false; }
     virtual void* native_render_device() const { return nullptr; }
     virtual void* native_render_command_queue() const { return nullptr; }

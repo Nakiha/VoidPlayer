@@ -55,7 +55,7 @@ final class MacOSNativeFramePump {
 
   func ensure(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge?,
+    texture: MacOSNativeTargetRing?,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
     presentationState: MacOSFramePresentationState
@@ -81,7 +81,7 @@ final class MacOSNativeFramePump {
     }
     guard targetInstalled else {
       presentationState.recordError()
-      NSLog("VoidPlayer macOS renderer-owned Metal presentation target unavailable")
+      NSLog("VoidPlayer macOS native Metal presentation target unavailable")
       return false
     }
     return true
@@ -89,14 +89,14 @@ final class MacOSNativeFramePump {
 
   func start(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge?,
+    texture: MacOSNativeTargetRing?,
     maxTrackSlots: Int,
     userData: UnsafeMutableRawPointer,
     presentationState: MacOSFramePresentationState
   ) -> Bool {
     stop(player: player)
     presentationState.resetFrameCounters()
-    player.resetRendererOwnedPresentationStats()
+    player.resetNativeTargetPresentationStats()
     texture?.resetNativeUploadBaseline()
     targetInstalled = false
     if !ensure(

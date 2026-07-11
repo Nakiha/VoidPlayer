@@ -10,9 +10,9 @@
 2.05, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-software
 2.1, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, true
 2.15, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationFallbackReason, software-decode
-2.205, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedPresentationActive, true
-2.21, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
-2.215, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+2.205, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeTargetPresentationActive, true
+2.21, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeTargetLastDrawSucceeded, true
+2.215, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetLastDrawError,
 2.22, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackDiagnosticCount, 1
 2.25, CAPTURE_VIEWPORT, vvc_software_start
 2.35, ASSERT_CAPTURE_NOT_BLACK, vvc_software_start, 0.01, 4.0
@@ -20,19 +20,19 @@
 6.5, ASSERT_POSITION_RANGE, 500000, 3000000
 6.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeDecodeFrameCount, 8
 6.65, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFramePresentationCount, 2
-6.66, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 2
-6.68, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeRendererOwnedUploadCount, 2
-6.69, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
+6.66, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameTargetPresentCount, 2
+6.68, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTargetUploadCount, 2
+6.69, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeTargetUploadFailureCount, 0, 0
 6.692, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, yuv
-6.693, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, yuv
-6.694, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorRange, limited
-6.6942, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorMatrix, bt709
-6.6944, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, sdr
-6.6946, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorPrimaries, bt709
+6.693, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetUploadStorageKind, yuv
+6.694, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetLastFrameColorRange, limited
+6.6942, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetLastFrameColorMatrix, bt709
+6.6944, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetLastFrameColorTransfer, sdr
+6.6946, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetLastFrameColorPrimaries, bt709
 6.695, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativePresentationTargetInstalled, true
 6.696, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameHostIntervalSampleCount, 1
 6.697, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameExpectedIntervalUs, 1
-6.698, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedRatioX1000, 900
+6.698, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameTargetRatioX1000, 900
 6.8, CAPTURE_VIEWPORT, vvc_software_after_play
 6.9, ASSERT_CAPTURE_CHANGED, vvc_software_start, vvc_software_after_play
 7.0, PAUSE

@@ -123,23 +123,23 @@ void VPMacOSNativePlayerReleaseMetalPresentationTarget(
     VPMacOSNativePlayer* player,
     void* pixel_buffer);
 void VPMacOSNativePlayerClearMetalPresentationTarget(VPMacOSNativePlayer* player);
-int VPMacOSNativePlayerRendererOwnedPresentationActive(VPMacOSNativePlayer* player);
-int VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(VPMacOSNativePlayer* player);
-int VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(
+int VPMacOSNativePlayerNativeTargetPresentationActive(VPMacOSNativePlayer* player);
+int VPMacOSNativePlayerLastNativeTargetPresentationSucceeded(VPMacOSNativePlayer* player);
+int VPMacOSNativePlayerCopyLastNativeTargetFrameInfo(
     VPMacOSNativePlayer* player,
     VPMacOSNativeFrameInfo* out);
-int VPMacOSNativePlayerCopyRendererOwnedPresentationState(
+int VPMacOSNativePlayerCopyNativeTargetPresentationState(
     VPMacOSNativePlayer* player,
-    VPMacOSNativeRendererOwnedPresentationState* out);
+    VPMacOSNativeTargetPresentationState* out);
 int VPMacOSNativePlayerCopyTrackDiagnostics(
     VPMacOSNativePlayer* player,
     VPMacOSNativeTrackDiagnosticInfo* out,
     size_t capacity,
     size_t* out_count);
-void VPMacOSNativePlayerResetRendererOwnedPresentationStats(VPMacOSNativePlayer* player);
-uint64_t VPMacOSNativePlayerRendererOwnedPresentationUploadCount(
+void VPMacOSNativePlayerResetNativeTargetPresentationStats(VPMacOSNativePlayer* player);
+uint64_t VPMacOSNativePlayerNativeTargetPresentationUploadCount(
     VPMacOSNativePlayer* player);
-uint64_t VPMacOSNativePlayerRendererOwnedPresentationFailureCount(
+uint64_t VPMacOSNativePlayerNativeTargetPresentationFailureCount(
     VPMacOSNativePlayer* player);
 int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
     VPMacOSNativePlayer* player,
@@ -149,13 +149,13 @@ int VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
 enum {
   VPMacOSNativeFrameRefreshSuppressFrameCallback = 1u << 0,
 };
-int VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(
+int VPMacOSNativePlayerRequestNativeTargetFrameRefresh(
     VPMacOSNativePlayer* player,
     int32_t timeout_ms,
     VPMacOSNativeFrameInfo* out,
     char* error,
     size_t error_size);
-int VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
+int VPMacOSNativePlayerRequestNativeTargetFrameRefreshWithOptions(
     VPMacOSNativePlayer* player,
     int32_t timeout_ms,
     uint32_t flags,

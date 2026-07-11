@@ -14,7 +14,7 @@
 3.28, ASSERT_NATIVE_DIAGNOSTIC_BOOL, macOSPresentationEDROutputEnabled, false
 3.3, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeCompositorEDREnabled, false
 3.32, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeCompositorVideoPixelFormat, 32BGRA
-3.34, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastFrameColorTransfer, sdr
+3.34, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetLastFrameColorTransfer, sdr
 3.4, CAPTURE_WINDOW, native_auto_sdr_policy
 3.5, ASSERT_CAPTURE_NOT_BLACK, native_auto_sdr_policy, 0.01, 4.0
 3.7, QUIT, 0

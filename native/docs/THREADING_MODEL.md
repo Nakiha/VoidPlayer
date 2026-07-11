@@ -54,8 +54,8 @@ NativePlayer / Renderer command surface
 - Uses the selected hardware provider or software decoder.
 - Windows D3D11VA may serialize immediate-context access through the backend
   device mutex depending on decode device mode.
-- macOS VideoToolbox preserves `CVPixelBuffer` frames for the renderer-owned
-  native-metal path when the codec/pixel format is supported, and otherwise falls back
+- macOS VideoToolbox preserves `CVPixelBuffer` frames for the native-target
+  native Metal path when the codec/pixel format is supported, and otherwise falls back
   to explicit software or hwdownload packages.
 - Does not call renderer public lifecycle APIs and does not access platform
   texture publication locks directly.
@@ -90,7 +90,7 @@ NativePlayer / Renderer command surface
   releases the next interaction tick; transient ring pressure retries only the
   latest revision.
 - macOS seek/step/startup/paused/EOF refresh calls install or validate the
-  renderer-owned target, release the Swift texture lock, then request native
+  native target, release the Swift texture lock, then request native
   refresh completion. Swift does not own playback clock, seek, loop, layout, or
   decode policy.
 
@@ -173,17 +173,17 @@ interface. Platform-specific ownership is split as follows:
 
 - Native owns the Metal device, command queue, `CVMetalTextureCache`, package
   upload, draw validation, presentation state, and refresh completion.
-- Swift owns `CVPixelBuffer` creation/retention, Flutter texture registration,
-  and `markTextureFrameAvailable` notifications.
+- Swift owns `CVPixelBuffer` ring creation/retention, stable target publication,
+  and runner compositor notification.
 - Swift installs or refreshes the target under a short texture lock, releases
   that lock, then calls
-  `VPMacOSNativePlayerRequestRendererOwnedFrameRefresh(...)`.
+  `VPMacOSNativePlayerRequestNativeTargetFrameRefresh(...)`.
 - Native waits on condition-style completion keyed by target generation, upload
   count, failure count, and last error. Success and failure callbacks wake
   waiters after renderer locks are released.
 
 `VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(...)` is a compatibility
-entry for copying information about the most recent renderer-owned frame. It is
+entry for copying information about the most recent native-target frame. It is
 not the normal active refresh command.
 
 ## Renderer Component Boundaries

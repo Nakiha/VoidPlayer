@@ -69,7 +69,7 @@ bool first_frame_info_from_decision(const PresentDecision& decision,
 
 void Renderer::Impl::set_frame_callback(RendererFrameCallback cb) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (presentation_.set_renderer_managed_headless_frame_callback(cb)) {
+    if (presentation_.set_renderer_managed_offscreen_frame_callback(cb)) {
         return;
     }
     presentation_.set_frame_callback(std::move(cb));
@@ -96,7 +96,7 @@ bool Renderer::Impl::update_presentation_sdr_white_level(double nits) {
 
 bool Renderer::Impl::prewarm_presentation_target(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless() || !presentation_.has_backend()) return false;
+    if (!surface_state_.offscreen() || !presentation_.has_backend()) return false;
     const auto validation =
         validate_renderer_dimensions(width, height, "prewarm dimensions");
     if (!validation.ok) {
@@ -104,12 +104,12 @@ bool Renderer::Impl::prewarm_presentation_target(int width, int height) {
                      validation.message);
         return false;
     }
-    return presentation_.prewarm_renderer_managed_headless_output(width, height);
+    return presentation_.prewarm_renderer_managed_offscreen_target(width, height);
 }
 
 void Renderer::Impl::resize(int width, int height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless() || !presentation_.has_backend()) return;
+    if (!surface_state_.offscreen() || !presentation_.has_backend()) return;
     const auto validation = validate_renderer_dimensions(width, height, "resize dimensions");
     if (!validation.ok) {
         spdlog::warn("[Renderer] ignoring invalid resize: {}", validation.message);
@@ -118,7 +118,7 @@ void Renderer::Impl::resize(int width, int height) {
     loop_driver_.request_resize(width, height);
 }
 
-bool Renderer::Impl::update_headless_output(void* output,
+bool Renderer::Impl::update_offscreen_target(void* output,
                                       int width,
                                       int height,
                                       int max_track_slots) {
@@ -129,17 +129,17 @@ bool Renderer::Impl::update_headless_output(void* output,
     bool attempted_draw = false;
     {
         std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-        if (!surface_state_.headless() || !presentation_.has_backend()) {
+        if (!surface_state_.offscreen() || !presentation_.has_backend()) {
             return false;
         }
         const auto validation =
-            validate_renderer_dimensions(width, height, "headless output dimensions");
+            validate_renderer_dimensions(width, height, "offscreen output dimensions");
         if (!validation.ok) {
-            spdlog::warn("[Renderer] ignoring invalid headless output: {}",
+            spdlog::warn("[Renderer] ignoring invalid offscreen output: {}",
                          validation.message);
             return false;
         }
-        if (!presentation_.update_headless_output(
+        if (!presentation_.update_offscreen_target(
                 output, width, height, max_track_slots)) {
             return false;
         }
@@ -168,7 +168,7 @@ bool Renderer::Impl::update_headless_output(void* output,
             attempted_draw = true;
             std::lock_guard<std::recursive_mutex> ctx_lock(presentation_.device_mutex());
             drew = presentation_.draw_frame(snapshot,
-                                            "install_headless_output",
+                                            "install_offscreen_target",
                                             presentation_metrics_,
                                             presentation_overlay_hooks());
             if (drew) {
@@ -195,22 +195,22 @@ bool Renderer::Impl::update_headless_output(void* output,
     return true;
 }
 
-bool Renderer::Impl::install_headless_output(void* output,
+bool Renderer::Impl::install_offscreen_target(void* output,
                                        int width,
                                        int height,
                                        int max_track_slots) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless() || !presentation_.has_backend()) {
+    if (!surface_state_.offscreen() || !presentation_.has_backend()) {
         return false;
     }
     const auto validation =
-        validate_renderer_dimensions(width, height, "headless output dimensions");
+        validate_renderer_dimensions(width, height, "offscreen output dimensions");
     if (!validation.ok) {
-        spdlog::warn("[Renderer] ignoring invalid headless output: {}",
+        spdlog::warn("[Renderer] ignoring invalid offscreen output: {}",
                      validation.message);
         return false;
     }
-    if (!presentation_.update_headless_output(
+    if (!presentation_.update_offscreen_target(
             output, width, height, max_track_slots)) {
         return false;
     }
@@ -232,7 +232,7 @@ bool Renderer::Impl::install_headless_output(void* output,
     return true;
 }
 
-bool Renderer::Impl::install_headless_output_ring(const void* const* pixel_buffers,
+bool Renderer::Impl::install_offscreen_target_ring(const void* const* pixel_buffers,
                                             size_t pixel_buffer_count,
                                             void* displayed_pixel_buffer,
                                             void* protected_pixel_buffer,
@@ -240,17 +240,17 @@ bool Renderer::Impl::install_headless_output_ring(const void* const* pixel_buffe
                                             int height,
                                             int max_track_slots) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless() || !presentation_.has_backend()) {
+    if (!surface_state_.offscreen() || !presentation_.has_backend()) {
         return false;
     }
     const auto validation =
-        validate_renderer_dimensions(width, height, "headless output dimensions");
+        validate_renderer_dimensions(width, height, "offscreen output dimensions");
     if (!validation.ok) {
-        spdlog::warn("[Renderer] ignoring invalid headless output ring: {}",
+        spdlog::warn("[Renderer] ignoring invalid offscreen output ring: {}",
                      validation.message);
         return false;
     }
-    if (!presentation_.update_headless_output_ring(pixel_buffers,
+    if (!presentation_.update_offscreen_target_ring(pixel_buffers,
                                                    pixel_buffer_count,
                                                    displayed_pixel_buffer,
                                                    protected_pixel_buffer,
@@ -277,36 +277,36 @@ bool Renderer::Impl::install_headless_output_ring(const void* const* pixel_buffe
     return true;
 }
 
-void Renderer::Impl::mark_headless_output_displayed(void* pixel_buffer) {
+void Renderer::Impl::mark_offscreen_target_displayed(void* pixel_buffer) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless() || !presentation_.has_backend()) {
+    if (!surface_state_.offscreen() || !presentation_.has_backend()) {
         return;
     }
-    presentation_.mark_headless_output_displayed(pixel_buffer);
+    presentation_.mark_offscreen_target_displayed(pixel_buffer);
 }
 
-void Renderer::Impl::protect_headless_output(void* pixel_buffer) {
+void Renderer::Impl::protect_offscreen_target(void* pixel_buffer) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless() || !presentation_.has_backend()) {
+    if (!surface_state_.offscreen() || !presentation_.has_backend()) {
         return;
     }
-    presentation_.protect_headless_output(pixel_buffer);
+    presentation_.protect_offscreen_target(pixel_buffer);
 }
 
-void Renderer::Impl::release_headless_output(void* pixel_buffer) {
+void Renderer::Impl::release_offscreen_target(void* pixel_buffer) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless() || !presentation_.has_backend()) {
+    if (!surface_state_.offscreen() || !presentation_.has_backend()) {
         return;
     }
-    presentation_.release_headless_output(pixel_buffer);
+    presentation_.release_offscreen_target(pixel_buffer);
 }
 
-void Renderer::Impl::clear_headless_output() {
+void Renderer::Impl::clear_offscreen_target() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless() || !presentation_.has_backend()) {
+    if (!surface_state_.offscreen() || !presentation_.has_backend()) {
         return;
     }
-    presentation_.clear_headless_output();
+    presentation_.clear_offscreen_target();
 }
 
 bool Renderer::Impl::commit_paused_preview_frame(

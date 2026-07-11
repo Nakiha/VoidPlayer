@@ -1,4 +1,4 @@
-# macOS native smoke proving 4:2:2 H.264 does not enter the renderer-owned
+# macOS native smoke proving 4:2:2 H.264 does not enter the native-target
 # VideoToolbox direct path. VideoToolbox can produce a 422 CVPixelBuffer for
 # this stream, but VoidPlayer only supports 420 NV12/P010 direct surfaces today,
 # so preferHardware must fall back to software decode.

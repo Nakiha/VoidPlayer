@@ -4,7 +4,7 @@ import Foundation
 struct MacOSTransportContext {
   let nativeBackendActive: Bool
   let player: MacOSNativePlayerSession?
-  let texture: MacOSFlutterTextureBridge?
+  let texture: MacOSNativeTargetRing?
   let textureRegistered: Bool
   let playback: MacOSPlaybackController
   let presentationState: MacOSFramePresentationState

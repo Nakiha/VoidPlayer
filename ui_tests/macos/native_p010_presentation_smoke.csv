@@ -1,4 +1,4 @@
-# macOS runner smoke for 10-bit H.264 VideoToolbox P010 renderer-owned presentation.
+# macOS runner smoke for 10-bit H.264 VideoToolbox P010 native target presentation.
 # Run with:
 #   python dev.py mac-ui-test --build ui_tests/macos/native_p010_presentation_smoke.csv
 @WINDOW, 960, 540
@@ -7,7 +7,7 @@
 0.3, ADD_MEDIA, build/generated/macos/native_p010_presentation.mp4
 1.3, ASSERT_TRACK_COUNT, 1
 1.4, ASSERT_NATIVE_BACKEND, macos-native-player, true
-1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, metal
+1.5, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetBackendName, metal
 1.65, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeActive, true
 1.7, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
 1.75, ASSERT_NATIVE_DIAGNOSTIC_BOOL, softwareFallbackActive, false

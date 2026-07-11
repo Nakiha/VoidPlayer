@@ -4,8 +4,8 @@ Portable color and decode-path visual checks live here. These scripts should use
 small fixtures from `resources/video/` so they can run on any dev machine.
 
 The current portable coverage checks software decode vs preferred hardware
-decode by capturing the same frame through the full Flutter texture path and
-asserting that the final BGRA screenshots stay visually close.
+decode by capturing the same frame through the platform's final viewport path
+and asserting that the BGRA screenshots stay visually close.
 
 `hevc_fullrange_bt709_decode_mode_single_track_diff.csv` uses
 `resources/video/mhw_hevc_fullrange_bt709_3s.mp4`, a short stream-copied HEVC

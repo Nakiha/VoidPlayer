@@ -100,23 +100,23 @@ extension MacOSNativePlayerSession {
     VPMacOSNativePlayerClearMetalPresentationTarget(handle)
   }
 
-  func rendererOwnedPresentationActive() -> Bool {
-    VPMacOSNativePlayerRendererOwnedPresentationActive(handle) != 0
+  func nativeTargetPresentationActive() -> Bool {
+    VPMacOSNativePlayerNativeTargetPresentationActive(handle) != 0
   }
 
-  func lastRendererOwnedPresentationSucceeded() -> Bool {
-    VPMacOSNativePlayerLastRendererOwnedPresentationSucceeded(handle) != 0
+  func lastNativeTargetPresentationSucceeded() -> Bool {
+    VPMacOSNativePlayerLastNativeTargetPresentationSucceeded(handle) != 0
   }
 
-  func lastRendererOwnedFrameInfo() -> MacOSNativeFrameInfo? {
+  func lastNativeTargetFrameInfo() -> MacOSNativeFrameInfo? {
     var info = VPMacOSNativeFrameInfo()
-    guard VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(handle, &info) == 0 else {
+    guard VPMacOSNativePlayerCopyLastNativeTargetFrameInfo(handle, &info) == 0 else {
       return nil
     }
     return MacOSNativeFrameInfo(native: info)
   }
 
-  func copyLastRendererOwnedFrameInfo() throws -> MacOSNativeFrameInfo {
+  func copyLastNativeTargetFrameInfo() throws -> MacOSNativeFrameInfo {
     var info = VPMacOSNativeFrameInfo()
     var error = [CChar](repeating: 0, count: 1024)
     let ret = VPMacOSNativePlayerPresentCurrentFrameToMetalTarget(
@@ -129,7 +129,7 @@ extension MacOSNativePlayerSession {
       let message = String(cString: error)
       throw MacOSNativePlayerError.failed(
         message.isEmpty
-          ? "macOS renderer-owned presentation failed with code \(ret)"
+          ? "macOS native target presentation failed with code \(ret)"
           : message
       )
     }
@@ -139,13 +139,13 @@ extension MacOSNativePlayerSession {
     return MacOSNativeFrameInfo(native: info)
   }
 
-  func requestRendererOwnedFrameRefresh(
+  func requestNativeTargetFrameRefresh(
     timeoutMs: Int,
     suppressFrameCallback: Bool = false
   ) throws -> MacOSNativeFrameInfo {
     var info = VPMacOSNativeFrameInfo()
     var error = [CChar](repeating: 0, count: 1024)
-    let ret = VPMacOSNativePlayerRequestRendererOwnedFrameRefreshWithOptions(
+    let ret = VPMacOSNativePlayerRequestNativeTargetFrameRefreshWithOptions(
       handle,
       Int32(max(0, timeoutMs)),
       suppressFrameCallback ? UInt32(VPMacOSNativeFrameRefreshSuppressFrameCallback) : 0,
@@ -156,8 +156,8 @@ extension MacOSNativePlayerSession {
     if ret != 0 {
       let message = String(cString: error)
       let fallback = ret == -2
-        ? "renderer-owned Metal frame refresh timed out"
-        : "macOS renderer-owned presentation failed with code \(ret)"
+        ? "native Metal frame refresh timed out"
+        : "macOS native target presentation failed with code \(ret)"
       let finalMessage = message.isEmpty ? fallback : message
       if ret == -2 {
         throw MacOSNativePlayerError.transientFrameUnavailable(finalMessage)
@@ -188,15 +188,15 @@ extension MacOSNativePlayerSession {
     throw MacOSNativePlayerError.failed(message.isEmpty ? fallback : message)
   }
 
-  func resetRendererOwnedPresentationStats() {
-    VPMacOSNativePlayerResetRendererOwnedPresentationStats(handle)
+  func resetNativeTargetPresentationStats() {
+    VPMacOSNativePlayerResetNativeTargetPresentationStats(handle)
   }
 
-  func rendererOwnedPresentationUploadCount() -> Int {
-    Int(VPMacOSNativePlayerRendererOwnedPresentationUploadCount(handle))
+  func nativeTargetPresentationUploadCount() -> Int {
+    Int(VPMacOSNativePlayerNativeTargetPresentationUploadCount(handle))
   }
 
-  func rendererOwnedPresentationFailureCount() -> Int {
-    Int(VPMacOSNativePlayerRendererOwnedPresentationFailureCount(handle))
+  func nativeTargetPresentationFailureCount() -> Int {
+    Int(VPMacOSNativePlayerNativeTargetPresentationFailureCount(handle))
   }
 }

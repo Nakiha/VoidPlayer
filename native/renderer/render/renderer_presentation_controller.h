@@ -33,14 +33,14 @@ struct RendererPresentationDrawRequest {
 
     const RendererDrawSnapshot& snapshot;
     const char* source = nullptr;
-    bool headless = false;
+    bool offscreen = false;
     bool publish_swap_chain_after_sync_draw = false;
     const char* wait_idle_after_sync_draw_label = nullptr;
     const char* poll_device_removed_label = nullptr;
     bool check_device_lost_after_draw = false;
     PresentationMetricsStore& metrics;
     RendererPresentationOverlayHooks overlay_hooks;
-    std::function<bool()> should_abort_headless_publish;
+    std::function<bool()> should_abort_offscreen_publish;
     PresentationBackendAsyncDrawCompleted async_completion;
 };
 
@@ -76,14 +76,14 @@ struct RendererPresentationSubmitRequest {
 
     const RendererDrawSnapshot& snapshot;
     const char* source = nullptr;
-    bool headless = false;
+    bool offscreen = false;
     bool publish_swap_chain_after_sync_draw = false;
     const char* wait_idle_after_sync_draw_label = nullptr;
     const char* poll_device_removed_label = nullptr;
     bool check_device_lost_after_draw = false;
     PresentationMetricsStore& metrics;
     RendererPresentationOverlayHooks overlay_hooks;
-    std::function<bool()> should_abort_headless_publish;
+    std::function<bool()> should_abort_offscreen_publish;
     // Async completions may capture renderer-owned state through the caller's
     // context. The active backend must satisfy the PresentationBackend async
     // shutdown contract before renderer resource teardown can release it.
@@ -155,21 +155,21 @@ public:
     long device_removed_reason() const;
     void reset_track(size_t slot);
     void move_track(size_t from, size_t to);
-    bool update_headless_output(void* output,
+    bool update_offscreen_target(void* output,
                                 int width,
                                 int height,
                                 int max_track_slots);
-    bool update_headless_output_ring(const void* const* pixel_buffers,
+    bool update_offscreen_target_ring(const void* const* pixel_buffers,
                                      size_t pixel_buffer_count,
                                      void* displayed_pixel_buffer,
                                      void* protected_pixel_buffer,
                                      int width,
                                      int height,
                                      int max_track_slots);
-    void mark_headless_output_displayed(void* pixel_buffer);
-    void protect_headless_output(void* pixel_buffer);
-    void release_headless_output(void* pixel_buffer);
-    void clear_headless_output();
+    void mark_offscreen_target_displayed(void* pixel_buffer);
+    void protect_offscreen_target(void* pixel_buffer);
+    void release_offscreen_target(void* pixel_buffer);
+    void clear_offscreen_target();
     bool update_sdr_white_level(double nits);
 
     // Caller must hold device_mutex() when coordinating with surrounding
@@ -177,7 +177,7 @@ public:
     void wait_gpu_idle(const char* label, PresentationMetricsStore& metrics);
     // Caller must hold device_mutex() when coordinating with surrounding
     // presentation work.
-    bool draw_renderer_managed_headless_and_publish(
+    bool draw_renderer_managed_offscreen_and_publish(
         const RendererDrawSnapshot& snapshot,
         const char* source,
         PresentationMetricsStore& metrics,
@@ -206,12 +206,12 @@ public:
                                              int& region_width,
                                              int& region_height);
     RendererPresentationMemorySnapshot memory_snapshot() const;
-    bool resize_renderer_managed_headless_output(int width,
+    bool resize_renderer_managed_offscreen_target(int width,
                                                  int height,
                                                  PresentationMetricsStore& metrics);
-    bool prewarm_renderer_managed_headless_output(int width, int height);
-    void cleanup_renderer_managed_headless_pending_buffers();
-    bool set_renderer_managed_headless_frame_callback(
+    bool prewarm_renderer_managed_offscreen_target(int width, int height);
+    void cleanup_renderer_managed_offscreen_pending_buffers();
+    bool set_renderer_managed_offscreen_frame_callback(
         RendererFrameCallback callback);
 
     bool recover_device_loss(const char* reason, long removed_reason);

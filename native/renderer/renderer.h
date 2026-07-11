@@ -94,30 +94,27 @@ public:
     void set_frame_failure_callback(std::function<void(const char*)> cb);
     void set_event_callback(RendererEventCallback cb);
 
-    int texture_width() const;
-    int texture_height() const;
-
     bool prewarm_presentation_target(int width, int height);
     void resize(int width, int height);
-    bool update_headless_output(void* output,
+    bool update_offscreen_target(void* output,
                                 int width,
                                 int height,
                                 int max_track_slots);
-    bool install_headless_output(void* output,
+    bool install_offscreen_target(void* output,
                                  int width,
                                  int height,
                                  int max_track_slots);
-    bool install_headless_output_ring(const void* const* pixel_buffers,
+    bool install_offscreen_target_ring(const void* const* pixel_buffers,
                                       size_t pixel_buffer_count,
                                       void* displayed_pixel_buffer,
                                       void* protected_pixel_buffer,
                                       int width,
                                       int height,
                                       int max_track_slots);
-    void mark_headless_output_displayed(void* pixel_buffer);
-    void protect_headless_output(void* pixel_buffer);
-    void release_headless_output(void* pixel_buffer);
-    void clear_headless_output();
+    void mark_offscreen_target_displayed(void* pixel_buffer);
+    void protect_offscreen_target(void* pixel_buffer);
+    void release_offscreen_target(void* pixel_buffer);
+    void clear_offscreen_target();
 
     bool request_frame_refresh(const char* reason);
     bool request_interaction_frame();

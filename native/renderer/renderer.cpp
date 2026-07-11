@@ -204,14 +204,6 @@ void Renderer::set_event_callback(RendererEventCallback cb) {
     impl_->set_event_callback(std::move(cb));
 }
 
-int Renderer::texture_width() const {
-    return impl_->texture_width();
-}
-
-int Renderer::texture_height() const {
-    return impl_->texture_height();
-}
-
 bool Renderer::prewarm_presentation_target(int width, int height) {
     return impl_->prewarm_presentation_target(width, height);
 }
@@ -220,28 +212,28 @@ void Renderer::resize(int width, int height) {
     impl_->resize(width, height);
 }
 
-bool Renderer::update_headless_output(void* output,
+bool Renderer::update_offscreen_target(void* output,
                                       int width,
                                       int height,
                                       int max_track_slots) {
-    return impl_->update_headless_output(output, width, height, max_track_slots);
+    return impl_->update_offscreen_target(output, width, height, max_track_slots);
 }
 
-bool Renderer::install_headless_output(void* output,
+bool Renderer::install_offscreen_target(void* output,
                                        int width,
                                        int height,
                                        int max_track_slots) {
-    return impl_->install_headless_output(output, width, height, max_track_slots);
+    return impl_->install_offscreen_target(output, width, height, max_track_slots);
 }
 
-bool Renderer::install_headless_output_ring(const void* const* pixel_buffers,
+bool Renderer::install_offscreen_target_ring(const void* const* pixel_buffers,
                                             size_t pixel_buffer_count,
                                             void* displayed_pixel_buffer,
                                             void* protected_pixel_buffer,
                                             int width,
                                             int height,
                                             int max_track_slots) {
-    return impl_->install_headless_output_ring(pixel_buffers,
+    return impl_->install_offscreen_target_ring(pixel_buffers,
                                                pixel_buffer_count,
                                                displayed_pixel_buffer,
                                                protected_pixel_buffer,
@@ -250,20 +242,20 @@ bool Renderer::install_headless_output_ring(const void* const* pixel_buffers,
                                                max_track_slots);
 }
 
-void Renderer::mark_headless_output_displayed(void* pixel_buffer) {
-    impl_->mark_headless_output_displayed(pixel_buffer);
+void Renderer::mark_offscreen_target_displayed(void* pixel_buffer) {
+    impl_->mark_offscreen_target_displayed(pixel_buffer);
 }
 
-void Renderer::protect_headless_output(void* pixel_buffer) {
-    impl_->protect_headless_output(pixel_buffer);
+void Renderer::protect_offscreen_target(void* pixel_buffer) {
+    impl_->protect_offscreen_target(pixel_buffer);
 }
 
-void Renderer::release_headless_output(void* pixel_buffer) {
-    impl_->release_headless_output(pixel_buffer);
+void Renderer::release_offscreen_target(void* pixel_buffer) {
+    impl_->release_offscreen_target(pixel_buffer);
 }
 
-void Renderer::clear_headless_output() {
-    impl_->clear_headless_output();
+void Renderer::clear_offscreen_target() {
+    impl_->clear_offscreen_target();
 }
 
 bool Renderer::request_frame_refresh(const char* reason) {
@@ -305,16 +297,6 @@ bool Renderer::has_event_callback_for_test() const {
 
 void Renderer::enter_terminal_render_loop_error_for_test(const char* reason) {
     impl_->enter_terminal_render_loop_error_for_test(reason);
-}
-
-int Renderer::Impl::texture_width() const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    return surface_state_.width();
-}
-
-int Renderer::Impl::texture_height() const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    return surface_state_.height();
 }
 
 } // namespace vr

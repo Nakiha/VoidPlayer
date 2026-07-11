@@ -28,7 +28,7 @@ void write_error(char* error, size_t error_size, const std::string& message) {
 
 namespace {
 
-constexpr uint64_t kRendererOwnedIntervalSampleLimit = 256;
+constexpr uint64_t kNativeTargetIntervalSampleLimit = 256;
 constexpr uint64_t kTargetWarmupMaxIntervalNs = 250ull * 1000ull * 1000ull;
 
 bool env_enabled(const char* name) {
@@ -60,10 +60,10 @@ uint64_t percentile_95_ms(std::vector<uint64_t> samples_ns) {
 void append_interval_sample(std::vector<uint64_t>& samples_ns,
                             uint64_t interval_ns) {
   samples_ns.push_back(interval_ns);
-  if (samples_ns.size() > kRendererOwnedIntervalSampleLimit) {
+  if (samples_ns.size() > kNativeTargetIntervalSampleLimit) {
     samples_ns.erase(samples_ns.begin(),
                      samples_ns.begin() +
-                         (samples_ns.size() - kRendererOwnedIntervalSampleLimit));
+                         (samples_ns.size() - kNativeTargetIntervalSampleLimit));
   }
 }
 
@@ -163,11 +163,11 @@ void VPMacOSNativePlayer::shutdown_renderer_locked() {
 
 void VPMacOSNativePlayer::clear_last_frame_locked() {
   std::lock_guard<std::mutex> callback_lock(callback_mutex);
-  last_renderer_owned_presentation_succeeded = false;
-  last_renderer_owned_frame_info_available = false;
-  last_renderer_owned_frame_info = {};
-  last_renderer_owned_layout_revision = 0;
-  renderer_owned_refresh_min_pts_us = -1;
+  last_native_target_presentation_succeeded = false;
+  last_native_target_frame_info_available = false;
+  last_native_target_frame_info = {};
+  last_native_target_layout_revision = 0;
+  native_target_refresh_min_pts_us = -1;
 }
 
 bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
@@ -191,7 +191,7 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
     max_track_slots = presentation_target_max_track_slots;
   }
   if (!output || width <= 0 || height <= 0) {
-    error = "renderer-owned Metal presentation target is not installed";
+    error = "native Metal presentation target is not installed";
     return false;
   }
 
@@ -200,7 +200,7 @@ bool VPMacOSNativePlayer::ensure_renderer_locked(std::string& error) {
   config.video_paths = {opened_path};
   config.width = width;
   config.height = height;
-  config.headless = true;
+  config.offscreen = true;
   config.use_hardware_decode =
       use_hardware_decode &&
       !vp_macos::videotoolbox_disabled_by_env();
@@ -246,82 +246,82 @@ void VPMacOSNativePlayer::on_frame_available(
   int64_t pts_us = -1;
   {
     std::lock_guard<std::mutex> callback_lock(callback_mutex);
-    last_renderer_owned_presentation_succeeded = true;
-    last_renderer_owned_frame_info_available = true;
-    renderer_owned_presentation_consecutive_failures = 0;
-    renderer_owned_presentation_last_error.clear();
+    last_native_target_presentation_succeeded = true;
+    last_native_target_frame_info_available = true;
+    native_target_presentation_consecutive_failures = 0;
+    native_target_presentation_last_error.clear();
     if (completed_frame_info) {
-      VPMacOSNativeFrameInfoInit(&last_renderer_owned_frame_info);
-      last_renderer_owned_frame_info.width = completed_frame_info->width;
-      last_renderer_owned_frame_info.height = completed_frame_info->height;
-      last_renderer_owned_frame_info.pts_us = completed_frame_info->pts_us;
-      last_renderer_owned_frame_info.dts_us = completed_frame_info->dts_us;
-      last_renderer_owned_frame_info.duration_us =
+      VPMacOSNativeFrameInfoInit(&last_native_target_frame_info);
+      last_native_target_frame_info.width = completed_frame_info->width;
+      last_native_target_frame_info.height = completed_frame_info->height;
+      last_native_target_frame_info.pts_us = completed_frame_info->pts_us;
+      last_native_target_frame_info.dts_us = completed_frame_info->dts_us;
+      last_native_target_frame_info.duration_us =
           completed_frame_info->duration_us;
-      last_renderer_owned_frame_info.analysis_frame_index =
+      last_native_target_frame_info.analysis_frame_index =
           completed_frame_info->analysis_frame_index;
-      last_renderer_owned_frame_info.frame_identity_mode =
+      last_native_target_frame_info.frame_identity_mode =
           completed_frame_info->frame_identity_mode;
-      last_renderer_owned_frame_info.source_packet_index =
+      last_native_target_frame_info.source_packet_index =
           completed_frame_info->source_packet_index;
-      last_renderer_owned_frame_info.source_packet_size =
+      last_native_target_frame_info.source_packet_size =
           completed_frame_info->source_packet_size;
-      last_renderer_owned_frame_info.source_packet_pos =
+      last_native_target_frame_info.source_packet_pos =
           completed_frame_info->source_packet_pos;
-      last_renderer_owned_frame_info.source_packet_pts =
+      last_native_target_frame_info.source_packet_pts =
           completed_frame_info->source_packet_pts;
-      last_renderer_owned_frame_info.source_packet_dts =
+      last_native_target_frame_info.source_packet_dts =
           completed_frame_info->source_packet_dts;
-      last_renderer_owned_frame_info.color_range =
+      last_native_target_frame_info.color_range =
           completed_frame_info->color_range;
-      last_renderer_owned_frame_info.color_matrix =
+      last_native_target_frame_info.color_matrix =
           completed_frame_info->color_matrix;
-      last_renderer_owned_frame_info.color_transfer =
+      last_native_target_frame_info.color_transfer =
           completed_frame_info->color_transfer;
-      last_renderer_owned_frame_info.color_primaries =
+      last_native_target_frame_info.color_primaries =
           completed_frame_info->color_primaries;
-      last_renderer_owned_frame_info.target_pixel_buffer_address =
+      last_native_target_frame_info.target_pixel_buffer_address =
           completed_frame_info->target_pixel_buffer_address;
-      last_renderer_owned_frame_info.layout_revision =
+      last_native_target_frame_info.layout_revision =
           completed_frame_info->layout_revision;
-      last_renderer_owned_layout_revision = completed_frame_info->layout_revision;
+      last_native_target_layout_revision = completed_frame_info->layout_revision;
     } else {
-      last_renderer_owned_frame_info.width = presentation_target_width;
-      last_renderer_owned_frame_info.height = presentation_target_height;
+      last_native_target_frame_info.width = presentation_target_width;
+      last_native_target_frame_info.height = presentation_target_height;
     }
     const auto now = std::chrono::steady_clock::now();
-    if (renderer_owned_presentation_upload_count > 0 &&
-        renderer_owned_presentation_last_upload_time.time_since_epoch().count() != 0) {
+    if (native_target_presentation_upload_count > 0 &&
+        native_target_presentation_last_upload_time.time_since_epoch().count() != 0) {
       const auto interval_ns = static_cast<uint64_t>(
           std::chrono::duration_cast<std::chrono::nanoseconds>(
-              now - renderer_owned_presentation_last_upload_time)
+              now - native_target_presentation_last_upload_time)
               .count());
       vp_macos::append_interval_sample(
-          renderer_owned_presentation_upload_intervals_ns, interval_ns);
-      renderer_owned_presentation_upload_interval_p95_ms =
+          native_target_presentation_upload_intervals_ns, interval_ns);
+      native_target_presentation_upload_interval_p95_ms =
           vp_macos::percentile_95_ms(
-              renderer_owned_presentation_upload_intervals_ns);
-      if (renderer_owned_target_warmup_remaining > 0 &&
+              native_target_presentation_upload_intervals_ns);
+      if (native_target_warmup_remaining > 0 &&
           interval_ns <= vp_macos::kTargetWarmupMaxIntervalNs) {
         vp_macos::append_interval_sample(
-            renderer_owned_target_warmup_intervals_ns, interval_ns);
-        --renderer_owned_target_warmup_remaining;
-        ++renderer_owned_target_warmup_sample_count;
-        renderer_owned_target_warmup_last_ms =
+            native_target_warmup_intervals_ns, interval_ns);
+        --native_target_warmup_remaining;
+        ++native_target_warmup_sample_count;
+        native_target_warmup_last_ms =
             interval_ns / (1000ull * 1000ull);
-        renderer_owned_target_warmup_p95_ms =
+        native_target_warmup_p95_ms =
             vp_macos::percentile_95_ms(
-                renderer_owned_target_warmup_intervals_ns);
+                native_target_warmup_intervals_ns);
       }
     }
-    if (renderer_owned_presentation_upload_count == 0) {
-      renderer_owned_presentation_first_upload_time = now;
+    if (native_target_presentation_upload_count == 0) {
+      native_target_presentation_first_upload_time = now;
     }
-    renderer_owned_presentation_last_upload_time = now;
-    ++renderer_owned_presentation_upload_count;
-    ++renderer_owned_presentation_event_sequence;
-    upload_count = renderer_owned_presentation_upload_count;
-    pts_us = last_renderer_owned_frame_info.pts_us;
+    native_target_presentation_last_upload_time = now;
+    ++native_target_presentation_upload_count;
+    ++native_target_presentation_event_sequence;
+    upload_count = native_target_presentation_upload_count;
+    pts_us = last_native_target_frame_info.pts_us;
     if (manual_refresh_callback_suppression_count > 0) {
       --manual_refresh_callback_suppression_count;
       suppress_external_callback = true;
@@ -332,8 +332,8 @@ void VPMacOSNativePlayer::on_frame_available(
           "target_buffer=0x{:x}",
           pts_us,
           upload_count,
-          last_renderer_owned_layout_revision,
-          last_renderer_owned_frame_info.target_pixel_buffer_address);
+          last_native_target_layout_revision,
+          last_native_target_frame_info.target_pixel_buffer_address);
     }
     if (!suppress_external_callback) {
       callback = frame_available_callback;
@@ -374,16 +374,16 @@ void VPMacOSNativePlayer::on_frame_available(
 void VPMacOSNativePlayer::record_presentation_failure_locked(
     const std::string& error,
     bool upload_failure) {
-  last_renderer_owned_presentation_succeeded = false;
-  last_renderer_owned_frame_info_available = false;
-  ++renderer_owned_presentation_draw_failure_count;
+  last_native_target_presentation_succeeded = false;
+  last_native_target_frame_info_available = false;
+  ++native_target_presentation_draw_failure_count;
   if (upload_failure) {
-    ++renderer_owned_presentation_failure_count;
+    ++native_target_presentation_failure_count;
   }
-  ++renderer_owned_presentation_event_sequence;
-  ++renderer_owned_presentation_consecutive_failures;
-  renderer_owned_presentation_last_error =
-      error.empty() ? "renderer-owned Metal presentation failed" : error;
+  ++native_target_presentation_event_sequence;
+  ++native_target_presentation_consecutive_failures;
+  native_target_presentation_last_error =
+      error.empty() ? "native Metal presentation failed" : error;
 }
 
 void VPMacOSNativePlayer::on_frame_failed(const char* error) {
@@ -397,8 +397,8 @@ void VPMacOSNativePlayer::on_frame_failed(const char* error) {
       suppressed_refresh_count = 1;
     }
     record_presentation_failure_locked(message, false);
-    failure_count = renderer_owned_presentation_draw_failure_count;
-    message = renderer_owned_presentation_last_error;
+    failure_count = native_target_presentation_draw_failure_count;
+    message = native_target_presentation_last_error;
   }
   spdlog::warn(
       "[MacOSFrameRefresh] frame_failed failures={} suppressed_manual_refresh={} error={}",

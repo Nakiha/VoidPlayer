@@ -8,7 +8,7 @@ struct MacOSPresentationContext {
   let nativeBackendActive: Bool
   let player: MacOSNativePlayerSession?
   let texture: MacOSVideoSurface?
-  let nativeTexture: MacOSFlutterTextureBridge?
+  let nativeTargetRing: MacOSNativeTargetRing?
   let maxTrackSlots: Int
   let playback: MacOSPlaybackController
   let presentationState: MacOSFramePresentationState
@@ -114,7 +114,7 @@ final class MacOSPresentationController {
   func refreshCurrentFrame(context: MacOSPresentationContext) -> Bool {
     guard context.nativeBackendActive,
           let player = context.player,
-          let texture = context.nativeTexture else {
+          let texture = context.nativeTargetRing else {
       context.markFrameAvailable()
       return true
     }
@@ -208,7 +208,7 @@ final class MacOSPresentationController {
   ) {
     guard context.nativeBackendActive,
           context.player != nil,
-          context.nativeTexture != nil else {
+          context.nativeTargetRing != nil else {
       context.markFrameAvailable()
       completion?("flutter-texture")
       return
@@ -284,13 +284,13 @@ final class MacOSPresentationController {
         switch outcome {
         case .ready(let pending):
           guard self.isCurrentLayoutRequest(request) else {
-            request.context.nativeTexture?.discardPendingNativeFrame(pending)
+            request.context.nativeTargetRing?.discardPendingNativeFrame(pending)
             self.layoutStaleAfterDrawDropCount += 1
             finalOutcomeName = LayoutRefreshOutcome.staleAfterDraw.profilerName
             break
           }
           guard let player = request.context.player,
-                let texture = request.context.nativeTexture else {
+                let texture = request.context.nativeTargetRing else {
             request.context.presentationState.recordMiss()
             finalOutcomeName = LayoutRefreshOutcome.transientMiss.profilerName
             break
@@ -402,7 +402,7 @@ final class MacOSPresentationController {
     }
     let pumpReady = context.playback.ensurePresentationPump(
       player: player,
-      texture: context.nativeTexture,
+      texture: context.nativeTargetRing,
       maxTrackSlots: context.maxTrackSlots,
       userData: context.userData,
       presentationState: context.presentationState
@@ -427,7 +427,7 @@ final class MacOSPresentationController {
         return .transientMiss
       }
     }
-    guard let texture = context.nativeTexture else {
+    guard let texture = context.nativeTargetRing else {
       return .transientMiss
     }
     let drawResult = MacOSNativeFrameRefresh.drawCurrentFrameForLayoutRefresh(

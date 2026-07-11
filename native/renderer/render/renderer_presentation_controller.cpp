@@ -156,17 +156,17 @@ void RendererPresentationController::move_track(size_t from, size_t to) {
     }
 }
 
-bool RendererPresentationController::update_headless_output(
+bool RendererPresentationController::update_offscreen_target(
     void* output,
     int width,
     int height,
     int max_track_slots) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     return backend_ &&
-           backend_->update_headless_output(output, width, height, max_track_slots);
+           backend_->update_offscreen_target(output, width, height, max_track_slots);
 }
 
-bool RendererPresentationController::update_headless_output_ring(
+bool RendererPresentationController::update_offscreen_target_ring(
     const void* const* pixel_buffers,
     size_t pixel_buffer_count,
     void* displayed_pixel_buffer,
@@ -176,7 +176,7 @@ bool RendererPresentationController::update_headless_output_ring(
     int max_track_slots) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     return backend_ &&
-           backend_->update_headless_output_ring(pixel_buffers,
+           backend_->update_offscreen_target_ring(pixel_buffers,
                                                  pixel_buffer_count,
                                                  displayed_pixel_buffer,
                                                  protected_pixel_buffer,
@@ -185,32 +185,32 @@ bool RendererPresentationController::update_headless_output_ring(
                                                  max_track_slots);
 }
 
-void RendererPresentationController::mark_headless_output_displayed(
+void RendererPresentationController::mark_offscreen_target_displayed(
     void* pixel_buffer) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     if (backend_) {
-        backend_->mark_headless_output_displayed(pixel_buffer);
+        backend_->mark_offscreen_target_displayed(pixel_buffer);
     }
 }
 
-void RendererPresentationController::protect_headless_output(void* pixel_buffer) {
+void RendererPresentationController::protect_offscreen_target(void* pixel_buffer) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     if (backend_) {
-        backend_->protect_headless_output(pixel_buffer);
+        backend_->protect_offscreen_target(pixel_buffer);
     }
 }
 
-void RendererPresentationController::release_headless_output(void* pixel_buffer) {
+void RendererPresentationController::release_offscreen_target(void* pixel_buffer) {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     if (backend_) {
-        backend_->release_headless_output(pixel_buffer);
+        backend_->release_offscreen_target(pixel_buffer);
     }
 }
 
-void RendererPresentationController::clear_headless_output() {
+void RendererPresentationController::clear_offscreen_target() {
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     if (backend_) {
-        backend_->clear_headless_output();
+        backend_->clear_offscreen_target();
     }
 }
 
@@ -231,7 +231,7 @@ void RendererPresentationController::wait_gpu_idle(
     metrics.render_wait_count.fetch_add(1, std::memory_order_relaxed);
 }
 
-bool RendererPresentationController::draw_renderer_managed_headless_and_publish(
+bool RendererPresentationController::draw_renderer_managed_offscreen_and_publish(
     const RendererDrawSnapshot& snapshot,
     const char* source,
     PresentationMetricsStore& metrics,
@@ -242,7 +242,7 @@ bool RendererPresentationController::draw_renderer_managed_headless_and_publish(
     if (should_abort && should_abort()) {
         return false;
     }
-    if (!backend_ || !backend_->begin_renderer_managed_headless_frame()) {
+    if (!backend_ || !backend_->begin_renderer_managed_offscreen_frame()) {
         return false;
     }
     if (!draw_frame(snapshot, source, metrics, std::move(overlay_hooks))) {
@@ -250,7 +250,7 @@ bool RendererPresentationController::draw_renderer_managed_headless_and_publish(
     }
     const auto publish_start = std::chrono::steady_clock::now();
     auto published_callback =
-        backend_->publish_renderer_managed_headless_frame(source);
+        backend_->publish_renderer_managed_offscreen_frame(source);
     callback = published_callback
         ? RendererFrameCallback(
               [published_callback = std::move(published_callback)](
@@ -303,15 +303,15 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
         async_backend ? std::move(request.async_completion)
                       : PresentationBackendAsyncDrawCompleted();
 
-    if (request.headless) {
-        if (backend_ && backend_->renderer_manages_headless_publish() &&
-            request.should_abort_headless_publish) {
-            result.drew = draw_renderer_managed_headless_and_publish(
+    if (request.offscreen) {
+        if (backend_ && backend_->renderer_manages_offscreen_publish() &&
+            request.should_abort_offscreen_publish) {
+            result.drew = draw_renderer_managed_offscreen_and_publish(
                 request.snapshot,
                 request.source,
                 request.metrics,
                 std::move(request.overlay_hooks),
-                request.should_abort_headless_publish,
+                request.should_abort_offscreen_publish,
                 result.frame_callback);
         } else {
             result.drew = draw_frame(request.snapshot,
@@ -381,7 +381,7 @@ RendererPresentationSubmitResult RendererPresentationController::submit_draw(
 
     RendererPresentationDrawRequest draw_request(request.snapshot, request.metrics);
     draw_request.source = request.source;
-    draw_request.headless = request.headless;
+    draw_request.offscreen = request.offscreen;
     draw_request.publish_swap_chain_after_sync_draw =
         request.publish_swap_chain_after_sync_draw;
     draw_request.wait_idle_after_sync_draw_label =
@@ -389,8 +389,8 @@ RendererPresentationSubmitResult RendererPresentationController::submit_draw(
     draw_request.poll_device_removed_label = request.poll_device_removed_label;
     draw_request.check_device_lost_after_draw = request.check_device_lost_after_draw;
     draw_request.overlay_hooks = std::move(request.overlay_hooks);
-    draw_request.should_abort_headless_publish =
-        std::move(request.should_abort_headless_publish);
+    draw_request.should_abort_offscreen_publish =
+        std::move(request.should_abort_offscreen_publish);
     if (request.async_completed) {
         auto callbacks = result.callbacks;
         auto async_completed = std::move(request.async_completed);
@@ -519,38 +519,38 @@ RendererPresentationController::memory_snapshot() const {
     return {};
 }
 
-bool RendererPresentationController::resize_renderer_managed_headless_output(
+bool RendererPresentationController::resize_renderer_managed_offscreen_target(
     int width,
     int height,
     PresentationMetricsStore& metrics) {
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     if (!backend_ ||
-        !backend_->resize_renderer_managed_headless_output(width, height)) {
+        !backend_->resize_renderer_managed_offscreen_target(width, height)) {
         return false;
     }
     metrics.note_presentation_target_resize();
     return true;
 }
 
-bool RendererPresentationController::prewarm_renderer_managed_headless_output(
+bool RendererPresentationController::prewarm_renderer_managed_offscreen_target(
     int width,
     int height) {
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     return backend_ &&
-           backend_->prewarm_renderer_managed_headless_output(width, height);
+           backend_->prewarm_renderer_managed_offscreen_target(width, height);
 }
 
-void RendererPresentationController::cleanup_renderer_managed_headless_pending_buffers() {
+void RendererPresentationController::cleanup_renderer_managed_offscreen_pending_buffers() {
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     if (backend_) {
-        backend_->cleanup_renderer_managed_headless_pending_buffers();
+        backend_->cleanup_renderer_managed_offscreen_pending_buffers();
     }
 }
 
-bool RendererPresentationController::set_renderer_managed_headless_frame_callback(
+bool RendererPresentationController::set_renderer_managed_offscreen_frame_callback(
     RendererFrameCallback callback) {
     if (!backend_ ||
-        !backend_->set_renderer_managed_headless_frame_callback(
+        !backend_->set_renderer_managed_offscreen_frame_callback(
             [callback = std::move(callback)]() {
                 if (callback) {
                     callback(nullptr);

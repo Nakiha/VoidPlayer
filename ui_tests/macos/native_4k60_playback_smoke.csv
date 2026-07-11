@@ -9,10 +9,10 @@
 2.35, ASSERT_NATIVE_DIAGNOSTIC_BOOL, hardwareDecodeDownloadsToCpu, false
 2.36, ASSERT_NATIVE_DIAGNOSTIC_STRING, decodeMode, shared-renderer-videotoolbox
 2.42, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-renderer
-2.44, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, metal
-2.4455, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
-2.446, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
-2.4465, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+2.44, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetBackendName, metal
+2.4455, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeTargetLastDrawSucceeded, true
+2.446, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeTargetConsecutiveDrawFailures, 0, 0
+2.4465, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetLastDrawError,
 2.46, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureWidth, 320, 1920
 2.47, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, textureHeight, 180, 1080
 2.5, CAPTURE_VIEWPORT, native_4k60_start
@@ -20,24 +20,24 @@
 4.7, PLAY
 6.5, ASSERT_POSITION_RANGE, 700000, 2900000
 6.6, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFramePresentationCount, 2
-6.65, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedPresentCount, 2
+6.65, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameTargetPresentCount, 2
 6.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount, 2
 6.715, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationPackageStorage, cvpixelbuffer
-6.7155, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
+6.7155, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetUploadStorageKind, cvpixelbuffer
 6.716, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentationPackageCopyUs, 0, 0
 6.717, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageGpuWaitUs, 1
 6.718, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationPackageTotalUs, 1
 6.72, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerFrameNotificationCount, 2
 6.74, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentationSchedulerLastPresentFrameCount, 1
 6.745, ASSERT_NATIVE_DIAGNOSTIC_BOOL, presentationSchedulerCachedDecisionAvailable, true
-6.756, ASSERT_NATIVE_DIAGNOSTIC_BOOL, rendererOwnedLastDrawSucceeded, true
-6.757, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, rendererOwnedConsecutiveDrawFailures, 0, 0
-6.76, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, metal
+6.756, ASSERT_NATIVE_DIAGNOSTIC_BOOL, nativeTargetLastDrawSucceeded, true
+6.757, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeTargetConsecutiveDrawFailures, 0, 0
+6.76, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetBackendName, metal
 6.761, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationFallbackReason, none
 6.7615, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackDiagnosticCount, 1
-6.764, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeRendererOwnedUploadCount, 2
-6.766, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
-6.767, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeRendererOwnedUploadFpsX1000, 1000
+6.764, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTargetUploadCount, 2
+6.766, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeTargetUploadFailureCount, 0, 0
+6.767, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTargetUploadFpsX1000, 1000
 6.768, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeDecodeFrameCount, 20
 6.77, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsSampleCount, 20
 6.775, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFramePtsDistinctCount, 20
@@ -52,7 +52,7 @@
 6.7884, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, presentedFrameHostIntervalP95Ms, 1
 6.7886, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentedFrameLateCount, 0, 0
 6.7888, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, presentedFrameErrorCount, 0, 0
-6.789, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameRendererOwnedRatioX1000, 900
+6.789, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeFrameTargetRatioX1000, 900
 6.9, CAPTURE_VIEWPORT, native_4k60_after_play
 7.0, ASSERT_CAPTURE_CHANGED, native_4k60_start, native_4k60_after_play
 7.1, PAUSE

@@ -9,7 +9,7 @@ final class MacOSFramePresentationState {
   private(set) var lastPresentedDurationUs: Int?
   private var callbackCount = 0
   private var presentationCount = 0
-  private var rendererOwnedPresentCount = 0
+  private var nativeTargetPresentCount = 0
   private var missCount = 0
   private var errorCount = 0
   private var firstHostNs: UInt64?
@@ -38,7 +38,7 @@ final class MacOSFramePresentationState {
   func resetFrameCounters() {
     callbackCount = 0
     presentationCount = 0
-    rendererOwnedPresentCount = 0
+    nativeTargetPresentCount = 0
     missCount = 0
     errorCount = 0
     firstHostNs = nil
@@ -79,7 +79,7 @@ final class MacOSFramePresentationState {
     callbackCount += 1
   }
 
-  func recordPresentation(rendererOwned: Bool) {
+  func recordPresentation(nativeTarget: Bool) {
     let now = DispatchTime.now().uptimeNanoseconds
     if firstHostNs == nil {
       firstHostNs = now
@@ -96,8 +96,8 @@ final class MacOSFramePresentationState {
     }
     lastHostNs = now
     presentationCount += 1
-    if rendererOwned {
-      rendererOwnedPresentCount += 1
+    if nativeTarget {
+      nativeTargetPresentCount += 1
     }
   }
 
@@ -126,8 +126,8 @@ final class MacOSFramePresentationState {
       "nativeFramePresentationFps": fps,
       "nativeFramePresentationFpsX1000": Int(fps * 1000.0),
       "nativeFrameCopyCount": presentationCount,
-      "nativeFrameRendererOwnedPresentCount": rendererOwnedPresentCount,
-      "nativeFrameRendererOwnedRatioX1000": rendererOwnedRatioX1000(),
+      "nativeFrameTargetPresentCount": nativeTargetPresentCount,
+      "nativeFrameTargetRatioX1000": nativeTargetRatioX1000(),
       "nativeFrameCopyMissCount": missCount,
       "nativeFrameCopyErrorCount": errorCount,
       "nativeFrameCopyElapsedMs": presentationElapsedMs(),
@@ -216,11 +216,11 @@ final class MacOSFramePresentationState {
     max(Int(Double(expectedPresentedIntervalUs()) * 2.5), 100_000)
   }
 
-  private func rendererOwnedRatioX1000() -> Int {
+  private func nativeTargetRatioX1000() -> Int {
     guard presentationCount > 0 else {
       return 0
     }
-    return rendererOwnedPresentCount * 1000 / presentationCount
+    return nativeTargetPresentCount * 1000 / presentationCount
   }
 
   private func hostIntervalAvgMs() -> Int {

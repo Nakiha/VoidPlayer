@@ -56,8 +56,6 @@ native/
 └── docs/
 ```
 
-The Rust/native backend directories are removed from this branch.
-
 ## 核心对象
 
 | 对象 | 当前职责 |
@@ -68,7 +66,7 @@ The Rust/native backend directories are removed from this branch.
 | `RendererDrawSnapshot` | renderer 到 native video backend 的 immutable draw input |
 | `PresentationBackend` | native video texture/layer writer；不控制 Flutter 上屏 |
 | `TrackPipeline` | 每轨 demux/decode/buffer state |
-| `FrameConverter` | AVFrame 到 renderer-owned frame storage；硬解 import 只在已实现 backend 上启用 |
+| `FrameConverter` | AVFrame 到 native-target frame storage；硬解 import 只在已实现 backend 上启用 |
 
 ## 数据流总览
 
@@ -99,7 +97,7 @@ hardware decode provider 和 presentation backend 开始：
 ## 当前播放路径状态
 
 - macOS native Metal presentation builds and passes native smoke.
-- macOS VideoToolbox preserves renderer-owned CVPixelBuffer frames when supported.
+- macOS VideoToolbox preserves native-target CVPixelBuffer frames when supported.
 - Windows presentation is fail-closed until the runner-composed D3D sandwich is
   implemented.
 - Flutter premultiplied-alpha export remains a Flutter fork requirement, but

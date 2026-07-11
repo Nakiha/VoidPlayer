@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Hosted macOS runners can expose Metal but still fail visible front-buffer
-# capture in headless contexts. Keep the PR fast gate on the software/native
+# capture on hosted runners. Keep the PR fast gate on the software/native
 # suite and let CTest labels exclude hosted-flaky Metal canaries.
 # Keep VideoToolbox provider probing outside the software pass. The full
 # shared-renderer VT smoke is intentionally local/nightly: hosted macOS runners

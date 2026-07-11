@@ -94,7 +94,7 @@ void VPMacOSNativePlayerSeek(VPMacOSNativePlayer* player, int64_t pts_us) {
     player->clear_last_frame_locked();
     {
       std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
-      player->renderer_owned_refresh_min_pts_us =
+      player->native_target_refresh_min_pts_us =
           std::max<int64_t>(0, pts_us - 500'000);
     }
     player->renderer->seek(pts_us, vr::SeekType::Exact);
@@ -117,7 +117,7 @@ int VPMacOSNativePlayerStepForward(VPMacOSNativePlayer* player,
   player->renderer->step_forward();
   {
     std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
-    player->renderer_owned_refresh_min_pts_us =
+    player->native_target_refresh_min_pts_us =
         std::max<int64_t>(0, player->renderer->current_pts_us() - 100'000);
   }
   write_error(error, error_size, "");
@@ -140,7 +140,7 @@ int VPMacOSNativePlayerStepBackward(VPMacOSNativePlayer* player,
   player->renderer->step_backward();
   {
     std::lock_guard<std::mutex> callback_lock(player->callback_mutex);
-    player->renderer_owned_refresh_min_pts_us =
+    player->native_target_refresh_min_pts_us =
         std::max<int64_t>(0, player->renderer->current_pts_us() - 500'000);
   }
   write_error(error, error_size, "");

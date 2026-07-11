@@ -55,15 +55,17 @@ The first implementation target is:
 
 ```text
 NSWindow / content view
-  -> native Metal video layer or IOSurface-backed target
-  -> transparent FlutterView / Flutter engine ARGB surface
-  -> CoreAnimation/runner composition
+  -> runner CAMetalLayer drawable
+     <- complete native IOSurface target
+     <- Flutter engine premultiplied-alpha ARGB surface
+  -> screen
 ```
 
-The macOS presentation target owns its `CVPixelBuffer`/`IOSurface` ring. The
-runner retains the latest complete native target and samples it below Flutter's
-ARGB UI surface on every display tick. Swift does not interpret video layout,
-overlay primitives, or track topology.
+The runner allocates and retains the `CVPixelBuffer`/`IOSurface` ring; the native
+Metal backend owns draw acquisition and GPU completion state. The runner samples
+the latest complete target below Flutter's ARGB UI surface on every display
+tick. Swift does not interpret video layout, overlay primitives, or track
+topology.
 
 ## Windows Target
 
@@ -79,9 +81,3 @@ top-level HWND
 
 The reserved backend names are `native-d3d11` and `native-d3d12`. They are
 interface placeholders, not active render backends.
-
-## Deleted Paths
-
-The removed experimental renderer backend, its UI smokes, and the old Windows
-native D3D12 backend source are no longer active tree material. Use the previous
-branch or main history as reference material when rebuilding missing behavior.

@@ -522,7 +522,7 @@ int check_adapter_failure_statuses() {
       frame.width * 4,
       &info);
   if (status != vp_macos::PresentationAdapterStatus::UnsupportedStorage) {
-    return fail("adapter did not reject renderer-owned texture storage");
+    return fail("adapter did not reject native-target texture storage");
   }
 
   frame.storage = vr::CpuRgbaFrameStorage{

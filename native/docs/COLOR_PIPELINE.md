@@ -5,17 +5,17 @@ presentation backends. The shared contract is: decode metadata and frame storage
 must be normalized into shader inputs that produce equivalent RGB output for the
 selected platform presentation target.
 
-The historical production target is SDR BGRA/RGB for a Flutter texture. The
-macOS HDR exploration path adds a native compositor target that outputs extended
-linear Display P3 into a `RGBA16Float` `CAMetalLayer`. Windows native
-presentation is reserved/fail-closed on this branch; a new D3D11/DX12 color
-contract must be documented when that backend is rebuilt.
+The active macOS path writes a complete native viewport target and lets the
+runner composite it with Flutter's exported premultiplied-alpha surface. SDR
+uses BGRA8; HDR/EDR uses linear Display P3 in an `RGBA16Float` target. Windows
+native presentation is reserved/fail-closed until the D3D sandwich backend is
+rebuilt.
 
 ## Shared Output Contract
 
 - The shared renderer carries range, matrix, transfer, and primaries as metadata
   into platform presentation decisions.
-- SDR Flutter texture output remains SDR BGRA/RGB-compatible content.
+- SDR native targets use compositor-ready BGRA8 content.
 - macOS native-compositor EDR output is linear Display P3, normalized so
   reference white is `1.0` and values above `1.0` represent EDR headroom.
 - SDR YUV sources produce nonlinear R'G'B' values.
@@ -32,12 +32,11 @@ Concrete presentation targets are platform-specific:
 | Platform | Backend target | Notes |
 | --- | --- | --- |
 | Windows | reserved native D3D11/DX12 backend | Disabled on this branch; Flutter Texture SDR is not an allowed video fallback. |
-| macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Exposed to Flutter through the macOS texture registrar. |
-| macOS EDR | Native compositor `RGBA16Float` `CAMetalLayer` | Uses `extendedLinearDisplayP3` and composites native video with the exported Flutter texture. |
+| macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Retained by the runner native target ring. |
+| macOS EDR | Metal-rendered `RGBA16Float` `CVPixelBuffer` / IOSurface | Composed into an `extendedLinearDisplayP3` `CAMetalLayer` with the exported Flutter surface. |
 
-The HDR branch is deliberately native-compositor based on macOS. Flutter's
-texture path remains an SDR integration surface unless the Flutter engine fork
-later exposes a display-managed HDR surface contract.
+Flutter video textures are not a product fallback for either target. The engine
+fork exports only Flutter's UI surface for runner composition.
 
 ## macOS HDR Strategy
 
@@ -78,8 +77,8 @@ behavior remain testable.
 | `P010LE` | CPU semiplanar P010 ref | P010 high-bit layout is sampled directly. |
 | `YUV422P10LE` | CPU P010 | Chroma is vertically downsampled to 4:2:0. |
 | `YUV444P10LE` | CPU P010 | Chroma is 2x2 downsampled to 4:2:0. |
-| D3D11VA NV12/P010/P016 | GPU plane textures | Windows renderer-owned direct path. |
-| VideoToolbox NV12/P010 `CVPixelBuffer` | `CVPixelBuffer` fast path | macOS renderer-owned native-metal path when supported. |
+| D3D11VA NV12/P010/P016 | GPU plane textures | Windows renderer-owned source surface path. |
+| VideoToolbox NV12/P010 `CVPixelBuffer` | `CVPixelBuffer` fast path | macOS native Metal path when supported. |
 | BGRA package | BGRA texture/package | Fallback, capture, and parity path. |
 
 4:2:2 and 4:4:4 software frames are currently displayed after downsampling to
@@ -98,11 +97,11 @@ Soft/hard parity requirement:
 
 ## Color Metadata
 
-The macOS runner probes `AVCodecParameters` before creating the renderer-owned
+The macOS runner probes `AVCodecParameters` before creating the native target
 target so Auto presentation can decide whether a track needs EDR. `DemuxThread`
 also stores the same stream-level metadata in `TrackInfo`, while
 `FrameConverter` reads per-frame `AVFrame` metadata and carries it into
-presentation packages and renderer-owned frames:
+presentation packages and renderer-owned source frames:
 
 | Metadata | Supported values |
 | --- | --- |
@@ -139,27 +138,27 @@ When Windows work resumes, the new D3D11/DX12 sandwich backend must document:
 - how the runner composites the exported premultiplied-alpha Flutter surface
   over native video without color keys, child HWND holes, or desktop capture;
 - deterministic parity tests against the shared color reference and macOS
-  native-metal behavior.
+  native Metal behavior.
 
-## macOS native-metal / CVPixelBuffer Path
+## macOS native Metal / CVPixelBuffer Path
 
-macOS uses the same metadata and layout contract through native-metal:
+macOS uses the same metadata and layout contract through native Metal:
 
 - VideoToolbox zero-copy frames keep their `CVPixelBuffer` storage when the
-  codec and pixel format are supported by the renderer-owned native-metal path.
-- VideoToolbox renderer-owned direct decode is gated to 4:2:0-like stream
+  codec and pixel format are supported by the native Metal path.
+- VideoToolbox direct decode is gated to 4:2:0-like stream
   formats before codec open; 4:2:2 / 4:4:4 streams fall back to software decode
   until dedicated CVPixelBuffer/shader layouts exist.
 - Software/fallback frames use explicit YUV or BGRA present packages.
 - The macOS uploader validates target size, BGRA pixel-buffer compatibility,
   `CVMetalTextureCache` wrapping, storage kind, and package dimensions before
   draw.
-- The SDR renderer-owned target is a Metal-compatible, IOSurface-backed BGRA
-  `CVPixelBuffer` registered with Flutter by Swift.
-- The EDR native-compositor target is `RGBA16Float` and is interpreted by
-  `CAMetalLayer` as extended linear Display P3.
-- Swift does not apply color policy; it only owns texture lifecycle and frame
-  notification, except for selecting the native compositor layer color space.
+- The SDR offscreen target is a Metal-compatible, IOSurface-backed BGRA
+  `CVPixelBuffer` retained by `MacOSNativeTargetRing`.
+- The EDR offscreen target is an IOSurface-backed `RGBA16Float` buffer sampled
+  by the runner compositor into an extended-linear Display P3 `CAMetalLayer`.
+- Swift does not apply video color policy. It owns target lifetime, publication,
+  final composition, and the compositor layer color space.
 
 Local VideoToolbox probing on Apple Silicon showed that macOS can return more
 than NV12/P010-style 4:2:0 surfaces. The probe decoded synthetic H.264, HEVC,
@@ -224,7 +223,7 @@ Current Windows status:
 
 Current macOS release-readiness evidence:
 
-- macOS native-metal color/layout parity is covered by targeted macOS UI
+- macOS native Metal color/layout parity is covered by targeted macOS UI
   capture smokes and native color reference smoke. It
   compares BGRA channel order, NV12/P010 paths, split/layout fit, VideoToolbox
   CVPixelBuffer source import, and headed capture diagnostics against shared
@@ -232,7 +231,7 @@ Current macOS release-readiness evidence:
 - `native_4k60_playback_smoke.csv` remains a headed VideoToolbox/Metal cadence
   canary. It is not a strict 4K60 SLA; it asserts conservative health signals
   such as monotonic PTS, no large PTS gaps, duplicate PTS visibility, host
-  interval samples/max/p95, and a high renderer-owned presentation ratio.
+  interval samples/max/p95, and a high native target presentation ratio.
 
 Required evidence before raising macOS release confidence further:
 
@@ -243,8 +242,8 @@ Required evidence before raising macOS release confidence further:
   surfaces, beyond the synthetic CPU P010 package gate.
 - 4:2:2 / 4:4:4 fallback behavior remains explicit until dedicated direct paths
   are implemented.
-- Capture/hash expansion for real media should use backend capture contracts
-  where available, not only Flutter texture screenshots.
+- Capture/hash expansion for real media should use backend or final-window
+  capture contracts, not Flutter video-texture screenshots.
 
 ## MHW Full-Range BT.709 Fixture
 

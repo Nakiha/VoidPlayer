@@ -20,9 +20,9 @@
 4.0, ASSERT_CAPTURE_NOT_BLACK, ffv1_yuv422p10le_triple, 0.5, 16.0
 4.1, ADD_MEDIA, resources/video/ffv1_yuv444p10le.mkv
 5.4, ASSERT_TRACK_COUNT, 4
-5.5, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
+5.5, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeTargetUploadFailureCount, 0, 0
 5.55, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferMetalUploadFailureCount, 0, 0
-5.6, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+5.6, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetLastDrawError,
 5.7, CAPTURE_VIEWPORT, ffv1_odd_yuv_four_track
 5.8, ASSERT_CAPTURE_NOT_BLACK, ffv1_odd_yuv_four_track, 0.5, 16.0
 5.9, QUIT, 0

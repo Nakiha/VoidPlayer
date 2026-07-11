@@ -32,7 +32,7 @@ layout 和 diagnostics 都使用微秒时间戳。
 | --- | --- | --- |
 | `CpuNv12FrameStorage` / planar YUV | software decode、hwdownload fallback | native upload / fallback package |
 | `CpuRgbaFrameStorage` | 旧测试、BGRA fallback、capture helpers | native BGRA upload path |
-| macOS CVPixelBuffer storage | VideoToolbox zero-copy path | native-metal backend through CVMetalTextureCache / IOSurface |
+| macOS CVPixelBuffer storage | VideoToolbox zero-copy path | native Metal backend through CVMetalTextureCache / IOSurface |
 
 Frame storage 必须带足 lifetime 信息。VideoToolbox 硬解 frame 持有底层 FFmpeg/CVPixelBuffer 引用，避免
 decoder pool 在 renderer 使用期间提前复用 surface。
@@ -69,25 +69,25 @@ TextureFrame
   -> native Metal PresentationBackend
      -> CVPixelBuffer fast path for VideoToolbox frames
      -> YUV/BGRA present package for software or fallback frames
-  -> renderer-owned CVPixelBuffer / IOSurface
-  -> runner/native compositor target
+  -> offscreen CVPixelBuffer / IOSurface target ring
+  -> runner Metal compositor
 ```
 
-VideoToolbox H.264/H.265 支持路径会保留 decoder-owned `CVPixelBuffer`，native-metal backend 通过
+VideoToolbox H.264/H.265 支持路径会保留 decoder-owned `CVPixelBuffer`，native Metal backend 通过
 `CVMetalTextureCache` / IOSurface 采样，避免 hwdownload。unsupported codec、unsupported format 或 software decode
 走显式 present-package path，并在 diagnostics 中报告 `presentationFallbackReason` 与 storage kind。
 
 ## Capture 与 Diagnostics
 
-Windows 和 macOS 都应通过 shared renderer/capture contract 观察当前 front buffer。macOS 仍保留 Flutter texture 侧
-viewport metrics，但 native capture smoke 应优先使用 renderer/backend capture contract。
+Windows 和 macOS 都应通过 shared renderer/capture contract 观察当前 front buffer。macOS 的 runner 另外提供
+final-window 与 compositor diagnostics；产品视频不经过 Flutter Texture。
 
 关键 diagnostics：
 
 - backend kind、scheduler kind、storage kind、fallback reason
 - upload count/failure count/last draw error
 - per-track decode stats、offset、file id、slot
-- presented PTS trace、large-gap count、host interval、renderer-owned ratio
+- presented PTS trace、large-gap count、host interval、native-target presentation ratio
 
 ## 内存量级
 
@@ -98,4 +98,4 @@ viewport metrics，但 native capture smoke 应优先使用 renderer/backend cap
 | NV12 frame | 约 3 MB/帧 |
 | P010 frame | 约 6 MB/帧 |
 | macOS CVPixelBuffer target | 约 8 MB/1080p BGRA target |
-| renderer-owned YUV/P010 textures or staging | 随格式、轨道数和目标尺寸变化 |
+| platform YUV/P010 source textures or staging | 随格式、轨道数和目标尺寸变化 |

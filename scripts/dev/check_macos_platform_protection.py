@@ -26,7 +26,6 @@ REQUIRED_CMAKE_SOURCES = [
     "macos/metal/metal_uploader_bridge.mm",
     "macos/metal/metal_texture_wrapping.mm",
     "macos/metal/metal_pixel_buffer_uploader.mm",
-    "macos/metal/source_compositor_lease.mm",
     "macos/player/native_player_presentation_target.cpp",
     "macos/presentation/presentation_adapter.cpp",
     "macos/presentation/presentation_cv_pixel_buffer_frame.cpp",
@@ -40,15 +39,15 @@ REQUIRED_CMAKE_TARGETS = [
     "macos_metal_uploader_smoke",
     "macos_metal_color_reference_smoke",
     "videotoolbox_provider_smoke",
-    "renderer_metal_headless_smoke",
+    "renderer_metal_offscreen_smoke",
     "macos_native_player_shared_renderer_smoke",
 ]
 
 REQUIRED_SOURCE_MARKERS = {
-    "macos/Runner/MacOSFlutterTextureBridge.swift": [
+    "macos/Runner/MacOSNativeTargetRing.swift": [
         "protocol MacOSVideoSurface: AnyObject",
-        "MacOSVideoSurface, FlutterTexture",
-        "rendererOwnedPixelBufferCount",
+        "final class MacOSNativeTargetRing: NSObject, MacOSVideoSurface",
+        "nativeTargetPixelBufferCount",
         "installNativePresentationTarget",
         "publishRenderedTargetAndInstallNext",
         "kCVPixelBufferMetalCompatibilityKey",
@@ -63,14 +62,14 @@ REQUIRED_SOURCE_MARKERS = {
         "installMetalPresentationTargetRing",
     ],
     "macos/Runner/MacOSPlaybackController.swift": [
-        "lastRendererOwnedPresentationSucceeded",
+        "lastNativeTargetPresentationSucceeded",
         "publishRenderedTargetAndInstallNext",
-        "VoidPlayer macOS renderer-owned Metal presentation failed",
+        "VoidPlayer macOS native Metal presentation failed",
     ],
     "macos/Runner/MacOSVideoRendererDiagnostics.swift": [
         '"presentationAdapterKind"',
         '"presentationBackend"',
-        "renderer-owned-metal",
+        "native-target-metal",
         '"nativePresentationTargetInstalled"',
         '"hardwareDecodeProvider"',
         '"presentationUploadMode"',
@@ -78,15 +77,15 @@ REQUIRED_SOURCE_MARKERS = {
     ],
     "macos/Runner/MacOSNativeCompositorView.swift": [
         "import IOSurface",
-        "currentFlutterMetalTexture",
-        "nativeCompositorFlutterTextureAvailable",
-        "Flutter surface missing IOSurface",
+        "currentFlutterSurface",
+        "nativeCompositorFlutterSurfaceAvailable",
+        "no Flutter surface",
         "IOSurfaceLock",
     ],
     "native/macos/player/native_player_state.cpp": [
         "RendererBackendType::Metal",
         "HwDecodeType::VideoToolbox",
-        "renderer-owned Metal presentation target is not installed",
+        "native Metal presentation target is not installed",
         "record_presentation_failure_locked",
     ],
     "native/macos/decode/videotoolbox_provider.cpp": [
@@ -124,7 +123,7 @@ REQUIRED_UI_PROFILE_ENTRIES = {
 
 REQUIRED_UI_SCRIPT_MARKERS = {
     "ui_tests/macos/native_facade_smoke.csv": [
-        "ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedBackendName, metal",
+        "ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetBackendName, metal",
         "ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationScheduler, shared-renderer",
     ],
     "ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv": [
@@ -133,7 +132,7 @@ REQUIRED_UI_SCRIPT_MARKERS = {
         "ASSERT_NATIVE_DIAGNOSTIC_BOOL, macOSPresentationEDROutputEnabled, false",
     ],
     "ui_tests/macos/native_p010_presentation_smoke.csv": [
-        "VideoToolbox P010 renderer-owned presentation",
+        "VideoToolbox P010 native target presentation",
         "VideoToolbox / h264",
         "ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, pixelBufferMetalCVPixelBufferUploadCount",
     ],

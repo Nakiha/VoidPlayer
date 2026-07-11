@@ -25,23 +25,23 @@ public:
   const char* name() const override { return "metal-cvpixelbuffer"; }
   bool initialize(const vr::PresentationBackendConfig& config) override;
   void shutdown() override;
-  bool headless() const override { return headless_; }
+  bool offscreen() const override { return offscreen_; }
   bool completes_draw_asynchronously() const override { return true; }
-  bool update_headless_output(void* output,
+  bool update_offscreen_target(void* output,
                               int width,
                               int height,
                               int max_track_slots) override;
-  bool update_headless_output_ring(const void* const* pixel_buffers,
+  bool update_offscreen_target_ring(const void* const* pixel_buffers,
                                    size_t pixel_buffer_count,
                                    void* displayed_pixel_buffer,
                                    void* protected_pixel_buffer,
                                    int width,
                                    int height,
                                    int max_track_slots) override;
-  void mark_headless_output_displayed(void* pixel_buffer) override;
-  void protect_headless_output(void* pixel_buffer) override;
-  void release_headless_output(void* pixel_buffer) override;
-  void clear_headless_output() override;
+  void mark_offscreen_target_displayed(void* pixel_buffer) override;
+  void protect_offscreen_target(void* pixel_buffer) override;
+  void release_offscreen_target(void* pixel_buffer) override;
+  void clear_offscreen_target() override;
   vr::PresentationBackendStats presentation_stats() const override;
   bool copy_last_frame_info(vr::PresentationBackendFrameInfo* out) const override;
   bool capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) override;
@@ -156,7 +156,7 @@ private:
   uint64_t last_source_signature_ = 0;
   VPMacOSNativePresentFramePackageInfo cached_package_ = {};
   bool last_draw_succeeded_ = false;
-  bool headless_ = true;
+  bool offscreen_ = true;
   mutable std::mutex async_mutex_;
   std::condition_variable async_cv_;
   uint64_t in_flight_draws_ = 0;

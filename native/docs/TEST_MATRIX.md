@@ -9,7 +9,7 @@ and UI tests into gates and records cleanup decisions that changed the active se
 | --- | --- | --- |
 | PR fast | Stable, high-signal checks for shared native logic and platform backend canaries. | `python3.12 dev.py gate pr-fast` |
 | Platform protection | Cheap static guardrails for pinned Flutter fork, macOS presentation, and the disabled Windows backend restart line. | `python3.12 dev.py gate repo-hygiene` or targeted `*-protection` gates |
-| macOS stabilization | macOS native playback and renderer-owned native-metal confidence. | `python3.12 dev.py gate macos-ui-smoke` |
+| macOS stabilization | macOS native playback and native Metal target confidence. | `python3.12 dev.py gate macos-ui-smoke` |
 | macOS HDR EDR | Local HLG/PQ Auto promotion evidence on an EDR-capable display. | `python3.12 dev.py gate macos-hdr-edr-smoke` |
 | Nightly/headed | Slower headed UI, stress, audio, 4K/cadence, and lifecycle churn. | `python3.12 dev.py gate macos-ui-nightly` |
 | macOS release readiness | macOS package stage, FFmpeg dylibs, `@rpath`, notices, entitlements, sandbox/crash-log inputs, and codesign smoke. | `python3.12 dev.py gate macos-release-readiness` |
@@ -64,11 +64,11 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `macos_presentation_adapter_smoke` | backend canary | PR fast | macOS native build | Software fallback/parity adapter. |
 | `macos_metal_uploader_smoke` | backend canary | PR fast | Metal, sample media | Metal uploader and CVPixelBuffer validation. |
 | `videotoolbox_provider_smoke` | backend canary | PR fast / macOS stabilization | VideoToolbox availability | VT provider support/fallback visibility. |
-| `renderer_metal_headless_smoke` | backend integration | Nightly/headed or targeted macOS backend changes | native-metal, sample media | Renderer-owned native-metal headless path; labelled `hosted-flaky;nightly` and excluded from hosted PR fast because CI GPUs may fail visible-frame capture. |
+| `renderer_metal_offscreen_smoke` | backend integration | Nightly/headed or targeted macOS backend changes | native Metal, sample media | Complete offscreen target path; labelled `hosted-flaky;nightly` and excluded from hosted PR fast because CI GPUs may fail visible-frame capture. |
 | `macos_media_smoke` | native integration | macOS stabilization | FFmpeg media | macOS media open/metadata path. |
 | `software_decode_frame_queue_smoke` | native integration | macOS stabilization | sample media | Software decode frame queue. |
 | `decode_thread_software_smoke` | native integration | macOS stabilization | sample media | Decode thread software path. |
-| `macos_native_player_shared_renderer_smoke` | native integration | macOS stabilization | Metal, sample media | Shared native player + renderer-owned presentation. |
+| `macos_native_player_shared_renderer_smoke` | native integration | macOS stabilization | Metal, sample media | Shared native player + native target presentation. |
 | `macos_analysis_ffi_smoke` | analysis/FFI canary | macOS analysis changes | analysis build | macOS analysis symbols/cache path. |
 | `analysis_generation_service_smoke` | analysis contract | macOS analysis changes / PR fast when analysis is enabled | analysis build | Resident native analysis worker service de-duplication, priority ordering, polling completion, and stats. |
 | `macos_analysis_toolchain_smoke` | analysis CLI integration | macOS analysis changes | macOS analyzer, sample media | Portable `VoidPlayerCli` generates VAC2 base and analyzer-backed overlay VACHUNK, then reopens both. |
@@ -88,7 +88,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `ui_tests/analysis/**` | Windows analysis UI/IPC plus cross-platform overlay activation/seek regressions. | Analysis changes / release candidate. |
 | `ui_tests/color/**` | Color metadata/capture parity. | Release candidate or color pipeline changes. |
 | `ui_tests/macos/native_facade_smoke.csv` | macOS channel/metadata/diagnostics smoke. | macOS stabilization PR gate candidate. |
-| `ui_tests/macos/native_seek_frame_smoke.csv` | Renderer-owned refresh after seek. | macOS stabilization. |
+| `ui_tests/macos/native_seek_frame_smoke.csv` | Native-target refresh after seek. | macOS stabilization. |
 | `ui_tests/macos/native_layout_split_smoke.csv` | Shared layout through Metal presentation. | macOS stabilization. |
 | `ui_tests/macos/native_controls_smoke.csv` | Basic native play/pause/seek/step command smoke. | macOS stabilization. |
 | `ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv` | Default Auto policy keeps SDR media on the SDR native-compositor target and avoids EDR layer promotion. | macOS stabilization. |
@@ -98,11 +98,11 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 | `ui_tests/macos/native_remove_first_hlg_paused_pan_smoke.csv` | Removes the first HLG track from a mixed HLG+SDR session, leaving the SDR track in its original native slot and verifying paused layout redraw remains active. | Targeted target-ring slot/fileId regressions after track removal. |
 | `ui_tests/macos/native_media_header_remove_smoke.csv` | Real media-header remove button path for native fileId 0 and remaining-track presentation. | Targeted track/header changes; candidate for stabilization smoke after the layout smoke gate is stable. |
 | `ui_tests/macos/analysis_gated_smoke.csv` | macOS analysis FFI, media-header overlay panel/activation, and gated external analysis window behavior. | Nightly/headed or targeted analysis overlay changes. |
-| `ui_tests/analysis/overlay_seek_boundary_hevc_aq.csv` / `overlay_seek_boundary_vvc.csv` | Real timeline seek near VACHUNK window boundaries; validates async chunk readiness, native overlay rebinding, and redraw. | Targeted analysis overlay changes on Windows or macOS; use `mac-ui-test --build` for macOS renderer-owned Metal. |
-| `ui_tests/macos/native_4k60_playback_smoke.csv` | VideoToolbox/Metal/cadence canary; asserts monotonic PTS, large-gap/error counters, duplicate PTS visibility, host interval max/p95, and renderer-owned ratio. | Nightly/headed or release candidate. |
+| `ui_tests/analysis/overlay_seek_boundary_hevc_aq.csv` / `overlay_seek_boundary_vvc.csv` | Real timeline seek near VACHUNK window boundaries; validates async chunk readiness, native overlay rebinding, and redraw. | Targeted analysis overlay changes on Windows or macOS; use `mac-ui-test --build` for macOS native Metal. |
+| `ui_tests/macos/native_4k60_playback_smoke.csv` | VideoToolbox/Metal/cadence canary; asserts monotonic PTS, large-gap/error counters, duplicate PTS visibility, host interval max/p95, and native-target ratio. | Nightly/headed or release candidate. |
 | `ui_tests/macos/native_playing_dual_track_pan_smoke.csv` | Playing pan intent coalescing through complete native-target redraw and runner composition. | Targeted viewport/backend changes; candidate for macOS stabilization. |
 | `ui_tests/macos/native_paused_dual_track_pan_zoom_smoke.csv` | Paused dual-track pan/zoom through complete native-target redraw. | Targeted viewport/backend changes. |
-| `ui_tests/macos/native_eof_remove_to_short_tail_smoke.csv` | Removes long tracks after EOF until only a shorter track remains, verifying the last stable displayed frame stays non-black. | Targeted EOF / track removal / renderer-owned texture bridge changes. |
+| `ui_tests/macos/native_eof_remove_to_short_tail_smoke.csv` | Removes long tracks after EOF until only a shorter track remains, verifying the last stable displayed frame stays non-black. | Targeted EOF / track removal / native target-ring changes. |
 | `ui_tests/macos/native_eof_seek_dual_track_layout_smoke.csv` | EOF retained-target composition, seek recovery, and dual-track layout visibility. | Targeted EOF/seek/layout changes. |
 | `ui_tests/macos/native_vvc_software_playback_smoke.csv` | Software fallback + Metal package path. | Nightly/headed or release candidate. |
 | `ui_tests/macos/native_add_short_after_eof_smoke.csv` | EOF carry-forward when adding a shorter hardware-decoded track after AV1/VVC software tracks. | Nightly/headed or targeted track/presentation changes. |

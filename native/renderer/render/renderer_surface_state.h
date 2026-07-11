@@ -14,7 +14,7 @@ struct RendererSurfaceResize {
 };
 
 // Lock contract:
-// - Owns renderer surface configuration: host window, headless flag, target
+// - Owns renderer surface configuration: host window, offscreen flag, target
 //   dimensions, and selected render backend kind.
 // - Does not take locks, call callbacks, or touch presentation resources.
 // - Callers serialize mutations with the renderer state/lifecycle locks.
@@ -24,7 +24,7 @@ public:
     void reset();
 
     void* hwnd() const;
-    bool headless() const;
+    bool offscreen() const;
     int width() const;
     int height() const;
     RenderBackendKind backend_kind() const;
@@ -33,7 +33,7 @@ public:
 
 private:
     void* hwnd_ = nullptr;
-    bool headless_ = false;
+    bool offscreen_ = false;
     int width_ = 1920;
     int height_ = 1080;
     RenderBackendKind backend_kind_ = default_render_backend_kind();

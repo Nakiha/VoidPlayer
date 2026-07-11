@@ -44,10 +44,10 @@ extension MacOSNativePlayerSession {
     ]
   }
 
-  func rendererOwnedPresentationState() -> [String: Any] {
-    var state = VPMacOSNativeRendererOwnedPresentationState()
-    guard VPMacOSNativePlayerCopyRendererOwnedPresentationState(handle, &state) == 0 else {
-      return Self.emptyRendererOwnedPresentationState()
+  func nativeTargetPresentationState() -> [String: Any] {
+    var state = VPMacOSNativeTargetPresentationState()
+    guard VPMacOSNativePlayerCopyNativeTargetPresentationState(handle, &state) == 0 else {
+      return Self.emptyNativeTargetPresentationState()
     }
     let lastError = withUnsafeBytes(of: &state.last_draw_error) { rawBuffer -> String in
       guard let base = rawBuffer.bindMemory(to: CChar.self).baseAddress else {
@@ -120,16 +120,16 @@ extension MacOSNativePlayerSession {
       ),
       "lastDrawError": lastError,
     ]
-    diagnostics.merge(rendererOwnedLastFrameColorDiagnostics()) { _, next in next }
+    diagnostics.merge(nativeTargetLastFrameColorDiagnostics()) { _, next in next }
     return diagnostics
   }
 
-  func rendererOwnedLastFrameColorDiagnostics() -> [String: Any] {
+  func nativeTargetLastFrameColorDiagnostics() -> [String: Any] {
     var info = VPMacOSNativeFrameInfo()
-    guard VPMacOSNativePlayerCopyLastRendererOwnedFrameInfo(handle, &info) == 0 else {
-      return Self.emptyRendererOwnedLastFrameColorDiagnostics()
+    guard VPMacOSNativePlayerCopyLastNativeTargetFrameInfo(handle, &info) == 0 else {
+      return Self.emptyNativeTargetLastFrameColorDiagnostics()
     }
-    if let fallback = rendererOwnedTrackColorFallback() {
+    if let fallback = nativeTargetTrackColorFallback() {
       if info.color_range == 0 {
         info.color_range = Int32(fallback.colorRange)
       }
@@ -155,7 +155,7 @@ extension MacOSNativePlayerSession {
     ]
   }
 
-  private func rendererOwnedTrackColorFallback() -> (
+  private func nativeTargetTrackColorFallback() -> (
     colorRange: Int,
     colorMatrix: Int,
     colorTransfer: Int,
@@ -241,27 +241,27 @@ extension MacOSNativePlayerSession {
         "softwareFrameYuvPlaneLayout": 0,
         "softwareFrameYuvSampleAlignment": 0,
         "softwareFramePackFallbackCount": 0,
-        "rendererOwnedUploadCount": 0,
-        "rendererOwnedUploadFailureCount": 0,
-        "rendererOwnedUploadElapsedMs": 0,
-        "rendererOwnedUploadFps": 0.0,
-        "rendererOwnedUploadFpsX1000": 0,
-        "rendererOwnedDirectYuvUploadCount": 0,
-        "rendererOwnedCVPixelBufferUploadCount": 0,
-        "rendererOwnedPresentPackageUploadCount": 0,
-        "rendererOwnedPresentPackageCopyUs": 0,
-        "rendererOwnedPresentPackageGpuWaitUs": 0,
-        "rendererOwnedPresentPackageTotalUs": 0,
-        "rendererOwnedPresentPackageStorage": "unavailable",
+        "nativeTargetUploadCount": 0,
+        "nativeTargetUploadFailureCount": 0,
+        "nativeTargetUploadElapsedMs": 0,
+        "nativeTargetUploadFps": 0.0,
+        "nativeTargetUploadFpsX1000": 0,
+        "nativeTargetDirectYuvUploadCount": 0,
+        "nativeTargetCVPixelBufferUploadCount": 0,
+        "nativeTargetPresentPackageUploadCount": 0,
+        "nativeTargetPresentPackageCopyUs": 0,
+        "nativeTargetPresentPackageGpuWaitUs": 0,
+        "nativeTargetPresentPackageTotalUs": 0,
+        "nativeTargetPresentPackageStorage": "unavailable",
         "activeTrackCount": 0,
         "aggregateDecodeFrameCount": 0,
         "aggregateDecodeFps": 0.0,
         "aggregateDecodeFpsX1000": 0,
         "cpuFrameMemoryBytes": 0,
         "packetQueueMemoryBytes": 0,
-        "rendererOwnedStagingAllocationCount": 0,
-        "rendererOwnedStagingReuseCount": 0,
-        "rendererOwnedStagingMaxBytes": 0,
+        "nativeTargetStagingAllocationCount": 0,
+        "nativeTargetStagingReuseCount": 0,
+        "nativeTargetStagingMaxBytes": 0,
         "rendererDrawCount": 0,
         "rendererDrawAvgUs": 0,
         "rendererDrawMaxUs": 0,
@@ -416,37 +416,37 @@ extension MacOSNativePlayerSession {
       "softwareFramePackFallbackCount": Int64(
         min(stats.software_frame_pack_fallback_count, maxInt64)
       ),
-      "rendererOwnedUploadCount": Int64(
-        min(UInt64(stats.renderer_owned_upload_count), maxInt64)
+      "nativeTargetUploadCount": Int64(
+        min(UInt64(stats.native_target_upload_count), maxInt64)
       ),
-      "rendererOwnedUploadFailureCount": Int64(
-        min(UInt64(stats.renderer_owned_upload_failure_count), maxInt64)
+      "nativeTargetUploadFailureCount": Int64(
+        min(UInt64(stats.native_target_upload_failure_count), maxInt64)
       ),
-      "rendererOwnedUploadElapsedMs": Int64(stats.renderer_owned_upload_elapsed_ms),
-      "rendererOwnedUploadFps": stats.renderer_owned_upload_fps,
-      "rendererOwnedUploadFpsX1000": Self.finiteNonNegativeX1000(
-        stats.renderer_owned_upload_fps
+      "nativeTargetUploadElapsedMs": Int64(stats.native_target_upload_elapsed_ms),
+      "nativeTargetUploadFps": stats.native_target_upload_fps,
+      "nativeTargetUploadFpsX1000": Self.finiteNonNegativeX1000(
+        stats.native_target_upload_fps
       ),
-      "rendererOwnedDirectYuvUploadCount": Int64(
-        stats.renderer_owned_direct_yuv_upload_count
+      "nativeTargetDirectYuvUploadCount": Int64(
+        stats.native_target_direct_yuv_upload_count
       ),
-      "rendererOwnedCVPixelBufferUploadCount": Int64(
-        stats.renderer_owned_cvpixelbuffer_upload_count
+      "nativeTargetCVPixelBufferUploadCount": Int64(
+        stats.native_target_cvpixelbuffer_upload_count
       ),
-      "rendererOwnedPresentPackageUploadCount": Int64(
-        stats.renderer_owned_present_package_upload_count
+      "nativeTargetPresentPackageUploadCount": Int64(
+        stats.native_target_present_package_upload_count
       ),
-      "rendererOwnedPresentPackageCopyUs": Int64(
-        stats.renderer_owned_present_package_copy_us
+      "nativeTargetPresentPackageCopyUs": Int64(
+        stats.native_target_present_package_copy_us
       ),
-      "rendererOwnedPresentPackageGpuWaitUs": Int64(
-        stats.renderer_owned_present_package_gpu_wait_us
+      "nativeTargetPresentPackageGpuWaitUs": Int64(
+        stats.native_target_present_package_gpu_wait_us
       ),
-      "rendererOwnedPresentPackageTotalUs": Int64(
-        stats.renderer_owned_present_package_total_us
+      "nativeTargetPresentPackageTotalUs": Int64(
+        stats.native_target_present_package_total_us
       ),
-      "rendererOwnedPresentPackageStorage": Self.presentPackageStorageName(
-        stats.renderer_owned_present_package_storage
+      "nativeTargetPresentPackageStorage": Self.presentPackageStorageName(
+        stats.native_target_present_package_storage
       ),
       "activeTrackCount": Int64(min(UInt64(stats.active_track_count), maxInt64)),
       "aggregateDecodeFrameCount": Int64(
@@ -456,14 +456,14 @@ extension MacOSNativePlayerSession {
       "aggregateDecodeFpsX1000": Self.finiteNonNegativeX1000(stats.aggregate_decode_fps),
       "cpuFrameMemoryBytes": Int64(min(stats.cpu_frame_memory_bytes, maxInt64)),
       "packetQueueMemoryBytes": Int64(min(stats.packet_queue_memory_bytes, maxInt64)),
-      "rendererOwnedStagingAllocationCount": Int64(
-        min(UInt64(stats.renderer_owned_staging_allocation_count), maxInt64)
+      "nativeTargetStagingAllocationCount": Int64(
+        min(UInt64(stats.native_target_staging_allocation_count), maxInt64)
       ),
-      "rendererOwnedStagingReuseCount": Int64(
-        min(UInt64(stats.renderer_owned_staging_reuse_count), maxInt64)
+      "nativeTargetStagingReuseCount": Int64(
+        min(UInt64(stats.native_target_staging_reuse_count), maxInt64)
       ),
-      "rendererOwnedStagingMaxBytes": Int64(
-        min(UInt64(stats.renderer_owned_staging_max_bytes), maxInt64)
+      "nativeTargetStagingMaxBytes": Int64(
+        min(UInt64(stats.native_target_staging_max_bytes), maxInt64)
       ),
       "rendererDrawCount": Int64(min(UInt64(stats.renderer_draw_count), maxInt64)),
       "rendererDrawAvgUs": Int64(stats.renderer_draw_avg_us),
@@ -830,7 +830,7 @@ extension MacOSNativePlayerSession {
     }
   }
 
-  private static func emptyRendererOwnedPresentationState() -> [String: Any] {
+  private static func emptyNativeTargetPresentationState() -> [String: Any] {
     [
       "rendererInitialized": false,
       "targetInstalled": false,
@@ -875,7 +875,7 @@ extension MacOSNativePlayerSession {
     ]
   }
 
-  private static func emptyRendererOwnedLastFrameColorDiagnostics() -> [String: Any] {
+  private static func emptyNativeTargetLastFrameColorDiagnostics() -> [String: Any] {
     [
       "lastFrameColorRangeCode": 0,
       "lastFrameColorRange": "unknown",

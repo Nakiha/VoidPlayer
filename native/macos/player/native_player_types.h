@@ -110,7 +110,7 @@ typedef struct VPMacOSNativePresentationSchedulerStats {
   int64_t last_deadline_sleep_us;
 } VPMacOSNativePresentationSchedulerStats;
 
-typedef struct VPMacOSNativeRendererOwnedPresentationState {
+typedef struct VPMacOSNativeTargetPresentationState {
   int32_t renderer_initialized;
   int32_t target_installed;
   int32_t backend_available;
@@ -142,7 +142,7 @@ typedef struct VPMacOSNativeRendererOwnedPresentationState {
   uint64_t overlay_cpu_fallback_count;
   char backend_name[64];
   char last_draw_error[256];
-} VPMacOSNativeRendererOwnedPresentationState;
+} VPMacOSNativeTargetPresentationState;
 
 typedef struct VPMacOSNativeTrackDiagnosticInfo {
   int32_t file_id;
@@ -297,25 +297,25 @@ typedef struct VPMacOSNativePlayerPerfStats {
   int32_t software_frame_yuv_plane_layout;
   int32_t software_frame_yuv_sample_alignment;
   uint64_t software_frame_pack_fallback_count;
-  uint64_t renderer_owned_upload_count;
-  uint64_t renderer_owned_upload_failure_count;
-  int64_t renderer_owned_upload_elapsed_ms;
-  double renderer_owned_upload_fps;
-  int64_t renderer_owned_direct_yuv_upload_count;
-  int64_t renderer_owned_cvpixelbuffer_upload_count;
-  int64_t renderer_owned_present_package_upload_count;
-  int64_t renderer_owned_present_package_copy_us;
-  int64_t renderer_owned_present_package_gpu_wait_us;
-  int64_t renderer_owned_present_package_total_us;
-  int32_t renderer_owned_present_package_storage;
+  uint64_t native_target_upload_count;
+  uint64_t native_target_upload_failure_count;
+  int64_t native_target_upload_elapsed_ms;
+  double native_target_upload_fps;
+  int64_t native_target_direct_yuv_upload_count;
+  int64_t native_target_cvpixelbuffer_upload_count;
+  int64_t native_target_present_package_upload_count;
+  int64_t native_target_present_package_copy_us;
+  int64_t native_target_present_package_gpu_wait_us;
+  int64_t native_target_present_package_total_us;
+  int32_t native_target_present_package_storage;
   uint64_t active_track_count;
   uint64_t aggregate_decode_frame_count;
   double aggregate_decode_fps;
   uint64_t cpu_frame_memory_bytes;
   uint64_t packet_queue_memory_bytes;
-  uint64_t renderer_owned_staging_allocation_count;
-  uint64_t renderer_owned_staging_reuse_count;
-  uint64_t renderer_owned_staging_max_bytes;
+  uint64_t native_target_staging_allocation_count;
+  uint64_t native_target_staging_reuse_count;
+  uint64_t native_target_staging_max_bytes;
   uint64_t renderer_draw_count;
   int64_t renderer_draw_avg_us;
   int64_t renderer_draw_max_us;

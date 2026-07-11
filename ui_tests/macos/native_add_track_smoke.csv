@@ -22,16 +22,16 @@
 4.58, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackAddLatencyFFIMsX1000, 1
 4.59, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackAddLatencyTargetReadyMsX1000, 1
 4.60, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, nativeTrackAddLatencyCompositeMsX1000, 1
-4.61, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+4.61, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetLastDrawError,
 4.62, ASSERT_NATIVE_DIAGNOSTIC_STRING, presentationFallbackReason, none
 4.65, CAPTURE_VIEWPORT, after_second_native_track
 5.2, ASSERT_CAPTURE_CHANGED, before_second_native_track, after_second_native_track
 5.3, ADJUST_TRACK_OFFSET, 1, 120
 5.4, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, secondaryTrackOffsetUs, 120000
 5.41, ASSERT_NATIVE_DIAGNOSTIC_STRING, secondaryTrackDecodeMode, shared-renderer-videotoolbox
-5.42, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeRendererOwnedUploadFailureCount, 0, 0
+5.42, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, nativeTargetUploadFailureCount, 0, 0
 5.44, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, pixelBufferMetalUploadFailureCount, 0, 0
-5.45, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedLastDrawError,
+5.45, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetLastDrawError,
 5.5, REMOVE_TRACK, 1
 6.2, ASSERT_TRACK_COUNT, 1
 6.3, ASSERT_TRACK_ORDER, 0

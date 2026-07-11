@@ -5,7 +5,7 @@ import FlutterMacOS
 struct MacOSVideoRendererStartup {
   let texture: MacOSVideoSurface
   let flutterTexture: FlutterTexture?
-  let nativeTexture: MacOSFlutterTextureBridge?
+  let nativeTargetRing: MacOSNativeTargetRing?
   let backendName: String
   let nativePlayer: MacOSNativePlayerSession?
   let tracks: [[String: Any]]
@@ -71,7 +71,7 @@ enum MacOSVideoRendererStartupFactory {
     return MacOSVideoRendererStartup(
       texture: texture,
       flutterTexture: texture,
-      nativeTexture: nil,
+      nativeTargetRing: nil,
       backendName: "synthetic-texture",
       nativePlayer: nil,
       tracks: tracks,
@@ -123,7 +123,7 @@ enum MacOSVideoRendererStartupFactory {
       session.setBackgroundColor(viewportBackgroundColor)
     }
     try session.open(path: firstPath)
-    let texture = MacOSFlutterTextureBridge(
+    let texture = MacOSNativeTargetRing(
       nativeWidth: requestedWidth,
       nativeHeight: requestedHeight
     )
@@ -133,13 +133,13 @@ enum MacOSVideoRendererStartupFactory {
       refresh: false
     ) else {
       throw MacOSNativePlayerError.failed(
-        "failed to install renderer-owned Metal presentation target ring"
+        "failed to install native Metal presentation target ring"
       )
     }
     let sessionDurationUs = session.durationUs()
     let trackDurationUs = max(0, sessionDurationUs)
     let firstMetadata = try session.trackMetadata(fileId: 0)
-    let firstFrame = session.lastRendererOwnedFrameInfo()
+    let firstFrame = session.lastNativeTargetFrameInfo()
     let trackWidth = firstMetadata.width > 0 ? firstMetadata.width : (firstFrame?.width ?? requestedWidth)
     let trackHeight = firstMetadata.height > 0 ? firstMetadata.height : (firstFrame?.height ?? requestedHeight)
     var tracks = [
@@ -181,7 +181,7 @@ enum MacOSVideoRendererStartupFactory {
     return MacOSVideoRendererStartup(
       texture: texture,
       flutterTexture: nil,
-      nativeTexture: texture,
+      nativeTargetRing: texture,
       backendName: MacOSVideoTrackPayload.nativeFormatName,
       nativePlayer: session,
       tracks: tracks,
@@ -190,7 +190,7 @@ enum MacOSVideoRendererStartupFactory {
       initialPresentedDtsUs: firstFrame.map {
         MacOSFramePresentationState.normalizedDtsUs($0)
       } ?? 0,
-      presentationTargetInstalled: session.rendererOwnedPresentationActive()
+      presentationTargetInstalled: session.nativeTargetPresentationActive()
     )
   }
 }

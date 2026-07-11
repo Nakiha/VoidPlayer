@@ -28,8 +28,8 @@ enum MacOSVideoRendererDiagnostics {
       metalTextureCreationCount: Int,
       metalTextureFailureCount: Int,
       metalTextureLastError: String,
-      rendererOwnedPixelBufferBytes: Int,
-      rendererOwnedPixelBufferCount: Int,
+      nativeTargetPixelBufferBytes: Int,
+      nativeTargetPixelBufferCount: Int,
       inFlightMetalBufferCount: Int,
       metalBufferExhaustionCount: Int,
       stableDisplayFallbackActive: Bool,
@@ -54,33 +54,33 @@ enum MacOSVideoRendererDiagnostics {
     let primaryTrack = trackDiagnostics.first
     let primaryTrackPayload = trackPayloads.first
     let secondaryTrack = trackDiagnostics.dropFirst().first
-    let rendererOwnedState = player?.rendererOwnedPresentationState()
-      ?? Self.emptyRendererOwnedPresentationState()
-    let rendererOwnedLastFrameColorRangeCode = colorDiagnosticCode(
-      state: rendererOwnedState,
+    let nativeTargetState = player?.nativeTargetPresentationState()
+      ?? Self.emptyNativeTargetPresentationState()
+    let nativeTargetLastFrameColorRangeCode = colorDiagnosticCode(
+      state: nativeTargetState,
       stateKey: "lastFrameColorRangeCode",
       fallbackTrack: primaryTrackPayload,
       trackKey: "colorRange"
     )
-    let rendererOwnedLastFrameColorMatrixCode = colorDiagnosticCode(
-      state: rendererOwnedState,
+    let nativeTargetLastFrameColorMatrixCode = colorDiagnosticCode(
+      state: nativeTargetState,
       stateKey: "lastFrameColorMatrixCode",
       fallbackTrack: primaryTrackPayload,
       trackKey: "colorMatrix"
     )
-    let rendererOwnedLastFrameColorTransferCode = colorDiagnosticCode(
-      state: rendererOwnedState,
+    let nativeTargetLastFrameColorTransferCode = colorDiagnosticCode(
+      state: nativeTargetState,
       stateKey: "lastFrameColorTransferCode",
       fallbackTrack: primaryTrackPayload,
       trackKey: "colorTransfer"
     )
-    let rendererOwnedLastFrameColorPrimariesCode = colorDiagnosticCode(
-      state: rendererOwnedState,
+    let nativeTargetLastFrameColorPrimariesCode = colorDiagnosticCode(
+      state: nativeTargetState,
       stateKey: "lastFrameColorPrimariesCode",
       fallbackTrack: primaryTrackPayload,
       trackKey: "colorPrimaries"
     )
-    let rendererOwnedActive = rendererOwnedState["active"] as? Bool ?? false
+    let nativeTargetActive = nativeTargetState["active"] as? Bool ?? false
     let rendererDrawCount = int64Diagnostic(perfStats?["rendererDrawCount"])
     let nativeFramePresentationCount =
       int64Diagnostic(presentationDiagnostics["nativeFramePresentationCount"])
@@ -96,80 +96,80 @@ enum MacOSVideoRendererDiagnostics {
     let textureMetalBufferExhaustionCount =
       Int64(textureStats?.metalBufferExhaustionCount ?? 0)
     let nativeDedicatedGpuUsageBytes = int64Diagnostic(perfStats?["dedicatedGpuUsageBytes"])
-    let rendererOwnedPixelBufferBytes =
-      Int64(textureStats?.rendererOwnedPixelBufferBytes ?? 0)
-    let dedicatedGpuUsageBytes = nativeDedicatedGpuUsageBytes + rendererOwnedPixelBufferBytes
+    let nativeTargetPixelBufferBytes =
+      Int64(textureStats?.nativeTargetPixelBufferBytes ?? 0)
+    let dedicatedGpuUsageBytes = nativeDedicatedGpuUsageBytes + nativeTargetPixelBufferBytes
     var diagnostics: [String: Any] = [
       "platform": "macos",
       "backend": backendName,
       "presentationAdapter": String(cString: VPMacOSNativePresentationAdapterName()),
       "presentationAdapterKind": presentationAdapterKind(
         player: player,
-        state: rendererOwnedState
+        state: nativeTargetState
       ),
       "presentationScheduler": String(cString: VPMacOSNativePresentationSchedulerName()),
       "presentationBackend": presentationBackendName(
         player: player,
-        state: rendererOwnedState
+        state: nativeTargetState
       ),
-      "rendererOwnedPresentationActive": rendererOwnedActive,
-      "rendererOwnedRendererInitialized": rendererOwnedState["rendererInitialized"] ?? false,
-      "rendererOwnedTargetInstalled": rendererOwnedState["targetInstalled"] ?? false,
-      "rendererOwnedBackendAvailable": rendererOwnedState["backendAvailable"] ?? false,
-      "rendererOwnedBackendName": rendererOwnedState["backendName"] ?? "unknown",
-      "rendererOwnedLastDrawSucceeded": rendererOwnedState["lastDrawSucceeded"] ?? false,
-      "rendererOwnedConsecutiveDrawFailures":
-        rendererOwnedState["consecutiveDrawFailures"] ?? 0,
-      "rendererOwnedDrawFailureCount": rendererOwnedState["drawFailureCount"] ?? 0,
-      "rendererOwnedTargetGeneration": rendererOwnedState["targetGeneration"] ?? 0,
-      "rendererOwnedUploadIntervalP95Ms": rendererOwnedState["uploadIntervalP95Ms"] ?? 0,
-      "rendererOwnedTargetWarmupGeneration":
-        rendererOwnedState["targetWarmupGeneration"] ?? 0,
-      "rendererOwnedTargetWarmupRemaining":
-        rendererOwnedState["targetWarmupRemaining"] ?? 0,
-      "rendererOwnedTargetWarmupSampleCount":
-        rendererOwnedState["targetWarmupSampleCount"] ?? 0,
-      "rendererOwnedTargetWarmupLastMs":
-        rendererOwnedState["targetWarmupLastMs"] ?? 0,
-      "rendererOwnedTargetWarmupP95Ms":
-        rendererOwnedState["targetWarmupP95Ms"] ?? 0,
-      "rendererOwnedTargetWidth": rendererOwnedState["targetWidth"] ?? 0,
-      "rendererOwnedTargetHeight": rendererOwnedState["targetHeight"] ?? 0,
-      "rendererOwnedUploadStorageKind": rendererOwnedState["uploadStorageKind"] ?? "unavailable",
-      "rendererOwnedLastSuccessfulFramePtsUs":
-        rendererOwnedState["lastSuccessfulFramePtsUs"] ?? 0,
-      "rendererOwnedLastFrameColorRangeCode": rendererOwnedLastFrameColorRangeCode,
-      "rendererOwnedLastFrameColorRange": colorRangeName(rendererOwnedLastFrameColorRangeCode),
-      "rendererOwnedLastFrameColorMatrixCode": rendererOwnedLastFrameColorMatrixCode,
-      "rendererOwnedLastFrameColorMatrix":
-        colorMatrixName(rendererOwnedLastFrameColorMatrixCode),
-      "rendererOwnedLastFrameColorTransferCode": rendererOwnedLastFrameColorTransferCode,
-      "rendererOwnedLastFrameColorTransfer":
-        colorTransferName(rendererOwnedLastFrameColorTransferCode),
-      "rendererOwnedLastFrameColorPrimariesCode": rendererOwnedLastFrameColorPrimariesCode,
-      "rendererOwnedLastFrameColorPrimaries":
-        colorPrimariesName(rendererOwnedLastFrameColorPrimariesCode),
-      "rendererOwnedOverlayLastExpected":
-        rendererOwnedState["overlayLastExpected"] ?? false,
-      "rendererOwnedOverlayLastApplied":
-        rendererOwnedState["overlayLastApplied"] ?? false,
-      "rendererOwnedOverlayLastFillRectCount":
-        rendererOwnedState["overlayLastFillRectCount"] ?? 0,
-      "rendererOwnedOverlayLastLineRectCount":
-        rendererOwnedState["overlayLastLineRectCount"] ?? 0,
-      "rendererOwnedOverlayExpectedCount":
-        rendererOwnedState["overlayExpectedCount"] ?? 0,
-      "rendererOwnedOverlayAppliedCount":
-        rendererOwnedState["overlayAppliedCount"] ?? 0,
-      "rendererOwnedOverlayMissedCount":
-        rendererOwnedState["overlayMissedCount"] ?? 0,
-      "rendererOwnedOverlayGpuSuccessCount":
-        rendererOwnedState["overlayGpuSuccessCount"] ?? 0,
-      "rendererOwnedOverlayGpuFailureCount":
-        rendererOwnedState["overlayGpuFailureCount"] ?? 0,
-      "rendererOwnedOverlayCpuFallbackCount":
-        rendererOwnedState["overlayCpuFallbackCount"] ?? 0,
-      "rendererOwnedLastDrawError": rendererOwnedState["lastDrawError"] ?? "",
+      "nativeTargetPresentationActive": nativeTargetActive,
+      "nativeTargetRendererInitialized": nativeTargetState["rendererInitialized"] ?? false,
+      "nativeTargetInstalled": nativeTargetState["targetInstalled"] ?? false,
+      "nativeTargetBackendAvailable": nativeTargetState["backendAvailable"] ?? false,
+      "nativeTargetBackendName": nativeTargetState["backendName"] ?? "unknown",
+      "nativeTargetLastDrawSucceeded": nativeTargetState["lastDrawSucceeded"] ?? false,
+      "nativeTargetConsecutiveDrawFailures":
+        nativeTargetState["consecutiveDrawFailures"] ?? 0,
+      "nativeTargetDrawFailureCount": nativeTargetState["drawFailureCount"] ?? 0,
+      "nativeTargetGeneration": nativeTargetState["targetGeneration"] ?? 0,
+      "nativeTargetUploadIntervalP95Ms": nativeTargetState["uploadIntervalP95Ms"] ?? 0,
+      "nativeTargetWarmupGeneration":
+        nativeTargetState["targetWarmupGeneration"] ?? 0,
+      "nativeTargetWarmupRemaining":
+        nativeTargetState["targetWarmupRemaining"] ?? 0,
+      "nativeTargetWarmupSampleCount":
+        nativeTargetState["targetWarmupSampleCount"] ?? 0,
+      "nativeTargetWarmupLastMs":
+        nativeTargetState["targetWarmupLastMs"] ?? 0,
+      "nativeTargetWarmupP95Ms":
+        nativeTargetState["targetWarmupP95Ms"] ?? 0,
+      "nativeTargetWidth": nativeTargetState["targetWidth"] ?? 0,
+      "nativeTargetHeight": nativeTargetState["targetHeight"] ?? 0,
+      "nativeTargetUploadStorageKind": nativeTargetState["uploadStorageKind"] ?? "unavailable",
+      "nativeTargetLastSuccessfulFramePtsUs":
+        nativeTargetState["lastSuccessfulFramePtsUs"] ?? 0,
+      "nativeTargetLastFrameColorRangeCode": nativeTargetLastFrameColorRangeCode,
+      "nativeTargetLastFrameColorRange": colorRangeName(nativeTargetLastFrameColorRangeCode),
+      "nativeTargetLastFrameColorMatrixCode": nativeTargetLastFrameColorMatrixCode,
+      "nativeTargetLastFrameColorMatrix":
+        colorMatrixName(nativeTargetLastFrameColorMatrixCode),
+      "nativeTargetLastFrameColorTransferCode": nativeTargetLastFrameColorTransferCode,
+      "nativeTargetLastFrameColorTransfer":
+        colorTransferName(nativeTargetLastFrameColorTransferCode),
+      "nativeTargetLastFrameColorPrimariesCode": nativeTargetLastFrameColorPrimariesCode,
+      "nativeTargetLastFrameColorPrimaries":
+        colorPrimariesName(nativeTargetLastFrameColorPrimariesCode),
+      "nativeTargetOverlayLastExpected":
+        nativeTargetState["overlayLastExpected"] ?? false,
+      "nativeTargetOverlayLastApplied":
+        nativeTargetState["overlayLastApplied"] ?? false,
+      "nativeTargetOverlayLastFillRectCount":
+        nativeTargetState["overlayLastFillRectCount"] ?? 0,
+      "nativeTargetOverlayLastLineRectCount":
+        nativeTargetState["overlayLastLineRectCount"] ?? 0,
+      "nativeTargetOverlayExpectedCount":
+        nativeTargetState["overlayExpectedCount"] ?? 0,
+      "nativeTargetOverlayAppliedCount":
+        nativeTargetState["overlayAppliedCount"] ?? 0,
+      "nativeTargetOverlayMissedCount":
+        nativeTargetState["overlayMissedCount"] ?? 0,
+      "nativeTargetOverlayGpuSuccessCount":
+        nativeTargetState["overlayGpuSuccessCount"] ?? 0,
+      "nativeTargetOverlayGpuFailureCount":
+        nativeTargetState["overlayGpuFailureCount"] ?? 0,
+      "nativeTargetOverlayCpuFallbackCount":
+        nativeTargetState["overlayCpuFallbackCount"] ?? 0,
+      "nativeTargetLastDrawError": nativeTargetState["lastDrawError"] ?? "",
       "hardwareDecodeProvider": String(cString: VPMacOSNativeHardwareDecodeProviderName()),
       "hardwareDecodeAvailable": VPMacOSNativeHardwareDecodeAvailable() != 0,
       "hardwareDecodeActive": player?.hardwareDecodeActive() ?? false,
@@ -309,7 +309,7 @@ enum MacOSVideoRendererDiagnostics {
         ? "Explicit macOS synthetic texture source is active"
         : presentationReason(
           player: player,
-          state: rendererOwnedState
+          state: nativeTargetState
         ),
       "playerId": playerId ?? -1,
       "textureId": textureId ?? -1,
@@ -369,9 +369,9 @@ enum MacOSVideoRendererDiagnostics {
       "pixelBufferPrewarmDroppedCount": textureStats?.prewarmDroppedCount ?? 0,
       "pixelBufferMetalUploadCount": textureStats?.metalUploadCount ?? 0,
       "pixelBufferMetalYuvUploadCount":
-        perfStats?["rendererOwnedDirectYuvUploadCount"] ?? 0,
+        perfStats?["nativeTargetDirectYuvUploadCount"] ?? 0,
       "pixelBufferMetalCVPixelBufferUploadCount":
-        perfStats?["rendererOwnedCVPixelBufferUploadCount"] ?? 0,
+        perfStats?["nativeTargetCVPixelBufferUploadCount"] ?? 0,
       "pixelBufferMetalUploadFailureCount": textureStats?.metalUploadFailureCount ?? 0,
       "presentationUploadMode": MacOSPresentationDiagnostics.uploadMode(
           perfStats: perfStats,
@@ -380,20 +380,20 @@ enum MacOSVideoRendererDiagnostics {
           textureRegistered: textureId != nil
         ),
       "presentationPackageUploadCount":
-        perfStats?["rendererOwnedPresentPackageUploadCount"] ?? 0,
-      "presentationPackageCopyUs": perfStats?["rendererOwnedPresentPackageCopyUs"] ?? 0,
+        perfStats?["nativeTargetPresentPackageUploadCount"] ?? 0,
+      "presentationPackageCopyUs": perfStats?["nativeTargetPresentPackageCopyUs"] ?? 0,
       "presentationPackageGpuWaitUs":
-        perfStats?["rendererOwnedPresentPackageGpuWaitUs"] ?? 0,
+        perfStats?["nativeTargetPresentPackageGpuWaitUs"] ?? 0,
       "presentationPackageTotalUs":
-        perfStats?["rendererOwnedPresentPackageTotalUs"] ?? 0,
+        perfStats?["nativeTargetPresentPackageTotalUs"] ?? 0,
       "presentationPackageStorage":
-        perfStats?["rendererOwnedPresentPackageStorage"] ?? "unavailable",
+        perfStats?["nativeTargetPresentPackageStorage"] ?? "unavailable",
       "presentationPackageStagingAllocationCount":
-        perfStats?["rendererOwnedStagingAllocationCount"] ?? 0,
+        perfStats?["nativeTargetStagingAllocationCount"] ?? 0,
       "presentationPackageStagingReuseCount":
-        perfStats?["rendererOwnedStagingReuseCount"] ?? 0,
+        perfStats?["nativeTargetStagingReuseCount"] ?? 0,
       "presentationPackageStagingMaxBytes":
-        perfStats?["rendererOwnedStagingMaxBytes"] ?? 0,
+        perfStats?["nativeTargetStagingMaxBytes"] ?? 0,
       "metalAvailable": textureStats?.metalAvailable ?? false,
       "metalTextureCacheAvailable": textureStats?.metalTextureCacheAvailable ?? false,
       "metalTextureValid": textureStats?.metalTextureValid ?? false,
@@ -407,11 +407,11 @@ enum MacOSVideoRendererDiagnostics {
       "nativeStableDisplayFallbackCount": textureStats?.stableDisplayFallbackCount ?? 0,
       "nativeStableDisplayFallbackPtsUs": textureStats?.stableDisplayFallbackPtsUs ?? -1,
       "nativePresentationTargetInstalled": presentationTargetInstalled,
-      "nativeRendererOwnedUploadCount": player?.rendererOwnedPresentationUploadCount() ?? 0,
-      "nativeRendererOwnedUploadFailureCount": player?.rendererOwnedPresentationFailureCount() ?? 0,
-      "nativeRendererOwnedUploadFps": perfStats?["rendererOwnedUploadFps"] ?? 0.0,
-      "nativeRendererOwnedUploadFpsX1000": perfStats?["rendererOwnedUploadFpsX1000"] ?? 0,
-      "nativeRendererOwnedUploadElapsedMs": perfStats?["rendererOwnedUploadElapsedMs"] ?? 0,
+      "nativeTargetUploadCount": player?.nativeTargetPresentationUploadCount() ?? 0,
+      "nativeTargetUploadFailureCount": player?.nativeTargetPresentationFailureCount() ?? 0,
+      "nativeTargetUploadFps": perfStats?["nativeTargetUploadFps"] ?? 0.0,
+      "nativeTargetUploadFpsX1000": perfStats?["nativeTargetUploadFpsX1000"] ?? 0,
+      "nativeTargetUploadElapsedMs": perfStats?["nativeTargetUploadElapsedMs"] ?? 0,
       "nativeRendererDrawCount": rendererDrawCount,
       "nativeRendererDrawAvgUs": perfStats?["rendererDrawAvgUs"] ?? 0,
       "nativeRendererDrawMaxUs": perfStats?["rendererDrawMaxUs"] ?? 0,
@@ -453,8 +453,8 @@ enum MacOSVideoRendererDiagnostics {
       "processPrivateBytes": perfStats?["processPrivateBytes"] ?? 0,
       "dedicatedGpuUsageBytes": dedicatedGpuUsageBytes,
       "nativeDedicatedGpuUsageBytes": nativeDedicatedGpuUsageBytes,
-      "rendererOwnedPixelBufferBytes": rendererOwnedPixelBufferBytes,
-      "rendererOwnedPixelBufferCount": textureStats?.rendererOwnedPixelBufferCount ?? 0,
+      "nativeTargetPixelBufferBytes": nativeTargetPixelBufferBytes,
+      "nativeTargetPixelBufferCount": textureStats?.nativeTargetPixelBufferCount ?? 0,
       "nativeDecodeFrameCount": perfStats?["decodeFrameCount"] ?? 0,
       "nativeDecodeDroppedCount": perfStats?["decodeDroppedCount"] ?? 0,
       "nativeDecodeElapsedMs": perfStats?["decodeElapsedMs"] ?? 0,
@@ -504,7 +504,7 @@ enum MacOSVideoRendererDiagnostics {
       return "explicit-synthetic"
     }
     if state["active"] as? Bool == true {
-      return "renderer-owned-metal"
+      return "native-target-metal"
     }
     return "unavailable"
   }
@@ -514,15 +514,15 @@ enum MacOSVideoRendererDiagnostics {
     state: [String: Any]
   ) -> String {
     if player != nil && state["active"] as? Bool == true {
-      return "macOS shared renderer is active with renderer-owned Metal presentation"
+      return "macOS shared renderer is active with native Metal presentation"
     }
     if let error = state["lastDrawError"] as? String, !error.isEmpty {
       return error
     }
-    return "macOS shared renderer has no active renderer-owned presentation target"
+    return "macOS shared renderer has no active native target presentation target"
   }
 
-  private static func emptyRendererOwnedPresentationState() -> [String: Any] {
+  private static func emptyNativeTargetPresentationState() -> [String: Any] {
     [
       "rendererInitialized": false,
       "targetInstalled": false,

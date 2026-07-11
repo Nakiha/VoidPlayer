@@ -18,7 +18,7 @@ struct PresentationBackendConfig {
     int width = 0;
     int height = 0;
     int max_track_slots = 0;
-    bool headless = false;
+    bool offscreen = false;
     ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
     double sdr_white_level_nits = 80.0;
 };
@@ -91,7 +91,7 @@ struct PresentationBackendDiagnostics {
     int32_t width = 0;
     int32_t height = 0;
     int32_t buffer_count = 0;
-    bool headless = false;
+    bool offscreen = false;
     uint64_t prewarm_request_count = 0;
     uint64_t prewarm_ready_count = 0;
     uint64_t prewarm_hit_count = 0;
@@ -100,11 +100,11 @@ struct PresentationBackendDiagnostics {
 };
 
 inline bool is_transient_presentation_backpressure_error(const std::string& error) {
-    return error == "renderer-owned Metal async draw deferred by backpressure" ||
+    return error == "native Metal async draw deferred by backpressure" ||
            error == "native Metal uploader shared resources are busy" ||
            error == "native Metal uploader frame resource pool is busy" ||
            error == "native Metal uploader overlay layer resources are busy" ||
-           error == "renderer-owned Metal presentation target ring is busy";
+           error == "native Metal presentation target ring is busy";
 }
 
 struct PresentationBackendMetrics {

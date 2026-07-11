@@ -28,7 +28,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private let coalescedFrameCallbackDelayMs = 8
   private var frameAvailableCount = 0
   private var inlineDirtyFrameCallbackDrainCount = 0
-  private var flutterTextureFrameAvailableSkippedWhilePlayingCount = 0
+  private var nativeTargetFrameNotificationSkippedWhilePlayingCount = 0
   private var compositorVideoTextureRefreshCount = 0
   private var compositorVideoTextureRefreshSkippedWhilePlayingCount = 0
   private var playbackSpeed = 1.0
@@ -59,8 +59,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     lifecycle.playerId
   }
 
-  private var nativeTexture: MacOSFlutterTextureBridge? {
-    lifecycle.nativeTexture
+  private var nativeTargetRing: MacOSNativeTargetRing? {
+    lifecycle.nativeTargetRing
   }
 
   private var textureId: Int64? {
@@ -191,7 +191,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "play":
       playback.play(
         player: nativePlayer,
-        texture: nativeTexture,
+        texture: nativeTargetRing,
         textureRegistered: textureId != nil,
         maxTrackSlots: tracks.activeSlotCapacity(),
         userData: Unmanaged.passUnretained(self).toOpaque(),
@@ -258,7 +258,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "getTracks":
       result(tracks.tracks)
     case "resetNativePerfCounters":
-      nativePlayer?.resetRendererOwnedPresentationStats()
+      nativePlayer?.resetNativeTargetPresentationStats()
       presentationState.resetFrameCounters()
       result(nil)
     case "pickFiles":
@@ -297,8 +297,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     case "debugNativeCompositor":
       if let nativeCompositor {
         var diagnostics = nativeCompositor.diagnostics()
-        if let state = nativePlayer?.rendererOwnedPresentationState() {
-          diagnostics.merge(Self.rendererOwnedColorDiagnostics(from: state)) { _, next in next }
+        if let state = nativePlayer?.nativeTargetPresentationState() {
+          diagnostics.merge(Self.nativeTargetColorDiagnostics(from: state)) { _, next in next }
         }
         result(diagnostics)
       } else {
@@ -320,16 +320,16 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
   }
 
-  private static func rendererOwnedColorDiagnostics(from state: [String: Any]) -> [String: Any] {
+  private static func nativeTargetColorDiagnostics(from state: [String: Any]) -> [String: Any] {
     [
-      "rendererOwnedLastFrameColorRangeCode": state["lastFrameColorRangeCode"] ?? 0,
-      "rendererOwnedLastFrameColorRange": state["lastFrameColorRange"] ?? "unknown",
-      "rendererOwnedLastFrameColorMatrixCode": state["lastFrameColorMatrixCode"] ?? 0,
-      "rendererOwnedLastFrameColorMatrix": state["lastFrameColorMatrix"] ?? "unknown",
-      "rendererOwnedLastFrameColorTransferCode": state["lastFrameColorTransferCode"] ?? 0,
-      "rendererOwnedLastFrameColorTransfer": state["lastFrameColorTransfer"] ?? "unknown",
-      "rendererOwnedLastFrameColorPrimariesCode": state["lastFrameColorPrimariesCode"] ?? 0,
-      "rendererOwnedLastFrameColorPrimaries": state["lastFrameColorPrimaries"] ?? "unknown",
+      "nativeTargetLastFrameColorRangeCode": state["lastFrameColorRangeCode"] ?? 0,
+      "nativeTargetLastFrameColorRange": state["lastFrameColorRange"] ?? "unknown",
+      "nativeTargetLastFrameColorMatrixCode": state["lastFrameColorMatrixCode"] ?? 0,
+      "nativeTargetLastFrameColorMatrix": state["lastFrameColorMatrix"] ?? "unknown",
+      "nativeTargetLastFrameColorTransferCode": state["lastFrameColorTransferCode"] ?? 0,
+      "nativeTargetLastFrameColorTransfer": state["lastFrameColorTransfer"] ?? "unknown",
+      "nativeTargetLastFrameColorPrimariesCode": state["lastFrameColorPrimariesCode"] ?? 0,
+      "nativeTargetLastFrameColorPrimaries": state["lastFrameColorPrimaries"] ?? "unknown",
     ]
   }
 
@@ -349,7 +349,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     var payload = info
     payload.removeValue(forKey: "texture")
     payload.removeValue(forKey: "ioSurface")
-    payload["nativeTextureObjectAvailable"] = texture != nil
+    payload["nativeTargetRingObjectAvailable"] = texture != nil
     payload["nativeIOSurfaceObjectAvailable"] = ioSurface != nil
 
     NSLog(
@@ -461,14 +461,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     let fileId = MacOSFlutterArguments.intArg(arguments, "fileId") ?? -1
     if fileId >= 0, let player = nativePlayer {
       let tracks = player.trackDiagnostics()
-      if shouldUseRendererOwnedPresentedFrame(player: player),
+      if shouldUseNativeTargetPresentedFrame(player: player),
          tracks.count == 1,
          (tracks[0]["fileId"] as? Int) == fileId,
-         let frame = player.lastRendererOwnedFrameInfo() {
+         let frame = player.lastNativeTargetFrameInfo() {
         let map = frame.presentedFrameMap(fileId: fileId)
         tracePresentedFrameSource(
           route: "currentPresentedFrame",
-          source: "renderer-owned-paused",
+          source: "native-target-paused",
           fileId: fileId,
           map: map
         )
@@ -514,14 +514,14 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
   private func currentPresentedFrames() -> [[String: Any]] {
     guard playerId != nil, let player = nativePlayer else { return [] }
     let tracks = player.trackDiagnostics()
-    if shouldUseRendererOwnedPresentedFrame(player: player),
+    if shouldUseNativeTargetPresentedFrame(player: player),
        tracks.count == 1,
        let fileId = tracks[0]["fileId"] as? Int,
-       let frame = player.lastRendererOwnedFrameInfo() {
+       let frame = player.lastNativeTargetFrameInfo() {
       let map = frame.presentedFrameMap(fileId: fileId)
       tracePresentedFrameSource(
         route: "presentedFrames",
-        source: "renderer-owned-paused",
+        source: "native-target-paused",
         fileId: fileId,
         map: map
       )
@@ -559,10 +559,10 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     ]
   }
 
-  private func shouldUseRendererOwnedPresentedFrame(
+  private func shouldUseNativeTargetPresentedFrame(
     player: MacOSNativePlayerSession
   ) -> Bool {
-    player.rendererOwnedPresentationActive() &&
+    player.nativeTargetPresentationActive() &&
       !playback.currentIsPlaying(player: player)
   }
 
@@ -761,8 +761,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nextConfiguration.reason,
       tracks.hasHDRTrack ? "true" : "false"
     )
-    if let nativeTexture {
-      let pixelFormatChanged = nativeTexture.setRendererTargetPixelFormat(
+    if let nativeTargetRing {
+      let pixelFormatChanged = nativeTargetRing.setRendererTargetPixelFormat(
         nextConfiguration.rendererTargetPixelFormat,
         player: nativePlayer
       )
@@ -793,8 +793,8 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     diagnostics["frameAvailableHzX1000"] = Int(frameAvailableHz * 1000.0)
     diagnostics["macosFrameCallbackInlineDirtyDrainCount"] =
       inlineDirtyFrameCallbackDrainCount
-    diagnostics["flutterTextureFrameAvailableSkippedWhilePlayingCount"] =
-      flutterTextureFrameAvailableSkippedWhilePlayingCount
+    diagnostics["nativeTargetFrameNotificationSkippedWhilePlayingCount"] =
+      nativeTargetFrameNotificationSkippedWhilePlayingCount
     diagnostics["compositorVideoTextureRefreshCount"] = compositorVideoTextureRefreshCount
     diagnostics["compositorVideoTextureRefreshSkippedWhilePlayingCount"] =
       compositorVideoTextureRefreshSkippedWhilePlayingCount
@@ -824,7 +824,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
       player: nativePlayer,
       texture: texture,
-      nativeTexture: nativeTexture,
+      nativeTargetRing: nativeTargetRing,
       maxTrackSlots: tracks.activeSlotCapacity(),
       playback: playback,
       presentationState: presentationState,
@@ -839,7 +839,7 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     return MacOSTransportContext(
       nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
       player: nativePlayer,
-      texture: nativeTexture,
+      texture: nativeTargetRing,
       textureRegistered: textureId != nil,
       playback: playback,
       presentationState: presentationState,
@@ -912,12 +912,12 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
       emitPlaybackClock()
     }
     frameCallbackProfiler.recordMainStart(enqueueNs: enqueueNs, startNs: startNs)
-    if let generation = currentRendererOwnedTargetGeneration() {
+    if let generation = currentNativeTargetTargetGeneration() {
       frameCallbackProfiler.recordTargetGeneration(generation, nowNs: startNs)
     }
     playback.handleFrameCallback(
       player: nativePlayer,
-      texture: nativeTexture,
+      texture: nativeTargetRing,
       maxTrackSlots: tracks.activeSlotCapacity(),
       nativeBackendActive: backendName == MacOSVideoTrackPayload.nativeFormatName,
       presentationState: presentationState,
@@ -976,9 +976,9 @@ final class MacOSVideoRendererBridge: NSObject, FlutterStreamHandler {
     }
   }
 
-  private func currentRendererOwnedTargetGeneration() -> Int64? {
+  private func currentNativeTargetTargetGeneration() -> Int64? {
     guard let generation =
-      nativePlayer?.rendererOwnedPresentationState()["targetGeneration"] else {
+      nativePlayer?.nativeTargetPresentationState()["targetGeneration"] else {
       return nil
     }
     switch generation {

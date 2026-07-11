@@ -180,7 +180,7 @@ void Renderer::Impl::enter_terminal_render_loop_error_locked(const char* reason)
 
 bool Renderer::Impl::capture_front_buffer(std::vector<uint8_t>& bgra, int& width, int& height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless()) {
+    if (!surface_state_.offscreen()) {
         bgra.clear();
         width = 0;
         height = 0;
@@ -197,7 +197,7 @@ bool Renderer::Impl::capture_front_buffer_region(int x,
                                                  int& region_width,
                                                  int& region_height) {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
-    if (!surface_state_.headless()) {
+    if (!surface_state_.offscreen()) {
         bgra.clear();
         region_width = 0;
         region_height = 0;

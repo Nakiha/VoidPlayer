@@ -5,7 +5,7 @@ final class MacOSPlayerLifecycleController {
   private let textureRegistry: FlutterTextureRegistry
 
   private(set) var texture: MacOSVideoSurface?
-  private(set) var nativeTexture: MacOSFlutterTextureBridge?
+  private(set) var nativeTargetRing: MacOSNativeTargetRing?
   private(set) var playerId: Int64?
   private(set) var textureId: Int64?
   private(set) var backendName = "synthetic-texture"
@@ -41,7 +41,7 @@ final class MacOSPlayerLifecycleController {
     nextPlayerId &+= 1
 
     texture = startup.texture
-    nativeTexture = startup.nativeTexture
+    nativeTargetRing = startup.nativeTargetRing
     playerId = createdPlayerId
     textureId = registeredTextureId
     backendName = startup.backendName
@@ -75,7 +75,7 @@ final class MacOSPlayerLifecycleController {
       textureRegistry.unregisterTexture(id)
     }
     texture = nil
-    nativeTexture = nil
+    nativeTargetRing = nil
     playerId = nil
     textureId = nil
     tracks.reset()

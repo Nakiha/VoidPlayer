@@ -82,7 +82,7 @@ set(VOID_RENDERER_PORTABLE_DRIVER_SOURCES
     "${VOID_NATIVE_DIR}/renderer/playback/renderer_timeline_controller.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer_events.cpp"
-    "${VOID_NATIVE_DIR}/renderer/renderer_headless.cpp"
+    "${VOID_NATIVE_DIR}/renderer/renderer_offscreen.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer_layout.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer_lifecycle.cpp"
     "${VOID_NATIVE_DIR}/renderer/renderer_metrics.cpp"

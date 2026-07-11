@@ -26,7 +26,7 @@ enum MacOSNativeFrameRefresh {
 
   static func seekAndRefresh(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    texture: MacOSNativeTargetRing,
     targetPtsUs: Int,
     timeoutMs: Int = 3_000,
     maxTrackSlots: Int,
@@ -46,7 +46,7 @@ enum MacOSNativeFrameRefresh {
           acceptsSeekFrame(frameInfo, targetPtsUs: targetPtsUs)
         }
       )
-      framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
+      framePump.setTargetInstalled(player.nativeTargetPresentationActive())
       presentationState.recordDiscontinuityFrame(frameInfo)
       logRefreshProfiler(
         route: "seek",
@@ -79,7 +79,7 @@ enum MacOSNativeFrameRefresh {
   private static func updateFromNativePlayerWithTransientRetry(
     route: String,
     _ player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    texture: MacOSNativeTargetRing,
     maxTrackSlots: Int,
     timeoutMs: Int,
     acceptFrame: (MacOSNativeFrameInfo) -> Bool = { _ in true }
@@ -99,7 +99,7 @@ enum MacOSNativeFrameRefresh {
         )
         guard acceptFrame(frameInfo) else {
           throw MacOSNativePlayerError.transientFrameUnavailable(
-            "renderer-owned Metal refresh returned a stale frame pts=\(frameInfo.ptsUs)"
+            "native Metal refresh returned a stale frame pts=\(frameInfo.ptsUs)"
           )
         }
         return (frameInfo, attempts)
@@ -118,7 +118,7 @@ enum MacOSNativeFrameRefresh {
 
   static func refreshCurrentFrameAfterLayoutChange(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    texture: MacOSNativeTargetRing,
     maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
     framePump: MacOSNativeFramePump
@@ -130,7 +130,7 @@ enum MacOSNativeFrameRefresh {
         maxTrackSlots: maxTrackSlots,
         waitTimeoutMs: 100
       )
-      framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
+      framePump.setTargetInstalled(player.nativeTargetPresentationActive())
       presentationState.recordFrame(frameInfo)
       logRefreshProfiler(
         route: "layout",
@@ -159,7 +159,7 @@ enum MacOSNativeFrameRefresh {
 
   static func drawCurrentFrameForLayoutRefresh(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    texture: MacOSNativeTargetRing,
     maxTrackSlots: Int
   ) -> MacOSNativeLayoutDrawResult {
     let startNs = DispatchTime.now().uptimeNanoseconds
@@ -202,7 +202,7 @@ enum MacOSNativeFrameRefresh {
   static func publishLayoutRefreshFrame(
     _ pending: MacOSPendingNativeFrame,
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    texture: MacOSNativeTargetRing,
     maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
     framePump: MacOSNativeFramePump
@@ -214,7 +214,7 @@ enum MacOSNativeFrameRefresh {
         player: player,
         maxTrackSlots: maxTrackSlots
       )
-      framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
+      framePump.setTargetInstalled(player.nativeTargetPresentationActive())
       presentationState.recordFrame(pending.info)
       logRefreshProfiler(
         route: "layout-publish",
@@ -244,7 +244,7 @@ enum MacOSNativeFrameRefresh {
 
   static func stepAndRefresh(
     player: MacOSNativePlayerSession,
-    texture: MacOSFlutterTextureBridge,
+    texture: MacOSNativeTargetRing,
     forward: Bool,
     maxTrackSlots: Int,
     presentationState: MacOSFramePresentationState,
@@ -266,14 +266,14 @@ enum MacOSNativeFrameRefresh {
           frameInfo.ptsUs <= targetPtsUs + 100_000
         return forward ? nearStepTarget : nearBackwardStepTarget
       }
-      if let frameInfo = player.lastRendererOwnedFrameInfo(),
+      if let frameInfo = player.lastNativeTargetFrameInfo(),
          acceptStepFrame(frameInfo) {
         _ = texture.publishRenderedTargetAndInstallNext(
           player,
           maxTrackSlots: maxTrackSlots,
           frameInfo: frameInfo
         )
-        framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
+        framePump.setTargetInstalled(player.nativeTargetPresentationActive())
         presentationState.recordFrame(frameInfo)
         logRefreshProfiler(
           route: forward ? "step-forward" : "step-backward",
@@ -294,7 +294,7 @@ enum MacOSNativeFrameRefresh {
           acceptStepFrame(frameInfo)
         }
       )
-      framePump.setTargetInstalled(player.rendererOwnedPresentationActive())
+      framePump.setTargetInstalled(player.nativeTargetPresentationActive())
       presentationState.recordFrame(frameInfo)
       logRefreshProfiler(
         route: forward ? "step-forward" : "step-backward",

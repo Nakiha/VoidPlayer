@@ -79,7 +79,7 @@ Source ownership is split under `native/cmake/`:
 | `VoidPlayerCli` | analysis enabled | analysis cache/overlay CLI |
 | `video_renderer_tests` | native | Catch2 renderer/unit/integration tests |
 | `analysis_tests` | analysis enabled | VAC2/VACHUNK/cache tests |
-| `macos_*_smoke` / `renderer_metal_headless_smoke` | macOS | Metal、VideoToolbox、native player、capture、audio native smokes |
+| `macos_*_smoke` / `renderer_metal_offscreen_smoke` | macOS | Metal、VideoToolbox、native player、offscreen target、capture、audio smokes |
 
 常用 CMake 开关：
 
@@ -121,7 +121,7 @@ macOS CI 的 native fast gate uses the hosted-runner CTest profile：
 bash scripts/ci/run_macos_native_fast.sh
 ```
 
-Hosted macOS PR fast excludes tests labelled `hosted-flaky`; today that is `renderer_metal_headless_smoke`.
+Hosted macOS PR fast excludes tests labelled `hosted-flaky`; today that is `renderer_metal_offscreen_smoke`.
 Keep that canary for nightly/headed or targeted Metal changes because GitHub runner GPU presentation can report a
 black front buffer while the shared native player Metal canary passes.
 
@@ -136,7 +136,7 @@ ctest --test-dir build/native/standalone/macos-make -LE hosted-flaky --output-on
 
 ## macOS Stabilization Gates
 
-macOS native playback 当前是 feature-complete / stabilization 状态。修改 shared renderer、native-metal backend、VideoToolbox、
+macOS native playback 当前是 feature-complete / stabilization 状态。修改 shared renderer、native Metal backend、VideoToolbox、
 Swift texture bridge 或 diagnostics 时，优先使用以下 gate：
 
 ```bash
@@ -150,17 +150,17 @@ python3.12 dev.py gate macos-ui-smoke
 | `native_facade_smoke.csv` | channel、metadata、diagnostics、首帧健康 |
 | `native_controls_smoke.csv` | basic play/pause/seek/step commands |
 | `native_compositor_auto_sdr_policy_smoke.csv` | default Auto policy keeps SDR media on the SDR native-compositor target |
-| `native_seek_frame_smoke.csv` | seek preview / renderer-owned refresh |
+| `native_seek_frame_smoke.csv` | seek preview / native-target refresh |
 | `native_loop_range_smoke.csv` | loop policy |
 | `native_audio_play_seek_smoke.csv` | miniaudio/CoreAudio playback、seek、audible-track diagnostics |
 | `native_layout_split_smoke.csv` | split/layout and multi-track presentation |
-| `native_vvc_software_playback_smoke.csv` | software fallback + renderer-owned package path |
+| `native_vvc_software_playback_smoke.csv` | software fallback + native-target package path |
 | `native_p010_presentation_smoke.csv` | 10-bit/P010 presentation path |
 | `native_add_short_after_eof_smoke.csv` | EOF carry-forward after adding a shorter third track |
 | `native_compositor_lifecycle_stress_smoke.csv` | native compositor lifecycle stress |
 
 Native macOS CTest includes `videotoolbox_provider_smoke`,
-`macos_metal_uploader_smoke`, `renderer_metal_headless_smoke`, and
+`macos_metal_uploader_smoke`, `renderer_metal_offscreen_smoke`, and
 `macos_native_player_shared_renderer_smoke`.
 
 HDR Auto promotion needs a real EDR-capable display, so it is an explicit local
@@ -208,7 +208,7 @@ python3.12 dev.py gate macos-ui-nightly
 ```
 
 Native sanitizer coverage is a separate local/nightly gate. It builds the macOS native presets with ASAN and TSAN,
-then runs CTest while excluding the already-marked headless Metal hosted-flaky smoke:
+then runs CTest while excluding the already-marked offscreen Metal hosted-flaky smoke:
 
 ```bash
 python3.12 dev.py gate macos-native-sanitizers

@@ -1,5 +1,6 @@
 # Interaction redraw stays independent from 24 fps dual-track video presentation.
 @WINDOW, 1366, 768
+0.0, SET_DECODE_MODE, preferHardware
 0.0, GENERATE_TEST_VIDEO, build/generated/macos/interaction_24fps_h264.mp4, 240, 24, 640, 360
 0.1, GENERATE_TEST_VIDEO, build/generated/macos/interaction_24fps_hevc.mp4, 240, 24, 640, 360, 0, hevc
 0.3, ADD_MEDIA, build/generated/macos/interaction_24fps_h264.mp4
@@ -13,7 +14,7 @@
 5.0, ASSERT_POSITION_RANGE, 300000, 2500000
 5.3, DRAG_VIEWPORT, -520, 220, 60, 4
 5.8, ASSERT_POSITION_RANGE, 700000, 9000000
-6.06, ASSERT_NATIVE_DIAGNOSTIC_STRING, rendererOwnedUploadStorageKind, cvpixelbuffer
+6.06, ASSERT_NATIVE_DIAGNOSTIC_STRING, nativeTargetUploadStorageKind, cvpixelbuffer
 6.07, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, layoutPresentedCount, 1
 6.08, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, interactionLayoutSubmitCount, 30
 6.095, ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE, metalBufferExhaustionCount, 0, 0

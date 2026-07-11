@@ -19,8 +19,8 @@ The macOS runner owns:
 - Cocoa app lifecycle and Flutter macOS engine/plugin registration.
 - Sandbox file picking through `NSOpenPanel`.
 - `video_renderer` MethodChannel/EventChannel bridging.
-- FlutterTexture registration and frame notification.
-- `CVPixelBuffer` lifecycle for renderer-owned texture targets.
+- Exported Flutter surface acquisition for final runner composition.
+- `CVPixelBuffer` lifecycle and publication through `MacOSNativeTargetRing`.
 - App data/log path setup and macOS crash diagnostics.
 - macOS package/sign/notarization staging inputs.
 - Security-scoped bookmarks are captured from `NSOpenPanel` selections and
@@ -40,7 +40,7 @@ macOS-specific native code owns the Metal presentation backend:
 ```text
 RendererDrawSnapshot
   -> MetalPresentationBackend::draw_frame()
-  -> renderer-owned BGRA CVPixelBuffer / IOSurface target
+  -> offscreen BGRA8/RGBA16F CVPixelBuffer / IOSurface target
   -> runner-managed native video layer
   -> runner composition under Flutter's transparent ARGB UI surface
 ```

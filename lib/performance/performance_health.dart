@@ -140,7 +140,7 @@ class PerformanceHealthSnapshot {
     );
     final presentationBackend = _stringValue(
       diagnostics['presentationBackend'] ??
-          diagnostics['rendererOwnedBackendName'] ??
+          diagnostics['nativeTargetBackendName'] ??
           diagnostics['backend'],
     );
     final nativeCompositorBackend = _stringValue(
@@ -229,7 +229,7 @@ class PerformanceHealthSnapshot {
     final gpuCompletionQueueSevere =
         inputOrPlaybackActive && drawP95Us >= 22_000 && !rendererSubmitSevere;
     // Ring exhaustion can be a benign coalescing/backpressure signal on the
-    // renderer-owned target ring, especially when a 60fps source is displayed
+    // native target ring, especially when a 60fps source is displayed
     // through a 120Hz compositor. Treat GPU command failures as hard native
     // pressure, but let cadence/host interval diagnostics report visible
     // frame-delivery problems instead of escalating ring churn by itself.

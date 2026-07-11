@@ -4,7 +4,7 @@ namespace vr {
 
 void RendererSurfaceState::configure(const RendererConfig& config) {
     hwnd_ = config.hwnd;
-    headless_ = config.headless;
+    offscreen_ = config.offscreen;
     width_ = config.width;
     height_ = config.height;
     backend_kind_ = config.backend.type;
@@ -12,7 +12,7 @@ void RendererSurfaceState::configure(const RendererConfig& config) {
 
 void RendererSurfaceState::reset() {
     hwnd_ = nullptr;
-    headless_ = false;
+    offscreen_ = false;
     width_ = 1920;
     height_ = 1080;
     backend_kind_ = default_render_backend_kind();
@@ -22,8 +22,8 @@ void* RendererSurfaceState::hwnd() const {
     return hwnd_;
 }
 
-bool RendererSurfaceState::headless() const {
-    return headless_;
+bool RendererSurfaceState::offscreen() const {
+    return offscreen_;
 }
 
 int RendererSurfaceState::width() const {

@@ -26,31 +26,31 @@ int main() {
         return fail("valid windowed renderer config was rejected");
     }
 
-    auto d3d12_headless = valid_windowed_config();
-    d3d12_headless.headless = true;
-    d3d12_headless.hwnd = nullptr;
-    d3d12_headless.backend.type = vr::RendererBackendType::NativeD3D12;
-    d3d12_headless.backend.output = reinterpret_cast<void*>(0x5678);
-    if (vr::validate_renderer_config(d3d12_headless).ok) {
-        return fail("reserved NativeD3D12 headless renderer config was accepted");
+    auto d3d12_offscreen = valid_windowed_config();
+    d3d12_offscreen.offscreen = true;
+    d3d12_offscreen.hwnd = nullptr;
+    d3d12_offscreen.backend.type = vr::RendererBackendType::NativeD3D12;
+    d3d12_offscreen.backend.output = reinterpret_cast<void*>(0x5678);
+    if (vr::validate_renderer_config(d3d12_offscreen).ok) {
+        return fail("reserved NativeD3D12 offscreen renderer config was accepted");
     }
 
-    auto metal_headless = valid_windowed_config();
-    metal_headless.headless = true;
-    metal_headless.hwnd = nullptr;
-    metal_headless.backend.type = vr::RendererBackendType::Metal;
-    metal_headless.backend.output = reinterpret_cast<void*>(0x9abc);
+    auto metal_offscreen = valid_windowed_config();
+    metal_offscreen.offscreen = true;
+    metal_offscreen.hwnd = nullptr;
+    metal_offscreen.backend.type = vr::RendererBackendType::Metal;
+    metal_offscreen.backend.output = reinterpret_cast<void*>(0x9abc);
 #ifdef __APPLE__
-    if (!vr::validate_renderer_config(metal_headless).ok) {
-        return fail("valid Metal headless renderer config was rejected");
+    if (!vr::validate_renderer_config(metal_offscreen).ok) {
+        return fail("valid Metal offscreen renderer config was rejected");
     }
-    metal_headless.backend.output = nullptr;
-    if (vr::validate_renderer_config(metal_headless).ok) {
-        return fail("Metal headless renderer config without output was accepted");
+    metal_offscreen.backend.output = nullptr;
+    if (vr::validate_renderer_config(metal_offscreen).ok) {
+        return fail("Metal offscreen renderer config without output was accepted");
     }
 #else
-    if (vr::validate_renderer_config(metal_headless).ok) {
-        return fail("non-Apple Metal headless renderer config was accepted");
+    if (vr::validate_renderer_config(metal_offscreen).ok) {
+        return fail("non-Apple Metal offscreen renderer config was accepted");
     }
 #endif
 

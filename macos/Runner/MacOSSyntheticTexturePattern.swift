@@ -33,13 +33,13 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoSurface, FlutterTex
     presentationSnapshot()?.pixelBuffer
   }
 
-  func presentationSnapshot() -> MacOSTexturePresentationSnapshot? {
+  func presentationSnapshot() -> MacOSVideoSurfaceSnapshot? {
     lock.lock()
     defer { lock.unlock() }
 
     guard let pixelBuffer else { return nil }
     reuseCount += 1
-    return MacOSTexturePresentationSnapshot(
+    return MacOSVideoSurfaceSnapshot(
       pixelBuffer: Unmanaged.passRetained(pixelBuffer),
       generation: rebuildCount,
       layoutRevision: 0
@@ -97,7 +97,7 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoSurface, FlutterTex
     )
   }
 
-  func diagnostics() -> MacOSTextureDiagnostics {
+  func diagnostics() -> MacOSVideoSurfaceDiagnostics {
     lock.lock()
     defer { lock.unlock() }
 
@@ -123,8 +123,8 @@ final class MacOSSyntheticTextureBridge: NSObject, MacOSVideoSurface, FlutterTex
       metalTextureCreationCount: 0,
       metalTextureFailureCount: 0,
       metalTextureLastError: "",
-      rendererOwnedPixelBufferBytes: 0,
-      rendererOwnedPixelBufferCount: 0,
+      nativeTargetPixelBufferBytes: 0,
+      nativeTargetPixelBufferCount: 0,
       inFlightMetalBufferCount: 0,
       metalBufferExhaustionCount: 0,
       stableDisplayFallbackActive: false,

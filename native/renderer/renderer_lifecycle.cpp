@@ -43,7 +43,7 @@ bool Renderer::Impl::initialize(const RendererConfig& config) {
     backend_config.width = surface_state_.width();
     backend_config.height = surface_state_.height();
     backend_config.max_track_slots = config.backend.max_track_slots;
-    backend_config.headless = surface_state_.headless();
+    backend_config.offscreen = surface_state_.offscreen();
     backend_config.output_target = config.backend.output_target;
     backend_config.sdr_white_level_nits =
         config.backend.sdr_white_level_nits;

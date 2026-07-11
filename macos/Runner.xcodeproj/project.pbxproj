@@ -31,7 +31,7 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
 		A12F01022C08FF0100000001 /* MacOSNativePlayerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01002C08FF0100000001 /* MacOSNativePlayerSession.swift */; };
-		A12F01032C08FF0100000001 /* MacOSFlutterTextureBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01012C08FF0100000001 /* MacOSFlutterTextureBridge.swift */; };
+		A12F01032C08FF0100000001 /* MacOSNativeTargetRing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01012C08FF0100000001 /* MacOSNativeTargetRing.swift */; };
 		A12F01042C08FF0100000001 /* MacOSFlutterArguments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01052C08FF0100000001 /* MacOSFlutterArguments.swift */; };
 		A12F01062C08FF0100000001 /* MacOSPresentationDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */; };
 		A12F01082C08FF0100000001 /* MacOSVideoTrackPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */; };
@@ -127,7 +127,7 @@
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		A12F00052C06FF0100000001 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		A12F01002C08FF0100000001 /* MacOSNativePlayerSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativePlayerSession.swift; sourceTree = "<group>"; };
-		A12F01012C08FF0100000001 /* MacOSFlutterTextureBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSFlutterTextureBridge.swift; sourceTree = "<group>"; };
+		A12F01012C08FF0100000001 /* MacOSNativeTargetRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSNativeTargetRing.swift; sourceTree = "<group>"; };
 		A12F01052C08FF0100000001 /* MacOSFlutterArguments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSFlutterArguments.swift; sourceTree = "<group>"; };
 		A12F01072C08FF0100000001 /* MacOSPresentationDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSPresentationDiagnostics.swift; sourceTree = "<group>"; };
 		A12F01092C08FF0100000001 /* MacOSVideoTrackPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOSVideoTrackPayload.swift; sourceTree = "<group>"; };
@@ -290,7 +290,7 @@
 				A12F01172C08FF0100000001 /* MacOSSyntheticTexturePattern.swift */,
 				A12F01002C08FF0100000001 /* MacOSNativePlayerSession.swift */,
 				A12F013D2C08FF0100000001 /* MacOSNativeMetalPresentationTarget.swift */,
-				A12F01012C08FF0100000001 /* MacOSFlutterTextureBridge.swift */,
+				A12F01012C08FF0100000001 /* MacOSNativeTargetRing.swift */,
 				A12F00052C06FF0100000001 /* Runner-Bridging-Header.h */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
@@ -603,7 +603,7 @@
 				A12F01162C08FF0100000001 /* MacOSSyntheticTexturePattern.swift in Sources */,
 				A12F01022C08FF0100000001 /* MacOSNativePlayerSession.swift in Sources */,
 				A12F013C2C08FF0100000001 /* MacOSNativeMetalPresentationTarget.swift in Sources */,
-				A12F01032C08FF0100000001 /* MacOSFlutterTextureBridge.swift in Sources */,
+				A12F01032C08FF0100000001 /* MacOSNativeTargetRing.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 			);

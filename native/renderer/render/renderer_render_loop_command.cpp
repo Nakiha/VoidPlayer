@@ -65,7 +65,7 @@ void RendererRenderLoopCommandProcessor::run_body(
         }
 
 #ifdef _WIN32
-        presentation_.cleanup_renderer_managed_headless_pending_buffers();
+        presentation_.cleanup_renderer_managed_offscreen_pending_buffers();
 #endif
 
         bool playing_snapshot;

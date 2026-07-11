@@ -1,8 +1,7 @@
 import Cocoa
 import CoreVideo
-import FlutterMacOS
 
-typealias MacOSTextureDiagnostics = (
+typealias MacOSVideoSurfaceDiagnostics = (
   rebuildCount: Int,
   reuseCount: Int,
   allocationCount: Int,
@@ -24,8 +23,8 @@ typealias MacOSTextureDiagnostics = (
   metalTextureCreationCount: Int,
   metalTextureFailureCount: Int,
   metalTextureLastError: String,
-  rendererOwnedPixelBufferBytes: Int,
-  rendererOwnedPixelBufferCount: Int,
+  nativeTargetPixelBufferBytes: Int,
+  nativeTargetPixelBufferCount: Int,
   inFlightMetalBufferCount: Int,
   metalBufferExhaustionCount: Int,
   stableDisplayFallbackActive: Bool,
@@ -33,7 +32,7 @@ typealias MacOSTextureDiagnostics = (
   stableDisplayFallbackPtsUs: Int
 )
 
-struct MacOSTexturePresentationSnapshot {
+struct MacOSVideoSurfaceSnapshot {
   let pixelBuffer: Unmanaged<CVPixelBuffer>
   let generation: Int
   let layoutRevision: UInt64
@@ -45,7 +44,7 @@ protocol MacOSVideoSurface: AnyObject {
   func prewarmRendererTarget(width: Int, height: Int)
   func dimensions() -> (width: Int, height: Int)
   func presentationGeneration() -> Int
-  func presentationSnapshot() -> MacOSTexturePresentationSnapshot?
+  func presentationSnapshot() -> MacOSVideoSurfaceSnapshot?
   func clearStableDisplaySnapshot()
   func captureMetrics() -> (
     width: Int,
@@ -59,7 +58,7 @@ protocol MacOSVideoSurface: AnyObject {
     overlayLineWeakWhiteCenters: Int,
     overlayLineBlackOnlyCenters: Int
   )
-  func diagnostics() -> MacOSTextureDiagnostics
+  func diagnostics() -> MacOSVideoSurfaceDiagnostics
 }
 
 private enum NativePixelBufferState: Equatable {
@@ -85,8 +84,8 @@ private struct MacOSStableDisplaySnapshot {
   let ptsUs: Int
 }
 
-final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTexture {
-  private static let rendererOwnedPixelBufferCount = 6
+final class MacOSNativeTargetRing: NSObject, MacOSVideoSurface {
+  private static let nativeTargetPixelBufferCount = 6
 
   private let lock = NSLock()
   private let prewarmQueue = DispatchQueue(
@@ -189,14 +188,14 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
     guard presentationTarget.isAvailable() else {
       logTargetStateLocked(reason: "backend-unavailable")
       lock.unlock()
-      throw MacOSNativePlayerError.failed("renderer-owned Metal presentation backend is unavailable")
+      throw MacOSNativePlayerError.failed("native Metal presentation backend is unavailable")
     }
     guard installTargetRingLocked(player: player, maxTrackSlots: maxTrackSlots, refresh: false)
     else {
       logTargetStateLocked(reason: "install-ring-failed")
       lock.unlock()
       throw MacOSNativePlayerError.failed(
-        "failed to install renderer-owned Metal presentation target ring"
+        "failed to install native Metal presentation target ring"
       )
     }
     lock.unlock()
@@ -204,7 +203,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
 
     do {
       let requestStartNs = DispatchTime.now().uptimeNanoseconds
-      let info = try player.requestRendererOwnedFrameRefresh(
+      let info = try player.requestNativeTargetFrameRefresh(
         timeoutMs: waitTimeoutMs,
         suppressFrameCallback: true
       )
@@ -214,7 +213,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
       let completedAddress = info.targetPixelBufferAddress
       guard let completedIndex = pixelBufferIndexLocked(address: completedAddress) else {
         throw MacOSNativePlayerError.transientFrameUnavailable(
-          "renderer-owned Metal presentation target changed during refresh"
+          "native Metal presentation target changed during refresh"
         )
       }
       if pixelBufferStates.indices.contains(completedIndex),
@@ -235,7 +234,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
         info: info,
         publishToken: MacOSNativeFramePublishToken(
           pixelBufferAddress: completedAddress,
-          nativeUploadCount: player.rendererOwnedPresentationUploadCount(),
+          nativeUploadCount: player.nativeTargetPresentationUploadCount(),
           pixelBufferGeneration: pixelBufferGeneration
         )
       )
@@ -245,7 +244,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
         lock.lock()
         pixelBufferMetalUploadFailureCount += 1
         lock.unlock()
-        NSLog("VoidPlayer macOS renderer-owned Metal refresh failed: \(error)")
+        NSLog("VoidPlayer macOS native Metal refresh failed: \(error)")
       }
       let nowNs = DispatchTime.now().uptimeNanoseconds
       logUpdateProfiler(
@@ -276,7 +275,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
         pending.publishToken.nativeUploadCount
       )
       throw MacOSNativePlayerError.transientFrameUnavailable(
-        "renderer-owned Metal presentation target generation changed before publish"
+        "native Metal presentation target generation changed before publish"
       )
     }
     let pendingBufferIndex = pixelBufferIndexLocked(
@@ -329,7 +328,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
           pixelBufferStates[publishBufferIndex] == .available else {
       logTargetStateLocked(reason: "publish-state-mismatch")
       throw MacOSNativePlayerError.transientFrameUnavailable(
-        "renderer-owned Metal presentation target changed before publish"
+        "native Metal presentation target changed before publish"
       )
     }
     publishBufferLocked(
@@ -386,13 +385,13 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
     presentationSnapshot()?.pixelBuffer
   }
 
-  func presentationSnapshot() -> MacOSTexturePresentationSnapshot? {
+  func presentationSnapshot() -> MacOSVideoSurfaceSnapshot? {
     lock.lock()
     defer { lock.unlock() }
 
     if stableDisplayFallbackActive, let snapshot = stableDisplaySnapshot {
       lastCopiedBufferIndex = nil
-      return MacOSTexturePresentationSnapshot(
+      return MacOSVideoSurfaceSnapshot(
         pixelBuffer: Unmanaged.passRetained(snapshot.pixelBuffer),
         generation: snapshot.generation,
         layoutRevision: snapshot.layoutRevision
@@ -403,7 +402,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
       guard let snapshot = stableDisplaySnapshot else { return nil }
       activateStableDisplayFallbackLocked()
       lastCopiedBufferIndex = nil
-      return MacOSTexturePresentationSnapshot(
+      return MacOSVideoSurfaceSnapshot(
         pixelBuffer: Unmanaged.passRetained(snapshot.pixelBuffer),
         generation: snapshot.generation,
         layoutRevision: snapshot.layoutRevision
@@ -412,7 +411,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
     if lastPublishedNativeUploadCount <= 0, let snapshot = stableDisplaySnapshot {
       activateStableDisplayFallbackLocked()
       lastCopiedBufferIndex = nil
-      return MacOSTexturePresentationSnapshot(
+      return MacOSVideoSurfaceSnapshot(
         pixelBuffer: Unmanaged.passRetained(snapshot.pixelBuffer),
         generation: snapshot.generation,
         layoutRevision: snapshot.layoutRevision
@@ -424,7 +423,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
       lastCopiedBufferIndex = displayBufferIndex
       nativeTargetPlayer?.protectMetalPresentationTarget(pixelBuffer)
     }
-    return MacOSTexturePresentationSnapshot(
+    return MacOSVideoSurfaceSnapshot(
       pixelBuffer: Unmanaged.passRetained(pixelBuffer),
       generation: lastPublishedNativeUploadCount,
       layoutRevision: layoutRevision
@@ -508,7 +507,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
     )
   }
 
-  func diagnostics() -> MacOSTextureDiagnostics {
+  func diagnostics() -> MacOSVideoSurfaceDiagnostics {
     lock.lock()
     defer { lock.unlock() }
 
@@ -534,8 +533,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
       metalTextureCreationCount: metalTextureCreationCount,
       metalTextureFailureCount: metalTextureFailureCount,
       metalTextureLastError: metalTextureLastError,
-      rendererOwnedPixelBufferBytes: rendererOwnedPixelBufferBytesLocked(),
-      rendererOwnedPixelBufferCount: pixelBuffers.count,
+      nativeTargetPixelBufferBytes: nativeTargetPixelBufferBytesLocked(),
+      nativeTargetPixelBufferCount: pixelBuffers.count,
       inFlightMetalBufferCount: pixelBufferStates.filter { $0 == .rendering }.count,
       metalBufferExhaustionCount: metalBufferExhaustionCount,
       stableDisplayFallbackActive: stableDisplayFallbackActive,
@@ -593,7 +592,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
       width: nextWidth,
       height: nextHeight,
       pixelFormat: format
-    ) >= Self.rendererOwnedPixelBufferCount {
+    ) >= Self.nativeTargetPixelBufferCount {
       pixelBufferPrewarmHitCount += 1
       lock.unlock()
       return
@@ -621,7 +620,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
     maxTrackSlots: Int,
     frameInfo: MacOSNativeFrameInfo?
   ) -> Bool {
-    let nativeUploadCount = player.rendererOwnedPresentationUploadCount()
+    let nativeUploadCount = player.nativeTargetPresentationUploadCount()
     lock.lock()
     defer { lock.unlock() }
 
@@ -691,10 +690,10 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
       kCVPixelBufferIOSurfacePropertiesKey as String: [:],
     ] as CFDictionary
 
-    var nextBuffers = takeReusablePixelBuffersLocked(count: Self.rendererOwnedPixelBufferCount)
+    var nextBuffers = takeReusablePixelBuffersLocked(count: Self.nativeTargetPixelBufferCount)
     let reusedBufferCount = nextBuffers.count
     var allocatedBufferCount = 0
-    for _ in nextBuffers.count..<Self.rendererOwnedPixelBufferCount {
+    for _ in nextBuffers.count..<Self.nativeTargetPixelBufferCount {
       guard let nextBuffer = makePixelBuffer(
         width: width,
         height: height,
@@ -708,7 +707,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
         drawBufferIndex = 0
         lastCopiedBufferIndex = nil
         metalTextureValid = false
-        metalTextureLastError = "failed to allocate renderer-owned CVPixelBuffer"
+        metalTextureLastError = "failed to allocate native-target CVPixelBuffer"
         activateStableDisplayFallbackLocked()
         return
       }
@@ -792,8 +791,8 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
       kCVPixelBufferIOSurfacePropertiesKey as String: [:],
     ] as CFDictionary
     var buffers: [CVPixelBuffer] = []
-    buffers.reserveCapacity(Self.rendererOwnedPixelBufferCount)
-    for _ in 0..<Self.rendererOwnedPixelBufferCount {
+    buffers.reserveCapacity(Self.nativeTargetPixelBufferCount)
+    for _ in 0..<Self.nativeTargetPixelBufferCount {
       guard let buffer = makePixelBuffer(
         width: targetWidth,
         height: targetHeight,
@@ -814,7 +813,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
     lock.lock()
     defer { lock.unlock() }
     pixelBufferPrewarmKeys.remove(key)
-    guard buffers.count == Self.rendererOwnedPixelBufferCount else {
+    guard buffers.count == Self.nativeTargetPixelBufferCount else {
       pixelBufferPrewarmDroppedCount += 1
       return
     }
@@ -822,7 +821,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
       width: targetWidth,
       height: targetHeight,
       pixelFormat: targetPixelFormat
-    ) >= Self.rendererOwnedPixelBufferCount {
+    ) >= Self.nativeTargetPixelBufferCount {
       pixelBufferPrewarmHitCount += 1
       return
     }
@@ -927,7 +926,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
     }.joined()
   }
 
-  private func rendererOwnedPixelBufferBytesLocked() -> Int {
+  private func nativeTargetPixelBufferBytesLocked() -> Int {
     pixelBuffers.reduce(0) { total, buffer in
       total + CVPixelBufferGetBytesPerRow(buffer) * CVPixelBufferGetHeight(buffer)
     }
@@ -1052,7 +1051,7 @@ final class MacOSFlutterTextureBridge: NSObject, MacOSVideoSurface, FlutterTextu
   private func appendRetiredPixelBuffersLocked(_ buffers: [CVPixelBuffer]) {
     guard !buffers.isEmpty else { return }
     retiredPixelBuffers.append(contentsOf: buffers)
-    let maxRetiredBuffers = Self.rendererOwnedPixelBufferCount * 2
+    let maxRetiredBuffers = Self.nativeTargetPixelBufferCount * 2
     if retiredPixelBuffers.count > maxRetiredBuffers {
       retiredPixelBuffers.removeFirst(retiredPixelBuffers.count - maxRetiredBuffers)
     }

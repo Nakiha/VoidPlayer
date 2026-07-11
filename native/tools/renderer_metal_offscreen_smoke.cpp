@@ -92,7 +92,7 @@ int main() {
     constexpr int target_height = 360;
     auto target = make_bgra_pixel_buffer(target_width, target_height);
     if (!target.buffer) {
-        std::cerr << "failed to create renderer-owned target buffer\n";
+        std::cerr << "failed to create native-target target buffer\n";
         return 1;
     }
 
@@ -101,7 +101,7 @@ int main() {
     config.video_paths = {path};
     config.width = target_width;
     config.height = target_height;
-    config.headless = true;
+    config.offscreen = true;
     config.use_hardware_decode = true;
     config.backend.type = vr::RendererBackendType::Metal;
     config.backend.output = target.buffer;
@@ -148,7 +148,7 @@ int main() {
         return 1;
     }
 
-    std::cout << "shared Renderer Metal headless smoke passed; non_black="
+    std::cout << "shared Renderer Metal offscreen smoke passed; non_black="
               << non_black << "\n";
     return 0;
 }

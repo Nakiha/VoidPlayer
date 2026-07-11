@@ -16,18 +16,18 @@ RendererConfigValidationResult invalid(std::string message) {
                         std::move(message));
 }
 
-RendererConfigValidationResult validate_headless_backend(
+RendererConfigValidationResult validate_offscreen_backend(
     const RendererBackendInterop& backend) {
     const auto budget = default_native_resource_budget();
     switch (backend.type) {
     case RendererBackendType::Metal:
 #ifdef __APPLE__
         if (backend.output == nullptr) {
-            return invalid("headless metal renderer requires an output target");
+            return invalid("offscreen metal renderer requires an output target");
         }
         if (backend.max_track_slots < 0 ||
             static_cast<size_t>(backend.max_track_slots) > budget.max_tracks) {
-            return invalid("headless metal renderer max track slots out of range");
+            return invalid("offscreen metal renderer max track slots out of range");
         }
         return ok_result();
 #else
@@ -115,11 +115,11 @@ RendererConfigValidationResult validate_renderer_config(
         }
     }
 
-    if (config.headless) {
+    if (config.offscreen) {
         if (config.hwnd != nullptr) {
-            return invalid("headless renderer must not also receive an HWND");
+            return invalid("offscreen renderer must not also receive an HWND");
         }
-        if (auto result = validate_headless_backend(config.backend); !result.ok) {
+        if (auto result = validate_offscreen_backend(config.backend); !result.ok) {
             return result;
         }
     } else if (config.hwnd == nullptr) {

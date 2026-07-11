@@ -5,9 +5,10 @@ native sandwich:
 
 ```text
 NSWindow / runner view
-  -> native Metal video layer or IOSurface-backed target
-  -> Flutter engine premultiplied-alpha ARGB surface
-  -> runner/CoreAnimation composition
+  -> runner CAMetalLayer drawable
+     <- complete native IOSurface target
+     <- Flutter engine premultiplied-alpha ARGB surface
+  -> screen
 ```
 
 Flutter owns Flutter rendering and present scheduling. Native owns video decode,
@@ -24,12 +25,13 @@ The active renderer backend is `RenderBackendKind::Metal`.
 RendererDrawSnapshot
   -> MetalPresentationBackend::draw_frame()
   -> complete BGRA8/RGBA16F viewport target
-  -> native-owned CVPixelBuffer / IOSurface ring
+  -> runner-allocated CVPixelBuffer / IOSurface ring
   -> runner-managed Metal final compositor
 ```
 
-The old Rust/native backend is removed from the active tree. `native-metal` is no
-longer a supported macOS presentation mode in this worktree.
+`MacOSNativeTargetRing` allocates and retains the buffers. The native Metal
+backend owns draw-target acquisition, GPU completion, and available/in-flight/
+completed/displayed/protected state transitions.
 
 ## Current Capability Boundary
 
@@ -52,7 +54,7 @@ composition. Neither side may:
 - wait on or drive Flutter's present loop;
 - composite Flutter UI into the video target;
 - depend on Flutter dirty state to make video visible;
-- rebuild native target rings from Swift-side policy;
+- interpret target-ring state as playback or layout policy;
 - pass per-track source textures or layout projection through Dart/Swift.
 
 The native compositor and Flutter overlay should be tested as two independent
@@ -91,5 +93,5 @@ python dev.py mac-ui-test --build ui_tests/macos/native_facade_smoke.csv
 python dev.py mac-ui-test --build ui_tests/macos/native_compositor_auto_sdr_policy_smoke.csv
 ```
 
-When native Metal CVPixelBuffer import is rebuilt, add a new targeted hardware
-decode canary before restoring any 4K60/nightly VideoToolbox requirement.
+Hardware-frame import changes additionally require the P010 and 4K60
+VideoToolbox canaries from the nightly profile.

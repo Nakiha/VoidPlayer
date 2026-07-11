@@ -48,8 +48,8 @@ int main() {
           "VPMacOSNativeLayoutPresentationParams") ||
       !require_c_abi_struct<VPMacOSNativePresentationSchedulerStats>(
           "VPMacOSNativePresentationSchedulerStats") ||
-      !require_c_abi_struct<VPMacOSNativeRendererOwnedPresentationState>(
-          "VPMacOSNativeRendererOwnedPresentationState") ||
+      !require_c_abi_struct<VPMacOSNativeTargetPresentationState>(
+          "VPMacOSNativeTargetPresentationState") ||
       !require_c_abi_struct<VPMacOSNativeTrackDiagnosticInfo>(
           "VPMacOSNativeTrackDiagnosticInfo") ||
       !require_c_abi_struct<VPMacOSNativePlayerPerfStats>(

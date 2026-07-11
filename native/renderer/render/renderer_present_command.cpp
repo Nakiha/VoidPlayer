@@ -264,13 +264,13 @@ void RendererPresentCommandProcessor::present_frame(
     const auto completion_ctx = completion_context(context);
     RendererPresentationSubmitRequest request(snapshot, context.metrics);
     request.source = "present_frame";
-    request.headless = context.surface.headless();
+    request.offscreen = context.surface.offscreen();
     request.publish_swap_chain_after_sync_draw = true;
     request.poll_device_removed_label =
-        context.surface.headless() ? "headless present" : nullptr;
-    request.check_device_lost_after_draw = !context.surface.headless();
+        context.surface.offscreen() ? "offscreen present" : nullptr;
+    request.check_device_lost_after_draw = !context.surface.offscreen();
     request.overlay_hooks = context.hooks.overlay_hooks();
-    request.should_abort_headless_publish =
+    request.should_abort_offscreen_publish =
         [&shutting_down = context.shutting_down]() {
             return shutting_down.load(std::memory_order_acquire);
         };
@@ -329,13 +329,13 @@ void RendererPresentCommandProcessor::present_frame(
         }
         spdlog::info(
             "[RendererProfiler] present_frame total_us={} snapshot_us={} backend_us={} "
-            "attempted={} drew={} headless={} tracks={} layout_rev={} preview_drawn={}",
+            "attempted={} drew={} offscreen={} tracks={} layout_rev={} preview_drawn={}",
             total_us,
             snapshot_us,
             sync_draw_result.backend_us,
             attempted_draw,
             sync_draw_result.drew,
-            context.surface.headless(),
+            context.surface.offscreen(),
             active_tracks,
             snapshot_layout_revision,
             final_preview_drawn);
@@ -384,13 +384,13 @@ bool RendererPresentCommandProcessor::redraw_layout(
     const auto completion_ctx = completion_context(context);
     RendererPresentationSubmitRequest request(snapshot, context.metrics);
     request.source = "viewport_composite";
-    request.headless = context.surface.headless();
+    request.offscreen = context.surface.offscreen();
     request.wait_idle_after_sync_draw_label =
-        context.surface.headless() ? nullptr : "viewport_composite";
+        context.surface.offscreen() ? nullptr : "viewport_composite";
     request.poll_device_removed_label =
-        context.surface.headless() ? "headless redraw" : "viewport_composite";
+        context.surface.offscreen() ? "offscreen redraw" : "viewport_composite";
     request.overlay_hooks = context.hooks.overlay_hooks();
-    request.should_abort_headless_publish =
+    request.should_abort_offscreen_publish =
         [&shutting_down = context.shutting_down]() {
             return shutting_down.load(std::memory_order_acquire);
         };

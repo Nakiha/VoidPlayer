@@ -86,8 +86,6 @@ Future<void> runMacOSVoidPlayer(List<String> args) async {
   await _applyInitialMainWindowBounds(testWindow: testWindow);
   await windowManager.setPreventClose(true);
   windowManager.addListener(_CloseHandler());
-  await windowManager.show(inactive: silentUiTest);
-
   log.info('Application starting (macOS baseline), silentUiTest=$silentUiTest');
   runApp(
     VoidPlayerApp(
@@ -101,4 +99,6 @@ Future<void> runMacOSVoidPlayer(List<String> args) async {
       startupOptions: startupOptions,
     ),
   );
+  await WidgetsBinding.instance.endOfFrame;
+  await windowManager.show(inactive: silentUiTest);
 }

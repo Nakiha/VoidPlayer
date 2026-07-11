@@ -298,6 +298,8 @@ final class MacOSPresentationController {
           self.layoutStaleDropCount += 1
         case .staleAfterDraw:
           self.layoutStaleAfterDrawDropCount += 1
+        case .deferredToPlayback:
+          break
         case .transientMiss:
           request.context.presentationState.recordMiss()
         case .coalesced:
@@ -374,6 +376,9 @@ final class MacOSPresentationController {
       return .stale
     }
     MacOSNativeLayoutBridge.apply(layout: request.layout, player: player)
+    if context.playback.currentIsPlaying(player: player) {
+      return .deferredToPlayback
+    }
     guard let texture = context.nativeTexture else {
       return .transientMiss
     }
@@ -528,6 +533,7 @@ private enum LayoutRefreshOutcome {
   case ready(MacOSPendingNativeFrame)
   case stale
   case staleAfterDraw
+  case deferredToPlayback
   case transientMiss
   case coalesced
 
@@ -539,6 +545,8 @@ private enum LayoutRefreshOutcome {
       return "stale"
     case .staleAfterDraw:
       return "stale-after-draw"
+    case .deferredToPlayback:
+      return "deferred-to-playback"
     case .transientMiss:
       return "transient-miss"
     case .coalesced:

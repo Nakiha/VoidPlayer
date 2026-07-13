@@ -39,6 +39,7 @@ target_link_libraries(video_renderer_lib PUBLIC
     ${AVUTIL_LIBRARY}
     ${SWRESAMPLE_LIBRARY}
     d3d11
+    d3dcompiler
     dxgi
     winmm
 )

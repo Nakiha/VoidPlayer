@@ -2,6 +2,7 @@
 
 #include "renderer/render/presentation_backend.h"
 #include "windows/presentation/windows_d3d11_target_ring.h"
+#include "windows/presentation/windows_d3d11_viewport_renderer.h"
 
 #include <d3d11.h>
 #include <wrl/client.h>
@@ -38,6 +39,7 @@ class WindowsD3D11PresentationBackend final : public PresentationBackend {
   void protect_offscreen_target(void* texture) override;
   void release_offscreen_target(void* texture) override;
   void clear_offscreen_target() override;
+  bool update_sdr_white_level(double nits) override;
   void* native_render_device() const override { return device_.Get(); }
   PresentationBackendStats presentation_stats() const override;
   PresentationBackendDiagnostics diagnostics() const override;
@@ -58,6 +60,7 @@ class WindowsD3D11PresentationBackend final : public PresentationBackend {
 
   mutable std::mutex state_mutex_;
   WindowsD3D11TargetRing target_ring_;
+  WindowsD3D11ViewportRenderer viewport_renderer_;
   Microsoft::WRL::ComPtr<ID3D11Device> device_;
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
   Microsoft::WRL::ComPtr<ID3D11Query> completion_query_;

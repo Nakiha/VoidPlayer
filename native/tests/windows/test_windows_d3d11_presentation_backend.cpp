@@ -75,8 +75,12 @@ TEST_CASE("Windows D3D11 backend publishes a complete runner-owned target",
   config.offscreen = true;
   config.output = &install;
   config.output_target = ColorOutputTarget::kSDRToneMappedBT709;
-  REQUIRE(backend->initialize(config));
+  const bool initialized = backend->initialize(config);
+  INFO(backend->last_error());
+  REQUIRE(initialized);
   REQUIRE(backend->native_render_device() == device.Get());
+  REQUIRE_FALSE(backend->update_sdr_white_level(0.0));
+  REQUIRE(backend->update_sdr_white_level(100.0));
 
   RendererDrawSnapshot snapshot;
   snapshot.target_width = 16;
@@ -114,6 +118,7 @@ TEST_CASE("Windows D3D11 backend publishes a complete runner-owned target",
   const auto diagnostics = backend->diagnostics();
   REQUIRE(diagnostics.backend == "windows-native-d3d11");
   REQUIRE(diagnostics.target_format == "bgra8");
+  REQUIRE(diagnostics.fallback_reason == "none");
   REQUIRE(diagnostics.buffer_count == 3);
   backend->shutdown();
 }

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <thread>
 
@@ -72,6 +73,11 @@ bool WindowsD3D11PresentationBackend::initialize(
     set_error("Windows D3D11 backend could not create a completion query");
     return false;
   }
+  if (!viewport_renderer_.initialize(device_.Get(), context_.Get())) {
+    set_error("Windows D3D11 viewport initialization failed: " +
+              viewport_renderer_.last_error());
+    return false;
+  }
   initialized_ = true;
   set_error("");
   return true;
@@ -82,6 +88,7 @@ void WindowsD3D11PresentationBackend::shutdown() {
     context_->Flush();
   }
   std::lock_guard<std::mutex> lock(state_mutex_);
+  viewport_renderer_.shutdown();
   target_ring_.clear();
   last_completed_target_.Reset();
   completion_query_.Reset();
@@ -174,6 +181,16 @@ void WindowsD3D11PresentationBackend::clear_offscreen_target() {
   last_frame_info_available_ = false;
 }
 
+bool WindowsD3D11PresentationBackend::update_sdr_white_level(double nits) {
+  if (!std::isfinite(nits) || nits <= 0.0 || nits > 10000.0) {
+    set_error("Windows D3D11 SDR white level is invalid");
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  sdr_white_level_nits_ = nits;
+  return true;
+}
+
 PresentationBackendStats
 WindowsD3D11PresentationBackend::presentation_stats() const {
   PresentationBackendStats stats;
@@ -210,8 +227,7 @@ WindowsD3D11PresentationBackend::diagnostics() const {
       output_target == ColorOutputTarget::kWindowsLinearScRGB
       ? "linear-scrgb"
       : "sdr-bt709";
-  diagnostics.fallback_reason = initialized ? "viewport-shader-pending" :
-                                              "backend-unavailable";
+  diagnostics.fallback_reason = initialized ? "none" : "backend-unavailable";
   diagnostics.width = ring.width;
   diagnostics.height = ring.height;
   diagnostics.buffer_count = static_cast<int32_t>(ring.target_count);
@@ -321,13 +337,34 @@ bool WindowsD3D11PresentationBackend::draw_frame(
     record_draw_failure();
     return false;
   }
-  const float opaque_background[4] = {
-      snapshot.background_color[0],
-      snapshot.background_color[1],
-      snapshot.background_color[2],
-      1.0f,
-  };
-  context_->ClearRenderTargetView(rtv.Get(), opaque_background);
+  const auto presentation = build_presentation_snapshot(
+      snapshot.decision,
+      snapshot.layout,
+      snapshot.track_geometry,
+      snapshot.target_width,
+      snapshot.target_height,
+      snapshot.background_color);
+  ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
+  double sdr_white_level_nits = 80.0;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    output_target = output_target_;
+    sdr_white_level_nits = sdr_white_level_nits_;
+  }
+  if (!viewport_renderer_.draw(snapshot,
+                               presentation,
+                               rtv.Get(),
+                               output_target,
+                               sdr_white_level_nits)) {
+    target_ring_.complete_draw_target(target.Get(), false);
+    set_error("Windows D3D11 viewport draw failed: " +
+              viewport_renderer_.last_error());
+    record_draw_failure();
+    return false;
+  }
+  if (!hooks.suppress_analysis_overlay && hooks.draw_overlay) {
+    hooks.draw_overlay(*this, snapshot);
+  }
   if (!wait_for_gpu("draw_frame")) {
     target_ring_.complete_draw_target(target.Get(), false);
     record_draw_failure();
@@ -339,13 +376,6 @@ bool WindowsD3D11PresentationBackend::draw_frame(
     return false;
   }
 
-  const auto presentation = build_presentation_snapshot(
-      snapshot.decision,
-      snapshot.layout,
-      snapshot.track_geometry,
-      snapshot.target_width,
-      snapshot.target_height,
-      snapshot.background_color);
   PresentationBackendFrameInfo frame_info;
   for (const auto& frame : presentation.frames) {
     if (!frame.present) {

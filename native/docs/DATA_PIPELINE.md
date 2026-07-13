@@ -16,7 +16,7 @@ File
   -> PresentDecision
   -> RendererDrawSnapshot
   -> PresentationBackend
-     -> Windows: reserved D3D11/DX12 backend, disabled on this branch
+     -> Windows: native D3D11 complete-viewport backend; product runner still disabled
      -> macOS: native Metal import + CVPixelBuffer / IOSurface target
 ```
 
@@ -60,8 +60,10 @@ TextureFrame
   -> DComp final surface
 ```
 
-Windows 已恢复 D3D11VA frame storage、runner-owned target-ring 状态机与 target lifecycle backend；viewport shader、
-runner composition 和 player bridge 尚未接通，因此产品入口仍 fail-closed。产品视频上屏
+Windows 已恢复 D3D11VA frame storage、runner-owned target-ring 状态机与 target lifecycle backend。
+viewport shader 已消费 D3D11VA shared snapshot、CPU BGRA/NV12/P010/planar YUV，并按 shared
+layout/color constants 输出 BGRA8 SDR 或 RGBA16F scRGB。runner composition 和 player bridge 尚未接通，
+因此产品入口仍 fail-closed。产品视频上屏
 不得回到 Flutter Texture SDR。
 
 ## macOS Metal / CVPixelBuffer 输出路径

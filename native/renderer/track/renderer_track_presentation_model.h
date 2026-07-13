@@ -44,7 +44,8 @@ public:
         PresentDecision& decision) const;
     StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
         int64_t clock_pts_us,
-        const PresentDecision& last_decision) const;
+        const PresentDecision& last_decision,
+        std::optional<int64_t> logical_step_anchor_us = std::nullopt) const;
     bool build_step_backward_decision(int64_t current_pts_us,
                                       const PresentDecision& last_decision,
                                       PresentDecision& decision) const;

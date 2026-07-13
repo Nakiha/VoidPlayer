@@ -1,77 +1,366 @@
 #include "video_renderer_plugin.h"
 
 #include "native_player_channel_names.h"
+#include "common/win_utf8.h"
+#include "windows/presentation/windows_d3d11_target_ring.h"
 
 #include <flutter/event_channel.h>
 #include <flutter/event_stream_handler_functions.h>
 #include <flutter/method_channel.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <iomanip>
+#include <sstream>
 #include <string>
+#include <utility>
 #include <variant>
+#include <vector>
+#include <wincodec.h>
+#include <wrl/client.h>
 
 namespace {
 
-constexpr char kUnavailableReason[] =
-    "Windows native presentation backend has not been rebuilt";
+using EncodableMap = flutter::EncodableMap;
+using EncodableValue = flutter::EncodableValue;
 
-bool ReadBool(const flutter::EncodableValue* arguments,
-              const char* key,
-              bool fallback) {
-  const auto* map = arguments
-      ? std::get_if<flutter::EncodableMap>(arguments)
-      : nullptr;
-  if (!map) {
-    return fallback;
-  }
-  const auto it = map->find(flutter::EncodableValue(key));
-  if (it == map->end()) {
-    return fallback;
-  }
-  const auto* value = std::get_if<bool>(&it->second);
-  return value ? *value : fallback;
+const EncodableMap* AsMap(const EncodableValue* arguments) {
+  return arguments ? std::get_if<EncodableMap>(arguments) : nullptr;
 }
 
-flutter::EncodableMap UnavailableDiagnostics(
-    const WindowsNativeCompositor* compositor,
-    bool compositor_started) {
-  flutter::EncodableMap diagnostics = {
-      {flutter::EncodableValue("available"), flutter::EncodableValue(false)},
-      {flutter::EncodableValue("reason"),
-       flutter::EncodableValue(kUnavailableReason)},
-      {flutter::EncodableValue("presentationBackend"),
-       flutter::EncodableValue("windows-native-unavailable")},
-      {flutter::EncodableValue("nativeCompositorEnabled"),
-       flutter::EncodableValue(compositor_started)},
-      {flutter::EncodableValue("windowsBackendRebuildRequired"),
-       flutter::EncodableValue(true)},
-  };
-  if (compositor) {
-    const auto state = compositor->diagnostics();
-    diagnostics[flutter::EncodableValue("windowsCompositorInitialized")] =
-        flutter::EncodableValue(state.initialized);
-    diagnostics[flutter::EncodableValue("windowsFlutterExportEnabled")] =
-        flutter::EncodableValue(state.flutter_export_enabled);
-    diagnostics[flutter::EncodableValue("windowsCompositeCount")] =
-        flutter::EncodableValue(static_cast<int64_t>(state.composite_count));
-    diagnostics[flutter::EncodableValue("windowsFlutterPublishCount")] =
-        flutter::EncodableValue(
-            static_cast<int64_t>(state.flutter_publish_count));
-    diagnostics[flutter::EncodableValue("windowsAcquireFailureCount")] =
-        flutter::EncodableValue(
-            static_cast<int64_t>(state.acquire_failure_count));
-    diagnostics[flutter::EncodableValue("windowsKeyedMutexFailureCount")] =
-        flutter::EncodableValue(
-            static_cast<int64_t>(state.keyed_mutex_failure_count));
-    diagnostics[flutter::EncodableValue("windowsPresentFailureCount")] =
-        flutter::EncodableValue(
-            static_cast<int64_t>(state.present_failure_count));
-    diagnostics[flutter::EncodableValue("windowsLastFlutterFrameGeneration")] =
-        flutter::EncodableValue(
-            static_cast<int64_t>(state.last_flutter_frame_generation));
-    diagnostics[flutter::EncodableValue("windowsCompositorLastError")] =
-        flutter::EncodableValue(state.last_error);
+const EncodableValue* Find(const EncodableValue* arguments, const char* key) {
+  const auto* map = AsMap(arguments);
+  if (!map) {
+    return nullptr;
   }
-  return diagnostics;
+  const auto found = map->find(EncodableValue(key));
+  return found == map->end() ? nullptr : &found->second;
+}
+
+int64_t ReadInt(const EncodableValue* arguments,
+                const char* key,
+                int64_t fallback = 0) {
+  const auto* value = Find(arguments, key);
+  if (!value) {
+    return fallback;
+  }
+  if (const auto* result = std::get_if<int32_t>(value)) {
+    return *result;
+  }
+  if (const auto* result = std::get_if<int64_t>(value)) {
+    return *result;
+  }
+  if (const auto* result = std::get_if<double>(value)) {
+    return static_cast<int64_t>(*result);
+  }
+  return fallback;
+}
+
+double ReadDouble(const EncodableValue* arguments,
+                  const char* key,
+                  double fallback = 0.0) {
+  const auto* value = Find(arguments, key);
+  if (!value) {
+    return fallback;
+  }
+  if (const auto* result = std::get_if<double>(value)) {
+    return *result;
+  }
+  if (const auto* result = std::get_if<int32_t>(value)) {
+    return static_cast<double>(*result);
+  }
+  if (const auto* result = std::get_if<int64_t>(value)) {
+    return static_cast<double>(*result);
+  }
+  return fallback;
+}
+
+bool ReadBool(const EncodableValue* arguments,
+              const char* key,
+              bool fallback = false) {
+  const auto* value = Find(arguments, key);
+  const auto* result = value ? std::get_if<bool>(value) : nullptr;
+  return result ? *result : fallback;
+}
+
+std::string ReadString(const EncodableValue* arguments, const char* key) {
+  const auto* value = Find(arguments, key);
+  const auto* result = value ? std::get_if<std::string>(value) : nullptr;
+  return result ? *result : std::string();
+}
+
+std::vector<std::string> ReadStringList(const EncodableValue* arguments,
+                                        const char* key) {
+  std::vector<std::string> result;
+  const auto* value = Find(arguments, key);
+  const auto* list = value ? std::get_if<flutter::EncodableList>(value) : nullptr;
+  if (!list) {
+    return result;
+  }
+  for (const auto& entry : *list) {
+    if (const auto* path = std::get_if<std::string>(&entry)) {
+      result.push_back(*path);
+    }
+  }
+  return result;
+}
+
+EncodableMap TrackMap(const vr::TrackInfo& track) {
+  return {
+      {EncodableValue("fileId"), EncodableValue(track.file_id)},
+      {EncodableValue("slot"), EncodableValue(track.slot)},
+      {EncodableValue("path"), EncodableValue(track.file_path)},
+      {EncodableValue("width"), EncodableValue(track.width)},
+      {EncodableValue("height"), EncodableValue(track.height)},
+      {EncodableValue("durationUs"), EncodableValue(track.duration_us)},
+      {EncodableValue("startTimeUs"), EncodableValue(track.start_time_us)},
+      {EncodableValue("bitRate"), EncodableValue(track.bit_rate)},
+      {EncodableValue("formatName"), EncodableValue(track.format_name)},
+      {EncodableValue("codecName"), EncodableValue(track.codec_name)},
+      {EncodableValue("codecLongName"), EncodableValue(track.codec_long_name)},
+      {EncodableValue("decoderName"), EncodableValue(track.decoder_name)},
+      {EncodableValue("colorRange"), EncodableValue(track.color.range)},
+      {EncodableValue("colorMatrix"), EncodableValue(track.color.matrix)},
+      {EncodableValue("colorTransfer"), EncodableValue(track.color.transfer)},
+      {EncodableValue("colorPrimaries"), EncodableValue(track.color.primaries)},
+  };
+}
+
+flutter::EncodableList TrackList(const std::vector<vr::TrackInfo>& tracks) {
+  flutter::EncodableList result;
+  result.reserve(tracks.size());
+  for (const auto& track : tracks) {
+    result.emplace_back(TrackMap(track));
+  }
+  return result;
+}
+
+vr::LayoutState ReadLayout(const EncodableValue* arguments) {
+  vr::LayoutState layout;
+  layout.mode = static_cast<int>(ReadInt(arguments, "mode", layout.mode));
+  layout.split_pos = ReadDouble(arguments, "splitPos", layout.split_pos);
+  layout.zoom_ratio = ReadDouble(arguments, "zoomRatio", layout.zoom_ratio);
+  layout.view_offset[0] =
+      ReadDouble(arguments, "viewOffsetX", layout.view_offset[0]);
+  layout.view_offset[1] =
+      ReadDouble(arguments, "viewOffsetY", layout.view_offset[1]);
+  layout.pixel_size_mode = static_cast<int>(
+      ReadInt(arguments, "pixelSizeMode", layout.pixel_size_mode));
+  const auto* order_value = Find(arguments, "order");
+  const auto* order = order_value
+      ? std::get_if<flutter::EncodableList>(order_value)
+      : nullptr;
+  if (order) {
+    for (size_t index = 0; index < std::min<size_t>(4, order->size()); ++index) {
+      const auto& entry = (*order)[index];
+      if (const auto* value = std::get_if<int32_t>(&entry)) {
+        layout.order[index] = *value;
+      } else if (const auto* value = std::get_if<int64_t>(&entry)) {
+        layout.order[index] = static_cast<int>(*value);
+      }
+    }
+  }
+  return layout;
+}
+
+EncodableMap LayoutMap(const vr::LayoutState& layout) {
+  flutter::EncodableList order;
+  for (int entry : layout.order) {
+    order.emplace_back(entry);
+  }
+  return {
+      {EncodableValue("mode"), EncodableValue(layout.mode)},
+      {EncodableValue("splitPos"), EncodableValue(layout.split_pos)},
+      {EncodableValue("zoomRatio"), EncodableValue(layout.zoom_ratio)},
+      {EncodableValue("viewOffsetX"), EncodableValue(layout.view_offset[0])},
+      {EncodableValue("viewOffsetY"), EncodableValue(layout.view_offset[1])},
+      {EncodableValue("pixelSizeMode"),
+       EncodableValue(layout.pixel_size_mode)},
+      {EncodableValue("order"), EncodableValue(std::move(order))},
+  };
+}
+
+EncodableMap FrameMap(int file_id,
+                      const vr::PresentationBackendFrameInfo& frame) {
+  return {
+      {EncodableValue("fileId"), EncodableValue(file_id)},
+      {EncodableValue("ptsUs"), EncodableValue(frame.pts_us)},
+      {EncodableValue("dtsUs"), EncodableValue(frame.dts_us)},
+      {EncodableValue("durationUs"), EncodableValue(frame.duration_us)},
+      {EncodableValue("analysisFrameIndex"),
+       EncodableValue(frame.analysis_frame_index)},
+      {EncodableValue("frameIdentityMode"),
+       EncodableValue(frame.frame_identity_mode)},
+      {EncodableValue("sourcePacketIndex"),
+       EncodableValue(frame.source_packet_index)},
+      {EncodableValue("sourcePacketSize"),
+       EncodableValue(frame.source_packet_size)},
+      {EncodableValue("sourcePacketPos"),
+       EncodableValue(frame.source_packet_pos)},
+      {EncodableValue("sourcePacketPtsUs"),
+       EncodableValue(frame.source_packet_pts)},
+      {EncodableValue("sourcePacketDtsUs"),
+       EncodableValue(frame.source_packet_dts)},
+  };
+}
+
+std::string Fnv1a64(const std::vector<uint8_t>& bytes) {
+  uint64_t hash = 14695981039346656037ull;
+  for (uint8_t byte : bytes) {
+    hash ^= byte;
+    hash *= 1099511628211ull;
+  }
+  std::ostringstream output;
+  output << std::hex << std::setfill('0') << std::setw(16) << hash;
+  return output.str();
+}
+
+bool SaveBgraPng(const std::vector<uint8_t>& bgra,
+                 int width,
+                 int height,
+                 const std::string& path) {
+  if (bgra.empty() || width <= 0 || height <= 0 || path.empty()) {
+    return path.empty();
+  }
+  Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
+  if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                              CLSCTX_INPROC_SERVER,
+                              IID_PPV_ARGS(&factory))) ||
+      !factory) {
+    return false;
+  }
+  Microsoft::WRL::ComPtr<IWICStream> stream;
+  if (FAILED(factory->CreateStream(&stream)) || !stream) {
+    return false;
+  }
+  const auto wide_path = vr::win_utf8::utf16_from_utf8(path);
+  if (FAILED(stream->InitializeFromFilename(wide_path.c_str(), GENERIC_WRITE))) {
+    return false;
+  }
+  Microsoft::WRL::ComPtr<IWICBitmapEncoder> encoder;
+  if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr,
+                                    &encoder)) ||
+      FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache))) {
+    return false;
+  }
+  Microsoft::WRL::ComPtr<IWICBitmapFrameEncode> frame;
+  Microsoft::WRL::ComPtr<IPropertyBag2> properties;
+  if (FAILED(encoder->CreateNewFrame(&frame, &properties)) || !frame ||
+      FAILED(frame->Initialize(properties.Get())) ||
+      FAILED(frame->SetSize(static_cast<UINT>(width),
+                            static_cast<UINT>(height)))) {
+    return false;
+  }
+  WICPixelFormatGUID pixel_format = GUID_WICPixelFormat32bppBGRA;
+  if (FAILED(frame->SetPixelFormat(&pixel_format))) {
+    return false;
+  }
+  const UINT stride = static_cast<UINT>(width * 4);
+  const UINT image_size = stride * static_cast<UINT>(height);
+  return SUCCEEDED(frame->WritePixels(
+             static_cast<UINT>(height), stride, image_size,
+             const_cast<BYTE*>(bgra.data()))) &&
+         SUCCEEDED(frame->Commit()) && SUCCEEDED(encoder->Commit());
+}
+
+EncodableMap CaptureMap(const std::vector<uint8_t>& bgra,
+                        int width,
+                        int height,
+                        const std::string& output_path) {
+  uint64_t luma_sum = 0;
+  size_t non_black = 0;
+  const size_t pixels = bgra.size() / 4;
+  for (size_t index = 0; index < pixels; ++index) {
+    const uint8_t blue = bgra[index * 4];
+    const uint8_t green = bgra[index * 4 + 1];
+    const uint8_t red = bgra[index * 4 + 2];
+    luma_sum += static_cast<uint64_t>(
+        (77 * red + 150 * green + 29 * blue) >> 8);
+    if (red > 8 || green > 8 || blue > 8) {
+      ++non_black;
+    }
+  }
+  const double average = pixels == 0
+      ? 0.0
+      : static_cast<double>(luma_sum) / static_cast<double>(pixels);
+  const double ratio = pixels == 0
+      ? 0.0
+      : static_cast<double>(non_black) / static_cast<double>(pixels);
+  const bool saved = SaveBgraPng(bgra, width, height, output_path);
+  return {
+      {EncodableValue("hash"), EncodableValue(Fnv1a64(bgra))},
+      {EncodableValue("width"), EncodableValue(width)},
+      {EncodableValue("height"), EncodableValue(height)},
+      {EncodableValue("avgLuma"), EncodableValue(average)},
+      {EncodableValue("nonBlackRatio"), EncodableValue(ratio)},
+      {EncodableValue("outputPath"), EncodableValue(output_path)},
+      {EncodableValue("saved"), EncodableValue(saved)},
+  };
+}
+
+void ScaleBgraToMaxSize(std::vector<uint8_t>& bgra,
+                        int& width,
+                        int& height,
+                        int max_size) {
+  if (max_size <= 0 || width <= 0 || height <= 0 ||
+      std::max(width, height) <= max_size) {
+    return;
+  }
+  const double scale = static_cast<double>(max_size) /
+                       static_cast<double>(std::max(width, height));
+  const int output_width =
+      std::max(1, static_cast<int>(std::lround(width * scale)));
+  const int output_height =
+      std::max(1, static_cast<int>(std::lround(height * scale)));
+  std::vector<uint8_t> scaled(
+      static_cast<size_t>(output_width) * output_height * 4);
+  for (int output_y = 0; output_y < output_height; ++output_y) {
+    const int source_y = std::min(
+        height - 1,
+        static_cast<int>((static_cast<int64_t>(output_y) * height) /
+                         output_height));
+    for (int output_x = 0; output_x < output_width; ++output_x) {
+      const int source_x = std::min(
+          width - 1,
+          static_cast<int>((static_cast<int64_t>(output_x) * width) /
+                           output_width));
+      const size_t source_offset =
+          (static_cast<size_t>(source_y) * width + source_x) * 4;
+      const size_t output_offset =
+          (static_cast<size_t>(output_y) * output_width + output_x) * 4;
+      std::copy_n(bgra.data() + source_offset, 4,
+                  scaled.data() + output_offset);
+    }
+  }
+  bgra = std::move(scaled);
+  width = output_width;
+  height = output_height;
+}
+
+void AddCompositorDiagnostics(EncodableMap& diagnostics,
+                              const WindowsNativeCompositor* compositor,
+                              bool started) {
+  diagnostics[EncodableValue("nativeCompositorEnabled")] =
+      EncodableValue(started);
+  if (!compositor) {
+    return;
+  }
+  const auto state = compositor->diagnostics();
+  diagnostics[EncodableValue("windowsCompositorInitialized")] =
+      EncodableValue(state.initialized);
+  diagnostics[EncodableValue("windowsFlutterExportEnabled")] =
+      EncodableValue(state.flutter_export_enabled);
+  diagnostics[EncodableValue("windowsCompositeCount")] =
+      EncodableValue(static_cast<int64_t>(state.composite_count));
+  diagnostics[EncodableValue("windowsFlutterPublishCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_publish_count));
+  diagnostics[EncodableValue("windowsVideoPublishCount")] =
+      EncodableValue(static_cast<int64_t>(state.video_publish_count));
+  diagnostics[EncodableValue("windowsVideoPresentCount")] =
+      EncodableValue(static_cast<int64_t>(state.video_present_count));
+  diagnostics[EncodableValue("windowsCompositorLastError")] =
+      EncodableValue(state.last_error);
 }
 
 }  // namespace
@@ -79,26 +368,21 @@ flutter::EncodableMap UnavailableDiagnostics(
 void VideoRendererPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows* registrar,
     FlutterDesktopPluginRegistrarRef core_registrar) {
-  (void)core_registrar;
   auto channel = std::make_unique<
       flutter::MethodChannel<flutter::EncodableValue>>(
-      registrar->messenger(),
-      native_player_channels::kMethodChannel,
+      registrar->messenger(), native_player_channels::kMethodChannel,
       &flutter::StandardMethodCodec::GetInstance());
   auto events = std::make_unique<
       flutter::EventChannel<flutter::EncodableValue>>(
-      registrar->messenger(),
-      native_player_channels::kEventChannel,
+      registrar->messenger(), native_player_channels::kEventChannel,
       &flutter::StandardMethodCodec::GetInstance());
 
   FlutterDesktopViewRef flutter_view =
       FlutterDesktopPluginRegistrarGetView(core_registrar);
-  HWND flutter_window = flutter_view
-      ? FlutterDesktopViewGetHWND(flutter_view)
-      : nullptr;
-  HWND window_handle = flutter_window
-      ? GetAncestor(flutter_window, GA_ROOT)
-      : nullptr;
+  HWND flutter_window = flutter_view ? FlutterDesktopViewGetHWND(flutter_view)
+                                     : nullptr;
+  HWND window_handle = flutter_window ? GetAncestor(flutter_window, GA_ROOT)
+                                      : nullptr;
   auto plugin =
       std::make_unique<VideoRendererPlugin>(window_handle, flutter_view);
   channel->SetMethodCallHandler(
@@ -107,17 +391,21 @@ void VideoRendererPlugin::RegisterWithRegistrar(
       });
   events->SetStreamHandler(std::make_unique<
       flutter::StreamHandlerFunctions<flutter::EncodableValue>>(
-      [](const flutter::EncodableValue*,
-         std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&&)
+      [plugin_ptr = plugin.get()](
+          const flutter::EncodableValue*,
+          std::unique_ptr<flutter::EventSink<flutter::EncodableValue>>&& sink)
           -> std::unique_ptr<
               flutter::StreamHandlerError<flutter::EncodableValue>> {
+        plugin_ptr->SetEventSink(std::move(sink));
         return nullptr;
       },
-      [](const flutter::EncodableValue*)
+      [plugin_ptr = plugin.get()](const flutter::EncodableValue*)
           -> std::unique_ptr<
               flutter::StreamHandlerError<flutter::EncodableValue>> {
+        plugin_ptr->ClearEventSink();
         return nullptr;
       }));
+  plugin->event_bridge_.RegisterDrainWindow();
   registrar->AddPlugin(std::move(plugin));
 }
 
@@ -132,46 +420,405 @@ VideoRendererPlugin::VideoRendererPlugin(HWND window_handle,
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
+  DestroyPlayer();
+  event_bridge_.Shutdown();
   if (compositor_) {
     compositor_->Stop();
   }
 }
 
+void VideoRendererPlugin::SetEventSink(
+    std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink) {
+  event_bridge_.SetSink(std::move(sink));
+  if (player_) {
+    event_bridge_.QueueNativeCompositorState(
+        compositor_started_, true, "native-compositor-sdr", "active",
+        "windows-native-d3d11",
+        compositor_started_ ? "" : "Windows native compositor unavailable");
+  }
+}
+
+void VideoRendererPlugin::ClearEventSink() {
+  event_bridge_.ClearSink();
+}
+
+void VideoRendererPlugin::DestroyPlayer() {
+  auto player = std::move(player_);
+  if (player) {
+    player->set_frame_callback({});
+    player->set_frame_failure_callback({});
+    player->set_event_callback({});
+    player->shutdown();
+  }
+  if (compositor_) {
+    compositor_->ClearVideoTargetRing();
+  }
+  video_target_width_ = 0;
+  video_target_height_ = 0;
+  player_id_ = 0;
+}
+
+bool VideoRendererPlugin::ResizeVideoTargets(int width,
+                                             int height,
+                                             std::string& error) {
+  error.clear();
+  if (!compositor_ || !compositor_started_ || width <= 0 || height <= 0) {
+    error = "Windows native compositor is unavailable";
+    return false;
+  }
+  if (width == video_target_width_ && height == video_target_height_) {
+    return true;
+  }
+  std::vector<void*> textures;
+  if (!compositor_->CreateVideoTargetRing(
+          static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+          DXGI_FORMAT_B8G8R8A8_UNORM, 4, textures)) {
+    error = compositor_->diagnostics().last_error;
+    return false;
+  }
+  if (player_ && player_->initialized() &&
+      !player_->install_target_ring(
+          reinterpret_cast<const void* const*>(textures.data()),
+          textures.size(), nullptr, nullptr, width, height, 4)) {
+    error = player_->presentation_error();
+    return false;
+  }
+  video_target_width_ = width;
+  video_target_height_ = height;
+  return true;
+}
+
+void VideoRendererPlugin::OnFrameAvailable(
+    const std::weak_ptr<vr::WindowsNativePlayer>& weak_player,
+    const vr::PresentationBackendFrameInfo* frame_info) {
+  auto player = weak_player.lock();
+  if (!player || !compositor_) {
+    return;
+  }
+  vr::PresentationBackendFrameInfo copied = {};
+  if (!frame_info) {
+    if (!player->copy_last_frame_info(&copied)) {
+      return;
+    }
+    frame_info = &copied;
+  }
+  auto* target = reinterpret_cast<ID3D11Texture2D*>(
+      frame_info->target_pixel_buffer_address);
+  if (!target) {
+    return;
+  }
+  // The shared renderer invokes this callback synchronously, including from
+  // step/preview commands that still own its lifecycle lock. Do not re-enter
+  // Renderer here. The compositor copies the target and waits for GPU
+  // completion; release the completed ring slot later on the runner thread.
+  (void)compositor_->PresentVideoTarget(target);
+  event_bridge_.PostTask([weak_player, target]() {
+    if (auto callback_player = weak_player.lock()) {
+      callback_player->release_target(target);
+    }
+  });
+}
+
 void VideoRendererPlugin::HandleMethodCall(
     const flutter::MethodCall<flutter::EncodableValue>& call,
-    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+    std::unique_ptr<MethodResult> result) {
   const std::string& method = call.method_name();
-  if (method == "initLogging" || method == "destroyPlayer" ||
-      method == "resetNativePerfCounters" ||
-      method == "clearNativeCompositorSourceCache") {
+  const auto* arguments = call.arguments();
+
+  if (method == "initLogging" || method == "resetNativePerfCounters" ||
+      method == "prewarmNativePresentationTargetSize" ||
+      method == "setNativeCompositorViewportRect" ||
+      method == "requestNativeCompositorFlutterFrame" ||
+      method == "boostNativeCompositorFlutterInteraction" ||
+      method == "ackNativeCompositorFlutterState" ||
+      method == "setNativeAnalysisOverlay") {
     result->Success();
     return;
   }
   if (method == "pickFiles") {
-    const bool allow_multiple =
-        ReadBool(call.arguments(), "allowMultiple", true);
     flutter::EncodableList files;
-    for (const auto& path :
-         file_picker_.PickVideoFiles(allow_multiple, window_handle_)) {
+    for (const auto& path : file_picker_.PickVideoFiles(
+             ReadBool(arguments, "allowMultiple", true), window_handle_)) {
       files.emplace_back(path);
     }
-    result->Success(flutter::EncodableValue(std::move(files)));
+    result->Success(EncodableValue(std::move(files)));
     return;
   }
-  if (method == "getDiagnostics" || method == "debugNativeCompositor") {
-    result->Success(flutter::EncodableValue(
-        UnavailableDiagnostics(compositor_.get(), compositor_started_)));
+  if (method == "createPlayer") {
+    DestroyPlayer();
+    const auto paths = ReadStringList(arguments, "videoPaths");
+    const int width = static_cast<int>(ReadInt(arguments, "width", 1920));
+    const int height = static_cast<int>(ReadInt(arguments, "height", 1080));
+    if (paths.empty()) {
+      result->Error("BAD_ARGS", "createPlayer requires at least one path");
+      return;
+    }
+    if (!compositor_ || !compositor_started_ || width <= 0 || height <= 0) {
+      result->Error("TARGET_UNAVAILABLE",
+                    "Windows native compositor is unavailable");
+      return;
+    }
+    std::vector<void*> textures;
+    if (!compositor_->CreateVideoTargetRing(
+            static_cast<uint32_t>(width), static_cast<uint32_t>(height),
+            DXGI_FORMAT_B8G8R8A8_UNORM, 4, textures)) {
+      result->Error("TARGET_UNAVAILABLE", compositor_->diagnostics().last_error);
+      return;
+    }
+    video_target_width_ = width;
+    video_target_height_ = height;
+    vr::WindowsD3D11TargetRingInstall install;
+    install.textures = reinterpret_cast<const void* const*>(textures.data());
+    install.texture_count = textures.size();
+    install.width = width;
+    install.height = height;
+    install.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    vr::RendererConfig config;
+    config.video_paths = paths;
+    config.width = width;
+    config.height = height;
+    config.use_hardware_decode =
+        ReadBool(arguments, "useHardwareDecode", true);
+    config.initial_file_id = 0;
+    config.offscreen = true;
+    config.backend.type = vr::RendererBackendType::NativeD3D11;
+    config.backend.output = &install;
+    config.backend.max_track_slots = 4;
+    config.backend.output_target =
+        vr::ColorOutputTarget::kSDRToneMappedBT709;
+    auto player = std::make_shared<vr::WindowsNativePlayer>();
+    if (!player->initialize(config)) {
+      compositor_->ClearVideoTargetRing();
+      result->Error("NATIVE_INIT_FAILED",
+                    "shared Windows renderer failed to initialize");
+      return;
+    }
+    if (const uint32_t color =
+            static_cast<uint32_t>(ReadInt(arguments, "color", 0xFF000000));
+        color != 0) {
+      player->set_background_color(
+          static_cast<float>((color >> 16) & 0xFF) / 255.0f,
+          static_cast<float>((color >> 8) & 0xFF) / 255.0f,
+          static_cast<float>(color & 0xFF) / 255.0f,
+          static_cast<float>((color >> 24) & 0xFF) / 255.0f);
+    }
+    player_ = player;
+    player_id_ = next_player_id_.fetch_add(1);
+    const std::weak_ptr<vr::WindowsNativePlayer> weak_player = player;
+    player->set_frame_callback(
+        [this, weak_player](const vr::PresentationBackendFrameInfo* frame) {
+          OnFrameAvailable(weak_player, frame);
+        });
+    player->set_frame_failure_callback([](const char*) {});
+    player->set_event_callback(
+        [this](const vr::RendererEvent& event) { event_bridge_.Queue(event); });
+    player->request_frame_refresh("windows-runner-create");
+    event_bridge_.QueueNativeCompositorState(
+        true, true, "native-compositor-sdr", "active",
+        "windows-native-d3d11", "");
+    EncodableMap payload = {
+        {EncodableValue("playerId"), EncodableValue(player_id_)},
+        {EncodableValue("tracks"), EncodableValue(TrackList(player->tracks()))},
+    };
+    result->Success(EncodableValue(std::move(payload)));
     return;
   }
-  if (method == "getTracks") {
-    result->Success(flutter::EncodableValue(flutter::EncodableList{}));
+  if (method == "destroyPlayer") {
+    DestroyPlayer();
+    result->Success();
     return;
   }
-  if (method == "createPlayer" || method == "addTrack") {
-    result->Error("BACKEND_UNAVAILABLE", kUnavailableReason,
-                  flutter::EncodableValue(UnavailableDiagnostics(
-                      compositor_.get(), compositor_started_)));
+  if (method == "debugNativeCompositor") {
+    EncodableMap diagnostics;
+    AddCompositorDiagnostics(diagnostics, compositor_.get(), compositor_started_);
+    result->Success(EncodableValue(std::move(diagnostics)));
     return;
   }
-  result->NotImplemented();
+  if (method == "getDiagnostics") {
+    EncodableMap diagnostics = {
+        {EncodableValue("available"), EncodableValue(player_ != nullptr)},
+        {EncodableValue("presentationBackend"),
+         EncodableValue("windows-native-d3d11")},
+        {EncodableValue("windowsBackendRebuildRequired"),
+         EncodableValue(false)},
+        {EncodableValue("trackCount"),
+         EncodableValue(player_ ? static_cast<int64_t>(player_->tracks().size())
+                                : int64_t{0})},
+        {EncodableValue("isPlaying"),
+         EncodableValue(player_ && player_->is_playing())},
+    };
+    AddCompositorDiagnostics(diagnostics, compositor_.get(), compositor_started_);
+    if (player_) {
+      const auto stats = player_->presentation_stats();
+      const auto backend = player_->presentation_diagnostics();
+      diagnostics[EncodableValue("nativeTargetRendererInitialized")] =
+          EncodableValue(stats.backend_available != 0);
+      diagnostics[EncodableValue("nativeTargetLastDrawSucceeded")] =
+          EncodableValue(stats.last_draw_succeeded != 0);
+      diagnostics[EncodableValue("nativeFramePresentationCount")] =
+          EncodableValue(static_cast<int64_t>(stats.viewport_composite_count));
+      diagnostics[EncodableValue("nativeTargetConsecutiveDrawFailures")] =
+          EncodableValue(
+              static_cast<int64_t>(stats.consecutive_draw_failures));
+      diagnostics[EncodableValue("nativeTargetBackendName")] =
+          EncodableValue(backend.backend);
+      diagnostics[EncodableValue("presentationFallbackReason")] =
+          EncodableValue(backend.fallback_reason);
+      diagnostics[EncodableValue("textureWidth")] =
+          EncodableValue(backend.width);
+      diagnostics[EncodableValue("textureHeight")] =
+          EncodableValue(backend.height);
+    }
+    result->Success(EncodableValue(std::move(diagnostics)));
+    return;
+  }
+  if (!player_) {
+    if (method == "getTracks") {
+      result->Success(EncodableValue(flutter::EncodableList{}));
+    } else {
+      result->Error("NO_PLAYER", "createPlayer must be called first");
+    }
+    return;
+  }
+  if (method == "play") {
+    player_->play();
+    result->Success();
+  } else if (method == "pause") {
+    player_->pause();
+    result->Success();
+  } else if (method == "seek") {
+    player_->seek(ReadInt(arguments, "ptsUs"),
+                  ReadInt(arguments, "requestId", -1));
+    result->Success();
+  } else if (method == "stepForward") {
+    player_->step_forward();
+    result->Success();
+  } else if (method == "stepBackward") {
+    player_->step_backward();
+    result->Success();
+  } else if (method == "setSpeed") {
+    player_->set_speed(ReadDouble(arguments, "speed", 1.0));
+    result->Success();
+  } else if (method == "setLoopRange") {
+    player_->set_loop_range(ReadBool(arguments, "enabled"),
+                            ReadInt(arguments, "startUs"),
+                            ReadInt(arguments, "endUs"));
+    result->Success();
+  } else if (method == "setAudibleTrack") {
+    player_->set_audible_track(static_cast<int>(ReadInt(arguments, "fileId", -1)));
+    result->Success();
+  } else if (method == "setTrackOffset") {
+    player_->set_track_offset(static_cast<int>(ReadInt(arguments, "fileId", -1)),
+                              ReadInt(arguments, "offsetUs"));
+    result->Success();
+  } else if (method == "setViewportBackgroundColor") {
+    const uint32_t color = static_cast<uint32_t>(ReadInt(arguments, "color"));
+    player_->set_background_color(
+        static_cast<float>((color >> 16) & 0xFF) / 255.0f,
+        static_cast<float>((color >> 8) & 0xFF) / 255.0f,
+        static_cast<float>(color & 0xFF) / 255.0f,
+        static_cast<float>((color >> 24) & 0xFF) / 255.0f);
+    result->Success();
+  } else if (method == "resize") {
+    std::string error;
+    if (!ResizeVideoTargets(static_cast<int>(ReadInt(arguments, "width")),
+                            static_cast<int>(ReadInt(arguments, "height")),
+                            error)) {
+      result->Error("RESIZE_FAILED", error);
+    } else {
+      player_->request_frame_refresh("windows-runner-resize");
+      result->Success();
+    }
+  } else if (method == "applyLayout") {
+    player_->apply_layout(ReadLayout(arguments));
+    result->Success();
+  } else if (method == "getLayout") {
+    result->Success(EncodableValue(LayoutMap(player_->layout())));
+  } else if (method == "getTracks") {
+    result->Success(EncodableValue(TrackList(player_->tracks())));
+  } else if (method == "addTrack") {
+    const int file_id = player_->add_track(
+        ReadString(arguments, "path"),
+        ReadBool(arguments, "useHardwareDecode", true));
+    const auto tracks = player_->tracks();
+    const auto found = std::find_if(
+        tracks.begin(), tracks.end(),
+        [file_id](const auto& track) { return track.file_id == file_id; });
+    if (file_id < 0 || found == tracks.end()) {
+      result->Error("ADD_TRACK_FAILED", "native renderer rejected the track");
+    } else {
+      result->Success(EncodableValue(TrackMap(*found)));
+    }
+  } else if (method == "removeTrack") {
+    player_->remove_track(static_cast<int>(ReadInt(arguments, "fileId", -1)));
+    result->Success();
+  } else if (method == "currentPts") {
+    result->Success(EncodableValue(player_->current_pts_us()));
+  } else if (method == "duration") {
+    result->Success(EncodableValue(player_->duration_us()));
+  } else if (method == "isPlaying") {
+    result->Success(EncodableValue(player_->is_playing()));
+  } else if (method == "currentPresentedFrame") {
+    vr::PresentationBackendFrameInfo frame = {};
+    if (!player_->copy_last_frame_info(&frame)) {
+      result->Success();
+    } else {
+      result->Success(EncodableValue(FrameMap(
+          static_cast<int>(ReadInt(arguments, "fileId", -1)), frame)));
+    }
+  } else if (method == "getPlaybackSnapshot") {
+    EncodableMap snapshot = {
+        {EncodableValue("currentPtsUs"),
+         EncodableValue(player_->current_pts_us())},
+        {EncodableValue("durationUs"), EncodableValue(player_->duration_us())},
+        {EncodableValue("isPlaying"), EncodableValue(player_->is_playing())},
+    };
+    if (ReadBool(arguments, "includePresentedFrames")) {
+      flutter::EncodableList frames;
+      vr::PresentationBackendFrameInfo frame = {};
+      const auto tracks = player_->tracks();
+      if (!tracks.empty() && player_->copy_last_frame_info(&frame)) {
+        frames.emplace_back(FrameMap(tracks.front().file_id, frame));
+      }
+      snapshot[EncodableValue("presentedFrames")] =
+          EncodableValue(std::move(frames));
+    }
+    result->Success(EncodableValue(std::move(snapshot)));
+  } else if (method == "captureViewport") {
+    std::vector<uint8_t> bgra;
+    int width = 0;
+    int height = 0;
+    if (!player_->capture_front_buffer(bgra, width, height)) {
+      result->Error("CAPTURE_FAILED", "native viewport capture failed");
+    } else {
+      result->Success(EncodableValue(CaptureMap(
+          bgra, width, height, ReadString(arguments, "outputPath"))));
+    }
+  } else if (method == "captureViewportRegion") {
+    const int requested_width =
+        static_cast<int>(ReadInt(arguments, "width"));
+    const int requested_height =
+        static_cast<int>(ReadInt(arguments, "height"));
+    if (requested_width <= 0 || requested_height <= 0) {
+      result->Error("BAD_ARGS", "width and height must be positive");
+      return;
+    }
+    std::vector<uint8_t> bgra;
+    int width = 0;
+    int height = 0;
+    if (!player_->capture_front_buffer_region(
+            static_cast<int>(ReadInt(arguments, "x")),
+            static_cast<int>(ReadInt(arguments, "y")),
+            requested_width, requested_height, bgra, width, height)) {
+      result->Error("CAPTURE_FAILED", "native viewport region capture failed");
+    } else {
+      ScaleBgraToMaxSize(
+          bgra, width, height,
+          static_cast<int>(ReadInt(arguments, "maxSize")));
+      result->Success(EncodableValue(CaptureMap(
+          bgra, width, height, ReadString(arguments, "outputPath"))));
+    }
+  } else {
+    result->NotImplemented();
+  }
 }

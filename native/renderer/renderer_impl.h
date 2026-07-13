@@ -287,6 +287,7 @@ private:
     mutable std::mutex state_mutex_;
     RendererEventBus event_bus_;
     RendererPresentHistory present_history_;
+    std::optional<int64_t> step_forward_exact_seek_anchor_us_;
     std::chrono::steady_clock::time_point last_playback_clock_event_time_{};
 
 };

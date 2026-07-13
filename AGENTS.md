@@ -8,10 +8,10 @@ native C++ 模块负责。
 
 - **Flutter / Dart UI**: 主窗口、播放控制、Action/UI 自动化入口、MethodChannel/EventChannel 编排。
 - **Shared native renderer**: FFmpeg demux/decode、playback clock、seek/loop、track lifecycle、layout、RenderSink/PresentDecision、RendererDrawSnapshot。
-- **Windows host**: Win32 Flutter runner 和 fail-closed plugin；D3D11VA decode/frame-storage、runner-owned target ring、D3D11 target lifecycle 与 viewport shader backend 已恢复，runner composition 仍待重建。
+- **Windows host**: Win32 Flutter runner、WindowsNativePlayer、D3D11VA decode/frame-storage、runner-owned target ring、D3D11 viewport backend 与 passive DComp final compositor。
 - **macOS backend**: Cocoa runner、sandbox file access、Metal/CVPixelBuffer/IOSurface presentation、VideoToolbox 硬解。
 - **Analysis**: shared native analysis/cache 工具；macOS analysis UI/IPC capability-gated。
-- **当前平台状态**: macOS native playback 是唯一可用产品路径；Windows playback 暂不可用。
+- **当前平台状态**: macOS native playback feature-complete；Windows native SDR playback 已可交互，处于 color/HDR/device-loss stabilization 阶段。
 
 ## 开发脚本
 
@@ -47,8 +47,8 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 ## 硬约束
 
 - `python dev.py build --native` 只构建独立 native 模块，不会重新编译 Flutter Windows runner。
-- Windows runner 当前不编译 shared native renderer；已启用锁定 Flutter V1 lease + DComp canary，player channel 仍 fail-closed。
-- `python dev.py ui-test ...` 会运行 Windows UI 自动化，但当前不能作为视频播放验证。
+- Windows runner 会直接编译 `native/` shared renderer 并链接 FFmpeg；修改 runner 或 native C++ 后必须重建 Flutter Windows runner。
+- `python dev.py ui-test ...` 默认复用已有 Windows 产物；修改 Dart/runner/native 后必须使用 `--build` 或先完成锁定 engine release build。
 - `python dev.py ui-test ...` 可以一次传入多个 CSV 脚本，`dev.py` 会在同一次构建/启动配置下串行执行这些用例。
 - `python dev.py build --native` 不能替代平台 runner 重建。
 - macOS 上屏相关修改必须重建 macOS runner 或使用 `python dev.py mac-ui-test --build ...`，否则可能仍在跑旧 `.app`。
@@ -58,7 +58,7 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 - Windows runner 最终只组合 native SDR/HDR video surface 与 Flutter premultiplied-alpha surface，不控制 Flutter frame 上屏。
 - Windows runner 构建必须使用锁定 local engine；普通 Flutter SDK 不提供 surface-export ABI，不能作为构建或验证 fallback。
 - Windows final compositor 必须像 macOS `MacOSNativeCompositorView` 一样 input-transparent：只采样 Flutter 已发布 surface，不拦截 hit-test/input，不请求或驱动 Flutter frame scheduling。
-- Windows backend 完成前保持 `BACKEND_UNAVAILABLE` fail-closed；禁止用 Flutter Texture 伪装视频 fallback。
+- Windows native compositor / Flutter export 不可用时必须 fail closed；禁止用 Flutter Texture 伪装视频 fallback。
 - Windows 重建阶段必须同步新增独立的 color/layout/HDR/device-loss/backend UI 验证矩阵；旧 preservation gate 不是通过证据。
 - 不要在一个轮次里堆无关改动。每轮完成后先测试，再单独提交。
 
@@ -69,7 +69,7 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 | 改动类型 | 必跑验证 |
 | --- | --- |
 | native C++ 单元逻辑 | `python dev.py gate pr-fast` 或 `python dev.py test --native-only` |
-| Windows rebuild boundary | `python scripts/dev/check_windows_rebuild_boundary.py` + Windows runner build |
+| Windows runner / native presentation | `python scripts/dev/check_windows_rebuild_boundary.py` + locked-engine Windows runner build + relevant rebuilt UI smoke |
 | native C++ 影响 macOS runner / Texture / Metal 上屏 | `python dev.py gate macos-ui-smoke` 或相关 `python dev.py mac-ui-test --build ...` |
 | shared renderer / presentation backend 边界 | `python dev.py test --native-only` + macOS 相关 smoke |
 | macOS package / signing / FFmpeg dylib / release docs | `python dev.py gate macos-release-readiness` |
@@ -104,7 +104,7 @@ python dev.py gate macos-ui-smoke
 ## UI 自动化选择
 
 - UI 自动化是最高成本验证层。新增 CSV 前先判断能否用 Dart/widget/native 单测覆盖；能下沉就下沉，不能下沉时优先更新既有同目录脚本，而不是新增相邻场景脚本。
-- `ui_tests/analysis/` 是旧 Windows 自动化集合，Windows backend 重建前不作为产品验证。
+- `ui_tests/analysis/` 覆盖 Windows analysis UI/IPC；修改相关路径时按能力选择用例。
 - `ui_tests/timeline/` 覆盖真实 timeline pointer/click 路径；修改 timeline / seek / 硬解上屏相关逻辑时，优先选这里的真实点击路径脚本，而不是只跑直接调用 native seek 的脚本。
 - `ui_tests/seek/` 覆盖直接 seek / step / rapid seek；`ui_tests/loop/` 覆盖 loop range；`ui_tests/viewport/` 覆盖窗口尺寸、pan/zoom、split 布局；`ui_tests/track/` 覆盖轨道级修改；`ui_tests/codec/` 覆盖 codec 上屏 smoke；`ui_tests/local/` 是依赖个人绝对路径的非通用回归。
 - `ui_tests/macos/` 覆盖 macOS runner、native Metal/CVPixelBuffer target、VideoToolbox/software fallback、layout/seek/audio/callback 生命周期；macOS 改动优先从这里选脚本。

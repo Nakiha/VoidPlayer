@@ -19,6 +19,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 struct WindowsNativeCompositorDiagnostics {
   bool initialized = false;
@@ -29,6 +30,9 @@ struct WindowsNativeCompositorDiagnostics {
   uint64_t acquire_failure_count = 0;
   uint64_t keyed_mutex_failure_count = 0;
   uint64_t present_failure_count = 0;
+  uint64_t video_target_generation = 0;
+  uint64_t video_publish_count = 0;
+  uint64_t video_present_count = 0;
   uint64_t last_flutter_frame_generation = 0;
   std::string last_error;
 };
@@ -48,7 +52,13 @@ class WindowsNativeCompositor final {
   bool Start();
   void Stop();
   void NotifyResize();
-  void PublishVideoTarget(ID3D11Texture2D* texture);
+  bool CreateVideoTargetRing(uint32_t width,
+                             uint32_t height,
+                             DXGI_FORMAT format,
+                             size_t target_count,
+                             std::vector<void*>& textures);
+  void ClearVideoTargetRing();
+  bool PresentVideoTarget(ID3D11Texture2D* texture, uint32_t timeout_ms = 250);
   ID3D11Device* device() const { return device_.Get(); }
   WindowsNativeCompositorDiagnostics diagnostics() const;
 
@@ -64,6 +74,7 @@ class WindowsNativeCompositor final {
   bool CompositeLatest();
   bool CreatePipeline();
   bool WaitForGpu();
+  void CompleteVideoPresentation(uint64_t serial, bool success);
   void SetError(std::string error);
 
   HWND top_level_window_ = nullptr;
@@ -78,6 +89,7 @@ class WindowsNativeCompositor final {
 
   Microsoft::WRL::ComPtr<ID3D11Device> device_;
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
+  Microsoft::WRL::ComPtr<ID3D10Multithread> multithread_;
   Microsoft::WRL::ComPtr<IDXGISwapChain2> swap_chain_;
   Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device_;
   Microsoft::WRL::ComPtr<IDCompositionTarget> dcomp_target_;
@@ -89,9 +101,14 @@ class WindowsNativeCompositor final {
   Microsoft::WRL::ComPtr<ID3D11Query> completion_query_;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> video_target_;
   Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> video_srv_;
+  std::vector<Microsoft::WRL::ComPtr<ID3D11Texture2D>> video_targets_;
+  uint64_t video_publish_serial_ = 0;
+  uint64_t video_completed_serial_ = 0;
+  bool last_video_presentation_succeeded_ = false;
   uint32_t width_ = 0;
   uint32_t height_ = 0;
 
   mutable std::mutex state_mutex_;
+  std::condition_variable state_condition_;
   WindowsNativeCompositorDiagnostics diagnostics_;
 };

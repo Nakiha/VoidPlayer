@@ -10,7 +10,7 @@ VoidPlayer native 保留共享媒体播放与渲染调度内核，重启平台 p
 - shared audio engine / miniaudio output
 - shared diagnostics / capture / UI automation hooks
 - macOS native Metal video target
-- Windows D3D11VA decode/shared-snapshot、runner-owned target ring 与 D3D11 viewport backend；runner composition 仍 fail-closed
+- Windows D3D11VA decode/shared-snapshot、runner-owned target ring、D3D11 viewport backend 与 passive DComp final composition
 - runner-owned final composition of native video + Flutter ARGB UI
 
 平台 runner 不再把视频伪装成 Flutter Texture 主路径，也不让 native backend
@@ -49,7 +49,7 @@ native/
 │   ├── decode/          # DecodeThread, FrameConverter, hardware providers
 │   ├── render/          # RendererDrawSnapshot, PresentationBackend contracts
 │   ├── sync/            # RenderSink and present scheduling
-├── windows/             # D3D11VA、viewport backend；产品 runner composition 仍 fail-closed
+├── windows/             # D3D11VA、WindowsNativePlayer、D3D11 viewport backend
 ├── macos/               # macOS native bridge and Metal presentation backend
 ├── tests/               # Catch2 tests
 ├── tools/               # native smoke binaries and CLIs
@@ -91,7 +91,7 @@ hardware decode provider 和 presentation backend 开始：
 
 | 平台 | 硬解 provider | presentation backend |
 | --- | --- | --- |
-| Windows | D3D11VA；H.264/H.265 使用独立 decode device 与稳定 shared snapshot，AV1/VP9 可 hwdownload | `native-d3d11` 完整 viewport shader active；runner composition 尚未接通 |
+| Windows | D3D11VA；H.264/H.265 使用独立 decode device 与稳定 shared snapshot，AV1/VP9 可 hwdownload | `native-d3d11` 完整 viewport shader写入 runner-owned BGRA8 ring；DComp 合成 Flutter UI |
 | macOS | VideoToolbox CVPixelBuffer or explicit fallback package | native Metal target backed by CVPixelBuffer / IOSurface |
 
 ## 当前播放路径状态
@@ -99,8 +99,8 @@ hardware decode provider 和 presentation backend 开始：
 - macOS native Metal presentation builds and passes native smoke.
 - macOS VideoToolbox preserves native-target CVPixelBuffer frames when supported.
 - Windows native decode、cross-device GPU snapshot bridge、SDR/scRGB viewport shader
-  are active in standalone native builds；product playback remains fail-closed until
-  the runner-composed D3D sandwich is implemented.
+  与 runner-composed D3D sandwich 已接通；当前产品 target 为 SDR BGRA8，HDR/scRGB policy
+  与 device-loss recovery 仍处于 stabilization。
 - Flutter premultiplied-alpha export remains a Flutter fork requirement, but
   Flutter should not own video presentation.
 

@@ -47,6 +47,13 @@ class WindowsD3D11PresentationBackend final : public PresentationBackend {
   bool capture_front_buffer(std::vector<uint8_t>& bgra,
                             int& width,
                             int& height) override;
+  bool capture_front_buffer_region(int x,
+                                   int y,
+                                   int width,
+                                   int height,
+                                   std::vector<uint8_t>& bgra,
+                                   int& region_width,
+                                   int& region_height) override;
   const char* last_error() const override;
   bool draw_frame(const RendererDrawSnapshot& snapshot,
                   const PresentationBackendDrawHooks& hooks) override;

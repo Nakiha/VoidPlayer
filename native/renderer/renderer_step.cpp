@@ -9,6 +9,7 @@ void Renderer::Impl::step_forward() {
     bool need_decode_wait = false;
     bool need_exact_seek = false;
     int64_t exact_seek_target = 0;
+    int64_t exact_seek_decode_target = 0;
     StepDecisionApplication step_application;
     PresentDecision conservative_step_decision;
     bool have_conservative_step_decision = false;
@@ -107,16 +108,27 @@ void Renderer::Impl::step_forward() {
         if (!have_step_decision) {
             std::lock_guard<std::mutex> lock(state_mutex_);
             if (!initialized_) return;
+            const auto clock_pts_us =
+                timeline_.playback().clock().current_pts_us();
+            std::optional<int64_t> logical_step_anchor_us;
+            if (step_forward_exact_seek_anchor_us_ == clock_pts_us) {
+                logical_step_anchor_us = clock_pts_us;
+            }
             const auto fallback_seek =
                 track_controller_.choose_step_forward_exact_seek_target(
-                    timeline_.playback().clock().current_pts_us(),
-                    present_history_.snapshot());
+                    clock_pts_us,
+                    present_history_.snapshot(),
+                    logical_step_anchor_us);
             exact_seek_target = fallback_seek.target_pts_us;
-            spdlog::info("[Renderer] step_forward exact_seek: visible_pts={:.3f}s, clock_pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
-                         fallback_seek.base_pts_us / 1e6,
+            exact_seek_decode_target = fallback_seek.decode_target_pts_us;
+            spdlog::info("[Renderer] step_forward exact_seek: visible_pts={:.3f}s, clock_pts={:.3f}s, duration={:.3f}ms, target={:.3f}s, decode_target={:.3f}s",
+                         fallback_seek.has_visible_pts
+                             ? fallback_seek.visible_pts_us / 1e6
+                             : -1.0,
                          fallback_seek.clock_pts_us / 1e6,
                          fallback_seek.frame_duration_us / 1e3,
-                         exact_seek_target / 1e6);
+                         exact_seek_target / 1e6,
+                         exact_seek_decode_target / 1e6);
             need_exact_seek = true;
         }
     }
@@ -128,6 +140,7 @@ void Renderer::Impl::step_forward() {
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             present_history_.set(step_decision);
+            step_forward_exact_seek_anchor_us_.reset();
         }
         double pts = step_application.has_clock_target
                      ? step_application.presented_pts_us / 1e6 : -1.0;
@@ -138,7 +151,13 @@ void Renderer::Impl::step_forward() {
     if (need_exact_seek) {
         std::unique_lock<std::mutex> lock(state_mutex_);
         SeekCommandProcessor::seek(
-            *this, lock, exact_seek_target, SeekType::ExactStepForward);
+            *this,
+            lock,
+            exact_seek_decode_target,
+            SeekType::ExactStepForward,
+            false);
+        timeline_.playback().clock().seek(exact_seek_target);
+        step_forward_exact_seek_anchor_us_ = exact_seek_target;
         spdlog::info("[Renderer] step_forward exact_seek done: clock_pts={:.3f}s",
                      timeline_.playback().clock().current_pts_us() / 1e6);
     }
@@ -155,6 +174,7 @@ void Renderer::Impl::step_backward() {
             initialized_,
             initialized_ && track_controller_.has_buffering_track());
         if (!step_plan.execute) return;
+        step_forward_exact_seek_anchor_us_.reset();
 
         if (step_plan.pause_clock) {
             timeline_.playback().clock().pause();

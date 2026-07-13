@@ -122,12 +122,14 @@ RendererTrackPresentationModel::build_step_forward_decision(
 StepForwardExactSeekTarget
 RendererTrackPresentationModel::choose_step_forward_exact_seek_target(
     int64_t clock_pts_us,
-    const PresentDecision& last_decision) const {
+    const PresentDecision& last_decision,
+    std::optional<int64_t> logical_step_anchor_us) const {
     return vr::choose_step_forward_exact_seek_target(
         registry_.tracks_for_snapshot(),
         clock_pts_us,
         registry_.cached_duration(),
-        last_decision);
+        last_decision,
+        logical_step_anchor_us);
 }
 
 bool RendererTrackPresentationModel::build_step_backward_decision(

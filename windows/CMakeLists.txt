@@ -2,14 +2,14 @@
 cmake_minimum_required(VERSION 3.14)
 project(void_player LANGUAGES CXX)
 
-# Keep the reset Windows runner buildable without linking the shared native
-# renderer. The runner's startup diagnostics still use the repository-locked
-# header-only spdlog dependency.
+# Windows runner and shared native renderer use one locked dependency graph.
 set(BUILD_ANALYSIS OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_ANALYSIS_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_PYTHON OFF CACHE BOOL "" FORCE)
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/Dependencies.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/FFmpeg.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/NativeSources.cmake")
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
@@ -58,6 +58,9 @@ endfunction()
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../native/renderer"
+                 "${CMAKE_BINARY_DIR}/native-renderer")
+
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
@@ -65,6 +68,9 @@ add_subdirectory("runner")
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)
+
+void_collect_ffmpeg_runtime_dlls(VOID_WINDOWS_FFMPEG_RUNTIME_DLLS)
+list(APPEND PLUGIN_BUNDLED_LIBRARIES ${VOID_WINDOWS_FFMPEG_RUNTIME_DLLS})
 
 
 # === Installation ===

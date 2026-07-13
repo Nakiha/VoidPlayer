@@ -501,10 +501,11 @@ StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
     const TrackPipelineManager& tracks,
     int64_t clock_pts_us,
     int64_t cached_duration_us,
-    const PresentDecision& last_decision) {
+    const PresentDecision& last_decision,
+    std::optional<int64_t> logical_step_anchor_us) {
     StepForwardExactSeekTarget result;
     result.clock_pts_us = clock_pts_us;
-    result.base_pts_us = clock_pts_us;
+    result.base_pts_us = logical_step_anchor_us.value_or(clock_pts_us);
     result.frame_duration_us = compute_min_current_frame_duration_us(tracks);
     const int64_t forward_slop_us = std::max<int64_t>(2000, result.frame_duration_us / 2);
     constexpr int64_t kTrustedVisibleLookaheadUs = 500000;
@@ -525,13 +526,20 @@ StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
         const auto& track = tracks[slot];
         if (track) {
             if (present_decision_slot_matches_track(last_decision, tracks, slot)) {
-                apply_candidate_base(
-                    last_decision.frames[slot]->pts_us + track->offset_us,
-                    true);
+                result.visible_pts_us =
+                    last_decision.frames[slot]->pts_us + track->offset_us;
+                result.has_visible_pts = true;
+                if (!logical_step_anchor_us.has_value()) {
+                    apply_candidate_base(result.visible_pts_us, true);
+                }
             } else if (track->track_buffer) {
                 auto frame = track->track_buffer->peek(0);
                 if (frame.has_value()) {
-                    apply_candidate_base(frame->pts_us + track->offset_us, false);
+                    result.visible_pts_us = frame->pts_us + track->offset_us;
+                    result.has_visible_pts = true;
+                    if (!logical_step_anchor_us.has_value()) {
+                        apply_candidate_base(result.visible_pts_us, false);
+                    }
                 }
             }
         }
@@ -542,6 +550,15 @@ StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
     if (cached_duration_us > 0 && result.target_pts_us > cached_duration_us) {
         result.target_pts_us = cached_duration_us;
         result.clamped_to_duration = true;
+    }
+    result.decode_target_pts_us = result.target_pts_us;
+    if (logical_step_anchor_us.has_value() && result.has_visible_pts &&
+        result.visible_pts_us >= result.target_pts_us) {
+        result.decode_target_pts_us = result.visible_pts_us + 1000;
+        if (cached_duration_us > 0) {
+            result.decode_target_pts_us =
+                std::min(result.decode_target_pts_us, cached_duration_us);
+        }
     }
     return result;
 }

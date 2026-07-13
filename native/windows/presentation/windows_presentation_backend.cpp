@@ -301,6 +301,49 @@ bool WindowsD3D11PresentationBackend::capture_front_buffer(
   return true;
 }
 
+bool WindowsD3D11PresentationBackend::capture_front_buffer_region(
+    int x,
+    int y,
+    int width,
+    int height,
+    std::vector<uint8_t>& bgra,
+    int& region_width,
+    int& region_height) {
+  std::vector<uint8_t> full_bgra;
+  int full_width = 0;
+  int full_height = 0;
+  bgra.clear();
+  region_width = 0;
+  region_height = 0;
+  if (width <= 0 || height <= 0 ||
+      !capture_front_buffer(full_bgra, full_width, full_height)) {
+    return false;
+  }
+  const int left = std::clamp(x, 0, full_width);
+  const int top = std::clamp(y, 0, full_height);
+  const int right = std::clamp(x + width, left, full_width);
+  const int bottom = std::clamp(y + height, top, full_height);
+  region_width = right - left;
+  region_height = bottom - top;
+  if (region_width <= 0 || region_height <= 0) {
+    region_width = 0;
+    region_height = 0;
+    return false;
+  }
+  const size_t source_stride = static_cast<size_t>(full_width) * 4u;
+  const size_t region_stride = static_cast<size_t>(region_width) * 4u;
+  bgra.resize(region_stride * static_cast<size_t>(region_height));
+  for (int row = 0; row < region_height; ++row) {
+    const size_t source_offset =
+        static_cast<size_t>(top + row) * source_stride +
+        static_cast<size_t>(left) * 4u;
+    std::memcpy(bgra.data() + static_cast<size_t>(row) * region_stride,
+                full_bgra.data() + source_offset,
+                region_stride);
+  }
+  return true;
+}
+
 const char* WindowsD3D11PresentationBackend::last_error() const {
   thread_local std::string copy;
   std::lock_guard<std::mutex> lock(state_mutex_);

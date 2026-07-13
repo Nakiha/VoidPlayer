@@ -41,6 +41,24 @@ struct CompositeConstants {
   float padding[3] = {};
 };
 
+class ScopedD3D11ContextLock final {
+ public:
+  explicit ScopedD3D11ContextLock(ID3D10Multithread* multithread)
+      : multithread_(multithread) {
+    if (multithread_) {
+      multithread_->Enter();
+    }
+  }
+  ~ScopedD3D11ContextLock() {
+    if (multithread_) {
+      multithread_->Leave();
+    }
+  }
+
+ private:
+  ID3D10Multithread* multithread_ = nullptr;
+};
+
 }  // namespace
 
 WindowsNativeCompositor::WindowsNativeCompositor(
@@ -104,13 +122,89 @@ void WindowsNativeCompositor::NotifyResize() {
   SignalComposite();
 }
 
-void WindowsNativeCompositor::PublishVideoTarget(ID3D11Texture2D* texture) {
+bool WindowsNativeCompositor::CreateVideoTargetRing(
+    uint32_t width,
+    uint32_t height,
+    DXGI_FORMAT format,
+    size_t target_count,
+    std::vector<void*>& textures) {
+  textures.clear();
+  if (!device_ || width == 0 || height == 0 || target_count < 3 ||
+      target_count > 8 ||
+      (format != DXGI_FORMAT_B8G8R8A8_UNORM &&
+       format != DXGI_FORMAT_R16G16B16A16_FLOAT)) {
+    SetError("Windows video target ring request is invalid");
+    return false;
+  }
+  std::vector<Microsoft::WRL::ComPtr<ID3D11Texture2D>> targets;
+  targets.reserve(target_count);
+  D3D11_TEXTURE2D_DESC desc = {};
+  desc.Width = width;
+  desc.Height = height;
+  desc.MipLevels = 1;
+  desc.ArraySize = 1;
+  desc.Format = format;
+  desc.SampleDesc.Count = 1;
+  desc.Usage = D3D11_USAGE_DEFAULT;
+  desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+  for (size_t index = 0; index < target_count; ++index) {
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> target;
+    if (FAILED(device_->CreateTexture2D(&desc, nullptr, &target)) || !target) {
+      SetError("Windows video target ring allocation failed");
+      return false;
+    }
+    targets.push_back(std::move(target));
+  }
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
+    video_target_.Reset();
+    video_srv_.Reset();
+    video_targets_ = std::move(targets);
+    ++diagnostics_.video_target_generation;
+    for (const auto& target : video_targets_) {
+      textures.push_back(target.Get());
+    }
+  }
+  return true;
+}
+
+void WindowsNativeCompositor::ClearVideoTargetRing() {
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  video_srv_.Reset();
+  video_target_.Reset();
+  video_targets_.clear();
+  ++diagnostics_.video_target_generation;
+}
+
+bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
+                                                 uint32_t timeout_ms) {
+  if (!texture || !running_) {
+    return false;
+  }
+  uint64_t serial = 0;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    const auto found = std::find_if(
+        video_targets_.begin(), video_targets_.end(),
+        [texture](const auto& candidate) { return candidate.Get() == texture; });
+    if (found == video_targets_.end()) {
+      diagnostics_.last_error =
+          "Windows compositor rejected a target outside its ring";
+      return false;
+    }
     video_target_ = texture;
     video_srv_.Reset();
+    serial = ++video_publish_serial_;
+    ++diagnostics_.video_publish_count;
   }
   SignalComposite();
+  std::unique_lock<std::mutex> lock(state_mutex_);
+  const bool completed = state_condition_.wait_for(
+      lock, std::chrono::milliseconds(timeout_ms), [this, serial] {
+        return video_completed_serial_ >= serial || !running_;
+      });
+  return completed && video_completed_serial_ >= serial &&
+         last_video_presentation_succeeded_;
 }
 
 WindowsNativeCompositorDiagnostics WindowsNativeCompositor::diagnostics() const {
@@ -144,8 +238,8 @@ void WindowsNativeCompositor::Run() {
   initialization_succeeded_ = initialized;
   SetEvent(ready_event_);
   if (!initialized) {
-    ShutdownOnThread();
     running_ = false;
+    ShutdownOnThread();
     return;
   }
   const HANDLE events[] = {stop_event_, wake_event_};
@@ -163,8 +257,8 @@ void WindowsNativeCompositor::Run() {
     }
     (void)CompositeLatest();
   }
-  ShutdownOnThread();
   running_ = false;
+  ShutdownOnThread();
 }
 
 bool WindowsNativeCompositor::InitializeOnThread() {
@@ -199,6 +293,11 @@ bool WindowsNativeCompositor::InitializeOnThread() {
   if (!CreatePipeline()) {
     return false;
   }
+  if (FAILED(device_.As(&multithread_)) || !multithread_) {
+    SetError("DComp compositor could not enable D3D11 multithread protection");
+    return false;
+  }
+  multithread_->SetMultithreadProtected(TRUE);
 
   Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
   Microsoft::WRL::ComPtr<IDXGIAdapter> device_adapter;
@@ -265,8 +364,12 @@ void WindowsNativeCompositor::ShutdownOnThread() {
   if (dcomp_device_) {
     dcomp_device_->Commit();
   }
-  video_srv_.Reset();
-  video_target_.Reset();
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    video_srv_.Reset();
+    video_target_.Reset();
+    video_targets_.clear();
+  }
   completion_query_.Reset();
   constants_.Reset();
   sampler_.Reset();
@@ -277,10 +380,14 @@ void WindowsNativeCompositor::ShutdownOnThread() {
   dcomp_device_.Reset();
   swap_chain_.Reset();
   context_.Reset();
+  multithread_.Reset();
   device_.Reset();
-  std::lock_guard<std::mutex> lock(state_mutex_);
-  diagnostics_.initialized = false;
-  diagnostics_.flutter_export_enabled = false;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    diagnostics_.initialized = false;
+    diagnostics_.flutter_export_enabled = false;
+  }
+  state_condition_.notify_all();
 }
 
 bool WindowsNativeCompositor::ResizeSwapChain() {
@@ -311,12 +418,23 @@ bool WindowsNativeCompositor::ResizeSwapChain() {
 }
 
 bool WindowsNativeCompositor::CompositeLatest() {
+  uint64_t video_serial = 0;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    video_serial = video_publish_serial_;
+  }
+  const auto fail_video = [this, &video_serial]() {
+    CompleteVideoPresentation(video_serial, false);
+  };
   FlutterDesktopWindowsSurface lease = {};
   lease.struct_size = sizeof(lease);
   if (!FlutterDesktopViewAcquireLatestSurface(flutter_view_, &lease)) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    ++diagnostics_.acquire_failure_count;
-    diagnostics_.last_composite_succeeded = false;
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      ++diagnostics_.acquire_failure_count;
+      diagnostics_.last_composite_succeeded = false;
+    }
+    fail_video();
     return false;
   }
   const auto release_lease = [this, lease]() {
@@ -328,6 +446,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
           kFlutterDesktopWindowsSurfaceAlphaModePremultiplied) {
     release_lease();
     SetError("Flutter surface lease has an unsupported format or alpha mode");
+    fail_video();
     return false;
   }
   if (lease.width > 0 && lease.height > 0 &&
@@ -341,6 +460,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
     if (FAILED(resize)) {
       release_lease();
       SetError("DComp compositor could not match the Flutter surface size");
+      fail_video();
       return false;
     }
     width_ = lease.width;
@@ -358,18 +478,22 @@ bool WindowsNativeCompositor::CompositeLatest() {
     release_lease();
     SetError("DComp compositor could not open the Flutter NT-handle surface: " +
              std::to_string(static_cast<uint32_t>(open_result)));
+    fail_video();
     return false;
   }
   Microsoft::WRL::ComPtr<IDXGIKeyedMutex> keyed_mutex;
   if (FAILED(flutter_texture.As(&keyed_mutex)) ||
       FAILED(keyed_mutex->AcquireSync(lease.consumer_acquire_key, 16))) {
     release_lease();
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    ++diagnostics_.keyed_mutex_failure_count;
-    diagnostics_.last_composite_succeeded = false;
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      ++diagnostics_.keyed_mutex_failure_count;
+      diagnostics_.last_composite_succeeded = false;
+    }
+    fail_video();
     return false;
   }
-  bool acquired_mutex = true;
+  ScopedD3D11ContextLock context_lock(multithread_.Get());
   Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> flutter_srv;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> back_buffer;
   Microsoft::WRL::ComPtr<ID3D11RenderTargetView> target;
@@ -383,6 +507,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
   Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> video_srv;
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
+    video_serial = video_publish_serial_;
     if (video_target_ && !video_srv_) {
       device_->CreateShaderResourceView(video_target_.Get(), nullptr, &video_srv_);
     }
@@ -416,9 +541,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
     context_->PSSetShaderResources(0, 2, empty);
     success = WaitForGpu();
   }
-  if (acquired_mutex) {
-    keyed_mutex->ReleaseSync(lease.producer_release_key);
-  }
+  keyed_mutex->ReleaseSync(lease.producer_release_key);
   release_lease();
   if (success) {
     const HRESULT present = swap_chain_->Present(1, 0);
@@ -438,6 +561,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
       diagnostics_.last_error.clear();
     }
   }
+  CompleteVideoPresentation(video_serial, success);
   return success;
 }
 
@@ -529,6 +653,25 @@ bool WindowsNativeCompositor::WaitForGpu() {
     return false;
   }
   return true;
+}
+
+void WindowsNativeCompositor::CompleteVideoPresentation(uint64_t serial,
+                                                        bool success) {
+  if (serial == 0) {
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (serial < video_completed_serial_) {
+      return;
+    }
+    video_completed_serial_ = serial;
+    last_video_presentation_succeeded_ = success;
+    if (success) {
+      ++diagnostics_.video_present_count;
+    }
+  }
+  state_condition_.notify_all();
 }
 
 void WindowsNativeCompositor::SetError(std::string error) {

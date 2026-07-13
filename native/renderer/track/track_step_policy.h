@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 
 namespace vr {
 
@@ -66,6 +67,9 @@ struct StepForwardExactSeekTarget {
     int64_t clock_pts_us = 0;
     int64_t frame_duration_us = 0;
     int64_t target_pts_us = 0;
+    int64_t decode_target_pts_us = 0;
+    int64_t visible_pts_us = 0;
+    bool has_visible_pts = false;
     bool clamped_to_duration = false;
 };
 
@@ -73,7 +77,8 @@ StepForwardExactSeekTarget choose_step_forward_exact_seek_target(
     const TrackPipelineManager& tracks,
     int64_t clock_pts_us,
     int64_t cached_duration_us,
-    const PresentDecision& last_decision);
+    const PresentDecision& last_decision,
+    std::optional<int64_t> logical_step_anchor_us = std::nullopt);
 
 struct StepBackwardExactSeekTarget {
     int reference_slot = -1;

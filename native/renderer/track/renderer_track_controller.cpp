@@ -190,9 +190,10 @@ void RendererTrackController::discard_step_forward_consumed_frames(
 StepForwardExactSeekTarget
 RendererTrackController::choose_step_forward_exact_seek_target(
     int64_t clock_pts_us,
-    const PresentDecision& last_decision) const {
+    const PresentDecision& last_decision,
+    std::optional<int64_t> logical_step_anchor_us) const {
     return presentation_model_->choose_step_forward_exact_seek_target(
-        clock_pts_us, last_decision);
+        clock_pts_us, last_decision, logical_step_anchor_us);
 }
 
 bool RendererTrackController::build_step_backward_decision(

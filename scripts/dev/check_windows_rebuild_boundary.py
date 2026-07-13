@@ -1,9 +1,9 @@
-"""Guard the staged Windows native presentation rebuild boundary.
+"""Guard the active Windows native presentation rebuild boundary.
 
 D3D11VA decode, typed frame storage, target rings, and a standalone D3D11
-presentation backend are active. The runner may consume the locked Flutter V1
-lease in a passive DComp compositor while this check continues to prevent the
-fail-closed player plugin from claiming product availability or restoring the
+presentation backend are active. The runner owns the shared native player and
+consumes the locked Flutter V1 lease in a passive DComp compositor. This check
+prevents the active player path from losing those boundaries or restoring the
 deleted capture/D3D12 paths.
 """
 
@@ -30,9 +30,15 @@ REMOVED_PATHS = [
 
 REQUIRED_TOKENS = {
     "windows/runner/video_renderer_plugin.cpp": [
-        '"BACKEND_UNAVAILABLE"',
-        "windows-native-unavailable",
-        "Windows native presentation backend has not been rebuilt",
+        "WindowsNativePlayer",
+        "install_target_ring",
+        "event_bridge_.PostTask",
+        "windows-native-d3d11",
+    ],
+    "windows/runner/renderer_event_bridge.h": [
+        "RendererEventBridge",
+        "PostTask",
+        "pending_tasks_",
     ],
     "native/windows/presentation/windows_presentation_backend.cpp": [
         "create_windows_presentation_backend",
@@ -42,6 +48,7 @@ REQUIRED_TOKENS = {
         "analysis_overlay_renderer_portable",
         "windows/decode/d3d11_frame_snapshot.cpp",
         "windows/decode/d3d11va_provider.cpp",
+        "windows/player/native_player.cpp",
         "windows/presentation/windows_d3d11_target_ring.cpp",
         "windows/presentation/windows_presentation_backend.cpp",
     ],

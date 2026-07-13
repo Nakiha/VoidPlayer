@@ -1871,6 +1871,21 @@ TEST_CASE("TrackStepPolicy chooses step-forward exact-seek fallback targets",
     REQUIRE(future_last_target.base_pts_us == 70100);
     REQUIRE(future_last_target.target_pts_us == 111100);
 
+    const auto chained_exact_step_target = choose_step_forward_exact_seek_target(
+        future_manager, 30000, 0, future_last_decision, 30000);
+    REQUIRE(chained_exact_step_target.base_pts_us == 30000);
+    REQUIRE(chained_exact_step_target.target_pts_us == 71000);
+    REQUIRE(chained_exact_step_target.decode_target_pts_us == 71000);
+
+    TextureFrame overshot_frame;
+    overshot_frame.pts_us = 100000;
+    future_last_decision.frames[0] = overshot_frame;
+    const auto overshot_exact_step_target = choose_step_forward_exact_seek_target(
+        future_manager, 30000, 0, future_last_decision, 30000);
+    REQUIRE(overshot_exact_step_target.target_pts_us == 71000);
+    REQUIRE(overshot_exact_step_target.visible_pts_us == 100100);
+    REQUIRE(overshot_exact_step_target.decode_target_pts_us == 101100);
+
     const auto clamped_target = choose_step_forward_exact_seek_target(
         manager, 9000, 20000, last_decision);
     REQUIRE(clamped_target.target_pts_us == 20000);

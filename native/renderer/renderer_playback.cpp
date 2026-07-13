@@ -8,6 +8,7 @@ void Renderer::Impl::play() {
         std::lock_guard<std::mutex> lock(state_mutex_);
         const auto plan = plan_renderer_play_command(initialized_, timeline_.playing());
         if (!plan.execute) return;
+        step_forward_exact_seek_anchor_us_.reset();
         if (plan.reset_seek && timeline_.seek()) {
             timeline_.seek()->reset();
         }
@@ -42,6 +43,7 @@ void Renderer::Impl::seek(int64_t target_pts_us, SeekType type, int64_t request_
         if (request_id >= 0) {
             timeline_.begin_pending_seek_preview_event(request_id, target_pts_us);
         }
+        step_forward_exact_seek_anchor_us_.reset();
         SeekCommandProcessor::seek(*this, lock, target_pts_us, type);
     }
     emit_playback_clock_event(true);

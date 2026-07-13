@@ -8,7 +8,7 @@ native C++ 模块负责。
 
 - **Flutter / Dart UI**: 主窗口、播放控制、Action/UI 自动化入口、MethodChannel/EventChannel 编排。
 - **Shared native renderer**: FFmpeg demux/decode、playback clock、seek/loop、track lifecycle、layout、RenderSink/PresentDecision、RendererDrawSnapshot。
-- **Windows host**: Win32 Flutter runner 和 fail-closed plugin；D3D11VA decode/frame-storage 基础已恢复，native presentation 等待从新 factory contract 重建。
+- **Windows host**: Win32 Flutter runner 和 fail-closed plugin；D3D11VA decode/frame-storage 与 runner-owned D3D11 target-ring 状态机已恢复，shader presentation/runner composition 仍待重建。
 - **macOS backend**: Cocoa runner、sandbox file access、Metal/CVPixelBuffer/IOSurface presentation、VideoToolbox 硬解。
 - **Analysis**: shared native analysis/cache 工具；macOS analysis UI/IPC capability-gated。
 - **当前平台状态**: macOS native playback 是唯一可用产品路径；Windows playback 暂不可用。

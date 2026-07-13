@@ -32,6 +32,7 @@ layout 和 diagnostics 都使用微秒时间戳。
 | --- | --- | --- |
 | `CpuNv12FrameStorage` / planar YUV | software decode、hwdownload fallback | native upload / fallback package |
 | `CpuRgbaFrameStorage` | 旧测试、BGRA fallback、capture helpers | native BGRA upload path |
+| Windows D3D11 storage | D3D11VA NV12/P010 shared snapshot | native D3D11 backend |
 | macOS CVPixelBuffer storage | VideoToolbox zero-copy path | native Metal backend through CVMetalTextureCache / IOSurface |
 
 Frame storage 必须带足 lifetime 信息。VideoToolbox 硬解 frame 持有底层 FFmpeg/CVPixelBuffer 引用，避免
@@ -53,13 +54,15 @@ immutable `RendererDrawSnapshot`。
 
 ```text
 TextureFrame
-  -> reserved NativeD3D11/NativeD3D12PresentationBackend
-  -> runner-composed sandwich backend (future work)
+  -> NativeD3D11PresentationBackend
+  -> runner-owned complete-viewport D3D11 target ring (BGRA8 / RGBA16F)
+  -> runner samples native target + Flutter premultiplied-alpha D3D11 lease
+  -> DComp final surface
 ```
 
-Windows native presentation 在本 restart 分支为 reserved/fail-closed。后续恢复时
-需要重新建立 D3D11/DX12 backend、runner composition 和验证矩阵；产品视频上屏不得回到
-Flutter Texture SDR。
+Windows 已恢复 D3D11VA frame storage 与 runner-owned target-ring 状态机；shader backend、
+runner composition 和 player bridge 尚未接通，因此产品入口仍 fail-closed。产品视频上屏
+不得回到 Flutter Texture SDR。
 
 ## macOS Metal / CVPixelBuffer 输出路径
 

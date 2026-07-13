@@ -81,14 +81,26 @@ rebuilt:
 
 ```text
 top-level HWND
-  -> native D3D11/D3D12 video visual
-  -> Flutter ARGB visual exported by the locked engine
+  -> runner-owned D3D11 complete-viewport target ring
+     <- native D3D11 presentation backend
+  -> Flutter premultiplied-alpha D3D11 lease exported by the locked engine
   -> DComp/runner composition
 ```
 
 The final Windows compositor is input-transparent. Win32/Flutter keeps normal
 hit testing, pointer, keyboard, gesture, and frame scheduling ownership; the
 runner only samples the latest Flutter export and native video target.
+
+The runner owns the D3D11 device and target textures. The native backend owns
+draw acquisition and completion state but does not own the final visual tree.
+The target ring mirrors the macOS available/in-flight/completed/displayed/
+protected lifecycle so resize and compositor retention cannot reuse an active
+surface.
+
+The restart path consumes the existing V1 D3D11 Flutter lease. The fork's
+current V2 ABI advertises D3D12 while its producer resource is still an ANGLE
+D3D11 keyed-mutex texture, so V2 is not accepted as evidence for this backend.
+Any future V2 change must expose the real producer API and synchronization kind.
 
 The reserved backend names are `native-d3d11` and `native-d3d12`. They are
 interface placeholders, not active render backends.

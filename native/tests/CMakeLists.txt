@@ -7,6 +7,7 @@ add_executable(video_renderer_tests
     common/test_logging.cpp
     windows/test_win_utf8.cpp
     windows/test_d3d11va_provider.cpp
+    windows/test_windows_d3d11_target_ring.cpp
     renderer/test_renderer_playback_command_policy.cpp
     renderer/test_renderer_seek_log_policy.cpp
     renderer/test_renderer_lifecycle.cpp

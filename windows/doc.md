@@ -8,6 +8,7 @@ Windows 当前处于 native presentation 重建边界，不是可播放产品路
 - `video_renderer` MethodChannel/EventChannel 的 fail-closed 壳；
 - 原生文件选择器；
 - standalone native 模块中的 D3D11VA provider、独立 decode device 和稳定 shared snapshot frame storage；
+- runner-owned D3D11 complete-viewport target ring 状态机；
 - `native/windows/presentation/windows_presentation_backend.*` 中的新 backend factory 合同。
 
 创建 player 或添加媒体会返回 `BACKEND_UNAVAILABLE`。runner 不链接 FFmpeg、D3D、
@@ -34,6 +35,11 @@ Win32 window
 3. shared renderer 只提交 `RendererDrawSnapshot`，不暴露 GPU device、shared ring 或
    external-target draw 旁路。
 4. 新后端必须建立自己的 color、layout、HDR、device-loss 和 UI smoke 矩阵。
+
+当前选定的首条产品链路是 D3D11VA + D3D11。runner 分配 BGRA8/RGBA16F
+target ring，native backend 只绘制完整 viewport；runner 使用 Flutter engine
+现有 V1 D3D11 keyed-mutex lease 合成 UI。V2 的 D3D12 标签在 fork 提供真实
+D3D12 resource/fence 之前不接入。
 
 旧 DComp compositor、source projection、FP16 ring、window capture 和 native player
 bridge 已删除。需要算法参考时看历史提交，不要把旧文件复制回 active tree。

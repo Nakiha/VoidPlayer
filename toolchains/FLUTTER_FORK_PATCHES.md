@@ -59,6 +59,15 @@ compositor contract instead of falling back to a Flutter Texture path. Windows
 surface-export V2 leases are D3D12-only: D3D11 V2 acquisition fails closed so
 VoidPlayer cannot silently return to the legacy DX11 consumer path.
 
+The native-presentation restart deliberately uses the existing V1 D3D11 lease
+first. ANGLE currently produces a D3D11 BGRA keyed-mutex texture, while V2 only
+relabels that shared handle as a D3D12 backend. The new runner must not consume
+that label as if it were a D3D12 resource/fence contract. After the D3D11 runner
+canary is proven, V2 should be revised in a separate Flutter-fork change to
+negotiate the actual producer backend and synchronization primitive. Native
+composition must not depend on `RequestSurfaceExportFrame` or the bounded frame
+pump; Flutter remains responsible for scheduling its own UI frames.
+
 `voidplayer-flutter-3.44.1-hdr.2` stabilizes the exported macOS front surface
 list: `FlutterSurfaceManager.frontSurfaces` returns an immutable snapshot while
 mutations are locked, and `FlutterEngine` enumerates only that snapshot. This

@@ -41,6 +41,7 @@ REQUIRED_TOKENS = {
         "analysis_overlay_renderer_portable",
         "windows/decode/d3d11_frame_snapshot.cpp",
         "windows/decode/d3d11va_provider.cpp",
+        "windows/presentation/windows_d3d11_target_ring.cpp",
         "windows/presentation/windows_presentation_backend.cpp",
     ],
 }

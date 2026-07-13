@@ -14,6 +14,7 @@ add_executable(${BINARY_NAME} WIN32
   "utils.cpp"
   "win32_window.cpp"
   "video_renderer_plugin.cpp"
+  "windows_native_compositor.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"
@@ -39,7 +40,15 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app flutter_wrapper_plugin)
-target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib" "ole32.lib" "shell32.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE
+  "d3d11.lib"
+  "d3dcompiler.lib"
+  "dcomp.lib"
+  "dwmapi.lib"
+  "dxgi.lib"
+  "ole32.lib"
+  "shell32.lib"
+)
 target_link_libraries(${BINARY_NAME} PRIVATE spdlog::spdlog_header_only)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 

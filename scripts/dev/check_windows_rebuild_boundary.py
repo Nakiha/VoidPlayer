@@ -1,8 +1,10 @@
-"""Guard the fail-closed Windows native presentation boundary.
+"""Guard the staged Windows native presentation rebuild boundary.
 
 D3D11VA decode, typed frame storage, target rings, and a standalone D3D11
-presentation backend may be rebuilt while this check continues to prevent the
-fail-closed runner plugin from claiming product availability.
+presentation backend are active. The runner may consume the locked Flutter V1
+lease in a passive DComp compositor while this check continues to prevent the
+fail-closed player plugin from claiming product availability or restoring the
+deleted capture/D3D12 paths.
 """
 
 from __future__ import annotations
@@ -18,7 +20,6 @@ except ImportError:
 
 
 REMOVED_PATHS = [
-    "windows/runner/windows_native_compositor.cpp",
     "windows/runner/flutter_texture_bridge.cpp",
     "native/windows/decode/d3d12va_provider.cpp",
     "native/windows/presentation/windows_d3d12_present_target.cpp",
@@ -44,13 +45,25 @@ REQUIRED_TOKENS = {
         "windows/presentation/windows_d3d11_target_ring.cpp",
         "windows/presentation/windows_presentation_backend.cpp",
     ],
+    "windows/runner/windows_native_compositor.cpp": [
+        "FlutterDesktopViewAcquireLatestSurface",
+        "OpenSharedResource1",
+        "IDXGIKeyedMutex",
+        "kFlutterDesktopWindowsSurfaceExportModeCompositorOwned",
+    ],
 }
 
 FORBIDDEN_RUNNER_TOKENS = [
-    "dcomp.lib",
     "d3d12",
     "FlutterNativeTarget",
-    "windows_native_compositor.cpp",
+]
+
+FORBIDDEN_COMPOSITOR_TOKENS = [
+    "FlutterDesktopViewRequestSurfaceExportFrame",
+    "WS_EX_LAYERED",
+    "PrintWindow",
+    "BitBlt",
+    "D3D12",
 ]
 
 
@@ -74,6 +87,12 @@ def check_windows_rebuild_boundary() -> list[str]:
     for token in FORBIDDEN_RUNNER_TOKENS:
         if token in runner_cmake:
             errors.append(f"Windows runner restored forbidden dependency: {token}")
+    compositor = (ROOT / "windows/runner/windows_native_compositor.cpp").read_text(
+        encoding="utf-8"
+    )
+    for token in FORBIDDEN_COMPOSITOR_TOKENS:
+        if token in compositor:
+            errors.append(f"Windows compositor restored forbidden path: {token}")
     return errors
 
 

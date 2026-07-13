@@ -5,6 +5,7 @@
 #include <flutter_windows.h>
 
 #include "file_picker_service.h"
+#include "windows_native_compositor.h"
 
 #include <memory>
 
@@ -14,8 +15,8 @@ class VideoRendererPlugin : public flutter::Plugin {
       flutter::PluginRegistrarWindows* registrar,
       FlutterDesktopPluginRegistrarRef core_registrar);
 
-  explicit VideoRendererPlugin(HWND window_handle);
-  ~VideoRendererPlugin() override = default;
+  VideoRendererPlugin(HWND window_handle, FlutterDesktopViewRef flutter_view);
+  ~VideoRendererPlugin() override;
 
   VideoRendererPlugin(const VideoRendererPlugin&) = delete;
   VideoRendererPlugin& operator=(const VideoRendererPlugin&) = delete;
@@ -27,4 +28,6 @@ class VideoRendererPlugin : public flutter::Plugin {
 
   FilePickerService file_picker_;
   HWND window_handle_ = nullptr;
+  std::unique_ptr<WindowsNativeCompositor> compositor_;
+  bool compositor_started_ = false;
 };

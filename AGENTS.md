@@ -47,7 +47,7 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 ## 硬约束
 
 - `python dev.py build --native` 只构建独立 native 模块，不会重新编译 Flutter Windows runner。
-- Windows runner 当前不编译 shared native renderer，只提供 fail-closed channel host。
+- Windows runner 当前不编译 shared native renderer；已启用锁定 Flutter V1 lease + DComp canary，player channel 仍 fail-closed。
 - `python dev.py ui-test ...` 会运行 Windows UI 自动化，但当前不能作为视频播放验证。
 - `python dev.py ui-test ...` 可以一次传入多个 CSV 脚本，`dev.py` 会在同一次构建/启动配置下串行执行这些用例。
 - `python dev.py build --native` 不能替代平台 runner 重建。
@@ -56,6 +56,7 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 - Windows presentation 只能从 `native/windows/presentation/windows_presentation_backend.*` 的 factory contract 重建。
 - 禁止恢复旧 DComp compositor、shared FP16 ring、external D3D12 target、source-projection、window capture 或 renderer C FFI 路径。
 - Windows runner 最终只组合 native SDR/HDR video surface 与 Flutter premultiplied-alpha surface，不控制 Flutter frame 上屏。
+- Windows runner 构建必须使用锁定 local engine；普通 Flutter SDK 不提供 surface-export ABI，不能作为构建或验证 fallback。
 - Windows final compositor 必须像 macOS `MacOSNativeCompositorView` 一样 input-transparent：只采样 Flutter 已发布 surface，不拦截 hit-test/input，不请求或驱动 Flutter frame scheduling。
 - Windows backend 完成前保持 `BACKEND_UNAVAILABLE` fail-closed；禁止用 Flutter Texture 伪装视频 fallback。
 - Windows 重建阶段必须同步新增独立的 color/layout/HDR/device-loss/backend UI 验证矩阵；旧 preservation gate 不是通过证据。

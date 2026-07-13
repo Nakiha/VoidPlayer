@@ -5,15 +5,16 @@ Windows 当前处于 native presentation 重建边界，不是可播放产品路
 ## 当前可用内容
 
 - Win32 Flutter runner、窗口生命周期和插件注册；
-- `video_renderer` MethodChannel/EventChannel 的 fail-closed 壳；
+- `video_renderer` MethodChannel/EventChannel 的 fail-closed player 壳；
+- 顶层 HWND 上 input-transparent 的 DComp final visual，已消费锁定 Flutter V1 D3D11 keyed-mutex lease；
 - 原生文件选择器；
 - standalone native 模块中的 D3D11VA provider、独立 decode device 和稳定 shared snapshot frame storage；
 - runner-owned D3D11 complete-viewport target ring 状态机；
 - `native/windows/presentation/windows_presentation_backend.*` 中已激活的 D3D11 target lifecycle backend；
 - `windows_d3d11_viewport_renderer.*` 中已验证的 D3D11VA/CPU YUV/BGRA、shared layout 与 SDR/scRGB viewport shader。
 
-创建 player 或添加媒体仍会返回 `BACKEND_UNAVAILABLE`。runner 不链接 FFmpeg、D3D、
-DComp 或 shared native renderer，也不要求 patched Flutter engine。D3D11VA 与 viewport backend 目前只在
+创建 player 或添加媒体仍会返回 `BACKEND_UNAVAILABLE`。runner 已链接 D3D11/DComp 但尚未链接 FFmpeg
+或 shared native renderer，并且强制要求 patched Flutter local engine。D3D11VA 与 viewport backend 目前只在
 standalone native build/test 中生效；不要把 Flutter Texture
 当作视频 fallback。
 

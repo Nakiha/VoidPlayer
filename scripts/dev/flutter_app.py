@@ -74,6 +74,44 @@ def _macos_local_engine_args(debug: bool) -> list[str]:
     return args
 
 
+def _windows_local_engine_args(debug: bool) -> list[str]:
+    engine_src = Path(
+        os.environ.get(
+            "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH",
+            str(ROOT / ".toolchains" / "flutter" / "engine" / "src"),
+        )
+    )
+    engine_name = os.environ.get(
+        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE" if debug
+        else "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_RELEASE",
+        "host_debug_unopt" if debug else "host_release",
+    )
+    engine_host = os.environ.get(
+        "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST" if debug
+        else "VOIDPLAYER_FLUTTER_LOCAL_ENGINE_HOST_RELEASE",
+        engine_name,
+    )
+    engine_path = engine_src / "out" / engine_name
+    required = (
+        engine_path / "flutter_windows.dll",
+        engine_path / "flutter_export.h",
+        engine_path / "flutter_windows.h",
+        engine_path / "cpp_client_wrapper",
+        engine_path / "flutter_patched_sdk",
+    )
+    if not engine_path.exists() or any(not path.exists() for path in required):
+        print("ERROR: Windows native compositor requires the locked local engine.")
+        print("Set:")
+        print("  VOIDPLAYER_FLUTTER_LOCAL_ENGINE_SRC_PATH=<engine/src>")
+        print("  VOIDPLAYER_FLUTTER_LOCAL_ENGINE[_RELEASE]=<output-name>")
+        sys.exit(1)
+    return [
+        f"--local-engine-src-path={engine_src}",
+        f"--local-engine={engine_name}",
+        f"--local-engine-host={engine_host}",
+    ]
+
+
 def flutter_build(debug: bool) -> None:
     """Build Flutter Windows app."""
     build_type = "Debug" if debug else "Release"
@@ -82,6 +120,7 @@ def flutter_build(debug: bool) -> None:
     header(f"Build Flutter ({build_type})")
 
     cmd = _flutter_cmd("build", "windows")
+    cmd.extend(_windows_local_engine_args(debug))
     cmd.append("--debug" if debug else "--release")
 
     run(cmd, cwd=str(ROOT))

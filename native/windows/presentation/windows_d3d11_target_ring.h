@@ -33,6 +33,16 @@ struct WindowsD3D11TargetRingDiagnostics {
   uint64_t backpressure_count = 0;
 };
 
+struct WindowsD3D11TargetRingInstall {
+  const void* const* textures = nullptr;
+  size_t texture_count = 0;
+  void* displayed_texture = nullptr;
+  void* protected_texture = nullptr;
+  int width = 0;
+  int height = 0;
+  DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
+};
+
 // Tracks runner-owned complete-viewport textures. The presentation backend may
 // render only into Available targets; the runner marks the texture currently
 // sampled by the final compositor as Displayed and may protect one prior target

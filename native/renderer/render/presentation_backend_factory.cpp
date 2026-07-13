@@ -3,6 +3,9 @@
 #ifdef __APPLE__
 #include "macos/metal/metal_presentation_backend.h"
 #endif
+#ifdef _WIN32
+#include "windows/presentation/windows_presentation_backend.h"
+#endif
 
 namespace vr {
 namespace {
@@ -11,8 +14,7 @@ class DefaultPresentationBackendProvider final : public PresentationBackendProvi
 public:
     bool supports(RenderBackendKind kind) const override {
 #ifdef _WIN32
-        (void)kind;
-        return false;
+        return kind == RenderBackendKind::NativeD3D11;
 #elif defined(__APPLE__)
         return kind == RenderBackendKind::Metal;
 #else
@@ -23,7 +25,9 @@ public:
 
     std::unique_ptr<PresentationBackend> create(RenderBackendKind kind) const override {
 #ifdef _WIN32
-        (void)kind;
+        if (kind == RenderBackendKind::NativeD3D11) {
+            return create_windows_presentation_backend();
+        }
 #elif defined(__APPLE__)
         if (kind == RenderBackendKind::Metal) {
             return vp_macos::create_metal_presentation_backend();

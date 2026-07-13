@@ -79,16 +79,28 @@ TEST_CASE("Renderer config validation accepts Metal offscreen output on macOS",
 #endif
 }
 
-TEST_CASE("Windows native D3D backends are reserved but not active",
+TEST_CASE("Windows native D3D11 backend requires the runner target contract",
           "[renderer_config][presentation_backend]") {
     auto config = valid_windowed_config();
     config.offscreen = true;
     config.hwnd = nullptr;
-    config.backend.type = RendererBackendType::NativeD3D12;
+    config.backend.type = RendererBackendType::NativeD3D11;
     config.backend.output = reinterpret_cast<void*>(0x9abc);
+    config.backend.max_track_slots = 1;
 
+#ifdef _WIN32
+    REQUIRE(validate_renderer_config(config).ok);
+    REQUIRE(create_presentation_backend(RenderBackendKind::NativeD3D11) != nullptr);
+#else
     REQUIRE_FALSE(validate_renderer_config(config).ok);
     REQUIRE(create_presentation_backend(RenderBackendKind::NativeD3D11) == nullptr);
+#endif
+
+    config.backend.output = nullptr;
+    REQUIRE_FALSE(validate_renderer_config(config).ok);
+    config.backend.type = RendererBackendType::NativeD3D12;
+    config.backend.output = reinterpret_cast<void*>(0x9abc);
+    REQUIRE_FALSE(validate_renderer_config(config).ok);
     REQUIRE(create_presentation_backend(RenderBackendKind::NativeD3D12) == nullptr);
 }
 

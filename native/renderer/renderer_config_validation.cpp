@@ -35,9 +35,14 @@ RendererConfigValidationResult validate_offscreen_backend(
 #endif
     case RendererBackendType::NativeD3D11:
 #ifdef _WIN32
-        return invalid(
-            "windows native-d3d11 renderer backend is reserved for the "
-            "runner-composed sandwich path and is not implemented yet");
+        if (backend.output == nullptr) {
+            return invalid("native-d3d11 renderer requires a target ring");
+        }
+        if (backend.max_track_slots < 1 ||
+            static_cast<size_t>(backend.max_track_slots) > budget.max_tracks) {
+            return invalid("native-d3d11 renderer max track slots out of range");
+        }
+        return ok_result();
 #else
         return invalid("native-d3d11 renderer is only supported on Windows");
 #endif

@@ -1,8 +1,8 @@
 """Guard the fail-closed Windows native presentation boundary.
 
-D3D11VA decode and typed frame-storage foundations may be rebuilt while this
-check continues to prevent a partial runner/presentation path from claiming
-product availability.
+D3D11VA decode, typed frame storage, target rings, and a standalone D3D11
+presentation backend may be rebuilt while this check continues to prevent the
+fail-closed runner plugin from claiming product availability.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ REQUIRED_TOKENS = {
     ],
     "native/windows/presentation/windows_presentation_backend.cpp": [
         "create_windows_presentation_backend",
-        "return nullptr;",
+        "WindowsD3D11PresentationBackend",
     ],
     "native/cmake/NativeSourcesWindows.cmake": [
         "analysis_overlay_renderer_portable",

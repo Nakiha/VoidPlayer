@@ -60,7 +60,7 @@ TextureFrame
   -> DComp final surface
 ```
 
-Windows 已恢复 D3D11VA frame storage 与 runner-owned target-ring 状态机；shader backend、
+Windows 已恢复 D3D11VA frame storage、runner-owned target-ring 状态机与 target lifecycle backend；viewport shader、
 runner composition 和 player bridge 尚未接通，因此产品入口仍 fail-closed。产品视频上屏
 不得回到 Flutter Texture SDR。
 

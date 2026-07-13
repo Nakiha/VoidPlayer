@@ -9,9 +9,9 @@ Windows 当前处于 native presentation 重建边界，不是可播放产品路
 - 原生文件选择器；
 - standalone native 模块中的 D3D11VA provider、独立 decode device 和稳定 shared snapshot frame storage；
 - runner-owned D3D11 complete-viewport target ring 状态机；
-- `native/windows/presentation/windows_presentation_backend.*` 中的新 backend factory 合同。
+- `native/windows/presentation/windows_presentation_backend.*` 中已激活的 D3D11 target lifecycle backend；viewport shader 尚未接入。
 
-创建 player 或添加媒体会返回 `BACKEND_UNAVAILABLE`。runner 不链接 FFmpeg、D3D、
+创建 player 或添加媒体仍会返回 `BACKEND_UNAVAILABLE`。runner 不链接 FFmpeg、D3D、
 DComp 或 shared native renderer，也不要求 patched Flutter engine。D3D11VA 基础目前只在
 standalone native build/test 中生效；不要把 Flutter Texture
 当作视频 fallback。

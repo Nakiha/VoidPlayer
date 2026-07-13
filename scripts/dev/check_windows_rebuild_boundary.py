@@ -1,4 +1,9 @@
-"""Guard the intentionally empty Windows native presentation boundary."""
+"""Guard the fail-closed Windows native presentation boundary.
+
+D3D11VA decode and typed frame-storage foundations may be rebuilt while this
+check continues to prevent a partial runner/presentation path from claiming
+product availability.
+"""
 
 from __future__ import annotations
 
@@ -33,6 +38,9 @@ REQUIRED_TOKENS = {
         "return nullptr;",
     ],
     "native/cmake/NativeSourcesWindows.cmake": [
+        "analysis_overlay_renderer_portable",
+        "windows/decode/d3d11_frame_snapshot.cpp",
+        "windows/decode/d3d11va_provider.cpp",
         "windows/presentation/windows_presentation_backend.cpp",
     ],
 }

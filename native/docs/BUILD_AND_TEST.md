@@ -62,7 +62,7 @@ Source ownership is split under `native/cmake/`:
 | 文件 | 说明 |
 | --- | --- |
 | `NativeSourcesPortable.cmake` | shared playback/media/renderer source lists |
-| `NativeSourcesWindows.cmake` | Windows facade shell only; native D3D11/DX12 backend sources are reserved for the later Windows restart |
+| `NativeSourcesWindows.cmake` | portable analysis overlay、D3D11VA provider/shared snapshot foundation plus fail-closed presentation factory；D3D11/DX12 target 与 runner composition 尚未实现 |
 | `NativeSourcesMacOS.cmake` | macOS native bridge、Metal/CVPixelBuffer presentation |
 | `NativeSourcesAnalysis.cmake` | analysis cache/generator source list |
 

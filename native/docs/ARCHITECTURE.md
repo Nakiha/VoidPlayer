@@ -10,7 +10,7 @@ VoidPlayer native 保留共享媒体播放与渲染调度内核，重启平台 p
 - shared audio engine / miniaudio output
 - shared diagnostics / capture / UI automation hooks
 - macOS native Metal video target
-- Windows native D3D11/D3D12 target placeholders, currently fail-closed
+- Windows D3D11VA decode/shared-snapshot foundation；D3D11/D3D12 presentation placeholders 仍 fail-closed
 - runner-owned final composition of native video + Flutter ARGB UI
 
 平台 runner 不再把视频伪装成 Flutter Texture 主路径，也不让 native backend
@@ -91,15 +91,15 @@ hardware decode provider 和 presentation backend 开始：
 
 | 平台 | 硬解 provider | presentation backend |
 | --- | --- | --- |
-| Windows | reserved D3D path; disabled on this branch | `native-d3d11` / `native-d3d12` placeholders |
+| Windows | D3D11VA；H.264/H.265 使用独立 decode device 与稳定 shared snapshot，AV1/VP9 可 hwdownload | `native-d3d11` / `native-d3d12` placeholders，尚未接 runner target |
 | macOS | VideoToolbox CVPixelBuffer or explicit fallback package | native Metal target backed by CVPixelBuffer / IOSurface |
 
 ## 当前播放路径状态
 
 - macOS native Metal presentation builds and passes native smoke.
 - macOS VideoToolbox preserves native-target CVPixelBuffer frames when supported.
-- Windows presentation is fail-closed until the runner-composed D3D sandwich is
-  implemented.
+- Windows native decode foundation is active in standalone native builds；presentation
+  remains fail-closed until the runner-composed D3D sandwich is implemented.
 - Flutter premultiplied-alpha export remains a Flutter fork requirement, but
   Flutter should not own video presentation.
 

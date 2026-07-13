@@ -38,6 +38,8 @@ target_link_libraries(video_renderer_lib PUBLIC
     ${AVFORMAT_LIBRARY}
     ${AVUTIL_LIBRARY}
     ${SWRESAMPLE_LIBRARY}
+    d3d11
+    dxgi
     winmm
 )
 if(BUILD_ANALYSIS)

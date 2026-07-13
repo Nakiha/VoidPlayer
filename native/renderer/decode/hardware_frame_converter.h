@@ -2,6 +2,9 @@
 
 #include "renderer/buffer/bidi_ring_buffer.h"
 #include "renderer/decode/hw/hw_decode_provider.h"
+#ifdef _WIN32
+#include "windows/decode/d3d11_frame_snapshot.h"
+#endif
 
 #include <memory>
 #include <mutex>
@@ -47,6 +50,9 @@ private:
     HwDecodeType hw_type_ = HwDecodeType::None;
     AVPixelFormat downloaded_format_ = AV_PIX_FMT_NONE;
     std::recursive_mutex* device_mutex_ = nullptr;
+#ifdef _WIN32
+    std::shared_ptr<D3D11SnapshotPool> d3d11_snapshot_pool_;
+#endif
 };
 
 } // namespace vr

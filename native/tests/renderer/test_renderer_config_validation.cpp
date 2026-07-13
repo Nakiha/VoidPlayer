@@ -94,6 +94,16 @@ TEST_CASE("Windows native D3D backends are reserved but not active",
 
 TEST_CASE("Hardware decode compatibility follows active native backends",
           "[renderer_config][hw_decode]") {
+    const auto d3d11_names = compatible_hw_decode_provider_names(
+        RenderBackendKind::NativeD3D11,
+        DecodeDeviceMode::IndependentDevice);
+#ifdef _WIN32
+    REQUIRE(d3d11_names.size() == 1);
+    REQUIRE(std::string(d3d11_names.front()) == "D3D11VA");
+#else
+    REQUIRE(d3d11_names.empty());
+#endif
+
     const auto d3d12_names = compatible_hw_decode_provider_names(
         RenderBackendKind::NativeD3D12,
         DecodeDeviceMode::IndependentDevice);

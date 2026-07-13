@@ -120,7 +120,12 @@ bool HardwareFrameConverter::init(void* native_device, void* native_context,
     downloaded_format_ = AV_PIX_FMT_NONE;
     device_mutex_ = device_mutex;
 
-#ifndef _WIN32
+#ifdef _WIN32
+    d3d11_snapshot_pool_ =
+        !download_to_cpu && hw_type == HwDecodeType::D3D11VA
+        ? create_d3d11_snapshot_pool()
+        : nullptr;
+#else
     if (!download_to_cpu) {
 #ifdef __APPLE__
         if (hw_type != HwDecodeType::VideoToolbox) {
@@ -170,6 +175,14 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
     }
 
     TextureFrame result = make_texture_frame_metadata(frame);
+#ifdef _WIN32
+    if (hw_type_ == HwDecodeType::D3D11VA) {
+        if (!populate_d3d11_hardware_texture_frame(frame, result)) {
+            return std::nullopt;
+        }
+        return result;
+    }
+#endif
 #ifdef __APPLE__
     if (hw_type_ == HwDecodeType::VideoToolbox) {
         return populate_videotoolbox_frame(frame, result);
@@ -181,12 +194,39 @@ std::optional<TextureFrame> HardwareFrameConverter::convert(AVFrame* frame) {
 }
 
 std::optional<TextureFrame> HardwareFrameConverter::snapshot_frame(AVFrame* frame) {
+#ifdef _WIN32
+    if (download_to_cpu_ || hw_type_ != HwDecodeType::D3D11VA ||
+        !frame || !frame->data[0]) {
+        return std::nullopt;
+    }
+    return snapshot_d3d11_hardware_frame(
+        frame,
+        make_texture_frame_metadata(frame),
+        device_mutex_,
+        d3d11_snapshot_pool_);
+#else
     (void)frame;
     return std::nullopt;
+#endif
 }
 
 HardwareSnapshotPoolStats HardwareFrameConverter::snapshot_pool_stats() const {
+#ifdef _WIN32
+    const auto stats = d3d11_snapshot_pool_stats(d3d11_snapshot_pool_);
+    HardwareSnapshotPoolStats result;
+    result.estimated_bytes = stats.estimated_bytes;
+    result.texture_bytes = stats.texture_bytes;
+    result.created_count = stats.created_count;
+    result.reused_count = stats.reused_count;
+    result.checked_out_count = stats.checked_out_count;
+    result.available_count = stats.available_count;
+    result.width = stats.width;
+    result.height = stats.height;
+    result.format = stats.format;
+    return result;
+#else
     return {};
+#endif
 }
 
 } // namespace vr

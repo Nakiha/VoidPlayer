@@ -31,7 +31,7 @@ Concrete presentation targets are platform-specific:
 
 | Platform | Backend target | Notes |
 | --- | --- | --- |
-| Windows | reserved native D3D11/DX12 backend | Disabled on this branch; Flutter Texture SDR is not an allowed video fallback. |
+| Windows | D3D11VA NV12/P010 shared snapshots；reserved native D3D11/DX12 presentation | Decode/frame-storage foundation is active；presentation remains fail-closed and Flutter Texture SDR is not an allowed video fallback. |
 | macOS SDR | Metal-rendered BGRA `CVPixelBuffer` / IOSurface | Retained by the runner native target ring. |
 | macOS EDR | Metal-rendered `RGBA16Float` `CVPixelBuffer` / IOSurface | Composed into an `extendedLinearDisplayP3` `CAMetalLayer` with the exported Flutter surface. |
 

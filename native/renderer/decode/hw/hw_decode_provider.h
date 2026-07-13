@@ -15,6 +15,7 @@ namespace vr {
 
 enum class HwDecodeType {
     None = 0,
+    D3D11VA,
     CUDA,
     DXVA2,
     Vulkan,

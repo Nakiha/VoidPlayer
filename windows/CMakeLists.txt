@@ -2,6 +2,15 @@
 cmake_minimum_required(VERSION 3.14)
 project(void_player LANGUAGES CXX)
 
+# Keep the reset Windows runner buildable without linking the shared native
+# renderer. The runner's startup diagnostics still use the repository-locked
+# header-only spdlog dependency.
+set(BUILD_ANALYSIS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_ANALYSIS_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_PYTHON OFF CACHE BOOL "" FORCE)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../native/cmake/Dependencies.cmake")
+
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
 set(BINARY_NAME "void_player")

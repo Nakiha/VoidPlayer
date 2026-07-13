@@ -665,6 +665,37 @@ TEST_CASE("TextureFrame: storage exposes CPU planar YUV metadata", "[frame_stora
     REQUIRE(frame.cpu_planar_yuv_storage()->bytes_per_sample == 1);
 }
 
+TEST_CASE("TextureFrame: storage exposes Windows D3D11 metadata", "[frame_storage]") {
+    TextureFrame frame;
+    auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x369a), [](void*) {});
+    auto* texture = reinterpret_cast<ID3D11Texture2D*>(0x147b);
+
+    frame.texture_handle = texture;
+    frame.is_ref = true;
+    frame.is_nv12 = true;
+    frame.is_p010 = true;
+    frame.texture_array_index = 2;
+    frame.hw_frame_ref = ref;
+    frame.storage = WindowsD3D11FrameStorage{
+        texture,
+        2,
+        true,
+        1920,
+        1088,
+        ref,
+    };
+
+    REQUIRE(frame.storage_kind() == FrameStorageKind::WindowsD3D11);
+    REQUIRE(frame.storage_class() == FrameStorageClass::HardwareTexture);
+    REQUIRE(frame.windows_d3d11_storage() != nullptr);
+    REQUIRE(frame.windows_d3d11_storage()->texture == texture);
+    REQUIRE(frame.windows_d3d11_storage()->array_index == 2);
+    REQUIRE(frame.windows_d3d11_storage()->is_p010);
+    REQUIRE(frame.windows_d3d11_storage()->coded_width == 1920);
+    REQUIRE(frame.windows_d3d11_storage()->coded_height == 1088);
+    REQUIRE(frame.windows_d3d11_storage()->frame_ref == ref);
+}
+
 TEST_CASE("TextureFrame: storage exposes CVPixelBuffer metadata", "[frame_storage]") {
     TextureFrame frame;
     auto ref = std::shared_ptr<void>(reinterpret_cast<void*>(0x2468), [](void*) {});

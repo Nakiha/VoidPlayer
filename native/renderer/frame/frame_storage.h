@@ -5,6 +5,8 @@
 #include <variant>
 #include <vector>
 
+struct ID3D11Texture2D;
+
 namespace vr {
 
 enum VideoColorRange : int {
@@ -78,6 +80,15 @@ struct CpuPlanarYuvFrameStorage {
     CpuYuvSampleAlignment sample_alignment = CpuYuvSampleAlignment::Packed;
 };
 
+struct WindowsD3D11FrameStorage {
+    ID3D11Texture2D* texture = nullptr;
+    int array_index = 0;
+    bool is_p010 = false;
+    int coded_width = 0;
+    int coded_height = 0;
+    std::shared_ptr<void> frame_ref;
+};
+
 struct MacOSCVPixelBufferFrameStorage {
     void* pixel_buffer = nullptr;
     uint32_t pixel_format = 0;
@@ -93,7 +104,8 @@ using FrameStorage = std::variant<
     CpuRgbaFrameStorage,
     CpuNv12FrameStorage,
     CpuPlanarYuvFrameStorage,
-    MacOSCVPixelBufferFrameStorage>;
+    MacOSCVPixelBufferFrameStorage,
+    WindowsD3D11FrameStorage>;
 
 enum class FrameStorageKind {
     Empty,
@@ -101,6 +113,7 @@ enum class FrameStorageKind {
     CpuNv12,
     CpuPlanarYuv,
     MacOSCVPixelBuffer,
+    WindowsD3D11,
 };
 
 enum class FrameStorageClass {
@@ -120,6 +133,9 @@ inline FrameStorageKind frame_storage_kind(const FrameStorage& storage) {
     if (std::holds_alternative<CpuPlanarYuvFrameStorage>(storage)) {
         return FrameStorageKind::CpuPlanarYuv;
     }
+    if (std::holds_alternative<WindowsD3D11FrameStorage>(storage)) {
+        return FrameStorageKind::WindowsD3D11;
+    }
     if (std::holds_alternative<MacOSCVPixelBufferFrameStorage>(storage)) {
         return FrameStorageKind::MacOSCVPixelBuffer;
     }
@@ -132,6 +148,8 @@ inline FrameStorageClass frame_storage_class(FrameStorageKind kind) {
     case FrameStorageKind::CpuNv12:
     case FrameStorageKind::CpuPlanarYuv:
         return FrameStorageClass::CpuPixels;
+    case FrameStorageKind::WindowsD3D11:
+        return FrameStorageClass::HardwareTexture;
     case FrameStorageKind::MacOSCVPixelBuffer:
         return FrameStorageClass::CVPixelBuffer;
     case FrameStorageKind::Empty:

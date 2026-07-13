@@ -48,6 +48,9 @@ non-blocking redraws of that latest decision at interaction cadence. Shared
 native arbitration suppresses duplicate playback presents during that short
 interaction window; it does not defer interaction until the next video frame.
 Both producers use the same complete target ring and native layout pipeline.
+That display-link request is for the native video target only. The final
+compositor samples Flutter's latest published surface and never requests,
+throttles, or otherwise drives Flutter frame scheduling.
 
 ## macOS Target
 
@@ -67,6 +70,10 @@ the latest complete target below Flutter's ARGB UI surface on every display
 tick. Swift does not interpret video layout, overlay primitives, or track
 topology.
 
+`MacOSNativeCompositorView` is input-transparent (`hitTest` returns `nil`) and
+reads `voidPlayerHDRCurrentFlutterSurfaceInfos()` without asking Flutter to draw
+a frame. The Windows runner must preserve the same ownership shape.
+
 ## Windows Target
 
 Windows is intentionally fail-closed on this branch until the same model is
@@ -78,6 +85,10 @@ top-level HWND
   -> Flutter ARGB visual exported by the locked engine
   -> DComp/runner composition
 ```
+
+The final Windows compositor is input-transparent. Win32/Flutter keeps normal
+hit testing, pointer, keyboard, gesture, and frame scheduling ownership; the
+runner only samples the latest Flutter export and native video target.
 
 The reserved backend names are `native-d3d11` and `native-d3d12`. They are
 interface placeholders, not active render backends.

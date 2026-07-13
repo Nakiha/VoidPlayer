@@ -8,7 +8,7 @@ native C++ 模块负责。
 
 - **Flutter / Dart UI**: 主窗口、播放控制、Action/UI 自动化入口、MethodChannel/EventChannel 编排。
 - **Shared native renderer**: FFmpeg demux/decode、playback clock、seek/loop、track lifecycle、layout、RenderSink/PresentDecision、RendererDrawSnapshot。
-- **Windows host**: Win32 Flutter runner 和 fail-closed plugin；native presentation 等待从新 factory contract 重建。
+- **Windows host**: Win32 Flutter runner 和 fail-closed plugin；D3D11VA decode/frame-storage 基础已恢复，native presentation 等待从新 factory contract 重建。
 - **macOS backend**: Cocoa runner、sandbox file access、Metal/CVPixelBuffer/IOSurface presentation、VideoToolbox 硬解。
 - **Analysis**: shared native analysis/cache 工具；macOS analysis UI/IPC capability-gated。
 - **当前平台状态**: macOS native playback 是唯一可用产品路径；Windows playback 暂不可用。
@@ -56,6 +56,7 @@ python dev.py ui-test --build ui_tests/smoke/basic.csv ui_tests/viewport/viewpor
 - Windows presentation 只能从 `native/windows/presentation/windows_presentation_backend.*` 的 factory contract 重建。
 - 禁止恢复旧 DComp compositor、shared FP16 ring、external D3D12 target、source-projection、window capture 或 renderer C FFI 路径。
 - Windows runner 最终只组合 native SDR/HDR video surface 与 Flutter premultiplied-alpha surface，不控制 Flutter frame 上屏。
+- Windows final compositor 必须像 macOS `MacOSNativeCompositorView` 一样 input-transparent：只采样 Flutter 已发布 surface，不拦截 hit-test/input，不请求或驱动 Flutter frame scheduling。
 - Windows backend 完成前保持 `BACKEND_UNAVAILABLE` fail-closed；禁止用 Flutter Texture 伪装视频 fallback。
 - Windows 重建阶段必须同步新增独立的 color/layout/HDR/device-loss/backend UI 验证矩阵；旧 preservation gate 不是通过证据。
 - 不要在一个轮次里堆无关改动。每轮完成后先测试，再单独提交。

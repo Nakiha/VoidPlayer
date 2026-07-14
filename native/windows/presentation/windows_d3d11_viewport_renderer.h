@@ -3,6 +3,7 @@
 #include "renderer/render/renderer_draw_snapshot.h"
 #include "renderer/render/presentation_backend_types.h"
 #include "renderer/render/presentation_snapshot.h"
+#include "renderer/overlay/analysis_overlay_gpu_geometry.h"
 
 #include <d3d11.h>
 #include <wrl/client.h>
@@ -22,6 +23,11 @@ struct WindowsD3D11ViewportRendererStats {
   uint64_t video_source_update_count = 0;
   uint64_t source_frame_cache_hit_count = 0;
   uint64_t source_frame_cache_miss_count = 0;
+  uint64_t overlay_draw_count = 0;
+  uint64_t overlay_failure_count = 0;
+  uint64_t overlay_last_vertex_count = 0;
+  uint64_t overlay_last_fill_rect_count = 0;
+  uint64_t overlay_last_line_rect_count = 0;
 };
 
 // Consumes the platform-neutral presentation snapshot and writes one complete,
@@ -45,6 +51,11 @@ class WindowsD3D11ViewportRenderer final {
             ID3D11RenderTargetView* target,
             ColorOutputTarget output_target,
             double sdr_white_level_nits);
+  bool draw_overlay(const AnalysisOverlayPrimitivePackage& package,
+                    const PresentationSnapshot& presentation,
+                    ID3D11RenderTargetView* target,
+                    ColorOutputTarget output_target,
+                    double sdr_white_level_nits);
 
   const std::string& last_error() const { return last_error_; }
   WindowsD3D11ViewportRendererStats stats() const { return stats_; }
@@ -78,6 +89,8 @@ class WindowsD3D11ViewportRenderer final {
   };
 
   bool create_pipeline();
+  bool create_overlay_pipeline();
+  bool ensure_overlay_vertex_buffer(size_t vertex_count);
   bool prepare_track(size_t slot,
                      const TextureFrame& frame,
                      ShaderConstants& constants);
@@ -122,6 +135,13 @@ class WindowsD3D11ViewportRenderer final {
   Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer_;
   Microsoft::WRL::ComPtr<ID3D11Buffer> constant_buffer_;
   Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
+  Microsoft::WRL::ComPtr<ID3D11VertexShader> overlay_vertex_shader_;
+  Microsoft::WRL::ComPtr<ID3D11PixelShader> overlay_pixel_shader_;
+  Microsoft::WRL::ComPtr<ID3D11InputLayout> overlay_input_layout_;
+  Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_vertex_buffer_;
+  Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_constant_buffer_;
+  Microsoft::WRL::ComPtr<ID3D11BlendState> overlay_blend_state_;
+  size_t overlay_vertex_capacity_ = 0;
   std::array<TrackResources, kMaxTracks> tracks_{};
   std::array<ID3D11ShaderResourceView*, kMaxTracks> rgba_srvs_{};
   std::array<ID3D11ShaderResourceView*, kMaxTracks> y_srvs_{};

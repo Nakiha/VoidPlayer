@@ -16,6 +16,8 @@ target_link_libraries(video_renderer_core PUBLIC
     ${AVUTIL_LIBRARY}
     ${SWRESAMPLE_LIBRARY}
 )
+target_compile_definitions(video_renderer_core PUBLIC
+    VOID_BUILD_ANALYSIS=$<BOOL:${BUILD_ANALYSIS}>)
 
 add_library(video_renderer_lib STATIC
     ${VOID_RENDERER_WINDOWS_SOURCES}

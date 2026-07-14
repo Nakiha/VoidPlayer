@@ -25,8 +25,12 @@
 #include <unordered_map>
 #include <vector>
 
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace {
 
@@ -83,10 +87,28 @@ const char* ffmpeg_analysis_codec_arg(AnalysisCodec codec) {
 }
 
 std::string host_analyzer_platform_dir() {
-#if defined(__aarch64__) || defined(__arm64__)
+#if defined(_WIN32)
+    return "windows-x64";
+#elif defined(__aarch64__) || defined(__arm64__)
     return "macos-arm64";
 #else
     return "macos-x64";
+#endif
+}
+
+std::string analyzer_executable_name() {
+#if defined(_WIN32)
+    return "void_ffmpeg_analyzer.exe";
+#else
+    return "void_ffmpeg_analyzer";
+#endif
+}
+
+uint64_t current_process_id() {
+#if defined(_WIN32)
+    return static_cast<uint64_t>(GetCurrentProcessId());
+#else
+    return static_cast<uint64_t>(getpid());
 #endif
 }
 
@@ -106,26 +128,87 @@ std::string find_ffmpeg_analyzer() {
     }
 
     const std::string platform = host_analyzer_platform_dir();
-    std::vector<std::string> candidates;
-    for (const auto& root : roots) {
-        candidates.push_back(join_path(join_path(root, "../Helpers"), "ffmpeg-analysis/void_ffmpeg_analyzer"));
-        candidates.push_back(join_path(join_path(root, "tools"), "ffmpeg-analysis/void_ffmpeg_analyzer"));
-        candidates.push_back(join_path(root, "void_ffmpeg_analyzer"));
-        candidates.push_back(join_path(
-            join_path(root, "native/analysis/vendor/ffmpeg/bin"),
-            platform + "/void_ffmpeg_analyzer"));
-        candidates.push_back(join_path(
-            join_path(root, "analysis/vendor/ffmpeg/bin"),
-            platform + "/void_ffmpeg_analyzer"));
-    }
-    for (const auto& candidate : candidates) {
-        if (path_exists(candidate)) return candidate;
+    const std::string executable = analyzer_executable_name();
+    for (const auto& initial_root : roots) {
+        auto root_path = vr::win_utf8::path_from_utf8(initial_root);
+        for (int depth = 0; depth < 8 && !root_path.empty(); ++depth) {
+            const std::string root = vr::win_utf8::path_to_utf8(root_path);
+            const std::vector<std::string> candidates = {
+                join_path(join_path(root, "../Helpers"),
+                          "ffmpeg-analysis/" + executable),
+                join_path(join_path(root, "tools"),
+                          "ffmpeg-analysis/" + executable),
+                join_path(root, executable),
+                join_path(join_path(root, "native/analysis/vendor/ffmpeg/bin"),
+                          platform + "/" + executable),
+                join_path(join_path(root, "analysis/vendor/ffmpeg/bin"),
+                          platform + "/" + executable),
+            };
+            for (const auto& candidate : candidates) {
+                if (path_exists(candidate)) return candidate;
+            }
+            if (!root_path.has_parent_path() ||
+                root_path.parent_path() == root_path) {
+                break;
+            }
+            root_path = root_path.parent_path();
+        }
     }
     return {};
 }
 
 int run_process(const std::vector<std::string>& args) {
     if (args.empty()) return -1;
+#if defined(_WIN32)
+    auto quote_arg = [](const std::wstring& arg) {
+        if (arg.find_first_of(L" \t\n\v\"") == std::wstring::npos) {
+            return arg;
+        }
+        std::wstring quoted(1, L'\"');
+        size_t backslashes = 0;
+        for (const wchar_t ch : arg) {
+            if (ch == L'\\') {
+                ++backslashes;
+                continue;
+            }
+            if (ch == L'\"') {
+                quoted.append(backslashes * 2 + 1, L'\\');
+                quoted.push_back(L'\"');
+                backslashes = 0;
+                continue;
+            }
+            quoted.append(backslashes, L'\\');
+            backslashes = 0;
+            quoted.push_back(ch);
+        }
+        quoted.append(backslashes * 2, L'\\');
+        quoted.push_back(L'\"');
+        return quoted;
+    };
+
+    std::wstring command_line;
+    for (const auto& arg : args) {
+        const std::wstring wide = vr::win_utf8::utf16_from_utf8(arg);
+        if (wide.empty() && !arg.empty()) return -1;
+        if (!command_line.empty()) command_line.push_back(L' ');
+        command_line.append(quote_arg(wide));
+    }
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESHOWWINDOW;
+    startup.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(nullptr, command_line.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
+        return -1;
+    }
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD exit_code = 1;
+    GetExitCodeProcess(process.hProcess, &exit_code);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return static_cast<int>(exit_code);
+#else
     std::vector<const char*> argv;
     argv.reserve(args.size() + 1);
     for (const auto& arg : args) argv.push_back(arg.c_str());
@@ -146,6 +229,7 @@ int run_process(const std::vector<std::string>& args) {
     if (WIFEXITED(status)) return WEXITSTATUS(status);
     if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
     return -1;
+#endif
 }
 
 bool vachunk_matches_key(const vr::analysis::VachunkFile& chunk,
@@ -613,7 +697,7 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_generate_vac2_base(
     const auto ticks =
         std::chrono::duration_cast<std::chrono::nanoseconds>(now).count();
     std::ostringstream tmp_name;
-    tmp_name << "base." << static_cast<long long>(getpid()) << "." << ticks << ".vac.tmp";
+    tmp_name << "base." << current_process_id() << "." << ticks << ".vac.tmp";
     const std::string tmp_path = vr::win_utf8::path_to_utf8(
         vr::win_utf8::path_from_utf8(store.tmp_dir()) /
         vr::win_utf8::path_from_utf8(tmp_name.str()));
@@ -710,7 +794,7 @@ extern "C" NAKI_ANALYSIS_FFI_EXPORT int32_t naki_analysis_generate_vac2_overlay_
     const uint64_t staging_counter =
         g_overlay_staging_counter.fetch_add(1, std::memory_order_relaxed);
     std::ostringstream staging_name;
-    staging_name << "overlay.ffi." << static_cast<long long>(getpid())
+    staging_name << "overlay.ffi." << current_process_id()
                  << "." << ticks << "." << staging_counter;
     const auto staging_dir =
         vr::win_utf8::path_from_utf8(store.tmp_dir()) / staging_name.str();

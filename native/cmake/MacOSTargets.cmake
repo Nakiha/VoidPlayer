@@ -4,6 +4,7 @@ set(VOID_RENDERER_PORTABLE_OVERLAY_SOURCES
     "${VOID_NATIVE_DIR}/renderer/overlay/analysis_overlay_renderer_portable_stub.cpp")
 if(BUILD_ANALYSIS)
     set(VOID_RENDERER_PORTABLE_OVERLAY_SOURCES
+        "${VOID_NATIVE_DIR}/renderer/overlay/analysis_overlay_gpu_geometry.cpp"
         "${VOID_NATIVE_DIR}/renderer/overlay/analysis_overlay_primitives.cpp"
         "${VOID_NATIVE_DIR}/renderer/overlay/analysis_overlay_renderer_portable.cpp")
 endif()

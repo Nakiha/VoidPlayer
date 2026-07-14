@@ -261,6 +261,41 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 }
 )hlsl";
 
+constexpr char kOverlayShader[] = R"hlsl(
+struct VSInput { float2 position : POSITION; float4 color : COLOR0; };
+struct VSOutput { float4 position : SV_POSITION; float4 color : COLOR0; };
+cbuffer OverlayConstants : register(b0) {
+  int u_output_target;
+  float u_sdr_white_scale;
+  float2 u_padding;
+};
+float3 srgb_to_linear(float3 x) {
+  x = saturate(x);
+  return lerp(x / 12.92,
+              pow((x + 0.055) / 1.055, 2.4),
+              step(0.04045, x));
+}
+VSOutput VSOverlay(VSInput input) {
+  VSOutput output;
+  output.position = float4(input.position, 0.0, 1.0);
+  output.color = input.color;
+  return output;
+}
+float4 PSOverlay(VSOutput input) : SV_TARGET {
+  float3 rgb = input.color.rgb;
+  if (u_output_target == 1) {
+    rgb = srgb_to_linear(rgb) * u_sdr_white_scale;
+  }
+  return float4(rgb, input.color.a);
+}
+)hlsl";
+
+struct OverlayConstants {
+  int output_target = 0;
+  float sdr_white_scale = 1.0f;
+  float padding[2] = {};
+};
+
 struct Vertex {
   float position[2];
   float texcoord[2];
@@ -303,13 +338,20 @@ bool WindowsD3D11ViewportRenderer::initialize(ID3D11Device* device,
   }
   device_ = device;
   context_ = context;
-  return create_pipeline();
+  return create_pipeline() && create_overlay_pipeline();
 }
 
 void WindowsD3D11ViewportRenderer::shutdown() {
   unbind_shader_resources();
   tracks_ = {};
   sampler_.Reset();
+  overlay_blend_state_.Reset();
+  overlay_constant_buffer_.Reset();
+  overlay_vertex_buffer_.Reset();
+  overlay_input_layout_.Reset();
+  overlay_pixel_shader_.Reset();
+  overlay_vertex_shader_.Reset();
+  overlay_vertex_capacity_ = 0;
   constant_buffer_.Reset();
   vertex_buffer_.Reset();
   input_layout_.Reset();
@@ -428,6 +470,165 @@ bool WindowsD3D11ViewportRenderer::create_pipeline() {
     return fail("could not create viewport sampler");
   }
   last_error_.clear();
+  return true;
+}
+
+bool WindowsD3D11ViewportRenderer::create_overlay_pipeline() {
+  UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+#ifndef NDEBUG
+  flags |= D3DCOMPILE_DEBUG;
+#endif
+  Microsoft::WRL::ComPtr<ID3DBlob> vertex_blob;
+  Microsoft::WRL::ComPtr<ID3DBlob> pixel_blob;
+  Microsoft::WRL::ComPtr<ID3DBlob> errors;
+  HRESULT result = D3DCompile(kOverlayShader, sizeof(kOverlayShader) - 1,
+                              "windows_d3d11_analysis_overlay", nullptr, nullptr,
+                              "VSOverlay", "vs_5_0", flags, 0,
+                              &vertex_blob, &errors);
+  if (FAILED(result)) {
+    const std::string message = errors
+        ? std::string(static_cast<const char*>(errors->GetBufferPointer()),
+                      errors->GetBufferSize())
+        : "unknown vertex shader error";
+    return fail("overlay vertex shader compilation failed: " + message);
+  }
+  errors.Reset();
+  result = D3DCompile(kOverlayShader, sizeof(kOverlayShader) - 1,
+                      "windows_d3d11_analysis_overlay", nullptr, nullptr,
+                      "PSOverlay", "ps_5_0", flags, 0, &pixel_blob, &errors);
+  if (FAILED(result)) {
+    const std::string message = errors
+        ? std::string(static_cast<const char*>(errors->GetBufferPointer()),
+                      errors->GetBufferSize())
+        : "unknown pixel shader error";
+    return fail("overlay pixel shader compilation failed: " + message);
+  }
+  if (FAILED(device_->CreateVertexShader(vertex_blob->GetBufferPointer(),
+                                          vertex_blob->GetBufferSize(), nullptr,
+                                          &overlay_vertex_shader_)) ||
+      FAILED(device_->CreatePixelShader(pixel_blob->GetBufferPointer(),
+                                         pixel_blob->GetBufferSize(), nullptr,
+                                         &overlay_pixel_shader_))) {
+    return fail("could not create analysis overlay shaders");
+  }
+  const D3D11_INPUT_ELEMENT_DESC input_desc[] = {
+      {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
+       D3D11_INPUT_PER_VERTEX_DATA, 0},
+      {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 8,
+       D3D11_INPUT_PER_VERTEX_DATA, 0},
+  };
+  if (FAILED(device_->CreateInputLayout(input_desc, ARRAYSIZE(input_desc),
+                                         vertex_blob->GetBufferPointer(),
+                                         vertex_blob->GetBufferSize(),
+                                         &overlay_input_layout_))) {
+    return fail("could not create analysis overlay input layout");
+  }
+  D3D11_BUFFER_DESC constant_desc = {};
+  constant_desc.ByteWidth = sizeof(OverlayConstants);
+  constant_desc.Usage = D3D11_USAGE_DEFAULT;
+  constant_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+  if (FAILED(device_->CreateBuffer(&constant_desc, nullptr,
+                                    &overlay_constant_buffer_))) {
+    return fail("could not create analysis overlay constant buffer");
+  }
+  D3D11_BLEND_DESC blend_desc = {};
+  blend_desc.RenderTarget[0].BlendEnable = TRUE;
+  blend_desc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+  blend_desc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+  blend_desc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+  blend_desc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+  blend_desc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+  blend_desc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+  blend_desc.RenderTarget[0].RenderTargetWriteMask =
+      D3D11_COLOR_WRITE_ENABLE_ALL;
+  if (FAILED(device_->CreateBlendState(&blend_desc, &overlay_blend_state_))) {
+    return fail("could not create analysis overlay blend state");
+  }
+  return true;
+}
+
+bool WindowsD3D11ViewportRenderer::ensure_overlay_vertex_buffer(
+    size_t vertex_count) {
+  if (overlay_vertex_buffer_ && vertex_count <= overlay_vertex_capacity_) {
+    return true;
+  }
+  size_t capacity = std::max<size_t>(256, overlay_vertex_capacity_);
+  while (capacity < vertex_count) capacity *= 2;
+  if (capacity > std::numeric_limits<UINT>::max() /
+                     sizeof(AnalysisOverlayGpuVertex)) {
+    return fail("analysis overlay geometry exceeds D3D11 buffer limits");
+  }
+  D3D11_BUFFER_DESC desc = {};
+  desc.ByteWidth = static_cast<UINT>(capacity * sizeof(AnalysisOverlayGpuVertex));
+  desc.Usage = D3D11_USAGE_DYNAMIC;
+  desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+  desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+  Microsoft::WRL::ComPtr<ID3D11Buffer> buffer;
+  if (FAILED(device_->CreateBuffer(&desc, nullptr, &buffer))) {
+    return fail("could not allocate analysis overlay vertex buffer");
+  }
+  overlay_vertex_buffer_ = std::move(buffer);
+  overlay_vertex_capacity_ = capacity;
+  return true;
+}
+
+bool WindowsD3D11ViewportRenderer::draw_overlay(
+    const AnalysisOverlayPrimitivePackage& package,
+    const PresentationSnapshot& presentation,
+    ID3D11RenderTargetView* target,
+    ColorOutputTarget output_target,
+    double sdr_white_level_nits) {
+  auto geometry = build_analysis_overlay_gpu_geometry(
+      package, presentation.constants,
+      static_cast<int>(std::lround(presentation.constants.canvas_width)),
+      static_cast<int>(std::lround(presentation.constants.canvas_height)));
+  stats_.overlay_last_vertex_count = geometry.vertices.size();
+  stats_.overlay_last_fill_rect_count = geometry.fill_rect_count;
+  stats_.overlay_last_line_rect_count = geometry.line_rect_count;
+  if (geometry.empty()) return true;
+  if (!target || !overlay_vertex_shader_ || !overlay_pixel_shader_ ||
+      !ensure_overlay_vertex_buffer(geometry.vertices.size())) {
+    ++stats_.overlay_failure_count;
+    return false;
+  }
+  D3D11_MAPPED_SUBRESOURCE mapped = {};
+  if (FAILED(context_->Map(overlay_vertex_buffer_.Get(), 0,
+                            D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+    ++stats_.overlay_failure_count;
+    return fail("could not map analysis overlay vertex buffer");
+  }
+  std::memcpy(mapped.pData, geometry.vertices.data(),
+              geometry.vertices.size() * sizeof(AnalysisOverlayGpuVertex));
+  context_->Unmap(overlay_vertex_buffer_.Get(), 0);
+
+  OverlayConstants constants;
+  constants.output_target =
+      output_target == ColorOutputTarget::kWindowsLinearScRGB ? 1 : 0;
+  constants.sdr_white_scale = static_cast<float>(
+      std::isfinite(sdr_white_level_nits) && sdr_white_level_nits > 0.0
+          ? sdr_white_level_nits / 80.0
+          : 1.0);
+  context_->UpdateSubresource(overlay_constant_buffer_.Get(), 0, nullptr,
+                              &constants, 0, 0);
+  context_->OMSetRenderTargets(1, &target, nullptr);
+  const float blend_factor[4] = {};
+  context_->OMSetBlendState(overlay_blend_state_.Get(), blend_factor, 0xffffffffu);
+  const UINT stride = sizeof(AnalysisOverlayGpuVertex);
+  const UINT offset = 0;
+  ID3D11Buffer* vertices = overlay_vertex_buffer_.Get();
+  context_->IASetInputLayout(overlay_input_layout_.Get());
+  context_->IASetVertexBuffers(0, 1, &vertices, &stride, &offset);
+  context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+  context_->VSSetShader(overlay_vertex_shader_.Get(), nullptr, 0);
+  context_->PSSetShader(overlay_pixel_shader_.Get(), nullptr, 0);
+  ID3D11Buffer* constant_buffer = overlay_constant_buffer_.Get();
+  context_->VSSetConstantBuffers(0, 1, &constant_buffer);
+  context_->PSSetConstantBuffers(0, 1, &constant_buffer);
+  context_->Draw(static_cast<UINT>(geometry.vertices.size()), 0);
+  context_->OMSetBlendState(nullptr, blend_factor, 0xffffffffu);
+  ID3D11RenderTargetView* null_target = nullptr;
+  context_->OMSetRenderTargets(1, &null_target, nullptr);
+  ++stats_.overlay_draw_count;
   return true;
 }
 

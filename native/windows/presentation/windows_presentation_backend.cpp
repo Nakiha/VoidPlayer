@@ -1,5 +1,6 @@
 #include "windows/presentation/windows_presentation_backend.h"
 
+#include "renderer/overlay/analysis_overlay_primitives.h"
 #include "renderer/render/presentation_snapshot.h"
 
 #include <algorithm>
@@ -122,6 +123,15 @@ void WindowsD3D11PresentationBackend::shutdown() {
   width_ = 0;
   height_ = 0;
   max_track_slots_ = 0;
+  overlay_last_expected_ = false;
+  overlay_last_applied_ = false;
+  overlay_last_fill_rect_count_ = 0;
+  overlay_last_line_rect_count_ = 0;
+  overlay_expected_count_ = 0;
+  overlay_applied_count_ = 0;
+  overlay_missed_count_ = 0;
+  overlay_gpu_failure_count_ = 0;
+  overlay_diagnostic_count_ = 0;
 }
 
 bool WindowsD3D11PresentationBackend::poll_device_removed(
@@ -264,6 +274,15 @@ WindowsD3D11PresentationBackend::presentation_stats() const {
       viewport.source_frame_cache_hit_count;
   stats.source_frame_cache_miss_count =
       viewport.source_frame_cache_miss_count;
+  stats.overlay_last_expected = overlay_last_expected_ ? 1 : 0;
+  stats.overlay_last_applied = overlay_last_applied_ ? 1 : 0;
+  stats.overlay_last_fill_rect_count = overlay_last_fill_rect_count_;
+  stats.overlay_last_line_rect_count = overlay_last_line_rect_count_;
+  stats.overlay_expected_count = overlay_expected_count_;
+  stats.overlay_applied_count = overlay_applied_count_;
+  stats.overlay_missed_count = overlay_missed_count_;
+  stats.overlay_gpu_success_count = overlay_applied_count_;
+  stats.overlay_gpu_failure_count = overlay_gpu_failure_count_;
   return stats;
 }
 
@@ -467,6 +486,10 @@ bool WindowsD3D11PresentationBackend::draw_frame(
   }
   const auto viewport_before = viewport_renderer_.stats();
   bool viewport_drawn = false;
+  bool overlay_expected = false;
+  bool overlay_applied = false;
+  uint64_t overlay_fill_rect_count = 0;
+  uint64_t overlay_line_rect_count = 0;
   {
     ScopedD3D11ContextLock context_lock(multithread_.Get());
     viewport_drawn = viewport_renderer_.draw(snapshot,
@@ -475,8 +498,55 @@ bool WindowsD3D11PresentationBackend::draw_frame(
                                              output_target,
                                              sdr_white_level_nits);
     if (viewport_drawn && !hooks.suppress_analysis_overlay &&
-        hooks.draw_overlay) {
+        hooks.build_overlay_primitives) {
+      const auto package = hooks.build_overlay_primitives(snapshot);
+      overlay_expected = package && !package->empty();
+      if (package && package->overlay_track_count > 0) {
+        ++overlay_diagnostic_count_;
+        if (overlay_diagnostic_count_ <= 12 ||
+            overlay_diagnostic_count_ % 120 == 0) {
+          spdlog::info(
+              "[WindowsAnalysisOverlay] package tracks={} matched={} draw_tracks={} "
+              "missing_slot={} missing_presented={} missing_index={} missing_frame={} "
+              "generation={}",
+              package->overlay_track_count, package->matched_track_count,
+              package->tracks.size(), package->missing_track_slot_count,
+              package->missing_presented_frame_count,
+              package->missing_frame_index_count,
+              package->overlay_frame_missing_count, package->cache_generation);
+        }
+      }
+      if (overlay_expected) {
+        overlay_applied = viewport_renderer_.draw_overlay(
+            *package, presentation, rtv.Get(), output_target,
+            sdr_white_level_nits);
+        const auto overlay_stats = viewport_renderer_.stats();
+        overlay_fill_rect_count = overlay_stats.overlay_last_fill_rect_count;
+        overlay_line_rect_count = overlay_stats.overlay_last_line_rect_count;
+        if (!overlay_applied) {
+          spdlog::error("[WindowsAnalysisOverlay] D3D11 draw failed: {}",
+                        viewport_renderer_.last_error());
+        }
+      }
+    }
+    if (viewport_drawn && hooks.draw_overlay) {
       hooks.draw_overlay(*this, snapshot);
+    }
+  }
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    overlay_last_expected_ = overlay_expected;
+    overlay_last_applied_ = overlay_applied;
+    overlay_last_fill_rect_count_ = overlay_fill_rect_count;
+    overlay_last_line_rect_count_ = overlay_line_rect_count;
+    if (overlay_expected) {
+      ++overlay_expected_count_;
+      if (overlay_applied) {
+        ++overlay_applied_count_;
+      } else {
+        ++overlay_missed_count_;
+        ++overlay_gpu_failure_count_;
+      }
     }
   }
   if (!viewport_drawn) {

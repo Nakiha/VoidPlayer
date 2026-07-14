@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.14)
 project(void_player LANGUAGES CXX)
 
 # Windows runner and shared native renderer use one locked dependency graph.
-set(BUILD_ANALYSIS OFF CACHE BOOL "" FORCE)
+set(BUILD_ANALYSIS ON CACHE BOOL "" FORCE)
 set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_ANALYSIS_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_PYTHON OFF CACHE BOOL "" FORCE)
@@ -58,6 +58,8 @@ endfunction()
 set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../native/analysis"
+                 "${CMAKE_BINARY_DIR}/native-analysis")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../native/renderer"
                  "${CMAKE_BINARY_DIR}/native-renderer")
 

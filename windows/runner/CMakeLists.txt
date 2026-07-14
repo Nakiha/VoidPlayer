@@ -15,6 +15,7 @@ add_executable(${BINARY_NAME} WIN32
   "utils.cpp"
   "win32_window.cpp"
   "video_renderer_plugin.cpp"
+  "${CMAKE_SOURCE_DIR}/../native/analysis/analysis_ffi_bridge.cpp"
   "windows_native_compositor.cpp"
   "windows_target_release_queue.cpp"
   "windows_viewport_presentation_controller.cpp"

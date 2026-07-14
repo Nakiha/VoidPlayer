@@ -26,5 +26,5 @@ set(VOID_MACOS_NATIVE_PLAYER_SOURCES
 
 if(BUILD_ANALYSIS)
     list(APPEND VOID_MACOS_NATIVE_PLAYER_SOURCES
-        "${VOID_NATIVE_DIR}/macos/analysis/analysis_ffi_bridge.cpp")
+        "${VOID_NATIVE_DIR}/analysis/analysis_ffi_bridge.cpp")
 endif()

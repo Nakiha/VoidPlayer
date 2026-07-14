@@ -507,7 +507,7 @@
 				"$(PROJECT_DIR)/../native/analysis/analysis_ffi_abi.h",
 				"$(PROJECT_DIR)/../native/analysis/analysis_generation_service.cpp",
 				"$(PROJECT_DIR)/../native/analysis/analysis_generation_service.h",
-				"$(PROJECT_DIR)/../native/macos/analysis/analysis_ffi_bridge.cpp",
+				"$(PROJECT_DIR)/../native/analysis/analysis_ffi_bridge.cpp",
 				"$(PROJECT_DIR)/../native/macos/metal/metal_layout_params.cpp",
 				"$(PROJECT_DIR)/../native/macos/metal/metal_layout_params.h",
 				"$(PROJECT_DIR)/../native/macos/metal/metal_pixel_buffer_uploader.mm",

@@ -87,6 +87,15 @@ class WindowsD3D11PresentationBackend final : public PresentationBackend {
   uint64_t draw_count_ = 0;
   uint64_t draw_failure_count_ = 0;
   uint64_t consecutive_draw_failures_ = 0;
+  bool overlay_last_expected_ = false;
+  bool overlay_last_applied_ = false;
+  uint64_t overlay_last_fill_rect_count_ = 0;
+  uint64_t overlay_last_line_rect_count_ = 0;
+  uint64_t overlay_expected_count_ = 0;
+  uint64_t overlay_applied_count_ = 0;
+  uint64_t overlay_missed_count_ = 0;
+  uint64_t overlay_gpu_failure_count_ = 0;
+  uint64_t overlay_diagnostic_count_ = 0;
 };
 
 std::unique_ptr<PresentationBackend> create_windows_presentation_backend();

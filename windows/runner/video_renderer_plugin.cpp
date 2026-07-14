@@ -1,5 +1,6 @@
 #include "video_renderer_plugin.h"
 
+#include "analysis/analysis_ffi_abi.h"
 #include "native_player_channel_names.h"
 #include "common/logging.h"
 #include "common/win_utf8.h"
@@ -887,11 +888,83 @@ void VideoRendererPlugin::HandleMethodCall(
     result->Success();
     return;
   }
+  if (method == "setNativeAnalysisOverlay") {
+    const auto* tracks_value = Find(arguments, "tracks");
+    const auto* tracks = tracks_value
+        ? std::get_if<flutter::EncodableList>(tracks_value)
+        : nullptr;
+    if (!tracks) {
+      result->Error("BAD_ARGS", "tracks must be a list");
+      return;
+    }
+
+    naki_analysis_clear_overlay_tracks();
+    size_t loaded_track_count = 0;
+    for (const auto& entry : *tracks) {
+      const auto* track = std::get_if<EncodableMap>(&entry);
+      if (!track) {
+        naki_analysis_clear_overlay_tracks();
+        result->Error("BAD_ARGS", "analysis overlay track must be a map");
+        return;
+      }
+      const auto file = track->find(EncodableValue("fileId"));
+      const auto path = track->find(EncodableValue("analysisPath"));
+      int64_t file_id = -1;
+      if (file != track->end()) {
+        if (const auto* value = std::get_if<int32_t>(&file->second)) {
+          file_id = *value;
+        } else if (const auto* value = std::get_if<int64_t>(&file->second)) {
+          file_id = *value;
+        }
+      }
+      const auto* analysis_path = path != track->end()
+          ? std::get_if<std::string>(&path->second)
+          : nullptr;
+      if (file_id < 0 || !analysis_path || analysis_path->empty() ||
+          naki_analysis_set_overlay_track(
+              static_cast<int32_t>(file_id), analysis_path->c_str()) == 0) {
+        char message[256] = {};
+        naki_analysis_last_error(message, sizeof(message));
+        naki_analysis_clear_overlay_tracks();
+        result->Error("ANALYSIS_OVERLAY_TRACK",
+                      message[0] != '\0' ? message
+                                          : "failed to load analysis overlay track");
+        return;
+      }
+      ++loaded_track_count;
+    }
+
+    NakiOverlayState state{};
+    state.show_cu_grid = ReadBool(arguments, "showCuGrid") ? 1 : 0;
+    state.show_pred_mode = ReadBool(arguments, "showPredMode") ? 1 : 0;
+    state.show_qp_heatmap = ReadBool(arguments, "showQpHeatmap") ? 1 : 0;
+    state.show_pred_lines = ReadBool(arguments, "showPredLines") ? 1 : 0;
+    state.show_cu_bit_cost_heatmap =
+        ReadBool(arguments, "showCuBitCostHeatmap") ? 1 : 0;
+    state.opacity_permille = static_cast<int32_t>(
+        std::clamp<int64_t>(ReadInt(arguments, "opacityPermille", 550),
+                            0, 1000));
+    state.mode = static_cast<int32_t>(
+        std::max<int64_t>(0, ReadInt(arguments, "mode")));
+    state.track_file_id = static_cast<int32_t>(
+        ReadInt(arguments, "trackFileId", -1));
+    naki_analysis_set_overlay(&state);
+    if (player_) {
+      player_->request_frame_refresh("windows-analysis-overlay-state");
+    }
+    spdlog::info(
+        "[WindowsAnalysisOverlay] synchronized tracks={} cu={} pred={} qp={} "
+        "motion={} bit_cost={} mode={} opacity={}",
+        loaded_track_count, state.show_cu_grid, state.show_pred_mode,
+        state.show_qp_heatmap, state.show_pred_lines,
+        state.show_cu_bit_cost_heatmap, state.mode, state.opacity_permille);
+    result->Success();
+    return;
+  }
   if (method == "resetNativePerfCounters" ||
       method == "prewarmNativePresentationTargetSize" ||
       method == "boostNativeCompositorFlutterInteraction" ||
-      method == "ackNativeCompositorFlutterState" ||
-      method == "setNativeAnalysisOverlay") {
+      method == "ackNativeCompositorFlutterState") {
     result->Success();
     return;
   }
@@ -1036,6 +1109,31 @@ void VideoRendererPlugin::HandleMethodCall(
           static_cast<int64_t>(stats.source_frame_cache_hit_count));
       diagnostics[EncodableValue("sourceFrameCacheMissCount")] = EncodableValue(
           static_cast<int64_t>(stats.source_frame_cache_miss_count));
+      diagnostics[EncodableValue("nativeTargetOverlayLastExpected")] =
+          EncodableValue(stats.overlay_last_expected != 0);
+      diagnostics[EncodableValue("nativeTargetOverlayLastApplied")] =
+          EncodableValue(stats.overlay_last_applied != 0);
+      diagnostics[EncodableValue("nativeTargetOverlayLastFillRectCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_last_fill_rect_count));
+      diagnostics[EncodableValue("nativeTargetOverlayLastLineRectCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_last_line_rect_count));
+      diagnostics[EncodableValue("nativeTargetOverlayExpectedCount")] =
+          EncodableValue(static_cast<int64_t>(stats.overlay_expected_count));
+      diagnostics[EncodableValue("nativeTargetOverlayAppliedCount")] =
+          EncodableValue(static_cast<int64_t>(stats.overlay_applied_count));
+      diagnostics[EncodableValue("nativeTargetOverlayMissedCount")] =
+          EncodableValue(static_cast<int64_t>(stats.overlay_missed_count));
+      diagnostics[EncodableValue("nativeTargetOverlayGpuSuccessCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_gpu_success_count));
+      diagnostics[EncodableValue("nativeTargetOverlayGpuFailureCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_gpu_failure_count));
+      diagnostics[EncodableValue("nativeTargetOverlayCpuFallbackCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_cpu_fallback_count));
       diagnostics[EncodableValue("nativeTargetConsecutiveDrawFailures")] =
           EncodableValue(
               static_cast<int64_t>(stats.consecutive_draw_failures));

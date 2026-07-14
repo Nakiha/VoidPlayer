@@ -11,6 +11,7 @@ add_executable(video_renderer_tests
     windows/test_windows_d3d11_viewport_renderer.cpp
     windows/test_windows_d3d11_presentation_backend.cpp
     windows/test_windows_presentation_policy.cpp
+    renderer/test_analysis_overlay_gpu_geometry.cpp
     renderer/test_renderer_playback_command_policy.cpp
     renderer/test_renderer_presentation_completion.cpp
     renderer/test_renderer_seek_log_policy.cpp

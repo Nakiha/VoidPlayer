@@ -28,6 +28,9 @@ namespace {
 using EncodableMap = flutter::EncodableMap;
 using EncodableValue = flutter::EncodableValue;
 
+constexpr UINT_PTR kPresentationPolicyRefreshTimer = 0x56504844;
+constexpr UINT kPresentationPolicyRefreshDelayMs = 120;
+
 const EncodableMap* AsMap(const EncodableValue* arguments) {
   return arguments ? std::get_if<EncodableMap>(arguments) : nullptr;
 }
@@ -375,6 +378,22 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
           static_cast<int64_t>(state.last_flutter_frame_generation));
   diagnostics[EncodableValue("windowsCompositorLastError")] =
       EncodableValue(state.last_error);
+  diagnostics[EncodableValue("windowsCompositorOutputMode")] =
+      EncodableValue(state.output_mode);
+  diagnostics[EncodableValue("windowsCompositorScRGBEnabled")] =
+      EncodableValue(state.scrgb_output_enabled);
+  diagnostics[EncodableValue("windowsCompositorSwapChainFormat")] =
+      EncodableValue(state.swap_chain_format);
+  diagnostics[EncodableValue("windowsCompositorColorSpace")] =
+      EncodableValue(state.swap_chain_color_space);
+  diagnostics[EncodableValue("windowsFlutterSourceFormat")] =
+      EncodableValue(state.flutter_source_format);
+  diagnostics[EncodableValue("windowsVideoTargetFormat")] =
+      EncodableValue(state.video_target_format);
+  diagnostics[EncodableValue("windowsSDRWhiteLevelMilliNits")] =
+      EncodableValue(state.sdr_white_level_milli_nits);
+  diagnostics[EncodableValue("windowsCompositorOutputFallbackReason")] =
+      EncodableValue(state.output_fallback_reason);
   if (!viewport_controller) {
     return;
   }
@@ -411,6 +430,44 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
       EncodableValue(int64_t{2});
 }
 
+void AddPresentationPolicyDiagnostics(
+    EncodableMap& diagnostics,
+    const vr::WindowsPresentationPolicy& policy,
+    const vr::WindowsDisplayProbeResult& display,
+    double sdr_white_level_nits) {
+  diagnostics[EncodableValue("windowsPresentationRequest")] =
+      EncodableValue(policy.request);
+  diagnostics[EncodableValue("windowsPresentationMode")] =
+      EncodableValue(policy.mode);
+  diagnostics[EncodableValue("windowsPresentationReason")] =
+      EncodableValue(policy.reason);
+  diagnostics[EncodableValue("windowsPresentationFallbackReason")] =
+      EncodableValue(policy.fallback_reason);
+  diagnostics[EncodableValue("windowsMediaHasHDRTrack")] =
+      EncodableValue(policy.has_hdr_track);
+  diagnostics[EncodableValue("windowsDisplayProbeStatus")] =
+      EncodableValue(display.status);
+  diagnostics[EncodableValue("windowsDisplayDeviceName")] =
+      EncodableValue(display.device_name);
+  diagnostics[EncodableValue("windowsDisplayAdapterDescription")] =
+      EncodableValue(display.adapter_description);
+  diagnostics[EncodableValue("windowsDisplayColorSpace")] =
+      EncodableValue(display.color_space);
+  diagnostics[EncodableValue("windowsDisplayHDRActive")] =
+      EncodableValue(display.hdr_active);
+  diagnostics[EncodableValue("windowsDisplayAdvancedColorActive")] =
+      EncodableValue(display.advanced_color_active);
+  diagnostics[EncodableValue("windowsDisplayMatchesPresentationAdapter")] =
+      EncodableValue(display.matches_presentation_adapter);
+  diagnostics[EncodableValue("windowsDisplayBitsPerColor")] =
+      EncodableValue(display.bits_per_color);
+  diagnostics[EncodableValue("windowsDisplaySDRWhiteLevelStatus")] =
+      EncodableValue(display.sdr_white_level_status);
+  diagnostics[EncodableValue("windowsPresentationSDRWhiteLevelMilliNits")] =
+      EncodableValue(
+          static_cast<int64_t>(std::llround(sdr_white_level_nits * 1000.0)));
+}
+
 }  // namespace
 
 void VideoRendererPlugin::RegisterWithRegistrar(
@@ -431,8 +488,8 @@ void VideoRendererPlugin::RegisterWithRegistrar(
                                      : nullptr;
   HWND window_handle = flutter_window ? GetAncestor(flutter_window, GA_ROOT)
                                       : nullptr;
-  auto plugin =
-      std::make_unique<VideoRendererPlugin>(window_handle, flutter_view);
+  auto plugin = std::make_unique<VideoRendererPlugin>(
+      registrar, window_handle, flutter_view);
   channel->SetMethodCallHandler(
       [plugin_ptr = plugin.get()](const auto& call, auto result) {
         plugin_ptr->HandleMethodCall(call, std::move(result));
@@ -457,9 +514,18 @@ void VideoRendererPlugin::RegisterWithRegistrar(
   registrar->AddPlugin(std::move(plugin));
 }
 
-VideoRendererPlugin::VideoRendererPlugin(HWND window_handle,
-                                         FlutterDesktopViewRef flutter_view)
-    : window_handle_(window_handle) {
+VideoRendererPlugin::VideoRendererPlugin(
+    flutter::PluginRegistrarWindows* registrar,
+    HWND window_handle,
+    FlutterDesktopViewRef flutter_view)
+    : window_handle_(window_handle), registrar_(registrar) {
+  if (registrar_) {
+    window_proc_delegate_id_ = registrar_->RegisterTopLevelWindowProcDelegate(
+        [this](HWND hwnd, UINT message, WPARAM wparam,
+               LPARAM lparam) -> std::optional<LRESULT> {
+          return HandleTopLevelWindowProc(hwnd, message, wparam, lparam);
+        });
+  }
   if (window_handle_) {
     viewport_presentation_controller_ =
         std::make_unique<WindowsViewportPresentationController>(window_handle_);
@@ -472,6 +538,13 @@ VideoRendererPlugin::VideoRendererPlugin(HWND window_handle,
 }
 
 VideoRendererPlugin::~VideoRendererPlugin() {
+  if (window_handle_) {
+    KillTimer(window_handle_, kPresentationPolicyRefreshTimer);
+  }
+  if (registrar_ && window_proc_delegate_id_ >= 0) {
+    registrar_->UnregisterTopLevelWindowProcDelegate(window_proc_delegate_id_);
+    window_proc_delegate_id_ = -1;
+  }
   DestroyPlayer();
   event_bridge_.Shutdown();
   if (compositor_) {
@@ -479,14 +552,69 @@ VideoRendererPlugin::~VideoRendererPlugin() {
   }
 }
 
+std::optional<LRESULT> VideoRendererPlugin::HandleTopLevelWindowProc(
+    HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+  (void)lparam;
+  switch (message) {
+  case WM_DISPLAYCHANGE:
+  case WM_SETTINGCHANGE:
+  case WM_MOVE:
+  case WM_EXITSIZEMOVE:
+  case WM_DPICHANGED:
+    SchedulePresentationPolicyRefresh();
+    break;
+  case WM_TIMER:
+    if (wparam == kPresentationPolicyRefreshTimer) {
+      KillTimer(window_handle_, kPresentationPolicyRefreshTimer);
+      std::string error;
+      if (!RefreshPresentationPolicy("window-display-change", error)) {
+        spdlog::warn("[WindowsPresentation] display refresh failed: {}", error);
+        FailClosedPresentation(std::move(error));
+      }
+    }
+    break;
+  default:
+    break;
+  }
+  return std::nullopt;
+}
+
+void VideoRendererPlugin::SchedulePresentationPolicyRefresh() {
+  if (window_handle_) {
+    SetTimer(window_handle_, kPresentationPolicyRefreshTimer,
+             kPresentationPolicyRefreshDelayMs, nullptr);
+  }
+}
+
+void VideoRendererPlugin::FailClosedPresentation(std::string failure) {
+  if (player_) {
+    player_->pause();
+  }
+  if (compositor_) {
+    compositor_->ClearVideoTargetRing();
+  }
+  presentation_policy_.mode = "unavailable";
+  presentation_policy_.reason = "presentation-fail-closed";
+  presentation_policy_.fallback_reason = std::move(failure);
+  spdlog::error(
+      "[WindowsPresentation] fail closed: {}",
+      presentation_policy_.fallback_reason);
+  event_bridge_.QueueNativeCompositorState(
+      false, true, presentation_policy_.mode, presentation_policy_.reason,
+      "windows-native-d3d11", presentation_policy_.fallback_reason);
+}
+
 void VideoRendererPlugin::SetEventSink(
     std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink) {
   event_bridge_.SetSink(std::move(sink));
   if (player_) {
     event_bridge_.QueueNativeCompositorState(
-        compositor_started_, true, "native-compositor-sdr", "active",
+        compositor_started_, true, presentation_policy_.mode,
+        presentation_policy_.reason,
         "windows-native-d3d11",
-        compositor_started_ ? "" : "Windows native compositor unavailable");
+        compositor_started_ ? (presentation_policy_.fallback_reason == "none"
+                                   ? "" : presentation_policy_.fallback_reason)
+                            : "Windows native compositor unavailable");
   }
 }
 
@@ -514,6 +642,143 @@ void VideoRendererPlugin::DestroyPlayer() {
   player_id_ = 0;
 }
 
+bool VideoRendererPlugin::RefreshPresentationPolicy(
+    const char* reason,
+    std::string& error) {
+  error.clear();
+  if (!compositor_ || !compositor_started_) {
+    error = "Windows native compositor is unavailable";
+    return false;
+  }
+  Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
+  Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+  if (compositor_->device() &&
+      SUCCEEDED(
+          compositor_->device()->QueryInterface(IID_PPV_ARGS(&dxgi_device))) &&
+      dxgi_device) {
+    (void)dxgi_device->GetAdapter(&adapter);
+  }
+  display_probe_ = display_resolver_.Probe(window_handle_, adapter.Get());
+  const std::string requested_mode =
+      vr::win_utf8::get_env_utf8(L"VOIDPLAYER_WINDOWS_PRESENTATION_MODE");
+  const bool has_hdr_track =
+      player_ && vr::windows_tracks_have_hdr_transfer(player_->tracks());
+  auto policy = vr::resolve_windows_presentation_policy(
+      requested_mode.empty() ? "auto" : requested_mode, has_hdr_track,
+      display_probe_);
+  if (!policy.supported) {
+    error = policy.reason;
+    return false;
+  }
+  return ApplyPresentationPolicy(std::move(policy), display_probe_, reason,
+                                 error);
+}
+
+bool VideoRendererPlugin::ApplyPresentationPolicy(
+    vr::WindowsPresentationPolicy policy,
+    const vr::WindowsDisplayProbeResult& display,
+    const char* reason,
+    std::string& error) {
+  error.clear();
+  const double white_nits =
+      display.sdr_white_level_milli_nits > 0
+          ? static_cast<double>(display.sdr_white_level_milli_nits) / 1000.0
+          : 80.0;
+  WindowsNativeCompositorOutputConfig compositor_config;
+  compositor_config.linear_scrgb =
+      policy.output_target == vr::ColorOutputTarget::kWindowsLinearScRGB;
+  compositor_config.sdr_white_level_nits = white_nits;
+  std::string compositor_error;
+  if (!compositor_->ConfigureOutput(compositor_config, compositor_error)) {
+    if (!compositor_config.linear_scrgb) {
+      error = compositor_error;
+      return false;
+    }
+    policy.mode = "native-compositor-sdr";
+    policy.reason = "scrgb-target-failed-native-sdr";
+    policy.fallback_reason = compositor_error.empty()
+                                 ? "scrgb-target-configuration-failed"
+                                 : compositor_error;
+    policy.output_target = vr::ColorOutputTarget::kSDRToneMappedBT709;
+    policy.hdr_output_requested = false;
+    compositor_config.linear_scrgb = false;
+    if (!compositor_->ConfigureOutput(compositor_config, compositor_error)) {
+      error = "scRGB and native SDR compositor configuration failed: " +
+              compositor_error;
+      return false;
+    }
+  }
+
+  const DXGI_FORMAT target_format = compositor_config.linear_scrgb
+                                        ? DXGI_FORMAT_R16G16B16A16_FLOAT
+                                        : DXGI_FORMAT_B8G8R8A8_UNORM;
+  const std::string desired_target_format =
+      compositor_config.linear_scrgb ? "rgba16f" : "bgra8";
+  const auto compositor_diagnostics = compositor_->diagnostics();
+  const bool target_format_changed =
+      compositor_diagnostics.video_target_format != desired_target_format;
+  if (player_ && player_->initialized() && target_format_changed) {
+    std::vector<void*> textures;
+    if (!compositor_->CreateVideoTargetRing(
+            static_cast<uint32_t>(video_target_width_),
+            static_cast<uint32_t>(video_target_height_), target_format, 6,
+            textures) ||
+        !player_->install_target_ring(
+            reinterpret_cast<const void* const*>(textures.data()),
+            textures.size(), nullptr, nullptr, video_target_width_,
+            video_target_height_, 4)) {
+      if (compositor_config.linear_scrgb) {
+        policy.mode = "native-compositor-sdr";
+        policy.reason = "scrgb-ring-failed-native-sdr";
+        policy.fallback_reason = player_->presentation_error();
+        policy.output_target = vr::ColorOutputTarget::kSDRToneMappedBT709;
+        policy.hdr_output_requested = false;
+        compositor_config.linear_scrgb = false;
+        std::string fallback_error;
+        std::vector<void*> fallback_textures;
+        if (!compositor_->ConfigureOutput(compositor_config, fallback_error) ||
+            !compositor_->CreateVideoTargetRing(
+                static_cast<uint32_t>(video_target_width_),
+                static_cast<uint32_t>(video_target_height_),
+                DXGI_FORMAT_B8G8R8A8_UNORM, 6, fallback_textures) ||
+            !player_->install_target_ring(
+                reinterpret_cast<const void* const*>(fallback_textures.data()),
+                fallback_textures.size(), nullptr, nullptr, video_target_width_,
+                video_target_height_, 4)) {
+          error = "scRGB target ring failed and native SDR fallback failed";
+          return false;
+        }
+      } else {
+        error = player_->presentation_error();
+        return false;
+      }
+    }
+  }
+  if (player_ && player_->initialized()) {
+    (void)player_->update_presentation_sdr_white_level(white_nits);
+    player_->request_frame_refresh(reason ? reason : "windows-output-policy");
+  }
+  presentation_policy_ = std::move(policy);
+  presentation_sdr_white_level_nits_ = white_nits;
+  spdlog::info(
+      "[WindowsPresentation] request={} mode={} reason={} hdr_track={} "
+      "display_status={} display_hdr={} adapter_match={} target={} "
+      "sdr_white_nits={:.3f} white_status={} fallback={}",
+      presentation_policy_.request, presentation_policy_.mode,
+      presentation_policy_.reason, presentation_policy_.has_hdr_track,
+      display.status, display.hdr_active, display.matches_presentation_adapter,
+      compositor_config.linear_scrgb ? "rgba16f-linear-scrgb" : "bgra8-sdr",
+      white_nits, display.sdr_white_level_status,
+      presentation_policy_.fallback_reason);
+  event_bridge_.QueueNativeCompositorState(
+      true, true, presentation_policy_.mode, presentation_policy_.reason,
+      "windows-native-d3d11",
+      presentation_policy_.fallback_reason == "none"
+          ? ""
+          : presentation_policy_.fallback_reason);
+  return true;
+}
+
 bool VideoRendererPlugin::ResizeVideoTargets(int width,
                                              int height,
                                              std::string& error) {
@@ -526,9 +791,14 @@ bool VideoRendererPlugin::ResizeVideoTargets(int width,
     return true;
   }
   std::vector<void*> textures;
+  const DXGI_FORMAT target_format =
+      presentation_policy_.output_target ==
+              vr::ColorOutputTarget::kWindowsLinearScRGB
+          ? DXGI_FORMAT_R16G16B16A16_FLOAT
+          : DXGI_FORMAT_B8G8R8A8_UNORM;
   if (!compositor_->CreateVideoTargetRing(
           static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-          DXGI_FORMAT_B8G8R8A8_UNORM, 6, textures)) {
+          target_format, 6, textures)) {
     error = compositor_->diagnostics().last_error;
     return false;
   }
@@ -705,10 +975,12 @@ void VideoRendererPlugin::HandleMethodCall(
     if (viewport_presentation_controller_) {
       viewport_presentation_controller_->AttachPlayer(player);
     }
-    player->request_frame_refresh("windows-runner-create");
-    event_bridge_.QueueNativeCompositorState(
-        true, true, "native-compositor-sdr", "active",
-        "windows-native-d3d11", "");
+    std::string policy_error;
+    if (!RefreshPresentationPolicy("windows-runner-create", policy_error)) {
+      DestroyPlayer();
+      result->Error("PRESENTATION_POLICY_FAILED", policy_error);
+      return;
+    }
     EncodableMap payload = {
         {EncodableValue("playerId"), EncodableValue(player_id_)},
         {EncodableValue("tracks"), EncodableValue(TrackList(player->tracks()))},
@@ -725,6 +997,9 @@ void VideoRendererPlugin::HandleMethodCall(
     EncodableMap diagnostics;
     AddCompositorDiagnostics(diagnostics, compositor_.get(), compositor_started_,
                              viewport_presentation_controller_.get());
+    AddPresentationPolicyDiagnostics(diagnostics, presentation_policy_,
+                                     display_probe_,
+                                     presentation_sdr_white_level_nits_);
     result->Success(EncodableValue(std::move(diagnostics)));
     return;
   }
@@ -743,6 +1018,9 @@ void VideoRendererPlugin::HandleMethodCall(
     };
     AddCompositorDiagnostics(diagnostics, compositor_.get(), compositor_started_,
                              viewport_presentation_controller_.get());
+    AddPresentationPolicyDiagnostics(diagnostics, presentation_policy_,
+                                     display_probe_,
+                                     presentation_sdr_white_level_nits_);
     if (player_) {
       const auto stats = player_->presentation_stats();
       const auto backend = player_->presentation_diagnostics();
@@ -861,10 +1139,27 @@ void VideoRendererPlugin::HandleMethodCall(
     if (file_id < 0 || found == tracks.end()) {
       result->Error("ADD_TRACK_FAILED", "native renderer rejected the track");
     } else {
+      std::string policy_error;
+      if (!RefreshPresentationPolicy("windows-add-track", policy_error)) {
+        player_->remove_track(file_id);
+        std::string restore_error;
+        if (!RefreshPresentationPolicy(
+                "windows-add-track-rollback", restore_error)) {
+          FailClosedPresentation(std::move(restore_error));
+        }
+        result->Error("PRESENTATION_POLICY_FAILED", policy_error);
+        return;
+      }
       result->Success(EncodableValue(TrackMap(*found)));
     }
   } else if (method == "removeTrack") {
     player_->remove_track(static_cast<int>(ReadInt(arguments, "fileId", -1)));
+    std::string policy_error;
+    if (!RefreshPresentationPolicy("windows-remove-track", policy_error)) {
+      spdlog::warn(
+          "[WindowsPresentation] remove-track policy refresh failed: {}",
+          policy_error);
+    }
     result->Success();
   } else if (method == "currentPts") {
     result->Success(EncodableValue(player_->current_pts_us()));

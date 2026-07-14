@@ -9,7 +9,7 @@
 
 #include <d3d11.h>
 #include <dcomp.h>
-#include <dxgi1_3.h>
+#include <dxgi1_4.h>
 #include <wrl/client.h>
 
 #include <atomic>
@@ -34,7 +34,20 @@ struct WindowsNativeCompositorDiagnostics {
   uint64_t video_publish_count = 0;
   uint64_t video_present_count = 0;
   uint64_t last_flutter_frame_generation = 0;
+  int64_t sdr_white_level_milli_nits = 80000;
+  bool scrgb_output_enabled = false;
+  std::string output_mode = "native-compositor-sdr";
+  std::string swap_chain_format = "bgra8";
+  std::string swap_chain_color_space = "RGB_FULL_G22_NONE_P709";
+  std::string flutter_source_format = "bgra8-premultiplied-srgb";
+  std::string video_target_format = "unavailable";
+  std::string output_fallback_reason = "none";
   std::string last_error;
+};
+
+struct WindowsNativeCompositorOutputConfig {
+  bool linear_scrgb = false;
+  double sdr_white_level_nits = 80.0;
 };
 
 // Passive final compositor: it samples the latest runner-owned native viewport
@@ -52,6 +65,8 @@ class WindowsNativeCompositor final {
   bool Start();
   void Stop();
   void NotifyResize();
+  bool ConfigureOutput(const WindowsNativeCompositorOutputConfig& config,
+                       std::string& error);
   bool CreateVideoTargetRing(uint32_t width,
                              uint32_t height,
                              DXGI_FORMAT format,
@@ -77,6 +92,14 @@ class WindowsNativeCompositor final {
   bool InitializeOnThread();
   void ShutdownOnThread();
   bool ResizeSwapChain();
+  bool ApplyPendingOutputConfiguration();
+  bool ApplyOutputConfiguration(
+      const WindowsNativeCompositorOutputConfig& config,
+      std::string& error);
+  bool ResizeSwapChainBuffers(uint32_t width, uint32_t height,
+                              DXGI_FORMAT format,
+                              DXGI_COLOR_SPACE_TYPE color_space,
+                              std::string& error);
   bool CompositeLatest();
   bool CreatePipeline();
   bool WaitForGpu();
@@ -96,7 +119,7 @@ class WindowsNativeCompositor final {
   Microsoft::WRL::ComPtr<ID3D11Device> device_;
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
   Microsoft::WRL::ComPtr<ID3D10Multithread> multithread_;
-  Microsoft::WRL::ComPtr<IDXGISwapChain2> swap_chain_;
+  Microsoft::WRL::ComPtr<IDXGISwapChain3> swap_chain_;
   Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device_;
   Microsoft::WRL::ComPtr<IDCompositionTarget> dcomp_target_;
   Microsoft::WRL::ComPtr<IDCompositionVisual> dcomp_visual_;
@@ -113,6 +136,7 @@ class WindowsNativeCompositor final {
   Microsoft::WRL::ComPtr<ID3D11Texture2D> video_target_;
   Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> video_srv_;
   std::vector<Microsoft::WRL::ComPtr<ID3D11Texture2D>> video_targets_;
+  std::vector<Microsoft::WRL::ComPtr<ID3D11Texture2D>> retired_video_targets_;
   uint64_t video_publish_serial_ = 0;
   uint64_t video_completed_serial_ = 0;
   bool last_video_presentation_succeeded_ = false;
@@ -128,6 +152,15 @@ class WindowsNativeCompositor final {
   int video_viewport_surface_height_ = 0;
   uint32_t width_ = 0;
   uint32_t height_ = 0;
+  DXGI_FORMAT output_format_ = DXGI_FORMAT_B8G8R8A8_UNORM;
+  DXGI_COLOR_SPACE_TYPE output_color_space_ =
+      DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+  DXGI_FORMAT video_target_format_ = DXGI_FORMAT_UNKNOWN;
+  WindowsNativeCompositorOutputConfig requested_output_config_;
+  WindowsNativeCompositorOutputConfig applied_output_config_;
+  uint64_t requested_output_generation_ = 0;
+  uint64_t completed_output_generation_ = 0;
+  bool completed_output_succeeded_ = true;
 
   mutable std::mutex state_mutex_;
   std::condition_variable state_condition_;

@@ -220,6 +220,11 @@ bool WindowsNativePlayer::install_target_ring(
                                max_track_slots);
 }
 
+bool WindowsNativePlayer::update_presentation_sdr_white_level(double nits) {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() && renderer_->update_presentation_sdr_white_level(nits);
+}
+
 bool WindowsNativePlayer::request_frame_refresh(const char* reason) {
   std::shared_lock<std::shared_mutex> lock(mutex_);
   return ready_locked() && renderer_->request_frame_refresh(reason);

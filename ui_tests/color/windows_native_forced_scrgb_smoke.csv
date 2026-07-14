@@ -1,0 +1,25 @@
+# Portable Windows scRGB contract smoke. Launch with
+# VOIDPLAYER_WINDOWS_PRESENTATION_MODE=native-compositor-scrgb.
+@WINDOW,960,540
+0.0,SET_DECODE_MODE,preferHardware
+0.2,ADD_MEDIA,resources/video/h264_9s_1920x1080.mp4
+1.6,WAIT_TRACK_COUNT,1,10000
+1.7,DEBUG_NATIVE_COMPOSITOR
+1.72,ASSERT_NATIVE_DIAGNOSTIC_STRING,windowsPresentationRequest,native-compositor-scrgb
+1.74,ASSERT_NATIVE_DIAGNOSTIC_STRING,windowsPresentationReason,forced-native-compositor-scrgb
+1.76,ASSERT_NATIVE_DIAGNOSTIC_STRING,windowsPresentationMode,native-compositor-scrgb
+1.78,ASSERT_NATIVE_DIAGNOSTIC_BOOL,windowsMediaHasHDRTrack,false
+1.80,ASSERT_NATIVE_DIAGNOSTIC_BOOL,windowsCompositorScRGBEnabled,true
+1.82,ASSERT_NATIVE_DIAGNOSTIC_STRING,windowsCompositorSwapChainFormat,rgba16f
+1.84,ASSERT_NATIVE_DIAGNOSTIC_STRING,windowsCompositorColorSpace,RGB_FULL_G10_NONE_P709
+1.86,ASSERT_NATIVE_DIAGNOSTIC_STRING,windowsFlutterSourceFormat,bgra8-premultiplied-srgb
+1.88,ASSERT_NATIVE_DIAGNOSTIC_STRING,windowsVideoTargetFormat,rgba16f
+1.90,ASSERT_NATIVE_DIAGNOSTIC_STRING,windowsPresentationFallbackReason,none
+2.0,PLAY
+2.8,WAIT_PLAYING,3000
+3.2,PAUSE
+3.5,WAIT_PAUSED,3000
+3.6,DEBUG_NATIVE_COMPOSITOR
+3.7,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsCompositeCount,1
+3.8,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoPresentCount,1
+4.0,QUIT,0

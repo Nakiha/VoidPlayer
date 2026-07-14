@@ -158,6 +158,22 @@ bool WindowsD3D11PresentationBackend::update_offscreen_target_ring(
     int width,
     int height,
     int max_track_slots) {
+  if (!textures || texture_count == 0 || !textures[0]) {
+    set_error("Windows D3D11 target ring is empty");
+    return false;
+  }
+  D3D11_TEXTURE2D_DESC first_desc = {};
+  static_cast<ID3D11Texture2D*>(const_cast<void*>(textures[0]))
+      ->GetDesc(&first_desc);
+  ColorOutputTarget next_output_target;
+  if (first_desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT) {
+    next_output_target = ColorOutputTarget::kWindowsLinearScRGB;
+  } else if (first_desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM) {
+    next_output_target = ColorOutputTarget::kSDRToneMappedBT709;
+  } else {
+    set_error("Windows D3D11 target ring format is unsupported");
+    return false;
+  }
   WindowsD3D11TargetRingInstall install;
   install.textures = textures;
   install.texture_count = texture_count;
@@ -165,19 +181,35 @@ bool WindowsD3D11PresentationBackend::update_offscreen_target_ring(
   install.protected_texture = protected_texture;
   install.width = width;
   install.height = height;
-  install.format = target_format_for(output_target_);
+  install.format = first_desc.Format;
+  ColorOutputTarget previous_output_target;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    previous_output_target = output_target_;
+    output_target_ = next_output_target;
+  }
   if (!install_ring(install)) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    output_target_ = previous_output_target;
     return false;
   }
   auto next_device = target_ring_.device();
   if (!device_ || next_device.Get() != device_.Get()) {
     set_error("Windows D3D11 target-ring device cannot change in place");
     target_ring_.clear();
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    output_target_ = previous_output_target;
     return false;
   }
   width_ = width;
   height_ = height;
   max_track_slots_ = std::clamp(max_track_slots, 1, 4);
+  spdlog::info(
+      "[WindowsPresentation] target ring reconfigured format={} output={}",
+      target_format_name(first_desc.Format),
+      next_output_target == ColorOutputTarget::kWindowsLinearScRGB
+          ? "linear-scrgb"
+          : "sdr-bt709");
   return true;
 }
 
@@ -279,15 +311,17 @@ bool WindowsD3D11PresentationBackend::capture_front_buffer(
     int& width,
     int& height) {
   Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
+  ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     source = last_completed_target_;
+    output_target = output_target_;
   }
   bgra.clear();
   width = 0;
   height = 0;
   if (!source || !device_ || !context_ ||
-      output_target_ == ColorOutputTarget::kWindowsLinearScRGB) {
+      output_target == ColorOutputTarget::kWindowsLinearScRGB) {
     return false;
   }
   D3D11_TEXTURE2D_DESC desc = {};
@@ -513,7 +547,12 @@ bool WindowsD3D11PresentationBackend::draw_frame(
 
 bool WindowsD3D11PresentationBackend::install_ring(
     const WindowsD3D11TargetRingInstall& install) {
-  if (install.format != target_format_for(output_target_)) {
+  ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    output_target = output_target_;
+  }
+  if (install.format != target_format_for(output_target)) {
     set_error("Windows D3D11 target-ring format does not match output mode");
     return false;
   }

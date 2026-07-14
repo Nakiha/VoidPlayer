@@ -1,0 +1,29 @@
+# Local Windows HDR canary. Requires Windows HDR enabled on the current output
+# and C:\Users\12967\Downloads\dolby.mp4.
+@WINDOW, 960, 540
+0.0, SET_DECODE_MODE, preferHardware
+0.2, ADD_MEDIA, C:\Users\12967\Downloads\dolby.mp4
+1.8, WAIT_TRACK_COUNT, 1, 10000
+1.9, ASSERT_TRACK_COUNT, 1
+2.0, DEBUG_NATIVE_COMPOSITOR
+2.02, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationRequest, auto
+2.04, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationReason, auto-hdr-track
+2.06, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationMode, native-compositor-scrgb
+2.08, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsMediaHasHDRTrack, true
+2.10, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDisplayHDRActive, true
+2.12, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsDisplayMatchesPresentationAdapter, true
+2.14, ASSERT_NATIVE_DIAGNOSTIC_BOOL, windowsCompositorScRGBEnabled, true
+2.16, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsCompositorSwapChainFormat, rgba16f
+2.18, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsCompositorColorSpace, RGB_FULL_G10_NONE_P709
+2.20, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsFlutterSourceFormat, bgra8-premultiplied-srgb
+2.22, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsVideoTargetFormat, rgba16f
+2.24, ASSERT_NATIVE_DIAGNOSTIC_STRING, windowsPresentationFallbackReason, none
+2.4, PLAY
+3.2, WAIT_PLAYING, 3000
+3.4, ASSERT_PLAYING
+4.2, PAUSE
+4.5, WAIT_PAUSED, 3000
+4.6, DEBUG_NATIVE_COMPOSITOR
+4.7, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsCompositeCount, 1
+4.8, ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST, windowsVideoPresentCount, 1
+5.0, QUIT, 0

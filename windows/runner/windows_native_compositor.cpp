@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <utility>
 
 #include <spdlog/spdlog.h>
@@ -18,7 +19,9 @@ Texture2D video_surface : register(t1);
 SamplerState surface_sampler : register(s0);
 cbuffer CompositeConstants : register(b0) {
   uint has_video;
-  float3 padding;
+  uint output_scrgb;
+  uint video_is_sdr;
+  float sdr_white_scale;
   float4 video_rect;
 };
 struct VertexOutput { float4 position : SV_POSITION; float2 uv : TEXCOORD0; };
@@ -30,6 +33,31 @@ VertexOutput VSMain(uint vertex_id : SV_VertexID) {
   output.uv = float2(position.x * 0.5 + 0.5, 0.5 - position.y * 0.5);
   return output;
 }
+float srgb_channel_to_linear(float value) {
+  float c = saturate(value);
+  return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+float3 srgb_to_linear(float3 color) {
+  return float3(srgb_channel_to_linear(color.r),
+                srgb_channel_to_linear(color.g),
+                srgb_channel_to_linear(color.b));
+}
+float linear_channel_to_srgb(float value) {
+  float c = saturate(value);
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+}
+float3 linear_to_srgb(float3 color) {
+  return float3(linear_channel_to_srgb(color.r),
+                linear_channel_to_srgb(color.g),
+                linear_channel_to_srgb(color.b));
+}
+float3 premultiplied_srgb_to_scrgb(float3 color, float alpha) {
+  if (alpha <= 0.0001) {
+    return float3(0.0, 0.0, 0.0);
+  }
+  float3 straight = saturate(color / alpha);
+  return srgb_to_linear(straight) * alpha * sdr_white_scale;
+}
 float4 PSMain(VertexOutput input) : SV_TARGET {
   float4 video = float4(0.0, 0.0, 0.0, 1.0);
   float2 video_end = video_rect.xy + video_rect.zw;
@@ -38,15 +66,29 @@ float4 PSMain(VertexOutput input) : SV_TARGET {
       input.uv.y >= video_rect.y && input.uv.y <= video_end.y) {
     float2 video_uv = (input.uv - video_rect.xy) / max(video_rect.zw, 1e-6);
     video = video_surface.Sample(surface_sampler, video_uv);
+    if (output_scrgb != 0 && video_is_sdr != 0) {
+      video.rgb = srgb_to_linear(video.rgb) * sdr_white_scale;
+    } else if (output_scrgb == 0 && video_is_sdr == 0) {
+      // A target from the immediately retired FP16 ring can complete while an
+      // HDR -> SDR reconfiguration is draining. Preserve that completion in
+      // the SDR domain instead of presenting unclamped linear values.
+      video.rgb = linear_to_srgb(video.rgb / max(sdr_white_scale, 1e-6));
+    }
   }
   float4 flutter = flutter_surface.Sample(surface_sampler, input.uv);
+  if (output_scrgb != 0) {
+    flutter.rgb = premultiplied_srgb_to_scrgb(
+        flutter.rgb, saturate(flutter.a));
+  }
   return float4(flutter.rgb + video.rgb * (1.0 - flutter.a), 1.0);
 }
 )hlsl";
 
 struct CompositeConstants {
   uint32_t has_video = 0;
-  float padding[3] = {};
+  uint32_t output_scrgb = 0;
+  uint32_t video_is_sdr = 1;
+  float sdr_white_scale = 1.0f;
   float video_rect[4] = {0.0f, 0.0f, 1.0f, 1.0f};
 };
 
@@ -131,6 +173,44 @@ void WindowsNativeCompositor::NotifyResize() {
   SignalComposite();
 }
 
+bool WindowsNativeCompositor::ConfigureOutput(
+    const WindowsNativeCompositorOutputConfig& config, std::string& error) {
+  error.clear();
+  if (!std::isfinite(config.sdr_white_level_nits) ||
+      config.sdr_white_level_nits <= 0.0 ||
+      config.sdr_white_level_nits > 10000.0) {
+    error = "Windows compositor SDR white level is invalid";
+    return false;
+  }
+  uint64_t generation = 0;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (!running_) {
+      error = "Windows compositor is not running";
+      return false;
+    }
+    requested_output_config_ = config;
+    generation = ++requested_output_generation_;
+  }
+  SignalComposite();
+  std::unique_lock<std::mutex> lock(state_mutex_);
+  if (!state_condition_.wait_for(
+          lock, std::chrono::seconds(5), [this, generation]() {
+            return completed_output_generation_ >= generation || !running_;
+          })) {
+    error = "Windows compositor output reconfiguration timed out";
+    return false;
+  }
+  if (completed_output_generation_ < generation ||
+      !completed_output_succeeded_) {
+    error = diagnostics_.last_error.empty()
+                ? "Windows compositor output reconfiguration failed"
+                : diagnostics_.last_error;
+    return false;
+  }
+  return true;
+}
+
 bool WindowsNativeCompositor::CreateVideoTargetRing(
     uint32_t width,
     uint32_t height,
@@ -168,7 +248,19 @@ bool WindowsNativeCompositor::CreateVideoTargetRing(
     std::lock_guard<std::mutex> lock(state_mutex_);
     video_target_.Reset();
     video_srv_.Reset();
+    retired_video_targets_.insert(retired_video_targets_.end(),
+                                  video_targets_.begin(), video_targets_.end());
+    constexpr size_t kMaxRetiredVideoTargets = 16;
+    if (retired_video_targets_.size() > kMaxRetiredVideoTargets) {
+      retired_video_targets_.erase(
+          retired_video_targets_.begin(),
+          retired_video_targets_.begin() +
+              (retired_video_targets_.size() - kMaxRetiredVideoTargets));
+    }
     video_targets_ = std::move(targets);
+    video_target_format_ = format;
+    diagnostics_.video_target_format =
+        format == DXGI_FORMAT_R16G16B16A16_FLOAT ? "rgba16f" : "bgra8";
     ++diagnostics_.video_target_generation;
     for (const auto& target : video_targets_) {
       textures.push_back(target.Get());
@@ -182,6 +274,9 @@ void WindowsNativeCompositor::ClearVideoTargetRing() {
   video_srv_.Reset();
   video_target_.Reset();
   video_targets_.clear();
+  retired_video_targets_.clear();
+  video_target_format_ = DXGI_FORMAT_UNKNOWN;
+  diagnostics_.video_target_format = "unavailable";
   ++diagnostics_.video_target_generation;
 }
 
@@ -196,12 +291,21 @@ bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
     const auto found = std::find_if(
         video_targets_.begin(), video_targets_.end(),
         [texture](const auto& candidate) { return candidate.Get() == texture; });
-    if (found == video_targets_.end()) {
+    const auto retired = std::find_if(retired_video_targets_.begin(),
+                                      retired_video_targets_.end(),
+                                      [texture](const auto& candidate) {
+                                        return candidate.Get() == texture;
+                                      });
+    if (found == video_targets_.end() &&
+        retired == retired_video_targets_.end()) {
       diagnostics_.last_error =
           "Windows compositor rejected a target outside its ring";
       return false;
     }
     video_target_ = texture;
+    D3D11_TEXTURE2D_DESC presented_desc = {};
+    texture->GetDesc(&presented_desc);
+    video_target_format_ = presented_desc.Format;
     video_srv_.Reset();
     serial = ++video_publish_serial_;
     ++diagnostics_.video_publish_count;
@@ -310,6 +414,9 @@ void WindowsNativeCompositor::Run() {
       SetError("DComp compositor wait failed");
       break;
     }
+    if (!ApplyPendingOutputConfiguration()) {
+      continue;
+    }
     if (resize_pending_.exchange(false) && !ResizeSwapChain()) {
       continue;
     }
@@ -369,7 +476,7 @@ bool WindowsNativeCompositor::InitializeOnThread() {
   DXGI_SWAP_CHAIN_DESC1 swap_desc = {};
   swap_desc.Width = width_;
   swap_desc.Height = height_;
-  swap_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  swap_desc.Format = output_format_;
   swap_desc.SampleDesc.Count = 1;
   swap_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   swap_desc.BufferCount = 3;
@@ -380,6 +487,15 @@ bool WindowsNativeCompositor::InitializeOnThread() {
       device_.Get(), &swap_desc, nullptr, &swap_chain);
   if (FAILED(result) || FAILED(swap_chain.As(&swap_chain_))) {
     SetError("DComp compositor could not create its swap chain");
+    return false;
+  }
+  UINT color_space_support = 0;
+  if (FAILED(swap_chain_->CheckColorSpaceSupport(output_color_space_,
+                                                 &color_space_support)) ||
+      (color_space_support &
+       DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT) == 0 ||
+      FAILED(swap_chain_->SetColorSpace1(output_color_space_))) {
+    SetError("DComp compositor could not configure its SDR color space");
     return false;
   }
   result = DCompositionCreateDevice(
@@ -432,6 +548,7 @@ void WindowsNativeCompositor::ShutdownOnThread() {
     video_srv_.Reset();
     video_target_.Reset();
     video_targets_.clear();
+    retired_video_targets_.clear();
   }
   completion_query_.Reset();
   constants_.Reset();
@@ -469,14 +586,141 @@ bool WindowsNativeCompositor::ResizeSwapChain() {
   if (width == width_ && height == height_) {
     return true;
   }
-  const HRESULT result = swap_chain_->ResizeBuffers(
-      3, width, height, DXGI_FORMAT_B8G8R8A8_UNORM, 0);
-  if (FAILED(result)) {
-    SetError("DComp compositor swap-chain resize failed");
+  std::string error;
+  if (!ResizeSwapChainBuffers(width, height, output_format_,
+                              output_color_space_, error)) {
+    SetError(error);
     return false;
   }
   width_ = width;
   height_ = height;
+  return true;
+}
+
+bool WindowsNativeCompositor::ApplyPendingOutputConfiguration() {
+  WindowsNativeCompositorOutputConfig config;
+  uint64_t generation = 0;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (completed_output_generation_ >= requested_output_generation_) {
+      return true;
+    }
+    config = requested_output_config_;
+    generation = requested_output_generation_;
+  }
+  std::string error;
+  const bool success = ApplyOutputConfiguration(config, error);
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    completed_output_generation_ = generation;
+    completed_output_succeeded_ = success;
+    if (!success) {
+      diagnostics_.last_error = error;
+      diagnostics_.last_composite_succeeded = false;
+    }
+  }
+  state_condition_.notify_all();
+  return success;
+}
+
+bool WindowsNativeCompositor::ApplyOutputConfiguration(
+    const WindowsNativeCompositorOutputConfig& config, std::string& error) {
+  const DXGI_FORMAT next_format = config.linear_scrgb
+                                      ? DXGI_FORMAT_R16G16B16A16_FLOAT
+                                      : DXGI_FORMAT_B8G8R8A8_UNORM;
+  const DXGI_COLOR_SPACE_TYPE next_color_space =
+      config.linear_scrgb ? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+                          : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+  if (next_format != output_format_ ||
+      next_color_space != output_color_space_) {
+    {
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      video_srv_.Reset();
+      video_target_.Reset();
+    }
+    if (!WaitForGpu()) {
+      error = "DComp compositor could not drain before output reconfiguration";
+      return false;
+    }
+    if (!ResizeSwapChainBuffers(width_, height_, next_format, next_color_space,
+                                error)) {
+      if (config.linear_scrgb) {
+        std::string rollback_error;
+        if (ResizeSwapChainBuffers(width_, height_, DXGI_FORMAT_B8G8R8A8_UNORM,
+                                   DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709,
+                                   rollback_error)) {
+          output_format_ = DXGI_FORMAT_B8G8R8A8_UNORM;
+          output_color_space_ = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+          applied_output_config_.linear_scrgb = false;
+          std::lock_guard<std::mutex> lock(state_mutex_);
+          diagnostics_.scrgb_output_enabled = false;
+          diagnostics_.output_mode = "native-compositor-sdr";
+          diagnostics_.swap_chain_format = "bgra8";
+          diagnostics_.swap_chain_color_space = "RGB_FULL_G22_NONE_P709";
+          diagnostics_.output_fallback_reason =
+              "scrgb-swap-chain-configuration-failed";
+        } else {
+          error += "; SDR rollback failed: " + rollback_error;
+        }
+      }
+      return false;
+    }
+    output_format_ = next_format;
+    output_color_space_ = next_color_space;
+  }
+  applied_output_config_ = config;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    diagnostics_.scrgb_output_enabled = config.linear_scrgb;
+    diagnostics_.output_mode = config.linear_scrgb ? "native-compositor-scrgb"
+                                                   : "native-compositor-sdr";
+    diagnostics_.swap_chain_format = config.linear_scrgb ? "rgba16f" : "bgra8";
+    diagnostics_.swap_chain_color_space = config.linear_scrgb
+                                              ? "RGB_FULL_G10_NONE_P709"
+                                              : "RGB_FULL_G22_NONE_P709";
+    diagnostics_.sdr_white_level_milli_nits = static_cast<int64_t>(
+        std::llround(config.sdr_white_level_nits * 1000.0));
+    diagnostics_.output_fallback_reason = "none";
+    diagnostics_.last_error.clear();
+  }
+  spdlog::info(
+      "[WindowsCompositor] output mode={} format={} color_space={} "
+      "sdr_white_nits={:.3f} flutter_source=bgra8-premultiplied-srgb",
+      config.linear_scrgb ? "native-compositor-scrgb" : "native-compositor-sdr",
+      config.linear_scrgb ? "rgba16f" : "bgra8",
+      config.linear_scrgb ? "RGB_FULL_G10_NONE_P709" : "RGB_FULL_G22_NONE_P709",
+      config.sdr_white_level_nits);
+  return true;
+}
+
+bool WindowsNativeCompositor::ResizeSwapChainBuffers(
+    uint32_t width, uint32_t height, DXGI_FORMAT format,
+    DXGI_COLOR_SPACE_TYPE color_space, std::string& error) {
+  if (!swap_chain_) {
+    error = "DComp compositor swap chain is unavailable";
+    return false;
+  }
+  const HRESULT resize = swap_chain_->ResizeBuffers(
+      3, width, height, format, 0);
+  if (FAILED(resize)) {
+    error = "DComp compositor swap-chain resize failed hr=" +
+            std::to_string(static_cast<long>(resize));
+    return false;
+  }
+  UINT support = 0;
+  const HRESULT check =
+      swap_chain_->CheckColorSpaceSupport(color_space, &support);
+  if (FAILED(check) ||
+      (support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT) == 0) {
+    error = "DComp compositor color space is unsupported";
+    return false;
+  }
+  const HRESULT set = swap_chain_->SetColorSpace1(color_space);
+  if (FAILED(set)) {
+    error = "DComp compositor SetColorSpace1 failed hr=" +
+            std::to_string(static_cast<long>(set));
+    return false;
+  }
   return true;
 }
 
@@ -572,10 +816,12 @@ bool WindowsNativeCompositor::CompositeLatest() {
         cached_flutter_ring_generation_ = lease.ring_generation;
         ++flutter_cache_refresh_count_;
         if (lease.width != width_ || lease.height != height_) {
-          const HRESULT resize = swap_chain_->ResizeBuffers(
-              3, lease.width, lease.height, DXGI_FORMAT_B8G8R8A8_UNORM, 0);
-          if (FAILED(resize)) {
-            SetError("DComp compositor could not match the Flutter surface size");
+          std::string resize_error;
+          if (!ResizeSwapChainBuffers(lease.width, lease.height, output_format_,
+                                      output_color_space_, resize_error)) {
+            SetError(
+                "DComp compositor could not match the Flutter surface size: " +
+                resize_error);
             fail_video();
             return false;
           }
@@ -618,6 +864,12 @@ bool WindowsNativeCompositor::CompositeLatest() {
       device_->CreateShaderResourceView(video_target_.Get(), nullptr, &video_srv_);
     }
     video_srv = video_srv_;
+    composite_constants.output_scrgb =
+        applied_output_config_.linear_scrgb ? 1u : 0u;
+    composite_constants.video_is_sdr =
+        video_target_format_ == DXGI_FORMAT_R16G16B16A16_FLOAT ? 0u : 1u;
+    composite_constants.sdr_white_scale =
+        static_cast<float>(applied_output_config_.sdr_white_level_nits / 80.0);
     if (video_viewport_width_ > 0 && video_viewport_height_ > 0 &&
         video_viewport_surface_width_ > 0 &&
         video_viewport_surface_height_ > 0) {

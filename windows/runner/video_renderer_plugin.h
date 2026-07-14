@@ -7,12 +7,15 @@
 #include "file_picker_service.h"
 #include "renderer_event_bridge.h"
 #include "windows/player/native_player.h"
+#include "windows/presentation/windows_display_resolver.h"
+#include "windows/presentation/windows_presentation_policy.h"
 #include "windows_native_compositor.h"
 #include "windows_target_release_queue.h"
 #include "windows_viewport_presentation_controller.h"
 
 #include <atomic>
 #include <memory>
+#include <optional>
 
 class VideoRendererPlugin final : public flutter::Plugin {
  public:
@@ -20,7 +23,8 @@ class VideoRendererPlugin final : public flutter::Plugin {
       flutter::PluginRegistrarWindows* registrar,
       FlutterDesktopPluginRegistrarRef core_registrar);
 
-  VideoRendererPlugin(HWND window_handle, FlutterDesktopViewRef flutter_view);
+  VideoRendererPlugin(flutter::PluginRegistrarWindows* registrar,
+                      HWND window_handle, FlutterDesktopViewRef flutter_view);
   ~VideoRendererPlugin() override;
 
   VideoRendererPlugin(const VideoRendererPlugin&) = delete;
@@ -36,6 +40,15 @@ class VideoRendererPlugin final : public flutter::Plugin {
       std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink);
   void ClearEventSink();
   void DestroyPlayer();
+  std::optional<LRESULT> HandleTopLevelWindowProc(HWND hwnd, UINT message,
+                                                  WPARAM wparam, LPARAM lparam);
+  void SchedulePresentationPolicyRefresh();
+  void FailClosedPresentation(std::string failure);
+  bool RefreshPresentationPolicy(const char* reason, std::string& error);
+  bool ApplyPresentationPolicy(vr::WindowsPresentationPolicy policy,
+                               const vr::WindowsDisplayProbeResult& display,
+                               const char* reason,
+                               std::string& error);
   bool ResizeVideoTargets(int width, int height, std::string& error);
   void OnFrameAvailable(
       const std::weak_ptr<vr::WindowsNativePlayer>& weak_player,
@@ -45,6 +58,8 @@ class VideoRendererPlugin final : public flutter::Plugin {
   RendererEventBridge event_bridge_;
   WindowsTargetReleaseQueue target_release_queue_;
   HWND window_handle_ = nullptr;
+  flutter::PluginRegistrarWindows* registrar_ = nullptr;
+  int window_proc_delegate_id_ = -1;
   std::unique_ptr<WindowsNativeCompositor> compositor_;
   std::unique_ptr<WindowsViewportPresentationController>
       viewport_presentation_controller_;
@@ -53,6 +68,10 @@ class VideoRendererPlugin final : public flutter::Plugin {
   int video_target_width_ = 0;
   int video_target_height_ = 0;
   uint64_t layout_apply_count_ = 0;
+  vr::WindowsDisplayResolver display_resolver_;
+  vr::WindowsDisplayProbeResult display_probe_;
+  vr::WindowsPresentationPolicy presentation_policy_;
+  double presentation_sdr_white_level_nits_ = 80.0;
   int64_t player_id_ = 0;
   std::atomic<int64_t> next_player_id_{1};
 };

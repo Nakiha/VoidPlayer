@@ -119,7 +119,8 @@ void Renderer::Impl::SeekCommandProcessor::seek(
     int64_t target_pts_us,
     SeekType type,
     bool allow_deferred,
-    bool force_recreate_paused_hevc) {
+    bool force_recreate_paused_hevc,
+    const StepBackwardTrackSeekTargets* target_overrides) {
     // Caller must hold lifecycle_mutex_ and state_mutex_.
     // See native/docs/SEEK_STRATEGY.md for codec/container-specific exact seek
     // limits, especially H.264 FLV streams without repeated SPS/PPS on IDR.
@@ -172,7 +173,8 @@ void Renderer::Impl::SeekCommandProcessor::seek(
         type,
         playing_snapshot,
         force_recreate_paused_hevc,
-        seek_hooks);
+        seek_hooks,
+        target_overrides);
     if (applied_seek) {
         renderer.loop_driver_.force_preview_redraw();
         renderer.present_history_.reset();

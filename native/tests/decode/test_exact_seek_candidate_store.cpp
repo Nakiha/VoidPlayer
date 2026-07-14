@@ -26,7 +26,7 @@ ExactSeekCandidate make_candidate(int64_t pts) {
 
 } // namespace
 
-TEST_CASE("ExactSeekCandidateStore: collect keeps only latest pre-target frame",
+TEST_CASE("ExactSeekCandidateStore: collect keeps ordered predecessor history",
           "[decode_thread][exact_seek_candidate_store]") {
     ExactSeekCandidateStore store;
     int snapshots = 0;
@@ -35,8 +35,9 @@ TEST_CASE("ExactSeekCandidateStore: collect keeps only latest pre-target frame",
     store.collect(make_candidate(10), 50, snapshot);
     store.collect(make_candidate(20), 50, snapshot);
 
-    REQUIRE(store.reorder_count() == 1);
-    REQUIRE(store.reorder_at(0).pts_us == 20);
+    REQUIRE(store.reorder_count() == 2);
+    REQUIRE(store.reorder_at(0).pts_us == 10);
+    REQUIRE(store.reorder_at(1).pts_us == 20);
     REQUIRE(snapshots == 0);
 }
 
@@ -48,10 +49,10 @@ TEST_CASE("ExactSeekCandidateStore: first post-target frame snapshots previous p
         snapshotted_pts.push_back(candidate.pts_us);
     };
 
+    store.collect(make_candidate(20), 50, snapshot);
     store.collect(make_candidate(40), 50, snapshot);
     store.collect(make_candidate(60), 50, snapshot);
     store.collect(make_candidate(80), 50, snapshot);
-    store.collect(make_candidate(100), 50, snapshot);
 
     REQUIRE(store.reorder_count() == 4);
     REQUIRE(snapshotted_pts.size() == 1);

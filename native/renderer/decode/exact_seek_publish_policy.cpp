@@ -16,7 +16,18 @@ ExactSeekPreviewPublishWindow choose_exact_seek_preview_publish_window(
     }
 
     const size_t free_slots = buffer_capacity - buffered_frames;
-    window.end = std::min(reorder_count, selected + std::min(max_window_frames, free_slots));
+    // Preserve predecessor history when capacity permits, but never make an
+    // otherwise valid exact-seek preview fail solely because only the selected
+    // frame fits.
+    window.history = selected > 0 && free_slots > 1 ? 1 : 0;
+    window.start = selected - window.history;
+    const size_t requested = max_window_frames + window.history;
+    window.end = std::min(
+        reorder_count,
+        window.start + std::min(requested, free_slots));
+    if (window.end <= selected) {
+        return window;
+    }
     window.published = window.end - selected;
     window.can_publish = window.published > 0;
     return window;

@@ -2,6 +2,7 @@
 
 #include "renderer/track/track_pipeline.h"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -90,6 +91,19 @@ struct StepBackwardExactSeekTarget {
 };
 
 StepBackwardExactSeekTarget choose_step_backward_exact_seek_target(
+    const TrackPipelineManager& tracks,
+    int64_t clock_pts_us,
+    const PresentDecision& last_decision);
+
+using StepBackwardTrackSeekTargets =
+    std::array<std::optional<int64_t>, kMaxTracks>;
+
+struct StepBackwardReconstructionPlan {
+    StepBackwardExactSeekTarget reference;
+    StepBackwardTrackSeekTargets track_targets;
+};
+
+StepBackwardReconstructionPlan build_step_backward_reconstruction_plan(
     const TrackPipelineManager& tracks,
     int64_t clock_pts_us,
     const PresentDecision& last_decision);

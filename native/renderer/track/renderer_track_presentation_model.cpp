@@ -148,6 +148,14 @@ RendererTrackPresentationModel::choose_step_backward_exact_seek_target(
         registry_.tracks_for_snapshot(), clock_pts_us, last_decision);
 }
 
+StepBackwardReconstructionPlan
+RendererTrackPresentationModel::build_step_backward_reconstruction_plan(
+    int64_t clock_pts_us,
+    const PresentDecision& last_decision) const {
+    return vr::build_step_backward_reconstruction_plan(
+        registry_.tracks_for_snapshot(), clock_pts_us, last_decision);
+}
+
 void RendererTrackPresentationModel::apply_carry_forward(
     const PresentDecision& last_decision,
     PresentDecision& decision) const {

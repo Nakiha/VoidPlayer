@@ -1646,8 +1646,22 @@ TEST_CASE("TrackStepPolicy applies step-forward decisions",
     REQUIRE(application.has_clock_target);
     REQUIRE(application.presented_pts_us == 200);
     REQUIRE(application.clock_target_us == 250);
-    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 300);
-    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 300);
+    REQUIRE(manager[0]->track_buffer->peek(-1)->pts_us == 100);
+    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 200);
+    REQUIRE(manager[1]->track_buffer->peek(-1)->pts_us == 100);
+    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 200);
+
+    PresentDecision last_decision = decision;
+    set_present_decision_track_identity(last_decision, 0, *manager[0]);
+    set_present_decision_track_identity(last_decision, 1, *manager[1]);
+    PresentDecision backward;
+    REQUIRE(build_step_backward_decision(
+        manager, application.clock_target_us, last_decision, backward));
+    const auto backward_application =
+        apply_step_backward_decision(manager, backward);
+    REQUIRE(backward_application.has_clock_target);
+    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 100);
+    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 100);
 }
 
 TEST_CASE("TrackStepPolicy chooses fair multi-track step-forward target",
@@ -1901,8 +1915,8 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     REQUIRE(empty_target.base_pts_us == 10000);
     REQUIRE(empty_target.clock_pts_us == 10000);
     REQUIRE(empty_target.frame_duration_us == 33333);
-    REQUIRE(empty_target.target_pts_us == 0);
-    REQUIRE(empty_target.clamped_to_zero);
+    REQUIRE(empty_target.target_pts_us == 9999);
+    REQUIRE_FALSE(empty_target.clamped_to_zero);
 
     auto track = std::make_unique<TrackPipeline>();
     track->track_buffer = std::make_shared<TrackBuffer>();
@@ -1919,13 +1933,14 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     REQUIRE(target.base_pts_us == 90000);
     REQUIRE(target.clock_pts_us == 90000);
     REQUIRE(target.frame_duration_us == 40000);
-    REQUIRE(target.target_pts_us == 49000);
+    REQUIRE(target.target_pts_us == 89999);
     REQUIRE_FALSE(target.clamped_to_zero);
 
     const auto clamped_target = choose_step_backward_exact_seek_target(
         manager, 40500, PresentDecision{});
-    REQUIRE(clamped_target.target_pts_us == 0);
-    REQUIRE(clamped_target.clamped_to_zero);
+    REQUIRE(clamped_target.base_pts_us == 1000);
+    REQUIRE(clamped_target.target_pts_us == 999);
+    REQUIRE_FALSE(clamped_target.clamped_to_zero);
 
     TextureFrame visible_frame;
     visible_frame.pts_us = 60000;
@@ -1935,7 +1950,19 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     const auto visible_target = choose_step_backward_exact_seek_target(
         manager, 90000, last_decision);
     REQUIRE(visible_target.base_pts_us == 60000);
-    REQUIRE(visible_target.target_pts_us == 19000);
+    REQUIRE(visible_target.target_pts_us == 59999);
+
+    TextureFrame far_behind_visible_frame;
+    far_behind_visible_frame.pts_us = 2066578;
+    PresentDecision far_behind_last_decision;
+    far_behind_last_decision.frames[0] = far_behind_visible_frame;
+    set_present_decision_track_identity(
+        far_behind_last_decision, 0, *manager[0]);
+    const auto far_behind_visible_target =
+        choose_step_backward_exact_seek_target(
+            manager, 3060000, far_behind_last_decision);
+    REQUIRE(far_behind_visible_target.base_pts_us == 2066578);
+    REQUIRE(far_behind_visible_target.target_pts_us == 2066577);
 
     TextureFrame future_visible_frame;
     future_visible_frame.pts_us = 130000;
@@ -1946,7 +1973,7 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
     const auto future_visible_target = choose_step_backward_exact_seek_target(
         manager, 90000, future_last_decision);
     REQUIRE(future_visible_target.base_pts_us == 130000);
-    REQUIRE(future_visible_target.target_pts_us == 89000);
+    REQUIRE(future_visible_target.target_pts_us == 129999);
 
     PresentDecision stale_future_last_decision;
     stale_future_last_decision.frames[0] = future_visible_frame;
@@ -1955,7 +1982,33 @@ TEST_CASE("TrackStepPolicy chooses step-backward exact-seek fallback targets",
         choose_step_backward_exact_seek_target(
             manager, 90000, stale_future_last_decision);
     REQUIRE(stale_future_visible_target.base_pts_us == 90000);
-    REQUIRE(stale_future_visible_target.target_pts_us == 49000);
+    REQUIRE(stale_future_visible_target.target_pts_us == 89999);
+
+    auto second_track = std::make_unique<TrackPipeline>();
+    second_track->offset_us = 5000;
+    second_track->track_buffer = std::make_shared<TrackBuffer>();
+    TextureFrame second_current;
+    second_current.pts_us = 70000;
+    second_track->track_buffer->push_frame(second_current);
+    manager[1] = std::move(second_track);
+
+    PresentDecision multi_track_anchor;
+    TextureFrame first_anchor;
+    first_anchor.pts_us = 100000;
+    TextureFrame second_anchor;
+    second_anchor.pts_us = 80000;
+    multi_track_anchor.frames[0] = first_anchor;
+    multi_track_anchor.frames[1] = second_anchor;
+    set_present_decision_track_identity(
+        multi_track_anchor, 0, *manager[0]);
+    set_present_decision_track_identity(
+        multi_track_anchor, 1, *manager[1]);
+
+    const auto reconstruction_plan = build_step_backward_reconstruction_plan(
+        manager, 110000, multi_track_anchor);
+    REQUIRE(reconstruction_plan.reference.target_pts_us == 99999);
+    REQUIRE(reconstruction_plan.track_targets[0] == 99999);
+    REQUIRE(reconstruction_plan.track_targets[1] == 84999);
 }
 
 TEST_CASE("TrackStepPolicy discards consumed step-forward frames",
@@ -1995,9 +2048,12 @@ TEST_CASE("TrackStepPolicy discards consumed step-forward frames",
         decision,
         last_decision);
 
-    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 300);
-    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 300);
-    REQUIRE(manager[2]->track_buffer->peek(0)->pts_us == 300);
+    REQUIRE(manager[0]->track_buffer->peek(-1)->pts_us == 100);
+    REQUIRE(manager[0]->track_buffer->peek(0)->pts_us == 200);
+    REQUIRE(manager[1]->track_buffer->peek(-1)->pts_us == 100);
+    REQUIRE(manager[1]->track_buffer->peek(0)->pts_us == 200);
+    REQUIRE(manager[2]->track_buffer->peek(-1)->pts_us == 100);
+    REQUIRE(manager[2]->track_buffer->peek(0)->pts_us == 200);
 }
 
 TEST_CASE("TrackLifecycle prepares add-track seek to current clock",

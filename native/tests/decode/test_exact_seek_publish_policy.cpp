@@ -14,8 +14,10 @@ TEST_CASE("ExactSeekPublishPolicy: publish window is bounded by reorder count an
         4);
 
     REQUIRE(window.can_publish);
-    REQUIRE(window.end == 4);
-    REQUIRE(window.published == 3);
+    REQUIRE(window.start == 0);
+    REQUIRE(window.end == 3);
+    REQUIRE(window.history == 1);
+    REQUIRE(window.published == 2);
 
     window = choose_exact_seek_preview_publish_window(
         1,
@@ -25,8 +27,22 @@ TEST_CASE("ExactSeekPublishPolicy: publish window is bounded by reorder count an
         4);
 
     REQUIRE(window.can_publish);
+    REQUIRE(window.start == 0);
     REQUIRE(window.end == 3);
+    REQUIRE(window.history == 1);
     REQUIRE(window.published == 2);
+
+    window = choose_exact_seek_preview_publish_window(
+        1,
+        3,
+        0,
+        1,
+        4);
+    REQUIRE(window.can_publish);
+    REQUIRE(window.start == 1);
+    REQUIRE(window.end == 2);
+    REQUIRE(window.history == 0);
+    REQUIRE(window.published == 1);
 }
 
 TEST_CASE("ExactSeekPublishPolicy: publish window rejects invalid or full output",

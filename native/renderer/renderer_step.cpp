@@ -166,7 +166,12 @@ void Renderer::Impl::step_forward() {
 void Renderer::Impl::step_backward() {
     std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
     PresentDecision step_decision;
+    PresentDecision step_anchor;
     bool have_step_decision = false;
+    bool need_reconstruction = false;
+    int64_t reconstruction_target_us = 0;
+    StepBackwardTrackSeekTargets reconstruction_track_targets;
+    int64_t step_clock_anchor_us = 0;
     StepDecisionApplication step_application;
     {
         std::unique_lock<std::mutex> lock(state_mutex_);
@@ -181,9 +186,11 @@ void Renderer::Impl::step_backward() {
         }
         timeline_.set_playing(step_plan.playing);
 
+        step_anchor = present_history_.snapshot();
+        step_clock_anchor_us = timeline_.playback().clock().current_pts_us();
         if (track_controller_.build_step_backward_decision(
-                timeline_.playback().clock().current_pts_us(),
-                present_history_.snapshot(),
+                step_clock_anchor_us,
+                step_anchor,
                 step_decision)) {
             step_application = track_controller_.apply_step_backward_decision(
                 step_decision);
@@ -192,26 +199,68 @@ void Renderer::Impl::step_backward() {
             }
             have_step_decision = true;
         } else {
-            // Cache miss: exact seek to (current_pts - frame_duration - margin)
-            // Add 1ms margin: frame duration is integer-truncated (e.g. 1/60s → 16666us)
-            // but actual PTS spacing is 16667us, so (pts - dur) overshoots the
-            // previous frame by 1us and exact seek's "< target" check discards it.
-            const auto fallback_seek =
-                track_controller_.choose_step_backward_exact_seek_target(
+            const auto reconstruction =
+                track_controller_.build_step_backward_reconstruction_plan(
                     timeline_.playback().clock().current_pts_us(),
-                    present_history_.snapshot());
-            const int64_t target = fallback_seek.target_pts_us;
-            spdlog::info("[Renderer] step_backward exact_seek: visible_pts={:.3f}s, clock_pts={:.3f}s, duration={:.3f}ms, target={:.3f}s",
-                         fallback_seek.base_pts_us / 1e6,
-                         fallback_seek.clock_pts_us / 1e6,
-                         fallback_seek.frame_duration_us / 1e3,
-                         target / 1e6);
+                    step_anchor);
+            reconstruction_target_us = reconstruction.reference.target_pts_us;
+            reconstruction_track_targets = reconstruction.track_targets;
+            spdlog::info(
+                "[Renderer] step_backward reconstruct: anchor_pts={:.3f}s, "
+                "clock_pts={:.3f}s, target={:.3f}s",
+                reconstruction.reference.base_pts_us / 1e6,
+                reconstruction.reference.clock_pts_us / 1e6,
+                reconstruction_target_us / 1e6);
             SeekCommandProcessor::seek(
-                *this, lock, target, SeekType::Exact);
-            spdlog::info("[Renderer] step_backward exact_seek done: clock_pts={:.3f}s",
-                         timeline_.playback().clock().current_pts_us() / 1e6);
-            // Don't draw stale frame; seek_internal requested a preview redraw,
-            // render loop will draw the new frame when decode completes.
+                *this,
+                lock,
+                reconstruction_target_us,
+                SeekType::Exact,
+                false,
+                false,
+                &reconstruction_track_targets);
+            need_reconstruction = true;
+        }
+    }
+
+    if (need_reconstruction) {
+        const auto deadline = std::chrono::steady_clock::now() +
+            kStepBackwardReconstructionWait;
+        while (std::chrono::steady_clock::now() < deadline) {
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                if (!initialized_) return;
+                if (!track_controller_.has_buffering_track() &&
+                    track_controller_.build_step_backward_decision(
+                        reconstruction_target_us,
+                        step_anchor,
+                        step_decision)) {
+                    step_application =
+                        track_controller_.apply_step_backward_decision(
+                            step_decision);
+                    if (step_application.has_clock_target) {
+                        timeline_.playback().clock().seek(
+                            step_application.clock_target_us);
+                    }
+                    have_step_decision = true;
+                    break;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        if (!have_step_decision) {
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                if (initialized_) {
+                    timeline_.playback().clock().seek(step_clock_anchor_us);
+                    present_history_.set(step_anchor);
+                }
+            }
+            spdlog::warn(
+                "[Renderer] step_backward reconstruction did not resolve "
+                "a fair predecessor within {}ms; keeping anchor frame",
+                static_cast<long long>(
+                    kStepBackwardReconstructionWait.count()));
             return;
         }
     }

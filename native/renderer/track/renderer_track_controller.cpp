@@ -217,6 +217,14 @@ RendererTrackController::choose_step_backward_exact_seek_target(
         clock_pts_us, last_decision);
 }
 
+StepBackwardReconstructionPlan
+RendererTrackController::build_step_backward_reconstruction_plan(
+    int64_t clock_pts_us,
+    const PresentDecision& last_decision) const {
+    return presentation_model_->build_step_backward_reconstruction_plan(
+        clock_pts_us, last_decision);
+}
+
 void RendererTrackController::apply_carry_forward(
     const PresentDecision& last_decision,
     PresentDecision& decision) const {
@@ -368,9 +376,11 @@ RendererTrackController::apply_seek_to_all(
     SeekType type,
     bool playing,
     bool force_recreate_paused_hevc,
-    const RendererTrackSeekHooks& hooks) {
+    const RendererTrackSeekHooks& hooks,
+    const StepBackwardTrackSeekTargets* target_overrides) {
     return mutation_->apply_seek_to_all(
-        target_pts_us, type, playing, force_recreate_paused_hevc, hooks);
+        target_pts_us, type, playing, force_recreate_paused_hevc,
+        hooks, target_overrides);
 }
 
 bool RendererTrackController::apply_seek_to_all_and_log(
@@ -378,9 +388,11 @@ bool RendererTrackController::apply_seek_to_all_and_log(
     SeekType type,
     bool playing,
     bool force_recreate_paused_hevc,
-    const RendererTrackSeekHooks& hooks) {
+    const RendererTrackSeekHooks& hooks,
+    const StepBackwardTrackSeekTargets* target_overrides) {
     return mutation_->apply_seek_to_all_and_log(
-        target_pts_us, type, playing, force_recreate_paused_hevc, hooks);
+        target_pts_us, type, playing, force_recreate_paused_hevc,
+        hooks, target_overrides);
 }
 
 int64_t RendererTrackController::cached_duration_us() const {

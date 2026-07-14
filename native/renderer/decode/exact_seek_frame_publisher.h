@@ -17,6 +17,7 @@ struct ExactSeekPreviewFramePublishResult {
     bool conversion_failed = false;
     int64_t selected_pts_us = 0;
     size_t published_count = 0;
+    size_t history_count = 0;
     size_t pending_count = 0;
 };
 

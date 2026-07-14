@@ -573,11 +573,11 @@ StepBackwardExactSeekTarget choose_step_backward_exact_seek_target(
     result.frame_duration_us = compute_min_current_frame_duration_us(tracks);
     const int64_t visible_slop_us =
         std::max<int64_t>(2000, result.frame_duration_us + 2000);
-    constexpr int64_t kTrustedVisibleLookbehindUs = 500000;
     const auto apply_candidate_base = [&](int64_t candidate_us, bool trusted_visible) {
-        if ((trusted_visible &&
-             candidate_us <= clock_pts_us &&
-             candidate_us >= std::max<int64_t>(0, clock_pts_us - kTrustedVisibleLookbehindUs)) ||
+        // A track-identity-matched PresentDecision is the actual composited
+        // frame. It remains authoritative even when a keyframe seek preview
+        // lands far behind the requested timeline clock.
+        if (trusted_visible ||
             (candidate_us >= std::max<int64_t>(0, clock_pts_us - visible_slop_us) &&
              candidate_us <= clock_pts_us + visible_slop_us)) {
             result.base_pts_us = candidate_us;
@@ -602,11 +602,54 @@ StepBackwardExactSeekTarget choose_step_backward_exact_seek_target(
         }
     }
 
-    const int64_t target =
-        result.base_pts_us - result.frame_duration_us - 1000;
-    result.target_pts_us = std::max(int64_t(0), target);
-    result.clamped_to_zero = result.target_pts_us != target;
+    // A backward cache miss is a strict predecessor query, not a duration-
+    // based approximation of Fn-1. One microsecond only makes the boundary
+    // exclusive; exact-seek candidate selection still chooses the greatest
+    // decoded PTS below the actually presented anchor. The shared fair
+    // multi-track planner then validates and applies that real predecessor.
+    result.clamped_to_zero = result.base_pts_us <= 0;
+    result.target_pts_us = result.clamped_to_zero
+        ? 0
+        : result.base_pts_us - 1;
     return result;
+}
+
+StepBackwardReconstructionPlan build_step_backward_reconstruction_plan(
+    const TrackPipelineManager& tracks,
+    int64_t clock_pts_us,
+    const PresentDecision& last_decision) {
+    StepBackwardReconstructionPlan plan;
+    plan.reference = choose_step_backward_exact_seek_target(
+        tracks, clock_pts_us, last_decision);
+
+    for (size_t i = 0; i < kMaxTracks; ++i) {
+        const auto& track = tracks[i];
+        if (!track) {
+            continue;
+        }
+
+        std::optional<int64_t> visible_global_pts_us;
+        if (present_decision_slot_matches_track(last_decision, tracks, i)) {
+            visible_global_pts_us =
+                last_decision.frames[i]->pts_us + track->offset_us;
+        } else if (track->track_buffer) {
+            const auto current = track->track_buffer->peek(0);
+            if (current.has_value()) {
+                visible_global_pts_us = current->pts_us + track->offset_us;
+            }
+        }
+        if (!visible_global_pts_us.has_value()) {
+            continue;
+        }
+
+        // Each track reconstructs its own immediate predecessor. Reusing the
+        // reference track's boundary could skip frames on a higher-rate or
+        // offset track before the shared greedy planner gets to inspect it.
+        plan.track_targets[i] = *visible_global_pts_us <= 0
+            ? 0
+            : *visible_global_pts_us - 1;
+    }
+    return plan;
 }
 
 void discard_step_forward_consumed_frames(
@@ -629,7 +672,7 @@ void discard_step_forward_consumed_frames(
         auto& buffer = tracks[i]->track_buffer;
         while (true) {
             auto frame = buffer->peek(0);
-            if (!frame.has_value() || frame->pts_us > keep_after_pts) {
+            if (!frame.has_value() || frame->pts_us >= keep_after_pts) {
                 break;
             }
             if (!buffer->advance()) {

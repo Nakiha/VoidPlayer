@@ -114,6 +114,9 @@ public:
     StepBackwardExactSeekTarget choose_step_backward_exact_seek_target(
         int64_t clock_pts_us,
         const PresentDecision& last_decision) const;
+    StepBackwardReconstructionPlan build_step_backward_reconstruction_plan(
+        int64_t clock_pts_us,
+        const PresentDecision& last_decision) const;
     void apply_carry_forward(const PresentDecision& last_decision,
                              PresentDecision& decision) const;
     void filter_present_decision(PresentDecision& decision) const;
@@ -172,12 +175,15 @@ public:
         SeekType type,
         bool playing,
         bool force_recreate_paused_hevc,
-        const RendererTrackSeekHooks& hooks);
+        const RendererTrackSeekHooks& hooks,
+        const StepBackwardTrackSeekTargets* target_overrides = nullptr);
     bool apply_seek_to_all_and_log(int64_t target_pts_us,
                                    SeekType type,
                                    bool playing,
                                    bool force_recreate_paused_hevc,
-                                   const RendererTrackSeekHooks& hooks);
+                                   const RendererTrackSeekHooks& hooks,
+                                   const StepBackwardTrackSeekTargets*
+                                       target_overrides = nullptr);
 
     int64_t cached_duration_us() const;
     void set_cached_duration_us(int64_t duration_us);

@@ -10,10 +10,10 @@ bool should_collect_exact_seek_candidate(int64_t pts_us, int64_t target_pts_us) 
     if (target_pts_us < 0) {
         return false;
     }
-    // Keep every pre-target frame as a possible held-frame candidate. The
-    // candidate store collapses these to the latest pre-target frame, so sparse
-    // visual streams (still images, low-fps clips, and video tail seeks) can
-    // still publish a valid frame when EOF proves no post-target frame exists.
+    // Keep every pre-target frame eligible as a held-frame candidate. The
+    // candidate store preserves a bounded decoder-ordered predecessor history,
+    // so sparse visual streams (still images, low-fps clips, and tail seeks)
+    // can still publish a valid frame when EOF proves no post-target frame exists.
     if (pts_us < target_pts_us) {
         return true;
     }

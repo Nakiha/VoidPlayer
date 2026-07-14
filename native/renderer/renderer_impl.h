@@ -207,7 +207,9 @@ private:
                          int64_t target_pts_us,
                          SeekType type,
                          bool allow_deferred = true,
-                         bool force_recreate_paused_hevc = false);
+                         bool force_recreate_paused_hevc = false,
+                         const StepBackwardTrackSeekTargets*
+                             target_overrides = nullptr);
     };
 
     void render_loop() noexcept;

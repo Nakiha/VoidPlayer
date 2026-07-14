@@ -560,7 +560,8 @@ void DecodeThread::flush_reorder_buffer() {
     if (exact_seek_candidates_.reorder_empty()) {
         return;
     }
-    // Make the decode-device writes visible before exposing reordered frames
+    // Make the decode-device writes visible before exposing decoder-ordered
+    // candidate frames
     // to the render thread; otherwise the paused preview can sample a
     // partially-written first seek frame.
     auto publisher = make_frame_publisher();
@@ -575,7 +576,7 @@ void DecodeThread::flush_reorder_buffer() {
             break;
         }
     }
-    spdlog::info("[DecodeThread] Exact seek reorder: {} frames pushed",
+    spdlog::info("[DecodeThread] Exact seek candidate window: {} frames pushed",
                  pushed_count);
     exact_seek_candidates_.clear_reorder();
     exact_seek_target_us_ = -1;
@@ -678,7 +679,7 @@ bool DecodeThread::publish_best_exact_seek_frame() {
 
     const int64_t selected_pts = exact_seek_candidates_.reorder_at(*selected).pts_us;
     const size_t collected = exact_seek_candidates_.reorder_count();
-    spdlog::info("[DecodeThread] Exact seek reorder: selected pts={:.3f}s from {} frames (target={:.3f}s)",
+    spdlog::info("[DecodeThread] Exact seek candidate window: selected pts={:.3f}s from {} decoder-ordered frames (target={:.3f}s)",
                  selected_pts / 1e6, collected, exact_seek_target_us_ / 1e6);
     publish_exact_seek_window(*selected);
     return true;

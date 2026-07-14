@@ -9,7 +9,9 @@ namespace vr {
 
 struct ExactSeekPreviewPublishWindow {
     bool can_publish = false;
+    size_t start = 0;
     size_t end = 0;
+    size_t history = 0;
     size_t published = 0;
 };
 

@@ -41,7 +41,7 @@ ExactSeekPreviewFramePublishResult publish_exact_seek_preview_frames(
     }
 
     result.can_publish = true;
-    for (size_t i = selected; i < window.end; ++i) {
+    for (size_t i = window.start; i < window.end; ++i) {
         auto& candidate = candidates.reorder_at(i);
         if (!candidate.frame) {
             continue;
@@ -66,7 +66,27 @@ ExactSeekPreviewFramePublishResult publish_exact_seek_preview_frames(
             result.conversion_failed = true;
             return result;
         }
+        if (i < selected) {
+            ++result.history_count;
+        }
     }
+    for (size_t i = 0; i < result.history_count; ++i) {
+        if (!output_buffer.advance_history_cursor()) {
+            spdlog::error(
+                "[DecodeThread] Failed to position exact-seek predecessor history");
+            candidates.clear();
+            result.conversion_failed = true;
+            return result;
+        }
+    }
+
+    const auto predecessor = output_buffer.peek(-1);
+    const auto current = output_buffer.peek(0);
+    spdlog::info(
+        "[DecodeThread] Exact seek publish cursor: history={} predecessor_pts={:.6f}s current_pts={:.6f}s",
+        result.history_count,
+        predecessor.has_value() ? predecessor->pts_us / 1e6 : -1.0,
+        current.has_value() ? current->pts_us / 1e6 : -1.0);
 
     candidates.move_reorder_tail_to_pending(window.end);
     result.published_count = window.published;

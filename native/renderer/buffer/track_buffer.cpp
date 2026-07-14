@@ -104,6 +104,15 @@ bool TrackBuffer::advance() {
     return true;
 }
 
+bool TrackBuffer::advance_history_cursor() {
+    if (!ring_.advance()) return false;
+
+    // The predecessor exists solely to seed bidirectional stepping. Keep
+    // last_presented_pts_us_ tied to an actual presentation decision.
+    push_cv_.notify_one();
+    return true;
+}
+
 bool TrackBuffer::retreat() {
     return ring_.retreat();
 }

@@ -47,7 +47,7 @@ bool DecodeThread::handle_buffering_eof(
     const std::function<void(AVFrame*)>& rescale_ts) {
     if (eof_action == EofDrainAction::BufferingExactSeekDrain) {
         drain_codec(frame, rescale_ts, exact_seek_target_us_);
-        spdlog::info("[DecodeThread] Exact seek EOF drain: reorder buffer has {} frames",
+        spdlog::info("[DecodeThread] Exact seek EOF drain: candidate window has {} frames",
                      exact_seek_candidates_.reorder_count());
         publish_best_exact_seek_frame();
     } else {
@@ -430,7 +430,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                 },
                 [](size_t reorder_count) {
                     spdlog::info("[DecodeThread] Exact seek EOF: codec drain, "
-                                 "reorder buffer now has {} frames",
+                                 "candidate window now has {} frames",
                                  reorder_count);
                 },
                 [this]() {
@@ -444,7 +444,7 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
                     return first->pts_us;
                 },
                 [](std::optional<int64_t> first_pts_us) {
-                    spdlog::info("[DecodeThread] Exact seek reorder: frames pushed, "
+                    spdlog::info("[DecodeThread] Exact seek candidate window: frames pushed, "
                                  "first_pts={:.3f}s",
                                  first_pts_us.has_value()
                                      ? static_cast<double>(*first_pts_us) / 1e6

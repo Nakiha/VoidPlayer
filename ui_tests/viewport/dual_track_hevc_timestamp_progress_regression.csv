@@ -1,0 +1,22 @@
+# Regression: decoder output order is preserved without dropping frames while
+# non-monotonic HEVC timestamps are normalized before entering TrackBuffer.
+# The ROI is entirely inside the right-hand HEVC track, so left-track playback
+# cannot make ASSERT_CAPTURE_CHANGED pass accidentally.
+@WINDOW,1600,900
+
+0.0,SET_DECODE_MODE,preferHardware
+0.1,ADD_MEDIA,resources/video/av1_10s_1920x1080.webm
+1.8,ASSERT_TRACK_COUNT,1
+1.9,ADD_MEDIA,resources/video/h265_10s_1920x1080.mp4
+4.0,ASSERT_TRACK_COUNT,2
+4.1,SET_LAYOUT_MODE,0
+4.3,PLAY
+4.6,ASSERT_PLAYING
+5.2,CAPTURE_VIEWPORT_REGION,hevc_playing_a,900,120,420,420,256
+5.3,ASSERT_CAPTURE_NOT_BLACK,hevc_playing_a,0.01,4.0
+6.2,CAPTURE_VIEWPORT_REGION,hevc_playing_b,900,120,420,420,256
+6.3,ASSERT_CAPTURE_NOT_BLACK,hevc_playing_b,0.01,4.0
+6.4,ASSERT_CAPTURE_CHANGED,hevc_playing_a,hevc_playing_b
+6.5,ASSERT_POSITION_RANGE,1500000,3500000
+6.7,PAUSE
+7.0,QUIT,0

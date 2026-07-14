@@ -96,6 +96,7 @@ DecodeThread::DecodeThread(PacketQueue& input_queue, TrackBuffer& output_buffer,
     , output_buffer_(output_buffer)
     , codec_params_(codec_params)
     , time_base_(time_base)
+    , timestamp_normalizer_(time_base)
 {
     codec_ = nullptr;
     if (!codec_params) {
@@ -364,6 +365,7 @@ bool DecodeThread::start() {
     }
 
     output_buffer_.set_state(TrackState::Buffering);
+    timestamp_normalizer_.reset();
     hw_visibility_flush_pending_ = hw_enabled_;
     running_.store(true);
     thread_ = std::thread(&DecodeThread::run, this);
@@ -473,6 +475,7 @@ bool DecodeThread::has_pending_seek_notification() {
 
 void DecodeThread::begin_seek_epoch(AVFrame* frame, const DecodeSeekNotification& notification) {
     cancelled_.store(false, std::memory_order_release);
+    timestamp_normalizer_.reset();
 
     spdlog::info("[DecodeThread] === SEEK START: target={:.3f}s, type={}, "
                  "input_pq={}, output_buf={}, buf_state={}",

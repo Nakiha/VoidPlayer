@@ -8,6 +8,7 @@
 #include "renderer/decode/decode_seek_epoch.h"
 #include "renderer/decode/exact_seek_candidate_store.h"
 #include "renderer/decode/frame_converter.h"
+#include "renderer/decode/frame_timestamp_rescaler.h"
 #include "renderer/decode/hw/hw_decode_provider.h"
 #include "media/seek_controller.h"
 #include <thread>
@@ -211,6 +212,7 @@ private:
     const AVCodec* codec_ = nullptr;
     const AVCodecParameters* codec_params_;
     AVRational time_base_;
+    FrameTimestampNormalizer timestamp_normalizer_;
     CodecOpenFunction codec_open_for_test_ = nullptr;
 
     // Hardware decode state

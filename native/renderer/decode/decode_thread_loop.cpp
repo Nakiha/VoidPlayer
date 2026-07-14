@@ -146,7 +146,22 @@ void DecodeThread::run() {
     }
     AVFrame* frame = frame_owner.get();
     auto rescale_ts = [&](AVFrame* frame_to_rescale) {
-        rescale_frame_timestamps_to_us(frame_to_rescale, time_base_);
+        const auto result = timestamp_normalizer_.normalize(frame_to_rescale);
+        if (result.adjusted_for_monotonicity &&
+            (result.adjustment_count <= 8 ||
+             result.adjustment_count % 120 == 0)) {
+            spdlog::warn(
+                "[DecodeTimestamp] normalized non-monotonic timestamp "
+                "raw_pts_us={} best_effort_pts_us={} output_pts_us={} "
+                "used_best_effort={} correction={} order_preserved=true dropped=0",
+                result.raw_pts_available ? result.raw_pts_us : AV_NOPTS_VALUE,
+                result.best_effort_available
+                    ? result.best_effort_pts_us
+                    : AV_NOPTS_VALUE,
+                result.output_pts_us,
+                result.used_best_effort,
+                result.adjustment_count);
+        }
     };
     auto publisher = make_frame_publisher();
     DecodeLoopScratch scratch{

@@ -208,7 +208,8 @@ TEST_CASE("DecodeThread: software decode follows generated H264 resolution chang
     REQUIRE(saw_second_size);
 }
 
-TEST_CASE("DecodeThread: software decode HEVC produces frames", "[decode_thread]") {
+TEST_CASE("DecodeThread: software decode HEVC preserves decoder order with monotonic PTS",
+          "[decode_thread][hevc_timestamp]") {
     std::string path = vr::test::video_test_dir() + "/h265_10s_1920x1080.mp4";
 
     PacketQueue pkt_queue(100);
@@ -233,7 +234,17 @@ TEST_CASE("DecodeThread: software decode HEVC produces frames", "[decode_thread]
         frame_count = track_buffer.total_count();
     }
 
-    REQUIRE(frame_count >= 2);
+    REQUIRE(frame_count >= 5);
+
+    int64_t previous_pts_us = INT64_MIN;
+    for (size_t i = 0; i < frame_count; ++i) {
+        const auto frame = track_buffer.peek(static_cast<int>(i));
+        REQUIRE(frame.has_value());
+        INFO("frame=" << i << " pts_us=" << frame->pts_us
+                       << " previous_pts_us=" << previous_pts_us);
+        REQUIRE(frame->pts_us > previous_pts_us);
+        previous_pts_us = frame->pts_us;
+    }
 
     decoder.stop();
     demux.stop();

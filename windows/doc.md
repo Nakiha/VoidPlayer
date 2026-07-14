@@ -38,6 +38,34 @@ video target + Flutter UI surface
   -> HWND
 ```
 
+### 播放帧与交互帧
+
+Windows 与 macOS 一样把两种 cadence 分开：
+
+```text
+video clock / decoded PTS
+  -> shared Renderer playback lane
+  -> 新 source frame
+
+pointer / wheel / layout intent
+  -> WindowsViewportPresentationController (latest-only, max 2 in flight)
+  -> 对 cached source frame 重新做 viewport projection
+
+两条 lane -> runner-owned video target ring
+          -> WindowsNativeCompositor
+          -> DXGI Present(1) / display cadence
+```
+
+因此 24/30/60fps 视频不会限制 zoom、pan、split 等交互的上屏频率。runner 从当前
+monitor mode 读取 nominal refresh 仅用于 diagnostics；真正的节拍由 compositor 的
+DXGI `Present(1)` 提供。在 120Hz 显示器上，连续交互可约每 8.3ms 提交一次。D3D11
+viewport backend 为每个 track 保留 presentation-device source cache：同一视频帧的
+交互重投影不重复跨 D3D11VA device 复制，只更新 layout shader constants 并绘制新
+target。Windows 与 macOS 都使用 6 个 native presentation targets；短暂 ring
+backpressure 会按 latest layout intent 合并并重试，不计作交互失败。compositor 完成
+GPU 消费后的 target 由 interaction callback 的安全直返路径或独立 native release
+queue 回收，不能依赖正在处理 pointer/MethodChannel 的 Win32 UI 消息泵。
+
 1. Windows presentation 策略只通过 `windows_presentation_backend.*` 的 D3D11 backend 边界进入。
 2. runner 负责窗口、target ring、surface lease 和最终合成，不接管 Flutter frame 调度。
    与 macOS `MacOSNativeCompositorView` 同构：最终 compositor 不参与 hit-test，

@@ -275,8 +275,9 @@ TEST_CASE("Windows D3D11 viewport samples the selected D3D11VA array slice",
                  VIDEO_COLOR_MATRIX_BT709,
                  VIDEO_COLOR_TRANSFER_SDR,
                  VIDEO_COLOR_PRIMARIES_BT709};
+  auto frame_ref = std::make_shared<int>(1);
   frame.storage = WindowsD3D11FrameStorage{
-      source.Get(), 1, false, 4, 4, {}};
+      source.Get(), 1, false, 4, 4, frame_ref};
   auto draw = make_single_track_snapshot(std::move(frame));
   const auto presentation = build_snapshot(draw);
   REQUIRE(renderer.draw(draw,
@@ -301,6 +302,21 @@ TEST_CASE("Windows D3D11 viewport samples the selected D3D11VA array slice",
   REQUIRE(static_cast<int>(readback[offset + 0]) ==
           Catch::Approx(expected.b * 255.0).margin(2.0));
   REQUIRE(renderer.stats().hardware_frame_count == 1);
+  REQUIRE(renderer.stats().video_source_update_count == 1);
+  REQUIRE(renderer.stats().source_frame_cache_miss_count == 1);
+  REQUIRE(renderer.stats().source_frame_cache_hit_count == 0);
+
+  ++draw.layout_revision;
+  const auto projected_presentation = build_snapshot(draw);
+  REQUIRE(renderer.draw(draw,
+                        projected_presentation,
+                        rtv.Get(),
+                        ColorOutputTarget::kSDRToneMappedBT709,
+                        80.0));
+  REQUIRE(renderer.stats().hardware_frame_count == 2);
+  REQUIRE(renderer.stats().video_source_update_count == 1);
+  REQUIRE(renderer.stats().source_frame_cache_miss_count == 1);
+  REQUIRE(renderer.stats().source_frame_cache_hit_count == 1);
 }
 
 TEST_CASE("Windows D3D11 viewport applies shared split layout and track order",

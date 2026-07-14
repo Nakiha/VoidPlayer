@@ -132,6 +132,7 @@ public:
 
     /// Atomically apply layout state and trigger redraw if paused.
     void apply_layout(const LayoutState& state);
+    void apply_interaction_layout(const LayoutState& state);
 
     /// Set the viewport fill color used outside video bounds.
     void set_background_color(float r, float g, float b, float a);
@@ -225,7 +226,12 @@ private:
     void emit_playback_clock_event(bool force);
     void emit_playback_frame_ready_event();
     void clear_event_callback();
-    void apply_layout_locked(const LayoutState& state, uint64_t revision);
+    void apply_layout_locked(const LayoutState& state,
+                             uint64_t revision,
+                             bool schedule_preview = true);
+    void apply_layout_impl(const LayoutState& state,
+                           bool schedule_preview,
+                           const char* trace_source);
     bool consume_pending_layout_locked();
     void clear_pending_layout_intent();
     RendererPresentCommandContext present_command_context();

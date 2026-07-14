@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 namespace vr {
@@ -18,6 +19,9 @@ struct WindowsD3D11ViewportRendererStats {
   uint64_t hardware_frame_count = 0;
   uint64_t software_frame_count = 0;
   uint64_t resource_rebuild_count = 0;
+  uint64_t video_source_update_count = 0;
+  uint64_t source_frame_cache_hit_count = 0;
+  uint64_t source_frame_cache_miss_count = 0;
 };
 
 // Consumes the platform-neutral presentation snapshot and writes one complete,
@@ -66,6 +70,11 @@ class WindowsD3D11ViewportRenderer final {
     int hardware_width = 0;
     int hardware_height = 0;
     DXGI_FORMAT hardware_format = DXGI_FORMAT_UNKNOWN;
+    std::shared_ptr<void> cached_hardware_frame_ref;
+    ID3D11Texture2D* cached_hardware_source = nullptr;
+    int cached_hardware_array_index = -1;
+    int64_t cached_hardware_pts_us = 0;
+    int64_t cached_hardware_dts_us = 0;
   };
 
   bool create_pipeline();
@@ -73,6 +82,7 @@ class WindowsD3D11ViewportRenderer final {
                      const TextureFrame& frame,
                      ShaderConstants& constants);
   bool prepare_hardware_track(size_t slot,
+                              const TextureFrame& frame,
                               const WindowsD3D11FrameStorage& storage,
                               ShaderConstants& constants);
   bool prepare_cpu_rgba_track(size_t slot,

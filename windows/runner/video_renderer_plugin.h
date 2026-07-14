@@ -8,6 +8,8 @@
 #include "renderer_event_bridge.h"
 #include "windows/player/native_player.h"
 #include "windows_native_compositor.h"
+#include "windows_target_release_queue.h"
+#include "windows_viewport_presentation_controller.h"
 
 #include <atomic>
 #include <memory>
@@ -41,8 +43,11 @@ class VideoRendererPlugin final : public flutter::Plugin {
 
   FilePickerService file_picker_;
   RendererEventBridge event_bridge_;
+  WindowsTargetReleaseQueue target_release_queue_;
   HWND window_handle_ = nullptr;
   std::unique_ptr<WindowsNativeCompositor> compositor_;
+  std::unique_ptr<WindowsViewportPresentationController>
+      viewport_presentation_controller_;
   bool compositor_started_ = false;
   std::shared_ptr<vr::WindowsNativePlayer> player_;
   int video_target_width_ = 0;

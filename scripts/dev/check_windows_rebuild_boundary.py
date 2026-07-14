@@ -32,8 +32,12 @@ REQUIRED_TOKENS = {
     "windows/runner/video_renderer_plugin.cpp": [
         "WindowsNativePlayer",
         "install_target_ring",
-        "event_bridge_.PostTask",
+        "target_release_queue_.Enqueue",
         "windows-native-d3d11",
+    ],
+    "windows/runner/windows_target_release_queue.h": [
+        "WindowsTargetReleaseQueue",
+        "Drain",
     ],
     "windows/runner/renderer_event_bridge.h": [
         "RendererEventBridge",

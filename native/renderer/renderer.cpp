@@ -184,6 +184,10 @@ void Renderer::apply_layout(const LayoutState& state) {
     impl_->apply_layout(state);
 }
 
+void Renderer::apply_interaction_layout(const LayoutState& state) {
+    impl_->apply_interaction_layout(state);
+}
+
 void Renderer::set_background_color(float r, float g, float b, float a) {
     impl_->set_background_color(r, g, b, a);
 }

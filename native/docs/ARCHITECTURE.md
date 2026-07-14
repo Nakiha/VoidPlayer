@@ -94,6 +94,16 @@ hardware decode provider 和 presentation backend 开始：
 | Windows | D3D11VA；H.264/H.265 使用独立 decode device 与稳定 shared snapshot，AV1/VP9 可 hwdownload | `native-d3d11` 完整 viewport shader写入 runner-owned BGRA8 ring；DComp 合成 Flutter UI |
 | macOS | VideoToolbox CVPixelBuffer or explicit fallback package | native Metal target backed by CVPixelBuffer / IOSurface |
 
+### 交互 presentation cadence
+
+视频 source cadence 继续由 shared playback clock、PTS selection 与 render scheduler
+决定；viewport interaction cadence 则由平台 runner 拥有。runner 把最新 layout
+intent 应用到 shared `LayoutState`，并请求 backend 用最近的 source frame 重画，而不
+等待下一张解码帧。macOS 由 display link 驱动，Windows 由 runner interaction
+controller 提交并在 DXGI `Present(1)` 上按显示器节拍完成；两端最多允许两个交互帧
+in flight。这样 shared 层仍只拥有 frame selection/layout snapshot 语义，显示器时钟、
+GPU target ring 和最终 Flutter/native 合成都留在平台层。
+
 ## 当前播放路径状态
 
 - macOS native Metal presentation builds and passes native smoke.

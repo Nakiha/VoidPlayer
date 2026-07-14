@@ -493,7 +493,6 @@ bool WindowsNativeCompositor::CompositeLatest() {
   const auto fail_video = [this, &video_serial]() {
     CompleteVideoPresentation(video_serial, false);
   };
-  ScopedD3D11ContextLock context_lock(multithread_.Get());
   if (!has_flutter_cache ||
       latest_flutter_generation > cached_flutter_generation_) {
     FlutterDesktopWindowsSurface lease = {};
@@ -557,7 +556,10 @@ bool WindowsNativeCompositor::CompositeLatest() {
           }
         }
         if (cache_success) {
-          context_->CopyResource(flutter_cache_.Get(), flutter_texture.Get());
+          {
+            ScopedD3D11ContextLock context_lock(multithread_.Get());
+            context_->CopyResource(flutter_cache_.Get(), flutter_texture.Get());
+          }
           cache_success = WaitForGpu();
         }
       }
@@ -638,31 +640,34 @@ bool WindowsNativeCompositor::CompositeLatest() {
     }
   }
   if (success) {
-    ID3D11RenderTargetView* target_pointer = target.Get();
-    context_->OMSetRenderTargets(1, &target_pointer, nullptr);
-    D3D11_VIEWPORT viewport = {};
-    viewport.Width = static_cast<float>(width_);
-    viewport.Height = static_cast<float>(height_);
-    viewport.MinDepth = 0.0f;
-    viewport.MaxDepth = 1.0f;
-    context_->RSSetViewports(1, &viewport);
-    context_->IASetInputLayout(nullptr);
-    context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
-    context_->PSSetShader(pixel_shader_.Get(), nullptr, 0);
-    composite_constants.has_video = video_srv ? 1u : 0u;
-    context_->UpdateSubresource(
-        constants_.Get(), 0, nullptr, &composite_constants, 0, 0);
-    ID3D11Buffer* constant_pointer = constants_.Get();
-    context_->PSSetConstantBuffers(0, 1, &constant_pointer);
-    ID3D11SamplerState* sampler_pointer = sampler_.Get();
-    context_->PSSetSamplers(0, 1, &sampler_pointer);
-    ID3D11ShaderResourceView* resources[] = {
-        flutter_cache_srv_.Get(), video_srv.Get()};
-    context_->PSSetShaderResources(0, 2, resources);
-    context_->Draw(3, 0);
-    ID3D11ShaderResourceView* empty[] = {nullptr, nullptr};
-    context_->PSSetShaderResources(0, 2, empty);
+    {
+      ScopedD3D11ContextLock context_lock(multithread_.Get());
+      ID3D11RenderTargetView* target_pointer = target.Get();
+      context_->OMSetRenderTargets(1, &target_pointer, nullptr);
+      D3D11_VIEWPORT viewport = {};
+      viewport.Width = static_cast<float>(width_);
+      viewport.Height = static_cast<float>(height_);
+      viewport.MinDepth = 0.0f;
+      viewport.MaxDepth = 1.0f;
+      context_->RSSetViewports(1, &viewport);
+      context_->IASetInputLayout(nullptr);
+      context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+      context_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
+      context_->PSSetShader(pixel_shader_.Get(), nullptr, 0);
+      composite_constants.has_video = video_srv ? 1u : 0u;
+      context_->UpdateSubresource(
+          constants_.Get(), 0, nullptr, &composite_constants, 0, 0);
+      ID3D11Buffer* constant_pointer = constants_.Get();
+      context_->PSSetConstantBuffers(0, 1, &constant_pointer);
+      ID3D11SamplerState* sampler_pointer = sampler_.Get();
+      context_->PSSetSamplers(0, 1, &sampler_pointer);
+      ID3D11ShaderResourceView* resources[] = {
+          flutter_cache_srv_.Get(), video_srv.Get()};
+      context_->PSSetShaderResources(0, 2, resources);
+      context_->Draw(3, 0);
+      ID3D11ShaderResourceView* empty[] = {nullptr, nullptr};
+      context_->PSSetShaderResources(0, 2, empty);
+    }
     success = WaitForGpu();
   }
   if (success) {

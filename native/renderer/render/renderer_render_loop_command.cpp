@@ -118,6 +118,14 @@ void RendererRenderLoopCommandProcessor::run_body(
                     std::min(backoff, std::chrono::microseconds(2000)));
                 continue;
             }
+            // A runner-owned display-linked interaction lane is already
+            // consuming the newest layout. Do not let the ordinary paused
+            // preview loop race it after a stale completion, otherwise both
+            // lanes acquire offscreen targets for the same interaction tick.
+            if (context.hooks.interaction_presentation_active()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
             // While paused/prerolling, draw current frame if not yet drawn.
             bool should_draw_preview = false;
             {

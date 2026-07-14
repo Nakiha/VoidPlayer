@@ -4,6 +4,7 @@
 #include "renderer/renderer_api_types.h"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -219,6 +220,7 @@ public:
 private:
     std::unique_ptr<PresentationBackend> backend_;
     mutable std::recursive_mutex device_mutex_;
+    std::atomic<uint32_t> pending_offscreen_target_releases_{0};
     mutable std::mutex callback_mutex_;
     RendererFrameCallback frame_callback_;
     std::function<void(const char*)> frame_failure_callback_;

@@ -16,6 +16,8 @@ add_executable(${BINARY_NAME} WIN32
   "win32_window.cpp"
   "video_renderer_plugin.cpp"
   "windows_native_compositor.cpp"
+  "windows_target_release_queue.cpp"
+  "windows_viewport_presentation_controller.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"

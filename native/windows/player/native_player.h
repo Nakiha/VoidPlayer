@@ -33,6 +33,7 @@ class WindowsNativePlayer final {
   void set_track_offset(int file_id, int64_t offset_us);
   void set_background_color(float red, float green, float blue, float alpha);
   void apply_layout(const LayoutState& layout);
+  void apply_interaction_layout(const LayoutState& layout);
   void resize(int width, int height);
 
   int add_track(const std::string& path, bool use_hardware_decode);
@@ -54,6 +55,7 @@ class WindowsNativePlayer final {
   void mark_target_displayed(void* texture);
   void protect_target(void* texture);
   void release_target(void* texture);
+  bool release_target_if_interaction_callback(void* texture);
   bool install_target_ring(const void* const* textures,
                            size_t texture_count,
                            void* displayed_texture,
@@ -62,6 +64,7 @@ class WindowsNativePlayer final {
                            int height,
                            int max_track_slots);
   bool request_frame_refresh(const char* reason);
+  bool request_interaction_frame();
   bool capture_front_buffer(std::vector<uint8_t>& bgra,
                             int& width,
                             int& height);

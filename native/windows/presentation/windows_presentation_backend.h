@@ -70,6 +70,7 @@ class WindowsD3D11PresentationBackend final : public PresentationBackend {
   WindowsD3D11ViewportRenderer viewport_renderer_;
   Microsoft::WRL::ComPtr<ID3D11Device> device_;
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
+  Microsoft::WRL::ComPtr<ID3D10Multithread> multithread_;
   Microsoft::WRL::ComPtr<ID3D11Query> completion_query_;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> last_completed_target_;
   PresentationBackendFrameInfo last_frame_info_{};

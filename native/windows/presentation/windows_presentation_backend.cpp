@@ -8,6 +8,8 @@
 #include <cstring>
 #include <thread>
 
+#include <spdlog/spdlog.h>
+
 namespace vr {
 namespace {
 
@@ -20,6 +22,24 @@ DXGI_FORMAT target_format_for(ColorOutputTarget output_target) {
 const char* target_format_name(DXGI_FORMAT format) {
   return format == DXGI_FORMAT_R16G16B16A16_FLOAT ? "rgba16f" : "bgra8";
 }
+
+class ScopedD3D11ContextLock final {
+ public:
+  explicit ScopedD3D11ContextLock(ID3D10Multithread* multithread)
+      : multithread_(multithread) {
+    if (multithread_) {
+      multithread_->Enter();
+    }
+  }
+  ~ScopedD3D11ContextLock() {
+    if (multithread_) {
+      multithread_->Leave();
+    }
+  }
+
+ private:
+  ID3D10Multithread* multithread_ = nullptr;
+};
 
 }  // namespace
 
@@ -60,9 +80,8 @@ bool WindowsD3D11PresentationBackend::initialize(
     set_error("Windows D3D11 target device has no immediate context");
     return false;
   }
-  Microsoft::WRL::ComPtr<ID3D10Multithread> multithread;
-  if (SUCCEEDED(device_.As(&multithread)) && multithread) {
-    multithread->SetMultithreadProtected(TRUE);
+  if (SUCCEEDED(device_.As(&multithread_)) && multithread_) {
+    multithread_->SetMultithreadProtected(TRUE);
   }
   D3D11_QUERY_DESC query_desc = {};
   query_desc.Query = D3D11_QUERY_EVENT;
@@ -92,6 +111,7 @@ void WindowsD3D11PresentationBackend::shutdown() {
   target_ring_.clear();
   last_completed_target_.Reset();
   completion_query_.Reset();
+  multithread_.Reset();
   context_.Reset();
   device_.Reset();
   last_frame_info_ = {};
@@ -206,6 +226,12 @@ WindowsD3D11PresentationBackend::presentation_stats() const {
   stats.consecutive_draw_failures = consecutive_draw_failures_;
   stats.last_successful_frame_pts_us = last_frame_info_.pts_us;
   stats.viewport_composite_count = draw_count_;
+  const auto viewport = viewport_renderer_.stats();
+  stats.video_source_update_count = viewport.video_source_update_count;
+  stats.source_frame_cache_hit_count =
+      viewport.source_frame_cache_hit_count;
+  stats.source_frame_cache_miss_count =
+      viewport.source_frame_cache_miss_count;
   return stats;
 }
 
@@ -366,6 +392,15 @@ bool WindowsD3D11PresentationBackend::draw_frame(
   }
   auto target = target_ring_.acquire_draw_target();
   if (!target) {
+    const auto ring = target_ring_.diagnostics();
+    if (ring.backpressure_count <= 8 ||
+        ring.backpressure_count % 120 == 0) {
+      spdlog::warn(
+          "[WindowsInteraction] target ring backpressure={} targets={} "
+          "available={} in_flight={} completed={}",
+          ring.backpressure_count, ring.target_count, ring.available_count,
+          ring.in_flight_count, ring.completed_count);
+    }
     set_error("Windows D3D11 target ring is busy");
     record_draw_failure();
     return false;
@@ -394,21 +429,39 @@ bool WindowsD3D11PresentationBackend::draw_frame(
     output_target = output_target_;
     sdr_white_level_nits = sdr_white_level_nits_;
   }
-  if (!viewport_renderer_.draw(snapshot,
-                               presentation,
-                               rtv.Get(),
-                               output_target,
-                               sdr_white_level_nits)) {
+  const auto viewport_before = viewport_renderer_.stats();
+  bool viewport_drawn = false;
+  {
+    ScopedD3D11ContextLock context_lock(multithread_.Get());
+    viewport_drawn = viewport_renderer_.draw(snapshot,
+                                             presentation,
+                                             rtv.Get(),
+                                             output_target,
+                                             sdr_white_level_nits);
+    if (viewport_drawn && !hooks.suppress_analysis_overlay &&
+        hooks.draw_overlay) {
+      hooks.draw_overlay(*this, snapshot);
+    }
+  }
+  if (!viewport_drawn) {
     target_ring_.complete_draw_target(target.Get(), false);
     set_error("Windows D3D11 viewport draw failed: " +
               viewport_renderer_.last_error());
     record_draw_failure();
     return false;
   }
-  if (!hooks.suppress_analysis_overlay && hooks.draw_overlay) {
-    hooks.draw_overlay(*this, snapshot);
-  }
-  if (!wait_for_gpu("draw_frame")) {
+  const auto viewport_after = viewport_renderer_.stats();
+  const bool projection_only_draw =
+      viewport_after.source_frame_cache_hit_count >
+          viewport_before.source_frame_cache_hit_count &&
+      viewport_after.video_source_update_count ==
+          viewport_before.video_source_update_count;
+  // A projection-only interaction reuses the presentation-device source
+  // cache. The runner compositor consumes this target on the same immediate
+  // context, so D3D11 command ordering already places its sample after this
+  // draw. The ring slot remains retained until the compositor's GPU query
+  // completes; an intermediate CPU wait here only serializes interaction.
+  if (!projection_only_draw && !wait_for_gpu("draw_frame")) {
     target_ring_.complete_draw_target(target.Get(), false);
     record_draw_failure();
     return false;

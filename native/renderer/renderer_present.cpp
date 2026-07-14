@@ -50,7 +50,10 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
     const char* refresh_reason = reason && reason[0] != '\0'
                                      ? reason
                                      : "request_frame_refresh";
+    const bool interaction_refresh =
+        std::strcmp(refresh_reason, "renderer-owned-interaction-refresh") == 0;
     const bool renderer_owned_refresh =
+        interaction_refresh ||
         std::strcmp(refresh_reason, "macos-renderer-owned-refresh") == 0 ||
         std::strcmp(refresh_reason, "request_frame_refresh") == 0;
     bool has_complete_cached_decision = false;
@@ -63,7 +66,11 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
         preview_draw_pending = loop_driver_.preview_pending();
     }
     if (renderer_owned_refresh) {
-        if (preview_draw_pending) {
+        // An interaction request is itself the display-linked consumer for the
+        // pending preview. Returning success here would acknowledge the input
+        // without publishing a frame and leave the ordinary playback loop to
+        // update it at source-video cadence.
+        if (preview_draw_pending && !interaction_refresh) {
             return true;
         }
         auto present_context = present_command_context();
@@ -94,7 +101,7 @@ bool Renderer::Impl::request_interaction_frame() {
     interaction_presentation_until_us_.store(
         steady_clock_us_now() + kInteractionPresentationHoldUs,
         std::memory_order_release);
-    return request_frame_refresh("macos-renderer-owned-refresh");
+    return request_frame_refresh("renderer-owned-interaction-refresh");
 }
 
 bool Renderer::Impl::interaction_presentation_active() const {

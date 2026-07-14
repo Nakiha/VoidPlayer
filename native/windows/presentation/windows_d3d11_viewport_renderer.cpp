@@ -560,7 +560,7 @@ bool WindowsD3D11ViewportRenderer::prepare_track(
     const TextureFrame& frame,
     ShaderConstants& constants) {
   if (const auto* storage = frame.windows_d3d11_storage()) {
-    return prepare_hardware_track(slot, *storage, constants);
+    return prepare_hardware_track(slot, frame, *storage, constants);
   }
   if (const auto* storage = frame.cpu_nv12_storage()) {
     ++stats_.software_frame_count;
@@ -579,6 +579,7 @@ bool WindowsD3D11ViewportRenderer::prepare_track(
 
 bool WindowsD3D11ViewportRenderer::prepare_hardware_track(
     size_t slot,
+    const TextureFrame& frame,
     const WindowsD3D11FrameStorage& storage,
     ShaderConstants& constants) {
   if (!storage.texture) {
@@ -591,6 +592,26 @@ bool WindowsD3D11ViewportRenderer::prepare_hardware_track(
       static_cast<UINT>(storage.array_index) >= source_desc.ArraySize) {
     return fail("D3D11 frame storage has unsupported format or array slice");
   }
+  auto& resources = tracks_[slot];
+  const bool same_frame_owner =
+      storage.frame_ref && resources.cached_hardware_frame_ref &&
+      !storage.frame_ref.owner_before(resources.cached_hardware_frame_ref) &&
+      !resources.cached_hardware_frame_ref.owner_before(storage.frame_ref);
+  const bool source_cache_hit =
+      same_frame_owner && resources.hardware_copy &&
+      resources.cached_hardware_source == storage.texture &&
+      resources.cached_hardware_array_index == storage.array_index &&
+      resources.cached_hardware_pts_us == frame.pts_us &&
+      resources.cached_hardware_dts_us == frame.dts_us;
+  if (source_cache_hit) {
+    y_srvs_[slot] = resources.hardware_y_srv.Get();
+    uv_srvs_[slot] = resources.hardware_uv_srv.Get();
+    constants.nv12_mask |= (1 << static_cast<int>(slot));
+    ++stats_.hardware_frame_count;
+    ++stats_.source_frame_cache_hit_count;
+    return true;
+  }
+  ++stats_.source_frame_cache_miss_count;
   Microsoft::WRL::ComPtr<ID3D11Device> source_device;
   storage.texture->GetDevice(&source_device);
   Microsoft::WRL::ComPtr<ID3D11Texture2D> opened_source;
@@ -612,7 +633,6 @@ bool WindowsD3D11ViewportRenderer::prepare_hardware_track(
     copy_source = opened_source.Get();
     copy_source->GetDesc(&source_desc);
   }
-  auto& resources = tracks_[slot];
   if (!ensure_hardware_copy(resources, copy_source)) {
     return false;
   }
@@ -626,10 +646,16 @@ bool WindowsD3D11ViewportRenderer::prepare_hardware_track(
                                   copy_source,
                                   source_subresource,
                                   nullptr);
+  resources.cached_hardware_frame_ref = storage.frame_ref;
+  resources.cached_hardware_source = storage.texture;
+  resources.cached_hardware_array_index = storage.array_index;
+  resources.cached_hardware_pts_us = frame.pts_us;
+  resources.cached_hardware_dts_us = frame.dts_us;
   y_srvs_[slot] = resources.hardware_y_srv.Get();
   uv_srvs_[slot] = resources.hardware_uv_srv.Get();
   constants.nv12_mask |= (1 << static_cast<int>(slot));
   ++stats_.hardware_frame_count;
+  ++stats_.video_source_update_count;
   return true;
 }
 
@@ -871,6 +897,9 @@ bool WindowsD3D11ViewportRenderer::ensure_hardware_copy(
   resources.hardware_copy.Reset();
   resources.hardware_y_srv.Reset();
   resources.hardware_uv_srv.Reset();
+  resources.cached_hardware_frame_ref.reset();
+  resources.cached_hardware_source = nullptr;
+  resources.cached_hardware_array_index = -1;
   D3D11_TEXTURE2D_DESC copy_desc = source_desc;
   copy_desc.MipLevels = 1;
   copy_desc.ArraySize = 1;

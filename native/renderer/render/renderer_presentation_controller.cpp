@@ -7,6 +7,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <memory>
+#include <thread>
 #include <utility>
 
 namespace vr {
@@ -201,10 +202,12 @@ void RendererPresentationController::protect_offscreen_target(void* pixel_buffer
 }
 
 void RendererPresentationController::release_offscreen_target(void* pixel_buffer) {
+    pending_offscreen_target_releases_.fetch_add(1, std::memory_order_acq_rel);
     std::lock_guard<std::recursive_mutex> lock(device_mutex_);
     if (backend_) {
         backend_->release_offscreen_target(pixel_buffer);
     }
+    pending_offscreen_target_releases_.fetch_sub(1, std::memory_order_acq_rel);
 }
 
 void RendererPresentationController::clear_offscreen_target() {
@@ -296,6 +299,13 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
     RendererPresentationDrawRequest request) {
     RendererPresentationDrawResult result;
     const auto backend_start = std::chrono::steady_clock::now();
+    // Completed-target releases are tiny but latency-sensitive. Once a host
+    // callback is waiting to return a ring slot, do not let a continuous stream
+    // of 120Hz interaction/source draws repeatedly win the backend mutex.
+    while (pending_offscreen_target_releases_.load(
+               std::memory_order_acquire) > 0) {
+        std::this_thread::yield();
+    }
     std::lock_guard<std::recursive_mutex> ctx_lock(device_mutex_);
     const bool async_backend =
         backend_ && backend_->completes_draw_asynchronously();

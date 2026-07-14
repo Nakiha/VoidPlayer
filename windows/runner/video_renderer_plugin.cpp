@@ -343,7 +343,9 @@ void ScaleBgraToMaxSize(std::vector<uint8_t>& bgra,
 
 void AddCompositorDiagnostics(EncodableMap& diagnostics,
                               const WindowsNativeCompositor* compositor,
-                              bool started) {
+                              bool started,
+                              const WindowsViewportPresentationController*
+                                  viewport_controller) {
   diagnostics[EncodableValue("nativeCompositorEnabled")] =
       EncodableValue(started);
   if (!compositor) {
@@ -373,6 +375,40 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
           static_cast<int64_t>(state.last_flutter_frame_generation));
   diagnostics[EncodableValue("windowsCompositorLastError")] =
       EncodableValue(state.last_error);
+  if (!viewport_controller) {
+    return;
+  }
+  const auto viewport = viewport_controller->diagnostics();
+  diagnostics[EncodableValue("viewportClockSource")] =
+      EncodableValue("dxgi-present-vsync");
+  diagnostics[EncodableValue("displayRefreshHzEstimateX1000")] =
+      EncodableValue(static_cast<int64_t>(
+          std::llround(viewport.nominal_refresh_hz * 1000.0)));
+  diagnostics[EncodableValue("layoutIntentCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_intent_count));
+  diagnostics[EncodableValue("layoutSubmitCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_submit_count));
+  diagnostics[EncodableValue("layoutDrawCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_presented_count));
+  diagnostics[EncodableValue("layoutPublishedCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_presented_count));
+  diagnostics[EncodableValue("interactionLayoutSubmitCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_submit_count));
+  diagnostics[EncodableValue("interactionLayoutSubmitHzX1000")] =
+      EncodableValue(static_cast<int64_t>(
+          std::llround(viewport.measured_submit_hz * 1000.0)));
+  diagnostics[EncodableValue("layoutRefreshSupersededCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_superseded_count));
+  diagnostics[EncodableValue("layoutRefreshFailureCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_failed_count));
+  diagnostics[EncodableValue("layoutRefreshBackpressureCount")] =
+      EncodableValue(
+          static_cast<int64_t>(viewport.layout_backpressure_count));
+  diagnostics[EncodableValue("interactionFramesInFlight")] =
+      EncodableValue(static_cast<int64_t>(
+          viewport.interaction_frames_in_flight));
+  diagnostics[EncodableValue("maxInteractionFramesInFlight")] =
+      EncodableValue(int64_t{2});
 }
 
 }  // namespace
@@ -424,6 +460,10 @@ void VideoRendererPlugin::RegisterWithRegistrar(
 VideoRendererPlugin::VideoRendererPlugin(HWND window_handle,
                                          FlutterDesktopViewRef flutter_view)
     : window_handle_(window_handle) {
+  if (window_handle_) {
+    viewport_presentation_controller_ =
+        std::make_unique<WindowsViewportPresentationController>(window_handle_);
+  }
   if (window_handle_ && flutter_view) {
     compositor_ = std::make_unique<WindowsNativeCompositor>(
         window_handle_, flutter_view);
@@ -455,12 +495,16 @@ void VideoRendererPlugin::ClearEventSink() {
 }
 
 void VideoRendererPlugin::DestroyPlayer() {
+  if (viewport_presentation_controller_) {
+    viewport_presentation_controller_->DetachPlayerAndWait();
+  }
   auto player = std::move(player_);
   if (player) {
     player->set_frame_callback({});
     player->set_frame_failure_callback({});
     player->set_event_callback({});
     player->shutdown();
+    target_release_queue_.Drain();
   }
   if (compositor_) {
     compositor_->ClearVideoTargetRing();
@@ -484,7 +528,7 @@ bool VideoRendererPlugin::ResizeVideoTargets(int width,
   std::vector<void*> textures;
   if (!compositor_->CreateVideoTargetRing(
           static_cast<uint32_t>(width), static_cast<uint32_t>(height),
-          DXGI_FORMAT_B8G8R8A8_UNORM, 4, textures)) {
+          DXGI_FORMAT_B8G8R8A8_UNORM, 6, textures)) {
     error = compositor_->diagnostics().last_error;
     return false;
   }
@@ -520,15 +564,15 @@ void VideoRendererPlugin::OnFrameAvailable(
     return;
   }
   // The shared renderer invokes this callback synchronously, including from
-  // step/preview commands that still own its lifecycle lock. Do not re-enter
-  // Renderer here. The compositor copies the target and waits for GPU
-  // completion; release the completed ring slot later on the runner thread.
+  // interaction requests that still own the WindowsNativePlayer facade lock.
+  // Do not re-enter it on this stack. The compositor has waited for its GPU
+  // copy. Interaction callbacks can release immediately through their guarded
+  // re-entry path; lifecycle-owning preview/step callbacks use a native release
+  // queue that is independent of the Win32 UI message pump.
   (void)compositor_->PresentVideoTarget(target);
-  event_bridge_.PostTask([weak_player, target]() {
-    if (auto callback_player = weak_player.lock()) {
-      callback_player->release_target(target);
-    }
-  });
+  if (!player->release_target_if_interaction_callback(target)) {
+    target_release_queue_.Enqueue(player, target);
+  }
 }
 
 void VideoRendererPlugin::HandleMethodCall(
@@ -661,6 +705,9 @@ void VideoRendererPlugin::HandleMethodCall(
     player->set_frame_failure_callback([](const char*) {});
     player->set_event_callback(
         [this](const vr::RendererEvent& event) { event_bridge_.Queue(event); });
+    if (viewport_presentation_controller_) {
+      viewport_presentation_controller_->AttachPlayer(player);
+    }
     player->request_frame_refresh("windows-runner-create");
     event_bridge_.QueueNativeCompositorState(
         true, true, "native-compositor-sdr", "active",
@@ -679,7 +726,8 @@ void VideoRendererPlugin::HandleMethodCall(
   }
   if (method == "debugNativeCompositor") {
     EncodableMap diagnostics;
-    AddCompositorDiagnostics(diagnostics, compositor_.get(), compositor_started_);
+    AddCompositorDiagnostics(diagnostics, compositor_.get(), compositor_started_,
+                             viewport_presentation_controller_.get());
     result->Success(EncodableValue(std::move(diagnostics)));
     return;
   }
@@ -696,7 +744,8 @@ void VideoRendererPlugin::HandleMethodCall(
         {EncodableValue("isPlaying"),
          EncodableValue(player_ && player_->is_playing())},
     };
-    AddCompositorDiagnostics(diagnostics, compositor_.get(), compositor_started_);
+    AddCompositorDiagnostics(diagnostics, compositor_.get(), compositor_started_,
+                             viewport_presentation_controller_.get());
     if (player_) {
       const auto stats = player_->presentation_stats();
       const auto backend = player_->presentation_diagnostics();
@@ -706,6 +755,12 @@ void VideoRendererPlugin::HandleMethodCall(
           EncodableValue(stats.last_draw_succeeded != 0);
       diagnostics[EncodableValue("nativeFramePresentationCount")] =
           EncodableValue(static_cast<int64_t>(stats.viewport_composite_count));
+      diagnostics[EncodableValue("videoSourceUpdateCount")] =
+          EncodableValue(static_cast<int64_t>(stats.video_source_update_count));
+      diagnostics[EncodableValue("sourceFrameCacheHitCount")] = EncodableValue(
+          static_cast<int64_t>(stats.source_frame_cache_hit_count));
+      diagnostics[EncodableValue("sourceFrameCacheMissCount")] = EncodableValue(
+          static_cast<int64_t>(stats.source_frame_cache_miss_count));
       diagnostics[EncodableValue("nativeTargetConsecutiveDrawFailures")] =
           EncodableValue(
               static_cast<int64_t>(stats.consecutive_draw_failures));
@@ -789,7 +844,10 @@ void VideoRendererPlugin::HandleMethodCall(
           layout.view_offset[0], layout.view_offset[1], layout.split_pos,
           layout.pixel_size_mode);
     }
-    player_->apply_layout(layout);
+    player_->apply_interaction_layout(layout);
+    if (viewport_presentation_controller_) {
+      viewport_presentation_controller_->RequestLayoutFrame();
+    }
     result->Success();
   } else if (method == "getLayout") {
     result->Success(EncodableValue(LayoutMap(player_->layout())));

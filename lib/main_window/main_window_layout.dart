@@ -46,6 +46,7 @@ class MainWindowLayoutCoordinator {
   int _debugSplitUpdates = 0;
   int _debugViewportResizeReports = 0;
   int _debugNativeResizeFlushes = 0;
+  int _debugNativeLayoutApplies = 0;
 
   int viewportWidth = 0;
   int viewportHeight = 0;
@@ -765,6 +766,19 @@ class MainWindowLayoutCoordinator {
   }
 
   Future<void> _applyLayoutToNative(LayoutState nextLayout) async {
+    _debugNativeLayoutApplies++;
+    if (_debugNativeLayoutApplies <= 12 ||
+        _debugNativeLayoutApplies % 60 == 0) {
+      log.info(
+        '[WindowsLayout] dart intent=$_debugNativeLayoutApplies '
+        'playing=${_state.isPlaying} mode=${nextLayout.mode} '
+        'zoom=${nextLayout.zoomRatio.toStringAsFixed(4)} '
+        'offset=(${nextLayout.viewOffsetX.toStringAsFixed(1)},'
+        '${nextLayout.viewOffsetY.toStringAsFixed(1)}) '
+        'split=${nextLayout.splitPos.toStringAsFixed(4)} '
+        'pixelMode=${nextLayout.pixelSizeMode}',
+      );
+    }
     await controller.applyLayout(nextLayout);
   }
 

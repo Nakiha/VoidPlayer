@@ -9,6 +9,8 @@
 #include <cstring>
 #include <limits>
 
+#include <spdlog/spdlog.h>
+
 namespace vr {
 namespace {
 
@@ -316,6 +318,8 @@ void WindowsD3D11ViewportRenderer::shutdown() {
   context_.Reset();
   device_.Reset();
   stats_ = {};
+  last_layout_revision_ = 0;
+  layout_log_count_ = 0;
   last_error_.clear();
 }
 
@@ -465,6 +469,21 @@ bool WindowsD3D11ViewportRenderer::draw(
   u_srvs_.fill(nullptr);
   v_srvs_.fill(nullptr);
   ShaderConstants constants = presentation.constants;
+  if (draw_snapshot.layout_revision != last_layout_revision_) {
+    last_layout_revision_ = draw_snapshot.layout_revision;
+    ++layout_log_count_;
+    if (layout_log_count_ <= 12 || layout_log_count_ % 60 == 0) {
+      spdlog::info(
+          "[WindowsLayout] d3d11 draw={} layout_rev={} target={}x{} mode={} "
+          "zoom={:.4f} offset=({:.1f},{:.1f}) split={:.4f}",
+          stats_.draw_count + 1, draw_snapshot.layout_revision,
+          draw_snapshot.target_width, draw_snapshot.target_height,
+          draw_snapshot.layout.mode, draw_snapshot.layout.zoom_ratio,
+          draw_snapshot.layout.view_offset[0],
+          draw_snapshot.layout.view_offset[1],
+          draw_snapshot.layout.split_pos);
+    }
+  }
   constants.nv12_mask = 0;
   constants.planar_yuv_mask = 0;
   constants.output_target =

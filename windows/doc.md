@@ -8,7 +8,8 @@ runner 使用 DComp 合成 shared renderer 输出的 D3D11 视频 target 与 Flu
 
 - Win32 Flutter runner、窗口生命周期和插件注册；
 - `video_renderer` MethodChannel/EventChannel 的 Windows native player facade；
-- 顶层 HWND 上 input-transparent 的 DComp final visual，消费锁定 Flutter V1 D3D11 keyed-mutex lease；
+- 顶层 HWND 上 input-transparent 的 DComp final visual；每个新 Flutter generation
+  只消费一次锁定 V1 D3D11 keyed-mutex lease，并复制到 runner 私有 UI cache；
 - 原生文件选择器；
 - standalone native 模块中的 D3D11VA provider、独立 decode device 和稳定 shared snapshot frame storage；
 - runner-owned D3D11 BGRA8 complete-viewport target ring 状态机；
@@ -30,6 +31,7 @@ Dart UI / input
   -> WindowsD3D11PresentationBackend -> runner-owned video target ring
 
 Flutter engine -> exported premultiplied-alpha UI surface
+  -> keyed-mutex acquire once per generation -> runner-owned UI cache
 
 video target + Flutter UI surface
   -> passive WindowsNativeCompositor / DComp
@@ -40,14 +42,16 @@ video target + Flutter UI surface
 2. runner 负责窗口、target ring、surface lease 和最终合成，不接管 Flutter frame 调度。
    与 macOS `MacOSNativeCompositorView` 同构：最终 compositor 不参与 hit-test，
    不拦截 pointer/keyboard/gesture，不调用 Flutter frame request/pump；它只采样
-   Flutter 自己已经发布的最新 premultiplied-alpha surface。
+   Flutter 自己已经发布的最新 premultiplied-alpha surface。native video frame 只与
+   runner-owned UI cache 合成，不重新 acquire 未更新的 keyed-mutex ring slot。
 3. shared renderer 只提交 `RendererDrawSnapshot`，不暴露 GPU device、shared ring 或
    external-target draw 旁路。
 4. color、layout、HDR、device-loss 和 UI smoke 使用 Windows 独立验证矩阵。
 
 当前产品链路是 D3D11VA + D3D11。runner 分配 BGRA8 target ring，native backend
 只绘制完整 viewport；runner 使用 Flutter engine
-现有 V1 D3D11 keyed-mutex lease 合成 UI。V2 的 D3D12 标签在 fork 提供真实
+现有 V1 D3D11 keyed-mutex lease 更新 runner-owned UI cache，并按 Flutter 报告的
+物理 viewport rect 定位 video surface。V2 的 D3D12 标签在 fork 提供真实
 D3D12 resource/fence 之前不接入。
 
 旧 capture-based DComp compositor、source projection、FP16 ring、window capture 和

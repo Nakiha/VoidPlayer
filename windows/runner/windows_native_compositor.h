@@ -59,6 +59,12 @@ class WindowsNativeCompositor final {
                              std::vector<void*>& textures);
   void ClearVideoTargetRing();
   bool PresentVideoTarget(ID3D11Texture2D* texture, uint32_t timeout_ms = 250);
+  void SetVideoViewportRect(int left,
+                            int top,
+                            int width,
+                            int height,
+                            int surface_width,
+                            int surface_height);
   ID3D11Device* device() const { return device_.Get(); }
   WindowsNativeCompositorDiagnostics diagnostics() const;
 
@@ -99,12 +105,27 @@ class WindowsNativeCompositor final {
   Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_;
   Microsoft::WRL::ComPtr<ID3D11Buffer> constants_;
   Microsoft::WRL::ComPtr<ID3D11Query> completion_query_;
+  // The keyed-mutex Flutter export cannot be reacquired until Flutter renders
+  // into that ring slot again. Copy each newly published generation once, then
+  // composite native video frames against this runner-owned immutable cache.
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> flutter_cache_;
+  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> flutter_cache_srv_;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> video_target_;
   Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> video_srv_;
   std::vector<Microsoft::WRL::ComPtr<ID3D11Texture2D>> video_targets_;
   uint64_t video_publish_serial_ = 0;
   uint64_t video_completed_serial_ = 0;
   bool last_video_presentation_succeeded_ = false;
+  uint64_t latest_flutter_published_generation_ = 0;
+  uint64_t cached_flutter_generation_ = 0;
+  uint64_t cached_flutter_ring_generation_ = 0;
+  uint64_t flutter_cache_refresh_count_ = 0;
+  int video_viewport_left_ = 0;
+  int video_viewport_top_ = 0;
+  int video_viewport_width_ = 0;
+  int video_viewport_height_ = 0;
+  int video_viewport_surface_width_ = 0;
+  int video_viewport_surface_height_ = 0;
   uint32_t width_ = 0;
   uint32_t height_ = 0;
 

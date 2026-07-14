@@ -47,6 +47,7 @@ class VideoRendererPlugin final : public flutter::Plugin {
   std::shared_ptr<vr::WindowsNativePlayer> player_;
   int video_target_width_ = 0;
   int video_target_height_ = 0;
+  uint64_t layout_apply_count_ = 0;
   int64_t player_id_ = 0;
   std::atomic<int64_t> next_player_id_{1};
 };

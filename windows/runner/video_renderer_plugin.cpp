@@ -1,6 +1,7 @@
 #include "video_renderer_plugin.h"
 
 #include "native_player_channel_names.h"
+#include "common/logging.h"
 #include "common/win_utf8.h"
 #include "windows/presentation/windows_d3d11_target_ring.h"
 
@@ -19,6 +20,8 @@
 #include <vector>
 #include <wincodec.h>
 #include <wrl/client.h>
+
+#include <spdlog/spdlog.h>
 
 namespace {
 
@@ -359,6 +362,15 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
       EncodableValue(static_cast<int64_t>(state.video_publish_count));
   diagnostics[EncodableValue("windowsVideoPresentCount")] =
       EncodableValue(static_cast<int64_t>(state.video_present_count));
+  diagnostics[EncodableValue("windowsFlutterAcquireFailureCount")] =
+      EncodableValue(static_cast<int64_t>(state.acquire_failure_count));
+  diagnostics[EncodableValue("windowsFlutterKeyedMutexFailureCount")] =
+      EncodableValue(static_cast<int64_t>(state.keyed_mutex_failure_count));
+  diagnostics[EncodableValue("windowsPresentFailureCount")] =
+      EncodableValue(static_cast<int64_t>(state.present_failure_count));
+  diagnostics[EncodableValue("windowsLastFlutterFrameGeneration")] =
+      EncodableValue(
+          static_cast<int64_t>(state.last_flutter_frame_generation));
   diagnostics[EncodableValue("windowsCompositorLastError")] =
       EncodableValue(state.last_error);
 }
@@ -525,10 +537,47 @@ void VideoRendererPlugin::HandleMethodCall(
   const std::string& method = call.method_name();
   const auto* arguments = call.arguments();
 
-  if (method == "initLogging" || method == "resetNativePerfCounters" ||
+  if (method == "initLogging") {
+    const std::string logs_dir = ReadString(arguments, "logsDir");
+    const std::string file_name = ReadString(arguments, "logFileName");
+    vr::LogConfig config;
+    if (!logs_dir.empty()) {
+      config.file_path = logs_dir + "/" +
+          (file_name.empty() ? "native_main.log" : file_name);
+    }
+    const std::string level = ReadString(arguments, "logLevel");
+    config.level = spdlog::level::from_str(level.empty() ? "info" : level);
+    config.max_files = 5;
+    config.use_environment_level_override = true;
+    config.manage_global_flush = true;
+    vr::configure_logging(config);
+    spdlog::info("[WindowsNative] logging configured: {}", config.file_path);
+    result->Success();
+    return;
+  }
+  if (method == "setNativeCompositorViewportRect") {
+    if (compositor_) {
+      compositor_->SetVideoViewportRect(
+          static_cast<int>(ReadInt(arguments, "left")),
+          static_cast<int>(ReadInt(arguments, "top")),
+          static_cast<int>(ReadInt(arguments, "width")),
+          static_cast<int>(ReadInt(arguments, "height")),
+          static_cast<int>(ReadInt(arguments, "surfaceWidth")),
+          static_cast<int>(ReadInt(arguments, "surfaceHeight")));
+    }
+    result->Success();
+    return;
+  }
+  if (method == "requestNativeCompositorFlutterFrame") {
+    // The final compositor is passive: Flutter's ordinary scheduler publishes
+    // UI changes. Native video presentation must never pump Flutter frames.
+    spdlog::debug("[WindowsCompositor] passive Flutter frame hint reason={}",
+                  ReadString(arguments, "reason"));
+    result->Success();
+    return;
+  }
+  if (method == "resetNativePerfCounters" ||
       method == "prewarmNativePresentationTargetSize" ||
-      method == "setNativeCompositorViewportRect" ||
-      method == "requestNativeCompositorFlutterFrame" ||
       method == "boostNativeCompositorFlutterInteraction" ||
       method == "ackNativeCompositorFlutterState" ||
       method == "setNativeAnalysisOverlay") {
@@ -730,7 +779,17 @@ void VideoRendererPlugin::HandleMethodCall(
       result->Success();
     }
   } else if (method == "applyLayout") {
-    player_->apply_layout(ReadLayout(arguments));
+    const vr::LayoutState layout = ReadLayout(arguments);
+    const uint64_t count = ++layout_apply_count_;
+    if (count <= 12 || count % 60 == 0) {
+      spdlog::info(
+          "[WindowsLayout] runner intent={} playing={} mode={} zoom={:.4f} "
+          "offset=({:.1f},{:.1f}) split={:.4f} pixel_mode={}",
+          count, player_->is_playing(), layout.mode, layout.zoom_ratio,
+          layout.view_offset[0], layout.view_offset[1], layout.split_pos,
+          layout.pixel_size_mode);
+    }
+    player_->apply_layout(layout);
     result->Success();
   } else if (method == "getLayout") {
     result->Success(EncodableValue(LayoutMap(player_->layout())));

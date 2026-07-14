@@ -119,6 +119,8 @@ class WindowsD3D11ViewportRenderer final {
   std::array<ID3D11ShaderResourceView*, kMaxTracks> u_srvs_{};
   std::array<ID3D11ShaderResourceView*, kMaxTracks> v_srvs_{};
   WindowsD3D11ViewportRendererStats stats_{};
+  uint64_t last_layout_revision_ = 0;
+  uint64_t layout_log_count_ = 0;
   std::string last_error_;
 };
 

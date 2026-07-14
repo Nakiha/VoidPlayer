@@ -40,6 +40,7 @@ public:
         RendererDrawSnapshot snapshot;
         snapshot.decision = decision;
         tracks.filter_present_decision(snapshot.decision);
+        snapshot.layout_revision = layout.current_revision();
         snapshot.layout = layout.current_for_draw();
         snapshot.track_geometry = tracks.layout_track_geometry();
         tracks.populate_draw_tracks(snapshot.tracks);

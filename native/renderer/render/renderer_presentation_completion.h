@@ -21,6 +21,10 @@ struct RendererPresentationCompletionInput {
 struct RendererPresentationCompletionDecision {
     bool callback_available = false;
     bool callback_published = false;
+    // A stale offscreen draw is intentionally hidden from the host callback,
+    // so the renderer must recycle its completed target itself.
+    bool release_discarded_target = false;
+    uint64_t discarded_target_address = 0;
     bool transient_backpressure = false;
     bool notify_frame_failure = false;
     const char* frame_failure_error = "";

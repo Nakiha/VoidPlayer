@@ -185,8 +185,10 @@ void WindowsD3D11TargetRing::release(ID3D11Texture2D* texture) {
   std::lock_guard<std::mutex> lock(mutex_);
   Slot* slot = find_locked(texture);
   if (!slot || slot->state != WindowsD3D11TargetState::Completed) {
+    ++release_miss_count_;
     return;
   }
+  ++release_count_;
   if (texture == displayed_) {
     slot->state = WindowsD3D11TargetState::Displayed;
   } else if (texture == protected_) {
@@ -228,6 +230,8 @@ WindowsD3D11TargetRingDiagnostics WindowsD3D11TargetRing::diagnostics() const {
   result.generation = generation_;
   result.acquisition_count = acquisition_count_;
   result.completion_count = completion_count_;
+  result.release_count = release_count_;
+  result.release_miss_count = release_miss_count_;
   result.backpressure_count = backpressure_count_;
   for (const auto& slot : slots_) {
     switch (slot.state) {

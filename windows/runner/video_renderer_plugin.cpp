@@ -563,16 +563,13 @@ void VideoRendererPlugin::OnFrameAvailable(
   if (!target) {
     return;
   }
-  // The shared renderer invokes this callback synchronously, including from
-  // interaction requests that still own the WindowsNativePlayer facade lock.
-  // Do not re-enter it on this stack. The compositor has waited for its GPU
-  // copy. Interaction callbacks can release immediately through their guarded
-  // re-entry path; lifecycle-owning preview/step callbacks use a native release
-  // queue that is independent of the Win32 UI message pump.
+  // The shared renderer invokes this callback synchronously from interaction,
+  // preview, playback and step paths, some of which still own facade/lifecycle
+  // locks. The compositor has waited for its GPU copy; return every completed
+  // target through one native queue so no callback path can silently skip the
+  // same release protocol or depend on the Win32 UI message pump.
   (void)compositor_->PresentVideoTarget(target);
-  if (!player->release_target_if_interaction_callback(target)) {
-    target_release_queue_.Enqueue(player, target);
-  }
+  target_release_queue_.Enqueue(player, target);
 }
 
 void VideoRendererPlugin::HandleMethodCall(

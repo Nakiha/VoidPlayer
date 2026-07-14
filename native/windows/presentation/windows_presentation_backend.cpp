@@ -397,9 +397,11 @@ bool WindowsD3D11PresentationBackend::draw_frame(
         ring.backpressure_count % 120 == 0) {
       spdlog::warn(
           "[WindowsInteraction] target ring backpressure={} targets={} "
-          "available={} in_flight={} completed={}",
+          "available={} in_flight={} completed={} releases={} "
+          "release_misses={}",
           ring.backpressure_count, ring.target_count, ring.available_count,
-          ring.in_flight_count, ring.completed_count);
+          ring.in_flight_count, ring.completed_count, ring.release_count,
+          ring.release_miss_count);
     }
     set_error("Windows D3D11 target ring is busy");
     record_draw_failure();

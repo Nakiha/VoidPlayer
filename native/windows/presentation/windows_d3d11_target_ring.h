@@ -30,6 +30,8 @@ struct WindowsD3D11TargetRingDiagnostics {
   uint64_t generation = 0;
   uint64_t acquisition_count = 0;
   uint64_t completion_count = 0;
+  uint64_t release_count = 0;
+  uint64_t release_miss_count = 0;
   uint64_t backpressure_count = 0;
 };
 
@@ -95,6 +97,8 @@ class WindowsD3D11TargetRing {
   uint64_t generation_ = 0;
   uint64_t acquisition_count_ = 0;
   uint64_t completion_count_ = 0;
+  uint64_t release_count_ = 0;
+  uint64_t release_miss_count_ = 0;
   uint64_t backpressure_count_ = 0;
 };
 

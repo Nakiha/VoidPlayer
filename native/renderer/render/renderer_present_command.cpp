@@ -23,6 +23,7 @@ struct RendererPresentCompletionContext {
     RendererPresentHistory* history = nullptr;
     PresentationMetricsStore* metrics = nullptr;
     RendererLoopDriver* loop = nullptr;
+    RendererPresentationController* presentation = nullptr;
     std::atomic<bool>* shutting_down = nullptr;
 };
 
@@ -83,6 +84,10 @@ void finish_presented_draw(
     if (completion.callback_published) {
         frame_callback(completion.callback_frame_info_ptr);
     }
+    if (completion.release_discarded_target) {
+        context.presentation->release_offscreen_target(reinterpret_cast<void*>(
+            static_cast<uintptr_t>(completion.discarded_target_address)));
+    }
     if (completion.transient_backpressure) {
         const auto count = context.metrics->note_transient_backpressure(
             kTransientPresentationBackpressureBackoff,
@@ -125,6 +130,7 @@ RendererPresentCompletionContext completion_context(
         &context.history,
         &context.metrics,
         &context.loop,
+        &context.presentation,
         &context.shutting_down,
     };
 }

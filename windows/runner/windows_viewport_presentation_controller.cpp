@@ -1,6 +1,8 @@
 #include "windows_viewport_presentation_controller.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <string>
 
 #include <spdlog/spdlog.h>
@@ -96,6 +98,7 @@ void WindowsViewportPresentationController::Run() {
     std::shared_ptr<vr::WindowsNativePlayer> player;
     uint64_t serial = 0;
     uint64_t submit_count = 0;
+    double nominal_refresh_hz = 0.0;
     {
       std::unique_lock<std::mutex> lock(mutex_);
       condition_.wait(lock, [this]() {
@@ -111,6 +114,7 @@ void WindowsViewportPresentationController::Run() {
       diagnostics_.submitted_intent_serial = serial;
       ++diagnostics_.interaction_frames_in_flight;
       submit_count = ++diagnostics_.layout_submit_count;
+      nominal_refresh_hz = diagnostics_.nominal_refresh_hz;
     }
 
     if (submit_count <= 12 || submit_count % 120 == 0) {
@@ -128,7 +132,11 @@ void WindowsViewportPresentationController::Run() {
       // Match macOS display-link coalescing: a temporarily full native target
       // ring is not a failed user interaction. Give the completed-target lane
       // a chance to run, then retry the latest intent if it was not superseded.
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      const auto retry_ms = static_cast<int>(std::clamp(
+          std::lround(1000.0 /
+                      (nominal_refresh_hz > 1.0 ? nominal_refresh_hz : 60.0)),
+          1L, 17L));
+      std::this_thread::sleep_for(std::chrono::milliseconds(retry_ms));
     }
     const int64_t completion_ns = SteadyClockNs();
 
@@ -162,7 +170,12 @@ void WindowsViewportPresentationController::Run() {
         --diagnostics_.interaction_frames_in_flight;
       }
       const uint64_t completed = diagnostics_.layout_presented_count;
-      if (completed <= 32 || completed % 120 == 0 || !presented) {
+      const bool log_failure =
+          !presented &&
+          (!transient_backpressure ||
+           diagnostics_.layout_backpressure_count <= 8 ||
+           diagnostics_.layout_backpressure_count % 120 == 0);
+      if (completed <= 32 || completed % 120 == 0 || log_failure) {
         spdlog::info(
             "[WindowsInteraction] complete={} serial={} success={} "
             "measured_hz={:.2f} nominal_hz={:.2f} pending={} "

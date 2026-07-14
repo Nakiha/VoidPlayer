@@ -4,26 +4,6 @@
 #include <utility>
 
 namespace vr {
-namespace {
-
-thread_local WindowsNativePlayer* interaction_callback_player = nullptr;
-
-class ScopedInteractionCallbackPlayer final {
- public:
-  explicit ScopedInteractionCallbackPlayer(WindowsNativePlayer* player)
-      : previous_(interaction_callback_player) {
-    interaction_callback_player = player;
-  }
-
-  ~ScopedInteractionCallbackPlayer() {
-    interaction_callback_player = previous_;
-  }
-
- private:
-  WindowsNativePlayer* previous_ = nullptr;
-};
-
-}  // namespace
 
 WindowsNativePlayer::WindowsNativePlayer()
     : renderer_(std::make_unique<Renderer>()) {}
@@ -225,20 +205,6 @@ void WindowsNativePlayer::release_target(void* texture) {
   }
 }
 
-bool WindowsNativePlayer::release_target_if_interaction_callback(
-    void* texture) {
-  if (interaction_callback_player != this || !renderer_) {
-    return false;
-  }
-  // request_interaction_frame() only holds the facade's shared lock. The
-  // renderer invokes the frame callback after releasing its presentation
-  // device lock and does not hold the lifecycle lock on this path, so this
-  // targeted re-entry is safe and prevents completed targets from accumulating
-  // behind subsequent high-refresh draws.
-  renderer_->release_offscreen_target(texture);
-  return true;
-}
-
 bool WindowsNativePlayer::install_target_ring(
     const void* const* textures,
     size_t texture_count,
@@ -261,11 +227,7 @@ bool WindowsNativePlayer::request_frame_refresh(const char* reason) {
 
 bool WindowsNativePlayer::request_interaction_frame() {
   std::shared_lock<std::shared_mutex> lock(mutex_);
-  if (!ready_locked()) {
-    return false;
-  }
-  ScopedInteractionCallbackPlayer callback_scope(this);
-  return renderer_->request_interaction_frame();
+  return ready_locked() && renderer_->request_interaction_frame();
 }
 
 bool WindowsNativePlayer::capture_front_buffer(std::vector<uint8_t>& bgra,

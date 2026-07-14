@@ -4,6 +4,7 @@
 
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -39,4 +40,6 @@ class WindowsTargetReleaseQueue final {
   std::thread thread_;
   bool stopping_ = false;
   size_t active_count_ = 0;
+  uint64_t enqueue_count_ = 0;
+  uint64_t release_count_ = 0;
 };

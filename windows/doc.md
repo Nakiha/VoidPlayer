@@ -63,8 +63,10 @@ viewport backend 为每个 track 保留 presentation-device source cache：同�
 交互重投影不重复跨 D3D11VA device 复制，只更新 layout shader constants 并绘制新
 target。Windows 与 macOS 都使用 6 个 native presentation targets；短暂 ring
 backpressure 会按 latest layout intent 合并并重试，不计作交互失败。compositor 完成
-GPU 消费后的 target 由 interaction callback 的安全直返路径或独立 native release
-queue 回收，不能依赖正在处理 pointer/MethodChannel 的 Win32 UI 消息泵。
+GPU 消费后的 target 全部由同一条独立 native release queue 回收，不能依赖正在处理
+pointer/MethodChannel 的 Win32 UI 消息泵，也不允许不同 callback 来源分叉回收规则。
+若 shared renderer 在 draw 完成后判定 layout revision 已过期，则不发布旧帧，并在 shared
+presentation completion 边界直接回收该 completed target，避免静默耗尽 ring。
 
 1. Windows presentation 策略只通过 `windows_presentation_backend.*` 的 D3D11 backend 边界进入。
 2. runner 负责窗口、target ring、surface lease 和最终合成，不接管 Flutter frame 调度。

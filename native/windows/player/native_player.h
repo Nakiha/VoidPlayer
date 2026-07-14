@@ -55,7 +55,6 @@ class WindowsNativePlayer final {
   void mark_target_displayed(void* texture);
   void protect_target(void* texture);
   void release_target(void* texture);
-  bool release_target_if_interaction_callback(void* texture);
   bool install_target_ring(const void* const* textures,
                            size_t texture_count,
                            void* displayed_texture,

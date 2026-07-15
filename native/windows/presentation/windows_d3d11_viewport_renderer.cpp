@@ -986,6 +986,7 @@ bool WindowsD3D11ViewportRenderer::draw(
         draw_snapshot.decision.track_generations[slot] ==
             draw_snapshot.tracks[slot].generation;
     if (!matches) {
+      invalidate_cpu_source_cache(tracks_[slot]);
       clear_track_bindings(slot, constants);
       continue;
     }
@@ -1049,11 +1050,11 @@ bool WindowsD3D11ViewportRenderer::prepare_track(
   }
   if (const auto* storage = frame.cpu_nv12_storage()) {
     ++stats_.software_frame_count;
-    return prepare_cpu_nv12_track(slot, *storage, constants);
+    return prepare_cpu_nv12_track(slot, frame, *storage, constants);
   }
   if (const auto* storage = frame.cpu_planar_yuv_storage()) {
     ++stats_.software_frame_count;
-    return prepare_cpu_planar_track(slot, *storage, constants);
+    return prepare_cpu_planar_track(slot, frame, *storage, constants);
   }
   if (const auto* storage = frame.cpu_rgba_storage()) {
     ++stats_.software_frame_count;
@@ -1078,6 +1079,7 @@ bool WindowsD3D11ViewportRenderer::prepare_hardware_track(
     return fail("D3D11 frame storage has unsupported format or array slice");
   }
   auto& resources = tracks_[slot];
+  invalidate_cpu_source_cache(resources);
   const bool same_frame_owner =
       storage.frame_ref && resources.cached_hardware_frame_ref &&
       !storage.frame_ref.owner_before(resources.cached_hardware_frame_ref) &&
@@ -1153,7 +1155,24 @@ bool WindowsD3D11ViewportRenderer::prepare_cpu_rgba_track(
       storage.stride < frame.width * 4) {
     return fail("CPU BGRA frame storage is invalid");
   }
-  auto& resource = tracks_[slot].rgba;
+  auto& resources = tracks_[slot];
+  std::shared_ptr<void> frame_ref = storage.data;
+  const bool source_cache_hit =
+      resources.rgba.texture && resources.rgba.srv &&
+      cpu_source_cache_hit(resources,
+                           frame,
+                           FrameStorageKind::CpuRgba,
+                           frame_ref,
+                           storage.data->data());
+  if (source_cache_hit) {
+    rgba_srvs_[slot] = resources.rgba.srv.Get();
+    constants.nv12_mask &= ~(1 << static_cast<int>(slot));
+    constants.planar_yuv_mask &= ~(1 << static_cast<int>(slot));
+    ++stats_.source_frame_cache_hit_count;
+    return true;
+  }
+  ++stats_.source_frame_cache_miss_count;
+  auto& resource = resources.rgba;
   if (!ensure_plane(resource,
                     frame.width,
                     frame.height,
@@ -1164,11 +1183,18 @@ bool WindowsD3D11ViewportRenderer::prepare_cpu_rgba_track(
   rgba_srvs_[slot] = resource.srv.Get();
   constants.nv12_mask &= ~(1 << static_cast<int>(slot));
   constants.planar_yuv_mask &= ~(1 << static_cast<int>(slot));
+  commit_cpu_source_cache(resources,
+                          frame,
+                          FrameStorageKind::CpuRgba,
+                          std::move(frame_ref),
+                          storage.data->data());
+  ++stats_.video_source_update_count;
   return true;
 }
 
 bool WindowsD3D11ViewportRenderer::prepare_cpu_nv12_track(
     size_t slot,
+    const TextureFrame& frame,
     const CpuNv12FrameStorage& storage,
     ShaderConstants& constants) {
   const int width = storage.coded_width;
@@ -1188,6 +1214,24 @@ bool WindowsD3D11ViewportRenderer::prepare_cpu_nv12_track(
     return fail("CPU NV12/P010 frame buffer is undersized");
   }
   auto& resources = tracks_[slot];
+  std::shared_ptr<void> frame_ref = storage.data;
+  const bool source_cache_hit =
+      resources.y.texture && resources.y.srv &&
+      resources.uv.texture && resources.uv.srv &&
+      cpu_source_cache_hit(resources,
+                           frame,
+                           FrameStorageKind::CpuNv12,
+                           frame_ref,
+                           storage.data->data());
+  if (source_cache_hit) {
+    y_srvs_[slot] = resources.y.srv.Get();
+    uv_srvs_[slot] = resources.uv.srv.Get();
+    constants.nv12_mask |= (1 << static_cast<int>(slot));
+    constants.planar_yuv_mask &= ~(1 << static_cast<int>(slot));
+    ++stats_.source_frame_cache_hit_count;
+    return true;
+  }
+  ++stats_.source_frame_cache_miss_count;
   const DXGI_FORMAT y_format = storage.is_p010 ? DXGI_FORMAT_R16_UNORM
                                                : DXGI_FORMAT_R8_UNORM;
   const DXGI_FORMAT uv_format = storage.is_p010 ? DXGI_FORMAT_R16G16_UNORM
@@ -1208,11 +1252,18 @@ bool WindowsD3D11ViewportRenderer::prepare_cpu_nv12_track(
   uv_srvs_[slot] = resources.uv.srv.Get();
   constants.nv12_mask |= (1 << static_cast<int>(slot));
   constants.planar_yuv_mask &= ~(1 << static_cast<int>(slot));
+  commit_cpu_source_cache(resources,
+                          frame,
+                          FrameStorageKind::CpuNv12,
+                          std::move(frame_ref),
+                          storage.data->data());
+  ++stats_.video_source_update_count;
   return true;
 }
 
 bool WindowsD3D11ViewportRenderer::prepare_cpu_planar_track(
     size_t slot,
+    const TextureFrame& frame,
     const CpuPlanarYuvFrameStorage& storage,
     ShaderConstants& constants) {
   if (!storage.planes[0] || !storage.planes[1] ||
@@ -1224,6 +1275,35 @@ bool WindowsD3D11ViewportRenderer::prepare_cpu_planar_track(
   const bool shift = is_16_bit &&
       storage.sample_alignment == CpuYuvSampleAlignment::Packed;
   auto& resources = tracks_[slot];
+  const bool semiplanar =
+      storage.plane_layout == CpuYuvPlaneLayout::SemiPlanarYuv420;
+  const bool cache_resources_ready =
+      resources.y.texture && resources.y.srv &&
+      (semiplanar
+           ? (resources.uv.texture && resources.uv.srv)
+           : (resources.u.texture && resources.u.srv &&
+              resources.v.texture && resources.v.srv));
+  if (cache_resources_ready &&
+      cpu_source_cache_hit(resources,
+                           frame,
+                           FrameStorageKind::CpuPlanarYuv,
+                           storage.frame_ref,
+                           storage.planes[0])) {
+    y_srvs_[slot] = resources.y.srv.Get();
+    if (semiplanar) {
+      uv_srvs_[slot] = resources.uv.srv.Get();
+      constants.nv12_mask |= (1 << static_cast<int>(slot));
+      constants.planar_yuv_mask &= ~(1 << static_cast<int>(slot));
+    } else {
+      u_srvs_[slot] = resources.u.srv.Get();
+      v_srvs_[slot] = resources.v.srv.Get();
+      constants.nv12_mask &= ~(1 << static_cast<int>(slot));
+      constants.planar_yuv_mask |= (1 << static_cast<int>(slot));
+    }
+    ++stats_.source_frame_cache_hit_count;
+    return true;
+  }
+  ++stats_.source_frame_cache_miss_count;
   const DXGI_FORMAT one_channel = is_16_bit ? DXGI_FORMAT_R16_UNORM
                                             : DXGI_FORMAT_R8_UNORM;
   if (!ensure_plane(resources.y,
@@ -1256,6 +1336,12 @@ bool WindowsD3D11ViewportRenderer::prepare_cpu_planar_track(
     uv_srvs_[slot] = resources.uv.srv.Get();
     constants.nv12_mask |= (1 << static_cast<int>(slot));
     constants.planar_yuv_mask &= ~(1 << static_cast<int>(slot));
+    commit_cpu_source_cache(resources,
+                            frame,
+                            FrameStorageKind::CpuPlanarYuv,
+                            storage.frame_ref,
+                            storage.planes[0]);
+    ++stats_.video_source_update_count;
     return true;
   }
 
@@ -1284,7 +1370,61 @@ bool WindowsD3D11ViewportRenderer::prepare_cpu_planar_track(
   v_srvs_[slot] = resources.v.srv.Get();
   constants.nv12_mask &= ~(1 << static_cast<int>(slot));
   constants.planar_yuv_mask |= (1 << static_cast<int>(slot));
+  commit_cpu_source_cache(resources,
+                          frame,
+                          FrameStorageKind::CpuPlanarYuv,
+                          storage.frame_ref,
+                          storage.planes[0]);
+  ++stats_.video_source_update_count;
   return true;
+}
+
+bool WindowsD3D11ViewportRenderer::cpu_source_cache_hit(
+    const TrackResources& resources,
+    const TextureFrame& frame,
+    FrameStorageKind storage_kind,
+    const std::shared_ptr<void>& frame_ref,
+    const void* source) const {
+  const bool same_owner =
+      frame_ref && resources.cached_cpu_frame_ref &&
+      !frame_ref.owner_before(resources.cached_cpu_frame_ref) &&
+      !resources.cached_cpu_frame_ref.owner_before(frame_ref);
+  return same_owner && source &&
+      resources.cached_cpu_storage_kind == storage_kind &&
+      resources.cached_cpu_source == source &&
+      resources.cached_cpu_width == frame.width &&
+      resources.cached_cpu_height == frame.height &&
+      resources.cached_cpu_pts_us == frame.pts_us &&
+      resources.cached_cpu_dts_us == frame.dts_us;
+}
+
+void WindowsD3D11ViewportRenderer::commit_cpu_source_cache(
+    TrackResources& resources,
+    const TextureFrame& frame,
+    FrameStorageKind storage_kind,
+    std::shared_ptr<void> frame_ref,
+    const void* source) {
+  resources.cached_hardware_frame_ref.reset();
+  resources.cached_hardware_source = nullptr;
+  resources.cached_hardware_array_index = -1;
+  resources.cached_cpu_storage_kind = storage_kind;
+  resources.cached_cpu_frame_ref = std::move(frame_ref);
+  resources.cached_cpu_source = source;
+  resources.cached_cpu_width = frame.width;
+  resources.cached_cpu_height = frame.height;
+  resources.cached_cpu_pts_us = frame.pts_us;
+  resources.cached_cpu_dts_us = frame.dts_us;
+}
+
+void WindowsD3D11ViewportRenderer::invalidate_cpu_source_cache(
+    TrackResources& resources) {
+  resources.cached_cpu_storage_kind = FrameStorageKind::Empty;
+  resources.cached_cpu_frame_ref.reset();
+  resources.cached_cpu_source = nullptr;
+  resources.cached_cpu_width = 0;
+  resources.cached_cpu_height = 0;
+  resources.cached_cpu_pts_us = 0;
+  resources.cached_cpu_dts_us = 0;
 }
 
 bool WindowsD3D11ViewportRenderer::ensure_plane(PlaneResource& resource,

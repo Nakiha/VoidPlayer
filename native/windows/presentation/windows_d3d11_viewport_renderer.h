@@ -96,6 +96,13 @@ class WindowsD3D11ViewportRenderer final {
     int cached_hardware_array_index = -1;
     int64_t cached_hardware_pts_us = 0;
     int64_t cached_hardware_dts_us = 0;
+    FrameStorageKind cached_cpu_storage_kind = FrameStorageKind::Empty;
+    std::shared_ptr<void> cached_cpu_frame_ref;
+    const void* cached_cpu_source = nullptr;
+    int cached_cpu_width = 0;
+    int cached_cpu_height = 0;
+    int64_t cached_cpu_pts_us = 0;
+    int64_t cached_cpu_dts_us = 0;
   };
 
   bool create_pipeline();
@@ -113,11 +120,24 @@ class WindowsD3D11ViewportRenderer final {
                               const CpuRgbaFrameStorage& storage,
                               ShaderConstants& constants);
   bool prepare_cpu_nv12_track(size_t slot,
+                              const TextureFrame& frame,
                               const CpuNv12FrameStorage& storage,
                               ShaderConstants& constants);
   bool prepare_cpu_planar_track(size_t slot,
+                                const TextureFrame& frame,
                                 const CpuPlanarYuvFrameStorage& storage,
                                 ShaderConstants& constants);
+  bool cpu_source_cache_hit(const TrackResources& resources,
+                            const TextureFrame& frame,
+                            FrameStorageKind storage_kind,
+                            const std::shared_ptr<void>& frame_ref,
+                            const void* source) const;
+  void commit_cpu_source_cache(TrackResources& resources,
+                               const TextureFrame& frame,
+                               FrameStorageKind storage_kind,
+                               std::shared_ptr<void> frame_ref,
+                               const void* source);
+  void invalidate_cpu_source_cache(TrackResources& resources);
   bool ensure_plane(PlaneResource& resource,
                     int width,
                     int height,

@@ -240,6 +240,19 @@ bool DecodeThread::open_codec() {
         }
     }
 
+    if (!hw_enabled_ && codec_ctx_ &&
+        codec_ctx_->codec_id == AV_CODEC_ID_VVC) {
+        // FFmpeg's VVC decoder otherwise allocates one large frame context per
+        // logical CPU (up to 16) even though VoidPlayer retains decoded frames
+        // in its own bounded TrackBuffer. LOW_DELAY keeps one decoder frame
+        // context while preserving the decoder's emitted frame order.
+        codec_ctx_->flags |= AV_CODEC_FLAG_LOW_DELAY;
+        spdlog::info(
+            "[DecodeThread] VVC bounded frame-context policy enabled "
+            "(low_delay=true, thread_count={})",
+            codec_ctx_->thread_count);
+    }
+
     int ret = open_codec_seh_guarded(codec_ctx_.get(), codec_, nullptr, codec_open_for_test_);
     if (ret == 0) return true;
 
@@ -262,6 +275,14 @@ bool DecodeThread::open_codec() {
         }
         if (!reset_codec_context(sw_codec ? sw_codec : codec_)) {
             return false;
+        }
+
+        if (codec_ctx_->codec_id == AV_CODEC_ID_VVC) {
+            codec_ctx_->flags |= AV_CODEC_FLAG_LOW_DELAY;
+            spdlog::info(
+                "[DecodeThread] VVC bounded frame-context policy enabled after "
+                "hardware fallback (low_delay=true, thread_count={})",
+                codec_ctx_->thread_count);
         }
 
         int ret2 = open_codec_seh_guarded(codec_ctx_.get(), codec_, nullptr, codec_open_for_test_);

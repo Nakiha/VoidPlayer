@@ -319,6 +319,89 @@ TEST_CASE("Windows D3D11 viewport samples the selected D3D11VA array slice",
   REQUIRE(renderer.stats().source_frame_cache_hit_count == 1);
 }
 
+TEST_CASE("Windows D3D11 viewport retains CPU planar source across layout changes",
+          "[windows_d3d11_viewport][windows_source_cache]"
+          "[windows_source_projection][windows_high_refresh]") {
+  auto test_device = create_viewport_test_device();
+  WindowsD3D11ViewportRenderer renderer;
+  REQUIRE(renderer.initialize(test_device.device.Get(), test_device.context.Get()));
+  auto target = create_viewport_target(test_device.device.Get(),
+                                       DXGI_FORMAT_B8G8R8A8_UNORM);
+  Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
+  REQUIRE(SUCCEEDED(test_device.device->CreateRenderTargetView(
+      target.Get(), nullptr, &rtv)));
+
+  struct PlanarPixels {
+    std::array<uint8_t, 16> y{};
+    std::array<uint8_t, 4> u{};
+    std::array<uint8_t, 4> v{};
+  };
+  const auto make_frame = [](uint8_t luma, int64_t pts_us) {
+    auto pixels = std::make_shared<PlanarPixels>();
+    pixels->y.fill(luma);
+    pixels->u.fill(128);
+    pixels->v.fill(128);
+    TextureFrame frame;
+    frame.pts_us = pts_us;
+    frame.dts_us = pts_us;
+    frame.width = 4;
+    frame.height = 4;
+    frame.color = {VIDEO_COLOR_RANGE_LIMITED,
+                   VIDEO_COLOR_MATRIX_BT709,
+                   VIDEO_COLOR_TRANSFER_SDR,
+                   VIDEO_COLOR_PRIMARIES_BT709};
+    frame.storage = CpuPlanarYuvFrameStorage{
+        pixels,
+        {pixels->y.data(), pixels->u.data(), pixels->v.data()},
+        {4, 2, 2},
+        {4, 2, 2},
+        {4, 2, 2},
+        1,
+        8,
+        CpuYuvPlaneLayout::PlanarYuv420,
+        CpuYuvSampleAlignment::Packed,
+    };
+    return frame;
+  };
+
+  auto draw = make_single_track_snapshot(make_frame(126, 0));
+  auto presentation = build_snapshot(draw);
+  REQUIRE(renderer.draw(draw,
+                        presentation,
+                        rtv.Get(),
+                        ColorOutputTarget::kSDRToneMappedBT709,
+                        80.0));
+  REQUIRE(renderer.stats().video_source_update_count == 1);
+  REQUIRE(renderer.stats().source_frame_cache_miss_count == 1);
+  REQUIRE(renderer.stats().source_frame_cache_hit_count == 0);
+
+  ++draw.layout_revision;
+  draw.layout.zoom_ratio = 2.0f;
+  draw.layout.view_offset[0] = 3.0f;
+  presentation = build_snapshot(draw);
+  REQUIRE(renderer.draw(draw,
+                        presentation,
+                        rtv.Get(),
+                        ColorOutputTarget::kSDRToneMappedBT709,
+                        80.0));
+  REQUIRE(renderer.stats().software_frame_count == 2);
+  REQUIRE(renderer.stats().video_source_update_count == 1);
+  REQUIRE(renderer.stats().source_frame_cache_miss_count == 1);
+  REQUIRE(renderer.stats().source_frame_cache_hit_count == 1);
+
+  draw.decision.frames[0] = make_frame(180, 16667);
+  ++draw.layout_revision;
+  presentation = build_snapshot(draw);
+  REQUIRE(renderer.draw(draw,
+                        presentation,
+                        rtv.Get(),
+                        ColorOutputTarget::kSDRToneMappedBT709,
+                        80.0));
+  REQUIRE(renderer.stats().video_source_update_count == 2);
+  REQUIRE(renderer.stats().source_frame_cache_miss_count == 2);
+  REQUIRE(renderer.stats().source_frame_cache_hit_count == 1);
+}
+
 TEST_CASE("Windows D3D11 viewport applies shared split layout and track order",
           "[windows_d3d11_viewport][windows_layout]") {
   auto test_device = create_viewport_test_device();

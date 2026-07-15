@@ -295,6 +295,20 @@ WindowsD3D11PresentationBackend::presentation_stats() const {
   stats.overlay_missed_count = overlay_missed_count_;
   stats.overlay_gpu_success_count = overlay_applied_count_;
   stats.overlay_gpu_failure_count = overlay_gpu_failure_count_;
+  stats.overlay_source_cache_hit_count =
+      viewport.overlay_source_cache_hit_count;
+  stats.overlay_source_cache_miss_count =
+      viewport.overlay_source_cache_miss_count;
+  stats.overlay_gpu_upload_count = viewport.overlay_gpu_upload_count;
+  stats.overlay_gpu_buffer_reuse_count =
+      viewport.overlay_gpu_buffer_reuse_count;
+  stats.overlay_gpu_upload_bytes = viewport.overlay_gpu_upload_bytes;
+  stats.overlay_last_source_generation =
+      viewport.overlay_last_source_generation;
+  stats.overlay_last_lookup_us = viewport.overlay_last_lookup_us;
+  stats.overlay_last_upload_us = viewport.overlay_last_upload_us;
+  stats.overlay_last_cpu_submit_us = viewport.overlay_last_cpu_submit_us;
+  stats.overlay_max_cpu_submit_us = viewport.overlay_max_cpu_submit_us;
   return stats;
 }
 

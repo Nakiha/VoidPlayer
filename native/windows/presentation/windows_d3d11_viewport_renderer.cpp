@@ -5,6 +5,7 @@
 #include <d3dcompiler.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -263,43 +264,181 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 
 constexpr char kOverlayShader[] = R"hlsl(
 struct VSInput {
-  float2 position : POSITION;
+  float2 corner : POSITION;
+  float2 source_uv0 : TEXCOORD0;
+  float2 source_uv1 : TEXCOORD1;
   float4 color : COLOR0;
-  float2 contrast : TEXCOORD0;
+  uint track_slot : BLENDINDICES0;
+  uint kind : BLENDINDICES1;
 };
 struct VSOutput {
   float4 position : SV_POSITION;
   float4 color : COLOR0;
-  nointerpolation float2 contrast : TEXCOORD0;
+  nointerpolation float4 clip_rect : TEXCOORD0;
+  nointerpolation float contrast_center : TEXCOORD1;
+  nointerpolation uint kind : BLENDINDICES0;
 };
-cbuffer OverlayConstants : register(b0) {
+
+#define MODE_SPLIT_SCREEN 1
+#define PRIMITIVE_FILL_RECT 0
+#define PRIMITIVE_CONTRAST_VERTICAL 1
+#define PRIMITIVE_CONTRAST_HORIZONTAL 2
+#define PRIMITIVE_MOTION_LINE 3
+
+cbuffer LayoutConstants : register(b0) {
+  int u_mode;
+  int u_track_count;
+  float u_split_pos;
+  float u_zoom_ratio;
+  float u_canvas_width;
+  float u_canvas_height;
+  float2 u_view_offset;
+  int4 u_order;
+  float4 u_video_aspect;
+  int u_nv12_mask;
+  int u_planar_yuv_mask;
+  float2 u_pad1;
+  float4 u_nv12_uv_scale_y;
+  float4 u_nv12_uv_scale_x;
+  float4 u_track_scale;
+  float4 u_display_offset_x;
+  float4 u_display_offset_y;
+  float4 u_inv_display_size_x;
+  float4 u_inv_display_size_y;
+  float4 u_view_offset_uv_x;
+  float4 u_view_offset_uv_y;
+  float4 u_background_color;
+  int4 u_color_range;
+  int4 u_color_matrix;
+  int4 u_color_transfer;
+  int4 u_color_primaries;
+  int u_layout_output_target;
+  float u_layout_sdr_white_scale;
+  float2 u_pad2;
+};
+cbuffer OverlayConstants : register(b1) {
   int u_output_target;
   float u_sdr_white_scale;
   int u_contrast_pass;
   float u_padding;
 };
+
 float3 srgb_to_linear(float3 x) {
   x = saturate(x);
   return lerp(x / 12.92,
               pow((x + 0.055) / 1.055, 2.4),
               step(0.04045, x));
 }
+
+int display_index_for_slot(int slot) {
+  int count = clamp(u_track_count, 1, 4);
+  [unroll]
+  for (int i = 0; i < 4; ++i) {
+    if (i < count && u_order[i] == slot) return i;
+  }
+  return -1;
+}
+
+float4 clip_rect_for_slot(int slot, int display_index) {
+  if (u_mode == MODE_SPLIT_SCREEN) {
+    float split = saturate(u_split_pos) * u_canvas_width;
+    if (u_order[0] == slot) return float4(0.0, 0.0, split, u_canvas_height);
+    if (u_order[1] == slot) {
+      return float4(split, 0.0, u_canvas_width, u_canvas_height);
+    }
+    return float4(0.0, 0.0, 0.0, 0.0);
+  }
+  int count = clamp(u_track_count, 1, 4);
+  float cell_width = u_canvas_width / float(count);
+  return float4(display_index * cell_width, 0.0,
+                (display_index + 1) * cell_width, u_canvas_height);
+}
+
+float2 project_source_uv(int slot, int display_index, float2 source_uv) {
+  float2 inverse_size =
+      float2(u_inv_display_size_x[slot], u_inv_display_size_y[slot]);
+  float2 local =
+      float2(u_display_offset_x[slot], u_display_offset_y[slot]) +
+      (source_uv +
+       float2(u_view_offset_uv_x[slot], u_view_offset_uv_y[slot])) /
+          inverse_size;
+  if (u_mode == MODE_SPLIT_SCREEN) {
+    return local * float2(u_canvas_width, u_canvas_height);
+  }
+  int count = clamp(u_track_count, 1, 4);
+  return float2((display_index + local.x) * u_canvas_width / float(count),
+                local.y * u_canvas_height);
+}
+
+float4 pixel_position(float2 pixel) {
+  return float4(pixel.x * 2.0 / u_canvas_width - 1.0,
+                1.0 - pixel.y * 2.0 / u_canvas_height,
+                0.0, 1.0);
+}
+
 VSOutput VSOverlay(VSInput input) {
   VSOutput output;
-  output.position = float4(input.position, 0.0, 1.0);
   output.color = input.color;
-  output.contrast = input.contrast;
+  output.kind = input.kind;
+  output.contrast_center = 0.0;
+  int slot = clamp(int(input.track_slot), 0, 3);
+  int display_index = display_index_for_slot(slot);
+  bool valid = display_index >= 0 && u_canvas_width > 0.0 &&
+      u_canvas_height > 0.0 && u_inv_display_size_x[slot] != 0.0 &&
+      u_inv_display_size_y[slot] != 0.0;
+  output.clip_rect = valid
+      ? clip_rect_for_slot(slot, display_index)
+      : float4(0.0, 0.0, 0.0, 0.0);
+  if (!valid) {
+    output.position = float4(-2.0, -2.0, 0.0, 1.0);
+    return output;
+  }
+
+  float2 p0 = project_source_uv(slot, display_index, input.source_uv0);
+  float2 p1 = project_source_uv(slot, display_index, input.source_uv1);
+  float2 pixel;
+  if (input.kind == PRIMITIVE_CONTRAST_VERTICAL) {
+    float center = floor(p0.x + 0.001);
+    float top = floor(min(p0.y, p1.y));
+    float bottom = ceil(max(p0.y, p1.y));
+    pixel = lerp(float2(center - 1.0, top),
+                 float2(center + 2.0, bottom), input.corner);
+    output.contrast_center = center + 0.5;
+  } else if (input.kind == PRIMITIVE_CONTRAST_HORIZONTAL) {
+    float center = floor(p0.y + 0.001);
+    float left = floor(min(p0.x, p1.x));
+    float right = ceil(max(p0.x, p1.x));
+    pixel = lerp(float2(left, center - 1.0),
+                 float2(right, center + 2.0), input.corner);
+    output.contrast_center = center + 0.5;
+  } else if (input.kind == PRIMITIVE_MOTION_LINE) {
+    float2 delta = p1 - p0;
+    float line_length = max(length(delta), 0.001);
+    float2 normal = float2(-delta.y, delta.x) / line_length;
+    pixel = lerp(p0, p1, input.corner.x) +
+            normal * (input.corner.y * 2.0 - 1.0);
+  } else {
+    pixel = lerp(min(p0, p1), max(p0, p1), input.corner);
+  }
+  output.position = pixel_position(pixel);
   return output;
 }
+
 float4 PSOverlay(VSOutput input) : SV_TARGET {
+  if (input.position.x < input.clip_rect.x ||
+      input.position.y < input.clip_rect.y ||
+      input.position.x >= input.clip_rect.z ||
+      input.position.y >= input.clip_rect.w) discard;
   float4 color = input.color;
-  if (input.contrast.x > 0.5) {
+  if (input.kind == PRIMITIVE_CONTRAST_VERTICAL ||
+      input.kind == PRIMITIVE_CONTRAST_HORIZONTAL) {
     if (u_contrast_pass == 0) {
       color = float4(0.0, 0.0, 0.0, 0.85);
     } else {
-      const float axis_position =
-          input.contrast.x < 1.5 ? input.position.x : input.position.y;
-      if (abs(axis_position - (input.contrast.y + 0.5)) >= 0.55) discard;
+      float axis_position = input.kind == PRIMITIVE_CONTRAST_VERTICAL
+          ? input.position.x
+          : input.position.y;
+      if (abs(axis_position - input.contrast_center) >= 0.55) discard;
       color = float4(1.0, 1.0, 1.0, 0.95);
     }
   }
@@ -316,6 +455,15 @@ struct OverlayConstants {
   float sdr_white_scale = 1.0f;
   int contrast_pass = 0;
   float padding = 0.0f;
+};
+
+struct OverlayUnitVertex {
+  float corner[2];
+};
+
+constexpr OverlayUnitVertex kOverlayUnitVertices[] = {
+    {{0.0f, 0.0f}}, {{1.0f, 0.0f}}, {{0.0f, 1.0f}},
+    {{0.0f, 1.0f}}, {{1.0f, 0.0f}}, {{1.0f, 1.0f}},
 };
 
 struct Vertex {
@@ -369,11 +517,15 @@ void WindowsD3D11ViewportRenderer::shutdown() {
   sampler_.Reset();
   overlay_blend_state_.Reset();
   overlay_constant_buffer_.Reset();
-  overlay_vertex_buffer_.Reset();
+  overlay_instance_buffer_.Reset();
+  overlay_unit_vertex_buffer_.Reset();
   overlay_input_layout_.Reset();
   overlay_pixel_shader_.Reset();
   overlay_vertex_shader_.Reset();
-  overlay_vertex_capacity_ = 0;
+  overlay_instance_capacity_ = 0;
+  overlay_uploaded_generation_ = 0;
+  overlay_uploaded_instance_count_ = 0;
+  overlay_retained_batch_.reset();
   constant_buffer_.Reset();
   vertex_buffer_.Reset();
   input_layout_.Reset();
@@ -536,16 +688,32 @@ bool WindowsD3D11ViewportRenderer::create_overlay_pipeline() {
   const D3D11_INPUT_ELEMENT_DESC input_desc[] = {
       {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
        D3D11_INPUT_PER_VERTEX_DATA, 0},
-      {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 8,
-       D3D11_INPUT_PER_VERTEX_DATA, 0},
-      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24,
-       D3D11_INPUT_PER_VERTEX_DATA, 0},
+      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 1, 0,
+       D3D11_INPUT_PER_INSTANCE_DATA, 1},
+      {"TEXCOORD", 1, DXGI_FORMAT_R32G32_FLOAT, 1, 8,
+       D3D11_INPUT_PER_INSTANCE_DATA, 1},
+      {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 16,
+       D3D11_INPUT_PER_INSTANCE_DATA, 1},
+      {"BLENDINDICES", 0, DXGI_FORMAT_R32_UINT, 1, 32,
+       D3D11_INPUT_PER_INSTANCE_DATA, 1},
+      {"BLENDINDICES", 1, DXGI_FORMAT_R32_UINT, 1, 36,
+       D3D11_INPUT_PER_INSTANCE_DATA, 1},
   };
   if (FAILED(device_->CreateInputLayout(input_desc, ARRAYSIZE(input_desc),
                                          vertex_blob->GetBufferPointer(),
                                          vertex_blob->GetBufferSize(),
                                          &overlay_input_layout_))) {
     return fail("could not create analysis overlay input layout");
+  }
+  D3D11_BUFFER_DESC unit_vertex_desc = {};
+  unit_vertex_desc.ByteWidth = sizeof(kOverlayUnitVertices);
+  unit_vertex_desc.Usage = D3D11_USAGE_IMMUTABLE;
+  unit_vertex_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+  D3D11_SUBRESOURCE_DATA unit_vertex_data = {};
+  unit_vertex_data.pSysMem = kOverlayUnitVertices;
+  if (FAILED(device_->CreateBuffer(&unit_vertex_desc, &unit_vertex_data,
+                                    &overlay_unit_vertex_buffer_))) {
+    return fail("could not create analysis overlay unit vertex buffer");
   }
   D3D11_BUFFER_DESC constant_desc = {};
   constant_desc.ByteWidth = sizeof(OverlayConstants);
@@ -571,28 +739,32 @@ bool WindowsD3D11ViewportRenderer::create_overlay_pipeline() {
   return true;
 }
 
-bool WindowsD3D11ViewportRenderer::ensure_overlay_vertex_buffer(
-    size_t vertex_count) {
-  if (overlay_vertex_buffer_ && vertex_count <= overlay_vertex_capacity_) {
+bool WindowsD3D11ViewportRenderer::ensure_overlay_instance_buffer(
+    size_t instance_count) {
+  if (overlay_instance_buffer_ &&
+      instance_count <= overlay_instance_capacity_) {
     return true;
   }
-  size_t capacity = std::max<size_t>(256, overlay_vertex_capacity_);
-  while (capacity < vertex_count) capacity *= 2;
+  size_t capacity = std::max<size_t>(256, overlay_instance_capacity_);
+  while (capacity < instance_count) capacity *= 2;
   if (capacity > std::numeric_limits<UINT>::max() /
-                     sizeof(AnalysisOverlayGpuVertex)) {
-    return fail("analysis overlay geometry exceeds D3D11 buffer limits");
+                     sizeof(AnalysisOverlayGpuPrimitive)) {
+    return fail("analysis overlay instances exceed D3D11 buffer limits");
   }
   D3D11_BUFFER_DESC desc = {};
-  desc.ByteWidth = static_cast<UINT>(capacity * sizeof(AnalysisOverlayGpuVertex));
+  desc.ByteWidth =
+      static_cast<UINT>(capacity * sizeof(AnalysisOverlayGpuPrimitive));
   desc.Usage = D3D11_USAGE_DYNAMIC;
   desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
   desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
   Microsoft::WRL::ComPtr<ID3D11Buffer> buffer;
   if (FAILED(device_->CreateBuffer(&desc, nullptr, &buffer))) {
-    return fail("could not allocate analysis overlay vertex buffer");
+    return fail("could not allocate analysis overlay instance buffer");
   }
-  overlay_vertex_buffer_ = std::move(buffer);
-  overlay_vertex_capacity_ = capacity;
+  overlay_instance_buffer_ = std::move(buffer);
+  overlay_instance_capacity_ = capacity;
+  overlay_uploaded_generation_ = 0;
+  overlay_uploaded_instance_count_ = 0;
   return true;
 }
 
@@ -602,75 +774,145 @@ bool WindowsD3D11ViewportRenderer::draw_overlay(
     ID3D11RenderTargetView* target,
     ColorOutputTarget output_target,
     double sdr_white_level_nits) {
-  auto geometry = build_analysis_overlay_gpu_geometry(
-      package, presentation.constants,
-      static_cast<int>(std::lround(presentation.constants.canvas_width)),
-      static_cast<int>(std::lround(presentation.constants.canvas_height)));
-  stats_.overlay_last_vertex_count = geometry.vertices.size();
-  stats_.overlay_last_fill_rect_count = geometry.fill_rect_count;
-  stats_.overlay_last_line_rect_count = geometry.line_rect_count;
-  if (geometry.empty()) return true;
+  using Clock = std::chrono::steady_clock;
+  const auto lookup_start = Clock::now();
+  AnalysisOverlayGpuPrimitiveLookup lookup;
+  if (package.cache_generation != 0 && overlay_retained_batch_ &&
+      overlay_retained_batch_->source_generation == package.cache_generation) {
+    lookup = {overlay_retained_batch_, true};
+  } else {
+    lookup = lookup_analysis_overlay_gpu_primitives(package);
+    if (package.cache_generation != 0) {
+      overlay_retained_batch_ = lookup.batch;
+    }
+  }
+  const auto lookup_end = Clock::now();
+  stats_.overlay_last_lookup_us = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          lookup_end - lookup_start)
+          .count());
+  lookup.cache_hit ? ++stats_.overlay_source_cache_hit_count
+                   : ++stats_.overlay_source_cache_miss_count;
+  if (!lookup.batch) {
+    ++stats_.overlay_failure_count;
+    return fail("analysis overlay source primitive lookup failed");
+  }
+  const auto& batch = *lookup.batch;
+  stats_.overlay_last_source_generation = batch.source_generation;
+  stats_.overlay_last_vertex_count = batch.primitives.size() * 6;
+  stats_.overlay_last_fill_rect_count = batch.fill_count;
+  stats_.overlay_last_line_rect_count = batch.line_rect_count();
+  if (batch.empty()) return true;
   if (!target || !overlay_vertex_shader_ || !overlay_pixel_shader_ ||
-      !ensure_overlay_vertex_buffer(geometry.vertices.size())) {
+      !overlay_unit_vertex_buffer_ ||
+      !ensure_overlay_instance_buffer(batch.primitives.size())) {
     ++stats_.overlay_failure_count;
     return false;
   }
-  D3D11_MAPPED_SUBRESOURCE mapped = {};
-  if (FAILED(context_->Map(overlay_vertex_buffer_.Get(), 0,
-                            D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
-    ++stats_.overlay_failure_count;
-    return fail("could not map analysis overlay vertex buffer");
-  }
-  std::memcpy(mapped.pData, geometry.vertices.data(),
-              geometry.vertices.size() * sizeof(AnalysisOverlayGpuVertex));
-  context_->Unmap(overlay_vertex_buffer_.Get(), 0);
 
-  OverlayConstants constants;
-  constants.output_target =
+  const auto upload_start = Clock::now();
+  const bool needs_upload =
+      batch.source_generation == 0 ||
+      overlay_uploaded_generation_ != batch.source_generation ||
+      overlay_uploaded_instance_count_ != batch.primitives.size();
+  if (needs_upload) {
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    if (FAILED(context_->Map(overlay_instance_buffer_.Get(), 0,
+                             D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+      ++stats_.overlay_failure_count;
+      return fail("could not map analysis overlay instance buffer");
+    }
+    const size_t upload_bytes =
+        batch.primitives.size() * sizeof(AnalysisOverlayGpuPrimitive);
+    std::memcpy(mapped.pData, batch.primitives.data(), upload_bytes);
+    context_->Unmap(overlay_instance_buffer_.Get(), 0);
+    overlay_uploaded_generation_ = batch.source_generation;
+    overlay_uploaded_instance_count_ = batch.primitives.size();
+    ++stats_.overlay_gpu_upload_count;
+    stats_.overlay_gpu_upload_bytes += upload_bytes;
+  } else {
+    ++stats_.overlay_gpu_buffer_reuse_count;
+  }
+  stats_.overlay_last_upload_us = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          Clock::now() - upload_start)
+          .count());
+
+  const auto submit_start = Clock::now();
+  ShaderConstants layout_constants = presentation.constants;
+  layout_constants.output_target =
       output_target == ColorOutputTarget::kWindowsLinearScRGB ? 1 : 0;
-  constants.sdr_white_scale = static_cast<float>(
+  layout_constants.sdr_white_scale = static_cast<float>(
       std::isfinite(sdr_white_level_nits) && sdr_white_level_nits > 0.0
           ? sdr_white_level_nits / 80.0
           : 1.0);
+  context_->UpdateSubresource(constant_buffer_.Get(), 0, nullptr,
+                              &layout_constants, 0, 0);
+  OverlayConstants constants;
+  constants.output_target = layout_constants.output_target;
+  constants.sdr_white_scale = layout_constants.sdr_white_scale;
   context_->UpdateSubresource(overlay_constant_buffer_.Get(), 0, nullptr,
                               &constants, 0, 0);
   context_->OMSetRenderTargets(1, &target, nullptr);
   const float blend_factor[4] = {};
   context_->OMSetBlendState(overlay_blend_state_.Get(), blend_factor, 0xffffffffu);
-  const UINT stride = sizeof(AnalysisOverlayGpuVertex);
-  const UINT offset = 0;
-  ID3D11Buffer* vertices = overlay_vertex_buffer_.Get();
+  const UINT strides[] = {
+      sizeof(OverlayUnitVertex), sizeof(AnalysisOverlayGpuPrimitive)};
+  const UINT offsets[] = {0, 0};
+  ID3D11Buffer* vertices[] = {
+      overlay_unit_vertex_buffer_.Get(), overlay_instance_buffer_.Get()};
   context_->IASetInputLayout(overlay_input_layout_.Get());
-  context_->IASetVertexBuffers(0, 1, &vertices, &stride, &offset);
+  context_->IASetVertexBuffers(0, 2, vertices, strides, offsets);
   context_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
   context_->VSSetShader(overlay_vertex_shader_.Get(), nullptr, 0);
   context_->PSSetShader(overlay_pixel_shader_.Get(), nullptr, 0);
-  ID3D11Buffer* constant_buffer = overlay_constant_buffer_.Get();
-  context_->VSSetConstantBuffers(0, 1, &constant_buffer);
-  context_->PSSetConstantBuffers(0, 1, &constant_buffer);
-  const UINT fill_count = static_cast<UINT>(geometry.fill_vertex_count);
-  const UINT contrast_count = static_cast<UINT>(geometry.contrast_vertex_count);
-  const UINT motion_count = static_cast<UINT>(geometry.motion_vertex_count);
-  if (fill_count > 0) context_->Draw(fill_count, 0);
+  ID3D11Buffer* layout_buffer = constant_buffer_.Get();
+  ID3D11Buffer* overlay_buffer = overlay_constant_buffer_.Get();
+  context_->VSSetConstantBuffers(0, 1, &layout_buffer);
+  context_->PSSetConstantBuffers(1, 1, &overlay_buffer);
+  const UINT fill_count = static_cast<UINT>(batch.fill_count);
+  const UINT contrast_count = static_cast<UINT>(batch.contrast_count);
+  const UINT motion_count = static_cast<UINT>(batch.motion_count);
+  if (fill_count > 0) context_->DrawInstanced(6, fill_count, 0, 0);
   // The explicit two-pass order is part of the contrast-line contract: all
   // black halos land before any white centers, including at CU intersections.
   if (contrast_count > 0) {
-    context_->Draw(contrast_count, fill_count);
+    context_->DrawInstanced(6, contrast_count, 0, fill_count);
     constants.contrast_pass = 1;
     context_->UpdateSubresource(overlay_constant_buffer_.Get(), 0, nullptr,
                                 &constants, 0, 0);
-    context_->Draw(contrast_count, fill_count);
+    context_->DrawInstanced(6, contrast_count, 0, fill_count);
   }
   if (motion_count > 0) {
     constants.contrast_pass = 0;
     context_->UpdateSubresource(overlay_constant_buffer_.Get(), 0, nullptr,
                                 &constants, 0, 0);
-    context_->Draw(motion_count, fill_count + contrast_count);
+    context_->DrawInstanced(
+        6, motion_count, 0, fill_count + contrast_count);
   }
   context_->OMSetBlendState(nullptr, blend_factor, 0xffffffffu);
   ID3D11RenderTargetView* null_target = nullptr;
   context_->OMSetRenderTargets(1, &null_target, nullptr);
   ++stats_.overlay_draw_count;
+  stats_.overlay_last_cpu_submit_us = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          Clock::now() - submit_start)
+          .count());
+  stats_.overlay_max_cpu_submit_us = std::max(
+      stats_.overlay_max_cpu_submit_us, stats_.overlay_last_cpu_submit_us);
+  if (stats_.overlay_draw_count <= 12 ||
+      stats_.overlay_draw_count % 120 == 0) {
+    spdlog::info(
+        "[WindowsAnalysisOverlayHotPath] draw={} generation={} instances={} "
+        "source_cache_hit={} gpu_upload={} gpu_uploads={} gpu_reuse={} "
+        "lookup_us={} upload_us={} cpu_submit_us={} cpu_submit_max_us={}",
+        stats_.overlay_draw_count, batch.source_generation,
+        batch.primitives.size(), lookup.cache_hit, needs_upload,
+        stats_.overlay_gpu_upload_count,
+        stats_.overlay_gpu_buffer_reuse_count, stats_.overlay_last_lookup_us,
+        stats_.overlay_last_upload_us, stats_.overlay_last_cpu_submit_us,
+        stats_.overlay_max_cpu_submit_us);
+  }
   return true;
 }
 

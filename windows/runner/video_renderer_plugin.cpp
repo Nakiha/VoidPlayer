@@ -1334,6 +1334,36 @@ void VideoRendererPlugin::HandleMethodCall(
       diagnostics[EncodableValue("nativeTargetOverlayCpuFallbackCount")] =
           EncodableValue(
               static_cast<int64_t>(stats.overlay_cpu_fallback_count));
+      diagnostics[EncodableValue("nativeTargetOverlaySourceCacheHitCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_source_cache_hit_count));
+      diagnostics[EncodableValue("nativeTargetOverlaySourceCacheMissCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_source_cache_miss_count));
+      diagnostics[EncodableValue("nativeTargetOverlayGpuUploadCount")] =
+          EncodableValue(
+              static_cast<int64_t>(stats.overlay_gpu_upload_count));
+      diagnostics[EncodableValue("nativeTargetOverlayGpuBufferReuseCount")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_gpu_buffer_reuse_count));
+      diagnostics[EncodableValue("nativeTargetOverlayGpuUploadBytes")] =
+          EncodableValue(
+              static_cast<int64_t>(stats.overlay_gpu_upload_bytes));
+      diagnostics[EncodableValue("nativeTargetOverlayLastSourceGeneration")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_last_source_generation));
+      diagnostics[EncodableValue("nativeTargetOverlayLastLookupUs")] =
+          EncodableValue(
+              static_cast<int64_t>(stats.overlay_last_lookup_us));
+      diagnostics[EncodableValue("nativeTargetOverlayLastUploadUs")] =
+          EncodableValue(
+              static_cast<int64_t>(stats.overlay_last_upload_us));
+      diagnostics[EncodableValue("nativeTargetOverlayLastCpuSubmitUs")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_last_cpu_submit_us));
+      diagnostics[EncodableValue("nativeTargetOverlayMaxCpuSubmitUs")] =
+          EncodableValue(static_cast<int64_t>(
+              stats.overlay_max_cpu_submit_us));
       diagnostics[EncodableValue("nativeTargetConsecutiveDrawFailures")] =
           EncodableValue(static_cast<int64_t>(stats.consecutive_draw_failures));
       diagnostics[EncodableValue("nativeTargetBackendName")] =

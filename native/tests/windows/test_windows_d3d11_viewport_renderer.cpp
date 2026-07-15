@@ -465,6 +465,127 @@ TEST_CASE("Windows D3D11 overlay matches Metal black-white-black contrast lines"
   }
 }
 
+TEST_CASE("Windows D3D11 overlay retains source instances across layout changes",
+          "[windows_d3d11_viewport][windows_overlay_layer][windows_high_refresh]") {
+  auto test_device = create_viewport_test_device();
+  WindowsD3D11ViewportRenderer renderer;
+  REQUIRE(renderer.initialize(test_device.device.Get(), test_device.context.Get()));
+
+  PresentationSnapshot presentation;
+  presentation.constants.mode = 0;
+  presentation.constants.track_count = 1;
+  presentation.constants.order[0] = 0;
+  presentation.constants.canvas_width = 64.0f;
+  presentation.constants.canvas_height = 64.0f;
+  presentation.constants.inv_display_size_x[0] = 1.0f;
+  presentation.constants.inv_display_size_y[0] = 1.0f;
+
+  AnalysisOverlayPrimitivePackage package;
+  package.cache_generation = UINT64_C(0xfedcba9876543211);
+  AnalysisOverlayTrackPrimitives track;
+  track.slot = 0;
+  track.video_width = 64;
+  track.video_height = 64;
+  track.outline_rects.push_back(
+      {0, 0, 64, 64, analysis::OverlayColor{255, 255, 255, 255}});
+  package.tracks.push_back(std::move(track));
+
+  auto target = create_viewport_target(test_device.device.Get(),
+                                       DXGI_FORMAT_B8G8R8A8_UNORM);
+  Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
+  REQUIRE(SUCCEEDED(test_device.device->CreateRenderTargetView(
+      target.Get(), nullptr, &rtv)));
+  const D3D11_VIEWPORT viewport = {0.0f, 0.0f, 64.0f, 64.0f, 0.0f, 1.0f};
+  test_device.context->RSSetViewports(1, &viewport);
+
+  REQUIRE(renderer.draw_overlay(package,
+                                presentation,
+                                rtv.Get(),
+                                ColorOutputTarget::kSDRToneMappedBT709,
+                                80.0));
+  auto stats = renderer.stats();
+  CHECK(stats.overlay_gpu_upload_count == 1);
+  CHECK(stats.overlay_gpu_buffer_reuse_count == 0);
+  CHECK(stats.overlay_last_source_generation == package.cache_generation);
+
+  presentation.constants.display_offset_x[0] = 0.125f;
+  presentation.constants.view_offset_uv_y[0] = 0.25f;
+  REQUIRE(renderer.draw_overlay(package,
+                                presentation,
+                                rtv.Get(),
+                                ColorOutputTarget::kSDRToneMappedBT709,
+                                80.0));
+  stats = renderer.stats();
+  CHECK(stats.overlay_draw_count == 2);
+  CHECK(stats.overlay_gpu_upload_count == 1);
+  CHECK(stats.overlay_gpu_buffer_reuse_count == 1);
+  CHECK(stats.overlay_source_cache_hit_count >= 1);
+}
+
+TEST_CASE("Windows D3D11 source overlay obeys parallel and split clipping",
+          "[windows_d3d11_viewport][windows_overlay_layer][windows_source_projection]") {
+  auto test_device = create_viewport_test_device();
+  WindowsD3D11ViewportRenderer renderer;
+  REQUIRE(renderer.initialize(test_device.device.Get(), test_device.context.Get()));
+
+  PresentationSnapshot presentation;
+  presentation.constants.track_count = 2;
+  presentation.constants.order[0] = 0;
+  presentation.constants.order[1] = 1;
+  presentation.constants.canvas_width = 16.0f;
+  presentation.constants.canvas_height = 8.0f;
+  presentation.constants.inv_display_size_x[0] = 1.0f;
+  presentation.constants.inv_display_size_y[0] = 1.0f;
+
+  AnalysisOverlayPrimitivePackage package;
+  AnalysisOverlayTrackPrimitives track;
+  track.slot = 0;
+  track.video_width = 16;
+  track.video_height = 8;
+  track.fill_rects.push_back(
+      {0, 0, 16, 8, analysis::OverlayColor{255, 255, 255, 255}});
+  package.tracks.push_back(std::move(track));
+
+  const D3D11_VIEWPORT viewport = {0.0f, 0.0f, 16.0f, 8.0f, 0.0f, 1.0f};
+  test_device.context->RSSetViewports(1, &viewport);
+  const auto render = [&](int mode, float split) {
+    presentation.constants.mode = mode;
+    presentation.constants.split_pos = split;
+    auto target = create_viewport_target(test_device.device.Get(),
+                                         DXGI_FORMAT_B8G8R8A8_UNORM);
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
+    REQUIRE(SUCCEEDED(test_device.device->CreateRenderTargetView(
+        target.Get(), nullptr, &rtv)));
+    const float gray[4] = {0.5f, 0.5f, 0.5f, 1.0f};
+    test_device.context->ClearRenderTargetView(rtv.Get(), gray);
+    REQUIRE(renderer.draw_overlay(package,
+                                  presentation,
+                                  rtv.Get(),
+                                  ColorOutputTarget::kSDRToneMappedBT709,
+                                  80.0));
+    return read_viewport_target(test_device, target.Get());
+  };
+  const auto red_at = [](const std::vector<uint8_t>& pixels, int x) {
+    return static_cast<int>(pixels[bgra_pixel_offset(x, 4) + 2]);
+  };
+
+  SECTION("parallel cell") {
+    const auto pixels = render(0, 0.5f);
+    CHECK(red_at(pixels, 3) == Catch::Approx(255).margin(1));
+    CHECK(red_at(pixels, 7) == Catch::Approx(255).margin(1));
+    CHECK(red_at(pixels, 8) == Catch::Approx(128).margin(1));
+    CHECK(red_at(pixels, 12) == Catch::Approx(128).margin(1));
+  }
+
+  SECTION("split boundary") {
+    const auto pixels = render(1, 0.375f);
+    CHECK(red_at(pixels, 2) == Catch::Approx(255).margin(1));
+    CHECK(red_at(pixels, 5) == Catch::Approx(255).margin(1));
+    CHECK(red_at(pixels, 6) == Catch::Approx(128).margin(1));
+    CHECK(red_at(pixels, 12) == Catch::Approx(128).margin(1));
+  }
+}
+
 TEST_CASE("Windows D3D11 viewport opens an independent decode-device snapshot",
           "[windows_d3d11_viewport][windows_d3d11va][windows_cross_device]") {
   auto presentation_device = create_viewport_test_device();

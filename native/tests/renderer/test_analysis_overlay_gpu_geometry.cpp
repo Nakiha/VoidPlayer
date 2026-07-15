@@ -3,91 +3,76 @@
 
 #include "renderer/overlay/analysis_overlay_gpu_geometry.h"
 
-#include <cmath>
+#include <cstdint>
+#include <utility>
 
 namespace {
 
-vr::ShaderConstants base_constants() {
-  vr::ShaderConstants constants{};
-  constants.mode = 0;
-  constants.track_count = 1;
-  constants.order[0] = 0;
-  constants.canvas_width = 200.0f;
-  constants.canvas_height = 100.0f;
-  constants.inv_display_size_x[0] = 1.0f;
-  constants.inv_display_size_y[0] = 1.0f;
-  return constants;
-}
-
-vr::AnalysisOverlayPrimitivePackage package_with_fill(int slot = 0) {
-  vr::AnalysisOverlayPrimitivePackage package;
+vr::AnalysisOverlayTrackPrimitives base_track() {
   vr::AnalysisOverlayTrackPrimitives track;
-  track.slot = slot;
+  track.slot = 0;
   track.video_width = 100;
-  track.video_height = 100;
-  track.fill_rects.push_back(
-      {10, 20, 30, 40, vr::analysis::OverlayColor{255, 64, 32, 128}});
-  package.tracks.push_back(std::move(track));
-  return package;
+  track.video_height = 50;
+  return track;
 }
 
 }  // namespace
 
-TEST_CASE("analysis overlay geometry follows shared viewport projection",
-          "[analysis][overlay][geometry]") {
-  const auto geometry = vr::build_analysis_overlay_gpu_geometry(
-      package_with_fill(), base_constants(), 200, 100);
-  REQUIRE(geometry.fill_rect_count == 1);
-  REQUIRE(geometry.line_rect_count == 0);
-  REQUIRE(geometry.vertices.size() == 6);
-  CHECK(std::abs(geometry.vertices[0].position_x + 0.8f) < 0.0001f);
-  CHECK(std::abs(geometry.vertices[0].position_y - 0.6f) < 0.0001f);
-  CHECK(std::abs(geometry.vertices[5].position_x + 0.4f) < 0.0001f);
-  CHECK(std::abs(geometry.vertices[5].position_y - 0.2f) < 0.0001f);
-  CHECK(std::abs(geometry.vertices[0].alpha - 128.0f / 255.0f) < 0.0001f);
-}
-
-TEST_CASE("analysis overlay geometry clips each track to its layout cell",
-          "[analysis][overlay][geometry]") {
-  auto constants = base_constants();
-  constants.track_count = 2;
-  constants.order[0] = 0;
-  constants.order[1] = 1;
-  auto package = package_with_fill(0);
-  package.tracks[0].fill_rects[0] =
-      {0, 0, 100, 100, vr::analysis::OverlayColor{255, 255, 255, 255}};
-  const auto geometry = vr::build_analysis_overlay_gpu_geometry(
-      package, constants, 200, 100);
-  REQUIRE(geometry.vertices.size() == 6);
-  for (const auto& vertex : geometry.vertices) {
-    CHECK(vertex.position_x <= 0.0001f);
-  }
-}
-
-TEST_CASE("analysis overlay geometry keeps outline and motion primitives on GPU",
-          "[analysis][overlay][geometry]") {
-  auto package = package_with_fill();
-  auto& track = package.tracks[0];
+TEST_CASE("analysis overlay GPU primitives remain in normalized source space",
+          "[analysis_overlay_gpu_geometry]") {
+  vr::AnalysisOverlayPrimitivePackage package;
+  auto track = base_track();
+  track.fill_rects.push_back(
+      {10, 5, 30, 15, vr::analysis::OverlayColor{12, 34, 56, 128}});
   track.outline_rects.push_back(
-      {5, 5, 20, 20, vr::analysis::OverlayColor{255, 255, 255, 180}});
+      {10, 5, 30, 15, vr::analysis::OverlayColor{255, 255, 255, 255}});
   track.motion_lines.push_back(
-      {10, 10, 90, 90, vr::analysis::OverlayColor{80, 180, 255, 200}});
-  const auto geometry = vr::build_analysis_overlay_gpu_geometry(
-      package, base_constants(), 200, 100);
-  CHECK(geometry.fill_rect_count == 1);
-  CHECK(geometry.line_rect_count == 3);
-  CHECK(geometry.vertices.size() == 24);
-  CHECK(geometry.fill_vertex_count == 6);
-  CHECK(geometry.contrast_vertex_count == 12);
-  CHECK(geometry.motion_vertex_count == 6);
+      {20, 10, 25, 20, vr::analysis::OverlayColor{80, 180, 255, 200}});
+  package.tracks.push_back(std::move(track));
 
-  const auto& contrast = geometry.vertices[geometry.fill_vertex_count];
-  CHECK(contrast.contrast_axis == 1.0f);
-  CHECK(contrast.contrast_center_px == Catch::Approx(10.0f));
+  const auto lookup = vr::lookup_analysis_overlay_gpu_primitives(package);
+  REQUIRE(lookup.batch);
+  CHECK_FALSE(lookup.cache_hit);
+  CHECK(lookup.batch->fill_count == 1);
+  CHECK(lookup.batch->contrast_count == 2);
+  CHECK(lookup.batch->motion_count == 1);
+  REQUIRE(lookup.batch->primitives.size() == 4);
 
-  const auto px_from_ndc_x = [](float x) { return (x + 1.0f) * 100.0f; };
-  CHECK(px_from_ndc_x(geometry.vertices[geometry.fill_vertex_count].position_x) ==
-        Catch::Approx(9.0f));
-  CHECK(px_from_ndc_x(geometry.vertices[geometry.fill_vertex_count + 1].position_x) ==
-        Catch::Approx(12.0f));
+  const auto& fill = lookup.batch->primitives[0];
+  CHECK(fill.kind == static_cast<uint32_t>(
+                         vr::AnalysisOverlayGpuPrimitiveKind::FillRect));
+  CHECK(fill.source_uv0[0] == Catch::Approx(0.10f));
+  CHECK(fill.source_uv0[1] == Catch::Approx(0.10f));
+  CHECK(fill.source_uv1[0] == Catch::Approx(0.30f));
+  CHECK(fill.source_uv1[1] == Catch::Approx(0.30f));
+  CHECK(fill.color[3] == Catch::Approx(128.0f / 255.0f));
+
+  const auto& vertical = lookup.batch->primitives[1];
+  CHECK(vertical.kind == static_cast<uint32_t>(
+                             vr::AnalysisOverlayGpuPrimitiveKind::ContrastVertical));
+  CHECK(vertical.source_uv0[0] == Catch::Approx(0.10f));
+  CHECK(vertical.source_uv1[0] == Catch::Approx(0.10f));
+  const auto& horizontal = lookup.batch->primitives[2];
+  CHECK(horizontal.kind == static_cast<uint32_t>(
+                               vr::AnalysisOverlayGpuPrimitiveKind::ContrastHorizontal));
+}
+
+TEST_CASE("analysis overlay GPU primitive cache is independent of layout",
+          "[analysis_overlay_gpu_geometry][windows_high_refresh]") {
+  vr::AnalysisOverlayPrimitivePackage package;
+  package.cache_generation = UINT64_C(0xfedcba9876543210);
+  auto track = base_track();
+  track.outline_rects.push_back(
+      {0, 0, 100, 50, vr::analysis::OverlayColor{255, 255, 255, 255}});
+  package.tracks.push_back(std::move(track));
+
+  const auto first = vr::lookup_analysis_overlay_gpu_primitives(package);
+  const auto second = vr::lookup_analysis_overlay_gpu_primitives(package);
+  REQUIRE(first.batch);
+  REQUIRE(second.batch);
+  CHECK_FALSE(first.cache_hit);
+  CHECK(second.cache_hit);
+  CHECK(first.batch == second.batch);
+  CHECK(first.batch->contrast_count == 4);
+  CHECK(first.batch->line_rect_count() == 4);
 }

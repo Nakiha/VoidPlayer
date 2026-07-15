@@ -71,6 +71,16 @@ struct PresentationBackendStats {
     uint64_t overlay_gpu_success_count = 0;
     uint64_t overlay_gpu_failure_count = 0;
     uint64_t overlay_cpu_fallback_count = 0;
+    uint64_t overlay_source_cache_hit_count = 0;
+    uint64_t overlay_source_cache_miss_count = 0;
+    uint64_t overlay_gpu_upload_count = 0;
+    uint64_t overlay_gpu_buffer_reuse_count = 0;
+    uint64_t overlay_gpu_upload_bytes = 0;
+    uint64_t overlay_last_source_generation = 0;
+    uint64_t overlay_last_lookup_us = 0;
+    uint64_t overlay_last_upload_us = 0;
+    uint64_t overlay_last_cpu_submit_us = 0;
+    uint64_t overlay_max_cpu_submit_us = 0;
     uint64_t in_flight_metal_buffer_count = 0;
     uint64_t metal_buffer_exhaustion_count = 0;
     uint64_t metal_command_completion_p95_us = 0;

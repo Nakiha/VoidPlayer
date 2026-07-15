@@ -18,4 +18,7 @@
 5.71,ASSERT_NATIVE_DIAGNOSTIC_BOOL,nativeTargetOverlayLastExpected,true
 5.72,ASSERT_NATIVE_DIAGNOSTIC_BOOL,nativeTargetOverlayLastApplied,true
 5.73,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,nativeTargetOverlayLastLineRectCount,1
+5.74,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,nativeTargetOverlayGpuUploadCount,1,4
+5.75,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,nativeTargetOverlayGpuBufferReuseCount,30
+5.76,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,nativeTargetOverlayLastSourceGeneration,1
 5.8,QUIT,0

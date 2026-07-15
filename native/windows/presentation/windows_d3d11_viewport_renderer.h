@@ -28,6 +28,16 @@ struct WindowsD3D11ViewportRendererStats {
   uint64_t overlay_last_vertex_count = 0;
   uint64_t overlay_last_fill_rect_count = 0;
   uint64_t overlay_last_line_rect_count = 0;
+  uint64_t overlay_source_cache_hit_count = 0;
+  uint64_t overlay_source_cache_miss_count = 0;
+  uint64_t overlay_gpu_upload_count = 0;
+  uint64_t overlay_gpu_buffer_reuse_count = 0;
+  uint64_t overlay_gpu_upload_bytes = 0;
+  uint64_t overlay_last_source_generation = 0;
+  uint64_t overlay_last_lookup_us = 0;
+  uint64_t overlay_last_upload_us = 0;
+  uint64_t overlay_last_cpu_submit_us = 0;
+  uint64_t overlay_max_cpu_submit_us = 0;
 };
 
 // Consumes the platform-neutral presentation snapshot and writes one complete,
@@ -90,7 +100,7 @@ class WindowsD3D11ViewportRenderer final {
 
   bool create_pipeline();
   bool create_overlay_pipeline();
-  bool ensure_overlay_vertex_buffer(size_t vertex_count);
+  bool ensure_overlay_instance_buffer(size_t instance_count);
   bool prepare_track(size_t slot,
                      const TextureFrame& frame,
                      ShaderConstants& constants);
@@ -138,10 +148,15 @@ class WindowsD3D11ViewportRenderer final {
   Microsoft::WRL::ComPtr<ID3D11VertexShader> overlay_vertex_shader_;
   Microsoft::WRL::ComPtr<ID3D11PixelShader> overlay_pixel_shader_;
   Microsoft::WRL::ComPtr<ID3D11InputLayout> overlay_input_layout_;
-  Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_vertex_buffer_;
+  Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_unit_vertex_buffer_;
+  Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_instance_buffer_;
   Microsoft::WRL::ComPtr<ID3D11Buffer> overlay_constant_buffer_;
   Microsoft::WRL::ComPtr<ID3D11BlendState> overlay_blend_state_;
-  size_t overlay_vertex_capacity_ = 0;
+  size_t overlay_instance_capacity_ = 0;
+  uint64_t overlay_uploaded_generation_ = 0;
+  size_t overlay_uploaded_instance_count_ = 0;
+  std::shared_ptr<const AnalysisOverlayGpuPrimitiveBatch>
+      overlay_retained_batch_;
   std::array<TrackResources, kMaxTracks> tracks_{};
   std::array<ID3D11ShaderResourceView*, kMaxTracks> rgba_srvs_{};
   std::array<ID3D11ShaderResourceView*, kMaxTracks> y_srvs_{};

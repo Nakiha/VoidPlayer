@@ -14,6 +14,7 @@ add_executable(video_renderer_tests
     renderer/test_analysis_overlay_gpu_geometry.cpp
     renderer/test_bgra_capture_metrics.cpp
     renderer/test_renderer_playback_command_policy.cpp
+    renderer/test_renderer_frame_refresh_policy.cpp
     renderer/test_renderer_presentation_completion.cpp
     renderer/test_renderer_seek_log_policy.cpp
     renderer/test_renderer_lifecycle.cpp

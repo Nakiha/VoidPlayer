@@ -50,12 +50,9 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
     const char* refresh_reason = reason && reason[0] != '\0'
                                      ? reason
                                      : "request_frame_refresh";
-    const bool interaction_refresh =
-        std::strcmp(refresh_reason, "renderer-owned-interaction-refresh") == 0;
-    const bool renderer_owned_refresh =
-        interaction_refresh ||
-        std::strcmp(refresh_reason, "macos-renderer-owned-refresh") == 0 ||
-        std::strcmp(refresh_reason, "request_frame_refresh") == 0;
+    const auto refresh_policy = renderer_frame_refresh_policy(refresh_reason);
+    const bool interaction_refresh = refresh_policy.interaction_refresh;
+    const bool renderer_owned_refresh = refresh_policy.retain_presented_frame;
     bool has_complete_cached_decision = false;
     bool preview_draw_pending = false;
     if (renderer_owned_refresh) {

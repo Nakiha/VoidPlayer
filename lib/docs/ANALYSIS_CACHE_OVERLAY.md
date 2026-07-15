@@ -102,7 +102,7 @@ timeline / action seek
   -> renderer presents paused preview frame
   -> native emits seekPreviewPresented(requestId, trackFileId, ptsUs, dtsUs)
   -> MainWindowPlaybackCoordinator accepts the latest requestId
-  -> MainWindowAnalysisCoordinator.refreshOverlayForPresentedFrame(...)
+  -> MainWindowAnalysisCoordinator.refreshOverlayForPresentedFrame(requestId, ...)
   -> AnalysisManager schedules the needed overlay chunk window
   -> chunk completion reloads the still-requested native overlay track
   -> MainWindowController.applyLayout(...) forces redraw

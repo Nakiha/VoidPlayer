@@ -18,6 +18,7 @@
 #include "renderer/render/presentation_backend_factory.h"
 #include "renderer/render/presentation_snapshot.h"
 #include "renderer/render/render_thread_platform.h"
+#include "renderer/render/renderer_frame_refresh_policy.h"
 #include "renderer/render/renderer_timing_utils.h"
 #include "renderer/render/renderer_viewport_trace.h"
 #include "renderer/render/swap_chain_present_policy.h"

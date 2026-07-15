@@ -42,7 +42,9 @@ class MainWindowPlaybackCoordinator {
   final bool Function() mounted;
   final MainWindowTimelineMetrics timelineMetrics;
   final Future<void> Function(int ptsUs)? onSeekSettled;
+  final void Function({required int requestId})? onSeekStarted;
   final Future<void> Function({
+    required int requestId,
     required int trackFileId,
     required int ptsUs,
     required int dtsUs,
@@ -81,6 +83,7 @@ class MainWindowPlaybackCoordinator {
     required this.mounted,
     required this.timelineMetrics,
     this.onSeekSettled,
+    this.onSeekStarted,
     this.onSeekPreviewPresented,
     this.onPlaybackTransition,
     this.onNativeCompositorAvailabilityChanged,
@@ -332,6 +335,7 @@ class MainWindowPlaybackCoordinator {
     if (_disposed) return;
     final targetPtsUs = _clampSeekTargetUs(ptsUs);
     final seekSerial = ++_seekSerial;
+    onSeekStarted?.call(requestId: seekSerial);
     _seekPreviewEventSerial++;
     _pollSerial++;
     final wasPlaying = isPlaying();
@@ -587,6 +591,7 @@ class MainWindowPlaybackCoordinator {
     if (callback == null) return;
     unawaited(
       callback(
+        requestId: requestId,
         trackFileId: event.trackFileId!,
         ptsUs: eventPtsUs,
         dtsUs: eventDtsUs,

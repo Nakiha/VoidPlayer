@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:void_player/analysis/analysis_manager.dart';
@@ -16,6 +18,8 @@ class _CountingAnalysisGenerationService extends ChangeNotifier
   Set<int> _activeOverlayTrackFileIds = const {};
   AnalysisOverlayConfig _config = const AnalysisOverlayConfig();
   int _overlayPresentationRevision = 0;
+  Completer<String?>? ensureGeneratedCompleter;
+  final List<List<AnalysisOverlayTrackSource>> overlayTrackActivations = [];
 
   @override
   String? get activeOverlayHash => null;
@@ -44,6 +48,11 @@ class _CountingAnalysisGenerationService extends ChangeNotifier
   @override
   Future<String?> ensureGenerated(String videoPath) async {
     ensureGeneratedCalls++;
+    final completer = ensureGeneratedCompleter;
+    if (completer != null) {
+      ensureGeneratedCompleter = null;
+      return completer.future;
+    }
     return 'hash-$ensureGeneratedCalls';
   }
 
@@ -95,6 +104,7 @@ class _CountingAnalysisGenerationService extends ChangeNotifier
     List<AnalysisOverlayTrackSource> tracks,
   ) async {
     activateOverlayTracksCalls++;
+    overlayTrackActivations.add(List.unmodifiable(tracks));
     _overlayPanelVisible = tracks.isNotEmpty;
     _activeOverlayTrackFileIds = tracks
         .map((track) => track.trackFileId)
@@ -122,6 +132,11 @@ class _CountingAnalysisGenerationService extends ChangeNotifier
 
   void emitSameOverlayRevisionForTest() {
     notifyListeners();
+  }
+
+  void setActiveOverlayTrackForTest(int trackFileId) {
+    _overlayPanelVisible = true;
+    _activeOverlayTrackFileIds = {trackFileId};
   }
 }
 
@@ -251,4 +266,52 @@ void main() {
 
     expect(redraws, 1);
   });
+
+  test(
+    'new seek epoch prevents an older overlay refresh from committing',
+    () async {
+      final tracks = _trackManagerWithOneTrack();
+      final generation = _CountingAnalysisGenerationService();
+      generation.setActiveOverlayTrackForTest(7);
+      final firstHash = Completer<String?>();
+      generation.ensureGeneratedCompleter = firstHash;
+      var redraws = 0;
+      final coordinator = MainWindowAnalysisCoordinator(
+        trackManager: tracks,
+        analysisProcesses: UnsupportedAnalysisProcessHost(),
+        analysisGeneration: generation,
+        onOverlayStateChanged: () {
+          redraws++;
+        },
+      );
+      addTearDown(coordinator.dispose);
+      addTearDown(tracks.dispose);
+
+      coordinator.beginSeekOverlayRefresh(1);
+      final staleRefresh = coordinator.refreshOverlayForPresentedFrame(
+        requestId: 1,
+        trackFileId: 7,
+        ptsUs: 1000000,
+        dtsUs: 1000000,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      coordinator.beginSeekOverlayRefresh(2);
+      final currentRefresh = coordinator.refreshOverlayForPresentedFrame(
+        requestId: 2,
+        trackFileId: 7,
+        ptsUs: 2000000,
+        dtsUs: 2000000,
+      );
+      firstHash.complete('hash-stale');
+      await Future.wait([staleRefresh, currentRefresh]);
+
+      expect(generation.activateOverlayTracksCalls, 1);
+      expect(
+        generation.overlayTrackActivations.single.single.presentedPtsUs,
+        2000000,
+      );
+      expect(redraws, 1);
+    },
+  );
 }

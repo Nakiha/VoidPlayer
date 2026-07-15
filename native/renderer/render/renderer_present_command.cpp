@@ -1,4 +1,5 @@
 #include "renderer/render/renderer_present_command.h"
+#include "renderer/render/renderer_frame_refresh_policy.h"
 
 #include "renderer/render/renderer_draw_snapshot_builder.h"
 #include "renderer/render/renderer_profiler_flags.h"
@@ -205,7 +206,7 @@ bool RendererPresentCommandProcessor::draw_paused_frame(
         reason && (std::strcmp(reason, "macos-renderer-owned-refresh") == 0 ||
                    std::strcmp(reason, "request_frame_refresh") == 0);
     const bool decoded_preview_refresh =
-        reason && std::strcmp(reason, "seek_frame_refresh") == 0;
+        renderer_frame_refresh_policy(reason).decoded_preview_refresh;
     PresentDecision decision;
     bool has_frame = false;
     {

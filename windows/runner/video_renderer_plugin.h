@@ -7,6 +7,7 @@
 #include "file_picker_service.h"
 #include "renderer_event_bridge.h"
 #include "windows/player/native_player.h"
+#include "windows/presentation/windows_first_frame_activation_gate.h"
 #include "windows/presentation/windows_display_resolver.h"
 #include "windows/presentation/windows_presentation_policy.h"
 #include "windows_native_compositor.h"
@@ -15,6 +16,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <optional>
 
 class VideoRendererPlugin final : public flutter::Plugin {
@@ -50,8 +52,11 @@ class VideoRendererPlugin final : public flutter::Plugin {
                                const char* reason,
                                std::string& error);
   bool ResizeVideoTargets(int width, int height, std::string& error);
+  void QueueCurrentNativeCompositorState(
+      vr::WindowsFirstFrameActivationGate::Session expected_session = 0);
   void OnFrameAvailable(
       const std::weak_ptr<vr::WindowsNativePlayer>& weak_player,
+      vr::WindowsFirstFrameActivationGate::Session presentation_session,
       const vr::PresentationBackendFrameInfo* frame_info);
 
   FilePickerService file_picker_;
@@ -72,6 +77,9 @@ class VideoRendererPlugin final : public flutter::Plugin {
   vr::WindowsDisplayProbeResult display_probe_;
   vr::WindowsPresentationPolicy presentation_policy_;
   double presentation_sdr_white_level_nits_ = 80.0;
+  mutable std::mutex presentation_state_mutex_;
+  vr::WindowsFirstFrameActivationGate first_frame_activation_gate_;
+  vr::WindowsFirstFrameActivationGate::Session presentation_session_ = 0;
   int64_t player_id_ = 0;
   std::atomic<int64_t> next_player_id_{1};
 };

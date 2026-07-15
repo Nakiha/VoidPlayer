@@ -77,6 +77,7 @@ class WindowsNativeCompositor final {
                              std::vector<void*>& textures);
   void ClearVideoTargetRing();
   bool PresentVideoTarget(ID3D11Texture2D* texture, uint32_t timeout_ms = 250);
+  bool IsCurrentVideoTarget(ID3D11Texture2D* texture) const;
   void SetVideoViewportRect(int left,
                             int top,
                             int width,

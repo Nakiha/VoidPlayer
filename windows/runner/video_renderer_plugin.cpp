@@ -740,6 +740,11 @@ void VideoRendererPlugin::SchedulePresentationPolicyRefresh() {
 }
 
 void VideoRendererPlugin::FailClosedPresentation(std::string failure) {
+  {
+    std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+    first_frame_activation_gate_.cancel_session();
+    presentation_session_ = 0;
+  }
   if (player_) {
     player_->pause();
   }
@@ -760,13 +765,7 @@ void VideoRendererPlugin::SetEventSink(
     std::unique_ptr<flutter::EventSink<flutter::EncodableValue>> sink) {
   event_bridge_.SetSink(std::move(sink));
   if (player_) {
-    event_bridge_.QueueNativeCompositorState(
-        compositor_started_, true, presentation_policy_.mode,
-        presentation_policy_.reason,
-        "windows-native-d3d11",
-        compositor_started_ ? (presentation_policy_.fallback_reason == "none"
-                                   ? "" : presentation_policy_.fallback_reason)
-                            : "Windows native compositor unavailable");
+    QueueCurrentNativeCompositorState();
   }
 }
 
@@ -775,6 +774,11 @@ void VideoRendererPlugin::ClearEventSink() {
 }
 
 void VideoRendererPlugin::DestroyPlayer() {
+  {
+    std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+    first_frame_activation_gate_.cancel_session();
+    presentation_session_ = 0;
+  }
   if (viewport_presentation_controller_) {
     viewport_presentation_controller_->DetachPlayerAndWait();
   }
@@ -905,12 +909,19 @@ bool VideoRendererPlugin::ApplyPresentationPolicy(
       }
     }
   }
+  {
+    std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+    presentation_policy_ = std::move(policy);
+    presentation_sdr_white_level_nits_ = white_nits;
+    if (presentation_session_ != 0) {
+      (void)first_frame_activation_gate_.mark_policy_ready(
+          presentation_session_);
+    }
+  }
   if (player_ && player_->initialized()) {
     (void)player_->update_presentation_sdr_white_level(white_nits);
     player_->request_frame_refresh(reason ? reason : "windows-output-policy");
   }
-  presentation_policy_ = std::move(policy);
-  presentation_sdr_white_level_nits_ = white_nits;
   spdlog::info(
       "[WindowsPresentation] request={} mode={} reason={} hdr_track={} "
       "display_status={} display_hdr={} adapter_match={} target={} "
@@ -921,12 +932,7 @@ bool VideoRendererPlugin::ApplyPresentationPolicy(
       compositor_config.linear_scrgb ? "rgba16f-linear-scrgb" : "bgra8-sdr",
       white_nits, display.sdr_white_level_status,
       presentation_policy_.fallback_reason);
-  event_bridge_.QueueNativeCompositorState(
-      true, true, presentation_policy_.mode, presentation_policy_.reason,
-      "windows-native-d3d11",
-      presentation_policy_.fallback_reason == "none"
-          ? ""
-          : presentation_policy_.fallback_reason);
+  QueueCurrentNativeCompositorState();
   return true;
 }
 
@@ -965,8 +971,25 @@ bool VideoRendererPlugin::ResizeVideoTargets(int width,
   return true;
 }
 
+void VideoRendererPlugin::QueueCurrentNativeCompositorState(
+    vr::WindowsFirstFrameActivationGate::Session expected_session) {
+  std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+  if (expected_session != 0 && expected_session != presentation_session_) {
+    return;
+  }
+  const bool active =
+      first_frame_activation_gate_.active(presentation_session_);
+  event_bridge_.QueueNativeCompositorState(
+      active, true, presentation_policy_.mode, presentation_policy_.reason,
+      "windows-native-d3d11",
+      active && presentation_policy_.fallback_reason != "none"
+          ? presentation_policy_.fallback_reason
+          : "");
+}
+
 void VideoRendererPlugin::OnFrameAvailable(
     const std::weak_ptr<vr::WindowsNativePlayer>& weak_player,
+    vr::WindowsFirstFrameActivationGate::Session presentation_session,
     const vr::PresentationBackendFrameInfo* frame_info) {
   auto player = weak_player.lock();
   if (!player || !compositor_) {
@@ -989,7 +1012,16 @@ void VideoRendererPlugin::OnFrameAvailable(
   // locks. The compositor has waited for its GPU copy; return every completed
   // target through one native queue so no callback path can silently skip the
   // same release protocol or depend on the Win32 UI message pump.
-  (void)compositor_->PresentVideoTarget(target);
+  const bool presented = compositor_->PresentVideoTarget(target);
+  const bool current_target = compositor_->IsCurrentVideoTarget(target);
+  if (first_frame_activation_gate_.accept_present(
+          presentation_session, presented, current_target)) {
+    spdlog::info(
+        "[WindowsPresentation] first-frame activation session={} "
+        "current_ring=true",
+        presentation_session);
+    QueueCurrentNativeCompositorState(presentation_session);
+  }
   target_release_queue_.Enqueue(player, target);
 }
 
@@ -1188,10 +1220,17 @@ void VideoRendererPlugin::HandleMethodCall(
     }
     player_ = player;
     player_id_ = next_player_id_.fetch_add(1);
+    vr::WindowsFirstFrameActivationGate::Session presentation_session = 0;
+    {
+      std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+      presentation_session_ = first_frame_activation_gate_.begin_session();
+      presentation_session = presentation_session_;
+    }
     const std::weak_ptr<vr::WindowsNativePlayer> weak_player = player;
     player->set_frame_callback(
-        [this, weak_player](const vr::PresentationBackendFrameInfo* frame) {
-          OnFrameAvailable(weak_player, frame);
+        [this, weak_player, presentation_session](
+            const vr::PresentationBackendFrameInfo* frame) {
+          OnFrameAvailable(weak_player, presentation_session, frame);
         });
     player->set_frame_failure_callback([](const char*) {});
     player->set_event_callback(
@@ -1433,6 +1472,13 @@ void VideoRendererPlugin::HandleMethodCall(
                             error)) {
       result->Error("RESIZE_FAILED", error);
     } else {
+      vr::WindowsFirstFrameActivationGate::Session presentation_session = 0;
+      {
+        std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+        presentation_session = presentation_session_;
+      }
+      (void)first_frame_activation_gate_.commit_initial_viewport(
+          presentation_session);
       player_->request_frame_refresh("windows-runner-resize");
       result->Success();
     }

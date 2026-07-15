@@ -368,6 +368,18 @@ bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
   return success;
 }
 
+bool WindowsNativeCompositor::IsCurrentVideoTarget(
+    ID3D11Texture2D* texture) const {
+  if (!texture) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  return std::any_of(video_targets_.begin(), video_targets_.end(),
+                     [texture](const auto& candidate) {
+                       return candidate.Get() == texture;
+                     });
+}
+
 void WindowsNativeCompositor::SetVideoViewportRect(
     int left,
     int top,

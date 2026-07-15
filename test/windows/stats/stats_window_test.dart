@@ -56,7 +56,14 @@ PerformanceHealthSnapshot _health({
 }
 
 void main() {
-  test('native diagnostics stats source maps macOS per-track stats', () async {
+  test('platform stats source uses the shared native diagnostics channel', () {
+    expect(
+      StatsDataSource.forCurrentPlatform(),
+      isA<NativeDiagnosticsStatsDataSource>(),
+    );
+  });
+
+  test('native diagnostics stats source maps per-track stats', () async {
     final source = NativeDiagnosticsStatsDataSource(
       _FakeNativePlayerApi({
         'processRssBytes': 8192,

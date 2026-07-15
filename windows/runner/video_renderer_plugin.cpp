@@ -14,12 +14,14 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 #include <wincodec.h>
+#include <psapi.h>
 #include <wrl/client.h>
 
 #include <spdlog/spdlog.h>
@@ -113,6 +115,47 @@ std::vector<std::string> ReadStringList(const EncodableValue* arguments,
   return result;
 }
 
+int64_t SaturatingInt64(uint64_t value) {
+  return static_cast<int64_t>(std::min<uint64_t>(
+      value, static_cast<uint64_t>(std::numeric_limits<int64_t>::max())));
+}
+
+struct ProcessMemorySnapshot {
+  uint64_t rss_bytes = 0;
+  uint64_t private_bytes = 0;
+};
+
+ProcessMemorySnapshot QueryProcessMemory() {
+  PROCESS_MEMORY_COUNTERS_EX counters = {};
+  counters.cb = sizeof(counters);
+  if (!GetProcessMemoryInfo(
+          GetCurrentProcess(),
+          reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters),
+          sizeof(counters))) {
+    return {};
+  }
+  return {static_cast<uint64_t>(counters.WorkingSetSize),
+          static_cast<uint64_t>(counters.PrivateUsage)};
+}
+
+uint64_t QueryDedicatedGpuUsage(ID3D11Device* device) {
+  if (!device) {
+    return 0;
+  }
+  Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
+  Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+  Microsoft::WRL::ComPtr<IDXGIAdapter3> adapter3;
+  DXGI_QUERY_VIDEO_MEMORY_INFO info = {};
+  if (FAILED(device->QueryInterface(IID_PPV_ARGS(&dxgi_device))) ||
+      FAILED(dxgi_device->GetAdapter(&adapter)) ||
+      FAILED(adapter.As(&adapter3)) ||
+      FAILED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL,
+                                            &info))) {
+    return 0;
+  }
+  return info.CurrentUsage;
+}
+
 EncodableMap TrackMap(const vr::TrackInfo& track) {
   return {
       {EncodableValue("fileId"), EncodableValue(track.file_id)},
@@ -139,6 +182,92 @@ flutter::EncodableList TrackList(const std::vector<vr::TrackInfo>& tracks) {
   result.reserve(tracks.size());
   for (const auto& track : tracks) {
     result.emplace_back(TrackMap(track));
+  }
+  return result;
+}
+
+flutter::EncodableList TrackDiagnosticList(
+    const vr::WindowsNativePlayer& player,
+    const std::vector<vr::TrackInfo>& tracks,
+    const std::vector<vr::TrackPerfStats>& perf_stats,
+    const vr::RendererGpuMemoryStats& memory_stats) {
+  flutter::EncodableList result;
+  result.reserve(perf_stats.size());
+  for (const auto& perf : perf_stats) {
+    const auto track = std::find_if(tracks.begin(), tracks.end(),
+                                    [&perf](const auto& candidate) {
+                                      return candidate.file_id == perf.file_id;
+                                    });
+    const auto memory =
+        std::find_if(memory_stats.tracks.begin(), memory_stats.tracks.end(),
+                     [&perf](const auto& candidate) {
+                       return candidate.file_id == perf.file_id;
+                     });
+    const uint64_t cpu_frame_bytes =
+        memory == memory_stats.tracks.end() ? 0 : memory->total_cpu_frame_bytes;
+    const uint64_t packet_queue_bytes =
+        memory == memory_stats.tracks.end() ? 0 : memory->packet_queue_bytes;
+    const bool hardware_decode =
+        memory != memory_stats.tracks.end() && memory->hardware_enabled;
+    const bool hardware_download =
+        memory != memory_stats.tracks.end() && memory->hardware_download_to_cpu;
+    EncodableMap item = {
+        {EncodableValue("fileId"), EncodableValue(perf.file_id)},
+        {EncodableValue("slot"), EncodableValue(perf.slot)},
+        {EncodableValue("durationUs"),
+         EncodableValue(track == tracks.end() ? int64_t{0}
+                                              : track->duration_us)},
+        {EncodableValue("offsetUs"),
+         EncodableValue(player.track_offset_us(perf.file_id))},
+        {EncodableValue("hardwareDecodeActive"),
+         EncodableValue(hardware_decode)},
+        {EncodableValue("hardwareDecodeDownloadsToCpu"),
+         EncodableValue(hardware_download)},
+        {EncodableValue("framesDecoded"),
+         EncodableValue(SaturatingInt64(perf.frames_decoded))},
+        {EncodableValue("fps"), EncodableValue(perf.fps)},
+        {EncodableValue("decodeFps"), EncodableValue(perf.fps)},
+        {EncodableValue("decodeAvgMs"), EncodableValue(perf.avg_decode_ms)},
+        {EncodableValue("decodeMaxMs"), EncodableValue(perf.max_decode_ms)},
+        {EncodableValue("decodeStagePacketSendCount"),
+         EncodableValue(SaturatingInt64(perf.decode_stage_packet_send_count))},
+        {EncodableValue("decodeStagePacketSendAvgMs"),
+         EncodableValue(perf.decode_stage_packet_send_avg_ms)},
+        {EncodableValue("decodeStagePacketSendMaxMs"),
+         EncodableValue(perf.decode_stage_packet_send_max_ms)},
+        {EncodableValue("decodeStageReceiveFrameCount"),
+         EncodableValue(
+             SaturatingInt64(perf.decode_stage_receive_frame_count))},
+        {EncodableValue("decodeStageReceiveAvgMs"),
+         EncodableValue(perf.decode_stage_receive_avg_ms)},
+        {EncodableValue("decodeStageReceiveMaxMs"),
+         EncodableValue(perf.decode_stage_receive_max_ms)},
+        {EncodableValue("decodeStageConvertCount"),
+         EncodableValue(SaturatingInt64(perf.decode_stage_convert_count))},
+        {EncodableValue("decodeStageConvertAvgMs"),
+         EncodableValue(perf.decode_stage_convert_avg_ms)},
+        {EncodableValue("decodeStageConvertMaxMs"),
+         EncodableValue(perf.decode_stage_convert_max_ms)},
+        {EncodableValue("decodeStagePublishCount"),
+         EncodableValue(SaturatingInt64(perf.decode_stage_publish_count))},
+        {EncodableValue("decodeStagePublishAvgMs"),
+         EncodableValue(perf.decode_stage_publish_avg_ms)},
+        {EncodableValue("decodeStagePublishMaxMs"),
+         EncodableValue(perf.decode_stage_publish_max_ms)},
+        {EncodableValue("bufferState"),
+         EncodableValue(static_cast<int32_t>(perf.buffer_state))},
+        {EncodableValue("bufferCount"),
+         EncodableValue(static_cast<int64_t>(perf.buffer_count))},
+        {EncodableValue("bufferCapacity"),
+         EncodableValue(static_cast<int64_t>(perf.buffer_capacity))},
+        {EncodableValue("cpuFrameMemoryBytes"),
+         EncodableValue(SaturatingInt64(cpu_frame_bytes))},
+        {EncodableValue("packetQueueMemoryBytes"),
+         EncodableValue(SaturatingInt64(packet_queue_bytes))},
+        {EncodableValue("currentPtsUs"), EncodableValue(perf.current_pts_us)},
+        {EncodableValue("currentDtsUs"), EncodableValue(perf.current_dts_us)},
+    };
+    result.emplace_back(std::move(item));
   }
   return result;
 }
@@ -288,9 +417,9 @@ EncodableMap CaptureMap(const std::vector<uint8_t>& bgra,
       ++non_black;
     }
   }
-  const double average = pixels == 0
-      ? 0.0
-      : static_cast<double>(luma_sum) / static_cast<double>(pixels);
+  const double average =
+      pixels == 0 ? 0.0
+                  : static_cast<double>(luma_sum) / static_cast<double>(pixels);
   const double ratio = pixels == 0
       ? 0.0
       : static_cast<double>(non_black) / static_cast<double>(pixels);
@@ -368,6 +497,14 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
       EncodableValue(static_cast<int64_t>(state.video_publish_count));
   diagnostics[EncodableValue("windowsVideoPresentCount")] =
       EncodableValue(static_cast<int64_t>(state.video_present_count));
+  diagnostics[EncodableValue("windowsVideoTargetRetainedReconfigureCount")] =
+      EncodableValue(
+          static_cast<int64_t>(state.video_target_retained_reconfigure_count));
+  diagnostics[EncodableValue("windowsVideoTargetRetainedHandoffCount")] =
+      EncodableValue(
+          static_cast<int64_t>(state.video_target_retained_handoff_count));
+  diagnostics[EncodableValue("windowsVideoPresentRetryCount")] =
+      EncodableValue(static_cast<int64_t>(state.video_present_retry_count));
   diagnostics[EncodableValue("windowsFlutterAcquireFailureCount")] =
       EncodableValue(static_cast<int64_t>(state.acquire_failure_count));
   diagnostics[EncodableValue("windowsFlutterKeyedMutexFailureCount")] =
@@ -401,9 +538,12 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
   const auto viewport = viewport_controller->diagnostics();
   diagnostics[EncodableValue("viewportClockSource")] =
       EncodableValue("dxgi-present-vsync");
-  diagnostics[EncodableValue("displayRefreshHzEstimateX1000")] =
-      EncodableValue(static_cast<int64_t>(
-          std::llround(viewport.nominal_refresh_hz * 1000.0)));
+  diagnostics[EncodableValue("displayRefreshHzEstimateX1000")] = EncodableValue(
+      static_cast<int64_t>(std::llround(viewport.nominal_refresh_hz * 1000.0)));
+  diagnostics[EncodableValue("displayRefreshHzEstimate")] =
+      EncodableValue(viewport.nominal_refresh_hz);
+  diagnostics[EncodableValue("displayTickHz")] =
+      EncodableValue(viewport.nominal_refresh_hz);
   diagnostics[EncodableValue("layoutIntentCount")] =
       EncodableValue(static_cast<int64_t>(viewport.layout_intent_count));
   diagnostics[EncodableValue("layoutSubmitCount")] =
@@ -417,25 +557,25 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
   diagnostics[EncodableValue("interactionLayoutSubmitHzX1000")] =
       EncodableValue(static_cast<int64_t>(
           std::llround(viewport.measured_submit_hz * 1000.0)));
+  diagnostics[EncodableValue("interactionLayoutSubmitHz")] =
+      EncodableValue(viewport.measured_submit_hz);
+  diagnostics[EncodableValue("layoutDrawHz")] =
+      EncodableValue(viewport.measured_submit_hz);
   diagnostics[EncodableValue("layoutRefreshSupersededCount")] =
       EncodableValue(static_cast<int64_t>(viewport.layout_superseded_count));
   diagnostics[EncodableValue("layoutRefreshFailureCount")] =
       EncodableValue(static_cast<int64_t>(viewport.layout_failed_count));
   diagnostics[EncodableValue("layoutRefreshBackpressureCount")] =
-      EncodableValue(
-          static_cast<int64_t>(viewport.layout_backpressure_count));
-  diagnostics[EncodableValue("interactionFramesInFlight")] =
-      EncodableValue(static_cast<int64_t>(
-          viewport.interaction_frames_in_flight));
+      EncodableValue(static_cast<int64_t>(viewport.layout_backpressure_count));
+  diagnostics[EncodableValue("interactionFramesInFlight")] = EncodableValue(
+      static_cast<int64_t>(viewport.interaction_frames_in_flight));
   diagnostics[EncodableValue("maxInteractionFramesInFlight")] =
       EncodableValue(int64_t{2});
 }
 
 void AddPresentationPolicyDiagnostics(
-    EncodableMap& diagnostics,
-    const vr::WindowsPresentationPolicy& policy,
-    const vr::WindowsDisplayProbeResult& display,
-    double sdr_white_level_nits) {
+    EncodableMap& diagnostics, const vr::WindowsPresentationPolicy& policy,
+    const vr::WindowsDisplayProbeResult& display, double sdr_white_level_nits) {
   diagnostics[EncodableValue("windowsPresentationRequest")] =
       EncodableValue(policy.request);
   diagnostics[EncodableValue("windowsPresentationMode")] =
@@ -474,14 +614,14 @@ void AddPresentationPolicyDiagnostics(
 void VideoRendererPlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows* registrar,
     FlutterDesktopPluginRegistrarRef core_registrar) {
-  auto channel = std::make_unique<
-      flutter::MethodChannel<flutter::EncodableValue>>(
-      registrar->messenger(), native_player_channels::kMethodChannel,
-      &flutter::StandardMethodCodec::GetInstance());
-  auto events = std::make_unique<
-      flutter::EventChannel<flutter::EncodableValue>>(
-      registrar->messenger(), native_player_channels::kEventChannel,
-      &flutter::StandardMethodCodec::GetInstance());
+  auto channel =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          registrar->messenger(), native_player_channels::kMethodChannel,
+          &flutter::StandardMethodCodec::GetInstance());
+  auto events =
+      std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
+          registrar->messenger(), native_player_channels::kEventChannel,
+          &flutter::StandardMethodCodec::GetInstance());
 
   FlutterDesktopViewRef flutter_view =
       FlutterDesktopPluginRegistrarGetView(core_registrar);
@@ -597,9 +737,8 @@ void VideoRendererPlugin::FailClosedPresentation(std::string failure) {
   presentation_policy_.mode = "unavailable";
   presentation_policy_.reason = "presentation-fail-closed";
   presentation_policy_.fallback_reason = std::move(failure);
-  spdlog::error(
-      "[WindowsPresentation] fail closed: {}",
-      presentation_policy_.fallback_reason);
+  spdlog::error("[WindowsPresentation] fail closed: {}",
+                presentation_policy_.fallback_reason);
   event_bridge_.QueueNativeCompositorState(
       false, true, presentation_policy_.mode, presentation_policy_.reason,
       "windows-native-d3d11", presentation_policy_.fallback_reason);
@@ -643,9 +782,8 @@ void VideoRendererPlugin::DestroyPlayer() {
   player_id_ = 0;
 }
 
-bool VideoRendererPlugin::RefreshPresentationPolicy(
-    const char* reason,
-    std::string& error) {
+bool VideoRendererPlugin::RefreshPresentationPolicy(const char* reason,
+                                                    std::string& error) {
   error.clear();
   if (!compositor_ || !compositor_started_) {
     error = "Windows native compositor is unavailable";
@@ -918,8 +1056,8 @@ void VideoRendererPlugin::HandleMethodCall(
         }
       }
       const auto* analysis_path = path != track->end()
-          ? std::get_if<std::string>(&path->second)
-          : nullptr;
+                                      ? std::get_if<std::string>(&path->second)
+                                      : nullptr;
       if (file_id < 0 || !analysis_path || analysis_path->empty() ||
           naki_analysis_set_overlay_track(
               static_cast<int32_t>(file_id), analysis_path->c_str()) == 0) {
@@ -927,8 +1065,9 @@ void VideoRendererPlugin::HandleMethodCall(
         naki_analysis_last_error(message, sizeof(message));
         naki_analysis_clear_overlay_tracks();
         result->Error("ANALYSIS_OVERLAY_TRACK",
-                      message[0] != '\0' ? message
-                                          : "failed to load analysis overlay track");
+                      message[0] != '\0'
+                          ? message
+                          : "failed to load analysis overlay track");
         return;
       }
       ++loaded_track_count;
@@ -1077,6 +1216,7 @@ void VideoRendererPlugin::HandleMethodCall(
     return;
   }
   if (method == "getDiagnostics") {
+    const ProcessMemorySnapshot process_memory = QueryProcessMemory();
     EncodableMap diagnostics = {
         {EncodableValue("available"), EncodableValue(player_ != nullptr)},
         {EncodableValue("presentationBackend"),
@@ -1088,15 +1228,58 @@ void VideoRendererPlugin::HandleMethodCall(
                                 : int64_t{0})},
         {EncodableValue("isPlaying"),
          EncodableValue(player_ && player_->is_playing())},
+        {EncodableValue("processRssBytes"),
+         EncodableValue(SaturatingInt64(process_memory.rss_bytes))},
+        {EncodableValue("processPrivateBytes"),
+         EncodableValue(SaturatingInt64(process_memory.private_bytes))},
+        {EncodableValue("dedicatedGpuUsageBytes"), EncodableValue(int64_t{0})},
+        {EncodableValue("cpuFrameMemoryBytes"), EncodableValue(int64_t{0})},
+        {EncodableValue("packetQueueMemoryBytes"), EncodableValue(int64_t{0})},
+        {EncodableValue("nativeTrackDiagnostics"),
+         EncodableValue(flutter::EncodableList{})},
+        {EncodableValue("nativeTrackDiagnosticCount"),
+         EncodableValue(int64_t{0})},
     };
-    AddCompositorDiagnostics(diagnostics, compositor_.get(), compositor_started_,
+    AddCompositorDiagnostics(diagnostics, compositor_.get(),
+                             compositor_started_,
                              viewport_presentation_controller_.get());
     AddPresentationPolicyDiagnostics(diagnostics, presentation_policy_,
                                      display_probe_,
                                      presentation_sdr_white_level_nits_);
     if (player_) {
+      const auto tracks = player_->tracks();
+      const auto track_perf = player_->track_perf_stats();
+      const auto memory = player_->gpu_memory_stats();
+      const auto renderer_metrics = player_->presentation_metrics();
       const auto stats = player_->presentation_stats();
       const auto backend = player_->presentation_diagnostics();
+      auto track_diagnostics =
+          TrackDiagnosticList(*player_, tracks, track_perf, memory);
+      uint64_t dedicated_gpu_usage =
+          QueryDedicatedGpuUsage(compositor_ ? compositor_->device() : nullptr);
+      if (dedicated_gpu_usage == 0) {
+        dedicated_gpu_usage =
+            memory.decoder_pool_bytes + memory.presenter_texture_bytes +
+            memory.fp16_target_bytes + memory.analysis_overlay_bytes;
+      }
+      diagnostics[EncodableValue("nativeTrackDiagnostics")] =
+          EncodableValue(std::move(track_diagnostics));
+      diagnostics[EncodableValue("nativeTrackDiagnosticCount")] =
+          EncodableValue(static_cast<int64_t>(track_perf.size()));
+      diagnostics[EncodableValue("dedicatedGpuUsageBytes")] =
+          EncodableValue(SaturatingInt64(dedicated_gpu_usage));
+      diagnostics[EncodableValue("cpuFrameMemoryBytes")] =
+          EncodableValue(SaturatingInt64(memory.cpu_frame_bytes));
+      diagnostics[EncodableValue("nativeCpuFrameMemoryBytes")] =
+          EncodableValue(SaturatingInt64(memory.cpu_frame_bytes));
+      diagnostics[EncodableValue("packetQueueMemoryBytes")] =
+          EncodableValue(SaturatingInt64(memory.packet_queue_bytes));
+      diagnostics[EncodableValue("nativePacketQueueMemoryBytes")] =
+          EncodableValue(SaturatingInt64(memory.packet_queue_bytes));
+      diagnostics[EncodableValue("nativeRendererDrawP95Us")] =
+          EncodableValue(SaturatingInt64(renderer_metrics.draw_p95_us));
+      diagnostics[EncodableValue("nativeRendererDrawBackendP95Us")] =
+          EncodableValue(SaturatingInt64(renderer_metrics.draw_backend_p95_us));
       diagnostics[EncodableValue("nativeTargetRendererInitialized")] =
           EncodableValue(stats.backend_available != 0);
       diagnostics[EncodableValue("nativeTargetLastDrawSucceeded")] =
@@ -1126,17 +1309,14 @@ void VideoRendererPlugin::HandleMethodCall(
       diagnostics[EncodableValue("nativeTargetOverlayMissedCount")] =
           EncodableValue(static_cast<int64_t>(stats.overlay_missed_count));
       diagnostics[EncodableValue("nativeTargetOverlayGpuSuccessCount")] =
-          EncodableValue(static_cast<int64_t>(
-              stats.overlay_gpu_success_count));
+          EncodableValue(static_cast<int64_t>(stats.overlay_gpu_success_count));
       diagnostics[EncodableValue("nativeTargetOverlayGpuFailureCount")] =
-          EncodableValue(static_cast<int64_t>(
-              stats.overlay_gpu_failure_count));
+          EncodableValue(static_cast<int64_t>(stats.overlay_gpu_failure_count));
       diagnostics[EncodableValue("nativeTargetOverlayCpuFallbackCount")] =
-          EncodableValue(static_cast<int64_t>(
-              stats.overlay_cpu_fallback_count));
-      diagnostics[EncodableValue("nativeTargetConsecutiveDrawFailures")] =
           EncodableValue(
-              static_cast<int64_t>(stats.consecutive_draw_failures));
+              static_cast<int64_t>(stats.overlay_cpu_fallback_count));
+      diagnostics[EncodableValue("nativeTargetConsecutiveDrawFailures")] =
+          EncodableValue(static_cast<int64_t>(stats.consecutive_draw_failures));
       diagnostics[EncodableValue("nativeTargetBackendName")] =
           EncodableValue(backend.backend);
       diagnostics[EncodableValue("presentationFallbackReason")] =
@@ -1185,8 +1365,9 @@ void VideoRendererPlugin::HandleMethodCall(
     player_->set_audible_track(static_cast<int>(ReadInt(arguments, "fileId", -1)));
     result->Success();
   } else if (method == "setTrackOffset") {
-    player_->set_track_offset(static_cast<int>(ReadInt(arguments, "fileId", -1)),
-                              ReadInt(arguments, "offsetUs"));
+    player_->set_track_offset(
+        static_cast<int>(ReadInt(arguments, "fileId", -1)),
+        ReadInt(arguments, "offsetUs"));
     result->Success();
   } else if (method == "setViewportBackgroundColor") {
     const uint32_t color = static_cast<uint32_t>(ReadInt(arguments, "color"));
@@ -1227,9 +1408,9 @@ void VideoRendererPlugin::HandleMethodCall(
   } else if (method == "getTracks") {
     result->Success(EncodableValue(TrackList(player_->tracks())));
   } else if (method == "addTrack") {
-    const int file_id = player_->add_track(
-        ReadString(arguments, "path"),
-        ReadBool(arguments, "useHardwareDecode", true));
+    const int file_id =
+        player_->add_track(ReadString(arguments, "path"),
+                           ReadBool(arguments, "useHardwareDecode", true));
     const auto tracks = player_->tracks();
     const auto found = std::find_if(
         tracks.begin(), tracks.end(),
@@ -1319,9 +1500,8 @@ void VideoRendererPlugin::HandleMethodCall(
             requested_width, requested_height, bgra, width, height)) {
       result->Error("CAPTURE_FAILED", "native viewport region capture failed");
     } else {
-      ScaleBgraToMaxSize(
-          bgra, width, height,
-          static_cast<int>(ReadInt(arguments, "maxSize")));
+      ScaleBgraToMaxSize(bgra, width, height,
+                         static_cast<int>(ReadInt(arguments, "maxSize")));
       result->Success(EncodableValue(CaptureMap(
           bgra, width, height, ReadString(arguments, "outputPath"))));
     }

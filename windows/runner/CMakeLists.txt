@@ -52,6 +52,7 @@ target_link_libraries(${BINARY_NAME} PRIVATE
   "dwmapi.lib"
   "dxgi.lib"
   "ole32.lib"
+  "psapi.lib"
   "shell32.lib"
   "winmm.lib"
   "windowscodecs.lib"

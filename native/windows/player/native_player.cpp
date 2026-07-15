@@ -75,6 +75,12 @@ void WindowsNativePlayer::set_audible_track(int file_id) {
 void WindowsNativePlayer::set_track_offset(int file_id, int64_t offset_us) {
   VP_WINDOWS_PLAYER_VOID(set_track_offset, file_id, offset_us);
 }
+
+int64_t WindowsNativePlayer::track_offset_us(int file_id) const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->track_offset_us(file_id) : 0;
+}
+
 void WindowsNativePlayer::set_background_color(float red,
                                                float green,
                                                float blue,
@@ -135,6 +141,18 @@ std::vector<TrackPerfStats> WindowsNativePlayer::track_perf_stats() const {
   std::shared_lock<std::shared_mutex> lock(mutex_);
   return ready_locked() ? renderer_->track_perf_stats()
                         : std::vector<TrackPerfStats>{};
+}
+
+RendererGpuMemoryStats WindowsNativePlayer::gpu_memory_stats() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->gpu_memory_stats()
+                        : RendererGpuMemoryStats{};
+}
+
+PresentationBackendMetrics WindowsNativePlayer::presentation_metrics() const {
+  std::shared_lock<std::shared_mutex> lock(mutex_);
+  return ready_locked() ? renderer_->presentation_backend_metrics()
+                        : PresentationBackendMetrics{};
 }
 
 PresentationBackendStats WindowsNativePlayer::presentation_stats() const {

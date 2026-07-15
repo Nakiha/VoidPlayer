@@ -31,6 +31,9 @@ struct WindowsNativeCompositorDiagnostics {
   uint64_t keyed_mutex_failure_count = 0;
   uint64_t present_failure_count = 0;
   uint64_t video_target_generation = 0;
+  uint64_t video_target_retained_reconfigure_count = 0;
+  uint64_t video_target_retained_handoff_count = 0;
+  uint64_t video_present_retry_count = 0;
   uint64_t video_publish_count = 0;
   uint64_t video_present_count = 0;
   uint64_t last_flutter_frame_generation = 0;
@@ -156,6 +159,8 @@ class WindowsNativeCompositor final {
   DXGI_COLOR_SPACE_TYPE output_color_space_ =
       DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
   DXGI_FORMAT video_target_format_ = DXGI_FORMAT_UNKNOWN;
+  bool video_target_handoff_pending_ = false;
+  uint64_t video_target_handoff_serial_ = 0;
   WindowsNativeCompositorOutputConfig requested_output_config_;
   WindowsNativeCompositorOutputConfig applied_output_config_;
   uint64_t requested_output_generation_ = 0;

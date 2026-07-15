@@ -246,8 +246,11 @@ bool WindowsNativeCompositor::CreateVideoTargetRing(
   }
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    video_target_.Reset();
-    video_srv_.Reset();
+    const bool retaining_displayed_target = video_target_ != nullptr;
+    D3D11_TEXTURE2D_DESC retained_desc = {};
+    if (retaining_displayed_target) {
+      video_target_->GetDesc(&retained_desc);
+    }
     retired_video_targets_.insert(retired_video_targets_.end(),
                                   video_targets_.begin(), video_targets_.end());
     constexpr size_t kMaxRetiredVideoTargets = 16;
@@ -258,13 +261,23 @@ bool WindowsNativeCompositor::CreateVideoTargetRing(
               (retired_video_targets_.size() - kMaxRetiredVideoTargets));
     }
     video_targets_ = std::move(targets);
-    video_target_format_ = format;
+    if (retaining_displayed_target) {
+      video_target_handoff_pending_ = true;
+      video_target_handoff_serial_ = 0;
+      ++diagnostics_.video_target_retained_reconfigure_count;
+    }
     diagnostics_.video_target_format =
         format == DXGI_FORMAT_R16G16B16A16_FLOAT ? "rgba16f" : "bgra8";
     ++diagnostics_.video_target_generation;
     for (const auto& target : video_targets_) {
       textures.push_back(target.Get());
     }
+    spdlog::info(
+        "[WindowsCompositor] target ring generation={} next={}x{} format={} "
+        "retained={} retained_size={}x{}",
+        diagnostics_.video_target_generation, width, height,
+        diagnostics_.video_target_format, retaining_displayed_target,
+        retained_desc.Width, retained_desc.Height);
   }
   return true;
 }
@@ -276,6 +289,8 @@ void WindowsNativeCompositor::ClearVideoTargetRing() {
   video_targets_.clear();
   retired_video_targets_.clear();
   video_target_format_ = DXGI_FORMAT_UNKNOWN;
+  video_target_handoff_pending_ = false;
+  video_target_handoff_serial_ = 0;
   diagnostics_.video_target_format = "unavailable";
   ++diagnostics_.video_target_generation;
 }
@@ -288,26 +303,35 @@ bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
   uint64_t serial = 0;
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
-    const auto found = std::find_if(
-        video_targets_.begin(), video_targets_.end(),
-        [texture](const auto& candidate) { return candidate.Get() == texture; });
+    const auto found =
+        std::find_if(video_targets_.begin(), video_targets_.end(),
+                     [texture](const auto& candidate) {
+                       return candidate.Get() == texture;
+                     });
     const auto retired = std::find_if(retired_video_targets_.begin(),
                                       retired_video_targets_.end(),
                                       [texture](const auto& candidate) {
                                         return candidate.Get() == texture;
                                       });
     if (found == video_targets_.end() &&
-        retired == retired_video_targets_.end()) {
+        retired == retired_video_targets_.end() &&
+        video_target_.Get() != texture) {
       diagnostics_.last_error =
           "Windows compositor rejected a target outside its ring";
       return false;
     }
+    const bool starts_retained_handoff =
+        video_target_handoff_pending_ && found != video_targets_.end();
     video_target_ = texture;
     D3D11_TEXTURE2D_DESC presented_desc = {};
     texture->GetDesc(&presented_desc);
     video_target_format_ = presented_desc.Format;
     video_srv_.Reset();
     serial = ++video_publish_serial_;
+    if (starts_retained_handoff) {
+      video_target_handoff_pending_ = false;
+      video_target_handoff_serial_ = serial;
+    }
     ++diagnostics_.video_publish_count;
   }
   SignalComposite();
@@ -317,7 +341,11 @@ bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
         return video_completed_serial_ >= serial || !running_;
       });
   const bool success = completed && video_completed_serial_ >= serial &&
-      last_video_presentation_succeeded_;
+                       last_video_presentation_succeeded_;
+  const bool schedule_retry = !success && running_;
+  if (schedule_retry) {
+    ++diagnostics_.video_present_retry_count;
+  }
   if (!success) {
     spdlog::warn(
         "[WindowsCompositor] video present failed serial={} completed={} "
@@ -329,6 +357,13 @@ bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
         "[WindowsCompositor] video present serial={} flutter_generation={} "
         "composites={}",
         serial, cached_flutter_generation_, diagnostics_.composite_count);
+  }
+  lock.unlock();
+  if (schedule_retry) {
+    // Keep the prior swap-chain backbuffer visible and retry composition from
+    // the retained new target. The renderer target stays alive through
+    // video_target_, so no viewport redraw or Flutter frame is required.
+    SignalComposite();
   }
   return success;
 }
@@ -1039,6 +1074,10 @@ void WindowsNativeCompositor::CompleteVideoPresentation(uint64_t serial,
   if (serial == 0) {
     return;
   }
+  bool completed_retained_handoff = false;
+  uint64_t handoff_count = 0;
+  uint64_t reconfigure_count = 0;
+  uint64_t generation = 0;
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     if (serial < video_completed_serial_) {
@@ -1049,6 +1088,24 @@ void WindowsNativeCompositor::CompleteVideoPresentation(uint64_t serial,
     if (success) {
       ++diagnostics_.video_present_count;
     }
+    if (video_target_handoff_serial_ != 0 &&
+        serial >= video_target_handoff_serial_) {
+      if (success) {
+        ++diagnostics_.video_target_retained_handoff_count;
+        completed_retained_handoff = true;
+        handoff_count = diagnostics_.video_target_retained_handoff_count;
+        reconfigure_count =
+            diagnostics_.video_target_retained_reconfigure_count;
+        generation = diagnostics_.video_target_generation;
+        video_target_handoff_serial_ = 0;
+      }
+    }
+  }
+  if (completed_retained_handoff) {
+    spdlog::info(
+        "[WindowsCompositor] retained target handoff complete generation={} "
+        "reconfigures={} handoffs={}",
+        generation, reconfigure_count, handoff_count);
   }
   state_condition_.notify_all();
 }

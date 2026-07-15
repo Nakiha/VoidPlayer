@@ -31,6 +31,7 @@ class WindowsNativePlayer final {
   void set_loop_range(bool enabled, int64_t start_us, int64_t end_us);
   void set_audible_track(int file_id);
   void set_track_offset(int file_id, int64_t offset_us);
+  int64_t track_offset_us(int file_id) const;
   void set_background_color(float red, float green, float blue, float alpha);
   void apply_layout(const LayoutState& layout);
   void apply_interaction_layout(const LayoutState& layout);
@@ -44,6 +45,8 @@ class WindowsNativePlayer final {
   LayoutState layout() const;
   std::vector<TrackInfo> tracks() const;
   std::vector<TrackPerfStats> track_perf_stats() const;
+  RendererGpuMemoryStats gpu_memory_stats() const;
+  PresentationBackendMetrics presentation_metrics() const;
   PresentationBackendStats presentation_stats() const;
   PresentationBackendDiagnostics presentation_diagnostics() const;
   std::string presentation_error() const;

@@ -10,6 +10,13 @@ namespace {
 
 struct FloatRect { float left, top, right, bottom; };
 
+// CU contrast rectangles are drawn twice by the platform backend: a three-pixel
+// black pass followed by a one-pixel white center pass. The geometry carries the
+// screen-space axis and snapped center so both passes reuse the same vertices.
+constexpr analysis::OverlayColor kContrastMarkerColor{0, 0, 0, 255};
+constexpr float kContrastAxisVertical = 1.0f;
+constexpr float kContrastAxisHorizontal = 2.0f;
+
 int display_count(const ShaderConstants& c) {
   return std::clamp(c.track_count, 1, 4);
 }
@@ -59,27 +66,69 @@ bool project(const ShaderConstants& c, int slot, int width, int height,
 }
 
 AnalysisOverlayGpuVertex make_vertex(float x, float y, int width, int height,
-                                     analysis::OverlayColor color) {
+                                     analysis::OverlayColor color,
+                                     float contrast_axis = 0.0f,
+                                     float contrast_center_px = 0.0f) {
   constexpr float scale = 1.0f / 255.0f;
   return {x * 2.0f / width - 1.0f, 1.0f - y * 2.0f / height,
-          color.r * scale, color.g * scale, color.b * scale, color.a * scale};
+          color.r * scale, color.g * scale, color.b * scale, color.a * scale,
+          contrast_axis, contrast_center_px};
 }
 
-bool add_rect(AnalysisOverlayGpuGeometry& out, FloatRect rect,
+bool add_rect(std::vector<AnalysisOverlayGpuVertex>& vertices, FloatRect rect,
               const FloatRect& clip, int width, int height,
-              analysis::OverlayColor color, bool line) {
+              analysis::OverlayColor color,
+              float contrast_axis = 0.0f,
+              float contrast_center_px = 0.0f) {
   rect.left = std::max(rect.left, clip.left);
   rect.top = std::max(rect.top, clip.top);
   rect.right = std::min(rect.right, clip.right);
   rect.bottom = std::min(rect.bottom, clip.bottom);
   if (rect.left >= rect.right || rect.top >= rect.bottom || color.a == 0) return false;
-  const auto a = make_vertex(rect.left, rect.top, width, height, color);
-  const auto b = make_vertex(rect.right, rect.top, width, height, color);
-  const auto c = make_vertex(rect.left, rect.bottom, width, height, color);
-  const auto d = make_vertex(rect.right, rect.bottom, width, height, color);
-  out.vertices.insert(out.vertices.end(), {a, b, c, c, b, d});
-  line ? ++out.line_rect_count : ++out.fill_rect_count;
+  const auto a = make_vertex(rect.left, rect.top, width, height, color,
+                             contrast_axis, contrast_center_px);
+  const auto b = make_vertex(rect.right, rect.top, width, height, color,
+                             contrast_axis, contrast_center_px);
+  const auto c = make_vertex(rect.left, rect.bottom, width, height, color,
+                             contrast_axis, contrast_center_px);
+  const auto d = make_vertex(rect.right, rect.bottom, width, height, color,
+                             contrast_axis, contrast_center_px);
+  vertices.insert(vertices.end(), {a, b, c, c, b, d});
   return true;
+}
+
+bool add_contrast_vertical(
+    std::vector<AnalysisOverlayGpuVertex>& contrast_vertices,
+    float x, float y0, float y1, const FloatRect& clip, int width, int height) {
+  if (x < clip.left || x > clip.right) return false;
+  const float top = std::max(std::min(y0, y1), clip.top);
+  const float bottom = std::min(std::max(y0, y1), clip.bottom);
+  if (top >= bottom) return false;
+  const float snapped_x = std::floor(x + 0.001f);
+  const float snapped_top = std::floor(top);
+  const float snapped_bottom = std::ceil(bottom);
+  return add_rect(
+      contrast_vertices,
+      {snapped_x - 1.0f, snapped_top, snapped_x + 2.0f, snapped_bottom},
+      clip, width, height, kContrastMarkerColor,
+      kContrastAxisVertical, snapped_x);
+}
+
+bool add_contrast_horizontal(
+    std::vector<AnalysisOverlayGpuVertex>& contrast_vertices,
+    float y, float x0, float x1, const FloatRect& clip, int width, int height) {
+  if (y < clip.top || y > clip.bottom) return false;
+  const float left = std::max(std::min(x0, x1), clip.left);
+  const float right = std::min(std::max(x0, x1), clip.right);
+  if (left >= right) return false;
+  const float snapped_y = std::floor(y + 0.001f);
+  const float snapped_left = std::floor(left);
+  const float snapped_right = std::ceil(right);
+  return add_rect(
+      contrast_vertices,
+      {snapped_left, snapped_y - 1.0f, snapped_right, snapped_y + 2.0f},
+      clip, width, height, kContrastMarkerColor,
+      kContrastAxisHorizontal, snapped_y);
 }
 
 bool clip_line(float& x0, float& y0, float& x1, float& y1,
@@ -101,20 +150,21 @@ bool clip_line(float& x0, float& y0, float& x1, float& y1,
   return true;
 }
 
-void add_line(AnalysisOverlayGpuGeometry& out, float x0, float y0,
-              float x1, float y1, const FloatRect& clip, int width, int height,
+bool add_line(std::vector<AnalysisOverlayGpuVertex>& vertices,
+              float x0, float y0, float x1, float y1,
+              const FloatRect& clip, int width, int height,
               analysis::OverlayColor color) {
-  if (!clip_line(x0, y0, x1, y1, clip) || color.a == 0) return;
+  if (!clip_line(x0, y0, x1, y1, clip) || color.a == 0) return false;
   const float dx = x1 - x0, dy = y1 - y0;
   const float length = std::sqrt(dx * dx + dy * dy);
-  if (length < 0.001f) return;
+  if (length < 0.001f) return false;
   const float nx = -dy / length, ny = dx / length;
   const auto a = make_vertex(x0 + nx, y0 + ny, width, height, color);
   const auto b = make_vertex(x1 + nx, y1 + ny, width, height, color);
   const auto c = make_vertex(x0 - nx, y0 - ny, width, height, color);
   const auto d = make_vertex(x1 - nx, y1 - ny, width, height, color);
-  out.vertices.insert(out.vertices.end(), {a, b, c, c, b, d});
-  ++out.line_rect_count;
+  vertices.insert(vertices.end(), {a, b, c, c, b, d});
+  return true;
 }
 
 }  // namespace
@@ -124,10 +174,20 @@ AnalysisOverlayGpuGeometry build_analysis_overlay_gpu_geometry(
     int target_width, int target_height) {
   AnalysisOverlayGpuGeometry out;
   if (target_width <= 0 || target_height <= 0) return out;
-  size_t count = 0;
-  for (const auto& track : package.tracks) count += track.fill_rects.size() +
-      track.outline_rects.size() * 4 + track.motion_lines.size();
-  out.vertices.reserve(count * 6);
+  size_t fill_count = 0;
+  size_t outline_edge_capacity = 0;
+  size_t motion_count = 0;
+  for (const auto& track : package.tracks) {
+    fill_count += track.fill_rects.size();
+    outline_edge_capacity += track.outline_rects.size() * 4;
+    motion_count += track.motion_lines.size();
+  }
+  std::vector<AnalysisOverlayGpuVertex> fill_vertices;
+  std::vector<AnalysisOverlayGpuVertex> contrast_vertices;
+  std::vector<AnalysisOverlayGpuVertex> motion_vertices;
+  fill_vertices.reserve(fill_count * 6);
+  contrast_vertices.reserve(outline_edge_capacity * 6);
+  motion_vertices.reserve(motion_count * 6);
   for (const auto& track : package.tracks) {
     if (track.slot < 0 || track.video_width <= 0 || track.video_height <= 0) continue;
     FloatRect clip{};
@@ -139,27 +199,58 @@ AnalysisOverlayGpuGeometry build_analysis_overlay_gpu_geometry(
     };
     for (const auto& rect : track.fill_rects) {
       float x0, y0, x1, y1;
-      if (point(rect.x0, rect.y0, x0, y0) && point(rect.x1, rect.y1, x1, y1))
-        add_rect(out, {std::min(x0, x1), std::min(y0, y1),
-                       std::max(x0, x1), std::max(y0, y1)},
-                 clip, target_width, target_height, rect.color, false);
+      if (point(rect.x0, rect.y0, x0, y0) && point(rect.x1, rect.y1, x1, y1)) {
+        if (add_rect(fill_vertices,
+                     {std::min(x0, x1), std::min(y0, y1),
+                      std::max(x0, x1), std::max(y0, y1)},
+                     clip, target_width, target_height, rect.color)) {
+          ++out.fill_rect_count;
+        }
+      }
     }
     for (const auto& rect : track.outline_rects) {
+      if (rect.color.a == 0) continue;
       float x0, y0, x1, y1;
       if (!point(rect.x0, rect.y0, x0, y0) || !point(rect.x1, rect.y1, x1, y1)) continue;
       const float l = std::min(x0, x1), t = std::min(y0, y1);
-      const float r = std::max(x0, x1), b = std::max(y0, y1), w = 2.0f;
-      add_rect(out, {l, t, r, t + w}, clip, target_width, target_height, rect.color, true);
-      add_rect(out, {l, t, l + w, b}, clip, target_width, target_height, rect.color, true);
-      add_rect(out, {r - w, t, r, b}, clip, target_width, target_height, rect.color, true);
-      add_rect(out, {l, b - w, r, b}, clip, target_width, target_height, rect.color, true);
+      const float r = std::max(x0, x1), b = std::max(y0, y1);
+      if (add_contrast_vertical(contrast_vertices, l, t, b,
+                                clip, target_width, target_height)) {
+        ++out.line_rect_count;
+      }
+      if (add_contrast_horizontal(contrast_vertices, t, l, r,
+                                  clip, target_width, target_height)) {
+        ++out.line_rect_count;
+      }
+      if (std::max(rect.x0, rect.x1) >= track.video_width &&
+          add_contrast_vertical(contrast_vertices, r, t, b,
+                                clip, target_width, target_height)) {
+        ++out.line_rect_count;
+      }
+      if (std::max(rect.y0, rect.y1) >= track.video_height &&
+          add_contrast_horizontal(contrast_vertices, b, l, r,
+                                  clip, target_width, target_height)) {
+        ++out.line_rect_count;
+      }
     }
     for (const auto& line : track.motion_lines) {
       float x0, y0, x1, y1;
-      if (point(line.x0, line.y0, x0, y0) && point(line.x1, line.y1, x1, y1))
-        add_line(out, x0, y0, x1, y1, clip, target_width, target_height, line.color);
+      if (point(line.x0, line.y0, x0, y0) && point(line.x1, line.y1, x1, y1)) {
+        if (add_line(motion_vertices, x0, y0, x1, y1, clip,
+                     target_width, target_height, line.color)) {
+          ++out.line_rect_count;
+        }
+      }
     }
   }
+  out.fill_vertex_count = fill_vertices.size();
+  out.contrast_vertex_count = contrast_vertices.size();
+  out.motion_vertex_count = motion_vertices.size();
+  out.vertices.reserve(out.fill_vertex_count + out.contrast_vertex_count +
+                       out.motion_vertex_count);
+  out.vertices.insert(out.vertices.end(), fill_vertices.begin(), fill_vertices.end());
+  out.vertices.insert(out.vertices.end(), contrast_vertices.begin(), contrast_vertices.end());
+  out.vertices.insert(out.vertices.end(), motion_vertices.begin(), motion_vertices.end());
   return out;
 }
 

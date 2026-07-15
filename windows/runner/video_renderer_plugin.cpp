@@ -4,6 +4,7 @@
 #include "native_player_channel_names.h"
 #include "common/logging.h"
 #include "common/win_utf8.h"
+#include "renderer/capture/bgra_capture_metrics.h"
 #include "windows/presentation/windows_d3d11_target_ring.h"
 
 #include <flutter/event_channel.h>
@@ -423,6 +424,9 @@ EncodableMap CaptureMap(const std::vector<uint8_t>& bgra,
   const double ratio = pixels == 0
       ? 0.0
       : static_cast<double>(non_black) / static_cast<double>(pixels);
+  const vr::BgraOverlayLineStyleMetrics overlay_line_style =
+      vr::measure_bgra_overlay_line_style(
+          bgra.data(), width, height, width * 4);
   const bool saved = SaveBgraPng(bgra, width, height, output_path);
   return {
       {EncodableValue("hash"), EncodableValue(Fnv1a64(bgra))},
@@ -430,6 +434,14 @@ EncodableMap CaptureMap(const std::vector<uint8_t>& bgra,
       {EncodableValue("height"), EncodableValue(height)},
       {EncodableValue("avgLuma"), EncodableValue(average)},
       {EncodableValue("nonBlackRatio"), EncodableValue(ratio)},
+      {EncodableValue("overlayLinePairedCenters"),
+       EncodableValue(static_cast<int64_t>(overlay_line_style.paired_centers))},
+      {EncodableValue("overlayLineWeakWhiteCenters"),
+       EncodableValue(
+           static_cast<int64_t>(overlay_line_style.weak_white_centers))},
+      {EncodableValue("overlayLineBlackOnlyCenters"),
+       EncodableValue(
+           static_cast<int64_t>(overlay_line_style.black_only_centers))},
       {EncodableValue("outputPath"), EncodableValue(output_path)},
       {EncodableValue("saved"), EncodableValue(saved)},
   };

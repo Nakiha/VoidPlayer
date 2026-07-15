@@ -384,6 +384,87 @@ TEST_CASE("Windows D3D11 viewport applies shared split layout and track order",
   REQUIRE(readback[right + 3] == 255);
 }
 
+TEST_CASE("Windows D3D11 overlay matches Metal black-white-black contrast lines",
+          "[windows_d3d11_viewport][windows_overlay_layer][windows_color][windows_fp16]") {
+  auto test_device = create_viewport_test_device();
+  WindowsD3D11ViewportRenderer renderer;
+  REQUIRE(renderer.initialize(test_device.device.Get(), test_device.context.Get()));
+
+  PresentationSnapshot presentation;
+  presentation.constants.mode = 0;
+  presentation.constants.track_count = 1;
+  presentation.constants.order[0] = 0;
+  presentation.constants.canvas_width = 16.0f;
+  presentation.constants.canvas_height = 8.0f;
+  presentation.constants.inv_display_size_x[0] = 1.0f;
+  presentation.constants.inv_display_size_y[0] = 1.0f;
+
+  AnalysisOverlayPrimitivePackage package;
+  AnalysisOverlayTrackPrimitives track;
+  track.slot = 0;
+  track.video_width = 16;
+  track.video_height = 8;
+  track.line_alpha = 255;
+  track.outline_rects.push_back(
+      {8, 0, 16, 8, analysis::OverlayColor{255, 255, 255, 255}});
+  package.tracks.push_back(std::move(track));
+
+  const D3D11_VIEWPORT viewport = {0.0f, 0.0f, 16.0f, 8.0f, 0.0f, 1.0f};
+  test_device.context->RSSetViewports(1, &viewport);
+
+  SECTION("SDR BGRA8") {
+    auto target = create_viewport_target(test_device.device.Get(),
+                                         DXGI_FORMAT_B8G8R8A8_UNORM);
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
+    REQUIRE(SUCCEEDED(test_device.device->CreateRenderTargetView(
+        target.Get(), nullptr, &rtv)));
+    const float gray[4] = {0.5f, 0.5f, 0.5f, 1.0f};
+    test_device.context->ClearRenderTargetView(rtv.Get(), gray);
+    REQUIRE(renderer.draw_overlay(package,
+                                  presentation,
+                                  rtv.Get(),
+                                  ColorOutputTarget::kSDRToneMappedBT709,
+                                  80.0));
+    const auto readback = read_viewport_target(test_device, target.Get());
+    const auto channel = [&](int x) {
+      return static_cast<int>(readback[bgra_pixel_offset(x, 4) + 2]);
+    };
+    CHECK(channel(6) == Catch::Approx(128).margin(1));
+    CHECK(channel(7) == Catch::Approx(19).margin(2));
+    CHECK(channel(8) == Catch::Approx(243).margin(2));
+    CHECK(channel(9) == Catch::Approx(19).margin(2));
+    CHECK(channel(10) == Catch::Approx(128).margin(1));
+  }
+
+  SECTION("linear scRGB FP16") {
+    auto target = create_viewport_target(test_device.device.Get(),
+                                         DXGI_FORMAT_R16G16B16A16_FLOAT);
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> rtv;
+    REQUIRE(SUCCEEDED(test_device.device->CreateRenderTargetView(
+        target.Get(), nullptr, &rtv)));
+    const float gray[4] = {0.5f, 0.5f, 0.5f, 1.0f};
+    test_device.context->ClearRenderTargetView(rtv.Get(), gray);
+    REQUIRE(renderer.draw_overlay(package,
+                                  presentation,
+                                  rtv.Get(),
+                                  ColorOutputTarget::kWindowsLinearScRGB,
+                                  100.0));
+    const auto readback = read_viewport_target(test_device, target.Get());
+    const auto channel = [&](int x) {
+      std::array<uint16_t, 4> half{};
+      std::memcpy(half.data(),
+                  readback.data() + fp16_pixel_offset(x, 4),
+                  sizeof(half));
+      return DirectX::PackedVector::XMConvertHalfToFloat(half[0]);
+    };
+    CHECK(channel(6) == Catch::Approx(0.5f).margin(0.002f));
+    CHECK(channel(7) == Catch::Approx(0.075f).margin(0.003f));
+    CHECK(channel(8) == Catch::Approx(1.1895f).margin(0.004f));
+    CHECK(channel(9) == Catch::Approx(0.075f).margin(0.003f));
+    CHECK(channel(10) == Catch::Approx(0.5f).margin(0.002f));
+  }
+}
+
 TEST_CASE("Windows D3D11 viewport opens an independent decode-device snapshot",
           "[windows_d3d11_viewport][windows_d3d11va][windows_cross_device]") {
   auto presentation_device = create_viewport_test_device();

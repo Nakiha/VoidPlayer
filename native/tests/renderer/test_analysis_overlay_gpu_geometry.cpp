@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "renderer/overlay/analysis_overlay_gpu_geometry.h"
@@ -74,6 +75,19 @@ TEST_CASE("analysis overlay geometry keeps outline and motion primitives on GPU"
   const auto geometry = vr::build_analysis_overlay_gpu_geometry(
       package, base_constants(), 200, 100);
   CHECK(geometry.fill_rect_count == 1);
-  CHECK(geometry.line_rect_count == 5);
-  CHECK(geometry.vertices.size() == 36);
+  CHECK(geometry.line_rect_count == 3);
+  CHECK(geometry.vertices.size() == 24);
+  CHECK(geometry.fill_vertex_count == 6);
+  CHECK(geometry.contrast_vertex_count == 12);
+  CHECK(geometry.motion_vertex_count == 6);
+
+  const auto& contrast = geometry.vertices[geometry.fill_vertex_count];
+  CHECK(contrast.contrast_axis == 1.0f);
+  CHECK(contrast.contrast_center_px == Catch::Approx(10.0f));
+
+  const auto px_from_ndc_x = [](float x) { return (x + 1.0f) * 100.0f; };
+  CHECK(px_from_ndc_x(geometry.vertices[geometry.fill_vertex_count].position_x) ==
+        Catch::Approx(9.0f));
+  CHECK(px_from_ndc_x(geometry.vertices[geometry.fill_vertex_count + 1].position_x) ==
+        Catch::Approx(12.0f));
 }

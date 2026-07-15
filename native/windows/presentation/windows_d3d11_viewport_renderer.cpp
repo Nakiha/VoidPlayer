@@ -262,12 +262,21 @@ float4 PSMain(VSOutput input) : SV_TARGET {
 )hlsl";
 
 constexpr char kOverlayShader[] = R"hlsl(
-struct VSInput { float2 position : POSITION; float4 color : COLOR0; };
-struct VSOutput { float4 position : SV_POSITION; float4 color : COLOR0; };
+struct VSInput {
+  float2 position : POSITION;
+  float4 color : COLOR0;
+  float2 contrast : TEXCOORD0;
+};
+struct VSOutput {
+  float4 position : SV_POSITION;
+  float4 color : COLOR0;
+  nointerpolation float2 contrast : TEXCOORD0;
+};
 cbuffer OverlayConstants : register(b0) {
   int u_output_target;
   float u_sdr_white_scale;
-  float2 u_padding;
+  int u_contrast_pass;
+  float u_padding;
 };
 float3 srgb_to_linear(float3 x) {
   x = saturate(x);
@@ -279,21 +288,34 @@ VSOutput VSOverlay(VSInput input) {
   VSOutput output;
   output.position = float4(input.position, 0.0, 1.0);
   output.color = input.color;
+  output.contrast = input.contrast;
   return output;
 }
 float4 PSOverlay(VSOutput input) : SV_TARGET {
-  float3 rgb = input.color.rgb;
+  float4 color = input.color;
+  if (input.contrast.x > 0.5) {
+    if (u_contrast_pass == 0) {
+      color = float4(0.0, 0.0, 0.0, 0.85);
+    } else {
+      const float axis_position =
+          input.contrast.x < 1.5 ? input.position.x : input.position.y;
+      if (abs(axis_position - (input.contrast.y + 0.5)) >= 0.55) discard;
+      color = float4(1.0, 1.0, 1.0, 0.95);
+    }
+  }
+  float3 rgb = color.rgb;
   if (u_output_target == 1) {
     rgb = srgb_to_linear(rgb) * u_sdr_white_scale;
   }
-  return float4(rgb, input.color.a);
+  return float4(rgb, color.a);
 }
 )hlsl";
 
 struct OverlayConstants {
   int output_target = 0;
   float sdr_white_scale = 1.0f;
-  float padding[2] = {};
+  int contrast_pass = 0;
+  float padding = 0.0f;
 };
 
 struct Vertex {
@@ -516,6 +538,8 @@ bool WindowsD3D11ViewportRenderer::create_overlay_pipeline() {
        D3D11_INPUT_PER_VERTEX_DATA, 0},
       {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 8,
        D3D11_INPUT_PER_VERTEX_DATA, 0},
+      {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24,
+       D3D11_INPUT_PER_VERTEX_DATA, 0},
   };
   if (FAILED(device_->CreateInputLayout(input_desc, ARRAYSIZE(input_desc),
                                          vertex_blob->GetBufferPointer(),
@@ -624,7 +648,25 @@ bool WindowsD3D11ViewportRenderer::draw_overlay(
   ID3D11Buffer* constant_buffer = overlay_constant_buffer_.Get();
   context_->VSSetConstantBuffers(0, 1, &constant_buffer);
   context_->PSSetConstantBuffers(0, 1, &constant_buffer);
-  context_->Draw(static_cast<UINT>(geometry.vertices.size()), 0);
+  const UINT fill_count = static_cast<UINT>(geometry.fill_vertex_count);
+  const UINT contrast_count = static_cast<UINT>(geometry.contrast_vertex_count);
+  const UINT motion_count = static_cast<UINT>(geometry.motion_vertex_count);
+  if (fill_count > 0) context_->Draw(fill_count, 0);
+  // The explicit two-pass order is part of the contrast-line contract: all
+  // black halos land before any white centers, including at CU intersections.
+  if (contrast_count > 0) {
+    context_->Draw(contrast_count, fill_count);
+    constants.contrast_pass = 1;
+    context_->UpdateSubresource(overlay_constant_buffer_.Get(), 0, nullptr,
+                                &constants, 0, 0);
+    context_->Draw(contrast_count, fill_count);
+  }
+  if (motion_count > 0) {
+    constants.contrast_pass = 0;
+    context_->UpdateSubresource(overlay_constant_buffer_.Get(), 0, nullptr,
+                                &constants, 0, 0);
+    context_->Draw(motion_count, fill_count + contrast_count);
+  }
   context_->OMSetBlendState(nullptr, blend_factor, 0xffffffffu);
   ID3D11RenderTargetView* null_target = nullptr;
   context_->OMSetRenderTargets(1, &null_target, nullptr);

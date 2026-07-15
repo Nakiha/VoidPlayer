@@ -12,9 +12,21 @@ struct BgraCaptureMetrics {
     uint64_t hash = 14695981039346656037ull;
 };
 
+struct BgraOverlayLineStyleMetrics {
+    uint64_t paired_centers = 0;
+    uint64_t weak_white_centers = 0;
+    uint64_t black_only_centers = 0;
+};
+
 BgraCaptureMetrics measure_bgra_capture(const uint8_t* bgra,
                                         int width,
                                         int height,
                                         int stride_bytes) noexcept;
+
+BgraOverlayLineStyleMetrics measure_bgra_overlay_line_style(
+    const uint8_t* bgra,
+    int width,
+    int height,
+    int stride_bytes) noexcept;
 
 } // namespace vr

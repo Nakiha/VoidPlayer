@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "name": "voidplayer-flutter",
   "upstreamFlutter": "3.44.1",
-  "flutterVersion": "3.44.2-0.0.pre-12",
+  "flutterVersion": "3.44.2-0.0.pre-13",
   "dartSdkVersion": "3.12.1",
-  "frameworkRevision": "dd94358590cf3de70bff7c60bfb7f41f33146b3b",
+  "frameworkRevision": "882b569738038262d9f057c17aa89bc84e1afd36",
   "engineRevision": "c416acfeb8126e097f758c664aaa3da929e27da0",
   "forkRemote": "https://github.com/Nakiha/VoidPlayer-Flutter.git",
   "forkRef": "codex/windows-surface-export-pacing",
   "forkBranch": "codex/windows-surface-export-pacing",
-  "forkCommit": "dd94358590cf3de70bff7c60bfb7f41f33146b3b",
+  "forkCommit": "882b569738038262d9f057c17aa89bc84e1afd36",
   "defaultInstallPath": ".toolchains/flutter",
   "macosLocalEngineReleaseTag": "voidplayer-flutter-3.44.1-hdr.2",
-  "windowsEngineReleaseTag": "voidplayer-flutter-dd94358590cf-windows.1",
+  "windowsEngineReleaseTag": "voidplayer-flutter-882b56973803-windows.1",
   "macosLocalEngineArtifacts": {
     "debug": {
       "engine": "host_debug_unopt_arm64",
@@ -31,14 +31,14 @@
     "debug": {
       "engine": "host_debug_unopt",
       "host": "host_debug_unopt",
-      "asset": "voidplayer-flutter-dd94358590cf-windows-host_debug_unopt.zip",
-      "sha256": "e8dc97536fc3f90df00c0a17fa892f3fd58d47e1bb3c89fe2bfa2e588b79ecd2"
+      "asset": "voidplayer-flutter-882b56973803-windows-host_debug_unopt.zip",
+      "sha256": "ade2a82d676809c4ea8a6c3c59ae20ddb0a01fce5a4706986b525e56292d69a5"
     },
     "release": {
       "engine": "host_release",
       "host": "host_release",
-      "asset": "voidplayer-flutter-dd94358590cf-windows-host_release.zip",
-      "sha256": "3d9f3fc57ee8a09e9d17ba1660da5c6d5155fb980b1c4bb3d7be4ee5097a25a9"
+      "asset": "voidplayer-flutter-882b56973803-windows-host_release.zip",
+      "sha256": "218d5bff9ad68d47e3ec85111312db40b5f0a1a9d475fb9765ee4897dcfef943"
     }
   },
   "requiredPatchMarkers": [
@@ -57,6 +57,10 @@
     {
       "path": "engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.cc",
       "contains": "kFlutterDesktopWindowsSurfaceBackendD3D12"
+    },
+    {
+      "path": "engine/src/flutter/shell/platform/common/accessibility_bridge.cc",
+      "contains": "reachable_ids"
     }
   ]
 }

@@ -15,6 +15,9 @@
   "nextFrame": "下一帧",
   "enterFullScreen": "进入全屏",
   "exitFullScreen": "退出全屏",
+  "playbackControls": "播放控制",
+  "zoom": "缩放",
+  "timelineSeek": "播放进度",
 
   "sideBySide": "并排",
   "splitScreen": "分屏",
@@ -236,6 +239,7 @@
   "analysisOverlayLayerPredictionMode": "预测模式标签",
   "analysisOverlayLayerPredictionLines": "预测线",
   "analysisOverlayOpacity": "遮罩透明度",
+  "analysisOverlayControls": "码流遮罩控制",
 
   "quickMarkSync": "同步到其他轨道",
   "quickMarkFocus": "聚焦标记",

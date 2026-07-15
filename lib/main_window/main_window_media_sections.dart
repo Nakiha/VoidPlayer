@@ -144,27 +144,25 @@ class MainWindowControlsBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final playback = model.playback;
     final mediaActions = actions.mediaTimeline;
-    return ExcludeSemantics(
-      child: ControlsBar(
-        key: handles.controlsBarKey,
-        timelineKey: handles.timelineSliderKey,
-        timelineStartWidth: playback.timelineStartWidth,
-        zoomRatio: model.viewport.layout.zoomRatio,
-        onZoomChanged: mediaActions.onZoomChanged,
-        isPlaying: playback.isPlaying,
-        isFullScreen: model.overlays.fullScreen,
-        onToggleFullScreen: mediaActions.onToggleFullScreen,
-        onTogglePlay: mediaActions.onTogglePlay,
-        onStepForward: mediaActions.onStepForward,
-        onStepBackward: mediaActions.onStepBackward,
-        currentPtsUs: playback.currentPtsUs,
-        durationUs: playback.durationUs,
-        onSeek: mediaActions.onSeek,
-        onHoverChanged: mediaActions.onSliderHover,
-        markerUs: playback.markerUs,
-        seekMinUs: playback.seekMinUs,
-        seekMaxUs: playback.seekMaxUs,
-      ),
+    return ControlsBar(
+      key: handles.controlsBarKey,
+      timelineKey: handles.timelineSliderKey,
+      timelineStartWidth: playback.timelineStartWidth,
+      zoomRatio: model.viewport.layout.zoomRatio,
+      onZoomChanged: mediaActions.onZoomChanged,
+      isPlaying: playback.isPlaying,
+      isFullScreen: model.overlays.fullScreen,
+      onToggleFullScreen: mediaActions.onToggleFullScreen,
+      onTogglePlay: mediaActions.onTogglePlay,
+      onStepForward: mediaActions.onStepForward,
+      onStepBackward: mediaActions.onStepBackward,
+      currentPtsUs: playback.currentPtsUs,
+      durationUs: playback.durationUs,
+      onSeek: mediaActions.onSeek,
+      onHoverChanged: mediaActions.onSliderHover,
+      markerUs: playback.markerUs,
+      seekMinUs: playback.seekMinUs,
+      seekMaxUs: playback.seekMaxUs,
     );
   }
 }

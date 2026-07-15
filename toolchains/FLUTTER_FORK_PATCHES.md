@@ -13,11 +13,11 @@ truth.
 | Fork ref | `codex/windows-surface-export-pacing` |
 | Patch branch | `codex/windows-surface-export-pacing` |
 | macOS local engine release tag | `voidplayer-flutter-3.44.1-hdr.2` |
-| Windows local engine release tag | `voidplayer-flutter-dd94358590cf-windows.1` |
+| Windows local engine release tag | `voidplayer-flutter-882b56973803-windows.1` |
 | Baseline branch | `voidplayer/flutter-3.44.1-baseline` |
 | Baseline tag | `3.44.1` |
-| Fork commit | `dd94358590cf3de70bff7c60bfb7f41f33146b3b` |
-| Framework revision | `dd94358590cf3de70bff7c60bfb7f41f33146b3b` |
+| Fork commit | `882b569738038262d9f057c17aa89bc84e1afd36` |
+| Framework revision | `882b569738038262d9f057c17aa89bc84e1afd36` |
 | Engine revision | `c416acfeb8126e097f758c664aaa3da929e27da0` |
 | Dart SDK | `3.12.1` |
 
@@ -32,7 +32,7 @@ The current fork exposes the macOS Flutter backing surface to the runner for
 the HDR compositor. The app uses this to composite native video under the
 Flutter UI in a native `CAMetalLayer`.
 
-Changed Flutter files through `dd94358590cf`:
+Changed Flutter files through `882b56973803`:
 
 | File | Purpose |
 | --- | --- |
@@ -52,6 +52,8 @@ Changed Flutter files through `dd94358590cf`:
 | `engine/src/flutter/shell/platform/windows/flutter_windows_surface_export.h` / `.cc` | Implements the Windows surface export V2 backend negotiation path and request/publish/backpressure diagnostics. |
 | `engine/src/flutter/shell/platform/windows/compositor_opengl.cc` | Restores the bounded compositor-owned frame pump after successful surface exports so DComp-visible Flutter UI keeps publishing during native compositor interaction bursts. |
 | `engine/src/flutter/shell/platform/windows/compositor_opengl_unittests.cc` / `flutter_windows_view_unittests.cc` | Covers export generation/state and compositor-owned request scheduling. |
+| `engine/src/flutter/shell/platform/common/accessibility_bridge.cc` / `_unittests.cc` | Drops detached transient overlay nodes before an incremental desktop AXTree commit, preserving valid updates in the same batch. |
+| `packages/flutter/lib/src/widgets/raw_tooltip.dart` / `packages/flutter/test/widgets/raw_tooltip_test.dart` | Keeps excluded visual tooltip overlays out of the semantics tree and covers the hover path. |
 
 The current lock also carries the Windows surface-export patch line. Windows
 runner builds use this to access the Flutter surface through the native
@@ -101,7 +103,7 @@ scripts/ci/package_flutter_windows_engine.ps1 -Mode release
 
 4. Create a new immutable release tag, for example
    `voidplayer-flutter-3.44.1-hdr.2` for macOS or
-   `voidplayer-flutter-dd94358590cf-windows.1` for Windows.
+   `voidplayer-flutter-882b56973803-windows.1` for Windows.
 5. Upload the generated `*-macos-host_*.tar.gz` or
    `*-windows-host_*.zip` files to that release.
 6. Update `toolchains/flutter.lock.json`, including asset names and SHA-256

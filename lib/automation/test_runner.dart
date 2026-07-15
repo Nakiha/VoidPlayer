@@ -18,6 +18,7 @@ import 'automation_script.dart';
 import 'main_window_harness.dart';
 import 'ui_automation_bridge.dart';
 import 'ui_automation_runtime.dart';
+import 'windows_axtree_probe.dart';
 
 /// Parses a test script file and runs instructions on a timeline.
 class TestRunner {
@@ -783,6 +784,9 @@ class TestRunner {
       case HoverTimeline(:final steps, :final stepMs):
         log.info('TestRunner: HOVER_TIMELINE steps=$steps stepMs=$stepMs');
         await testHarness.hoverTimeline(steps: steps, stepMs: stepMs);
+      case AssertWindowsAxTree(:final requiredNames):
+        log.info('TestRunner: ASSERT_WINDOWS_AXTREE names=$requiredNames');
+        await assertWindowsAxTreeNames(requiredNames);
       case ClickMediaHeaderOverlayButtonNative():
         log.info('TestRunner: CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE');
         await testHarness.clickAnalysisOverlayButtonNative();

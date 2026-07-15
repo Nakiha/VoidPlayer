@@ -645,6 +645,12 @@ ScriptInstruction? _parseInstruction(
           stepMs: args.length >= 2 ? int.parse(args[1]) : 8,
         ),
       );
+    case 'ASSERT_WINDOWS_AXTREE':
+      if (args.isEmpty) {
+        log.warning('ASSERT_WINDOWS_AXTREE needs required names: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(time, AssertWindowsAxTree(List.of(args)));
     case 'CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE':
       return ScriptAutomationAction(
         time,

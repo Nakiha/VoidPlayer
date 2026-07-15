@@ -165,54 +165,64 @@ class _MediaHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final entry = entries[slotIndex];
-    return Container(
-      height: 28,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        children: [
-          if (showOverlayPanelButton)
-            _HeaderOverlayPanelButton(
-              key: analysisOverlayButtonKey,
-              dataSource: analysisDataSource,
-              controlsVisible: analysisOverlayControlsVisible,
-              onPressed: onAnalysisOverlayControlsToggle,
-            ),
-          Expanded(
-            child: Opacity(
-              opacity: canReorderTrack ? 1.0 : 0.55,
-              child: IgnorePointer(
-                ignoring: !canReorderTrack,
-                child: _SourceComboBox(
-                  entries: entries,
-                  currentIndex: slotIndex,
-                  onChanged: (targetIndex) {
-                    if (targetIndex != slotIndex) {
-                      onMediaSwapped(slotIndex, targetIndex);
-                    }
-                  },
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      label: entry.fileName,
+      child: Container(
+        height: 28,
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.5,
+          ),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          children: [
+            if (showOverlayPanelButton)
+              _HeaderOverlayPanelButton(
+                key: analysisOverlayButtonKey,
+                dataSource: analysisDataSource,
+                controlsVisible: analysisOverlayControlsVisible,
+                onPressed: onAnalysisOverlayControlsToggle,
+              ),
+            Expanded(
+              child: Opacity(
+                opacity: canReorderTrack ? 1.0 : 0.55,
+                child: IgnorePointer(
+                  ignoring: !canReorderTrack,
+                  child: _SourceComboBox(
+                    entries: entries,
+                    currentIndex: slotIndex,
+                    onChanged: (targetIndex) {
+                      if (targetIndex != slotIndex) {
+                        onMediaSwapped(slotIndex, targetIndex);
+                      }
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
-          SizedBox(
-            width: 28,
-            height: 28,
-            child: IconButton(
-              key: mediaHeaderRemoveButtonKey(entry.fileId),
-              onPressed: canRemoveTrack
-                  ? () => onRemoveClicked(entry.fileId)
-                  : null,
-              icon: const Icon(Icons.close, size: 14),
-              tooltip: AppLocalizations.of(context)!.removeTrack,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-              style: _removeTrackButtonStyle(theme.colorScheme, 6),
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: IconButton(
+                key: mediaHeaderRemoveButtonKey(entry.fileId),
+                onPressed: canRemoveTrack
+                    ? () => onRemoveClicked(entry.fileId)
+                    : null,
+                icon: const Icon(Icons.close, size: 14),
+                tooltip: AppLocalizations.of(context)!.removeTrack,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 28,
+                  height: 28,
+                ),
+                style: _removeTrackButtonStyle(theme.colorScheme, 6),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -274,45 +284,56 @@ class _HeaderOverlayPanelButtonState extends State<_HeaderOverlayPanelButton> {
     return SizedBox(
       width: 28,
       height: 28,
-      child: Tooltip(
-        message: tooltip,
-        excludeFromSemantics: true,
-        child: IconButton(
-          onPressed: widget.onPressed,
-          icon: working
-              ? const SizedBox(
-                  width: 13,
-                  height: 13,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.grid_on, size: 14),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-          style: ButtonStyle(
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      child: Semantics(
+        button: true,
+        enabled: widget.onPressed != null,
+        toggled: active,
+        label: tooltip,
+        onTap: widget.onPressed,
+        child: ExcludeSemantics(
+          child: Tooltip(
+            message: tooltip,
+            excludeFromSemantics: true,
+            child: IconButton(
+              onPressed: widget.onPressed,
+              icon: working
+                  ? const SizedBox(
+                      width: 13,
+                      height: 13,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.grid_on, size: 14),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+              style: ButtonStyle(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: WidgetStatePropertyAll(
+                  RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+                backgroundColor: WidgetStateProperty.resolveWith((states) {
+                  if (working) return Colors.transparent;
+                  if (active) {
+                    return colorScheme.primary.withValues(alpha: 0.22);
+                  }
+                  if (states.contains(WidgetState.hovered) ||
+                      states.contains(WidgetState.focused)) {
+                    return colorScheme.primary.withValues(alpha: 0.14);
+                  }
+                  return Colors.transparent;
+                }),
+                foregroundColor: WidgetStateProperty.resolveWith((states) {
+                  if (working) {
+                    return colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
+                  }
+                  return active
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant;
+                }),
+                overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+              ),
             ),
-            backgroundColor: WidgetStateProperty.resolveWith((states) {
-              if (working) return Colors.transparent;
-              if (active) {
-                return colorScheme.primary.withValues(alpha: 0.22);
-              }
-              if (states.contains(WidgetState.hovered) ||
-                  states.contains(WidgetState.focused)) {
-                return colorScheme.primary.withValues(alpha: 0.14);
-              }
-              return Colors.transparent;
-            }),
-            foregroundColor: WidgetStateProperty.resolveWith((states) {
-              if (working) {
-                return colorScheme.onSurfaceVariant.withValues(alpha: 0.34);
-              }
-              return active
-                  ? colorScheme.primary
-                  : colorScheme.onSurfaceVariant;
-            }),
-            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
           ),
         ),
       ),

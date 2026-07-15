@@ -37,6 +37,15 @@
   "exitFullScreen": "Exit Full Screen",
   "@exitFullScreen": { "description": "Exit fullscreen tooltip" },
 
+  "playbackControls": "Playback controls",
+  "@playbackControls": { "description": "Accessibility region label for playback controls" },
+
+  "zoom": "Zoom",
+  "@zoom": { "description": "Accessibility label for the viewport zoom selector" },
+
+  "timelineSeek": "Timeline seek",
+  "@timelineSeek": { "description": "Accessibility label for the playback seek slider" },
+
   "sideBySide": "Side by Side",
   "@sideBySide": { "description": "View mode: side by side" },
 
@@ -674,6 +683,9 @@
 
   "analysisOverlayOpacity": "Overlay opacity",
   "@analysisOverlayOpacity": { "description": "Tooltip for the bitstream overlay opacity slider" },
+
+  "analysisOverlayControls": "Bitstream overlay controls",
+  "@analysisOverlayControls": { "description": "Accessibility region label for bitstream overlay controls" },
 
   "quickMarkSync": "Sync to tracks",
   "@quickMarkSync": { "description": "Tooltip for syncing a quick mark to other tracks" },

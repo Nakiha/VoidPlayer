@@ -289,6 +289,34 @@ void main() {
     );
   });
 
+  test('parses Windows AXTree assertions with required UIA names', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}'
+      'void_player_axtree_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync(
+      '0.1,ASSERT_WINDOWS_AXTREE,playbackControls,timelineSeek,play\n',
+    );
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(
+      instructions.single,
+      isA<ScriptAutomationAction>().having(
+        (instruction) => instruction.action,
+        'action',
+        isA<AssertWindowsAxTree>().having(
+          (action) => action.requiredNames,
+          'requiredNames',
+          const ['playbackControls', 'timelineSeek', 'play'],
+        ),
+      ),
+    );
+  });
+
   test('parses TOGGLE_MARKS_SIDEBAR', () {
     final file = File(
       '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_marks_sidebar_script_test.csv',

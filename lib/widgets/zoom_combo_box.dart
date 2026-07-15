@@ -29,16 +29,21 @@ class ZoomComboBox extends StatelessWidget {
     final l = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
 
-    return AppMenuCombo<double>(
-      width: 76,
-      height: 32,
-      value: value,
-      items: presets,
-      labelFor: (v) => _label(v, l),
-      onChanged: onChanged,
-      textStyle: theme.textTheme.bodySmall,
-      menuTextStyle: theme.textTheme.bodySmall,
-      maxMenuWidth: 220,
+    return Semantics(
+      container: true,
+      label: l.zoom,
+      value: _label(value, l),
+      child: AppMenuCombo<double>(
+        width: 76,
+        height: 32,
+        value: value,
+        items: presets,
+        labelFor: (v) => _label(v, l),
+        onChanged: onChanged,
+        textStyle: theme.textTheme.bodySmall,
+        menuTextStyle: theme.textTheme.bodySmall,
+        maxMenuWidth: 220,
+      ),
     );
   }
 }

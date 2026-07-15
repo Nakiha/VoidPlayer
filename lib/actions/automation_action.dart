@@ -308,6 +308,13 @@ class HoverTimeline extends AutomationAction {
     : super('HOVER_TIMELINE');
 }
 
+class AssertWindowsAxTree extends AutomationAction {
+  final List<String> requiredNames;
+
+  const AssertWindowsAxTree(this.requiredNames)
+    : super('ASSERT_WINDOWS_AXTREE');
+}
+
 class ClickMediaHeaderOverlayButtonNative extends AutomationAction {
   const ClickMediaHeaderOverlayButtonNative()
     : super('CLICK_MEDIA_HEADER_OVERLAY_BUTTON_NATIVE');

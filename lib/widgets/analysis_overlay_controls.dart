@@ -95,67 +95,75 @@ class _AnalysisOverlayStripState extends State<AnalysisOverlayStrip> {
     if (!widget.visible || widget.entries.isEmpty) {
       return const SizedBox.shrink();
     }
+    final l = AppLocalizations.of(context)!;
     final colorScheme = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      key: analysisOverlayStripKey,
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow.withValues(alpha: 0.92),
-        border: Border(
-          top: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.6),
-          ),
-          bottom: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.44),
+    return Semantics(
+      container: true,
+      explicitChildNodes: true,
+      label: l.analysisOverlayControls,
+      child: DecoratedBox(
+        key: analysisOverlayStripKey,
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerLow.withValues(alpha: 0.92),
+          border: Border(
+            top: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.6),
+            ),
+            bottom: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.44),
+            ),
           ),
         ),
-      ),
-      child: SizedBox(
-        height: AnalysisOverlayStrip.height,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 2, 4, 2),
-          child: Row(
-            children: [
-              Expanded(
-                child: AnalysisOverlayControlBar(
-                  dataSource: widget.dataSource,
-                  panelReady: _cachedTrackFileIds.isNotEmpty,
-                  panelActive: widget.dataSource.overlayPanelVisible,
-                  onTypeChanged: widget.onTypeChanged,
-                  onOpacityChanged: widget.onOpacityChanged,
-                  onActivateOverlay: widget.onActivateOverlay,
-                  onDeactivateOverlay: widget.onDeactivateOverlay,
-                ),
-              ),
-              const SizedBox(width: 4),
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: IconButton(
-                  onPressed: widget.onClose,
-                  icon: const Icon(Icons.close, size: 15),
-                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 28,
-                    height: 28,
+        child: SizedBox(
+          height: AnalysisOverlayStrip.height,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 2, 4, 2),
+            child: Row(
+              children: [
+                Expanded(
+                  child: AnalysisOverlayControlBar(
+                    dataSource: widget.dataSource,
+                    panelReady: _cachedTrackFileIds.isNotEmpty,
+                    panelActive: widget.dataSource.overlayPanelVisible,
+                    onTypeChanged: widget.onTypeChanged,
+                    onOpacityChanged: widget.onOpacityChanged,
+                    onActivateOverlay: widget.onActivateOverlay,
+                    onDeactivateOverlay: widget.onDeactivateOverlay,
                   ),
-                  style: ButtonStyle(
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: WidgetStatePropertyAll(
-                      RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
+                ),
+                const SizedBox(width: 4),
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: IconButton(
+                    onPressed: widget.onClose,
+                    icon: const Icon(Icons.close, size: 15),
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).closeButtonTooltip,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 28,
+                      height: 28,
+                    ),
+                    style: ButtonStyle(
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: WidgetStatePropertyAll(
+                        RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      foregroundColor: WidgetStatePropertyAll(
+                        colorScheme.onSurfaceVariant,
+                      ),
+                      overlayColor: WidgetStatePropertyAll(
+                        colorScheme.primary.withValues(alpha: 0.10),
                       ),
                     ),
-                    foregroundColor: WidgetStatePropertyAll(
-                      colorScheme.onSurfaceVariant,
-                    ),
-                    overlayColor: WidgetStatePropertyAll(
-                      colorScheme.primary.withValues(alpha: 0.10),
-                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -433,33 +441,41 @@ class _OverlayBareIconButtonState extends State<_OverlayBareIconButton> {
         ? colorScheme.onPrimary
         : colorScheme.onSurfaceVariant;
 
-    return Tooltip(
-      message: widget.tooltip,
-      excludeFromSemantics: true,
-      waitDuration: const Duration(milliseconds: 450),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() {
-          _hovered = false;
-          _pressed = false;
-        }),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onPressed,
-          onTapDown: (_) => setState(() => _pressed = true),
-          onTapCancel: () => setState(() => _pressed = false),
-          onTapUp: (_) => setState(() => _pressed = false),
-          child: SizedBox(
-            width: 26,
-            height: 24,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: background,
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: Center(
-                child: Icon(widget.icon, size: 15, color: foreground),
+    return Semantics(
+      button: true,
+      selected: widget.selected,
+      label: widget.tooltip,
+      onTap: widget.onPressed,
+      child: ExcludeSemantics(
+        child: Tooltip(
+          message: widget.tooltip,
+          excludeFromSemantics: true,
+          waitDuration: const Duration(milliseconds: 450),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _hovered = true),
+            onExit: (_) => setState(() {
+              _hovered = false;
+              _pressed = false;
+            }),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onPressed,
+              onTapDown: (_) => setState(() => _pressed = true),
+              onTapCancel: () => setState(() => _pressed = false),
+              onTapUp: (_) => setState(() => _pressed = false),
+              child: SizedBox(
+                width: 26,
+                height: 24,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: background,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Center(
+                    child: Icon(widget.icon, size: 15, color: foreground),
+                  ),
+                ),
               ),
             ),
           ),
@@ -484,39 +500,56 @@ class _OverlayOpacitySlider extends StatelessWidget {
     final tooltip = AppLocalizations.of(context)!.analysisOverlayOpacity;
     final colorScheme = Theme.of(context).colorScheme;
     final normalized = value.clamp(0.0, 1.0).toDouble();
-    return Tooltip(
-      message: tooltip,
-      excludeFromSemantics: true,
-      waitDuration: const Duration(milliseconds: 450),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          void updateFromLocal(Offset local) {
-            final width = constraints.maxWidth <= 0
-                ? 1.0
-                : constraints.maxWidth;
-            final t = (local.dx / width).clamp(0.0, 1.0);
-            onChanged(t.toDouble());
-          }
+    const step = 0.05;
+    return Semantics(
+      slider: true,
+      label: tooltip,
+      value: '${(normalized * 100).round()}%',
+      increasedValue: '${((normalized + step).clamp(0.0, 1.0) * 100).round()}%',
+      decreasedValue: '${((normalized - step).clamp(0.0, 1.0) * 100).round()}%',
+      onIncrease: normalized < 1.0
+          ? () => onChanged((normalized + step).clamp(0.0, 1.0))
+          : null,
+      onDecrease: normalized > 0.0
+          ? () => onChanged((normalized - step).clamp(0.0, 1.0))
+          : null,
+      child: ExcludeSemantics(
+        child: Tooltip(
+          message: tooltip,
+          excludeFromSemantics: true,
+          waitDuration: const Duration(milliseconds: 450),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              void updateFromLocal(Offset local) {
+                final width = constraints.maxWidth <= 0
+                    ? 1.0
+                    : constraints.maxWidth;
+                final t = (local.dx / width).clamp(0.0, 1.0);
+                onChanged(t.toDouble());
+              }
 
-          return MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (details) => updateFromLocal(details.localPosition),
-              onHorizontalDragUpdate: (details) =>
-                  updateFromLocal(details.localPosition),
-              child: SizedBox(
-                height: 24,
-                child: CustomPaint(
-                  painter: _OverlayOpacitySliderPainter(
-                    normalized: normalized,
-                    colorScheme: colorScheme,
+              return MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (details) =>
+                      updateFromLocal(details.localPosition),
+                  onHorizontalDragUpdate: (details) =>
+                      updateFromLocal(details.localPosition),
+                  child: SizedBox(
+                    height: 24,
+                    child: CustomPaint(
+                      painter: _OverlayOpacitySliderPainter(
+                        normalized: normalized,
+                        colorScheme: colorScheme,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          );
-        },
+              );
+            },
+          ),
+        ),
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../utils/time_format.dart';
 
 /// TimelineSlider with hover tooltip, matching PySide6 TimelineSlider behavior.
@@ -54,6 +55,7 @@ class _TimelineSliderState extends State<TimelineSlider> {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     final accentColor = Theme.of(context).colorScheme.primary;
     final inactiveColor = Theme.of(context).colorScheme.surfaceContainerHighest;
     final markerTooltipColor = Theme.of(
@@ -67,7 +69,7 @@ class _TimelineSliderState extends State<TimelineSlider> {
     return Semantics(
       container: true,
       slider: true,
-      label: 'Timeline seek',
+      label: l.timelineSeek,
       value: semanticsValue,
       increasedValue: _formatTime(
         _clampSeekUs(

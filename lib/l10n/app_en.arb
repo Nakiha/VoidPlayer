@@ -234,8 +234,8 @@
   "memoryRss": "RSS",
   "@memoryRss": { "description": "Performance monitor memory metric: resident set size" },
 
-  "memoryPrivate": "Private",
-  "@memoryPrivate": { "description": "Performance monitor memory metric: private process memory" },
+  "memoryPrivate": "Private commit",
+  "@memoryPrivate": { "description": "Performance monitor memory metric: Windows private committed memory" },
 
   "memoryGpuFrames": "GPU frames",
   "@memoryGpuFrames": { "description": "Performance monitor memory metric: estimated GPU frame resources" },

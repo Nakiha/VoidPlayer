@@ -98,6 +98,42 @@ TEST_CASE("Windows D3D11 backend publishes a complete runner-owned target",
       frame_info.target_pixel_buffer_address);
   backend->mark_offscreen_target_displayed(completed);
 
+  std::vector<uint8_t> region_bgra;
+  int region_width = 0;
+  int region_height = 0;
+  REQUIRE(backend->capture_front_buffer_region(
+      3, 2, 5, 3, region_bgra, region_width, region_height));
+  REQUIRE(region_width == 5);
+  REQUIRE(region_height == 3);
+  REQUIRE(region_bgra.size() == 5u * 3u * 4u);
+  REQUIRE(near_byte(region_bgra[0], 191));
+  REQUIRE(near_byte(region_bgra[1], 128));
+  REQUIRE(near_byte(region_bgra[2], 64));
+  REQUIRE(near_byte(region_bgra[3], 255));
+  auto capture_stats = backend->presentation_stats();
+  REQUIRE(capture_stats.staging_allocation_count == 1);
+  REQUIRE(capture_stats.staging_reuse_count == 0);
+  REQUIRE(capture_stats.staging_max_bytes == 5u * 3u * 4u);
+
+  REQUIRE(backend->capture_front_buffer_region(
+      14, 6, 8, 8, region_bgra, region_width, region_height));
+  REQUIRE(region_width == 2);
+  REQUIRE(region_height == 2);
+  REQUIRE(region_bgra.size() == 2u * 2u * 4u);
+  capture_stats = backend->presentation_stats();
+  REQUIRE(capture_stats.staging_allocation_count == 1);
+  REQUIRE(capture_stats.staging_reuse_count == 1);
+  REQUIRE(capture_stats.staging_max_bytes == 5u * 3u * 4u);
+
+  for (int capture = 0; capture < 64; ++capture) {
+    REQUIRE(backend->capture_front_buffer_region(
+        1, 1, 4, 2, region_bgra, region_width, region_height));
+  }
+  capture_stats = backend->presentation_stats();
+  REQUIRE(capture_stats.staging_allocation_count == 1);
+  REQUIRE(capture_stats.staging_reuse_count == 65);
+  REQUIRE(capture_stats.staging_max_bytes == 5u * 3u * 4u);
+
   std::vector<uint8_t> bgra;
   int width = 0;
   int height = 0;
@@ -115,6 +151,9 @@ TEST_CASE("Windows D3D11 backend publishes a complete runner-owned target",
   REQUIRE(stats.target_installed == 1);
   REQUIRE(stats.last_draw_succeeded == 1);
   REQUIRE(stats.viewport_composite_count == 1);
+  REQUIRE(stats.staging_allocation_count == 2);
+  REQUIRE(stats.staging_reuse_count == 65);
+  REQUIRE(stats.staging_max_bytes == 16u * 8u * 4u);
   const auto diagnostics = backend->diagnostics();
   REQUIRE(diagnostics.backend == "windows-native-d3d11");
   REQUIRE(diagnostics.target_format == "bgra8");

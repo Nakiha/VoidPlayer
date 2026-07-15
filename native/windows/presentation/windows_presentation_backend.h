@@ -60,12 +60,14 @@ class WindowsD3D11PresentationBackend final : public PresentationBackend {
 
  private:
   bool install_ring(const WindowsD3D11TargetRingInstall& install);
+  bool ensure_capture_staging(UINT width, UINT height, DXGI_FORMAT format);
   bool wait_for_gpu(const char* label);
   void set_error(std::string error);
   void record_draw_failure();
   void record_device_error(HRESULT result, const char* operation);
 
   mutable std::mutex state_mutex_;
+  std::mutex capture_mutex_;
   WindowsD3D11TargetRing target_ring_;
   WindowsD3D11ViewportRenderer viewport_renderer_;
   Microsoft::WRL::ComPtr<ID3D11Device> device_;
@@ -73,6 +75,7 @@ class WindowsD3D11PresentationBackend final : public PresentationBackend {
   Microsoft::WRL::ComPtr<ID3D10Multithread> multithread_;
   Microsoft::WRL::ComPtr<ID3D11Query> completion_query_;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> last_completed_target_;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> capture_staging_;
   PresentationBackendFrameInfo last_frame_info_{};
   bool last_frame_info_available_ = false;
   bool initialized_ = false;
@@ -87,6 +90,12 @@ class WindowsD3D11PresentationBackend final : public PresentationBackend {
   uint64_t draw_count_ = 0;
   uint64_t draw_failure_count_ = 0;
   uint64_t consecutive_draw_failures_ = 0;
+  UINT capture_staging_width_ = 0;
+  UINT capture_staging_height_ = 0;
+  DXGI_FORMAT capture_staging_format_ = DXGI_FORMAT_UNKNOWN;
+  uint64_t capture_staging_allocation_count_ = 0;
+  uint64_t capture_staging_reuse_count_ = 0;
+  uint64_t capture_staging_max_bytes_ = 0;
   bool overlay_last_expected_ = false;
   bool overlay_last_applied_ = false;
   uint64_t overlay_last_fill_rect_count_ = 0;

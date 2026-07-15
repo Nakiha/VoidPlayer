@@ -1280,6 +1280,13 @@ void VideoRendererPlugin::HandleMethodCall(
           EncodableValue(SaturatingInt64(renderer_metrics.draw_p95_us));
       diagnostics[EncodableValue("nativeRendererDrawBackendP95Us")] =
           EncodableValue(SaturatingInt64(renderer_metrics.draw_backend_p95_us));
+      diagnostics[EncodableValue("nativeTargetStagingAllocationCount")] =
+          EncodableValue(
+              SaturatingInt64(stats.staging_allocation_count));
+      diagnostics[EncodableValue("nativeTargetStagingReuseCount")] =
+          EncodableValue(SaturatingInt64(stats.staging_reuse_count));
+      diagnostics[EncodableValue("nativeTargetStagingMaxBytes")] =
+          EncodableValue(SaturatingInt64(stats.staging_max_bytes));
       diagnostics[EncodableValue("nativeTargetRendererInitialized")] =
           EncodableValue(stats.backend_available != 0);
       diagnostics[EncodableValue("nativeTargetLastDrawSucceeded")] =

@@ -85,7 +85,7 @@
   "memoryTitle": "Void Player - 内存监视器",
   "objectStatistics": "对象统计",
   "memoryRss": "RSS",
-  "memoryPrivate": "私有",
+  "memoryPrivate": "私有提交",
   "memoryGpuFrames": "GPU帧",
   "memoryCpuFrames": "CPU帧",
   "memoryPackets": "包队列",

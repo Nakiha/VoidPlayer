@@ -178,7 +178,7 @@ void main() {
 
       expect(find.byType(SingleChildScrollView), findsNothing);
       expect(find.text('RSS'), findsOneWidget);
-      expect(find.text('私有'), findsOneWidget);
+      expect(find.text('私有提交'), findsOneWidget);
       expect(find.text('GPU帧'), findsOneWidget);
       expect(find.text('CPU帧'), findsOneWidget);
       expect(find.text('包队列'), findsOneWidget);

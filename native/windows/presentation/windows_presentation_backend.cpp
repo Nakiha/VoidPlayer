@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <thread>
 
 #include <spdlog/spdlog.h>
@@ -104,6 +105,7 @@ bool WindowsD3D11PresentationBackend::initialize(
 }
 
 void WindowsD3D11PresentationBackend::shutdown() {
+  std::lock_guard<std::mutex> capture_lock(capture_mutex_);
   if (context_) {
     context_->Flush();
   }
@@ -111,6 +113,7 @@ void WindowsD3D11PresentationBackend::shutdown() {
   viewport_renderer_.shutdown();
   target_ring_.clear();
   last_completed_target_.Reset();
+  capture_staging_.Reset();
   completion_query_.Reset();
   multithread_.Reset();
   context_.Reset();
@@ -123,6 +126,12 @@ void WindowsD3D11PresentationBackend::shutdown() {
   width_ = 0;
   height_ = 0;
   max_track_slots_ = 0;
+  capture_staging_width_ = 0;
+  capture_staging_height_ = 0;
+  capture_staging_format_ = DXGI_FORMAT_UNKNOWN;
+  capture_staging_allocation_count_ = 0;
+  capture_staging_reuse_count_ = 0;
+  capture_staging_max_bytes_ = 0;
   overlay_last_expected_ = false;
   overlay_last_applied_ = false;
   overlay_last_fill_rect_count_ = 0;
@@ -267,6 +276,9 @@ WindowsD3D11PresentationBackend::presentation_stats() const {
   stats.draw_failure_count = draw_failure_count_;
   stats.consecutive_draw_failures = consecutive_draw_failures_;
   stats.last_successful_frame_pts_us = last_frame_info_.pts_us;
+  stats.staging_allocation_count = capture_staging_allocation_count_;
+  stats.staging_reuse_count = capture_staging_reuse_count_;
+  stats.staging_max_bytes = capture_staging_max_bytes_;
   stats.viewport_composite_count = draw_count_;
   const auto viewport = viewport_renderer_.stats();
   stats.video_source_update_count = viewport.video_source_update_count;
@@ -329,55 +341,9 @@ bool WindowsD3D11PresentationBackend::capture_front_buffer(
     std::vector<uint8_t>& bgra,
     int& width,
     int& height) {
-  Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
-  ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
-  {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    source = last_completed_target_;
-    output_target = output_target_;
-  }
-  bgra.clear();
-  width = 0;
-  height = 0;
-  if (!source || !device_ || !context_ ||
-      output_target == ColorOutputTarget::kWindowsLinearScRGB) {
-    return false;
-  }
-  D3D11_TEXTURE2D_DESC desc = {};
-  source->GetDesc(&desc);
-  D3D11_TEXTURE2D_DESC staging_desc = desc;
-  staging_desc.Usage = D3D11_USAGE_STAGING;
-  staging_desc.BindFlags = 0;
-  staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-  staging_desc.MiscFlags = 0;
-  Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
-  HRESULT result = device_->CreateTexture2D(&staging_desc, nullptr, &staging);
-  if (FAILED(result) || !staging) {
-    record_device_error(result, "capture CreateTexture2D");
-    return false;
-  }
-  context_->CopyResource(staging.Get(), source.Get());
-  if (!wait_for_gpu("capture")) {
-    return false;
-  }
-  D3D11_MAPPED_SUBRESOURCE mapped = {};
-  result = context_->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
-  if (FAILED(result)) {
-    record_device_error(result, "capture Map");
-    return false;
-  }
-  width = static_cast<int>(desc.Width);
-  height = static_cast<int>(desc.Height);
-  const size_t row_bytes = static_cast<size_t>(width) * 4u;
-  bgra.resize(row_bytes * static_cast<size_t>(height));
-  for (int row = 0; row < height; ++row) {
-    std::memcpy(bgra.data() + static_cast<size_t>(row) * row_bytes,
-                static_cast<const uint8_t*>(mapped.pData) +
-                    static_cast<size_t>(row) * mapped.RowPitch,
-                row_bytes);
-  }
-  context_->Unmap(staging.Get(), 0);
-  return true;
+  return capture_front_buffer_region(
+      0, 0, std::numeric_limits<int>::max(),
+      std::numeric_limits<int>::max(), bgra, width, height);
 }
 
 bool WindowsD3D11PresentationBackend::capture_front_buffer_region(
@@ -388,20 +354,35 @@ bool WindowsD3D11PresentationBackend::capture_front_buffer_region(
     std::vector<uint8_t>& bgra,
     int& region_width,
     int& region_height) {
-  std::vector<uint8_t> full_bgra;
-  int full_width = 0;
-  int full_height = 0;
+  std::lock_guard<std::mutex> capture_lock(capture_mutex_);
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> source;
+  ColorOutputTarget output_target = ColorOutputTarget::kSDRToneMappedBT709;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    source = last_completed_target_;
+    output_target = output_target_;
+  }
   bgra.clear();
   region_width = 0;
   region_height = 0;
-  if (width <= 0 || height <= 0 ||
-      !capture_front_buffer(full_bgra, full_width, full_height)) {
+  if (width <= 0 || height <= 0 || !source || !device_ || !context_ ||
+      output_target == ColorOutputTarget::kWindowsLinearScRGB) {
     return false;
   }
+  D3D11_TEXTURE2D_DESC source_desc = {};
+  source->GetDesc(&source_desc);
+  if (source_desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM) {
+    set_error("Windows D3D11 capture requires an SDR BGRA8 target");
+    return false;
+  }
+  const int full_width = static_cast<int>(source_desc.Width);
+  const int full_height = static_cast<int>(source_desc.Height);
   const int left = std::clamp(x, 0, full_width);
   const int top = std::clamp(y, 0, full_height);
-  const int right = std::clamp(x + width, left, full_width);
-  const int bottom = std::clamp(y + height, top, full_height);
+  const int right = static_cast<int>(std::clamp<int64_t>(
+      static_cast<int64_t>(x) + width, left, full_width));
+  const int bottom = static_cast<int>(std::clamp<int64_t>(
+      static_cast<int64_t>(y) + height, top, full_height));
   region_width = right - left;
   region_height = bottom - top;
   if (region_width <= 0 || region_height <= 0) {
@@ -409,16 +390,111 @@ bool WindowsD3D11PresentationBackend::capture_front_buffer_region(
     region_height = 0;
     return false;
   }
-  const size_t source_stride = static_cast<size_t>(full_width) * 4u;
+  if (!ensure_capture_staging(static_cast<UINT>(region_width),
+                              static_cast<UINT>(region_height),
+                              source_desc.Format)) {
+    region_width = 0;
+    region_height = 0;
+    return false;
+  }
+  const D3D11_BOX source_box = {
+      static_cast<UINT>(left), static_cast<UINT>(top), 0,
+      static_cast<UINT>(right), static_cast<UINT>(bottom), 1};
+  D3D11_MAPPED_SUBRESOURCE mapped = {};
+  HRESULT result = S_OK;
   const size_t region_stride = static_cast<size_t>(region_width) * 4u;
-  bgra.resize(region_stride * static_cast<size_t>(region_height));
-  for (int row = 0; row < region_height; ++row) {
-    const size_t source_offset =
-        static_cast<size_t>(top + row) * source_stride +
-        static_cast<size_t>(left) * 4u;
-    std::memcpy(bgra.data() + static_cast<size_t>(row) * region_stride,
-                full_bgra.data() + source_offset,
-                region_stride);
+  {
+    ScopedD3D11ContextLock context_lock(multithread_.Get());
+    context_->CopySubresourceRegion(capture_staging_.Get(), 0, 0, 0, 0,
+                                    source.Get(), 0, &source_box);
+    if (!wait_for_gpu("capture-region")) {
+      region_width = 0;
+      region_height = 0;
+      return false;
+    }
+    result = context_->Map(capture_staging_.Get(), 0, D3D11_MAP_READ, 0,
+                           &mapped);
+    if (FAILED(result)) {
+      record_device_error(result, "capture region Map");
+      region_width = 0;
+      region_height = 0;
+      return false;
+    }
+    bgra.resize(region_stride * static_cast<size_t>(region_height));
+    for (int row = 0; row < region_height; ++row) {
+      std::memcpy(bgra.data() + static_cast<size_t>(row) * region_stride,
+                  static_cast<const uint8_t*>(mapped.pData) +
+                      static_cast<size_t>(row) * mapped.RowPitch,
+                  region_stride);
+    }
+    context_->Unmap(capture_staging_.Get(), 0);
+  }
+  return true;
+}
+
+bool WindowsD3D11PresentationBackend::ensure_capture_staging(
+    UINT width,
+    UINT height,
+    DXGI_FORMAT format) {
+  if (capture_staging_ && capture_staging_format_ == format &&
+      capture_staging_width_ >= width && capture_staging_height_ >= height) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    ++capture_staging_reuse_count_;
+    return true;
+  }
+  const auto grow_dimension = [](UINT current, UINT required) {
+    if (current >= required) {
+      return current;
+    }
+    if (current == 0) {
+      return required;
+    }
+    const uint64_t grown = static_cast<uint64_t>(current) +
+        std::max<uint64_t>(1, static_cast<uint64_t>(current) / 2);
+    return static_cast<UINT>(std::min<uint64_t>(
+        D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION,
+        std::max<uint64_t>(required, grown)));
+  };
+  const UINT current_width =
+      capture_staging_format_ == format ? capture_staging_width_ : 0;
+  const UINT current_height =
+      capture_staging_format_ == format ? capture_staging_height_ : 0;
+  const UINT next_width = grow_dimension(current_width, width);
+  const UINT next_height = grow_dimension(current_height, height);
+  D3D11_TEXTURE2D_DESC desc = {};
+  desc.Width = next_width;
+  desc.Height = next_height;
+  desc.MipLevels = 1;
+  desc.ArraySize = 1;
+  desc.Format = format;
+  desc.SampleDesc.Count = 1;
+  desc.Usage = D3D11_USAGE_STAGING;
+  desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> staging;
+  const HRESULT result = device_->CreateTexture2D(&desc, nullptr, &staging);
+  if (FAILED(result) || !staging) {
+    record_device_error(result, "capture region CreateTexture2D");
+    set_error("Windows D3D11 region capture staging allocation failed");
+    return false;
+  }
+  capture_staging_ = std::move(staging);
+  capture_staging_width_ = next_width;
+  capture_staging_height_ = next_height;
+  capture_staging_format_ = format;
+  const uint64_t bytes_per_pixel =
+      format == DXGI_FORMAT_R16G16B16A16_FLOAT ? 8u : 4u;
+  const uint64_t staging_bytes = static_cast<uint64_t>(next_width) *
+      static_cast<uint64_t>(next_height) * bytes_per_pixel;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    ++capture_staging_allocation_count_;
+    capture_staging_max_bytes_ =
+        std::max(capture_staging_max_bytes_, staging_bytes);
+    spdlog::info(
+        "[WindowsCapture] staging allocation={} size={}x{} bytes={} "
+        "requested={}x{}",
+        capture_staging_allocation_count_, next_width, next_height,
+        staging_bytes, width, height);
   }
   return true;
 }

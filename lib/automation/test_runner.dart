@@ -793,6 +793,12 @@ class TestRunner {
       case ClickMediaHeaderOverlayButton():
         log.info('TestRunner: CLICK_MEDIA_HEADER_OVERLAY_BUTTON');
         testHarness.clickAnalysisOverlayButton();
+      case InvokeWindowsAxAction(:final actionName):
+        log.info('TestRunner: INVOKE_WINDOWS_AX_ACTION $actionName');
+        await testHarness.invokeWindowsAxAction(actionName);
+      case PressKeyNative(:final key):
+        log.info('TestRunner: PRESS_KEY_NATIVE $key');
+        await testHarness.pressKeyNative(key);
       case ClickMediaHeaderRemoveButton(:final fileId):
         log.info('TestRunner: CLICK_MEDIA_HEADER_REMOVE_BUTTON fileId=$fileId');
         testHarness.clickMediaHeaderRemoveButton(fileId);

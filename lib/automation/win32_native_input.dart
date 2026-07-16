@@ -10,6 +10,7 @@ const _mouseEventLeftUp = 0x0004;
 const _mouseEventRightDown = 0x0008;
 const _mouseEventRightUp = 0x0010;
 const _mouseEventWheel = 0x0800;
+const _keyEventKeyUp = 0x0002;
 final _setCursorPos = _user32
     .lookupFunction<
       Int32 Function(Int32 x, Int32 y),
@@ -26,6 +27,16 @@ final _mouseEvent = _user32
       ),
       void Function(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo)
     >('mouse_event');
+final _keybdEvent = _user32
+    .lookupFunction<
+      Void Function(
+        Uint8 virtualKey,
+        Uint8 scanCode,
+        Uint32 flags,
+        IntPtr extraInfo,
+      ),
+      void Function(int virtualKey, int scanCode, int flags, int extraInfo)
+    >('keybd_event');
 
 void nativeSetCursorPos(int x, int y) => _setCursorPos(x, y);
 
@@ -39,3 +50,8 @@ void nativeMouseRightUp() => _mouseEvent(_mouseEventRightUp, 0, 0, 0, 0);
 
 void nativeMouseWheel(int delta) =>
     _mouseEvent(_mouseEventWheel, 0, 0, delta & 0xffffffff, 0);
+
+void nativeKeyDown(int virtualKey) => _keybdEvent(virtualKey, 0, 0, 0);
+
+void nativeKeyUp(int virtualKey) =>
+    _keybdEvent(virtualKey, 0, _keyEventKeyUp, 0);

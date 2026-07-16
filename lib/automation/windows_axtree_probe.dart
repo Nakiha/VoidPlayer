@@ -55,6 +55,45 @@ Future<void> assertWindowsAxTreeNames(List<String> requiredNames) async {
   log.info('Windows AXTree probe passed: $stdoutText');
 }
 
+/// Invokes a named Flutter semantics action through the out-of-process Windows
+/// accessibility provider. This avoids pointer coordinates entirely, so the
+/// action is independent of monitor DPI, window position, and device scale.
+Future<void> invokeWindowsAxTreeAction(String name) async {
+  if (!Platform.isWindows) return;
+  final aliases = _windowsAxTreeNameAliases[name] ?? [name];
+  final script = _findProbeScript();
+  final result = await Process.run(
+    'powershell.exe',
+    [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      script.path,
+      '-TargetProcessId',
+      '$pid',
+      '-InvokeNameBase64',
+      base64Encode(utf8.encode(aliases.join(';'))),
+      '-TimeoutMs',
+      '5000',
+    ],
+    stdoutEncoding: utf8,
+    stderrEncoding: utf8,
+  );
+
+  final stdoutText = (result.stdout as String).trim();
+  final stderrText = (result.stderr as String).trim();
+  if (result.exitCode != 0) {
+    throw StateError(
+      'Windows AXTree invoke failed (${result.exitCode}): '
+      '${stderrText.isNotEmpty ? stderrText : stdoutText}',
+    );
+  }
+  log.info('Windows AXTree invoke passed: $stdoutText');
+}
+
 const _windowsAxTreeNameAliases = <String, List<String>>{
   'playbackControls': ['Playback controls', '播放控制'],
   'zoom': ['Zoom', '缩放'],

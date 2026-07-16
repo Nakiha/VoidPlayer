@@ -661,6 +661,21 @@ ScriptInstruction? _parseInstruction(
         time,
         const ClickMediaHeaderOverlayButton(),
       );
+    case 'INVOKE_WINDOWS_AX_ACTION':
+      if (args.isEmpty) {
+        log.warning('INVOKE_WINDOWS_AX_ACTION needs action name: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        InvokeWindowsAxAction(args[0].trim()),
+      );
+    case 'PRESS_KEY_NATIVE':
+      if (args.isEmpty) {
+        log.warning('PRESS_KEY_NATIVE needs key name: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(time, PressKeyNative(args[0].trim()));
     case 'CLICK_MEDIA_HEADER_REMOVE_BUTTON':
       if (args.isEmpty) {
         log.warning(

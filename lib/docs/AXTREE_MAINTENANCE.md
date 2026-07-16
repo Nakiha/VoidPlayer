@@ -116,6 +116,9 @@ Failed to update ui::AXTree, error: <id> will not be in the tree and is not the 
 锁定 Windows engine 的 direct UIA provider 仍受编译开关控制。测试不应为了“让 UIA 工具看见”
 而改变产品 provider 模式；当前验收以引擎默认 MSAA 树为准。`ASSERT_WINDOWS_AXTREE` 使用稳定
 语义 key，并在 probe 层映射中英文 label，避免本机 locale 影响用例。
+`INVOKE_WINDOWS_AX_ACTION` 使用同一外部 provider 按稳定语义名调用 `InvokePattern` 或
+`IAccessible.accDoDefaultAction`；名称通过 UTF-8 Base64 传给 Windows PowerShell，避免旧
+代码页破坏中文。需要验证控件动作时优先使用它，不要通过屏幕坐标移动或点击鼠标。
 
 AXTree 改动属于 Flutter UI / analysis UI 改动。至少运行：
 

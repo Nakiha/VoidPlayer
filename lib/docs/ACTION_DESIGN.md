@@ -102,9 +102,9 @@ class ActionRegistry {
 ### ActionFocus — 全局按键拦截层
 
 ```dart
-class ActionFocus extends StatelessWidget {
+class ActionFocus extends StatefulWidget {
   final Widget child;
-  // 内部: Focus(onKeyEvent: registry.handleKey, autofocus: true)
+  // 内部: 向 HardwareKeyboard 注册全局 handler，并维护 ActionFocus 节点
 }
 ```
 
@@ -125,6 +125,13 @@ class ActionFocus extends StatelessWidget {
 ```
 
 **EditableText 穿透：** 焦点在 `TextField` 等输入控件内时放行所有按键，保证光标移动、文本编辑等基本功能正常。除此之外不做其他焦点判断，快捷键行为一致。
+
+**快捷键诊断：** 已绑定快捷键会以 `[ShortcutTrace]` 记录 `down/repeat/up`、logical/physical
+key、synthesized、Ctrl、EditableText 状态、primary focus 和最终 decision。Windows runner
+同时在消息循环记录对应 `WM_KEYDOWN/UP`、target HWND 与 focus HWND。排查时按时间对齐两份
+日志：只有 Win32 表示 engine 转换中断；两边都没有表示窗口未收到输入；Flutter decision
+会明确区分 `passedToEditable`、`modifierMismatch`、`swallowedRepeat`、`callbackMissing` 与
+`dispatched`。`ActionFocus` handler 的注册、迁移和卸载也有独立记录，用于发现生命周期泄漏。
 
 ### 使用示例
 

@@ -486,4 +486,41 @@ void main() {
       isA<ToggleMarksSidebar>(),
     );
   });
+
+  test('parses native shortcut tracing actions', () {
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}void_player_native_shortcut_script_test.csv',
+    );
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+    file.writeAsStringSync('''
+0.1,INVOKE_WINDOWS_AX_ACTION,cuPartitions
+0.2,PRESS_KEY_NATIVE,space
+''');
+
+    final instructions = parseAutomationScript(file.path);
+
+    expect(instructions, hasLength(2));
+    expect(
+      instructions[0],
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<InvokeWindowsAxAction>().having(
+          (a) => a.actionName,
+          'actionName',
+          'cuPartitions',
+        ),
+      ),
+    );
+    expect(
+      instructions[1],
+      isA<ScriptAutomationAction>().having(
+        (i) => i.action,
+        'action',
+        isA<PressKeyNative>().having((a) => a.key, 'key', 'space'),
+      ),
+    );
+  });
 }

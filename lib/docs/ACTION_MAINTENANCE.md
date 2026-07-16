@@ -64,6 +64,11 @@ Automation command 是 release UI test 的正式能力，但不属于用户操�
 
 `ActionFocus` 默认在焦点位于 `EditableText`（`TextField`、`TextFormField` 等）时放行所有按键。如果未来有输入控件需要部分拦截，需要修改 `handleKey` 中的判断逻辑。
 
+快捷键失效回归优先使用 `PRESS_KEY_NATIVE`，它会激活测试窗口并注入真实 Win32 key
+down/up；不要用直接执行 `TOGGLE_PLAY_PAUSE` 代替键盘链路。需要先激活按钮时使用
+`INVOKE_WINDOWS_AX_ACTION` 按稳定语义名调用 accessibility default action，避免依赖窗口
+位置和 DPI 的鼠标坐标。
+
 ### 窗口注意事项
 
 设置、统计、内存入口都在主窗口内显示，不再创建额外 Flutter engine。快捷键显示使用 `PlayerAction.shortcutEntries` 静态列表，不依赖运行时注册状态。

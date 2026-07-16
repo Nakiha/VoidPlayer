@@ -5,6 +5,10 @@ param(
 
     [string]$RequiredNames = "",
 
+    [string]$InvokeName = "",
+
+    [string]$InvokeNameBase64 = "",
+
     [ValidateRange(250, 30000)]
     [int]$TimeoutMs = 5000
 )
@@ -57,7 +61,8 @@ function Add-AccessibleNames {
         [int]$Depth = 0
     )
 
-    if ($null -eq $Accessible -or $Depth -gt 64 -or $NodeCount.Value -gt 5000) {
+    if ($null -eq $Accessible -or $Depth -gt 64 -or $NodeCount.Value -gt 5000 -or
+        -not [string]::IsNullOrEmpty($script:invokedName)) {
         return
     }
     $NodeCount.Value++
@@ -65,6 +70,12 @@ function Add-AccessibleNames {
         $name = $Accessible.accName(0)
         if (-not [string]::IsNullOrWhiteSpace($name)) {
             $Names.Add($name)
+            if ($script:invokeNames.Count -gt 0 -and $script:invokeNames -contains $name) {
+                $Accessible.accDoDefaultAction(0)
+                $script:invokedName = $name
+                $script:invokePattern = "IAccessible.accDoDefaultAction"
+                return
+            }
         }
     } catch {
     }
@@ -84,6 +95,12 @@ function Add-AccessibleNames {
             $name = $Accessible.accName($childId)
             if (-not [string]::IsNullOrWhiteSpace($name)) {
                 $Names.Add($name)
+                if ($script:invokeNames.Count -gt 0 -and $script:invokeNames -contains $name) {
+                    $Accessible.accDoDefaultAction($childId)
+                    $script:invokedName = $name
+                    $script:invokePattern = "IAccessible.accDoDefaultAction"
+                    return
+                }
             }
             $NodeCount.Value++
         } catch {
@@ -97,6 +114,21 @@ $requiredGroups = @(
         ForEach-Object { $_.Trim() } |
         Where-Object { $_.Length -gt 0 }
 )
+$decodedInvokeName = if ([string]::IsNullOrWhiteSpace($InvokeNameBase64)) {
+    $InvokeName
+} else {
+    [System.Text.Encoding]::UTF8.GetString(
+        [System.Convert]::FromBase64String($InvokeNameBase64)
+    )
+}
+$invokeNames = @(
+    $decodedInvokeName.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries) |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_.Length -gt 0 }
+)
+$script:invokeNames = $invokeNames
+$script:invokedName = ""
+$script:invokePattern = ""
 $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
 $lastNames = @()
 $lastError = $null
@@ -138,6 +170,14 @@ while ([DateTime]::UtcNow -lt $deadline) {
                             [Accessibility.IAccessible]
                         )
                         Add-AccessibleNames -Accessible $typedAccessible -Names $names -NodeCount ([ref]$nodeCount)
+                        if (-not [string]::IsNullOrEmpty($script:invokedName)) {
+                            [pscustomobject]@{
+                                processId = $TargetProcessId
+                                invoked = $script:invokedName
+                                pattern = $script:invokePattern
+                            } | ConvertTo-Json -Compress
+                            exit 0
+                        }
                     } finally {
                         [void][Runtime.InteropServices.Marshal]::Release($unknown)
                     }
@@ -157,9 +197,38 @@ while ([DateTime]::UtcNow -lt $deadline) {
                 $nodeCount += $elements.Count
                 for ($i = 0; $i -lt $elements.Count; $i++) {
                     try {
-                        $name = $elements.Item($i).Current.Name
+                        $element = $elements.Item($i)
+                        $name = $element.Current.Name
                         if (-not [string]::IsNullOrWhiteSpace($name)) {
                             $names.Add($name)
+                        }
+                        if ($invokeNames.Count -gt 0 -and $invokeNames -contains $name) {
+                            $pattern = $null
+                            if ($element.TryGetCurrentPattern(
+                                [System.Windows.Automation.InvokePattern]::Pattern,
+                                [ref]$pattern
+                            )) {
+                                ([System.Windows.Automation.InvokePattern]$pattern).Invoke()
+                                [pscustomobject]@{
+                                    processId = $TargetProcessId
+                                    invoked = $name
+                                    pattern = "InvokePattern"
+                                } | ConvertTo-Json -Compress
+                                exit 0
+                            }
+                            if ($element.TryGetCurrentPattern(
+                                [System.Windows.Automation.LegacyIAccessiblePattern]::Pattern,
+                                [ref]$pattern
+                            )) {
+                                ([System.Windows.Automation.LegacyIAccessiblePattern]$pattern).DoDefaultAction()
+                                [pscustomobject]@{
+                                    processId = $TargetProcessId
+                                    invoked = $name
+                                    pattern = "LegacyIAccessiblePattern"
+                                } | ConvertTo-Json -Compress
+                                exit 0
+                            }
+                            $diagnostics.Add("UIA name=$name has no invokable pattern")
                         }
                     } catch {
                         # A hover popup can disappear while UIA is reading it.
@@ -184,7 +253,7 @@ while ([DateTime]::UtcNow -lt $deadline) {
                 )
             }
         )
-        if ($missing.Count -eq 0) {
+        if ($missing.Count -eq 0 -and $invokeNames.Count -eq 0) {
             [pscustomobject]@{
                 processId = $TargetProcessId
                 nodeCount = $nodeCount
@@ -192,7 +261,11 @@ while ([DateTime]::UtcNow -lt $deadline) {
             } | ConvertTo-Json -Compress
             exit 0
         }
-        $lastError = "missing AXTree names: $($missing -join ', ')"
+        $lastError = if ($invokeNames.Count -gt 0) {
+            "unable to invoke AXTree name: $($invokeNames -join '; ')"
+        } else {
+            "missing AXTree names: $($missing -join ', ')"
+        }
     } catch {
         $lastError = $_.Exception.Message
     }

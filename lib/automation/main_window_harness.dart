@@ -15,6 +15,7 @@ import '../widgets/analysis_overlay_controls.dart';
 import '../widgets/media_header.dart';
 import 'capture_metrics.dart';
 import 'win32_native_input.dart';
+import 'windows_axtree_probe.dart';
 
 /// Drives the main window through synthetic pointer events, native mouse
 /// injection, and frame captures during UI automation. The main window only
@@ -654,6 +655,33 @@ class MainWindowTestHarness {
       scale: 1,
       label: 'unscaled',
     );
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+  }
+
+  Future<void> invokeWindowsAxAction(String actionName) =>
+      invokeWindowsAxTreeAction(actionName.trim());
+
+  Future<void> pressKeyNative(String key) async {
+    final normalized = key.trim().toLowerCase();
+    final virtualKey = switch (normalized) {
+      'space' => 0x20,
+      'left' || 'arrowleft' => 0x25,
+      'right' || 'arrowright' => 0x27,
+      'escape' || 'esc' => 0x1b,
+      'f11' => 0x7a,
+      'm' => 0x4d,
+      'o' => 0x4f,
+      _ => throw ArgumentError.value(key, 'key', 'unsupported native key'),
+    };
+    log.info(
+      'Test action: PRESS_KEY_NATIVE key=$normalized '
+      'vk=0x${virtualKey.toRadixString(16)}',
+    );
+    await wm.windowManager.focus();
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    nativeKeyDown(virtualKey);
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    nativeKeyUp(virtualKey);
     await Future<void>.delayed(const Duration(milliseconds: 120));
   }
 

@@ -325,6 +325,19 @@ class ClickMediaHeaderOverlayButton extends AutomationAction {
     : super('CLICK_MEDIA_HEADER_OVERLAY_BUTTON');
 }
 
+class InvokeWindowsAxAction extends AutomationAction {
+  final String actionName;
+
+  const InvokeWindowsAxAction(this.actionName)
+    : super('INVOKE_WINDOWS_AX_ACTION');
+}
+
+class PressKeyNative extends AutomationAction {
+  final String key;
+
+  const PressKeyNative(this.key) : super('PRESS_KEY_NATIVE');
+}
+
 class ClickMediaHeaderRemoveButton extends AutomationAction {
   final int fileId;
 

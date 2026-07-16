@@ -4,8 +4,6 @@
 #include "renderer/decode/decoded_frame_publisher.h"
 #include "renderer/decode/exact_seek_candidate_store.h"
 #include "renderer/decode/exact_seek_publish_policy.h"
-#include "renderer/decode/hw/hw_decode_provider.h"
-
 #include <spdlog/spdlog.h>
 
 #include <optional>
@@ -18,9 +16,6 @@ ExactSeekPreviewFramePublishResult publish_exact_seek_preview_frames(
     size_t selected,
     TrackBuffer& output_buffer,
     DecodedFramePublisher& publisher,
-    bool hw_enabled,
-    HwDecodeProvider* hw_provider,
-    bool& hw_visibility_flush_pending,
     size_t max_window_frames) {
     ExactSeekPreviewFramePublishResult result;
     if (selected >= candidates.reorder_count()) {
@@ -46,12 +41,7 @@ ExactSeekPreviewFramePublishResult publish_exact_seek_preview_frames(
         if (!candidate.frame) {
             continue;
         }
-        if (i == selected && hw_enabled && hw_provider) {
-            hw_provider->wait_idle();
-            hw_visibility_flush_pending = false;
-        } else {
-            publisher.flush_before_publish_if_needed(true);
-        }
+        publisher.flush_before_publish_if_needed(true);
 
         std::optional<TextureFrame> frame;
         if (i == selected &&

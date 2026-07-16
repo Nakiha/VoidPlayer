@@ -166,7 +166,9 @@ long WindowsD3D11PresentationBackend::device_removed_reason() const {
 }
 
 void WindowsD3D11PresentationBackend::wait_idle(const char* label) {
-  (void)wait_for_gpu(label ? label : "wait_idle");
+  if (wait_for_gpu(label ? label : "wait_idle")) {
+    viewport_renderer_.release_completed_hardware_sources();
+  }
 }
 
 bool WindowsD3D11PresentationBackend::update_offscreen_target_ring(
@@ -282,6 +284,10 @@ WindowsD3D11PresentationBackend::presentation_stats() const {
   stats.viewport_composite_count = draw_count_;
   const auto viewport = viewport_renderer_.stats();
   stats.video_source_update_count = viewport.video_source_update_count;
+  stats.hardware_direct_bind_count = viewport.hardware_direct_bind_count;
+  stats.hardware_array_copy_count = viewport.hardware_array_copy_count;
+  stats.hardware_source_retire_count = viewport.hardware_source_retire_count;
+  stats.hardware_source_release_count = viewport.hardware_source_release_count;
   stats.source_frame_cache_hit_count =
       viewport.source_frame_cache_hit_count;
   stats.source_frame_cache_miss_count =
@@ -676,6 +682,7 @@ bool WindowsD3D11PresentationBackend::draw_frame(
       record_draw_failure();
       return false;
     }
+    viewport_renderer_.release_completed_hardware_sources();
   }
   if (!target_ring_.complete_draw_target(target.Get(), true)) {
     set_error("Windows D3D11 target completion state mismatch");

@@ -34,6 +34,10 @@ public:
     bool downloads_hardware_to_cpu() const {
         return hardware_converter_ && hardware_converter_->downloads_to_cpu();
     }
+    bool hardware_snapshot_submits_shared_visibility() const {
+        return hardware_converter_ &&
+               hardware_converter_->snapshot_submits_shared_visibility();
+    }
     HardwareSnapshotPoolStats snapshot_pool_stats() const;
 
 private:

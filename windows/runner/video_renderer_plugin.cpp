@@ -1436,6 +1436,14 @@ void VideoRendererPlugin::HandleMethodCall(
           EncodableValue(static_cast<int64_t>(stats.viewport_composite_count));
       diagnostics[EncodableValue("videoSourceUpdateCount")] =
           EncodableValue(static_cast<int64_t>(stats.video_source_update_count));
+      diagnostics[EncodableValue("hardwareDirectBindCount")] = EncodableValue(
+          static_cast<int64_t>(stats.hardware_direct_bind_count));
+      diagnostics[EncodableValue("hardwarePresenterCopyCount")] = EncodableValue(
+          static_cast<int64_t>(stats.hardware_array_copy_count));
+      diagnostics[EncodableValue("hardwareSourceRetireCount")] = EncodableValue(
+          static_cast<int64_t>(stats.hardware_source_retire_count));
+      diagnostics[EncodableValue("hardwareSourceReleaseCount")] = EncodableValue(
+          static_cast<int64_t>(stats.hardware_source_release_count));
       diagnostics[EncodableValue("sourceFrameCacheHitCount")] = EncodableValue(
           static_cast<int64_t>(stats.source_frame_cache_hit_count));
       diagnostics[EncodableValue("sourceFrameCacheMissCount")] = EncodableValue(

@@ -87,10 +87,7 @@ TEST_CASE("ExactSeekFramePublisher: publishes selected preview window and clears
         store,
         1,
         output_buffer,
-        publisher,
-        hw_enabled,
-        nullptr,
-        hw_visibility_flush_pending);
+        publisher);
 
     REQUIRE(result.can_publish);
     REQUIRE_FALSE(result.conversion_failed);
@@ -167,10 +164,7 @@ TEST_CASE("ExactSeekFramePublisher: conversion failure clears candidates",
         store,
         0,
         output_buffer,
-        publisher,
-        hw_enabled,
-        nullptr,
-        hw_visibility_flush_pending);
+        publisher);
 
     REQUIRE(result.can_publish);
     REQUIRE(result.conversion_failed);

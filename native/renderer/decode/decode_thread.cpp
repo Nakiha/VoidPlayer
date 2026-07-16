@@ -643,10 +643,7 @@ void DecodeThread::publish_exact_seek_window(size_t selected) {
         exact_seek_candidates_,
         selected,
         output_buffer_,
-        publisher,
-        hw_enabled_,
-        hw_provider_.get(),
-        hw_visibility_flush_pending_);
+        publisher);
     const auto completion = plan_exact_seek_preview_completion(
         publish_result.can_publish,
         publish_result.conversion_failed,

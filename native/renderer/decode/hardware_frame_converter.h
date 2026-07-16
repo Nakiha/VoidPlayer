@@ -38,6 +38,9 @@ public:
 
     bool downloads_to_cpu() const { return download_to_cpu_; }
     HwDecodeType hw_type() const { return hw_type_; }
+    bool snapshot_submits_shared_visibility() const {
+        return !download_to_cpu_ && hw_type_ == HwDecodeType::D3D11VA;
+    }
 
     std::optional<TextureFrame> convert(AVFrame* frame);
     std::optional<TextureFrame> snapshot_frame(AVFrame* frame);

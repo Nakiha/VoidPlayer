@@ -9,7 +9,6 @@ namespace vr {
 
 class DecodedFramePublisher;
 class ExactSeekCandidateStore;
-class HwDecodeProvider;
 class TrackBuffer;
 
 struct ExactSeekPreviewFramePublishResult {
@@ -26,9 +25,6 @@ ExactSeekPreviewFramePublishResult publish_exact_seek_preview_frames(
     size_t selected,
     TrackBuffer& output_buffer,
     DecodedFramePublisher& publisher,
-    bool hw_enabled,
-    HwDecodeProvider* hw_provider,
-    bool& hw_visibility_flush_pending,
     size_t max_window_frames = kExactSeekPreviewWindowFrames);
 
 bool publish_pending_exact_seek_frame(ExactSeekCandidateStore& candidates,

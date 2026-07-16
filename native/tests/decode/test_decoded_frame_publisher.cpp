@@ -249,3 +249,40 @@ TEST_CASE("DecodedFramePublisher: publish flush respects hw download and shared-
     REQUIRE(provider_ptr->flush_count == 1);
     REQUIRE_FALSE(hw_visibility_flush_pending);
 }
+
+#ifdef _WIN32
+TEST_CASE("DecodedFramePublisher: D3D11 snapshots own shared-resource submission",
+          "[decode_thread][decoded_frame_publisher][hw][windows_d3d11va]") {
+    TrackBuffer output_buffer;
+    FrameConverter converter;
+    std::recursive_mutex device_mutex;
+    REQUIRE(converter.init_hardware(
+        nullptr,
+        nullptr,
+        64,
+        64,
+        HwDecodeType::D3D11VA,
+        false,
+        &device_mutex));
+
+    bool hw_enabled = true;
+    bool hw_visibility_flush_pending = true;
+    auto provider = std::make_unique<CountingHwDecodeProvider>();
+    auto* provider_ptr = provider.get();
+    std::unique_ptr<HwDecodeProvider> hw_provider = std::move(provider);
+    std::atomic<bool> decode_paused{false};
+    std::atomic<bool> running{true};
+    DecodedFramePublisher publisher(output_buffer,
+                                    converter,
+                                    hw_enabled,
+                                    hw_provider,
+                                    hw_visibility_flush_pending,
+                                    decode_paused,
+                                    running);
+
+    publisher.flush_visibility_if_needed();
+    publisher.flush_before_publish_if_needed(true);
+    REQUIRE(provider_ptr->flush_count == 0);
+    REQUIRE_FALSE(hw_visibility_flush_pending);
+}
+#endif

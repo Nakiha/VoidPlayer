@@ -70,7 +70,7 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 | 路径 | 数据流 | 说明 |
 | --- | --- | --- |
 | Software fallback | `AVFrame(YUV/NV12/P010) -> CPU planar/NV12/P010 TextureFrame` | 显式 fallback；不依赖 libswscale/libyuv 做通用转换 |
-| Windows D3D11VA snapshot | `AVFrame(D3D11VA) -> stable shared D3D11 TextureFrame` | 默认路径；从 decoder array slice GPU-copy 到 renderer-owned snapshot 后交给 D3D11 backend |
+| Windows D3D11VA snapshot | `AVFrame(D3D11VA array slice) -> stable single-slice shared texture -> presentation-device plane SRVs` | 默认路径；一次 GPU copy 隔离 decoder pool，producer `Flush` 后由 D3D11 backend 直接采样 shared allocation，不做 CPU wait 或第二次 presenter copy |
 | macOS VideoToolbox zero-copy | `AVFrame(VideoToolbox) -> CVPixelBuffer TextureFrame` | native Metal backend 通过 IOSurface/CVMetalTextureCache 上屏 |
 | macOS fallback package | `AVFrame -> CPU YUV/BGRA package` | VVC/software 或 unsupported format 的 explicit native Metal package path |
 
@@ -87,7 +87,7 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 
 Zero-copy 是 presentation backend 能直接消费 decoder-owned frame 时的优化，不改变 decode/track/playback policy。
 
-- Windows：D3D11VA surface GPU-copy 到 renderer-owned shared snapshot，再由 D3D11 backend 消费，隔离 decoder pool lifetime。
+- Windows：D3D11VA surface GPU-copy 到 renderer-owned single-slice shared snapshot，producer 按 `OpenSharedResource` 约束调用 `Flush` 提交；presentation device 直接为 opened snapshot 建 Y/UV SRV。被替换 snapshot 的 owner 延迟到 presentation GPU completion 后释放，避免 projection draw 尚未完成时 decode snapshot pool 跨 device 复用。只有显式传入多 slice texture array 的兼容入口才使用 presenter 侧 slice adapter copy。
 - macOS：VideoToolbox `CVPixelBuffer` / IOSurface 由 native Metal backend 消费；fallback reason 必须可见。
 - VideoToolbox hwdownload smoke 仍可使用 hardware decoder 后下载到 CPU，但不属于 Windows 产品上屏路径。
 - software fallback：decoder 本身是 software，presentation 仍走平台 native backend。

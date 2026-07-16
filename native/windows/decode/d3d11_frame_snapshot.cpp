@@ -7,8 +7,6 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 
-#include <chrono>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -56,43 +54,15 @@ uint64_t estimate_texture_bytes(const D3D11_TEXTURE2D_DESC& desc) {
     }
 }
 
-bool wait_for_copy(
-    ID3D11Device* device,
-    ID3D11DeviceContext* context) {
+bool submit_shared_copy(ID3D11DeviceContext* context) {
     if (!context) {
         return false;
     }
-    if (!device) {
-        context->Flush();
-        return false;
-    }
-
-    D3D11_QUERY_DESC query_desc = {};
-    query_desc.Query = D3D11_QUERY_EVENT;
-    Microsoft::WRL::ComPtr<ID3D11Query> query;
-    HRESULT status = device->CreateQuery(&query_desc, &query);
-    if (FAILED(status) || !query) {
-        context->Flush();
-        return false;
-    }
-
-    context->End(query.Get());
+    // OpenSharedResource requires the producer to submit shared-texture
+    // updates with Flush. The presentation device then consumes the same
+    // allocation directly; a CPU-side event query here only serializes decode
+    // behind the GPU and is not required for visibility.
     context->Flush();
-    const auto start = std::chrono::steady_clock::now();
-    while ((status = context->GetData(query.Get(), nullptr, 0, 0)) == S_FALSE) {
-        if (std::chrono::steady_clock::now() - start >=
-            std::chrono::milliseconds(100)) {
-            spdlog::warn("[D3D11FrameSnapshot] GPU copy timed out after 100ms");
-            return false;
-        }
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
-    }
-    if (FAILED(status)) {
-        spdlog::warn(
-            "[D3D11FrameSnapshot] GPU copy query failed: {:#x}",
-            static_cast<unsigned long>(status));
-        return false;
-    }
     return true;
 }
 
@@ -323,7 +293,7 @@ std::optional<TextureFrame> snapshot_d3d11_hardware_frame(
             static_cast<UINT>(array_index),
             source_desc.MipLevels),
         nullptr);
-    if (!wait_for_copy(device.Get(), context.Get())) {
+    if (!submit_shared_copy(context.Get())) {
         snapshot_pool->discard();
         return std::nullopt;
     }

@@ -4,9 +4,7 @@
 
 #include <spdlog/spdlog.h>
 
-#include <chrono>
 #include <iterator>
-#include <thread>
 
 extern "C" {
 #include <libavutil/hwcontext_d3d11va.h>
@@ -220,62 +218,6 @@ void D3D11VAProvider::flush() {
         device_context_->Flush();
     } else {
         device_context_->Flush();
-    }
-}
-
-void D3D11VAProvider::wait_idle() {
-    if (!device_context_) {
-        return;
-    }
-
-    const auto wait_for_event = [this]() {
-        Microsoft::WRL::ComPtr<ID3D11Device> device;
-        device_context_->GetDevice(&device);
-        if (!device) {
-            device_context_->Flush();
-            return;
-        }
-
-        D3D11_QUERY_DESC query_desc = {};
-        query_desc.Query = D3D11_QUERY_EVENT;
-        Microsoft::WRL::ComPtr<ID3D11Query> query;
-        const HRESULT create_result = device->CreateQuery(&query_desc, &query);
-        if (FAILED(create_result) || !query) {
-            device_context_->Flush();
-            return;
-        }
-
-        device_context_->End(query.Get());
-        device_context_->Flush();
-        constexpr auto timeout = std::chrono::milliseconds(200);
-        const auto start = std::chrono::steady_clock::now();
-        HRESULT status = S_FALSE;
-        while ((status = device_context_->GetData(query.Get(), nullptr, 0, 0)) ==
-               S_FALSE) {
-            if (std::chrono::steady_clock::now() - start >= timeout) {
-                spdlog::warn("[D3D11VA] wait_idle timed out after 200ms");
-                const HRESULT removed_reason = device->GetDeviceRemovedReason();
-                if (FAILED(removed_reason)) {
-                    spdlog::error(
-                        "[D3D11VA] Device removed while waiting: {:#x}",
-                        static_cast<unsigned long>(removed_reason));
-                }
-                return;
-            }
-            std::this_thread::sleep_for(std::chrono::microseconds(100));
-        }
-        if (FAILED(status)) {
-            spdlog::warn(
-                "[D3D11VA] Event query failed: {:#x}",
-                static_cast<unsigned long>(status));
-        }
-    };
-
-    if (active_mutex_) {
-        std::lock_guard<std::recursive_mutex> lock(*active_mutex_);
-        wait_for_event();
-    } else {
-        wait_for_event();
     }
 }
 

@@ -1085,7 +1085,7 @@ bool WindowsD3D11ViewportRenderer::prepare_hardware_track(
       !storage.frame_ref.owner_before(resources.cached_hardware_frame_ref) &&
       !resources.cached_hardware_frame_ref.owner_before(storage.frame_ref);
   const bool source_cache_hit =
-      same_frame_owner && resources.hardware_copy &&
+      same_frame_owner && resources.hardware_source &&
       resources.cached_hardware_source == storage.texture &&
       resources.cached_hardware_array_index == storage.array_index &&
       resources.cached_hardware_pts_us == frame.pts_us &&
@@ -1120,19 +1120,32 @@ bool WindowsD3D11ViewportRenderer::prepare_hardware_track(
     copy_source = opened_source.Get();
     copy_source->GetDesc(&source_desc);
   }
-  if (!ensure_hardware_copy(resources, copy_source)) {
+  ID3D11Texture2D* shader_source = copy_source;
+  if (source_desc.ArraySize > 1 || storage.array_index != 0) {
+    if (!ensure_hardware_array_copy(resources, copy_source)) {
+      return false;
+    }
+    const UINT source_subresource = D3D11CalcSubresource(
+        0, static_cast<UINT>(storage.array_index), source_desc.MipLevels);
+    context_->CopySubresourceRegion(resources.hardware_array_copy.Get(),
+                                    0,
+                                    0,
+                                    0,
+                                    0,
+                                    copy_source,
+                                    source_subresource,
+                                    nullptr);
+    shader_source = resources.hardware_array_copy.Get();
+    ++stats_.hardware_array_copy_count;
+  } else {
+    ++stats_.hardware_direct_bind_count;
+  }
+  if (!bind_hardware_source(resources, shader_source, source_desc.Format)) {
     return false;
   }
-  const UINT source_subresource = D3D11CalcSubresource(
-      0, static_cast<UINT>(storage.array_index), 1);
-  context_->CopySubresourceRegion(resources.hardware_copy.Get(),
-                                  0,
-                                  0,
-                                  0,
-                                  0,
-                                  copy_source,
-                                  source_subresource,
-                                  nullptr);
+  if (!same_frame_owner) {
+    retire_cached_hardware_source(resources);
+  }
   resources.cached_hardware_frame_ref = storage.frame_ref;
   resources.cached_hardware_source = storage.texture;
   resources.cached_hardware_array_index = storage.array_index;
@@ -1404,7 +1417,7 @@ void WindowsD3D11ViewportRenderer::commit_cpu_source_cache(
     FrameStorageKind storage_kind,
     std::shared_ptr<void> frame_ref,
     const void* source) {
-  resources.cached_hardware_frame_ref.reset();
+  retire_cached_hardware_source(resources);
   resources.cached_hardware_source = nullptr;
   resources.cached_hardware_array_index = -1;
   resources.cached_cpu_storage_kind = storage_kind;
@@ -1425,6 +1438,24 @@ void WindowsD3D11ViewportRenderer::invalidate_cpu_source_cache(
   resources.cached_cpu_height = 0;
   resources.cached_cpu_pts_us = 0;
   resources.cached_cpu_dts_us = 0;
+}
+
+void WindowsD3D11ViewportRenderer::retire_cached_hardware_source(
+    TrackResources& resources) {
+  if (!resources.cached_hardware_frame_ref) {
+    return;
+  }
+  resources.retired_hardware_frame_refs.push_back(
+      std::move(resources.cached_hardware_frame_ref));
+  ++stats_.hardware_source_retire_count;
+}
+
+void WindowsD3D11ViewportRenderer::release_completed_hardware_sources() {
+  for (auto& resources : tracks_) {
+    stats_.hardware_source_release_count +=
+        resources.retired_hardware_frame_refs.size();
+    resources.retired_hardware_frame_refs.clear();
+  }
 }
 
 bool WindowsD3D11ViewportRenderer::ensure_plane(PlaneResource& resource,
@@ -1508,21 +1539,24 @@ bool WindowsD3D11ViewportRenderer::upload_plane(
   return true;
 }
 
-bool WindowsD3D11ViewportRenderer::ensure_hardware_copy(
+bool WindowsD3D11ViewportRenderer::ensure_hardware_array_copy(
     TrackResources& resources,
     ID3D11Texture2D* source) {
   D3D11_TEXTURE2D_DESC source_desc = {};
   source->GetDesc(&source_desc);
-  if (resources.hardware_copy &&
+  if (resources.hardware_array_copy &&
       resources.hardware_width == static_cast<int>(source_desc.Width) &&
       resources.hardware_height == static_cast<int>(source_desc.Height) &&
       resources.hardware_format == source_desc.Format) {
     return true;
   }
-  resources.hardware_copy.Reset();
-  resources.hardware_y_srv.Reset();
-  resources.hardware_uv_srv.Reset();
-  resources.cached_hardware_frame_ref.reset();
+  if (resources.hardware_source.Get() == resources.hardware_array_copy.Get()) {
+    resources.hardware_source.Reset();
+    resources.hardware_y_srv.Reset();
+    resources.hardware_uv_srv.Reset();
+  }
+  resources.hardware_array_copy.Reset();
+  retire_cached_hardware_source(resources);
   resources.cached_hardware_source = nullptr;
   resources.cached_hardware_array_index = -1;
   D3D11_TEXTURE2D_DESC copy_desc = source_desc;
@@ -1534,21 +1568,38 @@ bool WindowsD3D11ViewportRenderer::ensure_hardware_copy(
   copy_desc.MiscFlags = 0;
   HRESULT result = device_->CreateTexture2D(&copy_desc,
                                             nullptr,
-                                            &resources.hardware_copy);
+                                            &resources.hardware_array_copy);
   if (FAILED(result)) {
-    return fail("could not create D3D11VA shader-readable copy texture");
-  }
-  if (!create_plane_srvs(resources.hardware_copy.Get(),
-                         source_desc.Format,
-                         resources.hardware_y_srv,
-                         resources.hardware_uv_srv)) {
-    resources.hardware_copy.Reset();
-    return false;
+    return fail("could not create D3D11VA array-slice adapter texture");
   }
   resources.hardware_width = static_cast<int>(source_desc.Width);
   resources.hardware_height = static_cast<int>(source_desc.Height);
   resources.hardware_format = source_desc.Format;
   ++stats_.resource_rebuild_count;
+  return true;
+}
+
+bool WindowsD3D11ViewportRenderer::bind_hardware_source(
+    TrackResources& resources,
+    ID3D11Texture2D* source,
+    DXGI_FORMAT format) {
+  if (!source) {
+    return fail("D3D11 hardware shader source is null");
+  }
+  if (resources.hardware_source.Get() == source &&
+      resources.hardware_y_srv && resources.hardware_uv_srv) {
+    return true;
+  }
+  resources.hardware_source = source;
+  resources.hardware_y_srv.Reset();
+  resources.hardware_uv_srv.Reset();
+  if (!create_plane_srvs(source,
+                         format,
+                         resources.hardware_y_srv,
+                         resources.hardware_uv_srv)) {
+    resources.hardware_source.Reset();
+    return false;
+  }
   return true;
 }
 

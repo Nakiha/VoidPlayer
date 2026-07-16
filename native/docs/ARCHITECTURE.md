@@ -91,7 +91,7 @@ hardware decode provider 和 presentation backend 开始：
 
 | 平台 | 硬解 provider | presentation backend |
 | --- | --- | --- |
-| Windows | D3D11VA；H.264/H.265/AV1/VP9 使用独立 decode device 与稳定 shared snapshot | `native-d3d11` 完整 viewport shader写入 runner-owned BGRA8 ring；DComp 合成 Flutter UI |
+| Windows | D3D11VA；H.264/H.265/AV1/VP9 使用独立 decode device 与稳定 single-slice shared snapshot | `native-d3d11` 在 presentation device 直接采样 opened snapshot，完整 viewport shader 写入 runner-owned BGRA8/FP16 ring；DComp 合成 Flutter UI |
 | macOS | VideoToolbox CVPixelBuffer or explicit fallback package | native Metal target backed by CVPixelBuffer / IOSurface |
 
 ### 交互 presentation cadence

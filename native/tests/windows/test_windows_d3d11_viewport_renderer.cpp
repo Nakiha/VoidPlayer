@@ -303,6 +303,8 @@ TEST_CASE("Windows D3D11 viewport samples the selected D3D11VA array slice",
           Catch::Approx(expected.b * 255.0).margin(2.0));
   REQUIRE(renderer.stats().hardware_frame_count == 1);
   REQUIRE(renderer.stats().video_source_update_count == 1);
+  REQUIRE(renderer.stats().hardware_direct_bind_count == 0);
+  REQUIRE(renderer.stats().hardware_array_copy_count == 1);
   REQUIRE(renderer.stats().source_frame_cache_miss_count == 1);
   REQUIRE(renderer.stats().source_frame_cache_hit_count == 0);
 
@@ -315,6 +317,7 @@ TEST_CASE("Windows D3D11 viewport samples the selected D3D11VA array slice",
                         80.0));
   REQUIRE(renderer.stats().hardware_frame_count == 2);
   REQUIRE(renderer.stats().video_source_update_count == 1);
+  REQUIRE(renderer.stats().hardware_array_copy_count == 1);
   REQUIRE(renderer.stats().source_frame_cache_miss_count == 1);
   REQUIRE(renderer.stats().source_frame_cache_hit_count == 1);
 }
@@ -709,8 +712,9 @@ TEST_CASE("Windows D3D11 viewport opens an independent decode-device snapshot",
                  VIDEO_COLOR_MATRIX_BT709,
                  VIDEO_COLOR_TRANSFER_SDR,
                  VIDEO_COLOR_PRIMARIES_BT709};
+  auto first_frame_ref = std::make_shared<int>(1);
   frame.storage = WindowsD3D11FrameStorage{
-      source.Get(), 0, false, 4, 4, {}};
+      source.Get(), 0, false, 4, 4, first_frame_ref};
   auto draw = make_single_track_snapshot(std::move(frame));
   const auto presentation = build_snapshot(draw);
   const bool drew = renderer.draw(draw,
@@ -727,4 +731,22 @@ TEST_CASE("Windows D3D11 viewport opens an independent decode-device snapshot",
   REQUIRE(static_cast<int>(readback[offset + 1]) == Catch::Approx(127).margin(2));
   REQUIRE(static_cast<int>(readback[offset + 2]) == Catch::Approx(127).margin(2));
   REQUIRE(readback[offset + 3] == 255);
+  REQUIRE(renderer.stats().hardware_direct_bind_count == 1);
+  REQUIRE(renderer.stats().hardware_array_copy_count == 0);
+
+  auto second_frame_ref = std::make_shared<int>(2);
+  draw.decision.frames[0]->pts_us = 16667;
+  std::get<WindowsD3D11FrameStorage>(draw.decision.frames[0]->storage).frame_ref =
+      second_frame_ref;
+  ++draw.layout_revision;
+  REQUIRE(renderer.draw(draw,
+                        build_snapshot(draw),
+                        rtv.Get(),
+                        ColorOutputTarget::kSDRToneMappedBT709,
+                        80.0));
+  REQUIRE(renderer.stats().hardware_direct_bind_count == 2);
+  REQUIRE(renderer.stats().hardware_source_retire_count == 1);
+  REQUIRE(renderer.stats().hardware_source_release_count == 0);
+  renderer.release_completed_hardware_sources();
+  REQUIRE(renderer.stats().hardware_source_release_count == 1);
 }

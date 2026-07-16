@@ -87,6 +87,10 @@ struct PresentationBackendStats {
     uint64_t metal_command_failure_count = 0;
     int32_t async_metal_publish_active = 0;
     uint64_t video_source_update_count = 0;
+    uint64_t hardware_direct_bind_count = 0;
+    uint64_t hardware_array_copy_count = 0;
+    uint64_t hardware_source_retire_count = 0;
+    uint64_t hardware_source_release_count = 0;
     uint64_t viewport_composite_count = 0;
     uint64_t source_frame_cache_hit_count = 0;
     uint64_t source_frame_cache_miss_count = 0;

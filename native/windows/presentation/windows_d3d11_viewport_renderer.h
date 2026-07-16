@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace vr {
 
@@ -21,6 +22,10 @@ struct WindowsD3D11ViewportRendererStats {
   uint64_t software_frame_count = 0;
   uint64_t resource_rebuild_count = 0;
   uint64_t video_source_update_count = 0;
+  uint64_t hardware_direct_bind_count = 0;
+  uint64_t hardware_array_copy_count = 0;
+  uint64_t hardware_source_retire_count = 0;
+  uint64_t hardware_source_release_count = 0;
   uint64_t source_frame_cache_hit_count = 0;
   uint64_t source_frame_cache_miss_count = 0;
   uint64_t overlay_draw_count = 0;
@@ -66,6 +71,7 @@ class WindowsD3D11ViewportRenderer final {
                     ID3D11RenderTargetView* target,
                     ColorOutputTarget output_target,
                     double sdr_white_level_nits);
+  void release_completed_hardware_sources();
 
   const std::string& last_error() const { return last_error_; }
   WindowsD3D11ViewportRendererStats stats() const { return stats_; }
@@ -85,13 +91,15 @@ class WindowsD3D11ViewportRenderer final {
     PlaneResource uv;
     PlaneResource u;
     PlaneResource v;
-    Microsoft::WRL::ComPtr<ID3D11Texture2D> hardware_copy;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> hardware_source;
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> hardware_array_copy;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> hardware_y_srv;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> hardware_uv_srv;
     int hardware_width = 0;
     int hardware_height = 0;
     DXGI_FORMAT hardware_format = DXGI_FORMAT_UNKNOWN;
     std::shared_ptr<void> cached_hardware_frame_ref;
+    std::vector<std::shared_ptr<void>> retired_hardware_frame_refs;
     ID3D11Texture2D* cached_hardware_source = nullptr;
     int cached_hardware_array_index = -1;
     int64_t cached_hardware_pts_us = 0;
@@ -138,6 +146,7 @@ class WindowsD3D11ViewportRenderer final {
                                std::shared_ptr<void> frame_ref,
                                const void* source);
   void invalidate_cpu_source_cache(TrackResources& resources);
+  void retire_cached_hardware_source(TrackResources& resources);
   bool ensure_plane(PlaneResource& resource,
                     int width,
                     int height,
@@ -147,8 +156,11 @@ class WindowsD3D11ViewportRenderer final {
                     int stride,
                     int bytes_per_sample,
                     bool shift_10_bit_to_msb = false);
-  bool ensure_hardware_copy(TrackResources& resources,
-                            ID3D11Texture2D* source);
+  bool ensure_hardware_array_copy(TrackResources& resources,
+                                  ID3D11Texture2D* source);
+  bool bind_hardware_source(TrackResources& resources,
+                            ID3D11Texture2D* source,
+                            DXGI_FORMAT format);
   bool create_plane_srvs(ID3D11Texture2D* texture,
                          DXGI_FORMAT format,
                          Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>& y,

@@ -15,6 +15,7 @@
 4.0,TOGGLE_MARKS_SIDEBAR
 4.5,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedReconfigureCount,4
 4.52,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedHandoffCount,4
+4.54,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedGeometrySyncCount,1
 4.6,CAPTURE_VIEWPORT_REGION,windows_roi_large,80,50,320,180,96,build/windows_roi_large.png
 4.7,ASSERT_CAPTURE_NOT_BLACK,windows_roi_large,0.01,4.0
 4.75,CAPTURE_VIEWPORT_REGION,windows_roi_small,100,70,160,90,96,build/windows_roi_small.png
@@ -22,4 +23,10 @@
 4.9,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,nativeTargetStagingAllocationCount,1,1
 4.92,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,nativeTargetStagingReuseCount,1
 4.94,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,nativeTargetStagingMaxBytes,1,230400
-5.2,QUIT,0
+5.0,TOGGLE_MARKS_SIDEBAR
+5.4,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedReconfigureCount,5
+5.42,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedHandoffCount,5
+5.44,ASSERT_NATIVE_DIAGNOSTIC_INT_AT_LEAST,windowsVideoTargetRetainedGeometrySyncCount,2
+5.5,CAPTURE_VIEWPORT_REGION,windows_roi_sidebar_closed,80,50,320,180,96,build/windows_roi_sidebar_closed.png
+5.6,ASSERT_CAPTURE_NOT_BLACK,windows_roi_sidebar_closed,0.01,4.0
+5.8,QUIT,0

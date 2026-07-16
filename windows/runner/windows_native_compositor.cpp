@@ -11,6 +11,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "windows/presentation/windows_compositor_viewport_handoff.h"
+
 namespace {
 
 constexpr char kCompositeShader[] = R"hlsl(
@@ -334,6 +336,22 @@ bool WindowsNativeCompositor::PresentVideoTarget(ID3D11Texture2D* texture,
     video_srv_.Reset();
     serial = ++video_publish_serial_;
     if (starts_retained_handoff) {
+      vr::WindowsCompositorViewportRect viewport{
+          video_viewport_left_,          video_viewport_top_,
+          video_viewport_width_,         video_viewport_height_,
+          video_viewport_surface_width_, video_viewport_surface_height_};
+      if (vr::synchronize_retained_horizontal_viewport_handoff(
+              viewport, static_cast<int>(presented_desc.Width),
+              static_cast<int>(presented_desc.Height))) {
+        video_viewport_width_ = viewport.width;
+        ++diagnostics_.video_target_retained_geometry_sync_count;
+        spdlog::info(
+            "[WindowsCompositor] retained target geometry sync serial={} "
+            "viewport=({},{} {}x{}) surface={}x{}",
+            serial, video_viewport_left_, video_viewport_top_,
+            video_viewport_width_, video_viewport_height_,
+            video_viewport_surface_width_, video_viewport_surface_height_);
+      }
       video_target_handoff_pending_ = false;
       video_target_handoff_serial_ = serial;
     }

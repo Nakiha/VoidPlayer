@@ -18,6 +18,8 @@ runner 使用 DComp 合成 shared renderer 输出的 D3D11 视频 target 与 Flu
 - H.264/H.265/MPEG-2 D3D11VA、multi-track split、play/pause、seek、step、loop、layout 和 native capture 的 runner 集成；
 - timeline 用户 seek 与 macOS facade 一样进入 shared `SeekType::Exact` 管线；UI 时钟与
   native 实际 presented frame 必须同时落到目标帧，不能只停在目标时间却显示此前关键帧；
+- marks sidebar 等纯横向 viewport 变化在 retained target handoff 时原子同步新 target
+  宽度，避免用旧 viewport rect 拉伸新纹理后再由 Flutter rect 纠正的一帧形变；
 - 基于当前 HWND output 的 DXGI HDR 状态、presentation adapter 和
   `DISPLAYCONFIG_SDR_WHITE_LEVEL` 的 Auto SDR/scRGB policy。
 - runner message pump 到 `ActionRegistry` 的独立应用快捷键 channel；原始按键仍进入

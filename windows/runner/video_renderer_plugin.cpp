@@ -546,6 +546,9 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
   diagnostics[EncodableValue("windowsVideoTargetRetainedHandoffCount")] =
       EncodableValue(
           static_cast<int64_t>(state.video_target_retained_handoff_count));
+  diagnostics[EncodableValue("windowsVideoTargetRetainedGeometrySyncCount")] =
+      EncodableValue(static_cast<int64_t>(
+          state.video_target_retained_geometry_sync_count));
   diagnostics[EncodableValue("windowsVideoPresentRetryCount")] =
       EncodableValue(static_cast<int64_t>(state.video_present_retry_count));
   diagnostics[EncodableValue("windowsFlutterAcquireFailureCount")] =

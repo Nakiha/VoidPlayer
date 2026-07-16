@@ -67,7 +67,7 @@ class WindowsNativePlayer final {
                            int max_track_slots);
   bool update_presentation_sdr_white_level(double nits);
   bool request_frame_refresh(const char* reason);
-  bool request_interaction_frame();
+  RendererFrameRefreshResult request_interaction_frame();
   bool capture_front_buffer(std::vector<uint8_t>& bgra,
                             int& width,
                             int& height);

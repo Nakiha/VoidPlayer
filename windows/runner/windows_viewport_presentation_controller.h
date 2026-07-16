@@ -16,6 +16,7 @@ struct WindowsViewportPresentationDiagnostics {
   uint64_t layout_submit_count = 0;
   uint64_t layout_presented_count = 0;
   uint64_t layout_failed_count = 0;
+  uint64_t layout_not_ready_count = 0;
   uint64_t layout_backpressure_count = 0;
   uint64_t layout_superseded_count = 0;
   uint64_t latest_intent_serial = 0;

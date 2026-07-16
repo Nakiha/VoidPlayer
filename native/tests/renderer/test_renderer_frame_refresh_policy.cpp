@@ -24,3 +24,19 @@ TEST_CASE("RendererFrameRefreshPolicy: only seek preview consumes decoded previe
     REQUIRE_FALSE(generic.retain_presented_frame);
     REQUIRE_FALSE(generic.decoded_preview_refresh);
 }
+
+TEST_CASE("RendererFrameRefreshPolicy: incomplete interaction snapshots retry without failure",
+          "[renderer][frame_refresh][interaction]") {
+    REQUIRE(classify_interaction_refresh_result(
+                RendererFrameRefreshResult::Presented, false) ==
+            RendererInteractionRefreshDisposition::Presented);
+    REQUIRE(classify_interaction_refresh_result(
+                RendererFrameRefreshResult::NotReady, false) ==
+            RendererInteractionRefreshDisposition::RetryNotReady);
+    REQUIRE(classify_interaction_refresh_result(
+                RendererFrameRefreshResult::Failed, true) ==
+            RendererInteractionRefreshDisposition::RetryBackpressure);
+    REQUIRE(classify_interaction_refresh_result(
+                RendererFrameRefreshResult::Failed, false) ==
+            RendererInteractionRefreshDisposition::Failed);
+}

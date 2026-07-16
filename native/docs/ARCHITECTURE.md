@@ -104,6 +104,11 @@ controller 提交并在 DXGI `Present(1)` 上按显示器节拍完成；两端�
 in flight。这样 shared 层仍只拥有 frame selection/layout snapshot 语义，显示器时钟、
 GPU target ring 和最终 Flutter/native 合成都留在平台层。
 
+Shared interaction refresh 返回 `Presented / NotReady / Failed` 三态。新增轨道尚未
+preroll、完整多轨 `PresentDecision` 尚不可用时返回 `NotReady`；平台 display-linked
+controller 只重试最新 layout revision，不把 readiness gap 记成 backend failure，也不
+使用只覆盖部分活动轨道的旧 snapshot 上屏。
+
 ## 当前播放路径状态
 
 - macOS native Metal presentation builds and passes native smoke.

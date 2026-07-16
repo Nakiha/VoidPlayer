@@ -1,5 +1,7 @@
 #pragma once
 
+#include "renderer/renderer_api_types.h"
+
 #include <cstring>
 
 namespace vr {
@@ -9,6 +11,28 @@ struct RendererFrameRefreshPolicy {
     bool decoded_preview_refresh = false;
     bool interaction_refresh = false;
 };
+
+enum class RendererInteractionRefreshDisposition : uint8_t {
+    Presented,
+    RetryNotReady,
+    RetryBackpressure,
+    Failed,
+};
+
+inline RendererInteractionRefreshDisposition
+classify_interaction_refresh_result(
+    RendererFrameRefreshResult result,
+    bool transient_backend_backpressure) {
+    if (result == RendererFrameRefreshResult::Presented) {
+        return RendererInteractionRefreshDisposition::Presented;
+    }
+    if (result == RendererFrameRefreshResult::NotReady) {
+        return RendererInteractionRefreshDisposition::RetryNotReady;
+    }
+    return transient_backend_backpressure
+        ? RendererInteractionRefreshDisposition::RetryBackpressure
+        : RendererInteractionRefreshDisposition::Failed;
+}
 
 inline RendererFrameRefreshPolicy renderer_frame_refresh_policy(
     const char* reason) {

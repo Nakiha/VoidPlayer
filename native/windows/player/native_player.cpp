@@ -252,9 +252,10 @@ bool WindowsNativePlayer::request_frame_refresh(const char* reason) {
   return ready_locked() && renderer_->request_frame_refresh(reason);
 }
 
-bool WindowsNativePlayer::request_interaction_frame() {
+RendererFrameRefreshResult WindowsNativePlayer::request_interaction_frame() {
   std::shared_lock<std::shared_mutex> lock(mutex_);
-  return ready_locked() && renderer_->request_interaction_frame();
+  return ready_locked() ? renderer_->request_interaction_frame()
+                        : RendererFrameRefreshResult::Failed;
 }
 
 bool WindowsNativePlayer::capture_front_buffer(std::vector<uint8_t>& bgra,

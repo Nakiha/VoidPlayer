@@ -40,11 +40,17 @@ RendererPresentCommandContext Renderer::Impl::present_command_context() {
 }
 
 bool Renderer::Impl::request_frame_refresh(const char* reason) {
+    return request_frame_refresh_result(reason) ==
+           RendererFrameRefreshResult::Presented;
+}
+
+RendererFrameRefreshResult Renderer::Impl::request_frame_refresh_result(
+    const char* reason) {
     {
         std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
         if (!initialized_.load(std::memory_order_acquire) ||
             shutting_down_.load(std::memory_order_acquire)) {
-            return false;
+            return RendererFrameRefreshResult::Failed;
         }
     }
     const char* refresh_reason = reason && reason[0] != '\0'
@@ -68,16 +74,21 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
         // without publishing a frame and leave the ordinary playback loop to
         // update it at source-video cadence.
         if (preview_draw_pending && !interaction_refresh) {
-            return true;
+            return RendererFrameRefreshResult::Presented;
         }
         auto present_context = present_command_context();
-        if (RendererPresentCommandProcessor::redraw_layout(present_context)) {
-            return true;
+        const auto redraw_result =
+            RendererPresentCommandProcessor::redraw_layout(present_context);
+        if (redraw_result != RendererFrameRefreshResult::NotReady) {
+            return redraw_result;
+        }
+        if (interaction_refresh) {
+            return RendererFrameRefreshResult::NotReady;
         }
         if (has_complete_cached_decision ||
             (timeline_.playing() &&
              !timeline_.playback().clock().is_paused())) {
-            return false;
+            return RendererFrameRefreshResult::NotReady;
         }
     } else if (timeline_.playing() &&
                !timeline_.playback().clock().is_paused()) {
@@ -91,14 +102,15 @@ bool Renderer::Impl::request_frame_refresh(const char* reason) {
         std::lock_guard<std::mutex> lock(state_mutex_);
         mark_paused_hevc_seek_preview_drawn_locked();
     }
-    return drew;
+    return drew ? RendererFrameRefreshResult::Presented
+                : RendererFrameRefreshResult::NotReady;
 }
 
-bool Renderer::Impl::request_interaction_frame() {
+RendererFrameRefreshResult Renderer::Impl::request_interaction_frame() {
     interaction_presentation_until_us_.store(
         steady_clock_us_now() + kInteractionPresentationHoldUs,
         std::memory_order_release);
-    return request_frame_refresh("renderer-owned-interaction-refresh");
+    return request_frame_refresh_result("renderer-owned-interaction-refresh");
 }
 
 bool Renderer::Impl::interaction_presentation_active() const {

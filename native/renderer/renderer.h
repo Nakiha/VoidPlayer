@@ -118,7 +118,7 @@ public:
     void clear_offscreen_target();
 
     bool request_frame_refresh(const char* reason);
-    bool request_interaction_frame();
+    RendererFrameRefreshResult request_interaction_frame();
     bool update_presentation_sdr_white_level(double nits);
     bool commit_paused_preview_frame(int timeout_ms,
                                      PresentationBackendFrameInfo* out,

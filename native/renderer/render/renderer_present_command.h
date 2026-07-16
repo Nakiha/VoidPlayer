@@ -44,7 +44,8 @@ class RendererPresentCommandProcessor {
 public:
     static bool draw_paused_frame(RendererPresentCommandContext& context,
                                   const char* reason);
-    static bool redraw_layout(RendererPresentCommandContext& context);
+    static RendererFrameRefreshResult redraw_layout(
+        RendererPresentCommandContext& context);
     static void present_frame(RendererPresentCommandContext& context,
                               const PresentDecision& decision);
 };

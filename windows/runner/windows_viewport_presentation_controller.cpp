@@ -7,6 +7,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "renderer/render/renderer_frame_refresh_policy.h"
+
 namespace {
 
 int64_t SteadyClockNs() {
@@ -122,16 +124,31 @@ void WindowsViewportPresentationController::Run() {
           "[WindowsInteraction] submit={} serial={} clock=dxgi-present-vsync",
           submit_count, serial);
     }
-    const bool presented = player && player->request_interaction_frame();
+    const auto refresh_result =
+        player ? player->request_interaction_frame()
+               : vr::RendererFrameRefreshResult::Failed;
+    const bool presented =
+        refresh_result == vr::RendererFrameRefreshResult::Presented;
     const std::string presentation_error =
-        !presented && player ? player->presentation_error() : std::string();
+        refresh_result == vr::RendererFrameRefreshResult::Failed && player
+            ? player->presentation_error()
+            : std::string();
     const bool transient_backpressure =
-        !presented &&
+        refresh_result == vr::RendererFrameRefreshResult::Failed &&
         presentation_error == "Windows D3D11 target ring is busy";
-    if (transient_backpressure) {
-      // Match macOS display-link coalescing: a temporarily full native target
-      // ring is not a failed user interaction. Give the completed-target lane
-      // a chance to run, then retry the latest intent if it was not superseded.
+    const auto disposition = vr::classify_interaction_refresh_result(
+        refresh_result, transient_backpressure);
+    const bool transient_not_ready =
+        disposition ==
+        vr::RendererInteractionRefreshDisposition::RetryNotReady;
+    const bool retry =
+        transient_not_ready ||
+        disposition ==
+            vr::RendererInteractionRefreshDisposition::RetryBackpressure;
+    if (retry) {
+      // Match macOS display-link coalescing: an incomplete multi-track snapshot
+      // or a temporarily full target ring is not a failed user interaction.
+      // Retry the latest intent at display cadence unless it was superseded.
       const auto retry_ms = static_cast<int>(std::clamp(
           std::lround(1000.0 /
                       (nominal_refresh_hz > 1.0 ? nominal_refresh_hz : 60.0)),
@@ -156,8 +173,12 @@ void WindowsViewportPresentationController::Run() {
           }
         }
         last_completion_ns_ = completion_ns;
-      } else if (transient_backpressure) {
-        ++diagnostics_.layout_backpressure_count;
+      } else if (retry) {
+        if (transient_not_ready) {
+          ++diagnostics_.layout_not_ready_count;
+        } else {
+          ++diagnostics_.layout_backpressure_count;
+        }
         if (player_ == player &&
             diagnostics_.latest_intent_serial == serial &&
             diagnostics_.submitted_intent_serial == serial) {
@@ -172,20 +193,24 @@ void WindowsViewportPresentationController::Run() {
       const uint64_t completed = diagnostics_.layout_presented_count;
       const bool log_failure =
           !presented &&
-          (!transient_backpressure ||
-           diagnostics_.layout_backpressure_count <= 8 ||
-           diagnostics_.layout_backpressure_count % 120 == 0);
+          (!retry ||
+           (transient_not_ready
+                ? diagnostics_.layout_not_ready_count <= 8 ||
+                      diagnostics_.layout_not_ready_count % 120 == 0
+                : diagnostics_.layout_backpressure_count <= 8 ||
+                      diagnostics_.layout_backpressure_count % 120 == 0));
       if (completed <= 32 || completed % 120 == 0 || log_failure) {
         spdlog::info(
             "[WindowsInteraction] complete={} serial={} success={} "
             "measured_hz={:.2f} nominal_hz={:.2f} pending={} "
-            "backpressure={} error={}",
+            "not_ready={} backpressure={} error={}",
             completed, serial, presented, diagnostics_.measured_submit_hz,
             diagnostics_.nominal_refresh_hz,
             diagnostics_.latest_intent_serial >
                 diagnostics_.submitted_intent_serial,
+            diagnostics_.layout_not_ready_count,
             diagnostics_.layout_backpressure_count,
-            presentation_error);
+            transient_not_ready ? "frame-not-ready" : presentation_error);
       }
     }
     condition_.notify_all();

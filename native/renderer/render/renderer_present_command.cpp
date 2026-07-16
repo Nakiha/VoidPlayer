@@ -358,12 +358,12 @@ void RendererPresentCommandProcessor::present_frame(
     }
 }
 
-bool RendererPresentCommandProcessor::redraw_layout(
+RendererFrameRefreshResult RendererPresentCommandProcessor::redraw_layout(
     RendererPresentCommandContext& context) {
     if (context.metrics
             .transient_backpressure_remaining(steady_clock_us_now())
             .count() > 0) {
-        return false;
+        return RendererFrameRefreshResult::Failed;
     }
     const auto profiler_start = std::chrono::steady_clock::now();
     RendererDrawSnapshot snapshot;
@@ -385,7 +385,7 @@ bool RendererPresentCommandProcessor::redraw_layout(
                     snapshot_layout_revision,
                     decision_result.active_track_count);
             }
-            return false;
+            return RendererFrameRefreshResult::NotReady;
         }
         const auto& decision = decision_result.decision;
         context.history.set(decision);
@@ -443,7 +443,9 @@ bool RendererPresentCommandProcessor::redraw_layout(
                        profiler_start,
                        attempted_draw,
                        nullptr,
-                       nullptr));
+                       nullptr))
+        ? RendererFrameRefreshResult::Presented
+        : RendererFrameRefreshResult::Failed;
 }
 
 } // namespace vr

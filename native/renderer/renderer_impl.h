@@ -177,7 +177,8 @@ public:
     /// Request an immediate redraw of the currently presentable frame.
     /// Returns false when the renderer cannot issue a refresh command.
     bool request_frame_refresh(const char* reason);
-    bool request_interaction_frame();
+    RendererFrameRefreshResult request_frame_refresh_result(const char* reason);
+    RendererFrameRefreshResult request_interaction_frame();
     bool interaction_presentation_active() const;
     bool update_presentation_sdr_white_level(double nits);
     bool commit_paused_preview_frame(int timeout_ms,

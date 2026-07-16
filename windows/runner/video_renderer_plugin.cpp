@@ -613,6 +613,8 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
       EncodableValue(static_cast<int64_t>(viewport.layout_superseded_count));
   diagnostics[EncodableValue("layoutRefreshFailureCount")] =
       EncodableValue(static_cast<int64_t>(viewport.layout_failed_count));
+  diagnostics[EncodableValue("layoutRefreshNotReadyCount")] =
+      EncodableValue(static_cast<int64_t>(viewport.layout_not_ready_count));
   diagnostics[EncodableValue("layoutRefreshBackpressureCount")] =
       EncodableValue(static_cast<int64_t>(viewport.layout_backpressure_count));
   diagnostics[EncodableValue("interactionFramesInFlight")] = EncodableValue(

@@ -36,6 +36,12 @@ using RendererEventCallback = std::function<void(const RendererEvent&)>;
 using RendererFrameCallback =
     std::function<void(const PresentationBackendFrameInfo*)>;
 
+enum class RendererFrameRefreshResult : uint8_t {
+    Presented,
+    NotReady,
+    Failed,
+};
+
 struct RendererGpuMemoryStats {
     uint64_t total_estimated_bytes = 0;
     uint64_t decoder_pool_bytes = 0;

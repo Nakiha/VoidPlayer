@@ -896,9 +896,15 @@ int VPMacOSNativePlayerRequestInteractionLayoutFrame(
                 message.empty() ? "shared macOS renderer is not available" : message);
     return VPMacOSNativeStatusRendererFailed;
   }
-  if (player->renderer->request_interaction_frame()) {
+  const auto refresh_result = player->renderer->request_interaction_frame();
+  if (refresh_result == vr::RendererFrameRefreshResult::Presented) {
     write_error(error, error_size, "");
     return VPMacOSNativeStatusOk;
+  }
+  if (refresh_result == vr::RendererFrameRefreshResult::NotReady) {
+    write_error(error, error_size,
+                "native interaction layout frame is not ready");
+    return VPMacOSNativeStatusTransientBackpressure;
   }
 
   message = player->renderer->presentation_backend_last_error();

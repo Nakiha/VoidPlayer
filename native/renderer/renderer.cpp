@@ -266,7 +266,7 @@ bool Renderer::request_frame_refresh(const char* reason) {
     return impl_->request_frame_refresh(reason);
 }
 
-bool Renderer::request_interaction_frame() {
+RendererFrameRefreshResult Renderer::request_interaction_frame() {
     return impl_->request_interaction_frame();
 }
 

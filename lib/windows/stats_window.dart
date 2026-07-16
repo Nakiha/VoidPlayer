@@ -92,6 +92,8 @@ class StatsSnapshot {
 // ---- UI panel ----
 
 class StatsPage extends StatefulWidget {
+  static const double preferredWidth = 920;
+
   final StatsDataSource? dataSource;
 
   const StatsPage({super.key, this.dataSource});
@@ -761,6 +763,7 @@ class StatsTrackRow {
   final double maxDecodeMs;
   final int bufferCount;
   final int bufferCapacity;
+  final int bufferPrerollTarget;
   final int bufferState;
   final int cpuFrameMemoryBytes;
   final int packetQueueMemoryBytes;
@@ -773,6 +776,7 @@ class StatsTrackRow {
     required this.maxDecodeMs,
     required this.bufferCount,
     required this.bufferCapacity,
+    this.bufferPrerollTarget = 0,
     required this.bufferState,
     required this.cpuFrameMemoryBytes,
     required this.packetQueueMemoryBytes,
@@ -790,6 +794,7 @@ class StatsTrackRow {
     maxDecodeMs: _doubleValue(map['decodeMaxMs'] ?? map['maxDecodeMs']),
     bufferCount: _intValue(map['bufferCount']),
     bufferCapacity: _intValue(map['bufferCapacity']),
+    bufferPrerollTarget: _intValue(map['bufferPrerollTarget']),
     bufferState: _intValue(map['bufferState']),
     cpuFrameMemoryBytes: _intValue(
       map['cpuFrameMemoryBytes'] ?? map['totalCpuFrameBytes'],

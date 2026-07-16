@@ -89,7 +89,8 @@ TrackPerfSnapshotResult snapshot_track_perf_stats(
     stats.frames_decoded = decode_perf.frames_decoded;
     if (track.track_buffer) {
         stats.buffer_count = track.track_buffer->total_count();
-        stats.buffer_capacity = track.track_buffer->preroll_target();
+        stats.buffer_capacity = track.track_buffer->max_count();
+        stats.buffer_preroll_target = track.track_buffer->preroll_target();
         stats.buffer_state = track.track_buffer->state();
     }
     if (current_frame.has_value()) {

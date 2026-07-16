@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "test_utils.h"
 #include "renderer/decode/decode_thread.h"
+#include "renderer/decode/decode_perf_timing.h"
 #include "media/demux_thread.h"
 #include "media/packet_queue.h"
 #include "renderer/buffer/track_buffer.h"
@@ -15,6 +16,14 @@
 #include <windows.h>
 
 using namespace vr;
+
+TEST_CASE("Decode performance excludes output buffer wait",
+          "[decode][performance]") {
+    REQUIRE(decode_active_batch_time_us(4'000'000, 10, 3'990'010) ==
+            10'000);
+    REQUIRE(decode_active_batch_time_us(1'000, 5'000, 4'000) == 1'000);
+    REQUIRE(decode_active_batch_time_us(1'000, 0, 2'000) == 0);
+}
 
 namespace {
 

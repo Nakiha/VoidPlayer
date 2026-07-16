@@ -78,6 +78,7 @@ void main() {
             'decodeMaxMs': 7.25,
             'bufferCount': 3,
             'bufferCapacity': 8,
+            'bufferPrerollTarget': 4,
             'bufferState': 2,
             'cpuFrameMemoryBytes': 1024,
             'packetQueueMemoryBytes': 512,
@@ -100,6 +101,7 @@ void main() {
     expect(snapshot.tracks.single.fps, closeTo(59.8, 0.001));
     expect(snapshot.tracks.single.bufferCount, 3);
     expect(snapshot.tracks.single.bufferCapacity, 8);
+    expect(snapshot.tracks.single.bufferPrerollTarget, 4);
     expect(snapshot.tracks.single.cpuFrameMemoryBytes, 1024);
     expect(snapshot.tracks.single.packetQueueMemoryBytes, 512);
     expect(snapshot.tracks.single.currentPtsUs, 123000);

@@ -547,7 +547,8 @@ TEST_CASE("TrackSnapshot builds track perf stats",
     REQUIRE(snapshot.stats.slot == 3);
     REQUIRE(snapshot.stats.file_id == 42);
     REQUIRE(snapshot.stats.buffer_count == 1);
-    REQUIRE(snapshot.stats.buffer_capacity == 4);
+    REQUIRE(snapshot.stats.buffer_capacity == 5);
+    REQUIRE(snapshot.stats.buffer_preroll_target == 4);
     REQUIRE(snapshot.stats.buffer_state == TrackState::Ready);
     REQUIRE(snapshot.stats.current_pts_us == 1234567);
     REQUIRE(snapshot.stats.current_dts_us == 1200000);
@@ -588,7 +589,8 @@ TEST_CASE("TrackSnapshot collects track perf stats in slot order",
     REQUIRE(collection.stats[0].slot == 1);
     REQUIRE(collection.stats[0].file_id == 11);
     REQUIRE(collection.stats[0].buffer_count == 1);
-    REQUIRE(collection.stats[0].buffer_capacity == 2);
+    REQUIRE(collection.stats[0].buffer_capacity == 3);
+    REQUIRE(collection.stats[0].buffer_preroll_target == 2);
     REQUIRE(collection.stats[0].buffer_state == TrackState::Ready);
     REQUIRE(collection.stats[0].current_pts_us == 2222);
     REQUIRE(collection.stats[0].current_dts_us == 1111);

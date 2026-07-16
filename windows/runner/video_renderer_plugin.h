@@ -46,6 +46,7 @@ class VideoRendererPlugin final : public flutter::Plugin {
                                                   WPARAM wparam, LPARAM lparam);
   void SchedulePresentationPolicyRefresh();
   void FailClosedPresentation(std::string failure);
+  void ApplyViewportBackgroundColor(uint32_t color);
   bool RefreshPresentationPolicy(const char* reason, std::string& error);
   bool ApplyPresentationPolicy(vr::WindowsPresentationPolicy policy,
                                const vr::WindowsDisplayProbeResult& display,
@@ -65,6 +66,7 @@ class VideoRendererPlugin final : public flutter::Plugin {
   HWND window_handle_ = nullptr;
   flutter::PluginRegistrarWindows* registrar_ = nullptr;
   int window_proc_delegate_id_ = -1;
+  COLORREF viewport_background_color_ = RGB(0, 0, 0);
   std::unique_ptr<WindowsNativeCompositor> compositor_;
   std::unique_ptr<WindowsViewportPresentationController>
       viewport_presentation_controller_;

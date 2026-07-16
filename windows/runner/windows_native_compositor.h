@@ -38,6 +38,7 @@ struct WindowsNativeCompositorDiagnostics {
   uint64_t video_present_count = 0;
   uint64_t last_flutter_frame_generation = 0;
   int64_t sdr_white_level_milli_nits = 80000;
+  uint32_t background_color_argb = 0xFF000000u;
   bool scrgb_output_enabled = false;
   std::string output_mode = "native-compositor-sdr";
   std::string swap_chain_format = "bgra8";
@@ -84,6 +85,7 @@ class WindowsNativeCompositor final {
                             int height,
                             int surface_width,
                             int surface_height);
+  void SetBackgroundColor(float red, float green, float blue, float alpha);
   ID3D11Device* device() const { return device_.Get(); }
   WindowsNativeCompositorDiagnostics diagnostics() const;
 
@@ -154,6 +156,7 @@ class WindowsNativeCompositor final {
   int video_viewport_height_ = 0;
   int video_viewport_surface_width_ = 0;
   int video_viewport_surface_height_ = 0;
+  float background_color_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
   uint32_t width_ = 0;
   uint32_t height_ = 0;
   DXGI_FORMAT output_format_ = DXGI_FORMAT_B8G8R8A8_UNORM;

@@ -23,6 +23,7 @@ cbuffer CompositeConstants : register(b0) {
   uint video_is_sdr;
   float sdr_white_scale;
   float4 video_rect;
+  float4 background_color;
 };
 struct VertexOutput { float4 position : SV_POSITION; float2 uv : TEXCOORD0; };
 VertexOutput VSMain(uint vertex_id : SV_VertexID) {
@@ -59,7 +60,10 @@ float3 premultiplied_srgb_to_scrgb(float3 color, float alpha) {
   return srgb_to_linear(straight) * alpha * sdr_white_scale;
 }
 float4 PSMain(VertexOutput input) : SV_TARGET {
-  float4 video = float4(0.0, 0.0, 0.0, 1.0);
+  float4 video = float4(saturate(background_color.rgb), 1.0);
+  if (output_scrgb != 0) {
+    video.rgb = srgb_to_linear(video.rgb) * sdr_white_scale;
+  }
   float2 video_end = video_rect.xy + video_rect.zw;
   if (has_video != 0 &&
       input.uv.x >= video_rect.x && input.uv.x <= video_end.x &&
@@ -90,6 +94,7 @@ struct CompositeConstants {
   uint32_t video_is_sdr = 1;
   float sdr_white_scale = 1.0f;
   float video_rect[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+  float background_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 };
 
 class ScopedD3D11ContextLock final {
@@ -410,6 +415,36 @@ void WindowsNativeCompositor::SetVideoViewportRect(
     spdlog::info(
         "[WindowsCompositor] viewport rect=({},{} {}x{}) surface={}x{}",
         left, top, width, height, surface_width, surface_height);
+    SignalComposite();
+  }
+}
+
+void WindowsNativeCompositor::SetBackgroundColor(
+    float red, float green, float blue, float alpha) {
+  const float next[4] = {
+      std::clamp(red, 0.0f, 1.0f),
+      std::clamp(green, 0.0f, 1.0f),
+      std::clamp(blue, 0.0f, 1.0f),
+      std::clamp(alpha, 0.0f, 1.0f),
+  };
+  bool changed = false;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    for (size_t index = 0; index < 4; ++index) {
+      changed = changed || background_color_[index] != next[index];
+      background_color_[index] = next[index];
+    }
+    const auto to_byte = [](float value) -> uint32_t {
+      return static_cast<uint32_t>(std::lround(value * 255.0f));
+    };
+    diagnostics_.background_color_argb =
+        (to_byte(next[3]) << 24u) | (to_byte(next[0]) << 16u) |
+        (to_byte(next[1]) << 8u) | to_byte(next[2]);
+  }
+  if (changed) {
+    spdlog::info(
+        "[WindowsCompositor] background color argb=0x{:08X}",
+        diagnostics().background_color_argb);
     SignalComposite();
   }
 }
@@ -917,6 +952,7 @@ bool WindowsNativeCompositor::CompositeLatest() {
         video_target_format_ == DXGI_FORMAT_R16G16B16A16_FLOAT ? 0u : 1u;
     composite_constants.sdr_white_scale =
         static_cast<float>(applied_output_config_.sdr_white_level_nits / 80.0);
+    std::copy_n(background_color_, 4, composite_constants.background_color);
     if (video_viewport_width_ > 0 && video_viewport_height_ > 0 &&
         video_viewport_surface_width_ > 0 &&
         video_viewport_surface_height_ > 0) {

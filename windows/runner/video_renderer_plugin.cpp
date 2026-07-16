@@ -548,6 +548,8 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
       EncodableValue(state.video_target_format);
   diagnostics[EncodableValue("windowsSDRWhiteLevelMilliNits")] =
       EncodableValue(state.sdr_white_level_milli_nits);
+  diagnostics[EncodableValue("windowsCompositorBackgroundColorArgb")] =
+      EncodableValue(static_cast<int64_t>(state.background_color_argb));
   diagnostics[EncodableValue("windowsCompositorOutputFallbackReason")] =
       EncodableValue(state.output_fallback_reason);
   if (!viewport_controller) {
@@ -715,6 +717,17 @@ std::optional<LRESULT> VideoRendererPlugin::HandleTopLevelWindowProc(
     HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
   (void)lparam;
   switch (message) {
+  case WM_ERASEBKGND: {
+    RECT client = {};
+    GetClientRect(hwnd, &client);
+    HBRUSH brush = CreateSolidBrush(viewport_background_color_);
+    if (brush) {
+      FillRect(reinterpret_cast<HDC>(wparam), &client, brush);
+      DeleteObject(brush);
+      return 1;
+    }
+    break;
+  }
   case WM_DISPLAYCHANGE:
   case WM_SETTINGCHANGE:
   case WM_MOVE:
@@ -736,6 +749,23 @@ std::optional<LRESULT> VideoRendererPlugin::HandleTopLevelWindowProc(
     break;
   }
   return std::nullopt;
+}
+
+void VideoRendererPlugin::ApplyViewportBackgroundColor(uint32_t color) {
+  const uint8_t red = static_cast<uint8_t>((color >> 16u) & 0xFFu);
+  const uint8_t green = static_cast<uint8_t>((color >> 8u) & 0xFFu);
+  const uint8_t blue = static_cast<uint8_t>(color & 0xFFu);
+  const uint8_t alpha = static_cast<uint8_t>((color >> 24u) & 0xFFu);
+  viewport_background_color_ = RGB(red, green, blue);
+  const float scale = 1.0f / 255.0f;
+  if (player_) {
+    player_->set_background_color(red * scale, green * scale, blue * scale,
+                                  alpha * scale);
+  }
+  if (compositor_) {
+    compositor_->SetBackgroundColor(red * scale, green * scale, blue * scale,
+                                    alpha * scale);
+  }
 }
 
 void VideoRendererPlugin::SchedulePresentationPolicyRefresh() {
@@ -1215,16 +1245,9 @@ void VideoRendererPlugin::HandleMethodCall(
                     "shared Windows renderer failed to initialize");
       return;
     }
-    if (const uint32_t color =
-            static_cast<uint32_t>(ReadInt(arguments, "color", 0xFF000000));
-        color != 0) {
-      player->set_background_color(
-          static_cast<float>((color >> 16) & 0xFF) / 255.0f,
-          static_cast<float>((color >> 8) & 0xFF) / 255.0f,
-          static_cast<float>(color & 0xFF) / 255.0f,
-          static_cast<float>((color >> 24) & 0xFF) / 255.0f);
-    }
     player_ = player;
+    ApplyViewportBackgroundColor(
+        static_cast<uint32_t>(ReadInt(arguments, "color", 0xFF000000)));
     player_id_ = next_player_id_.fetch_add(1);
     vr::WindowsFirstFrameActivationGate::Session presentation_session = 0;
     {
@@ -1476,11 +1499,7 @@ void VideoRendererPlugin::HandleMethodCall(
     result->Success();
   } else if (method == "setViewportBackgroundColor") {
     const uint32_t color = static_cast<uint32_t>(ReadInt(arguments, "color"));
-    player_->set_background_color(
-        static_cast<float>((color >> 16) & 0xFF) / 255.0f,
-        static_cast<float>((color >> 8) & 0xFF) / 255.0f,
-        static_cast<float>(color & 0xFF) / 255.0f,
-        static_cast<float>((color >> 24) & 0xFF) / 255.0f);
+    ApplyViewportBackgroundColor(color);
     result->Success();
   } else if (method == "resize") {
     std::string error;

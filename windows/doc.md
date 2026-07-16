@@ -64,6 +64,10 @@ final compositor in HDR mode
   blend:   Flutter over video -> RGBA16F scRGB DComp swap chain
 ```
 
+Flutter 传给 shared renderer 的 viewport 背景色也同步给 final compositor 和 Win32
+client erase fallback。视频矩形之外不使用硬编码黑色；SDR 直接使用该 sRGB 颜色，scRGB
+先按与 Flutter UI 相同的 SDR white 映射转为线性值，避免侧栏或窗口布局变化时暴露黑底。
+
 这样 Windows HDR 开启时，Flutter 的 SDR UI 仍由系统 SDR white level 映射；不会因为
 整张 Flutter surface 被误标成 linear FP16 而变暗。Flutter lease 不是完整 BGRA8
 premultiplied-alpha surface 时 compositor 直接拒绝，不能退回 Flutter Texture、截图或

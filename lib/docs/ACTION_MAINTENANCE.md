@@ -140,7 +140,7 @@ Analysis 窗口是独立进程，通过 IPC 与主窗口同步需要的 track �
 | `STORE_VIEW_CENTER` | name | 记录归一化视图中心基线 |
 | `STORE_RESOURCE_USAGE` | name | 记录进程 RSS / 专用显存基线 |
 | `STORE_NATIVE_SEEK_COUNT` | name | 记录当前 native 插件 seek 日志计数 |
-| `RESET_NATIVE_PERF_COUNTERS` | — | 清空 native compositor high-refresh 诊断采样窗口 |
+| `RESET_NATIVE_PERF_COUNTERS` | — | 清空 native compositor 诊断采样窗口（含 Flutter surface publish） |
 | `BEGIN_NATIVE_INTERACTION_SAMPLE` | label? | 开始 native high-refresh 交互采样窗口 |
 | `END_NATIVE_INTERACTION_SAMPLE` | label? | 结束 native high-refresh 交互采样窗口 |
 | `DRAG_VIEWPORT_WIN32_MESSAGE` | dx, dy, steps?, stepMs? | 按当前进程 HWND 投递右键拖动消息，不移动系统鼠标，覆盖 Windows embedder pointer 路径 |

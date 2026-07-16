@@ -1,0 +1,12 @@
+# The inactive loading spinner must not keep Flutter's exported UI surface
+# presenting at display refresh while the native video viewport is paused.
+@WINDOW,960,540
+
+0.0,ADD_MEDIA,resources/video/h264_9s_1920x1080.mp4
+1.4,WAIT_TRACK_COUNT,1,10000
+1.5,WAIT_PAUSED,3000
+1.6,RESET_NATIVE_PERF_COUNTERS
+2.8,DEBUG_NATIVE_COMPOSITOR
+2.82,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,windowsFlutterPublishSampleCount,0,12
+2.84,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,windowsFlutterExportRequestCount,0,0
+3.0,QUIT,0

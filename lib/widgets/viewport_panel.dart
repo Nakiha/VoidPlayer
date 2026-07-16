@@ -782,26 +782,30 @@ class _ViewportPanelState extends State<ViewportPanel> {
           sizing: StackFit.expand,
           children: [
             // State 0: Loading
-            Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      color: Theme.of(context).colorScheme.primary,
+            TickerMode(
+              key: const ValueKey('viewport-loading-ticker-mode'),
+              enabled: widget.viewportState.stackIndex == 0,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    AppLocalizations.of(context)!.initializing,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 8),
+                    Text(
+                      AppLocalizations.of(context)!.initializing,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             // State 1: Empty

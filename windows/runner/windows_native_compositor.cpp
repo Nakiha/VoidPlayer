@@ -450,8 +450,36 @@ void WindowsNativeCompositor::SetBackgroundColor(
 }
 
 WindowsNativeCompositorDiagnostics WindowsNativeCompositor::diagnostics() const {
+  WindowsNativeCompositorDiagnostics result;
+  {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    result = diagnostics_;
+    result.flutter_publish_sample_count =
+        diagnostics_.flutter_publish_count - flutter_publish_sample_baseline_;
+  }
+  FlutterDesktopWindowsSurfaceExportState export_state = {};
+  export_state.struct_size = sizeof(export_state);
+  if (flutter_view_ &&
+      FlutterDesktopViewGetSurfaceExportState(flutter_view_, &export_state)) {
+    result.flutter_export_request_count = export_state.request_count;
+    result.flutter_export_request_dispatch_count =
+        export_state.request_dispatch_count;
+    result.flutter_export_schedule_frame_count =
+        export_state.schedule_frame_count;
+    result.flutter_export_vsync_count = export_state.vsync_count;
+    result.flutter_export_present_count = export_state.present_count;
+    result.flutter_export_begin_count = export_state.export_begin_count;
+    result.flutter_export_flush_count = export_state.export_flush_count;
+    result.flutter_export_finish_count = export_state.export_finish_count;
+    result.flutter_export_pending_pump_frames =
+        export_state.pending_frame_pump_frames;
+  }
+  return result;
+}
+
+void WindowsNativeCompositor::ResetFlutterPublishSample() {
   std::lock_guard<std::mutex> lock(state_mutex_);
-  return diagnostics_;
+  flutter_publish_sample_baseline_ = diagnostics_.flutter_publish_count;
 }
 
 void WindowsNativeCompositor::OnFlutterSurfacePublished(
@@ -912,11 +940,20 @@ bool WindowsNativeCompositor::CompositeLatest() {
         }
         if (flutter_cache_refresh_count_ <= 8 ||
             flutter_cache_refresh_count_ % 120 == 0) {
+          FlutterDesktopWindowsSurfaceExportState export_state = {};
+          export_state.struct_size = sizeof(export_state);
+          FlutterDesktopViewGetSurfaceExportState(flutter_view_, &export_state);
           spdlog::info(
               "[WindowsCompositor] cached Flutter refresh={} generation={} "
-              "ring={} size={}x{}",
+              "ring={} size={}x{} requests={} dispatched={} scheduled={} "
+              "vsync={} presents={} pending_pump={}",
               flutter_cache_refresh_count_, cached_flutter_generation_,
-              cached_flutter_ring_generation_, lease.width, lease.height);
+              cached_flutter_ring_generation_, lease.width, lease.height,
+              export_state.request_count,
+              export_state.request_dispatch_count,
+              export_state.schedule_frame_count, export_state.vsync_count,
+              export_state.present_count,
+              export_state.pending_frame_pump_frames);
         }
       } else if (!flutter_cache_srv_) {
         {

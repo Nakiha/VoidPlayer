@@ -49,6 +49,7 @@ void main() {
     Size size = const Size(240, 160),
     bool nativeCompositorHole = false,
     int? textureId = 1,
+    ViewportDisplayState viewportState = const ViewportDisplayState.active(),
   }) {
     return MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -61,7 +62,7 @@ void main() {
             height: size.height,
             child: ViewportPanel(
               textureId: textureId,
-              viewportState: const ViewportDisplayState.active(),
+              viewportState: viewportState,
               layout: const LayoutState(),
               onPan: pans.add,
               onSplit: (_) {},
@@ -103,6 +104,35 @@ void main() {
 
     expect(find.byType(Texture), findsNothing);
     expect(find.bySemanticsLabel('Video viewport'), findsOneWidget);
+  });
+
+  testWidgets('hidden loading indicator does not keep its ticker active', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildPanel(pans: [], zooms: []));
+
+    final inactive = tester.widget<TickerMode>(
+      find.byKey(
+        const ValueKey('viewport-loading-ticker-mode'),
+        skipOffstage: false,
+      ),
+    );
+    expect(inactive.enabled, isFalse);
+
+    await tester.pumpWidget(
+      buildPanel(
+        pans: [],
+        zooms: [],
+        viewportState: const ViewportDisplayState.loading(),
+      ),
+    );
+    final loading = tester.widget<TickerMode>(
+      find.byKey(
+        const ValueKey('viewport-loading-ticker-mode'),
+        skipOffstage: false,
+      ),
+    );
+    expect(loading.enabled, isTrue);
   });
 
   testWidgets('pan zoom scale noise still pans the viewport', (tester) async {

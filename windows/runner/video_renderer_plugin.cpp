@@ -511,6 +511,31 @@ void AddCompositorDiagnostics(EncodableMap& diagnostics,
       EncodableValue(static_cast<int64_t>(state.composite_count));
   diagnostics[EncodableValue("windowsFlutterPublishCount")] =
       EncodableValue(static_cast<int64_t>(state.flutter_publish_count));
+  diagnostics[EncodableValue("windowsFlutterPublishSampleCount")] =
+      EncodableValue(
+          static_cast<int64_t>(state.flutter_publish_sample_count));
+  diagnostics[EncodableValue("windowsFlutterExportRequestCount")] =
+      EncodableValue(
+          static_cast<int64_t>(state.flutter_export_request_count));
+  diagnostics[EncodableValue("windowsFlutterExportRequestDispatchCount")] =
+      EncodableValue(static_cast<int64_t>(
+          state.flutter_export_request_dispatch_count));
+  diagnostics[EncodableValue("windowsFlutterExportScheduleFrameCount")] =
+      EncodableValue(static_cast<int64_t>(
+          state.flutter_export_schedule_frame_count));
+  diagnostics[EncodableValue("windowsFlutterExportVsyncCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_export_vsync_count));
+  diagnostics[EncodableValue("windowsFlutterExportPresentCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_export_present_count));
+  diagnostics[EncodableValue("windowsFlutterExportBeginCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_export_begin_count));
+  diagnostics[EncodableValue("windowsFlutterExportFlushCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_export_flush_count));
+  diagnostics[EncodableValue("windowsFlutterExportFinishCount")] =
+      EncodableValue(static_cast<int64_t>(state.flutter_export_finish_count));
+  diagnostics[EncodableValue("windowsFlutterExportPendingPumpFrames")] =
+      EncodableValue(static_cast<int64_t>(
+          state.flutter_export_pending_pump_frames));
   diagnostics[EncodableValue("windowsVideoPublishCount")] =
       EncodableValue(static_cast<int64_t>(state.video_publish_count));
   diagnostics[EncodableValue("windowsVideoPresentCount")] =
@@ -1180,8 +1205,14 @@ void VideoRendererPlugin::HandleMethodCall(
     result->Success();
     return;
   }
-  if (method == "resetNativePerfCounters" ||
-      method == "prewarmNativePresentationTargetSize" ||
+  if (method == "resetNativePerfCounters") {
+    if (compositor_) {
+      compositor_->ResetFlutterPublishSample();
+    }
+    result->Success();
+    return;
+  }
+  if (method == "prewarmNativePresentationTargetSize" ||
       method == "boostNativeCompositorFlutterInteraction" ||
       method == "ackNativeCompositorFlutterState") {
     result->Success();

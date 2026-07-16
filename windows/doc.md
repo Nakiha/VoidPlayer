@@ -44,6 +44,11 @@ video target + Flutter UI surface
   -> HWND
 ```
 
+runner diagnostics 同时导出 Flutter surface export 的 request、schedule、vsync、present
+与 publish 计数，用来区分 engine frame pump、framework ticker 和 native compositor
+消费。暂停状态下可通过 `resetNativePerfCounters` 重置 publish 采样窗口；inactive viewport
+子树必须关闭动画 ticker，不能仅依赖 `IndexedStack` 隐藏后继续按显示刷新率发布 UI surface。
+
 ### HDR 与 SDR UI 合成
 
 Windows HDR 使用 linear scRGB 作为 native video 与最终 swap chain 的工作域，不把

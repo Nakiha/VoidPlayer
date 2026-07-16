@@ -26,6 +26,16 @@ struct WindowsNativeCompositorDiagnostics {
   bool flutter_export_enabled = false;
   bool last_composite_succeeded = false;
   uint64_t flutter_publish_count = 0;
+  uint64_t flutter_publish_sample_count = 0;
+  uint64_t flutter_export_request_count = 0;
+  uint64_t flutter_export_request_dispatch_count = 0;
+  uint64_t flutter_export_schedule_frame_count = 0;
+  uint64_t flutter_export_vsync_count = 0;
+  uint64_t flutter_export_present_count = 0;
+  uint64_t flutter_export_begin_count = 0;
+  uint64_t flutter_export_flush_count = 0;
+  uint64_t flutter_export_finish_count = 0;
+  uint64_t flutter_export_pending_pump_frames = 0;
   uint64_t composite_count = 0;
   uint64_t acquire_failure_count = 0;
   uint64_t keyed_mutex_failure_count = 0;
@@ -86,6 +96,7 @@ class WindowsNativeCompositor final {
                             int surface_width,
                             int surface_height);
   void SetBackgroundColor(float red, float green, float blue, float alpha);
+  void ResetFlutterPublishSample();
   ID3D11Device* device() const { return device_.Get(); }
   WindowsNativeCompositorDiagnostics diagnostics() const;
 
@@ -150,6 +161,7 @@ class WindowsNativeCompositor final {
   uint64_t cached_flutter_generation_ = 0;
   uint64_t cached_flutter_ring_generation_ = 0;
   uint64_t flutter_cache_refresh_count_ = 0;
+  uint64_t flutter_publish_sample_baseline_ = 0;
   int video_viewport_left_ = 0;
   int video_viewport_top_ = 0;
   int video_viewport_width_ = 0;

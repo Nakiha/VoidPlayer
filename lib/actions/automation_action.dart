@@ -190,6 +190,20 @@ class DragViewportNative extends AutomationAction {
   }) : super('DRAG_VIEWPORT_NATIVE');
 }
 
+class DragViewportWin32Message extends AutomationAction {
+  final double dx;
+  final double dy;
+  final int steps;
+  final int stepMs;
+
+  const DragViewportWin32Message(
+    this.dx,
+    this.dy, {
+    this.steps = 24,
+    this.stepMs = 16,
+  }) : super('DRAG_VIEWPORT_WIN32_MESSAGE');
+}
+
 class DragSplitHandleNative extends AutomationAction {
   final double targetFraction;
   final int steps;
@@ -336,6 +350,12 @@ class PressKeyNative extends AutomationAction {
   final String key;
 
   const PressKeyNative(this.key) : super('PRESS_KEY_NATIVE');
+}
+
+class PressKeyWin32Message extends AutomationAction {
+  final String key;
+
+  const PressKeyWin32Message(this.key) : super('PRESS_KEY_WIN32_MESSAGE');
 }
 
 class ClickMediaHeaderRemoveButton extends AutomationAction {

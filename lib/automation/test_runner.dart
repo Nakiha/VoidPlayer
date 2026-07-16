@@ -632,6 +632,21 @@ class TestRunner {
           stepDelay: Duration(milliseconds: stepMs),
           button: button,
         );
+      case DragViewportWin32Message(
+        :final dx,
+        :final dy,
+        :final steps,
+        :final stepMs,
+      ):
+        log.info(
+          'TestRunner: DRAG_VIEWPORT_WIN32_MESSAGE dx=$dx dy=$dy '
+          'steps=$steps stepMs=$stepMs',
+        );
+        await testHarness.dragViewportWin32Message(
+          Offset(dx, dy),
+          steps: steps,
+          stepDelay: Duration(milliseconds: stepMs),
+        );
       case DragSplitHandleNative(
         :final targetFraction,
         :final steps,
@@ -799,6 +814,9 @@ class TestRunner {
       case PressKeyNative(:final key):
         log.info('TestRunner: PRESS_KEY_NATIVE $key');
         await testHarness.pressKeyNative(key);
+      case PressKeyWin32Message(:final key):
+        log.info('TestRunner: PRESS_KEY_WIN32_MESSAGE $key');
+        await testHarness.pressKeyWin32Message(key);
       case ClickMediaHeaderRemoveButton(:final fileId):
         log.info('TestRunner: CLICK_MEDIA_HEADER_REMOVE_BUTTON fileId=$fileId');
         testHarness.clickMediaHeaderRemoveButton(fileId);

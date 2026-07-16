@@ -262,6 +262,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   uint64_t shortcut_message_sequence = 0;
   while (::GetMessage(&msg, nullptr, 0, 0)) {
     TraceShortcutMessage(msg, ++shortcut_message_sequence);
+    window.ForwardShortcutMessage(msg);
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
   }

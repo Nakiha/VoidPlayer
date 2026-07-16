@@ -18,6 +18,8 @@ runner 使用 DComp 合成 shared renderer 输出的 D3D11 视频 target 与 Flu
 - H.264/H.265/MPEG-2 D3D11VA、multi-track split、play/pause、seek、step、loop、layout 和 native capture 的 runner 集成；
 - 基于当前 HWND output 的 DXGI HDR 状态、presentation adapter 和
   `DISPLAYCONFIG_SDR_WHITE_LEVEL` 的 Auto SDR/scRGB policy。
+- runner message pump 到 `ActionRegistry` 的独立应用快捷键 channel；原始按键仍进入
+  Flutter 文本输入，Windows `HardwareKeyboard` 对已接管快捷键只去重、不重复执行。
 
 runner 直接编译并链接 shared native renderer、FFmpeg、D3D11 与 DComp。构建强制要求
 patched Flutter local engine；普通 Flutter SDK

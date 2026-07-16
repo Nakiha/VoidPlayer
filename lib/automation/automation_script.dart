@@ -360,6 +360,22 @@ ScriptInstruction? _parseInstruction(
           button: args.length >= 5 ? args[4] : 'secondary',
         ),
       );
+    case 'DRAG_VIEWPORT_WIN32_MESSAGE':
+      if (args.length < 2) {
+        log.warning(
+          'DRAG_VIEWPORT_WIN32_MESSAGE needs dx and dy arguments: $rawLine',
+        );
+        return null;
+      }
+      return ScriptAutomationAction(
+        time,
+        DragViewportWin32Message(
+          double.parse(args[0]),
+          double.parse(args[1]),
+          steps: args.length >= 3 ? int.parse(args[2]) : 24,
+          stepMs: args.length >= 4 ? int.parse(args[3]) : 16,
+        ),
+      );
     case 'DRAG_SPLIT_HANDLE_NATIVE':
       if (args.isEmpty) {
         log.warning('DRAG_SPLIT_HANDLE_NATIVE needs target fraction: $rawLine');
@@ -676,6 +692,12 @@ ScriptInstruction? _parseInstruction(
         return null;
       }
       return ScriptAutomationAction(time, PressKeyNative(args[0].trim()));
+    case 'PRESS_KEY_WIN32_MESSAGE':
+      if (args.isEmpty) {
+        log.warning('PRESS_KEY_WIN32_MESSAGE needs key name: $rawLine');
+        return null;
+      }
+      return ScriptAutomationAction(time, PressKeyWin32Message(args[0].trim()));
     case 'CLICK_MEDIA_HEADER_REMOVE_BUTTON':
       if (args.isEmpty) {
         log.warning(

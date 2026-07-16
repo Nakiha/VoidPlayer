@@ -18,6 +18,11 @@ class FlutterWindow : public Win32Window {
   explicit FlutterWindow(const flutter::DartProject& project);
   virtual ~FlutterWindow();
 
+  // Mirrors application-level key downs to Dart without depending on the
+  // embedder keyboard response queue. The original message is still
+  // dispatched to Flutter for text input and normal widget behavior.
+  void ForwardShortcutMessage(const MSG& message);
+
  protected:
   // Win32Window:
   bool OnCreate() override;
@@ -34,6 +39,9 @@ class FlutterWindow : public Win32Window {
 
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       bootstrap_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      shortcut_channel_;
+  HWND flutter_view_hwnd_ = nullptr;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

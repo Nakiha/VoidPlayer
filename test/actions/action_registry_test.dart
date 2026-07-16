@@ -214,6 +214,82 @@ void main() {
     expect(traces.first.editable, isTrue);
   });
 
+  testWidgets(
+    'Windows runner owns application shortcuts without double dispatch',
+    (tester) async {
+      final traces = <ShortcutTraceRecord>[];
+      final actionRegistry = ActionRegistry(
+        useWindowsRunnerShortcuts: true,
+        shortcutTraceSink: traces.add,
+      );
+      var toggleCount = 0;
+      actionRegistry.bind(const TogglePlayPause(), (_) => toggleCount++);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ActionFocus(
+            actionRegistry: actionRegistry,
+            child: const SizedBox.shrink(),
+          ),
+        ),
+      );
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+      expect(toggleCount, 0);
+      expect(traces.last.decision, ShortcutTraceDecision.platformOwned);
+
+      expect(
+        actionRegistry.handleWindowsRunnerShortcut(
+          virtualKey: 0x20,
+          scanCode: 0x39,
+          repeat: false,
+          controlPressed: false,
+        ),
+        isTrue,
+      );
+      expect(toggleCount, 1);
+      expect(traces.last.decision, ShortcutTraceDecision.dispatched);
+
+      actionRegistry.handleWindowsRunnerShortcut(
+        virtualKey: 0x20,
+        scanCode: 0x39,
+        repeat: true,
+        controlPressed: false,
+      );
+      expect(toggleCount, 1);
+      expect(traces.last.decision, ShortcutTraceDecision.swallowedRepeat);
+    },
+  );
+
+  testWidgets('Windows runner shortcuts pass through while editing text', (
+    tester,
+  ) async {
+    final actionRegistry = ActionRegistry(useWindowsRunnerShortcuts: true);
+    var toggleCount = 0;
+    actionRegistry.bind(const TogglePlayPause(), (_) => toggleCount++);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ActionFocus(
+          actionRegistry: actionRegistry,
+          child: const Scaffold(body: TextField()),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+
+    expect(
+      actionRegistry.handleWindowsRunnerShortcut(
+        virtualKey: 0x20,
+        scanCode: 0x39,
+        repeat: false,
+        controlPressed: false,
+      ),
+      isFalse,
+    );
+    expect(toggleCount, 0);
+  });
+
   testWidgets('ActionFocus moves its global handler with keyboard service', (
     tester,
   ) async {

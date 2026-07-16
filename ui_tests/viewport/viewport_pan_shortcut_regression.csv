@@ -1,0 +1,12 @@
+# A Flutter-internal pointer drag does not move the system cursor, but still
+# exercises the real viewport gesture/layout path. The shortcut is injected
+# through Win32 so the Windows embedder delivery boundary is covered.
+@WINDOW, 1280, 720
+0.5, ADD_MEDIA, resources/video/h264_9s_1920x1080.mp4
+3.0, ASSERT_TRACK_COUNT, 1
+3.2, DRAG_VIEWPORT_WIN32_MESSAGE, 520, -160, 180, 8
+5.8, PRESS_KEY_WIN32_MESSAGE, space
+6.2, ASSERT_PLAYING
+6.4, PRESS_KEY_WIN32_MESSAGE, space
+6.8, ASSERT_PAUSED
+7.0, QUIT, 0

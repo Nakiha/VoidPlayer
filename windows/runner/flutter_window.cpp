@@ -11,6 +11,23 @@ namespace {
 
 constexpr const char kSystemAccentColorChangedMethod[] =
     "systemAccentColorChanged";
+constexpr const char kShortcutChannelName[] =
+    "void_player/windows_runner_shortcuts";
+
+bool IsApplicationShortcutKey(WPARAM virtual_key) {
+  switch (virtual_key) {
+    case VK_SPACE:
+    case VK_LEFT:
+    case VK_RIGHT:
+    case 'M':
+    case 'O':
+    case VK_F11:
+    case VK_ESCAPE:
+      return true;
+    default:
+      return false;
+  }
+}
 
 bool ReadBoolArgument(const flutter::EncodableValue* arguments,
                       const char* key,
@@ -70,7 +87,8 @@ bool FlutterWindow::OnCreate() {
       video_renderer_registrar);
   RunnerStartupTraceMark("video renderer plugin registered");
 
-  SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  flutter_view_hwnd_ = flutter_controller_->view()->GetNativeWindow();
+  SetChildContent(flutter_view_hwnd_);
   RunnerStartupTraceMark("Flutter child content attached");
 
   bootstrap_channel_ =
@@ -99,16 +117,47 @@ bool FlutterWindow::OnCreate() {
       });
   RunnerStartupTraceMark("bootstrap channel installed");
 
+  shortcut_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), kShortcutChannelName,
+          &flutter::StandardMethodCodec::GetInstance());
+  RunnerStartupTraceMark("shortcut channel installed");
+
   return true;
 }
 
 void FlutterWindow::OnDestroy() {
+  shortcut_channel_.reset();
   bootstrap_channel_.reset();
+  flutter_view_hwnd_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
 
   Win32Window::OnDestroy();
+}
+
+void FlutterWindow::ForwardShortcutMessage(const MSG& message) {
+  if (!shortcut_channel_ ||
+      (message.hwnd != flutter_view_hwnd_ && message.hwnd != GetHandle()) ||
+      (message.message != WM_KEYDOWN && message.message != WM_SYSKEYDOWN) ||
+      !IsApplicationShortcutKey(message.wParam)) {
+    return;
+  }
+
+  const auto bits = static_cast<uint64_t>(message.lParam);
+  flutter::EncodableMap arguments;
+  arguments[flutter::EncodableValue("virtualKey")] =
+      flutter::EncodableValue(static_cast<int64_t>(message.wParam));
+  arguments[flutter::EncodableValue("scanCode")] =
+      flutter::EncodableValue(static_cast<int64_t>((bits >> 16u) & 0xffu));
+  arguments[flutter::EncodableValue("repeat")] =
+      flutter::EncodableValue(((bits >> 30u) & 1u) != 0);
+  arguments[flutter::EncodableValue("controlPressed")] =
+      flutter::EncodableValue((::GetKeyState(VK_CONTROL) & 0x8000) != 0);
+  shortcut_channel_->InvokeMethod(
+      "keyDown",
+      std::make_unique<flutter::EncodableValue>(std::move(arguments)));
 }
 
 LRESULT

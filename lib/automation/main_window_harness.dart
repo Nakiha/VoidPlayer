@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart' as wm;
 import '../app_log.dart';
 import '../l10n/app_localizations.dart';
 import '../native_player/native_player_protocol.dart';
+import '../windows/win32ffi.dart';
 import '../widgets/analysis_overlay_controls.dart';
 import '../widgets/media_header.dart';
 import 'capture_metrics.dart';
@@ -685,6 +686,38 @@ class MainWindowTestHarness {
     await Future<void>.delayed(const Duration(milliseconds: 120));
   }
 
+  Future<void> pressKeyWin32Message(String key) async {
+    final normalized = key.trim().toLowerCase();
+    final virtualKey = switch (normalized) {
+      'space' => 0x20,
+      'left' || 'arrowleft' => 0x25,
+      'right' || 'arrowright' => 0x27,
+      'escape' || 'esc' => 0x1b,
+      'f11' => 0x7a,
+      'm' => 0x4d,
+      'o' => 0x4f,
+      _ => throw ArgumentError.value(key, 'key', 'unsupported Win32 key'),
+    };
+    final root = Win32FFI.findCurrentMainWindow();
+    final hwnd = nativeFlutterChildWindow(root);
+    if (hwnd == 0) {
+      throw StateError('Current-process Flutter child HWND was not found');
+    }
+    log.info(
+      'Test action: PRESS_KEY_WIN32_MESSAGE key=$normalized '
+      'root=0x${root.toRadixString(16)} child=0x${hwnd.toRadixString(16)} '
+      'vk=0x${virtualKey.toRadixString(16)}',
+    );
+    if (!nativePostKeyDown(hwnd, virtualKey)) {
+      throw StateError('Failed to post WM_KEYDOWN');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    if (!nativePostKeyUp(hwnd, virtualKey)) {
+      throw StateError('Failed to post WM_KEYUP');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+  }
+
   Future<void> clickToolbarMediaInfoNative() async {
     final root = WidgetsBinding.instance.rootElement;
     if (root == null) {
@@ -1041,6 +1074,59 @@ class MainWindowTestHarness {
         kind: PointerDeviceKind.mouse,
       ),
     );
+    await Future<void>.delayed(stepDelay);
+  }
+
+  Future<void> dragViewportWin32Message(
+    Offset delta, {
+    int steps = 24,
+    Duration stepDelay = const Duration(milliseconds: 16),
+  }) async {
+    final context = viewportKey.currentContext;
+    if (context == null) {
+      throw StateError('Viewport is not mounted');
+    }
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      throw StateError('Viewport has no render box');
+    }
+
+    final root = Win32FFI.findCurrentMainWindow();
+    final hwnd = nativeFlutterChildWindow(root);
+    if (hwnd == 0) {
+      throw StateError('Flutter child HWND was not found');
+    }
+    final scale = View.of(context).devicePixelRatio;
+    final count = steps <= 0 ? 1 : steps;
+    final startLogical = renderObject.localToGlobal(
+      Offset(renderObject.size.width / 2, renderObject.size.height / 2),
+    );
+    final endLogical = startLogical + delta;
+    Offset toPhysical(Offset point) => point * scale;
+    final start = toPhysical(startLogical);
+    final end = toPhysical(endLogical);
+
+    log.info(
+      'Test action: DRAG_VIEWPORT_WIN32_MESSAGE '
+      'root=0x${root.toRadixString(16)} child=0x${hwnd.toRadixString(16)} '
+      'delta=(${delta.dx.toStringAsFixed(1)}, ${delta.dy.toStringAsFixed(1)}) '
+      'steps=$count stepMs=${stepDelay.inMilliseconds} dpr=$scale',
+    );
+    if (!nativePostRightButtonDown(hwnd, start.dx.round(), start.dy.round())) {
+      throw StateError('Failed to post WM_RBUTTONDOWN');
+    }
+    await Future<void>.delayed(stepDelay);
+    for (var i = 1; i <= count; i++) {
+      final t = i / count;
+      final next = Offset.lerp(start, end, t)!;
+      if (!nativePostRightButtonMove(hwnd, next.dx.round(), next.dy.round())) {
+        throw StateError('Failed to post WM_MOUSEMOVE');
+      }
+      await Future<void>.delayed(stepDelay);
+    }
+    if (!nativePostRightButtonUp(hwnd, end.dx.round(), end.dy.round())) {
+      throw StateError('Failed to post WM_RBUTTONUP');
+    }
     await Future<void>.delayed(stepDelay);
   }
 

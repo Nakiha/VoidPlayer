@@ -53,7 +53,11 @@ bool WindowsNativePlayer::initialized() const {
 void WindowsNativePlayer::play() { VP_WINDOWS_PLAYER_VOID(play); }
 void WindowsNativePlayer::pause() { VP_WINDOWS_PLAYER_VOID(pause); }
 void WindowsNativePlayer::seek(int64_t pts_us, int64_t request_id) {
-  VP_WINDOWS_PLAYER_VOID(seek, pts_us, SeekType::Keyframe, request_id);
+  // User-visible timeline seeks have the same exact-frame contract as the
+  // macOS facade. Keyframe seek is only a decoder entry point inside the
+  // shared exact-seek pipeline; exposing it here leaves the clock at the
+  // requested time while presenting an earlier keyframe.
+  VP_WINDOWS_PLAYER_VOID(seek, pts_us, SeekType::Exact, request_id);
 }
 void WindowsNativePlayer::step_forward() {
   VP_WINDOWS_PLAYER_VOID(step_forward);

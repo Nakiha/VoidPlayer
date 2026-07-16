@@ -66,9 +66,7 @@ class AutomationProbe {
       throw StateError('Native log file not found: ${file.path}');
     }
     final text = file.readAsStringSync();
-    return RegExp(
-      RegExp.escape('[VideoRendererPlugin] seek:'),
-    ).allMatches(text).length;
+    return countNativeSeekRequests(text);
   }
 
   static double bytesToMb(int bytes) => bytes / 1024.0 / 1024.0;
@@ -140,4 +138,10 @@ class AutomationProbe {
       throw AssertionError('Dedicated GPU memory metric is unavailable');
     }
   }
+}
+
+int countNativeSeekRequests(String nativeLog) {
+  return RegExp(
+    RegExp.escape('[Renderer] seek_internal: target='),
+  ).allMatches(nativeLog).length;
 }

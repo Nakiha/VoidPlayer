@@ -43,6 +43,7 @@ class WindowsD3D11PresentationBackend final : public PresentationBackend {
   void* native_render_device() const override { return device_.Get(); }
   PresentationBackendStats presentation_stats() const override;
   PresentationBackendDiagnostics diagnostics() const override;
+  uint64_t last_draw_blocking_wait_us() const override;
   bool copy_last_frame_info(PresentationBackendFrameInfo* out) const override;
   bool capture_front_buffer(std::vector<uint8_t>& bgra,
                             int& width,
@@ -105,6 +106,7 @@ class WindowsD3D11PresentationBackend final : public PresentationBackend {
   uint64_t overlay_missed_count_ = 0;
   uint64_t overlay_gpu_failure_count_ = 0;
   uint64_t overlay_diagnostic_count_ = 0;
+  uint64_t last_draw_blocking_wait_us_ = 0;
 };
 
 std::unique_ptr<PresentationBackend> create_windows_presentation_backend();

@@ -37,31 +37,73 @@ void main() {
     expect(snapshot.reason, 'native-render');
   });
 
-  test(
-    'uses native compositor timings for retained native pressure',
-    () {
-      final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
-        'trackCount': 1,
-        'isPlaying': true,
-        'displayRefreshHzEstimate': 120.0,
-        'presentationBackend': 'native-metal-cvpixelbuffer-target',
-        'nativeCompositorBackend': 'metal',
-        'nativeCompositorCompositeHz': 120.0,
-        'nativeRendererDrawP95Us': 12000.0,
-        'nativeRendererDrawBackendP95Us': 11000.0,
-        'metalCommandCompletionP95Us': 10500.0,
-        'nativeCompositorFrameCpuP95Ms': 0.28,
-        'nativeCompositorBackendSubmitCpuP95Ms': 0.19,
-        'nativeCompositorBackendCompletionP95Ms': 3.85,
-      });
+  test('ignores blocking Windows compositor callback in draw pressure', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 3,
+      'isPlaying': true,
+      'presentationBackend': 'windows-native-d3d11',
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 120.0,
+      'nativeCompositorEnabled': true,
+      'nativeCompositorCompositeHz': 120.0,
+      'nativeRendererDrawP95Us': 16700.0,
+      'nativeRendererDrawWorkP95Us': 1300.0,
+      'nativeRendererDrawCallbackP95Us': 8300.0,
+      'nativeRendererDrawBlockingWaitP95Us': 7100.0,
+      'nativeRendererDrawBackendP95Us': 8300.0,
+      'nativeRendererDrawBackendWorkP95Us': 1200.0,
+    });
 
-      expect(snapshot.level, PerformanceHealthLevel.ok);
-      expect(snapshot.kind, PerformanceHealthKind.ok);
-      expect(snapshot.drawP95Us, closeTo(280.0, 0.1));
-      expect(snapshot.backendP95Us, closeTo(190.0, 0.1));
-      expect(snapshot.metalP95Us, closeTo(3850.0, 0.1));
-    },
-  );
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+    expect(snapshot.drawP95Us, 1300.0);
+    expect(snapshot.diagnosticSummary, isNot(contains('gpu-completion-high')));
+  });
+
+  test('still reports pressure from split renderer work timing', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 3,
+      'isPlaying': true,
+      'presentationBackend': 'windows-native-d3d11',
+      'displayRefreshHzEstimate': 120.0,
+      'displayTickHz': 120.0,
+      'nativeCompositorEnabled': true,
+      'nativeCompositorCompositeHz': 120.0,
+      'nativeRendererDrawP95Us': 20500.0,
+      'nativeRendererDrawWorkP95Us': 12200.0,
+      'nativeRendererDrawCallbackP95Us': 8300.0,
+      'nativeRendererDrawBlockingWaitP95Us': 0.0,
+      'nativeRendererDrawBackendP95Us': 11100.0,
+      'nativeRendererDrawBackendWorkP95Us': 11100.0,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.warning);
+    expect(snapshot.kind, PerformanceHealthKind.nativeRenderPressure);
+    expect(snapshot.drawP95Us, 12200.0);
+  });
+
+  test('uses native compositor timings for retained native pressure', () {
+    final snapshot = PerformanceHealthSnapshot.fromDiagnostics({
+      'trackCount': 1,
+      'isPlaying': true,
+      'displayRefreshHzEstimate': 120.0,
+      'presentationBackend': 'native-metal-cvpixelbuffer-target',
+      'nativeCompositorBackend': 'metal',
+      'nativeCompositorCompositeHz': 120.0,
+      'nativeRendererDrawP95Us': 12000.0,
+      'nativeRendererDrawBackendP95Us': 11000.0,
+      'metalCommandCompletionP95Us': 10500.0,
+      'nativeCompositorFrameCpuP95Ms': 0.28,
+      'nativeCompositorBackendSubmitCpuP95Ms': 0.19,
+      'nativeCompositorBackendCompletionP95Ms': 3.85,
+    });
+
+    expect(snapshot.level, PerformanceHealthLevel.ok);
+    expect(snapshot.kind, PerformanceHealthKind.ok);
+    expect(snapshot.drawP95Us, closeTo(280.0, 0.1));
+    expect(snapshot.backendP95Us, closeTo(190.0, 0.1));
+    expect(snapshot.metalP95Us, closeTo(3850.0, 0.1));
+  });
 
   test('classifies queued GPU completion latency as display pressure', () {
     final snapshot = PerformanceHealthSnapshot.fromDiagnostics({

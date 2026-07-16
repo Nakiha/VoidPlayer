@@ -217,6 +217,9 @@ Current shared renderer ownership is split as follows:
 - `RendererLayoutState`, `RendererTimelineController`, `RendererEventBus`, and
   `PresentationMetricsStore` own layout revisions, playback/seek/loop state,
   native events, and presentation metrics respectively.
+  Presentation timings retain end-to-end totals for diagnostics, but health
+  classification consumes per-sample work timings after callback/compositor
+  pacing and explicit backend completion waits have been separated out.
 
 - Render loop / tick / present scheduling: shared renderer code.
 - Track lifecycle, layout, seek, loop, EOF settle, and refresh completion: shared

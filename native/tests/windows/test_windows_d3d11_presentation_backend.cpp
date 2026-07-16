@@ -90,6 +90,7 @@ TEST_CASE("Windows D3D11 backend publishes a complete runner-owned target",
   snapshot.background_color[2] = 0.75f;
   snapshot.background_color[3] = 1.00f;
   REQUIRE(backend->draw_frame(snapshot, {}));
+  REQUIRE(backend->last_draw_blocking_wait_us() > 0);
 
   PresentationBackendFrameInfo frame_info;
   REQUIRE(backend->copy_last_frame_info(&frame_info));

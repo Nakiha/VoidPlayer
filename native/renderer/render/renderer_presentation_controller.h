@@ -51,6 +51,7 @@ struct RendererPresentationDrawResult {
     bool device_lost = false;
     bool frame_info_available = false;
     uint64_t backend_us = 0;
+    uint64_t backend_blocking_wait_us = 0;
     PresentationBackendFrameInfo frame_info{};
     RendererFrameCallback frame_callback;
     std::string failure_error;

@@ -1329,8 +1329,19 @@ void VideoRendererPlugin::HandleMethodCall(
           EncodableValue(SaturatingInt64(memory.packet_queue_bytes));
       diagnostics[EncodableValue("nativeRendererDrawP95Us")] =
           EncodableValue(SaturatingInt64(renderer_metrics.draw_p95_us));
+      diagnostics[EncodableValue("nativeRendererDrawWorkP95Us")] =
+          EncodableValue(SaturatingInt64(renderer_metrics.draw_work_p95_us));
+      diagnostics[EncodableValue("nativeRendererDrawCallbackP95Us")] =
+          EncodableValue(
+              SaturatingInt64(renderer_metrics.draw_callback_p95_us));
+      diagnostics[EncodableValue("nativeRendererDrawBlockingWaitP95Us")] =
+          EncodableValue(
+              SaturatingInt64(renderer_metrics.draw_blocking_wait_p95_us));
       diagnostics[EncodableValue("nativeRendererDrawBackendP95Us")] =
           EncodableValue(SaturatingInt64(renderer_metrics.draw_backend_p95_us));
+      diagnostics[EncodableValue("nativeRendererDrawBackendWorkP95Us")] =
+          EncodableValue(
+              SaturatingInt64(renderer_metrics.draw_backend_work_p95_us));
       diagnostics[EncodableValue("nativeTargetStagingAllocationCount")] =
           EncodableValue(
               SaturatingInt64(stats.staging_allocation_count));

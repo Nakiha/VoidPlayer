@@ -338,6 +338,11 @@ WindowsD3D11PresentationBackend::diagnostics() const {
   return diagnostics;
 }
 
+uint64_t WindowsD3D11PresentationBackend::last_draw_blocking_wait_us() const {
+  std::lock_guard<std::mutex> lock(state_mutex_);
+  return last_draw_blocking_wait_us_;
+}
+
 bool WindowsD3D11PresentationBackend::copy_last_frame_info(
     PresentationBackendFrameInfo* out) const {
   if (!out) {
@@ -528,6 +533,7 @@ bool WindowsD3D11PresentationBackend::draw_frame(
   {
     std::lock_guard<std::mutex> lock(state_mutex_);
     available = initialized_ && context_ && !device_lost_;
+    last_draw_blocking_wait_us_ = 0;
   }
   if (!available) {
     set_error("Windows D3D11 backend is unavailable");
@@ -657,10 +663,19 @@ bool WindowsD3D11PresentationBackend::draw_frame(
   // context, so D3D11 command ordering already places its sample after this
   // draw. The ring slot remains retained until the compositor's GPU query
   // completes; an intermediate CPU wait here only serializes interaction.
-  if (!projection_only_draw && !wait_for_gpu("draw_frame")) {
-    target_ring_.complete_draw_target(target.Get(), false);
-    record_draw_failure();
-    return false;
+  uint64_t blocking_wait_us = 0;
+  if (!projection_only_draw) {
+    const auto wait_start = std::chrono::steady_clock::now();
+    const bool wait_succeeded = wait_for_gpu("draw_frame");
+    blocking_wait_us = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - wait_start)
+            .count());
+    if (!wait_succeeded) {
+      target_ring_.complete_draw_target(target.Get(), false);
+      record_draw_failure();
+      return false;
+    }
   }
   if (!target_ring_.complete_draw_target(target.Get(), true)) {
     set_error("Windows D3D11 target completion state mismatch");
@@ -698,6 +713,7 @@ bool WindowsD3D11PresentationBackend::draw_frame(
     last_completed_target_ = target;
     last_frame_info_ = frame_info;
     last_frame_info_available_ = true;
+    last_draw_blocking_wait_us_ = blocking_wait_us;
     ++draw_count_;
     consecutive_draw_failures_ = 0;
     last_error_.clear();

@@ -147,8 +147,20 @@ class PerformanceHealthSnapshot {
       diagnostics['nativeCompositorBackend'],
     );
     final rawDrawP95Us = _doubleValue(diagnostics['nativeRendererDrawP95Us']);
+    final hasRawDrawWorkP95Us = diagnostics.containsKey(
+      'nativeRendererDrawWorkP95Us',
+    );
+    final rawDrawWorkP95Us = _doubleValue(
+      diagnostics['nativeRendererDrawWorkP95Us'],
+    );
     final rawBackendP95Us = _doubleValue(
       diagnostics['nativeRendererDrawBackendP95Us'],
+    );
+    final hasRawBackendWorkP95Us = diagnostics.containsKey(
+      'nativeRendererDrawBackendWorkP95Us',
+    );
+    final rawBackendWorkP95Us = _doubleValue(
+      diagnostics['nativeRendererDrawBackendWorkP95Us'],
     );
     final rawMetalP95Us = _doubleValue(
       diagnostics['metalCommandCompletionP95Us'],
@@ -164,9 +176,13 @@ class PerformanceHealthSnapshot {
         1000.0;
     final drawP95Us = usingNativeMetalCompositor && retainedDrawP95Us > 0
         ? retainedDrawP95Us
+        : hasRawDrawWorkP95Us
+        ? rawDrawWorkP95Us
         : rawDrawP95Us;
     final backendP95Us = usingNativeMetalCompositor && retainedBackendP95Us > 0
         ? retainedBackendP95Us
+        : hasRawBackendWorkP95Us
+        ? rawBackendWorkP95Us
         : rawBackendP95Us;
     final metalP95Us = usingNativeMetalCompositor && retainedMetalP95Us > 0
         ? retainedMetalP95Us

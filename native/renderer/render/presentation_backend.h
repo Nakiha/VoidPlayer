@@ -78,6 +78,9 @@ public:
     virtual void* native_render_command_queue() const { return nullptr; }
     virtual PresentationBackendStats presentation_stats() const { return {}; }
     virtual PresentationBackendDiagnostics diagnostics() const { return {}; }
+    // Time spent in an explicit synchronous backend wait during the most
+    // recent draw. This is pacing/synchronization, not CPU submission work.
+    virtual uint64_t last_draw_blocking_wait_us() const { return 0; }
     virtual bool copy_last_frame_info(PresentationBackendFrameInfo*) const { return false; }
     virtual bool capture_front_buffer(std::vector<uint8_t>&, int&, int&) { return false; }
     virtual bool capture_front_buffer_region(int,

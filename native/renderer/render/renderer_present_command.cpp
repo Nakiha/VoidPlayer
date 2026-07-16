@@ -41,6 +41,7 @@ void finish_presented_draw(
     bool drew,
     const char* frame_failure_error,
     uint64_t backend_us,
+    uint64_t backend_blocking_wait_us,
     const PresentationBackendFrameInfo* completed_frame_info) {
     if (context.shutting_down->load(std::memory_order_acquire)) {
         return;
@@ -82,8 +83,11 @@ void finish_presented_draw(
         completed_frame_info,
     });
 
+    uint64_t callback_us = 0;
     if (completion.callback_published) {
+        const auto callback_start = std::chrono::steady_clock::now();
         frame_callback(completion.callback_frame_info_ptr);
+        callback_us += elapsed_us_since(callback_start);
     }
     if (completion.release_discarded_target) {
         context.presentation->release_offscreen_target(reinterpret_cast<void*>(
@@ -104,11 +108,14 @@ void finish_presented_draw(
         }
     }
     if (completion.notify_frame_failure) {
+        const auto callback_start = std::chrono::steady_clock::now();
         frame_failure_callback(completion.frame_failure_error);
+        callback_us += elapsed_us_since(callback_start);
     }
 
     const auto total_us = elapsed_us_since(profiler_start);
-    context.metrics->record_draw_timing(total_us, backend_us);
+    context.metrics->record_draw_timing(
+        total_us, backend_us, callback_us, backend_blocking_wait_us);
     log_viewport_draw_trace(source,
                             snapshot,
                             snapshot_layout_revision,
@@ -190,6 +197,7 @@ RendererPresentationSubmitDispatchHooks dispatch_hooks(
                 completion.draw.drew,
                 completion.draw.failure_error.c_str(),
                 completion.draw.backend_us,
+                completion.draw.backend_blocking_wait_us,
                 completion.draw.frame_info_available
                     ? &completion.draw.frame_info
                     : nullptr);
@@ -301,6 +309,7 @@ void RendererPresentCommandProcessor::present_frame(
                 completion.success,
                 completion.error,
                 completion.backend_us,
+                0,
                 completion.frame_info);
         };
     RendererPresentationDrawResult sync_draw_result;
@@ -420,6 +429,7 @@ bool RendererPresentCommandProcessor::redraw_layout(
                                   completion.success,
                                   completion.error,
                                   completion.backend_us,
+                                  0,
                                   completion.frame_info);
         };
     return context.presentation.submit_and_dispatch(

@@ -375,6 +375,8 @@ RendererPresentationDrawResult RendererPresentationController::execute_draw(
     }
     if (backend_) {
         if (result.drew && !result.async_draw_submitted) {
+            result.backend_blocking_wait_us =
+                backend_->last_draw_blocking_wait_us();
             result.frame_info_available =
                 backend_->copy_last_frame_info(&result.frame_info);
         }

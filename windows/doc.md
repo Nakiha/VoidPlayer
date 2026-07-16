@@ -105,6 +105,11 @@ pointer/MethodChannel 的 Win32 UI 消息泵，也不允许不同 callback 来�
 若 shared renderer 在 draw 完成后判定 layout revision 已过期，则不发布旧帧，并在 shared
 presentation completion 边界直接回收该 completed target，避免静默耗尽 ring。
 
+presentation timing 保留端到端 `total` 供诊断，但性能健康判定只使用逐样本拆出的
+`work`：frame callback/compositor `Present(1)` 与 backend 显式 GPU completion wait 分别
+记为 callback/wait，不得再次算作 CPU/GPU 提交压力。这样同步到 60/120Hz 显示节拍不会
+制造压力告警；真正过慢的 backend work、可见掉帧和 backpressure 仍由独立指标告警。
+
 1. Windows presentation 策略只通过 `windows_presentation_backend.*` 的 D3D11 backend 边界进入。
 2. runner 负责窗口、target ring、surface lease 和最终合成，不接管 Flutter frame 调度。
    与 macOS `MacOSNativeCompositorView` 同构：最终 compositor 不参与 hit-test，

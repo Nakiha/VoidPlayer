@@ -106,38 +106,6 @@ HwDecodeInitResult D3D11VAProvider::init(const HwDecodeInitParams& params) {
     HwDecodeInitResult result;
     shutdown();
 
-    if (params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice) {
-        AvBufferRefOwner device_ref;
-        const int status = av_hwdevice_ctx_create(
-            device_ref.put(), AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0);
-        if (status < 0 || !device_ref) {
-            spdlog::error(
-                "[D3D11VA] FFmpeg-owned device creation failed for {}: {}",
-                avcodec_get_name(probed_codec_id_),
-                status);
-            return result;
-        }
-
-        auto* device_context = reinterpret_cast<AVHWDeviceContext*>(device_ref->data);
-        auto* d3d11_context =
-            reinterpret_cast<AVD3D11VADeviceContext*>(device_context->hwctx);
-        owned_device_ = d3d11_context->device;
-        device_context_ = d3d11_context->device_context;
-        uses_shared_device_ = true;
-
-        result.success = true;
-        result.hw_device_ctx = device_ref.release();
-        result.hw_pix_fmt = probed_pixel_format_ != AV_PIX_FMT_NONE
-            ? probed_pixel_format_
-            : AV_PIX_FMT_D3D11;
-        result.type = HwDecodeType::D3D11VA;
-        spdlog::info(
-            "[D3D11VA] FFmpeg-owned hwdownload device initialized ({}x{})",
-            params.width,
-            params.height);
-        return result;
-    }
-
     ID3D11Device* decode_device = nullptr;
     if (params.device_mode == DecodeDeviceMode::SharedRenderDevice) {
         decode_device = static_cast<ID3D11Device*>(params.render_device);

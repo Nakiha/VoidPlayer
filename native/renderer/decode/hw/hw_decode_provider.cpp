@@ -59,14 +59,16 @@ std::vector<HwDecodeProviderDescriptor> registered_hw_decode_providers() {
 
 bool provider_matches_request(const HwDecodeProviderDescriptor& provider,
                               const HwDecodeInitParams& params) {
+    if (params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice) {
+        return provider.allow_ffmpeg_owned_hwdownload;
+    }
     if (provider.backend == params.backend) {
         return true;
     }
     if (provider.secondary_backend == params.backend) {
         return true;
     }
-    return provider.allow_ffmpeg_owned_hwdownload &&
-           params.device_mode == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
+    return false;
 }
 
 } // namespace

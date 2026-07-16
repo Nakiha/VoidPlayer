@@ -16,8 +16,6 @@ extern "C" {
 namespace vr {
 
 namespace {
-constexpr int kRendererOwnedHwExtraFrames = 0;
-
 uint64_t estimate_av_yuv_surface_bytes(int width, int height, AVPixelFormat format) {
     if (width <= 0 || height <= 0) {
         return 0;
@@ -204,16 +202,6 @@ bool DecodeThread::enable_hardware_decode(DecodeDeviceMode mode,
     // Set hw_device_ctx on codec context BEFORE opening
     codec_ctx_->hw_device_ctx = av_buffer_ref(hw_device_ctx_.get());
 
-    // Increase the hw frame pool only when decoded hardware surfaces can be
-    // held by the render queue. Hwdownload paths release decoder surfaces
-    // immediately after transfer; forcing a large hardware pool there is both
-    // unnecessary and can produce black transfer frames on some drivers.
-    if (hardware_surfaces_are_renderer_owned()) {
-        codec_ctx_->extra_hw_frames = kRendererOwnedHwExtraFrames;
-        spdlog::info("[DecodeThread] Renderer-owned hardware frame pool extra_hw_frames={}",
-                     codec_ctx_->extra_hw_frames);
-    }
-
     // NOTE: We intentionally do NOT create hw_frames_ctx here.
     // FFmpeg's internal ff_decode_get_hw_frames_ctx() will create one
     // automatically when the codec is opened with hw_device_ctx set.
@@ -346,10 +334,6 @@ const AVCodec* DecodeThread::preferred_software_decoder() const {
 bool DecodeThread::hardware_output_downloads_to_cpu() const {
     return hw_enabled_ &&
            decode_device_mode_ == DecodeDeviceMode::FfmpegOwnedHwDownloadDevice;
-}
-
-bool DecodeThread::hardware_surfaces_are_renderer_owned() const {
-    return hw_enabled_ && !hardware_output_downloads_to_cpu();
 }
 
 bool DecodeThread::start() {

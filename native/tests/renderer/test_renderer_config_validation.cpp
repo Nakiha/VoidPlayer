@@ -121,6 +121,11 @@ TEST_CASE("Hardware decode compatibility follows active native backends",
         DecodeDeviceMode::IndependentDevice);
     REQUIRE(d3d12_names.empty());
 
+    const auto d3d11_hwdownload_names = compatible_hw_decode_provider_names(
+        RenderBackendKind::NativeD3D11,
+        DecodeDeviceMode::FfmpegOwnedHwDownloadDevice);
+    REQUIRE(d3d11_hwdownload_names.empty());
+
     const auto metal_hwdownload_names = compatible_hw_decode_provider_names(
         RenderBackendKind::Metal,
         DecodeDeviceMode::FfmpegOwnedHwDownloadDevice);

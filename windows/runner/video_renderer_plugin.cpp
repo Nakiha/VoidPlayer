@@ -1342,6 +1342,9 @@ void VideoRendererPlugin::HandleMethodCall(
                                 : int64_t{0})},
         {EncodableValue("isPlaying"),
          EncodableValue(player_ && player_->is_playing())},
+        {EncodableValue("hardwareDecodeActive"), EncodableValue(false)},
+        {EncodableValue("hardwareDecodeDownloadsToCpu"),
+         EncodableValue(false)},
         {EncodableValue("processRssBytes"),
          EncodableValue(SaturatingInt64(process_memory.rss_bytes))},
         {EncodableValue("processPrivateBytes"),
@@ -1367,6 +1370,15 @@ void VideoRendererPlugin::HandleMethodCall(
       const auto renderer_metrics = player_->presentation_metrics();
       const auto stats = player_->presentation_stats();
       const auto backend = player_->presentation_diagnostics();
+      const bool hardware_decode_active =
+          std::any_of(memory.tracks.begin(), memory.tracks.end(),
+                      [](const auto& track) { return track.hardware_enabled; });
+      const bool hardware_decode_downloads_to_cpu =
+          std::any_of(memory.tracks.begin(), memory.tracks.end(),
+                      [](const auto& track) {
+                        return track.hardware_enabled &&
+                               track.hardware_download_to_cpu;
+                      });
       auto track_diagnostics =
           TrackDiagnosticList(*player_, tracks, track_perf, memory);
       uint64_t dedicated_gpu_usage =
@@ -1380,6 +1392,10 @@ void VideoRendererPlugin::HandleMethodCall(
           EncodableValue(std::move(track_diagnostics));
       diagnostics[EncodableValue("nativeTrackDiagnosticCount")] =
           EncodableValue(static_cast<int64_t>(track_perf.size()));
+      diagnostics[EncodableValue("hardwareDecodeActive")] =
+          EncodableValue(hardware_decode_active);
+      diagnostics[EncodableValue("hardwareDecodeDownloadsToCpu")] =
+          EncodableValue(hardware_decode_downloads_to_cpu);
       diagnostics[EncodableValue("dedicatedGpuUsageBytes")] =
           EncodableValue(SaturatingInt64(dedicated_gpu_usage));
       diagnostics[EncodableValue("cpuFrameMemoryBytes")] =

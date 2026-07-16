@@ -43,7 +43,7 @@ File
 
 | 平台 | Provider | 常规用途 |
 | --- | --- | --- |
-| Windows | D3D11VA | H.264/H.265 renderer-owned source surface；AV1/VP9 可走 hwdownload fallback |
+| Windows | D3D11VA | H.264/H.265/AV1/VP9 使用独立 decode device，并复制为稳定 shared snapshot |
 | macOS | VideoToolbox | H.264/H.265 CVPixelBuffer preservation；unsupported codec/format 显式 fallback |
 
 Provider 只决定 decoder device 与 hardware frame output。它不决定播放时间、seek、loop、layout 或 track lifecycle。
@@ -55,7 +55,7 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 | Mode | 用途 |
 | --- | --- |
 | `IndependentDevice` | 默认稳定路径；Windows 创建独立 D3D11 decode device，macOS 创建 VideoToolbox context |
-| `FfmpegOwnedHwDownloadDevice` | Windows AV1/VP9 等 hwdownload 路径，让 FFmpeg 自行管理 hardware context |
+| `FfmpegOwnedHwDownloadDevice` | provider-specific 诊断路径；当前仅由 macOS VideoToolbox hwdownload smoke 使用 |
 | `SharedRenderDevice` | 诊断/实验路径，不作为常规播放默认值 |
 
 `avcodec_open2()` 延迟到 `start()`，确保 `hw_device_ctx`、`get_format` 和 frame pool 配置已完成。
@@ -70,8 +70,7 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 | 路径 | 数据流 | 说明 |
 | --- | --- | --- |
 | Software fallback | `AVFrame(YUV/NV12/P010) -> CPU planar/NV12/P010 TextureFrame` | 显式 fallback；不依赖 libswscale/libyuv 做通用转换 |
-| Windows D3D11VA direct | `AVFrame(D3D11VA) -> D3D11 TextureFrame` | D3D11 backend 复制/采样 renderer-owned source surface |
-| Windows hwdownload | `AVFrame(D3D11VA) -> av_hwframe_transfer_data -> CPU NV12/P010` | 用于需要稳定 CPU upload fallback 的 codec/driver 路径 |
+| Windows D3D11VA snapshot | `AVFrame(D3D11VA) -> stable shared D3D11 TextureFrame` | 默认路径；从 decoder array slice GPU-copy 到 renderer-owned snapshot 后交给 D3D11 backend |
 | macOS VideoToolbox zero-copy | `AVFrame(VideoToolbox) -> CVPixelBuffer TextureFrame` | native Metal backend 通过 IOSurface/CVMetalTextureCache 上屏 |
 | macOS fallback package | `AVFrame -> CPU YUV/BGRA package` | VVC/software 或 unsupported format 的 explicit native Metal package path |
 
@@ -88,9 +87,9 @@ Provider 只决定 decoder device 与 hardware frame output。它不决定播放
 
 Zero-copy 是 presentation backend 能直接消费 decoder-owned frame 时的优化，不改变 decode/track/playback policy。
 
-- Windows：D3D11VA surface 由 D3D11 backend 消费；必要时复制到 renderer-owned source texture，避免 decoder pool lifetime 问题。
+- Windows：D3D11VA surface GPU-copy 到 renderer-owned shared snapshot，再由 D3D11 backend 消费，隔离 decoder pool lifetime。
 - macOS：VideoToolbox `CVPixelBuffer` / IOSurface 由 native Metal backend 消费；fallback reason 必须可见。
-- hwdownload fallback：仍可使用 hardware decoder，但 presentation 前下载到 CPU。
+- VideoToolbox hwdownload smoke 仍可使用 hardware decoder 后下载到 CPU，但不属于 Windows 产品上屏路径。
 - software fallback：decoder 本身是 software，presentation 仍走平台 native backend。
 
 ## Seek 内的解码行为

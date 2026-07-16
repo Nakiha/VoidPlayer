@@ -462,8 +462,11 @@ DecodeThread::DecodeLoopStepResult DecodeThread::process_decode_packet(
     // Hardware HEVC exact seek is sensitive to burst-feeding packets while
     // paused. Playback naturally paces this path through render/clock
     // consumption; mirror a tiny amount of that pacing during drain mode.
-    if (should_pace_hardware_exact_seek_decode(
-            exact_seek_target_us_ >= 0, hw_enabled_)) {
+    const bool hevc_hardware_decode =
+        hw_enabled_ && codec_params_ &&
+        codec_params_->codec_id == AV_CODEC_ID_HEVC;
+    if (should_pace_hevc_hardware_exact_seek_decode(
+            exact_seek_target_us_ >= 0, hevc_hardware_decode)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 

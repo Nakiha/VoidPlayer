@@ -141,9 +141,6 @@ private:
     /// Whether hardware frames are downloaded before being published.
     bool hardware_output_downloads_to_cpu() const;
 
-    /// Whether decoded hardware surfaces can be held by the render queue.
-    bool hardware_surfaces_are_renderer_owned() const;
-
     /// Drain remaining frames from the codec (avcodec_send_packet(nullptr) + receive loop).
     /// If target_us >= 0, frames with pts >= target_us are added to exact seek candidates.
     /// Sets eof_flushed_ = true.

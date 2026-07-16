@@ -83,9 +83,9 @@ bool should_publish_exact_seek_preview_after_collect(
     bool exact_seek_active,
     bool preview_window_ready);
 
-bool should_pace_hardware_exact_seek_decode(
+bool should_pace_hevc_hardware_exact_seek_decode(
     bool exact_seek_active,
-    bool hardware_decode);
+    bool hevc_hardware_decode);
 
 bool should_complete_buffering_eof_preroll(size_t buffered_frames);
 

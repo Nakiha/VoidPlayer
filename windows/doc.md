@@ -107,6 +107,9 @@ pointer / wheel / layout intent
 因此 24/30/60fps 视频不会限制 zoom、pan、split 等交互的上屏频率。runner 从当前
 monitor mode 读取 nominal refresh 仅用于 diagnostics；真正的节拍由 compositor 的
 DXGI `Present(1)` 提供。在 120Hz 显示器上，连续交互可约每 8.3ms 提交一次。D3D11
+first-frame gate 激活前，layout intent 只更新 shared renderer 状态，不提交尚无 cached
+source frame 的交互重投影；首张 preview 会直接使用最新 layout，且不会把初始化等待误计为
+presentation draw failure。D3D11
 viewport backend 为每个 track 保留 presentation-device source cache：同一视频帧的
 交互重投影不重复跨 D3D11VA device 复制，只更新 layout shader constants 并绘制新
 target。Windows 与 macOS 都使用 6 个 native presentation targets；短暂 ring

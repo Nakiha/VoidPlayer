@@ -1561,7 +1561,17 @@ void VideoRendererPlugin::HandleMethodCall(
           layout.pixel_size_mode);
     }
     player_->apply_interaction_layout(layout);
-    if (viewport_presentation_controller_) {
+    bool native_viewport_active = false;
+    {
+      std::lock_guard<std::mutex> lock(presentation_state_mutex_);
+      native_viewport_active =
+          first_frame_activation_gate_.active(presentation_session_);
+    }
+    if (viewport_presentation_controller_ && native_viewport_active) {
+      // Before first-frame activation there is no cached source frame to
+      // reproject. The shared renderer has already retained this layout and
+      // will use it for the initial preview; submitting an interaction draw
+      // here only records a synthetic backend failure during startup.
       viewport_presentation_controller_->RequestLayoutFrame();
     }
     result->Success();

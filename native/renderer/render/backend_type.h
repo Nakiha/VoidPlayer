@@ -12,7 +12,7 @@ enum class RenderBackendKind {
 
 inline constexpr RenderBackendKind default_render_backend_kind() {
 #ifdef _WIN32
-    return RenderBackendKind::Unknown;
+    return RenderBackendKind::NativeD3D11;
 #elif defined(__APPLE__)
     return RenderBackendKind::Metal;
 #else

@@ -14,8 +14,8 @@ class PresentationBackendProvider;
 
 /// Platform-specific renderer interop values.
 /// Backends that render into a runner-owned native video layer, such as macOS
-/// Metal writing into a CVPixelBuffer/IOSurface target or future Windows
-/// D3D11/D3D12 targets, use `output`.
+/// Metal writing into a CVPixelBuffer/IOSurface target or Windows D3D11 writing
+/// into a runner-owned target ring, use `output`.
 struct RendererBackendInterop {
     RendererBackendType type = default_render_backend_kind();
     void* adapter = nullptr;

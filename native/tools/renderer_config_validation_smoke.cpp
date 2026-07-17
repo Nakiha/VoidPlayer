@@ -22,6 +22,21 @@ vr::RendererConfig valid_windowed_config() {
 } // namespace
 
 int main() {
+    const auto default_backend = vr::default_render_backend_kind();
+#ifdef _WIN32
+    if (default_backend != vr::RenderBackendKind::NativeD3D11) {
+        return fail("Windows default renderer backend is not NativeD3D11");
+    }
+#elif defined(__APPLE__)
+    if (default_backend != vr::RenderBackendKind::Metal) {
+        return fail("macOS default renderer backend is not Metal");
+    }
+#else
+    if (default_backend != vr::RenderBackendKind::Unknown) {
+        return fail("unsupported platform default renderer backend is not Unknown");
+    }
+#endif
+
     if (!vr::validate_renderer_config(valid_windowed_config()).ok) {
         return fail("valid windowed renderer config was rejected");
     }

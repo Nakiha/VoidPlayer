@@ -27,6 +27,26 @@ TEST_CASE("Renderer config validation accepts valid windowed config",
     REQUIRE(validate_renderer_config(valid_windowed_config()).ok);
 }
 
+TEST_CASE("Renderer default backend follows native platform presentation",
+          "[renderer_config][presentation_backend]") {
+    const auto default_backend = default_render_backend_kind();
+
+#ifdef _WIN32
+    REQUIRE(default_backend == RenderBackendKind::NativeD3D11);
+    auto backend = create_presentation_backend(default_backend);
+    REQUIRE(backend != nullptr);
+    REQUIRE(backend->kind() == PresentationBackendKind::NativeD3D11);
+#elif defined(__APPLE__)
+    REQUIRE(default_backend == RenderBackendKind::Metal);
+    auto backend = create_presentation_backend(default_backend);
+    REQUIRE(backend != nullptr);
+    REQUIRE(backend->kind() == PresentationBackendKind::Metal);
+#else
+    REQUIRE(default_backend == RenderBackendKind::Unknown);
+    REQUIRE(create_presentation_backend(default_backend) == nullptr);
+#endif
+}
+
 TEST_CASE("Renderer config validation rejects invalid dimensions",
           "[renderer_config]") {
     auto config = valid_windowed_config();

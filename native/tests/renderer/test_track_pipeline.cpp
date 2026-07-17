@@ -1138,16 +1138,63 @@ TEST_CASE("TrackPlaybackPacing snapshots preroll and underrun frontiers",
     manager[0]->track_buffer->advance();
     manager[0]->track_buffer->advance();
     manager[0]->track_buffer->advance();
+    auto final_frame = snapshot_track_playback_pacing(manager, 99999);
+    REQUIRE_FALSE(final_frame.starvation_risk);
+    REQUIRE(final_frame.resume_ready);
+    REQUIRE(final_frame.min_buffered_frames == 1);
+
+    REQUIRE(manager[0]->track_buffer->advance());
     auto starved = snapshot_track_playback_pacing(manager, 99999);
     REQUIRE(starved.starvation_risk);
     REQUIRE_FALSE(starved.resume_ready);
-    REQUIRE(starved.min_buffered_frames == 1);
+    REQUIRE(starved.min_buffered_frames == 0);
 
     manager[0]->packet_queue->signal_eof();
     auto eof = snapshot_track_playback_pacing(manager, 99999);
     REQUIRE(eof.all_active_tracks_eof);
     REQUIRE_FALSE(eof.starvation_risk);
     REQUIRE(eof.resume_ready);
+}
+
+TEST_CASE("TrackPlaybackPacing admits the only forward frame before waiting",
+          "[track_pipeline][playback_pacing]") {
+    TrackPipelineManager manager;
+    auto track = std::make_unique<TrackPipeline>();
+    track->track_buffer = std::make_shared<TrackBuffer>(1, 1);
+    track->packet_queue = std::make_unique<PacketQueue>();
+
+    TextureFrame frame;
+    frame.pts_us = 6000;
+    frame.duration_us = 33333;
+    frame.texture_handle = reinterpret_cast<void*>(1);
+    track->track_buffer->push_frame(frame);
+    track->track_buffer->set_state(TrackState::Ready);
+    manager[0] = std::move(track);
+
+    const auto admitted = snapshot_track_playback_pacing(manager, 6000);
+    REQUIRE(admitted.has_active_tracks);
+    REQUIRE_FALSE(admitted.preroll_blocked);
+    REQUIRE_FALSE(admitted.starvation_risk);
+    REQUIRE(admitted.resume_ready);
+    REQUIRE_FALSE(admitted.frontier_limited);
+    REQUIRE(admitted.min_buffered_frames == 1);
+
+    TextureFrame successor;
+    successor.pts_us = 39333;
+    successor.duration_us = 33333;
+    successor.texture_handle = reinterpret_cast<void*>(2);
+    manager[0]->track_buffer->push_frame(successor);
+    const auto saturated = snapshot_track_playback_pacing(manager, 6000);
+    REQUIRE(saturated.frontier_limited);
+    REQUIRE(saturated.resume_ready);
+    REQUIRE(saturated.headroom_us == saturated.high_watermark_us);
+
+    REQUIRE(manager[0]->track_buffer->advance());
+    REQUIRE(manager[0]->track_buffer->advance());
+    const auto waiting = snapshot_track_playback_pacing(manager, 39333);
+    REQUIRE(waiting.starvation_risk);
+    REQUIRE_FALSE(waiting.resume_ready);
+    REQUIRE(waiting.min_buffered_frames == 0);
 }
 
 TEST_CASE("TrackPlaybackPacing ignores tracks before positive offset start",

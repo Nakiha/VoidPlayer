@@ -114,24 +114,23 @@ PlaybackPacingSnapshot snapshot_track_playback_pacing(
 
         const auto next = track->track_buffer->peek(1);
         const int64_t interval_us = frame_interval_us(*current, next);
+        const size_t maximum_ahead_frames =
+            track->track_buffer->max_count() > 0
+                ? track->track_buffer->max_count() - 1
+                : 0;
+        const int64_t target_intervals = static_cast<int64_t>(
+            std::clamp<size_t>(maximum_ahead_frames, 1, 2));
         const int64_t high_watermark_us = std::clamp<int64_t>(
-            interval_us * 2,
+            interval_us * target_intervals,
             kMinimumHighWatermarkUs,
             kMaximumHighWatermarkUs);
 
         if (!next.has_value()) {
-            snapshot.starvation_risk = true;
-            snapshot.resume_ready = false;
-            snapshot.frontier_limited = true;
-            minimum_frontier =
-                std::min(minimum_frontier, first_global_pts);
-            if (bottleneck_fill > 0.0) {
-                bottleneck_fill = 0.0;
-                snapshot.bottleneck_slot = static_cast<int>(slot);
-                snapshot.headroom_us =
-                    std::max<int64_t>(0, first_global_pts - current_pts_us);
-                snapshot.high_watermark_us = high_watermark_us;
-            }
+            // The head frame has not been presented yet. Admit it before
+            // declaring an underrun; otherwise a one-frame preroll cannot
+            // release its slot for the decoder and pacing deadlocks. Once
+            // the renderer commits this frame, an actually empty buffer will
+            // enter the normal rebuffering path on the next evaluation.
             continue;
         }
 
@@ -153,7 +152,8 @@ PlaybackPacingSnapshot snapshot_track_playback_pacing(
             snapshot.headroom_us = headroom_us;
             snapshot.high_watermark_us = high_watermark_us;
         }
-        if (headroom_us < high_watermark_us) {
+        if (headroom_us < high_watermark_us &&
+            buffered_frames < track->track_buffer->max_count()) {
             snapshot.resume_ready = false;
         }
     }

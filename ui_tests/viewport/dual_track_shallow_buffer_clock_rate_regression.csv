@@ -1,0 +1,16 @@
+# Regression: a full high-resolution decoder queue has a deliberately shallow
+# two-frame capacity. Its instantaneous PTS headroom falls within every frame,
+# but that frame phase must not continuously slow the shared playback clock.
+@WINDOW,1600,900
+
+0.0,SET_DECODE_MODE,preferHardware
+0.1,ADD_MEDIA,resources/video/h265_10s_1920x1080.mp4
+1.8,ASSERT_TRACK_COUNT,1
+1.9,ADD_MEDIA,resources/video/mhw_hevc_fullrange_bt709_3s.mp4
+4.0,ASSERT_TRACK_COUNT,2
+4.1,PLAY
+4.3,WAIT_PLAYING,2000
+6.1,ASSERT_POSITION_RANGE,1500000,2400000
+6.2,ASSERT_NATIVE_DIAGNOSTIC_INT_RANGE,effectivePlaybackSpeedX1000,990,1010
+6.3,PAUSE
+6.5,QUIT,0

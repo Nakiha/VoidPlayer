@@ -18,13 +18,19 @@ double PlaybackPacingController::choose_effective_speed(
     if (requested_speed <= 0.0 ||
         !allow_adaptive_speed ||
         !snapshot.frontier_limited ||
-        snapshot.high_watermark_us <= 0) {
+        snapshot.bottleneck_target_frames <= 1) {
         return std::max(requested_speed, 0.0);
     }
 
+    const size_t buffered_ahead =
+        snapshot.bottleneck_buffered_frames > 0
+            ? snapshot.bottleneck_buffered_frames - 1
+            : 0;
+    const size_t target_ahead =
+        snapshot.bottleneck_target_frames - 1;
     const double fill = std::clamp(
-        static_cast<double>(snapshot.headroom_us) /
-            static_cast<double>(snapshot.high_watermark_us),
+        static_cast<double>(buffered_ahead) /
+            static_cast<double>(target_ahead),
         0.0,
         1.0);
     const double pacing_scale =
@@ -53,6 +59,10 @@ PlaybackPacingDecision PlaybackPacingController::evaluate(
     diagnostics_.requested_speed = input.requested_speed;
     diagnostics_.bottleneck_slot = input.snapshot.bottleneck_slot;
     diagnostics_.min_buffered_frames = input.snapshot.min_buffered_frames;
+    diagnostics_.bottleneck_buffered_frames =
+        input.snapshot.bottleneck_buffered_frames;
+    diagnostics_.bottleneck_target_frames =
+        input.snapshot.bottleneck_target_frames;
     diagnostics_.safe_frontier_us = input.snapshot.safe_frontier_us;
     diagnostics_.headroom_us = input.snapshot.headroom_us;
 

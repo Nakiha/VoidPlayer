@@ -266,6 +266,20 @@ void RendererRenderLoopCommandProcessor::run_body(
             const auto diagnostic =
                 loop_driver_.take_diagnostic_decision(now, pts);
             if (diagnostic.should_emit) {
+                const auto pacing =
+                    loop_driver_.playback_pacing_diagnostics();
+                spdlog::info(
+                    "[diag] pacing: state={} requested={:.3f}x "
+                    "effective={:.3f}x bottleneck={} buffer={}/{} "
+                    "headroom={:.1f}ms rebuffers={}",
+                    playback_pacing_state_name(pacing.state),
+                    pacing.requested_speed,
+                    pacing.effective_speed,
+                    pacing.bottleneck_slot,
+                    pacing.bottleneck_buffered_frames,
+                    pacing.bottleneck_target_frames,
+                    pacing.headroom_us / 1e3,
+                    pacing.rebuffer_count);
                 std::vector<RenderLoopTrackDiagnosticSnapshot> diagnostics;
                 {
                     std::lock_guard<std::mutex> lock(state_mutex_);

@@ -44,6 +44,8 @@ TEST_CASE("PlaybackPacingController holds and recovers exact playback",
     healthy.has_active_tracks = true;
     healthy.frontier_limited = true;
     healthy.resume_ready = true;
+    healthy.bottleneck_buffered_frames = 3;
+    healthy.bottleneck_target_frames = 3;
     healthy.headroom_us = 80000;
     healthy.high_watermark_us = 60000;
 
@@ -73,31 +75,59 @@ TEST_CASE("PlaybackPacingController holds and recovers exact playback",
     REQUIRE(recovered.resumed_running);
     REQUIRE(recovered.release_pacing_hold);
     REQUIRE(recovered.resume_decode);
-    REQUIRE(recovered.effective_speed < 1.0);
+    REQUIRE(recovered.effective_speed == 1.0);
     REQUIRE(controller.diagnostics().rebuffer_count == 1);
     REQUIRE(controller.diagnostics().rebuffer_duration_us == 400);
 }
 
-TEST_CASE("PlaybackPacingController scales requested speed from PTS headroom",
+TEST_CASE("PlaybackPacingController does not scale a full shallow buffer by frame phase",
           "[playback_pacing]") {
     PlaybackPacingController controller;
     PlaybackPacingSnapshot snapshot;
     snapshot.has_active_tracks = true;
     snapshot.frontier_limited = true;
     snapshot.resume_ready = true;
-    snapshot.headroom_us = 30000;
+    snapshot.min_buffered_frames = 2;
+    snapshot.bottleneck_buffered_frames = 2;
+    snapshot.bottleneck_target_frames = 2;
+    snapshot.headroom_us = 16667;
+    snapshot.high_watermark_us = 33333;
+
+    auto half_frame_remaining =
+        controller.evaluate({true, false, true, 2.0, 0, snapshot});
+    REQUIRE(half_frame_remaining.state == PlaybackPacingState::Running);
+    REQUIRE(half_frame_remaining.update_effective_speed);
+    REQUIRE(half_frame_remaining.effective_speed == 2.0);
+
+    snapshot.headroom_us = 1000;
+    auto near_frame_boundary =
+        controller.evaluate({true, false, true, 2.0, 1, snapshot});
+    REQUIRE(near_frame_boundary.effective_speed == 2.0);
+}
+
+TEST_CASE("PlaybackPacingController scales only from stable forward occupancy",
+          "[playback_pacing]") {
+    PlaybackPacingController controller;
+    PlaybackPacingSnapshot snapshot;
+    snapshot.has_active_tracks = true;
+    snapshot.frontier_limited = true;
+    snapshot.resume_ready = true;
+    snapshot.bottleneck_buffered_frames = 2;
+    snapshot.bottleneck_target_frames = 3;
+    snapshot.headroom_us = 59000;
     snapshot.high_watermark_us = 60000;
 
-    auto half_buffer =
+    auto one_of_two_ahead =
         controller.evaluate({true, false, true, 2.0, 0, snapshot});
-    REQUIRE(half_buffer.state == PlaybackPacingState::Running);
-    REQUIRE(half_buffer.update_effective_speed);
-    REQUIRE(half_buffer.effective_speed == 1.25);
+    REQUIRE(one_of_two_ahead.state == PlaybackPacingState::Running);
+    REQUIRE(one_of_two_ahead.update_effective_speed);
+    REQUIRE(one_of_two_ahead.effective_speed == 1.25);
 
-    snapshot.headroom_us = 60000;
-    auto full_buffer =
+    snapshot.bottleneck_buffered_frames = 3;
+    snapshot.headroom_us = 1000;
+    auto target_reached =
         controller.evaluate({true, false, true, 2.0, 1, snapshot});
-    REQUIRE(full_buffer.effective_speed == 2.0);
+    REQUIRE(target_reached.effective_speed == 2.0);
 }
 
 TEST_CASE("PlaybackPacingController uses hold-only pacing with audible audio",

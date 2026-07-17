@@ -21,6 +21,8 @@ struct PlaybackPacingSnapshot {
     bool all_active_tracks_eof = false;
     int bottleneck_slot = -1;
     size_t min_buffered_frames = 0;
+    size_t bottleneck_buffered_frames = 0;
+    size_t bottleneck_target_frames = 0;
     int64_t safe_frontier_us = 0;
     int64_t headroom_us = 0;
     int64_t high_watermark_us = 0;
@@ -53,6 +55,8 @@ struct PlaybackPacingDiagnostics {
     double effective_speed = 1.0;
     int bottleneck_slot = -1;
     size_t min_buffered_frames = 0;
+    size_t bottleneck_buffered_frames = 0;
+    size_t bottleneck_target_frames = 0;
     int64_t safe_frontier_us = 0;
     int64_t headroom_us = 0;
     uint64_t rebuffer_count = 0;
@@ -60,9 +64,9 @@ struct PlaybackPacingDiagnostics {
     uint64_t presentation_skipped_frame_count = 0;
 };
 
-// Shared playback admission policy. Track code supplies only immutable PTS
-// frontier facts; this controller owns hysteresis and effective clock rate.
-// It never mutates track buffers or presentation state.
+// Shared playback admission policy. Track code supplies immutable queue
+// capacity and PTS-frontier facts; this controller owns hysteresis and the
+// effective clock rate. It never mutates track buffers or presentation state.
 class PlaybackPacingController {
 public:
     PlaybackPacingDecision evaluate(const PlaybackPacingInput& input);

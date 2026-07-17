@@ -71,14 +71,19 @@ native/
 ### Exact playback pacing
 
 Shared native playback uses a single `PlaybackPacingController` boundary.
-`RendererTrackPresentationModel` supplies immutable per-track PTS-frontier
-facts; the pacing controller owns preroll, mid-stream rebuffer hysteresis, and
-the effective clock rate. Platform runners do not participate in playback
-admission.
+`RendererTrackPresentationModel` supplies immutable per-track queue-capacity
+and PTS-frontier facts; the pacing controller owns preroll, mid-stream
+rebuffer hysteresis, and the effective clock rate. Platform runners do not
+participate in playback admission.
 
 - The user-requested speed and effective clock speed are separate.
-- With no audible track, safe PTS headroom may reduce effective speed before an
-  underrun.
+- With no audible track, forward-buffer depletion may reduce effective speed
+  before an underrun. The fill ratio is normalized against
+  each track's attainable forward-frame target, so a full shallow hardware
+  decode queue remains at the requested speed throughout the frame interval.
+- PTS headroom is synchronization/frontier evidence, not a continuous clock
+  control input. Frame phase therefore cannot make wall-clock playback run
+  slow while every decoder queue is healthy.
 - With audible audio, pacing remains at the requested speed and uses an
   audio/video hold instead of changing video rate without time stretching.
 - The slowest currently active, non-EOF track is the pacing bottleneck.

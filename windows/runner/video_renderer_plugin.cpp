@@ -1453,6 +1453,12 @@ void VideoRendererPlugin::HandleMethodCall(
       diagnostics[EncodableValue("playbackMinBufferedFrames")] =
           EncodableValue(static_cast<int64_t>(
               pacing.min_buffered_frames));
+      diagnostics[EncodableValue("playbackBottleneckBufferedFrames")] =
+          EncodableValue(static_cast<int64_t>(
+              pacing.bottleneck_buffered_frames));
+      diagnostics[EncodableValue("playbackBottleneckTargetFrames")] =
+          EncodableValue(static_cast<int64_t>(
+              pacing.bottleneck_target_frames));
       diagnostics[EncodableValue("playbackRebufferCount")] =
           EncodableValue(
               SaturatingInt64(pacing.rebuffer_count));

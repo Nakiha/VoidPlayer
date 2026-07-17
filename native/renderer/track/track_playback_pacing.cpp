@@ -59,6 +59,8 @@ PlaybackPacingSnapshot snapshot_track_playback_pacing(
             if (!packet_eof) {
                 snapshot.frontier_limited = true;
                 snapshot.bottleneck_slot = static_cast<int>(slot);
+                snapshot.bottleneck_buffered_frames = 0;
+                snapshot.bottleneck_target_frames = 1;
                 snapshot.safe_frontier_us = current_pts_us;
                 snapshot.headroom_us = 0;
                 snapshot.high_watermark_us = kMinimumHighWatermarkUs;
@@ -91,6 +93,8 @@ PlaybackPacingSnapshot snapshot_track_playback_pacing(
                 if (bottleneck_fill > 0.0) {
                     bottleneck_fill = 0.0;
                     snapshot.bottleneck_slot = static_cast<int>(slot);
+                    snapshot.bottleneck_buffered_frames = 0;
+                    snapshot.bottleneck_target_frames = 1;
                     snapshot.headroom_us = 0;
                     snapshot.high_watermark_us =
                         kMinimumHighWatermarkUs;
@@ -118,8 +122,15 @@ PlaybackPacingSnapshot snapshot_track_playback_pacing(
             track->track_buffer->max_count() > 0
                 ? track->track_buffer->max_count() - 1
                 : 0;
-        const int64_t target_intervals = static_cast<int64_t>(
-            std::clamp<size_t>(maximum_ahead_frames, 1, 2));
+        const size_t target_ahead_frames =
+            std::clamp<size_t>(maximum_ahead_frames, 1, 2);
+        const size_t target_buffered_frames = std::max<size_t>(
+            1,
+            std::min(
+                track->track_buffer->max_count(),
+                target_ahead_frames + 1));
+        const int64_t target_intervals =
+            static_cast<int64_t>(target_ahead_frames);
         const int64_t high_watermark_us = std::clamp<int64_t>(
             interval_us * target_intervals,
             kMinimumHighWatermarkUs,
@@ -141,19 +152,25 @@ PlaybackPacingSnapshot snapshot_track_playback_pacing(
             track->offset_us;
         const int64_t headroom_us =
             std::max<int64_t>(0, frontier_us - current_pts_us);
-        const double fill = static_cast<double>(headroom_us) /
-            static_cast<double>(high_watermark_us);
+        const size_t buffered_ahead_frames =
+            buffered_frames > 0 ? buffered_frames - 1 : 0;
+        const double fill = target_ahead_frames > 0
+            ? static_cast<double>(std::min(
+                  buffered_ahead_frames, target_ahead_frames)) /
+                  static_cast<double>(target_ahead_frames)
+            : 1.0;
 
         snapshot.frontier_limited = true;
         minimum_frontier = std::min(minimum_frontier, frontier_us);
         if (fill < bottleneck_fill) {
             bottleneck_fill = fill;
             snapshot.bottleneck_slot = static_cast<int>(slot);
+            snapshot.bottleneck_buffered_frames = buffered_frames;
+            snapshot.bottleneck_target_frames = target_buffered_frames;
             snapshot.headroom_us = headroom_us;
             snapshot.high_watermark_us = high_watermark_us;
         }
-        if (headroom_us < high_watermark_us &&
-            buffered_frames < track->track_buffer->max_count()) {
+        if (buffered_frames < target_buffered_frames) {
             snapshot.resume_ready = false;
         }
     }
@@ -178,6 +195,8 @@ PlaybackPacingSnapshot snapshot_track_playback_pacing(
         snapshot.starvation_risk = false;
         snapshot.frontier_limited = false;
         snapshot.bottleneck_slot = -1;
+        snapshot.bottleneck_buffered_frames = 0;
+        snapshot.bottleneck_target_frames = 0;
         snapshot.safe_frontier_us = 0;
         snapshot.headroom_us = 0;
         snapshot.high_watermark_us = 0;

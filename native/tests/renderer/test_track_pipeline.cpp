@@ -1145,6 +1145,8 @@ TEST_CASE("TrackPlaybackPacing snapshots preroll and underrun frontiers",
     REQUIRE_FALSE(ready_snapshot.preroll_blocked);
     REQUIRE_FALSE(ready_snapshot.starvation_risk);
     REQUIRE(ready_snapshot.bottleneck_slot == 0);
+    REQUIRE(ready_snapshot.bottleneck_buffered_frames == 4);
+    REQUIRE(ready_snapshot.bottleneck_target_frames == 3);
     REQUIRE(ready_snapshot.headroom_us == 49999);
 
     manager[0]->track_buffer->advance();
@@ -1199,7 +1201,17 @@ TEST_CASE("TrackPlaybackPacing admits the only forward frame before waiting",
     const auto saturated = snapshot_track_playback_pacing(manager, 6000);
     REQUIRE(saturated.frontier_limited);
     REQUIRE(saturated.resume_ready);
+    REQUIRE(saturated.bottleneck_buffered_frames == 2);
+    REQUIRE(saturated.bottleneck_target_frames == 2);
     REQUIRE(saturated.headroom_us == saturated.high_watermark_us);
+
+    const auto half_frame_remaining =
+        snapshot_track_playback_pacing(manager, 22667);
+    REQUIRE(half_frame_remaining.resume_ready);
+    REQUIRE(half_frame_remaining.bottleneck_buffered_frames == 2);
+    REQUIRE(half_frame_remaining.bottleneck_target_frames == 2);
+    REQUIRE(half_frame_remaining.headroom_us <
+            half_frame_remaining.high_watermark_us);
 
     REQUIRE(manager[0]->track_buffer->advance());
     REQUIRE(manager[0]->track_buffer->advance());
